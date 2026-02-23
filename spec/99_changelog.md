@@ -1,5 +1,14 @@
 # Implementation Changelog
 
+## Completed (v0.12.76) - Add state-filter tabs to runner detail steps view
+- **State filter tabs** (All / Running / Complete / Error) added below the Flat/Tree toggle on the runner detail page (`/runners/{runner_id}`) — client-side filtering via `data-state-category` attributes on step rows and tree nodes
+- **`step_row.html`**: `<tr>` tagged with `data-state-category="{{ step.state|step_category }}"` using the existing `step_category` Jinja filter (maps to `categorize_step_state()`)
+- **`step_tree.html`**: `<details class="step-tree-node">` tagged with same attribute for tree-view filtering
+- **`detail.html`**: state filter button row with count badges; JavaScript IIFE with `applyStateFilter()` (show/hide by category), `updateStateCounts()` (recompute badge counts), click handler, and `htmx:afterSwap` listener to re-apply filter and recount after each 5s auto-refresh
+- **`style.css`**: `.tab-count` (small opacity badge) and `.state-filter` (inline spacing) styles
+- **Test update**: `test_flat_partial_unchanged` assertion changed from `<tr>` to `<tr data-state-category=` to match new markup
+- No new tests; 5 files changed; test suite: 2438 passed, 79 skipped; total collected 2517
+
 ## Completed (v0.12.75) - Fix error propagation in block hierarchies
 - **Root cause**: when child steps errored, parent blocks waited forever — `StepAnalysis._categorize_step()` had no branch for error state (errored steps fell through all conditions and were invisible), and `done` required `len(completed) == len(statements)` which could never be true with errored children
 - **Identified by comparing** with FMS Scala codebase (`/Users/ralph_lemke/fms`) which has a similar `StepAnalysis` / `BlockRunner` architecture
