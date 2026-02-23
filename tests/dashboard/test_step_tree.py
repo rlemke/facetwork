@@ -230,7 +230,7 @@ class TestTreeIntegration:
 
         resp = tc.get("/api/runners/r-1/steps?partial=true")
         assert resp.status_code == 200
-        assert "<tr>" in resp.text
+        assert "<tr data-state-category=" in resp.text
         # Flat view should not contain tree markup
         assert "step-tree-node" not in resp.text
 

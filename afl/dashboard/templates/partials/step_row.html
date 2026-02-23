@@ -1,4 +1,4 @@
-<tr>
+<tr data-state-category="{{ step.state|step_category }}">
     <td><a href="/steps/{{ step.id }}">{{ step.statement_name or step.statement_id or step.id|truncate_uuid }}</a></td>
     <td>{% if step.facet_name %}{{ step.facet_name.split('.')[-1] }}{% else %}{{ step.object_type }}{% endif %}</td>
     <td><span class="badge badge-{{ step.state|state_color }}">{{ step.state|state_label }}</span></td>

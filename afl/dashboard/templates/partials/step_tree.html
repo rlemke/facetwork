@@ -1,5 +1,5 @@
 {% for node in tree %}
-<details class="step-tree-node" {% if node.depth < 2 %}open{% endif %}>
+<details class="step-tree-node" data-state-category="{{ node.step.state|step_category }}" {% if node.depth < 2 %}open{% endif %}>
     <summary>
         <span class="badge badge-{{ node.step.state|state_color }}">{{ node.step.state|state_label }}</span>
         <a href="/steps/{{ node.step.id }}">{{ node.step.statement_name or node.step.id|truncate_uuid }}</a>

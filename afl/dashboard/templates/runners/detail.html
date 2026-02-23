@@ -66,6 +66,12 @@
     <button class="view-toggle-btn active" onclick="document.getElementById('step-flat').style.display='';document.getElementById('step-tree').style.display='none';this.classList.add('active');this.nextElementSibling.classList.remove('active');">Flat</button>
     <button class="view-toggle-btn" onclick="document.getElementById('step-tree').style.display='';document.getElementById('step-flat').style.display='none';this.classList.add('active');this.previousElementSibling.classList.remove('active');">Tree</button>
 </div>
+<div class="view-toggle state-filter" id="state-tabs">
+    <button class="view-toggle-btn active" data-filter="all">All <span class="tab-count" id="count-all"></span></button>
+    <button class="view-toggle-btn" data-filter="running">Running <span class="tab-count" id="count-running"></span></button>
+    <button class="view-toggle-btn" data-filter="complete">Complete <span class="tab-count" id="count-complete"></span></button>
+    <button class="view-toggle-btn" data-filter="error">Error <span class="tab-count" id="count-error"></span></button>
+</div>
 
 <div id="step-flat">
 <figure>
@@ -113,6 +119,66 @@
 </table>
 </figure>
 {% endif %}
+
+<script>
+(function() {
+    var currentFilter = "all";
+
+    function applyStateFilter(filter) {
+        currentFilter = filter;
+        var elements = document.querySelectorAll("[data-state-category]");
+        for (var i = 0; i < elements.length; i++) {
+            var el = elements[i];
+            if (filter === "all" || el.getAttribute("data-state-category") === filter) {
+                el.style.display = "";
+            } else {
+                el.style.display = "none";
+            }
+        }
+        var buttons = document.querySelectorAll("#state-tabs .view-toggle-btn");
+        for (var j = 0; j < buttons.length; j++) {
+            if (buttons[j].getAttribute("data-filter") === filter) {
+                buttons[j].classList.add("active");
+            } else {
+                buttons[j].classList.remove("active");
+            }
+        }
+    }
+
+    function updateStateCounts() {
+        var elements = document.querySelectorAll("[data-state-category]");
+        var counts = {all: 0, running: 0, complete: 0, error: 0};
+        for (var i = 0; i < elements.length; i++) {
+            var cat = elements[i].getAttribute("data-state-category");
+            counts.all++;
+            if (counts.hasOwnProperty(cat)) {
+                counts[cat]++;
+            }
+        }
+        for (var key in counts) {
+            var span = document.getElementById("count-" + key);
+            if (span) {
+                span.textContent = "(" + counts[key] + ")";
+            }
+        }
+    }
+
+    document.getElementById("state-tabs").addEventListener("click", function(e) {
+        var btn = e.target.closest("[data-filter]");
+        if (btn) {
+            applyStateFilter(btn.getAttribute("data-filter"));
+            updateStateCounts();
+        }
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function() {
+        applyStateFilter(currentFilter);
+        updateStateCounts();
+    });
+
+    updateStateCounts();
+})();
+</script>
 
 {% endif %}
 {% endblock %}
