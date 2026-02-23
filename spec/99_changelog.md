@@ -1,5 +1,22 @@
 # Implementation Changelog
 
+## Completed (v0.12.80) - Splunk-compatible JSON logging and centralized config
+
+### New shared module: `afl/logging.py`
+- **`SplunkJsonFormatter`**: subclass of `logging.Formatter` emitting one compact JSON object per line with Splunk CIM fields: `timestamp` (ISO 8601 UTC with ms and `Z` suffix), `level`, `logger`, `message`, `source` ("agentflow"), and optional `exc_info` (traceback string)
+- **`configure_logging()`**: centralized setup replacing duplicated `logging.basicConfig` patterns; `log_format="json"` installs `SplunkJsonFormatter`, `log_format="text"` uses legacy plain-text format; uses `force=True` to ensure handler installation
+
+### CLI entry point updates (5 files)
+- **`afl/cli.py`**: added `--log-format` to `_add_common_args()`; refactored `_configure_logging()` to delegate to `afl.logging.configure_logging()`
+- **`afl/dashboard/__main__.py`**: replaced inline `logging.basicConfig` with `configure_logging()` call; added `--log-format` argument
+- **`afl/mcp/__main__.py`**: replaced inline `logging.basicConfig` with `configure_logging()` call; added `--log-format` argument
+- **`afl/runtime/runner/__main__.py`**: replaced inline `logging.basicConfig` with `configure_logging()` call; added `--log-format` argument
+- **`afl/runtime/submit.py`**: replaced inline `logging.basicConfig` with `configure_logging()` call; added `--log-format` argument
+
+### Tests
+- **12 new tests** in `tests/test_logging.py`: `TestSplunkJsonFormatter` (10 tests — valid JSON output, required fields, ISO 8601 timestamp, level/logger/message/source fields, exc_info inclusion/omission, compact single-line output) and `TestConfigureLogging` (2 tests — JSON format installs SplunkJsonFormatter, text format installs plain formatter)
+- 7 files changed; test suite: 2480 passed, 79 skipped; total collected 2559
+
 ## Completed (v0.12.79) - Dashboard UI overhaul: fonts, tabs, refresh, state colors
 
 ### Part 1: Cap font sizes (max ~20px)
