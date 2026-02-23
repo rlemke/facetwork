@@ -1,5 +1,18 @@
 # Implementation Changelog
 
+## Completed (v0.12.78) - DownloadStates and AnalyzeStates scaling workflow variants
+
+### Scaling workflow variants
+- **DownloadStates**: 10 AFL workflow variants (`DownloadStates_02` through `_45`) for benchmarking parallel OSM PBF cache downloads at different scales (2, 5, 10, 15, 20, 25, 30, 35, 40, 45 states); each calls individual state cache facets from `osm.geo.cache.UnitedStates` and concatenates results via `++`; Georgia uses FQN `osm.geo.cache.UnitedStates.Georgia()` to avoid ambiguity with `osm.geo.cache.Europe.Georgia`
+- **AnalyzeStates**: 11 AFL workflow variants (`AnalyzeStates_01` through `_45`) for benchmarking parallel composed analysis (10 analysis workflows per state via `AnalyzeRegion`); each variant file references `AnalyzeRegion` from the base `osm_analyze_states.afl` included as a library
+- **Run scripts**: 21 shell scripts (`run_osm_cache_states_{02..45}.sh`, `run_osm_analyze_states_{01..45}.sh`) — each boots Docker stack, compiles AFL, and submits the workflow; analyze scripts auto-discover all library AFL files via `find`
+
+### Seed script update
+- **`scripts/seed-examples`**: relaxed `/tests/` exclusion to allow `/tests/real/` paths — scaling workflows and other integration test AFL files now appear in dashboard when seeded (59 files, 64 workflows for osm-geocoder; 98 total workflows across all examples)
+
+### Tests
+- No new test code; test suite: 2478 passed, 67 skipped; total collected 2545 (increase from 2536 due to new AFL files picked up by existing parameterized compilation tests)
+
 ## Completed (v0.12.77) - V2 workflow "Other" tab, handler detail fixes, handler activity
 
 ### Part 1: "Other" tab for step categorization
