@@ -51,7 +51,11 @@ def short_workflow_name(workflow_name: str) -> str:
 
 
 def categorize_step_state(state: str) -> str:
-    """Categorize a step state into running/complete/error.
+    """Categorize a step state into running/complete/error/other.
+
+    ``running`` covers states where handler interaction happens or the step
+    is newly created.  ``other`` covers internal evaluator states (block
+    execution, mixin blocks, statement blocks, capture, scripts).
 
     >>> categorize_step_state("state.statement.Complete")
     'complete'
@@ -59,6 +63,8 @@ def categorize_step_state(state: str) -> str:
     'error'
     >>> categorize_step_state("state.statement.Created")
     'running'
+    >>> categorize_step_state("state.block.execution.Begin")
+    'other'
     """
     from afl.runtime.states import StepState
 
@@ -66,7 +72,14 @@ def categorize_step_state(state: str) -> str:
         return "complete"
     if state == StepState.STATEMENT_ERROR:
         return "error"
-    return "running"
+    if state in {
+        StepState.CREATED,
+        StepState.EVENT_TRANSMIT,
+        StepState.FACET_INIT_BEGIN,
+        StepState.FACET_INIT_END,
+    }:
+        return "running"
+    return "other"
 
 
 def group_runners_by_namespace(

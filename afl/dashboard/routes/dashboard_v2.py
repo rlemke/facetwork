@@ -134,7 +134,7 @@ def workflow_detail(
     all_steps = list(store.get_steps_by_workflow(runner.workflow_id))
 
     # Categorize and count steps
-    step_counts = {"running": 0, "error": 0, "complete": 0}
+    step_counts = {"running": 0, "error": 0, "complete": 0, "other": 0}
     for s in all_steps:
         cat = categorize_step_state(s.state)
         step_counts[cat] = step_counts.get(cat, 0) + 1
@@ -172,7 +172,7 @@ def step_rows_partial(
         )
 
     all_steps = list(store.get_steps_by_workflow(runner.workflow_id))
-    step_counts = {"running": 0, "error": 0, "complete": 0}
+    step_counts = {"running": 0, "error": 0, "complete": 0, "other": 0}
     for s in all_steps:
         cat = categorize_step_state(s.state)
         step_counts[cat] = step_counts.get(cat, 0) + 1
@@ -404,11 +404,15 @@ def handler_detail_partial(
 ):
     """HTMX partial for handler detail refresh."""
     handler = store.get_handler_registration(facet_name)
+    active_tasks = store.get_tasks_by_facet_name(facet_name, states=["pending", "running"])
+    recent_logs = store.get_step_logs_by_facet(facet_name, limit=20)
     return request.app.state.templates.TemplateResponse(
         request,
         "v2/handlers/_detail_content.html",
         {
             "handler": handler,
+            "active_tasks": active_tasks,
+            "recent_logs": recent_logs,
         },
     )
 
@@ -431,11 +435,15 @@ def handler_detail(
 ):
     """Handler detail page."""
     handler = store.get_handler_registration(facet_name)
+    active_tasks = store.get_tasks_by_facet_name(facet_name, states=["pending", "running"])
+    recent_logs = store.get_step_logs_by_facet(facet_name, limit=20)
     return request.app.state.templates.TemplateResponse(
         request,
         "v2/handlers/detail.html",
         {
             "handler": handler,
             "active_tab": "handlers",
+            "active_tasks": active_tasks,
+            "recent_logs": recent_logs,
         },
     )

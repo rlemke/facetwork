@@ -84,8 +84,26 @@ class TestCategorizeStepState:
     def test_event_transmit(self):
         assert categorize_step_state("state.EventTransmit") == "running"
 
-    def test_block_begin(self):
-        assert categorize_step_state("state.block.execution.Begin") == "running"
+    def test_facet_init_begin(self):
+        assert categorize_step_state("state.facet.initialization.Begin") == "running"
+
+    def test_facet_init_end(self):
+        assert categorize_step_state("state.facet.initialization.End") == "running"
+
+    def test_block_begin_is_other(self):
+        assert categorize_step_state("state.block.execution.Begin") == "other"
+
+    def test_block_continue_is_other(self):
+        assert categorize_step_state("state.block.execution.Continue") == "other"
+
+    def test_mixin_blocks_begin_is_other(self):
+        assert categorize_step_state("state.mixin.blocks.Begin") == "other"
+
+    def test_statement_capture_is_other(self):
+        assert categorize_step_state("state.statement.capture.Begin") == "other"
+
+    def test_statement_end_is_other(self):
+        assert categorize_step_state("state.statement.End") == "other"
 
 
 class TestGroupRunnersByNamespace:
@@ -299,3 +317,102 @@ class TestNavStructure:
         tc, store = client
         resp = tc.get("/runners")
         assert resp.status_code == 200
+
+
+@pytestmark_routes
+class TestV2WorkflowOtherTab:
+    def test_detail_has_other_pill(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows/r-1")
+        assert resp.status_code == 200
+        assert "step_tab=other" in resp.text
+        assert "Other" in resp.text
+
+    def test_other_tab_returns_200(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows/r-1?step_tab=other")
+        assert resp.status_code == 200
+
+    def test_other_tab_partial(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows/r-1/steps/partial?step_tab=other")
+        assert resp.status_code == 200
+
+
+@pytestmark_routes
+class TestV2HandlerDetail:
+    def _make_handler(self, facet_name="osm.geo.Cache"):
+        from afl.runtime.entities import HandlerRegistration
+
+        return HandlerRegistration(
+            facet_name=facet_name,
+            module_uri="examples.osm_geocoder.handlers.cache",
+            entrypoint="handle",
+            version="1.0.0",
+        )
+
+    def test_handler_detail_has_small_font_class(self, client):
+        tc, store = client
+        store.save_handler_registration(self._make_handler())
+        resp = tc.get("/v2/handlers/osm.geo.Cache")
+        assert resp.status_code == 200
+        assert "summary-value-sm" in resp.text
+
+    def test_handler_detail_shows_activity_section(self, client):
+        tc, store = client
+        store.save_handler_registration(self._make_handler())
+        resp = tc.get("/v2/handlers/osm.geo.Cache")
+        assert resp.status_code == 200
+        assert "Current Activity" in resp.text
+        assert "Recent Logs" in resp.text
+        assert "No active tasks" in resp.text
+        assert "No recent logs" in resp.text
+
+    def test_handler_detail_with_active_task(self, client):
+        from afl.runtime.entities import TaskDefinition
+
+        tc, store = client
+        store.save_handler_registration(self._make_handler())
+        store.save_task(TaskDefinition(
+            uuid="task-1",
+            name="osm.geo.Cache",
+            runner_id="r-1",
+            workflow_id="wf-1",
+            flow_id="flow-1",
+            step_id="step-1",
+            state="running",
+            created=1000,
+        ))
+        resp = tc.get("/v2/handlers/osm.geo.Cache")
+        assert resp.status_code == 200
+        assert "step-1" in resp.text
+        assert "No active tasks" not in resp.text
+
+    def test_handler_detail_with_recent_log(self, client):
+        from afl.runtime.entities import StepLogEntry
+
+        tc, store = client
+        store.save_handler_registration(self._make_handler())
+        store.save_step_log(StepLogEntry(
+            uuid="log-1",
+            step_id="step-1",
+            workflow_id="wf-1",
+            runner_id="r-1",
+            facet_name="osm.geo.Cache",
+            message="Task completed",
+            time=1000,
+        ))
+        resp = tc.get("/v2/handlers/osm.geo.Cache")
+        assert resp.status_code == 200
+        assert "Task completed" in resp.text
+        assert "No recent logs" not in resp.text
+
+    def test_handler_partial_includes_activity(self, client):
+        tc, store = client
+        store.save_handler_registration(self._make_handler())
+        resp = tc.get("/v2/handlers/osm.geo.Cache/partial")
+        assert resp.status_code == 200
+        assert "Current Activity" in resp.text

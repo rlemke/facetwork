@@ -419,6 +419,34 @@ class PersistenceAPI(Protocol):
         """
         ...
 
+    def get_tasks_by_facet_name(
+        self, facet_name: str, states: list[str] | None = None
+    ) -> Sequence["TaskDefinition"]:
+        """Get tasks matching a facet name, optionally filtered by states.
+
+        Args:
+            facet_name: The qualified facet name (matches task.name)
+            states: Optional list of states to filter by
+
+        Returns:
+            Tasks matching the criteria
+        """
+        return []
+
+    def get_step_logs_by_facet(
+        self, facet_name: str, limit: int = 20
+    ) -> Sequence["StepLogEntry"]:
+        """Get recent step logs for a facet, ordered by time descending.
+
+        Args:
+            facet_name: The qualified facet name
+            limit: Maximum number of entries to return
+
+        Returns:
+            Recent step log entries for the facet
+        """
+        return []
+
     # Lock operations
 
     @abstractmethod

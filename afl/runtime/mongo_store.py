@@ -190,6 +190,7 @@ class MongoStore(PersistenceAPI):
         tasks.create_index("step_id", name="task_step_id_index")
         tasks.create_index("task_list_name", name="task_list_name_index")
         tasks.create_index("state", name="task_state_index")
+        tasks.create_index("name", name="task_name_index")
         # Partial unique index for running tasks
         tasks.create_index(
             "step_id",
@@ -233,6 +234,7 @@ class MongoStore(PersistenceAPI):
         step_logs.create_index("uuid", unique=True, name="step_log_uuid_index")
         step_logs.create_index("step_id", name="step_log_step_id_index")
         step_logs.create_index("workflow_id", name="step_log_workflow_id_index")
+        step_logs.create_index("facet_name", name="step_log_facet_name_index")
 
         # Handler registrations collection
         handler_regs = self._db.handler_registrations
@@ -541,6 +543,23 @@ class MongoStore(PersistenceAPI):
     def get_step_logs_by_workflow(self, workflow_id: str) -> Sequence[StepLogEntry]:
         """Get step logs for a workflow, ordered by time ascending."""
         docs = self._db.step_logs.find({"workflow_id": workflow_id}).sort("time", ASCENDING)
+        return [self._doc_to_step_log(doc) for doc in docs]
+
+    def get_tasks_by_facet_name(
+        self, facet_name: str, states: list[str] | None = None
+    ) -> Sequence[TaskDefinition]:
+        """Get tasks matching a facet name, optionally filtered by states."""
+        query: dict[str, Any] = {"name": facet_name}
+        if states:
+            query["state"] = {"$in": states}
+        docs = self._db.tasks.find(query).sort("created", -1)
+        return [self._doc_to_task(doc) for doc in docs]
+
+    def get_step_logs_by_facet(
+        self, facet_name: str, limit: int = 20
+    ) -> Sequence[StepLogEntry]:
+        """Get recent step logs for a facet, ordered by time descending."""
+        docs = self._db.step_logs.find({"facet_name": facet_name}).sort("time", -1).limit(limit)
         return [self._doc_to_step_log(doc) for doc in docs]
 
     # =========================================================================

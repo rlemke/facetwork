@@ -358,6 +358,24 @@ class MemoryStore(PersistenceAPI):
             key=lambda e: e.time,
         )
 
+    def get_tasks_by_facet_name(
+        self, facet_name: str, states: list[str] | None = None
+    ) -> list[TaskDefinition]:
+        """Get tasks matching a facet name, optionally filtered by states."""
+        result = [t for t in self._tasks.values() if t.name == facet_name]
+        if states:
+            states_set = set(states)
+            result = [t for t in result if t.state in states_set]
+        return sorted(result, key=lambda t: t.created, reverse=True)
+
+    def get_step_logs_by_facet(
+        self, facet_name: str, limit: int = 20
+    ) -> list[StepLogEntry]:
+        """Get recent step logs for a facet, ordered by time descending."""
+        matching = [e for e in self._step_logs if e.facet_name == facet_name]
+        matching.sort(key=lambda e: e.time, reverse=True)
+        return matching[:limit]
+
     # =========================================================================
     # Server Operations
     # =========================================================================

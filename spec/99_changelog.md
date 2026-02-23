@@ -1,5 +1,28 @@
 # Implementation Changelog
 
+## Completed (v0.12.77) - V2 workflow "Other" tab, handler detail fixes, handler activity
+
+### Part 1: "Other" tab for step categorization
+- **`categorize_step_state()`** in `helpers.py` refined: `"running"` now covers only `CREATED`, `EVENT_TRANSMIT`, `FACET_INIT_BEGIN`, `FACET_INIT_END` (states where handler interaction happens or step is newly created); all other non-terminal states return `"other"` (block execution, mixin blocks, statement blocks, capture, scripts — internal evaluator states)
+- **`v2/workflows/detail.html`**: added "Other" subnav pill with count
+- **`runners/detail.html`**: added "Other" button to `#state-tabs` client-side filter; updated JS `counts` object to include `other` category
+- **`dashboard_v2.py`**: added `"other": 0` to `step_counts` dict in `workflow_detail()` and `step_rows_partial()`
+
+### Part 2: Handler detail font fix
+- **`v2/handlers/detail.html`**: module_uri and entrypoint `<h2>` elements now use `summary-value-sm` class
+- **`style.css`**: added `.summary-card .summary-value-sm { font-size: 1rem; word-break: break-all; }` — prevents oversized rendering of long Python module paths
+
+### Part 3: Handler activity section
+- **New persistence methods**: `get_tasks_by_facet_name(facet_name, states)` and `get_step_logs_by_facet(facet_name, limit)` added to `persistence.py` (default implementations), `mongo_store.py` (MongoDB queries with sort/limit), `memory_store.py` (linear scan)
+- **New indexes** in `MongoStore._ensure_indexes()`: `tasks.name` (`task_name_index`), `step_logs.facet_name` (`step_log_facet_name_index`)
+- **Route changes**: `handler_detail()` and `handler_detail_partial()` now query active tasks and recent logs, passing `active_tasks` and `recent_logs` to templates
+- **`_detail_content.html`**: added "Current Activity" section (tasks table: Step ID link, Runner link, State badge, Created time) and "Recent Logs" section (Time, Level badge, Message, Step link); both show empty-state messages when no data
+- **`style.css`**: added `.handler-activity` table styles
+
+### Tests
+- **19 new tests**: 7 categorize state tests (facet_init running, block/mixin/capture/statement_end other), 3 "Other" tab route tests, 5 handler detail route tests (font class, activity section, active task, recent log, partial), 2 step logs by facet tests, 2 tasks by facet tests
+- 11 files changed; test suite: 2457 passed, 79 skipped; total collected 2536
+
 ## Completed (v0.12.76) - Add state-filter tabs to runner detail steps view
 - **State filter tabs** (All / Running / Complete / Error) added below the Flat/Tree toggle on the runner detail page (`/runners/{runner_id}`) — client-side filtering via `data-state-category` attributes on step rows and tree nodes
 - **`step_row.html`**: `<tr>` tagged with `data-state-category="{{ step.state|step_category }}"` using the existing `step_category` Jinja filter (maps to `categorize_step_state()`)

@@ -32,6 +32,10 @@
     margin: 0;
     color: var(--muted-color);
 }
+.summary-card .summary-value-sm {
+    font-size: 1rem;
+    word-break: break-all;
+}
 
 /* Monospace for UUIDs and code */
 .mono {
@@ -247,6 +251,10 @@ pre code {
 .state-filter { margin-left: 1rem; }
 
 .doc-comment { margin-top: 0.5rem; font-size: 0.9em; color: var(--muted-color); }
+/* Handler activity table */
+.handler-activity { font-size: 0.9em; }
+.handler-activity td, .handler-activity th { padding: 0.4rem 0.75rem; }
+
 .doc-description p { margin: 0.25rem 0; }
 .doc-section { margin-top: 0.25rem; padding-left: 0.5rem; border-left: 2px solid var(--muted-border-color, #ddd); }
 .doc-section dl { margin: 0.25rem 0; display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.75rem; }

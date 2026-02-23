@@ -48,4 +48,51 @@
         {% endif %}
     </div>
 </div>
+
+<h2>Current Activity</h2>
+{% if active_tasks %}
+<figure>
+<table class="handler-activity">
+    <thead>
+        <tr><th>Step ID</th><th>Runner</th><th>State</th><th>Created</th></tr>
+    </thead>
+    <tbody>
+    {% for task in active_tasks %}
+        <tr>
+            <td><a href="/steps/{{ task.step_id }}" class="mono">{{ task.step_id[:12] }}…</a></td>
+            <td><a href="/v2/workflows/{{ task.runner_id }}" class="mono">{{ task.runner_id[:12] }}…</a></td>
+            <td><span class="badge badge-{{ task.state|state_color }}">{{ task.state }}</span></td>
+            <td>{{ task.created|timestamp }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<p>No active tasks.</p>
+{% endif %}
+
+<h2>Recent Logs</h2>
+{% if recent_logs %}
+<figure>
+<table class="handler-activity">
+    <thead>
+        <tr><th>Time</th><th>Level</th><th>Message</th><th>Step</th></tr>
+    </thead>
+    <tbody>
+    {% for log in recent_logs %}
+        <tr>
+            <td>{{ log.time|timestamp }}</td>
+            <td><span class="badge badge-{{ log.level|step_log_color }}">{{ log.level }}</span></td>
+            <td>{{ log.message }}</td>
+            <td><a href="/steps/{{ log.step_id }}" class="mono">{{ log.step_id[:12] }}…</a></td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<p>No recent logs.</p>
+{% endif %}
+
 {% endif %}

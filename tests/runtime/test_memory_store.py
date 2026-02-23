@@ -278,3 +278,70 @@ class TestStepLogOperations:
 
         store.clear()
         assert len(store.get_step_logs_by_step("s1")) == 0
+
+    def test_get_step_logs_by_facet(self, store):
+        """Retrieve step logs by facet_name, ordered by time descending."""
+        for i in range(5):
+            store.save_step_log(StepLogEntry(
+                uuid=generate_id(), step_id=f"s{i}", workflow_id="w1",
+                facet_name="ns.Facet", message=f"Log {i}", time=1000 + i,
+            ))
+        store.save_step_log(StepLogEntry(
+            uuid=generate_id(), step_id="s99", workflow_id="w1",
+            facet_name="other.Facet", message="Other", time=2000,
+        ))
+
+        logs = store.get_step_logs_by_facet("ns.Facet", limit=3)
+        assert len(logs) == 3
+        assert logs[0].message == "Log 4"  # most recent first
+        assert logs[2].message == "Log 2"
+
+    def test_get_step_logs_by_facet_empty(self, store):
+        """Returns empty list for unknown facet."""
+        assert store.get_step_logs_by_facet("nonexistent") == []
+
+
+class TestTasksByFacetName:
+    """Tests for get_tasks_by_facet_name."""
+
+    @pytest.fixture
+    def store(self):
+        return MemoryStore()
+
+    def _make_task(self, name, state="pending", uuid=None):
+        from afl.runtime.entities import TaskDefinition
+
+        return TaskDefinition(
+            uuid=uuid or generate_id(),
+            name=name,
+            runner_id="r-1",
+            workflow_id="wf-1",
+            flow_id="flow-1",
+            step_id="step-1",
+            state=state,
+            created=1000,
+        )
+
+    def test_get_by_facet_name(self, store):
+        """Find tasks matching a facet name."""
+        store.save_task(self._make_task("ns.FacetA", "running"))
+        store.save_task(self._make_task("ns.FacetB", "running"))
+        store.save_task(self._make_task("ns.FacetA", "pending"))
+
+        tasks = store.get_tasks_by_facet_name("ns.FacetA")
+        assert len(tasks) == 2
+        assert all(t.name == "ns.FacetA" for t in tasks)
+
+    def test_filter_by_states(self, store):
+        """Filter tasks by state."""
+        store.save_task(self._make_task("ns.Facet", "running"))
+        store.save_task(self._make_task("ns.Facet", "pending"))
+        store.save_task(self._make_task("ns.Facet", "completed"))
+
+        tasks = store.get_tasks_by_facet_name("ns.Facet", states=["running", "pending"])
+        assert len(tasks) == 2
+        assert {t.state for t in tasks} == {"running", "pending"}
+
+    def test_empty_result(self, store):
+        """Returns empty list for unknown facet."""
+        assert store.get_tasks_by_facet_name("nonexistent") == []

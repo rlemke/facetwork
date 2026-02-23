@@ -20,6 +20,10 @@
            class="subnav-pill{% if step_tab == 'complete' %} active{% endif %}">
             Complete <span class="subnav-count">{{ step_counts.complete }}</span>
         </a>
+        <a href="/v2/workflows/{{ runner.uuid }}?step_tab=other"
+           class="subnav-pill{% if step_tab == 'other' %} active{% endif %}">
+            Other <span class="subnav-count">{{ step_counts.other }}</span>
+        </a>
     </div>
 </div>
 {% endif %}
