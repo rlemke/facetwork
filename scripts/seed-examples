@@ -95,11 +95,13 @@ def discover_examples(
         # Deduplicate by real path and exclude:
         # - files that resolve outside this example (e.g. via symlinks)
         # - files inside tests/ directories (test fixtures, not production AFL)
+        #   Exception: tests/real/ contains integration workflows meant to be seeded
         seen: set[str] = set()
         unique: list[str] = []
         for f in files:
             real_f = os.path.realpath(f)
-            if real_f not in seen and real_f.startswith(real_example_root) and "/tests/" not in real_f:
+            is_test = "/tests/" in real_f and "/tests/real/" not in real_f
+            if real_f not in seen and real_f.startswith(real_example_root) and not is_test:
                 seen.add(real_f)
                 unique.append(f)
         files = unique

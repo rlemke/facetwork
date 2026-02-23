@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Download All US States — convenience startup script
+# Download 15 US States — convenience startup script
 #
 # Sets up HDFS + MongoDB with external data directories under ~/data,
 # starts the AgentFlow stack, compiles the workflow, and submits it.
 #
 # Usage:
-#   examples/osm-geocoder/tests/real/scripts/run_osm_cache_states_01.sh
+#   examples/osm-geocoder/tests/real/scripts/run_osm_cache_states_15.sh
 #
 set -euo pipefail
 
@@ -78,9 +78,9 @@ echo ""
 # ---------------------------------------------------------------------------
 # 4. Compile the AFL workflow
 # ---------------------------------------------------------------------------
-echo "=== Compiling osm_cache_states_01.afl ==="
-AFL_FILE="$REAL_DIR/afl/osm_cache_states_01.afl"
-OUTPUT_FILE="$REAL_DIR/osm_cache_states_01.json"
+echo "=== Compiling osm_cache_states_15.afl ==="
+AFL_FILE="$REAL_DIR/afl/osm_cache_states_15.afl"
+OUTPUT_FILE="$REAL_DIR/osm_cache_states_15.json"
 
 cd "$PROJECT_DIR"
 source .venv/bin/activate 2>/dev/null || true
@@ -97,14 +97,14 @@ echo ""
 # ---------------------------------------------------------------------------
 # 5. Submit the workflow
 # ---------------------------------------------------------------------------
-echo "=== Submitting DownloadStates_01 workflow ==="
+echo "=== Submitting DownloadStates_15 workflow ==="
 export AFL_MONGODB_URL="mongodb://localhost:${MONGODB_PORT:-27018}"
 python -m afl.runtime.submit \
     --primary "$AFL_FILE" \
     --library "$EXAMPLE_DIR/handlers/cache/afl/osmtypes.afl" \
     --library "$EXAMPLE_DIR/handlers/downloads/afl/osmoperations.afl" \
     --library "$EXAMPLE_DIR/handlers/cache/afl/osmcache.afl" \
-    --workflow "osm.geo.UnitedStates.cache.DownloadStates_01"
+    --workflow "osm.geo.UnitedStates.cache.DownloadStates_15"
 echo ""
 
 # ---------------------------------------------------------------------------
