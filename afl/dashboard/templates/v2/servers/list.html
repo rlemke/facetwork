@@ -17,6 +17,10 @@
            class="subnav-pill{% if tab == 'error' %} active{% endif %}">
             Error <span class="subnav-count">{{ tab_counts.error }}</span>
         </a>
+        <a href="/v2/servers?tab=down"
+           class="subnav-pill{% if tab == 'down' %} active{% endif %}">
+            Down <span class="subnav-count">{{ tab_counts.down }}</span>
+        </a>
         <a href="/v2/servers?tab=shutdown"
            class="subnav-pill{% if tab == 'shutdown' %} active{% endif %}">
             Shutdown <span class="subnav-count">{{ tab_counts.shutdown }}</span>

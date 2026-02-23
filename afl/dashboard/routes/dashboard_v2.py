@@ -22,6 +22,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from ..dependencies import get_store
 from ..helpers import (
     categorize_step_state,
+    effective_server_state,
     extract_handler_prefix,
     group_handlers_by_namespace,
     group_runners_by_namespace,
@@ -243,7 +244,15 @@ _SERVER_TAB_STATES = {
     "startup": {"startup"},
     "error": {"error"},
     "shutdown": {"shutdown"},
+    "down": {"down"},
 }
+
+
+def _apply_effective_state(servers: list) -> list:
+    """Mutate each server's state to its effective value (e.g. 'down')."""
+    for s in servers:
+        s.state = effective_server_state(s)
+    return servers
 
 
 def _filter_servers(servers: list, tab: str) -> list:
@@ -254,7 +263,7 @@ def _filter_servers(servers: list, tab: str) -> list:
 
 def _count_servers_by_tab(servers: list) -> dict[str, int]:
     """Count servers per tab."""
-    counts = {"running": 0, "startup": 0, "error": 0, "shutdown": 0}
+    counts = {"running": 0, "startup": 0, "error": 0, "shutdown": 0, "down": 0}
     for s in servers:
         if s.state in counts:
             counts[s.state] += 1
@@ -268,7 +277,7 @@ def server_list(
     store=Depends(get_store),
 ):
     """Server list with state tabs and group accordion."""
-    all_servers = list(store.get_all_servers())
+    all_servers = _apply_effective_state(list(store.get_all_servers()))
     tab_counts = _count_servers_by_tab(all_servers)
     filtered = _filter_servers(all_servers, tab)
     groups = group_servers_by_group(filtered)
@@ -292,7 +301,7 @@ def server_list_partial(
     store=Depends(get_store),
 ):
     """HTMX partial for auto-refresh of server groups."""
-    all_servers = list(store.get_all_servers())
+    all_servers = _apply_effective_state(list(store.get_all_servers()))
     tab_counts = _count_servers_by_tab(all_servers)
     filtered = _filter_servers(all_servers, tab)
     groups = group_servers_by_group(filtered)
@@ -316,6 +325,8 @@ def server_detail(
 ):
     """Server detail page."""
     server = store.get_server(server_id)
+    if server:
+        server.state = effective_server_state(server)
     return request.app.state.templates.TemplateResponse(
         request,
         "v2/servers/detail.html",
@@ -334,6 +345,8 @@ def server_detail_partial(
 ):
     """HTMX partial for server detail refresh."""
     server = store.get_server(server_id)
+    if server:
+        server.state = effective_server_state(server)
     return request.app.state.templates.TemplateResponse(
         request,
         "v2/servers/_detail_content.html",

@@ -16,10 +16,28 @@
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from afl.runtime.entities import HandlerRegistration, RunnerDefinition
+    from afl.runtime.entities import HandlerRegistration, RunnerDefinition, ServerDefinition
+
+SERVER_DOWN_TIMEOUT_MS = 300_000  # 5 minutes
+
+
+def effective_server_state(server: ServerDefinition) -> str:
+    """Return 'down' if a running/startup server's ping_time is stale (>5 min).
+
+    Servers in ``shutdown`` or ``error`` keep their original state.
+    A ``ping_time`` of 0 with ``running`` state means the server never pinged
+    and is treated as down.
+    """
+    if server.state not in ("running", "startup"):
+        return server.state
+    now_ms = time.time() * 1000
+    if server.ping_time == 0 or (now_ms - server.ping_time) > SERVER_DOWN_TIMEOUT_MS:
+        return "down"
+    return server.state
 
 
 def extract_namespace(workflow_name: str) -> str:

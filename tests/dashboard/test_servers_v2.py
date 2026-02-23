@@ -14,6 +14,8 @@
 
 """Tests for dashboard v2 server helpers and routes."""
 
+import time
+
 import pytest
 
 try:
@@ -35,7 +37,11 @@ except ImportError:
 # Helper unit tests (no server needed)
 # ---------------------------------------------------------------------------
 
-from afl.dashboard.helpers import group_servers_by_group
+from afl.dashboard.helpers import (
+    SERVER_DOWN_TIMEOUT_MS,
+    effective_server_state,
+    group_servers_by_group,
+)
 
 
 class TestGroupServersByGroup:
@@ -97,6 +103,38 @@ class TestGroupServersByGroup:
         assert len(groups[0]["servers"]) == 2
 
 
+class TestEffectiveServerState:
+    """Unit tests for effective_server_state()."""
+
+    def _make(self, state="running", ping_time=0):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(state=state, ping_time=ping_time)
+
+    def test_running_with_recent_ping(self):
+        recent = int(time.time() * 1000) - 10_000  # 10 seconds ago
+        assert effective_server_state(self._make("running", recent)) == "running"
+
+    def test_running_with_stale_ping(self):
+        stale = int(time.time() * 1000) - SERVER_DOWN_TIMEOUT_MS - 1000
+        assert effective_server_state(self._make("running", stale)) == "down"
+
+    def test_running_with_zero_ping(self):
+        assert effective_server_state(self._make("running", 0)) == "down"
+
+    def test_startup_with_stale_ping(self):
+        stale = int(time.time() * 1000) - SERVER_DOWN_TIMEOUT_MS - 1000
+        assert effective_server_state(self._make("startup", stale)) == "down"
+
+    def test_shutdown_stays_shutdown_even_if_stale(self):
+        stale = int(time.time() * 1000) - SERVER_DOWN_TIMEOUT_MS - 1000
+        assert effective_server_state(self._make("shutdown", stale)) == "shutdown"
+
+    def test_error_stays_error_even_if_stale(self):
+        stale = int(time.time() * 1000) - SERVER_DOWN_TIMEOUT_MS - 1000
+        assert effective_server_state(self._make("error", stale)) == "error"
+
+
 # ---------------------------------------------------------------------------
 # Route integration tests (require fastapi + mongomock)
 # ---------------------------------------------------------------------------
@@ -106,8 +144,14 @@ pytestmark_routes = pytest.mark.skipif(
 )
 
 
-def _make_server_entity(uuid="srv-1", group="test-group", name="test-node", state="running"):
+def _make_server_entity(
+    uuid="srv-1", group="test-group", name="test-node", state="running", ping_time=None,
+):
     from afl.runtime.entities import ServerDefinition
+
+    if ping_time is None:
+        # Default to a recent ping so running servers aren't classified as down
+        ping_time = int(time.time() * 1000)
 
     return ServerDefinition(
         uuid=uuid,
@@ -116,6 +160,7 @@ def _make_server_entity(uuid="srv-1", group="test-group", name="test-node", stat
         server_name=name,
         server_ips=["10.0.0.1"],
         state=state,
+        ping_time=ping_time,
         handlers=["handler-a"],
     )
 
@@ -256,3 +301,33 @@ class TestV2ServerNav:
         tc, store = client
         resp = tc.get("/servers")
         assert resp.status_code == 200
+
+
+@pytestmark_routes
+class TestV2ServerDownDetection:
+    """Tests for heartbeat timeout → 'down' state detection."""
+
+    def test_stale_server_appears_under_down_tab(self, client):
+        tc, store = client
+        store.save_server(_make_server_entity("srv-stale", state="running", ping_time=0))
+        resp = tc.get("/v2/servers?tab=down")
+        assert resp.status_code == 200
+        assert "test-node" in resp.text
+
+    def test_stale_server_not_under_running_tab(self, client):
+        tc, store = client
+        store.save_server(_make_server_entity("srv-stale", state="running", ping_time=0))
+        resp = tc.get("/v2/servers?tab=running")
+        assert resp.status_code == 200
+        assert "No servers" in resp.text
+
+    def test_tab_counts_include_down(self, client):
+        tc, store = client
+        store.save_server(_make_server_entity("srv-ok", state="running"))
+        stale_ping = int(time.time() * 1000) - SERVER_DOWN_TIMEOUT_MS - 1000
+        store.save_server(
+            _make_server_entity("srv-stale", state="running", ping_time=stale_ping)
+        )
+        resp = tc.get("/v2/servers?tab=running")
+        assert resp.status_code == 200
+        assert "Down" in resp.text
