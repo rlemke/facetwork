@@ -287,6 +287,94 @@ class TestStepDedupIndex:
         assert mongo_store.get_step(step1.id) is not None
         assert mongo_store.get_step(step2.id) is not None
 
+    def test_orphan_task_skipped_when_step_is_duplicate(self, mongo_store):
+        """Tasks referencing a skipped duplicate step are not committed."""
+        wf_id = workflow_id()
+        blk = step_id()
+        ctr = step_id()
+
+        # Insert a step directly
+        step1 = StepDefinition(
+            id=step_id(),
+            workflow_id=wf_id,
+            object_type="VariableAssignment",
+            state="state.facet.initialization.Begin",
+        )
+        step1.statement_id = "s1"
+        step1.block_id = blk
+        step1.container_id = ctr
+        mongo_store.save_step(step1)
+
+        # Create a duplicate step + a task that references it
+        dup_step = StepDefinition(
+            id=step_id(),  # different uuid — will be skipped
+            workflow_id=wf_id,
+            object_type="VariableAssignment",
+            state="state.facet.initialization.Begin",
+        )
+        dup_step.statement_id = "s1"
+        dup_step.block_id = blk
+        dup_step.container_id = ctr
+
+        orphan_task = TaskDefinition(
+            uuid=str(step_id()),
+            name="osm.geo.Test",
+            runner_id="r1",
+            workflow_id=str(wf_id),
+            flow_id="f1",
+            step_id=str(dup_step.id),
+            state=TaskState.PENDING,
+            created=1000,
+            updated=1000,
+            task_list_name="default",
+        )
+
+        changes = IterationChanges()
+        changes.add_created_step(dup_step)
+        changes.add_created_task(orphan_task)
+        mongo_store.commit(changes)
+
+        # Step was skipped (duplicate)
+        assert mongo_store.get_step(dup_step.id) is None
+        # Orphan task should also be skipped
+        assert mongo_store.get_task(orphan_task.uuid) is None
+
+    def test_task_committed_when_step_succeeds(self, mongo_store):
+        """Tasks referencing a successfully committed step are kept."""
+        wf_id = workflow_id()
+
+        step1 = StepDefinition(
+            id=step_id(),
+            workflow_id=wf_id,
+            object_type="VariableAssignment",
+            state="state.facet.initialization.Begin",
+        )
+        step1.statement_id = "unique-stmt"
+        step1.block_id = step_id()
+        step1.container_id = step_id()
+
+        task1 = TaskDefinition(
+            uuid=str(step_id()),
+            name="osm.geo.Test",
+            runner_id="r1",
+            workflow_id=str(wf_id),
+            flow_id="f1",
+            step_id=str(step1.id),
+            state=TaskState.PENDING,
+            created=1000,
+            updated=1000,
+            task_list_name="default",
+        )
+
+        changes = IterationChanges()
+        changes.add_created_step(step1)
+        changes.add_created_task(task1)
+        mongo_store.commit(changes)
+
+        # Both should exist
+        assert mongo_store.get_step(step1.id) is not None
+        assert mongo_store.get_task(task1.uuid) is not None
+
 
 class TestCommitOperations:
     """Tests for atomic commit operations."""

@@ -368,11 +368,14 @@ class MongoStore(PersistenceAPI):
         if session is not None:
             kwargs["session"] = session
 
+        skipped_step_ids: set[str] = set()
+
         for step in changes.created_steps:
             doc = self._step_to_doc(step)
             try:
                 self._db.steps.insert_one(doc, **kwargs)
             except DuplicateKeyError:
+                skipped_step_ids.add(str(step.id))
                 logger.debug(
                     "Skipping duplicate step: statement_id=%s block_id=%s container_id=%s",
                     doc.get("statement_id"),
@@ -385,6 +388,13 @@ class MongoStore(PersistenceAPI):
             self._db.steps.replace_one({"uuid": step.id}, doc, **kwargs)
 
         for task in changes.created_tasks:
+            if task.step_id and task.step_id in skipped_step_ids:
+                logger.debug(
+                    "Skipping orphan task: name=%s step_id=%s",
+                    task.name,
+                    task.step_id,
+                )
+                continue
             doc = self._task_to_doc(task)
             self._db.tasks.insert_one(doc, **kwargs)
 
