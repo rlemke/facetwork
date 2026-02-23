@@ -1,5 +1,11 @@
 # Implementation Changelog
 
+## Completed (v0.12.74) - Skip orphan tasks when duplicate steps are dropped
+- **Root cause**: when `_commit_changes()` silently skipped a duplicate step (Layer 3 `DuplicateKeyError` catch), the associated task was still committed — its `step_id` referenced a phantom step that was never persisted, causing agents to fail with `ValueError: Step not found` on `continue_step()`, which set the runner to `failed` state
+- **Fix**: `_commit_changes()` in `MongoStore` now tracks `skipped_step_ids` and filters out any `created_tasks` whose `step_id` references a skipped step, logging a debug message
+- **2 new tests** in `test_mongo_store.py`: `test_orphan_task_skipped_when_step_is_duplicate` (task dropped when step is duplicate) + `test_task_committed_when_step_succeeds` (task kept when step commits normally)
+- 2 files changed; test suite: 2432 passed, 79 skipped; total collected 2511
+
 ## Completed (v0.12.73) - Verify concurrent step dedup with 3 evaluators
 - **Integration verification**: ran 3 concurrent `Evaluator.execute()` instances against the same `AnalyzeAllStates` workflow (50 US states, ~3300 steps) — all three competed to create the same steps simultaneously
 - **Result**: 3321 total steps (3 root steps × 1 per evaluator + 3318 unique statement steps), **0 duplicate `(statement_id, block_id, container_id)` triples** — all three layers (application checks, unique index, DuplicateKeyError catch) working correctly
