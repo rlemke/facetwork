@@ -284,13 +284,21 @@ class BlockExecutionContinueHandler(StateHandler):
         )
 
         if analysis.done:
-            # All statements complete, transition to end
+            # All statements terminal (complete or error)
+            if analysis.has_errors:
+                errors = [s.transition.error for s in analysis.errored if s.transition.error]
+                msg = f"Block has {len(analysis.errored)} errored step(s)"
+                if errors:
+                    msg += f": {errors[0]}"
+                self.step.mark_error(RuntimeError(msg))
+                return StateChangeResult(step=self.step)
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
 
-        # Create steps for newly ready statements
-        completed_ids = {str(s.statement_id) for s in analysis.completed if s.statement_id}
-        self._create_ready_steps(graph, completed_ids)
+        # Create steps for newly ready statements (errored deps also satisfy)
+        terminal_ids = {str(s.statement_id) for s in analysis.completed if s.statement_id}
+        terminal_ids |= {str(s.statement_id) for s in analysis.errored if s.statement_id}
+        self._create_ready_steps(graph, terminal_ids)
 
         # Check if we made progress
         if analysis.has_pending_work():
@@ -329,17 +337,24 @@ class BlockExecutionContinueHandler(StateHandler):
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
 
-        completed = sum(1 for s in sub_blocks if s.is_complete)
+        completed = [s for s in sub_blocks if s.is_complete]
+        errored = [s for s in sub_blocks if s.is_error]
+        terminal = len(completed) + len(errored)
         total = len(sub_blocks)
 
         logger.debug(
-            "Foreach block continue: block_id=%s progress=%d/%d",
+            "Foreach block continue: block_id=%s progress=%d/%d errored=%d",
             self.step.id,
-            completed,
+            terminal,
             total,
+            len(errored),
         )
 
-        if completed == total:
+        if terminal == total:
+            if errored:
+                msg = f"Foreach block has {len(errored)} errored sub-block(s)"
+                self.step.mark_error(RuntimeError(msg))
+                return StateChangeResult(step=self.step)
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
 

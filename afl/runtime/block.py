@@ -57,16 +57,18 @@ class StepAnalysis:
     statements: Sequence[StatementDefinition]  # All statements in the block
 
     # Step collections
-    missing: list[StatementDefinition] = field(default_factory=list)  # Not yet created
+    missing: list[StepDefinition] = field(default_factory=list)  # Not yet created
     steps: list[StepDefinition] = field(default_factory=list)  # All created steps
     completed: list[StepDefinition] = field(default_factory=list)  # Complete steps
+    errored: list[StepDefinition] = field(default_factory=list)  # Error steps
     requesting_push: list[StepDefinition] = field(default_factory=list)  # Need re-queue
     requesting_transition: list[StepDefinition] = field(default_factory=list)  # Need state change
     pending_event: list[StepDefinition] = field(default_factory=list)  # Waiting on events
     pending_mixin: list[StepDefinition] = field(default_factory=list)  # In mixin blocks
     pending_blocks: list[StepDefinition] = field(default_factory=list)  # In block execution
 
-    done: bool = False  # True when all statements complete
+    done: bool = False  # True when all statements are terminal (complete or error)
+    has_errors: bool = False  # True when any statement has errored
 
     @classmethod
     def load(
@@ -102,17 +104,20 @@ class StepAnalysis:
                 analysis.steps.append(step)
                 analysis._categorize_step(step)
 
-        # Check if done (all statements have complete steps)
-        analysis.done = len(analysis.missing) == 0 and len(analysis.completed) == len(
+        # Done when all statements have terminal steps (complete or error)
+        terminal_count = len(analysis.completed) + len(analysis.errored)
+        analysis.done = len(analysis.missing) == 0 and terminal_count == len(
             analysis.statements
         )
+        analysis.has_errors = len(analysis.errored) > 0
 
         logger.debug(
-            "StepAnalysis loaded: block_id=%s total=%d missing=%d completed=%d pending_event=%d pending_blocks=%d",
+            "StepAnalysis loaded: block_id=%s total=%d missing=%d completed=%d errored=%d pending_event=%d pending_blocks=%d",
             block.id,
             len(statements),
             len(analysis.missing),
             len(analysis.completed),
+            len(analysis.errored),
             len(analysis.pending_event),
             len(analysis.pending_blocks),
         )
@@ -123,6 +128,8 @@ class StepAnalysis:
         """Categorize a step by its current state."""
         if step.is_complete:
             self.completed.append(step)
+        elif step.is_error:
+            self.errored.append(step)
         elif step.transition.is_requesting_push:
             self.requesting_push.append(step)
         elif step.transition.is_requesting_state_change:
@@ -140,16 +147,18 @@ class StepAnalysis:
     def can_be_created(self) -> Sequence[StatementDefinition]:
         """Get statements that can have steps created.
 
-        A statement can be created if all its dependencies are complete.
+        A statement can be created if all its dependencies are terminal
+        (complete or error).
 
         Returns:
             Statements ready for step creation
         """
-        completed_ids = {str(s.statement_id) for s in self.completed if s.statement_id}
+        terminal_ids = {str(s.statement_id) for s in self.completed if s.statement_id}
+        terminal_ids |= {str(s.statement_id) for s in self.errored if s.statement_id}
 
         ready = []
         for stmt in self.missing:
-            if stmt.dependencies.issubset(completed_ids):
+            if stmt.dependencies.issubset(terminal_ids):
                 ready.append(stmt)
 
         return ready
@@ -174,7 +183,7 @@ class StepAnalysis:
     @property
     def completion_progress(self) -> tuple[int, int]:
         """Get completion progress as (completed, total)."""
-        return len(self.completed), len(self.statements)
+        return len(self.completed) + len(self.errored), len(self.statements)
 
 
 @dataclass
@@ -189,9 +198,11 @@ class BlockAnalysis:
     blocks: list[StepDefinition]  # All block steps
 
     completed: list[StepDefinition] = field(default_factory=list)
+    errored: list[StepDefinition] = field(default_factory=list)
     pending: list[StepDefinition] = field(default_factory=list)
 
     done: bool = False
+    has_errors: bool = False
 
     @classmethod
     def load(
@@ -215,16 +226,20 @@ class BlockAnalysis:
         for block in blocks:
             if block.is_complete:
                 analysis.completed.append(block)
+            elif block.is_error:
+                analysis.errored.append(block)
             else:
                 analysis.pending.append(block)
 
         analysis.done = len(analysis.pending) == 0
+        analysis.has_errors = len(analysis.errored) > 0
 
         logger.debug(
-            "BlockAnalysis loaded: step_id=%s total=%d completed=%d pending=%d",
+            "BlockAnalysis loaded: step_id=%s total=%d completed=%d errored=%d pending=%d",
             step.id,
             len(list(blocks)),
             len(analysis.completed),
+            len(analysis.errored),
             len(analysis.pending),
         )
 
@@ -233,4 +248,4 @@ class BlockAnalysis:
     @property
     def completion_progress(self) -> tuple[int, int]:
         """Get completion progress as (completed, total)."""
-        return len(self.completed), len(self.blocks)
+        return len(self.completed) + len(self.errored), len(self.blocks)

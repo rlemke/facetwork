@@ -5301,3 +5301,210 @@ class TestDirtyBlockTracking:
         assert block.id in processed_block_ids, (
             "Continue block in chain should be seeded as dirty and processed"
         )
+
+
+class TestErrorPropagation:
+    """Tests for error propagation through block hierarchies.
+
+    When child steps error, the parent block should recognize them as
+    terminal and propagate the error upward rather than waiting forever.
+    """
+
+    @pytest.fixture
+    def store(self):
+        return MemoryStore()
+
+    def test_step_analysis_counts_errored_steps(self, store):
+        """StepAnalysis categorizes error steps and includes them in done check."""
+        from afl.runtime.block import StatementDefinition, StepAnalysis
+        from afl.runtime.step import StepDefinition
+
+        block = StepDefinition.create(
+            workflow_id="wf-err",
+            object_type=ObjectType.AND_THEN,
+            facet_name="",
+        )
+
+        stmts = [
+            StatementDefinition(id="s1", name="ok", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F1"),
+            StatementDefinition(id="s2", name="bad", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F2"),
+        ]
+
+        # One complete, one errored
+        s1 = StepDefinition.create(workflow_id="wf-err", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F1", statement_id="s1", block_id=block.id)
+        s1.state = StepState.STATEMENT_COMPLETE
+        s1.transition.current_state = StepState.STATEMENT_COMPLETE
+
+        s2 = StepDefinition.create(workflow_id="wf-err", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F2", statement_id="s2", block_id=block.id)
+        s2.mark_error(RuntimeError("handler failed"))
+
+        analysis = StepAnalysis.load(block=block, statements=stmts, steps=[s1, s2])
+
+        assert len(analysis.completed) == 1
+        assert len(analysis.errored) == 1
+        assert analysis.done is True
+        assert analysis.has_errors is True
+
+    def test_step_analysis_not_done_with_pending_and_error(self, store):
+        """StepAnalysis is not done when some steps are still pending."""
+        from afl.runtime.block import StatementDefinition, StepAnalysis
+        from afl.runtime.step import StepDefinition
+
+        block = StepDefinition.create(
+            workflow_id="wf-err2",
+            object_type=ObjectType.AND_THEN,
+            facet_name="",
+        )
+
+        stmts = [
+            StatementDefinition(id="s1", name="bad", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F1"),
+            StatementDefinition(id="s2", name="pending", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F2"),
+        ]
+
+        s1 = StepDefinition.create(workflow_id="wf-err2", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F1", statement_id="s1", block_id=block.id)
+        s1.mark_error(RuntimeError("failed"))
+
+        # s2 is still in EventTransmit
+        s2 = StepDefinition.create(workflow_id="wf-err2", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F2", statement_id="s2", block_id=block.id)
+        s2.state = StepState.EVENT_TRANSMIT
+        s2.transition.current_state = StepState.EVENT_TRANSMIT
+        s2.transition.request_transition = False
+
+        analysis = StepAnalysis.load(block=block, statements=stmts, steps=[s1, s2])
+
+        assert len(analysis.errored) == 1
+        assert len(analysis.pending_event) == 1
+        assert analysis.done is False
+
+    def test_step_analysis_errored_deps_satisfy_downstream(self, store):
+        """Errored steps satisfy dependency requirements for downstream steps."""
+        from afl.runtime.block import StatementDefinition, StepAnalysis
+        from afl.runtime.step import StepDefinition
+
+        block = StepDefinition.create(
+            workflow_id="wf-dep",
+            object_type=ObjectType.AND_THEN,
+            facet_name="",
+        )
+
+        stmts = [
+            StatementDefinition(id="s1", name="upstream", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F1"),
+            StatementDefinition(id="s2", name="downstream", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F2", dependencies={"s1"}),
+        ]
+
+        # s1 errored — s2 should still be createable
+        s1 = StepDefinition.create(workflow_id="wf-dep", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F1", statement_id="s1", block_id=block.id)
+        s1.mark_error(RuntimeError("failed"))
+
+        analysis = StepAnalysis.load(block=block, statements=stmts, steps=[s1])
+
+        ready = analysis.can_be_created()
+        assert len(ready) == 1
+        assert ready[0].id == "s2"
+
+    def test_block_analysis_counts_errored_blocks(self, store):
+        """BlockAnalysis treats errored blocks as terminal."""
+        from afl.runtime.block import BlockAnalysis
+        from afl.runtime.step import StepDefinition
+
+        container = StepDefinition.create(
+            workflow_id="wf-ba",
+            object_type=ObjectType.VARIABLE_ASSIGNMENT,
+            facet_name="Parent",
+        )
+
+        b1 = StepDefinition.create(workflow_id="wf-ba", object_type=ObjectType.AND_THEN, facet_name="", container_id=container.id)
+        b1.state = StepState.STATEMENT_COMPLETE
+        b1.transition.current_state = StepState.STATEMENT_COMPLETE
+
+        b2 = StepDefinition.create(workflow_id="wf-ba", object_type=ObjectType.AND_THEN, facet_name="", container_id=container.id)
+        b2.mark_error(RuntimeError("block failed"))
+
+        analysis = BlockAnalysis.load(container, [b1, b2])
+
+        assert len(analysis.completed) == 1
+        assert len(analysis.errored) == 1
+        assert len(analysis.pending) == 0
+        assert analysis.done is True
+        assert analysis.has_errors is True
+
+    def test_block_execution_continue_propagates_error(self, store):
+        """BlockExecutionContinue marks block as error when all children are terminal with errors."""
+        from afl.runtime.block import StatementDefinition
+        from afl.runtime.dependency import DependencyGraph
+        from afl.runtime.evaluator import ExecutionContext, IterationChanges
+        from afl.runtime.handlers.block_execution import BlockExecutionContinueHandler
+        from afl.runtime.step import StepDefinition
+        from afl.runtime.telemetry import Telemetry
+
+        wf_id = "wf-prop"
+        block = StepDefinition.create(
+            workflow_id=wf_id,
+            object_type=ObjectType.AND_THEN,
+            facet_name="",
+            statement_id="block-0",
+            container_id="root-step",
+        )
+        block.state = "state.block.execution.Continue"
+        block.transition.current_state = "state.block.execution.Continue"
+        store.save_step(block)
+
+        # Create one errored child
+        child = StepDefinition.create(
+            workflow_id=wf_id,
+            object_type=ObjectType.VARIABLE_ASSIGNMENT,
+            facet_name="FailFacet",
+            statement_id="stmt-1",
+            block_id=block.id,
+        )
+        child.mark_error(RuntimeError("handler crash"))
+        store.save_step(child)
+
+        # Build a dependency graph with one statement
+        stmt = StatementDefinition(id="stmt-1", name="fail", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="FailFacet")
+
+        context = ExecutionContext(
+            persistence=store,
+            telemetry=Telemetry(enabled=False),
+            changes=IterationChanges(),
+            workflow_id=wf_id,
+        )
+        graph = DependencyGraph()
+        graph.statements["stmt-1"] = stmt
+        context.set_block_graph(block.id, graph)
+
+        handler = BlockExecutionContinueHandler(step=block, context=context)
+        result = handler.process_state()
+
+        assert block.is_error, f"Block should be in error state, got {block.state}"
+        assert "errored" in str(block.transition.error).lower()
+
+    def test_completion_progress_includes_errors(self, store):
+        """completion_progress counts both completed and errored steps."""
+        from afl.runtime.block import StatementDefinition, StepAnalysis
+        from afl.runtime.step import StepDefinition
+
+        block = StepDefinition.create(workflow_id="wf-prog", object_type=ObjectType.AND_THEN, facet_name="")
+
+        stmts = [
+            StatementDefinition(id="s1", name="ok", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F1"),
+            StatementDefinition(id="s2", name="bad", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F2"),
+            StatementDefinition(id="s3", name="wait", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F3"),
+        ]
+
+        s1 = StepDefinition.create(workflow_id="wf-prog", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F1", statement_id="s1", block_id=block.id)
+        s1.state = StepState.STATEMENT_COMPLETE
+        s1.transition.current_state = StepState.STATEMENT_COMPLETE
+
+        s2 = StepDefinition.create(workflow_id="wf-prog", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F2", statement_id="s2", block_id=block.id)
+        s2.mark_error(RuntimeError("failed"))
+
+        s3 = StepDefinition.create(workflow_id="wf-prog", object_type=ObjectType.VARIABLE_ASSIGNMENT, facet_name="F3", statement_id="s3", block_id=block.id)
+        s3.state = StepState.EVENT_TRANSMIT
+        s3.transition.current_state = StepState.EVENT_TRANSMIT
+
+        analysis = StepAnalysis.load(block=block, statements=stmts, steps=[s1, s2, s3])
+
+        completed, total = analysis.completion_progress
+        assert completed == 2  # 1 complete + 1 errored
+        assert total == 3

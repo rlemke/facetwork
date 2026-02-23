@@ -1,5 +1,15 @@
 # Implementation Changelog
 
+## Completed (v0.12.75) - Fix error propagation in block hierarchies
+- **Root cause**: when child steps errored, parent blocks waited forever — `StepAnalysis._categorize_step()` had no branch for error state (errored steps fell through all conditions and were invisible), and `done` required `len(completed) == len(statements)` which could never be true with errored children
+- **Identified by comparing** with FMS Scala codebase (`/Users/ralph_lemke/fms`) which has a similar `StepAnalysis` / `BlockRunner` architecture
+- **`block.py` StepAnalysis fix**: added `errored` list, changed `done` to use terminal count (`completed + errored == total`), added `has_errors` flag, updated `can_be_created()` to treat errored deps as satisfied (downstream steps unblocked), updated `completion_progress` to include errored count
+- **`block.py` BlockAnalysis fix**: categorizes blocks into completed/errored/pending (was only completed/pending), `done` when no pending blocks, `has_errors` when any errored
+- **`block_execution.py`**: `BlockExecutionContinueHandler` propagates error upward when `analysis.done and analysis.has_errors` via `self.step.mark_error()`; `_continue_foreach()` tracks errored sub-blocks separately and propagates; `_create_ready_steps` uses terminal IDs (completed + errored) for dependency satisfaction
+- **`blocks.py`**: `StatementBlocksContinueHandler` and `MixinBlocksContinueHandler` propagate error when `analysis.done and analysis.has_errors`
+- **6 new tests** in `TestErrorPropagation`: errored step counting, mixed pending+error not done, errored deps satisfy downstream, BlockAnalysis error counting, BlockExecutionContinue error propagation, completion progress includes errors
+- 4 files changed; test suite: 2438 passed, 79 skipped; total collected 2517
+
 ## Completed (v0.12.74) - Skip orphan tasks when duplicate steps are dropped
 - **Root cause**: when `_commit_changes()` silently skipped a duplicate step (Layer 3 `DuplicateKeyError` catch), the associated task was still committed — its `step_id` referenced a phantom step that was never persisted, causing agents to fail with `ValueError: Step not found` on `continue_step()`, which set the runner to `failed` state
 - **Fix**: `_commit_changes()` in `MongoStore` now tracks `skipped_step_ids` and filters out any `created_tasks` whose `step_id` references a skipped step, logging a debug message
