@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..dependencies import get_store
 from ..helpers import (
@@ -28,6 +28,7 @@ from ..helpers import (
     group_servers_by_group,
     short_workflow_name,
 )
+from ..tree import build_step_tree
 
 router = APIRouter(prefix="/v2")
 
@@ -142,12 +143,15 @@ def workflow_detail(
     # Filter steps by selected tab
     filtered_steps = [s for s in all_steps if categorize_step_state(s.state) == step_tab]
 
+    tree = build_step_tree(all_steps)
+
     return request.app.state.templates.TemplateResponse(
         request,
         "v2/workflows/detail.html",
         {
             "runner": runner,
             "steps": filtered_steps,
+            "tree": tree,
             "step_counts": step_counts,
             "step_tab": step_tab,
             "active_tab": "workflows",
@@ -160,11 +164,14 @@ def step_rows_partial(
     runner_id: str,
     request: Request,
     step_tab: str = "running",
+    view: str = "flat",
     store=Depends(get_store),
 ):
     """HTMX partial for step table refresh."""
     runner = store.get_runner(runner_id)
     if not runner:
+        if view == "tree":
+            return HTMLResponse("")
         return request.app.state.templates.TemplateResponse(
             request,
             "v2/workflows/_step_rows.html",
@@ -176,6 +183,14 @@ def step_rows_partial(
     for s in all_steps:
         cat = categorize_step_state(s.state)
         step_counts[cat] = step_counts.get(cat, 0) + 1
+
+    if view == "tree":
+        tree = build_step_tree(all_steps)
+        templates = request.app.state.templates
+        html = templates.get_template("partials/step_tree.html").render(
+            tree=tree, request=request,
+        )
+        return HTMLResponse(html)
 
     filtered_steps = [s for s in all_steps if categorize_step_state(s.state) == step_tab]
 

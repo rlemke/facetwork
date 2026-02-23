@@ -75,7 +75,12 @@
 </div>
 
 <h2>Steps</h2>
+<div class="view-toggle">
+    <button class="view-toggle-btn active" onclick="document.getElementById('v2-step-flat').style.display='';document.getElementById('v2-step-tree').style.display='none';this.classList.add('active');this.nextElementSibling.classList.remove('active');">Flat</button>
+    <button class="view-toggle-btn" onclick="document.getElementById('v2-step-tree').style.display='';document.getElementById('v2-step-flat').style.display='none';this.classList.add('active');this.previousElementSibling.classList.remove('active');">Tree</button>
+</div>
 
+<div id="v2-step-flat">
 <button class="btn-refresh"
         hx-get="/v2/workflows/{{ runner.uuid }}/steps/partial?step_tab={{ step_tab }}"
         hx-target="#step-rows"
@@ -84,6 +89,19 @@
 </button>
 <div id="step-rows">
     {% include "v2/workflows/_step_rows.html" %}
+</div>
+</div>
+
+<div id="v2-step-tree" style="display:none">
+<button class="btn-refresh"
+        hx-get="/v2/workflows/{{ runner.uuid }}/steps/partial?view=tree"
+        hx-target="#v2-step-tree-content"
+        hx-swap="innerHTML">
+    <span class="refresh-icon">&#x21bb;</span> Refresh
+</button>
+<div class="step-tree-container" id="v2-step-tree-content">
+    {% with tree=tree %}{% include "partials/step_tree.html" %}{% endwith %}
+</div>
 </div>
 
 {% else %}

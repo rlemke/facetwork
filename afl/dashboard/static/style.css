@@ -310,13 +310,13 @@ pre code {
     to { transform: rotate(360deg); }
 }
 
-/* Step state row/tree background colours */
-.state-bg-complete { background-color: #e8f5e9; }
-.state-bg-error { background-color: #ffebee; }
-.state-bg-transmit { background-color: #fce4ec; }
-.state-bg-running { background-color: #e3f2fd; }
-.state-bg-continue { background-color: #fff8e1; }
-.state-bg-other { background-color: #f5f5f5; }
+/* Step state row/tree background colours — use high specificity to override Pico CSS table styles */
+table tbody tr.state-bg-complete { background-color: #e8f5e9 !important; }
+table tbody tr.state-bg-error { background-color: #ffebee !important; }
+table tbody tr.state-bg-transmit { background-color: #fce4ec !important; }
+table tbody tr.state-bg-running { background-color: #e3f2fd !important; }
+table tbody tr.state-bg-continue { background-color: #fff8e1 !important; }
+table tbody tr.state-bg-other { background-color: #f5f5f5 !important; }
 /* Tree summary state tints */
 .step-tree-container summary.state-bg-complete { background-color: #e8f5e9; }
 .step-tree-container summary.state-bg-error { background-color: #ffebee; }
