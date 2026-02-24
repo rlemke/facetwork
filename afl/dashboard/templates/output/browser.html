@@ -38,7 +38,12 @@
                     <a href="/output?path={{ entry.path | urlencode }}">{{ entry.name }}/</a>
                 {% else %}
                     <span class="output-icon">&#128196;</span>
-                    <span>{{ entry.name }}</span>
+                    {% set ext = entry.name.rsplit('.', 1)[-1] | lower if '.' in entry.name else '' %}
+                    {% if ext in ['html', 'htm', 'png', 'jpg', 'jpeg', 'svg', 'txt', 'csv', 'json', 'geojson'] %}
+                        <a href="/output/view?path={{ entry.path | urlencode }}" target="_blank">{{ entry.name }}</a>
+                    {% else %}
+                        <span>{{ entry.name }}</span>
+                    {% endif %}
                 {% endif %}
             </td>
             <td class="output-meta">{{ entry.size | filesizeformat }}</td>

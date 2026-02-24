@@ -227,3 +227,16 @@ class TestOutputRoutes:
         resp = client.get("/output/view?path=stats/report.txt")
         assert resp.status_code == 200
         assert "some stats" in resp.text
+
+    def test_viewable_file_name_is_link(self, client, output_dir):
+        resp = client.get("/output?path=maps")
+        assert resp.status_code == 200
+        # The filename itself should be an <a> link to /output/view
+        assert '<a href="/output/view?path=maps' in resp.text
+        assert "alabama.html</a>" in resp.text
+
+    def test_json_file_name_is_link(self, client, output_dir):
+        (output_dir / "maps" / "data.json").write_text('{"a":1}')
+        resp = client.get("/output?path=maps")
+        assert resp.status_code == 200
+        assert "data.json</a>" in resp.text
