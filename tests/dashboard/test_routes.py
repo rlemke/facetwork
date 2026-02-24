@@ -978,10 +978,10 @@ class TestHandlerRoutes:
         assert data[0]["facet_name"] == "ns.TestFacet"
         assert data[0]["module_uri"] == "my.handlers"
 
-    def test_home_handler_count(self, client):
+    def test_home_handler_route(self, client):
         tc, store = client
         store.save_handler_registration(_make_handler())
-        resp = tc.get("/")
+        resp = tc.get("/v2/handlers")
         assert resp.status_code == 200
         assert "Handlers" in resp.text
 
@@ -1134,10 +1134,10 @@ class TestSourceRoutes:
         assert len(data) == 1
         assert data[0]["namespace_name"] == "geo.cache"
 
-    def test_home_source_count(self, client):
+    def test_home_source_route(self, client):
         tc, store = client
         store.save_published_source(_make_published_source())
-        resp = tc.get("/")
+        resp = tc.get("/sources")
         assert resp.status_code == 200
         assert "Sources" in resp.text
 

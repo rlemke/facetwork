@@ -132,11 +132,8 @@ class TestNavigationRendering:
         assert 'href="/flows"' in html
         assert 'href="/tasks"' in html
         assert 'href="/v2/servers"' in html
-        assert 'href="/events"' in html
-        assert 'href="/v2/handlers"' in html
-        assert 'href="/sources"' in html
-        assert 'href="/locks"' in html
-        assert 'href="/namespaces"' in html
+        assert 'href="/output"' in html
+        assert 'href="/workflows/new"' in html
 
     def test_nav_links_on_runners_page(self, client):
         tc, store = client

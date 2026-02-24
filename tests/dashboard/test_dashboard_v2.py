@@ -305,13 +305,13 @@ class TestNavStructure:
         resp = tc.get("/v2/workflows")
         assert '/v2/servers"' in resp.text
 
-    def test_nav_has_more_dropdown(self, client):
+    def test_nav_has_flat_tabs(self, client):
         tc, store = client
         resp = tc.get("/v2/workflows")
-        assert "More" in resp.text
-        assert "/handlers" in resp.text
-        assert "/events" in resp.text
         assert "/tasks" in resp.text
+        assert "/flows" in resp.text
+        assert "/runners" in resp.text
+        assert "/output" in resp.text
 
     def test_old_runners_route_still_works(self, client):
         tc, store = client

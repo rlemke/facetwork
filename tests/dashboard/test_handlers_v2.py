@@ -286,15 +286,11 @@ class TestV2HandlerDetail:
 
 @pytestmark_routes
 class TestV2HandlerNav:
-    def test_nav_handlers_link_is_v2(self, client):
+    def test_nav_handlers_page_renders(self, client):
         tc, store = client
         resp = tc.get("/v2/handlers")
-        assert '/v2/handlers"' in resp.text
-
-    def test_nav_handlers_highlighted(self, client):
-        tc, store = client
-        resp = tc.get("/v2/handlers")
-        assert 'nav-active' in resp.text
+        assert resp.status_code == 200
+        assert "Handlers" in resp.text
 
     def test_old_handlers_route_still_works(self, client):
         tc, store = client
