@@ -1,5 +1,24 @@
 # Implementation Changelog
 
+## Completed (v0.12.82) - Completion step_log for OSM handler extractors/filters/stats
+
+### Completion logging across 8 handler files
+Added a second `step_log()` call (with `level="success"`) after each successful extraction, filter, or stats computation so the dashboard step log section shows result counts and key metrics — not just the initial "starting" message.
+
+- **`park_handlers.py`** (8 handlers): national/state/nature-reserve/protected-area/generic extraction log feature count; filter logs filtered count; stats logs total parks, area, and breakdown by type; large parks logs count with area threshold
+- **`boundary_handlers.py`** (4 handlers): admin and natural boundary handlers log `extracted {count} {type} boundaries`
+- **`route_handlers.py`** (5 handlers): extract/typed/public-transport log feature count by route type; filter logs filtered count; stats logs route count and total km
+- **`road_handlers.py`** (9 handlers): extract/typed/surface/speed-limit log feature count; major roads and special roads log filtered/total; stats logs total roads and km; class and speed filters log filtered count
+- **`building_handlers.py`** (6 handlers): extract/typed/3D/large log feature count; stats logs total, area, residential/commercial breakdown; inline filter logs filtered/total
+- **`amenity_handlers.py`** (6 handlers): extract/typed/single log count by category; stats logs total with food/shopping/healthcare breakdown; search logs match count; inline filter logs filtered/total
+- **`filter_handlers.py`** (7 handlers): radius/range/type-and-radius/osm-type/osm-tag/geojson-type filters log `{matched}/{original} matched (criteria)`; extract-and-filter logs both extraction and filter counts
+- **`elevation_handlers.py`** (5 handlers): enrich logs enriched/total; max/min/gain/range filters log matched/total with threshold
+
+### Details
+- All completion logs use `level="success"` and are guarded by `if step_log:` matching existing pattern
+- No new tests needed — changes are step_log additions only; existing handler tests don't mock step_log
+- 8 files changed, 115 insertions; test suite: 2489 passed, 79 skipped; total collected 2568
+
 ## Completed (v0.12.81) - 5-minute server heartbeat timeout detection
 
 ### Dashboard-only computed "down" state
