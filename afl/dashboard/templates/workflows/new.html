@@ -3,6 +3,28 @@
 {% block content %}
 <h1>New Workflow</h1>
 
+{% if ns_groups %}
+<h2>Browse Workflows</h2>
+<p>Click a workflow to load its AFL source into the editor.</p>
+
+{% for group in ns_groups %}
+<details class="ns-group">
+    <summary>
+        <strong>{{ group.name }}</strong>
+        <span class="badge badge-secondary">{{ group.workflows|length }}</span>
+    </summary>
+    <ul>
+    {% for wf in group.workflows %}
+        <li>
+            <a href="#" class="wf-pick" data-source="{{ wf.afl_source|e }}">{{ wf.name }}</a>
+        </li>
+    {% endfor %}
+    </ul>
+</details>
+{% endfor %}
+{% endif %}
+
+<h2>Editor</h2>
 <form method="POST" action="/workflows/compile" enctype="application/x-www-form-urlencoded">
     <label for="source">AFL Source</label>
     <textarea id="source" name="source" rows="20">facet MyFacet(input: Long)
@@ -14,4 +36,15 @@ workflow MyWorkflow(x: Long) => (result: Long) andThen {
     <button type="submit">Compile</button>
     <button type="submit" formaction="/workflows/validate" class="outline">Validate Only</button>
 </form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll(".wf-pick").forEach(function(link) {
+    link.addEventListener("click", function(e) {
+        e.preventDefault();
+        document.getElementById("source").value = this.getAttribute("data-source");
+    });
+});
+</script>
 {% endblock %}

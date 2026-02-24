@@ -81,6 +81,72 @@ workflow WF_B(y: String) => (out: String) andThen {
 INVALID_AFL_SOURCE = "this is not valid AFL %%% syntax"
 
 
+def _make_flow(uuid, name, compiled_ast):
+    """Helper to create a FlowDefinition with compiled_ast."""
+    from afl.runtime.entities import FlowDefinition, FlowIdentity
+
+    return FlowDefinition(
+        uuid=uuid,
+        name=FlowIdentity(name=name, path="test", uuid=uuid),
+        compiled_ast=compiled_ast,
+    )
+
+
+# Sample compiled_ast with namespaced workflows
+NAMESPACED_AST = {
+    "declarations": [
+        {
+            "type": "Namespace",
+            "name": "geo.Routes",
+            "declarations": [
+                {
+                    "type": "WorkflowDecl",
+                    "name": "BicycleRoutes",
+                    "params": [
+                        {"name": "region", "type": "String", "default": {"value": "Alaska"}},
+                    ],
+                    "returns": [{"name": "result", "type": "String"}],
+                },
+                {
+                    "type": "WorkflowDecl",
+                    "name": "HikingTrails",
+                    "params": [
+                        {"name": "state", "type": "String"},
+                    ],
+                    "returns": [],
+                },
+            ],
+        },
+        {
+            "type": "Namespace",
+            "name": "geo.Boundaries",
+            "declarations": [
+                {
+                    "type": "WorkflowDecl",
+                    "name": "StateBoundaries",
+                    "params": [
+                        {"name": "count", "type": "Long", "default": {"value": 5}},
+                    ],
+                    "returns": [{"name": "output", "type": "String"}],
+                },
+            ],
+        },
+    ],
+}
+
+# Sample compiled_ast with a top-level workflow (no namespace)
+TOPLEVEL_AST = {
+    "declarations": [
+        {
+            "type": "WorkflowDecl",
+            "name": "SimpleWF",
+            "params": [{"name": "x", "type": "Long"}],
+            "returns": [{"name": "result", "type": "Long"}],
+        },
+    ],
+}
+
+
 class TestWorkflowNew:
     """Tests for GET /workflows/new."""
 
@@ -95,6 +161,77 @@ class TestWorkflowNew:
         tc, store = client
         resp = tc.get("/workflows/new")
         assert "/workflows/compile" in resp.text
+
+    def test_new_page_empty_db(self, client):
+        """Page renders fine with no flows in the database."""
+        tc, store = client
+        resp = tc.get("/workflows/new")
+        assert resp.status_code == 200
+        assert "New Workflow" in resp.text
+        # No accordion sections when DB is empty
+        assert "<details" not in resp.text
+
+    def test_new_page_shows_workflows_from_db(self, client):
+        """Workflows from seeded flows appear in the browser."""
+        tc, store = client
+        flow = _make_flow("flow-1", "TestFlow", NAMESPACED_AST)
+        store.save_flow(flow)
+
+        resp = tc.get("/workflows/new")
+        assert resp.status_code == 200
+        assert "BicycleRoutes" in resp.text
+        assert "HikingTrails" in resp.text
+        assert "StateBoundaries" in resp.text
+
+    def test_new_page_groups_by_namespace(self, client):
+        """Workflows are grouped under namespace <details> sections."""
+        tc, store = client
+        flow = _make_flow("flow-2", "TestFlow", NAMESPACED_AST)
+        store.save_flow(flow)
+
+        resp = tc.get("/workflows/new")
+        assert resp.status_code == 200
+        # Both namespace groups appear as <details> accordions
+        assert "geo.Routes" in resp.text
+        assert "geo.Boundaries" in resp.text
+        assert resp.text.count("<details") == 2
+
+    def test_new_page_toplevel_workflows(self, client):
+        """Top-level workflows (no namespace) appear under (top-level) group."""
+        tc, store = client
+        flow = _make_flow("flow-3", "TestFlow", TOPLEVEL_AST)
+        store.save_flow(flow)
+
+        resp = tc.get("/workflows/new")
+        assert resp.status_code == 200
+        assert "(top-level)" in resp.text
+        assert "SimpleWF" in resp.text
+
+    def test_new_page_afl_snippet_in_data_source(self, client):
+        """Each workflow link has a data-source attribute with AFL snippet."""
+        tc, store = client
+        flow = _make_flow("flow-4", "TestFlow", NAMESPACED_AST)
+        store.save_flow(flow)
+
+        resp = tc.get("/workflows/new")
+        assert resp.status_code == 200
+        # The AFL snippet should contain a namespace wrapper and workflow keyword
+        assert "data-source=" in resp.text
+        assert "namespace geo.Routes" in resp.text
+        # Jinja2 |e escapes " as &#34; or &quot;
+        assert "region: String = " in resp.text
+        assert "Alaska" in resp.text
+
+    def test_new_page_flow_without_compiled_ast(self, client):
+        """Flows without compiled_ast are silently skipped."""
+        tc, store = client
+        flow = _make_flow("flow-5", "NoAST", None)
+        store.save_flow(flow)
+
+        resp = tc.get("/workflows/new")
+        assert resp.status_code == 200
+        # No accordion sections
+        assert "<details" not in resp.text
 
 
 class TestWorkflowCompile:

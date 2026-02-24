@@ -27,13 +27,112 @@ from ..dependencies import get_store
 router = APIRouter(prefix="/workflows")
 
 
+# ---------------------------------------------------------------------------
+# Helpers for the workflow browser on /workflows/new
+# ---------------------------------------------------------------------------
+
+
+def _collect_workflows_with_ns(
+    node: dict, ns_prefix: str, acc: list[dict]
+) -> None:
+    """Recursively collect WorkflowDecl nodes with their namespace path."""
+    for decl in node.get("declarations", []):
+        if decl.get("type") == "WorkflowDecl":
+            acc.append({"ns": ns_prefix, "wf": decl})
+        elif decl.get("type") == "Namespace":
+            child_ns = decl.get("name", "")
+            full_ns = f"{ns_prefix}.{child_ns}" if ns_prefix else child_ns
+            _collect_workflows_with_ns(decl, full_ns, acc)
+
+
+def _build_afl_snippet(ns: str, wf: dict) -> str:
+    """Generate a minimal AFL source snippet for a workflow."""
+    name = wf.get("name", "Unnamed")
+
+    # Build params string
+    param_parts: list[str] = []
+    for p in wf.get("params", []):
+        pname = p.get("name", "")
+        ptype = p.get("type", "String")
+        default = p.get("default")
+        if isinstance(default, dict) and "value" in default:
+            default = default["value"]
+        if default is not None:
+            if isinstance(default, str):
+                param_parts.append(f'{pname}: {ptype} = "{default}"')
+            else:
+                param_parts.append(f"{pname}: {ptype} = {default}")
+        else:
+            param_parts.append(f"{pname}: {ptype}")
+    params_str = ", ".join(param_parts)
+
+    # Build returns string
+    ret_parts: list[str] = []
+    for r in wf.get("returns", []):
+        rname = r.get("name", "")
+        rtype = r.get("type", "String")
+        ret_parts.append(f"{rname}: {rtype}")
+    returns_str = f" => ({', '.join(ret_parts)})" if ret_parts else ""
+
+    sig = f"workflow {name}({params_str}){returns_str} andThen {{"
+    body = "    // Edit workflow body here"
+    close = "}"
+
+    if ns:
+        indent = "    "
+        lines = [
+            f"namespace {ns} {{",
+            f"{indent}{sig}",
+            f"{indent}{body}",
+            f"{indent}{close}",
+            "}",
+        ]
+    else:
+        lines = [sig, body, close]
+
+    return "\n".join(lines)
+
+
 @router.get("/new")
-def workflow_new(request: Request):
-    """Render the new workflow form."""
+def workflow_new(request: Request, store=Depends(get_store)):
+    """Render the new workflow form with a namespace-grouped workflow browser."""
+    # Collect all workflows from every flow in the DB
+    all_wf_items: list[dict] = []
+    for flow in store.get_all_flows():
+        if not flow.compiled_ast:
+            continue
+        entries: list[dict] = []
+        _collect_workflows_with_ns(flow.compiled_ast, "", entries)
+        for entry in entries:
+            ns = entry["ns"]
+            wf = entry["wf"]
+            qualified = f"{ns}.{wf['name']}" if ns else wf["name"]
+            all_wf_items.append(
+                {
+                    "ns": ns or "(top-level)",
+                    "name": wf.get("name", ""),
+                    "qualified_name": qualified,
+                    "afl_source": _build_afl_snippet(ns, wf),
+                }
+            )
+
+    # Group by namespace
+    ns_map: dict[str, list[dict]] = {}
+    for item in all_wf_items:
+        ns_map.setdefault(item["ns"], []).append(item)
+
+    ns_groups = sorted(
+        [
+            {"name": ns, "workflows": sorted(wfs, key=lambda w: w["name"])}
+            for ns, wfs in ns_map.items()
+        ],
+        key=lambda g: g["name"],
+    )
+
     return request.app.state.templates.TemplateResponse(
         request,
         "workflows/new.html",
-        {},
+        {"ns_groups": ns_groups},
     )
 
 
