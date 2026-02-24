@@ -1,5 +1,11 @@
 # Implementation Changelog
 
+## Completed (v0.12.86) - Add folium to lite agent for HTML map rendering
+
+The lite agent container handles visualization tasks (RenderMap, etc.) but lacked `folium`, causing all map rendering steps to return empty `output_path` values. Added `folium` to `Dockerfile.osm-geocoder-lite` dependencies.
+
+**File changed:** `docker/Dockerfile.osm-geocoder-lite`
+
 ## Completed (v0.12.85) - Skip pyosmium-dependent handler registration on lite agent
 
 ### Root cause: lite agent claiming extraction tasks it cannot process

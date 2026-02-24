@@ -11,7 +11,8 @@ RUN pip install --no-cache-dir -e ".[mongodb]" || \
     pip install --no-cache-dir lark pymongo
 
 # Install requests for Nominatim API and Geofabrik downloads
-RUN pip install --no-cache-dir requests
+# Install folium for HTML map rendering
+RUN pip install --no-cache-dir requests folium
 
 # HDFS support uses WebHDFS REST API via requests (already installed above)
 
