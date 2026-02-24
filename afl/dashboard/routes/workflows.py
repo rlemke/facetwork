@@ -101,20 +101,26 @@ def workflow_new(request: Request, store=Depends(get_store)):
     for flow in store.get_all_flows():
         if not flow.compiled_ast:
             continue
+        # Build name→uuid mapping from workflow DB records
+        wf_records = store.get_workflows_by_flow(flow.uuid)
+        wf_name_to_uuid: dict[str, str] = {wr.name: wr.uuid for wr in wf_records}
+
         entries: list[dict] = []
         _collect_workflows_with_ns(flow.compiled_ast, "", entries)
         for entry in entries:
             ns = entry["ns"]
             wf = entry["wf"]
             qualified = f"{ns}.{wf['name']}" if ns else wf["name"]
-            all_wf_items.append(
-                {
-                    "ns": ns or "(top-level)",
-                    "name": wf.get("name", ""),
-                    "qualified_name": qualified,
-                    "afl_source": _build_afl_snippet(ns, wf),
-                }
-            )
+            wf_uuid = wf_name_to_uuid.get(qualified, "")
+            item: dict = {
+                "ns": ns or "(top-level)",
+                "name": wf.get("name", ""),
+                "qualified_name": qualified,
+                "afl_source": _build_afl_snippet(ns, wf),
+            }
+            if wf_uuid:
+                item["run_url"] = f"/flows/{flow.uuid}/run/{wf_uuid}"
+            all_wf_items.append(item)
 
     # Group by namespace
     ns_map: dict[str, list[dict]] = {}

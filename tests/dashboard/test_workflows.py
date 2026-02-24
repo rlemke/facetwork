@@ -92,6 +92,30 @@ def _make_flow(uuid, name, compiled_ast):
     )
 
 
+def _seed_workflows(store, flow_id, compiled_ast):
+    """Seed WorkflowDefinition records matching the compiled_ast workflows."""
+    from afl.dashboard.routes.workflows import _collect_workflows_with_ns
+    from afl.runtime.entities import WorkflowDefinition
+
+    entries: list[dict] = []
+    _collect_workflows_with_ns(compiled_ast, "", entries)
+    for entry in entries:
+        ns = entry["ns"]
+        wf = entry["wf"]
+        qualified = f"{ns}.{wf['name']}" if ns else wf["name"]
+        store.save_workflow(
+            WorkflowDefinition(
+                uuid=f"wf-{qualified}",
+                name=qualified,
+                namespace_id=ns or "top",
+                facet_id=f"facet-{qualified}",
+                flow_id=flow_id,
+                starting_step="",
+                version="1.0",
+            )
+        )
+
+
 # Sample compiled_ast with namespaced workflows
 NAMESPACED_AST = {
     "declarations": [
@@ -176,6 +200,8 @@ class TestWorkflowNew:
         tc, store = client
         flow = _make_flow("flow-1", "TestFlow", NAMESPACED_AST)
         store.save_flow(flow)
+        # Seed workflow records so run URLs can be resolved
+        _seed_workflows(store, "flow-1", NAMESPACED_AST)
 
         resp = tc.get("/workflows/new")
         assert resp.status_code == 200
@@ -221,6 +247,37 @@ class TestWorkflowNew:
         # Jinja2 |e escapes " as &#34; or &quot;
         assert "region: String = " in resp.text
         assert "Alaska" in resp.text
+
+    def test_new_page_has_run_links(self, client):
+        """Workflows with DB records get run links to /flows/.../run/..."""
+        tc, store = client
+        flow = _make_flow("flow-run", "TestFlow", NAMESPACED_AST)
+        store.save_flow(flow)
+        _seed_workflows(store, "flow-run", NAMESPACED_AST)
+
+        resp = tc.get("/workflows/new")
+        assert resp.status_code == 200
+        # Each workflow should have a run link pointing to the flow run page
+        assert "/flows/flow-run/run/wf-geo.Routes.BicycleRoutes" in resp.text
+        assert "/flows/flow-run/run/wf-geo.Routes.HikingTrails" in resp.text
+        assert "/flows/flow-run/run/wf-geo.Boundaries.StateBoundaries" in resp.text
+        # Links should have the wf-run CSS class
+        assert 'class="wf-run"' in resp.text
+
+    def test_new_page_no_run_links_without_workflow_records(self, client):
+        """Workflows without DB records don't get run links."""
+        tc, store = client
+        flow = _make_flow("flow-nowr", "TestFlow", NAMESPACED_AST)
+        store.save_flow(flow)
+        # Don't seed workflow records
+
+        resp = tc.get("/workflows/new")
+        assert resp.status_code == 200
+        # Workflow names still appear
+        assert "BicycleRoutes" in resp.text
+        # But no run links
+        assert "wf-run" not in resp.text
+        assert "/flows/flow-nowr/run/" not in resp.text
 
     def test_new_page_flow_without_compiled_ast(self, client):
         """Flows without compiled_ast are silently skipped."""

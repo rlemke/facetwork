@@ -5,7 +5,7 @@
 
 {% if ns_groups %}
 <h2>Browse Workflows</h2>
-<p>Click a workflow to load its AFL source into the editor.</p>
+<p>Run an existing workflow or load its AFL source into the editor.</p>
 
 {% for group in ns_groups %}
 <details class="ns-group">
@@ -16,7 +16,9 @@
     <ul>
     {% for wf in group.workflows %}
         <li>
-            <a href="#" class="wf-pick" data-source="{{ wf.afl_source|e }}">{{ wf.name }}</a>
+            {{ wf.name }}
+            {% if wf.run_url %}<a href="{{ wf.run_url }}" class="wf-run">Run</a>{% endif %}
+            <a href="#" class="wf-pick" data-source="{{ wf.afl_source|e }}">Edit</a>
         </li>
     {% endfor %}
     </ul>
