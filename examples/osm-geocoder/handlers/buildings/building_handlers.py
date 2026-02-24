@@ -39,6 +39,8 @@ def _make_extract_buildings_handler(facet_name: str):
 
         try:
             result = extract_buildings(pbf_path, building_type=building_type)
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} {building_type} buildings", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract buildings: %s", e)
@@ -64,6 +66,8 @@ def _make_typed_building_handler(facet_name: str, building_type: str):
 
         try:
             result = extract_buildings(pbf_path, building_type=building_type)
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} {building_type} buildings", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract %s buildings: %s", building_type, e)
@@ -89,6 +93,8 @@ def _make_buildings_3d_handler(facet_name: str):
 
         try:
             result = extract_buildings(pbf_path, building_type="all", require_height=True)
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} 3D buildings", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract 3D buildings: %s", e)
@@ -115,6 +121,8 @@ def _make_large_buildings_handler(facet_name: str):
 
         try:
             result = extract_buildings(pbf_path, building_type="all", min_area_m2=min_area_m2)
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} buildings >= {min_area_m2:.0f} m2", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract large buildings: %s", e)
@@ -139,6 +147,12 @@ def _make_building_stats_handler(facet_name: str):
 
         try:
             stats = calculate_building_stats(input_path)
+            if step_log:
+                step_log(
+                    f"{facet_name}: {stats.total_buildings} buildings, {stats.total_area_km2:.2f} km2"
+                    f" (residential={stats.residential}, commercial={stats.commercial})",
+                    level="success",
+                )
             return {"stats": _stats_to_dict(stats)}
         except Exception as e:
             log.error("Failed to calculate building stats: %s", e)
@@ -186,6 +200,9 @@ def _make_filter_buildings_handler(facet_name: str):
             with_height = sum(1 for f in filtered
                               if f["properties"].get("height") or f["properties"].get("levels"))
 
+            all_features = geojson.get("features", [])
+            if step_log:
+                step_log(f"{facet_name}: {len(filtered)}/{len(all_features)} {building_type} buildings", level="success")
             return {"result": {
                 "output_path": str(output_path),
                 "feature_count": len(filtered),

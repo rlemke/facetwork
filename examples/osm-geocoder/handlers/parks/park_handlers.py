@@ -42,6 +42,8 @@ def _make_national_parks_handler(facet_name: str):
                 pbf_path,
                 park_type=ParkType.NATIONAL,
             )
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} national parks", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract national parks: %s", e)
@@ -70,6 +72,8 @@ def _make_state_parks_handler(facet_name: str):
                 pbf_path,
                 park_type=ParkType.STATE,
             )
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} state parks", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract state parks: %s", e)
@@ -98,6 +102,8 @@ def _make_nature_reserves_handler(facet_name: str):
                 pbf_path,
                 park_type=ParkType.NATURE_RESERVE,
             )
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} nature reserves", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract nature reserves: %s", e)
@@ -131,6 +137,8 @@ def _make_protected_areas_handler(facet_name: str):
                 park_type=ParkType.PROTECTED_AREA,
                 protect_classes=protect_classes,
             )
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} protected areas", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract protected areas: %s", e)
@@ -165,6 +173,8 @@ def _make_extract_parks_handler(facet_name: str):
                 park_type=park_type,
                 protect_classes=protect_classes,
             )
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} {park_type} parks", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract parks: %s", e)
@@ -198,6 +208,8 @@ def _make_filter_parks_handler(facet_name: str):
                 park_type=park_type,
                 protect_classes=protect_classes,
             )
+            if step_log:
+                step_log(f"{facet_name}: filtered to {result.feature_count} {park_type} parks", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to filter parks: %s", e)
@@ -222,6 +234,13 @@ def _make_park_stats_handler(facet_name: str):
 
         try:
             stats = calculate_park_stats(input_path)
+            if step_log:
+                step_log(
+                    f"{facet_name}: {stats.total_parks} parks, {stats.total_area_km2:.1f} km2"
+                    f" (national={stats.national_parks}, state={stats.state_parks},"
+                    f" reserves={stats.nature_reserves})",
+                    level="success",
+                )
             return {"stats": _stats_to_dict(stats)}
         except Exception as e:
             log.error("Failed to calculate park stats: %s", e)
@@ -256,6 +275,8 @@ def _make_large_parks_handler(facet_name: str):
                 park_type=park_type,
                 min_area_km2=min_area_km2,
             )
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} large {park_type} parks (>= {min_area_km2:.1f} km2)", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract large parks: %s", e)

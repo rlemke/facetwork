@@ -45,6 +45,8 @@ def _make_extract_amenities_handler(facet_name: str):
 
         try:
             result = extract_amenities(pbf_path, category=category)
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} {category} amenities", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract amenities: %s", e)
@@ -70,6 +72,8 @@ def _make_typed_amenity_handler(facet_name: str, amenity_types: set[str], catego
 
         try:
             result = extract_amenities(pbf_path, amenity_types=amenity_types)
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} {category} amenities", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract %s amenities: %s", category, e)
@@ -95,6 +99,8 @@ def _make_single_amenity_handler(facet_name: str, amenity_type: str, category: s
 
         try:
             result = extract_amenities(pbf_path, amenity_types={amenity_type})
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} {amenity_type}", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract %s: %s", amenity_type, e)
@@ -119,6 +125,12 @@ def _make_amenity_stats_handler(facet_name: str):
 
         try:
             stats = calculate_amenity_stats(input_path)
+            if step_log:
+                step_log(
+                    f"{facet_name}: {stats.total_amenities} amenities"
+                    f" (food={stats.food}, shopping={stats.shopping}, healthcare={stats.healthcare})",
+                    level="success",
+                )
             return {"stats": _stats_to_dict(stats)}
         except Exception as e:
             log.error("Failed to calculate amenity stats: %s", e)
@@ -144,6 +156,8 @@ def _make_search_amenities_handler(facet_name: str):
 
         try:
             result = search_amenities(input_path, name_pattern)
+            if step_log:
+                step_log(f"{facet_name}: found {result.feature_count} matching '{name_pattern}'", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to search amenities: %s", e)
@@ -187,6 +201,9 @@ def _make_filter_by_category_handler(facet_name: str):
             with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(output_geojson, f, indent=2)
 
+            all_features = geojson.get("features", [])
+            if step_log:
+                step_log(f"{facet_name}: {len(filtered)}/{len(all_features)} {category} amenities", level="success")
             return {"result": {
                 "output_path": str(output_path),
                 "feature_count": len(filtered),

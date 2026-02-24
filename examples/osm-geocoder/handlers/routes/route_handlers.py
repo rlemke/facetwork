@@ -50,6 +50,8 @@ def _make_extract_routes_handler(facet_name: str):
                 network=network,
                 include_infrastructure=include_infrastructure,
             )
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} {route_type} routes", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract routes: %s", e)
@@ -83,6 +85,8 @@ def _make_filter_routes_handler(facet_name: str):
                 route_type=route_type,
                 network=network,
             )
+            if step_log:
+                step_log(f"{facet_name}: filtered to {result.feature_count} {route_type} routes", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to filter routes: %s", e)
@@ -107,6 +111,8 @@ def _make_route_stats_handler(facet_name: str):
 
         try:
             stats = calculate_route_stats(input_path)
+            if step_log:
+                step_log(f"{facet_name}: {stats.route_count} routes, {stats.total_length_km:.1f} km", level="success")
             return {"stats": _stats_to_dict(stats)}
         except Exception as e:
             log.error("Failed to calculate stats: %s", e)
@@ -142,6 +148,8 @@ def _make_typed_route_handler(facet_name: str, route_type: str):
                 network=network,
                 include_infrastructure=include_infrastructure,
             )
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} {route_type} routes", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract %s routes: %s", route_type, e)
@@ -171,6 +179,8 @@ def _make_public_transport_handler(facet_name: str):
                 route_type="public_transport",
                 include_infrastructure=True,
             )
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} public transport routes", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract public transport: %s", e)

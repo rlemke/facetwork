@@ -61,6 +61,8 @@ def _make_admin_handler(facet_name: str, admin_levels: list[int]):
             }
 
         result = extract_boundaries(pbf_path, admin_levels=admin_levels)
+        if step_log:
+            step_log(f"{facet_name}: extracted {result.feature_count} {result.boundary_type} boundaries", level="success")
         return {
             "result": {
                 "output_path": result.output_path,
@@ -114,6 +116,8 @@ def _make_natural_handler(facet_name: str, natural_types: list[str]):
             }
 
         result = extract_boundaries(pbf_path, natural_types=natural_types)
+        if step_log:
+            step_log(f"{facet_name}: extracted {result.feature_count} {result.boundary_type} boundaries", level="success")
         return {
             "result": {
                 "output_path": result.output_path,
@@ -162,6 +166,8 @@ def _make_configurable_admin_handler(facet_name: str):
             }
 
         result = extract_boundaries(pbf_path, admin_levels=[admin_level])
+        if step_log:
+            step_log(f"{facet_name}: extracted {result.feature_count} {result.boundary_type} boundaries", level="success")
         return {
             "result": {
                 "output_path": result.output_path,
@@ -210,6 +216,8 @@ def _make_configurable_natural_handler(facet_name: str):
             }
 
         result = extract_boundaries(pbf_path, natural_types=[natural_type])
+        if step_log:
+            step_log(f"{facet_name}: extracted {result.feature_count} {result.boundary_type} boundaries", level="success")
         return {
             "result": {
                 "output_path": result.output_path,

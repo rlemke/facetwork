@@ -42,6 +42,8 @@ def _make_extract_roads_handler(facet_name: str):
 
         try:
             result = extract_roads(pbf_path, road_class=road_class)
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} {road_class} roads", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract roads: %s", e)
@@ -67,6 +69,8 @@ def _make_typed_road_handler(facet_name: str, road_class: str):
 
         try:
             result = extract_roads(pbf_path, road_class=road_class)
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} {road_class} roads", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract %s roads: %s", road_class, e)
@@ -117,6 +121,8 @@ def _make_major_roads_handler(facet_name: str):
             total_length = sum(f["properties"].get("length_km", 0) for f in filtered)
             with_speed = sum(1 for f in filtered if f["properties"].get("maxspeed"))
 
+            if step_log:
+                step_log(f"{facet_name}: {len(filtered)}/{result.feature_count} major roads", level="success")
             return {"result": {
                 "output_path": str(output_path),
                 "feature_count": len(filtered),
@@ -174,6 +180,8 @@ def _make_special_road_handler(facet_name: str, attribute: str):
             total_length = sum(f["properties"].get("length_km", 0) for f in filtered)
             with_speed = sum(1 for f in filtered if f["properties"].get("maxspeed"))
 
+            if step_log:
+                step_log(f"{facet_name}: {len(filtered)}/{result.feature_count} {attribute}s", level="success")
             return {"result": {
                 "output_path": str(output_path),
                 "feature_count": len(filtered),
@@ -207,6 +215,8 @@ def _make_surface_handler(facet_name: str, surface_type: str):
 
         try:
             result = extract_roads(pbf_path, road_class="all", surface_filter=surface_type)
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} {surface_type} roads", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract %s roads: %s", surface_type, e)
@@ -232,6 +242,8 @@ def _make_speed_limit_handler(facet_name: str):
 
         try:
             result = extract_roads(pbf_path, road_class="all", require_speed_limit=True)
+            if step_log:
+                step_log(f"{facet_name}: extracted {result.feature_count} roads with speed limits", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to extract roads with speed limits: %s", e)
@@ -256,6 +268,8 @@ def _make_road_stats_handler(facet_name: str):
 
         try:
             stats = calculate_road_stats(input_path)
+            if step_log:
+                step_log(f"{facet_name}: {stats.total_roads} roads, {stats.total_length_km:.1f} km", level="success")
             return {"stats": _stats_to_dict(stats)}
         except Exception as e:
             log.error("Failed to calculate road stats: %s", e)
@@ -281,6 +295,8 @@ def _make_filter_by_class_handler(facet_name: str):
 
         try:
             result = filter_roads_by_class(input_path, road_class)
+            if step_log:
+                step_log(f"{facet_name}: filtered to {result.feature_count} {road_class} roads", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to filter roads: %s", e)
@@ -307,6 +323,8 @@ def _make_filter_by_speed_handler(facet_name: str):
 
         try:
             result = filter_by_speed_limit(input_path, min_speed, max_speed)
+            if step_log:
+                step_log(f"{facet_name}: filtered to {result.feature_count} roads (speed {min_speed}-{max_speed})", level="success")
             return {"result": _result_to_dict(result)}
         except Exception as e:
             log.error("Failed to filter by speed limit: %s", e)

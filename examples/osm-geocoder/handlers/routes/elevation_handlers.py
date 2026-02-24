@@ -238,6 +238,8 @@ def handle_enrich_with_elevation(params: dict[str, Any]) -> dict[str, Any]:
     with open(output_path, "w") as f:
         json.dump(output_geojson, f)
 
+    if step_log:
+        step_log(f"EnrichWithElevation: enriched {len(enriched_routes)}/{len(features)} routes with elevation", level="success")
     return {
         "result": {
             "output_path": output_path,
@@ -292,6 +294,8 @@ def handle_filter_by_max_elevation(params: dict[str, Any]) -> dict[str, Any]:
     with open(output_path, "w") as f:
         json.dump(output_geojson, f)
 
+    if step_log:
+        step_log(f"FilterByMaxElevation: {len(matched)}/{len(features)} routes above {threshold_ft} ft", level="success")
     return {
         "result": {
             "output_path": output_path,
@@ -345,6 +349,8 @@ def handle_filter_by_min_elevation(params: dict[str, Any]) -> dict[str, Any]:
     with open(output_path, "w") as f:
         json.dump(output_geojson, f)
 
+    if step_log:
+        step_log(f"FilterByMinElevation: {len(matched)}/{len(features)} routes below {threshold_ft} ft", level="success")
     return {
         "result": {
             "output_path": output_path,
@@ -398,6 +404,8 @@ def handle_filter_by_elevation_gain(params: dict[str, Any]) -> dict[str, Any]:
     with open(output_path, "w") as f:
         json.dump(output_geojson, f)
 
+    if step_log:
+        step_log(f"FilterByElevationGain: {len(matched)}/{len(features)} routes with gain >= {min_gain_ft} ft", level="success")
     return {
         "result": {
             "output_path": output_path,
@@ -461,6 +469,8 @@ def handle_filter_by_elevation_range(params: dict[str, Any]) -> dict[str, Any]:
     with open(output_path, "w") as f:
         json.dump(output_geojson, f)
 
+    if step_log:
+        step_log(f"FilterByElevationRange: {len(matched)}/{len(features)} routes in range {min_elev}-{max_elev} ft", level="success")
     return {
         "result": {
             "output_path": output_path,
