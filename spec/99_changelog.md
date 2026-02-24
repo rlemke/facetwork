@@ -1,5 +1,27 @@
 # Implementation Changelog
 
+## Completed (v0.12.87) - Host-mounted output directory and dashboard file browser
+
+Introduce `AFL_LOCAL_OUTPUT_DIR` env var (default `/Volumes/afl_data/output`) to redirect handler output (HTML maps, stats, GeoJSON) to a host-mounted directory instead of ephemeral `/tmp` paths inside containers. Add a dashboard file browser at `/output` with directory tree navigation, breadcrumbs, file metadata display, and inline viewing for HTML/image/text files.
+
+### Output directory helpers
+- **`_output.py`**: Added `resolve_local_output_dir(*parts)` — joins parts as subdirectories under `AFL_LOCAL_OUTPUT_DIR`, creating them if needed. Updated `resolve_output_dir()` fallback chain: `default_local` → `AFL_LOCAL_OUTPUT_DIR` → `/tmp`.
+- **`map_renderer.py`**: `render_map_html()`, `render_map_png()`, `render_layers()` now use `resolve_local_output_dir("maps")` instead of `os.path.dirname(local_geojson)` for default output paths.
+
+### Dashboard file browser
+- **`routes/output.py`**: New route module with `GET /output` (directory browser) and `GET /output/view` (file serving). Path traversal protection via `_safe_path()` using `Path.resolve()`.
+- **`templates/output/browser.html`**: Template with breadcrumb navigation, file table with name/size/timestamp columns, and "View" links for HTML/image/text files.
+- **`filters.py`**: Added `filesizeformat()` (B/KB/MB/GB) and `file_timestamp()` (YYYY-MM-DD HH:MM:SS) filters.
+- **`base.html`**: Added "Output" link to the More dropdown nav.
+- **`style.css`**: Output browser styles (breadcrumbs, table, view button).
+
+### Docker configuration
+- **`docker-compose.yml`**: Added `AFL_LOCAL_OUTPUT_DIR` env var and volume mounts to `dashboard` (read-only), `runner`, `agent-osm-geocoder`, `agent-osm-geocoder-lite`.
+- **`.env.example`**: Documented `AFL_LOCAL_OUTPUT_DIR`.
+
+### Details
+- 12 files changed (9 modified, 3 new); 31 new tests; test suite: 2522 passed, 79 skipped; total collected 2601
+
 ## Completed (v0.12.86) - Add folium to lite agent for HTML map rendering
 
 The lite agent container handles visualization tasks (RenderMap, etc.) but lacked `folium`, causing all map rendering steps to return empty `output_path` values. Added `folium` to `Dockerfile.osm-geocoder-lite` dependencies.
