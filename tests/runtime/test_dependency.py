@@ -179,6 +179,67 @@ class TestDependencyGraph:
         assert order.index("b") < order.index("c")
 
 
+class TestYieldDeferral:
+    """Tests for yield deferral until all non-yield statements complete."""
+
+    def test_yield_deferred_until_all_non_yields_complete(self):
+        """Yield is NOT ready until all non-yield statements are terminal,
+        even if the yield's explicit dependencies are already satisfied."""
+        block_ast = {
+            "steps": [
+                {"id": "s1", "name": "s1", "call": {"target": "V", "args": []}},
+                {"id": "s2", "name": "s2", "call": {"target": "V", "args": []}},
+            ],
+            "yield": {
+                "id": "y1",
+                "call": {
+                    "target": "W",
+                    "args": [
+                        {"name": "out", "value": {"type": "StepRef", "path": ["s1", "x"]}}
+                    ],
+                },
+            },
+        }
+        graph = DependencyGraph.from_ast(block_ast, set())
+
+        # Initially: s1 and s2 ready, yield not ready
+        ready_ids = {s.id for s in graph.get_ready_statements(set())}
+        assert "s1" in ready_ids
+        assert "s2" in ready_ids
+        assert "y1" not in ready_ids
+
+        # After s1 completes (yield's explicit dep): yield still NOT ready (s2 pending)
+        ready_ids = {s.id for s in graph.get_ready_statements({"s1"})}
+        assert "s2" in ready_ids
+        assert "y1" not in ready_ids
+
+        # After both s1 and s2 complete: NOW yield is ready
+        ready_ids = {s.id for s in graph.get_ready_statements({"s1", "s2"})}
+        assert "y1" in ready_ids
+
+    def test_yield_no_deps_still_deferred(self):
+        """Yield with zero explicit dependencies still waits for all non-yields."""
+        block_ast = {
+            "steps": [
+                {"id": "s1", "name": "s1", "call": {"target": "V", "args": []}},
+            ],
+            "yield": {
+                "id": "y1",
+                "call": {"target": "W", "args": []},
+            },
+        }
+        graph = DependencyGraph.from_ast(block_ast, set())
+
+        # Yield has no deps, but s1 is not terminal — yield NOT ready
+        ready_ids = {s.id for s in graph.get_ready_statements(set())}
+        assert "s1" in ready_ids
+        assert "y1" not in ready_ids
+
+        # After s1 completes, yield becomes ready
+        ready_ids = {s.id for s in graph.get_ready_statements({"s1"})}
+        assert "y1" in ready_ids
+
+
 class TestCollectionDependencyExtraction:
     """Tests for dependency extraction from collection literals."""
 

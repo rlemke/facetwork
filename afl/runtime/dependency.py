@@ -320,15 +320,24 @@ class DependencyGraph:
     def get_ready_statements(self, completed: set[str]) -> Sequence[StatementDefinition]:
         """Get statements ready to be created.
 
+        Yield statements are only ready when ALL non-yield statements
+        are terminal (complete or error). This ensures yields execute
+        after the block's regular work is done.
+
         Args:
             completed: Set of completed statement IDs
 
         Returns:
             Statements with all dependencies satisfied
         """
+        non_yield_ids = {sid for sid, stmt in self.statements.items() if not stmt.is_yield}
+        yields_eligible = non_yield_ids.issubset(completed)
+
         ready = []
         for stmt_id, stmt in self.statements.items():
             if stmt_id not in completed and self.can_create(stmt_id, completed):
+                if stmt.is_yield and not yields_eligible:
+                    continue
                 ready.append(stmt)
         return ready
 

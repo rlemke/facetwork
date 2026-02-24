@@ -284,16 +284,16 @@ Steps MUST NOT be created prematurely.
 
 ### 11.1 Lazy Yield Creation
 
-> **Implemented** — yield steps are created by `BlockExecutionContinueHandler._create_ready_steps()` only when dependencies are satisfied.
+> **Implemented** — yield steps are created by `BlockExecutionContinueHandler._create_ready_steps()` only after all non-yield statements in the block are terminal.
 
-Yield steps (`YieldAssignment`) are created **lazily** — they are not created in the same iteration as regular steps. Instead, yield steps are created by `BlockExecutionContinue` only when all of their dependencies (referenced steps) are committed as complete.
+Yield steps (`YieldAssignment`) are created **lazily** — they are deferred until **all non-yield statements** in the same block are terminal (complete or error), regardless of the yield's explicit dependencies.
 
 This means:
-- In a block with steps `s1`, `s2`, and `yield F(sum = s1.input + s2.input)`, the yield step is **not** created in the iteration that creates `s1` and `s2`.
-- The yield step is created in the first iteration where `s1` and `s2` are both committed as `statement.Complete`.
+- In a block with steps `s1`, `s2`, and `yield F(output = s1.x)`, the yield is **not** created when `s1` completes — it waits until `s2` also completes, even though `s2` is not an explicit dependency of the yield.
+- The yield step is created in the first iteration where all non-yield statements (`s1` and `s2`) are committed as `statement.Complete`.
 - Because the yield's dependencies are already satisfied at creation time, the yield step runs to `statement.Complete` in the same iteration it is created.
 
-**Rationale:** The `DependencyGraph` treats yield steps the same as regular steps — they are only "ready" when their dependencies are in the completed set. Since steps completed within the current iteration are not yet committed, yields cannot see them as complete until the next iteration.
+**Rationale:** Yield statements are not regular dependency-graph participants. They represent the block's output and should only execute after the block's regular work is fully done. The `DependencyGraph.get_ready_statements()` method enforces this by checking that all non-yield statement IDs are in the completed set before including any yield in the ready list.
 
 **Effect on step counts:** The total number of steps in a workflow grows over iterations as yield steps are created. For example, a workflow with 8 total steps may have only 6 steps after iteration 0, with the remaining 2 yield steps created in later iterations.
 

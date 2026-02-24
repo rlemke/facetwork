@@ -1,5 +1,19 @@
 # Implementation Changelog
 
+## Completed (v0.12.83) - Defer yield step creation until all non-yield statements are terminal
+
+### Yield deferral in DependencyGraph
+Previously, `DependencyGraph.get_ready_statements()` treated yields as regular dependency-graph participants — a yield was created as soon as its explicit dependencies were satisfied, even if other non-yield statements in the block were still running. Now yields are deferred until **all** non-yield statements in the block are terminal (complete or error).
+
+- **`afl/runtime/dependency.py`**: `get_ready_statements()` computes `non_yield_ids` and checks `non_yield_ids.issubset(completed)` before including any yield in the ready list
+- **`spec/30_runtime.md`**: updated §11.1 "Lazy Yield Creation" to reflect the new semantics
+- **`tests/runtime/test_dependency.py`**: 2 new tests in `TestYieldDeferral` — `test_yield_deferred_until_all_non_yields_complete` (yield with explicit dep on s1 waits for s2 too) and `test_yield_no_deps_still_deferred` (yield with zero deps still waits)
+
+### Details
+- Single-point fix: both `BlockExecutionBeginHandler` and `BlockExecutionContinueHandler` call `get_ready_statements()`, so both paths are covered
+- No impact on existing tests — in all existing examples, yields transitively depend on all non-yield statements in their block
+- 3 files changed; test suite: 2491 passed, 79 skipped; total collected 2570
+
 ## Completed (v0.12.82) - Completion step_log for OSM handler extractors/filters/stats
 
 ### Completion logging across 8 handler files
