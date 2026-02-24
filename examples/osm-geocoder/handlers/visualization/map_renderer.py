@@ -17,7 +17,7 @@ from typing import Any
 
 from afl.runtime.storage import get_storage_backend, localize
 
-from ..shared._output import uri_stem
+from ..shared._output import resolve_local_output_dir, uri_stem
 
 log = logging.getLogger(__name__)
 
@@ -204,7 +204,7 @@ def render_map_html(
     local_geojson = localize(geojson_path_str)
     if output_path is None:
         output_path = os.path.join(
-            os.path.dirname(local_geojson),
+            resolve_local_output_dir("maps"),
             uri_stem(geojson_path_str) + ".html",
         )
     output_path = str(output_path)
@@ -329,7 +329,7 @@ def render_map_png(
     local_geojson = localize(geojson_path_str)
     if output_path is None:
         output_path = os.path.join(
-            os.path.dirname(local_geojson),
+            resolve_local_output_dir("maps"),
             uri_stem(geojson_path_str) + ".png",
         )
     output_path = str(output_path)
@@ -448,9 +448,8 @@ def render_layers(
 
     # Determine output path
     if output_path is None:
-        first_local = localize(str(layer_paths[0]))
         output_path = os.path.join(
-            os.path.dirname(first_local),
+            resolve_local_output_dir("maps"),
             uri_stem(str(layer_paths[0])) + "_layers.html",
         )
     output_path = str(output_path)

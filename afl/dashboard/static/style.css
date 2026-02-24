@@ -324,3 +324,24 @@ table tbody tr.state-bg-other { background-color: #f5f5f5 !important; }
 .step-tree-container summary.state-bg-running { background-color: #e3f2fd; }
 .step-tree-container summary.state-bg-continue { background-color: #fff8e1; }
 .step-tree-container summary.state-bg-other { background-color: #f5f5f5; }
+
+/* Output file browser */
+.output-breadcrumbs { margin-bottom: 1rem; font-size: 0.95em; }
+.output-breadcrumbs a { text-decoration: none; color: var(--primary); }
+.output-breadcrumbs a:hover { text-decoration: underline; }
+.output-breadcrumb-sep { margin: 0 0.3em; color: var(--muted-color, #6c757d); }
+.output-breadcrumb-current { font-weight: 600; }
+.output-table { font-size: 0.9em; }
+.output-icon { margin-right: 0.3em; }
+.output-meta { color: var(--muted-color, #6c757d); white-space: nowrap; }
+.output-actions { text-align: right; }
+.btn-view {
+    display: inline-block;
+    padding: 0.15em 0.6em;
+    font-size: 0.85em;
+    border: 1px solid var(--primary);
+    border-radius: 4px;
+    color: var(--primary);
+    text-decoration: none;
+}
+.btn-view:hover { background: var(--primary); color: #fff; }

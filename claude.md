@@ -60,8 +60,9 @@ pytest examples/osm-geocoder/tests/ -v               # single example
 afl input.afl -o output.json       # compile
 afl input.afl --check              # syntax check only
 
-# Services
+# Services (--log-format json|text; default: json for Splunk)
 python -m afl.dashboard             # web UI (port 8080)
+python -m afl.dashboard --log-format text  # plain-text logs
 python -m afl.runtime.runner        # runner service
 python -m afl.mcp                   # MCP server (stdio)
 ```

@@ -34,6 +34,9 @@ services:
     environment:
       - AFL_MONGODB_URL=mongodb://mongodb:27017
       - AFL_MONGODB_DATABASE=afl
+      - AFL_LOCAL_OUTPUT_DIR=${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
+    volumes:
+      - ${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:/Volumes/afl_data/output:ro
     depends_on:
       mongodb:
         condition: service_healthy
@@ -54,6 +57,9 @@ services:
       - AFL_OSM_OUTPUT_BASE=${AFL_OSM_OUTPUT_BASE:-}
       - AFL_CACHE_DIR=${AFL_CACHE_DIR:-}
       - AFL_GEOFABRIK_MIRROR=${AFL_GEOFABRIK_MIRROR:-}
+      - AFL_LOCAL_OUTPUT_DIR=${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
+    volumes:
+      - ${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:/Volumes/afl_data/output
     depends_on:
       mongodb:
         condition: service_healthy
@@ -100,8 +106,10 @@ services:
       - AFL_OSM_OUTPUT_BASE=${AFL_OSM_OUTPUT_BASE:-}
       - AFL_CACHE_DIR=${AFL_CACHE_DIR:-}
       - AFL_GEOFABRIK_MIRROR=${AFL_GEOFABRIK_MIRROR:-}
+      - AFL_LOCAL_OUTPUT_DIR=${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
     volumes:
       - ${GRAPHHOPPER_DATA_DIR:-graphhopper_data}:/data/graphhopper
+      - ${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:/Volumes/afl_data/output
     depends_on:
       mongodb:
         condition: service_healthy
@@ -118,6 +126,9 @@ services:
       - AFL_OSM_OUTPUT_BASE=${AFL_OSM_OUTPUT_BASE:-}
       - AFL_CACHE_DIR=${AFL_CACHE_DIR:-}
       - AFL_GEOFABRIK_MIRROR=${AFL_GEOFABRIK_MIRROR:-}
+      - AFL_LOCAL_OUTPUT_DIR=${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
+    volumes:
+      - ${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:/Volumes/afl_data/output
     depends_on:
       mongodb:
         condition: service_healthy

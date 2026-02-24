@@ -16,15 +16,33 @@ from afl.runtime.storage import get_storage_backend
 _OUTPUT_BASE = os.environ.get("AFL_OSM_OUTPUT_BASE", "")
 
 
-def resolve_output_dir(category: str, default_local: str = "/tmp") -> str:
+def resolve_output_dir(category: str, default_local: str = "") -> str:
     """Return output directory for a handler category.
 
     When AFL_OSM_OUTPUT_BASE is set (e.g. hdfs://namenode:8020/osm-output),
-    returns '{base}/{category}'. Otherwise returns '{default_local}/{category}'.
+    returns '{base}/{category}'. Otherwise falls back to *default_local*,
+    then AFL_LOCAL_OUTPUT_DIR, then ``/tmp``.
     """
     if _OUTPUT_BASE:
         return f"{_OUTPUT_BASE.rstrip('/')}/{category}"
-    return f"{default_local}/{category}"
+    base = default_local or os.environ.get("AFL_LOCAL_OUTPUT_DIR", "/tmp")
+    return f"{base}/{category}"
+
+
+def resolve_local_output_dir(*parts: str) -> str:
+    """Return local output directory under AFL_LOCAL_OUTPUT_DIR.
+
+    Joins *parts* as subdirectories.  Creates the directory if it doesn't exist.
+
+    Example::
+
+        resolve_local_output_dir("maps", "alabama")
+        # -> "/Volumes/afl_data/output/maps/alabama"
+    """
+    base = os.environ.get("AFL_LOCAL_OUTPUT_DIR", "/Volumes/afl_data/output")
+    path = os.path.join(base, *parts)
+    Path(path).mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def open_output(path: str, mode: str = "w") -> IO:

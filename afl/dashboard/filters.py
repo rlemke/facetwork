@@ -190,6 +190,27 @@ def namespace_of_filter(name: str) -> str:
     return extract_namespace(name)
 
 
+def filesizeformat(value: int | float) -> str:
+    """Format byte count as human-readable size (B/KB/MB/GB)."""
+    value = float(value)
+    if value < 1024:
+        return f"{int(value)} B"
+    elif value < 1024 * 1024:
+        return f"{value / 1024:.1f} KB"
+    elif value < 1024 * 1024 * 1024:
+        return f"{value / (1024 * 1024):.1f} MB"
+    else:
+        return f"{value / (1024 * 1024 * 1024):.1f} GB"
+
+
+def file_timestamp(value: float) -> str:
+    """Format a file mtime as ``YYYY-MM-DD HH:MM:SS``."""
+    if not value:
+        return "---"
+    dt = datetime.datetime.fromtimestamp(value, tz=datetime.UTC)
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def register_filters(env: Environment) -> None:
     """Register all custom filters on a Jinja2 environment."""
     env.filters["timestamp"] = timestamp_fmt
@@ -205,3 +226,5 @@ def register_filters(env: Environment) -> None:
     env.filters["short_workflow_name"] = short_workflow_name_filter
     env.filters["step_category"] = step_category_filter
     env.filters["namespace_of"] = namespace_of_filter
+    env.filters["filesizeformat"] = filesizeformat
+    env.filters["file_timestamp"] = file_timestamp
