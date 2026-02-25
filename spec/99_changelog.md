@@ -1,5 +1,32 @@
 # Implementation Changelog
 
+## Completed (v0.12.91) - Fix census download URLs and add error step_logs
+
+Census workflow downloads were failing because ACS used non-existent bulk ZIP URLs and TIGER COUNTY used per-state files instead of the national file. ACS now uses the Census Bureau REST API (`api.census.gov`) which returns JSON converted to CSV. TIGER COUNTY downloads `tl_{year}_us_county.zip` (national). All four handler modules now report errors via `step_log` before re-raising.
+
+### Downloader changes (`handlers/shared/downloader.py`)
+- **ACS**: Replaced `ACS_BASE` (www2.census.gov ZIP) with `CENSUS_API_BASE` (api.census.gov REST). New `_download_acs_api()` fetches JSON, writes CSV with GEOID/NAME/data columns. Cached by `acs_{year}_{fips}.csv`.
+- **TIGER COUNTY**: Added `_TIGER_NATIONAL_GEO = {"COUNTY"}` set. `download_tiger()` builds `tl_{year}_us_county.zip` for COUNTY, per-state for TRACT/BG/PLACE.
+- Fixed `timezone.utc` → `UTC` (ruff UP017)
+
+### Extractor changes (`handlers/acs/acs_extractor.py`)
+- `extract_acs_table()` parameter renamed `zip_path` → `csv_path`; reads plain CSV via `csv.DictReader` instead of `zipfile.ZipFile`
+- Removed `io`, `zipfile` imports
+- Fixed `timezone.utc` → `UTC`
+
+### Handler error reporting (4 files)
+- **`download_handlers.py`**: try/except in `handle_download_acs`, `handle_download_tiger`
+- **`acs_handlers.py`**: try/except in `_make_acs_handler` closure; updated `zip_path` → `csv_path` call
+- **`tiger_handlers.py`**: try/except in `_make_tiger_handler` closure
+- **`summary_handlers.py`**: try/except in `handle_join_geo`, `handle_summarize_state`
+- Pattern: `step_log(f"HandlerName: {exc}", level="error")` then `raise`
+
+### TIGER extractor (`handlers/tiger/tiger_extractor.py`)
+- Fixed `timezone.utc` → `UTC`
+
+### Details
+- 8 files changed (7 source, 1 test); 13 new tests (ACS CSV extraction, state FIPS filtering, COUNTY national URL pattern, TRACT per-state URL, Census API base, error step_log for download/ACS/TIGER/summary handlers); test suite: 2585 passed, 79 skipped
+
 ## Completed (v0.12.90) - Snapshot compiled AST into RunnerDefinition
 
 Running workflows now capture `compiled_ast` (full program AST) and `workflow_ast` (specific workflow node) at start time, making them self-contained and immune to flow changes during execution. On resume, the runtime prefers the runner-snapshotted ASTs, eliminating the `workflow → flow → compiled_ast` DB lookup chain. Old runners without these fields fall back to the existing flow lookup for backward compatibility.
