@@ -18,6 +18,13 @@ TIGER ZIPs contain shapefiles (.shp, .dbf, .shx), not .geojson files. When fiona
 - New `TestTIGERExtractor` class with 5 tests: pyshp extraction, STATEFP filtering, ALAND numeric preservation, no-readers graceful zero, null geometry skip
 - Helper `_make_tiger_zip()` creates minimal shapefile ZIPs using pyshp Writer for test fixtures
 
+### E2E verification (`census.workflows.AnalyzeState`, Alabama)
+- 11 event tasks completed in 6.6s via local AgentPoller
+- **ExtractCounties**: 67 features (all Alabama counties) — pyshp read `tl_2024_us_county.zip` directly, previously returned 0
+- **ACS extractors**: 67 records each for Population (B01003), Income (B19013), Housing (B25001), Education (B15003), Commuting (B08301)
+- **JoinGeo**: 67 joined records with population density computed from ALAND
+- **SummarizeState**: 5 tables joined, 335 total records
+
 ### Details
 - 3 files changed; 5 new tests; test suite: 2590 passed, 79 skipped
 
