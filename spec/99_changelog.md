@@ -42,6 +42,15 @@ New ingestion pipeline that reads upstream handler output files (GeoJSON, CSV, J
 ### Compiled output
 - `census-us.json` recompiled with all ingestion declarations
 
+### E2E verification (`census.workflows.AnalyzeStateWithDB`, Alabama)
+- 21 steps, 19 event tasks — all completed in 9.6s
+- **DownloadACS/DownloadTIGER**: cached, <3ms each
+- **ACS extractors**: 67 records each for Population (B01003), Income (B19013), Housing (B25001), Education (B15003), Commuting (B08301)
+- **ExtractCounties**: 67 features (pyshp, 3.5s)
+- **JoinGeo**: 67 features joined on GEOID (344ms)
+- **SummarizeState**: 5 tables, 335 records
+- **Ingestion (8 ToDB steps)**: PopulationToDB 67, IncomeToDB 67, HousingToDB 67, EducationToDB 67, CommutingToDB 67, CountiesToDB 67 county features, JoinedToDB 67 joined features, SummaryToDB 1 summary — 470 total documents ingested into MongoDB
+
 ### Details
 - 9 files changed (5 new, 3 modified, 1 recompiled); 18 new tests; test suite: 2608 passed, 79 skipped
 
