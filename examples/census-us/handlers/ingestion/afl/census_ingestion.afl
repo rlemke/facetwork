@@ -1,0 +1,26 @@
+namespace census.Ingestion {
+    use census.types
+
+    schema IngestionResult {
+        dataset_key: String,
+        record_count: Long,
+        data_type: String,
+        imported_at: String
+    }
+
+    event facet PopulationToDB(result: ACSResult, state_fips: String) => (ingestion: IngestionResult)
+
+    event facet IncomeToDB(result: ACSResult, state_fips: String) => (ingestion: IngestionResult)
+
+    event facet HousingToDB(result: ACSResult, state_fips: String) => (ingestion: IngestionResult)
+
+    event facet EducationToDB(result: ACSResult, state_fips: String) => (ingestion: IngestionResult)
+
+    event facet CommutingToDB(result: ACSResult, state_fips: String) => (ingestion: IngestionResult)
+
+    event facet CountiesToDB(result: TIGERResult, state_fips: String) => (ingestion: IngestionResult)
+
+    event facet JoinedToDB(result: CensusSummary, state_fips: String) => (ingestion: IngestionResult)
+
+    event facet SummaryToDB(result: CensusSummary, state_fips: String) => (ingestion: IngestionResult)
+}

@@ -4,6 +4,7 @@ namespace census.workflows {
     use census.ACS
     use census.TIGER
     use census.Summary
+    use census.Ingestion
 
     workflow AnalyzeState(state_fips: String = "01", state_name: String = "Alabama") => (summary: CensusSummary) andThen {
         acs = DownloadACS(state_fips = $.state_fips)
@@ -17,6 +18,28 @@ namespace census.workflows {
         joined = JoinGeo(acs_path = pop.result.output_path, tiger_path = counties.result.output_path)
         summary = SummarizeState(population = pop.result, income = income.result, housing = housing.result, education = education.result, commuting = commuting.result)
         yield AnalyzeState(summary = summary.result)
+    }
+
+    workflow AnalyzeStateWithDB(state_fips: String = "01", state_name: String = "Alabama") => (summary: CensusSummary) andThen {
+        acs = DownloadACS(state_fips = $.state_fips)
+        tiger = DownloadTIGER(state_fips = $.state_fips, geo_level = "COUNTY")
+        pop = ExtractPopulation(file = acs.file, state_fips = $.state_fips)
+        income = ExtractIncome(file = acs.file, state_fips = $.state_fips)
+        housing = ExtractHousing(file = acs.file, state_fips = $.state_fips)
+        education = ExtractEducation(file = acs.file, state_fips = $.state_fips)
+        commuting = ExtractCommuting(file = acs.file, state_fips = $.state_fips)
+        counties = ExtractCounties(file = tiger.file, state_fips = $.state_fips)
+        joined = JoinGeo(acs_path = pop.result.output_path, tiger_path = counties.result.output_path)
+        summary = SummarizeState(population = pop.result, income = income.result, housing = housing.result, education = education.result, commuting = commuting.result)
+        pop_db = PopulationToDB(result = pop.result, state_fips = $.state_fips)
+        income_db = IncomeToDB(result = income.result, state_fips = $.state_fips)
+        housing_db = HousingToDB(result = housing.result, state_fips = $.state_fips)
+        education_db = EducationToDB(result = education.result, state_fips = $.state_fips)
+        commuting_db = CommutingToDB(result = commuting.result, state_fips = $.state_fips)
+        counties_db = CountiesToDB(result = counties.result, state_fips = $.state_fips)
+        joined_db = JoinedToDB(result = joined.result, state_fips = $.state_fips)
+        summary_db = SummaryToDB(result = summary.result, state_fips = $.state_fips)
+        yield AnalyzeStateWithDB(summary = summary.result)
     }
 
     workflow AnalyzeStates_03() => (states_completed: Long) andThen {

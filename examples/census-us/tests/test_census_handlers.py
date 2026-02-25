@@ -671,11 +671,11 @@ class TestInitRegistryHandlers:
         mod = _census_import("__init__")
         runner = MagicMock()
         mod.register_all_registry_handlers(runner)
-        # 2 downloads + 5 ACS + 4 TIGER + 2 summary = 13
-        assert runner.register_handler.call_count == 13
+        # 2 downloads + 5 ACS + 4 TIGER + 2 summary + 8 ingestion = 21
+        assert runner.register_handler.call_count == 21
 
     def test_register_all_handlers(self):
         mod = _census_import("__init__")
         poller = MagicMock()
         mod.register_all_handlers(poller)
-        assert poller.register.call_count == 13
+        assert poller.register.call_count == 21
