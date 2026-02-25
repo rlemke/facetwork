@@ -1,5 +1,26 @@
 # Implementation Changelog
 
+## Completed (v0.12.93) - Add pyshp fallback for TIGER shapefile extraction
+
+TIGER ZIPs contain shapefiles (.shp, .dbf, .shx), not .geojson files. When fiona is unavailable, the existing geojson-in-ZIP fallback finds nothing and returns 0 features. Added pyshp (pure-Python, no C deps) as a middle fallback between fiona and the geojson path.
+
+### TIGER extractor (`handlers/tiger/tiger_extractor.py`)
+- Added `import shapefile` cascade with `HAS_PYSHP` flag (mirrors `HAS_FIONA` pattern)
+- New `elif HAS_PYSHP` branch between fiona and geojson-in-ZIP paths
+- Uses `shapefile.Reader(zip_path)` to read shapefiles directly from ZIP archives
+- Filters by `STATEFP` field, skips null geometries defensively
+- Property types preserved correctly — `ALAND` comes as numeric, `join_geo()` does `float(aland)` which handles both
+
+### Dependencies (`requirements.txt`)
+- Added `pyshp>=2.3`
+
+### Tests (`tests/test_census_handlers.py`)
+- New `TestTIGERExtractor` class with 5 tests: pyshp extraction, STATEFP filtering, ALAND numeric preservation, no-readers graceful zero, null geometry skip
+- Helper `_make_tiger_zip()` creates minimal shapefile ZIPs using pyshp Writer for test fixtures
+
+### Details
+- 3 files changed; 5 new tests; test suite: 2590 passed, 79 skipped
+
 ## Completed (v0.12.92) - Harden ACS handler and verify end-to-end census workflow
 
 Investigated the 0-record ACS extraction issue reported during live workflow runs. Root cause: stale agent processes from previous sessions held outdated handler code in memory and raced for census tasks. With a fresh agent, all 5 ACS extractions return 67 records and the full AnalyzeState workflow completes end-to-end (11 tasks: download, extract, join, summarize).
