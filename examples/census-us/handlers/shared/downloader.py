@@ -21,7 +21,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-_CACHE_DIR = os.environ.get("AFL_CENSUS_CACHE_DIR", "/tmp/census-cache")
+_LOCAL_OUTPUT = os.environ.get("AFL_LOCAL_OUTPUT_DIR", "/tmp")
+_CACHE_DIR = os.environ.get("AFL_CENSUS_CACHE_DIR",
+                            os.path.join(_LOCAL_OUTPUT, "census-cache"))
 
 # Per-path locks to prevent duplicate concurrent downloads
 _locks: dict[str, threading.Lock] = {}

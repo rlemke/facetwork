@@ -23,7 +23,9 @@ ACS_TABLES: dict[str, dict[str, str]] = {
     "B08301": {"label": "Means of Transportation", "column": "B08301_001E"},
 }
 
-_OUTPUT_DIR = os.environ.get("AFL_CENSUS_OUTPUT_DIR", "/tmp/census-output")
+_LOCAL_OUTPUT = os.environ.get("AFL_LOCAL_OUTPUT_DIR", "/tmp")
+_OUTPUT_DIR = os.environ.get("AFL_CENSUS_OUTPUT_DIR",
+                             os.path.join(_LOCAL_OUTPUT, "census-output"))
 
 
 @dataclass
