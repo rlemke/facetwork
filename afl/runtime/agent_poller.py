@@ -324,9 +324,18 @@ class AgentPoller:
     def _load_workflow_ast(self, workflow_id: str) -> dict | None:
         """Load a workflow AST from persistence if available.
 
-        Returns None if the persistence store does not support flow lookups.
+        Prefers runner-snapshotted ASTs (self-contained, immune to flow
+        changes) and falls back to the flow lookup for backward compat.
         """
         try:
+            # Prefer runner-snapshotted AST
+            if hasattr(self._persistence, "get_runners_by_workflow"):
+                for r in self._persistence.get_runners_by_workflow(workflow_id):
+                    if r.compiled_ast and r.workflow_ast:
+                        self._program_ast_cache[workflow_id] = r.compiled_ast
+                        return r.workflow_ast
+
+            # Fall back to flow lookup
             if not hasattr(self._persistence, "get_workflow"):
                 return None
 

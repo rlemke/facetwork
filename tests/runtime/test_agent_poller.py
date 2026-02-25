@@ -702,3 +702,64 @@ class TestAgentPollerStepLogs:
         assert handler_logs[0].level == "info"
         assert handler_logs[1].message == "Download complete"
         assert handler_logs[1].level == "success"
+
+
+# =========================================================================
+# TestAgentPollerASTSnapshot
+# =========================================================================
+
+
+class TestAgentPollerASTSnapshot:
+    """Tests for runner-snapshotted AST preference in AgentPoller."""
+
+    def test_load_prefers_runner_ast(self, store, evaluator):
+        """_load_workflow_ast prefers runner-snapshotted AST."""
+        poller = AgentPoller(
+            persistence=store,
+            evaluator=evaluator,
+            config=AgentPollerConfig(),
+        )
+
+        wf = WorkflowDefinition(
+            uuid="wf-snap", name="SnapWF", namespace_id="ns",
+            facet_id="f-1", flow_id="fl-1", starting_step="s-1", version="1.0",
+        )
+        program_dict = {"declarations": [{"type": "WorkflowDecl", "name": "SnapWF"}]}
+        wf_ast = {"type": "WorkflowDecl", "name": "SnapWF"}
+        runner = RunnerDefinition(
+            uuid="r-snap",
+            workflow_id="wf-snap",
+            workflow=wf,
+            state=RunnerState.RUNNING,
+            compiled_ast=program_dict,
+            workflow_ast=wf_ast,
+        )
+        store.save_runner(runner)
+
+        result = poller._load_workflow_ast("wf-snap")
+        assert result == wf_ast
+        assert poller._program_ast_cache["wf-snap"] == program_dict
+
+    def test_load_skips_runner_without_ast(self, store, evaluator):
+        """_load_workflow_ast skips runners with no snapshotted ASTs."""
+        poller = AgentPoller(
+            persistence=store,
+            evaluator=evaluator,
+            config=AgentPollerConfig(),
+        )
+
+        wf = WorkflowDefinition(
+            uuid="wf-noast", name="NoAstWF", namespace_id="ns",
+            facet_id="f-1", flow_id="fl-1", starting_step="s-1", version="1.0",
+        )
+        runner = RunnerDefinition(
+            uuid="r-noast",
+            workflow_id="wf-noast",
+            workflow=wf,
+            state=RunnerState.RUNNING,
+        )
+        store.save_runner(runner)
+
+        # MemoryStore has no get_workflow/get_flow, so fallback returns None
+        result = poller._load_workflow_ast("wf-noast")
+        assert result is None

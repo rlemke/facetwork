@@ -484,6 +484,63 @@ class TestRunnerOperations:
         assert running[0].uuid == "r-1"
 
 
+    def test_runner_compiled_ast_round_trip(self, mongo_store):
+        """Test that compiled_ast and workflow_ast survive runner save/load."""
+        workflow = WorkflowDefinition(
+            uuid="wf-ast-rt",
+            name="AstWorkflow",
+            namespace_id="ns-1",
+            facet_id="f-1",
+            flow_id="flow-1",
+            starting_step="s-1",
+            version="1.0",
+        )
+        program_dict = {
+            "declarations": [
+                {"type": "WorkflowDecl", "name": "AstWorkflow", "params": []}
+            ]
+        }
+        wf_ast = {"type": "WorkflowDecl", "name": "AstWorkflow", "params": []}
+        runner = RunnerDefinition(
+            uuid="r-ast-1",
+            workflow_id="wf-ast-rt",
+            workflow=workflow,
+            state=RunnerState.RUNNING,
+            compiled_ast=program_dict,
+            workflow_ast=wf_ast,
+        )
+        mongo_store.save_runner(runner)
+        retrieved = mongo_store.get_runner("r-ast-1")
+
+        assert retrieved is not None
+        assert retrieved.compiled_ast == program_dict
+        assert retrieved.workflow_ast == wf_ast
+
+    def test_runner_compiled_ast_none_for_legacy(self, mongo_store):
+        """Test that runners without compiled_ast get None (backward compat)."""
+        workflow = WorkflowDefinition(
+            uuid="wf-legacy-r",
+            name="LegacyRunner",
+            namespace_id="ns-1",
+            facet_id="f-1",
+            flow_id="flow-1",
+            starting_step="s-1",
+            version="1.0",
+        )
+        runner = RunnerDefinition(
+            uuid="r-legacy-1",
+            workflow_id="wf-legacy-r",
+            workflow=workflow,
+            state=RunnerState.RUNNING,
+        )
+        mongo_store.save_runner(runner)
+        retrieved = mongo_store.get_runner("r-legacy-1")
+
+        assert retrieved is not None
+        assert retrieved.compiled_ast is None
+        assert retrieved.workflow_ast is None
+
+
 class TestTaskOperations:
     """Tests for task persistence operations."""
 

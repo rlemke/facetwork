@@ -1988,6 +1988,138 @@ workflow TaskWF(x: Long) => (result: Long) andThen {
 
 
 # =========================================================================
+# TestRunnerASTSnapshot
+# =========================================================================
+
+
+class TestRunnerASTSnapshot:
+    """Tests for runner-snapshotted compiled_ast / workflow_ast."""
+
+    def test_runner_definition_defaults_none(self):
+        """New RunnerDefinition fields default to None."""
+        from afl.runtime.entities import RunnerDefinition, WorkflowDefinition
+
+        wf = WorkflowDefinition(
+            uuid="wf-1", name="W", namespace_id="ns",
+            facet_id="f-1", flow_id="fl-1", starting_step="s-1", version="1.0",
+        )
+        runner = RunnerDefinition(uuid="r-1", workflow_id="wf-1", workflow=wf)
+        assert runner.compiled_ast is None
+        assert runner.workflow_ast is None
+
+    def test_execute_snapshots_ast_into_runner(self, evaluator, config):
+        """afl:execute handler snapshots compiled_ast and workflow_ast into runner."""
+        import json
+
+        from afl.emitter import JSONEmitter
+        from afl.parser import AFLParser
+        from afl.runtime.entities import RunnerState
+
+        mock_store = MagicMock()
+
+        afl_source = """
+facet Compute(input: Long)
+
+workflow SnapshotWF(x: Long) => (result: Long) andThen {
+    s1 = Compute(input = $.x)
+    yield SnapshotWF(result = s1.input)
+}
+"""
+        parser = AFLParser()
+        ast = parser.parse(afl_source)
+        emitter_obj = JSONEmitter(include_locations=False)
+        program_dict = json.loads(emitter_obj.emit(ast))
+
+        mock_flow = MagicMock()
+        mock_flow.compiled_ast = program_dict
+        mock_flow.compiled_sources = []
+        mock_store.get_flow.return_value = mock_flow
+
+        mock_runner = MagicMock()
+        mock_runner.state = RunnerState.CREATED
+        mock_runner.start_time = 0
+        mock_runner.end_time = 0
+        mock_runner.duration = 0
+        mock_store.get_runner.return_value = mock_runner
+
+        real_store = MemoryStore()
+        real_evaluator = Evaluator(persistence=real_store, telemetry=Telemetry(enabled=False))
+
+        registry = ToolRegistry()
+        svc = RunnerService(mock_store, real_evaluator, config, registry)
+
+        payload = {
+            "flow_id": "f-1",
+            "workflow_name": "SnapshotWF",
+            "inputs": {"x": 10},
+            "runner_id": "r-1",
+        }
+        svc._handle_execute_workflow(payload)
+
+        # Runner should have snapshotted ASTs
+        assert mock_runner.compiled_ast == program_dict
+        assert mock_runner.workflow_ast is not None
+        assert mock_runner.workflow_ast["name"] == "SnapshotWF"
+
+    def test_resume_prefers_runner_ast_over_flow(self, config):
+        """_load_workflow_ast prefers runner-snapshotted AST over flow lookup."""
+        from afl.runtime.entities import RunnerDefinition, RunnerState, WorkflowDefinition
+
+        store = MemoryStore()
+        evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
+        registry = ToolRegistry()
+        svc = RunnerService(store, evaluator, config, registry)
+
+        # Create a runner with snapshotted ASTs
+        wf = WorkflowDefinition(
+            uuid="wf-snap", name="SnapWF", namespace_id="ns",
+            facet_id="f-1", flow_id="fl-1", starting_step="s-1", version="1.0",
+        )
+        program_dict = {"declarations": [{"type": "WorkflowDecl", "name": "SnapWF"}]}
+        wf_ast = {"type": "WorkflowDecl", "name": "SnapWF"}
+        runner = RunnerDefinition(
+            uuid="r-snap",
+            workflow_id="wf-snap",
+            workflow=wf,
+            state=RunnerState.RUNNING,
+            compiled_ast=program_dict,
+            workflow_ast=wf_ast,
+        )
+        store.save_runner(runner)
+
+        # _load_workflow_ast should find it from the runner
+        result = svc._load_workflow_ast("wf-snap")
+        assert result == wf_ast
+        assert svc._program_ast_cache["wf-snap"] == program_dict
+
+    def test_resume_falls_back_without_runner_ast(self, config):
+        """_load_workflow_ast falls back to flow when runner has no ASTs."""
+        from afl.runtime.entities import RunnerDefinition, RunnerState, WorkflowDefinition
+
+        store = MemoryStore()
+        evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
+        registry = ToolRegistry()
+        svc = RunnerService(store, evaluator, config, registry)
+
+        # Create a runner WITHOUT snapshotted ASTs (legacy)
+        wf = WorkflowDefinition(
+            uuid="wf-legacy", name="LegacyWF", namespace_id="ns",
+            facet_id="f-1", flow_id="fl-1", starting_step="s-1", version="1.0",
+        )
+        runner = RunnerDefinition(
+            uuid="r-legacy",
+            workflow_id="wf-legacy",
+            workflow=wf,
+            state=RunnerState.RUNNING,
+        )
+        store.save_runner(runner)
+
+        # MemoryStore has no get_workflow/get_flow, so fallback returns None
+        result = svc._load_workflow_ast("wf-legacy")
+        assert result is None
+
+
+# =========================================================================
 # TestHTTPStatusServer
 # =========================================================================
 

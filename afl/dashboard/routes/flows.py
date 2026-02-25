@@ -290,8 +290,10 @@ def flow_run_execute(
             {"flow": flow, "workflows": [], "runners": []},
         )
 
-    # Extract defaults from compiled AST
+    # Extract defaults from compiled AST and capture for runner snapshot
     inputs: dict = {}
+    program_dict: dict | None = None
+    wf_ast: dict | None = None
     if flow.compiled_ast or flow.compiled_sources:
         try:
             if flow.compiled_ast:
@@ -333,6 +335,8 @@ def flow_run_execute(
         workflow_id=workflow_id,
         workflow=workflow_def,
         state=RunnerState.CREATED,
+        compiled_ast=program_dict,
+        workflow_ast=wf_ast,
     )
     store.save_runner(runner)
 

@@ -292,6 +292,25 @@ class TestFlowRunExecute:
         assert tasks[0].data["inputs"]["x"] == 42
         assert tasks[0].data["inputs"]["name"] == "hello"
 
+    def test_runner_has_snapshotted_asts(self, client):
+        """Runner created by flow_run_execute has compiled_ast and workflow_ast."""
+        tc, store = client
+        flow, wf = _seed_flow(store)
+        resp = tc.post(
+            f"/flows/{flow.uuid}/run/{wf.uuid}",
+            data={"inputs_json": "{}"},
+            follow_redirects=False,
+        )
+        location = resp.headers["location"]
+        runner_id = location.split("/runners/")[1]
+        runner = store.get_runner(runner_id)
+        assert runner is not None
+        assert runner.compiled_ast is not None
+        assert isinstance(runner.compiled_ast, dict)
+        assert "declarations" in runner.compiled_ast
+        assert runner.workflow_ast is not None
+        assert runner.workflow_ast["name"] == "SimpleWF"
+
     def test_missing_flow_returns_gracefully(self, client):
         tc, store = client
         resp = tc.post(

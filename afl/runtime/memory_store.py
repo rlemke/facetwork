@@ -269,6 +269,10 @@ class MemoryStore(PersistenceAPI):
         """Get runners by state."""
         return [r for r in self._runners.values() if r.state == state]
 
+    def get_runners_by_workflow(self, workflow_id: str) -> Sequence["RunnerDefinition"]:
+        """Get all runners for a workflow."""
+        return [r for r in self._runners.values() if r.workflow_id == workflow_id]
+
     # =========================================================================
     # Task Operations
     # =========================================================================

@@ -349,6 +349,8 @@ def workflow_run(
         workflow_id=wf_id,
         workflow=workflow,
         state=RunnerState.CREATED,
+        compiled_ast=program_dict,
+        workflow_ast=wf_ast,
     )
     store.save_runner(runner)
 

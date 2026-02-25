@@ -959,6 +959,8 @@ class MongoStore(PersistenceAPI):
             "duration": runner.duration,
             "retain": runner.retain,
             "state": runner.state,
+            "compiled_ast": runner.compiled_ast,
+            "workflow_ast": runner.workflow_ast,
         }
 
     def _doc_to_runner(self, doc: dict) -> RunnerDefinition:
@@ -982,6 +984,8 @@ class MongoStore(PersistenceAPI):
             duration=doc.get("duration", 0),
             retain=doc.get("retain", 0),
             state=doc.get("state", "created"),
+            compiled_ast=doc.get("compiled_ast"),
+            workflow_ast=doc.get("workflow_ast"),
         )
 
     def _workflow_to_doc(self, workflow: WorkflowDefinition) -> dict:

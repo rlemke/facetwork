@@ -823,6 +823,11 @@ class RunnerService:
             self._ast_cache[result.workflow_id] = workflow_ast
             self._program_ast_cache[result.workflow_id] = program_dict
 
+            # Snapshot ASTs into runner for self-contained resume
+            if runner:
+                runner.compiled_ast = program_dict
+                runner.workflow_ast = workflow_ast
+
             # Update runner with evaluator's workflow_id so dashboard can find steps
             if runner:
                 runner.workflow_id = result.workflow_id
@@ -889,11 +894,18 @@ class RunnerService:
     def _load_workflow_ast(self, workflow_id: str) -> dict | None:
         """Attempt to load the workflow AST from persistence.
 
-        This requires the MongoStore with flow/workflow lookups.
-        Returns None if not available.
+        Prefers runner-snapshotted ASTs (self-contained, immune to flow
+        changes) and falls back to the flow lookup for backward compat.
         """
         try:
-            # Try to use store methods if they exist
+            # Prefer runner-snapshotted AST
+            if hasattr(self._persistence, "get_runners_by_workflow"):
+                for r in self._persistence.get_runners_by_workflow(workflow_id):
+                    if r.compiled_ast and r.workflow_ast:
+                        self._program_ast_cache[workflow_id] = r.compiled_ast
+                        return r.workflow_ast
+
+            # Fall back to flow lookup
             if not hasattr(self._persistence, "get_workflow"):
                 return None
 

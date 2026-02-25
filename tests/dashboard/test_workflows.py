@@ -424,6 +424,27 @@ class TestWorkflowRun:
         assert tasks[0].name == "afl:execute"
         assert tasks[0].data["workflow_name"] == "SimpleWF"
 
+    def test_run_runner_has_snapshotted_asts(self, client):
+        """Runner created by workflow_run has compiled_ast and workflow_ast."""
+        tc, store = client
+        resp = tc.post(
+            "/workflows/run",
+            data={
+                "source": VALID_AFL_SOURCE,
+                "workflow_name": "SimpleWF",
+            },
+            follow_redirects=False,
+        )
+        location = resp.headers["location"]
+        runner_id = location.split("/runners/")[1]
+        runner = store.get_runner(runner_id)
+        assert runner is not None
+        assert runner.compiled_ast is not None
+        assert isinstance(runner.compiled_ast, dict)
+        assert "declarations" in runner.compiled_ast
+        assert runner.workflow_ast is not None
+        assert runner.workflow_ast["name"] == "SimpleWF"
+
 
 class TestNavLink:
     """Tests for the navigation link."""

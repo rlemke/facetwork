@@ -305,6 +305,8 @@ class RunnerDefinition:
     duration: int = 0  # Total execution duration (ms)
     retain: int = 0  # Retention period (ms)
     state: str = RunnerState.CREATED
+    compiled_ast: dict | None = None  # Snapshotted program AST at workflow start
+    workflow_ast: dict | None = None  # Snapshotted workflow node AST at workflow start
 
 
 # =============================================================================
