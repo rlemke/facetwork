@@ -125,4 +125,4 @@ Copy `.env.example` to `.env` and edit to configure MongoDB, scaling, overlays, 
 - `spec/70_examples.md` — iteration traces for Examples 2, 3, 4
 - `spec/80_acceptance_tests.md` — test requirements
 - `spec/90_nonfunctional.md` — dependencies, build/run reference, Docker, configuration
-- `spec/99_changelog.md` — implementation changelog (v0.1.0 through v0.12.91)
+- `spec/99_changelog.md` — implementation changelog (v0.1.0 through v0.12.92)

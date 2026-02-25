@@ -1,5 +1,19 @@
 # Implementation Changelog
 
+## Completed (v0.12.92) - Harden ACS handler and verify end-to-end census workflow
+
+Investigated the 0-record ACS extraction issue reported during live workflow runs. Root cause: stale agent processes from previous sessions held outdated handler code in memory and raced for census tasks. With a fresh agent, all 5 ACS extractions return 67 records and the full AnalyzeState workflow completes end-to-end (11 tasks: download, extract, join, summarize).
+
+### Handler hardening (`handlers/acs/acs_handlers.py`)
+- Added `isinstance(file_info, dict)` type guard on `csv_path` extraction — prevents `AttributeError` if `file` param is not a dict
+- Added `output=` path to success `step_log` for easier debugging
+
+### CLAUDE.md
+- Bumped changelog reference from v0.12.90 to v0.12.91 (missed in prior commit)
+
+### Details
+- 2 files changed; no new tests; test suite: 2585 passed, 79 skipped
+
 ## Completed (v0.12.91) - Fix census download URLs and add error step_logs
 
 Census workflow downloads were failing because ACS used non-existent bulk ZIP URLs and TIGER COUNTY used per-state files instead of the national file. ACS now uses the Census Bureau REST API (`api.census.gov`) which returns JSON converted to CSV. TIGER COUNTY downloads `tl_{year}_us_county.zip` (national). All four handler modules now report errors via `step_log` before re-raising.
