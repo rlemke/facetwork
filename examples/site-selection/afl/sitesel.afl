@@ -1,0 +1,91 @@
+namespace sitesel.types {
+    schema ACSFile {
+        path: String,
+        state_fips: String,
+        wasInCache: Boolean
+    }
+    schema TIGERFile {
+        path: String,
+        state_fips: String,
+        geo_level: String,
+        wasInCache: Boolean
+    }
+    schema PBFFile {
+        path: String,
+        region: String,
+        wasInCache: Boolean
+    }
+    schema DemographicsResult {
+        output_path: String,
+        feature_count: Long,
+        state_fips: String
+    }
+    schema RestaurantResult {
+        output_path: String,
+        restaurant_count: Long,
+        region: String
+    }
+    schema ScoredResult {
+        output_path: String,
+        county_count: Long,
+        top_county: String,
+        top_score: Double
+    }
+    schema ExportResult {
+        output_path: String,
+        format: String
+    }
+}
+
+namespace sitesel.Downloads {
+    use sitesel.types
+
+    event facet DownloadACS(state_fips: String = "01") => (file: ACSFile)
+    event facet DownloadTIGER(state_fips: String = "01", geo_level: String = "COUNTY") => (file: TIGERFile)
+    event facet DownloadPBF(region: String = "alabama") => (file: PBFFile)
+}
+
+namespace sitesel.Extract {
+    use sitesel.types
+
+    event facet JoinDemographics(acs_path: String, tiger_path: String, state_fips: String) => (result: DemographicsResult)
+    event facet ExtractRestaurants(pbf_path: String, region: String) => (result: RestaurantResult)
+}
+
+namespace sitesel.Scoring {
+    use sitesel.types
+
+    event facet ScoreCounties(demographics_path: String, restaurants_path: String, state_fips: String) => (result: ScoredResult)
+}
+
+namespace sitesel.Output {
+    use sitesel.types
+
+    event facet ExportScored(scored_path: String, state_fips: String) => (result: ExportResult)
+}
+
+namespace sitesel.workflows {
+    use sitesel.types
+    use sitesel.Downloads
+    use sitesel.Extract
+    use sitesel.Scoring
+    use sitesel.Output
+
+    workflow AnalyzeSite(state_fips: String = "01", state_name: String = "Alabama", region: String = "alabama") => (result: ScoredResult) andThen {
+        acs = DownloadACS(state_fips = $.state_fips)
+        tiger = DownloadTIGER(state_fips = $.state_fips, geo_level = "COUNTY")
+        pbf = DownloadPBF(region = $.region)
+        demographics = JoinDemographics(acs_path = acs.file.path, tiger_path = tiger.file.path, state_fips = $.state_fips)
+        restaurants = ExtractRestaurants(pbf_path = pbf.file.path, region = $.region)
+        scored = ScoreCounties(demographics_path = demographics.result.output_path, restaurants_path = restaurants.result.output_path, state_fips = $.state_fips)
+        exported = ExportScored(scored_path = scored.result.output_path, state_fips = $.state_fips)
+        yield AnalyzeSite(result = scored.result)
+    }
+
+    workflow AnalyzeSites_03() => (states_completed: Long) andThen {
+        alabama = AnalyzeSite(state_fips = "01", state_name = "Alabama", region = "alabama")
+        alaska = AnalyzeSite(state_fips = "02", state_name = "Alaska", region = "alaska")
+        arizona = AnalyzeSite(state_fips = "04", state_name = "Arizona", region = "arizona")
+        yield AnalyzeSites_03(states_completed = 3)
+    }
+}

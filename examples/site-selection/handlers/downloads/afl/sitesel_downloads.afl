@@ -1,0 +1,26 @@
+namespace sitesel.types {
+    schema ACSFile {
+        path: String,
+        state_fips: String,
+        wasInCache: Boolean
+    }
+    schema TIGERFile {
+        path: String,
+        state_fips: String,
+        geo_level: String,
+        wasInCache: Boolean
+    }
+    schema PBFFile {
+        path: String,
+        region: String,
+        wasInCache: Boolean
+    }
+}
+
+namespace sitesel.Downloads {
+    use sitesel.types
+
+    event facet DownloadACS(state_fips: String = "01") => (file: ACSFile)
+    event facet DownloadTIGER(state_fips: String = "01", geo_level: String = "COUNTY") => (file: TIGERFile)
+    event facet DownloadPBF(region: String = "alabama") => (file: PBFFile)
+}

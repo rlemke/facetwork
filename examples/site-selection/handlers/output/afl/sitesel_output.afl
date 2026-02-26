@@ -1,0 +1,12 @@
+namespace sitesel.types {
+    schema ExportResult {
+        output_path: String,
+        format: String
+    }
+}
+
+namespace sitesel.Output {
+    use sitesel.types
+
+    event facet ExportScored(scored_path: String, state_fips: String) => (result: ExportResult)
+}

@@ -1,0 +1,19 @@
+namespace sitesel.types {
+    schema DemographicsResult {
+        output_path: String,
+        feature_count: Long,
+        state_fips: String
+    }
+    schema RestaurantResult {
+        output_path: String,
+        restaurant_count: Long,
+        region: String
+    }
+}
+
+namespace sitesel.Extract {
+    use sitesel.types
+
+    event facet JoinDemographics(acs_path: String, tiger_path: String, state_fips: String) => (result: DemographicsResult)
+    event facet ExtractRestaurants(pbf_path: String, region: String) => (result: RestaurantResult)
+}

@@ -1,0 +1,14 @@
+namespace sitesel.types {
+    schema ScoredResult {
+        output_path: String,
+        county_count: Long,
+        top_county: String,
+        top_score: Double
+    }
+}
+
+namespace sitesel.Scoring {
+    use sitesel.types
+
+    event facet ScoreCounties(demographics_path: String, restaurants_path: String, state_fips: String) => (result: ScoredResult)
+}

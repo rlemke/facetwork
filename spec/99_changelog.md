@@ -1,5 +1,39 @@
 # Implementation Changelog
 
+## Completed (v0.14.0) - Site Selection Pipeline Example
+
+New example: food-service site-selection pipeline combining census demographics,
+TIGER county boundaries, and OSM restaurant data to score counties by suitability
+for new food-service locations.
+
+### AFL definitions
+- `sitesel.afl`: 7 schemas, 7 event facets across 4 namespaces, 2 workflows
+- `AnalyzeSite`: single-state pipeline (download → extract → score → export)
+- `AnalyzeSites_03`: parallel 3-state analysis (Alabama, Alaska, Arizona)
+
+### Handler modules (4 categories, 7 event facets)
+- **Downloads**: DownloadACS, DownloadTIGER, DownloadPBF (Geofabrik state PBFs)
+- **Extract**: JoinDemographics (ACS+TIGER→GeoJSON with derived metrics), ExtractRestaurants (pyosmium food amenities)
+- **Scoring**: ScoreCounties (point-in-polygon + demand index + suitability formula)
+- **Output**: ExportScored (GeoJSON to output store)
+
+### Scoring formula
+- Demand index: weighted sum of 6 normalized factors (pop density 0.25, income 0.20, inverse poverty 0.20, labor force 0.15, education 0.10, owner-occupied 0.10)
+- Suitability score: `demand_index * 100 / (1 + restaurants_per_1000)`
+
+### Dashboard
+- `/site-selection/`: state list with scored dataset counts
+- `/site-selection/{fips}`: Leaflet choropleth colored by suitability_score with popup metrics
+- `/site-selection/{fips}/table`: ranked county table with score, demand, competition, demographics
+- `/site-selection/api/{fips}`: GeoJSON API endpoint
+- `/site-selection/api/{fips}/download`: CSV/GeoJSON download
+- Nav link added to base.html
+
+### Tests: 35 new (22 handler + 13 dashboard)
+- Handler tests: PBF download/cache, demographics join/derived fields/density/zero-pop/missing-cols, restaurant amenity filter/empty/format/no-osmium, scoring point-in-polygon/demand-index/suitability-formula/restaurants-per-1000/zero-pop/empty/top-county/weights, export path/format, dispatch tables/routing/count
+- Dashboard tests: field labels/numeric filter/list empty/list states/map render/choropleth/field labels in view/table render/table headers/GeoJSON API
+- Full suite: 2797 passed, 84 skipped (6 pre-existing flaky registry_runner_integration)
+
 ## Completed (v0.13.1) - Derived Metrics, Field Labels, and Map UX
 
 Five features improving census pipeline data richness and dashboard usability.

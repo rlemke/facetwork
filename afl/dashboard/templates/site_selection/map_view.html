@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}{{ state_name }} — Site Selection Map{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>{{ state_name }} — Site Suitability</h1>
+    <p>{{ feature_count }} counties — <a href="/site-selection/{{ state_fips }}/table">Table View</a> | <a href="/site-selection/">Back to states</a></p>
+</hgroup>
+<p>
+    <a href="/site-selection/api/{{ state_fips }}/download?format=geojson" role="button" class="outline secondary">Download GeoJSON</a>
+    <a href="/site-selection/api/{{ state_fips }}/download?format=csv" role="button" class="outline secondary">Download CSV</a>
+</p>
+
+{% if numeric_fields %}
+<label for="choropleth-field">Color by:</label>
+<select id="choropleth-field" style="max-width:300px;display:inline-block;margin-left:.5rem">
+    <option value="">None (uniform)</option>
+    {% for field in numeric_fields %}
+    <option value="{{ field }}"{% if field == 'suitability_score' %} selected{% endif %}>{{ field_labels.get(field, field) }}</option>
+    {% endfor %}
+</select>
+{% endif %}
+
+<div id="map" style="height:70vh;margin-top:1rem;border:1px solid var(--pico-muted-border-color);border-radius:var(--pico-border-radius)"></div>
+
+<div id="legend" style="margin-top:.5rem;display:none">
+    <small>
+        <span id="legend-min" style="color:#f7fbff"></span>
+        <span style="display:inline-block;width:200px;height:12px;background:linear-gradient(to right,#f7fbff,#08306b);vertical-align:middle;border:1px solid #ccc"></span>
+        <span id="legend-max" style="color:#08306b"></span>
+        <span id="legend-label" style="margin-left:.5rem"></span>
+    </small>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+(function() {
+    var geojsonData = {{ geojson_str | safe }};
+    var fieldLabels = {{ field_labels | tojson }};
+    var popupFields = {{ popup_fields | tojson }};
+
+    var map = L.map('map').setView([39.8, -98.5], 4);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+
+    var currentField = 'suitability_score';
+
+    function interpolateColor(t) {
+        var r = Math.round(247 + (8 - 247) * t);
+        var g = Math.round(251 + (48 - 251) * t);
+        var b = Math.round(255 + (107 - 255) * t);
+        return 'rgb(' + r + ',' + g + ',' + b + ')';
+    }
+
+    function computeRange(field) {
+        var min = Infinity, max = -Infinity;
+        geojsonData.features.forEach(function(f) {
+            var v = f.properties[field];
+            if (typeof v === 'number' && isFinite(v)) {
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
+        });
+        return {min: min, max: max};
+    }
+
+    function getStyle(feature) {
+        if (!currentField) {
+            return {color: '#3388ff', weight: 1, fillColor: '#3388ff', fillOpacity: 0.3};
+        }
+        var range = computeRange(currentField);
+        var v = feature.properties[currentField];
+        var t = 0;
+        if (typeof v === 'number' && isFinite(v) && range.max > range.min) {
+            t = (v - range.min) / (range.max - range.min);
+        }
+        return {color: '#333', weight: 1, fillColor: interpolateColor(t), fillOpacity: 0.7};
+    }
+
+    function formatMetric(key, v) {
+        if (v == null) return '\u2014';
+        if (typeof v !== 'number') return String(v);
+        if (key === 'median_income') return '$' + v.toLocaleString();
+        if (key.startsWith('pct_') || key === 'unemployment_rate' || key === 'labor_force_participation') return v.toFixed(1) + '%';
+        if (key === 'suitability_score' || key === 'demand_index') return v.toFixed(2);
+        if (key === 'restaurants_per_1000') return v.toFixed(4);
+        return v.toLocaleString();
+    }
+
+    function onEachFeature(feature, layer) {
+        layer.on('click', function() {
+            var props = feature.properties;
+            var html = '<strong>' + (props.NAME || '') + '</strong>';
+            if (props.GEOID) html += ' <small>(' + props.GEOID + ')</small>';
+            html += '<table style="font-size:12px;border-collapse:collapse;margin-top:4px">';
+            popupFields.forEach(function(key) {
+                if (props[key] != null) {
+                    html += '<tr><td style="padding:1px 6px 1px 0"><strong>' + (fieldLabels[key] || key) + '</strong></td><td>' + formatMetric(key, props[key]) + '</td></tr>';
+                }
+            });
+            html += '</table>';
+            html += '<a href="/site-selection/{{ state_fips }}/table" style="font-size:11px">View all fields</a>';
+            layer.bindPopup(html, {maxWidth: 400, maxHeight: 300}).openPopup();
+        });
+    }
+
+    var geojsonLayer = L.geoJSON(geojsonData, {
+        style: getStyle,
+        onEachFeature: onEachFeature
+    }).addTo(map);
+
+    if (geojsonData.features.length > 0) {
+        map.fitBounds(geojsonLayer.getBounds());
+    }
+
+    var legendEl = document.getElementById('legend');
+    var legendMin = document.getElementById('legend-min');
+    var legendMax = document.getElementById('legend-max');
+    var legendLabel = document.getElementById('legend-label');
+
+    function updateLegend(field, range) {
+        if (!field) {
+            legendEl.style.display = 'none';
+            return;
+        }
+        legendEl.style.display = 'block';
+        legendMin.textContent = range.min.toLocaleString();
+        legendMax.textContent = range.max.toLocaleString();
+        legendLabel.textContent = fieldLabels[field] || field;
+    }
+
+    // Initial legend
+    if (currentField) {
+        updateLegend(currentField, computeRange(currentField));
+    }
+
+    var dropdown = document.getElementById('choropleth-field');
+    if (dropdown) {
+        dropdown.addEventListener('change', function() {
+            currentField = this.value;
+            geojsonLayer.setStyle(getStyle);
+            if (currentField) {
+                updateLegend(currentField, computeRange(currentField));
+            } else {
+                updateLegend('', {});
+            }
+        });
+    }
+})();
+</script>
+{% endblock %}

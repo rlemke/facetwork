@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ state_name }} — Site Selection Table{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>{{ state_name }} — County Rankings</h1>
+    <p>{{ rows | length }} counties ranked by suitability score — <a href="/site-selection/{{ state_fips }}">Map View</a> | <a href="/site-selection/">Back to states</a></p>
+</hgroup>
+<p>
+    <a href="/site-selection/api/{{ state_fips }}/download?format=csv" role="button" class="outline secondary">Download CSV</a>
+</p>
+
+{% if rows %}
+<table role="grid">
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>County</th>
+            <th>{{ field_labels.get('suitability_score', 'Score') }}</th>
+            <th>{{ field_labels.get('demand_index', 'Demand') }}</th>
+            <th>{{ field_labels.get('restaurant_count', 'Restaurants') }}</th>
+            <th>{{ field_labels.get('restaurants_per_1000', 'Rest./1K') }}</th>
+            <th>{{ field_labels.get('population', 'Population') }}</th>
+            <th>{{ field_labels.get('median_income', 'Income') }}</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ row.name }}</td>
+            <td>{{ "%.2f" | format(row.suitability_score) }}</td>
+            <td>{{ "%.4f" | format(row.demand_index) }}</td>
+            <td>{{ row.restaurant_count }}</td>
+            <td>{{ "%.4f" | format(row.restaurants_per_1000) }}</td>
+            <td>{{ "{:,.0f}".format(row.population) if row.population else "—" }}</td>
+            <td>{{ "${:,.0f}".format(row.median_income) if row.median_income else "—" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No scored data available for this state.</p>
+{% endif %}
+{% endblock %}
