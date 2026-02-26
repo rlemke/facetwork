@@ -1,5 +1,56 @@
 # Implementation Changelog
 
+## Completed (v0.12.95) - Add 4 new ACS tables: tenure, households, age, vehicles
+
+Add B25003 (Housing Tenure), B11001 (Household Type), B01001 (Sex by Age), and B25044 (Vehicles Available) to the census-us pipeline. Multi-column extraction support added to the ACS extractor, and a separate `DownloadACSDetailed` request handles B01001's 49 columns to stay within the Census API's ~50-variable limit.
+
+### Multi-column ACS support (`handlers/acs/acs_extractor.py`)
+- `ACS_TABLES` dict changed from `"column"` (single string) to `"columns"` (list of strings)
+- Existing 5 tables become single-element lists (backward compatible)
+- 4 new entries: B25003 (3 cols), B11001 (9 cols), B01001 (49 cols), B25044 (15 cols)
+- `extract_acs_table()` extracts all listed columns into output CSV with fieldnames `["GEOID", "NAME"] + columns`
+- Records included if any target column has a value
+
+### Download grouping (`handlers/shared/downloader.py`)
+- Default `columns` param expanded: 5 → 32 columns (added B25003, B11001, B25044)
+- New `tag` param for cache filename differentiation: `acs_{year}_{state_fips}_{tag}.csv`
+- Cache column validation: if cached CSV header doesn't contain all requested columns, re-downloads
+
+### New download handler (`handlers/downloads/download_handlers.py`)
+- `handle_download_acs_detailed()`: downloads B01001 (49 columns) with `tag="detailed"` via separate API call
+- Dispatch count: 2 → 3
+
+### ACS extraction handlers (`handlers/acs/acs_handlers.py`)
+- Added to `_FACET_TABLE_MAP`: ExtractTenure→B25003, ExtractHouseholds→B11001, ExtractAge→B01001, ExtractVehicles→B25044
+- Dispatch count: 5 → 9
+
+### Ingestion handlers (`handlers/ingestion/ingestion_handlers.py`)
+- Added 4 entries to `_DISPATCH`: TenureToDB→B25003, HouseholdsToDB→B11001, AgeToDB→B01001, VehiclesToDB→B25044
+- All use `_make_acs_db_handler()` factory (same pattern as existing)
+- Dispatch count: 8 → 12
+
+### AFL declarations
+- `census_acs.afl`: 4 new event facets (ExtractTenure, ExtractHouseholds, ExtractAge, ExtractVehicles)
+- `census_operations.afl`: 1 new event facet (DownloadACSDetailed)
+- `census_ingestion.afl`: 4 new event facets (TenureToDB, HouseholdsToDB, AgeToDB, VehiclesToDB)
+
+### Workflows (`afl/census.afl`)
+- **AnalyzeState**: 10 → 15 steps (+1 DownloadACSDetailed, +4 extract)
+- **AnalyzeStateWithDB**: 18 → 27 steps (+1 DownloadACSDetailed, +4 extract, +4 ToDB)
+- Age extraction uses `acs_detail.file` (separate download); tenure, households, vehicles use `acs.file`
+
+### Handler registration
+- Total count: 21 → 30 (3 downloads + 9 ACS + 4 TIGER + 2 summary + 12 ingestion)
+
+### Tests
+- `test_census_handlers.py`: 6 new tests — DownloadACSDetailed dispatch, ExtractTenure/Households/Age/Vehicles dispatch, multi-column CSV extraction
+- `test_ingestion_handlers.py`: updated dispatch count (8→12), expected key names (+4), register counts
+- Both test files: updated total registry count (21→30)
+- Compiled output: `census-us.json` recompiled
+
+### Details
+- 12 files changed; 6 new tests; test suite: 2614 passed, 79 skipped
+
 ## Completed (v0.12.94) - Add MongoDB ingestion handlers for census-us ToDB facets
 
 New ingestion pipeline that reads upstream handler output files (GeoJSON, CSV, JSON) and upserts them into MongoDB `handler_output` / `handler_output_meta` collections. Compound unique index on `(dataset_key, feature_key)` ensures re-runs replace data without duplicates. Existing handlers and outputs are untouched — ingestion handlers compose as downstream workflow steps.
