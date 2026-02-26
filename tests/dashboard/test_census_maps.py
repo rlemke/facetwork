@@ -278,6 +278,61 @@ class TestCensusMapView:
         # The <select> element should not be rendered when no numeric fields exist
         assert '<select id="choropleth-field"' not in resp.text
 
+    def test_raw_acs_codes_filtered_from_dropdown(self, client):
+        """Raw ACS variable codes (B*) should not clutter the choropleth dropdown."""
+        tc, store = client
+        store._db.handler_output.insert_one({
+            "dataset_key": "census.joined.01",
+            "feature_key": "01001",
+            "facet_name": "Joined",
+            "data_type": "geojson_feature",
+            "properties": {
+                "NAME": "Autauga", "GEOID": "01001",
+                "population": 59285, "median_income": 69841,
+                "B01003_001E": 59285, "B19013_001E": 69841,
+                "ALAND": 1539631459, "STATEFP": 1,
+            },
+            "geometry": _TRIANGLE,
+            "imported_at": 1708873045000,
+        })
+
+        resp = tc.get("/census/maps/census.joined.01")
+        assert resp.status_code == 200
+        text = resp.text
+        # Friendly fields should appear as dropdown options
+        assert '<option value="population">' in text
+        assert '<option value="median_income">' in text
+        # Raw ACS codes and TIGER IDs should NOT appear as dropdown options
+        assert '<option value="B01003_001E">' not in text
+        assert '<option value="B19013_001E">' not in text
+        assert '<option value="ALAND">' not in text
+        assert '<option value="STATEFP">' not in text
+
+    def test_preferred_fields_ordered_first(self, client):
+        """Preferred fields like population should appear before other numeric fields."""
+        tc, store = client
+        store._db.handler_output.insert_one({
+            "dataset_key": "census.joined.02",
+            "feature_key": "02001",
+            "facet_name": "Joined",
+            "data_type": "geojson_feature",
+            "properties": {
+                "NAME": "Test", "GEOID": "02001",
+                "population": 100, "zzz_custom": 42, "median_income": 50000,
+            },
+            "geometry": _TRIANGLE,
+            "imported_at": 1708873045000,
+        })
+
+        resp = tc.get("/census/maps/census.joined.02")
+        assert resp.status_code == 200
+        text = resp.text
+        pos_pop = text.index(">population<")
+        pos_income = text.index(">median_income<")
+        pos_custom = text.index(">zzz_custom<")
+        # population before median_income (preferred order), both before custom
+        assert pos_pop < pos_income < pos_custom
+
     def test_skips_docs_without_geometry(self, client):
         """Documents lacking geometry should be excluded from the map."""
         tc, store = client

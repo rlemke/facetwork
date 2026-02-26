@@ -94,12 +94,31 @@ def census_map_view(
     geojson: dict[str, Any] = {"type": "FeatureCollection", "features": features}
 
     # Identify numeric property fields for the choropleth dropdown.
+    # Preferred fields are shown first (friendly derived names), then any
+    # remaining numeric fields that don't match raw ACS codes or TIGER IDs.
+    _PREFERRED = [
+        "population", "population_density", "median_income",
+        "housing_units", "total_households", "family_households", "nonfamily_households",
+        "pct_owner_occupied", "pct_renter_occupied",
+        "pct_no_vehicle", "pct_drive_alone", "pct_public_transit", "pct_walk", "pct_work_from_home",
+        "pct_under_18", "pct_18_34", "pct_35_64", "pct_65_plus",
+    ]
+    _SKIP_PREFIXES = ("B0", "B1", "B2", "B3")  # raw ACS variable codes
+    _SKIP_FIELDS = {"ALAND", "AWATER", "CBSAFP", "CSAFP", "METDIVFP", "STATEFP", "COUNTYFP"}
+
     numeric_fields: list[str] = []
     if features:
         sample = features[0].get("properties", {})
-        for key, val in sample.items():
-            if isinstance(val, (int, float)):
+        all_numeric = {k for k, v in sample.items() if isinstance(v, (int, float))}
+        # Add preferred fields first (in order), then remaining non-skipped fields.
+        for key in _PREFERRED:
+            if key in all_numeric:
                 numeric_fields.append(key)
+                all_numeric.discard(key)
+        for key in sorted(all_numeric):
+            if key in _SKIP_FIELDS or any(key.startswith(p) for p in _SKIP_PREFIXES):
+                continue
+            numeric_fields.append(key)
 
     geojson_str = json.dumps(geojson)
 
