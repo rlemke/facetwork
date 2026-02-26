@@ -78,7 +78,8 @@ def _download_file(url: str, dest: str) -> int:
 def download_acs(year: str = "2023", period: str = "5-Year",
                  state_fips: str = "01",
                  columns: str = "B01003_001E,B19013_001E,B25001_001E,"
-                                "B15003_001E,B08301_001E,"
+                                "B15003_001E,B15003_022E,B15003_023E,B15003_024E,B15003_025E,"
+                                "B08301_001E,B08301_003E,B08301_010E,B08301_019E,B08301_021E,"
                                 "B25003_001E,B25003_002E,B25003_003E,"
                                 "B11001_001E,B11001_002E,B11001_003E,"
                                 "B11001_004E,B11001_005E,B11001_006E,"

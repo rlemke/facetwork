@@ -44,11 +44,14 @@ pytestmark = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 from afl.dashboard.routes.census_maps import (
+    _FIELD_LABELS,
+    _PREFERRED_FIELDS,
     _aggregate_state_stats,
     _build_comparison,
     _compute_stats,
     _decimate_ring,
     _features_to_csv,
+    _get_field_label,
     _region_label,
     _simplify_geometry,
     _slim_properties,
@@ -131,6 +134,41 @@ class TestSlimProperties:
         props = {"NAME": "Test", "population": 100, "median_income": 50000, "GEOID": "01001"}
         result = _slim_properties(props)
         assert result == props
+
+
+class TestFieldLabels:
+    def test_get_field_label_known(self):
+        assert _get_field_label("population") == "Population"
+        assert _get_field_label("median_income") == "Median Income"
+
+    def test_get_field_label_unknown_passthrough(self):
+        assert _get_field_label("some_custom_field") == "some_custom_field"
+
+    def test_preferred_fields_have_labels(self):
+        for field in _PREFERRED_FIELDS:
+            label = _FIELD_LABELS.get(field)
+            assert label is not None, f"Missing label for preferred field: {field}"
+
+    def test_labels_in_map_view(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test County", _TRIANGLE, population=100)
+        resp = tc.get("/census/maps/census.joined.01")
+        assert resp.status_code == 200
+        assert "fieldLabels" in resp.text
+
+    def test_labels_in_map_all(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        resp = tc.get("/census/maps/_all")
+        assert resp.status_code == 200
+        assert "fieldLabels" in resp.text
+
+    def test_labels_in_table_view(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        resp = tc.get("/census/maps/census.joined.01/table")
+        assert resp.status_code == 200
+        assert "Population" in resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -397,8 +435,8 @@ class TestCensusMapView:
         resp = tc.get("/census/maps/census.joined.02")
         assert resp.status_code == 200
         text = resp.text
-        pos_pop = text.index(">population<")
-        pos_income = text.index(">median_income<")
+        pos_pop = text.index(">Population<")
+        pos_income = text.index(">Median Income<")
         pos_custom = text.index(">zzz_custom<")
         # population before median_income (preferred order), both before custom
         assert pos_pop < pos_income < pos_custom
@@ -952,7 +990,7 @@ class TestCensusTableView:
         table_section = text[table_start:]
         pos_geoid = table_section.index(">GEOID<")
         pos_name = table_section.index(">NAME<")
-        pos_pop = table_section.index(">population<")
+        pos_pop = table_section.index(">Population<")
         assert pos_geoid < pos_name < pos_pop
 
     def test_stats_computed(self, client):
@@ -1406,3 +1444,98 @@ class TestNavLink:
         resp = tc.get("/census/maps")
         assert resp.status_code == 200
         assert 'class="nav-active"' in resp.text
+
+
+class TestColorLegend:
+    """Verify compare view has a color legend."""
+
+    def test_compare_has_legend_div(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        _seed_feature(store, "census.joined.02", "GEO2", "Test2", _TRIANGLE_2, population=200)
+        resp = tc.get("/census/compare?left=census.joined.01&right=census.joined.02")
+        assert resp.status_code == 200
+        assert 'id="legend"' in resp.text
+
+    def test_compare_legend_has_min_max(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        _seed_feature(store, "census.joined.02", "GEO2", "Test2", _TRIANGLE_2, population=200)
+        resp = tc.get("/census/compare?left=census.joined.01&right=census.joined.02")
+        assert resp.status_code == 200
+        assert 'id="legend-min"' in resp.text
+        assert 'id="legend-max"' in resp.text
+
+    def test_compare_legend_js_update(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        _seed_feature(store, "census.joined.02", "GEO2", "Test2", _TRIANGLE_2, population=200)
+        resp = tc.get("/census/compare?left=census.joined.01&right=census.joined.02")
+        assert resp.status_code == 200
+        assert "updateLegend" in resp.text
+
+
+class TestPopupContent:
+    """Verify focused popups with field labels."""
+
+    def test_map_view_has_popup_fields(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        resp = tc.get("/census/maps/census.joined.01")
+        assert resp.status_code == 200
+        assert "popupFields" in resp.text
+        assert "fieldLabels" in resp.text
+
+    def test_map_view_has_view_all_fields_link(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        resp = tc.get("/census/maps/census.joined.01")
+        assert resp.status_code == 200
+        assert "View all fields" in resp.text
+
+    def test_map_all_has_popup_fields(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        resp = tc.get("/census/maps/_all")
+        assert resp.status_code == 200
+        assert "popupFields" in resp.text
+
+    def test_compare_has_popup_fields(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        _seed_feature(store, "census.joined.02", "GEO2", "Test2", _TRIANGLE_2, population=200)
+        resp = tc.get("/census/compare?left=census.joined.01&right=census.joined.02")
+        assert resp.status_code == 200
+        assert "popupFields" in resp.text
+
+
+class TestAjaxErrorHandling:
+    """Verify AJAX fetch calls have error handling."""
+
+    def test_map_all_has_catch(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        resp = tc.get("/census/maps/_all")
+        assert resp.status_code == 200
+        assert ".catch(" in resp.text
+
+    def test_map_all_checks_resp_ok(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        resp = tc.get("/census/maps/_all")
+        assert resp.status_code == 200
+        assert "resp.ok" in resp.text
+
+    def test_map_states_has_catch(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        resp = tc.get("/census/maps/states")
+        assert resp.status_code == 200
+        assert ".catch(" in resp.text
+
+    def test_map_states_checks_resp_ok(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "GEO1", "Test", _TRIANGLE, population=100)
+        resp = tc.get("/census/maps/states")
+        assert resp.status_code == 200
+        assert "resp.ok" in resp.text

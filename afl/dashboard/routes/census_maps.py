@@ -59,13 +59,60 @@ def _region_label(dataset_key: str) -> str:
 
 # Preferred choropleth fields and skip lists (shared by single + combined views).
 _PREFERRED_FIELDS = [
-    "population", "population_density", "median_income",
+    "population", "population_density", "population_density_km2", "median_income",
     "housing_units", "total_households", "family_households", "nonfamily_households",
     "pct_owner_occupied", "pct_renter_occupied",
-    "pct_no_vehicle", "pct_drive_alone", "pct_public_transit", "pct_walk", "pct_work_from_home",
+    "pct_no_vehicle", "pct_drove_alone", "pct_public_transit", "pct_walk", "pct_work_from_home",
     "pct_under_18", "pct_18_34", "pct_35_64", "pct_65_plus",
     "pct_white", "pct_black", "pct_asian", "pct_below_poverty", "unemployment_rate",
+    "labor_force_participation", "pct_bachelors_plus", "vehicles_per_household",
 ]
+_FIELD_LABELS: dict[str, str] = {
+    "population": "Population",
+    "population_density": "Pop. Density",
+    "population_density_km2": "Pop. Density (per km\u00b2)",
+    "median_income": "Median Income",
+    "housing_units": "Housing Units",
+    "total_households": "Total Households",
+    "family_households": "Family Households",
+    "nonfamily_households": "Non-family Households",
+    "pct_owner_occupied": "Owner-Occupied (%)",
+    "pct_renter_occupied": "Renter-Occupied (%)",
+    "pct_no_vehicle": "No Vehicle (%)",
+    "pct_drove_alone": "Drove Alone (%)",
+    "pct_public_transit": "Public Transit (%)",
+    "pct_walk": "Walk (%)",
+    "pct_work_from_home": "Work from Home (%)",
+    "pct_under_18": "Under 18 (%)",
+    "pct_18_34": "Age 18-34 (%)",
+    "pct_35_64": "Age 35-64 (%)",
+    "pct_65_plus": "Age 65+ (%)",
+    "pct_white": "White (%)",
+    "pct_black": "Black (%)",
+    "pct_asian": "Asian (%)",
+    "pct_below_poverty": "Below Poverty (%)",
+    "unemployment_rate": "Unemployment Rate (%)",
+    "labor_force_participation": "Labor Force Part. (%)",
+    "pct_bachelors_plus": "Bachelor's+ (%)",
+    "vehicles_per_household": "Vehicles per Household",
+    # State-level aggregates
+    "total_population": "Total Population",
+    "total_housing_units": "Total Housing Units",
+    "weighted_median_income": "Median Income (weighted)",
+}
+
+
+def _get_field_label(field: str) -> str:
+    """Return a human-readable label for a field name."""
+    return _FIELD_LABELS.get(field, field)
+
+
+_POPUP_FIELDS = [
+    "population", "median_income", "population_density_km2",
+    "pct_below_poverty", "unemployment_rate", "pct_owner_occupied",
+    "pct_white", "pct_bachelors_plus",
+]
+
 _SKIP_PREFIXES = ("B0", "B1", "B2", "B3")  # raw ACS variable codes
 _SKIP_FIELDS = {"ALAND", "AWATER", "CBSAFP", "CSAFP", "METDIVFP", "STATEFP", "COUNTYFP"}
 
@@ -324,6 +371,8 @@ def census_map_all(
             "dataset_count": len(dataset_keys),
             "feature_count": total_features,
             "numeric_fields": numeric_fields,
+            "field_labels": _FIELD_LABELS,
+            "popup_fields": _POPUP_FIELDS,
             "active_tab": "census_maps",
         },
     )
@@ -469,6 +518,8 @@ def census_map_states(
             "state_stats": state_stats,
             "state_count": len(state_stats),
             "choropleth_fields": choropleth_fields,
+            "field_labels": _FIELD_LABELS,
+            "popup_fields": _POPUP_FIELDS,
             "active_tab": "census_maps",
         },
     )
@@ -567,6 +618,7 @@ def census_table_view(
             "columns": columns,
             "numeric_fields": numeric_fields,
             "stats": stats,
+            "field_labels": _FIELD_LABELS,
             "active_tab": "census_maps",
         },
     )
@@ -609,6 +661,8 @@ def census_map_view(
             "geojson_str": geojson_str,
             "feature_count": len(features),
             "numeric_fields": numeric_fields,
+            "field_labels": _FIELD_LABELS,
+            "popup_fields": _POPUP_FIELDS,
             "active_tab": "census_maps",
         },
     )
@@ -698,6 +752,8 @@ def census_compare(
             "right_count": len(right_features),
             "comparison": comparison,
             "numeric_fields": numeric_fields,
+            "field_labels": _FIELD_LABELS,
+            "popup_fields": _POPUP_FIELDS,
             "active_tab": "census_maps",
         },
     )

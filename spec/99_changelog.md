@@ -1,5 +1,52 @@
 # Implementation Changelog
 
+## Completed (v0.13.1) - Derived Metrics, Field Labels, and Map UX
+
+Five features improving census pipeline data richness and dashboard usability.
+
+### Feature A: Derived metrics in join_geo
+- `join_geo()` now accepts `extra_acs_paths` parameter to merge multiple ACS CSVs
+- `_compute_derived_metrics()` computes ~15 derived percentage/rate metrics from raw ACS columns
+- `_safe_pct()` helper for safe division (returns None if denominator missing/zero)
+- `_load_acs_csv()` helper factored out from join_geo
+- Default download columns expanded: B15003_022E-025E (education), B08301_003E/010E/019E/021E (commuting)
+- `ACS_TABLES` expanded: B15003 (5 cols), B08301 (5 cols) for sub-column extraction
+- Both `AnalyzeState` and `AnalyzeStateWithDB` workflows pass 9 extra ACS paths to JoinGeo
+- JoinGeo AFL facet gains `extra_acs_paths: List[String] = []` parameter
+- `_PREFERRED_FIELDS` updated with `population_density_km2`, `pct_drove_alone`, `labor_force_participation`, `pct_bachelors_plus`, `vehicles_per_household`
+- Derived metrics: population, median_income, housing_units (aliases); pct_owner_occupied, pct_renter_occupied, pct_below_poverty, unemployment_rate, labor_force_participation, pct_white, pct_black, pct_asian, pct_bachelors_plus, pct_drove_alone, pct_public_transit, vehicles_per_household
+
+### Feature B: Friendly field labels
+- `_FIELD_LABELS` dict mapping ~30 field names to human-readable labels
+- `_get_field_label()` helper for label lookup with passthrough fallback
+- `field_labels` passed to all 6 census template contexts
+- All choropleth dropdowns use labels: `{{ field_labels.get(field, field) }}`
+- Legend text uses JS `fieldLabels[field] || field`
+- Table view: stats field column and data table headers show labels (with raw name in title tooltip)
+- Compare view: comparison table Field column uses labels
+
+### Feature E: AJAX error handling
+- `map_all.html`: fetch chain checks `resp.ok`, throws on HTTP error, `.catch()` shows error in loading-msg
+- `map_states.html`: same pattern in `loadData()` function
+- Error display: removes aria-busy, sets red color, shows "Failed to load data: {message}"
+
+### Feature C: Improved map popups
+- `_POPUP_FIELDS` list: 8 key metrics shown in popup (population, median_income, density, poverty, unemployment, tenure, race, education)
+- `popupFields` and `fieldLabels` JS vars injected into all map templates
+- `formatMetric()` JS helper: $ prefix for income, % suffix for rates, locale formatting for counts
+- Focused popup: NAME header + GEOID, key metrics with labels, "View all fields" link (map_view only)
+- Popups added to compare view county features via `onEachFeature`
+
+### Feature D: Color legend on compare view
+- Legend div with gradient bar added to compare.html between dropdown and maps
+- `updateLegend()` JS function: shows/hides legend, updates min/max/label on field change
+- Uses shared range across both datasets via `computeSharedRange()`
+
+### Tests
+- 2762 passed, 79 skipped (up from 2733 passed); 29 new tests
+- Census handler tests: 70 tests (up from 58): 12 new TestDerivedMetrics
+- Dashboard census maps: 139 tests (up from 122): 6 TestFieldLabels + 4 TestAjaxErrorHandling + 4 TestPopupContent + 3 TestColorLegend
+
 ## Completed (v0.13.0) - Census-US pipeline extensions
 
 Five features broadening the census-us pipeline: new ACS tables, data download, table view, state-level analysis, and state comparison.

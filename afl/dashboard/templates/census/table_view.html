@@ -24,7 +24,7 @@
         <tbody>
             {% for field, s in stats.items() %}
             <tr>
-                <td>{{ field }}</td>
+                <td>{{ field_labels.get(field, field) }}</td>
                 <td>{{ s.min }}</td>
                 <td>{{ s.max }}</td>
                 <td>{{ s.mean }}</td>
@@ -42,7 +42,7 @@
     <thead>
         <tr>
             {% for col in columns %}
-            <th data-col="{{ loop.index0 }}" style="cursor:pointer">{{ col }}</th>
+            <th data-col="{{ loop.index0 }}" style="cursor:pointer" title="{{ col }}">{{ field_labels.get(col, col) }}</th>
             {% endfor %}
         </tr>
     </thead>

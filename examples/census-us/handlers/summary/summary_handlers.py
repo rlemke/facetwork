@@ -22,6 +22,7 @@ def handle_join_geo(params: dict[str, Any]) -> dict[str, Any]:
     acs_path = params.get("acs_path", "")
     tiger_path = params.get("tiger_path", "")
     join_field = params.get("join_field", "GEOID")
+    extra_acs_paths = params.get("extra_acs_paths") or []
     step_log = params.get("_step_log")
 
     try:
@@ -29,6 +30,7 @@ def handle_join_geo(params: dict[str, Any]) -> dict[str, Any]:
             acs_path=acs_path,
             tiger_path=tiger_path,
             join_field=join_field,
+            extra_acs_paths=extra_acs_paths,
         )
 
         if step_log:

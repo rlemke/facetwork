@@ -45,14 +45,133 @@ class SummaryResult:
     )
 
 
+def _safe_pct(num_key: str, den_key: str, props: dict[str, Any],
+              *, scale: float = 100.0) -> float | None:
+    """Compute num/den * scale, returning None if missing/zero."""
+    num = props.get(num_key)
+    den = props.get(den_key)
+    if num is None or den is None:
+        return None
+    try:
+        n = float(num)
+        d = float(den)
+    except (ValueError, TypeError):
+        return None
+    if d == 0:
+        return None
+    return round(n / d * scale, 2)
+
+
+def _compute_derived_metrics(props: dict[str, Any]) -> dict[str, Any]:
+    """Compute derived fields from raw ACS columns. Returns dict of non-None values."""
+    derived: dict[str, Any] = {}
+
+    # Friendly aliases
+    for raw, friendly in [
+        ("B01003_001E", "population"),
+        ("B19013_001E", "median_income"),
+        ("B25001_001E", "housing_units"),
+    ]:
+        v = props.get(raw)
+        if v is not None:
+            try:
+                derived[friendly] = float(v)
+            except (ValueError, TypeError):
+                pass
+
+    # Percentage metrics
+    pct_metrics = [
+        ("pct_owner_occupied", "B25003_002E", "B25003_001E"),
+        ("pct_below_poverty", "B17001_002E", "B17001_001E"),
+        ("unemployment_rate", "B23025_005E", "B23025_003E"),
+        ("labor_force_participation", "B23025_002E", "B23025_001E"),
+        ("pct_white", "B02001_002E", "B02001_001E"),
+        ("pct_black", "B02001_003E", "B02001_001E"),
+        ("pct_asian", "B02001_005E", "B02001_001E"),
+        ("pct_drove_alone", "B08301_003E", "B08301_001E"),
+        ("pct_public_transit", "B08301_010E", "B08301_001E"),
+    ]
+    for name, num_key, den_key in pct_metrics:
+        val = _safe_pct(num_key, den_key, props)
+        if val is not None:
+            derived[name] = val
+
+    # Renter occupied = complement of owner occupied
+    if "pct_owner_occupied" in derived:
+        derived["pct_renter_occupied"] = round(100.0 - derived["pct_owner_occupied"], 2)
+
+    # Bachelor's degree or higher: sum of B15003_022E..025E / B15003_001E
+    edu_cols = ["B15003_022E", "B15003_023E", "B15003_024E", "B15003_025E"]
+    edu_den = props.get("B15003_001E")
+    if edu_den is not None:
+        try:
+            den = float(edu_den)
+            if den > 0:
+                num_vals = []
+                for c in edu_cols:
+                    v = props.get(c)
+                    if v is not None:
+                        num_vals.append(float(v))
+                if num_vals:
+                    derived["pct_bachelors_plus"] = round(sum(num_vals) / den * 100.0, 2)
+        except (ValueError, TypeError):
+            pass
+
+    # Vehicles per household: weighted average from B25044
+    # B25044_003-006 = owner 1-4+ vehicles, B25044_010-013 = renter 1-4+ vehicles
+    # B25044_001E = total occupied units
+    total_occ = props.get("B25044_001E")
+    if total_occ is not None:
+        try:
+            tot = float(total_occ)
+            if tot > 0:
+                weighted_sum = 0.0
+                vehicle_pairs = [
+                    ("B25044_003E", 1), ("B25044_004E", 2),
+                    ("B25044_005E", 3), ("B25044_006E", 4),
+                    ("B25044_010E", 1), ("B25044_011E", 2),
+                    ("B25044_012E", 3), ("B25044_013E", 4),
+                ]
+                has_data = False
+                for col, weight in vehicle_pairs:
+                    v = props.get(col)
+                    if v is not None:
+                        try:
+                            weighted_sum += float(v) * weight
+                            has_data = True
+                        except (ValueError, TypeError):
+                            pass
+                if has_data:
+                    derived["vehicles_per_household"] = round(weighted_sum / tot, 2)
+        except (ValueError, TypeError):
+            pass
+
+    return derived
+
+
+def _load_acs_csv(path: str, join_field: str) -> dict[str, dict[str, str]]:
+    """Load an ACS CSV file, returning a dict keyed by join_field."""
+    data: dict[str, dict[str, str]] = {}
+    if path and os.path.exists(path):
+        with open(path, newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                key = row.get(join_field, "")
+                if key:
+                    data[key] = dict(row)
+    return data
+
+
 def join_geo(acs_path: str, tiger_path: str,
-             join_field: str = "GEOID") -> JoinResult:
+             join_field: str = "GEOID",
+             extra_acs_paths: list[str] | None = None) -> JoinResult:
     """Join ACS CSV data with TIGER GeoJSON features.
 
     Args:
-        acs_path: Path to ACS CSV file.
+        acs_path: Path to primary ACS CSV file (population).
         tiger_path: Path to TIGER GeoJSON file.
         join_field: Field to join on (default GEOID).
+        extra_acs_paths: Additional ACS CSV paths to merge.
 
     Returns:
         JoinResult with output path and feature count.
@@ -60,15 +179,17 @@ def join_geo(acs_path: str, tiger_path: str,
     output_dir = os.path.join(_OUTPUT_DIR, "joined")
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    # Load ACS data keyed by join field
-    acs_data: dict[str, dict[str, str]] = {}
-    if os.path.exists(acs_path):
-        with open(acs_path, newline="") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                key = row.get(join_field, "")
-                if key:
-                    acs_data[key] = dict(row)
+    # Load primary ACS data keyed by join field
+    acs_data = _load_acs_csv(acs_path, join_field)
+
+    # Merge extra ACS CSVs
+    for extra_path in (extra_acs_paths or []):
+        extra_data = _load_acs_csv(extra_path, join_field)
+        for key, row in extra_data.items():
+            if key in acs_data:
+                acs_data[key].update(row)
+            else:
+                acs_data[key] = row
 
     # Load TIGER GeoJSON
     features: list[dict[str, Any]] = []
@@ -77,7 +198,7 @@ def join_geo(acs_path: str, tiger_path: str,
             geojson = json.load(f)
             features = geojson.get("features", [])
 
-    # Join: enrich TIGER features with ACS attributes + population density
+    # Join: enrich TIGER features with ACS attributes + density + derived metrics
     joined_features: list[dict[str, Any]] = []
     for feat in features:
         props = feat.get("properties", {})
@@ -97,6 +218,8 @@ def join_geo(acs_path: str, tiger_path: str,
                 )
             except (ValueError, TypeError):
                 pass
+        # Compute derived percentage/rate metrics
+        props.update(_compute_derived_metrics(props))
         joined_features.append({
             "type": "Feature",
             "properties": props,

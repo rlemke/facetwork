@@ -541,6 +541,152 @@ class TestJoinGeoDensity:
         assert props["population_density_km2"] == 0.0
 
 
+class TestDerivedMetrics:
+    """Test derived metric computation in join_geo."""
+
+    def _join_with_cols(self, tmp_path, acs_cols, tiger_props=None):
+        """Helper: create ACS CSV + TIGER GeoJSON, call join_geo, return props."""
+        mod = _census_import("summary.summary_builder")
+        # Build ACS CSV
+        header = ["GEOID", "NAME"] + list(acs_cols.keys())
+        values = ["GEO1", "Test County"] + [str(v) for v in acs_cols.values()]
+        acs_csv = tmp_path / "acs.csv"
+        acs_csv.write_text(",".join(header) + "\n" + ",".join(values) + "\n")
+        # Build TIGER GeoJSON
+        props = {"GEOID": "GEO1", "ALAND": 100000000}
+        if tiger_props:
+            props.update(tiger_props)
+        tiger = tmp_path / "tiger.geojson"
+        tiger.write_text(json.dumps({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": props,
+                "geometry": {"type": "Point", "coordinates": [0, 0]},
+            }],
+        }))
+        result = mod.join_geo(str(acs_csv), str(tiger))
+        with open(result.output_path) as f:
+            data = json.load(f)
+        return data["features"][0]["properties"]
+
+    def test_pct_owner_occupied(self, tmp_path):
+        props = self._join_with_cols(tmp_path, {
+            "B01003_001E": "1000",
+            "B25003_001E": "500", "B25003_002E": "400", "B25003_003E": "100",
+        })
+        assert props["pct_owner_occupied"] == 80.0
+
+    def test_pct_renter_occupied_complement(self, tmp_path):
+        props = self._join_with_cols(tmp_path, {
+            "B01003_001E": "1000",
+            "B25003_001E": "500", "B25003_002E": "400", "B25003_003E": "100",
+        })
+        assert props["pct_renter_occupied"] == 20.0
+
+    def test_pct_below_poverty(self, tmp_path):
+        props = self._join_with_cols(tmp_path, {
+            "B01003_001E": "10000",
+            "B17001_001E": "1000", "B17001_002E": "150",
+        })
+        assert props["pct_below_poverty"] == 15.0
+
+    def test_unemployment_rate(self, tmp_path):
+        props = self._join_with_cols(tmp_path, {
+            "B01003_001E": "1000",
+            "B23025_001E": "800", "B23025_002E": "700",
+            "B23025_003E": "600", "B23025_005E": "30",
+        })
+        assert props["unemployment_rate"] == 5.0
+
+    def test_pct_white(self, tmp_path):
+        props = self._join_with_cols(tmp_path, {
+            "B01003_001E": "1000",
+            "B02001_001E": "1000", "B02001_002E": "750",
+        })
+        assert props["pct_white"] == 75.0
+
+    def test_pct_bachelors_plus(self, tmp_path):
+        props = self._join_with_cols(tmp_path, {
+            "B01003_001E": "1000",
+            "B15003_001E": "800",
+            "B15003_022E": "100", "B15003_023E": "50",
+            "B15003_024E": "30", "B15003_025E": "20",
+        })
+        # (100+50+30+20)/800*100 = 25.0
+        assert props["pct_bachelors_plus"] == 25.0
+
+    def test_pct_drove_alone(self, tmp_path):
+        props = self._join_with_cols(tmp_path, {
+            "B01003_001E": "1000",
+            "B08301_001E": "500", "B08301_003E": "400",
+        })
+        assert props["pct_drove_alone"] == 80.0
+
+    def test_vehicles_per_household(self, tmp_path):
+        props = self._join_with_cols(tmp_path, {
+            "B01003_001E": "1000",
+            "B25044_001E": "100",
+            "B25044_003E": "30", "B25044_004E": "40",
+            "B25044_005E": "10", "B25044_006E": "5",
+            "B25044_010E": "5", "B25044_011E": "5",
+            "B25044_012E": "3", "B25044_013E": "2",
+        })
+        # weighted: 30*1+40*2+10*3+5*4+5*1+5*2+3*3+2*4 = 30+80+30+20+5+10+9+8 = 192
+        # 192/100 = 1.92
+        assert props["vehicles_per_household"] == 1.92
+
+    def test_zero_denominator_returns_none(self, tmp_path):
+        props = self._join_with_cols(tmp_path, {
+            "B01003_001E": "1000",
+            "B25003_001E": "0", "B25003_002E": "0",
+        })
+        assert "pct_owner_occupied" not in props
+
+    def test_missing_columns_no_metric(self, tmp_path):
+        props = self._join_with_cols(tmp_path, {
+            "B01003_001E": "1000",
+        })
+        assert "pct_owner_occupied" not in props
+        assert "unemployment_rate" not in props
+        assert "pct_bachelors_plus" not in props
+
+    def test_extra_acs_paths_merged(self, tmp_path):
+        mod = _census_import("summary.summary_builder")
+        # Primary ACS (population)
+        primary = tmp_path / "pop.csv"
+        primary.write_text("GEOID,NAME,B01003_001E\nGEO1,Test,5000\n")
+        # Extra ACS (tenure)
+        extra = tmp_path / "tenure.csv"
+        extra.write_text("GEOID,NAME,B25003_001E,B25003_002E,B25003_003E\nGEO1,Test,200,160,40\n")
+        # TIGER
+        tiger = tmp_path / "tiger.geojson"
+        tiger.write_text(json.dumps({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"GEOID": "GEO1", "ALAND": 100000000},
+                "geometry": {"type": "Point", "coordinates": [0, 0]},
+            }],
+        }))
+        result = mod.join_geo(str(primary), str(tiger), extra_acs_paths=[str(extra)])
+        with open(result.output_path) as f:
+            data = json.load(f)
+        props = data["features"][0]["properties"]
+        assert props["pct_owner_occupied"] == 80.0
+        assert props["population"] == 5000.0
+
+    def test_friendly_aliases(self, tmp_path):
+        props = self._join_with_cols(tmp_path, {
+            "B01003_001E": "50000",
+            "B19013_001E": "65000",
+            "B25001_001E": "20000",
+        })
+        assert props["population"] == 50000.0
+        assert props["median_income"] == 65000.0
+        assert props["housing_units"] == 20000.0
+
+
 class TestSummaryHandlers:
     def test_dispatch_keys(self):
         mod = _census_import("summary.summary_handlers")

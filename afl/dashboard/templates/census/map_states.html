@@ -11,7 +11,7 @@
 <label for="choropleth-field">Color by:</label>
 <select id="choropleth-field" style="max-width:300px;display:inline-block;margin-left:.5rem">
     {% for field in choropleth_fields %}
-    <option value="{{ field }}"{% if loop.first %} selected{% endif %}>{{ field }}</option>
+    <option value="{{ field }}"{% if loop.first %} selected{% endif %}>{{ field_labels.get(field, field) }}</option>
     {% endfor %}
 </select>
 {% endif %}
@@ -64,6 +64,7 @@
 
 <script>
 (function() {
+    var fieldLabels = {{ field_labels | tojson }};
     var map = L.map('map').setView([39.8, -98.5], 4);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
@@ -97,7 +98,10 @@
 
     function loadData(field) {
         fetch('/census/api/maps/states?field=' + encodeURIComponent(field))
-            .then(function(resp) { return resp.json(); })
+            .then(function(resp) {
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                return resp.json();
+            })
             .then(function(data) {
                 geojsonData = data;
                 if (geojsonLayer) map.removeLayer(geojsonLayer);
@@ -107,7 +111,7 @@
                         layer.on('click', function() {
                             var p = feature.properties;
                             var html = '<strong>' + (p._state || p.NAME || '') + '</strong><br>' +
-                                       field + ': ' + (p._state_value != null ? p._state_value.toLocaleString() : '—');
+                                       (fieldLabels[field] || field) + ': ' + (p._state_value != null ? p._state_value.toLocaleString() : '—');
                             layer.bindPopup(html).openPopup();
                         });
                     }
@@ -128,9 +132,15 @@
                     legendEl.style.display = 'block';
                     document.getElementById('legend-min').textContent = min.toLocaleString();
                     document.getElementById('legend-max').textContent = max.toLocaleString();
-                    document.getElementById('legend-label').textContent = field;
+                    document.getElementById('legend-label').textContent = fieldLabels[field] || field;
                 }
                 document.getElementById('loading-msg').style.display = 'none';
+            })
+            .catch(function(err) {
+                var msg = document.getElementById('loading-msg');
+                msg.removeAttribute('aria-busy');
+                msg.textContent = 'Failed to load data: ' + err.message;
+                msg.style.color = 'var(--pico-del-color, #c62828)';
             });
     }
 

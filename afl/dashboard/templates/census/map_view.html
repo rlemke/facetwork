@@ -16,7 +16,7 @@
 <select id="choropleth-field" style="max-width:300px;display:inline-block;margin-left:.5rem">
     <option value="">None (uniform)</option>
     {% for field in numeric_fields %}
-    <option value="{{ field }}">{{ field }}</option>
+    <option value="{{ field }}">{{ field_labels.get(field, field) }}</option>
     {% endfor %}
 </select>
 {% endif %}
@@ -40,6 +40,8 @@
 <script>
 (function() {
     var geojsonData = {{ geojson_str | safe }};
+    var fieldLabels = {{ field_labels | tojson }};
+    var popupFields = {{ popup_fields | tojson }};
 
     var map = L.map('map').setView([39.8, -98.5], 4);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -89,14 +91,27 @@
         return v == null ? '—' : String(v);
     }
 
+    function formatMetric(key, v) {
+        if (v == null) return '—';
+        if (typeof v !== 'number') return String(v);
+        if (key === 'median_income') return '$' + v.toLocaleString();
+        if (key.startsWith('pct_') || key === 'unemployment_rate' || key === 'labor_force_participation') return v.toFixed(1) + '%';
+        return v.toLocaleString();
+    }
+
     function onEachFeature(feature, layer) {
         layer.on('click', function() {
             var props = feature.properties;
-            var rows = '';
-            for (var key in props) {
-                rows += '<tr><td><strong>' + key + '</strong></td><td>' + formatValue(props[key]) + '</td></tr>';
-            }
-            var html = '<table style="font-size:12px;border-collapse:collapse">' + rows + '</table>';
+            var html = '<strong>' + (props.NAME || '') + '</strong>';
+            if (props.GEOID) html += ' <small>(' + props.GEOID + ')</small>';
+            html += '<table style="font-size:12px;border-collapse:collapse;margin-top:4px">';
+            popupFields.forEach(function(key) {
+                if (props[key] != null) {
+                    html += '<tr><td style="padding:1px 6px 1px 0"><strong>' + (fieldLabels[key] || key) + '</strong></td><td>' + formatMetric(key, props[key]) + '</td></tr>';
+                }
+            });
+            html += '</table>';
+            html += '<a href="/census/maps/{{ dataset_key }}/table" style="font-size:11px">View all fields</a>';
             layer.bindPopup(html, {maxWidth: 400, maxHeight: 300}).openPopup();
         });
     }
@@ -124,7 +139,7 @@
         legendEl.style.display = 'block';
         legendMin.textContent = range.min.toLocaleString();
         legendMax.textContent = range.max.toLocaleString();
-        legendLabel.textContent = field;
+        legendLabel.textContent = fieldLabels[field] || field;
     }
 
     var dropdown = document.getElementById('choropleth-field');

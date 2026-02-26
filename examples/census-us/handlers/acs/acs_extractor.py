@@ -19,8 +19,10 @@ ACS_TABLES: dict[str, dict] = {
     "B01003": {"label": "Total Population", "columns": ["B01003_001E"]},
     "B19013": {"label": "Median Household Income", "columns": ["B19013_001E"]},
     "B25001": {"label": "Housing Units", "columns": ["B25001_001E"]},
-    "B15003": {"label": "Educational Attainment", "columns": ["B15003_001E"]},
-    "B08301": {"label": "Means of Transportation", "columns": ["B08301_001E"]},
+    "B15003": {"label": "Educational Attainment", "columns": [
+        "B15003_001E", "B15003_022E", "B15003_023E", "B15003_024E", "B15003_025E"]},
+    "B08301": {"label": "Means of Transportation", "columns": [
+        "B08301_001E", "B08301_003E", "B08301_010E", "B08301_019E", "B08301_021E"]},
     "B25003": {
         "label": "Housing Tenure",
         "columns": ["B25003_001E", "B25003_002E", "B25003_003E"],

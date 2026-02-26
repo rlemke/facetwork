@@ -23,7 +23,7 @@ namespace census.workflows {
         poverty = ExtractPoverty(file = acs.file, state_fips = $.state_fips)
         employment = ExtractEmployment(file = acs.file, state_fips = $.state_fips)
         counties = ExtractCounties(file = tiger.file, state_fips = $.state_fips)
-        joined = JoinGeo(acs_path = pop.result.output_path, tiger_path = counties.result.output_path)
+        joined = JoinGeo(acs_path = pop.result.output_path, tiger_path = counties.result.output_path, extra_acs_paths = [income.result.output_path, housing.result.output_path, education.result.output_path, commuting.result.output_path, tenure.result.output_path, vehicles.result.output_path, race.result.output_path, poverty.result.output_path, employment.result.output_path])
         summary = SummarizeState(population = pop.result, income = income.result, housing = housing.result, education = education.result, commuting = commuting.result, race = race.result, poverty = poverty.result, employment = employment.result)
         yield AnalyzeState(summary = summary.result)
     }
@@ -45,7 +45,7 @@ namespace census.workflows {
         poverty = ExtractPoverty(file = acs.file, state_fips = $.state_fips)
         employment = ExtractEmployment(file = acs.file, state_fips = $.state_fips)
         counties = ExtractCounties(file = tiger.file, state_fips = $.state_fips)
-        joined = JoinGeo(acs_path = pop.result.output_path, tiger_path = counties.result.output_path)
+        joined = JoinGeo(acs_path = pop.result.output_path, tiger_path = counties.result.output_path, extra_acs_paths = [income.result.output_path, housing.result.output_path, education.result.output_path, commuting.result.output_path, tenure.result.output_path, vehicles.result.output_path, race.result.output_path, poverty.result.output_path, employment.result.output_path])
         summary = SummarizeState(population = pop.result, income = income.result, housing = housing.result, education = education.result, commuting = commuting.result, race = race.result, poverty = poverty.result, employment = employment.result)
         pop_db = PopulationToDB(result = pop.result, state_fips = $.state_fips)
         income_db = IncomeToDB(result = income.result, state_fips = $.state_fips)
