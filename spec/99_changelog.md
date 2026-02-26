@@ -48,6 +48,17 @@ Add B25003 (Housing Tenure), B11001 (Household Type), B01001 (Sex by Age), and B
 - Both test files: updated total registry count (21→30)
 - Compiled output: `census-us.json` recompiled
 
+### E2E verification (`census.workflows.AnalyzeStateWithDB`, Alabama)
+- 30 steps, 28 event tasks — all completed in 10.8s via local AgentPoller
+- **DownloadACS**: 32 columns (B01003+B19013+B25001+B15003+B08301+B25003+B11001+B25044), 992ms download
+- **DownloadACSDetailed**: 49 B01001 columns, 763ms download (separate API call)
+- **DownloadTIGER**: cached, <1ms
+- **ACS extractors** (9 facets, 67 records each): Population (B01003), Income (B19013), Housing (B25001), Education (B15003), Commuting (B08301), Tenure (B25003), Households (B11001), Age (B01001), Vehicles (B25044)
+- **ExtractCounties**: 67 features (pyshp, 3.5s)
+- **JoinGeo**: 67 features joined on GEOID (286ms)
+- **SummarizeState**: 5 tables, 335 records
+- **Ingestion (12 ToDB steps)**: PopulationToDB 67, IncomeToDB 67, HousingToDB 67, EducationToDB 67, CommutingToDB 67, TenureToDB 67, HouseholdsToDB 67, AgeToDB 67, VehiclesToDB 67, CountiesToDB 67, JoinedToDB 67, SummaryToDB 1 — 872 total documents ingested into MongoDB
+
 ### Details
 - 12 files changed; 6 new tests; test suite: 2614 passed, 79 skipped
 
