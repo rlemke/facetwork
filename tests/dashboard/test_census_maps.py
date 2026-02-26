@@ -40,6 +40,30 @@ pytestmark = pytest.mark.skipif(
 
 
 # ---------------------------------------------------------------------------
+# Helper unit tests (no server needed)
+# ---------------------------------------------------------------------------
+
+from afl.dashboard.routes.census_maps import _region_label
+
+
+class TestRegionLabel:
+    def test_known_fips(self):
+        assert _region_label("census.tiger.county.01") == "Alabama"
+
+    def test_texas(self):
+        assert _region_label("census.joined.48") == "Texas"
+
+    def test_unknown_fips(self):
+        assert _region_label("census.tiger.county.99") == ""
+
+    def test_no_dots(self):
+        assert _region_label("nodots") == ""
+
+    def test_dc(self):
+        assert _region_label("census.tiger.county.11") == "District of Columbia"
+
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
@@ -176,6 +200,24 @@ class TestCensusMapList:
         pos_county99 = text.index("census.tiger.county.99")
         assert pos_joined < pos_county01 < pos_county99
 
+    def test_shows_region_name(self, client):
+        tc, store = client
+        _seed_meta(store, "census.tiger.county.01")
+        _seed_meta(store, "census.tiger.county.48")
+
+        resp = tc.get("/census/maps")
+        assert resp.status_code == 200
+        assert "Alabama" in resp.text
+        assert "Texas" in resp.text
+
+    def test_unknown_fips_region_blank(self, client):
+        tc, store = client
+        _seed_meta(store, "census.tiger.county.99")
+
+        resp = tc.get("/census/maps")
+        assert resp.status_code == 200
+        assert "census.tiger.county.99" in resp.text
+
 
 # ---------------------------------------------------------------------------
 # Map view page: GET /census/maps/{dataset_key}
@@ -277,6 +319,20 @@ class TestCensusMapView:
         assert resp.status_code == 200
         assert "census.joined.01" in resp.text
         assert "1 features" in resp.text
+
+    def test_shows_region_name_in_heading(self, client):
+        tc, store = client
+        _seed_feature(store, "census.tiger.county.01", "01001", "Autauga", _TRIANGLE)
+
+        resp = tc.get("/census/maps/census.tiger.county.01")
+        assert resp.status_code == 200
+        assert "Alabama" in resp.text
+
+    def test_unknown_fips_no_region(self, client):
+        tc, store = client
+        resp = tc.get("/census/maps/census.tiger.county.99")
+        assert resp.status_code == 200
+        assert "census.tiger.county.99" in resp.text
 
 
 # ---------------------------------------------------------------------------

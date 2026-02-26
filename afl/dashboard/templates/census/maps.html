@@ -12,6 +12,7 @@
     <thead>
         <tr>
             <th>Dataset Key</th>
+            <th>Region</th>
             <th>Facet Name</th>
             <th>Records</th>
             <th>Imported At</th>
@@ -21,6 +22,7 @@
         {% for ds in datasets %}
         <tr>
             <td><a href="/census/maps/{{ ds.dataset_key }}">{{ ds.dataset_key }}</a></td>
+            <td>{{ ds.region }}</td>
             <td>{{ ds.facet_name }}</td>
             <td>{{ ds.record_count }}</td>
             <td>

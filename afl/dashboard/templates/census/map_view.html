@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{{ dataset_key }} — Census Map{% endblock %}
+{% block title %}{% if region %}{{ region }} — {% endif %}{{ dataset_key }} — Census Map{% endblock %}
 
 {% block content %}
 <hgroup>
-    <h1>{{ dataset_key }}</h1>
+    <h1>{% if region %}{{ region }} — {% endif %}{{ dataset_key }}</h1>
     <p>{{ feature_count }} features — <a href="/census/maps">Back to datasets</a></p>
 </hgroup>
 

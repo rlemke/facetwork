@@ -26,6 +26,33 @@ from ..dependencies import get_store
 
 router = APIRouter(prefix="/census")
 
+# FIPS code → state name for display purposes.
+_FIPS_TO_STATE: dict[str, str] = {
+    "01": "Alabama", "02": "Alaska", "04": "Arizona", "05": "Arkansas",
+    "06": "California", "08": "Colorado", "09": "Connecticut", "10": "Delaware",
+    "11": "District of Columbia", "12": "Florida", "13": "Georgia", "15": "Hawaii",
+    "16": "Idaho", "17": "Illinois", "18": "Indiana", "19": "Iowa",
+    "20": "Kansas", "21": "Kentucky", "22": "Louisiana", "23": "Maine",
+    "24": "Maryland", "25": "Massachusetts", "26": "Michigan", "27": "Minnesota",
+    "28": "Mississippi", "29": "Missouri", "30": "Montana", "31": "Nebraska",
+    "32": "Nevada", "33": "New Hampshire", "34": "New Jersey", "35": "New Mexico",
+    "36": "New York", "37": "North Carolina", "38": "North Dakota", "39": "Ohio",
+    "40": "Oklahoma", "41": "Oregon", "42": "Pennsylvania", "44": "Rhode Island",
+    "45": "South Carolina", "46": "South Dakota", "47": "Tennessee", "48": "Texas",
+    "49": "Utah", "50": "Vermont", "51": "Virginia", "53": "Washington",
+    "54": "West Virginia", "55": "Wisconsin", "56": "Wyoming",
+}
+
+
+def _region_label(dataset_key: str) -> str:
+    """Extract a human-readable region name from a dataset key.
+
+    Keys like ``census.tiger.county.01`` or ``census.joined.01`` have the
+    state FIPS as the last dotted segment.
+    """
+    suffix = dataset_key.rsplit(".", 1)[-1] if "." in dataset_key else ""
+    return _FIPS_TO_STATE.get(suffix, "")
+
 
 @router.get("/maps")
 def census_map_list(request: Request, store=Depends(get_store)):
@@ -38,6 +65,7 @@ def census_map_list(request: Request, store=Depends(get_store)):
     )
     for m in metas:
         m.pop("_id", None)
+        m["region"] = _region_label(m.get("dataset_key", ""))
 
     return request.app.state.templates.TemplateResponse(
         request,
@@ -75,11 +103,14 @@ def census_map_view(
 
     geojson_str = json.dumps(geojson)
 
+    region = _region_label(dataset_key)
+
     return request.app.state.templates.TemplateResponse(
         request,
         "census/map_view.html",
         {
             "dataset_key": dataset_key,
+            "region": region,
             "geojson_str": geojson_str,
             "feature_count": len(features),
             "numeric_fields": numeric_fields,
