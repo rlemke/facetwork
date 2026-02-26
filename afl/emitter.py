@@ -332,6 +332,8 @@ class JSONEmitter:
             data["returns"] = self._convert(node.sig.returns.params)
         if node.sig.mixins:
             data["mixins"] = self._convert(node.sig.mixins)
+        if node.pre_script:
+            data["pre_script"] = self._convert(node.pre_script)
         if node.body:
             data["body"] = self._emit_body(node.body)
 
@@ -352,6 +354,8 @@ class JSONEmitter:
             data["returns"] = self._convert(node.sig.returns.params)
         if node.sig.mixins:
             data["mixins"] = self._convert(node.sig.mixins)
+        if node.pre_script:
+            data["pre_script"] = self._convert(node.pre_script)
         if node.body:
             data["body"] = self._emit_body(node.body)
 
@@ -372,6 +376,8 @@ class JSONEmitter:
             data["returns"] = self._convert(node.sig.returns.params)
         if node.sig.mixins:
             data["mixins"] = self._convert(node.sig.mixins)
+        if node.pre_script:
+            data["pre_script"] = self._convert(node.pre_script)
         if node.body:
             data["body"] = self._emit_body(node.body)
 
@@ -503,7 +509,9 @@ class JSONEmitter:
 
         if node.foreach:
             data["foreach"] = self._convert(node.foreach)
-        if node.block:
+        if node.script:
+            data["script"] = self._convert(node.script)
+        elif node.block:
             if node.block.steps:
                 data["steps"] = self._convert(node.block.steps)
             if node.block.yield_stmts:

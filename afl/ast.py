@@ -216,10 +216,14 @@ class Block(ASTNode):
 
 @dataclass
 class AndThenBlock(ASTNode):
-    """andThen block with optional foreach."""
+    """andThen block with optional foreach.
 
-    block: Block
+    Has EITHER block (regular andThen) or script (andThen script variant), not both.
+    """
+
+    block: Block | None = None
     foreach: ForeachClause | None = None
+    script: ScriptBlock | None = None
 
 
 @dataclass
@@ -294,7 +298,8 @@ class FacetDecl(ASTNode):
     """Facet declaration."""
 
     sig: FacetSig
-    body: "list[AndThenBlock] | AndThenBlock | ScriptBlock | None" = None
+    pre_script: ScriptBlock | None = None
+    body: "list[AndThenBlock] | AndThenBlock | None" = None
     doc: "DocComment | None" = field(default=None, kw_only=True)
 
 
@@ -303,7 +308,8 @@ class EventFacetDecl(ASTNode):
     """Event facet declaration."""
 
     sig: FacetSig
-    body: "list[AndThenBlock] | AndThenBlock | PromptBlock | ScriptBlock | None" = None
+    pre_script: ScriptBlock | None = None
+    body: "list[AndThenBlock] | AndThenBlock | PromptBlock | None" = None
     doc: "DocComment | None" = field(default=None, kw_only=True)
 
 
@@ -312,6 +318,7 @@ class WorkflowDecl(ASTNode):
     """Workflow declaration."""
 
     sig: FacetSig
+    pre_script: ScriptBlock | None = None
     body: "list[AndThenBlock] | AndThenBlock | None" = None
     doc: "DocComment | None" = field(default=None, kw_only=True)
 

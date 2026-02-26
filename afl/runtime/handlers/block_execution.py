@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 from ..block import StepAnalysis
 from ..changers.base import StateChangeResult
 from ..dependency import DependencyGraph
+from ..script_executor import ScriptExecutor
 from .base import StateHandler
 
 if TYPE_CHECKING:
@@ -48,6 +49,10 @@ class BlockExecutionBeginHandler(StateHandler):
             # No block definition, complete immediately
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
+
+        # Check for andThen script block
+        if "script" in block_ast:
+            return self._execute_script_block(block_ast["script"])
 
         # Check for foreach clause
         if "foreach" in block_ast:
@@ -226,6 +231,40 @@ class BlockExecutionBeginHandler(StateHandler):
                 self.step.id,
             )
             self.context.changes.add_created_step(step)
+
+    def _execute_script_block(self, script_ast: dict) -> StateChangeResult:
+        """Execute an andThen script block.
+
+        Runs the script with the container step's params as input and
+        stores results as returns on this block step.
+
+        Args:
+            script_ast: ScriptBlock AST dict with "code" and "language" keys.
+
+        Returns:
+            StateChangeResult
+        """
+        # Build params from the container step's attributes
+        params: dict = {}
+        container = self.context._find_step(self.step.container_id) if self.step.container_id else None
+        if container:
+            for name, attr in container.attributes.params.items():
+                params[name] = attr.value
+
+        code = script_ast.get("code", "")
+        language = script_ast.get("language", "python")
+        executor = ScriptExecutor()
+        result = executor.execute(code, params, language)
+
+        if not result.success:
+            return self.error(RuntimeError(result.error or "andThen script execution failed"))
+
+        # Store results as returns on this block step
+        for name, value in result.result.items():
+            self.step.set_attribute(name, value, is_return=True)
+
+        self.step.request_state_change(True)
+        return StateChangeResult(step=self.step)
 
 
 class BlockExecutionContinueHandler(StateHandler):

@@ -402,7 +402,8 @@ class AFLTransformer(Transformer):
         return ForeachClause(variable=var, iterable=ref, location=self._loc(meta))
 
     @v_args(meta=True)
-    def more_andthen_block(self, meta, items: list) -> AndThenBlock:
+    def andthen_clause(self, meta, items: list) -> AndThenBlock:
+        """Handle regular andThen block clause."""
         foreach = None
         block = None
         for item in items:
@@ -413,31 +414,36 @@ class AFLTransformer(Transformer):
         return AndThenBlock(block=block, foreach=foreach, location=self._loc(meta))
 
     @v_args(meta=True)
+    def andthen_script(self, meta, items: list) -> AndThenBlock:
+        """Handle andThen script variant."""
+        script = items[0]  # ScriptBlock from script_block rule
+        return AndThenBlock(script=script, location=self._loc(meta))
+
+    @v_args(meta=True)
     def facet_def_tail(self, meta, items: list):
-        # Check for prompt or script blocks
+        # Check for prompt block
         for item in items:
             if isinstance(item, PromptBlock):
                 return item
-            elif isinstance(item, ScriptBlock):
-                return item
 
-        # Build the first andThen block from inline components
-        foreach = None
-        block = None
-        more_blocks = []
+        # Separate pre_script (ScriptBlock) from andThen blocks
+        pre_script = None
+        blocks = []
         for item in items:
-            if isinstance(item, ForeachClause):
-                foreach = item
-            elif isinstance(item, Block):
-                block = item
+            if isinstance(item, ScriptBlock):
+                pre_script = item
             elif isinstance(item, AndThenBlock):
-                more_blocks.append(item)
+                blocks.append(item)
 
-        first_block = AndThenBlock(block=block, foreach=foreach, location=self._loc(meta))
+        body = None
+        if len(blocks) == 1:
+            body = blocks[0]
+        elif blocks:
+            body = blocks
 
-        if more_blocks:
-            return [first_block] + more_blocks
-        return first_block
+        if pre_script is not None:
+            return (pre_script, body)  # tuple signals both fields
+        return body  # None, single AndThenBlock, or list
 
     # Prompt block handling
     @v_args(meta=True)
@@ -518,22 +524,37 @@ class AFLTransformer(Transformer):
     def facet_decl(self, meta, items: list) -> FacetDecl:
         doc = _extract_doc_comment(items)
         sig = items[0]
-        body = items[1] if len(items) > 1 else None
-        return FacetDecl(sig=sig, body=body, doc=doc, location=self._loc(meta))
+        tail = items[1] if len(items) > 1 else None
+        pre_script, body = None, None
+        if isinstance(tail, tuple):
+            pre_script, body = tail
+        elif isinstance(tail, (PromptBlock, AndThenBlock, list)):
+            body = tail
+        return FacetDecl(sig=sig, pre_script=pre_script, body=body, doc=doc, location=self._loc(meta))
 
     @v_args(meta=True)
     def event_facet_decl(self, meta, items: list) -> EventFacetDecl:
         doc = _extract_doc_comment(items)
         sig = items[0]
-        body = items[1] if len(items) > 1 else None
-        return EventFacetDecl(sig=sig, body=body, doc=doc, location=self._loc(meta))
+        tail = items[1] if len(items) > 1 else None
+        pre_script, body = None, None
+        if isinstance(tail, tuple):
+            pre_script, body = tail
+        elif isinstance(tail, (PromptBlock, AndThenBlock, list)):
+            body = tail
+        return EventFacetDecl(sig=sig, pre_script=pre_script, body=body, doc=doc, location=self._loc(meta))
 
     @v_args(meta=True)
     def workflow_decl(self, meta, items: list) -> WorkflowDecl:
         doc = _extract_doc_comment(items)
         sig = items[0]
-        body = items[1] if len(items) > 1 else None
-        return WorkflowDecl(sig=sig, body=body, doc=doc, location=self._loc(meta))
+        tail = items[1] if len(items) > 1 else None
+        pre_script, body = None, None
+        if isinstance(tail, tuple):
+            pre_script, body = tail
+        elif isinstance(tail, (PromptBlock, AndThenBlock, list)):
+            body = tail
+        return WorkflowDecl(sig=sig, pre_script=pre_script, body=body, doc=doc, location=self._loc(meta))
 
     @v_args(meta=True, inline=True)
     def implicit_decl(self, meta, name: str, call: CallExpr) -> ImplicitDecl:

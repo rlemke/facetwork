@@ -113,11 +113,12 @@ step_stmt          := ident "=" call_expr (stmt_sep)? ;
 
 call_expr          := qname "(" named_args? ")" mixin_call* ;
 
-facet_def_tail     := ("andThen" foreach_clause? block more_andthen_block*)
-                   | ("prompt" prompt_block)
-                   | ("script" script_block) ;
+facet_def_tail     := ("script" script_block andthen_clause*)
+                   | andthen_clause+
+                   | ("prompt" prompt_block) ;
 
-more_andthen_block := "andThen" foreach_clause? block ;
+andthen_clause     := "andThen" foreach_clause? block
+                   | "andThen" "script" script_block ;
 
 foreach_clause     := "foreach" ident "in" reference ;
 
@@ -127,7 +128,9 @@ prompt_directive   := "system" string
                    | "model" string ;
 
 script_block       := string
-                   | "python" string ;
+                   | "python" string
+                   | "{" raw_python_code "}"
+                   | "python" "{" raw_python_code "}" ;
 
 block              := "{" block_stmt* yield_stmt? "}" ;
 
@@ -204,8 +207,25 @@ event facet Summarize(text: String) => (summary: String) prompt {
     model "claude-sonnet-4-20250514"
 }
 
-### Script block (inline Python execution)
+### Script blocks (inline Python execution)
+
+#### Pre-processing script (runs before event/begins, modifies params)
 event facet AddOne(input: Long) => (output: Long) script python "result['output'] = params['input'] + 1"
+
+#### Brace-delimited pre-processing script
+facet Transform(input: String) => (output: String) script {
+    result["output"] = params["input"].upper()
+}
+
+#### Pre-script with andThen blocks
+facet Prepare(x: Long) script "result['x'] = params['x'] * 2" andThen {
+    s = Process(x = $.x)
+}
+
+#### andThen script (concurrent block variant)
+facet Pipeline() andThen { s = Step1() } andThen script {
+    result["computed"] = 42
+}
 
 ### Schema declaration and instantiation
 schema Config {

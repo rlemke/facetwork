@@ -23,6 +23,7 @@ from lark import Lark
 from lark.exceptions import UnexpectedCharacters, UnexpectedInput, UnexpectedToken
 
 from .ast import Program
+from .preprocess import PreprocessError, preprocess_script_braces
 from .source import CompilerInput, SourceRegistry
 from .transformer import AFLTransformer
 
@@ -105,7 +106,15 @@ class AFLParser:
         transformer = AFLTransformer(source_id=effective_source_id)
 
         try:
-            tree = self._parser.parse(source)
+            preprocessed = preprocess_script_braces(source)
+        except PreprocessError as e:
+            raise ParseError(
+                str(e),
+                line=e.line,
+            ) from e
+
+        try:
+            tree = self._parser.parse(preprocessed)
             return transformer.transform(tree)
         except UnexpectedCharacters as e:
             raise ParseError(
@@ -252,6 +261,13 @@ class AFLParser:
 
 # Module-level cached parser for the convenience function
 _default_parser: AFLParser | None = None
+
+
+def _reset_parser_cache() -> None:
+    """Reset cached Lark and parser instances (used after grammar changes in tests)."""
+    global _default_parser
+    AFLParser._lark = None
+    _default_parser = None
 
 
 def _get_default_parser() -> AFLParser:

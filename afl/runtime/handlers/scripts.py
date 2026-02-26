@@ -43,8 +43,16 @@ class FacetScriptsBeginHandler(StateHandler):
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
 
-        body = facet_def.get("body")
-        if body is None or isinstance(body, list) or body.get("type") != "ScriptBlock":
+        # Check for pre_script (new format) first, then fall back to body ScriptBlock
+        script_def = facet_def.get("pre_script")
+        is_pre_script = script_def is not None
+
+        if script_def is None:
+            body = facet_def.get("body")
+            if body is not None and not isinstance(body, list) and body.get("type") == "ScriptBlock":
+                script_def = body
+
+        if script_def is None:
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
 
@@ -54,17 +62,18 @@ class FacetScriptsBeginHandler(StateHandler):
             params[name] = attr.value
 
         # Execute script
-        code = body.get("code", "")
-        language = body.get("language", "python")
+        code = script_def.get("code", "")
+        language = script_def.get("language", "python")
         executor = ScriptExecutor()
         result = executor.execute(code, params, language)
 
         if not result.success:
             return self.error(RuntimeError(result.error or "Script execution failed"))
 
-        # Write results to step returns
+        # Pre-script writes back as params (modifies inputs for downstream);
+        # legacy body script writes as returns (backward compat)
         for name, value in result.result.items():
-            self.step.set_attribute(name, value, is_return=True)
+            self.step.set_attribute(name, value, is_return=not is_pre_script)
 
         self.step.request_state_change(True)
         return StateChangeResult(step=self.step)

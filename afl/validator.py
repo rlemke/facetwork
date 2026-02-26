@@ -563,11 +563,10 @@ class AFLValidator:
         # Validate mixin references in signature
         for mixin in decl.sig.mixins:
             self._resolve_facet_name(mixin.name, mixin.location)
+        if decl.pre_script:
+            self._validate_script_block(decl.pre_script, decl.sig)
         if decl.body:
-            if isinstance(decl.body, ScriptBlock):
-                self._validate_script_block(decl.body, decl.sig)
-            else:
-                self._validate_body(decl.body, decl.sig)
+            self._validate_body(decl.body, decl.sig)
 
     def _validate_event_facet_decl(self, decl: EventFacetDecl) -> None:
         """Validate an event facet declaration."""
@@ -576,11 +575,11 @@ class AFLValidator:
         # Validate mixin references in signature
         for mixin in decl.sig.mixins:
             self._resolve_facet_name(mixin.name, mixin.location)
+        if decl.pre_script:
+            self._validate_script_block(decl.pre_script, decl.sig)
         if decl.body:
             if isinstance(decl.body, PromptBlock):
                 self._validate_prompt_block(decl.body, decl.sig)
-            elif isinstance(decl.body, ScriptBlock):
-                self._validate_script_block(decl.body, decl.sig)
             else:
                 self._validate_body(decl.body, decl.sig)
 
@@ -646,6 +645,8 @@ class AFLValidator:
         # Validate mixin references in signature
         for mixin in decl.sig.mixins:
             self._resolve_facet_name(mixin.name, mixin.location)
+        if decl.pre_script:
+            self._validate_script_block(decl.pre_script, decl.sig)
         if decl.body:
             self._validate_body(decl.body, decl.sig)
 
@@ -656,6 +657,11 @@ class AFLValidator:
         extra_yield_targets: set[str] | None = None,
     ) -> None:
         """Validate an andThen block."""
+        # andThen script variant
+        if body.script:
+            self._validate_script_block(body.script, containing_sig)
+            return
+
         if not body.block:
             return
 

@@ -1,5 +1,40 @@
 # Implementation Changelog
 
+## Completed (v0.15.0) - Script Block Refactor: Two Distinct Uses
+
+Refactored script blocks to support two distinct use cases:
+1. **Pre-processing script** (`facet F() script { code }`): runs after FacetInitialization, before event/begins. Modifies params directly.
+2. **andThen script** (`andThen script { code }`): concurrent andThen block variant that runs in parallel with other andThen blocks.
+
+Both support brace-delimited syntax (`script { raw python }`) via a new pre-lex preprocessor.
+
+### Grammar changes
+- `facet_def_tail` restructured: `script` followed by optional `andthen_clause*`, or `andthen_clause+`, or `prompt`
+- New `andthen_clause` rule with regular block and `andthen_script` variant
+- Brace-delimited script blocks converted to quoted strings by pre-lex preprocessor before LALR parsing
+
+### AST changes
+- `FacetDecl`, `EventFacetDecl`, `WorkflowDecl`: added `pre_script: ScriptBlock | None` field; `ScriptBlock` removed from `body` union
+- `AndThenBlock`: added `script: ScriptBlock | None` field; `block` made optional (has EITHER block or script, not both)
+
+### Compiler changes
+- New `afl/preprocess.py`: `preprocess_script_braces()` converts `script { code }` to `script "escaped_code"` before Lark parsing
+- Handles nested braces (Python dicts/sets), Python string literals, AFL comments, dedentation, line preservation
+- Transformer: new `andthen_clause`/`andthen_script` methods; declaration methods unpack `(pre_script, body)` tuple
+- Emitter: emits `pre_script` field on declarations, handles `script` key on `AndThenBlock`
+- Validator: validates `pre_script` on all declaration types, validates `script` on `AndThenBlock`
+
+### Runtime changes
+- `FacetScriptsBeginHandler`: checks `pre_script` first (writes as params), falls back to `body` ScriptBlock (writes as returns for backward compat)
+- `BlockExecutionBeginHandler`: detects `script` in block AST, executes via `ScriptExecutor`, stores results as returns
+
+### Tests: 28 new
+- `test_preprocess.py` (16): single-line, multiline, nested braces, Python strings, AFL comments, script python, passthrough, unbalanced error, line preservation, empty braces, andThen script, multiple blocks, dedent, triple-quoted strings, block comment skip, string literal skip
+- `test_parser.py` (7): brace syntax, pre_script+andThen, andThen script, mixed blocks, all three combined, workflow pre_script
+- `test_emitter.py` (3): pre_script+andThen, andThen script, mixed body
+- `test_validator.py` (4): pre_script+andThen, andThen script, empty code fail, mixed validate
+- `test_script_handlers.py` (7): pre_script modifies params, backward compat, pre_script precedence, andThen script execution, error handling, container params, regular block still works
+
 ## Completed (v0.14.0) - Site Selection Pipeline Example
 
 New example: food-service site-selection pipeline combining census demographics,

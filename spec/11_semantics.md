@@ -52,13 +52,13 @@ All AST nodes MUST have a unique UUID (v4) stored in the `node_id` field. This I
 ### Block Nodes
 | Node | Description |
 |------|-------------|
-| `AndThenBlock` | `andThen [foreach] { block }` |
+| `AndThenBlock` | `andThen [foreach] { block }` or `andThen script "code"` |
 | `Block` | `{ steps* yield? }` |
 | `ForeachClause` | `foreach var in reference` |
 | `StepStmt` | `name = CallExpr` |
 | `YieldStmt` | `yield CallExpr` |
 | `PromptBlock` | `prompt { system/template/model directives }` for LLM-based facets |
-| `ScriptBlock` | `script [python] "code..."` for inline sandboxed Python execution |
+| `ScriptBlock` | `script [python] "code..."` or `script { code }` for inline sandboxed Python execution |
 
 ### Expression Nodes
 | Node | Description |
@@ -93,12 +93,14 @@ Program
 │   │   ├── params: list[Parameter]
 │   │   ├── returns: ReturnClause?
 │   │   └── mixins: list[MixinSig]
-│   └── body: AndThenBlock? | PromptBlock? | ScriptBlock?
-│       # AndThenBlock:
+│   ├── pre_script: ScriptBlock?       # pre-processing script (runs before event/begins)
+│   └── body: AndThenBlock? | PromptBlock?
+│       # AndThenBlock (regular):
 │       ├── foreach: ForeachClause?
-│       └── block: Block
-│           ├── steps: list[StepStmt]
-│           └── yield_stmt: YieldStmt?
+│       ├── block: Block?
+│       │   ├── steps: list[StepStmt]
+│       │   └── yield_stmt: YieldStmt?
+│       └── script: ScriptBlock?       # andThen script variant (mutually exclusive with block)
 │       # PromptBlock:
 │       ├── system: str?
 │       ├── template: str?

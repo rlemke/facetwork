@@ -100,16 +100,17 @@ class TestScriptBlocks:
     """Test script block parsing for inline code execution."""
 
     def test_script_block_simple(self, parser):
-        """Parse facet with simple script block."""
+        """Parse facet with simple script block as pre_script."""
         from afl.ast import ScriptBlock
 
         ast = parser.parse('facet Test() script "result = params"')
         assert len(ast.facets) == 1
         f = ast.facets[0]
-        assert f.body is not None
-        assert isinstance(f.body, ScriptBlock)
-        assert f.body.language == "python"
-        assert f.body.code == "result = params"
+        assert f.pre_script is not None
+        assert isinstance(f.pre_script, ScriptBlock)
+        assert f.pre_script.language == "python"
+        assert f.pre_script.code == "result = params"
+        assert f.body is None
 
     def test_script_block_explicit_python(self, parser):
         """Parse script block with explicit python directive."""
@@ -120,9 +121,9 @@ script
     python "result = params"'''
         ast = parser.parse(source)
         f = ast.facets[0]
-        assert isinstance(f.body, ScriptBlock)
-        assert f.body.language == "python"
-        assert f.body.code == "result = params"
+        assert isinstance(f.pre_script, ScriptBlock)
+        assert f.pre_script.language == "python"
+        assert f.pre_script.code == "result = params"
 
     def test_script_block_with_params_and_returns(self, parser):
         """Parse script block with parameters and returns."""
@@ -131,8 +132,8 @@ script
         source = r'facet Transform(input: String) => (output: String) script "result[\"output\"] = params[\"input\"].upper()"'
         ast = parser.parse(source)
         f = ast.facets[0]
-        assert isinstance(f.body, ScriptBlock)
-        assert 'params["input"]' in f.body.code
+        assert isinstance(f.pre_script, ScriptBlock)
+        assert 'params["input"]' in f.pre_script.code
 
     def test_script_block_event_facet(self, parser):
         """Parse event facet with script block."""
@@ -140,8 +141,8 @@ script
 
         ast = parser.parse('event facet Process() script "print(42)"')
         ef = ast.event_facets[0]
-        assert isinstance(ef.body, ScriptBlock)
-        assert ef.body.code == "print(42)"
+        assert isinstance(ef.pre_script, ScriptBlock)
+        assert ef.pre_script.code == "print(42)"
 
     def test_script_block_in_namespace(self, parser):
         """Parse script block inside namespace."""
@@ -153,7 +154,80 @@ script
         ast = parser.parse(source)
         ns = ast.namespaces[0]
         f = ns.facets[0]
-        assert isinstance(f.body, ScriptBlock)
+        assert isinstance(f.pre_script, ScriptBlock)
+
+    def test_pre_script_brace_syntax(self, parser):
+        """Parse facet with brace-delimited script block."""
+        from afl.ast import ScriptBlock
+
+        source = 'facet F() script {\n    x = 1\n    y = 2\n}'
+        ast = parser.parse(source)
+        f = ast.facets[0]
+        assert isinstance(f.pre_script, ScriptBlock)
+        assert "x = 1" in f.pre_script.code
+        assert "y = 2" in f.pre_script.code
+
+    def test_pre_script_with_andthen(self, parser):
+        """Parse pre_script followed by andThen blocks."""
+        from afl.ast import AndThenBlock, ScriptBlock
+
+        source = 'facet F() script "pre" andThen { s = G() }'
+        ast = parser.parse(source)
+        f = ast.facets[0]
+        assert isinstance(f.pre_script, ScriptBlock)
+        assert f.pre_script.code == "pre"
+        assert isinstance(f.body, AndThenBlock)
+        assert f.body.block is not None
+
+    def test_andthen_script(self, parser):
+        """Parse andThen script variant."""
+        from afl.ast import AndThenBlock, ScriptBlock
+
+        source = 'facet F() andThen script "y = 2"'
+        ast = parser.parse(source)
+        f = ast.facets[0]
+        assert f.pre_script is None
+        assert isinstance(f.body, AndThenBlock)
+        assert f.body.script is not None
+        assert f.body.script.code == "y = 2"
+        assert f.body.block is None
+
+    def test_multiple_andthen_mixed(self, parser):
+        """Parse mixed regular andThen and andThen script blocks."""
+        from afl.ast import AndThenBlock
+
+        source = 'facet F() andThen { s = G() } andThen script "y = 2"'
+        ast = parser.parse(source)
+        f = ast.facets[0]
+        assert isinstance(f.body, list)
+        assert len(f.body) == 2
+        assert f.body[0].block is not None
+        assert f.body[1].script is not None
+
+    def test_pre_script_with_andthen_script(self, parser):
+        """Parse pre_script + regular andThen + andThen script."""
+        from afl.ast import ScriptBlock
+
+        source = 'facet F() script "pre" andThen { s = G() } andThen script "post"'
+        ast = parser.parse(source)
+        f = ast.facets[0]
+        assert isinstance(f.pre_script, ScriptBlock)
+        assert f.pre_script.code == "pre"
+        assert isinstance(f.body, list)
+        assert len(f.body) == 2
+        assert f.body[0].block is not None
+        assert f.body[1].script is not None
+        assert f.body[1].script.code == "post"
+
+    def test_workflow_with_pre_script(self, parser):
+        """Parse workflow with pre_script."""
+        from afl.ast import ScriptBlock
+
+        source = 'workflow W() script "setup" andThen { s = F() }'
+        ast = parser.parse(source)
+        w = ast.workflows[0]
+        assert isinstance(w.pre_script, ScriptBlock)
+        assert w.pre_script.code == "setup"
 
 
 class TestPromptBlocks:

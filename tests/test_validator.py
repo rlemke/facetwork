@@ -868,6 +868,31 @@ class TestScriptBlockValidation:
         result = validator.validate(ast)
         assert result.is_valid
 
+    def test_pre_script_with_andthen_validates(self, validator):
+        """Pre-script combined with andThen blocks validates."""
+        ast = parse('facet F() script "x = 1" andThen { s = G() }')
+        result = validator.validate(ast)
+        assert result.is_valid
+
+    def test_andthen_script_validates(self, validator):
+        """andThen script variant validates."""
+        ast = parse('facet F() andThen script "y = 2"')
+        result = validator.validate(ast)
+        assert result.is_valid
+
+    def test_andthen_script_empty_code_fails(self, validator):
+        """andThen script with empty code should fail."""
+        ast = parse('facet F() andThen script ""')
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("must contain code" in str(e) for e in result.errors)
+
+    def test_mixed_andthen_validates(self, validator):
+        """Mixed regular andThen + andThen script validates."""
+        ast = parse('facet F() andThen { s = G() } andThen script "y = 2"')
+        result = validator.validate(ast)
+        assert result.is_valid
+
 
 class TestPromptBlockValidation:
     """Test prompt block validation."""

@@ -140,31 +140,70 @@ class TestScriptBlockEmission:
     """Test script block emission."""
 
     def test_script_block_simple(self, emitter):
-        """Script block with code."""
+        """Script block emitted as pre_script."""
         ast = parse('facet Test() script "x = 1"')
         data = emitter.emit_dict(ast)
 
         f = _first_decl(data, "FacetDecl")
-        body = f["body"]
-        assert body["type"] == "ScriptBlock"
-        assert body["language"] == "python"
-        assert body["code"] == "x = 1"
+        pre = f["pre_script"]
+        assert pre["type"] == "ScriptBlock"
+        assert pre["language"] == "python"
+        assert pre["code"] == "x = 1"
+        assert "body" not in f
 
     def test_script_block_includes_id(self, emitter):
         """Script block should have an id."""
         ast = parse('facet Test() script "pass"')
         data = emitter.emit_dict(ast)
 
-        body = _first_decl(data, "FacetDecl")["body"]
-        assert "id" in body
+        pre = _first_decl(data, "FacetDecl")["pre_script"]
+        assert "id" in pre
 
     def test_script_block_event_facet(self, emitter):
-        """Script block in event facet."""
+        """Script block in event facet as pre_script."""
         ast = parse('event facet Test() script "result = {}"')
         data = emitter.emit_dict(ast)
 
-        body = _first_decl(data, "EventFacetDecl")["body"]
-        assert body["type"] == "ScriptBlock"
+        pre = _first_decl(data, "EventFacetDecl")["pre_script"]
+        assert pre["type"] == "ScriptBlock"
+
+    def test_pre_script_with_andthen_emission(self, emitter):
+        """Pre-script with andThen block both emitted."""
+        ast = parse('facet F() script "pre" andThen { s = G() }')
+        data = emitter.emit_dict(ast)
+
+        f = _first_decl(data, "FacetDecl")
+        assert "pre_script" in f
+        assert f["pre_script"]["type"] == "ScriptBlock"
+        assert f["pre_script"]["code"] == "pre"
+        assert "body" in f
+        body = f["body"]
+        assert body["type"] == "AndThenBlock"
+
+    def test_andthen_script_emission(self, emitter):
+        """andThen script block emitted with script key."""
+        ast = parse('facet F() andThen script "y = 2"')
+        data = emitter.emit_dict(ast)
+
+        f = _first_decl(data, "FacetDecl")
+        body = f["body"]
+        assert body["type"] == "AndThenBlock"
+        assert "script" in body
+        assert body["script"]["type"] == "ScriptBlock"
+        assert body["script"]["code"] == "y = 2"
+        assert "steps" not in body
+
+    def test_mixed_body_emission(self, emitter):
+        """Mixed regular andThen + andThen script emission."""
+        ast = parse('facet F() andThen { s = G() } andThen script "y = 2"')
+        data = emitter.emit_dict(ast)
+
+        f = _first_decl(data, "FacetDecl")
+        body = f["body"]
+        assert isinstance(body, list)
+        assert len(body) == 2
+        assert "steps" in body[0]
+        assert "script" in body[1]
 
 
 class TestPromptBlockEmission:
