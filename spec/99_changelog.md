@@ -1,5 +1,40 @@
 # Implementation Changelog
 
+## Completed (v0.12.97) - Add census data map visualization dashboard page
+
+New dashboard page for viewing census GeoJSON datasets on an interactive Leaflet.js map with choropleth coloring, click-to-inspect popups, and auto-fit bounds. No new Python dependencies — Leaflet loaded from CDN.
+
+### New route module (`afl/dashboard/routes/census_maps.py`)
+- `GET /census/maps` — dataset list page; queries `handler_output_meta` for `geojson_feature` entries, sorted by `dataset_key`
+- `GET /census/maps/{dataset_key}` — map view page; builds GeoJSON `FeatureCollection` from `handler_output` documents, detects numeric properties for choropleth dropdown
+- `GET /census/api/maps/{dataset_key}` — raw GeoJSON API endpoint returning `FeatureCollection` as JSON
+
+### Dataset list template (`afl/dashboard/templates/census/maps.html`)
+- Table with columns: Dataset Key (linked to map view), Facet Name, Record Count, Imported At
+- Filters to `geojson_feature` data type only (CSV/JSON records lack geometry)
+
+### Map view template (`afl/dashboard/templates/census/map_view.html`)
+- Leaflet.js (v1.9.4) via CDN with OpenStreetMap tile layer
+- GeoJSON polygon overlay with auto-fit bounds on load
+- Choropleth dropdown: select any numeric property (e.g. population, income, density) to color polygons with white→blue gradient
+- Color legend with min/max scale, auto-generated from selected property
+- Click popups: formatted property table for each polygon
+- Dropdown hidden when no numeric fields detected
+
+### Route registration and navigation
+- `afl/dashboard/routes/__init__.py`: added `census_maps_router`
+- `afl/dashboard/templates/base.html`: added "Census Maps" nav link between "Output" and "New Workflow"
+
+### Tests (`tests/dashboard/test_census_maps.py`)
+- 25 new tests across 4 classes:
+  - `TestCensusMapList` (7): empty list, dataset listing, non-geojson filtering, record count, facet name, link generation, sort order
+  - `TestCensusMapView` (9): empty dataset, feature rendering, embedded GeoJSON, numeric field detection, string-only dropdown suppression, geometry-less doc exclusion, Leaflet loading, back link, dotted dataset keys
+  - `TestCensusMapAPI` (7): empty response, GeoJSON structure, feature properties, geometry exclusion, content type, no `_id` leak, dataset isolation
+  - `TestNavLink` (2): nav link present, active tab highlighted
+
+### Details
+- 6 files changed (3 new, 2 modified, 1 new test); 25 new tests; test suite: 2633 passed, 79 skipped
+
 ## Completed (v0.12.95) - Add 4 new ACS tables: tenure, households, age, vehicles
 
 Add B25003 (Housing Tenure), B11001 (Household Type), B01001 (Sex by Age), and B25044 (Vehicles Available) to the census-us pipeline. Multi-column extraction support added to the ACS extractor, and a separate `DownloadACSDetailed` request handles B01001's 49 columns to stay within the Census API's ~50-variable limit.
