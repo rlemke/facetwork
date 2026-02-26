@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Compare States — Census Maps{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Compare States</h1>
+    <p><a href="/census/maps">Back to datasets</a></p>
+</hgroup>
+
+<form method="get" action="/census/compare">
+    <div class="grid">
+        <label>
+            Left state
+            <select name="left">
+                <option value="">Select&hellip;</option>
+                {% for ds in datasets %}
+                <option value="{{ ds.key }}"{% if ds.key == left %} selected{% endif %}>{{ ds.label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            Right state
+            <select name="right">
+                <option value="">Select&hellip;</option>
+                {% for ds in datasets %}
+                <option value="{{ ds.key }}"{% if ds.key == right %} selected{% endif %}>{{ ds.label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </div>
+    <button type="submit">Compare</button>
+</form>
+
+{% if left and right %}
+{% if numeric_fields %}
+<label for="choropleth-field">Color by:</label>
+<select id="choropleth-field" style="max-width:300px;display:inline-block;margin-left:.5rem">
+    <option value="">None (uniform)</option>
+    {% for field in numeric_fields %}
+    <option value="{{ field }}">{{ field }}</option>
+    {% endfor %}
+</select>
+{% endif %}
+
+<div class="grid">
+    <div>
+        <h3>{% if left_region %}{{ left_region }}{% else %}{{ left }}{% endif %}</h3>
+        <p>{{ left_count }} features</p>
+        <div id="map-left" style="height:40vh;border:1px solid var(--pico-muted-border-color);border-radius:var(--pico-border-radius)"></div>
+    </div>
+    <div>
+        <h3>{% if right_region %}{{ right_region }}{% else %}{{ right }}{% endif %}</h3>
+        <p>{{ right_count }} features</p>
+        <div id="map-right" style="height:40vh;border:1px solid var(--pico-muted-border-color);border-radius:var(--pico-border-radius)"></div>
+    </div>
+</div>
+
+{% if comparison %}
+<h2>Comparison</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Field</th>
+            <th>{% if left_region %}{{ left_region }}{% else %}{{ left }}{% endif %} (mean)</th>
+            <th>{% if right_region %}{{ right_region }}{% else %}{{ right }}{% endif %} (mean)</th>
+            <th>Difference</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in comparison %}
+        <tr>
+            <td>{{ row.field }}</td>
+            <td>{{ row.left }}</td>
+            <td>{{ row.right }}</td>
+            <td>{{ row.difference }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if left and right %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+(function() {
+    var leftData = {{ left_geojson_str | safe }};
+    var rightData = {{ right_geojson_str | safe }};
+    var currentField = '';
+
+    function interpolateColor(t) {
+        var r = Math.round(247 + (8 - 247) * t);
+        var g = Math.round(251 + (48 - 251) * t);
+        var b = Math.round(255 + (107 - 255) * t);
+        return 'rgb(' + r + ',' + g + ',' + b + ')';
+    }
+
+    // Shared min/max across both datasets
+    function computeSharedRange(field) {
+        var min = Infinity, max = -Infinity;
+        var all = (leftData ? leftData.features : []).concat(rightData ? rightData.features : []);
+        all.forEach(function(f) {
+            var v = f.properties[field];
+            if (typeof v === 'number' && isFinite(v)) {
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
+        });
+        return {min: min, max: max};
+    }
+
+    function styleFunc(feature) {
+        if (!currentField) return {color: '#3388ff', weight: 1, fillColor: '#3388ff', fillOpacity: 0.3};
+        var range = computeSharedRange(currentField);
+        var v = feature.properties[currentField];
+        var t = 0;
+        if (typeof v === 'number' && isFinite(v) && range.max > range.min) {
+            t = (v - range.min) / (range.max - range.min);
+        }
+        return {color: '#333', weight: 1, fillColor: interpolateColor(t), fillOpacity: 0.7};
+    }
+
+    function initMap(divId, data) {
+        var map = L.map(divId).setView([39.8, -98.5], 4);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
+        if (data && data.features && data.features.length > 0) {
+            var layer = L.geoJSON(data, {style: styleFunc}).addTo(map);
+            map.fitBounds(layer.getBounds());
+            return {map: map, layer: layer};
+        }
+        return {map: map, layer: null};
+    }
+
+    var leftMap = initMap('map-left', leftData);
+    var rightMap = initMap('map-right', rightData);
+
+    var dropdown = document.getElementById('choropleth-field');
+    if (dropdown) {
+        dropdown.addEventListener('change', function() {
+            currentField = this.value;
+            if (leftMap.layer) leftMap.layer.setStyle(styleFunc);
+            if (rightMap.layer) rightMap.layer.setStyle(styleFunc);
+        });
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}

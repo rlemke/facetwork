@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}State-Level Summary — Census Maps{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>State-Level Summary</h1>
+    <p>{{ state_count }} states — <a href="/census/maps/_all">View All Counties</a> | <a href="/census/maps">Back to datasets</a></p>
+</hgroup>
+
+{% if choropleth_fields %}
+<label for="choropleth-field">Color by:</label>
+<select id="choropleth-field" style="max-width:300px;display:inline-block;margin-left:.5rem">
+    {% for field in choropleth_fields %}
+    <option value="{{ field }}"{% if loop.first %} selected{% endif %}>{{ field }}</option>
+    {% endfor %}
+</select>
+{% endif %}
+
+<div id="map" style="height:60vh;margin-top:1rem;border:1px solid var(--pico-muted-border-color);border-radius:var(--pico-border-radius)"></div>
+
+<div id="legend" style="margin-top:.5rem;display:none">
+    <small>
+        <span id="legend-min" style="color:#f7fbff"></span>
+        <span style="display:inline-block;width:200px;height:12px;background:linear-gradient(to right,#f7fbff,#08306b);vertical-align:middle;border:1px solid #ccc"></span>
+        <span id="legend-max" style="color:#08306b"></span>
+        <span id="legend-label" style="margin-left:.5rem"></span>
+    </small>
+</div>
+
+<p id="loading-msg" aria-busy="true">Loading state data&hellip;</p>
+
+{% if state_stats %}
+<h2>Summary Statistics</h2>
+<table id="state-summary-table">
+    <thead>
+        <tr>
+            <th>State</th>
+            <th>Counties</th>
+            <th>Population</th>
+            <th>Housing Units</th>
+            <th>Median Income (weighted)</th>
+            <th>Pop. Density (per km&sup2;)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in state_stats %}
+        <tr>
+            <td>{{ s.state_name }}</td>
+            <td>{{ s.county_count }}</td>
+            <td>{{ s.total_population }}</td>
+            <td>{{ s.total_housing_units }}</td>
+            <td>{{ s.weighted_median_income }}</td>
+            <td>{{ s.population_density }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+(function() {
+    var map = L.map('map').setView([39.8, -98.5], 4);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+
+    var geojsonLayer = null;
+    var geojsonData = null;
+
+    function interpolateColor(t) {
+        var r = Math.round(247 + (8 - 247) * t);
+        var g = Math.round(251 + (48 - 251) * t);
+        var b = Math.round(255 + (107 - 255) * t);
+        return 'rgb(' + r + ',' + g + ',' + b + ')';
+    }
+
+    function getStyle(feature) {
+        if (!geojsonData) return {};
+        var min = Infinity, max = -Infinity;
+        geojsonData.features.forEach(function(f) {
+            var v = f.properties._state_value;
+            if (typeof v === 'number' && isFinite(v)) {
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
+        });
+        var v = feature.properties._state_value || 0;
+        var t = (max > min) ? (v - min) / (max - min) : 0;
+        return {color: '#333', weight: 0.5, fillColor: interpolateColor(t), fillOpacity: 0.7};
+    }
+
+    function loadData(field) {
+        fetch('/census/api/maps/states?field=' + encodeURIComponent(field))
+            .then(function(resp) { return resp.json(); })
+            .then(function(data) {
+                geojsonData = data;
+                if (geojsonLayer) map.removeLayer(geojsonLayer);
+                geojsonLayer = L.geoJSON(data, {
+                    style: getStyle,
+                    onEachFeature: function(feature, layer) {
+                        layer.on('click', function() {
+                            var p = feature.properties;
+                            var html = '<strong>' + (p._state || p.NAME || '') + '</strong><br>' +
+                                       field + ': ' + (p._state_value != null ? p._state_value.toLocaleString() : '—');
+                            layer.bindPopup(html).openPopup();
+                        });
+                    }
+                }).addTo(map);
+                if (data.features.length > 0) map.fitBounds(geojsonLayer.getBounds());
+
+                // Update legend
+                var min = Infinity, max = -Infinity;
+                data.features.forEach(function(f) {
+                    var v = f.properties._state_value;
+                    if (typeof v === 'number' && isFinite(v)) {
+                        if (v < min) min = v;
+                        if (v > max) max = v;
+                    }
+                });
+                var legendEl = document.getElementById('legend');
+                if (data.features.length > 0) {
+                    legendEl.style.display = 'block';
+                    document.getElementById('legend-min').textContent = min.toLocaleString();
+                    document.getElementById('legend-max').textContent = max.toLocaleString();
+                    document.getElementById('legend-label').textContent = field;
+                }
+                document.getElementById('loading-msg').style.display = 'none';
+            });
+    }
+
+    var dropdown = document.getElementById('choropleth-field');
+    if (dropdown) {
+        dropdown.addEventListener('change', function() { loadData(this.value); });
+        loadData(dropdown.value);
+    }
+})();
+</script>
+{% endblock %}

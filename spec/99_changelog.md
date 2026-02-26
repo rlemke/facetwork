@@ -1,5 +1,53 @@
 # Implementation Changelog
 
+## Completed (v0.13.0) - Census-US pipeline extensions
+
+Five features broadening the census-us pipeline: new ACS tables, data download, table view, state-level analysis, and state comparison.
+
+### Feature B: Race, Poverty, Employment ACS tables
+- 3 new ACS table definitions in `acs_extractor.py`: B02001 (Race, 8 cols), B17001 (Poverty Status, 2 cols), B23025 (Employment Status, 7 cols)
+- 3 new facet mappings in `acs_handlers.py`: ExtractRace, ExtractPoverty, ExtractEmployment
+- 3 new event facets in `census_acs.afl`
+- 3 new ingestion dispatch entries in `ingestion_handlers.py`: RaceToDB, PovertyToDB, EmploymentToDB
+- 3 new event facets in `census_ingestion.afl`
+- `summarize_state()` accepts optional `race`, `poverty`, `employment` kwargs
+- `SummarizeState` AFL facet updated with 3 new optional params
+- Both `AnalyzeState` and `AnalyzeStateWithDB` workflows updated with extract + ingest steps
+- 5 new preferred dashboard fields: `pct_white`, `pct_black`, `pct_asian`, `pct_below_poverty`, `unemployment_rate`
+- Dispatch counts: ACS 9→12, ingestion 12→15, total 30→36
+
+### Feature D: CSV/GeoJSON download
+- `_features_to_csv()` helper: flattens GeoJSON features to CSV (GEOID/NAME first, preferred fields, then alpha)
+- `GET /census/api/maps/{dataset_key}/download?format=geojson|csv` — full-resolution download with Content-Disposition
+- `GET /census/api/maps/_all/download?format=geojson|csv` — combined national download with slim properties
+- Download buttons on `map_view.html` and `map_all.html`
+- Invalid format returns 400
+
+### Feature C: Data table view
+- `_compute_stats()` helper: min/max/mean/median for numeric fields (no numpy)
+- `GET /census/maps/{dataset_key}/table` — sortable data table with summary statistics
+- New template `table_view.html`: collapsible stats, click-to-sort columns, download buttons
+- Map View ↔ Table View cross-links
+
+### Feature A: State-level summary map
+- `_aggregate_state_stats()` helper: groups by STATEFP, computes population/housing/income/density aggregates
+- `GET /census/maps/states` — state summary table + AJAX-loaded choropleth map
+- `GET /census/api/maps/states?field=total_population` — GeoJSON with `_state_value` per county
+- New template `map_states.html`: summary statistics table, choropleth dropdown, legend
+- "State-Level Summary" button on datasets list page
+
+### Feature E: State comparison view
+- `_build_comparison()` helper: builds field-by-field diff rows from stats
+- `GET /census/compare?left=...&right=...` — side-by-side maps + comparison table
+- New template `compare.html`: selection form, two Leaflet maps in grid, shared choropleth, comparison table
+- "Compare States" button on datasets list page
+
+### Tests
+- 2709 passed, 79 skipped (up from 2633 passed); 76 new tests
+- Dashboard census maps: 122 tests (up from 55)
+- Census handler tests: 59 tests (up from 53)
+- Ingestion handler tests: 17 tests (up from 17, count assertions updated)
+
 ## Completed (v0.12.99) - Add combined national county map
 
 New "View All Counties on One Map" page combining all 51 `census.joined.*` datasets into a single national view. Geometries are decimated server-side (~80 points per ring) reducing payload from 260 MB to ~8 MB, loaded via AJAX for fast page load.

@@ -49,6 +49,24 @@ ACS_TABLES: dict[str, dict] = {
             "B25044_013E", "B25044_014E", "B25044_015E",
         ],
     },
+    "B02001": {
+        "label": "Race",
+        "columns": [
+            "B02001_001E", "B02001_002E", "B02001_003E", "B02001_004E",
+            "B02001_005E", "B02001_006E", "B02001_007E", "B02001_008E",
+        ],
+    },
+    "B17001": {
+        "label": "Poverty Status",
+        "columns": ["B17001_001E", "B17001_002E"],
+    },
+    "B23025": {
+        "label": "Employment Status",
+        "columns": [
+            "B23025_001E", "B23025_002E", "B23025_003E", "B23025_004E",
+            "B23025_005E", "B23025_006E", "B23025_007E",
+        ],
+    },
 }
 
 _LOCAL_OUTPUT = os.environ.get("AFL_LOCAL_OUTPUT_DIR", "/tmp")

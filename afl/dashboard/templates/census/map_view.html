@@ -4,8 +4,12 @@
 {% block content %}
 <hgroup>
     <h1>{% if region %}{{ region }} — {% endif %}{{ dataset_key }}</h1>
-    <p>{{ feature_count }} features — <a href="/census/maps">Back to datasets</a></p>
+    <p>{{ feature_count }} features — <a href="/census/maps/{{ dataset_key }}/table">Table View</a> | <a href="/census/maps">Back to datasets</a></p>
 </hgroup>
+<p>
+    <a href="/census/api/maps/{{ dataset_key }}/download?format=geojson" role="button" class="outline secondary">Download GeoJSON</a>
+    <a href="/census/api/maps/{{ dataset_key }}/download?format=csv" role="button" class="outline secondary">Download CSV</a>
+</p>
 
 {% if numeric_fields %}
 <label for="choropleth-field">Color by:</label>

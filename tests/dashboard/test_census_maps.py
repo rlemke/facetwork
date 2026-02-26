@@ -44,7 +44,11 @@ pytestmark = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 from afl.dashboard.routes.census_maps import (
+    _aggregate_state_stats,
+    _build_comparison,
+    _compute_stats,
     _decimate_ring,
+    _features_to_csv,
     _region_label,
     _simplify_geometry,
     _slim_properties,
@@ -681,6 +685,686 @@ class TestCensusMapAllAPI:
         data = resp.json()
         coords = data["features"][0]["geometry"]["coordinates"][0]
         assert len(coords) < 300  # should be decimated
+
+
+# ---------------------------------------------------------------------------
+# CSV helper: _features_to_csv
+# ---------------------------------------------------------------------------
+
+
+class TestFeaturesToCSV:
+    def test_empty_features(self):
+        assert _features_to_csv([]) == ""
+
+    def test_flattens_properties(self):
+        features = [
+            {"type": "Feature", "properties": {"GEOID": "01001", "NAME": "Autauga", "population": 55869},
+             "geometry": {"type": "Point", "coordinates": [0, 0]}},
+        ]
+        result = _features_to_csv(features)
+        lines = result.strip().split("\n")
+        assert len(lines) == 2  # header + 1 row
+        assert "GEOID" in lines[0]
+        assert "NAME" in lines[0]
+        assert "population" in lines[0]
+        assert "01001" in lines[1]
+
+    def test_excludes_geometry(self):
+        features = [
+            {"type": "Feature", "properties": {"GEOID": "01001"}, "geometry": {"type": "Point", "coordinates": [0, 0]}},
+        ]
+        result = _features_to_csv(features)
+        assert "geometry" not in result
+        assert "coordinates" not in result
+
+
+# ---------------------------------------------------------------------------
+# Download: GET /census/api/maps/{dataset_key}/download
+# ---------------------------------------------------------------------------
+
+
+class TestCensusMapDownload:
+    def test_geojson_empty(self, client):
+        tc, store = client
+        resp = tc.get("/census/api/maps/census.tiger.county.01/download?format=geojson")
+        assert resp.status_code == 200
+        data = json.loads(resp.content)
+        assert data["type"] == "FeatureCollection"
+        assert data["features"] == []
+
+    def test_csv_empty(self, client):
+        tc, store = client
+        resp = tc.get("/census/api/maps/census.tiger.county.01/download?format=csv")
+        assert resp.status_code == 200
+        assert resp.content == b""
+
+    def test_geojson_with_data(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=55869)
+
+        resp = tc.get("/census/api/maps/census.joined.01/download?format=geojson")
+        assert resp.status_code == 200
+        data = json.loads(resp.content)
+        assert len(data["features"]) == 1
+        assert data["features"][0]["properties"]["NAME"] == "Autauga"
+
+    def test_csv_with_data(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=55869)
+
+        resp = tc.get("/census/api/maps/census.joined.01/download?format=csv")
+        assert resp.status_code == 200
+        lines = resp.content.decode().strip().split("\n")
+        assert len(lines) == 2
+        assert "Autauga" in lines[1]
+
+    def test_content_disposition_geojson(self, client):
+        tc, store = client
+        resp = tc.get("/census/api/maps/census.joined.01/download?format=geojson")
+        assert "attachment" in resp.headers.get("content-disposition", "")
+        assert ".geojson" in resp.headers.get("content-disposition", "")
+
+    def test_content_disposition_csv(self, client):
+        tc, store = client
+        resp = tc.get("/census/api/maps/census.joined.01/download?format=csv")
+        assert "attachment" in resp.headers.get("content-disposition", "")
+        assert ".csv" in resp.headers.get("content-disposition", "")
+
+    def test_content_type_geojson(self, client):
+        tc, store = client
+        resp = tc.get("/census/api/maps/census.joined.01/download?format=geojson")
+        assert "geo+json" in resp.headers["content-type"]
+
+    def test_content_type_csv(self, client):
+        tc, store = client
+        resp = tc.get("/census/api/maps/census.joined.01/download?format=csv")
+        assert "text/csv" in resp.headers["content-type"]
+
+    def test_full_resolution_not_decimated(self, client):
+        """Download should return full resolution geometry, not decimated."""
+        tc, store = client
+        ring = [[float(i) * 0.01 - 86.0, 32.0 + float(i) * 0.001] for i in range(200)]
+        ring.append(ring[0])
+        big_geom = {"type": "Polygon", "coordinates": [ring]}
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", big_geom, population=55869)
+
+        resp = tc.get("/census/api/maps/census.joined.01/download?format=geojson")
+        data = json.loads(resp.content)
+        coords = data["features"][0]["geometry"]["coordinates"][0]
+        assert len(coords) == 201  # full resolution
+
+    def test_excludes_docs_without_geometry(self, client):
+        tc, store = client
+        _seed_feature(store, "census.tiger.county.01", "01001", "Autauga", _TRIANGLE)
+        store._db.handler_output.insert_one({
+            "dataset_key": "census.tiger.county.01",
+            "feature_key": "01099",
+            "facet_name": "ExtractCounty",
+            "data_type": "geojson_feature",
+            "properties": {"NAME": "NoGeo"},
+            "imported_at": 1708873045000,
+        })
+
+        resp = tc.get("/census/api/maps/census.tiger.county.01/download?format=geojson")
+        data = json.loads(resp.content)
+        assert len(data["features"]) == 1
+
+    def test_invalid_format_returns_400(self, client):
+        tc, store = client
+        resp = tc.get("/census/api/maps/census.joined.01/download?format=xml")
+        assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Download all: GET /census/api/maps/_all/download
+# ---------------------------------------------------------------------------
+
+
+class TestCensusMapAllDownload:
+    def test_geojson_download(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=55869)
+
+        resp = tc.get("/census/api/maps/_all/download?format=geojson")
+        assert resp.status_code == 200
+        data = json.loads(resp.content)
+        assert len(data["features"]) == 1
+
+    def test_csv_download(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=55869)
+
+        resp = tc.get("/census/api/maps/_all/download?format=csv")
+        assert resp.status_code == 200
+        lines = resp.content.decode().strip().split("\n")
+        assert len(lines) == 2
+
+    def test_only_joined_prefix(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=55869)
+        _seed_feature(store, "census.tiger.county.01", "01001", "Autauga", _TRIANGLE, population=55869)
+
+        resp = tc.get("/census/api/maps/_all/download?format=geojson")
+        data = json.loads(resp.content)
+        assert len(data["features"]) == 1
+
+    def test_content_disposition(self, client):
+        tc, store = client
+        resp = tc.get("/census/api/maps/_all/download?format=csv")
+        assert "attachment" in resp.headers.get("content-disposition", "")
+        assert "census_all_counties" in resp.headers.get("content-disposition", "")
+
+    def test_slim_properties_applied(self, client):
+        tc, store = client
+        store._db.handler_output.insert_one({
+            "dataset_key": "census.joined.01",
+            "feature_key": "01001",
+            "facet_name": "Joined",
+            "data_type": "geojson_feature",
+            "properties": {"NAME": "Autauga", "population": 100, "B01003_001E": 100, "AWATER": 999},
+            "geometry": _TRIANGLE,
+            "imported_at": 1708873045000,
+        })
+
+        resp = tc.get("/census/api/maps/_all/download?format=geojson")
+        data = json.loads(resp.content)
+        props = data["features"][0]["properties"]
+        assert "population" in props
+        assert "B01003_001E" not in props
+        assert "AWATER" not in props
+
+    def test_invalid_format_returns_400(self, client):
+        tc, store = client
+        resp = tc.get("/census/api/maps/_all/download?format=xml")
+        assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Stats helper: _compute_stats
+# ---------------------------------------------------------------------------
+
+
+class TestComputeStats:
+    def test_basic_stats(self):
+        features = [
+            {"properties": {"pop": 10, "income": 100}},
+            {"properties": {"pop": 20, "income": 200}},
+            {"properties": {"pop": 30, "income": 300}},
+            {"properties": {"pop": 40, "income": 400}},
+        ]
+        stats = _compute_stats(features, ["pop", "income"])
+        assert stats["pop"]["min"] == 10
+        assert stats["pop"]["max"] == 40
+        assert stats["pop"]["mean"] == 25.0
+        assert stats["pop"]["median"] == 25.0  # (20+30)/2
+
+    def test_empty_features(self):
+        assert _compute_stats([], ["pop"]) == {}
+
+    def test_non_numeric_skipped(self):
+        features = [
+            {"properties": {"name": "Alabama", "pop": 100}},
+        ]
+        stats = _compute_stats(features, ["name", "pop"])
+        assert "name" not in stats
+        assert "pop" in stats
+
+    def test_single_feature(self):
+        features = [{"properties": {"pop": 42}}]
+        stats = _compute_stats(features, ["pop"])
+        assert stats["pop"]["min"] == 42
+        assert stats["pop"]["max"] == 42
+        assert stats["pop"]["mean"] == 42.0
+        assert stats["pop"]["median"] == 42.0
+
+
+# ---------------------------------------------------------------------------
+# Table view: GET /census/maps/{dataset_key}/table
+# ---------------------------------------------------------------------------
+
+
+class TestCensusTableView:
+    def test_empty_table(self, client):
+        tc, store = client
+        resp = tc.get("/census/maps/census.joined.01/table")
+        assert resp.status_code == 200
+        assert "0 features" in resp.text
+
+    def test_features_rendered(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=55869)
+        _seed_feature(store, "census.joined.01", "01003", "Baldwin", _TRIANGLE_2, population=223234)
+
+        resp = tc.get("/census/maps/census.joined.01/table")
+        assert resp.status_code == 200
+        assert "2 features" in resp.text
+        assert "Autauga" in resp.text
+        assert "Baldwin" in resp.text
+
+    def test_columns_ordered(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=55869)
+
+        resp = tc.get("/census/maps/census.joined.01/table")
+        text = resp.text
+        # Find the data table header (id="data-table")
+        table_start = text.index('id="data-table"')
+        table_section = text[table_start:]
+        pos_geoid = table_section.index(">GEOID<")
+        pos_name = table_section.index(">NAME<")
+        pos_pop = table_section.index(">population<")
+        assert pos_geoid < pos_name < pos_pop
+
+    def test_stats_computed(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=100)
+        _seed_feature(store, "census.joined.01", "01003", "Baldwin", _TRIANGLE_2, population=200)
+
+        resp = tc.get("/census/maps/census.joined.01/table")
+        assert resp.status_code == 200
+        assert "Summary Statistics" in resp.text
+
+    def test_map_link(self, client):
+        tc, store = client
+        resp = tc.get("/census/maps/census.joined.01/table")
+        assert resp.status_code == 200
+        assert 'href="/census/maps/census.joined.01"' in resp.text
+        assert "Map View" in resp.text
+
+    def test_back_link(self, client):
+        tc, store = client
+        resp = tc.get("/census/maps/census.joined.01/table")
+        assert resp.status_code == 200
+        assert 'href="/census/maps"' in resp.text
+
+    def test_region_heading(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=100)
+
+        resp = tc.get("/census/maps/census.joined.01/table")
+        assert resp.status_code == 200
+        assert "Alabama" in resp.text
+
+    def test_download_buttons_present(self, client):
+        tc, store = client
+        resp = tc.get("/census/maps/census.joined.01/table")
+        assert resp.status_code == 200
+        assert "Download GeoJSON" in resp.text
+        assert "Download CSV" in resp.text
+
+
+class TestMapViewTableLink:
+    def test_map_has_table_link(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE)
+
+        resp = tc.get("/census/maps/census.joined.01")
+        assert resp.status_code == 200
+        assert 'href="/census/maps/census.joined.01/table"' in resp.text
+
+    def test_table_has_map_link(self, client):
+        tc, store = client
+        resp = tc.get("/census/maps/census.joined.01/table")
+        assert resp.status_code == 200
+        assert 'href="/census/maps/census.joined.01"' in resp.text
+
+
+# ---------------------------------------------------------------------------
+# State aggregation helper: _aggregate_state_stats
+# ---------------------------------------------------------------------------
+
+
+class TestAggregateStateStats:
+    def test_empty(self):
+        assert _aggregate_state_stats([]) == []
+
+    def test_single_state(self):
+        features = [
+            {"properties": {"STATEFP": "01", "population": 100, "housing_units": 50,
+                             "median_income": 40000, "ALAND": 1000000}},
+            {"properties": {"STATEFP": "01", "population": 200, "housing_units": 80,
+                             "median_income": 60000, "ALAND": 2000000}},
+        ]
+        result = _aggregate_state_stats(features)
+        assert len(result) == 1
+        assert result[0]["state_fips"] == "01"
+        assert result[0]["state_name"] == "Alabama"
+        assert result[0]["county_count"] == 2
+        assert result[0]["total_population"] == 300
+        assert result[0]["total_housing_units"] == 130
+
+    def test_two_states(self):
+        features = [
+            {"properties": {"STATEFP": "01", "population": 100}},
+            {"properties": {"STATEFP": "48", "population": 200}},
+        ]
+        result = _aggregate_state_stats(features)
+        assert len(result) == 2
+        assert result[0]["state_fips"] == "01"
+        assert result[1]["state_fips"] == "48"
+
+    def test_weighted_income(self):
+        features = [
+            {"properties": {"STATEFP": "01", "population": 100, "median_income": 50000}},
+            {"properties": {"STATEFP": "01", "population": 300, "median_income": 70000}},
+        ]
+        result = _aggregate_state_stats(features)
+        # (100*50000 + 300*70000) / 400 = 26_000_000 / 400 = 65000
+        assert result[0]["weighted_median_income"] == 65000.0
+
+    def test_population_density(self):
+        features = [
+            {"properties": {"STATEFP": "01", "population": 1000, "ALAND": 1000000000}},
+        ]
+        result = _aggregate_state_stats(features)
+        # 1000 / (1e9/1e6) = 1000 / 1000 = 1.0
+        assert result[0]["population_density"] == 1.0
+
+    def test_missing_fields_default_zero(self):
+        features = [
+            {"properties": {"STATEFP": "01"}},
+        ]
+        result = _aggregate_state_stats(features)
+        assert result[0]["total_population"] == 0
+        assert result[0]["total_housing_units"] == 0
+        assert result[0]["weighted_median_income"] == 0.0
+        assert result[0]["population_density"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# State summary page: GET /census/maps/states
+# ---------------------------------------------------------------------------
+
+
+class TestCensusMapStates:
+    def test_empty_page(self, client):
+        tc, store = client
+        resp = tc.get("/census/maps/states")
+        assert resp.status_code == 200
+        assert "0 states" in resp.text
+
+    def test_renders_with_data(self, client):
+        tc, store = client
+        store._db.handler_output.insert_one({
+            "dataset_key": "census.joined.01",
+            "feature_key": "01001",
+            "facet_name": "Joined",
+            "data_type": "geojson_feature",
+            "properties": {"STATEFP": "01", "NAME": "Autauga", "GEOID": "01001",
+                           "population": 55869, "housing_units": 22000, "median_income": 55000,
+                           "ALAND": 1539631459},
+            "geometry": _TRIANGLE,
+            "imported_at": 1708873045000,
+        })
+
+        resp = tc.get("/census/maps/states")
+        assert resp.status_code == 200
+        assert "1 states" in resp.text
+        assert "Alabama" in resp.text
+
+    def test_choropleth_dropdown(self, client):
+        tc, store = client
+        store._db.handler_output.insert_one({
+            "dataset_key": "census.joined.01",
+            "feature_key": "01001",
+            "facet_name": "Joined",
+            "data_type": "geojson_feature",
+            "properties": {"STATEFP": "01", "population": 100, "GEOID": "01001"},
+            "geometry": _TRIANGLE,
+            "imported_at": 1708873045000,
+        })
+
+        resp = tc.get("/census/maps/states")
+        assert resp.status_code == 200
+        assert '<select id="choropleth-field"' in resp.text
+        assert "total_population" in resp.text
+
+    def test_summary_table(self, client):
+        tc, store = client
+        store._db.handler_output.insert_one({
+            "dataset_key": "census.joined.01",
+            "feature_key": "01001",
+            "facet_name": "Joined",
+            "data_type": "geojson_feature",
+            "properties": {"STATEFP": "01", "NAME": "Autauga", "GEOID": "01001",
+                           "population": 55869},
+            "geometry": _TRIANGLE,
+            "imported_at": 1708873045000,
+        })
+
+        resp = tc.get("/census/maps/states")
+        assert resp.status_code == 200
+        assert "Summary Statistics" in resp.text
+        assert "55869" in resp.text
+
+    def test_back_link(self, client):
+        tc, store = client
+        resp = tc.get("/census/maps/states")
+        assert resp.status_code == 200
+        assert 'href="/census/maps"' in resp.text
+
+
+# ---------------------------------------------------------------------------
+# State summary API: GET /census/api/maps/states
+# ---------------------------------------------------------------------------
+
+
+class TestCensusMapStatesAPI:
+    def test_empty_response(self, client):
+        tc, store = client
+        resp = tc.get("/census/api/maps/states")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["features"] == []
+
+    def test_features_have_state_value(self, client):
+        tc, store = client
+        store._db.handler_output.insert_one({
+            "dataset_key": "census.joined.01",
+            "feature_key": "01001",
+            "facet_name": "Joined",
+            "data_type": "geojson_feature",
+            "properties": {"STATEFP": "01", "NAME": "Autauga", "GEOID": "01001",
+                           "population": 55869},
+            "geometry": _TRIANGLE,
+            "imported_at": 1708873045000,
+        })
+
+        resp = tc.get("/census/api/maps/states?field=total_population")
+        data = resp.json()
+        assert len(data["features"]) == 1
+        assert "_state_value" in data["features"][0]["properties"]
+        assert data["features"][0]["properties"]["_state_value"] == 55869
+
+    def test_field_parameter(self, client):
+        tc, store = client
+        store._db.handler_output.insert_one({
+            "dataset_key": "census.joined.01",
+            "feature_key": "01001",
+            "facet_name": "Joined",
+            "data_type": "geojson_feature",
+            "properties": {"STATEFP": "01", "NAME": "Autauga", "GEOID": "01001",
+                           "population": 100, "housing_units": 50},
+            "geometry": _TRIANGLE,
+            "imported_at": 1708873045000,
+        })
+
+        resp = tc.get("/census/api/maps/states?field=total_housing_units")
+        data = resp.json()
+        assert data["features"][0]["properties"]["_state_value"] == 50
+
+    def test_only_joined_datasets(self, client):
+        tc, store = client
+        store._db.handler_output.insert_one({
+            "dataset_key": "census.joined.01",
+            "feature_key": "01001",
+            "facet_name": "Joined",
+            "data_type": "geojson_feature",
+            "properties": {"STATEFP": "01", "population": 100, "GEOID": "01001"},
+            "geometry": _TRIANGLE,
+            "imported_at": 1708873045000,
+        })
+        store._db.handler_output.insert_one({
+            "dataset_key": "census.tiger.county.01",
+            "feature_key": "01001",
+            "facet_name": "Tiger",
+            "data_type": "geojson_feature",
+            "properties": {"STATEFP": "01", "population": 100, "GEOID": "01001"},
+            "geometry": _TRIANGLE,
+            "imported_at": 1708873045000,
+        })
+
+        resp = tc.get("/census/api/maps/states")
+        data = resp.json()
+        assert len(data["features"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# State-Level Summary link on datasets page
+# ---------------------------------------------------------------------------
+
+
+class TestStateSummaryLink:
+    def test_states_link_present(self, client):
+        tc, store = client
+        _seed_meta(store, "census.joined.01")
+
+        resp = tc.get("/census/maps")
+        assert resp.status_code == 200
+        assert 'href="/census/maps/states"' in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Comparison helper: _build_comparison
+# ---------------------------------------------------------------------------
+
+
+class TestBuildComparison:
+    def test_basic_diff(self):
+        left = {"pop": {"min": 10, "max": 100, "mean": 50.0, "median": 45.0}}
+        right = {"pop": {"min": 20, "max": 200, "mean": 80.0, "median": 75.0}}
+        rows = _build_comparison(left, right, ["pop"])
+        assert len(rows) == 1
+        assert rows[0]["field"] == "pop"
+        assert rows[0]["left"] == 50.0
+        assert rows[0]["right"] == 80.0
+        assert rows[0]["difference"] == 30.0
+
+    def test_empty_features(self):
+        rows = _build_comparison({}, {}, ["pop"])
+        assert len(rows) == 1
+        assert rows[0]["left"] == 0
+        assert rows[0]["right"] == 0
+        assert rows[0]["difference"] == 0
+
+    def test_missing_fields(self):
+        left = {"pop": {"min": 10, "max": 100, "mean": 50.0, "median": 45.0}}
+        rows = _build_comparison(left, {}, ["pop", "income"])
+        assert len(rows) == 2
+        assert rows[0]["left"] == 50.0
+        assert rows[0]["right"] == 0
+        assert rows[1]["left"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Compare states: GET /census/compare
+# ---------------------------------------------------------------------------
+
+
+class TestCensusCompare:
+    def test_empty_form_shows_selectors(self, client):
+        tc, store = client
+        resp = tc.get("/census/compare")
+        assert resp.status_code == 200
+        assert "Compare States" in resp.text
+        assert "<form" in resp.text
+        assert "Compare" in resp.text  # submit button
+
+    def test_available_datasets_populated(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=100)
+        _seed_feature(store, "census.joined.48", "48001", "Anderson", _TRIANGLE_2, population=200)
+
+        resp = tc.get("/census/compare")
+        assert resp.status_code == 200
+        assert "census.joined.01" in resp.text
+        assert "census.joined.48" in resp.text
+
+    def test_compare_two_states(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=100)
+        _seed_feature(store, "census.joined.48", "48001", "Anderson", _TRIANGLE_2, population=200)
+
+        resp = tc.get("/census/compare?left=census.joined.01&right=census.joined.48")
+        assert resp.status_code == 200
+        assert "Alabama" in resp.text
+        assert "Texas" in resp.text
+
+    def test_comparison_table_present(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=100)
+        _seed_feature(store, "census.joined.48", "48001", "Anderson", _TRIANGLE_2, population=200)
+
+        resp = tc.get("/census/compare?left=census.joined.01&right=census.joined.48")
+        assert resp.status_code == 200
+        assert "Comparison" in resp.text
+        assert "Difference" in resp.text
+
+    def test_two_maps_rendered(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=100)
+        _seed_feature(store, "census.joined.48", "48001", "Anderson", _TRIANGLE_2, population=200)
+
+        resp = tc.get("/census/compare?left=census.joined.01&right=census.joined.48")
+        assert resp.status_code == 200
+        assert 'id="map-left"' in resp.text
+        assert 'id="map-right"' in resp.text
+
+    def test_shared_choropleth(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=100)
+        _seed_feature(store, "census.joined.48", "48001", "Anderson", _TRIANGLE_2, population=200)
+
+        resp = tc.get("/census/compare?left=census.joined.01&right=census.joined.48")
+        assert resp.status_code == 200
+        assert '<select id="choropleth-field"' in resp.text
+
+    def test_left_only_shows_selector(self, client):
+        tc, store = client
+        resp = tc.get("/census/compare?left=census.joined.01")
+        assert resp.status_code == 200
+        # Should show the form but no maps
+        assert "<form" in resp.text
+        assert 'id="map-left"' not in resp.text
+
+    def test_back_link(self, client):
+        tc, store = client
+        resp = tc.get("/census/compare")
+        assert resp.status_code == 200
+        assert 'href="/census/maps"' in resp.text
+
+    def test_same_state_comparison(self, client):
+        tc, store = client
+        _seed_feature(store, "census.joined.01", "01001", "Autauga", _TRIANGLE, population=100)
+
+        resp = tc.get("/census/compare?left=census.joined.01&right=census.joined.01")
+        assert resp.status_code == 200
+        assert "Comparison" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Compare States link on datasets page
+# ---------------------------------------------------------------------------
+
+
+class TestCompareLink:
+    def test_compare_link_present(self, client):
+        tc, store = client
+        _seed_meta(store, "census.joined.01")
+
+        resp = tc.get("/census/maps")
+        assert resp.status_code == 200
+        assert 'href="/census/compare"' in resp.text
 
 
 # ---------------------------------------------------------------------------

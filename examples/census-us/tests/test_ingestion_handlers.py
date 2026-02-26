@@ -218,7 +218,7 @@ class TestOutputStore:
 class TestIngestionHandlers:
     def test_dispatch_keys(self):
         mod = _census_import("ingestion.ingestion_handlers")
-        assert len(mod._DISPATCH) == 12
+        assert len(mod._DISPATCH) == 15
         for key in mod._DISPATCH:
             assert key.startswith("census.Ingestion.")
 
@@ -234,6 +234,9 @@ class TestIngestionHandlers:
             "census.Ingestion.HouseholdsToDB",
             "census.Ingestion.AgeToDB",
             "census.Ingestion.VehiclesToDB",
+            "census.Ingestion.RaceToDB",
+            "census.Ingestion.PovertyToDB",
+            "census.Ingestion.EmploymentToDB",
             "census.Ingestion.CountiesToDB",
             "census.Ingestion.JoinedToDB",
             "census.Ingestion.SummaryToDB",
@@ -249,13 +252,13 @@ class TestIngestionHandlers:
         mod = _census_import("ingestion.ingestion_handlers")
         runner = MagicMock()
         mod.register_handlers(runner)
-        assert runner.register_handler.call_count == 12
+        assert runner.register_handler.call_count == 15
 
     def test_register_ingestion_handlers_poller(self):
         mod = _census_import("ingestion.ingestion_handlers")
         poller = MagicMock()
         mod.register_ingestion_handlers(poller)
-        assert poller.register.call_count == 12
+        assert poller.register.call_count == 15
 
     def test_handle_counties_to_db(self, tmp_path):
         """CountiesToDB reads GeoJSON and calls OutputStore.ingest_geojson."""
@@ -390,11 +393,11 @@ class TestInitRegistryHandlersWithIngestion:
         mod = _census_import("__init__")
         runner = MagicMock()
         mod.register_all_registry_handlers(runner)
-        # 3 downloads + 9 ACS + 4 TIGER + 2 summary + 12 ingestion = 30
-        assert runner.register_handler.call_count == 30
+        # 3 downloads + 12 ACS + 4 TIGER + 2 summary + 15 ingestion = 36
+        assert runner.register_handler.call_count == 36
 
     def test_register_all_handlers(self):
         mod = _census_import("__init__")
         poller = MagicMock()
         mod.register_all_handlers(poller)
-        assert poller.register.call_count == 30
+        assert poller.register.call_count == 36

@@ -18,4 +18,10 @@ namespace census.ACS {
     event facet ExtractAge(file: CensusFile, state_fips: String, geo_level: String = "county") => (result: ACSResult)
 
     event facet ExtractVehicles(file: CensusFile, state_fips: String, geo_level: String = "county") => (result: ACSResult)
+
+    event facet ExtractRace(file: CensusFile, state_fips: String, geo_level: String = "county") => (result: ACSResult)
+
+    event facet ExtractPoverty(file: CensusFile, state_fips: String, geo_level: String = "county") => (result: ACSResult)
+
+    event facet ExtractEmployment(file: CensusFile, state_fips: String, geo_level: String = "county") => (result: ACSResult)
 }

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{% if region %}{{ region }} — {% endif %}{{ dataset_key }} — Data Table{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>{% if region %}{{ region }} — {% endif %}{{ dataset_key }}</h1>
+    <p>{{ feature_count }} features —
+        <a href="/census/maps/{{ dataset_key }}">Map View</a> |
+        <a href="/census/maps">Back to datasets</a>
+    </p>
+</hgroup>
+<p>
+    <a href="/census/api/maps/{{ dataset_key }}/download?format=geojson" role="button" class="outline secondary">Download GeoJSON</a>
+    <a href="/census/api/maps/{{ dataset_key }}/download?format=csv" role="button" class="outline secondary">Download CSV</a>
+</p>
+
+{% if stats %}
+<details>
+    <summary>Summary Statistics</summary>
+    <table>
+        <thead>
+            <tr><th>Field</th><th>Min</th><th>Max</th><th>Mean</th><th>Median</th></tr>
+        </thead>
+        <tbody>
+            {% for field, s in stats.items() %}
+            <tr>
+                <td>{{ field }}</td>
+                <td>{{ s.min }}</td>
+                <td>{{ s.max }}</td>
+                <td>{{ s.mean }}</td>
+                <td>{{ s.median }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</details>
+{% endif %}
+
+{% if features %}
+<div style="overflow-x:auto">
+<table id="data-table">
+    <thead>
+        <tr>
+            {% for col in columns %}
+            <th data-col="{{ loop.index0 }}" style="cursor:pointer">{{ col }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for f in features %}
+        <tr>
+            {% for col in columns %}
+            <td>{% if f.properties[col] is not none %}{{ f.properties[col] }}{% else %}&mdash;{% endif %}</td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p>No features with geometry found for this dataset.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var table = document.getElementById('data-table');
+    if (!table) return;
+    var headers = table.querySelectorAll('th');
+    var sortDir = {};
+    headers.forEach(function(th) {
+        th.addEventListener('click', function() {
+            var col = parseInt(th.getAttribute('data-col'));
+            var dir = sortDir[col] === 'asc' ? 'desc' : 'asc';
+            sortDir[col] = dir;
+            var tbody = table.querySelector('tbody');
+            var rows = Array.from(tbody.querySelectorAll('tr'));
+            rows.sort(function(a, b) {
+                var av = a.children[col].textContent.trim();
+                var bv = b.children[col].textContent.trim();
+                var an = parseFloat(av.replace(/,/g, ''));
+                var bn = parseFloat(bv.replace(/,/g, ''));
+                if (!isNaN(an) && !isNaN(bn)) {
+                    return dir === 'asc' ? an - bn : bn - an;
+                }
+                return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+            });
+            rows.forEach(function(r) { tbody.appendChild(r); });
+        });
+    });
+})();
+</script>
+{% endblock %}

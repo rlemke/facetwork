@@ -6,6 +6,10 @@
     <h1>United States — All Counties</h1>
     <p>{{ dataset_count }} states, {{ feature_count }} features — <a href="/census/maps">Back to datasets</a></p>
 </hgroup>
+<p>
+    <a href="/census/api/maps/_all/download?format=geojson" role="button" class="outline secondary">Download GeoJSON</a>
+    <a href="/census/api/maps/_all/download?format=csv" role="button" class="outline secondary">Download CSV</a>
+</p>
 
 {% if numeric_fields %}
 <label for="choropleth-field">Color by:</label>

@@ -138,7 +138,7 @@ class TestDownloadHandlers:
 class TestACSHandlers:
     def test_dispatch_keys(self):
         mod = _census_import("acs.acs_handlers")
-        assert len(mod._DISPATCH) == 9
+        assert len(mod._DISPATCH) == 12
         for key in mod._DISPATCH:
             assert key.startswith("census.ACS.")
 
@@ -162,7 +162,7 @@ class TestACSHandlers:
         mod = _census_import("acs.acs_handlers")
         runner = MagicMock()
         mod.register_handlers(runner)
-        assert runner.register_handler.call_count == 9
+        assert runner.register_handler.call_count == 12
 
     def test_extract_population(self):
         mod = _census_import("acs.acs_handlers")
@@ -246,6 +246,33 @@ class TestACSHandlers:
             "state_fips": "01",
         })
         assert result["result"]["table_id"] == "B25044"
+
+    def test_extract_race(self):
+        mod = _census_import("acs.acs_handlers")
+        result = mod.handle({
+            "_facet_name": "census.ACS.ExtractRace",
+            "file": {"path": ""},
+            "state_fips": "01",
+        })
+        assert result["result"]["table_id"] == "B02001"
+
+    def test_extract_poverty(self):
+        mod = _census_import("acs.acs_handlers")
+        result = mod.handle({
+            "_facet_name": "census.ACS.ExtractPoverty",
+            "file": {"path": ""},
+            "state_fips": "01",
+        })
+        assert result["result"]["table_id"] == "B17001"
+
+    def test_extract_employment(self):
+        mod = _census_import("acs.acs_handlers")
+        result = mod.handle({
+            "_facet_name": "census.ACS.ExtractEmployment",
+            "file": {"path": ""},
+            "state_fips": "01",
+        })
+        assert result["result"]["table_id"] == "B23025"
 
     def test_extract_multi_column_csv(self, tmp_path):
         """ACS extractor handles multi-column tables correctly."""
@@ -753,11 +780,11 @@ class TestInitRegistryHandlers:
         mod = _census_import("__init__")
         runner = MagicMock()
         mod.register_all_registry_handlers(runner)
-        # 3 downloads + 9 ACS + 4 TIGER + 2 summary + 12 ingestion = 30
-        assert runner.register_handler.call_count == 30
+        # 3 downloads + 12 ACS + 4 TIGER + 2 summary + 15 ingestion = 36
+        assert runner.register_handler.call_count == 36
 
     def test_register_all_handlers(self):
         mod = _census_import("__init__")
         poller = MagicMock()
         mod.register_all_handlers(poller)
-        assert poller.register.call_count == 30
+        assert poller.register.call_count == 36

@@ -123,7 +123,10 @@ def join_geo(acs_path: str, tiger_path: str,
 
 def summarize_state(population: dict[str, Any], income: dict[str, Any],
                     housing: dict[str, Any], education: dict[str, Any],
-                    commuting: dict[str, Any]) -> SummaryResult:
+                    commuting: dict[str, Any], *,
+                    race: dict[str, Any] | None = None,
+                    poverty: dict[str, Any] | None = None,
+                    employment: dict[str, Any] | None = None) -> SummaryResult:
     """Build a state-level summary from multiple ACS extraction results.
 
     Args:
@@ -132,6 +135,9 @@ def summarize_state(population: dict[str, Any], income: dict[str, Any],
         housing: ACSResult dict from ExtractHousing.
         education: ACSResult dict from ExtractEducation.
         commuting: ACSResult dict from ExtractCommuting.
+        race: ACSResult dict from ExtractRace (optional).
+        poverty: ACSResult dict from ExtractPoverty (optional).
+        employment: ACSResult dict from ExtractEmployment (optional).
 
     Returns:
         SummaryResult with output path, tables joined, and record count.
@@ -140,13 +146,19 @@ def summarize_state(population: dict[str, Any], income: dict[str, Any],
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # Collect all input results
-    inputs = {
+    inputs: dict[str, dict[str, Any]] = {
         "population": population,
         "income": income,
         "housing": housing,
         "education": education,
         "commuting": commuting,
     }
+    if race is not None:
+        inputs["race"] = race
+    if poverty is not None:
+        inputs["poverty"] = poverty
+    if employment is not None:
+        inputs["employment"] = employment
 
     # Derive state FIPS from first available result
     state_fips = ""

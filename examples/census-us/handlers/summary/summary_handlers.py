@@ -67,15 +67,27 @@ def handle_summarize_state(params: dict[str, Any]) -> dict[str, Any]:
     housing = params.get("housing", {})
     education = params.get("education", {})
     commuting = params.get("commuting", {})
+    race = params.get("race")
+    poverty = params.get("poverty")
+    employment = params.get("employment")
     step_log = params.get("_step_log")
 
     try:
+        kwargs: dict[str, Any] = {}
+        if race is not None:
+            kwargs["race"] = race
+        if poverty is not None:
+            kwargs["poverty"] = poverty
+        if employment is not None:
+            kwargs["employment"] = employment
+
         result = summarize_state(
             population=population,
             income=income,
             housing=housing,
             education=education,
             commuting=commuting,
+            **kwargs,
         )
 
         if step_log:
