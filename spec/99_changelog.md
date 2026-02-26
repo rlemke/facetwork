@@ -1,5 +1,27 @@
 # Implementation Changelog
 
+## Completed (v0.12.98) - Filter choropleth dropdown and add state name labels
+
+Choropleth dropdown now shows 19 friendly demographic fields in logical order, filtering out raw ACS variable codes and TIGER metadata. Dataset list and map view show state names derived from FIPS codes.
+
+### Choropleth field filtering (`afl/dashboard/routes/census_maps.py`)
+- Preferred fields shown first: population, population_density, median_income, housing_units, total_households, family/nonfamily_households, tenure (pct_owner/renter_occupied), commuting (pct_drive_alone/public_transit/walk/work_from_home, pct_no_vehicle), age bands (pct_under_18/18_34/35_64/65_plus)
+- Raw ACS codes (`B0*`, `B1*`, `B2*`, `B3*`) filtered from dropdown but remain in click popups
+- TIGER metadata fields (`ALAND`, `AWATER`, `CBSAFP`, `CSAFP`, `METDIVFP`, `STATEFP`, `COUNTYFP`) excluded
+- Non-skipped custom numeric fields still appear after preferred fields
+
+### State name labels
+- `_FIPS_TO_STATE` dict mapping 51 FIPS codes to state names (including DC)
+- `_region_label()` helper extracts FIPS from last dotted segment of dataset key
+- Dataset list table: added "Region" column showing state name
+- Map view heading: shows "Alabama — census.tiger.county.01" format
+
+### Tests (`tests/dashboard/test_census_maps.py`)
+- 36 tests (up from 25): added `TestRegionLabel` (5 unit tests), region name tests for list and map view (4), choropleth field filtering (2)
+
+### Details
+- 2 files changed; 11 new tests; test suite: 36 census map tests passing
+
 ## Completed (v0.12.97) - Add census data map visualization dashboard page
 
 New dashboard page for viewing census GeoJSON datasets on an interactive Leaflet.js map with choropleth coloring, click-to-inspect popups, and auto-fit bounds. No new Python dependencies — Leaflet loaded from CDN.
@@ -10,7 +32,7 @@ New dashboard page for viewing census GeoJSON datasets on an interactive Leaflet
 - `GET /census/api/maps/{dataset_key}` — raw GeoJSON API endpoint returning `FeatureCollection` as JSON
 
 ### Dataset list template (`afl/dashboard/templates/census/maps.html`)
-- Table with columns: Dataset Key (linked to map view), Facet Name, Record Count, Imported At
+- Table with columns: Dataset Key (linked to map view), Region, Facet Name, Record Count, Imported At
 - Filters to `geojson_feature` data type only (CSV/JSON records lack geometry)
 
 ### Map view template (`afl/dashboard/templates/census/map_view.html`)
@@ -26,14 +48,15 @@ New dashboard page for viewing census GeoJSON datasets on an interactive Leaflet
 - `afl/dashboard/templates/base.html`: added "Census Maps" nav link between "Output" and "New Workflow"
 
 ### Tests (`tests/dashboard/test_census_maps.py`)
-- 25 new tests across 4 classes:
-  - `TestCensusMapList` (7): empty list, dataset listing, non-geojson filtering, record count, facet name, link generation, sort order
-  - `TestCensusMapView` (9): empty dataset, feature rendering, embedded GeoJSON, numeric field detection, string-only dropdown suppression, geometry-less doc exclusion, Leaflet loading, back link, dotted dataset keys
+- 36 new tests across 5 classes:
+  - `TestRegionLabel` (5): known FIPS, Texas, unknown FIPS, no dots, DC
+  - `TestCensusMapList` (9): empty list, dataset listing, non-geojson filtering, record count, facet name, link generation, sort order, region names, unknown FIPS
+  - `TestCensusMapView` (13): empty dataset, feature rendering, embedded GeoJSON, numeric field detection, string-only dropdown suppression, ACS code filtering, preferred field ordering, geometry-less doc exclusion, Leaflet loading, back link, dotted dataset keys, region heading, unknown FIPS
   - `TestCensusMapAPI` (7): empty response, GeoJSON structure, feature properties, geometry exclusion, content type, no `_id` leak, dataset isolation
   - `TestNavLink` (2): nav link present, active tab highlighted
 
 ### Details
-- 6 files changed (3 new, 2 modified, 1 new test); 25 new tests; test suite: 2633 passed, 79 skipped
+- 6 files changed (3 new, 2 modified, 1 new test); 36 new tests; test suite: 2633 passed, 79 skipped
 
 ## Completed (v0.12.95) - Add 4 new ACS tables: tenure, households, age, vehicles
 
