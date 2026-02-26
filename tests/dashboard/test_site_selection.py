@@ -136,7 +136,7 @@ def _seed_feature(store, dataset_key: str, geoid: str, name: str,
         "median_income": 55000,
         **extra_props,
     }
-    store._db.handler_output_data.insert_one({
+    store._db.handler_output.insert_one({
         "dataset_key": dataset_key,
         "feature_key": geoid,
         "facet_name": "ExportScored",

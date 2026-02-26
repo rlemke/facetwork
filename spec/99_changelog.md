@@ -32,7 +32,7 @@ for new food-service locations.
 ### Tests: 35 new (22 handler + 13 dashboard)
 - Handler tests: PBF download/cache, demographics join/derived fields/density/zero-pop/missing-cols, restaurant amenity filter/empty/format/no-osmium, scoring point-in-polygon/demand-index/suitability-formula/restaurants-per-1000/zero-pop/empty/top-county/weights, export path/format, dispatch tables/routing/count
 - Dashboard tests: field labels/numeric filter/list empty/list states/map render/choropleth/field labels in view/table render/table headers/GeoJSON API
-- Full suite: 2797 passed, 84 skipped (6 pre-existing flaky registry_runner_integration)
+- Full suite: 2803 passed, 84 skipped
 
 ## Completed (v0.13.1) - Derived Metrics, Field Labels, and Map UX
 

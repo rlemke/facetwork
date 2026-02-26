@@ -87,10 +87,10 @@ def _filter_numeric_fields(sample_props: dict[str, Any]) -> list[str]:
 
 
 def _load_scored_geojson(db, state_fips: str) -> dict[str, Any]:
-    """Load scored GeoJSON for a state from handler_output_data."""
+    """Load scored GeoJSON for a state from handler_output."""
     dataset_key = f"sitesel.scored.{state_fips}"
     docs = list(
-        db.handler_output_data.find(
+        db.handler_output.find(
             {"dataset_key": dataset_key},
             {"_id": 0},
         )
