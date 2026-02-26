@@ -59,8 +59,28 @@ Add B25003 (Housing Tenure), B11001 (Household Type), B01001 (Sex by Age), and B
 - **SummarizeState**: 5 tables, 335 records
 - **Ingestion (12 ToDB steps)**: PopulationToDB 67, IncomeToDB 67, HousingToDB 67, EducationToDB 67, CommutingToDB 67, TenureToDB 67, HouseholdsToDB 67, AgeToDB 67, VehiclesToDB 67, CountiesToDB 67, JoinedToDB 67, SummaryToDB 1 — 872 total documents ingested into MongoDB
 
+### Runner `--registry` mode (`afl/runtime/runner/__main__.py`)
+- New `--registry` flag (or `AFL_USE_REGISTRY=1` env var) loads handler registrations from MongoDB into the ToolRegistry at startup
+- Enables the RunnerService to process both orchestration (`afl:execute`) AND event tasks from registered handlers
+- Uses `RegistryDispatcher` proxy pattern: each registered facet gets a proxy function that delegates to the dispatcher
+
+### Dispatcher fix (`afl/runtime/dispatcher.py`)
+- Fixed `_import_handler()`: dotted facet names in `spec_from_file_location` caused `No module named '_afl_handler_census'`
+- Replaced with `_import_from_file()`: walks up from file to find package root (furthest ancestor with `__init__.py`), adds root's parent to `sys.path`, computes dotted module name, uses `importlib.import_module` so relative imports work
+
+### Docker (`docker/Dockerfile.runner`, `docker-compose.yml`)
+- Runner CMD now includes `--registry` flag
+- Added `pyshp` to runner image dependencies (for TIGER shapefile extraction)
+- Added `./examples:/app/examples:ro` volume mount to runner service
+
+### Docker E2E verification (3 runner replicas, AnalyzeStateWithDB)
+- 30 steps created, 26 completed, 2 pre-existing temp-file locality errors (EducationToDB, CommutingToDB — extractors write to `/tmp/` which isn't shared across containers), 2 error-propagated (workflow root, block)
+- All 4 new handler chains verified: DownloadACSDetailed → ExtractAge → AgeToDB; ExtractTenure → TenureToDB; ExtractHouseholds → HouseholdsToDB; ExtractVehicles → VehiclesToDB
+- Registry handlers: 30 loaded per runner instance
+- SummaryToDB, JoinedToDB, CountiesToDB all completed
+
 ### Details
-- 12 files changed; 6 new tests; test suite: 2614 passed, 79 skipped
+- 14 files changed; 6 new tests; test suite: 2608 passed, 79 skipped
 
 ## Completed (v0.12.94) - Add MongoDB ingestion handlers for census-us ToDB facets
 

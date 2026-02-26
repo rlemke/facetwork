@@ -60,6 +60,7 @@ services:
       - AFL_LOCAL_OUTPUT_DIR=${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
     volumes:
       - ${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:/Volumes/afl_data/output
+      - ./examples:/app/examples:ro
     depends_on:
       mongodb:
         condition: service_healthy

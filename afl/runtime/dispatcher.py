@@ -142,18 +142,14 @@ class RegistryDispatcher:
         """Import and return the handler callable from a registration.
 
         Supports two URI formats:
-        - ``file:///path/to/module.py`` — loaded via ``spec_from_file_location``
+        - ``file:///path/to/module.py`` — loaded as a proper package import
+          so that relative imports work. Walks up from the file to find
+          the package root (furthest ancestor with ``__init__.py``), adds
+          the root's parent to ``sys.path``, and uses ``import_module``.
         - ``my.package.module`` — loaded via ``importlib.import_module``
         """
         if reg.module_uri.startswith("file://"):
-            file_path = reg.module_uri[7:]  # strip "file://"
-            spec = importlib.util.spec_from_file_location(
-                f"_afl_handler_{reg.facet_name}", file_path
-            )
-            if spec is None or spec.loader is None:
-                raise ImportError(f"Cannot load module from {file_path}")
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+            module = self._import_from_file(reg.module_uri[7:])
         else:
             module = importlib.import_module(reg.module_uri)
 
@@ -163,6 +159,41 @@ class RegistryDispatcher:
                 f"Entrypoint '{reg.entrypoint}' in '{reg.module_uri}' is not callable"
             )
         return attr
+
+    @staticmethod
+    def _import_from_file(file_path: str) -> Any:
+        """Import a module from a file path with proper package context.
+
+        Walks up from the file to find the package root (furthest ancestor
+        directory containing ``__init__.py``), adds the root's parent to
+        ``sys.path``, computes the dotted module name, and uses
+        ``importlib.import_module`` so that relative imports work.
+        """
+        import os
+        import sys
+
+        file_path = os.path.abspath(file_path)
+        parts: list[str] = []
+        current = file_path
+
+        # Strip .py extension for module name
+        stem = os.path.splitext(os.path.basename(current))[0]
+        parts.append(stem)
+        current = os.path.dirname(current)
+
+        # Walk up while __init__.py exists
+        while os.path.isfile(os.path.join(current, "__init__.py")):
+            parts.append(os.path.basename(current))
+            current = os.path.dirname(current)
+
+        # current is now the package root's parent
+        parts.reverse()
+        dotted_name = ".".join(parts)
+
+        if current not in sys.path:
+            sys.path.insert(0, current)
+
+        return importlib.import_module(dotted_name)
 
     @property
     def module_cache(self) -> dict[tuple[str, str], Callable]:

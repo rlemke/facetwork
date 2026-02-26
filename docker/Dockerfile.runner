@@ -9,10 +9,11 @@ RUN pip install --no-cache-dir -e ".[mongodb]" || \
     pip install --no-cache-dir lark pymongo
 
 # HDFS support uses WebHDFS REST API via requests (no native libs needed)
-RUN pip install --no-cache-dir requests
+# pyshp needed for census-us TIGER shapefiles
+RUN pip install --no-cache-dir requests pyshp
 
 # Copy application code
 COPY afl/ ./afl/
 
 ENV PYTHONUNBUFFERED=1
-CMD ["python", "-m", "afl.runtime.runner", "--poll-interval", "1000"]
+CMD ["python", "-m", "afl.runtime.runner", "--poll-interval", "1000", "--registry"]

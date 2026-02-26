@@ -111,6 +111,12 @@ def main() -> None:
         choices=["json", "text"],
         help="Log format (default: json)",
     )
+    parser.add_argument(
+        "--registry",
+        action="store_true",
+        default=os.environ.get("AFL_USE_REGISTRY", "").strip() == "1",
+        help="Load handler registrations from MongoDB (env: AFL_USE_REGISTRY=1)",
+    )
 
     args = parser.parse_args()
 
@@ -134,6 +140,22 @@ def main() -> None:
     telemetry = Telemetry(enabled=True)
     evaluator = Evaluator(persistence=store, telemetry=telemetry)
     tool_registry = ToolRegistry()
+
+    # Load handler registrations from MongoDB when --registry is set
+    if args.registry:
+        from afl.runtime.dispatcher import RegistryDispatcher
+
+        dispatcher = RegistryDispatcher(persistence=store)
+        registrations = store.list_handler_registrations()
+        for reg in registrations:
+            def _make_proxy(d: RegistryDispatcher, name: str):  # noqa: E301
+                def _proxy(payload: dict) -> dict:
+                    return d.dispatch(name, payload)
+                return _proxy
+            tool_registry.register(reg.facet_name, _make_proxy(dispatcher, reg.facet_name))
+        if registrations:
+            names = [r.facet_name for r in registrations]
+            print(f"  Registry handlers: {len(names)} loaded")
 
     runner_config = RunnerConfig(
         server_group=args.server_group,
