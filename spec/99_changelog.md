@@ -1,5 +1,40 @@
 # Implementation Changelog
 
+## Completed (v0.18.0) - Multi-Agent Debate Example
+
+New example at `examples/multi-agent-debate/` — the **first multi-agent
+interaction example**. Three debate agents (proposer, critic, synthesizer)
+with distinct personas argue, rebut, score, and synthesize positions.
+Every event facet has a prompt block.
+
+### AFL definitions
+- `debate.afl`: 6 schemas, 8 event facets across 4 namespaces (Framing, Argumentation, Evaluation, Synthesis), 2 mixin facets, 2 implicits, 2 workflows
+- `StructuredDebate`: pre-script → frame → assign roles → 3× parallel arguments with AgentRole mixins → 3× rebuttals with statement-level andThen for scoring (agent-to-agent dependency: each rebuttal consumes other agents' arguments) → synthesize (array literals) → judge → yield, plus andThen script for post-debate summary
+- `ConsensusDebate`: frame + assign roles → 3× parallel arguments → synthesize → judge → BuildConsensus with Timeout mixin + andThen foreach for parallel agent fan-out with statement-level andThen
+- Features demonstrated: prompt blocks (8×, every event facet), multi-agent personas (3 distinct agents), agent-to-agent output dependency (rebuttals consume other agents' arguments), scoring/voting mechanism, statement-level andThen (3 instances), andThen foreach, pre-script, andThen script, call-site mixins (`with AgentRole() with Timeout()`), implicit facets, array literals, array indexing (`roles.assignments[0]`), schemas (6), doc comments
+
+### Handler modules (4 categories, 8 event facets)
+- **Framing**: FrameDebate (topic analysis + stance cycling for/against/neutral), AssignRoles (persona cycling proposer/critic/synthesizer)
+- **Argumentation**: GenerateArgument (3 claims + 3 evidence, hash-based confidence 0.4-0.95), GenerateRebuttal (counter-claims targeting opposing agents, strength 0.3-0.9)
+- **Evaluation**: ScoreArguments (per-agent clarity/evidence/persuasiveness scoring), JudgeDebate (winner by highest overall score with margin and dissenting points)
+- **Synthesis**: SynthesizePositions (theme extraction from multi-agent debate), BuildConsensus (agreement level 0.2-0.9, common ground, unresolved points)
+
+### Implementation notes
+- Pure Python standard library only (`hashlib`, `json`) — no external dependencies
+- Deterministic stubs: all output derived from MD5 hashes of inputs for reproducibility
+- Follows research-agent pattern: conftest sys.modules purge, RegistryRunner dispatch tables
+- First example with multi-agent interaction: agents consume each other's outputs
+
+### Tests: 39 new (2981 passed, 84 skipped, 3065 collected)
+- `TestDebateUtils` (9): frame structure/determinism, role count, argument structure, rebuttal references, score range, verdict structure, synthesis themes, consensus level
+- `TestFramingHandlers` (3): frame default, custom num_agents, assign roles with JSON string
+- `TestArgumentationHandlers` (4): argument structure, rebuttal with arguments, JSON string role, empty arguments
+- `TestEvaluationHandlers` (4): score range, multiple arguments, judge verdict, JSON string scores
+- `TestSynthesisHandlers` (4): synthesis output, consensus level, JSON string inputs, agreement detection
+- `TestDispatch` (5): 4 namespace dispatch tables, total handler count (8)
+- `TestCompilation` (8): AFL parses, 6 schemas, 8 event facets, 2 workflows, 8 prompt blocks, 2 mixins, 2 implicits, foreach present
+- `TestAgentIntegration` (2): ToolRegistry dispatches all 8 handlers, ClaudeAgentRunner with real handler completes workflow
+
 ## Completed (v0.17.0) - AI Research Agent Example
 
 New example at `examples/research-agent/` — the **first example to exercise the

@@ -1,0 +1,2 @@
+# No external dependencies required.
+# All debate utilities use only the Python standard library (hashlib, json).

@@ -1,0 +1,257 @@
+// Multi-Agent Debate
+//
+// First multi-agent interaction example — three debate agents (proposer,
+// critic, synthesizer) with distinct personas argue, rebut, score, and
+// synthesize positions. Every event facet has a prompt block.
+//
+// Demonstrates: prompt blocks (8x), multi-agent personas, agent-to-agent
+// output dependency, scoring/voting, statement-level andThen, andThen foreach,
+// pre-scripts, andThen scripts, mixins, implicits, array literals,
+// array indexing, schemas, doc comments.
+
+// -----------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------
+namespace debate.types {
+    schema Position {
+        stance: String,
+        rationale: String,
+        priority: Long
+    }
+
+    schema Argument {
+        agent_role: String,
+        position: String,
+        claims: Json,
+        evidence: Json,
+        confidence: Double
+    }
+
+    schema Rebuttal {
+        agent_role: String,
+        target_role: String,
+        counter_claims: Json,
+        weaknesses: Json,
+        strength: Double
+    }
+
+    schema Score {
+        agent_role: String,
+        clarity: Long,
+        evidence_quality: Long,
+        persuasiveness: Long,
+        overall: Long
+    }
+
+    schema Verdict {
+        winner: String,
+        margin: Double,
+        rationale: String,
+        dissenting_points: Json
+    }
+
+    schema ConsensusResult {
+        agreement_level: Double,
+        common_ground: Json,
+        unresolved: Json,
+        summary: String
+    }
+}
+
+// -----------------------------------------------------------------------
+// Mixins
+// -----------------------------------------------------------------------
+namespace debate.mixins {
+    facet AgentRole(persona: String = "neutral", expertise: String = "general")
+    facet Timeout(minutes: Int = 30)
+
+    implicit defaultRole = AgentRole(persona = "neutral", expertise = "general")
+    implicit defaultTimeout = Timeout(minutes = 30)
+}
+
+// -----------------------------------------------------------------------
+// Framing
+// -----------------------------------------------------------------------
+namespace debate.Framing {
+    use debate.types
+
+    /** Frame a debate topic — analyze positions and identify stakes. */
+    event facet FrameDebate(
+        topic: String,
+        num_agents: Int = 3
+    ) => (topic_analysis: String, positions: Json, stakes: String) prompt {
+        system "You are a debate moderator. Analyze the topic, identify distinct positions, and outline what is at stake."
+        template "Frame a structured debate on '{topic}' with {num_agents} participants. Identify the key positions and stakes."
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Assign debate roles and personas to agents based on identified positions. */
+    event facet AssignRoles(
+        topic_analysis: String,
+        positions: Json
+    ) => (assignments: Json) prompt {
+        system "You are a debate organizer. Assign distinct personas — proposer, critic, synthesizer — ensuring balanced coverage of all positions."
+        template "Given the analysis '{topic_analysis}' and positions, assign agent roles with distinct personas and expertise areas."
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// -----------------------------------------------------------------------
+// Argumentation
+// -----------------------------------------------------------------------
+namespace debate.Argumentation {
+    use debate.types
+
+    /** Generate an argument for the assigned position with supporting evidence. */
+    event facet GenerateArgument(
+        role: Json,
+        topic: String,
+        context: String = ""
+    ) => (argument: Argument) prompt {
+        system "You are a debate participant. Construct a compelling argument for your assigned position with clear claims and evidence."
+        template "As {role}, argue your position on '{topic}'. Context: {context}. Provide 3 claims with supporting evidence."
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Generate a rebuttal to opposing arguments, identifying weaknesses. */
+    event facet GenerateRebuttal(
+        role: Json,
+        arguments: Json
+    ) => (rebuttal: Rebuttal) prompt {
+        system "You are a debate participant responding to opponents. Identify weaknesses in their arguments and construct counter-claims."
+        template "As {role}, rebut the opposing arguments: {arguments}. Identify weaknesses and provide counter-claims."
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// -----------------------------------------------------------------------
+// Evaluation
+// -----------------------------------------------------------------------
+namespace debate.Evaluation {
+    use debate.types
+
+    /** Score arguments on clarity, evidence quality, and persuasiveness. */
+    event facet ScoreArguments(
+        arguments: Json,
+        rebuttals: Json
+    ) => (scores: Json) prompt {
+        system "You are a debate judge. Score each argument objectively on clarity (0-100), evidence quality (0-100), and persuasiveness (0-100)."
+        template "Score the arguments: {arguments} considering rebuttals: {rebuttals}. Provide per-agent scores."
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Judge the overall debate — pick a winner with rationale. */
+    event facet JudgeDebate(
+        topic: String,
+        synthesis: String,
+        scores: Json
+    ) => (verdict: Verdict) prompt {
+        system "You are the head judge. Determine the debate winner based on cumulative scores, argument quality, and rebuttal effectiveness."
+        template "Judge the debate on '{topic}'. Synthesis: {synthesis}. Scores: {scores}. Declare a winner with rationale and note any dissenting points."
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// -----------------------------------------------------------------------
+// Synthesis
+// -----------------------------------------------------------------------
+namespace debate.Synthesis {
+    use debate.types
+
+    /** Synthesize all arguments, rebuttals, and scores into a unified analysis. */
+    event facet SynthesizePositions(
+        arguments: Json,
+        rebuttals: Json,
+        scores: Json
+    ) => (synthesis: String, themes: Json) prompt {
+        system "You are a debate synthesizer. Find common ground, identify key themes, and produce a balanced summary of all positions."
+        template "Synthesize the debate. Arguments: {arguments}. Rebuttals: {rebuttals}. Scores: {scores}. Identify themes and areas of agreement."
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Build a consensus result from the verdict and synthesis. */
+    event facet BuildConsensus(
+        verdict: Verdict,
+        synthesis: String,
+        themes: Json
+    ) => (consensus: ConsensusResult) prompt {
+        system "You are a consensus builder. Determine what all parties can agree on, what remains unresolved, and the overall agreement level."
+        template "Build consensus from verdict by '{verdict.winner}' (margin {verdict.margin}). Synthesis: {synthesis}. Themes: {themes}."
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// -----------------------------------------------------------------------
+// Workflows
+// -----------------------------------------------------------------------
+namespace debate.workflows {
+    use debate.types
+    use debate.mixins
+    use debate.Framing
+    use debate.Argumentation
+    use debate.Evaluation
+    use debate.Synthesis
+
+    /** Run a structured multi-agent debate: frame, argue, rebut, score, synthesize, and judge. */
+    workflow StructuredDebate(
+        topic: String,
+        num_agents: Int = 3
+    ) => (
+        verdict: Verdict,
+        synthesis: String,
+        total_arguments: Long,
+        summary: String
+    ) script {
+        result["total_arguments"] = int(params.get("num_agents", 3)) * 2
+        result["summary"] = "Structured debate on: " + params.get("topic", "unknown")
+    } andThen {
+        frame = FrameDebate(topic = $.topic, num_agents = $.num_agents)
+        roles = AssignRoles(topic_analysis = frame.topic_analysis, positions = frame.positions)
+        a0 = GenerateArgument(role = roles.assignments[0], topic = $.topic, context = frame.stakes) with AgentRole(persona = "proposer", expertise = "advocacy")
+        a1 = GenerateArgument(role = roles.assignments[1], topic = $.topic, context = frame.stakes) with AgentRole(persona = "critic", expertise = "analysis")
+        a2 = GenerateArgument(role = roles.assignments[2], topic = $.topic, context = frame.stakes) with AgentRole(persona = "synthesizer", expertise = "integration")
+        r0 = GenerateRebuttal(role = roles.assignments[0], arguments = [a1.argument, a2.argument]) with AgentRole(persona = "proposer") andThen {
+            s0 = ScoreArguments(arguments = [a0.argument], rebuttals = [r0.rebuttal])
+        }
+        r1 = GenerateRebuttal(role = roles.assignments[1], arguments = [a0.argument, a2.argument]) with AgentRole(persona = "critic") andThen {
+            s1 = ScoreArguments(arguments = [a1.argument], rebuttals = [r1.rebuttal])
+        }
+        r2 = GenerateRebuttal(role = roles.assignments[2], arguments = [a0.argument, a1.argument]) with AgentRole(persona = "synthesizer") andThen {
+            s2 = ScoreArguments(arguments = [a2.argument], rebuttals = [r2.rebuttal])
+        }
+        synth = SynthesizePositions(arguments = [a0.argument, a1.argument, a2.argument], rebuttals = [r0.rebuttal, r1.rebuttal, r2.rebuttal], scores = [s0.scores, s1.scores, s2.scores])
+        verdict = JudgeDebate(topic = $.topic, synthesis = synth.synthesis, scores = [s0.scores, s1.scores, s2.scores])
+        yield StructuredDebate(verdict = verdict.verdict, synthesis = synth.synthesis, total_arguments = $.total_arguments, summary = $.summary)
+    } andThen script {
+        result["summary"] = (
+            "Completed debate on: " + params.get("topic", "unknown")
+            + " with " + str(params.get("total_arguments", 0))
+            + " total arguments"
+        )
+    }
+
+    /** Consensus-seeking debate with foreach fan-out for parallel agent investigation. */
+    workflow ConsensusDebate(
+        topic: String,
+        num_agents: Int = 3
+    ) => (
+        consensus: ConsensusResult,
+        verdict: Verdict,
+        synthesis: String
+    ) andThen {
+        frame = FrameDebate(topic = $.topic, num_agents = $.num_agents)
+        roles = AssignRoles(topic_analysis = frame.topic_analysis, positions = frame.positions)
+        a0 = GenerateArgument(role = roles.assignments[0], topic = $.topic) with AgentRole(persona = "proposer")
+        a1 = GenerateArgument(role = roles.assignments[1], topic = $.topic) with AgentRole(persona = "critic")
+        a2 = GenerateArgument(role = roles.assignments[2], topic = $.topic) with AgentRole(persona = "synthesizer")
+        synth = SynthesizePositions(arguments = [a0.argument, a1.argument, a2.argument], rebuttals = [], scores = [])
+        verdict = JudgeDebate(topic = $.topic, synthesis = synth.synthesis, scores = [])
+        cons = BuildConsensus(verdict = verdict.verdict, synthesis = synth.synthesis, themes = synth.themes) with Timeout(minutes = 60)
+        yield ConsensusDebate(consensus = cons.consensus, verdict = verdict.verdict, synthesis = synth.synthesis)
+    } andThen foreach agent in $.assignments {
+        arg = GenerateArgument(role = $.agent, topic = $.topic) with AgentRole(persona = "debater") andThen {
+            reb = GenerateRebuttal(role = $.agent, arguments = [arg.argument])
+        }
+        yield ConsensusDebate(synthesis = reb.rebuttal)
+    }
+}
