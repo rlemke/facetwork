@@ -1,5 +1,39 @@
 # Implementation Changelog
 
+## Completed (v0.17.0) - AI Research Agent Example
+
+New example at `examples/research-agent/` — the **first example to exercise the
+LLM integration path**. Every event facet has a prompt block, making it the
+showcase for `ClaudeAgentRunner` / `LLMHandler`.
+
+### AFL definitions
+- `research.afl`: 7 schemas, 8 event facets across 4 namespaces (Planning, Gathering, Analysis, Writing), 2 mixin facets, 2 implicits, 2 workflows
+- `ResearchTopic`: pre-script → plan → decompose → 3× parallel gather-with-mixins (each with statement-level andThen for extract) → synthesize (array literal) → identify gaps → draft → review → yield, plus andThen script for post-pipeline summary
+- `DeepDive`: plan + decompose with Citation mixin + andThen foreach for parallel subtopic investigation with statement-level andThen
+- Features demonstrated: prompt blocks (8×, every event facet), chained LLM steps (8-step pipeline), statement-level andThen (3 instances), andThen foreach, pre-script, andThen script, call-site mixins (`with Retry() with Citation()`), implicit facets, array literals (`[f0.findings, f1.findings, f2.findings]`), array indexing (`decomp.subtopics[0]`), schemas (7), doc comments
+
+### Handler modules (4 categories, 8 event facets)
+- **Planning**: PlanResearch (topic hash → keywords/structure), DecomposeIntoSubtopics (deterministic subtopic generation)
+- **Gathering**: GatherSources (hash-based source generation, capped at 5), ExtractFindings (per-source finding extraction with confidence levels)
+- **Analysis**: SynthesizeFindings (theme/contradiction/gap identification from flattened findings), IdentifyGaps (gap severity classification + recommendations)
+- **Writing**: DraftReport (5-section report generation), ReviewDraft (hash-based scoring 55-94, approved if ≥70)
+
+### Implementation notes
+- Pure Python standard library only (`hashlib`, `json`) — no external dependencies
+- Deterministic stubs: all output derived from MD5 hashes of inputs for reproducibility
+- Follows ml-hyperparam-sweep pattern: conftest sys.modules purge, RegistryRunner dispatch tables
+- First example with ClaudeAgentRunner integration test using real handler dispatch
+
+### Tests: 38 new (2942 passed, 84 skipped, 3026 collected)
+- `TestResearchUtils` (8): plan structure/determinism, decompose count, sources count/capped, findings count, synthesis structure, review score range
+- `TestPlanningHandlers` (3): plan default, custom depth, decompose with JSON string topic
+- `TestGatheringHandlers` (4): sources list, JSON string subtopic, findings structure, empty sources
+- `TestAnalysisHandlers` (4): synthesis output, nested findings, gaps returns lists, JSON string analysis
+- `TestWritingHandlers` (4): draft sections, word count, review score, approved threshold
+- `TestDispatch` (5): 4 namespace dispatch tables, total handler count (8)
+- `TestCompilation` (8): AFL parses, 7 schemas, 8 event facets, 2 workflows, 8 prompt blocks, 2 mixins, 2 implicits, foreach present
+- `TestAgentIntegration` (2): ToolRegistry dispatches all 8 handlers, ClaudeAgentRunner with real handler completes workflow
+
 ## Completed (v0.16.0) - ML Hyperparameter Sweep Example
 
 New example at `examples/ml-hyperparam-sweep/` showcasing AFL features not yet

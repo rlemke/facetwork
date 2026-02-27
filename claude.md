@@ -88,6 +88,7 @@ Copy `.env.example` to `.env` and edit to configure MongoDB, scaling, overlays, 
 | `examples/osm-geocoder/` | OSM geocoding example (42 AFL files, 16 handler categories, ~80 handler modules) |
 | `examples/monte-carlo-risk/` | Monte Carlo portfolio risk analysis (GBM simulation, VaR/CVaR, Greeks, stress testing) |
 | `examples/ml-hyperparam-sweep/` | ML hyperparameter sweep (statement-level andThen, prompt blocks, map literals, andThen foreach) |
+| `examples/research-agent/` | AI research agent — first LLM integration showcase (8 prompt-block event facets, chained LLM steps, ClaudeAgentRunner) |
 | `spec/` | Language and runtime specifications |
 | `docker/` | Dockerfiles for all services |
 | `scripts/` | Convenience scripts (setup, compile, runner, dashboard, etc.) |
@@ -129,4 +130,4 @@ Copy `.env.example` to `.env` and edit to configure MongoDB, scaling, overlays, 
 - `spec/70_examples.md` — iteration traces for Examples 2, 3, 4
 - `spec/80_acceptance_tests.md` — test requirements
 - `spec/90_nonfunctional.md` — dependencies, build/run reference, Docker, configuration
-- `spec/99_changelog.md` — implementation changelog (v0.1.0 through v0.16.0)
+- `spec/99_changelog.md` — implementation changelog (v0.1.0 through v0.17.0)

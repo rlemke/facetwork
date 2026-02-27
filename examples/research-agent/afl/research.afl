@@ -1,0 +1,257 @@
+// AI Research Agent
+//
+// First example to exercise the LLM integration path — every event facet
+// has a prompt block, making it the showcase for ClaudeAgentRunner / LLMHandler.
+//
+// Demonstrates: prompt blocks (8×), chained LLM steps, statement-level andThen,
+// andThen foreach, pre-scripts, andThen scripts, mixins, implicits,
+// array literals, array indexing, schemas, doc comments.
+
+// -----------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------
+namespace research.types {
+    schema Topic {
+        name: String,
+        depth: Long,
+        keywords: Json,
+        summary: String,
+        max_subtopics: Long
+    }
+
+    schema Subtopic {
+        name: String,
+        parent_topic: String,
+        description: String,
+        priority: Long
+    }
+
+    schema Source {
+        title: String,
+        url: String,
+        relevance_score: Double,
+        source_type: String
+    }
+
+    schema Finding {
+        claim: String,
+        evidence: String,
+        confidence: Double,
+        source_title: String
+    }
+
+    schema Analysis {
+        themes: Json,
+        contradictions: Json,
+        gaps: Json,
+        summary: String,
+        confidence_score: Double
+    }
+
+    schema Draft {
+        title: String,
+        sections: Json,
+        word_count: Long,
+        citations: Json
+    }
+
+    schema ReviewResult {
+        score: Long,
+        approved: Boolean,
+        feedback: Json,
+        suggested_edits: Json
+    }
+}
+
+// -----------------------------------------------------------------------
+// Mixins
+// -----------------------------------------------------------------------
+namespace research.mixins {
+    facet Retry(max_attempts: Int = 3, backoff_ms: Int = 2000)
+    facet Citation(style: String = "apa", include_urls: Boolean = true)
+
+    implicit defaultRetry = Retry(max_attempts = 3, backoff_ms = 2000)
+    implicit defaultCitation = Citation(style = "apa", include_urls = true)
+}
+
+// -----------------------------------------------------------------------
+// Planning
+// -----------------------------------------------------------------------
+namespace research.Planning {
+    use research.types
+
+    /** Plan a research investigation for the given topic. */
+    event facet PlanResearch(
+        topic: String,
+        depth: Long = 3,
+        max_subtopics: Long = 5
+    ) => (plan: Topic) prompt {
+        system "You are a research planning assistant. Create detailed research plans with clear subtopic breakdowns."
+        template "Plan a research investigation on '{topic}' at depth {depth}. Identify up to {max_subtopics} key subtopics to explore."
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Break a research topic into subtopics for parallel investigation. */
+    event facet DecomposeIntoSubtopics(
+        topic: Topic,
+        max_subtopics: Long = 5
+    ) => (subtopics: Json) prompt {
+        system "You are a research decomposition expert. Break complex topics into focused, non-overlapping subtopics."
+        template "Decompose the topic '{topic.name}' into at most {max_subtopics} subtopics. Consider: {topic.keywords}."
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// -----------------------------------------------------------------------
+// Gathering
+// -----------------------------------------------------------------------
+namespace research.Gathering {
+    use research.types
+
+    /** Gather relevant sources for a subtopic. */
+    event facet GatherSources(
+        subtopic: Subtopic,
+        max_sources: Long = 5
+    ) => (sources: Json) prompt {
+        system "You are a research librarian. Find the most relevant and authoritative sources for a given topic."
+        template "Find up to {max_sources} sources for subtopic '{subtopic.name}': {subtopic.description}. Prioritize peer-reviewed and authoritative sources."
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Extract key findings from gathered sources. */
+    event facet ExtractFindings(
+        subtopic: Subtopic,
+        sources: Json
+    ) => (findings: Json) prompt {
+        system "You are a research analyst. Extract factual claims with evidence and confidence levels from source material."
+        template "Extract key findings about '{subtopic.name}' from the provided sources. For each finding, note the evidence and assign a confidence level."
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// -----------------------------------------------------------------------
+// Analysis
+// -----------------------------------------------------------------------
+namespace research.Analysis {
+    use research.types
+
+    /** Synthesize findings across subtopics into a cohesive analysis. */
+    event facet SynthesizeFindings(
+        topic: Topic,
+        all_findings: Json
+    ) => (analysis: Analysis) prompt {
+        system "You are a research synthesizer. Identify themes, contradictions, and gaps across multiple findings."
+        template "Synthesize findings for '{topic.name}'. Identify major themes, contradictions between sources, and remaining knowledge gaps."
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Identify gaps in the research and recommend next steps. */
+    event facet IdentifyGaps(
+        analysis: Analysis,
+        topic: Topic
+    ) => (gaps: Json, recommendations: Json) prompt {
+        system "You are a research quality reviewer. Identify methodological gaps, missing perspectives, and recommend improvements."
+        template "Review the analysis of '{topic.name}' with confidence {analysis.confidence_score}. Identify gaps in: {analysis.gaps}. Suggest concrete next steps."
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// -----------------------------------------------------------------------
+// Writing
+// -----------------------------------------------------------------------
+namespace research.Writing {
+    use research.types
+
+    /** Draft a research report from analysis results. */
+    event facet DraftReport(
+        topic: Topic,
+        analysis: Analysis,
+        gaps: Json
+    ) => (draft: Draft) prompt {
+        system "You are a technical writer. Draft clear, well-structured research reports with proper citations."
+        template "Draft a research report on '{topic.name}'. Key themes: {analysis.themes}. Known gaps: {gaps}. Target a comprehensive but concise report."
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Review a draft report for quality, accuracy, and completeness. */
+    event facet ReviewDraft(
+        draft: Draft,
+        topic: Topic,
+        analysis: Analysis
+    ) => (review: ReviewResult) prompt {
+        system "You are a peer reviewer. Evaluate research reports for accuracy, completeness, and clarity."
+        template "Review the draft report '{draft.title}' ({draft.word_count} words) on '{topic.name}'. Check against the analysis themes: {analysis.themes}. Score 0-100."
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// -----------------------------------------------------------------------
+// Workflows
+// -----------------------------------------------------------------------
+namespace research.workflows {
+    use research.types
+    use research.mixins
+    use research.Planning
+    use research.Gathering
+    use research.Analysis
+    use research.Writing
+
+    /** Research a topic end-to-end: plan, gather, analyze, write, and review. */
+    workflow ResearchTopic(
+        topic: String,
+        depth: Long = 3,
+        max_subtopics: Long = 3,
+        sources_per_subtopic: Long = 3
+    ) => (
+        report: Draft,
+        review: ReviewResult,
+        total_sources: Long,
+        summary: String
+    ) script {
+        result["total_sources"] = int(params.get("max_subtopics", 3)) * int(params.get("sources_per_subtopic", 3))
+        result["summary"] = "Research pipeline for: " + params.get("topic", "unknown")
+    } andThen {
+        plan = PlanResearch(topic = $.topic, depth = $.depth, max_subtopics = $.max_subtopics) with Retry(max_attempts = 3, backoff_ms = 2000) with Citation(style = "apa", include_urls = true)
+        decomp = DecomposeIntoSubtopics(topic = plan.plan, max_subtopics = $.max_subtopics)
+        g0 = GatherSources(subtopic = decomp.subtopics[0], max_sources = $.sources_per_subtopic) with Retry(max_attempts = 3) andThen {
+            f0 = ExtractFindings(subtopic = decomp.subtopics[0], sources = g0.sources)
+        }
+        g1 = GatherSources(subtopic = decomp.subtopics[1], max_sources = $.sources_per_subtopic) with Retry(max_attempts = 3) andThen {
+            f1 = ExtractFindings(subtopic = decomp.subtopics[1], sources = g1.sources)
+        }
+        g2 = GatherSources(subtopic = decomp.subtopics[2], max_sources = $.sources_per_subtopic) with Retry(max_attempts = 3) andThen {
+            f2 = ExtractFindings(subtopic = decomp.subtopics[2], sources = g2.sources)
+        }
+        synth = SynthesizeFindings(topic = plan.plan, all_findings = [f0.findings, f1.findings, f2.findings])
+        gapcheck = IdentifyGaps(analysis = synth.analysis, topic = plan.plan)
+        report = DraftReport(topic = plan.plan, analysis = synth.analysis, gaps = gapcheck.gaps)
+        rev = ReviewDraft(draft = report.draft, topic = plan.plan, analysis = synth.analysis)
+        yield ResearchTopic(report = report.draft, review = rev.review, total_sources = $.total_sources, summary = $.summary)
+    } andThen script {
+        result["summary"] = (
+            "Completed research on: " + params.get("topic", "unknown")
+            + " with " + str(params.get("total_sources", 0))
+            + " total sources"
+        )
+    }
+
+    /** Deep-dive into a topic with foreach fan-out for parallel subtopic investigation. */
+    workflow DeepDive(
+        topic: String,
+        depth: Long = 5,
+        max_subtopics: Long = 5,
+        max_sources: Long = 5
+    ) => (
+        plan: Topic,
+        subtopics: Json
+    ) andThen {
+        plan = PlanResearch(topic = $.topic, depth = $.depth, max_subtopics = $.max_subtopics) with Citation(style = "ieee", include_urls = true)
+        decomp = DecomposeIntoSubtopics(topic = plan.plan, max_subtopics = $.max_subtopics)
+        yield DeepDive(plan = plan.plan, subtopics = decomp.subtopics)
+    } andThen foreach sub in $.subtopics {
+        g = GatherSources(subtopic = $.sub, max_sources = $.max_sources) with Retry(max_attempts = 5, backoff_ms = 3000) andThen {
+            f = ExtractFindings(subtopic = $.sub, sources = g.sources)
+        }
+        yield DeepDive(subtopics = f.findings)
+    }
+}
