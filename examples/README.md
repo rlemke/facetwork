@@ -38,7 +38,7 @@ Each example also has a **USER_GUIDE.md** with step-by-step walkthroughs, key co
 | monte-carlo-risk | *(no user guide yet)* |
 | ml-hyperparam-sweep | *(no user guide yet)* |
 | research-agent | *(no user guide yet)* |
-| multi-agent-debate | *(no user guide yet)* |
+| multi-agent-debate | [USER_GUIDE.md](multi-agent-debate/USER_GUIDE.md) |
 
 ## Running an Example
 

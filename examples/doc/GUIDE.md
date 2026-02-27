@@ -319,4 +319,4 @@ Each example has its own detailed user guide:
 | monte-carlo-risk | *(no user guide yet)* |
 | ml-hyperparam-sweep | *(no user guide yet)* |
 | research-agent | *(no user guide yet)* |
-| multi-agent-debate | *(no user guide yet)* |
+| multi-agent-debate | [USER_GUIDE.md](../multi-agent-debate/USER_GUIDE.md) |
