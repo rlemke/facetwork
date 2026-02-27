@@ -182,8 +182,8 @@ afl [options] [input_file]
 | `-o, --output FILE` | Output file (default: stdout) |
 | `--primary FILE` | Primary source file (repeatable) |
 | `--library FILE` | Library source file (repeatable) |
-| `--mongo ID:NAME` | MongoDB source (not yet implemented) |
-| `--maven G:A:V` | Maven artifact (not yet implemented) |
+| `--mongo ID:NAME` | MongoDB source |
+| `--maven G:A:V[:CLASSIFIER]` | Maven artifact |
 | `--no-locations` | Exclude source locations |
 | `--include-provenance` | Include source provenance in locations |
 | `--compact` | Compact JSON (no indentation) |
