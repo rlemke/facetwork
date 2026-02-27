@@ -148,6 +148,54 @@ During `state.facet.initialization.Begin`:
 - Results MUST be stored in the step’s persistent facet structure
 - Expressions MAY include arithmetic, grouping, and references
 
+### Call-Site Mixin Argument Evaluation
+
+> **Implemented** (v0.21.0) — `FacetInitializationBeginHandler` in `afl/runtime/handlers/initialization.py`.
+
+A step’s call expression MAY include **call-site mixins**: `with MixinName(args) as alias`.
+
+The compiled AST stores these in the call’s `mixins` list:
+
+```json
+{
+  "call": {
+    "target": "FacetName",
+    "args": [...],
+    "mixins": [
+      {"type": "MixinCall", "target": "RetryPolicy", "args": [{"name": "max_retries", "value": {"type": "Int", "value": 5}}], "alias": "retry"},
+      {"type": "MixinCall", "target": "AlertConfig", "args": [{"name": "channel", "value": {"type": "String", "value": "alerts"}}]}
+    ]
+  }
+}
+```
+
+During `FACET_INIT_BEGIN`, after evaluating the step’s own call args, the runtime MUST evaluate mixin args with these rules:
+
+1. **Evaluation order:** Call args are evaluated first, then mixins in declaration order.
+
+2. **Aliased mixins** (`with Foo(x=1) as alias`): The evaluated mixin args are stored as a **nested dict** under the alias key. The handler receives `params["alias"] = {"x": 1}`.
+
+3. **Non-aliased mixins** (`with Foo(x=1)`): The evaluated mixin args are **flat-merged** into the step params. A mixin arg MUST NOT override an explicit call arg with the same name.
+
+4. **Dependencies:** Mixin args MAY contain step references. The dependency graph MUST scan mixin args in addition to call args when computing step dependencies.
+
+5. **Implicit fallback:** Implicit defaults still apply for params not provided by either the call args or the mixin args.
+
+**Example:**
+
+```afl
+ingest = IngestReading(sensor_id = $.id) with RetryPolicy(max_retries = 5) as retry
+```
+
+The handler receives:
+
+```python
+params = {
+    "sensor_id": "sensor_001",   # from call arg
+    "retry": {"max_retries": 5}, # from aliased mixin
+}
+```
+
 ### Dependency Enforcement
 
 A step MAY NOT evaluate expressions that reference another step unless the referenced step is in `state.statement.Complete`.
