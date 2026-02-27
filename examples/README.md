@@ -20,6 +20,7 @@ Each subdirectory contains a complete working example with AFL source and a Pyth
 | [multi-round-debate](multi-round-debate/) | Multi-round debate — composed facets as primary pattern (DebateRound encapsulates 12 steps, cross-round state, convergence) |
 | [tool-use-agent](tool-use-agent/) | Tool-use agent — tool-as-event-facet pattern (6 tools as event facets, planning facet, `++` and `%`/`/` arithmetic) |
 | [data-quality-pipeline](data-quality-pipeline/) | Data quality pipeline — schema instantiation as steps, array type annotations `[Type]`, parenthesized expression grouping `(a+b)*c` |
+| [sensor-monitoring](sensor-monitoring/) | Sensor monitoring — unary negation, null literals, computed map indexing, mixin alias, RegistryRunner-first |
 
 ## User Documentation
 
@@ -45,6 +46,7 @@ Each example also has a **USER_GUIDE.md** with step-by-step walkthroughs, key co
 | multi-round-debate | [USER_GUIDE.md](multi-round-debate/USER_GUIDE.md) |
 | tool-use-agent | [USER_GUIDE.md](tool-use-agent/USER_GUIDE.md) |
 | data-quality-pipeline | [USER_GUIDE.md](data-quality-pipeline/USER_GUIDE.md) |
+| sensor-monitoring | [USER_GUIDE.md](sensor-monitoring/USER_GUIDE.md) |
 
 ## Running an Example
 

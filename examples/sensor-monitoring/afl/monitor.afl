@@ -1,0 +1,213 @@
+// Sensor Monitoring -- unary negation, null literals, computed map indexing, mixin alias.
+//
+// Demonstrates:
+//   - Unary negation: critical_low = -40.0, low = -10.0 in ThresholdConfig
+//   - Null literals: last_reading = null, override_config = null in call args
+//   - Computed map indexing: $.sensor_configs[ingest.reading.sensor_id]
+//   - Mixin alias: with RetryPolicy(...) as retry, with AlertConfig(...) as alertcfg
+//   - Schema instantiation as steps (ThresholdConfig as step in andThen)
+//   - RegistryRunner as primary entry point (agent_registry.py)
+
+// ---------------------------------------------------------------------------
+// Schemas
+// ---------------------------------------------------------------------------
+namespace monitor.types {
+    schema SensorReading {
+        sensor_id: String,
+        timestamp: Long,
+        value: Double,
+        unit: String
+    }
+
+    schema ThresholdConfig {
+        low: Double,
+        high: Double,
+        critical_low: Double,
+        critical_high: Double
+    }
+
+    schema AnomalyResult {
+        is_anomaly: Boolean,
+        severity: String,
+        deviation: Double,
+        threshold_breached: String
+    }
+
+    schema AlertPayload {
+        sensor_id: String,
+        anomaly: Json,
+        priority: Int,
+        channel: String
+    }
+
+    schema DiagnosticReport {
+        sensor_id: String,
+        readings_checked: Int,
+        anomalies_found: Int,
+        health_status: String
+    }
+
+    schema MonitoringSummary {
+        total_sensors: Int,
+        total_anomalies: Int,
+        critical_count: Int,
+        report: String
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mixins and implicits
+// ---------------------------------------------------------------------------
+namespace monitor.mixins {
+    facet RetryPolicy(max_retries: Int = 3, backoff_ms: Int = 1000)
+    facet AlertConfig(channel: String = "default", escalate: Boolean = false)
+
+    implicit defaultRetry = RetryPolicy(max_retries = 3, backoff_ms = 1000)
+    implicit defaultAlert = AlertConfig(channel = "default", escalate = false)
+}
+
+// ---------------------------------------------------------------------------
+// Ingestion -- IngestReading, ValidateReading
+// ---------------------------------------------------------------------------
+namespace monitor.Ingestion {
+    use monitor.types
+
+    /** Ingest a raw sensor reading with optional last known value. */
+    event facet IngestReading(
+        sensor_id: String,
+        value: Double,
+        unit: String,
+        last_reading: Json = null
+    ) => (reading: SensorReading, quality: String) prompt {
+        system "You are a sensor ingestion agent that processes raw readings."
+        template "Ingest reading from sensor {sensor_id}: value={value} {unit}, last={last_reading}"
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Validate a reading against sensor-specific configuration. */
+    event facet ValidateReading(
+        reading: Json,
+        sensor_config: Json
+    ) => (valid: Boolean, calibrated_value: Double) prompt {
+        system "You are a sensor validation agent that checks readings against config."
+        template "Validate reading {reading} against config {sensor_config}"
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Analysis -- DetectAnomaly, ClassifyAlert
+// ---------------------------------------------------------------------------
+namespace monitor.Analysis {
+    use monitor.types
+
+    /** Detect anomalies using threshold values including negative thresholds. */
+    event facet DetectAnomaly(
+        reading: Json,
+        threshold_low: Double,
+        threshold_high: Double,
+        critical_low: Double,
+        critical_high: Double
+    ) => (result: AnomalyResult) prompt {
+        system "You are an anomaly detection agent that checks readings against thresholds."
+        template "Detect anomaly for {reading} with thresholds low={threshold_low} high={threshold_high} crit_low={critical_low} crit_high={critical_high}"
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Classify alert severity; null override_config uses default priority. */
+    event facet ClassifyAlert(
+        anomaly: Json,
+        sensor_id: String,
+        override_config: Json = null
+    ) => (alert: AlertPayload) prompt {
+        system "You are an alert classification agent that assigns priority and channel."
+        template "Classify alert for sensor {sensor_id}: anomaly={anomaly}, override={override_config}"
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Reporting -- RunDiagnostics, GenerateSummary
+// ---------------------------------------------------------------------------
+namespace monitor.Reporting {
+    use monitor.types
+
+    /** Run diagnostics on a sensor's anomaly history. */
+    event facet RunDiagnostics(
+        sensor_id: String,
+        anomaly_result: Json,
+        reading: Json
+    ) => (report: DiagnosticReport) prompt {
+        system "You are a diagnostic agent that assesses sensor health."
+        template "Run diagnostics for sensor {sensor_id}: anomaly={anomaly_result}"
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Generate monitoring summary across all processed readings. */
+    event facet GenerateSummary(
+        sensor_id: String,
+        diagnostic: Json,
+        alert: Json
+    ) => (summary: MonitoringSummary) prompt {
+        system "You are a summary agent that aggregates monitoring results."
+        template "Summarize monitoring for sensor {sensor_id}: diagnostic={diagnostic}, alert={alert}"
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Workflows
+// ---------------------------------------------------------------------------
+namespace monitor.workflows {
+    use monitor.types
+    use monitor.mixins
+    use monitor.Ingestion
+    use monitor.Analysis
+    use monitor.Reporting
+
+    /** Monitor a single sensor reading end-to-end. */
+    workflow MonitorSensors(
+        sensor_id: String,
+        value: Double,
+        unit: String,
+        sensor_configs: Json
+    ) => (
+        summary: MonitoringSummary,
+        report: String
+    ) script {
+        result["status"] = "Starting monitor for sensor " + params.get("sensor_id", "unknown")
+    } andThen {
+        cfg = ThresholdConfig(low = -10.0, high = 50.0, critical_low = -40.0, critical_high = 80.0)
+        ingest = IngestReading(sensor_id = $.sensor_id, value = $.value, unit = $.unit, last_reading = null) with RetryPolicy(max_retries = 5, backoff_ms = 2000) as retry
+        validate = ValidateReading(reading = ingest.reading, sensor_config = $.sensor_configs[ingest.reading.sensor_id])
+        detect = DetectAnomaly(reading = ingest.reading, threshold_low = cfg.low, threshold_high = cfg.high, critical_low = cfg.critical_low, critical_high = cfg.critical_high) andThen {
+            classify = ClassifyAlert(anomaly = detect.result, sensor_id = $.sensor_id, override_config = null) with AlertConfig(channel = "alerts", escalate = true) as alertcfg
+        }
+        diag = RunDiagnostics(sensor_id = $.sensor_id, anomaly_result = detect.result, reading = ingest.reading)
+        summ = GenerateSummary(sensor_id = $.sensor_id, diagnostic = diag.report, alert = classify.alert)
+        yield MonitorSensors(summary = summ.summary, report = "Sensor " ++ $.sensor_id ++ " status: " ++ diag.report.health_status)
+    } andThen script {
+        result["report"] = (
+            "Completed monitoring for sensor " + params.get("sensor_id", "unknown")
+            + " status=" + params.get("report", "?")
+        )
+    }
+
+    /** Batch monitor multiple sensors using foreach. */
+    workflow BatchMonitor(
+        sensor_ids: Json,
+        default_value: Double = 25.0,
+        unit: String = "celsius"
+    ) => (
+        report: String,
+        summary: String
+    ) andThen {
+        batch_cfg = ThresholdConfig(low = -10.0, high = 50.0, critical_low = -40.0, critical_high = 80.0)
+        yield BatchMonitor(report = "Batch configured", summary = "Batch started with " ++ (batch_cfg.high + batch_cfg.critical_high) * 1 ++ " total threshold")
+    } andThen foreach sid in $.sensor_ids {
+        reading = IngestReading(sensor_id = $.sid, value = $.default_value, unit = $.unit, last_reading = null) with RetryPolicy(max_retries = 3) as retry andThen {
+            anomaly = DetectAnomaly(reading = reading.reading, threshold_low = batch_cfg.low, threshold_high = batch_cfg.high, critical_low = batch_cfg.critical_low, critical_high = batch_cfg.critical_high)
+        }
+        yield BatchMonitor(summary = "Processed sensor: " ++ $.sid)
+    }
+}

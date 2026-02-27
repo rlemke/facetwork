@@ -22,6 +22,7 @@ This guide helps you choose the right example as a starting point for your own A
 | [multi-round-debate](../multi-round-debate/) | Intermediate | Composed facets, cross-round state | 8 | Iterative rounds with convergence |
 | [tool-use-agent](../tool-use-agent/) | Intermediate | Tool-as-event-facet, planning | 8 | Tool-use agent orchestration |
 | [data-quality-pipeline](../data-quality-pipeline/) | Intermediate | Schema instantiation, array types, `(expr)` | 8 | Data quality assessment pipelines |
+| [sensor-monitoring](../sensor-monitoring/) | Intermediate | Unary negation, null literals, map indexing, mixin alias | 6 | Sensor monitoring with RegistryRunner |
 
 ## Learning Path
 
@@ -60,9 +61,11 @@ Start simple and build up to more complex patterns:
                   |
 7. data-quality-pipeline  Schema instantiation + array types + (expr) grouping
        |
-8. osm-geocoder         Full production-scale agent
+8. sensor-monitoring     Unary negation + null literals + map indexing + mixin alias
+       |                  + RegistryRunner-first
+9. osm-geocoder         Full production-scale agent
        |
-9. continental-lz       Docker-orchestrated multi-region pipeline
+10. continental-lz       Docker-orchestrated multi-region pipeline
 ```
 
 ## Choosing an Example
@@ -122,6 +125,10 @@ Use **[tool-use-agent](../tool-use-agent/)**. Six tools (web search, deep search
 ### "I want to use schema instantiation, array types, or expression grouping"
 
 Use **[data-quality-pipeline](../data-quality-pipeline/)**. It is the first example to showcase schema instantiation as steps (`cfg = QualityConfig(...)` in andThen blocks), array type annotations (`[ColumnProfile]`, `[ValidationResult]`), and parenthesized expression grouping (`(a + b) * c`). The pipeline profiles datasets, validates quality, computes weighted scores, and generates remediation reports.
+
+### "I want to use unary negation, null literals, computed map keys, or mixin aliases"
+
+Use **[sensor-monitoring](../sensor-monitoring/)**. It is the first example to showcase unary negation (`-10.0`, `-40.0`), null literals as call arguments (`last_reading = null`), computed map indexing (`$.configs[step.field]`), and mixin aliases (`with RetryPolicy() as retry`). It also demonstrates RegistryRunner as the primary agent entry point.
 
 ### "I want to score and rank spatial locations"
 
@@ -348,3 +355,4 @@ Each example has its own detailed user guide:
 | multi-round-debate | [USER_GUIDE.md](../multi-round-debate/USER_GUIDE.md) |
 | tool-use-agent | [USER_GUIDE.md](../tool-use-agent/USER_GUIDE.md) |
 | data-quality-pipeline | [USER_GUIDE.md](../data-quality-pipeline/USER_GUIDE.md) |
+| sensor-monitoring | [USER_GUIDE.md](../sensor-monitoring/USER_GUIDE.md) |

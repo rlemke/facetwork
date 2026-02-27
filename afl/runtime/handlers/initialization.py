@@ -79,6 +79,18 @@ class FacetInitializationBeginHandler(StateHandler):
             args = stmt_def.args
             evaluated = evaluate_args(args, ctx)
 
+            # Evaluate call-site mixin args
+            for mixin in (stmt_def.mixins or []):
+                mixin_args = mixin.get("args", [])
+                mixin_alias = mixin.get("alias")
+                mixin_evaluated = evaluate_args(mixin_args, ctx)
+                if mixin_alias:
+                    evaluated[mixin_alias] = mixin_evaluated
+                else:
+                    for k, v in mixin_evaluated.items():
+                        if k not in evaluated:
+                            evaluated[k] = v
+
             # Apply implicit defaults for any params not provided in the call
             if self.step.facet_name:
                 implicit_args = self.context.get_implicit_args(self.step.facet_name)

@@ -1,5 +1,54 @@
 # Implementation Changelog
 
+## Completed (v0.21.0) - Sensor Monitoring Example + Mixin Alias Runtime Fix
+
+### Runtime fix: call-site mixin args + alias
+
+Call-site mixin arguments (`step = Foo() with Bar(x=1) as b`) were emitted correctly
+in JSON but silently dropped by the runtime. Three files changed:
+
+- **`afl/runtime/block.py`**: Added `mixins: list[dict]` field to `StatementDefinition`
+- **`afl/runtime/dependency.py`**: `_parse_step()` now extracts mixins from call AST; dependency loop scans mixin args for step references
+- **`afl/runtime/handlers/initialization.py`**: `FacetInitializationBeginHandler` evaluates mixin args after call args. Aliased mixins create nested dicts (`params["alias"] = {mixin_args}`); non-aliased mixins flat-merge without overriding explicit call args
+
+### New example: `examples/sensor-monitoring/`
+
+The **first example showcasing unary negation, null literals, computed map indexing,
+mixin aliases, and RegistryRunner as primary entry point**.
+
+### AFL definitions
+- `monitor.afl`: 6 schemas, 6 event facets across 3 namespaces (Ingestion, Analysis, Reporting), 2 mixin facets, 2 implicits, 2 workflows
+- `MonitorSensors`: pre-script → cfg=ThresholdConfig(low=-10.0, critical_low=-40.0) → IngestReading(last_reading=null) with RetryPolicy() as retry → ValidateReading(sensor_config=$.sensor_configs[ingest.reading.sensor_id]) → DetectAnomaly(threshold_low=cfg.low, ...) with statement-level andThen(ClassifyAlert(override_config=null) with AlertConfig() as alertcfg) → RunDiagnostics → GenerateSummary → yield with `++` → andThen script
+- `BatchMonitor`: batch_cfg=ThresholdConfig() → yield with `++` and `(expr)` → andThen foreach over $.sensor_ids with IngestReading with RetryPolicy() as retry → statement-level andThen(DetectAnomaly)
+
+### Feature showcase locations
+- **Unary negation**: `cfg = ThresholdConfig(low = -10.0, ..., critical_low = -40.0)` — negative float literals in schema instantiation
+- **Null literals**: `IngestReading(..., last_reading = null)` and `ClassifyAlert(..., override_config = null)` — null as call argument
+- **Computed map indexing**: `$.sensor_configs[ingest.reading.sensor_id]` — step ref as map index key
+- **Mixin alias**: `with RetryPolicy(max_retries = 5) as retry` and `with AlertConfig(channel = "alerts") as alertcfg` — aliased mixin args become nested dicts in handler params
+- **RegistryRunner-first**: `agent_registry.py` is the primary entry point (first example to recommend RegistryRunner)
+
+### Handler modules (3 categories, 6 event facets)
+- **Ingestion**: IngestReading (creates SensorReading, quality="initial" when last_reading is None), ValidateReading (applies sensor_config calibration from map lookup)
+- **Analysis**: DetectAnomaly (checks value against 4 threshold params including negative), ClassifyAlert (default priority map when override_config is None)
+- **Reporting**: RunDiagnostics (assembles DiagnosticReport), GenerateSummary (assembles MonitoringSummary)
+
+### Tests: 8 runtime + 38 example = 46 new
+- `TestCallSiteMixinArgs` (8): flat merge, alias nested, no override, multiple mixins, step ref dependency, literal no dep, backward compat, implicit fallback
+- `TestSensorUtils` (8): ingest structure, null last, with last, validate no config, validate with config, negative threshold, normal, null override
+- `TestIngestionHandlers` (4): ingest default, null JSON string, validate default, map key lookup
+- `TestAnalysisHandlers` (4): detect default, negative baseline, classify default, null override
+- `TestReportingHandlers` (4): diagnostics default/JSON string, summary default/JSON string
+- `TestDispatch` (5): 3 namespace tables, total count (6), registry handle routes
+- `TestCompilation` (9): AFL parses, 6 schemas, 6 event facets, 2 workflows, 2 mixins, 2 implicits, null literal in call (>=2), mixin alias present, unary negation in schema inst (>=2)
+- `TestAgentIntegration` (4): ToolRegistry dispatches all 6, handler names prefixed, ClaudeAgentRunner completes workflow, AgentPoller passes mixin args with alias
+
+### Implementation notes
+- Pure Python standard library only (`hashlib`, `json`) — no external dependencies
+- Deterministic stubs: all output derived from MD5 hashes of inputs for reproducibility
+- 17 files: AFL, 3 handler modules + utils, conftest pair, tests, agent.py, agent_registry.py, requirements, USER_GUIDE
+- `agent_registry.py` uses `RegistryRunner` with `register_all_registry_handlers()` — first example to position RegistryRunner as primary
+
 ## Completed (v0.20.0) - Data Quality Pipeline Example
 
 New example at `examples/data-quality-pipeline/` — the **first example showcasing

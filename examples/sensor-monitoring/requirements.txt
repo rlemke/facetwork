@@ -1,0 +1,2 @@
+# No external dependencies for the example itself.
+# All sensor utilities use only the Python standard library (hashlib, json).

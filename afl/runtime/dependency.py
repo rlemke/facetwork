@@ -91,6 +91,9 @@ class DependencyGraph:
         # Second pass: extract dependencies from references
         for stmt_id, stmt in graph.statements.items():
             deps = graph._extract_dependencies(stmt.args, workflow_inputs)
+            # Also scan mixin args for dependencies
+            for mixin in stmt.mixins:
+                deps |= graph._extract_dependencies(mixin.get("args", []), workflow_inputs)
             graph.dependencies[stmt_id] = deps
             stmt.dependencies = deps
 
@@ -103,6 +106,7 @@ class DependencyGraph:
         call = step_ast.get("call", {})
         facet_name = call.get("target", "")
         args = call.get("args", [])
+        mixins = call.get("mixins", [])
 
         # Determine object type: check if target is a schema
         if self._is_schema_instantiation(facet_name):
@@ -118,6 +122,7 @@ class DependencyGraph:
             object_type=object_type,
             facet_name=facet_name,
             args=args,
+            mixins=mixins,
             is_yield=False,
         )
 

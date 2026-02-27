@@ -42,6 +42,7 @@ class StatementDefinition:
     facet_name: str
     dependencies: set[str] = field(default_factory=set)  # Statement IDs this depends on
     args: list[dict] = field(default_factory=list)  # Named arguments
+    mixins: list[dict] = field(default_factory=list)  # Call-site mixin calls
     is_yield: bool = False
 
 
