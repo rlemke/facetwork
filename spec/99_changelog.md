@@ -1,5 +1,20 @@
 # Implementation Changelog
 
+## Completed (v0.21.1) - Spec Cleanup: MongoDB/Maven CLI Loaders
+
+Removed outdated "(not yet implemented)" annotations from `spec/20_compiler.md`
+for the `--mongo` and `--maven` CLI flags. Both loaders have been fully
+implemented since v0.12.0:
+
+- **`afl/loader.py`**: `SourceLoader.load_mongodb()` and `SourceLoader.load_maven()` with error handling
+- **`afl/source.py`**: `MongoDBOrigin` and `MavenOrigin` dataclasses, `SourceRegistry` provenance tracking
+- **`afl/cli.py`**: `--mongo ID:NAME` and `--maven G:A:V[:CLASSIFIER]` argument parsing
+- **`tests/test_loader.py`** (326 lines): comprehensive tests for both loaders
+- **`tests/test_source.py`** (402 lines): tests for source registry and provenance
+
+Also updated `--maven` format in the spec from `G:A:V` to `G:A:V[:CLASSIFIER]` to
+match the CLI's actual support for the optional classifier.
+
 ## Completed (v0.21.0) - Sensor Monitoring Example + Mixin Alias Runtime Fix
 
 ### Runtime fix: call-site mixin args + alias
