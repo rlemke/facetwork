@@ -66,7 +66,7 @@ All AST nodes MUST have a unique UUID (v4) stored in the `node_id` field. This I
 | `CallExpr` | `Name(args) mixins*` |
 | `NamedArg` | `name = expr` |
 | `Reference` | `$.path` (input) or `step.path` (step output) |
-| `Literal` | String, Integer, Boolean, or Null |
+| `Literal` | String, Integer, Double, Boolean, or Null |
 
 ### Metadata Nodes
 | Node | Description |
@@ -123,7 +123,7 @@ Program
 ## Semantic Rules
 
 ### Type System
-- Built-in types: `String`, `Long`, `Int`, `Boolean`, `Json`
+- Built-in types: `String`, `Long`, `Int`, `Double`, `Boolean`, `Json`
 - Qualified types: `namespace.TypeName`
 
 ### Reference Resolution
@@ -133,7 +133,7 @@ Program
 
 ### Default Parameter Values
 - Parameters can have optional default values: `name: Type = expr`
-- Supported default expressions: literals (`"hello"`, `42`, `true`, `null`), references, and concat expressions
+- Supported default expressions: literals (`"hello"`, `42`, `3.14`, `true`, `null`), references, and concat expressions
 - The `Parameter` AST node has an optional `default` field
 - The emitter produces a `"default"` key in the JSON AST when a default is present
 - The runtime evaluator uses defaults for any parameters not supplied in the `inputs` dict

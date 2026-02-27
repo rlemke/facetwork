@@ -44,6 +44,9 @@ Semantic rules (e.g., dependency scheduling, single-writer, yield merge semantic
   - `"newline:\n"`
 - Integer literal:
   - decimal digits only (v1): `0`, `123`, `9001`
+- Float literal:
+  - decimal digits with dot, optional exponent: `3.14`, `0.5`, `1.0e10`, `2.5E-3`
+  - maps to `Double` type in the AST
 - Boolean literal:
   - `true` or `false`
 - Null literal:
@@ -103,7 +106,7 @@ params             := param ("," param)* ;
 param              := ident ":" type ("=" expr)? ;
 
 type               := qname
-                   | "String" | "Long" | "Int" | "Boolean" | "Json" ;
+                   | "String" | "Long" | "Int" | "Double" | "Boolean" | "Json" ;
 
 mixin_sig          := "with" qname "(" named_args? ")" ;
 
@@ -146,7 +149,7 @@ expr                := literal | reference ;
 reference           := "$." ident ( "." ident )*
                     | ident "." ident ( "." ident )* ;
 
-literal             := string | integer | boolean | "null" ;
+literal             := string | float | integer | boolean | "null" ;
 
 implicit_decl       := "implicit" ident "=" call_expr (stmt_sep)? ;
 
