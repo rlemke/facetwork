@@ -209,23 +209,159 @@ event facet Summarize(text: String) => (summary: String) prompt {
 
 ### Script blocks (inline Python execution)
 
-#### Pre-processing script (runs before event/begins, modifies params)
-event facet AddOne(input: Long) => (output: Long) script python "result['output'] = params['input'] + 1"
+Script blocks embed sandboxed Python code directly in AFL declarations. There are **two distinct uses**, each with different placement, timing, and semantics.
 
-#### Brace-delimited pre-processing script
+---
+
+#### 1. Pre-processing script
+
+A **pre-script** appears immediately after the signature (before any `andThen` blocks). It runs once during the facet scripts phase — after `FacetInitialization` and before event transmission or block execution. The script receives the facet's parameters in a `params` dict and writes computed values back via a `result` dict. Values written to `result` become **additional params** available to downstream `andThen` blocks via `$.field` references.
+
+**Quoted string form:**
+```afl
+event facet AddOne(input: Long) => (output: Long) script python "result['output'] = params['input'] + 1"
+```
+
+**Brace-delimited form** (preferred for multi-line code):
+```afl
 facet Transform(input: String) => (output: String) script {
     result["output"] = params["input"].upper()
 }
+```
 
-#### Pre-script with andThen blocks
-facet Prepare(x: Long) script "result['x'] = params['x'] * 2" andThen {
-    s = Process(x = $.x)
+**Pre-script followed by andThen blocks** — the script runs first, then all andThen blocks execute concurrently:
+```afl
+workflow AnalyzeState(
+    state_fips: String,
+    state_name: String
+) => (label: String, summary: Json)
+script {
+    // Normalize inputs into a derived param
+    result["state_label"] = params["state_name"].upper() + " (" + params["state_fips"] + ")"
 }
+andThen {
+    data = FetchData(fips = $.state_fips)
+    yield AnalyzeState(summary = data.result)
+}
+```
 
-#### andThen script (concurrent block variant)
-facet Pipeline() andThen { s = Step1() } andThen script {
+In this example, `$.state_label` is available inside the `andThen` block because the pre-script wrote it to `result["state_label"]`.
+
+**With explicit `python` keyword:**
+```afl
+facet Prepare(x: Long) script python {
+    result["x"] = params["x"] * 2
+    result["label"] = f"doubled-{params['x']}"
+}
+```
+
+---
+
+#### 2. andThen script block
+
+An **andThen script** is a concurrent block variant that replaces the `{ steps... }` body with inline Python code. It runs in parallel with other `andThen` blocks (both regular and script). The script receives the **container step's params** in the `params` dict and writes outputs via `result`. Values written to `result` become **return values** on the workflow/facet, merged during the capture phase alongside yield results from regular blocks.
+
+**Basic andThen script:**
+```afl
+facet Pipeline() => (computed: Long) andThen script {
     result["computed"] = 42
 }
+```
+
+**Mixed regular and script blocks** — all run concurrently:
+```afl
+workflow ProcessData(input: String) => (
+    processed: String,
+    checksum: String,
+    audit: String
+)
+andThen {
+    p = Transform(data = $.input)
+    yield ProcessData(processed = p.output)
+}
+andThen script {
+    import hashlib
+    result["checksum"] = hashlib.md5(params["input"].encode()).hexdigest()
+}
+andThen script {
+    result["audit"] = "Processed input: " + params["input"][:50]
+}
+```
+
+---
+
+#### Combining pre-script with andThen scripts
+
+A declaration can have **all three**: a pre-script, regular andThen blocks, and andThen script blocks. Execution order:
+
+1. Pre-script runs first (modifies params)
+2. All andThen blocks (regular + script) run concurrently
+3. Results merge: yields from regular blocks + `result` dict from script blocks
+
+```afl
+workflow FullPipeline(
+    state_fips: String,
+    state_name: String
+) => (
+    summary: Json,
+    pop_total: Long,
+    report: String,
+    audit: String
+)
+script {
+    // Step 1: pre-processing — creates derived params
+    result["state_label"] = params["state_name"].upper() + " (" + params["state_fips"] + ")"
+}
+andThen {
+    // Step 2a: regular block — event facets with yield
+    data = FetchCensus(fips = $.state_fips)
+    yield FullPipeline(summary = data.result)
+}
+andThen script {
+    // Step 2b: concurrent script — uses pre-script's derived param
+    label = params.get("state_label", params["state_name"])
+    result["pop_total"] = 5000000
+    result["report"] = "Population report for " + label
+}
+andThen script {
+    // Step 2c: concurrent script — audit trail
+    label = params.get("state_label", params["state_name"])
+    result["audit"] = "Audit complete for " + label + " at fips=" + params["state_fips"]
+}
+```
+
+---
+
+#### Script block syntax forms
+
+All four syntactic forms are equivalent:
+
+| Form | Example |
+|------|---------|
+| Quoted string | `script "result['x'] = 1"` |
+| `python` + quoted string | `script python "result['x'] = 1"` |
+| Brace-delimited | `script { result["x"] = 1 }` |
+| `python` + brace-delimited | `script python { result["x"] = 1 }` |
+
+Brace-delimited blocks are converted to quoted strings by a pre-lex preprocessor before LALR parsing. The preprocessor:
+- Tracks brace depth (handles nested Python dicts/sets)
+- Respects Python string literals (braces inside strings are ignored)
+- Strips common leading indentation (dedent)
+- Preserves line numbers for error reporting
+
+#### Script execution API
+
+Scripts execute in a sandboxed Python environment with two pre-defined variables:
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `params` | `dict` | Input parameters (read-only by convention) |
+| `result` | `dict` | Output values (write to this) |
+
+- **Pre-script**: `params` contains the facet/workflow's input parameters. Values written to `result` become additional params for downstream blocks.
+- **andThen script**: `params` contains the container step's params (including any values added by a pre-script). Values written to `result` become return values on the workflow/facet.
+
+Scripts may use Python standard library imports. Execution errors are captured and reported as step failures.
 
 ### Schema declaration and instantiation
 schema Config {

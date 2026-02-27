@@ -150,6 +150,58 @@ Program
 - Schemas cannot have mixins; `Config() with Mixin()` is a validation error
 - Schema fields are validated at compile time (unknown fields produce errors)
 
+### Script Execution Semantics
+
+Script blocks embed sandboxed Python code. There are two distinct uses with different timing and data flow.
+
+#### Pre-processing script (`pre_script`)
+- **Placement**: `facet/event facet/workflow Name(...) script { code }`
+- **Timing**: Runs during `state.facet.scripts.Begin`, after `FacetInitialization` and before event transmission or block execution
+- **Input**: `params` dict contains the declaration's input parameters
+- **Output**: Values written to `result` dict are stored as **params** (not returns) on the step, making them available via `$.field` in downstream `andThen` blocks
+- **Cardinality**: At most one pre-script per declaration
+
+#### andThen script block (`AndThenBlock.script`)
+- **Placement**: `andThen script { code }` — appears where a regular `andThen { steps }` block would
+- **Timing**: Runs during `state.block.execution.Begin`, concurrently with other `andThen` blocks (both regular and script)
+- **Input**: `params` dict contains the container step's params (including any values added by a pre-script)
+- **Output**: Values written to `result` dict are stored as **returns** on the block step, merged into the containing declaration's outputs during the capture phase (`state.statement.capture.Begin`) alongside yield results from regular blocks
+- **Cardinality**: Zero or more andThen script blocks per declaration, interleaved freely with regular andThen blocks
+
+#### Execution environment
+- Scripts receive two pre-defined variables: `params` (dict, input) and `result` (dict, output)
+- Python standard library imports are available
+- Execution errors are captured and reported as step failures (the step transitions to an error state)
+- Scripts are executed via `ScriptExecutor` which uses `exec()` in a restricted namespace
+
+#### Data flow summary
+```
+Declaration params
+    │
+    ▼
+┌─────────────────┐
+│   Pre-script    │  writes to result → stored as params
+└────────┬────────┘
+         │ params (original + pre-script additions)
+         ▼
+┌─────────────────────────────────────────────┐
+│         All andThen blocks (concurrent)      │
+│                                              │
+│  ┌──────────────┐  ┌──────────────────────┐ │
+│  │ Regular block │  │ andThen script block │ │
+│  │ steps + yield │  │ params → result dict │ │
+│  └──────┬───────┘  └──────────┬───────────┘ │
+│         │                     │              │
+│    yield results        result dict values   │
+└─────────┼─────────────────────┼──────────────┘
+          │                     │
+          ▼                     ▼
+┌──────────────────────────────────────────────┐
+│  Capture phase: merge all into declaration   │
+│  outputs (yield params + block returns)      │
+└──────────────────────────────────────────────┘
+```
+
 ---
 
 ## Implementation Details
@@ -167,7 +219,15 @@ Program
 - Uses `@v_args(meta=True)` for location tracking
 - Converts Lark parse tree to AST nodes
 
+### File: `afl/preprocess.py`
+- `preprocess_script_braces()` converts brace-delimited `script { code }` to `script "escaped_code"` before LALR parsing
+- Tracks brace depth to handle nested Python dicts/sets
+- Respects Python string literals (single, double, triple-quoted) and AFL comments
+- Strips common indentation (dedent) and preserves line numbers via blank-line padding
+- `PreprocessError` exception for unbalanced braces
+
 ### File: `afl/parser.py`
 - `AFLParser` class wraps Lark parser
+- Calls `preprocess_script_braces()` before Lark parsing
 - `ParseError` exception with line/column
 - `parse()` convenience function
