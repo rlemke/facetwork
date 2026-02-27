@@ -1,0 +1,256 @@
+// Data Quality Pipeline -- schema instantiation, array types, parenthesized grouping.
+//
+// Demonstrates:
+//   - Schema instantiation as steps (cfg = QualityConfig(...) in andThen)
+//   - Array type annotations ([ColumnProfile], [ValidationResult], etc.)
+//   - Parenthesized expression grouping ((a + b) * c)
+//   - Mixins, implicits, pre-scripts, andThen scripts, andThen foreach,
+//     statement-level andThen, prompt blocks, ++ string concatenation
+
+// ---------------------------------------------------------------------------
+// Schemas
+// ---------------------------------------------------------------------------
+namespace dq.types {
+    schema ColumnProfile {
+        column_name: String,
+        missing_count: Int,
+        distinct_count: Int,
+        dtype: String
+    }
+
+    schema QualityConfig {
+        missing_threshold: Double,
+        type_error_max: Int,
+        freshness_hours: Int
+    }
+
+    schema ValidationResult {
+        check_name: String,
+        passed: Boolean,
+        score: Double,
+        details: Json
+    }
+
+    schema ScoringWeights {
+        completeness: Double,
+        accuracy: Double,
+        freshness: Double
+    }
+
+    schema QualityScore {
+        dimension: String,
+        raw_score: Double,
+        weighted_score: Double
+    }
+
+    schema RemediationAction {
+        priority: Int,
+        action: String,
+        target_column: String,
+        reason: String
+    }
+
+    schema QualityReport {
+        dataset: String,
+        grade: String,
+        passed: Boolean,
+        overall_score: Double,
+        dimensions: Json,
+        actions: Json,
+        summary: String
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mixins and implicits
+// ---------------------------------------------------------------------------
+namespace dq.mixins {
+    facet Strictness(fail_fast: Boolean = false, min_score: Double = 0.7)
+    facet Freshness(max_age_hours: Int = 24, check_timestamps: Boolean = true)
+
+    implicit defaultStrictness = Strictness(fail_fast = false, min_score = 0.7)
+    implicit defaultFreshness = Freshness(max_age_hours = 24, check_timestamps = true)
+}
+
+// ---------------------------------------------------------------------------
+// Profiling -- ProfileDataset, DetectAnomalies
+// ---------------------------------------------------------------------------
+namespace dq.Profiling {
+    use dq.types
+
+    /** Profile all columns in a dataset and compute statistics. */
+    event facet ProfileDataset(
+        dataset: String,
+        columns: [String]
+    ) => (profiles: [ColumnProfile], row_count: Int) prompt {
+        system "You are a data profiling agent that analyzes dataset columns."
+        template "Profile dataset '{dataset}' columns: {columns}"
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Detect anomalies across column profiles using thresholds. */
+    event facet DetectAnomalies(
+        profiles: [ColumnProfile],
+        row_count: Int,
+        missing_threshold: Double = 0.1
+    ) => (anomaly_count: Int, flagged_columns: Json) prompt {
+        system "You are an anomaly detection agent that flags quality issues."
+        template "Detect anomalies in {profiles} with missing threshold {missing_threshold}, total rows {row_count}"
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Validation -- ValidateCompleteness, ValidateAccuracy
+// ---------------------------------------------------------------------------
+namespace dq.Validation {
+    use dq.types
+
+    /** Check missing rates per column against threshold. */
+    event facet ValidateCompleteness(
+        profiles: [ColumnProfile],
+        row_count: Int,
+        missing_threshold: Double = 0.1
+    ) => (results: [ValidationResult], completeness_score: Double) prompt {
+        system "You are a completeness validator checking missing rates."
+        template "Validate completeness of {profiles} with threshold {missing_threshold}"
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Check type error counts against maximum allowed. */
+    event facet ValidateAccuracy(
+        profiles: [ColumnProfile],
+        type_error_max: Int = 5
+    ) => (results: [ValidationResult], accuracy_score: Double) prompt {
+        system "You are an accuracy validator checking type errors."
+        template "Validate accuracy of {profiles} with max type errors {type_error_max}"
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scoring -- ComputeScores, AssignGrade
+// ---------------------------------------------------------------------------
+namespace dq.Scoring {
+    use dq.types
+
+    /** Compute weighted quality scores from validation results. */
+    event facet ComputeScores(
+        completeness_score: Double,
+        accuracy_score: Double,
+        w_completeness: Double = 0.4,
+        w_accuracy: Double = 0.35,
+        w_freshness: Double = 0.25
+    ) => (scores: [QualityScore], overall: Double) prompt {
+        system "You are a scoring agent that computes weighted quality scores."
+        template "Compute scores: completeness={completeness_score}, accuracy={accuracy_score}, weights=({w_completeness},{w_accuracy},{w_freshness})"
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Assign a letter grade (A-F) based on overall score. */
+    event facet AssignGrade(
+        overall: Double,
+        min_score: Double = 0.7
+    ) => (grade: String, passed: Boolean) prompt {
+        system "You are a grading agent that assigns letter grades."
+        template "Assign grade for overall score {overall}, minimum passing {min_score}"
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Remediation -- PlanRemediation, GenerateReport
+// ---------------------------------------------------------------------------
+namespace dq.Remediation {
+    use dq.types
+
+    /** Plan remediation actions for failed checks. */
+    event facet PlanRemediation(
+        results: [ValidationResult],
+        flagged_columns: Json
+    ) => (actions: [RemediationAction]) prompt {
+        system "You are a remediation planner that prioritizes data fixes."
+        template "Plan remediation for results={results}, flagged={flagged_columns}"
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Generate a comprehensive quality report. */
+    event facet GenerateReport(
+        dataset: String,
+        grade: String,
+        passed: Boolean,
+        overall: Double,
+        scores: [QualityScore],
+        actions: [RemediationAction]
+    ) => (report: QualityReport) prompt {
+        system "You are a report generator that summarizes data quality findings."
+        template "Generate report for '{dataset}': grade={grade}, score={overall}"
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Workflows
+// ---------------------------------------------------------------------------
+namespace dq.workflows {
+    use dq.types
+    use dq.mixins
+    use dq.Profiling
+    use dq.Validation
+    use dq.Scoring
+    use dq.Remediation
+
+    /** Assess quality of a single dataset end-to-end. */
+    workflow AssessQuality(
+        dataset: String,
+        columns: [String],
+        datasets: Json = []
+    ) => (
+        report: QualityReport,
+        grade: String,
+        summary: String
+    ) script {
+        result["summary"] = "Assessing quality: " + params.get("dataset", "unknown")
+    } andThen {
+        cfg = QualityConfig(missing_threshold = 0.05, type_error_max = 3, freshness_hours = 48)
+        weights = ScoringWeights(completeness = 0.4, accuracy = 0.35, freshness = 0.25)
+        prof = ProfileDataset(dataset = $.dataset, columns = $.columns)
+        anom = DetectAnomalies(profiles = prof.profiles, row_count = prof.row_count, missing_threshold = cfg.missing_threshold)
+        comp = ValidateCompleteness(profiles = prof.profiles, row_count = prof.row_count, missing_threshold = cfg.missing_threshold) andThen {
+            acc = ValidateAccuracy(profiles = prof.profiles, type_error_max = cfg.type_error_max)
+        }
+        sc = ComputeScores(completeness_score = comp.completeness_score, accuracy_score = acc.accuracy_score, w_completeness = weights.completeness, w_accuracy = weights.accuracy, w_freshness = weights.freshness)
+        gr = AssignGrade(overall = sc.overall, min_score = 0.7)
+        rem = PlanRemediation(results = comp.results, flagged_columns = anom.flagged_columns)
+        rpt = GenerateReport(dataset = $.dataset, grade = gr.grade, passed = gr.passed, overall = sc.overall, scores = sc.scores, actions = rem.actions)
+        yield AssessQuality(report = rpt.report, grade = gr.grade, summary = "Quality " ++ gr.grade ++ " for " ++ $.dataset ++ " (" ++ (anom.anomaly_count + prof.row_count) * 1 ++ ")")
+    } andThen script {
+        result["summary"] = (
+            "Completed quality assessment: " + params.get("dataset", "unknown")
+            + " grade=" + params.get("grade", "?")
+        )
+    }
+
+    /** Batch quality assessment across multiple datasets. */
+    workflow BatchAssessment(
+        datasets: Json = ["sales", "inventory", "customers"],
+        columns: [String]
+    ) => (
+        grade: String,
+        summary: String
+    ) andThen {
+        batch_cfg = QualityConfig(missing_threshold = 0.1, type_error_max = 5, freshness_hours = 72)
+        batch_weights = ScoringWeights(completeness = 0.5, accuracy = 0.3, freshness = 0.2)
+        prof = ProfileDataset(dataset = "batch", columns = $.columns)
+        anom = DetectAnomalies(profiles = prof.profiles, row_count = prof.row_count, missing_threshold = batch_cfg.missing_threshold)
+        comp = ValidateCompleteness(profiles = prof.profiles, row_count = prof.row_count, missing_threshold = batch_cfg.missing_threshold)
+        sc = ComputeScores(completeness_score = comp.completeness_score, accuracy_score = 0.9, w_completeness = batch_weights.completeness, w_accuracy = batch_weights.accuracy, w_freshness = batch_weights.freshness)
+        gr = AssignGrade(overall = sc.overall)
+        yield BatchAssessment(grade = gr.grade, summary = "Batch: " ++ gr.grade ++ " across datasets")
+    } andThen foreach ds in $.datasets {
+        per = ProfileDataset(dataset = $.ds, columns = $.columns) andThen {
+            per_anom = DetectAnomalies(profiles = per.profiles, row_count = per.row_count)
+        }
+        yield BatchAssessment(summary = "Profiled: " ++ $.ds)
+    }
+}

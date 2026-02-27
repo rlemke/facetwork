@@ -1,5 +1,45 @@
 # Implementation Changelog
 
+## Completed (v0.20.0) - Data Quality Pipeline Example
+
+New example at `examples/data-quality-pipeline/` — the **first example showcasing
+schema instantiation as steps, array type annotations, and parenthesized expression
+grouping**. These three features were fully implemented but had zero showcase in
+any v0.14.0+ example.
+
+### AFL definitions
+- `quality.afl`: 7 schemas, 8 event facets across 4 namespaces (Profiling, Validation, Scoring, Remediation), 2 mixin facets, 2 implicits, 2 workflows
+- `AssessQuality`: pre-script → cfg=QualityConfig() → weights=ScoringWeights() → ProfileDataset → DetectAnomalies → ValidateCompleteness with statement-level andThen(ValidateAccuracy) → ComputeScores → AssignGrade → PlanRemediation → GenerateReport → yield with `++` and `(expr)` → andThen script
+- `BatchAssessment`: batch_cfg=QualityConfig() → batch_weights=ScoringWeights() → ProfileDataset → DetectAnomalies → ValidateCompleteness → ComputeScores → AssignGrade → yield with `++` + andThen foreach over $.datasets with statement-level andThen
+
+### Feature showcase locations
+- **Schema instantiation** (PRIMARY): `cfg = QualityConfig(missing_threshold = 0.05, ...)` and `weights = ScoringWeights(completeness = 0.4, ...)` as steps in both workflows; `cfg.missing_threshold`, `weights.completeness` etc. referenced by downstream steps
+- **Array type annotations**: `columns: [String]`, `profiles: [ColumnProfile]`, `results: [ValidationResult]`, `scores: [QualityScore]`, `actions: [RemediationAction]` — 14 total array annotations across facet params/returns
+- **Parenthesized expression grouping**: `(anom.anomaly_count + prof.row_count) * 1` in AssessQuality yield expression — forces addition before multiplication
+
+### Handler modules (4 categories, 8 event facets)
+- **Profiling**: ProfileDataset (per-column stats: missing_count, distinct_count, dtype from hash), DetectAnomalies (flags columns where missing_count/total_rows > threshold)
+- **Validation**: ValidateCompleteness (missing rate per column vs threshold, completeness_score), ValidateAccuracy (type error count check, accuracy_score)
+- **Scoring**: ComputeScores (weighted formula: (raw * weight) / total_weight), AssignGrade (score → A/B/C/D/F mapping, passed boolean)
+- **Remediation**: PlanRemediation (prioritized actions for failed checks), GenerateReport (assembles QualityReport dict)
+
+### Tests: 38 new
+- `TestQualityUtils` (8): profile structure, detect high missing, completeness score, accuracy determinism, scores weighted, grade mapping, remediation actions, report structure
+- `TestProfilingHandlers` (3): profile default, detect default, profile JSON string
+- `TestValidationHandlers` (4): completeness default/JSON string, accuracy default/custom max
+- `TestScoringHandlers` (4): compute default/custom weights, assign grade default/failing
+- `TestRemediationHandlers` (4): plan default/JSON string, generate default/JSON string
+- `TestDispatch` (5): 4 namespace dispatch tables, total count (8)
+- `TestCompilation` (8): AFL parses, 7 schemas, 8 event facets, 2 workflows, 8 prompts, 2 mixins, 2 implicits, **test_array_type_present** (>=10 array annotations — unique to this example)
+- `TestAgentIntegration` (2): ToolRegistry dispatches all 8, ClaudeAgentRunner completes workflow
+
+### Implementation notes
+- Pure Python standard library only (`hashlib`, `json`) — no external dependencies
+- Deterministic stubs: all output derived from MD5 hashes of inputs for reproducibility
+- Follows tool-use-agent pattern: conftest sys.modules purge, RegistryRunner dispatch tables
+- 17 files: AFL, 4 handler modules + utils, conftest pair, tests, requirements, USER_GUIDE
+- `null` is a reserved AFL keyword — schema fields use `missing_count`/`missing_threshold` instead of `null_count`/`null_threshold`
+
 ## Completed (v0.19.0) - Multi-Round Debate + Tool-Use Agent Examples
 
 Two new examples extending the AgentFlow example suite. The multi-agent-debate

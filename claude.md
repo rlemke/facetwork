@@ -90,6 +90,9 @@ Copy `.env.example` to `.env` and edit to configure MongoDB, scaling, overlays, 
 | `examples/ml-hyperparam-sweep/` | ML hyperparameter sweep (statement-level andThen, prompt blocks, map literals, andThen foreach) |
 | `examples/research-agent/` | AI research agent — first LLM integration showcase (8 prompt-block event facets, chained LLM steps, ClaudeAgentRunner) |
 | `examples/multi-agent-debate/` | Multi-agent debate — first multi-agent interaction example (3 debate agents, scoring/voting, agent-to-agent dependency) |
+| `examples/multi-round-debate/` | Multi-round debate — composed facets as primary pattern (DebateRound encapsulates 12 steps, cross-round state, convergence metrics) |
+| `examples/tool-use-agent/` | Tool-use agent — tool-as-event-facet pattern (6 tools as event facets, planning facet, `++` and `%`/`/` arithmetic) |
+| `examples/data-quality-pipeline/` | Data quality pipeline — schema instantiation as steps, array type annotations `[Type]`, parenthesized expression grouping `(a+b)*c` |
 | `spec/` | Language and runtime specifications |
 | `docker/` | Dockerfiles for all services |
 | `scripts/` | Convenience scripts (setup, compile, runner, dashboard, etc.) |
@@ -131,4 +134,4 @@ Copy `.env.example` to `.env` and edit to configure MongoDB, scaling, overlays, 
 - `spec/70_examples.md` — iteration traces for Examples 2, 3, 4
 - `spec/80_acceptance_tests.md` — test requirements
 - `spec/90_nonfunctional.md` — dependencies, build/run reference, Docker, configuration
-- `spec/99_changelog.md` — implementation changelog (v0.1.0 through v0.18.0)
+- `spec/99_changelog.md` — implementation changelog (v0.1.0 through v0.20.0)

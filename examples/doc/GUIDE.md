@@ -21,6 +21,7 @@ This guide helps you choose the right example as a starting point for your own A
 | [multi-agent-debate](../multi-agent-debate/) | Intermediate | Multi-agent personas, scoring/voting | 8 | Multi-agent interaction patterns |
 | [multi-round-debate](../multi-round-debate/) | Intermediate | Composed facets, cross-round state | 8 | Iterative rounds with convergence |
 | [tool-use-agent](../tool-use-agent/) | Intermediate | Tool-as-event-facet, planning | 8 | Tool-use agent orchestration |
+| [data-quality-pipeline](../data-quality-pipeline/) | Intermediate | Schema instantiation, array types, `(expr)` | 8 | Data quality assessment pipelines |
 
 ## Learning Path
 
@@ -57,9 +58,11 @@ Start simple and build up to more complex patterns:
        |                     |
        +----------+----------+
                   |
-7. osm-geocoder         Full production-scale agent
+7. data-quality-pipeline  Schema instantiation + array types + (expr) grouping
        |
-8. continental-lz       Docker-orchestrated multi-region pipeline
+8. osm-geocoder         Full production-scale agent
+       |
+9. continental-lz       Docker-orchestrated multi-region pipeline
 ```
 
 ## Choosing an Example
@@ -115,6 +118,10 @@ Use **[multi-round-debate](../multi-round-debate/)**. It demonstrates composed f
 ### "I want to model tools as event facets with planned orchestration"
 
 Use **[tool-use-agent](../tool-use-agent/)**. Six tools (web search, deep search, calculator, code executor, synthesizer, formatter) are modeled as event facets. A planning facet decides tool order and strategy. Demonstrates statement-level andThen for chaining tool calls, `++` concatenation, and andThen foreach for parallel subtopic searches.
+
+### "I want to use schema instantiation, array types, or expression grouping"
+
+Use **[data-quality-pipeline](../data-quality-pipeline/)**. It is the first example to showcase schema instantiation as steps (`cfg = QualityConfig(...)` in andThen blocks), array type annotations (`[ColumnProfile]`, `[ValidationResult]`), and parenthesized expression grouping (`(a + b) * c`). The pipeline profiles datasets, validates quality, computes weighted scores, and generates remediation reports.
 
 ### "I want to score and rank spatial locations"
 
@@ -340,3 +347,4 @@ Each example has its own detailed user guide:
 | multi-agent-debate | [USER_GUIDE.md](../multi-agent-debate/USER_GUIDE.md) |
 | multi-round-debate | [USER_GUIDE.md](../multi-round-debate/USER_GUIDE.md) |
 | tool-use-agent | [USER_GUIDE.md](../tool-use-agent/USER_GUIDE.md) |
+| data-quality-pipeline | [USER_GUIDE.md](../data-quality-pipeline/USER_GUIDE.md) |
