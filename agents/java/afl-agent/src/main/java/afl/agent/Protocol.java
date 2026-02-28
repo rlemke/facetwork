@@ -33,6 +33,7 @@ public final class Protocol {
     public static final String COLLECTION_FLOWS = "flows";
     public static final String COLLECTION_WORKFLOWS = "workflows";
     public static final String COLLECTION_RUNNERS = "runners";
+    public static final String COLLECTION_STEP_LOGS = "step_logs";
 
     // Task states
     public static final String TASK_STATE_PENDING = "pending";
@@ -53,6 +54,16 @@ public final class Protocol {
     public static final String SERVER_STATE_RUNNING = "running";
     public static final String SERVER_STATE_SHUTDOWN = "shutdown";
     public static final String SERVER_STATE_ERROR = "error";
+
+    // Step log levels
+    public static final String STEP_LOG_LEVEL_INFO = "info";
+    public static final String STEP_LOG_LEVEL_WARNING = "warning";
+    public static final String STEP_LOG_LEVEL_ERROR = "error";
+    public static final String STEP_LOG_LEVEL_SUCCESS = "success";
+
+    // Step log sources
+    public static final String STEP_LOG_SOURCE_FRAMEWORK = "framework";
+    public static final String STEP_LOG_SOURCE_HANDLER = "handler";
 
     // Protocol task names
     public static final String RESUME_TASK_NAME = "afl:resume";

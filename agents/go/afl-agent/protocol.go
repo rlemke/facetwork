@@ -29,6 +29,7 @@ const (
 	CollectionFlows     = "flows"
 	CollectionWorkflows = "workflows"
 	CollectionRunners   = "runners"
+	CollectionStepLogs  = "step_logs"
 )
 
 // Task states
@@ -55,6 +56,20 @@ const (
 	ServerStateRunning  = "running"
 	ServerStateShutdown = "shutdown"
 	ServerStateError    = "error"
+)
+
+// Step log levels
+const (
+	StepLogLevelInfo    = "info"
+	StepLogLevelWarning = "warning"
+	StepLogLevelError   = "error"
+	StepLogLevelSuccess = "success"
+)
+
+// Step log sources
+const (
+	StepLogSourceFramework = "framework"
+	StepLogSourceHandler   = "handler"
 )
 
 // Protocol task names

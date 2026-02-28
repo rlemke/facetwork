@@ -1,0 +1,5 @@
+include LICENSE
+include README.md
+recursive-include afl/grammar *.lark
+recursive-include afl/dashboard/templates *.html
+recursive-include afl/dashboard/static *.js *.css

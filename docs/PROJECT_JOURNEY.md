@@ -13,9 +13,9 @@ The system spans:
 - **A distributed runtime** with a 20+ state machine, dependency-driven evaluation, and MongoDB persistence
 - **A microservice architecture** with Docker-orchestrated runners, agents, HDFS storage, and a web dashboard
 - **Agent SDKs** in five languages (Python, Scala, Go, TypeScript, Java)
-- **A real-world example application** — an OpenStreetMap geocoder with 70 AFL files, 114 handler modules, and interactive map visualizations
+- **A real-world example application** — an OpenStreetMap geocoder with 42 AFL files, ~80 handler modules, and interactive map visualizations
 
-The project grew from a single grammar file to **2,522 passing tests**, **87 changelog versions**, and workflows that process all 50 US states in parallel — generating interactive maps of bicycle routes, national parks, city populations, transit networks, and administrative boundaries.
+The project grew from a single grammar file to **3,211 passing tests**, **100+ changelog versions**, and workflows that process all 50 US states in parallel — generating interactive maps of bicycle routes, national parks, city populations, transit networks, and administrative boundaries.
 
 ---
 
@@ -264,12 +264,12 @@ The largest example application is a complete OpenStreetMap analysis platform:
 
 | Metric | Count |
 |--------|-------|
-| AFL workflow files | 70 |
-| Handler Python modules | 114 |
+| AFL workflow files | 42 |
+| Handler Python modules | ~80 |
 | Handler categories | 16 |
 | Event facets | ~500+ |
 | Seeded workflows | 75 |
-| Passing tests | 2,522 |
+| Passing tests | 3,211 |
 
 ### Handler Categories
 
@@ -482,19 +482,29 @@ Each map features:
 | **v0.12.72** | Three-layer concurrent step dedup (0 duplicates with 3 evaluators) | 2,430 |
 | **v0.12.79** | Dashboard v2 redesign with HTMX, state tabs, manual refresh | 2,489 |
 | **v0.12.85** | Lite agent HAS_OSMIUM guards (prevents silent empty results) | 2,491 |
-| **v0.12.87** | Output browser, host-mounted maps, clickable file links | **2,522** |
+| **v0.12.87** | Output browser, host-mounted maps, clickable file links | 2,522 |
+| **v0.15.0** | Script blocks (pre-processing + andThen), grammar newline fix | 2,845 |
+| **v0.16.0** | ML hyperparameter sweep example, statement-level andThen | 2,904 |
+| **v0.17.0** | Research agent — first LLM integration, prompt blocks | 2,942 |
+| **v0.18.0** | Multi-agent debate — first multi-agent interaction | 2,981 |
+| **v0.19.0** | Multi-round debate + tool-use agent patterns | 3,057 |
+| **v0.20.0** | Data quality pipeline — schema instantiation, array types | 3,095 |
+| **v0.21.0** | Sensor monitoring — unary negation, null literals, mixin alias | 3,141 |
+| **v0.22.0** | Site-selection debate — spatial + research + debate combined | 3,180 |
+| **v0.23.0** | Dashboard UI redesign — sidebar nav, command palette, search | 3,211 |
+| **v0.24.0** | SDK step-log emission, PyPI packaging, cleanups | **3,211** |
 
 ### The Numbers
 
 | Metric | Value |
 |--------|-------|
-| Grammar size | 141 lines |
-| Total tests | 2,522 passed + 79 skipped |
-| Changelog entries | 87 versions (v0.1.0 – v0.12.87) |
-| AFL files (OSM example) | 70 |
-| Handler modules (OSM) | 114 |
+| Grammar size | 142 lines |
+| Total tests | 3,211 passed + 84 skipped (3,295 collected) |
+| Changelog entries | 100+ versions (v0.1.0 – v0.24.0) |
+| AFL files (OSM example) | 42 |
+| Handler modules (OSM) | ~80 |
 | Event facets (OSM) | ~500+ |
-| Seeded workflows (all examples) | 109 across 6 flows |
+| Seeded workflows (all examples) | 156 across 7 flows |
 | Agent SDKs | 5 languages |
 | Docker services | 8 (MongoDB, dashboard, runner ×3, OSM agent ×3, HDFS) |
 | Largest workflow tested | AnalyzeAllStates — 51 regions, 500K+ steps |
@@ -585,4 +595,4 @@ agentflow/
 
 ---
 
-*AgentFlow — v0.12.87 — February 2026*
+*AgentFlow — v0.24.0 — February 2026*

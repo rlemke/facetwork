@@ -111,25 +111,52 @@ class AgentPoller(val config: AgentPollerConfig):
           continue = false
     dispatched
 
+  /** Emit a step log entry (best-effort). */
+  private def emitStepLog(
+      stepId: String,
+      workflowId: String,
+      facetName: String,
+      level: String,
+      message: String
+  ): Unit =
+    try mongoOps.insertStepLog(stepId, workflowId, serverId_, facetName,
+      Protocol.StepLogSource.Framework, level, message)
+    catch case _: Exception => ()
+
   /** Process a single event task synchronously. */
   private def processEvent(task: model.TaskDocument): Unit =
     val handlerName = task.name
     val handler = lookupHandler(handlerName)
 
+    // 1. Task claimed
+    emitStepLog(task.stepId, task.workflowId, handlerName,
+      Protocol.StepLogLevel.Info, s"Task claimed: $handlerName")
+
     handler match
       case None =>
+        // 2. No handler found
+        val errorMsg = s"No handler registered for: $handlerName"
+        emitStepLog(task.stepId, task.workflowId, handlerName,
+          Protocol.StepLogLevel.Error, s"Handler error: $errorMsg")
         logger.warn(s"No handler for task: $handlerName (step=${task.stepId})")
-        mongoOps.markTaskFailed(task, s"No handler registered for: $handlerName")
+        mongoOps.markTaskFailed(task, errorMsg)
 
       case Some(fn) =>
         try
+          // 3. Dispatching handler
+          emitStepLog(task.stepId, task.workflowId, handlerName,
+            Protocol.StepLogLevel.Info, s"Dispatching handler: $handlerName")
           logger.debug(s"Processing event: $handlerName (step=${task.stepId})")
+
+          val dispatchStart = System.currentTimeMillis()
 
           // Read step params
           val params = mongoOps.readStepParams(task.stepId)
 
           // Invoke handler
           val result = fn(params)
+
+          val durationMs = System.currentTimeMillis() - dispatchStart
 
           // Convert result to returns format (value, typeHint)
           val returns = result.map { case (name, value) =>
@@ -145,9 +172,15 @@ class AgentPoller(val config: AgentPollerConfig):
           // Insert afl:resume task
           mongoOps.insertResumeTask(task.stepId, task.workflowId, config.taskList)
 
+          // 4. Handler completed
+          emitStepLog(task.stepId, task.workflowId, handlerName,
+            Protocol.StepLogLevel.Success, s"Handler completed: $handlerName (${durationMs}ms)")
           logger.info(s"Completed event: $handlerName (step=${task.stepId})")
         catch
           case e: Exception =>
+            // 5. Handler error
+            emitStepLog(task.stepId, task.workflowId, handlerName,
+              Protocol.StepLogLevel.Error, s"Handler error: ${e.getMessage}")
             logger.error(
               s"Handler failed for $handlerName (step=${task.stepId}): ${e.getMessage}",
               e

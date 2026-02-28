@@ -16,6 +16,7 @@ import { Db } from "mongodb";
 import { v4 as uuidv4 } from "uuid";
 import {
   CollectionSteps,
+  CollectionStepLogs,
   CollectionTasks,
   ResumeTaskName,
   StepStateEventTransmit,
@@ -150,6 +151,39 @@ export class MongoOps {
         },
       }
     );
+  }
+
+  /**
+   * Inserts a step log entry for dashboard observability.
+   * Best-effort: errors are caught and logged.
+   */
+  async insertStepLog(
+    stepId: string,
+    workflowId: string,
+    runnerId: string,
+    facetName: string,
+    source: string,
+    level: string,
+    message: string
+  ): Promise<void> {
+    try {
+      const collection = this.db.collection(CollectionStepLogs);
+
+      await collection.insertOne({
+        uuid: uuidv4(),
+        step_id: stepId,
+        workflow_id: workflowId,
+        runner_id: runnerId,
+        facet_name: facetName,
+        source,
+        level,
+        message,
+        details: {},
+        time: nowMillis(),
+      });
+    } catch (err) {
+      console.debug(`Could not save step log for step ${stepId}:`, err);
+    }
   }
 
   /**

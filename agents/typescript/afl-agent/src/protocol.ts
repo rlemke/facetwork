@@ -26,6 +26,7 @@ export const CollectionLogs = "logs";
 export const CollectionFlows = "flows";
 export const CollectionWorkflows = "workflows";
 export const CollectionRunners = "runners";
+export const CollectionStepLogs = "step_logs";
 
 // Task states
 export const TaskStatePending = "pending";
@@ -46,6 +47,16 @@ export const ServerStateStartup = "startup";
 export const ServerStateRunning = "running";
 export const ServerStateShutdown = "shutdown";
 export const ServerStateError = "error";
+
+// Step log levels
+export const StepLogLevelInfo = "info";
+export const StepLogLevelWarning = "warning";
+export const StepLogLevelError = "error";
+export const StepLogLevelSuccess = "success";
+
+// Step log sources
+export const StepLogSourceFramework = "framework";
+export const StepLogSourceHandler = "handler";
 
 // Protocol task names
 export const ResumeTaskName = "afl:resume";

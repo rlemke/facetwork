@@ -239,21 +239,47 @@ public class AgentPoller implements AutoCloseable {
         }
     }
 
+    private void emitStepLog(String stepId, String workflowId, String facetName,
+                             String level, String message) {
+        try {
+            ops.insertStepLog(stepId, workflowId, serverId, facetName,
+                    Protocol.STEP_LOG_SOURCE_FRAMEWORK, level, message);
+        } catch (Exception e) {
+            // best-effort
+        }
+    }
+
     private void processTask(TaskDocument task) {
+        // 1. Task claimed
+        emitStepLog(task.stepId(), task.workflowId(), task.name(),
+                Protocol.STEP_LOG_LEVEL_INFO, "Task claimed: " + task.name());
+
         // Find handler
         Handler handler = findHandler(task.name());
         if (handler == null) {
+            // 2. No handler found
+            emitStepLog(task.stepId(), task.workflowId(), task.name(),
+                    Protocol.STEP_LOG_LEVEL_ERROR,
+                    "Handler error: No handler registered for: " + task.name());
             logger.warning("No handler for task: " + task.name());
             ops.markTaskFailed(task, "no handler registered");
             return;
         }
 
         try {
+            // 3. Dispatching handler
+            emitStepLog(task.stepId(), task.workflowId(), task.name(),
+                    Protocol.STEP_LOG_LEVEL_INFO, "Dispatching handler: " + task.name());
+
+            long dispatchStart = System.currentTimeMillis();
+
             // Read step parameters
             Map<String, Object> params = ops.readStepParams(task.stepId());
 
             // Invoke handler
             Map<String, Object> result = handler.handle(params);
+
+            long durationMs = System.currentTimeMillis() - dispatchStart;
 
             // Write returns to step
             if (result != null && !result.isEmpty()) {
@@ -266,7 +292,15 @@ public class AgentPoller implements AutoCloseable {
             // Mark task completed
             ops.markTaskCompleted(task);
 
+            // 4. Handler completed
+            emitStepLog(task.stepId(), task.workflowId(), task.name(),
+                    Protocol.STEP_LOG_LEVEL_SUCCESS,
+                    "Handler completed: " + task.name() + " (" + durationMs + "ms)");
+
         } catch (Exception e) {
+            // 5. Handler error
+            emitStepLog(task.stepId(), task.workflowId(), task.name(),
+                    Protocol.STEP_LOG_LEVEL_ERROR, "Handler error: " + e.getMessage());
             logger.log(Level.WARNING, "Handler error for " + task.name(), e);
             ops.markTaskFailed(task, e.getMessage());
         }

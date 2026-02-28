@@ -16,6 +16,7 @@ package aflagent
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -227,16 +228,36 @@ func (p *AgentPoller) pollCycle(ctx context.Context) {
 	}
 }
 
+// emitStepLog writes a step log entry (best-effort).
+func (p *AgentPoller) emitStepLog(ctx context.Context, stepID, workflowID, facetName, level, message string) {
+	p.ops.InsertStepLog(ctx, stepID, workflowID, p.serverID, facetName,
+		StepLogSourceFramework, level, message)
+}
+
 func (p *AgentPoller) processTask(ctx context.Context, task *TaskDocument) {
+	// 1. Task claimed
+	p.emitStepLog(ctx, task.StepID, task.WorkflowID, task.Name,
+		StepLogLevelInfo, fmt.Sprintf("Task claimed: %s", task.Name))
+
 	// Find handler - try qualified name first, then short name
 	handler := p.findHandler(task.Name)
 	if handler == nil {
+		// 2. No handler found
+		errMsg := fmt.Sprintf("No handler registered for: %s", task.Name)
+		p.emitStepLog(ctx, task.StepID, task.WorkflowID, task.Name,
+			StepLogLevelError, "Handler error: "+errMsg)
 		log.Printf("No handler for task: %s", task.Name)
 		if err := p.ops.MarkTaskFailed(ctx, task, "no handler registered"); err != nil {
 			log.Printf("Failed to mark task as failed: %v", err)
 		}
 		return
 	}
+
+	// 3. Dispatching handler
+	p.emitStepLog(ctx, task.StepID, task.WorkflowID, task.Name,
+		StepLogLevelInfo, fmt.Sprintf("Dispatching handler: %s", task.Name))
+
+	dispatchStart := time.Now()
 
 	// Read step parameters
 	params, err := p.ops.ReadStepParams(ctx, task.StepID)
@@ -251,6 +272,9 @@ func (p *AgentPoller) processTask(ctx context.Context, task *TaskDocument) {
 	// Invoke handler
 	result, err := handler(params)
 	if err != nil {
+		// 5. Handler error
+		p.emitStepLog(ctx, task.StepID, task.WorkflowID, task.Name,
+			StepLogLevelError, fmt.Sprintf("Handler error: %v", err))
 		log.Printf("Handler error for %s: %v", task.Name, err)
 		if err := p.ops.MarkTaskFailed(ctx, task, err.Error()); err != nil {
 			log.Printf("Failed to mark task as failed: %v", err)
@@ -282,6 +306,11 @@ func (p *AgentPoller) processTask(ctx context.Context, task *TaskDocument) {
 	if err := p.ops.MarkTaskCompleted(ctx, task); err != nil {
 		log.Printf("Failed to mark task completed: %v", err)
 	}
+
+	// 4. Handler completed
+	durationMs := time.Since(dispatchStart).Milliseconds()
+	p.emitStepLog(ctx, task.StepID, task.WorkflowID, task.Name,
+		StepLogLevelSuccess, fmt.Sprintf("Handler completed: %s (%dms)", task.Name, durationMs))
 }
 
 func (p *AgentPoller) findHandler(taskName string) Handler {

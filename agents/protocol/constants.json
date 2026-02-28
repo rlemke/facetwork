@@ -11,7 +11,20 @@
     "logs": "logs",
     "flows": "flows",
     "workflows": "workflows",
-    "runners": "runners"
+    "runners": "runners",
+    "step_logs": "step_logs"
+  },
+
+  "step_log_levels": {
+    "info": "info",
+    "warning": "warning",
+    "error": "error",
+    "success": "success"
+  },
+
+  "step_log_sources": {
+    "framework": "framework",
+    "handler": "handler"
   },
 
   "task_states": {
@@ -178,6 +191,23 @@
             "type_hint": "<type>"
           }
         }
+      }
+    },
+    "insert_step_log": {
+      "description": "Insert a step log entry for observability in the dashboard",
+      "collection": "step_logs",
+      "operation": "insertOne",
+      "document": {
+        "uuid": "<generate UUID>",
+        "step_id": "<step_id>",
+        "workflow_id": "<workflow_id>",
+        "runner_id": "<server_id>",
+        "facet_name": "<task_name>",
+        "source": "<framework|handler>",
+        "level": "<info|warning|error|success>",
+        "message": "<descriptive message>",
+        "details": {},
+        "time": "<now_ms>"
       }
     },
     "create_resume_task": {

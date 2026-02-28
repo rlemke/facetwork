@@ -157,6 +157,41 @@ class MongoOps(db: MongoDatabase, timeout: Duration = 10.seconds):
     )
     Await.result(tasks.insertOne(resumeTask.toBson).toFuture(), timeout)
 
+  /** Insert a step log entry for dashboard observability.
+    *
+    * Best-effort: errors are caught and logged at debug level.
+    */
+  def insertStepLog(
+      stepId: String,
+      workflowId: String,
+      runnerId: String,
+      facetName: String,
+      source: String,
+      level: String,
+      message: String
+  ): Unit =
+    try
+      val nowMs = System.currentTimeMillis()
+      val doc = Document(
+        "uuid" -> UUID.randomUUID().toString,
+        "step_id" -> stepId,
+        "workflow_id" -> workflowId,
+        "runner_id" -> runnerId,
+        "facet_name" -> facetName,
+        "source" -> source,
+        "level" -> level,
+        "message" -> message,
+        "details" -> Document(),
+        "time" -> nowMs
+      )
+      Await.result(
+        db.getCollection(Protocol.Collections.StepLogs).insertOne(doc).toFuture(),
+        timeout
+      )
+    catch
+      case e: Exception =>
+        logger.debug(s"Could not save step log for step $stepId: ${e.getMessage}")
+
   /** Convert a Scala value to a MongoDB-compatible BsonValue. */
   private def scalaToMongo(value: Any): org.mongodb.scala.bson.BsonValue =
     import org.mongodb.scala.bson.*

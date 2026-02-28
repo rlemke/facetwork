@@ -16,6 +16,7 @@ package aflagent
 
 import (
 	"context"
+	"log"
 
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
@@ -164,6 +165,30 @@ func (m *MongoOps) InsertResumeTask(ctx context.Context, stepID, workflowID, tas
 
 	_, err := collection.InsertOne(ctx, task)
 	return err
+}
+
+// InsertStepLog inserts a step log entry for dashboard observability.
+// Best-effort: errors are logged but not returned.
+func (m *MongoOps) InsertStepLog(ctx context.Context, stepID, workflowID, runnerID, facetName, source, level, message string) {
+	collection := m.db.Collection(CollectionStepLogs)
+
+	now := NowMillis()
+	doc := bson.M{
+		"uuid":        uuid.New().String(),
+		"step_id":     stepID,
+		"workflow_id": workflowID,
+		"runner_id":   runnerID,
+		"facet_name":  facetName,
+		"source":      source,
+		"level":       level,
+		"message":     message,
+		"details":     bson.M{},
+		"time":        now,
+	}
+
+	if _, err := collection.InsertOne(ctx, doc); err != nil {
+		log.Printf("Could not save step log for step %s: %v", stepID, err)
+	}
 }
 
 func inferTypeHint(value interface{}) string {

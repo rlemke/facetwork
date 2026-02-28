@@ -191,21 +191,53 @@ export class AgentPoller {
       });
   }
 
+  private async emitStepLog(
+    stepId: string,
+    workflowId: string,
+    facetName: string,
+    level: string,
+    message: string
+  ): Promise<void> {
+    try {
+      await this.ops!.insertStepLog(
+        stepId, workflowId, this.serverId, facetName,
+        "framework", level, message
+      );
+    } catch {
+      // best-effort
+    }
+  }
+
   private async processTask(task: TaskDocument): Promise<void> {
+    // 1. Task claimed
+    await this.emitStepLog(task.step_id, task.workflow_id, task.name,
+      "info", `Task claimed: ${task.name}`);
+
     // Find handler
     const handler = this.findHandler(task.name);
     if (!handler) {
+      // 2. No handler found
+      await this.emitStepLog(task.step_id, task.workflow_id, task.name,
+        "error", `Handler error: No handler registered for: ${task.name}`);
       console.log(`No handler for task: ${task.name}`);
       await this.ops!.markTaskFailed(task, "no handler registered");
       return;
     }
 
     try {
+      // 3. Dispatching handler
+      await this.emitStepLog(task.step_id, task.workflow_id, task.name,
+        "info", `Dispatching handler: ${task.name}`);
+
+      const dispatchStart = Date.now();
+
       // Read step parameters
       const params = await this.ops!.readStepParams(task.step_id);
 
       // Invoke handler
       const result = await handler(params);
+
+      const durationMs = Date.now() - dispatchStart;
 
       // Write returns to step
       if (result && Object.keys(result).length > 0) {
@@ -221,9 +253,16 @@ export class AgentPoller {
 
       // Mark task completed
       await this.ops!.markTaskCompleted(task);
+
+      // 4. Handler completed
+      await this.emitStepLog(task.step_id, task.workflow_id, task.name,
+        "success", `Handler completed: ${task.name} (${durationMs}ms)`);
     } catch (err) {
-      console.error(`Handler error for ${task.name}:`, err);
+      // 5. Handler error
       const errorMsg = err instanceof Error ? err.message : String(err);
+      await this.emitStepLog(task.step_id, task.workflow_id, task.name,
+        "error", `Handler error: ${errorMsg}`);
+      console.error(`Handler error for ${task.name}:`, err);
       await this.ops!.markTaskFailed(task, errorMsg);
     }
   }

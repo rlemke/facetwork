@@ -162,6 +162,35 @@ public class MongoOps {
     }
 
     /**
+     * Inserts a step log entry for dashboard observability.
+     * Best-effort: errors are caught and logged.
+     */
+    public void insertStepLog(String stepId, String workflowId, String runnerId,
+                              String facetName, String source, String level, String message) {
+        try {
+            MongoCollection<Document> collection = db.getCollection(Protocol.COLLECTION_STEP_LOGS);
+
+            long now = nowMillis();
+            Document doc = new Document()
+                    .append("uuid", UUID.randomUUID().toString())
+                    .append("step_id", stepId)
+                    .append("workflow_id", workflowId)
+                    .append("runner_id", runnerId)
+                    .append("facet_name", facetName)
+                    .append("source", source)
+                    .append("level", level)
+                    .append("message", message)
+                    .append("details", new Document())
+                    .append("time", now);
+
+            collection.insertOne(doc);
+        } catch (Exception e) {
+            java.util.logging.Logger.getLogger(MongoOps.class.getName())
+                    .fine("Could not save step log for step " + stepId + ": " + e.getMessage());
+        }
+    }
+
+    /**
      * Inserts an afl:resume task for the Python RunnerService.
      */
     public void insertResumeTask(String stepId, String workflowId, String taskList) {

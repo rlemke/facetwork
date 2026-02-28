@@ -4,14 +4,30 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentflow"
-version = "0.23.1"
+version = "0.24.0"
 description = "AFL (Agent Flow Language) compiler and runtime"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
+authors = [{name = "Ralph Lemke"}]
+keywords = ["workflow", "compiler", "dsl", "agents", "distributed"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: System :: Distributed Computing",
+]
 dependencies = [
     "lark>=1.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/rlemke/agentflow"
+Repository = "https://github.com/rlemke/agentflow"
+Documentation = "https://github.com/rlemke/agentflow"
+Changelog = "https://github.com/rlemke/agentflow/blob/main/spec/99_changelog.md"
 
 [project.optional-dependencies]
 dev = [
@@ -55,6 +71,14 @@ afl-submit = "afl.runtime.submit:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["afl*"]
+
+[tool.setuptools.package-data]
+afl = [
+    "grammar/*.lark",
+    "dashboard/templates/**/*.html",
+    "dashboard/static/*.js",
+    "dashboard/static/*.css",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "examples"]

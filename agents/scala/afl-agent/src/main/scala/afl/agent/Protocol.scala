@@ -13,6 +13,7 @@ object Protocol:
     val Flows = "flows"
     val Workflows = "workflows"
     val Runners = "runners"
+    val StepLogs = "step_logs"
 
   object TaskState:
     val Pending = "pending"
@@ -33,6 +34,16 @@ object Protocol:
     val Running = "running"
     val Shutdown = "shutdown"
     val Error = "error"
+
+  object StepLogLevel:
+    val Info = "info"
+    val Warning = "warning"
+    val Error = "error"
+    val Success = "success"
+
+  object StepLogSource:
+    val Framework = "framework"
+    val Handler = "handler"
 
   val ResumeTaskName = "afl:resume"
   val ExecuteTaskName = "afl:execute"
