@@ -460,12 +460,146 @@ completion.
 
 ---
 
-## 7. RunnerService
+## 7. Step-Log Emission
+
+Agents emit **step log entries** during task processing to provide
+observability in the dashboard. Step logs capture key lifecycle milestones
+and are stored in the `step_logs` MongoDB collection.
+
+### 7.1 StepLogEntry
+
+```python
+@dataclass
+class StepLogEntry:
+    uuid: str
+    step_id: str
+    workflow_id: str
+    runner_id: str = ""
+    facet_name: str = ""
+    source: str = StepLogSource.FRAMEWORK
+    level: str = StepLogLevel.INFO
+    message: str = ""
+    details: dict = field(default_factory=dict)
+    time: int = 0                      # Timestamp (ms since epoch)
+```
+
+### 7.2 Level and Source Constants
+
+**Levels** (`StepLogLevel`):
+
+| Constant | Value | Usage |
+|----------|-------|-------|
+| `INFO` | `"info"` | Normal lifecycle events (task claimed, dispatching) |
+| `WARNING` | `"warning"` | Non-fatal issues |
+| `ERROR` | `"error"` | Handler failures, missing handlers |
+| `SUCCESS` | `"success"` | Handler completed successfully |
+
+**Sources** (`StepLogSource`):
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `FRAMEWORK` | `"framework"` | Emitted by the agent framework automatically |
+| `HANDLER` | `"handler"` | Emitted by handler code via the `_step_log` callback |
+
+### 7.3 Framework Emission Points
+
+All agent execution models (Python `AgentPoller`, `RegistryRunner`, and
+the non-Python SDKs in Scala, Go, TypeScript, Java) MUST emit step logs
+at the following five points during `processTask` / `_process_event`:
+
+| # | When | Level | Message pattern |
+|---|------|-------|-----------------|
+| 1 | Task claimed | `info` | `"Task claimed: {facet_name}"` |
+| 2 | No handler found | `error` | `"Handler error: No handler registered for: {facet_name}"` |
+| 3 | Dispatching handler | `info` | `"Dispatching handler: {facet_name}"` |
+| 4 | Handler completed | `success` | `"Handler completed: {facet_name} ({duration_ms}ms)"` |
+| 5 | Handler error | `error` | `"Handler error: {error_message}"` |
+
+All five use `source=framework`. The `runner_id` field is set to the
+agent's `server_id`.
+
+### 7.4 Best-Effort Semantics
+
+Step-log insertion MUST be **best-effort**: errors from `insertOne` into
+the `step_logs` collection are caught internally and logged at debug
+level. A step-log write failure MUST NOT cause the task to fail or
+prevent normal processing.
+
+### 7.5 Handler-Level Logging (Python only)
+
+The Python `AgentPoller` and `RegistryRunner` inject a `_step_log`
+callback into the handler payload. Handlers can call this to emit
+custom log entries visible in the dashboard:
+
+```python
+def handle(payload: dict) -> dict:
+    step_log = payload.get("_step_log")
+    if step_log:
+        step_log("Starting data download", level="info")
+    # ... do work ...
+    if step_log:
+        step_log("Downloaded 1,234 records", level="success")
+    return {"count": 1234}
+```
+
+The callback signature is:
+
+```python
+def _step_log(message: str, level: str = "info", details: dict | None = None) -> None
+```
+
+Handler-emitted logs use `source=handler`.
+
+### 7.6 MongoDB Document Schema
+
+```json
+{
+    "uuid": "<generated UUID>",
+    "step_id": "<step UUID>",
+    "workflow_id": "<workflow UUID>",
+    "runner_id": "<server UUID>",
+    "facet_name": "<qualified facet name>",
+    "source": "framework|handler",
+    "level": "info|warning|error|success",
+    "message": "<descriptive message>",
+    "details": {},
+    "time": 1709251200000
+}
+```
+
+Indexes on the `step_logs` collection:
+
+| Index | Fields | Purpose |
+|-------|--------|---------|
+| `step_log_uuid_index` | `uuid` (unique) | Primary key |
+| `step_log_step_id_index` | `step_id` | Step detail page queries |
+| `step_log_workflow_id_index` | `workflow_id` | Workflow-level log aggregation |
+| `step_log_facet_name_index` | `facet_name` | Handler activity page queries |
+
+### 7.7 Non-Python SDK Implementation
+
+The protocol constants file (`agents/protocol/constants.json`) defines
+the `step_logs` collection name, level values, source values, and the
+`insert_step_log` operation schema. Each non-Python SDK implements:
+
+| File | Addition |
+|------|----------|
+| Protocol constants | `step_logs` collection + level/source constants |
+| MongoOps | `insertStepLog(...)` — best-effort `insertOne` |
+| AgentPoller | `emitStepLog(...)` helper + 5 emission points in `processTask` |
+
+The non-Python SDKs do not currently support handler-level `_step_log`
+callback injection (§7.5). Only the 5 framework-level emission points
+are implemented.
+
+---
+
+## 8. RunnerService
 
 The `RunnerService` (`afl/runtime/runner/service.py`) is a superset of
 the `AgentPoller` that adds distributed coordination capabilities.
 
-### 7.1 RunnerConfig
+### 8.1 RunnerConfig
 
 ```python
 @dataclass
@@ -485,7 +619,7 @@ class RunnerConfig:
     http_max_port_attempts: int = 20
 ```
 
-### 7.2 Capabilities Beyond AgentPoller
+### 8.2 Capabilities Beyond AgentPoller
 
 | Capability | AgentPoller | RunnerService |
 |------------|-------------|---------------|
@@ -499,7 +633,7 @@ class RunnerConfig:
 | Signal handling (SIGTERM/SIGINT) | No | Yes |
 | Graceful shutdown timeout | No | Yes (`shutdown_timeout_ms`) |
 
-### 7.3 ToolRegistry
+### 8.3 ToolRegistry
 
 The `RunnerService` uses a `ToolRegistry` for handler dispatch instead
 of direct callback registration. The registry supports:
@@ -508,7 +642,7 @@ of direct callback registration. The registry supports:
 - Short-name fallback matching.
 - A default handler fallback for unmatched tasks.
 
-### 7.4 Distributed Locking
+### 8.4 Distributed Locking
 
 The `RunnerService` acquires a distributed lock before processing each
 work item. A background thread extends the lock at `lock_extend_interval_ms`
@@ -523,7 +657,7 @@ def extend_lock(self, key: str, duration_ms: int) -> bool
 def release_lock(self, key: str) -> bool
 ```
 
-### 7.5 HTTP Status Server
+### 8.5 HTTP Status Server
 
 The `RunnerService` starts an embedded HTTP server with two endpoints:
 
@@ -537,7 +671,7 @@ to `http_max_port_attempts` times if the port is in use.
 
 ---
 
-## 8. RegistryRunner (Recommended)
+## 9. RegistryRunner (Recommended)
 
 The `RegistryRunner` (`afl/runtime/registry_runner.py`) is a universal,
 handler-agnostic runner that eliminates the need for per-facet
@@ -545,7 +679,7 @@ microservices. Instead of writing custom agent code, developers register
 handler implementations in the database and the RegistryRunner
 dynamically loads and dispatches them.
 
-### 8.1 Why RegistryRunner?
+### 9.1 Why RegistryRunner?
 
 With the `AgentPoller` or `RunnerService`, building an agent requires:
 
@@ -563,7 +697,7 @@ Handler registrations are **persisted** and survive restarts. The
 RegistryRunner re-reads registrations periodically (default: every 30s)
 and picks up new handlers without restarting.
 
-### 8.2 RegistryRunnerConfig
+### 9.2 RegistryRunnerConfig
 
 ```python
 @dataclass
@@ -591,7 +725,7 @@ class RegistryRunnerConfig:
 | `registry_refresh_interval_ms` | `int` | `30000` | Milliseconds between registry re-reads |
 | `topics` | `list[str]` | `[]` | Glob patterns to filter which facets to handle (empty = all) |
 
-### 8.3 Constructor
+### 9.3 Constructor
 
 ```python
 def __init__(
@@ -602,7 +736,7 @@ def __init__(
 ) -> None
 ```
 
-### 8.4 Handler Registration
+### 9.4 Handler Registration
 
 ```python
 def register_handler(
@@ -643,7 +777,7 @@ The registration is picked up on the next registry refresh.
 4. **Direct persistence** — `store.save_handler_registration(...)` (for
    migration/seeding)
 
-### 8.5 HandlerRegistration Entity
+### 9.5 HandlerRegistration Entity
 
 ```python
 @dataclass
@@ -663,7 +797,7 @@ class HandlerRegistration:
 Stored in the `handler_registrations` collection (MongoDB) or the
 `_handler_registrations` dict (MemoryStore).
 
-### 8.6 Dynamic Module Loading
+### 9.6 Dynamic Module Loading
 
 The RegistryRunner supports two module URI formats:
 
@@ -676,7 +810,7 @@ Loaded modules are **cached** by `(module_uri, checksum)`. Changing the
 `checksum` field in the registration forces a module reload on the next
 invocation.
 
-### 8.7 Dispatch Flow
+### 9.7 Dispatch Flow
 
 When a task is claimed and processed:
 
@@ -692,7 +826,7 @@ When a task is claimed and processed:
 
 On any exception: call `evaluator.fail_step()`, mark task `FAILED`.
 
-### 8.8 Topic-Based Filtering
+### 9.8 Topic-Based Filtering
 
 When `topics` is set in the config, the RegistryRunner only handles
 facets matching at least one glob pattern:
@@ -706,7 +840,7 @@ config = RegistryRunnerConfig(topics=["osm.geo.*", "validation.*"])
 Pattern matching uses `fnmatch.fnmatch()` and supports `*`, `?`, and
 `[seq]` syntax.
 
-### 8.9 Streaming Support
+### 9.9 Streaming Support
 
 The RegistryRunner provides `update_step()` for handlers that produce
 partial/streaming results:
@@ -719,7 +853,7 @@ This merges `partial_result` into the step's return attributes
 immediately, without completing the step. The handler can call this
 multiple times before returning the final result.
 
-### 8.10 Complete Example: Event Facet with Auto-Loading
+### 9.10 Complete Example: Event Facet with Auto-Loading
 
 **1. Define the event facet in AFL:**
 
@@ -786,7 +920,7 @@ The runner automatically discovers `billing.ProcessPayment` from the
 handler registrations table, loads `handlers.billing.process_payment`,
 and dispatches incoming tasks to it.
 
-### 8.11 Handler Module Patterns
+### 9.11 Handler Module Patterns
 
 #### Simple handler (one facet per module):
 
@@ -841,7 +975,7 @@ def handle(payload: dict) -> dict:
     return {"data": download(path)}
 ```
 
-### 8.12 Properties
+### 9.12 Properties
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -850,12 +984,12 @@ def handle(payload: dict) -> dict:
 
 ---
 
-## 9. ClaudeAgentRunner
+## 10. ClaudeAgentRunner
 
 The `ClaudeAgentRunner` is a synchronous in-process execution model
 designed for LLM-driven workflow processing.
 
-### 9.1 Characteristics
+### 10.1 Characteristics
 
 | Aspect | Behavior |
 |--------|----------|
@@ -866,7 +1000,7 @@ designed for LLM-driven workflow processing.
 | Persistence | Required (for step/event storage) |
 | Concurrency | Single-threaded |
 
-### 9.2 Execution Flow
+### 10.2 Execution Flow
 
 1. The `ClaudeAgentRunner` receives a workflow AST and inputs.
 2. The evaluator executes until it reaches `EVENT_TRANSMIT`.
@@ -880,13 +1014,13 @@ in a tight loop.
 
 ---
 
-## 10. Concurrency Model
+## 11. Concurrency Model
 
 The `AgentPoller`, `RegistryRunner`, and `RunnerService` process multiple event tasks
 concurrently. This section defines how in-memory state is kept isolated
 between concurrent executions.
 
-### 10.1 Design Principle
+### 11.1 Design Principle
 
 The `Evaluator`, `AgentPoller`, `RegistryRunner`, and `RunnerService` are **shared
 instances**, but all mutable execution state is **created per-invocation**.
@@ -913,7 +1047,7 @@ atomicity guarantees enforced at the storage layer.
 └──────────────────────────────────────────────────────┘
 ```
 
-### 10.2 Per-Invocation ExecutionContext
+### 11.2 Per-Invocation ExecutionContext
 
 Each call to `execute()` or `resume()` MUST create a **fresh
 `ExecutionContext`** with a new `IterationChanges` instance:
@@ -934,7 +1068,7 @@ The `ExecutionContext` contains per-invocation caches
 execution. Concurrent threads calling `resume()` for different events
 operate on entirely separate context objects.
 
-### 10.3 Deep-Copy Persistence Pattern
+### 11.3 Deep-Copy Persistence Pattern
 
 The `MemoryStore` MUST return a **deep copy** of every `StepDefinition`
 on read and MUST clone before storing on write:
@@ -954,7 +1088,7 @@ threads do not collide in memory.
 The `MongoStore` achieves the same isolation naturally — each read
 deserializes a fresh object from the database document.
 
-### 10.4 Atomic Task Claiming
+### 11.4 Atomic Task Claiming
 
 The `claim_task()` method MUST guarantee that exactly one caller
 receives a given task:
@@ -966,7 +1100,7 @@ receives a given task:
 - A partial unique index on `(step_id, state=running)` ensures at most
   one agent processes a given event step at any time.
 
-### 10.5 Distributed Locking (RunnerService)
+### 11.5 Distributed Locking (RunnerService)
 
 The `RunnerService` acquires a distributed lock per work item before
 processing. A background thread extends the lock at
@@ -976,7 +1110,7 @@ other runner instances from claiming the same work concurrently.
 The `AgentPoller` does not use distributed locks. It relies on the
 atomic `claim_task()` semantics to prevent duplicate processing.
 
-### 10.6 Isolation Guarantees
+### 11.6 Isolation Guarantees
 
 | Layer | Mechanism | Scope |
 |-------|-----------|-------|
@@ -987,7 +1121,7 @@ atomic `claim_task()` semantics to prevent duplicate processing.
 | Task claiming | `threading.Lock` (memory) / `find_one_and_update` (MongoDB) | Global |
 | Work-item locking | `acquire_lock()` / `extend_lock()` (RunnerService only) | Per-work-item |
 
-### 10.7 Known Benign Races
+### 11.7 Known Benign Races
 
 The following shared state is accessed without synchronization. These
 races are benign and do not affect correctness:
@@ -1002,7 +1136,7 @@ races are benign and do not affect correctness:
 
 ---
 
-## 11. Key Files Reference
+## 12. Key Files Reference
 
 | File | Description |
 |------|-------------|
@@ -1020,7 +1154,7 @@ races are benign and do not affect correctness:
 
 ---
 
-## 12. Comparison Matrix
+## 13. Comparison Matrix
 
 | Feature | RegistryRunner | AgentPoller | RunnerService | ClaudeAgentRunner |
 |---------|----------------|-------------|---------------|-------------------|
