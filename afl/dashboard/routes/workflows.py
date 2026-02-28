@@ -138,7 +138,7 @@ def workflow_new(request: Request, store=Depends(get_store)):
     return request.app.state.templates.TemplateResponse(
         request,
         "workflows/new.html",
-        {"ns_groups": ns_groups},
+        {"ns_groups": ns_groups, "active_tab": "new_workflow"},
     )
 
 

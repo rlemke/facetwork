@@ -33,7 +33,7 @@ def flow_list(request: Request, q: str | None = None, store=Depends(get_store)):
     return request.app.state.templates.TemplateResponse(
         request,
         "flows/list.html",
-        {"flows": flows, "search_query": q},
+        {"flows": flows, "search_query": q, "active_tab": "flows"},
     )
 
 
@@ -74,6 +74,7 @@ def flow_detail(flow_id: str, request: Request, store=Depends(get_store)):
             "workflows": workflows,
             "namespace_list": namespace_list,
             "runners": runners,
+            "active_tab": "flows",
         },
     )
 

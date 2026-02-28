@@ -5,29 +5,35 @@ h3 { font-size: 1.05rem; }
 hgroup > p { font-size: 0.9rem; }
 
 /* ========================================================================
-   SIDEBAR LAYOUT
+   SIDEBAR LAYOUT — must override Pico CSS defaults on body/nav/a
    ======================================================================== */
 
-.sidebar-layout {
-    display: flex;
+body.sidebar-layout {
+    display: flex !important;
+    flex-direction: row !important;
     min-height: 100vh;
-    padding: 0;
-    margin: 0;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+    width: 100% !important;
 }
 
-.sidebar {
+aside.sidebar {
     width: 220px;
     min-width: 220px;
+    max-width: 220px;
     background: var(--card-background-color, #f8f9fa);
     border-right: 1px solid var(--muted-border-color, #ddd);
-    display: flex;
-    flex-direction: column;
+    display: flex !important;
+    flex-direction: column !important;
     position: sticky;
     top: 0;
     height: 100vh;
     overflow-y: auto;
+    overflow-x: hidden;
     z-index: 50;
     transition: width 0.2s, min-width 0.2s;
+    flex-shrink: 0;
 }
 
 .sidebar-header {
@@ -36,10 +42,11 @@ hgroup > p { font-size: 0.9rem; }
     justify-content: space-between;
     padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--muted-border-color, #ddd);
+    flex-shrink: 0;
 }
 
 .sidebar-brand {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     text-decoration: none;
@@ -62,6 +69,7 @@ hgroup > p { font-size: 0.9rem; }
     padding: 0.2rem;
     margin: 0;
     line-height: 1;
+    width: auto;
 }
 .sidebar-toggle:hover { color: var(--primary); }
 
@@ -79,6 +87,7 @@ hgroup > p { font-size: 0.9rem; }
     color: var(--muted-color, #6c757d);
     background: var(--background-color, #fff);
     transition: border-color 0.15s;
+    flex-shrink: 0;
 }
 .sidebar-search:hover {
     border-color: var(--primary);
@@ -94,32 +103,47 @@ hgroup > p { font-size: 0.9rem; }
     background: var(--card-background-color, #f0f0f0);
 }
 
-/* Sidebar navigation */
-.sidebar-nav {
+/* Sidebar navigation — override Pico CSS nav styles */
+nav.sidebar-nav {
     flex: 1;
     padding: 0.5rem 0;
     overflow-y: auto;
+    display: flex !important;
+    flex-direction: column !important;
+    /* Reset Pico CSS nav defaults */
+    justify-content: flex-start !important;
+    align-items: stretch !important;
 }
 
-.sidebar-link {
-    display: flex;
+nav.sidebar-nav ul,
+nav.sidebar-nav li {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+a.sidebar-link {
+    display: flex !important;
     align-items: center;
     gap: 0.6rem;
     padding: 0.45rem 1rem;
-    text-decoration: none;
-    color: var(--color, #333);
+    text-decoration: none !important;
+    color: var(--color, #333) !important;
     font-size: 0.88rem;
     border-left: 3px solid transparent;
     transition: background 0.15s, border-color 0.15s;
+    width: 100%;
+    box-sizing: border-box;
 }
-.sidebar-link:hover {
+a.sidebar-link:hover {
     background: rgba(0, 0, 0, 0.04);
+    text-decoration: none !important;
 }
-.sidebar-link.active {
+a.sidebar-link.active {
     background: rgba(16, 149, 193, 0.08);
     border-left-color: var(--primary);
     font-weight: 600;
-    color: var(--primary);
+    color: var(--primary) !important;
 }
 .sidebar-icon {
     font-size: 0.95rem;
@@ -132,6 +156,8 @@ hgroup > p { font-size: 0.9rem; }
 /* Sidebar groups */
 .sidebar-group {
     margin-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
 }
 .sidebar-group-label {
     display: block;
@@ -149,15 +175,17 @@ hgroup > p { font-size: 0.9rem; }
     min-width: 0;
     display: flex;
     flex-direction: column;
+    overflow-x: hidden;
 }
 .main-content > main {
     flex: 1;
 }
 
 /* Collapsed sidebar */
-.sidebar-collapsed .sidebar {
+body.sidebar-collapsed aside.sidebar {
     width: 52px;
     min-width: 52px;
+    max-width: 52px;
 }
 .sidebar-collapsed .sidebar-brand-text,
 .sidebar-collapsed .sidebar-search-text,
@@ -170,7 +198,7 @@ hgroup > p { font-size: 0.9rem; }
     justify-content: center;
     padding: 0.4rem;
 }
-.sidebar-collapsed .sidebar-link {
+.sidebar-collapsed a.sidebar-link {
     justify-content: center;
     padding: 0.45rem 0.5rem;
 }
@@ -181,8 +209,10 @@ hgroup > p { font-size: 0.9rem; }
 
 /* Mobile responsive */
 @media (max-width: 768px) {
-    .sidebar-layout { flex-direction: column; }
-    .sidebar {
+    body.sidebar-layout {
+        flex-direction: column !important;
+    }
+    aside.sidebar {
         position: fixed;
         left: -220px;
         top: 0;
@@ -190,10 +220,7 @@ hgroup > p { font-size: 0.9rem; }
         transition: left 0.2s;
         z-index: 100;
     }
-    .sidebar-layout:not(.sidebar-collapsed) .sidebar {
-        left: -220px;
-    }
-    .sidebar-layout.sidebar-open .sidebar {
+    body.sidebar-open aside.sidebar {
         left: 0;
         box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
     }
