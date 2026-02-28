@@ -42,6 +42,8 @@ export {
   CollectionFlows,
   CollectionWorkflows,
   CollectionRunners,
+  CollectionStepLogs,
+  CollectionHandlerRegistrations,
   TaskStatePending,
   TaskStateRunning,
   TaskStateCompleted,
@@ -56,6 +58,12 @@ export {
   ServerStateRunning,
   ServerStateShutdown,
   ServerStateError,
+  StepLogLevelInfo,
+  StepLogLevelWarning,
+  StepLogLevelError,
+  StepLogLevelSuccess,
+  StepLogSourceFramework,
+  StepLogSourceHandler,
   ResumeTaskName,
   ExecuteTaskName,
 } from "./protocol";
@@ -89,3 +97,6 @@ export { ServerRegistration } from "./server-registration";
 
 // Poller
 export { AgentPoller, Handler } from "./poller";
+
+// RegistryRunner
+export { RegistryRunner } from "./registry-runner";

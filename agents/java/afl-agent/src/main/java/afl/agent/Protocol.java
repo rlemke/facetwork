@@ -34,6 +34,7 @@ public final class Protocol {
     public static final String COLLECTION_WORKFLOWS = "workflows";
     public static final String COLLECTION_RUNNERS = "runners";
     public static final String COLLECTION_STEP_LOGS = "step_logs";
+    public static final String COLLECTION_HANDLER_REGISTRATIONS = "handler_registrations";
 
     // Task states
     public static final String TASK_STATE_PENDING = "pending";

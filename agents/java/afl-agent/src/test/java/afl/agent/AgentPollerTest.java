@@ -140,6 +140,25 @@ class ProtocolTest {
         assertEquals("afl:resume", Protocol.RESUME_TASK_NAME);
         assertEquals("afl:execute", Protocol.EXECUTE_TASK_NAME);
     }
+
+    @Test
+    void testStepLogLevels() {
+        assertEquals("info", Protocol.STEP_LOG_LEVEL_INFO);
+        assertEquals("warning", Protocol.STEP_LOG_LEVEL_WARNING);
+        assertEquals("error", Protocol.STEP_LOG_LEVEL_ERROR);
+        assertEquals("success", Protocol.STEP_LOG_LEVEL_SUCCESS);
+    }
+
+    @Test
+    void testStepLogSources() {
+        assertEquals("framework", Protocol.STEP_LOG_SOURCE_FRAMEWORK);
+        assertEquals("handler", Protocol.STEP_LOG_SOURCE_HANDLER);
+    }
+
+    @Test
+    void testStepLogsCollection() {
+        assertEquals("step_logs", Protocol.COLLECTION_STEP_LOGS);
+    }
 }
 
 class StepAttributeTest {

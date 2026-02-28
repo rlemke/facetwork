@@ -234,6 +234,14 @@ export class AgentPoller {
       // Read step parameters
       const params = await this.ops!.readStepParams(task.step_id);
 
+      // Inject handler-level step_log callback
+      params["_step_log"] = async (message: string, level = "info") => {
+        try {
+          await this.ops!.insertStepLog(task.step_id, task.workflow_id,
+            this.serverId, task.name, "handler", level, message);
+        } catch { /* best-effort */ }
+      };
+
       // Invoke handler
       const result = await handler(params);
 

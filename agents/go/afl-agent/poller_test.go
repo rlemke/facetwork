@@ -144,6 +144,41 @@ func TestProtocolConstants(t *testing.T) {
 	}
 }
 
+func TestStepLogConstants(t *testing.T) {
+	// Step log levels
+	if StepLogLevelInfo != "info" {
+		t.Errorf("StepLogLevelInfo should be 'info', got '%s'", StepLogLevelInfo)
+	}
+	if StepLogLevelWarning != "warning" {
+		t.Errorf("StepLogLevelWarning should be 'warning', got '%s'", StepLogLevelWarning)
+	}
+	if StepLogLevelError != "error" {
+		t.Errorf("StepLogLevelError should be 'error', got '%s'", StepLogLevelError)
+	}
+	if StepLogLevelSuccess != "success" {
+		t.Errorf("StepLogLevelSuccess should be 'success', got '%s'", StepLogLevelSuccess)
+	}
+
+	// Step log sources
+	if StepLogSourceFramework != "framework" {
+		t.Errorf("StepLogSourceFramework should be 'framework', got '%s'", StepLogSourceFramework)
+	}
+	if StepLogSourceHandler != "handler" {
+		t.Errorf("StepLogSourceHandler should be 'handler', got '%s'", StepLogSourceHandler)
+	}
+
+	// Step logs collection
+	if CollectionStepLogs != "step_logs" {
+		t.Errorf("CollectionStepLogs should be 'step_logs', got '%s'", CollectionStepLogs)
+	}
+
+	// Handler registrations collection
+	if CollectionHandlerRegistrations != "handler_registrations" {
+		t.Errorf("CollectionHandlerRegistrations should be 'handler_registrations', got '%s'",
+			CollectionHandlerRegistrations)
+	}
+}
+
 func TestInferTypeHint(t *testing.T) {
 	tests := []struct {
 		value    interface{}

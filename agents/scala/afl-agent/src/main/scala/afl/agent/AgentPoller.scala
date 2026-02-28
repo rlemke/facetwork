@@ -153,8 +153,15 @@ class AgentPoller(val config: AgentPollerConfig):
           // Read step params
           val params = mongoOps.readStepParams(task.stepId)
 
+          // Inject handler-level step_log callback
+          val stepLogCallback: (String, String) => Unit = (message, level) =>
+            try mongoOps.insertStepLog(task.stepId, task.workflowId, serverId_,
+              handlerName, Protocol.StepLogSource.Handler, level, message)
+            catch case _: Exception => ()
+          val paramsWithLog = params + ("_step_log" -> stepLogCallback)
+
           // Invoke handler
-          val result = fn(params)
+          val result = fn(paramsWithLog)
 
           val durationMs = System.currentTimeMillis() - dispatchStart
 

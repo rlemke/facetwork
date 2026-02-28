@@ -525,11 +525,13 @@ the `step_logs` collection are caught internally and logged at debug
 level. A step-log write failure MUST NOT cause the task to fail or
 prevent normal processing.
 
-### 7.5 Handler-Level Logging (Python only)
+### 7.5 Handler-Level Logging
 
-The Python `AgentPoller` and `RegistryRunner` inject a `_step_log`
-callback into the handler payload. Handlers can call this to emit
-custom log entries visible in the dashboard:
+All SDKs (Python, Scala, Go, TypeScript, Java) inject a `_step_log`
+callback into the handler params before invocation. Handlers can call
+this to emit custom log entries visible in the dashboard.
+
+**Python:**
 
 ```python
 def handle(payload: dict) -> dict:
@@ -542,11 +544,20 @@ def handle(payload: dict) -> dict:
     return {"count": 1234}
 ```
 
-The callback signature is:
+The Python callback signature is:
 
 ```python
 def _step_log(message: str, level: str = "info", details: dict | None = None) -> None
 ```
+
+**Non-Python SDKs:**
+
+| SDK | Callback type | Signature |
+|-----|--------------|-----------|
+| Scala | `(String, String) => Unit` | `(message, level)` |
+| Go | `func(string, string)` | `(message, level)` |
+| TypeScript | `async (string, string?) => void` | `(message, level="info")` |
+| Java | `BiConsumer<String, String>` | `(message, level)` |
 
 Handler-emitted logs use `source=handler`.
 
@@ -588,9 +599,8 @@ the `step_logs` collection name, level values, source values, and the
 | MongoOps | `insertStepLog(...)` — best-effort `insertOne` |
 | AgentPoller | `emitStepLog(...)` helper + 5 emission points in `processTask` |
 
-The non-Python SDKs do not currently support handler-level `_step_log`
-callback injection (§7.5). Only the 5 framework-level emission points
-are implemented.
+All non-Python SDKs also inject the handler-level `_step_log` callback
+(§7.5) into params before handler invocation, using `source=handler`.
 
 ---
 
@@ -981,6 +991,42 @@ def handle(payload: dict) -> dict:
 |----------|------|-------------|
 | `server_id` | `str` | Unique identifier for this runner instance |
 | `is_running` | `bool` | Whether the poll loop is currently active |
+
+### 9.13 Non-Python RegistryRunner (DB-Driven Topic Filtering)
+
+The non-Python SDKs (Scala, Go, TypeScript, Java) each provide a
+`RegistryRunner` class that wraps `AgentPoller` and adds **DB-driven
+topic filtering**. Unlike the Python RegistryRunner (which dynamically
+loads modules at runtime), non-Python SDKs register handlers at compile
+time via `register()`. The `RegistryRunner` restricts polling to only
+those handler names that also appear in the `handler_registrations`
+MongoDB collection.
+
+**Architecture:** Composition over inheritance. Each `RegistryRunner`
+wraps an `AgentPoller` instance and provides:
+
+1. `CollectionHandlerRegistrations = "handler_registrations"` protocol constant
+2. `refreshTopics()` — reads `handler_registrations` from MongoDB
+3. `effectiveHandlers()` — returns the intersection of registered handlers and active DB topics
+4. Refresh loop (default 30s) to pick up new registrations
+
+**Key logic** (same across all SDKs):
+
+```
+refreshTopics():
+  docs = db.handler_registrations.find({})
+  activeTopics = {doc.facet_name for doc in docs}
+
+effectiveHandlers():
+  return registeredHandlers ∩ activeTopics
+```
+
+| SDK | File | Notes |
+|-----|------|-------|
+| Scala | `RegistryRunner.scala` | Wraps `AgentPoller`, `AtomicReference[Set[String]]` for topics |
+| Go | `registry_runner.go` | Sets `topicFilter` func on `AgentPoller`, `sync.RWMutex` for topics |
+| TypeScript | `registry-runner.ts` | Wraps `AgentPoller`, exported from `index.ts` |
+| Java | `RegistryRunner.java` | Wraps `AgentPoller`, `ConcurrentHashMap.newKeySet()` for topics |
 
 ---
 

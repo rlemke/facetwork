@@ -12,7 +12,8 @@
     "flows": "flows",
     "workflows": "workflows",
     "runners": "runners",
-    "step_logs": "step_logs"
+    "step_logs": "step_logs",
+    "handler_registrations": "handler_registrations"
   },
 
   "step_log_levels": {

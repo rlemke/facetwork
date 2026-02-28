@@ -18,10 +18,17 @@ import {
   CollectionTasks,
   CollectionSteps,
   CollectionServers,
+  CollectionStepLogs,
   TaskStatePending,
   TaskStateRunning,
   TaskStateCompleted,
   ResumeTaskName,
+  StepLogLevelInfo,
+  StepLogLevelWarning,
+  StepLogLevelError,
+  StepLogLevelSuccess,
+  StepLogSourceFramework,
+  StepLogSourceHandler,
 } from "./protocol";
 import { inferTypeHint } from "./models";
 
@@ -95,6 +102,24 @@ describe("Protocol constants", () => {
 
   it("should have correct protocol task name", () => {
     expect(ResumeTaskName).toBe("afl:resume");
+  });
+});
+
+describe("Step log constants", () => {
+  it("should have correct step log levels", () => {
+    expect(StepLogLevelInfo).toBe("info");
+    expect(StepLogLevelWarning).toBe("warning");
+    expect(StepLogLevelError).toBe("error");
+    expect(StepLogLevelSuccess).toBe("success");
+  });
+
+  it("should have correct step log sources", () => {
+    expect(StepLogSourceFramework).toBe("framework");
+    expect(StepLogSourceHandler).toBe("handler");
+  });
+
+  it("should have correct step_logs collection", () => {
+    expect(CollectionStepLogs).toBe("step_logs");
   });
 });
 

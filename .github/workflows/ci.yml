@@ -58,6 +58,35 @@ jobs:
       - name: Check linting
         run: ruff check .
 
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tool
+        run: pip install build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Verify wheel assets
+        run: |
+          python -c "
+          import zipfile, sys, pathlib
+          whl = zipfile.ZipFile(next(p for p in pathlib.Path('dist').iterdir() if p.suffix == '.whl'))
+          names = whl.namelist()
+          for ext in ['.lark', '.html', '.js', '.css']:
+              matches = [n for n in names if n.endswith(ext)]
+              if not matches:
+                  print(f'ERROR: No {ext} files in wheel'); sys.exit(1)
+              print(f'OK: {len(matches)} {ext} file(s)')
+          "
+
   typecheck:
     runs-on: ubuntu-latest
     steps:

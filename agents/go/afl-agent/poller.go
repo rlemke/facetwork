@@ -49,6 +49,10 @@ type AgentPoller struct {
 	sem      chan struct{} // semaphore for concurrency control
 	running  bool
 	runMu    sync.Mutex
+
+	// topicFilter, if set, overrides RegisteredHandlers() for poll cycles.
+	// Used by RegistryRunner to restrict to DB-registered topics.
+	topicFilter func() []string
 }
 
 // NewAgentPoller creates a new AgentPoller with the given configuration.
@@ -195,8 +199,18 @@ func (p *AgentPoller) pollLoop(ctx context.Context) {
 	}
 }
 
+// EffectiveHandlers returns the handler names to poll for.
+// If a topicFilter is set (e.g., by RegistryRunner), it uses that;
+// otherwise it returns all registered handlers.
+func (p *AgentPoller) EffectiveHandlers() []string {
+	if p.topicFilter != nil {
+		return p.topicFilter()
+	}
+	return p.RegisteredHandlers()
+}
+
 func (p *AgentPoller) pollCycle(ctx context.Context) {
-	handlers := p.RegisteredHandlers()
+	handlers := p.EffectiveHandlers()
 	if len(handlers) == 0 {
 		return
 	}
@@ -267,6 +281,12 @@ func (p *AgentPoller) processTask(ctx context.Context, task *TaskDocument) {
 			log.Printf("Failed to mark task as failed: %v", err)
 		}
 		return
+	}
+
+	// Inject handler-level step_log callback
+	params["_step_log"] = func(message string, level string) {
+		p.ops.InsertStepLog(ctx, task.StepID, task.WorkflowID, p.serverID,
+			task.Name, StepLogSourceHandler, level, message)
 	}
 
 	// Invoke handler

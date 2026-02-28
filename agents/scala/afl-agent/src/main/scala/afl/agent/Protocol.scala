@@ -14,6 +14,7 @@ object Protocol:
     val Workflows = "workflows"
     val Runners = "runners"
     val StepLogs = "step_logs"
+    val HandlerRegistrations = "handler_registrations"
 
   object TaskState:
     val Pending = "pending"

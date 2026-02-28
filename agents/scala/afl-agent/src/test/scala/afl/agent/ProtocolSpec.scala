@@ -61,6 +61,14 @@ class ProtocolSpec extends AnyFlatSpec with Matchers:
     extractJsonString(constantsJson, "runners") shouldBe Protocol.Collections.Runners
   }
 
+  it should "match step_logs collection" in {
+    extractJsonString(constantsJson, "step_logs") shouldBe Protocol.Collections.StepLogs
+  }
+
+  it should "match handler_registrations collection" in {
+    extractJsonString(constantsJson, "handler_registrations") shouldBe Protocol.Collections.HandlerRegistrations
+  }
+
   // --- Task states ---
 
   "Protocol.TaskState" should "match pending" in {
@@ -117,6 +125,34 @@ class ProtocolSpec extends AnyFlatSpec with Matchers:
 
   it should "match error" in {
     extractJsonString(constantsJson, "error") shouldBe Protocol.ServerState.Error
+  }
+
+  // --- Step log levels ---
+
+  "Protocol.StepLogLevel" should "match info" in {
+    extractJsonString(constantsJson, "info") shouldBe Protocol.StepLogLevel.Info
+  }
+
+  it should "match warning" in {
+    extractJsonString(constantsJson, "warning") shouldBe Protocol.StepLogLevel.Warning
+  }
+
+  it should "match error" in {
+    extractJsonString(constantsJson, "error") shouldBe Protocol.StepLogLevel.Error
+  }
+
+  it should "match success" in {
+    extractJsonString(constantsJson, "success") shouldBe Protocol.StepLogLevel.Success
+  }
+
+  // --- Step log sources ---
+
+  "Protocol.StepLogSource" should "match framework" in {
+    extractJsonString(constantsJson, "framework") shouldBe Protocol.StepLogSource.Framework
+  }
+
+  it should "match handler" in {
+    extractJsonString(constantsJson, "handler") shouldBe Protocol.StepLogSource.Handler
   }
 
   // --- Protocol tasks ---

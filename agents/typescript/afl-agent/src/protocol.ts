@@ -27,6 +27,7 @@ export const CollectionFlows = "flows";
 export const CollectionWorkflows = "workflows";
 export const CollectionRunners = "runners";
 export const CollectionStepLogs = "step_logs";
+export const CollectionHandlerRegistrations = "handler_registrations";
 
 // Task states
 export const TaskStatePending = "pending";

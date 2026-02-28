@@ -29,7 +29,8 @@ const (
 	CollectionFlows     = "flows"
 	CollectionWorkflows = "workflows"
 	CollectionRunners   = "runners"
-	CollectionStepLogs  = "step_logs"
+	CollectionStepLogs              = "step_logs"
+	CollectionHandlerRegistrations = "handler_registrations"
 )
 
 // Task states

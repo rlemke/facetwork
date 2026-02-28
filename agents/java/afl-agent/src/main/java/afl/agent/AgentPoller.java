@@ -276,6 +276,15 @@ public class AgentPoller implements AutoCloseable {
             // Read step parameters
             Map<String, Object> params = ops.readStepParams(task.stepId());
 
+            // Inject handler-level step_log callback
+            java.util.function.BiConsumer<String, String> stepLogCb = (message, level) -> {
+                try {
+                    ops.insertStepLog(task.stepId(), task.workflowId(), serverId,
+                            task.name(), Protocol.STEP_LOG_SOURCE_HANDLER, level, message);
+                } catch (Exception e) { /* best-effort */ }
+            };
+            params.put("_step_log", stepLogCb);
+
             // Invoke handler
             Map<String, Object> result = handler.handle(params);
 

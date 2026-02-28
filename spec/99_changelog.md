@@ -1,6 +1,72 @@
 # Implementation Changelog
 
-**Current version: v0.24.0**
+**Current version: v0.25.0**
+
+## Completed (v0.25.0) - SDK Tests, CI Build, Handler Logging, RegistryRunner
+
+Add unit tests for step-log constants across all 4 non-Python SDKs, CI build
+verification job, handler-level `_step_log` callback injection in all SDK pollers,
+and DB-driven topic filtering RegistryRunner in all non-Python SDKs.
+
+### Item 1: SDK Unit Tests for Step-Log Constants
+
+Tests for `StepLogLevel`, `StepLogSource`, `CollectionStepLogs`, and
+`CollectionHandlerRegistrations` constants in all 4 SDKs, cross-validated
+against `agents/protocol/constants.json`.
+
+| SDK | File | New tests |
+|-----|------|-----------|
+| Scala | `ProtocolSpec.scala` | 8 (4 levels + 2 sources + step_logs + handler_registrations) |
+| Go | `poller_test.go` | 1 function, 8 assertions |
+| TypeScript | `poller.test.ts` | 3 test blocks, 7 assertions |
+| Java | `AgentPollerTest.java` | 3 test methods, 7 assertions |
+
+### Item 2: CI Build Verification
+
+Added `build` job to `.github/workflows/ci.yml` (parallel with test/lint/typecheck):
+- Installs `build`, runs `python -m build`
+- Verifies wheel contains `.lark`, `.html`, `.js`, `.css` assets
+
+### Item 3: Handler-Level Step-Log Callback
+
+All 4 non-Python SDK pollers now inject a `_step_log` callback into handler
+params before invocation, matching Python's `agent_poller.py:589-601` pattern.
+Handler logs use `source=handler`.
+
+| SDK | Callback type |
+|-----|--------------|
+| Scala | `(String, String) => Unit` |
+| Go | `func(string, string)` |
+| TypeScript | `async (string, string?) => void` |
+| Java | `BiConsumer<String, String>` |
+
+### Item 4: Heartbeat — No Changes Needed
+
+All 4 SDKs already implement heartbeat loops. No code changes.
+
+### Item 5: RegistryRunner (DB-Driven Topic Filtering)
+
+New `RegistryRunner` class in each non-Python SDK — wraps `AgentPoller` and
+restricts polling to the intersection of locally registered handlers and
+handlers in the `handler_registrations` MongoDB collection.
+
+| SDK | New files | Test file |
+|-----|-----------|-----------|
+| Scala | `RegistryRunner.scala` | `RegistryRunnerSpec.scala` (5 tests) |
+| Go | `registry_runner.go` | `registry_runner_test.go` (5 tests) |
+| TypeScript | `registry-runner.ts` | `registry-runner.test.ts` (5 tests) |
+| Java | `RegistryRunner.java` | `RegistryRunnerTest.java` (5 tests) |
+
+Protocol constants updated: added `handler_registrations` to `constants.json`
+and all 4 SDK protocol files. TypeScript `index.ts` updated with all new exports.
+
+### Spec updates
+
+- `spec/60_agent_sdk.md` §7.5: Updated from "Python only" to all SDKs
+- `spec/60_agent_sdk.md` §7.7: Updated to note all SDKs inject handler callback
+- `spec/60_agent_sdk.md` §9.13: New section documenting non-Python RegistryRunner
+
+---
 
 ## Completed (v0.24.0) - Agent SDK Step Logs + PyPI Packaging + Cleanups
 
