@@ -131,6 +131,33 @@ public class MongoOps {
     }
 
     /**
+     * Merges partial return attributes into a step.
+     * Unlike writeStepReturns, this does NOT require the step to be in EVENT_TRANSMIT state,
+     * allowing handlers to stream partial results during execution.
+     */
+    public void updateStepReturns(String stepId, Map<String, Object> partial) {
+        MongoCollection<Document> collection = db.getCollection(Protocol.COLLECTION_STEPS);
+
+        Document setFields = new Document();
+        for (Map.Entry<String, Object> entry : partial.entrySet()) {
+            String name = entry.getKey();
+            Object value = entry.getValue();
+
+            Document attr = new Document()
+                    .append("name", name)
+                    .append("value", value)
+                    .append("type_hint", StepAttribute.inferTypeHint(value));
+
+            setFields.append("attributes.returns." + name, attr);
+        }
+
+        collection.updateOne(
+                eq("uuid", stepId),
+                new Document("$set", setFields)
+        );
+    }
+
+    /**
      * Marks a task as completed.
      */
     public void markTaskCompleted(TaskDocument task) {

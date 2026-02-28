@@ -50,6 +50,8 @@ public class AgentPoller implements AutoCloseable {
     private MongoOps ops;
     private ServerRegistration registration;
 
+    private java.util.function.Function<String, Map<String, Object>> metadataProvider;
+
     private final AtomicBoolean running = new AtomicBoolean(false);
     private ScheduledExecutorService scheduler;
     private ExecutorService executor;
@@ -58,6 +60,13 @@ public class AgentPoller implements AutoCloseable {
     public AgentPoller(AgentPollerConfig config) {
         this.config = config;
         this.serverId = UUID.randomUUID().toString();
+    }
+
+    /**
+     * Sets a metadata provider function for injecting _handler_metadata.
+     */
+    public void setMetadataProvider(java.util.function.Function<String, Map<String, Object>> provider) {
+        this.metadataProvider = provider;
     }
 
     /**
@@ -284,6 +293,25 @@ public class AgentPoller implements AutoCloseable {
                 } catch (Exception e) { /* best-effort */ }
             };
             params.put("_step_log", stepLogCb);
+
+            // Inject _facet_name
+            params.put("_facet_name", task.name());
+
+            // Inject _handler_metadata if provider is available
+            if (metadataProvider != null) {
+                Map<String, Object> meta = metadataProvider.apply(task.name());
+                if (meta != null) {
+                    params.put("_handler_metadata", meta);
+                }
+            }
+
+            // Inject _update_step callback for streaming partial results
+            java.util.function.Consumer<Map<String, Object>> updateStepCb = (partial) -> {
+                try {
+                    ops.updateStepReturns(task.stepId(), partial);
+                } catch (Exception e) { /* best-effort */ }
+            };
+            params.put("_update_step", updateStepCb);
 
             // Invoke handler
             Map<String, Object> result = handler.handle(params);

@@ -53,6 +53,10 @@ type AgentPoller struct {
 	// topicFilter, if set, overrides RegisteredHandlers() for poll cycles.
 	// Used by RegistryRunner to restrict to DB-registered topics.
 	topicFilter func() []string
+
+	// metadataProvider, if set, returns handler metadata for a given facet name.
+	// Used by RegistryRunner to inject _handler_metadata into handler params.
+	metadataProvider func(facetName string) map[string]interface{}
 }
 
 // NewAgentPoller creates a new AgentPoller with the given configuration.
@@ -287,6 +291,23 @@ func (p *AgentPoller) processTask(ctx context.Context, task *TaskDocument) {
 	params["_step_log"] = func(message string, level string) {
 		p.ops.InsertStepLog(ctx, task.StepID, task.WorkflowID, p.serverID,
 			task.Name, StepLogSourceHandler, level, message)
+	}
+
+	// Inject _facet_name
+	params["_facet_name"] = task.Name
+
+	// Inject _handler_metadata if provider is available
+	if p.metadataProvider != nil {
+		if meta := p.metadataProvider(task.Name); meta != nil {
+			params["_handler_metadata"] = meta
+		}
+	}
+
+	// Inject _update_step callback for streaming partial results
+	params["_update_step"] = func(partial map[string]interface{}) {
+		if err := p.ops.UpdateStepReturns(ctx, task.StepID, partial); err != nil {
+			log.Printf("Failed to update step returns: %v", err)
+		}
 	}
 
 	// Invoke handler

@@ -434,6 +434,32 @@ class PersistenceAPI(Protocol):
         """
         return []
 
+    def get_step_logs_since(self, step_id: str, since_time: int) -> Sequence["StepLogEntry"]:
+        """Get step logs for a step newer than the given timestamp.
+
+        Args:
+            step_id: The step's unique identifier
+            since_time: Millisecond timestamp; only entries with time > since_time are returned
+
+        Returns:
+            Matching step log entries, ordered by time ascending
+        """
+        return []
+
+    def get_workflow_logs_since(
+        self, workflow_id: str, since_time: int
+    ) -> Sequence["StepLogEntry"]:
+        """Get step logs for a workflow newer than the given timestamp.
+
+        Args:
+            workflow_id: The workflow's unique identifier
+            since_time: Millisecond timestamp; only entries with time > since_time are returned
+
+        Returns:
+            Matching step log entries, ordered by time ascending
+        """
+        return []
+
     def get_step_logs_by_facet(self, facet_name: str, limit: int = 20) -> Sequence["StepLogEntry"]:
         """Get recent step logs for a facet, ordered by time descending.
 

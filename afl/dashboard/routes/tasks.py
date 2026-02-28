@@ -47,6 +47,30 @@ def task_list(request: Request, state: str | None = None, store=Depends(get_stor
     )
 
 
+@router.get("/partial")
+def task_list_partial(request: Request, state: str | None = None, store=Depends(get_store)):
+    """HTMX partial for auto-refresh of task table."""
+    if state:
+        tasks = store.get_tasks_by_state(state)
+    else:
+        tasks = store.get_all_tasks()
+
+    step_names: dict[str, str] = {}
+    for task in tasks:
+        if task.step_id and task.step_id not in step_names:
+            step = store.get_step(task.step_id)
+            if step:
+                step_names[task.step_id] = (
+                    step.statement_name or step.statement_id or step.facet_name or ""
+                )
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "tasks/_table_content.html",
+        {"tasks": tasks, "filter_state": state, "step_names": step_names},
+    )
+
+
 @router.get("/{task_id}")
 def task_detail(task_id: str, request: Request, store=Depends(get_store)):
     """Show task detail."""

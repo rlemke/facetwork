@@ -26,9 +26,11 @@ if TYPE_CHECKING:
     from afl.runtime.persistence import PersistenceAPI
 
 from ..dependencies import get_store
+from ..graph import compute_dag_layout
 from ..helpers import (
     categorize_step_state,
     compute_step_progress,
+    compute_timeline,
     effective_server_state,
     extract_handler_prefix,
     group_handlers_by_namespace,
@@ -156,6 +158,8 @@ def workflow_detail(
     filtered_steps = [s for s in all_steps if categorize_step_state(s.state) == step_tab]
 
     tree = build_step_tree(all_steps)
+    timeline = compute_timeline(all_steps, runner.start_time or 0)
+    dag = compute_dag_layout(all_steps)
 
     return request.app.state.templates.TemplateResponse(
         request,
@@ -164,9 +168,38 @@ def workflow_detail(
             "runner": runner,
             "steps": filtered_steps,
             "tree": tree,
+            "timeline": timeline,
+            "dag": dag,
             "step_counts": step_counts,
             "step_tab": step_tab,
             "active_tab": "workflows",
+        },
+    )
+
+
+@router.get("/workflows/{runner_id}/summary/partial")
+def workflow_summary_partial(
+    runner_id: str,
+    request: Request,
+    store=Depends(get_store),
+):
+    """HTMX partial for auto-refresh of workflow summary and progress bar."""
+    runner = store.get_runner(runner_id)
+    if not runner:
+        return HTMLResponse("")
+
+    all_steps = list(store.get_steps_by_workflow(runner.workflow_id))
+    step_counts = {"running": 0, "error": 0, "complete": 0, "other": 0}
+    for s in all_steps:
+        cat = categorize_step_state(s.state)
+        step_counts[cat] = step_counts.get(cat, 0) + 1
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v2/workflows/_summary.html",
+        {
+            "runner": runner,
+            "step_counts": step_counts,
         },
     )
 

@@ -119,6 +119,32 @@ export class MongoOps {
   }
 
   /**
+   * Merges partial return attributes into a step.
+   * Unlike writeStepReturns, this does NOT require the step to be in EVENT_TRANSMIT state,
+   * allowing handlers to stream partial results during execution.
+   */
+  async updateStepReturns(
+    stepId: string,
+    partial: Record<string, unknown>
+  ): Promise<void> {
+    const collection = this.db.collection<StepDocument>(CollectionSteps);
+
+    const setFields: Record<string, StepAttribute> = {};
+    for (const [name, value] of Object.entries(partial)) {
+      setFields[`attributes.returns.${name}`] = {
+        name,
+        value,
+        type_hint: inferTypeHint(value),
+      };
+    }
+
+    await collection.updateOne(
+      { uuid: stepId },
+      { $set: setFields }
+    );
+  }
+
+  /**
    * Marks a task as completed.
    */
   async markTaskCompleted(task: TaskDocument): Promise<void> {

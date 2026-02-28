@@ -98,6 +98,35 @@ class MongoOps(db: MongoDatabase, timeout: Duration = 10.seconds):
         timeout
       )
 
+  /** Merge partial return attributes into a step.
+    * Unlike writeStepReturns, this does NOT require the step to be in EVENT_TRANSMIT state,
+    * allowing handlers to stream partial results during execution.
+    *
+    * @param stepId   The step UUID
+    * @param partial  Map of return name to (value, typeHint)
+    */
+  def updateStepReturns(
+      stepId: String,
+      partial: Map[String, (Any, String)]
+  ): Unit =
+    val filter = Filters.eq("uuid", stepId)
+    val updates = partial.map { case (name, (value, typeHint)) =>
+      Updates.set(
+        s"attributes.returns.$name",
+        Document(
+          "name" -> name,
+          "value" -> scalaToMongo(value),
+          "type_hint" -> typeHint
+        )
+      )
+    }.toSeq
+
+    if updates.nonEmpty then
+      Await.result(
+        steps.updateOne(filter, Updates.combine(updates*)).toFuture(),
+        timeout
+      )
+
   /** Mark an event task as completed. */
   def markTaskCompleted(task: TaskDocument): Unit =
     val completed = task.copy(

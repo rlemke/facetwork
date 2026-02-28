@@ -1,6 +1,122 @@
 # Implementation Changelog
 
-**Current version: v0.26.0**
+**Current version: v0.27.0**
+
+## Completed (v0.27.0) - Dashboard Live Updates, DAG Visualization, SDK Handler Metadata & Streaming Parity
+
+Dashboard enhancements: SSE log streaming, workflow DAG visualization,
+step execution timeline, auto-refresh partials. SDK parity: handler
+metadata injection and streaming/partial updates across Go, TypeScript,
+Scala, and Java.
+
+### Item 1: Step Log Streaming via SSE
+
+Server-Sent Events endpoints for live log tailing in the dashboard.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/steps/{step_id}/logs/stream` | SSE stream of step logs |
+| `GET /api/runners/{runner_id}/logs/stream` | SSE stream of workflow-level logs |
+
+Persistence methods: `get_step_logs_since(step_id, since_time)` and
+`get_workflow_logs_since(workflow_id, since_time)` added to abstract
+`PersistenceAPI`, implemented in `MongoStore` (time-range query) and
+`MemoryStore` (list filter).
+
+Client: `log_stream.js` — EventSource client with connect/disconnect
+toggle button (`data-log-stream` attribute).
+
+Files: `persistence.py`, `mongo_store.py`, `memory_store.py`,
+`routes/api.py`, `static/log_stream.js`, `templates/steps/detail.html`,
+`templates/v2/workflows/detail.html`
+
+Tests: 6 (3 memory store, 3 SSE/template)
+
+### Item 2: Workflow DAG Visualization
+
+Inline SVG DAG rendering from step hierarchy. Layout algorithm uses BFS
+layer assignment from `build_step_tree()` hierarchy.
+
+| Component | File |
+|-----------|------|
+| Layout engine | `afl/dashboard/graph.py` — `DagNode`, `DagEdge`, `DagLayout`, `compute_dag_layout()` |
+| SVG template | `templates/v2/workflows/_dag.html` — cubic Bézier edges, state-colored nodes |
+| View toggle | Graph button in Flat/Tree/Graph/Timeline toggle |
+
+Layout: nodes 160×40px, 60px horizontal gap, 40px vertical gap. Labels
+truncated at 20 characters. Node fill colors by step state category.
+
+Tests: 9 (8 layout unit + 1 route)
+
+### Item 3: Step Execution Timeline
+
+Horizontal bar chart showing step execution timing relative to workflow
+duration.
+
+| Component | File |
+|-----------|------|
+| Data model | `afl/dashboard/helpers.py` — `TimelineEntry` dataclass, `compute_timeline()` |
+| Template | `templates/v2/workflows/_timeline.html` — CSS-positioned bars |
+| CSS | `static/style.css` — timeline rows, tracks, state-colored bars |
+
+Each step gets `offset_pct` and `width_pct` relative to total workflow
+duration. Minimum bar width 0.5% for visibility.
+
+Tests: 8 (7 compute + 1 route)
+
+### Item 4: Auto-Refresh Everywhere
+
+HTMX-based auto-refresh for workflow summary, step detail, and task list.
+
+| Partial endpoint | Template | Trigger |
+|-----------------|----------|---------|
+| `GET /v2/workflows/{id}/summary/partial` | `_summary.html` | `every 5s` (running/paused only) |
+| `GET /steps/{id}/partial` | `_detail_content.html` | `every 5s` (non-terminal only) |
+| `GET /tasks/partial` | `_table_content.html` | `every 5s` (pending/running filter) |
+
+View toggle: Flat/Tree/Graph/Timeline buttons with `switchView()` JS.
+
+Tests: 6
+
+### Item 5: Handler Metadata Injection (Go, TS, Scala, Java)
+
+All non-Python SDKs now inject `_facet_name` and `_handler_metadata`
+into handler params, matching Python's `dispatcher.py` behavior.
+
+**Per-SDK changes:**
+
+| SDK | Poller change | RegistryRunner change |
+|-----|--------------|----------------------|
+| Go | `metadataProvider` field + injection in `processTask` | `handlerMetadata` map + `getHandlerMetadata()` + `RefreshTopics` reads metadata |
+| TypeScript | `metadataProvider` field + injection | `handlerMetadata` Map + provider wiring + `refreshTopics` reads metadata |
+| Scala | `metadataProvider` var + `paramsWithMeta` chain | `handlerMetadata` AtomicReference + provider + `refreshTopics` reads metadata |
+| Java | `metadataProvider` Function + `setMetadataProvider()` | `handlerMetadata` ConcurrentHashMap + provider + `refreshTopics` reads metadata |
+
+Tests: 12 (3 per SDK — facet_name injected, metadata injected, metadata absent)
+
+Spec: `spec/60_agent_sdk.md` §9.14
+
+### Item 6: Streaming/Partial Updates (Go, TS, Scala, Java)
+
+All non-Python SDKs now support `_update_step` callback for streaming
+partial results, plus `UpdateStepReturns` MongoDB operation.
+
+| SDK | MongoOps method | Callback injection |
+|-----|----------------|-------------------|
+| Go | `UpdateStepReturns(ctx, stepID, partial)` | `func(map[string]interface{})` in params |
+| TypeScript | `updateStepReturns(stepId, partial)` | `async (partial) => void` in params |
+| Scala | `updateStepReturns(stepId, partial)` | `Map[String, Any] => Unit` in params |
+| Java | `updateStepReturns(stepId, partial)` | `Consumer<Map<String,Object>>` in params |
+
+`UpdateStepReturns` differs from `WriteStepReturns`: no state filter
+(any step can receive partial updates), `$set` on
+`attributes.returns.<name>` fields with `inferTypeHint()`.
+
+Tests: 12 (3 per SDK — update merges, callback injected, partial visible)
+
+Spec: `spec/60_agent_sdk.md` §9.15
+
+---
 
 ## Completed (v0.26.0) - SDK CI Tests, inferTypeHint Parity, RegistryRunner Refresh, New Example, Dashboard Handler Forms
 

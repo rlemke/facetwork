@@ -1055,6 +1055,54 @@ refreshes every 30 seconds. The MongoDB client is disconnected in
 | TypeScript | `registry-runner.ts` | `setInterval` (auto-started) | `Set<string>` |
 | Java | `RegistryRunner.java` | `ScheduledExecutorService` (daemon factory) | `ConcurrentHashMap.newKeySet()` |
 
+### 9.14 Handler Metadata Injection (All SDKs)
+
+All SDKs (Python, Scala, Go, TypeScript, Java) inject `_facet_name` and
+`_handler_metadata` into the handler params before invocation:
+
+| Injected key | Value | Purpose |
+|-------------|-------|---------|
+| `_facet_name` | Qualified event facet name (e.g. `"ns.CountDocuments"`) | Allows handlers to identify which facet triggered them |
+| `_handler_metadata` | Metadata dict from `HandlerRegistration.metadata` | Passes registration-time config to handler code |
+
+**Non-Python SDK implementation:**
+
+| SDK | Metadata source | Injection point |
+|-----|----------------|-----------------|
+| Go | `metadataProvider func(string) map[string]interface{}` on `AgentPoller` | `processTask()` after `_step_log` |
+| TypeScript | `metadataProvider: ((name: string) => Record\|undefined)\|null` on `AgentPoller` | `processTask()` after `_step_log` |
+| Scala | `metadataProvider: String => Option[Map[String, Any]]` on `AgentPoller` | `processTask()` after `_step_log` |
+| Java | `Function<String, Map<String,Object>>` via `setMetadataProvider()` on `AgentPoller` | `processTask()` after `_step_log` |
+
+The `RegistryRunner` in each SDK stores handler metadata during
+`refreshTopics()` (reading the `metadata` field from each
+`handler_registrations` document) and wires a metadata provider into the
+poller at construction time.
+
+### 9.15 Streaming/Partial Updates (All SDKs)
+
+All SDKs provide an `_update_step` callback injected into handler params,
+enabling handlers to publish partial results before returning the final
+result.
+
+**Python (RegistryRunner):** Uses `update_step()` method (§9.9).
+
+**Non-Python SDKs:** Each SDK implements `UpdateStepReturns` in its
+MongoOps module — a MongoDB `$set` operation on
+`attributes.returns.<name>` fields, filtered only by step UUID (no state
+guard, unlike `WriteStepReturns`). The callback is injected alongside
+`_step_log`, `_facet_name`, and `_handler_metadata`:
+
+| SDK | MongoOps method | Callback type |
+|-----|----------------|---------------|
+| Go | `UpdateStepReturns(ctx, stepID, partial)` | `func(map[string]interface{})` |
+| TypeScript | `updateStepReturns(stepId, partial)` | `async (partial) => void` |
+| Scala | `updateStepReturns(stepId, partial)` | `Map[String, Any] => Unit` |
+| Java | `updateStepReturns(stepId, partial)` | `Consumer<Map<String,Object>>` |
+
+Each value in the partial map is stored with a type hint via
+`inferTypeHint()` (§7.8).
+
 ---
 
 ## 10. ClaudeAgentRunner

@@ -25,6 +25,9 @@ class AgentPoller(val config: AgentPollerConfig):
   private val running = AtomicBoolean(false)
   private val serverId_ = UUID.randomUUID().toString
 
+  /** Optional metadata provider callback, set by RegistryRunner. */
+  var metadataProvider: String => Option[Map[String, Any]] = _ => None
+
   // MongoDB resources (initialized lazily on start)
   private var client: MongoClient = _
   private var db: MongoDatabase = _
@@ -159,10 +162,23 @@ class AgentPoller(val config: AgentPollerConfig):
             try mongoOps.insertStepLog(task.stepId, task.workflowId, serverId_,
               handlerName, Protocol.StepLogSource.Handler, level, message)
             catch case _: Exception => ()
-          val paramsWithLog = params + ("_step_log" -> stepLogCallback)
+          val paramsWithLog = params + ("_step_log" -> stepLogCallback) + ("_facet_name" -> handlerName)
+          val paramsWithMeta = metadataProvider(handlerName) match
+            case Some(meta) => paramsWithLog + ("_handler_metadata" -> meta)
+            case None => paramsWithLog
+
+          // Inject _update_step callback for streaming partial results
+          val updateStepCallback: Map[String, Any] => Unit = (partial) =>
+            try
+              val returns = partial.map { case (name, value) =>
+                name -> (value -> inferTypeHint(value))
+              }
+              mongoOps.updateStepReturns(task.stepId, returns)
+            catch case _: Exception => ()
+          val paramsWithUpdate = paramsWithMeta + ("_update_step" -> updateStepCallback)
 
           // Invoke handler
-          val result = fn(paramsWithLog)
+          val result = fn(paramsWithUpdate)
 
           val durationMs = System.currentTimeMillis() - dispatchStart
 

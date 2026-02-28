@@ -109,6 +109,28 @@ func (m *MongoOps) WriteStepReturns(ctx context.Context, stepID string, returns 
 	return err
 }
 
+// UpdateStepReturns merges partial return attributes into a step.
+// Unlike WriteStepReturns, this does NOT require the step to be in EVENT_TRANSMIT state,
+// allowing handlers to stream partial results during execution.
+func (m *MongoOps) UpdateStepReturns(ctx context.Context, stepID string, partial map[string]interface{}) error {
+	collection := m.db.Collection(CollectionSteps)
+
+	setFields := bson.M{}
+	for name, value := range partial {
+		setFields["attributes.returns."+name] = StepAttribute{
+			Name:     name,
+			Value:    value,
+			TypeHint: inferTypeHint(value),
+		}
+	}
+
+	filter := bson.M{"uuid": stepID}
+	update := bson.M{"$set": setFields}
+
+	_, err := collection.UpdateOne(ctx, filter, update)
+	return err
+}
+
 // MarkTaskCompleted marks a task as completed.
 func (m *MongoOps) MarkTaskCompleted(ctx context.Context, task *TaskDocument) error {
 	collection := m.db.Collection(CollectionTasks)

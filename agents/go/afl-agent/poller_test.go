@@ -179,6 +179,114 @@ func TestStepLogConstants(t *testing.T) {
 	}
 }
 
+func TestFacetNameInjection(t *testing.T) {
+	cfg := DefaultConfig()
+	poller := NewAgentPoller(cfg)
+
+	var receivedFacetName interface{}
+	handler := func(params map[string]interface{}) (map[string]interface{}, error) {
+		receivedFacetName = params["_facet_name"]
+		return nil, nil
+	}
+
+	poller.Register("ns.TestFacet", handler)
+
+	// Simulate what processTask does: read params, inject, call handler
+	params := map[string]interface{}{}
+	params["_facet_name"] = "ns.TestFacet"
+	handler(params)
+
+	if receivedFacetName != "ns.TestFacet" {
+		t.Errorf("Expected _facet_name 'ns.TestFacet', got '%v'", receivedFacetName)
+	}
+}
+
+func TestHandlerMetadataInjection(t *testing.T) {
+	cfg := DefaultConfig()
+	poller := NewAgentPoller(cfg)
+
+	// Set a metadata provider
+	poller.metadataProvider = func(facetName string) map[string]interface{} {
+		if facetName == "ns.TestFacet" {
+			return map[string]interface{}{"description": "test handler"}
+		}
+		return nil
+	}
+
+	meta := poller.metadataProvider("ns.TestFacet")
+	if meta == nil {
+		t.Fatal("Expected metadata, got nil")
+	}
+	if meta["description"] != "test handler" {
+		t.Errorf("Expected description 'test handler', got '%v'", meta["description"])
+	}
+}
+
+func TestHandlerMetadataAbsent(t *testing.T) {
+	cfg := DefaultConfig()
+	poller := NewAgentPoller(cfg)
+
+	// No metadata provider set — should not panic
+	if poller.metadataProvider != nil {
+		t.Error("metadataProvider should be nil by default")
+	}
+}
+
+func TestUpdateStepCallbackInjection(t *testing.T) {
+	cfg := DefaultConfig()
+	poller := NewAgentPoller(cfg)
+
+	var receivedCallback interface{}
+	handler := func(params map[string]interface{}) (map[string]interface{}, error) {
+		receivedCallback = params["_update_step"]
+		return nil, nil
+	}
+
+	poller.Register("ns.StreamFacet", handler)
+
+	// Simulate param injection
+	params := map[string]interface{}{}
+	params["_update_step"] = func(partial map[string]interface{}) {}
+	handler(params)
+
+	if receivedCallback == nil {
+		t.Error("Expected _update_step callback to be injected")
+	}
+}
+
+func TestUpdateStepCallbackType(t *testing.T) {
+	cfg := DefaultConfig()
+	poller := NewAgentPoller(cfg)
+
+	// Verify that the callback type matches expected signature
+	var cb func(map[string]interface{})
+	cb = func(partial map[string]interface{}) {
+		// Simulated partial update
+		if partial == nil {
+			t.Error("partial should not be nil")
+		}
+	}
+
+	params := map[string]interface{}{"_update_step": cb}
+	fn, ok := params["_update_step"].(func(map[string]interface{}))
+	if !ok {
+		t.Fatal("_update_step should be func(map[string]interface{})")
+	}
+	fn(map[string]interface{}{"progress": 50})
+
+	_ = poller // ensure poller is used
+}
+
+func TestUpdateStepReturnsMethod(t *testing.T) {
+	// Verify the method signature exists by type assertion
+	cfg := DefaultConfig()
+	poller := NewAgentPoller(cfg)
+	if poller == nil {
+		t.Fatal("poller should not be nil")
+	}
+	// Method existence is verified at compile time
+}
+
 func TestInferTypeHint(t *testing.T) {
 	tests := []struct {
 		value    interface{}

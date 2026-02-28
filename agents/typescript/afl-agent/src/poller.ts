@@ -39,6 +39,8 @@ export class AgentPoller {
   private ops: MongoOps | null = null;
   private registration: ServerRegistration | null = null;
 
+  public metadataProvider: ((facetName: string) => Record<string, unknown> | undefined) | null = null;
+
   private running = false;
   private pollInterval: NodeJS.Timeout | null = null;
   private heartbeatInterval: NodeJS.Timeout | null = null;
@@ -241,6 +243,24 @@ export class AgentPoller {
             this.serverId, task.name, "handler", level, message);
         } catch { /* best-effort */ }
       };
+
+      // Inject _facet_name
+      params["_facet_name"] = task.name;
+
+      // Inject _update_step callback for streaming partial results
+      params["_update_step"] = async (partial: Record<string, unknown>) => {
+        try {
+          await this.ops!.updateStepReturns(task.step_id, partial);
+        } catch { /* best-effort */ }
+      };
+
+      // Inject _handler_metadata if provider is available
+      if (this.metadataProvider) {
+        const meta = this.metadataProvider(task.name);
+        if (meta) {
+          params["_handler_metadata"] = meta;
+        }
+      }
 
       // Invoke handler
       const result = await handler(params);

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -208,6 +209,66 @@ def compute_step_progress(runner: RunnerDefinition, steps: list) -> dict:
         "total": total,
         "pct": int(100 * completed / total) if total > 0 else 0,
     }
+
+
+@dataclass
+class TimelineEntry:
+    """A single bar in the step execution timeline."""
+
+    step_id: str
+    label: str
+    state: str
+    start_ms: int
+    end_ms: int
+    offset_pct: float
+    width_pct: float
+
+
+def compute_timeline(steps: list, workflow_start: int = 0) -> list[TimelineEntry]:
+    """Compute timeline entries for steps with timestamps.
+
+    Each entry gets ``offset_pct`` and ``width_pct`` relative to the total
+    workflow duration, suitable for rendering as CSS positioned bars.
+    """
+    # Collect steps that have usable timestamps
+    timed = []
+    for s in steps:
+        start = getattr(s, "start_time", 0) or 0
+        end = getattr(s, "last_modified", 0) or start
+        if start <= 0:
+            continue
+        label = getattr(s, "statement_name", None) or getattr(s, "facet_name", None) or s.id[:8]
+        timed.append((s.id, label, s.state, start, max(end, start)))
+
+    if not timed:
+        return []
+
+    # Determine global time range
+    global_start = workflow_start if workflow_start > 0 else min(t[3] for t in timed)
+    global_end = max(t[4] for t in timed)
+    duration = global_end - global_start
+    if duration <= 0:
+        duration = 1  # avoid division by zero
+
+    entries = []
+    for step_id, label, state, start, end in sorted(timed, key=lambda t: t[3]):
+        offset_pct = round(100.0 * (start - global_start) / duration, 2)
+        width_pct = round(100.0 * max(end - start, 1) / duration, 2)
+        # Clamp to valid range
+        width_pct = max(width_pct, 0.5)
+        entries.append(
+            TimelineEntry(
+                step_id=step_id,
+                label=label,
+                state=state,
+                start_ms=start,
+                end_ms=end,
+                offset_pct=offset_pct,
+                width_pct=width_pct,
+            )
+        )
+
+    return entries
 
 
 def search_all(query: str, store: Any) -> list[dict]:

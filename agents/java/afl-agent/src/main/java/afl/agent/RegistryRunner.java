@@ -22,8 +22,10 @@ import org.bson.Document;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -45,6 +47,7 @@ public class RegistryRunner implements AutoCloseable {
     private final AgentPollerConfig config;
     private final long refreshIntervalMs;
     private final Set<String> activeTopics = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<String, Map<String, Object>> handlerMetadata = new ConcurrentHashMap<>();
     private ScheduledExecutorService refreshScheduler;
     private MongoClient refreshClient;
     private MongoDatabase refreshDb;
@@ -57,6 +60,7 @@ public class RegistryRunner implements AutoCloseable {
         this.config = config;
         this.poller = new AgentPoller(config);
         this.refreshIntervalMs = refreshIntervalMs;
+        this.poller.setMetadataProvider(facetName -> handlerMetadata.get(facetName));
     }
 
     /**
@@ -95,14 +99,21 @@ public class RegistryRunner implements AutoCloseable {
             MongoCollection<Document> coll = db.getCollection(
                     Protocol.COLLECTION_HANDLER_REGISTRATIONS);
             Set<String> topics = new HashSet<>();
+            ConcurrentHashMap<String, Map<String, Object>> metadata = new ConcurrentHashMap<>();
             for (Document doc : coll.find()) {
                 String name = doc.getString("facet_name");
                 if (name != null) {
                     topics.add(name);
+                    Document meta = doc.get("metadata", Document.class);
+                    if (meta != null) {
+                        metadata.put(name, new HashMap<>(meta));
+                    }
                 }
             }
             activeTopics.clear();
             activeTopics.addAll(topics);
+            handlerMetadata.clear();
+            handlerMetadata.putAll(metadata);
             logger.fine("Refreshed " + topics.size() + " active topics from DB");
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to refresh topics", e);

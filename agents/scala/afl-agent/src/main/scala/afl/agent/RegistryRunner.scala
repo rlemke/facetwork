@@ -1,7 +1,7 @@
 package afl.agent
 
 import com.mongodb.{ConnectionString, MongoClientSettings}
-import org.mongodb.scala.{MongoClient, MongoDatabase}
+import org.mongodb.scala.{MongoClient, MongoDatabase, ObservableFuture, documentToUntypedDocument}
 import org.slf4j.LoggerFactory
 
 import java.util.concurrent.atomic.AtomicReference
@@ -23,8 +23,12 @@ class RegistryRunner(
 
   private val logger = LoggerFactory.getLogger(getClass)
   private val activeTopics = AtomicReference(Set.empty[String])
+  private val handlerMetadata = AtomicReference(Map.empty[String, Map[String, Any]])
   private var refreshThread: Thread = _
   private var refreshClient: MongoClient = _
+
+  // Wire metadata provider into the underlying poller
+  poller.metadataProvider = facetName => handlerMetadata.get().get(facetName)
 
   /** Register a handler (delegates to the underlying poller). */
   def register(facetName: String)(
@@ -52,6 +56,15 @@ class RegistryRunner(
         Option(doc.getString("facet_name"))
       }.toSet
       activeTopics.set(topics)
+      val metadata = docs.flatMap { doc =>
+        val name = Option(doc.getString("facet_name"))
+        val meta = doc.get[org.bson.BsonDocument]("metadata").map { bd =>
+          import scala.jdk.CollectionConverters.*
+          bd.entrySet().asScala.map(e => e.getKey -> (e.getValue.asInstanceOf[Any]: Any)).toMap
+        }
+        for n <- name; m <- meta yield n -> m
+      }.toMap
+      handlerMetadata.set(metadata)
       logger.debug(s"Refreshed ${topics.size} active topics from DB")
     catch
       case e: Exception =>

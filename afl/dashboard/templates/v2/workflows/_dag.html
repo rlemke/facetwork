@@ -1,0 +1,26 @@
+<div class="dag-container">
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ dag.width }}" height="{{ dag.height }}">
+    <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5"
+                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#999" />
+        </marker>
+        <style>
+            .dag-node-running rect { fill: #e3f2fd; stroke: #1095c1; }
+            .dag-node-complete rect { fill: #e8f5e9; stroke: #43a047; }
+            .dag-node-error rect { fill: #fce4ec; stroke: #e53935; }
+            .dag-node-other rect { fill: #fff3e0; stroke: #e67e22; }
+        </style>
+    </defs>
+    {% for edge in dag.edges %}
+    <path class="dag-edge"
+          d="M {{ edge.x1 }} {{ edge.y1 }} C {{ edge.x1 + 40 }} {{ edge.y1 }}, {{ edge.x2 - 40 }} {{ edge.y2 }}, {{ edge.x2 }} {{ edge.y2 }}" />
+    {% endfor %}
+    {% for node in dag.nodes %}
+    <g class="dag-node dag-node-{{ node.state|categorize_step_state }}" transform="translate({{ node.x }}, {{ node.y }})">
+        <rect width="{{ node.w }}" height="{{ node.h }}" />
+        <text x="{{ node.w // 2 }}" y="{{ node.h // 2 }}">{{ node.label }}</text>
+    </g>
+    {% endfor %}
+</svg>
+</div>

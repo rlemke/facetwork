@@ -226,3 +226,4 @@ def register_filters(env: Environment) -> None:
     env.filters["namespace_of"] = namespace_of_filter
     env.filters["filesizeformat"] = filesizeformat
     env.filters["file_timestamp"] = file_timestamp
+    env.filters["categorize_step_state"] = step_category_filter

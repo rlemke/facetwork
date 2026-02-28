@@ -54,36 +54,10 @@
     </p>
 </hgroup>
 
-<div class="summary-grid">
-    <article class="summary-card">
-        <h2 class="mono">{{ runner.uuid|truncate_uuid }}</h2>
-        <p>Runner ID</p>
-    </article>
-    <article class="summary-card">
-        <h2>{{ runner.start_time|timestamp }}</h2>
-        <p>Started</p>
-    </article>
-    <article class="summary-card">
-        <h2>{{ runner.duration|duration }}</h2>
-        <p>Duration</p>
-    </article>
+<div id="workflow-summary"
+     {% if runner.state == 'running' or runner.state == 'paused' %}hx-get="/v2/workflows/{{ runner.uuid }}/summary/partial" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
+    {% include "v2/workflows/_summary.html" %}
 </div>
-
-{% set total = step_counts.running + step_counts.error + step_counts.complete + step_counts.other %}
-{% if total > 0 %}
-<div class="step-summary-bar">
-    <div class="seg-complete" style="width:{{ (step_counts.complete * 100 / total)|round(1) }}%"></div>
-    <div class="seg-running" style="width:{{ (step_counts.running * 100 / total)|round(1) }}%"></div>
-    <div class="seg-other" style="width:{{ (step_counts.other * 100 / total)|round(1) }}%"></div>
-    <div class="seg-error" style="width:{{ (step_counts.error * 100 / total)|round(1) }}%"></div>
-</div>
-<div class="step-summary-legend">
-    <span class="legend-complete">Complete {{ step_counts.complete }}</span>
-    <span class="legend-running">Running {{ step_counts.running }}</span>
-    <span class="legend-other">Other {{ step_counts.other }}</span>
-    <span class="legend-error">Error {{ step_counts.error }}</span>
-</div>
-{% endif %}
 
 <div class="actions" style="margin-bottom: 1rem;">
     {% if runner.state == 'running' %}
@@ -106,8 +80,10 @@
 
 <h2>Steps</h2>
 <div class="view-toggle">
-    <button class="view-toggle-btn" onclick="document.getElementById('v2-step-flat').style.display='';document.getElementById('v2-step-tree').style.display='none';this.classList.add('active');this.nextElementSibling.classList.remove('active');">Flat</button>
-    <button class="view-toggle-btn active" onclick="document.getElementById('v2-step-tree').style.display='';document.getElementById('v2-step-flat').style.display='none';this.classList.add('active');this.previousElementSibling.classList.remove('active');">Tree</button>
+    <button class="view-toggle-btn" data-view="flat" onclick="switchView('flat', this)">Flat</button>
+    <button class="view-toggle-btn active" data-view="tree" onclick="switchView('tree', this)">Tree</button>
+    <button class="view-toggle-btn" data-view="graph" onclick="switchView('graph', this)">Graph</button>
+    <button class="view-toggle-btn" data-view="timeline" onclick="switchView('timeline', this)">Timeline</button>
 </div>
 
 <div id="v2-step-flat" style="display:none">
@@ -142,6 +118,36 @@
 </div>
 </div>
 
+<div id="v2-step-graph" style="display:none">
+{% if dag %}
+    {% include "v2/workflows/_dag.html" %}
+{% else %}
+    <p class="empty-state">DAG view requires steps.</p>
+{% endif %}
+</div>
+
+<div id="v2-step-timeline" style="display:none">
+{% if timeline %}
+    {% include "v2/workflows/_timeline.html" %}
+{% else %}
+    <p class="empty-state">Timeline view requires steps with timestamps.</p>
+{% endif %}
+</div>
+
+<h2>Logs</h2>
+<button class="outline"
+        data-log-stream="/api/runners/{{ runner.uuid }}/logs/stream"
+        data-log-target="#wf-log-stream-body">Live</button>
+<figure>
+<table>
+    <thead>
+        <tr><th>Time</th><th>Source</th><th>Level</th><th>Message</th></tr>
+    </thead>
+    <tbody id="wf-log-stream-body">
+    </tbody>
+</table>
+</figure>
+
 {% else %}
 <h1>Workflow Not Found</h1>
 <div class="empty-state">
@@ -154,4 +160,18 @@
 
 {% block scripts %}
 <script src="/static/step_tree.js"></script>
+<script src="/static/log_stream.js"></script>
+<script>
+function switchView(name, btn) {
+    var views = ['flat', 'tree', 'graph', 'timeline'];
+    for (var i = 0; i < views.length; i++) {
+        var el = document.getElementById('v2-step-' + views[i]);
+        if (el) el.style.display = (views[i] === name) ? '' : 'none';
+    }
+    var btns = document.querySelectorAll('.view-toggle-btn');
+    for (var j = 0; j < btns.length; j++) {
+        btns[j].classList.toggle('active', btns[j] === btn);
+    }
+}
+</script>
 {% endblock %}

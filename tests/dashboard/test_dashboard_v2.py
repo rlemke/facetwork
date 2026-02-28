@@ -701,3 +701,351 @@ class TestStepTreeControls:
         assert resp.status_code == 200
         assert 'class="breadcrumb"' in resp.text
         assert "Workflows" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Auto-refresh partial tests
+# ---------------------------------------------------------------------------
+
+
+@pytestmark_routes
+class TestAutoRefreshPartials:
+    def test_workflow_summary_partial_returns_200(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows/r-1/summary/partial")
+        assert resp.status_code == 200
+        assert "Runner ID" in resp.text
+
+    def test_workflow_summary_partial_not_found(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows/nonexistent/summary/partial")
+        assert resp.status_code == 200
+        assert resp.text == ""
+
+    def test_workflow_summary_auto_refresh_for_running(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows/r-1")
+        assert resp.status_code == 200
+        assert "workflow-summary" in resp.text
+        assert "/summary/partial" in resp.text
+        assert 'hx-trigger="every 5s"' in resp.text
+
+    def test_workflow_summary_no_auto_refresh_for_completed(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="completed"))
+        resp = tc.get("/v2/workflows/r-1")
+        assert resp.status_code == 200
+        assert "/summary/partial" not in resp.text
+
+    def test_step_detail_partial_returns_200(self, client):
+        from afl.runtime.step import StepDefinition
+
+        tc, store = client
+        runner = _make_runner("r-1", state="running")
+        store.save_runner(runner)
+        store.save_step(
+            StepDefinition(
+                id="step-1",
+                object_type="step",
+                workflow_id=runner.workflow_id,
+                state="state.statement.Created",
+            )
+        )
+        resp = tc.get("/steps/step-1/partial")
+        assert resp.status_code == 200
+        assert "step-1" in resp.text
+
+    def test_task_list_partial_returns_200(self, client):
+        tc, store = client
+        resp = tc.get("/tasks/partial")
+        assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# SSE step log streaming tests
+# ---------------------------------------------------------------------------
+
+
+from afl.runtime.memory_store import MemoryStore
+
+
+class TestGetStepLogsSince:
+    def test_memory_store_step_logs_since(self):
+        from afl.runtime.entities import StepLogEntry
+
+        store = MemoryStore()
+        store.save_step_log(
+            StepLogEntry(uuid="l1", step_id="s1", workflow_id="w1", time=100, message="a")
+        )
+        store.save_step_log(
+            StepLogEntry(uuid="l2", step_id="s1", workflow_id="w1", time=200, message="b")
+        )
+        store.save_step_log(
+            StepLogEntry(uuid="l3", step_id="s1", workflow_id="w1", time=300, message="c")
+        )
+
+        logs = store.get_step_logs_since("s1", 150)
+        assert len(logs) == 2
+        assert logs[0].message == "b"
+        assert logs[1].message == "c"
+
+    def test_memory_store_step_logs_since_empty(self):
+        store = MemoryStore()
+        logs = store.get_step_logs_since("s1", 0)
+        assert len(logs) == 0
+
+    def test_memory_store_workflow_logs_since(self):
+        from afl.runtime.entities import StepLogEntry
+
+        store = MemoryStore()
+        store.save_step_log(
+            StepLogEntry(uuid="l1", step_id="s1", workflow_id="w1", time=100, message="a")
+        )
+        store.save_step_log(
+            StepLogEntry(uuid="l2", step_id="s2", workflow_id="w1", time=200, message="b")
+        )
+
+        logs = store.get_workflow_logs_since("w1", 150)
+        assert len(logs) == 1
+        assert logs[0].message == "b"
+
+
+@pytestmark_routes
+class TestSSEEndpoints:
+    def test_workflow_log_stream_not_found(self, client):
+        tc, store = client
+        resp = tc.get("/api/runners/nonexistent/logs/stream")
+        assert resp.status_code == 404
+
+    def test_step_detail_has_live_button(self, client):
+        from afl.runtime.step import StepDefinition
+
+        tc, store = client
+        runner = _make_runner("r-1", state="running")
+        store.save_runner(runner)
+        store.save_step(
+            StepDefinition(
+                id="step-1",
+                object_type="step",
+                workflow_id=runner.workflow_id,
+                state="state.statement.Created",
+            )
+        )
+        resp = tc.get("/steps/step-1")
+        assert resp.status_code == 200
+        assert "data-log-stream" in resp.text
+        assert "/logs/stream" in resp.text
+
+    def test_workflow_detail_has_live_button(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows/r-1")
+        assert resp.status_code == 200
+        assert "data-log-stream" in resp.text
+        assert "/logs/stream" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Timeline tests
+# ---------------------------------------------------------------------------
+
+
+from afl.dashboard.helpers import TimelineEntry, compute_timeline
+
+
+class TestComputeTimeline:
+    def _make_step(self, step_id, state, start_time=0, last_modified=0, facet_name=""):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            id=step_id,
+            state=state,
+            start_time=start_time,
+            last_modified=last_modified,
+            statement_name="",
+            facet_name=facet_name,
+        )
+
+    def test_empty_steps(self):
+        assert compute_timeline([]) == []
+
+    def test_steps_without_timestamps(self):
+        steps = [self._make_step("s1", "state.statement.Complete")]
+        assert compute_timeline(steps) == []
+
+    def test_single_step(self):
+        steps = [self._make_step("s1", "state.statement.Complete", 1000, 2000, "F")]
+        result = compute_timeline(steps)
+        assert len(result) == 1
+        assert result[0].step_id == "s1"
+        assert result[0].offset_pct == 0.0
+        assert result[0].width_pct == 100.0
+
+    def test_multiple_steps(self):
+        steps = [
+            self._make_step("s1", "state.statement.Complete", 1000, 2000, "A"),
+            self._make_step("s2", "state.statement.Complete", 1500, 3000, "B"),
+        ]
+        result = compute_timeline(steps, workflow_start=1000)
+        assert len(result) == 2
+        # s1 starts at 0%, s2 starts at 25%
+        assert result[0].step_id == "s1"
+        assert result[0].offset_pct == 0.0
+        assert result[1].step_id == "s2"
+        assert result[1].offset_pct == 25.0
+
+    def test_zero_duration_step(self):
+        steps = [self._make_step("s1", "state.statement.Complete", 1000, 1000, "F")]
+        result = compute_timeline(steps)
+        assert len(result) == 1
+        # Should have minimum width
+        assert result[0].width_pct >= 0.5
+
+    def test_timeline_entry_fields(self):
+        entry = TimelineEntry(
+            step_id="s1",
+            label="F",
+            state="complete",
+            start_ms=1000,
+            end_ms=2000,
+            offset_pct=0.0,
+            width_pct=100.0,
+        )
+        assert entry.step_id == "s1"
+        assert entry.label == "F"
+
+
+@pytestmark_routes
+class TestTimelineRoute:
+    def test_workflow_detail_has_timeline_view(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows/r-1")
+        assert resp.status_code == 200
+        assert "v2-step-timeline" in resp.text
+        assert 'data-view="timeline"' in resp.text
+
+
+# ---------------------------------------------------------------------------
+# DAG visualization tests
+# ---------------------------------------------------------------------------
+
+from afl.dashboard.graph import compute_dag_layout
+
+
+class TestComputeDagLayout:
+    def _make_step(
+        self,
+        sid,
+        state="state.statement.Created",
+        facet="F",
+        container_id=None,
+        block_id=None,
+        root_id=None,
+        is_block=False,
+        statement_name=None,
+    ):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            id=sid,
+            state=state,
+            facet_name=facet,
+            statement_name=statement_name or sid,
+            container_id=container_id,
+            block_id=block_id,
+            root_id=root_id,
+            is_block=is_block,
+        )
+
+    def test_empty_steps(self):
+        assert compute_dag_layout([]) is None
+
+    def test_single_step(self):
+        steps = [self._make_step("s1")]
+        dag = compute_dag_layout(steps)
+        assert dag is not None
+        assert len(dag.nodes) == 1
+        assert len(dag.edges) == 0
+        assert dag.nodes[0].step_id == "s1"
+        assert dag.nodes[0].label == "s1"
+        assert dag.width > 0
+        assert dag.height > 0
+
+    def test_parent_child_edges(self):
+        steps = [
+            self._make_step("root", statement_name="Root"),
+            self._make_step("child", container_id="root", root_id="root", statement_name="Child"),
+        ]
+        dag = compute_dag_layout(steps)
+        assert dag is not None
+        assert len(dag.nodes) == 2
+        assert len(dag.edges) == 1
+        edge = dag.edges[0]
+        assert edge.source_id == "root"
+        assert edge.target_id == "child"
+
+    def test_three_step_hierarchy(self):
+        steps = [
+            self._make_step("r", statement_name="Root"),
+            self._make_step(
+                "b1", container_id="r", root_id="r", is_block=True, statement_name="B1"
+            ),
+            self._make_step("s1", block_id="b1", root_id="r", statement_name="S1"),
+        ]
+        dag = compute_dag_layout(steps)
+        assert dag is not None
+        assert len(dag.nodes) == 3
+        assert len(dag.edges) == 2
+        # Root -> B1 -> S1
+        edge_targets = {(e.source_id, e.target_id) for e in dag.edges}
+        assert ("r", "b1") in edge_targets
+        assert ("b1", "s1") in edge_targets
+
+    def test_layer_assignment(self):
+        steps = [
+            self._make_step("r"),
+            self._make_step("c1", container_id="r", root_id="r"),
+            self._make_step("c2", container_id="r", root_id="r"),
+        ]
+        dag = compute_dag_layout(steps)
+        assert dag is not None
+        # Root at layer 0 (x=20), children at layer 1 (x > 20)
+        root_node = [n for n in dag.nodes if n.step_id == "r"][0]
+        child_nodes = [n for n in dag.nodes if n.step_id != "r"]
+        for cn in child_nodes:
+            assert cn.x > root_node.x
+
+    def test_many_steps(self):
+        steps = [self._make_step(f"s{i}") for i in range(10)]
+        dag = compute_dag_layout(steps)
+        assert dag is not None
+        assert len(dag.nodes) == 10
+        assert dag.height > 0
+
+    def test_long_label_truncated(self):
+        steps = [
+            self._make_step("s1", statement_name="AVeryLongStatementNameThatShouldBeTruncated")
+        ]
+        dag = compute_dag_layout(steps)
+        assert dag is not None
+        assert len(dag.nodes[0].label) <= 20
+
+    def test_state_preserved_on_node(self):
+        steps = [self._make_step("s1", state="state.statement.Complete")]
+        dag = compute_dag_layout(steps)
+        assert dag is not None
+        assert dag.nodes[0].state == "state.statement.Complete"
+
+
+@pytestmark_routes
+class TestDagRoute:
+    def test_workflow_detail_has_dag_view(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows/r-1")
+        assert resp.status_code == 200
+        assert "v2-step-graph" in resp.text
+        assert 'data-view="graph"' in resp.text

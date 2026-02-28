@@ -158,6 +158,19 @@ def _find_statement_in_block(statement_id: str, block: dict) -> str | None:
     return None
 
 
+@router.get("/{step_id}/partial")
+def step_detail_partial(step_id: str, request: Request, store=Depends(get_store)):
+    """HTMX partial for auto-refresh of step detail content."""
+    step = store.get_step(step_id)
+    names = _resolve_step_names(step, store) if step else {}
+    step_logs = store.get_step_logs_by_step(step_id) if step else []
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "steps/_detail_content.html",
+        {"step": step, "names": names, "step_logs": step_logs},
+    )
+
+
 @router.post("/{step_id}/retry")
 def retry_step(step_id: str, store=Depends(get_store)):
     """Retry a failed step by resetting it to EVENT_TRANSMIT."""

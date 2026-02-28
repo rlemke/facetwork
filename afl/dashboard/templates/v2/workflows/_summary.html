@@ -1,0 +1,30 @@
+<div class="summary-grid">
+    <article class="summary-card">
+        <h2 class="mono">{{ runner.uuid|truncate_uuid }}</h2>
+        <p>Runner ID</p>
+    </article>
+    <article class="summary-card">
+        <h2>{{ runner.start_time|timestamp }}</h2>
+        <p>Started</p>
+    </article>
+    <article class="summary-card">
+        <h2>{{ runner.duration|duration }}</h2>
+        <p>Duration</p>
+    </article>
+</div>
+
+{% set total = step_counts.running + step_counts.error + step_counts.complete + step_counts.other %}
+{% if total > 0 %}
+<div class="step-summary-bar">
+    <div class="seg-complete" style="width:{{ (step_counts.complete * 100 / total)|round(1) }}%"></div>
+    <div class="seg-running" style="width:{{ (step_counts.running * 100 / total)|round(1) }}%"></div>
+    <div class="seg-other" style="width:{{ (step_counts.other * 100 / total)|round(1) }}%"></div>
+    <div class="seg-error" style="width:{{ (step_counts.error * 100 / total)|round(1) }}%"></div>
+</div>
+<div class="step-summary-legend">
+    <span class="legend-complete">Complete {{ step_counts.complete }}</span>
+    <span class="legend-running">Running {{ step_counts.running }}</span>
+    <span class="legend-other">Other {{ step_counts.other }}</span>
+    <span class="legend-error">Error {{ step_counts.error }}</span>
+</div>
+{% endif %}

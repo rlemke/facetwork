@@ -357,6 +357,20 @@ class MemoryStore(PersistenceAPI):
             key=lambda e: e.time,
         )
 
+    def get_step_logs_since(self, step_id: str, since_time: int) -> Sequence[StepLogEntry]:
+        """Get step logs for a step newer than the given timestamp."""
+        return sorted(
+            [e for e in self._step_logs if e.step_id == step_id and e.time > since_time],
+            key=lambda e: e.time,
+        )
+
+    def get_workflow_logs_since(self, workflow_id: str, since_time: int) -> Sequence[StepLogEntry]:
+        """Get step logs for a workflow newer than the given timestamp."""
+        return sorted(
+            [e for e in self._step_logs if e.workflow_id == workflow_id and e.time > since_time],
+            key=lambda e: e.time,
+        )
+
     def get_tasks_by_facet_name(
         self, facet_name: str, states: list[str] | None = None
     ) -> list[TaskDefinition]:

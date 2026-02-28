@@ -6,7 +6,7 @@ import org.scalatest.matchers.should.Matchers
 class RegistryRunnerSpec extends AnyFlatSpec with Matchers:
 
   private def makePoller(): AgentPoller =
-    AgentPoller(AgentPollerConfig())
+    AgentPoller(AgentPollerConfig(mongoUrl = "mongodb://localhost:27017"))
 
   "RegistryRunner" should "return empty effectiveHandlers when no active topics" in {
     val poller = makePoller()

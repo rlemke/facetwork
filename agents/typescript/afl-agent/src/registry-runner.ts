@@ -26,6 +26,7 @@ export class RegistryRunner {
   private readonly poller: AgentPoller;
   private readonly refreshIntervalMs: number;
   private activeTopics: Set<string> = new Set();
+  private handlerMetadata: Map<string, Record<string, unknown>> = new Map();
   private refreshTimer: NodeJS.Timeout | null = null;
   private db: Db | null = null;
   private client: MongoClient | null = null;
@@ -33,6 +34,7 @@ export class RegistryRunner {
   constructor(config: AgentPollerConfig, refreshIntervalMs = 30000) {
     this.poller = new AgentPoller(config);
     this.refreshIntervalMs = refreshIntervalMs;
+    this.poller.metadataProvider = (facetName: string) => this.handlerMetadata.get(facetName);
   }
 
   /**
@@ -73,6 +75,15 @@ export class RegistryRunner {
           .map((doc) => doc.facet_name as string)
           .filter((name) => name != null)
       );
+
+      const metadata = new Map<string, Record<string, unknown>>();
+      for (const doc of docs) {
+        const name = doc.facet_name as string;
+        if (name && doc.metadata) {
+          metadata.set(name, doc.metadata as Record<string, unknown>);
+        }
+      }
+      this.handlerMetadata = metadata;
     } catch {
       // best-effort; keep existing topics
     }

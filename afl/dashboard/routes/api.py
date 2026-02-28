@@ -16,8 +16,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from ..dependencies import get_store
 from ..tree import build_step_tree
@@ -120,6 +123,59 @@ def api_step_logs(step_id: str, store=Depends(get_store)):
             for log in logs
         ]
     )
+
+
+def _log_to_sse_dict(log) -> dict:
+    """Convert a StepLogEntry to a JSON-serializable dict for SSE."""
+    return {
+        "uuid": log.uuid,
+        "step_id": log.step_id,
+        "workflow_id": log.workflow_id,
+        "runner_id": log.runner_id,
+        "facet_name": log.facet_name,
+        "source": log.source,
+        "level": log.level,
+        "message": log.message,
+        "details": log.details,
+        "time": log.time,
+    }
+
+
+@router.get("/steps/{step_id}/logs/stream")
+async def api_step_log_stream(step_id: str, store=Depends(get_store)):
+    """SSE endpoint for streaming step log updates."""
+
+    async def generate():
+        last_time = 0
+        while True:
+            logs = store.get_step_logs_since(step_id, last_time)
+            for log in logs:
+                yield f"data: {json.dumps(_log_to_sse_dict(log))}\n\n"
+                last_time = max(last_time, log.time)
+            await asyncio.sleep(1.5)
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@router.get("/runners/{runner_id}/logs/stream")
+async def api_workflow_log_stream(runner_id: str, store=Depends(get_store)):
+    """SSE endpoint for streaming workflow-level log updates."""
+    runner = store.get_runner(runner_id)
+    if not runner:
+        return JSONResponse({"error": "not found"}, status_code=404)
+
+    workflow_id = runner.workflow_id
+
+    async def generate():
+        last_time = 0
+        while True:
+            logs = store.get_workflow_logs_since(workflow_id, last_time)
+            for log in logs:
+                yield f"data: {json.dumps(_log_to_sse_dict(log))}\n\n"
+                last_time = max(last_time, log.time)
+            await asyncio.sleep(1.5)
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.get("/steps/{step_id}")

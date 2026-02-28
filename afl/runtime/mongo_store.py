@@ -557,6 +557,20 @@ class MongoStore(PersistenceAPI):
         docs = self._db.tasks.find(query).sort("created", -1)
         return [self._doc_to_task(doc) for doc in docs]
 
+    def get_step_logs_since(self, step_id: str, since_time: int) -> Sequence[StepLogEntry]:
+        """Get step logs for a step newer than the given timestamp."""
+        docs = self._db.step_logs.find({"step_id": step_id, "time": {"$gt": since_time}}).sort(
+            "time", ASCENDING
+        )
+        return [self._doc_to_step_log(doc) for doc in docs]
+
+    def get_workflow_logs_since(self, workflow_id: str, since_time: int) -> Sequence[StepLogEntry]:
+        """Get step logs for a workflow newer than the given timestamp."""
+        docs = self._db.step_logs.find(
+            {"workflow_id": workflow_id, "time": {"$gt": since_time}}
+        ).sort("time", ASCENDING)
+        return [self._doc_to_step_log(doc) for doc in docs]
+
     def get_step_logs_by_facet(self, facet_name: str, limit: int = 20) -> Sequence[StepLogEntry]:
         """Get recent step logs for a facet, ordered by time descending."""
         docs = self._db.step_logs.find({"facet_name": facet_name}).sort("time", -1).limit(limit)

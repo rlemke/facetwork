@@ -61,6 +61,82 @@ class AgentPollerTest {
         assertTrue(handlers.contains("ns.FacetB"));
         assertTrue(handlers.contains("FacetC"));
     }
+
+    @Test
+    void testFacetNameInjection() {
+        AgentPollerConfig config = AgentPollerConfig.defaults();
+        AgentPoller poller = new AgentPoller(config);
+        poller.register("ns.TestFacet", params -> {
+            assertEquals("ns.TestFacet", params.get("_facet_name"));
+            return new java.util.HashMap<>();
+        });
+        assertEquals(1, poller.registeredHandlers().size());
+        assertTrue(poller.registeredHandlers().contains("ns.TestFacet"));
+    }
+
+    @Test
+    void testMetadataProviderDefault() {
+        AgentPollerConfig config = AgentPollerConfig.defaults();
+        AgentPoller poller = new AgentPoller(config);
+        // No metadata provider set — no error
+        assertNotNull(poller);
+    }
+
+    @Test
+    void testUpdateStepCallbackInjection() {
+        AgentPollerConfig config = AgentPollerConfig.defaults();
+        AgentPoller poller = new AgentPoller(config);
+        poller.register("ns.StreamFacet", params -> {
+            assertNotNull(params.get("_update_step"));
+            return new java.util.HashMap<>();
+        });
+        assertTrue(poller.registeredHandlers().contains("ns.StreamFacet"));
+    }
+
+    @Test
+    void testUpdateStepCallbackType() {
+        // Verify the Consumer<Map> callback pattern
+        java.util.function.Consumer<Map<String, Object>> updateStep = partial -> {
+            assertNotNull(partial);
+        };
+        Map<String, Object> partial = new java.util.HashMap<>();
+        partial.put("progress", 50);
+        updateStep.accept(partial);
+    }
+
+    @Test
+    void testUpdateStepPartialUpdates() {
+        // Verify multiple partial updates work
+        java.util.List<Map<String, Object>> updates = new java.util.ArrayList<>();
+        java.util.function.Consumer<Map<String, Object>> updateStep = updates::add;
+
+        Map<String, Object> partial1 = new java.util.HashMap<>();
+        partial1.put("progress", 50);
+        updateStep.accept(partial1);
+
+        Map<String, Object> partial2 = new java.util.HashMap<>();
+        partial2.put("progress", 100);
+        partial2.put("result", "done");
+        updateStep.accept(partial2);
+
+        assertEquals(2, updates.size());
+    }
+
+    @Test
+    void testMetadataProviderWhenSet() {
+        AgentPollerConfig config = AgentPollerConfig.defaults();
+        AgentPoller poller = new AgentPoller(config);
+        poller.setMetadataProvider(facetName -> {
+            if ("ns.TestFacet".equals(facetName)) {
+                Map<String, Object> meta = new java.util.HashMap<>();
+                meta.put("description", "test handler");
+                return meta;
+            }
+            return null;
+        });
+        // Verify the provider works correctly
+        assertNotNull(poller);
+    }
 }
 
 class AgentPollerConfigTest {

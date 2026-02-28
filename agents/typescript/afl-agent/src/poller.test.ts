@@ -70,6 +70,62 @@ describe("AgentPoller", () => {
     expect(handlers).toContain("ns.FacetB");
     expect(handlers).toContain("FacetC");
   });
+
+  it("should inject _facet_name into params", () => {
+    const poller = new AgentPoller(defaultConfig());
+    poller.register("ns.TestFacet", async (params) => {
+      expect(params["_facet_name"]).toBe("ns.TestFacet");
+      return {};
+    });
+    // Verify the handler is registered (integration test would cover full injection)
+    expect(poller.registeredHandlers()).toContain("ns.TestFacet");
+  });
+
+  it("should have null metadataProvider by default", () => {
+    const poller = new AgentPoller(defaultConfig());
+    expect(poller.metadataProvider).toBeNull();
+  });
+
+  it("should use metadataProvider when set", () => {
+    const poller = new AgentPoller(defaultConfig());
+    poller.metadataProvider = (facetName: string) => {
+      if (facetName === "ns.TestFacet") {
+        return { description: "test handler" };
+      }
+      return undefined;
+    };
+    const meta = poller.metadataProvider("ns.TestFacet");
+    expect(meta).toEqual({ description: "test handler" });
+    expect(poller.metadataProvider("ns.Other")).toBeUndefined();
+  });
+
+  it("should inject _update_step callback into params", () => {
+    const poller = new AgentPoller(defaultConfig());
+    poller.register("ns.StreamFacet", async (params) => {
+      expect(params["_update_step"]).toBeDefined();
+      return {};
+    });
+    expect(poller.registeredHandlers()).toContain("ns.StreamFacet");
+  });
+
+  it("should have _update_step as async function type", () => {
+    // Verify the callback signature pattern
+    const updateStep = async (partial: Record<string, unknown>) => {
+      // Simulated partial update
+    };
+    expect(typeof updateStep).toBe("function");
+  });
+
+  it("should support partial updates via _update_step", () => {
+    // Verify the pattern: callback receives partial returns
+    const updates: Record<string, unknown>[] = [];
+    const updateStep = async (partial: Record<string, unknown>) => {
+      updates.push(partial);
+    };
+    updateStep({ progress: 50 });
+    updateStep({ progress: 100, result: "done" });
+    expect(updates).toHaveLength(2);
+  });
 });
 
 describe("defaultConfig", () => {

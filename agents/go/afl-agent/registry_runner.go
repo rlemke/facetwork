@@ -34,9 +34,13 @@ type RegistryRunner struct {
 
 	activeTopics map[string]bool
 	topicsMu     sync.RWMutex
-	stopCh       chan struct{}
-	client       *mongo.Client
-	db           *mongo.Database
+
+	handlerMetadata map[string]map[string]interface{}
+	metadataMu      sync.RWMutex
+
+	stopCh chan struct{}
+	client *mongo.Client
+	db     *mongo.Database
 }
 
 // NewRegistryRunner creates a RegistryRunner wrapping the given poller.
@@ -46,11 +50,15 @@ func NewRegistryRunner(poller *AgentPoller) *RegistryRunner {
 		Poller:          poller,
 		RefreshInterval: 30 * time.Second,
 		activeTopics:    make(map[string]bool),
+		handlerMetadata: make(map[string]map[string]interface{}),
 		stopCh:          make(chan struct{}),
 	}
 
 	// Set the topic filter on the poller
 	poller.topicFilter = rr.effectiveHandlers
+
+	// Set the metadata provider on the poller
+	poller.metadataProvider = rr.getHandlerMetadata
 
 	return rr
 }
@@ -70,6 +78,13 @@ func (rr *RegistryRunner) effectiveHandlers() []string {
 	return result
 }
 
+// getHandlerMetadata returns the metadata for the given facet name, or nil.
+func (rr *RegistryRunner) getHandlerMetadata(facetName string) map[string]interface{} {
+	rr.metadataMu.RLock()
+	defer rr.metadataMu.RUnlock()
+	return rr.handlerMetadata[facetName]
+}
+
 // RefreshTopics reads handler_registrations from MongoDB and updates activeTopics.
 func (rr *RegistryRunner) RefreshTopics(ctx context.Context, db *mongo.Database) {
 	coll := db.Collection(CollectionHandlerRegistrations)
@@ -81,6 +96,7 @@ func (rr *RegistryRunner) RefreshTopics(ctx context.Context, db *mongo.Database)
 	defer cursor.Close(ctx)
 
 	topics := make(map[string]bool)
+	metadata := make(map[string]map[string]interface{})
 	for cursor.Next(ctx) {
 		var doc bson.M
 		if err := cursor.Decode(&doc); err != nil {
@@ -88,12 +104,19 @@ func (rr *RegistryRunner) RefreshTopics(ctx context.Context, db *mongo.Database)
 		}
 		if name, ok := doc["facet_name"].(string); ok {
 			topics[name] = true
+			if meta, ok := doc["metadata"].(bson.M); ok {
+				metadata[name] = map[string]interface{}(meta)
+			}
 		}
 	}
 
 	rr.topicsMu.Lock()
 	rr.activeTopics = topics
 	rr.topicsMu.Unlock()
+
+	rr.metadataMu.Lock()
+	rr.handlerMetadata = metadata
+	rr.metadataMu.Unlock()
 
 	log.Printf("RegistryRunner: refreshed %d active topics from DB", len(topics))
 }

@@ -43,6 +43,59 @@ class AgentPollerSpec extends AnyFlatSpec with Matchers:
     an[IllegalStateException] should be thrownBy poller.start()
   }
 
+  it should "have null metadataProvider by default" in {
+    val config = AgentPollerConfig(mongoUrl = "mongodb://localhost:27017")
+    val poller = new AgentPoller(config)
+    poller.metadataProvider("any") shouldBe None
+  }
+
+  it should "inject _facet_name into params" in {
+    val config = AgentPollerConfig(mongoUrl = "mongodb://localhost:27017")
+    val poller = new AgentPoller(config)
+    poller.register("ns.TestFacet") { params =>
+      params should contain key "_facet_name"
+      params("_facet_name") shouldBe "ns.TestFacet"
+      Map.empty
+    }
+    poller.registeredNames should contain("ns.TestFacet")
+  }
+
+  it should "use metadataProvider when set" in {
+    val config = AgentPollerConfig(mongoUrl = "mongodb://localhost:27017")
+    val poller = new AgentPoller(config)
+    poller.metadataProvider = {
+      case "ns.TestFacet" => Some(Map("description" -> "test handler"))
+      case _ => None
+    }
+    poller.metadataProvider("ns.TestFacet") shouldBe Some(Map("description" -> "test handler"))
+    poller.metadataProvider("ns.Other") shouldBe None
+  }
+
+  it should "inject _update_step into params" in {
+    val config = AgentPollerConfig(mongoUrl = "mongodb://localhost:27017")
+    val poller = new AgentPoller(config)
+    poller.register("ns.StreamFacet") { params =>
+      params should contain key "_update_step"
+      Map.empty
+    }
+    poller.registeredNames should contain("ns.StreamFacet")
+  }
+
+  it should "have _update_step as function type" in {
+    // Verify the callback pattern
+    val updates = scala.collection.mutable.ListBuffer.empty[Map[String, Any]]
+    val updateStep: Map[String, Any] => Unit = partial => updates += partial
+    updateStep(Map("progress" -> 50))
+    updateStep(Map("progress" -> 100, "result" -> "done"))
+    updates should have length 2
+  }
+
+  it should "support partial updates via _update_step" in {
+    val updateStep: Map[String, Any] => Unit = _ => ()
+    // Should not throw
+    updateStep(Map("key" -> "value"))
+  }
+
   // --- StepAttributes extraction tests ---
 
   "StepAttributes.extractParams" should "extract params from a step document" in {

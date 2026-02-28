@@ -1,0 +1,13 @@
+<div class="timeline-chart">
+{% for entry in timeline %}
+<div class="timeline-row">
+    <div class="timeline-label" title="{{ entry.label }}">{{ entry.label|truncate(24) }}</div>
+    <div class="timeline-track">
+        <div class="timeline-bar state-bg-{{ entry.state|categorize_step_state }}"
+             style="left:{{ entry.offset_pct }}%; width:{{ entry.width_pct }}%;"
+             title="{{ entry.label }} — {{ (entry.end_ms - entry.start_ms)|duration }}">
+        </div>
+    </div>
+</div>
+{% endfor %}
+</div>

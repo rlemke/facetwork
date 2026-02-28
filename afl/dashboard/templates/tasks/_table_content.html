@@ -1,24 +1,3 @@
-{% extends "base.html" %}
-{% block title %}Tasks — AgentFlow{% endblock %}
-{% block content %}
-<h1>Task Queue</h1>
-
-<nav>
-    <a href="/tasks">All</a> |
-    <a href="/tasks?state=pending">Pending</a> |
-    <a href="/tasks?state=running">Running</a> |
-    <a href="/tasks?state=completed">Completed</a> |
-    <a href="/tasks?state=failed">Failed</a> |
-    <a href="/tasks?state=ignored">Ignored</a> |
-    <a href="/tasks?state=canceled">Canceled</a>
-</nav>
-
-{% if filter_state %}
-<p>Filtered by state: <span class="badge badge-{{ filter_state|state_color }}">{{ filter_state }}</span></p>
-{% endif %}
-
-<div id="task-table-content"
-     {% if filter_state == 'pending' or filter_state == 'running' %}hx-get="/tasks/partial{% if filter_state %}?state={{ filter_state }}{% endif %}" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
 <figure>
 <table>
     <thead>
@@ -49,5 +28,3 @@
     </tbody>
 </table>
 </figure>
-</div>
-{% endblock %}
