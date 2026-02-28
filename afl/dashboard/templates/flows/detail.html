@@ -1,9 +1,28 @@
 {% extends "base.html" %}
 {% from "partials/_doc_comment.html" import render_doc %}
 {% block title %}Flow {{ flow.name.name if flow else "Not Found" }} — AgentFlow{% endblock %}
+
+{% block breadcrumb %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="/flows">Flows</a>
+        <span class="breadcrumb-sep">/</span>
+        {% if flow %}
+        <span class="breadcrumb-current">{{ flow.name.name }}</span>
+        {% else %}
+        <span class="breadcrumb-current">Not Found</span>
+        {% endif %}
+    </nav>
+</div>
+{% endblock %}
+
 {% block content %}
 {% if not flow %}
 <h1>Flow not found</h1>
+<div class="empty-state">
+    <div class="empty-state-icon">&#x1F50D;</div>
+    <p>The requested flow could not be found.</p>
+</div>
 <p><a href="/flows">Back to flows</a></p>
 {% else %}
 <h1>{{ flow.name.name }}</h1>
@@ -45,27 +64,27 @@
 
 {% if flow.namespaces %}
 <h2>Namespaces</h2>
-<figure>
-<table>
-    <thead>
-        <tr><th>Name</th><th>UUID</th></tr>
-    </thead>
-    <tbody>
-        {% for ns in flow.namespaces %}
-        <tr>
-            <td><a href="/namespaces/{{ ns.name }}"><strong>{{ ns.name }}</strong></a>{% if ns.documentation %}{{ render_doc(ns.documentation) }}{% endif %}</td>
-            <td class="mono">{{ ns.uuid }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-</figure>
+{% for ns in flow.namespaces %}
+<details class="ns-group">
+    <summary>
+        <strong>{{ ns.name }}</strong>
+        {% if ns.documentation %}{{ render_doc(ns.documentation) }}{% endif %}
+    </summary>
+    <table>
+        <tr><th>UUID</th><td class="mono">{{ ns.uuid }}</td></tr>
+    </table>
+</details>
+{% endfor %}
 {% endif %}
 
 {% if flow.facets %}
 <h2>Facets</h2>
+<div class="page-search">
+    <input type="search" placeholder="Filter facets..."
+           data-list-filter=".facet-table tbody tr">
+</div>
 <figure>
-<table>
+<table class="facet-table">
     <thead>
         <tr><th>Name</th><th>Namespace ID</th><th>UUID</th></tr>
     </thead>
@@ -92,7 +111,7 @@
     <tbody>
         {% for runner in runners %}
         <tr>
-            <td><a href="/runners/{{ runner.uuid }}" class="mono">{{ runner.uuid|truncate_uuid }}</a></td>
+            <td><a href="/v2/workflows/{{ runner.uuid }}" class="mono">{{ runner.uuid|truncate_uuid }}</a></td>
             <td>{{ runner.workflow.name }}</td>
             <td><span class="badge badge-{{ runner.state|state_color }}">{{ runner.state }}</span></td>
             <td>{{ runner.start_time|timestamp }}</td>

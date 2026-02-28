@@ -194,3 +194,92 @@ def group_servers_by_group(
             }
         )
     return groups
+
+
+def compute_step_progress(runner: RunnerDefinition, steps: list) -> dict:
+    """Compute step completion progress for a runner.
+
+    Returns a dict with ``completed``, ``total``, and ``pct`` keys.
+    """
+    total = len(steps)
+    completed = sum(1 for s in steps if categorize_step_state(s.state) == "complete")
+    return {
+        "completed": completed,
+        "total": total,
+        "pct": int(100 * completed / total) if total > 0 else 0,
+    }
+
+
+def search_all(query: str, store: object) -> list[dict]:
+    """Search across workflows (runners), flows, servers, and handlers.
+
+    Returns a list of dicts:
+        [{"name": "...", "type": "workflow|flow|server|handler", "href": "..."}]
+    """
+    if not query or len(query.strip()) < 1:
+        return []
+
+    q = query.lower().strip()
+    results: list[dict] = []
+
+    # Search runners (workflows)
+    try:
+        runners = store.get_all_runners(limit=500)
+        for r in runners:
+            name = r.workflow.name if r.workflow else r.uuid
+            if q in name.lower():
+                results.append({
+                    "name": name,
+                    "type": "workflow",
+                    "href": f"/v2/workflows/{r.uuid}",
+                    "icon": "&#x25B6;",
+                })
+    except Exception:
+        pass
+
+    # Search flows
+    try:
+        flows = store.get_all_flows()
+        for f in flows:
+            name = f.name.name if hasattr(f.name, "name") else str(f.name)
+            if q in name.lower():
+                results.append({
+                    "name": name,
+                    "type": "flow",
+                    "href": f"/flows/{f.uuid}",
+                    "icon": "&#x2B22;",
+                })
+    except Exception:
+        pass
+
+    # Search servers
+    try:
+        servers = list(store.get_all_servers())
+        for s in servers:
+            name = getattr(s, "server_group", "") or s.uuid
+            if q in name.lower() or q in s.uuid.lower():
+                results.append({
+                    "name": f"{name} ({s.uuid[:8]})",
+                    "type": "server",
+                    "href": f"/v2/servers/{s.uuid}",
+                    "icon": "&#x2699;",
+                })
+    except Exception:
+        pass
+
+    # Search handlers
+    try:
+        handlers = store.list_handler_registrations()
+        for h in handlers:
+            if q in h.facet_name.lower():
+                results.append({
+                    "name": h.facet_name,
+                    "type": "handler",
+                    "href": f"/v2/handlers/{h.facet_name}",
+                    "icon": "&#x26A1;",
+                })
+    except Exception:
+        pass
+
+    # Limit to top 20 results
+    return results[:20]

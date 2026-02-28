@@ -10,33 +10,90 @@
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>
 </head>
-<body>
-    <nav class="container-fluid">
-        <ul>
-            <li><a href="/v2/workflows"><strong>AgentFlow</strong></a></li>
-        </ul>
-        <ul>
-            <li><a href="/v2/workflows"{% if active_tab == 'workflows' %} class="nav-active"{% endif %}>Workflows</a></li>
-            <li><a href="/v2/servers"{% if active_tab == 'servers' %} class="nav-active"{% endif %}>Servers</a></li>
-            <li><a href="/tasks"{% if active_tab == 'tasks' %} class="nav-active"{% endif %}>Tasks</a></li>
-            <li><a href="/flows"{% if active_tab == 'flows' %} class="nav-active"{% endif %}>Flows</a></li>
-            <li><a href="/runners"{% if active_tab == 'runners' %} class="nav-active"{% endif %}>Runners</a></li>
-            <li><a href="/output"{% if active_tab == 'output' %} class="nav-active"{% endif %}>Output</a></li>
-            <li><a href="/census/maps"{% if active_tab == 'census_maps' %} class="nav-active"{% endif %}>Census Maps</a></li>
-            <li><a href="/site-selection/"{% if active_tab == 'site_selection' %} class="nav-active"{% endif %}>Site Selection</a></li>
-            <li><a href="/workflows/new"{% if active_tab == 'new_workflow' %} class="nav-active"{% endif %}>New Workflow</a></li>
-        </ul>
-    </nav>
+<body class="sidebar-layout">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <a href="/v2/workflows" class="sidebar-brand">
+                <span class="sidebar-brand-icon">&#x25B6;</span>
+                <span class="sidebar-brand-text">AgentFlow</span>
+            </a>
+            <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">&#x2630;</button>
+        </div>
 
-    {% block subnav %}{% endblock %}
+        <div class="sidebar-search" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true}))">
+            <span class="sidebar-search-icon">&#x1F50D;</span>
+            <span class="sidebar-search-text">Search...</span>
+            <kbd class="sidebar-search-kbd">&#x2318;K</kbd>
+        </div>
 
-    <main class="container">
-        {% block content %}{% endblock %}
-    </main>
+        <nav class="sidebar-nav">
+            <a href="/v2/workflows" class="sidebar-link{% if active_tab == 'workflows' %} active{% endif %}">
+                <span class="sidebar-icon">&#x25B6;</span>
+                <span class="sidebar-label">Workflows</span>
+            </a>
+            <a href="/flows" class="sidebar-link{% if active_tab == 'flows' %} active{% endif %}">
+                <span class="sidebar-icon">&#x2B22;</span>
+                <span class="sidebar-label">Flows</span>
+            </a>
+            <div class="sidebar-group">
+                <span class="sidebar-group-label">Infrastructure</span>
+                <a href="/v2/servers" class="sidebar-link{% if active_tab == 'servers' %} active{% endif %}">
+                    <span class="sidebar-icon">&#x2699;</span>
+                    <span class="sidebar-label">Servers</span>
+                </a>
+                <a href="/v2/handlers" class="sidebar-link{% if active_tab == 'handlers' %} active{% endif %}">
+                    <span class="sidebar-icon">&#x26A1;</span>
+                    <span class="sidebar-label">Handlers</span>
+                </a>
+                <a href="/tasks" class="sidebar-link{% if active_tab == 'tasks' %} active{% endif %}">
+                    <span class="sidebar-icon">&#x2611;</span>
+                    <span class="sidebar-label">Tasks</span>
+                </a>
+            </div>
+            <div class="sidebar-group">
+                <span class="sidebar-group-label">Tools</span>
+                <a href="/workflows/new" class="sidebar-link{% if active_tab == 'new_workflow' %} active{% endif %}">
+                    <span class="sidebar-icon">&#x2795;</span>
+                    <span class="sidebar-label">New Workflow</span>
+                </a>
+                <a href="/output" class="sidebar-link{% if active_tab == 'output' %} active{% endif %}">
+                    <span class="sidebar-icon">&#x1F4C1;</span>
+                    <span class="sidebar-label">Output</span>
+                </a>
+                <a href="/runners" class="sidebar-link{% if active_tab == 'runners' %} active{% endif %}">
+                    <span class="sidebar-icon">&#x23F5;</span>
+                    <span class="sidebar-label">Runners</span>
+                </a>
+            </div>
+            <div class="sidebar-group">
+                <span class="sidebar-group-label">Views</span>
+                <a href="/census/maps" class="sidebar-link{% if active_tab == 'census_maps' %} active{% endif %}">
+                    <span class="sidebar-icon">&#x1F5FA;</span>
+                    <span class="sidebar-label">Census Maps</span>
+                </a>
+                <a href="/site-selection/" class="sidebar-link{% if active_tab == 'site_selection' %} active{% endif %}">
+                    <span class="sidebar-icon">&#x1F4CD;</span>
+                    <span class="sidebar-label">Site Selection</span>
+                </a>
+            </div>
+        </nav>
+    </aside>
 
-    <footer class="container">
-        <small>AgentFlow Dashboard</small>
-    </footer>
+    <div class="main-content">
+        {% block breadcrumb %}{% endblock %}
+
+        {% block subnav %}{% endblock %}
+
+        <main class="container">
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="container">
+            <small>AgentFlow Dashboard</small>
+        </footer>
+    </div>
+
+    {% include "partials/command_palette.html" %}
 
     <script>hljs.highlightAll();</script>
     <script>
@@ -50,7 +107,14 @@
             pad(d.getDate()) + " " + pad(d.getHours()) + ":" +
             pad(d.getMinutes()) + ":" + pad(d.getSeconds());
     });
+
+    // Sidebar toggle
+    document.getElementById("sidebar-toggle").addEventListener("click", function() {
+        document.body.classList.toggle("sidebar-collapsed");
+    });
     </script>
+    <script src="/static/list_filter.js"></script>
+    <script src="/static/command_palette.js"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

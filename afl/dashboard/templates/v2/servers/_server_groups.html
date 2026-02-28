@@ -1,6 +1,6 @@
 {% if groups %}
 {% for group in groups %}
-<details class="ns-group" open>
+<details class="ns-group">
     <summary>
         <strong>{{ group.group }}</strong>
         <span class="badge badge-secondary">{{ group.total }}</span>
@@ -40,5 +40,8 @@
 </details>
 {% endfor %}
 {% else %}
-<p>No servers in this category.</p>
+<div class="empty-state">
+    <div class="empty-state-icon">&#x2699;</div>
+    <p>No servers in this category.</p>
+</div>
 {% endif %}

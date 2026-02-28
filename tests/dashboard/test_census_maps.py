@@ -1443,7 +1443,7 @@ class TestNavLink:
         tc, store = client
         resp = tc.get("/census/maps")
         assert resp.status_code == 200
-        assert 'class="nav-active"' in resp.text
+        assert 'sidebar-link active' in resp.text
 
 
 class TestColorLegend:

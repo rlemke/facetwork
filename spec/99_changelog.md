@@ -1,5 +1,68 @@
 # Implementation Changelog
 
+## Completed (v0.23.0) - Dashboard UI Full Redesign
+
+Comprehensive dashboard UI redesign replacing the flat horizontal navbar with a
+collapsible sidebar, adding global search, per-page filtering, progress
+indicators, and tree controls.
+
+### Sidebar navigation
+- Replaced 9-item horizontal nav with collapsible left sidebar
+- 5 grouped sections: Workflows, Flows, Infrastructure (Servers/Handlers/Tasks), Tools (New Workflow/Output/Runners), Views (Census Maps/Site Selection)
+- Sticky sidebar with responsive collapse (icon-only mode via toggle button)
+- Active page highlighted with left border accent
+- `base.html` fully restructured: `sidebar-layout` flex container with `<aside>` + `<div class="main-content">`
+
+### Global command palette (Cmd+K)
+- Modal overlay (`partials/command_palette.html`) accessible via `Cmd+K` / `Ctrl+K`
+- HTMX-powered search endpoint `GET /v2/search?q=<query>` searches across workflows, flows, servers, handlers
+- Categorized results with keyboard navigation (arrow keys + Enter)
+- `search_all()` helper in `helpers.py`; `command_palette.js` for keyboard handling
+
+### Per-page search filtering
+- `list_filter.js`: shared client-side filter — `data-list-filter="<selector>"` on any `<input>`
+- Applied to workflow list, flow list, server list, handler list, and flow detail (facets)
+- Auto-hides `<details class="ns-group">` elements with zero visible matches
+
+### Workflow list improvements
+- Progress bars: new `Progress` column with mini progress bar and `completed/total` step count
+- `compute_step_progress()` helper; `_enrich_runners_with_progress()` in routes
+- Auto-refresh: Running tab auto-refreshes every 5s via `hx-trigger="every 5s"`
+- Accordions collapsed by default (removed `open` attribute from `<details>`)
+- Empty state with icon when no workflows in category
+
+### Step tree enhancements
+- Expand All / Collapse All buttons (`step_tree.js`)
+- Search within tree: filters tree nodes by text content, auto-opens matching parents
+- Step summary bar: colored proportional bar showing complete/running/other/error ratios
+- Legend below summary bar with counts per category
+- Auto-refresh for running workflows (tree refreshes every 5s)
+- `data-step-name` and `data-facet-name` attributes on tree nodes for search
+
+### Flow page improvements
+- Flow list: per-page search, workflow count badge
+- Flow detail: breadcrumb navigation, facet search filter
+- Namespace links preserved for test compatibility
+
+### Visual polish
+- Breadcrumbs on all detail pages (Workflows, Flows) via `{% block breadcrumb %}`
+- Empty states with icons on all list views
+- HTMX loading spinners on all refresh buttons
+- Responsive sidebar: collapses on mobile, hamburger toggle
+
+### Files changed
+- **New** (4): `templates/partials/command_palette.html`, `static/command_palette.js`, `static/step_tree.js`, `static/list_filter.js`
+- **Modified** (14): `templates/base.html`, `static/style.css`, `routes/dashboard_v2.py`, `helpers.py`, `templates/v2/workflows/list.html`, `templates/v2/workflows/detail.html`, `templates/v2/workflows/_runner_groups.html`, `templates/partials/step_tree.html`, `templates/flows/list.html`, `templates/flows/detail.html`, `templates/v2/servers/list.html`, `templates/v2/servers/_server_groups.html`, `templates/v2/handlers/list.html`, `templates/v2/handlers/_handler_groups.html`
+- **Tests updated** (3): `test_dashboard_v2.py` (+31 new tests), `test_census_maps.py`, `test_servers_v2.py` (nav assertion updates)
+
+### Tests (31 new)
+- **TestSidebarNav** (7): sidebar present, workflows/flows/servers/handlers/new-workflow links, search trigger
+- **TestGlobalSearch** (5): empty query, no results, finds workflow, finds handler, case insensitive
+- **TestCommandPalette** (2): palette in page, esc key
+- **TestComputeStepProgress** (4): all complete, none complete, partial, empty
+- **TestWorkflowListRedesign** (7): search input, auto-refresh running, no auto-refresh completed, progress column, breadcrumb, empty state, accordions collapsed
+- **TestStepTreeControls** (6): expand/collapse buttons, tree search, summary bar with steps, auto-refresh running, no auto-refresh completed, breadcrumb
+
 ## Completed (v0.22.0) - Site-Selection Debate Example
 
 ### New example: `examples/site-selection-debate/`

@@ -1,6 +1,6 @@
 {% if groups %}
 {% for group in groups %}
-<details class="ns-group" open>
+<details class="ns-group">
     <summary>
         <strong>{{ group.namespace }}</strong>
         <span class="badge badge-secondary">{{ group.total }}</span>
@@ -11,6 +11,7 @@
                 <th>Workflow</th>
                 <th>ID</th>
                 <th>State</th>
+                <th>Progress</th>
                 <th>Started</th>
                 <th>Duration</th>
             </tr>
@@ -33,6 +34,19 @@
                         {{ runner.state }}
                     </span>
                 </td>
+                <td>
+                    {% if progress is defined and runner.uuid in progress %}
+                    {% set p = progress[runner.uuid] %}
+                    <div class="progress-mini">
+                        <div class="progress-bar-wrap">
+                            <div class="progress-bar-fill" style="width:{{ p.pct }}%"></div>
+                        </div>
+                        <span class="progress-text">{{ p.completed }}/{{ p.total }}</span>
+                    </div>
+                    {% else %}
+                    —
+                    {% endif %}
+                </td>
                 <td>{{ runner.start_time|timestamp }}</td>
                 <td>{{ runner.duration|duration }}</td>
             </tr>
@@ -42,5 +56,8 @@
 </details>
 {% endfor %}
 {% else %}
-<p>No workflows in this category.</p>
+<div class="empty-state">
+    <div class="empty-state-icon">&#x1F4CB;</div>
+    <p>No workflows in this category.</p>
+</div>
 {% endif %}

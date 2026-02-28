@@ -4,6 +4,20 @@
 {% if runner %}{{ runner.workflow.name }} — AgentFlow{% else %}Workflow Not Found{% endif %}
 {% endblock %}
 
+{% block breadcrumb %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="/v2/workflows">Workflows</a>
+        <span class="breadcrumb-sep">/</span>
+        {% if runner %}
+        <span class="breadcrumb-current">{{ runner.workflow.name|short_workflow_name }}</span>
+        {% else %}
+        <span class="breadcrumb-current">Not Found</span>
+        {% endif %}
+    </nav>
+</div>
+{% endblock %}
+
 {% block subnav %}
 {% if runner %}
 <div class="container">
@@ -55,6 +69,22 @@
     </article>
 </div>
 
+{% set total = step_counts.running + step_counts.error + step_counts.complete + step_counts.other %}
+{% if total > 0 %}
+<div class="step-summary-bar">
+    <div class="seg-complete" style="width:{{ (step_counts.complete * 100 / total)|round(1) }}%"></div>
+    <div class="seg-running" style="width:{{ (step_counts.running * 100 / total)|round(1) }}%"></div>
+    <div class="seg-other" style="width:{{ (step_counts.other * 100 / total)|round(1) }}%"></div>
+    <div class="seg-error" style="width:{{ (step_counts.error * 100 / total)|round(1) }}%"></div>
+</div>
+<div class="step-summary-legend">
+    <span class="legend-complete">Complete {{ step_counts.complete }}</span>
+    <span class="legend-running">Running {{ step_counts.running }}</span>
+    <span class="legend-other">Other {{ step_counts.other }}</span>
+    <span class="legend-error">Error {{ step_counts.error }}</span>
+</div>
+{% endif %}
+
 <div class="actions" style="margin-bottom: 1rem;">
     {% if runner.state == 'running' %}
     <form method="post" action="/runners/{{ runner.uuid }}/pause" style="display:inline;">
@@ -86,6 +116,7 @@
         hx-target="#step-rows"
         hx-swap="innerHTML">
     <span class="refresh-icon">&#x21bb;</span> Refresh
+    <span class="loading-spinner htmx-indicator"></span>
 </button>
 <div id="step-rows">
     {% include "v2/workflows/_step_rows.html" %}
@@ -93,20 +124,34 @@
 </div>
 
 <div id="v2-step-tree">
-<button class="btn-refresh"
-        hx-get="/v2/workflows/{{ runner.uuid }}/steps/partial?view=tree"
-        hx-target="#v2-step-tree-content"
-        hx-swap="innerHTML">
-    <span class="refresh-icon">&#x21bb;</span> Refresh
-</button>
-<div class="step-tree-container" id="v2-step-tree-content">
+<div class="step-tree-controls">
+    <button id="step-tree-expand-all">Expand All</button>
+    <button id="step-tree-collapse-all">Collapse All</button>
+    <input type="search" id="step-tree-search" placeholder="Search steps...">
+    <button class="btn-refresh"
+            hx-get="/v2/workflows/{{ runner.uuid }}/steps/partial?view=tree"
+            hx-target="#v2-step-tree-content"
+            hx-swap="innerHTML">
+        <span class="refresh-icon">&#x21bb;</span> Refresh
+        <span class="loading-spinner htmx-indicator"></span>
+    </button>
+</div>
+<div class="step-tree-container" id="v2-step-tree-content"
+     {% if runner.state == 'running' %}hx-get="/v2/workflows/{{ runner.uuid }}/steps/partial?view=tree" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
     {% with tree=tree %}{% include "partials/step_tree.html" %}{% endwith %}
 </div>
 </div>
 
 {% else %}
 <h1>Workflow Not Found</h1>
-<p>The requested runner could not be found.</p>
+<div class="empty-state">
+    <div class="empty-state-icon">&#x1F50D;</div>
+    <p>The requested runner could not be found.</p>
+</div>
 <a href="/v2/workflows">Back to Workflows</a>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/step_tree.js"></script>
 {% endblock %}

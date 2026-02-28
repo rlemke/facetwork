@@ -416,3 +416,280 @@ class TestV2HandlerDetail:
         resp = tc.get("/v2/handlers/osm.geo.Cache/partial")
         assert resp.status_code == 200
         assert "Current Activity" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sidebar navigation tests
+# ---------------------------------------------------------------------------
+
+
+@pytestmark_routes
+class TestSidebarNav:
+    def test_sidebar_present(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows")
+        assert resp.status_code == 200
+        assert 'class="sidebar"' in resp.text
+        assert "sidebar-brand" in resp.text
+
+    def test_sidebar_has_workflows_link(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows")
+        assert '/v2/workflows" class="sidebar-link active"' in resp.text
+
+    def test_sidebar_has_flows_link(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows")
+        assert '/flows"' in resp.text
+
+    def test_sidebar_has_servers_link(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows")
+        assert '/v2/servers"' in resp.text
+
+    def test_sidebar_has_handlers_link(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows")
+        assert '/v2/handlers"' in resp.text
+
+    def test_sidebar_has_new_workflow_link(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows")
+        assert '/workflows/new"' in resp.text
+
+    def test_sidebar_has_search_trigger(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows")
+        assert "sidebar-search" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Command palette / search API tests
+# ---------------------------------------------------------------------------
+
+
+@pytestmark_routes
+class TestGlobalSearch:
+    def test_search_empty_query(self, client):
+        tc, store = client
+        resp = tc.get("/v2/search?q=")
+        assert resp.status_code == 200
+        assert "Type to search" in resp.text
+
+    def test_search_no_results(self, client):
+        tc, store = client
+        resp = tc.get("/v2/search?q=nonexistent_xyz")
+        assert resp.status_code == 200
+        assert "No results" in resp.text
+
+    def test_search_finds_workflow(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/search?q=TestWF")
+        assert resp.status_code == 200
+        assert "TestWF" in resp.text
+        assert "/v2/workflows/r-1" in resp.text
+
+    def test_search_finds_handler(self, client):
+        from afl.runtime.entities import HandlerRegistration
+
+        tc, store = client
+        store.save_handler_registration(HandlerRegistration(
+            facet_name="osm.geo.Cache",
+            module_uri="examples.handlers.cache",
+            entrypoint="handle",
+            version="1.0",
+        ))
+        resp = tc.get("/v2/search?q=Cache")
+        assert resp.status_code == 200
+        assert "osm.geo.Cache" in resp.text
+
+    def test_search_case_insensitive(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/search?q=testwf")
+        assert resp.status_code == 200
+        assert "TestWF" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Command palette template tests
+# ---------------------------------------------------------------------------
+
+
+@pytestmark_routes
+class TestCommandPalette:
+    def test_command_palette_in_page(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows")
+        assert resp.status_code == 200
+        assert "cmd-palette" in resp.text
+        assert "cmd-palette-input" in resp.text
+
+    def test_command_palette_has_esc_key(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows")
+        assert "Esc" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Progress enrichment tests
+# ---------------------------------------------------------------------------
+
+
+from afl.dashboard.helpers import compute_step_progress
+
+
+class TestComputeStepProgress:
+    def _make_step(self, state="state.statement.Complete"):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(state=state)
+
+    def test_all_complete(self):
+        steps = [self._make_step("state.statement.Complete") for _ in range(5)]
+        result = compute_step_progress(None, steps)
+        assert result["completed"] == 5
+        assert result["total"] == 5
+        assert result["pct"] == 100
+
+    def test_none_complete(self):
+        steps = [self._make_step("state.statement.Created") for _ in range(3)]
+        result = compute_step_progress(None, steps)
+        assert result["completed"] == 0
+        assert result["total"] == 3
+        assert result["pct"] == 0
+
+    def test_partial_complete(self):
+        steps = [
+            self._make_step("state.statement.Complete"),
+            self._make_step("state.statement.Created"),
+            self._make_step("state.statement.Error"),
+            self._make_step("state.statement.Complete"),
+        ]
+        result = compute_step_progress(None, steps)
+        assert result["completed"] == 2
+        assert result["total"] == 4
+        assert result["pct"] == 50
+
+    def test_empty_steps(self):
+        result = compute_step_progress(None, [])
+        assert result["completed"] == 0
+        assert result["total"] == 0
+        assert result["pct"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Workflow list redesign tests
+# ---------------------------------------------------------------------------
+
+
+@pytestmark_routes
+class TestWorkflowListRedesign:
+    def test_list_has_search_input(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows")
+        assert resp.status_code == 200
+        assert 'data-list-filter=' in resp.text
+
+    def test_list_has_auto_refresh_on_running(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows?tab=running")
+        assert resp.status_code == 200
+        assert 'hx-trigger="every 5s"' in resp.text
+
+    def test_list_no_auto_refresh_on_completed(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows?tab=completed")
+        assert resp.status_code == 200
+        assert 'hx-trigger="every 5s"' not in resp.text
+
+    def test_list_has_progress_column(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows?tab=running")
+        assert resp.status_code == 200
+        assert "Progress" in resp.text
+
+    def test_list_has_breadcrumb(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows")
+        assert resp.status_code == 200
+        assert 'class="breadcrumb"' in resp.text
+
+    def test_empty_state_shown(self, client):
+        tc, store = client
+        resp = tc.get("/v2/workflows?tab=running")
+        assert resp.status_code == 200
+        assert "empty-state" in resp.text
+
+    def test_accordions_collapsed_by_default(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows?tab=running")
+        assert resp.status_code == 200
+        # Accordions should NOT have 'open' attribute by default
+        assert '<details class="ns-group" open>' not in resp.text
+        assert '<details class="ns-group">' in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Step tree controls tests
+# ---------------------------------------------------------------------------
+
+
+@pytestmark_routes
+class TestStepTreeControls:
+    def test_detail_has_expand_collapse_buttons(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows/r-1")
+        assert resp.status_code == 200
+        assert "step-tree-expand-all" in resp.text
+        assert "step-tree-collapse-all" in resp.text
+
+    def test_detail_has_tree_search(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows/r-1")
+        assert resp.status_code == 200
+        assert "step-tree-search" in resp.text
+
+    def test_detail_has_summary_bar_with_steps(self, client):
+        from afl.runtime.step import StepDefinition
+
+        tc, store = client
+        runner = _make_runner("r-1", state="running")
+        store.save_runner(runner)
+        store.save_step(StepDefinition(
+            id="step-1",
+            object_type="step",
+            workflow_id=runner.workflow_id,
+            state="state.statement.Complete",
+        ))
+        resp = tc.get("/v2/workflows/r-1")
+        assert resp.status_code == 200
+        assert "step-summary-legend" in resp.text
+        assert "step-summary-bar" in resp.text
+
+    def test_detail_auto_refresh_for_running(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows/r-1")
+        assert resp.status_code == 200
+        assert 'hx-trigger="every 5s"' in resp.text
+
+    def test_detail_no_auto_refresh_for_completed(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="completed"))
+        resp = tc.get("/v2/workflows/r-1")
+        assert resp.status_code == 200
+        assert 'hx-trigger="every 5s"' not in resp.text
+
+    def test_detail_has_breadcrumb(self, client):
+        tc, store = client
+        store.save_runner(_make_runner("r-1", state="running"))
+        resp = tc.get("/v2/workflows/r-1")
+        assert resp.status_code == 200
+        assert 'class="breadcrumb"' in resp.text
+        assert "Workflows" in resp.text

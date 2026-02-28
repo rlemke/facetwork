@@ -1,14 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Flows — AgentFlow{% endblock %}
+
+{% block breadcrumb %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="/flows">Flows</a>
+    </nav>
+</div>
+{% endblock %}
+
 {% block content %}
 <h1>Flows</h1>
 
-<form method="get" action="/flows">
-    <input type="search" name="q" placeholder="Search by name..." value="{{ search_query or '' }}">
-</form>
+<div class="page-search">
+    <input type="search" placeholder="Filter flows by name..."
+           data-list-filter=".flow-table tbody tr">
+</div>
 
 <figure>
-<table>
+<table class="flow-table">
     <thead>
         <tr><th>Name</th><th>Path</th><th>Workflows</th><th>Sources</th></tr>
     </thead>
@@ -17,7 +27,7 @@
         <tr>
             <td><a href="/flows/{{ flow.uuid }}">{{ flow.name.name }}</a></td>
             <td class="mono">{{ flow.name.path }}</td>
-            <td>{{ flow.workflows|length }}</td>
+            <td><span class="badge badge-secondary">{{ flow.workflows|length }}</span></td>
             <td>
                 {% if flow.compiled_sources %}
                 <a href="/flows/{{ flow.uuid }}/source">AFL</a> |
@@ -31,4 +41,11 @@
     </tbody>
 </table>
 </figure>
+
+{% if not flows %}
+<div class="empty-state">
+    <div class="empty-state-icon">&#x2B22;</div>
+    <p>No flows found. Compile an AFL source to create one.</p>
+</div>
+{% endif %}
 {% endblock %}

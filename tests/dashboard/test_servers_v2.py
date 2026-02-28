@@ -293,9 +293,9 @@ class TestV2ServerNav:
     def test_nav_servers_highlighted(self, client):
         tc, store = client
         resp = tc.get("/v2/servers")
-        assert 'nav-active' in resp.text
-        # The Servers link should be active
-        assert '/v2/servers" class="nav-active"' in resp.text
+        assert 'sidebar-link active' in resp.text
+        # The Servers link should be active in sidebar
+        assert '/v2/servers" class="sidebar-link active"' in resp.text
 
     def test_old_servers_route_still_works(self, client):
         tc, store = client

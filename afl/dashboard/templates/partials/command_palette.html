@@ -1,0 +1,19 @@
+<div class="cmd-palette-overlay" id="cmd-palette" style="display:none">
+    <div class="cmd-palette">
+        <div class="cmd-palette-input-wrap">
+            <span class="cmd-palette-icon">&#x1F50D;</span>
+            <input type="text" id="cmd-palette-input" class="cmd-palette-input"
+                   placeholder="Search workflows, flows, servers, handlers..."
+                   autocomplete="off" spellcheck="false"
+                   hx-get="/v2/search"
+                   hx-trigger="keyup changed delay:200ms"
+                   hx-target="#cmd-palette-results"
+                   hx-swap="innerHTML"
+                   name="q">
+            <kbd class="cmd-palette-esc">Esc</kbd>
+        </div>
+        <div class="cmd-palette-results" id="cmd-palette-results">
+            <div class="cmd-palette-empty">Type to search across all resources</div>
+        </div>
+    </div>
+</div>

@@ -22,11 +22,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from ..dependencies import get_store
 from ..helpers import (
     categorize_step_state,
+    compute_step_progress,
     effective_server_state,
     extract_handler_prefix,
     group_handlers_by_namespace,
     group_runners_by_namespace,
     group_servers_by_group,
+    search_all,
     short_workflow_name,
 )
 from ..tree import build_step_tree
@@ -75,6 +77,7 @@ def workflow_list(
     tab_counts = _count_by_tab(all_runners)
     filtered = _filter_runners(all_runners, tab)
     groups = group_runners_by_namespace(filtered)
+    progress = _enrich_runners_with_progress(filtered, store)
 
     return request.app.state.templates.TemplateResponse(
         request,
@@ -84,6 +87,7 @@ def workflow_list(
             "tab": tab,
             "tab_counts": tab_counts,
             "active_tab": "workflows",
+            "progress": progress,
         },
     )
 
@@ -99,6 +103,7 @@ def workflow_list_partial(
     tab_counts = _count_by_tab(all_runners)
     filtered = _filter_runners(all_runners, tab)
     groups = group_runners_by_namespace(filtered)
+    progress = _enrich_runners_with_progress(filtered, store)
 
     return request.app.state.templates.TemplateResponse(
         request,
@@ -107,6 +112,7 @@ def workflow_list_partial(
             "groups": groups,
             "tab": tab,
             "tab_counts": tab_counts,
+            "progress": progress,
         },
     )
 
@@ -475,3 +481,78 @@ def handler_detail(
             "recent_logs": recent_logs,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Global search API
+# ---------------------------------------------------------------------------
+
+
+@router.get("/search", name="v2_search")
+def global_search(
+    request: Request,
+    q: str = "",
+    store=Depends(get_store),
+):
+    """Search across all resources — returns HTML partial for command palette."""
+    results = search_all(q, store)
+
+    if not results:
+        if q.strip():
+            return HTMLResponse('<div class="cmd-palette-empty">No results found</div>')
+        return HTMLResponse(
+            '<div class="cmd-palette-empty">Type to search across all resources</div>'
+        )
+
+    # Group results by type
+    grouped: dict[str, list] = {}
+    for r in results:
+        grouped.setdefault(r["type"], []).append(r)
+
+    html_parts = []
+    type_labels = {
+        "workflow": "Workflows",
+        "flow": "Flows",
+        "server": "Servers",
+        "handler": "Handlers",
+    }
+    for rtype in ["workflow", "flow", "server", "handler"]:
+        items = grouped.get(rtype, [])
+        if not items:
+            continue
+        html_parts.append(
+            f'<div class="cmd-palette-category">{type_labels[rtype]}</div>'
+        )
+        for item in items:
+            html_parts.append(
+                f'<div class="cmd-palette-item" data-href="{item["href"]}" '
+                f'onclick="window.location.href=\'{item["href"]}\'">'
+                f'<span class="cmd-palette-item-icon">{item["icon"]}</span>'
+                f'<span class="cmd-palette-item-name">{item["name"]}</span>'
+                f'<span class="cmd-palette-item-type">{item["type"]}</span>'
+                f"</div>"
+            )
+
+    return HTMLResponse("".join(html_parts))
+
+
+# ---------------------------------------------------------------------------
+# Progress enrichment
+# ---------------------------------------------------------------------------
+
+
+def _enrich_runners_with_progress(
+    runners: list, store: object,
+) -> dict[str, dict]:
+    """Compute step progress for a list of runners.
+
+    Returns a dict mapping runner UUID to progress info.
+    """
+    progress: dict[str, dict] = {}
+    for r in runners:
+        try:
+            steps = list(store.get_steps_by_workflow(r.workflow_id))
+            progress[r.uuid] = compute_step_progress(r, steps)
+        except Exception:
+            progress[r.uuid] = {"completed": 0, "total": 0, "pct": 0}
+    return progress

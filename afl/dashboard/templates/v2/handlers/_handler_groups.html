@@ -1,6 +1,6 @@
 {% if groups %}
 {% for group in groups %}
-<details class="ns-group" open>
+<details class="ns-group">
     <summary>
         <strong>{{ group.namespace }}</strong>
         <span class="badge badge-secondary">{{ group.total }}</span>
@@ -36,5 +36,8 @@
 </details>
 {% endfor %}
 {% else %}
-<p>No handlers in this category.</p>
+<div class="empty-state">
+    <div class="empty-state-icon">&#x26A1;</div>
+    <p>No handlers in this category.</p>
+</div>
 {% endif %}
