@@ -6,6 +6,7 @@ Run from the repo root:
 """
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -210,16 +211,20 @@ class TestRenderMapHtml:
         assert "<html>" in content or "<!DOCTYPE html>" in content
         assert "leaflet" in content.lower()
 
-    def test_render_default_output_path(self, sample_geojson):
+    def test_render_default_output_path(self, sample_geojson, tmp_path, monkeypatch):
         from handlers.visualization.map_renderer import render_map_html
+
+        monkeypatch.setenv("AFL_LOCAL_OUTPUT_DIR", str(tmp_path))
+        # Reload the cached module-level variable
+        import handlers.shared._output as _output_mod
+
+        monkeypatch.setattr(_output_mod, "_OUTPUT_BASE", "")
 
         result = render_map_html(sample_geojson)
 
-        expected_path = sample_geojson.with_suffix(".html")
-        assert result.output_path == str(expected_path)
-
-        # Cleanup
-        Path(result.output_path).unlink()
+        expected_path = os.path.join(str(tmp_path), "maps", "test.html")
+        assert result.output_path == expected_path
+        assert Path(result.output_path).exists()
 
     def test_render_with_custom_style(self, sample_geojson, tmp_path):
         from handlers.visualization.map_renderer import render_map_html
