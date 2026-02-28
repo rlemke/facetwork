@@ -1,5 +1,47 @@
 # Implementation Changelog
 
+## Completed (v0.24.0) - Agent SDK Step Logs + PyPI Packaging + Cleanups
+
+Add step-log emission to all four non-Python agent SDKs (Scala, Go, TypeScript,
+Java), fix PyPI packaging metadata, and perform project hygiene cleanups.
+
+### Step-log emission in non-Python SDKs (13 files)
+
+Protocol constants (`agents/protocol/constants.json`):
+- Added `step_logs` to `collections`
+- Added `step_log_levels` section: info, warning, error, success
+- Added `step_log_sources` section: framework, handler
+- Added `insert_step_log` to `mongodb_operations` with full document schema
+
+For each SDK (Scala, Go, TypeScript, Java) — identical pattern:
+- **Protocol**: Added `step_logs` collection constant + level/source constants
+- **MongoOps**: Added `insertStepLog(...)` — `insertOne` into `step_logs`, best-effort (catches errors internally, logs at debug)
+- **Poller**: Added 5 emission points in `processTask`/`processEvent` matching Python `AgentPoller._emit_step_log`:
+  1. Task claimed → `level=info, source=framework`
+  2. No handler found → `level=error, source=framework`
+  3. Dispatching handler → `level=info, source=framework`
+  4. Handler completed (with duration ms) → `level=success, source=framework`
+  5. Handler error → `level=error, source=framework`
+
+Files changed:
+- `agents/protocol/constants.json`
+- `agents/scala/afl-agent/src/main/scala/afl/agent/{Protocol,MongoOps,AgentPoller}.scala`
+- `agents/go/afl-agent/{protocol,mongo_ops,poller}.go`
+- `agents/typescript/afl-agent/src/{protocol,mongo-ops,poller}.ts`
+- `agents/java/afl-agent/src/main/java/afl/agent/{Protocol,MongoOps,AgentPoller}.java`
+
+### PyPI packaging (3 files)
+
+- `pyproject.toml`: Fixed license from MIT to Apache-2.0 (matches LICENSE file), added `authors`, `keywords`, `classifiers` (Beta, Apache, Python 3.11/3.12, Compilers, Distributed), added `[project.urls]` (Homepage, Repository, Documentation, Changelog), added `[tool.setuptools.package-data]` for `*.lark`, `templates/**/*.html`, `static/*.{js,css}`, bumped version to 0.24.0
+- `afl/__init__.py`: Updated `__version__` from `"0.12.54"` to `"0.24.0"`
+- New `MANIFEST.in`: Include LICENSE, README.md, grammar, templates, static assets for sdist builds
+
+### Cleanups (3 files)
+
+- `.gitignore`: Added `oms-mirror` (macOS alias)
+- `docs/PROJECT_JOURNEY.md`: Updated metrics (3,211 tests, 42 AFL files, ~80 handlers, 156/7 seeded workflows, 142 grammar lines), added v0.15–v0.24 milestone rows, updated version footer
+- New `CONTRIBUTING.md`: Dev setup, running tests, code style (ruff/mypy/pre-commit), PR process, license
+
 ## Completed (v0.23.1) - CI Pipeline Fix + Pre-commit Hooks
 
 Fix all CI errors and activate pre-commit hooks so lint, tests, and typecheck
