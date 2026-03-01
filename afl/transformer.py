@@ -15,8 +15,11 @@
 """Lark Transformer to convert parse tree to AFL AST."""
 
 import re
+from typing import TypeVar
 
 from lark import Token, Transformer, v_args
+
+_T = TypeVar("_T")
 
 from .ast import (
     AndThenBlock,
@@ -129,6 +132,67 @@ class AFLTransformer(Transformer):
     def _loc(self, meta) -> SourceLocation | None:
         """Helper to get location with source_id."""
         return _get_location(meta, self._source_id)
+
+    # --- Item extraction helpers ---
+
+    @staticmethod
+    def _find_one(items: list, cls: type[_T]) -> _T | None:
+        """Find first item of given type, or None."""
+        return next((item for item in items if isinstance(item, cls)), None)
+
+    @staticmethod
+    def _find_all(items: list, cls: type[_T]) -> list[_T]:
+        """Find all items of given type."""
+        return [item for item in items if isinstance(item, cls)]
+
+    @staticmethod
+    def _find_rest(items: list, *exclude: type) -> list:
+        """Find items NOT matching any of the given types."""
+        return [item for item in items if not isinstance(item, tuple(exclude))]
+
+    # --- Declaration helpers ---
+
+    _DECL_TYPE_MAP: dict[type, str] = {
+        Namespace: "namespaces",
+        UsesDecl: "uses",
+        FacetDecl: "facets",
+        EventFacetDecl: "event_facets",
+        WorkflowDecl: "workflows",
+        ImplicitDecl: "implicits",
+        SchemaDecl: "schemas",
+    }
+
+    @classmethod
+    def _segregate_declarations(cls, items: list) -> dict[str, list]:
+        """Sort items into typed declaration lists."""
+        result: dict[str, list] = {key: [] for key in cls._DECL_TYPE_MAP.values()}
+        for item in items:
+            for typ, key in cls._DECL_TYPE_MAP.items():
+                if isinstance(item, typ):
+                    result[key].append(item)
+                    break
+        return result
+
+    def _build_declaration(self, meta, items: list) -> dict:
+        """Extract common declaration fields: doc, sig, pre_script, body, catch."""
+        doc = _extract_doc_comment(items)
+        sig = items[0]
+        catch = self._find_one(items[1:], CatchClause)
+        rest = self._find_rest(items[1:], CatchClause)
+        tail = rest[0] if rest else None
+        pre_script, body = None, None
+        if isinstance(tail, tuple):
+            pre_script, body = tail
+        elif isinstance(tail, (PromptBlock, AndThenBlock, list)):
+            body = tail
+        return {
+            "sig": sig,
+            "pre_script": pre_script,
+            "body": body,
+            "catch": catch,
+            "doc": doc,
+            "location": self._loc(meta),
+        }
 
     # Terminals
     def IDENT(self, token: Token) -> str:
@@ -345,7 +409,7 @@ class AFLTransformer(Transformer):
 
     @v_args(meta=True)
     def map_literal(self, meta, items: list) -> MapLiteral:
-        entries = [item for item in items if isinstance(item, MapEntry)]
+        entries = self._find_all(items, MapEntry)
         return MapLiteral(entries=entries, location=self._loc(meta))
 
     # Named arguments
@@ -379,13 +443,8 @@ class AFLTransformer(Transformer):
     @v_args(meta=True)
     def call_expr(self, meta, items: list) -> CallExpr:
         name = items[0]
-        args = []
-        mixins = []
-        for item in items[1:]:
-            if isinstance(item, list):
-                args = item
-            elif isinstance(item, MixinCall):
-                mixins.append(item)
+        args = self._find_one(items[1:], list) or []
+        mixins = self._find_all(items[1:], MixinCall)
         return CallExpr(name=name, args=args, mixins=mixins, location=self._loc(meta))
 
     # Statements
@@ -393,24 +452,14 @@ class AFLTransformer(Transformer):
     def step_stmt(self, meta, items: list) -> StepStmt:
         name = items[0]
         call = items[1]
-        body = None
-        catch = None
-        for item in items[2:]:
-            if isinstance(item, CatchClause):
-                catch = item
-            elif isinstance(item, AndThenBlock):
-                body = item
+        body = self._find_one(items[2:], AndThenBlock)
+        catch = self._find_one(items[2:], CatchClause)
         return StepStmt(name=name, call=call, body=body, catch=catch, location=self._loc(meta))
 
     @v_args(meta=True)
     def step_body(self, meta, items: list) -> AndThenBlock:
-        foreach = None
-        block = None
-        for item in items:
-            if isinstance(item, ForeachClause):
-                foreach = item
-            elif isinstance(item, Block):
-                block = item
+        foreach = self._find_one(items, ForeachClause)
+        block = self._find_one(items, Block)
         return AndThenBlock(block=block, foreach=foreach, location=self._loc(meta))
 
     @v_args(meta=True, inline=True)
@@ -420,14 +469,7 @@ class AFLTransformer(Transformer):
     # Blocks
     @v_args(meta=True)
     def block_body(self, meta, items: list) -> tuple[list[StepStmt], list[YieldStmt]]:
-        steps = []
-        yield_stmts = []
-        for item in items:
-            if isinstance(item, StepStmt):
-                steps.append(item)
-            elif isinstance(item, YieldStmt):
-                yield_stmts.append(item)
-        return (steps, yield_stmts)
+        return (self._find_all(items, StepStmt), self._find_all(items, YieldStmt))
 
     @v_args(meta=True)
     def block(self, meta, items: list) -> Block:
@@ -456,13 +498,8 @@ class AFLTransformer(Transformer):
     @v_args(meta=True)
     def andthen_clause(self, meta, items: list) -> AndThenBlock:
         """Handle regular andThen block clause."""
-        foreach = None
-        block = None
-        for item in items:
-            if isinstance(item, ForeachClause):
-                foreach = item
-            elif isinstance(item, Block):
-                block = item
+        foreach = self._find_one(items, ForeachClause)
+        block = self._find_one(items, Block)
         return AndThenBlock(block=block, foreach=foreach, location=self._loc(meta))
 
     @v_args(meta=True)
@@ -486,7 +523,7 @@ class AFLTransformer(Transformer):
     @v_args(meta=True)
     def when_block(self, meta, items: list) -> WhenBlock:
         """Convert when_block rule to WhenBlock AST node."""
-        cases = [item for item in items if isinstance(item, WhenCase)]
+        cases = self._find_all(items, WhenCase)
         return WhenBlock(cases=cases, location=self._loc(meta))
 
     @v_args(meta=True)
@@ -509,30 +546,23 @@ class AFLTransformer(Transformer):
     @v_args(meta=True)
     def catch_simple(self, meta, items: list) -> CatchClause:
         """Handle simple catch block: catch { steps }."""
-        block = next(item for item in items if isinstance(item, Block))
+        block = self._find_one(items, Block)
         return CatchClause(block=block, location=self._loc(meta))
 
     @v_args(meta=True)
     def catch_when(self, meta, items: list) -> CatchClause:
         """Handle conditional catch block: catch when { case ... }."""
-        when_blk = next(item for item in items if isinstance(item, WhenBlock))
+        when_blk = self._find_one(items, WhenBlock)
         return CatchClause(when=when_blk, location=self._loc(meta))
 
     @v_args(meta=True)
     def facet_def_tail(self, meta, items: list):
-        # Check for prompt block
-        for item in items:
-            if isinstance(item, PromptBlock):
-                return item
+        prompt = self._find_one(items, PromptBlock)
+        if prompt is not None:
+            return prompt
 
-        # Separate pre_script (ScriptBlock) from andThen blocks
-        pre_script = None
-        blocks = []
-        for item in items:
-            if isinstance(item, ScriptBlock):
-                pre_script = item
-            elif isinstance(item, AndThenBlock):
-                blocks.append(item)
+        pre_script = self._find_one(items, ScriptBlock)
+        blocks = self._find_all(items, AndThenBlock)
 
         body: AndThenBlock | list[AndThenBlock] | None = None
         if len(blocks) == 1:
@@ -621,78 +651,15 @@ class AFLTransformer(Transformer):
     # Declarations
     @v_args(meta=True)
     def facet_decl(self, meta, items: list) -> FacetDecl:
-        doc = _extract_doc_comment(items)
-        sig = items[0]
-        tail = None
-        catch = None
-        for item in items[1:]:
-            if isinstance(item, CatchClause):
-                catch = item
-            elif tail is None:
-                tail = item
-        pre_script, body = None, None
-        if isinstance(tail, tuple):
-            pre_script, body = tail
-        elif isinstance(tail, (PromptBlock, AndThenBlock, list)):
-            body = tail
-        return FacetDecl(
-            sig=sig,
-            pre_script=pre_script,
-            body=body,
-            catch=catch,
-            doc=doc,
-            location=self._loc(meta),
-        )
+        return FacetDecl(**self._build_declaration(meta, items))
 
     @v_args(meta=True)
     def event_facet_decl(self, meta, items: list) -> EventFacetDecl:
-        doc = _extract_doc_comment(items)
-        sig = items[0]
-        tail = None
-        catch = None
-        for item in items[1:]:
-            if isinstance(item, CatchClause):
-                catch = item
-            elif tail is None:
-                tail = item
-        pre_script, body = None, None
-        if isinstance(tail, tuple):
-            pre_script, body = tail
-        elif isinstance(tail, (PromptBlock, AndThenBlock, list)):
-            body = tail
-        return EventFacetDecl(
-            sig=sig,
-            pre_script=pre_script,
-            body=body,
-            catch=catch,
-            doc=doc,
-            location=self._loc(meta),
-        )
+        return EventFacetDecl(**self._build_declaration(meta, items))
 
     @v_args(meta=True)
     def workflow_decl(self, meta, items: list) -> WorkflowDecl:
-        doc = _extract_doc_comment(items)
-        sig = items[0]
-        tail = None
-        catch = None
-        for item in items[1:]:
-            if isinstance(item, CatchClause):
-                catch = item
-            elif tail is None:
-                tail = item
-        pre_script, body = None, None
-        if isinstance(tail, tuple):
-            pre_script, body = tail
-        elif isinstance(tail, (PromptBlock, AndThenBlock, list)):
-            body = tail
-        return WorkflowDecl(
-            sig=sig,
-            pre_script=pre_script,
-            body=body,
-            catch=catch,
-            doc=doc,
-            location=self._loc(meta),
-        )
+        return WorkflowDecl(**self._build_declaration(meta, items))
 
     @v_args(meta=True, inline=True)
     def implicit_decl(self, meta, name: str, call: CallExpr) -> ImplicitDecl:
@@ -720,28 +687,7 @@ class AFLTransformer(Transformer):
     # Namespace
     @v_args(meta=True)
     def namespace_body(self, meta, items: list) -> dict:
-        result: dict[str, list] = {
-            "uses": [],
-            "facets": [],
-            "event_facets": [],
-            "workflows": [],
-            "implicits": [],
-            "schemas": [],
-        }
-        for item in items:
-            if isinstance(item, UsesDecl):
-                result["uses"].append(item)
-            elif isinstance(item, FacetDecl):
-                result["facets"].append(item)
-            elif isinstance(item, EventFacetDecl):
-                result["event_facets"].append(item)
-            elif isinstance(item, WorkflowDecl):
-                result["workflows"].append(item)
-            elif isinstance(item, ImplicitDecl):
-                result["implicits"].append(item)
-            elif isinstance(item, SchemaDecl):
-                result["schemas"].append(item)
-        return result
+        return self._segregate_declarations(items)
 
     @v_args(meta=True)
     def namespace_block(self, meta, items: list) -> Namespace:
@@ -767,31 +713,13 @@ class AFLTransformer(Transformer):
     # Program (start)
     @v_args(meta=True)
     def start(self, meta, items: list) -> Program:
-        namespaces = []
-        facets = []
-        event_facets = []
-        workflows = []
-        implicits = []
-        schemas = []
-        for item in items:
-            if isinstance(item, Namespace):
-                namespaces.append(item)
-            elif isinstance(item, FacetDecl):
-                facets.append(item)
-            elif isinstance(item, EventFacetDecl):
-                event_facets.append(item)
-            elif isinstance(item, WorkflowDecl):
-                workflows.append(item)
-            elif isinstance(item, ImplicitDecl):
-                implicits.append(item)
-            elif isinstance(item, SchemaDecl):
-                schemas.append(item)
+        seg = self._segregate_declarations(items)
         return Program(
-            namespaces=namespaces,
-            facets=facets,
-            event_facets=event_facets,
-            workflows=workflows,
-            implicits=implicits,
-            schemas=schemas,
+            namespaces=seg["namespaces"],
+            facets=seg["facets"],
+            event_facets=seg["event_facets"],
+            workflows=seg["workflows"],
+            implicits=seg["implicits"],
+            schemas=seg["schemas"],
             location=self._loc(meta),
         )
