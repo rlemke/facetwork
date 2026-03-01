@@ -2,10 +2,10 @@
 
 **Current version: v0.28.0**
 
-## Completed (v0.28.0) - Comparison/Boolean Operators & andThen Match Blocks
+## Completed (v0.28.0) - Comparison/Boolean Operators & andThen When Blocks
 
 Two new language features: comparison/boolean operators as general-purpose
-expressions, and `andThen match { case condition => { ... } }` conditional
+expressions, and `andThen when { case condition => { ... } }` conditional
 branching blocks.
 
 ### Item 1: Comparison & Boolean Operators
@@ -30,33 +30,35 @@ Files: `afl/grammar/afl.lark`, `afl/ast.py`, `afl/transformer.py`,
 
 Tests: 35 (parser 14, emitter 3, validator 8, runtime expression 8, runtime dependency 2)
 
-### Item 2: andThen Match Blocks
+### Item 2: andThen When Blocks
 
 Conditional branching on step outputs or workflow inputs. Non-exclusive
 semantics: all matching cases execute concurrently. Default case (`case _`)
-executes only if no other case matched.
+is **required** and executes only if no other case matched. Missing default
+is a compile-time validation error; at runtime, if no case matches and no
+default exists, the block errors.
 
 ```afl
-s1 = Classify(data = $.input) andThen match {
+s1 = Classify(data = $.input) andThen when {
     case s1.status == "success" => { a = HandleSuccess(id = s1.id) }
     case s1.score > 90 => { b = HandleHigh(id = s1.id) }
     case _ => { c = HandleDefault(id = s1.id) }
 }
 ```
 
-AST: `MatchBlock(cases: list[MatchCase])`, `MatchCase(condition, block, is_default)`.
-Runtime: `ObjectType.AND_MATCH` with sub-block pattern (same as foreach).
-Statement IDs: `match-case-N` for sub-block identification.
+AST: `WhenBlock(cases: list[WhenCase])`, `WhenCase(condition, block, is_default)`.
+Runtime: `ObjectType.AND_WHEN` with sub-block pattern (same as foreach).
+Statement IDs: `when-case-N` for sub-block identification.
 
 Files: `afl/grammar/afl.lark`, `afl/ast.py`, `afl/transformer.py`,
 `afl/emitter.py`, `afl/validator.py`, `afl/__init__.py`,
 `afl/runtime/handlers/blocks.py`, `afl/runtime/handlers/block_execution.py`,
 `afl/runtime/evaluator.py`
 
-Tests: 26 (parser 7, emitter 3, validator 5, runtime evaluator 5, runtime expression 6)
+Tests: 27 (parser 7, emitter 3, validator 6, runtime evaluator 5, runtime expression 6)
 
 Spec: `spec/10_language.md` (grammar, examples), `spec/11_semantics.md` (AST nodes),
-`spec/12_validation.md` (type checking, match validation rules)
+`spec/12_validation.md` (type checking, when validation rules)
 
 ---
 

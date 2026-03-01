@@ -49,7 +49,7 @@ facet_def_tail: _NL* "script" script_block _NL* andthen_clause*
 
 andthen_clause: "andThen" foreach_clause? block
               | "andThen" _NL* "script" script_block _NL*  -> andthen_script
-              | "andThen" _NL* "match" match_block         -> andthen_match
+              | "andThen" _NL* "when" when_block             -> andthen_when
 
 foreach_clause: "foreach" IDENT "in" reference
 
@@ -67,14 +67,14 @@ script_block: STRING
 block: "{" _NL* block_body "}" _NL*
 block_body: (step_stmt _NL*)* (yield_stmt _NL*)*
 
-// Match blocks for conditional branching
-match_block: "{" _NL* match_case+ "}" _NL*
-match_case: "case" match_condition "=>" block        -> match_case_expr
-          | "case" "_" "=>" block                    -> match_case_default
-match_condition: expr
+// When blocks for conditional branching
+when_block: "{" _NL* when_case+ "}" _NL*
+when_case: "case" when_condition "=>" block        -> when_case_expr
+         | "case" "_" "=>" block                   -> when_case_default
+when_condition: expr
 step_stmt: IDENT "=" call_expr step_body?
 step_body: "andThen" foreach_clause? block
-         | "andThen" _NL* "match" match_block         -> step_body_match
+         | "andThen" _NL* "when" when_block             -> step_body_when
 
 yield_stmt: "yield" call_expr
 

@@ -144,10 +144,10 @@ class StatementBlocksBeginHandler(StateHandler):
         for i, block_body in enumerate(bodies):
             statement_id = f"block-{i}"
 
-            # Determine block type: match blocks use AND_MATCH
+            # Determine block type: when blocks use AND_WHEN
             block_type = ObjectType.AND_THEN
-            if isinstance(block_body, dict) and "match" in block_body:
-                block_type = ObjectType.AND_MATCH
+            if isinstance(block_body, dict) and "when" in block_body:
+                block_type = ObjectType.AND_WHEN
 
             # Idempotency: skip if block step already exists in DB
             if self.context.persistence.block_step_exists(statement_id, self.step.id):

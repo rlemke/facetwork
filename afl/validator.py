@@ -39,7 +39,6 @@ from .ast import (
     IndexExpr,
     Literal,
     MapLiteral,
-    MatchBlock,
     Namespace,
     Program,
     PromptBlock,
@@ -49,6 +48,7 @@ from .ast import (
     SourceLocation,
     TypeRef,
     UnaryExpr,
+    WhenBlock,
     WorkflowDecl,
     YieldStmt,
 )
@@ -660,9 +660,9 @@ class AFLValidator:
             self._validate_script_block(body.script, containing_sig)
             return
 
-        # andThen match variant
-        if body.match:
-            self._validate_match_block(body.match, containing_sig, extra_yield_targets)
+        # andThen when variant
+        if body.when:
+            self._validate_when_block(body.when, containing_sig, extra_yield_targets)
             return
 
         if not body.block:
@@ -756,13 +756,13 @@ class AFLValidator:
             else:
                 yield_targets_used.add(target)
 
-    def _validate_match_block(
+    def _validate_when_block(
         self,
-        match: MatchBlock,
+        when: WhenBlock,
         containing_sig: FacetSig,
         extra_yield_targets: set[str] | None = None,
     ) -> None:
-        """Validate a match block.
+        """Validate a when block.
 
         Checks:
         - At least one case
@@ -771,40 +771,46 @@ class AFLValidator:
         - Each condition must be Boolean type
         - Validate references and steps in each case block
         """
-        if not match.cases:
+        if not when.cases:
             self._result.add_error(
-                "Match block must have at least one case",
-                match.location,
+                "When block must have at least one case",
+                when.location,
             )
             return
 
         default_count = 0
         default_index = -1
-        for i, case in enumerate(match.cases):
+        for i, case in enumerate(when.cases):
             if case.is_default:
                 default_count += 1
                 default_index = i
 
         if default_count > 1:
             self._result.add_error(
-                "Match block can have at most one default case",
-                match.location,
+                "When block can have at most one default case",
+                when.location,
             )
 
-        if default_count == 1 and default_index != len(match.cases) - 1:
+        if default_count == 0:
             self._result.add_error(
-                "Default case must be the last case in a match block",
-                match.location,
+                "When block must have a default case (case _ =>)",
+                when.location,
+            )
+
+        if default_count == 1 and default_index != len(when.cases) - 1:
+            self._result.add_error(
+                "Default case must be the last case in a when block",
+                when.location,
             )
 
         # Validate each case
-        for case in match.cases:
+        for case in when.cases:
             if not case.is_default and case.condition is not None:
                 # Check that condition type is Boolean
                 condition_type = self._infer_type(case.condition)
                 if condition_type != "Unknown" and condition_type != "Boolean":
                     self._result.add_error(
-                        f"Match case condition must be Boolean, got {condition_type}",
+                        f"When case condition must be Boolean, got {condition_type}",
                         case.location,
                     )
                 # Validate references in condition

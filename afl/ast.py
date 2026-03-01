@@ -215,8 +215,8 @@ class Block(ASTNode):
 
 
 @dataclass
-class MatchCase(ASTNode):
-    """A case in a match block."""
+class WhenCase(ASTNode):
+    """A case in a when block."""
 
     condition: (
         "Literal | Reference | BinaryExpr | UnaryExpr | ConcatExpr | None"  # None = default (_)
@@ -226,23 +226,23 @@ class MatchCase(ASTNode):
 
 
 @dataclass
-class MatchBlock(ASTNode):
-    """Match block: match { case condition => { ... } ... }"""
+class WhenBlock(ASTNode):
+    """When block: when { case condition => { ... } ... }"""
 
-    cases: list[MatchCase]
+    cases: list[WhenCase]
 
 
 @dataclass
 class AndThenBlock(ASTNode):
-    """andThen block with optional foreach/match.
+    """andThen block with optional foreach/when.
 
-    Has EITHER block (regular andThen), script, or match, not multiple.
+    Has EITHER block (regular andThen), script, or when, not multiple.
     """
 
     block: Block | None = None
     foreach: ForeachClause | None = None
     script: "ScriptBlock | None" = None
-    match: MatchBlock | None = None
+    when: WhenBlock | None = None
 
 
 @dataclass

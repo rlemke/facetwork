@@ -31,7 +31,7 @@ class TestObjectType:
         """Test block type detection."""
         assert ObjectType.is_block(ObjectType.AND_THEN)
         assert ObjectType.is_block(ObjectType.AND_MAP)
-        assert ObjectType.is_block(ObjectType.AND_MATCH)
+        assert ObjectType.is_block(ObjectType.AND_WHEN)
         assert ObjectType.is_block(ObjectType.BLOCK)
         assert not ObjectType.is_block(ObjectType.VARIABLE_ASSIGNMENT)
         assert not ObjectType.is_block(ObjectType.YIELD_ASSIGNMENT)

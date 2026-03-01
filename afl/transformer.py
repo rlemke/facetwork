@@ -37,8 +37,6 @@ from .ast import (
     Literal,
     MapEntry,
     MapLiteral,
-    MatchBlock,
-    MatchCase,
     MixinCall,
     MixinSig,
     NamedArg,
@@ -56,6 +54,8 @@ from .ast import (
     TypeRef,
     UnaryExpr,
     UsesDecl,
+    WhenBlock,
+    WhenCase,
     WorkflowDecl,
     YieldStmt,
 )
@@ -465,38 +465,38 @@ class AFLTransformer(Transformer):
         return AndThenBlock(script=script, location=self._loc(meta))
 
     @v_args(meta=True)
-    def andthen_match(self, meta, items: list) -> AndThenBlock:
-        """Handle andThen match variant."""
-        match_blk = items[0]  # MatchBlock from match_block rule
-        return AndThenBlock(match=match_blk, location=self._loc(meta))
+    def andthen_when(self, meta, items: list) -> AndThenBlock:
+        """Handle andThen when variant."""
+        when_blk = items[0]  # WhenBlock from when_block rule
+        return AndThenBlock(when=when_blk, location=self._loc(meta))
 
     @v_args(meta=True)
-    def step_body_match(self, meta, items: list) -> AndThenBlock:
-        """Handle statement-level andThen match."""
-        match_blk = items[0]
-        return AndThenBlock(match=match_blk, location=self._loc(meta))
+    def step_body_when(self, meta, items: list) -> AndThenBlock:
+        """Handle statement-level andThen when."""
+        when_blk = items[0]
+        return AndThenBlock(when=when_blk, location=self._loc(meta))
 
     @v_args(meta=True)
-    def match_block(self, meta, items: list) -> MatchBlock:
-        """Convert match_block rule to MatchBlock AST node."""
-        cases = [item for item in items if isinstance(item, MatchCase)]
-        return MatchBlock(cases=cases, location=self._loc(meta))
+    def when_block(self, meta, items: list) -> WhenBlock:
+        """Convert when_block rule to WhenBlock AST node."""
+        cases = [item for item in items if isinstance(item, WhenCase)]
+        return WhenBlock(cases=cases, location=self._loc(meta))
 
     @v_args(meta=True)
-    def match_case_expr(self, meta, items: list) -> MatchCase:
-        """Convert match_case_expr rule to MatchCase AST node."""
+    def when_case_expr(self, meta, items: list) -> WhenCase:
+        """Convert when_case_expr rule to WhenCase AST node."""
         condition = items[0]
         block = items[1]
-        return MatchCase(condition=condition, block=block, location=self._loc(meta))
+        return WhenCase(condition=condition, block=block, location=self._loc(meta))
 
     @v_args(meta=True)
-    def match_case_default(self, meta, items: list) -> MatchCase:
-        """Convert match_case_default rule to MatchCase AST node."""
+    def when_case_default(self, meta, items: list) -> WhenCase:
+        """Convert when_case_default rule to WhenCase AST node."""
         block = items[0]
-        return MatchCase(condition=None, block=block, is_default=True, location=self._loc(meta))
+        return WhenCase(condition=None, block=block, is_default=True, location=self._loc(meta))
 
-    def match_condition(self, items: list):
-        """Pass through match condition expression."""
+    def when_condition(self, items: list):
+        """Pass through when condition expression."""
         return items[0]
 
     @v_args(meta=True)

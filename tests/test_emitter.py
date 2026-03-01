@@ -1395,14 +1395,14 @@ class TestComparisonBooleanEmitter:
         assert arg_val["operand"]["type"] == "InputRef"
 
 
-class TestMatchBlockEmitter:
-    """Test emission of match blocks."""
+class TestWhenBlockEmitter:
+    """Test emission of when blocks."""
 
-    def test_match_block_emission(self):
-        """Match block emits MatchBlock with cases."""
+    def test_when_block_emission(self):
+        """When block emits WhenBlock with cases."""
         ast = parse("""
         facet DoA(x: Int) => (value: String)
-        workflow Test(count: Int) => (output: String) andThen match {
+        workflow Test(count: Int) => (output: String) andThen when {
             case $.count > 10 => {
                 a = DoA(x = $.count)
                 yield Test(output = a.value)
@@ -1414,16 +1414,16 @@ class TestMatchBlockEmitter:
         wf = _first_decl(data, "WorkflowDecl")
         body = wf["body"]
         assert body["type"] == "AndThenBlock"
-        assert "match" in body
-        match = body["match"]
-        assert match["type"] == "MatchBlock"
-        assert len(match["cases"]) == 1
+        assert "when" in body
+        when = body["when"]
+        assert when["type"] == "WhenBlock"
+        assert len(when["cases"]) == 1
 
-    def test_match_case_with_condition(self):
-        """Match case emits condition expression."""
+    def test_when_case_with_condition(self):
+        """When case emits condition expression."""
         ast = parse("""
         facet DoA(x: Int) => (value: String)
-        workflow Test(count: Int) => (output: String) andThen match {
+        workflow Test(count: Int) => (output: String) andThen when {
             case $.count > 10 => {
                 a = DoA(x = $.count)
                 yield Test(output = a.value)
@@ -1433,19 +1433,19 @@ class TestMatchBlockEmitter:
         emitter = JSONEmitter(include_locations=False)
         data = emitter.emit_dict(ast)
         wf = _first_decl(data, "WorkflowDecl")
-        case = wf["body"]["match"]["cases"][0]
-        assert case["type"] == "MatchCase"
+        case = wf["body"]["when"]["cases"][0]
+        assert case["type"] == "WhenCase"
         assert "condition" in case
         assert case["condition"]["type"] == "BinaryExpr"
         assert case["condition"]["operator"] == ">"
         assert "steps" in case
         assert "yield" in case
 
-    def test_match_default_case(self):
+    def test_when_default_case(self):
         """Default case emits with default=true and no condition."""
         ast = parse("""
         facet DoFallback() => (value: String)
-        workflow Test() => (output: String) andThen match {
+        workflow Test() => (output: String) andThen when {
             case _ => {
                 f = DoFallback()
                 yield Test(output = f.value)
@@ -1455,7 +1455,7 @@ class TestMatchBlockEmitter:
         emitter = JSONEmitter(include_locations=False)
         data = emitter.emit_dict(ast)
         wf = _first_decl(data, "WorkflowDecl")
-        case = wf["body"]["match"]["cases"][0]
-        assert case["type"] == "MatchCase"
+        case = wf["body"]["when"]["cases"][0]
+        assert case["type"] == "WhenCase"
         assert case["default"] is True
         assert "condition" not in case

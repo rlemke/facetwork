@@ -5577,8 +5577,8 @@ class TestErrorPropagation:
         assert total == 3
 
 
-class TestMatchBlockExecution:
-    """Tests for andThen match runtime execution."""
+class TestWhenBlockExecution:
+    """Tests for andThen when runtime execution."""
 
     @pytest.fixture
     def store(self):
@@ -5588,13 +5588,13 @@ class TestMatchBlockExecution:
     def evaluator(self, store):
         return Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
 
-    def _match_workflow_ast(self):
-        """AST for a workflow with an andThen match block.
+    def _when_workflow_ast(self):
+        """AST for a workflow with an andThen when block.
 
         ```afl
         facet DoA(x: Int)
         facet DoFallback()
-        workflow MatchTest(count: Int) andThen match {
+        workflow WhenTest(count: Int) andThen when {
             case $.count > 10 => {
                 a = DoA(x = $.count)
             }
@@ -5606,15 +5606,15 @@ class TestMatchBlockExecution:
         """
         return {
             "type": "WorkflowDecl",
-            "name": "MatchTest",
+            "name": "WhenTest",
             "params": [{"name": "count", "type": "Int"}],
             "body": {
                 "type": "AndThenBlock",
-                "match": {
-                    "type": "MatchBlock",
+                "when": {
+                    "type": "WhenBlock",
                     "cases": [
                         {
-                            "type": "MatchCase",
+                            "type": "WhenCase",
                             "condition": {
                                 "type": "BinaryExpr",
                                 "operator": ">",
@@ -5643,7 +5643,7 @@ class TestMatchBlockExecution:
                             ],
                         },
                         {
-                            "type": "MatchCase",
+                            "type": "WhenCase",
                             "default": True,
                             "steps": [
                                 {
@@ -5662,47 +5662,47 @@ class TestMatchBlockExecution:
             },
         }
 
-    def test_match_case_true_executes(self, store, evaluator):
+    def test_when_case_true_executes(self, store, evaluator):
         """When condition is true, matching case executes."""
-        workflow_ast = self._match_workflow_ast()
+        workflow_ast = self._when_workflow_ast()
         result = evaluator.execute(workflow_ast, inputs={"count": 20})
         assert result.success is True
 
-        # Should have a match-case-0 sub-block (condition true)
+        # Should have a when-case-0 sub-block (condition true)
         all_steps = list(store.get_all_steps())
-        match_blocks = [
-            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("match-case-")
+        when_blocks = [
+            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("when-case-")
         ]
-        assert len(match_blocks) == 1
-        assert str(match_blocks[0].statement_id) == "match-case-0"
+        assert len(when_blocks) == 1
+        assert str(when_blocks[0].statement_id) == "when-case-0"
 
-    def test_match_default_when_no_match(self, store, evaluator):
+    def test_when_default_when_no_match(self, store, evaluator):
         """When no condition matches, default case executes."""
-        workflow_ast = self._match_workflow_ast()
+        workflow_ast = self._when_workflow_ast()
         result = evaluator.execute(workflow_ast, inputs={"count": 5})
         assert result.success is True
 
-        # Should have a match-case-1 sub-block (default)
+        # Should have a when-case-1 sub-block (default)
         all_steps = list(store.get_all_steps())
-        match_blocks = [
-            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("match-case-")
+        when_blocks = [
+            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("when-case-")
         ]
-        assert len(match_blocks) == 1
-        assert str(match_blocks[0].statement_id) == "match-case-1"
+        assert len(when_blocks) == 1
+        assert str(when_blocks[0].statement_id) == "when-case-1"
 
-    def test_match_multiple_true_cases(self, store, evaluator):
+    def test_when_multiple_true_cases(self, store, evaluator):
         """When multiple conditions are true, all matching cases execute."""
         workflow_ast = {
             "type": "WorkflowDecl",
-            "name": "MultiMatch",
+            "name": "MultiWhen",
             "params": [{"name": "x", "type": "Int"}],
             "body": {
                 "type": "AndThenBlock",
-                "match": {
-                    "type": "MatchBlock",
+                "when": {
+                    "type": "WhenBlock",
                     "cases": [
                         {
-                            "type": "MatchCase",
+                            "type": "WhenCase",
                             "condition": {
                                 "type": "BinaryExpr",
                                 "operator": ">",
@@ -5722,7 +5722,7 @@ class TestMatchBlockExecution:
                             ],
                         },
                         {
-                            "type": "MatchCase",
+                            "type": "WhenCase",
                             "condition": {
                                 "type": "BinaryExpr",
                                 "operator": ">",
@@ -5749,25 +5749,25 @@ class TestMatchBlockExecution:
         assert result.success is True
 
         all_steps = list(store.get_all_steps())
-        match_blocks = [
-            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("match-case-")
+        when_blocks = [
+            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("when-case-")
         ]
         # Both cases match (20 > 5 and 20 > 0)
-        assert len(match_blocks) == 2
+        assert len(when_blocks) == 2
 
-    def test_match_no_match_no_default(self, store, evaluator):
-        """When no condition matches and no default, block completes with no sub-blocks."""
+    def test_when_no_match_no_default_errors(self, store, evaluator):
+        """When no condition matches and no default, block errors."""
         workflow_ast = {
             "type": "WorkflowDecl",
             "name": "NoMatch",
             "params": [{"name": "x", "type": "Int"}],
             "body": {
                 "type": "AndThenBlock",
-                "match": {
-                    "type": "MatchBlock",
+                "when": {
+                    "type": "WhenBlock",
                     "cases": [
                         {
-                            "type": "MatchCase",
+                            "type": "WhenCase",
                             "condition": {
                                 "type": "BinaryExpr",
                                 "operator": ">",
@@ -5791,29 +5791,23 @@ class TestMatchBlockExecution:
             },
         }
         result = evaluator.execute(workflow_ast, inputs={"x": 1})
-        assert result.success is True
+        assert result.success is False
 
-        all_steps = list(store.get_all_steps())
-        match_blocks = [
-            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("match-case-")
-        ]
-        assert len(match_blocks) == 0
-
-    def test_match_with_input_ref_condition(self, store, evaluator):
-        """Match condition using input references evaluates correctly."""
+    def test_when_with_input_ref_condition(self, store, evaluator):
+        """When condition using input references evaluates correctly."""
         workflow_ast = {
             "type": "WorkflowDecl",
-            "name": "RefMatch",
+            "name": "RefWhen",
             "params": [
                 {"name": "status", "type": "String"},
             ],
             "body": {
                 "type": "AndThenBlock",
-                "match": {
-                    "type": "MatchBlock",
+                "when": {
+                    "type": "WhenBlock",
                     "cases": [
                         {
-                            "type": "MatchCase",
+                            "type": "WhenCase",
                             "condition": {
                                 "type": "BinaryExpr",
                                 "operator": "==",
@@ -5833,7 +5827,7 @@ class TestMatchBlockExecution:
                             ],
                         },
                         {
-                            "type": "MatchCase",
+                            "type": "WhenCase",
                             "default": True,
                             "steps": [
                                 {
@@ -5855,8 +5849,8 @@ class TestMatchBlockExecution:
         result = evaluator.execute(workflow_ast, inputs={"status": "success"})
         assert result.success is True
         all_steps = list(store.get_all_steps())
-        match_blocks = [
-            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("match-case-")
+        when_blocks = [
+            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("when-case-")
         ]
-        assert len(match_blocks) == 1
-        assert str(match_blocks[0].statement_id) == "match-case-0"
+        assert len(when_blocks) == 1
+        assert str(when_blocks[0].statement_id) == "when-case-0"

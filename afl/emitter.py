@@ -36,8 +36,6 @@ from .ast import (
     Literal,
     MapEntry,
     MapLiteral,
-    MatchBlock,
-    MatchCase,
     MixinCall,
     MixinSig,
     NamedArg,
@@ -55,6 +53,8 @@ from .ast import (
     TypeRef,
     UnaryExpr,
     UsesDecl,
+    WhenBlock,
+    WhenCase,
     WorkflowDecl,
     YieldStmt,
 )
@@ -194,10 +194,10 @@ class JSONEmitter:
             return self._prompt_block(node)
         if isinstance(node, ScriptBlock):
             return self._script_block(node)
-        if isinstance(node, MatchBlock):
-            return self._match_block(node)
-        if isinstance(node, MatchCase):
-            return self._match_case(node)
+        if isinstance(node, WhenBlock):
+            return self._when_block(node)
+        if isinstance(node, WhenCase):
+            return self._when_case(node)
 
         raise ValueError(f"Unknown node type: {type(node)}")
 
@@ -515,8 +515,8 @@ class JSONEmitter:
 
         if node.foreach:
             data["foreach"] = self._convert(node.foreach)
-        if node.match:
-            data["match"] = self._convert(node.match)
+        if node.when:
+            data["when"] = self._convert(node.when)
         elif node.script:
             data["script"] = self._convert(node.script)
         elif node.block:
@@ -658,16 +658,16 @@ class JSONEmitter:
             "index": self._convert(node.index),
         }
 
-    def _match_block(self, node: MatchBlock) -> dict:
-        """Convert MatchBlock node."""
+    def _when_block(self, node: WhenBlock) -> dict:
+        """Convert WhenBlock node."""
         return {
-            "type": "MatchBlock",
+            "type": "WhenBlock",
             "cases": [self._convert(c) for c in node.cases],
         }
 
-    def _match_case(self, node: MatchCase) -> dict:
-        """Convert MatchCase node."""
-        data: dict = {"type": "MatchCase"}
+    def _when_case(self, node: WhenCase) -> dict:
+        """Convert WhenCase node."""
+        data: dict = {"type": "WhenCase"}
         if node.is_default:
             data["default"] = True
         else:

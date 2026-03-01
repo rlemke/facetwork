@@ -52,15 +52,15 @@ All AST nodes MUST have a unique UUID (v4) stored in the `node_id` field. This I
 ### Block Nodes
 | Node | Description |
 |------|-------------|
-| `AndThenBlock` | `andThen [foreach] { block }`, `andThen script "code"`, or `andThen match { cases }` |
+| `AndThenBlock` | `andThen [foreach] { block }`, `andThen script "code"`, or `andThen when { cases }` |
 | `Block` | `{ steps* yield? }` |
 | `ForeachClause` | `foreach var in reference` |
 | `StepStmt` | `name = CallExpr` |
 | `YieldStmt` | `yield CallExpr` |
 | `PromptBlock` | `prompt { system/template/model directives }` for LLM-based facets |
 | `ScriptBlock` | `script [python] "code..."` or `script { code }` for inline sandboxed Python execution |
-| `MatchBlock` | `match { cases }` — conditional branching within andThen |
-| `MatchCase` | `case expr => { block }` or `case _ => { block }` |
+| `WhenBlock` | `when { cases }` — conditional branching within andThen |
+| `WhenCase` | `case expr => { block }` or `case _ => { block }` |
 
 ### Expression Nodes
 | Node | Description |
@@ -108,9 +108,9 @@ Program
 │       ├── block: Block?
 │       │   ├── steps: list[StepStmt]
 │       │   └── yield_stmt: YieldStmt?
-│       ├── script: ScriptBlock?       # andThen script variant (mutually exclusive with block/match)
-│       └── match: MatchBlock?        # andThen match variant (mutually exclusive with block/script)
-│           └── cases: list[MatchCase]
+│       ├── script: ScriptBlock?       # andThen script variant (mutually exclusive with block/when)
+│       └── when: WhenBlock?          # andThen when variant (mutually exclusive with block/script)
+│           └── cases: list[WhenCase]
 │               ├── condition: expr?  # None for default case
 │               ├── block: Block
 │               └── is_default: bool

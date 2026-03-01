@@ -297,11 +297,12 @@ The validator infers expression types and rejects type-incompatible operations.
 
 ---
 
-### 8. Match Block Validation
+### 8. When Block Validation
 
 #### Structure Rules
 - At least one case required
-- At most one default case (`case _`)
+- Exactly one default case (`case _`) is **required**
+- At most one default case
 - Default case must be the last case
 
 #### Condition Requirements
@@ -312,8 +313,8 @@ The validator infers expression types and rejects type-incompatible operations.
 - Each case body (block) is validated as a normal block: steps, yields, references
 
 ```afl
-// Valid match block
-s1 = Classify(input = $.data) andThen match {
+// Valid when block
+s1 = Classify(input = $.data) andThen when {
     case s1.score > 90 => {
         a = HighGrade(id = s1.id)
     }
@@ -326,7 +327,7 @@ s1 = Classify(input = $.data) andThen match {
 }
 
 // ERROR: condition not boolean
-s2 = Process(input = $.data) andThen match {
+s2 = Process(input = $.data) andThen when {
     case s2.name => { ... }  // ERROR: String is not Boolean
 }
 ```
@@ -389,7 +390,8 @@ afl input.afl --no-validate
 | Boolean op on non-bool | `Operator '&&' requires Boolean operands, got String && Int` |
 | Ordered comp on bool | `Operator '>' cannot compare Boolean values` |
 | NOT on non-bool | `Operator '!' requires Boolean operand, got String` |
-| Match empty | `Match block must have at least one case` |
-| Match multiple defaults | `Match block has multiple default cases` |
-| Match default not last | `Default case must be the last case in a match block` |
-| Match non-bool condition | `Match case condition must be Boolean, got String` |
+| When empty | `When block must have at least one case` |
+| When missing default | `When block must have a default case (case _ =>)` |
+| When multiple defaults | `When block has multiple default cases` |
+| When default not last | `Default case must be the last case in a when block` |
+| When non-bool condition | `When case condition must be Boolean, got String` |

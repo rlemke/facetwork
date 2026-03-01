@@ -65,7 +65,7 @@ class ObjectType:
     # Block types
     AND_THEN = "AndThen"
     AND_MAP = "AndMap"
-    AND_MATCH = "AndMatch"
+    AND_WHEN = "AndWhen"
     BLOCK = "Block"
 
     # Mixin hooks
@@ -75,7 +75,7 @@ class ObjectType:
     @classmethod
     def is_block(cls, object_type: str) -> bool:
         """Check if object type is a block type."""
-        return object_type in (cls.AND_THEN, cls.AND_MAP, cls.AND_MATCH, cls.BLOCK)
+        return object_type in (cls.AND_THEN, cls.AND_MAP, cls.AND_WHEN, cls.BLOCK)
 
     @classmethod
     def is_statement(cls, object_type: str) -> bool:

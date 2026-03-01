@@ -154,16 +154,16 @@ class ExecutionContext:
                     self._block_ast_cache[block_step.id] = body_ast
                     return body_ast
 
-        # Match case sub-blocks: derive body from parent match block's AST
+        # When case sub-blocks: derive body from parent when block's AST
         stmt_id = str(block_step.statement_id) if block_step.statement_id else ""
-        if stmt_id.startswith("match-case-") and block_step.block_id:
+        if stmt_id.startswith("when-case-") and block_step.block_id:
             parent = self._find_step(block_step.block_id)
             if parent:
                 parent_ast = self.get_block_ast(parent)
-                if parent_ast and "match" in parent_ast:
+                if parent_ast and "when" in parent_ast:
                     try:
                         case_index = int(stmt_id.split("-")[-1])
-                        cases = parent_ast["match"].get("cases", [])
+                        cases = parent_ast["when"].get("cases", [])
                         if 0 <= case_index < len(cases):
                             case = cases[case_index]
                             case_body: dict = {"type": "AndThenBlock"}

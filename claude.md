@@ -46,7 +46,7 @@ This repository contains the **AgentFlow** platform:
 - **Boolean operators**: `&&`, `||` (short-circuit), `!` (unary NOT) — require Boolean operands.
 - **Precedence** (lowest→highest): `||` < `&&` < comparison < `++` < `+/-` < `*/%` < unary (`-`, `!`).
 - **Collection literals**: arrays `[1, 2, 3]`, maps `#{"key": "value"}`, indexing `arr[0]`, grouping `(expr)`.
-- **andThen match blocks**: `andThen match { case condition => { ... } case _ => { ... } }` — conditional branching. Non-exclusive: all matching cases execute concurrently. Default case runs only if no other case matched.
+- **andThen when blocks**: `andThen when { case condition => { ... } case _ => { ... } }` — conditional branching. Non-exclusive: all matching cases execute concurrently. Default case (`case _ =>`) is **required** and runs only if no other case matched.
 - **Type checking**: validator catches string+int and bool+arithmetic errors at compile time; unknown-type refs pass through.
 
 ---

@@ -58,9 +58,9 @@ class BlockExecutionBeginHandler(StateHandler):
         if "foreach" in block_ast:
             return self._process_foreach(block_ast)
 
-        # Check for match block
-        if "match" in block_ast:
-            return self._process_match(block_ast)
+        # Check for when block
+        if "when" in block_ast:
+            return self._process_when(block_ast)
 
         # Build dependency graph
         workflow_inputs = self._get_workflow_inputs()
@@ -164,15 +164,15 @@ class BlockExecutionBeginHandler(StateHandler):
         self.step.request_state_change(True)
         return StateChangeResult(step=self.step)
 
-    def _process_match(self, block_ast: dict) -> StateChangeResult:
-        """Process a match block by evaluating conditions and creating sub-blocks.
+    def _process_when(self, block_ast: dict) -> StateChangeResult:
+        """Process a when block by evaluating conditions and creating sub-blocks.
 
         Semantics:
         - Non-exclusive: ALL matching cases execute concurrently
         - Default case: executes ONLY if no other case matched
 
         Args:
-            block_ast: The block AST with a "match" key
+            block_ast: The block AST with a "when" key
 
         Returns:
             StateChangeResult
@@ -181,7 +181,7 @@ class BlockExecutionBeginHandler(StateHandler):
         from ..step import StepDefinition
         from ..types import ObjectType
 
-        match_ast = block_ast["match"]
+        match_ast = block_ast["when"]
         cases = match_ast.get("cases", [])
 
         # Build evaluation context from workflow inputs + parent step outputs
@@ -211,6 +211,7 @@ class BlockExecutionBeginHandler(StateHandler):
         evaluator = ExpressionEvaluator()
 
         any_matched = False
+        has_default = any(case.get("default", False) for case in cases)
         for i, case in enumerate(cases):
             is_default = case.get("default", False)
 
@@ -228,12 +229,12 @@ class BlockExecutionBeginHandler(StateHandler):
                     if not result:
                         continue
                 except Exception as e:
-                    logger.warning("Match case %d condition evaluation failed: %s", i, e)
+                    logger.warning("When case %d condition evaluation failed: %s", i, e)
                     continue
                 any_matched = True
 
             # Create sub-block for this case
-            match_stmt_id = f"match-case-{i}"
+            match_stmt_id = f"when-case-{i}"
 
             # Idempotency: skip if sub-block already exists
             if self.context.persistence.step_exists(match_stmt_id, self.step.id):
@@ -269,12 +270,18 @@ class BlockExecutionBeginHandler(StateHandler):
             self.context.set_block_ast_cache(sub_block.id, case_body)
 
             logger.debug(
-                "Match case sub-block created: block_id=%s case=%d default=%s",
+                "When case sub-block created: block_id=%s case=%d default=%s",
                 sub_block.id,
                 i,
                 is_default,
             )
             self.context.changes.add_created_step(sub_block)
+
+        # Error if no case matched and no default case exists
+        if not any_matched and not has_default:
+            return self.error(
+                RuntimeError("No when case matched and no default case (case _ =>) provided")
+            )
 
         self.step.request_state_change(True)
         return StateChangeResult(step=self.step)
@@ -397,12 +404,12 @@ class BlockExecutionContinueHandler(StateHandler):
 
     def process_state(self) -> StateChangeResult:
         """Continue block execution."""
-        # Check if this is a foreach or match block — use sub-block tracking
+        # Check if this is a foreach or when block — use sub-block tracking
         block_ast = self.context.get_block_ast(self.step)
         if block_ast and "foreach" in block_ast:
             return self._continue_foreach()
-        if block_ast and "match" in block_ast:
-            return self._continue_match()
+        if block_ast and "when" in block_ast:
+            return self._continue_when()
 
         # Get the dependency graph (may need to rebuild after resume)
         graph = self.context.get_block_graph(self.step.id)
@@ -522,10 +529,10 @@ class BlockExecutionContinueHandler(StateHandler):
 
         return self.stay(push=True)
 
-    def _continue_match(self) -> StateChangeResult:
-        """Continue a match block by checking sub-block completion.
+    def _continue_when(self) -> StateChangeResult:
+        """Continue a when block by checking sub-block completion.
 
-        For match blocks, we track sub-blocks (children with block_id=self.step.id)
+        For when blocks, we track sub-blocks (children with block_id=self.step.id)
         just like foreach blocks.
 
         Returns:
@@ -554,7 +561,7 @@ class BlockExecutionContinueHandler(StateHandler):
         total = len(sub_blocks)
 
         logger.debug(
-            "Match block continue: block_id=%s progress=%d/%d errored=%d",
+            "When block continue: block_id=%s progress=%d/%d errored=%d",
             self.step.id,
             terminal,
             total,
@@ -563,7 +570,7 @@ class BlockExecutionContinueHandler(StateHandler):
 
         if terminal == total:
             if errored:
-                msg = f"Match block has {len(errored)} errored sub-block(s)"
+                msg = f"When block has {len(errored)} errored sub-block(s)"
                 self.step.mark_error(RuntimeError(msg))
                 return StateChangeResult(step=self.step)
             self.step.request_state_change(True)

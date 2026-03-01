@@ -21,14 +21,14 @@ from afl import (
     ArrayType,
     BinaryExpr,
     Literal,
-    MatchBlock,
-    MatchCase,
     ParseError,
     Program,
     Reference,
     SchemaDecl,
     TypeRef,
     UnaryExpr,
+    WhenBlock,
+    WhenCase,
     parse,
 )
 
@@ -2006,14 +2006,14 @@ class TestBooleanOperators:
         assert expr.operand.operator == ">"
 
 
-class TestMatchBlocks:
-    """Test andThen match block parsing."""
+class TestWhenBlocks:
+    """Test andThen when block parsing."""
 
-    def test_simple_match(self, parser):
-        """Parse a simple match block with one case."""
+    def test_simple_when(self, parser):
+        """Parse a simple when block with one case."""
         ast = parser.parse("""
         facet DoA(x: String) => (value: String)
-        workflow Test(status: String) => (output: String) andThen match {
+        workflow Test(status: String) => (output: String) andThen when {
             case $.status == "ok" => {
                 a = DoA(x = $.status)
                 yield Test(output = a.value)
@@ -2023,24 +2023,24 @@ class TestMatchBlocks:
         wf = ast.workflows[0]
         assert wf.body is not None
         body = wf.body
-        assert body.match is not None
-        match_blk = body.match
-        assert isinstance(match_blk, MatchBlock)
-        assert len(match_blk.cases) == 1
-        case = match_blk.cases[0]
-        assert isinstance(case, MatchCase)
+        assert body.when is not None
+        when_blk = body.when
+        assert isinstance(when_blk, WhenBlock)
+        assert len(when_blk.cases) == 1
+        case = when_blk.cases[0]
+        assert isinstance(case, WhenCase)
         assert not case.is_default
         assert isinstance(case.condition, BinaryExpr)
         assert case.condition.operator == "=="
         assert len(case.block.steps) == 1
         assert len(case.block.yield_stmts) == 1
 
-    def test_multi_case_match(self, parser):
-        """Parse match block with multiple cases."""
+    def test_multi_case_when(self, parser):
+        """Parse when block with multiple cases."""
         ast = parser.parse("""
         facet DoA(x: Int) => (value: String)
         facet DoB(y: Int) => (result: String)
-        workflow Test(count: Int) => (output: String) andThen match {
+        workflow Test(count: Int) => (output: String) andThen when {
             case $.count > 100 => {
                 a = DoA(x = $.count)
                 yield Test(output = a.value)
@@ -2052,17 +2052,17 @@ class TestMatchBlocks:
         }
         """)
         wf = ast.workflows[0]
-        match_blk = wf.body.match
-        assert len(match_blk.cases) == 2
-        assert match_blk.cases[0].condition.operator == ">"
-        assert match_blk.cases[1].condition.operator == ">"
+        when_blk = wf.body.when
+        assert len(when_blk.cases) == 2
+        assert when_blk.cases[0].condition.operator == ">"
+        assert when_blk.cases[1].condition.operator == ">"
 
-    def test_match_with_default(self, parser):
-        """Parse match block with default case."""
+    def test_when_with_default(self, parser):
+        """Parse when block with default case."""
         ast = parser.parse("""
         facet DoA(x: Int) => (value: String)
         facet DoFallback() => (value: String)
-        workflow Test(count: Int) => (output: String) andThen match {
+        workflow Test(count: Int) => (output: String) andThen when {
             case $.count > 10 => {
                 a = DoA(x = $.count)
                 yield Test(output = a.value)
@@ -2074,17 +2074,17 @@ class TestMatchBlocks:
         }
         """)
         wf = ast.workflows[0]
-        match_blk = wf.body.match
-        assert len(match_blk.cases) == 2
-        assert not match_blk.cases[0].is_default
-        assert match_blk.cases[1].is_default
-        assert match_blk.cases[1].condition is None
+        when_blk = wf.body.when
+        assert len(when_blk.cases) == 2
+        assert not when_blk.cases[0].is_default
+        assert when_blk.cases[1].is_default
+        assert when_blk.cases[1].condition is None
 
-    def test_match_default_only(self, parser):
-        """Parse match block with only a default case."""
+    def test_when_default_only(self, parser):
+        """Parse when block with only a default case."""
         ast = parser.parse("""
         facet DoFallback() => (value: String)
-        workflow Test() => (output: String) andThen match {
+        workflow Test() => (output: String) andThen when {
             case _ => {
                 f = DoFallback()
                 yield Test(output = f.value)
@@ -2092,18 +2092,18 @@ class TestMatchBlocks:
         }
         """)
         wf = ast.workflows[0]
-        match_blk = wf.body.match
-        assert len(match_blk.cases) == 1
-        assert match_blk.cases[0].is_default
+        when_blk = wf.body.when
+        assert len(when_blk.cases) == 1
+        assert when_blk.cases[0].is_default
 
-    def test_statement_level_match(self, parser):
-        """Parse statement-level andThen match."""
+    def test_statement_level_when(self, parser):
+        """Parse statement-level andThen when."""
         ast = parser.parse("""
         facet Process(input: String) => (status: String, result: String)
         facet HandleOk(x: String) => (out: String)
         facet HandleErr() => (out: String)
         workflow Test(data: String) => (output: String) andThen {
-            s = Process(input = $.data) andThen match {
+            s = Process(input = $.data) andThen when {
                 case s.status == "ok" => {
                     h = HandleOk(x = s.result)
                     yield Process(out = h.out)
@@ -2119,17 +2119,17 @@ class TestMatchBlocks:
         wf = ast.workflows[0]
         step = wf.body.block.steps[0]
         assert step.body is not None
-        assert step.body.match is not None
-        assert len(step.body.match.cases) == 2
+        assert step.body.when is not None
+        assert len(step.body.when.cases) == 2
 
-    def test_chained_match_and_andthen(self, parser):
-        """Parse match block chained with regular andThen."""
+    def test_chained_when_and_andthen(self, parser):
+        """Parse when block chained with regular andThen."""
         ast = parser.parse("""
         facet DoA(x: Int) => (value: String)
         facet DoB() => (result: String)
         workflow Test(count: Int) => (output: String) andThen {
             a = DoA(x = $.count)
-        } andThen match {
+        } andThen when {
             case $.count > 0 => {
                 b = DoB()
                 yield Test(output = b.result)
@@ -2140,13 +2140,13 @@ class TestMatchBlocks:
         assert isinstance(wf.body, list)
         assert len(wf.body) == 2
         assert wf.body[0].block is not None
-        assert wf.body[1].match is not None
+        assert wf.body[1].when is not None
 
-    def test_match_complex_condition(self, parser):
-        """Parse match with complex boolean condition."""
+    def test_when_complex_condition(self, parser):
+        """Parse when with complex boolean condition."""
         ast = parser.parse("""
         facet DoA() => (value: String)
-        workflow Test(x: Int, y: Int) => (output: String) andThen match {
+        workflow Test(x: Int, y: Int) => (output: String) andThen when {
             case $.x > 0 && $.y > 0 => {
                 a = DoA()
                 yield Test(output = a.value)
@@ -2154,6 +2154,6 @@ class TestMatchBlocks:
         }
         """)
         wf = ast.workflows[0]
-        cond = wf.body.match.cases[0].condition
+        cond = wf.body.when.cases[0].condition
         assert isinstance(cond, BinaryExpr)
         assert cond.operator == "&&"

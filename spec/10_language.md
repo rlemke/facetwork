@@ -59,7 +59,7 @@ The following tokens are reserved:
 - `with`, `as`
 - `andThen`, `yield`
 - `foreach`, `in`
-- `match`, `case`
+- `when`, `case`
 - `prompt`, `script`, `python`
 - `true`, `false`, `null`
 
@@ -123,10 +123,10 @@ facet_def_tail     := ("script" script_block andthen_clause*)
 
 andthen_clause     := "andThen" foreach_clause? block
                    | "andThen" "script" script_block
-                   | "andThen" "match" match_block ;
+                   | "andThen" "when" when_block ;
 
-match_block         := "{" match_case+ "}" ;
-match_case          := "case" expr "=>" block
+when_block          := "{" when_case+ "}" ;
+when_case           := "case" expr "=>" block
                     | "case" "_" "=>" block ;
 
 foreach_clause     := "foreach" ident "in" reference ;
@@ -418,16 +418,16 @@ s5 = Check(result = !s1.done)
 s6 = Check(result = s1.x > 5 && s2.x < 10 || s1.done)
 ```
 
-### andThen match blocks
+### andThen when blocks
 
-Conditional branching based on step outputs or workflow inputs. Multiple matching cases execute concurrently (non-exclusive). The default case (`case _`) executes only if no other case matched.
+Conditional branching based on step outputs or workflow inputs. Multiple matching cases execute concurrently (non-exclusive). A default case (`case _`) is **required** and executes only if no other case matched.
 
 ```afl
 workflow ProcessOrder(amount: Long) => (result: String)
 andThen {
     order = CreateOrder(amount = $.amount)
 }
-andThen match {
+andThen when {
     case order.status == "success" => {
         a = NotifySuccess(id = order.id)
         yield ProcessOrder(result = a.message)
@@ -442,14 +442,17 @@ andThen match {
 }
 ```
 
-Statement-level match (on step outputs):
+Statement-level when (on step outputs):
 ```afl
-s1 = Classify(input = $.data) andThen match {
+s1 = Classify(input = $.data) andThen when {
     case s1.category == "A" => {
         a = ProcessA(data = s1.output)
     }
     case s1.category == "B" => {
         b = ProcessB(data = s1.output)
+    }
+    case _ => {
+        c = ProcessDefault(data = s1.output)
     }
 }
 ```

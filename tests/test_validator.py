@@ -1831,15 +1831,15 @@ class TestComparisonBooleanValidation:
         assert result.is_valid, [str(e) for e in result.errors]
 
 
-class TestMatchBlockValidation:
-    """Test validation of andThen match blocks."""
+class TestWhenBlockValidation:
+    """Test validation of andThen when blocks."""
 
-    def test_valid_match_block(self, validator):
-        """Valid match block with boolean conditions should pass."""
+    def test_valid_when_block(self, validator):
+        """Valid when block with boolean conditions should pass."""
         ast = parse("""
         facet DoA(x: Int) => (value: String)
         facet DoFallback() => (value: String)
-        workflow Test(count: Int) => (output: String) andThen match {
+        workflow Test(count: Int) => (output: String) andThen when {
             case $.count > 10 => {
                 a = DoA(x = $.count)
                 yield Test(output = a.value)
@@ -1854,11 +1854,11 @@ class TestMatchBlockValidation:
         assert result.is_valid, [str(e) for e in result.errors]
 
     def test_multiple_defaults_error(self, validator):
-        """Match block with multiple default cases should error."""
+        """When block with multiple default cases should error."""
         ast = parse("""
         facet DoA() => (value: String)
         facet DoB() => (value: String)
-        workflow Test() => (output: String) andThen match {
+        workflow Test() => (output: String) andThen when {
             case _ => {
                 a = DoA()
                 yield Test(output = a.value)
@@ -1878,7 +1878,7 @@ class TestMatchBlockValidation:
         ast = parse("""
         facet DoA() => (value: String)
         facet DoB(x: Int) => (value: String)
-        workflow Test(count: Int) => (output: String) andThen match {
+        workflow Test(count: Int) => (output: String) andThen when {
             case _ => {
                 a = DoA()
                 yield Test(output = a.value)
@@ -1897,7 +1897,7 @@ class TestMatchBlockValidation:
         """Non-boolean condition should produce error."""
         ast = parse("""
         facet DoA() => (value: String)
-        workflow Test() => (output: String) andThen match {
+        workflow Test() => (output: String) andThen when {
             case 42 => {
                 a = DoA()
                 yield Test(output = a.value)
@@ -1908,14 +1908,34 @@ class TestMatchBlockValidation:
         assert not result.is_valid
         assert any("Boolean" in str(e) for e in result.errors)
 
-    def test_valid_references_in_condition(self, validator):
-        """Valid input references in match conditions should pass."""
+    def test_missing_default_error(self, validator):
+        """When block without a default case should error."""
         ast = parse("""
         facet DoA(x: Int) => (value: String)
-        workflow Test(count: Int, active: Boolean) => (output: String) andThen match {
+        workflow Test(count: Int) => (output: String) andThen when {
+            case $.count > 10 => {
+                a = DoA(x = $.count)
+                yield Test(output = a.value)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("must have a default case" in str(e) for e in result.errors)
+
+    def test_valid_references_in_condition(self, validator):
+        """Valid input references in when conditions should pass."""
+        ast = parse("""
+        facet DoA(x: Int) => (value: String)
+        facet DoFallback() => (value: String)
+        workflow Test(count: Int, active: Boolean) => (output: String) andThen when {
             case $.active && $.count > 0 => {
                 a = DoA(x = $.count)
                 yield Test(output = a.value)
+            }
+            case _ => {
+                f = DoFallback()
+                yield Test(output = f.value)
             }
         }
         """)
