@@ -27,7 +27,11 @@ simplify maintenance. No behavioral changes — all 3,409 tests pass unchanged.
 `catch_when`, `facet_def_tail`, `facet_decl`, `event_facet_decl`, `workflow_decl`,
 `namespace_body`, `start`.
 
-**Net**: 72 fewer lines (165 deletions, 93 insertions). Single file change.
+**AndThen deduplication** (`_andthen_from_items` helper):
+- `step_body()` and `andthen_clause()` were character-for-character identical.
+  Both now delegate to `_andthen_from_items()`.
+
+**Net**: 76 fewer lines. Single file change.
 
 Files: `afl/transformer.py`
 
