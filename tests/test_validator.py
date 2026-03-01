@@ -1733,3 +1733,191 @@ class TestImplicitValidation:
         """)
         result = validator.validate(ast)
         assert result.is_valid, [str(e) for e in result.errors]
+
+
+class TestComparisonBooleanValidation:
+    """Test validation of comparison and boolean operators."""
+
+    def test_boolean_and_with_non_boolean_error(self, validator):
+        """&& with non-Boolean operand should produce type error."""
+        ast = parse("""
+        facet V(x: Boolean)
+        workflow Test() andThen {
+            s = V(x = 1 && true)
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("'&&' requires Boolean" in str(e) for e in result.errors)
+
+    def test_boolean_or_with_non_boolean_error(self, validator):
+        """|| with non-Boolean operand should produce type error."""
+        ast = parse("""
+        facet V(x: Boolean)
+        workflow Test() andThen {
+            s = V(x = true || "yes")
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("'||' requires Boolean" in str(e) for e in result.errors)
+
+    def test_ordered_comparison_with_boolean_error(self, validator):
+        """Ordered comparison (> < >= <=) with Boolean should produce error."""
+        ast = parse("""
+        facet V(x: Boolean)
+        workflow Test() andThen {
+            s = V(x = true > false)
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("ordered comparison" in str(e) and "Boolean" in str(e) for e in result.errors)
+
+    def test_not_with_non_boolean_error(self, validator):
+        """! with non-Boolean operand should produce type error."""
+        ast = parse("""
+        facet V(x: Boolean)
+        workflow Test() andThen {
+            s = V(x = !5)
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("'!' requires Boolean" in str(e) for e in result.errors)
+
+    def test_equality_with_any_types_valid(self, validator):
+        """== can compare any types (Int == Int)."""
+        ast = parse("""
+        facet V(x: Boolean)
+        workflow Test() andThen {
+            s = V(x = 1 == 2)
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_comparison_with_refs_valid(self, validator):
+        """Comparison with references should pass (Unknown type)."""
+        ast = parse("""
+        facet V(x: Boolean) => (output: Int)
+        workflow Test(a: Int) andThen {
+            s1 = V(x = $.a > 0)
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_not_with_ref_valid(self, validator):
+        """! with reference should pass (Unknown type)."""
+        ast = parse("""
+        facet V(x: Boolean) => (output: Boolean)
+        workflow Test(a: Boolean) andThen {
+            s = V(x = !$.a)
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_boolean_ops_valid(self, validator):
+        """&& and || with Boolean operands should be valid."""
+        ast = parse("""
+        facet V(x: Boolean)
+        workflow Test() andThen {
+            s = V(x = true && false || true)
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+
+class TestMatchBlockValidation:
+    """Test validation of andThen match blocks."""
+
+    def test_valid_match_block(self, validator):
+        """Valid match block with boolean conditions should pass."""
+        ast = parse("""
+        facet DoA(x: Int) => (value: String)
+        facet DoFallback() => (value: String)
+        workflow Test(count: Int) => (output: String) andThen match {
+            case $.count > 10 => {
+                a = DoA(x = $.count)
+                yield Test(output = a.value)
+            }
+            case _ => {
+                f = DoFallback()
+                yield Test(output = f.value)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_multiple_defaults_error(self, validator):
+        """Match block with multiple default cases should error."""
+        ast = parse("""
+        facet DoA() => (value: String)
+        facet DoB() => (value: String)
+        workflow Test() => (output: String) andThen match {
+            case _ => {
+                a = DoA()
+                yield Test(output = a.value)
+            }
+            case _ => {
+                b = DoB()
+                yield Test(output = b.value)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("at most one default" in str(e) for e in result.errors)
+
+    def test_default_not_last_error(self, validator):
+        """Default case not last should error."""
+        ast = parse("""
+        facet DoA() => (value: String)
+        facet DoB(x: Int) => (value: String)
+        workflow Test(count: Int) => (output: String) andThen match {
+            case _ => {
+                a = DoA()
+                yield Test(output = a.value)
+            }
+            case $.count > 10 => {
+                b = DoB(x = $.count)
+                yield Test(output = b.value)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("last case" in str(e) for e in result.errors)
+
+    def test_non_boolean_condition_error(self, validator):
+        """Non-boolean condition should produce error."""
+        ast = parse("""
+        facet DoA() => (value: String)
+        workflow Test() => (output: String) andThen match {
+            case 42 => {
+                a = DoA()
+                yield Test(output = a.value)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("Boolean" in str(e) for e in result.errors)
+
+    def test_valid_references_in_condition(self, validator):
+        """Valid input references in match conditions should pass."""
+        ast = parse("""
+        facet DoA(x: Int) => (value: String)
+        workflow Test(count: Int, active: Boolean) => (output: String) andThen match {
+            case $.active && $.count > 0 => {
+                a = DoA(x = $.count)
+                yield Test(output = a.value)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]

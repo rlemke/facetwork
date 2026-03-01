@@ -302,6 +302,10 @@ class DependencyGraph:
             for entry in value.get("entries", []):
                 self._extract_refs_from_value(entry.get("value"), deps)
 
+        elif value_type == "UnaryExpr":
+            # Unary expression: check operand
+            self._extract_refs_from_value(value.get("operand"), deps)
+
         elif value_type == "IndexExpr":
             # Index expression: check target and index
             self._extract_refs_from_value(value.get("target"), deps)

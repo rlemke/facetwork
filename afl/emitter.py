@@ -36,6 +36,8 @@ from .ast import (
     Literal,
     MapEntry,
     MapLiteral,
+    MatchBlock,
+    MatchCase,
     MixinCall,
     MixinSig,
     NamedArg,
@@ -192,6 +194,10 @@ class JSONEmitter:
             return self._prompt_block(node)
         if isinstance(node, ScriptBlock):
             return self._script_block(node)
+        if isinstance(node, MatchBlock):
+            return self._match_block(node)
+        if isinstance(node, MatchCase):
+            return self._match_case(node)
 
         raise ValueError(f"Unknown node type: {type(node)}")
 
@@ -509,7 +515,9 @@ class JSONEmitter:
 
         if node.foreach:
             data["foreach"] = self._convert(node.foreach)
-        if node.script:
+        if node.match:
+            data["match"] = self._convert(node.match)
+        elif node.script:
             data["script"] = self._convert(node.script)
         elif node.block:
             if node.block.steps:
@@ -649,6 +657,29 @@ class JSONEmitter:
             "target": self._convert(node.target),
             "index": self._convert(node.index),
         }
+
+    def _match_block(self, node: MatchBlock) -> dict:
+        """Convert MatchBlock node."""
+        return {
+            "type": "MatchBlock",
+            "cases": [self._convert(c) for c in node.cases],
+        }
+
+    def _match_case(self, node: MatchCase) -> dict:
+        """Convert MatchCase node."""
+        data: dict = {"type": "MatchCase"}
+        if node.is_default:
+            data["default"] = True
+        else:
+            data["condition"] = self._convert(node.condition)
+        if node.block.steps:
+            data["steps"] = self._convert(node.block.steps)
+        if node.block.yield_stmts:
+            if len(node.block.yield_stmts) == 1:
+                data["yield"] = self._convert(node.block.yield_stmts[0])
+            else:
+                data["yields"] = self._convert(node.block.yield_stmts)
+        return data
 
 
 def emit_json(ast: Program, include_locations: bool = True, indent: int | None = 2) -> str:

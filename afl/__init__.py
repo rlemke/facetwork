@@ -32,6 +32,8 @@ from .ast import (
     Literal,
     MapEntry,
     MapLiteral,
+    MatchBlock,
+    MatchCase,
     MixinCall,
     MixinSig,
     NamedArg,
@@ -68,7 +70,7 @@ from .source import (
 )
 from .validator import AFLValidator, ValidationError, ValidationResult, validate
 
-__version__ = "0.24.0"
+__version__ = "0.28.0"
 
 __all__ = [
     # AST utilities
@@ -138,6 +140,8 @@ __all__ = [
     "ArrayLiteral",
     "MapEntry",
     "MapLiteral",
+    "MatchBlock",
+    "MatchCase",
     "IndexExpr",
     "SourceLocation",
     "ASTNode",

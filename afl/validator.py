@@ -39,6 +39,7 @@ from .ast import (
     IndexExpr,
     Literal,
     MapLiteral,
+    MatchBlock,
     Namespace,
     Program,
     PromptBlock,
@@ -659,6 +660,11 @@ class AFLValidator:
             self._validate_script_block(body.script, containing_sig)
             return
 
+        # andThen match variant
+        if body.match:
+            self._validate_match_block(body.match, containing_sig, extra_yield_targets)
+            return
+
         if not body.block:
             return
 
@@ -750,6 +756,74 @@ class AFLValidator:
             else:
                 yield_targets_used.add(target)
 
+    def _validate_match_block(
+        self,
+        match: MatchBlock,
+        containing_sig: FacetSig,
+        extra_yield_targets: set[str] | None = None,
+    ) -> None:
+        """Validate a match block.
+
+        Checks:
+        - At least one case
+        - At most one default case
+        - Default must be last
+        - Each condition must be Boolean type
+        - Validate references and steps in each case block
+        """
+        if not match.cases:
+            self._result.add_error(
+                "Match block must have at least one case",
+                match.location,
+            )
+            return
+
+        default_count = 0
+        default_index = -1
+        for i, case in enumerate(match.cases):
+            if case.is_default:
+                default_count += 1
+                default_index = i
+
+        if default_count > 1:
+            self._result.add_error(
+                "Match block can have at most one default case",
+                match.location,
+            )
+
+        if default_count == 1 and default_index != len(match.cases) - 1:
+            self._result.add_error(
+                "Default case must be the last case in a match block",
+                match.location,
+            )
+
+        # Validate each case
+        for case in match.cases:
+            if not case.is_default and case.condition is not None:
+                # Check that condition type is Boolean
+                condition_type = self._infer_type(case.condition)
+                if condition_type != "Unknown" and condition_type != "Boolean":
+                    self._result.add_error(
+                        f"Match case condition must be Boolean, got {condition_type}",
+                        case.location,
+                    )
+                # Validate references in condition
+                for ref in self._extract_references(case.condition):
+                    # Conditions can only reference inputs ($.param) — no steps in scope
+                    if ref.is_input:
+                        input_attrs = {p.name for p in containing_sig.params}
+                        if ref.path and ref.path[0] not in input_attrs:
+                            self._result.add_error(
+                                f"Invalid input reference '$.{ref.path[0]}': "
+                                f"no parameter named '{ref.path[0]}'",
+                                ref.location,
+                            )
+
+            # Validate the case block body using a synthetic AndThenBlock
+            if case.block:
+                synthetic = AndThenBlock(block=case.block)
+                self._validate_and_then_block(synthetic, containing_sig, extra_yield_targets)
+
     def _extract_references(self, expr) -> list[Reference]:
         """Recursively extract all Reference nodes from an expression tree."""
         if isinstance(expr, Reference):
@@ -778,6 +852,10 @@ class AFLValidator:
         return []
 
     _NUMERIC_TYPES = {"Int", "Long", "Double"}
+    _COMPARISON_OPS = {"==", "!=", ">", "<", ">=", "<="}
+    _BOOLEAN_OPS = {"&&", "||"}
+    _ORDERED_COMPARISON_OPS = {">", "<", ">=", "<="}
+    _ARITHMETIC_OPS = {"+", "-", "*", "/", "%"}
 
     def _infer_type(self, expr) -> str:
         """Infer the type of an expression for type checking.
@@ -803,7 +881,39 @@ class AFLValidator:
         if isinstance(expr, BinaryExpr):
             left_type = self._infer_type(expr.left)
             right_type = self._infer_type(expr.right)
-            # Check for type errors
+
+            # Boolean operators: && ||
+            if expr.operator in self._BOOLEAN_OPS:
+                if left_type != "Unknown" and left_type != "Boolean":
+                    self._result.add_error(
+                        f"Type error: operator '{expr.operator}' requires Boolean operands, "
+                        f"got {left_type}",
+                        getattr(expr, "location", None),
+                    )
+                    return "Unknown"
+                if right_type != "Unknown" and right_type != "Boolean":
+                    self._result.add_error(
+                        f"Type error: operator '{expr.operator}' requires Boolean operands, "
+                        f"got {right_type}",
+                        getattr(expr, "location", None),
+                    )
+                    return "Unknown"
+                return "Boolean"
+
+            # Comparison operators: == != > < >= <=
+            if expr.operator in self._COMPARISON_OPS:
+                # Ordered comparisons reject Boolean operands
+                if expr.operator in self._ORDERED_COMPARISON_OPS:
+                    if left_type == "Boolean" or right_type == "Boolean":
+                        self._result.add_error(
+                            f"Type error: cannot use ordered comparison '{expr.operator}' "
+                            f"with Boolean operand",
+                            getattr(expr, "location", None),
+                        )
+                        return "Unknown"
+                return "Boolean"
+
+            # Arithmetic operators: + - * / %
             if left_type != "Unknown" and right_type != "Unknown":
                 if left_type == "String" or right_type == "String":
                     self._result.add_error(
@@ -830,6 +940,16 @@ class AFLValidator:
             return "Unknown"
         if isinstance(expr, UnaryExpr):
             operand_type = self._infer_type(expr.operand)
+            # Logical NOT
+            if expr.operator == "!":
+                if operand_type != "Unknown" and operand_type != "Boolean":
+                    self._result.add_error(
+                        f"Type error: operator '!' requires Boolean operand, got {operand_type}",
+                        getattr(expr, "location", None),
+                    )
+                    return "Unknown"
+                return "Boolean"
+            # Arithmetic negation
             if operand_type != "Unknown":
                 if operand_type == "String":
                     self._result.add_error(

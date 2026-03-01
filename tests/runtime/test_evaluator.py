@@ -5575,3 +5575,288 @@ class TestErrorPropagation:
         completed, total = analysis.completion_progress
         assert completed == 2  # 1 complete + 1 errored
         assert total == 3
+
+
+class TestMatchBlockExecution:
+    """Tests for andThen match runtime execution."""
+
+    @pytest.fixture
+    def store(self):
+        return MemoryStore()
+
+    @pytest.fixture
+    def evaluator(self, store):
+        return Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
+
+    def _match_workflow_ast(self):
+        """AST for a workflow with an andThen match block.
+
+        ```afl
+        facet DoA(x: Int)
+        facet DoFallback()
+        workflow MatchTest(count: Int) andThen match {
+            case $.count > 10 => {
+                a = DoA(x = $.count)
+            }
+            case _ => {
+                f = DoFallback()
+            }
+        }
+        ```
+        """
+        return {
+            "type": "WorkflowDecl",
+            "name": "MatchTest",
+            "params": [{"name": "count", "type": "Int"}],
+            "body": {
+                "type": "AndThenBlock",
+                "match": {
+                    "type": "MatchBlock",
+                    "cases": [
+                        {
+                            "type": "MatchCase",
+                            "condition": {
+                                "type": "BinaryExpr",
+                                "operator": ">",
+                                "left": {"type": "InputRef", "path": ["count"]},
+                                "right": {"type": "Int", "value": 10},
+                            },
+                            "steps": [
+                                {
+                                    "type": "StepStmt",
+                                    "id": "step-a",
+                                    "name": "a",
+                                    "call": {
+                                        "type": "CallExpr",
+                                        "target": "DoA",
+                                        "args": [
+                                            {
+                                                "name": "x",
+                                                "value": {
+                                                    "type": "InputRef",
+                                                    "path": ["count"],
+                                                },
+                                            }
+                                        ],
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "type": "MatchCase",
+                            "default": True,
+                            "steps": [
+                                {
+                                    "type": "StepStmt",
+                                    "id": "step-f",
+                                    "name": "f",
+                                    "call": {
+                                        "type": "CallExpr",
+                                        "target": "DoFallback",
+                                    },
+                                }
+                            ],
+                        },
+                    ],
+                },
+            },
+        }
+
+    def test_match_case_true_executes(self, store, evaluator):
+        """When condition is true, matching case executes."""
+        workflow_ast = self._match_workflow_ast()
+        result = evaluator.execute(workflow_ast, inputs={"count": 20})
+        assert result.success is True
+
+        # Should have a match-case-0 sub-block (condition true)
+        all_steps = list(store.get_all_steps())
+        match_blocks = [
+            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("match-case-")
+        ]
+        assert len(match_blocks) == 1
+        assert str(match_blocks[0].statement_id) == "match-case-0"
+
+    def test_match_default_when_no_match(self, store, evaluator):
+        """When no condition matches, default case executes."""
+        workflow_ast = self._match_workflow_ast()
+        result = evaluator.execute(workflow_ast, inputs={"count": 5})
+        assert result.success is True
+
+        # Should have a match-case-1 sub-block (default)
+        all_steps = list(store.get_all_steps())
+        match_blocks = [
+            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("match-case-")
+        ]
+        assert len(match_blocks) == 1
+        assert str(match_blocks[0].statement_id) == "match-case-1"
+
+    def test_match_multiple_true_cases(self, store, evaluator):
+        """When multiple conditions are true, all matching cases execute."""
+        workflow_ast = {
+            "type": "WorkflowDecl",
+            "name": "MultiMatch",
+            "params": [{"name": "x", "type": "Int"}],
+            "body": {
+                "type": "AndThenBlock",
+                "match": {
+                    "type": "MatchBlock",
+                    "cases": [
+                        {
+                            "type": "MatchCase",
+                            "condition": {
+                                "type": "BinaryExpr",
+                                "operator": ">",
+                                "left": {"type": "InputRef", "path": ["x"]},
+                                "right": {"type": "Int", "value": 5},
+                            },
+                            "steps": [
+                                {
+                                    "type": "StepStmt",
+                                    "id": "step-a",
+                                    "name": "a",
+                                    "call": {
+                                        "type": "CallExpr",
+                                        "target": "DoA",
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "type": "MatchCase",
+                            "condition": {
+                                "type": "BinaryExpr",
+                                "operator": ">",
+                                "left": {"type": "InputRef", "path": ["x"]},
+                                "right": {"type": "Int", "value": 0},
+                            },
+                            "steps": [
+                                {
+                                    "type": "StepStmt",
+                                    "id": "step-b",
+                                    "name": "b",
+                                    "call": {
+                                        "type": "CallExpr",
+                                        "target": "DoB",
+                                    },
+                                }
+                            ],
+                        },
+                    ],
+                },
+            },
+        }
+        result = evaluator.execute(workflow_ast, inputs={"x": 20})
+        assert result.success is True
+
+        all_steps = list(store.get_all_steps())
+        match_blocks = [
+            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("match-case-")
+        ]
+        # Both cases match (20 > 5 and 20 > 0)
+        assert len(match_blocks) == 2
+
+    def test_match_no_match_no_default(self, store, evaluator):
+        """When no condition matches and no default, block completes with no sub-blocks."""
+        workflow_ast = {
+            "type": "WorkflowDecl",
+            "name": "NoMatch",
+            "params": [{"name": "x", "type": "Int"}],
+            "body": {
+                "type": "AndThenBlock",
+                "match": {
+                    "type": "MatchBlock",
+                    "cases": [
+                        {
+                            "type": "MatchCase",
+                            "condition": {
+                                "type": "BinaryExpr",
+                                "operator": ">",
+                                "left": {"type": "InputRef", "path": ["x"]},
+                                "right": {"type": "Int", "value": 100},
+                            },
+                            "steps": [
+                                {
+                                    "type": "StepStmt",
+                                    "id": "step-a",
+                                    "name": "a",
+                                    "call": {
+                                        "type": "CallExpr",
+                                        "target": "DoA",
+                                    },
+                                }
+                            ],
+                        },
+                    ],
+                },
+            },
+        }
+        result = evaluator.execute(workflow_ast, inputs={"x": 1})
+        assert result.success is True
+
+        all_steps = list(store.get_all_steps())
+        match_blocks = [
+            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("match-case-")
+        ]
+        assert len(match_blocks) == 0
+
+    def test_match_with_input_ref_condition(self, store, evaluator):
+        """Match condition using input references evaluates correctly."""
+        workflow_ast = {
+            "type": "WorkflowDecl",
+            "name": "RefMatch",
+            "params": [
+                {"name": "status", "type": "String"},
+            ],
+            "body": {
+                "type": "AndThenBlock",
+                "match": {
+                    "type": "MatchBlock",
+                    "cases": [
+                        {
+                            "type": "MatchCase",
+                            "condition": {
+                                "type": "BinaryExpr",
+                                "operator": "==",
+                                "left": {"type": "InputRef", "path": ["status"]},
+                                "right": {"type": "String", "value": "success"},
+                            },
+                            "steps": [
+                                {
+                                    "type": "StepStmt",
+                                    "id": "step-ok",
+                                    "name": "ok",
+                                    "call": {
+                                        "type": "CallExpr",
+                                        "target": "HandleOk",
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "type": "MatchCase",
+                            "default": True,
+                            "steps": [
+                                {
+                                    "type": "StepStmt",
+                                    "id": "step-err",
+                                    "name": "err",
+                                    "call": {
+                                        "type": "CallExpr",
+                                        "target": "HandleErr",
+                                    },
+                                }
+                            ],
+                        },
+                    ],
+                },
+            },
+        }
+        # status == "success" should match case 0
+        result = evaluator.execute(workflow_ast, inputs={"status": "success"})
+        assert result.success is True
+        all_steps = list(store.get_all_steps())
+        match_blocks = [
+            s for s in all_steps if s.statement_id and str(s.statement_id).startswith("match-case-")
+        ]
+        assert len(match_blocks) == 1
+        assert str(match_blocks[0].statement_id) == "match-case-0"

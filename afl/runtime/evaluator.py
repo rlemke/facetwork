@@ -154,6 +154,30 @@ class ExecutionContext:
                     self._block_ast_cache[block_step.id] = body_ast
                     return body_ast
 
+        # Match case sub-blocks: derive body from parent match block's AST
+        stmt_id = str(block_step.statement_id) if block_step.statement_id else ""
+        if stmt_id.startswith("match-case-") and block_step.block_id:
+            parent = self._find_step(block_step.block_id)
+            if parent:
+                parent_ast = self.get_block_ast(parent)
+                if parent_ast and "match" in parent_ast:
+                    try:
+                        case_index = int(stmt_id.split("-")[-1])
+                        cases = parent_ast["match"].get("cases", [])
+                        if 0 <= case_index < len(cases):
+                            case = cases[case_index]
+                            case_body: dict = {"type": "AndThenBlock"}
+                            if "steps" in case:
+                                case_body["steps"] = case["steps"]
+                            if "yield" in case:
+                                case_body["yield"] = case["yield"]
+                            if "yields" in case:
+                                case_body["yields"] = case["yields"]
+                            self._block_ast_cache[block_step.id] = case_body
+                            return case_body
+                    except (ValueError, IndexError):
+                        pass
+
         if not block_step.container_id:
             # Block has no container — shouldn't normally happen
             if self.workflow_ast:

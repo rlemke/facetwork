@@ -262,7 +262,7 @@ class ExpressionEvaluator:
         return "".join(parts)
 
     def _eval_binary(self, expr: dict, ctx: EvaluationContext) -> Any:
-        """Evaluate a binary expression (arithmetic).
+        """Evaluate a binary expression (arithmetic, comparison, boolean).
 
         Args:
             expr: The BinaryExpr expression
@@ -271,12 +271,39 @@ class ExpressionEvaluator:
         Returns:
             The computed result
         """
-        left = self.evaluate(expr.get("left"), ctx)
-        right = self.evaluate(expr.get("right"), ctx)
         operator = expr.get("operator", "+")
 
+        # Short-circuit evaluation for boolean operators
+        if operator == "&&":
+            left = self.evaluate(expr.get("left"), ctx)
+            if not left:
+                return False
+            return bool(self.evaluate(expr.get("right"), ctx))
+        elif operator == "||":
+            left = self.evaluate(expr.get("left"), ctx)
+            if left:
+                return True
+            return bool(self.evaluate(expr.get("right"), ctx))
+
+        left = self.evaluate(expr.get("left"), ctx)
+        right = self.evaluate(expr.get("right"), ctx)
+
         try:
-            if operator == "+":
+            # Comparison operators
+            if operator == "==":
+                return left == right
+            elif operator == "!=":
+                return left != right
+            elif operator == ">":
+                return left > right
+            elif operator == "<":
+                return left < right
+            elif operator == ">=":
+                return left >= right
+            elif operator == "<=":
+                return left <= right
+            # Arithmetic operators
+            elif operator == "+":
                 return left + right
             elif operator == "-":
                 return left - right
@@ -306,14 +333,14 @@ class ExpressionEvaluator:
             ) from e
 
     def _eval_unary(self, expr: dict, ctx: EvaluationContext) -> Any:
-        """Evaluate a unary expression (negation).
+        """Evaluate a unary expression (negation or logical not).
 
         Args:
             expr: The UnaryExpr expression
             ctx: Evaluation context
 
         Returns:
-            The negated value
+            The result value
         """
         operand = self.evaluate(expr.get("operand"), ctx)
         operator = expr.get("operator", "-")
@@ -321,6 +348,8 @@ class ExpressionEvaluator:
         try:
             if operator == "-":
                 return -operand
+            elif operator == "!":
+                return not operand
             else:
                 raise EvaluationError(
                     str(expr),

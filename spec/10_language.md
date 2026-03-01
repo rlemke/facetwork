@@ -59,6 +59,7 @@ The following tokens are reserved:
 - `with`, `as`
 - `andThen`, `yield`
 - `foreach`, `in`
+- `match`, `case`
 - `prompt`, `script`, `python`
 - `true`, `false`, `null`
 
@@ -121,7 +122,12 @@ facet_def_tail     := ("script" script_block andthen_clause*)
                    | ("prompt" prompt_block) ;
 
 andthen_clause     := "andThen" foreach_clause? block
-                   | "andThen" "script" script_block ;
+                   | "andThen" "script" script_block
+                   | "andThen" "match" match_block ;
+
+match_block         := "{" match_case+ "}" ;
+match_case          := "case" expr "=>" block
+                    | "case" "_" "=>" block ;
 
 foreach_clause     := "foreach" ident "in" reference ;
 
@@ -144,7 +150,21 @@ yield_stmt         := "yield" call_expr (stmt_sep)? ;
 named_args          := named_arg ("," named_arg)* ;
 named_arg           := ident "=" expr ;
 
-expr                := literal | reference ;
+expr                := or_expr ;
+
+or_expr             := and_expr ("||" and_expr)* ;
+and_expr            := comparison_expr ("&&" comparison_expr)* ;
+comparison_expr     := concat_expr (COMP_OP concat_expr)? ;
+concat_expr         := additive_expr ("++" additive_expr)* ;
+additive_expr       := multiplicative_expr (ADD_OP multiplicative_expr)* ;
+multiplicative_expr := unary_expr (MUL_OP unary_expr)* ;
+unary_expr          := ADD_OP unary_expr | "!" unary_expr | postfix_expr ;
+postfix_expr        := atom_expr ("[" expr "]")* ;
+atom_expr           := literal | reference | array_literal | map_literal | "(" expr ")" ;
+
+COMP_OP             := "==" | "!=" | ">=" | "<=" | ">" | "<" ;
+ADD_OP              := "+" | "-" ;
+MUL_OP              := "*" | "/" | "%" ;
 
 reference           := "$." ident ( "." ident )*
                     | ident "." ident ( "." ident )* ;
@@ -365,6 +385,74 @@ Scripts execute in a sandboxed Python environment with two pre-defined variables
 - **andThen script**: `params` contains the container step's params (including any values added by a pre-script). Values written to `result` become return values on the workflow/facet.
 
 Scripts may use Python standard library imports. Execution errors are captured and reported as step failures.
+
+### Expression operators
+
+AFL supports arithmetic, concatenation, comparison, and boolean operators with the following precedence (lowest to highest):
+
+| Level | Operators | Description |
+|-------|-----------|-------------|
+| 1 (lowest) | `\|\|` | Logical OR |
+| 2 | `&&` | Logical AND |
+| 3 | `==` `!=` `>` `<` `>=` `<=` | Comparison |
+| 4 | `++` | String concatenation |
+| 5 | `+` `-` | Addition, subtraction |
+| 6 | `*` `/` `%` | Multiplication, division, modulo |
+| 7 (highest) | `-` `!` (unary) | Negation, logical NOT |
+
+Comparison operators are non-chainable — `a > b > c` is a syntax error. Use `a > b && b > c`.
+
+```afl
+// Comparison operators in call arguments
+s1 = SomeFacet(x = 1)
+s2 = AnotherFacet(eq = s1.x == 10, gt = s1.x > 5)
+
+// Boolean operators
+s3 = Check(result = s1.x > 0 && s1.x < 100)
+s4 = Check(result = s1.done || s2.done)
+
+// Logical NOT
+s5 = Check(result = !s1.done)
+
+// Precedence: comparison binds tighter than boolean
+s6 = Check(result = s1.x > 5 && s2.x < 10 || s1.done)
+```
+
+### andThen match blocks
+
+Conditional branching based on step outputs or workflow inputs. Multiple matching cases execute concurrently (non-exclusive). The default case (`case _`) executes only if no other case matched.
+
+```afl
+workflow ProcessOrder(amount: Long) => (result: String)
+andThen {
+    order = CreateOrder(amount = $.amount)
+}
+andThen match {
+    case order.status == "success" => {
+        a = NotifySuccess(id = order.id)
+        yield ProcessOrder(result = a.message)
+    }
+    case order.amount > 1000 => {
+        b = FlagForReview(id = order.id)
+    }
+    case _ => {
+        c = HandleDefault(id = order.id)
+        yield ProcessOrder(result = c.message)
+    }
+}
+```
+
+Statement-level match (on step outputs):
+```afl
+s1 = Classify(input = $.data) andThen match {
+    case s1.category == "A" => {
+        a = ProcessA(data = s1.output)
+    }
+    case s1.category == "B" => {
+        b = ProcessB(data = s1.output)
+    }
+}
+```
 
 ### Schema declaration and instantiation
 schema Config {

@@ -1340,3 +1340,122 @@ class TestDocCommentEmission:
         assert doc["description"] == "Adds one to the input."
         assert doc["params"] == [{"name": "value", "description": "The input value."}]
         assert doc["returns"] == [{"name": "result", "description": "The incremented value."}]
+
+
+class TestComparisonBooleanEmitter:
+    """Test emission of comparison and boolean operators."""
+
+    def test_comparison_round_trip(self):
+        """Comparison operators emit correct BinaryExpr with operator."""
+        ast = parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Int) andThen {
+            s = V(x = $.a >= 10)
+        }
+        """)
+        emitter = JSONEmitter(include_locations=False)
+        data = emitter.emit_dict(ast)
+        step = _first_decl(data, "WorkflowDecl")["body"]["steps"][0]
+        arg_val = step["call"]["args"][0]["value"]
+        assert arg_val["type"] == "BinaryExpr"
+        assert arg_val["operator"] == ">="
+        assert arg_val["left"]["type"] == "InputRef"
+        assert arg_val["right"]["type"] == "Int"
+        assert arg_val["right"]["value"] == 10
+
+    def test_boolean_round_trip(self):
+        """Boolean operators emit correct BinaryExpr."""
+        ast = parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Boolean, b: Boolean) andThen {
+            s = V(x = $.a && $.b)
+        }
+        """)
+        emitter = JSONEmitter(include_locations=False)
+        data = emitter.emit_dict(ast)
+        step = _first_decl(data, "WorkflowDecl")["body"]["steps"][0]
+        arg_val = step["call"]["args"][0]["value"]
+        assert arg_val["type"] == "BinaryExpr"
+        assert arg_val["operator"] == "&&"
+
+    def test_not_round_trip(self):
+        """Not operator emits correct UnaryExpr."""
+        ast = parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Boolean) andThen {
+            s = V(x = !$.a)
+        }
+        """)
+        emitter = JSONEmitter(include_locations=False)
+        data = emitter.emit_dict(ast)
+        step = _first_decl(data, "WorkflowDecl")["body"]["steps"][0]
+        arg_val = step["call"]["args"][0]["value"]
+        assert arg_val["type"] == "UnaryExpr"
+        assert arg_val["operator"] == "!"
+        assert arg_val["operand"]["type"] == "InputRef"
+
+
+class TestMatchBlockEmitter:
+    """Test emission of match blocks."""
+
+    def test_match_block_emission(self):
+        """Match block emits MatchBlock with cases."""
+        ast = parse("""
+        facet DoA(x: Int) => (value: String)
+        workflow Test(count: Int) => (output: String) andThen match {
+            case $.count > 10 => {
+                a = DoA(x = $.count)
+                yield Test(output = a.value)
+            }
+        }
+        """)
+        emitter = JSONEmitter(include_locations=False)
+        data = emitter.emit_dict(ast)
+        wf = _first_decl(data, "WorkflowDecl")
+        body = wf["body"]
+        assert body["type"] == "AndThenBlock"
+        assert "match" in body
+        match = body["match"]
+        assert match["type"] == "MatchBlock"
+        assert len(match["cases"]) == 1
+
+    def test_match_case_with_condition(self):
+        """Match case emits condition expression."""
+        ast = parse("""
+        facet DoA(x: Int) => (value: String)
+        workflow Test(count: Int) => (output: String) andThen match {
+            case $.count > 10 => {
+                a = DoA(x = $.count)
+                yield Test(output = a.value)
+            }
+        }
+        """)
+        emitter = JSONEmitter(include_locations=False)
+        data = emitter.emit_dict(ast)
+        wf = _first_decl(data, "WorkflowDecl")
+        case = wf["body"]["match"]["cases"][0]
+        assert case["type"] == "MatchCase"
+        assert "condition" in case
+        assert case["condition"]["type"] == "BinaryExpr"
+        assert case["condition"]["operator"] == ">"
+        assert "steps" in case
+        assert "yield" in case
+
+    def test_match_default_case(self):
+        """Default case emits with default=true and no condition."""
+        ast = parse("""
+        facet DoFallback() => (value: String)
+        workflow Test() => (output: String) andThen match {
+            case _ => {
+                f = DoFallback()
+                yield Test(output = f.value)
+            }
+        }
+        """)
+        emitter = JSONEmitter(include_locations=False)
+        data = emitter.emit_dict(ast)
+        wf = _first_decl(data, "WorkflowDecl")
+        case = wf["body"]["match"]["cases"][0]
+        assert case["type"] == "MatchCase"
+        assert case["default"] is True
+        assert "condition" not in case

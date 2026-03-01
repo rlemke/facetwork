@@ -52,13 +52,15 @@ All AST nodes MUST have a unique UUID (v4) stored in the `node_id` field. This I
 ### Block Nodes
 | Node | Description |
 |------|-------------|
-| `AndThenBlock` | `andThen [foreach] { block }` or `andThen script "code"` |
+| `AndThenBlock` | `andThen [foreach] { block }`, `andThen script "code"`, or `andThen match { cases }` |
 | `Block` | `{ steps* yield? }` |
 | `ForeachClause` | `foreach var in reference` |
 | `StepStmt` | `name = CallExpr` |
 | `YieldStmt` | `yield CallExpr` |
 | `PromptBlock` | `prompt { system/template/model directives }` for LLM-based facets |
 | `ScriptBlock` | `script [python] "code..."` or `script { code }` for inline sandboxed Python execution |
+| `MatchBlock` | `match { cases }` — conditional branching within andThen |
+| `MatchCase` | `case expr => { block }` or `case _ => { block }` |
 
 ### Expression Nodes
 | Node | Description |
@@ -67,6 +69,12 @@ All AST nodes MUST have a unique UUID (v4) stored in the `node_id` field. This I
 | `NamedArg` | `name = expr` |
 | `Reference` | `$.path` (input) or `step.path` (step output) |
 | `Literal` | String, Integer, Double, Boolean, or Null |
+| `BinaryExpr` | `left op right` — operators: `+`, `-`, `*`, `/`, `%`, `++`, `==`, `!=`, `>`, `<`, `>=`, `<=`, `&&`, `\|\|` |
+| `UnaryExpr` | `op operand` — operators: `-` (negation), `!` (logical NOT) |
+| `ConcatExpr` | String concatenation via `++` (legacy; new code uses `BinaryExpr`) |
+| `ArrayLiteral` | `[elem, ...]` |
+| `MapLiteral` | `#{"key": value, ...}` |
+| `IndexExpr` | `target[index]` |
 
 ### Metadata Nodes
 | Node | Description |
@@ -100,7 +108,12 @@ Program
 │       ├── block: Block?
 │       │   ├── steps: list[StepStmt]
 │       │   └── yield_stmt: YieldStmt?
-│       └── script: ScriptBlock?       # andThen script variant (mutually exclusive with block)
+│       ├── script: ScriptBlock?       # andThen script variant (mutually exclusive with block/match)
+│       └── match: MatchBlock?        # andThen match variant (mutually exclusive with block/script)
+│           └── cases: list[MatchCase]
+│               ├── condition: expr?  # None for default case
+│               ├── block: Block
+│               └── is_default: bool
 │       # PromptBlock:
 │       ├── system: str?
 │       ├── template: str?

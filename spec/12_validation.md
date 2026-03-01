@@ -273,6 +273,66 @@ Schema names follow the same resolution order as facets:
 
 ---
 
+### 7. Expression Type Checking
+
+The validator infers expression types and rejects type-incompatible operations.
+
+#### Comparison Operators (`==`, `!=`, `>`, `<`, `>=`, `<=`)
+- Return type: `Boolean`
+- Equality operators (`==`, `!=`) accept any operand types
+- Ordered comparison operators (`>`, `<`, `>=`, `<=`) reject `Boolean` operands
+
+#### Boolean Operators (`&&`, `||`)
+- Return type: `Boolean`
+- Both operands must be `Boolean` type
+- Runtime uses short-circuit evaluation (`&&` skips right if left is false; `||` skips right if left is true)
+
+#### Logical NOT (`!`)
+- Return type: `Boolean`
+- Operand must be `Boolean` type
+
+#### Arithmetic Operators (`+`, `-`, `*`, `/`, `%`)
+- Reject `String` and `Boolean` operands
+- Unknown-type operands pass through (no error)
+
+---
+
+### 8. Match Block Validation
+
+#### Structure Rules
+- At least one case required
+- At most one default case (`case _`)
+- Default case must be the last case
+
+#### Condition Requirements
+- Each non-default case condition must infer to `Boolean` type
+- References in conditions are validated against the scope (step outputs, input params)
+
+#### Body Validation
+- Each case body (block) is validated as a normal block: steps, yields, references
+
+```afl
+// Valid match block
+s1 = Classify(input = $.data) andThen match {
+    case s1.score > 90 => {
+        a = HighGrade(id = s1.id)
+    }
+    case s1.score > 50 && s1.score <= 90 => {
+        b = MidGrade(id = s1.id)
+    }
+    case _ => {
+        c = LowGrade(id = s1.id)
+    }
+}
+
+// ERROR: condition not boolean
+s2 = Process(input = $.data) andThen match {
+    case s2.name => { ... }  // ERROR: String is not Boolean
+}
+```
+
+---
+
 ## Implementation
 
 ### File: `afl/validator.py`
@@ -326,3 +386,10 @@ afl input.afl --no-validate
 | Unknown schema field | `Unknown field 'foo' for schema 'Config'. Valid fields are: ['timeout', 'retries']` |
 | Schema with mixins | `Schema instantiation 'Config' cannot have mixins. Schemas are simple data structures without mixin support.` |
 | Ambiguous schema | `Ambiguous schema reference 'Config': could be a.Config, b.Config. Use fully qualified name to disambiguate.` |
+| Boolean op on non-bool | `Operator '&&' requires Boolean operands, got String && Int` |
+| Ordered comp on bool | `Operator '>' cannot compare Boolean values` |
+| NOT on non-bool | `Operator '!' requires Boolean operand, got String` |
+| Match empty | `Match block must have at least one case` |
+| Match multiple defaults | `Match block has multiple default cases` |
+| Match default not last | `Default case must be the last case in a match block` |
+| Match non-bool condition | `Match case condition must be Boolean, got String` |

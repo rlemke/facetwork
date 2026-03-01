@@ -37,6 +37,8 @@ from .ast import (
     Literal,
     MapEntry,
     MapLiteral,
+    MatchBlock,
+    MatchCase,
     MixinCall,
     MixinSig,
     NamedArg,
@@ -216,6 +218,50 @@ class AFLTransformer(Transformer):
     # Expressions
     def expr(self, items: list):
         return items[0]
+
+    @v_args(meta=True)
+    def or_expr(self, meta, items: list):
+        # items alternates: expr, expr, expr, ...
+        if len(items) == 1:
+            return items[0]
+        # Left-associative binary tree
+        result = items[0]
+        for i in range(1, len(items)):
+            result = BinaryExpr(
+                operator="||", left=result, right=items[i], location=self._loc(meta)
+            )
+        return result
+
+    @v_args(meta=True)
+    def and_expr(self, meta, items: list):
+        # items alternates: expr, expr, expr, ...
+        if len(items) == 1:
+            return items[0]
+        # Left-associative binary tree
+        result = items[0]
+        for i in range(1, len(items)):
+            result = BinaryExpr(
+                operator="&&", left=result, right=items[i], location=self._loc(meta)
+            )
+        return result
+
+    @v_args(meta=True)
+    def comparison_expr(self, meta, items: list):
+        # items = [left] or [left, COMP_OP, right]
+        if len(items) == 1:
+            return items[0]
+        left = items[0]
+        op = str(items[1])
+        right = items[2]
+        return BinaryExpr(operator=op, left=left, right=right, location=self._loc(meta))
+
+    def COMP_OP(self, token: Token) -> str:
+        return str(token)
+
+    @v_args(meta=True)
+    def not_expr(self, meta, items: list):
+        # items = [operand] (the "!" is consumed by the grammar)
+        return UnaryExpr(operator="!", operand=items[0], location=self._loc(meta))
 
     @v_args(meta=True)
     def concat_expr(self, meta, items: list):
@@ -417,6 +463,41 @@ class AFLTransformer(Transformer):
         """Handle andThen script variant."""
         script = items[0]  # ScriptBlock from script_block rule
         return AndThenBlock(script=script, location=self._loc(meta))
+
+    @v_args(meta=True)
+    def andthen_match(self, meta, items: list) -> AndThenBlock:
+        """Handle andThen match variant."""
+        match_blk = items[0]  # MatchBlock from match_block rule
+        return AndThenBlock(match=match_blk, location=self._loc(meta))
+
+    @v_args(meta=True)
+    def step_body_match(self, meta, items: list) -> AndThenBlock:
+        """Handle statement-level andThen match."""
+        match_blk = items[0]
+        return AndThenBlock(match=match_blk, location=self._loc(meta))
+
+    @v_args(meta=True)
+    def match_block(self, meta, items: list) -> MatchBlock:
+        """Convert match_block rule to MatchBlock AST node."""
+        cases = [item for item in items if isinstance(item, MatchCase)]
+        return MatchBlock(cases=cases, location=self._loc(meta))
+
+    @v_args(meta=True)
+    def match_case_expr(self, meta, items: list) -> MatchCase:
+        """Convert match_case_expr rule to MatchCase AST node."""
+        condition = items[0]
+        block = items[1]
+        return MatchCase(condition=condition, block=block, location=self._loc(meta))
+
+    @v_args(meta=True)
+    def match_case_default(self, meta, items: list) -> MatchCase:
+        """Convert match_case_default rule to MatchCase AST node."""
+        block = items[0]
+        return MatchCase(condition=None, block=block, is_default=True, location=self._loc(meta))
+
+    def match_condition(self, items: list):
+        """Pass through match condition expression."""
+        return items[0]
 
     @v_args(meta=True)
     def facet_def_tail(self, meta, items: list):

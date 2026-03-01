@@ -722,3 +722,211 @@ class TestUnaryExprEvaluation:
         }
         with pytest.raises(EvaluationError, match="Type error"):
             evaluator.evaluate(expr, ctx)
+
+
+class TestComparisonOperators:
+    """Tests for comparison operator evaluation."""
+
+    @pytest.fixture
+    def evaluator(self):
+        return ExpressionEvaluator()
+
+    @pytest.fixture
+    def ctx(self):
+        def get_step_output(step_name: str, attr_name: str):
+            outputs = {
+                "s1": {"value": 42, "status": "success", "flag": True},
+                "s2": {"value": 10, "status": "failed", "flag": False},
+            }
+            if step_name in outputs and attr_name in outputs[step_name]:
+                return outputs[step_name][attr_name]
+            raise ValueError(f"Not found: {step_name}.{attr_name}")
+
+        return EvaluationContext(
+            inputs={"x": 5, "y": 10, "active": True},
+            get_step_output=get_step_output,
+        )
+
+    def test_equal_true(self, evaluator, ctx):
+        """== returns True when equal."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": "==",
+            "left": {"type": "Int", "value": 5},
+            "right": {"type": "Int", "value": 5},
+        }
+        assert evaluator.evaluate(expr, ctx) is True
+
+    def test_equal_false(self, evaluator, ctx):
+        """== returns False when not equal."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": "==",
+            "left": {"type": "Int", "value": 5},
+            "right": {"type": "Int", "value": 10},
+        }
+        assert evaluator.evaluate(expr, ctx) is False
+
+    def test_not_equal(self, evaluator, ctx):
+        """!= returns True when not equal."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": "!=",
+            "left": {"type": "String", "value": "a"},
+            "right": {"type": "String", "value": "b"},
+        }
+        assert evaluator.evaluate(expr, ctx) is True
+
+    def test_greater_than(self, evaluator, ctx):
+        """> operator."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": ">",
+            "left": {"type": "Int", "value": 10},
+            "right": {"type": "Int", "value": 5},
+        }
+        assert evaluator.evaluate(expr, ctx) is True
+
+    def test_less_than(self, evaluator, ctx):
+        """< operator."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": "<",
+            "left": {"type": "Int", "value": 3},
+            "right": {"type": "Int", "value": 5},
+        }
+        assert evaluator.evaluate(expr, ctx) is True
+
+    def test_greater_equal(self, evaluator, ctx):
+        """>= operator."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": ">=",
+            "left": {"type": "Int", "value": 5},
+            "right": {"type": "Int", "value": 5},
+        }
+        assert evaluator.evaluate(expr, ctx) is True
+
+    def test_less_equal(self, evaluator, ctx):
+        """<= operator."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": "<=",
+            "left": {"type": "Int", "value": 5},
+            "right": {"type": "Int", "value": 5},
+        }
+        assert evaluator.evaluate(expr, ctx) is True
+
+    def test_comparison_with_refs(self, evaluator, ctx):
+        """Comparison using step references."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": ">",
+            "left": {"type": "StepRef", "path": ["s1", "value"]},
+            "right": {"type": "StepRef", "path": ["s2", "value"]},
+        }
+        assert evaluator.evaluate(expr, ctx) is True  # 42 > 10
+
+
+class TestBooleanOperators:
+    """Tests for boolean operator evaluation."""
+
+    @pytest.fixture
+    def evaluator(self):
+        return ExpressionEvaluator()
+
+    @pytest.fixture
+    def ctx(self):
+        return EvaluationContext(
+            inputs={"a": True, "b": False},
+            get_step_output=lambda s, a: None,
+        )
+
+    def test_and_true(self, evaluator, ctx):
+        """&& returns True when both true."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": "&&",
+            "left": {"type": "Boolean", "value": True},
+            "right": {"type": "Boolean", "value": True},
+        }
+        assert evaluator.evaluate(expr, ctx) is True
+
+    def test_and_false(self, evaluator, ctx):
+        """&& returns False when one is false."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": "&&",
+            "left": {"type": "Boolean", "value": True},
+            "right": {"type": "Boolean", "value": False},
+        }
+        assert evaluator.evaluate(expr, ctx) is False
+
+    def test_or_true(self, evaluator, ctx):
+        """|| returns True when one is true."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": "||",
+            "left": {"type": "Boolean", "value": False},
+            "right": {"type": "Boolean", "value": True},
+        }
+        assert evaluator.evaluate(expr, ctx) is True
+
+    def test_or_false(self, evaluator, ctx):
+        """|| returns False when both false."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": "||",
+            "left": {"type": "Boolean", "value": False},
+            "right": {"type": "Boolean", "value": False},
+        }
+        assert evaluator.evaluate(expr, ctx) is False
+
+    def test_not_true(self, evaluator, ctx):
+        """! negates True to False."""
+        expr = {
+            "type": "UnaryExpr",
+            "operator": "!",
+            "operand": {"type": "Boolean", "value": True},
+        }
+        assert evaluator.evaluate(expr, ctx) is False
+
+    def test_not_false(self, evaluator, ctx):
+        """! negates False to True."""
+        expr = {
+            "type": "UnaryExpr",
+            "operator": "!",
+            "operand": {"type": "Boolean", "value": False},
+        }
+        assert evaluator.evaluate(expr, ctx) is True
+
+    def test_and_short_circuit(self, evaluator, ctx):
+        """&& short-circuits: false && (error) should not evaluate right side."""
+        # Right side would raise if evaluated (division by zero)
+        expr = {
+            "type": "BinaryExpr",
+            "operator": "&&",
+            "left": {"type": "Boolean", "value": False},
+            "right": {
+                "type": "BinaryExpr",
+                "operator": "/",
+                "left": {"type": "Int", "value": 1},
+                "right": {"type": "Int", "value": 0},
+            },
+        }
+        assert evaluator.evaluate(expr, ctx) is False
+
+    def test_or_short_circuit(self, evaluator, ctx):
+        """|| short-circuits: true || (error) should not evaluate right side."""
+        expr = {
+            "type": "BinaryExpr",
+            "operator": "||",
+            "left": {"type": "Boolean", "value": True},
+            "right": {
+                "type": "BinaryExpr",
+                "operator": "/",
+                "left": {"type": "Int", "value": 1},
+                "right": {"type": "Int", "value": 0},
+            },
+        }
+        assert evaluator.evaluate(expr, ctx) is True

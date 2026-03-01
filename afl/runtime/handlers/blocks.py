@@ -141,8 +141,13 @@ class StatementBlocksBeginHandler(StateHandler):
 
         # The body could be a single andThen block or a list of blocks
         bodies = body if isinstance(body, list) else [body]
-        for i, _block_body in enumerate(bodies):
+        for i, block_body in enumerate(bodies):
             statement_id = f"block-{i}"
+
+            # Determine block type: match blocks use AND_MATCH
+            block_type = ObjectType.AND_THEN
+            if isinstance(block_body, dict) and "match" in block_body:
+                block_type = ObjectType.AND_MATCH
 
             # Idempotency: skip if block step already exists in DB
             if self.context.persistence.block_step_exists(statement_id, self.step.id):
@@ -158,7 +163,7 @@ class StatementBlocksBeginHandler(StateHandler):
 
             block_step = StepDefinition.create(
                 workflow_id=self.step.workflow_id,
-                object_type=ObjectType.AND_THEN,
+                object_type=block_type,
                 facet_name="",
                 statement_id=statement_id,
                 container_id=self.step.id,

@@ -93,18 +93,18 @@ class ConcatExpr(ASTNode):
 
 @dataclass
 class BinaryExpr(ASTNode):
-    """Binary arithmetic expression: expr op expr"""
+    """Binary expression: expr op expr"""
 
-    operator: str  # "+", "-", "*", "/", "%"
+    operator: str  # "+", "-", "*", "/", "%", "==", "!=", ">", "<", ">=", "<=", "&&", "||"
     left: "Literal | Reference | ConcatExpr | BinaryExpr"
     right: "Literal | Reference | ConcatExpr | BinaryExpr"
 
 
 @dataclass
 class UnaryExpr(ASTNode):
-    """Unary expression: -expr"""
+    """Unary expression: -expr or !expr"""
 
-    operator: str  # "-"
+    operator: str  # "-", "!"
     operand: "Literal | Reference | BinaryExpr | UnaryExpr | ConcatExpr"
 
 
@@ -215,15 +215,34 @@ class Block(ASTNode):
 
 
 @dataclass
-class AndThenBlock(ASTNode):
-    """andThen block with optional foreach.
+class MatchCase(ASTNode):
+    """A case in a match block."""
 
-    Has EITHER block (regular andThen) or script (andThen script variant), not both.
+    condition: (
+        "Literal | Reference | BinaryExpr | UnaryExpr | ConcatExpr | None"  # None = default (_)
+    )
+    block: Block
+    is_default: bool = False
+
+
+@dataclass
+class MatchBlock(ASTNode):
+    """Match block: match { case condition => { ... } ... }"""
+
+    cases: list[MatchCase]
+
+
+@dataclass
+class AndThenBlock(ASTNode):
+    """andThen block with optional foreach/match.
+
+    Has EITHER block (regular andThen), script, or match, not multiple.
     """
 
     block: Block | None = None
     foreach: ForeachClause | None = None
     script: "ScriptBlock | None" = None
+    match: MatchBlock | None = None
 
 
 @dataclass

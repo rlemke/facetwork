@@ -21,6 +21,8 @@ from afl import (
     ArrayType,
     BinaryExpr,
     Literal,
+    MatchBlock,
+    MatchCase,
     ParseError,
     Program,
     Reference,
@@ -1798,3 +1800,360 @@ class TestDocComments:
         assert len(doc.params) == 2
         assert doc.params[0].name == "x"
         assert doc.params[1].name == "y"
+
+
+class TestComparisonOperators:
+    """Test comparison operator parsing."""
+
+    def test_equality(self, parser):
+        """Parse == operator."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Int) andThen {
+            s = V(x = $.a == 5)
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, BinaryExpr)
+        assert expr.operator == "=="
+        assert isinstance(expr.left, Reference)
+        assert isinstance(expr.right, Literal)
+        assert expr.right.value == 5
+
+    def test_inequality(self, parser):
+        """Parse != operator."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: String) andThen {
+            s = V(x = $.a != "done")
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, BinaryExpr)
+        assert expr.operator == "!="
+
+    def test_greater_than(self, parser):
+        """Parse > operator."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Int) andThen {
+            s = V(x = $.a > 10)
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, BinaryExpr)
+        assert expr.operator == ">"
+
+    def test_less_than(self, parser):
+        """Parse < operator."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Int) andThen {
+            s = V(x = $.a < 10)
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, BinaryExpr)
+        assert expr.operator == "<"
+
+    def test_greater_equal(self, parser):
+        """Parse >= operator."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Int) andThen {
+            s = V(x = $.a >= 10)
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, BinaryExpr)
+        assert expr.operator == ">="
+
+    def test_less_equal(self, parser):
+        """Parse <= operator."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Int) andThen {
+            s = V(x = $.a <= 10)
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, BinaryExpr)
+        assert expr.operator == "<="
+
+    def test_comparison_lower_precedence_than_arithmetic(self, parser):
+        """Comparison binds looser than arithmetic: a + 1 > 10 => (a+1) > 10."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Int) andThen {
+            s = V(x = $.a + 1 > 10)
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, BinaryExpr)
+        assert expr.operator == ">"
+        assert isinstance(expr.left, BinaryExpr)
+        assert expr.left.operator == "+"
+        assert isinstance(expr.right, Literal)
+
+    def test_comparison_in_call_arg(self, parser):
+        """Comparison expression used as a call argument."""
+        ast = parser.parse("""
+        facet V(eq: Boolean) => (result: String)
+        workflow Test(a: Int, b: Int) andThen {
+            s = V(eq = $.a == $.b)
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, BinaryExpr)
+        assert expr.operator == "=="
+
+
+class TestBooleanOperators:
+    """Test boolean operator parsing."""
+
+    def test_and_operator(self, parser):
+        """Parse && operator."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Boolean, b: Boolean) andThen {
+            s = V(x = $.a && $.b)
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, BinaryExpr)
+        assert expr.operator == "&&"
+
+    def test_or_operator(self, parser):
+        """Parse || operator."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Boolean, b: Boolean) andThen {
+            s = V(x = $.a || $.b)
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, BinaryExpr)
+        assert expr.operator == "||"
+
+    def test_not_operator(self, parser):
+        """Parse ! operator."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Boolean) andThen {
+            s = V(x = !$.a)
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, UnaryExpr)
+        assert expr.operator == "!"
+
+    def test_and_lower_precedence_than_comparison(self, parser):
+        """&& binds looser than ==: a == b && c == d => (a==b) && (c==d)."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Int, b: Int, c: Int, d: Int) andThen {
+            s = V(x = $.a == $.b && $.c == $.d)
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, BinaryExpr)
+        assert expr.operator == "&&"
+        assert isinstance(expr.left, BinaryExpr)
+        assert expr.left.operator == "=="
+        assert isinstance(expr.right, BinaryExpr)
+        assert expr.right.operator == "=="
+
+    def test_or_lower_precedence_than_and(self, parser):
+        """|| binds looser than &&: a && b || c => (a && b) || c."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Boolean, b: Boolean, c: Boolean) andThen {
+            s = V(x = $.a && $.b || $.c)
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, BinaryExpr)
+        assert expr.operator == "||"
+        assert isinstance(expr.left, BinaryExpr)
+        assert expr.left.operator == "&&"
+
+    def test_nested_not_with_comparison(self, parser):
+        """Nested: !(a > 10) parses correctly."""
+        ast = parser.parse("""
+        facet V(x: Boolean)
+        workflow Test(a: Int) andThen {
+            s = V(x = !($.a > 10))
+        }
+        """)
+        step = ast.workflows[0].body.block.steps[0]
+        expr = step.call.args[0].value
+        assert isinstance(expr, UnaryExpr)
+        assert expr.operator == "!"
+        assert isinstance(expr.operand, BinaryExpr)
+        assert expr.operand.operator == ">"
+
+
+class TestMatchBlocks:
+    """Test andThen match block parsing."""
+
+    def test_simple_match(self, parser):
+        """Parse a simple match block with one case."""
+        ast = parser.parse("""
+        facet DoA(x: String) => (value: String)
+        workflow Test(status: String) => (output: String) andThen match {
+            case $.status == "ok" => {
+                a = DoA(x = $.status)
+                yield Test(output = a.value)
+            }
+        }
+        """)
+        wf = ast.workflows[0]
+        assert wf.body is not None
+        body = wf.body
+        assert body.match is not None
+        match_blk = body.match
+        assert isinstance(match_blk, MatchBlock)
+        assert len(match_blk.cases) == 1
+        case = match_blk.cases[0]
+        assert isinstance(case, MatchCase)
+        assert not case.is_default
+        assert isinstance(case.condition, BinaryExpr)
+        assert case.condition.operator == "=="
+        assert len(case.block.steps) == 1
+        assert len(case.block.yield_stmts) == 1
+
+    def test_multi_case_match(self, parser):
+        """Parse match block with multiple cases."""
+        ast = parser.parse("""
+        facet DoA(x: Int) => (value: String)
+        facet DoB(y: Int) => (result: String)
+        workflow Test(count: Int) => (output: String) andThen match {
+            case $.count > 100 => {
+                a = DoA(x = $.count)
+                yield Test(output = a.value)
+            }
+            case $.count > 10 => {
+                b = DoB(y = $.count)
+                yield Test(output = b.result)
+            }
+        }
+        """)
+        wf = ast.workflows[0]
+        match_blk = wf.body.match
+        assert len(match_blk.cases) == 2
+        assert match_blk.cases[0].condition.operator == ">"
+        assert match_blk.cases[1].condition.operator == ">"
+
+    def test_match_with_default(self, parser):
+        """Parse match block with default case."""
+        ast = parser.parse("""
+        facet DoA(x: Int) => (value: String)
+        facet DoFallback() => (value: String)
+        workflow Test(count: Int) => (output: String) andThen match {
+            case $.count > 10 => {
+                a = DoA(x = $.count)
+                yield Test(output = a.value)
+            }
+            case _ => {
+                f = DoFallback()
+                yield Test(output = f.value)
+            }
+        }
+        """)
+        wf = ast.workflows[0]
+        match_blk = wf.body.match
+        assert len(match_blk.cases) == 2
+        assert not match_blk.cases[0].is_default
+        assert match_blk.cases[1].is_default
+        assert match_blk.cases[1].condition is None
+
+    def test_match_default_only(self, parser):
+        """Parse match block with only a default case."""
+        ast = parser.parse("""
+        facet DoFallback() => (value: String)
+        workflow Test() => (output: String) andThen match {
+            case _ => {
+                f = DoFallback()
+                yield Test(output = f.value)
+            }
+        }
+        """)
+        wf = ast.workflows[0]
+        match_blk = wf.body.match
+        assert len(match_blk.cases) == 1
+        assert match_blk.cases[0].is_default
+
+    def test_statement_level_match(self, parser):
+        """Parse statement-level andThen match."""
+        ast = parser.parse("""
+        facet Process(input: String) => (status: String, result: String)
+        facet HandleOk(x: String) => (out: String)
+        facet HandleErr() => (out: String)
+        workflow Test(data: String) => (output: String) andThen {
+            s = Process(input = $.data) andThen match {
+                case s.status == "ok" => {
+                    h = HandleOk(x = s.result)
+                    yield Process(out = h.out)
+                }
+                case _ => {
+                    e = HandleErr()
+                    yield Process(out = e.out)
+                }
+            }
+            yield Test(output = s.result)
+        }
+        """)
+        wf = ast.workflows[0]
+        step = wf.body.block.steps[0]
+        assert step.body is not None
+        assert step.body.match is not None
+        assert len(step.body.match.cases) == 2
+
+    def test_chained_match_and_andthen(self, parser):
+        """Parse match block chained with regular andThen."""
+        ast = parser.parse("""
+        facet DoA(x: Int) => (value: String)
+        facet DoB() => (result: String)
+        workflow Test(count: Int) => (output: String) andThen {
+            a = DoA(x = $.count)
+        } andThen match {
+            case $.count > 0 => {
+                b = DoB()
+                yield Test(output = b.result)
+            }
+        }
+        """)
+        wf = ast.workflows[0]
+        assert isinstance(wf.body, list)
+        assert len(wf.body) == 2
+        assert wf.body[0].block is not None
+        assert wf.body[1].match is not None
+
+    def test_match_complex_condition(self, parser):
+        """Parse match with complex boolean condition."""
+        ast = parser.parse("""
+        facet DoA() => (value: String)
+        workflow Test(x: Int, y: Int) => (output: String) andThen match {
+            case $.x > 0 && $.y > 0 => {
+                a = DoA()
+                yield Test(output = a.value)
+            }
+        }
+        """)
+        wf = ast.workflows[0]
+        cond = wf.body.match.cases[0].condition
+        assert isinstance(cond, BinaryExpr)
+        assert cond.operator == "&&"

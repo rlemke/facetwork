@@ -58,6 +58,10 @@ class BlockExecutionBeginHandler(StateHandler):
         if "foreach" in block_ast:
             return self._process_foreach(block_ast)
 
+        # Check for match block
+        if "match" in block_ast:
+            return self._process_match(block_ast)
+
         # Build dependency graph
         workflow_inputs = self._get_workflow_inputs()
         graph = DependencyGraph.from_ast(
@@ -154,6 +158,121 @@ class BlockExecutionBeginHandler(StateHandler):
                 i,
                 variable,
                 element,
+            )
+            self.context.changes.add_created_step(sub_block)
+
+        self.step.request_state_change(True)
+        return StateChangeResult(step=self.step)
+
+    def _process_match(self, block_ast: dict) -> StateChangeResult:
+        """Process a match block by evaluating conditions and creating sub-blocks.
+
+        Semantics:
+        - Non-exclusive: ALL matching cases execute concurrently
+        - Default case: executes ONLY if no other case matched
+
+        Args:
+            block_ast: The block AST with a "match" key
+
+        Returns:
+            StateChangeResult
+        """
+        from ..expression import EvaluationContext, ExpressionEvaluator
+        from ..step import StepDefinition
+        from ..types import ObjectType
+
+        match_ast = block_ast["match"]
+        cases = match_ast.get("cases", [])
+
+        # Build evaluation context from workflow inputs + parent step outputs
+        inputs = self._build_foreach_eval_inputs()
+
+        # Also gather parent step outputs for step refs in conditions
+        def get_step_output(step_name: str, attr_name: str):
+            # Look up completed steps in the workflow
+            container = (
+                self.context._find_step(self.step.container_id) if self.step.container_id else None
+            )
+            if container:
+                # Search for completed sibling steps
+                siblings = list(self.context.persistence.get_steps_by_block(container.id))
+                for sibling in siblings:
+                    if sibling.statement_name == step_name and sibling.is_complete:
+                        ret = sibling.attributes.returns.get(attr_name)
+                        if ret:
+                            return ret.value
+            raise ValueError(f"Not found: {step_name}.{attr_name}")
+
+        eval_ctx = EvaluationContext(
+            inputs=inputs,
+            get_step_output=get_step_output,
+            step_id=self.step.id,
+        )
+        evaluator = ExpressionEvaluator()
+
+        any_matched = False
+        for i, case in enumerate(cases):
+            is_default = case.get("default", False)
+
+            if is_default:
+                # Default case: only create if no other case matched
+                if any_matched:
+                    continue
+            else:
+                # Evaluate condition
+                condition = case.get("condition")
+                if condition is None:
+                    continue
+                try:
+                    result = evaluator.evaluate(condition, eval_ctx)
+                    if not result:
+                        continue
+                except Exception as e:
+                    logger.warning("Match case %d condition evaluation failed: %s", i, e)
+                    continue
+                any_matched = True
+
+            # Create sub-block for this case
+            match_stmt_id = f"match-case-{i}"
+
+            # Idempotency: skip if sub-block already exists
+            if self.context.persistence.step_exists(match_stmt_id, self.step.id):
+                continue
+
+            already_pending = any(
+                str(p.statement_id) == match_stmt_id and p.block_id == self.step.id
+                for p in self.context.changes.created_steps
+            )
+            if already_pending:
+                continue
+
+            # Build body AST from case's steps/yield
+            case_body: dict = {"type": "AndThenBlock"}
+            if "steps" in case:
+                case_body["steps"] = case["steps"]
+            if "yield" in case:
+                case_body["yield"] = case["yield"]
+            if "yields" in case:
+                case_body["yields"] = case["yields"]
+
+            sub_block = StepDefinition.create(
+                workflow_id=self.step.workflow_id,
+                object_type=ObjectType.AND_THEN,
+                facet_name="",
+                statement_id=match_stmt_id,
+                container_id=self.step.container_id,
+                block_id=self.step.id,
+                root_id=self.step.root_id or self.step.container_id,
+            )
+
+            # Cache the body AST for this sub-block
+            self.context.set_block_ast_cache(sub_block.id, case_body)
+
+            logger.debug(
+                "Match case sub-block created: block_id=%s case=%d default=%s",
+                sub_block.id,
+                i,
+                is_default,
             )
             self.context.changes.add_created_step(sub_block)
 
@@ -278,10 +397,12 @@ class BlockExecutionContinueHandler(StateHandler):
 
     def process_state(self) -> StateChangeResult:
         """Continue block execution."""
-        # Check if this is a foreach block — use sub-block tracking instead
+        # Check if this is a foreach or match block — use sub-block tracking
         block_ast = self.context.get_block_ast(self.step)
         if block_ast and "foreach" in block_ast:
             return self._continue_foreach()
+        if block_ast and "match" in block_ast:
+            return self._continue_match()
 
         # Get the dependency graph (may need to rebuild after resume)
         graph = self.context.get_block_graph(self.step.id)
@@ -394,6 +515,55 @@ class BlockExecutionContinueHandler(StateHandler):
         if terminal == total:
             if errored:
                 msg = f"Foreach block has {len(errored)} errored sub-block(s)"
+                self.step.mark_error(RuntimeError(msg))
+                return StateChangeResult(step=self.step)
+            self.step.request_state_change(True)
+            return StateChangeResult(step=self.step)
+
+        return self.stay(push=True)
+
+    def _continue_match(self) -> StateChangeResult:
+        """Continue a match block by checking sub-block completion.
+
+        For match blocks, we track sub-blocks (children with block_id=self.step.id)
+        just like foreach blocks.
+
+        Returns:
+            StateChangeResult
+        """
+        # Get all sub-blocks
+        sub_blocks = list(self.context.persistence.get_steps_by_block(self.step.id))
+
+        # Include pending created/updated sub-blocks
+        for pending in self.context.changes.created_steps:
+            if pending.block_id == self.step.id and pending not in sub_blocks:
+                sub_blocks.append(pending)
+        for pending in self.context.changes.updated_steps:
+            for i, s in enumerate(sub_blocks):
+                if s.id == pending.id:
+                    sub_blocks[i] = pending
+
+        if not sub_blocks:
+            # No sub-blocks (no case matched and no default), complete
+            self.step.request_state_change(True)
+            return StateChangeResult(step=self.step)
+
+        completed = [s for s in sub_blocks if s.is_complete]
+        errored = [s for s in sub_blocks if s.is_error]
+        terminal = len(completed) + len(errored)
+        total = len(sub_blocks)
+
+        logger.debug(
+            "Match block continue: block_id=%s progress=%d/%d errored=%d",
+            self.step.id,
+            terminal,
+            total,
+            len(errored),
+        )
+
+        if terminal == total:
+            if errored:
+                msg = f"Match block has {len(errored)} errored sub-block(s)"
                 self.step.mark_error(RuntimeError(msg))
                 return StateChangeResult(step=self.step)
             self.step.request_state_change(True)
