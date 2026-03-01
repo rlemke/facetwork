@@ -60,6 +60,18 @@ Tests: 27 (parser 7, emitter 3, validator 6, runtime evaluator 5, runtime expres
 Spec: `spec/10_language.md` (grammar, examples), `spec/11_semantics.md` (AST nodes),
 `spec/12_validation.md` (type checking, when validation rules)
 
+### Item 3: Authoring Roles Documentation
+
+Documented the three distinct authoring roles across platform docs:
+
+| Role | Writes | Skills required |
+|------|--------|-----------------|
+| **Domain programmer** | AFL source (`.afl` files) — workflows, facets, schemas, composition | AFL syntax; no Python needed |
+| **Service provider programmer** | Handler implementations (Python modules) for event facets | Python; domain-specific APIs |
+| **Claude** | Both AFL definitions and handler implementations | Given a natural-language description |
+
+Files: `CLAUDE.md`, `spec/00_overview.md`, `spec/60_agent_sdk.md`, `spec/61_llm_agent_integration.md`
+
 ---
 
 ## Completed (v0.27.0) - Dashboard Live Updates, DAG Visualization, SDK Handler Metadata & Streaming Parity
