@@ -377,7 +377,10 @@ def _make_export_zoom_layers_handler(facet_name: str):
     def handler(payload: dict) -> dict:
         assignments_path = payload.get("assignments_path", "")
         graph_path = payload.get("graph_path", "")
-        output_dir = payload.get("output_dir", "/tmp/zoom-export")
+        output_dir = payload.get(
+            "output_dir",
+            os.path.join(os.environ.get("AFL_LOCAL_OUTPUT_DIR", "/tmp"), "zoom-export"),
+        )
         step_log = payload.get("_step_log")
 
         if step_log:
@@ -436,7 +439,10 @@ def _make_build_zoom_layers_handler(facet_name: str):
         cache = payload.get("cache", {})
         gh_config = payload.get("graph", {})
         min_population = payload.get("min_population", 50000)
-        output_dir = payload.get("output_dir", "/tmp/zoom-builder")
+        output_dir = payload.get(
+            "output_dir",
+            os.path.join(os.environ.get("AFL_LOCAL_OUTPUT_DIR", "/tmp"), "zoom-builder"),
+        )
         max_concurrent = payload.get("max_concurrent", 16)
         step_log = payload.get("_step_log")
 

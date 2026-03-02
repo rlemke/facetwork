@@ -283,7 +283,7 @@ def align_reads(
 
     Returns AlignmentResult dict.
     """
-    bam_path = f"/tmp/hiv-align/{sample_id}.sorted.bam"
+    bam_path = os.path.join(_LOCAL_OUTPUT, "hiv-align", f"{sample_id}.sorted.bam")
     mapped_reads = _hash_int(f"mapped:{sample_id}:{reference}", 500, 300000)
     coverage_pct = _hash_float(f"coverage:{sample_id}:{reference}", 50.0, 100.0)
     mean_depth = _hash_int(f"meandepth:{sample_id}:{reference}", 50, 1000)

@@ -7,12 +7,15 @@ scoring, selection, and export into a complete pipeline.
 import csv
 import json
 import logging
+import os
 import time
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+_LOCAL_OUTPUT = os.environ.get("AFL_LOCAL_OUTPUT_DIR", "/tmp")
 
 from .zoom_detection import (
     detect_bypasses,
@@ -44,7 +47,7 @@ def build_zoom_layers(
     cache: dict,
     graph_config: dict,
     min_population: int = 50_000,
-    output_dir: str = "/tmp/zoom-builder",
+    output_dir: str = "",
     max_concurrent: int = 16,
 ) -> tuple[dict, dict]:
     """Orchestrate the full Low-Zoom roads pipeline.
@@ -59,6 +62,8 @@ def build_zoom_layers(
     Returns:
         Tuple of (result_dict, metrics_dict).
     """
+    if not output_dir:
+        output_dir = os.path.join(_LOCAL_OUTPUT, "zoom-builder")
     t0 = time.time()
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)

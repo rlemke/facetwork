@@ -10,6 +10,9 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
+_LOCAL_OUTPUT = os.environ.get("AFL_LOCAL_OUTPUT_DIR", "/tmp")
+_RISK_REPORTS_DIR = os.path.join(_LOCAL_OUTPUT, "risk-reports")
+
 NAMESPACE = "risk.Reporting"
 
 
@@ -51,7 +54,9 @@ def handle_generate_report(params: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "report": {
-            "report_path": f"/tmp/risk-reports/{portfolio.get('name', 'unknown')}_{timestamp}.json",
+            "report_path": os.path.join(
+                _RISK_REPORTS_DIR, f"{portfolio.get('name', 'unknown')}_{timestamp}.json"
+            ),
             "summary": summary,
             "timestamp": timestamp,
         }

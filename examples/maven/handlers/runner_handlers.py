@@ -11,6 +11,8 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
+_LOCAL_OUTPUT = os.environ.get("AFL_LOCAL_OUTPUT_DIR", "/tmp")
+
 NAMESPACE = "maven.runner"
 
 
@@ -47,7 +49,9 @@ def _run_maven_artifact_handler(payload: dict) -> dict[str, Any]:
     if classifier:
         jar_name += f"-{classifier}"
     jar_name += ".jar"
-    artifact_path = f"/tmp/maven-cache/{group_path}/{artifact_id}/{version}/{jar_name}"
+    artifact_path = os.path.join(
+        _LOCAL_OUTPUT, "maven-cache", group_path, artifact_id, version, jar_name
+    )
 
     cmd = "java"
     if jvm_args:
@@ -72,7 +76,7 @@ def _run_maven_artifact_handler(payload: dict) -> dict[str, Any]:
 def _run_maven_plugin_handler(payload: dict) -> dict[str, Any]:
     """Simulate running a Maven plugin goal within a workspace."""
     step_log = payload.get("_step_log")
-    workspace_path = payload.get("workspace_path", "/tmp/workspace")
+    workspace_path = payload.get("workspace_path", os.path.join(_LOCAL_OUTPUT, "workspace"))
     plugin_group_id = payload.get("plugin_group_id", "org.apache.maven.plugins")
     if step_log:
         step_log(f"RunMavenPlugin: {payload.get('goal', 'compile')}")

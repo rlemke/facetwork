@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,7 +42,8 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 # Default output directory for extracted boundaries
-DEFAULT_OUTPUT_DIR = Path("/tmp/osm-boundaries")
+_LOCAL_OUTPUT = os.environ.get("AFL_LOCAL_OUTPUT_DIR", "/tmp")
+DEFAULT_OUTPUT_DIR = Path(os.path.join(_LOCAL_OUTPUT, "osm-boundaries"))
 
 # Admin level mappings
 ADMIN_LEVEL_COUNTRY = 2
