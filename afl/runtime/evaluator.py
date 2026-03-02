@@ -207,7 +207,7 @@ class ExecutionContext:
         if container.facet_name:
             facet_def = self.get_facet_definition(container.facet_name)
             if facet_def and "body" in facet_def:
-                return facet_def["body"]
+                return self._select_block_body(facet_def["body"], block_step)
 
         return None
 

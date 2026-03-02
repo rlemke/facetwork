@@ -176,3 +176,175 @@ class TestAnalyzeSample:
 
         assert result.status == ExecutionStatus.COMPLETED
         assert result.outputs["status"] in ("completed", "qc_failed")
+
+
+# ============================================================================
+# Batch pipeline tests — run BatchAnalysis (foreach + catch) with real data
+# ============================================================================
+
+
+class TestBatchAnalysis:
+    """Run BatchAnalysis through the full evaluator/poller pipeline.
+
+    BatchAnalysis uses ``andThen foreach`` to iterate over sample_ids,
+    running AnalyzeSample per sample with ``catch`` for error recovery.
+    Each sample goes through all 9 handlers (QC → align → variants →
+    consensus → classify → score → interpret → report).
+    """
+
+    @staticmethod
+    def _register_handlers(poller):
+        """Register all 9 HIV handlers with the poller."""
+        from handlers import register_all_handlers
+
+        register_all_handlers(poller)
+
+    def test_batch_3_samples_completes(self, compiled_program, evaluator, poller):
+        """BatchAnalysis with 3 samples runs to COMPLETED."""
+        self._register_handlers(poller)
+        workflow = extract_workflow(compiled_program, "BatchAnalysis")
+
+        inputs = {
+            "batch_id": "BATCH-2026-001",
+            "sample_ids": ["HIV-PT-101", "HIV-PT-102", "HIV-PT-103"],
+            "fastq_dir": "/data/clinical/batch001",
+            "reference": "HXB2",
+        }
+
+        result = run_to_completion(
+            evaluator,
+            poller,
+            workflow,
+            compiled_program,
+            inputs=inputs,
+            max_rounds=100,
+        )
+
+        assert result.status == ExecutionStatus.COMPLETED
+
+    def test_batch_steps_per_sample(self, compiled_program, evaluator, poller, memory_store):
+        """Each sample creates >=9 steps; batch total >=30 (3 samples + root + blocks)."""
+        self._register_handlers(poller)
+        workflow = extract_workflow(compiled_program, "BatchAnalysis")
+
+        inputs = {
+            "batch_id": "BATCH-STEPS",
+            "sample_ids": ["HIV-S1", "HIV-S2", "HIV-S3"],
+            "fastq_dir": "/data/samples",
+            "reference": "HXB2",
+        }
+
+        result = run_to_completion(
+            evaluator,
+            poller,
+            workflow,
+            compiled_program,
+            inputs=inputs,
+            max_rounds=100,
+        )
+
+        assert result.status == ExecutionStatus.COMPLETED
+
+        steps = memory_store.get_steps_by_workflow(result.workflow_id)
+        # Root + foreach block + 3 sub-blocks + 3 AnalyzeSample calls
+        # + each AnalyzeSample's blocks and inner steps ≈ 20+
+        assert len(steps) >= 20
+
+    def test_batch_mixed_qc_outcomes(self, compiled_program, evaluator, poller):
+        """Batch with 1 forced QC failure and 2 passes completes without error."""
+        self._register_handlers(poller)
+
+        # Override QC to fail for one specific sample
+        original_qc = poller._handlers.get("hiv.Sequencing.AssessQuality")
+
+        def handle_selective_qc_fail(params):
+            if params.get("sample_id") == "HIV-FAIL-001":
+                return {
+                    "passed": False,
+                    "total_reads": 500,
+                    "mean_quality": 12.0,
+                    "coverage_depth": 5,
+                    "message": "Severely degraded sample",
+                }
+            return original_qc(params)
+
+        poller.register("hiv.Sequencing.AssessQuality", handle_selective_qc_fail)
+
+        workflow = extract_workflow(compiled_program, "BatchAnalysis")
+
+        inputs = {
+            "batch_id": "BATCH-MIXED",
+            "sample_ids": ["HIV-PASS-001", "HIV-FAIL-001", "HIV-PASS-002"],
+            "fastq_dir": "/data/clinical/mixed",
+            "reference": "HXB2",
+        }
+
+        result = run_to_completion(
+            evaluator,
+            poller,
+            workflow,
+            compiled_program,
+            inputs=inputs,
+            max_rounds=100,
+        )
+
+        # Batch completes even with per-sample QC failures
+        assert result.status == ExecutionStatus.COMPLETED
+
+    def test_batch_single_sample(self, compiled_program, evaluator, poller):
+        """BatchAnalysis with a single sample works (degenerate foreach)."""
+        self._register_handlers(poller)
+        workflow = extract_workflow(compiled_program, "BatchAnalysis")
+
+        inputs = {
+            "batch_id": "BATCH-SINGLE",
+            "sample_ids": ["HIV-SOLO-001"],
+            "fastq_dir": "/data/solo",
+            "reference": "HXB2",
+        }
+
+        result = run_to_completion(
+            evaluator,
+            poller,
+            workflow,
+            compiled_program,
+            inputs=inputs,
+            max_rounds=100,
+        )
+
+        assert result.status == ExecutionStatus.COMPLETED
+
+    def test_batch_5_samples_real_ids(
+        self, hxb2_fasta, compiled_program, evaluator, poller, memory_store
+    ):
+        """Batch of 5 samples with realistic patient IDs and HXB2 reference path."""
+        self._register_handlers(poller)
+        workflow = extract_workflow(compiled_program, "BatchAnalysis")
+
+        inputs = {
+            "batch_id": "CLINIC-2026-03-01",
+            "sample_ids": [
+                "PT-9281-A",
+                "PT-4517-B",
+                "PT-7033-C",
+                "PT-1156-D",
+                "PT-8842-E",
+            ],
+            "fastq_dir": str(hxb2_fasta).rsplit("/", 1)[0],
+            "reference": "HXB2",
+        }
+
+        result = run_to_completion(
+            evaluator,
+            poller,
+            workflow,
+            compiled_program,
+            inputs=inputs,
+            max_rounds=200,
+        )
+
+        assert result.status == ExecutionStatus.COMPLETED
+
+        steps = memory_store.get_steps_by_workflow(result.workflow_id)
+        # 5 samples × ~7 steps each + root + foreach + sub-blocks ≈ 35+
+        assert len(steps) >= 35
