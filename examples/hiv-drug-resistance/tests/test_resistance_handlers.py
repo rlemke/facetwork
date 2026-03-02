@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 
@@ -483,3 +484,108 @@ class TestAgentIntegration:
         all_names = list(d1.keys()) + list(d2.keys()) + list(d3.keys()) + list(d4.keys())
         assert len(all_names) == 9
         assert all(n.startswith("hiv.") for n in all_names)
+
+
+# ---------------------------------------------------------------------------
+# TestFastqParsing — FASTQ parsing and synthetic generation
+# ---------------------------------------------------------------------------
+class TestFastqParsing:
+    def test_parse_plain_fastq(self, tmp_path):
+        """parse_fastq_quality reads a plain .fastq file."""
+        from handlers.shared.resistance_utils import parse_fastq_quality
+
+        fq = tmp_path / "test.fastq"
+        fq.write_text("@read1\nACGT\n+\nIIII\n@read2\nGGCC\n+\nHHHH\n")
+        result = parse_fastq_quality(str(fq))
+        assert result["total_reads"] == 2
+        assert result["total_bases"] == 8
+        assert result["mean_read_length"] == 4.0
+        assert result["mean_quality"] > 0
+
+    def test_parse_gzipped_fastq(self, tmp_path):
+        """parse_fastq_quality reads a .fastq.gz file."""
+        from handlers.shared.resistance_utils import parse_fastq_quality
+
+        fq = tmp_path / "test.fastq.gz"
+        with gzip.open(str(fq), "wt") as f:
+            f.write("@read1\nACGT\n+\nIIII\n")
+        result = parse_fastq_quality(str(fq))
+        assert result["total_reads"] == 1
+        assert result["total_bases"] == 4
+
+    def test_parse_empty_fastq(self, tmp_path):
+        """parse_fastq_quality handles an empty file gracefully."""
+        from handlers.shared.resistance_utils import parse_fastq_quality
+
+        fq = tmp_path / "empty.fastq"
+        fq.write_text("")
+        result = parse_fastq_quality(str(fq))
+        assert result["total_reads"] == 0
+        assert result["mean_quality"] == 0.0
+        assert result["coverage_depth"] == 0
+
+    def test_coverage_depth_calculation(self, tmp_path):
+        """coverage_depth = total_bases / reference_length."""
+        from handlers.shared.resistance_utils import parse_fastq_quality
+
+        # 10 reads × 100 bases = 1000 bases / ref 100 = depth 10
+        lines = ""
+        for i in range(10):
+            seq = "A" * 100
+            qual = "I" * 100  # Phred 40
+            lines += f"@read{i}\n{seq}\n+\n{qual}\n"
+        fq = tmp_path / "depth.fastq"
+        fq.write_text(lines)
+        result = parse_fastq_quality(str(fq), reference_length=100)
+        assert result["coverage_depth"] == 10
+        assert result["total_reads"] == 10
+
+    def test_generate_synthetic_fastq(self, tmp_path):
+        """generate_synthetic_fastq creates a valid FASTQ file."""
+        from handlers.shared.resistance_utils import (
+            generate_synthetic_fastq,
+            parse_fastq_quality,
+        )
+
+        fq = str(tmp_path / "synth.fastq.gz")
+        generate_synthetic_fastq(fq, num_reads=100, read_length=150, seed=99)
+        result = parse_fastq_quality(fq)
+        assert result["total_reads"] == 100
+        assert result["mean_read_length"] == 150.0
+        assert result["total_bases"] == 100 * 150
+
+    def test_synthetic_deterministic(self, tmp_path):
+        """generate_synthetic_fastq is deterministic given the same seed."""
+        from handlers.shared.resistance_utils import generate_synthetic_fastq
+
+        fq1 = str(tmp_path / "det1.fastq")
+        fq2 = str(tmp_path / "det2.fastq")
+        generate_synthetic_fastq(fq1, num_reads=50, seed=7)
+        generate_synthetic_fastq(fq2, num_reads=50, seed=7)
+        with open(fq1) as f1, open(fq2) as f2:
+            assert f1.read() == f2.read()
+
+    def test_assess_quality_real_file(self, tmp_path):
+        """assess_read_quality uses parse_fastq_quality when file exists."""
+        from handlers.shared.resistance_utils import (
+            assess_read_quality,
+            generate_synthetic_fastq,
+        )
+
+        fq = str(tmp_path / "real.fastq.gz")
+        generate_synthetic_fastq(fq, num_reads=5000, read_length=150, mean_quality=35.0, seed=42)
+        result = assess_read_quality("test-sample", fq, min_quality=30, min_depth=100)
+        # With 5000 reads × 150bp / 3000 ref = 250 depth → should pass
+        assert result["passed"] is True
+        assert result["total_reads"] == 5000
+        assert result["message"] == "QC passed"
+
+    def test_assess_quality_fake_path_fallback(self):
+        """assess_read_quality falls back to hash mock for non-existent paths."""
+        from handlers.shared.resistance_utils import assess_read_quality
+
+        result = assess_read_quality("sample-001", "/nonexistent/path.fastq.gz")
+        assert "passed" in result
+        assert "total_reads" in result
+        # Hash-based: total_reads derived from hash, not 0
+        assert result["total_reads"] > 0

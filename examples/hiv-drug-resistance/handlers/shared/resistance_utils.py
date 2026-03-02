@@ -1,12 +1,16 @@
 """Shared utility functions for the hiv-drug-resistance example.
 
 All functions are pure and deterministic — they use hashlib for reproducible
-test outputs rather than random data or real I/O.
+test outputs rather than random data or real I/O.  When a real FASTQ file is
+available, ``assess_read_quality()`` delegates to ``parse_fastq_quality()``
+for actual read-level QC.
 """
 
 from __future__ import annotations
 
+import gzip
 import hashlib
+import os
 
 # ---------------------------------------------------------------------------
 # Hash helpers
@@ -101,6 +105,102 @@ AMINO_ACIDS = "ACDEFGHIKLMNPQRSTVWY"
 
 
 # ---------------------------------------------------------------------------
+# FASTQ parsing utilities
+# ---------------------------------------------------------------------------
+
+
+def parse_fastq_quality(
+    fastq_path: str,
+    reference_length: int = 3000,
+) -> dict:
+    """Parse a FASTQ file and compute read-level quality metrics.
+
+    Handles both plain ``.fastq`` and gzip-compressed ``.fastq.gz`` files.
+    Uses Phred+33 encoding.
+
+    Returns dict with total_reads, mean_quality, coverage_depth, total_bases,
+    mean_read_length.
+    """
+    opener = gzip.open if fastq_path.endswith(".gz") else open
+    total_reads = 0
+    total_bases = 0
+    quality_sum = 0
+
+    with opener(fastq_path, "rt") as fh:  # type: ignore[arg-type]
+        while True:
+            header = fh.readline()
+            if not header:
+                break
+            header = header.strip()
+            if not header.startswith("@"):
+                continue
+            _seq = fh.readline()  # sequence line
+            _plus = fh.readline()  # + line
+            qual_line = fh.readline().strip()
+            if not qual_line:
+                break
+            total_reads += 1
+            total_bases += len(qual_line)
+            quality_sum += sum(ord(c) - 33 for c in qual_line)
+
+    mean_quality = quality_sum / total_bases if total_bases > 0 else 0.0
+    mean_read_length = total_bases / total_reads if total_reads > 0 else 0.0
+    coverage_depth = total_bases / reference_length if reference_length > 0 else 0
+
+    return {
+        "total_reads": total_reads,
+        "mean_quality": round(mean_quality, 2),
+        "coverage_depth": int(coverage_depth),
+        "total_bases": total_bases,
+        "mean_read_length": round(mean_read_length, 2),
+    }
+
+
+def generate_synthetic_fastq(
+    output_path: str,
+    num_reads: int = 1000,
+    read_length: int = 150,
+    mean_quality: float = 35.0,
+    quality_std: float = 3.0,
+    seed: int = 42,
+) -> str:
+    """Generate a synthetic FASTQ file with deterministic content.
+
+    Uses hashlib for reproducibility (no numpy). Supports ``.gz`` output.
+
+    Returns the output path.
+    """
+    bases = "ACGT"
+    opener = gzip.open if output_path.endswith(".gz") else open
+
+    with opener(output_path, "wt") as fh:  # type: ignore[arg-type]
+        for i in range(num_reads):
+            # Deterministic sequence from hash
+            seq_hash = hashlib.sha256(f"seq:{seed}:{i}".encode()).hexdigest()
+            seq = "".join(bases[int(c, 16) % 4] for c in seq_hash[:read_length])
+            if len(seq) < read_length:
+                # Extend if hash hex digits aren't enough
+                repeats = (read_length // len(seq)) + 1
+                seq = (seq * repeats)[:read_length]
+
+            # Deterministic quality scores around mean_quality
+            qual_chars = []
+            for j in range(read_length):
+                q_hash = int(hashlib.sha256(f"qual:{seed}:{i}:{j}".encode()).hexdigest(), 16)
+                # Map to range [mean - 2*std, mean + 2*std], clamp to [2, 41]
+                q_val = mean_quality + quality_std * ((q_hash % 1000) / 500.0 - 1.0)
+                q_val = max(2.0, min(41.0, q_val))
+                qual_chars.append(chr(int(q_val) + 33))
+
+            fh.write(f"@read_{seed}_{i} length={read_length}\n")
+            fh.write(f"{seq}\n")
+            fh.write("+\n")
+            fh.write(f"{''.join(qual_chars)}\n")
+
+    return output_path
+
+
+# ---------------------------------------------------------------------------
 # Sequencing utilities
 # ---------------------------------------------------------------------------
 
@@ -113,16 +213,50 @@ def assess_read_quality(
 ) -> dict:
     """Assess FASTQ read quality.
 
+    If *fastq_path* points to an existing FASTQ file, parses it with
+    ``parse_fastq_quality()`` for real metrics.  Otherwise falls through
+    to the deterministic hash-based mock (backward compatible with tests
+    that use non-existent paths).
+
     Returns dict with passed, total_reads, mean_quality, coverage_depth, message.
     """
+    # Real-file path: parse actual FASTQ when the file exists
+    if os.path.isfile(fastq_path):
+        try:
+            metrics = parse_fastq_quality(fastq_path)
+            if metrics["total_reads"] > 0:
+                total_reads = metrics["total_reads"]
+                mean_quality_val = metrics["mean_quality"]
+                coverage_depth = metrics["coverage_depth"]
+                passed = mean_quality_val >= min_quality and coverage_depth >= min_depth
+                if not passed:
+                    reasons = []
+                    if mean_quality_val < min_quality:
+                        reasons.append(f"low quality ({mean_quality_val:.1f} < {min_quality})")
+                    if coverage_depth < min_depth:
+                        reasons.append(f"low depth ({coverage_depth} < {min_depth})")
+                    message = "; ".join(reasons)
+                else:
+                    message = "QC passed"
+                return {
+                    "passed": passed,
+                    "total_reads": total_reads,
+                    "mean_quality": round(mean_quality_val, 2),
+                    "coverage_depth": coverage_depth,
+                    "message": message,
+                }
+        except (OSError, UnicodeDecodeError):
+            pass  # Fall through to hash-based mock
+
+    # Hash-based mock (original behavior)
     total_reads = _hash_int(f"reads:{sample_id}:{fastq_path}", 1000, 500000)
-    mean_quality = _hash_float(f"quality:{sample_id}", 15.0, 40.0)
+    mean_quality_val = _hash_float(f"quality:{sample_id}", 15.0, 40.0)
     coverage_depth = _hash_int(f"depth:{sample_id}", 10, 500)
-    passed = mean_quality >= min_quality and coverage_depth >= min_depth
+    passed = mean_quality_val >= min_quality and coverage_depth >= min_depth
     if not passed:
         reasons = []
-        if mean_quality < min_quality:
-            reasons.append(f"low quality ({mean_quality:.1f} < {min_quality})")
+        if mean_quality_val < min_quality:
+            reasons.append(f"low quality ({mean_quality_val:.1f} < {min_quality})")
         if coverage_depth < min_depth:
             reasons.append(f"low depth ({coverage_depth} < {min_depth})")
         message = "; ".join(reasons)
@@ -131,7 +265,7 @@ def assess_read_quality(
     return {
         "passed": passed,
         "total_reads": total_reads,
-        "mean_quality": round(mean_quality, 2),
+        "mean_quality": round(mean_quality_val, 2),
         "coverage_depth": coverage_depth,
         "message": message,
     }

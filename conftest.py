@@ -82,3 +82,9 @@ def pytest_addoption(parser):
         default=False,
         help="Run PostGIS integration tests against live containers (localhost:5432)",
     )
+    parser.addoption(
+        "--sra",
+        action="store_true",
+        default=False,
+        help="Run SRA integration tests that download real FASTQ data from ENA",
+    )

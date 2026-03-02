@@ -119,3 +119,80 @@ def hxb2_fasta(tmp_path_factory):
 
     fasta_path.write_bytes(data)
     return str(fasta_path)
+
+
+# ---------------------------------------------------------------------------
+# Synthetic FASTQ fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def synthetic_fastq_dir(tmp_path_factory):
+    """Generate 3 synthetic FASTQ files for always-run pipeline tests.
+
+    - HIV-SRA-001.fastq.gz — high quality (Q35, 5000 reads) → passes QC
+    - HIV-SRA-002.fastq.gz — low quality (Q18, 500 reads) → fails QC
+    - HIV-SRA-003.fastq.gz — medium quality (Q32, 3000 reads) → passes QC
+    """
+    from handlers.shared.resistance_utils import generate_synthetic_fastq
+
+    fastq_dir = tmp_path_factory.mktemp("synthetic_fastq")
+
+    generate_synthetic_fastq(
+        str(fastq_dir / "HIV-SRA-001.fastq.gz"),
+        num_reads=5000,
+        read_length=150,
+        mean_quality=35.0,
+        quality_std=2.0,
+        seed=101,
+    )
+    generate_synthetic_fastq(
+        str(fastq_dir / "HIV-SRA-002.fastq.gz"),
+        num_reads=500,
+        read_length=100,
+        mean_quality=18.0,
+        quality_std=3.0,
+        seed=102,
+    )
+    generate_synthetic_fastq(
+        str(fastq_dir / "HIV-SRA-003.fastq.gz"),
+        num_reads=3000,
+        read_length=150,
+        mean_quality=32.0,
+        quality_std=2.5,
+        seed=103,
+    )
+
+    return str(fastq_dir)
+
+
+@pytest.fixture(scope="session")
+def sra_fastq_path(request, tmp_path_factory):
+    """Download a real FASTQ from ENA (SRR8806312, MiDRMpol HIV amplicon).
+
+    Gated by ``--sra`` flag. Skips on network failure.
+    ~13 MB compressed, single-end read 1.
+    """
+    if not request.config.getoption("--sra"):
+        pytest.skip("--sra not specified")
+
+    import urllib.error
+    import urllib.request
+
+    url = "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR880/002/SRR8806312/SRR8806312_1.fastq.gz"
+
+    cache_dir = tmp_path_factory.mktemp("sra")
+    fastq_path = cache_dir / "SRR8806312_1.fastq.gz"
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "AFL-test/1.0"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = resp.read()
+    except (urllib.error.URLError, OSError, TimeoutError):
+        pytest.skip("ENA unreachable — skipping SRA download test")
+
+    if not data or len(data) < 1000:
+        pytest.skip("ENA returned unexpected data — skipping SRA download test")
+
+    fastq_path.write_bytes(data)
+    return str(fastq_path)
