@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# List servers, runners, and handlers in a tree view.
+#
+# Groups runner instances by hostname, showing state, uptime, HTTP port,
+# and registered handlers for each.
+#
+# Usage:
+#   scripts/list-runners                # all servers, all states
+#   scripts/list-runners --state running  # only running runners
+#   scripts/list-runners --json         # output as JSON
+#   scripts/list-runners --help         # show this help
+#
+# Options:
+#   --state STATE   Filter by server state (running, shutdown, startup, error)
+#   --json          Output as JSON instead of tree view
+#   -h, --help      Show this help message
+#
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Load shared env (.env sets AFL_MONGODB_URL etc.)
+source "$(dirname "$0")/_env.sh"
+
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+STATE_FILTER=""
+JSON_OUTPUT="false"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --state)       STATE_FILTER="$2"; shift 2 ;;
+        --json)        JSON_OUTPUT="true"; shift ;;
+        -h|--help)
+            sed -n '2,/^[^#]/{ /^#/s/^# \{0,1\}//p; }' "$0"
+            exit 0 ;;
+        *)
+            echo "Unknown option: $1" >&2
+            exit 1 ;;
+    esac
+done
+
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -c "
+import json
+import os
+import sys
+import time
+from collections import defaultdict
+
+from afl.runtime.mongo_store import MongoStore
+
+mongo_url = os.environ.get('AFL_MONGODB_URL', 'mongodb://localhost:27018')
+store = MongoStore(mongo_url)
+
+state_filter = '${STATE_FILTER}' or None
+json_output = '${JSON_OUTPUT}' == 'true'
+
+if state_filter:
+    servers = list(store.get_servers_by_state(state_filter))
+else:
+    servers = list(store.get_all_servers())
+
+if not servers:
+    if json_output:
+        print('{}')
+    else:
+        msg = f'No servers found'
+        if state_filter:
+            msg += f' with state={state_filter}'
+        print(msg + '.')
+    sys.exit(0)
+
+# Group by hostname
+by_host = defaultdict(list)
+for s in servers:
+    by_host[s.server_name].append(s)
+
+# Sort runners within each host by start_time (most recent first)
+for host in by_host:
+    by_host[host].sort(key=lambda s: s.start_time, reverse=True)
+
+now_ms = int(time.time() * 1000)
+
+def format_uptime(start_ms):
+    if start_ms <= 0:
+        return '-'
+    delta = max(0, now_ms - start_ms)
+    secs = delta // 1000
+    if secs < 60:
+        return f'{secs}s'
+    mins = secs // 60
+    if mins < 60:
+        return f'{mins}m {secs % 60}s'
+    hours = mins // 60
+    if hours < 24:
+        return f'{hours}h {mins % 60}m'
+    days = hours // 24
+    return f'{days}d {hours % 24}h'
+
+def format_ago(ts_ms):
+    if ts_ms <= 0:
+        return 'never'
+    delta = max(0, now_ms - ts_ms)
+    secs = delta // 1000
+    if secs < 5:
+        return 'just now'
+    if secs < 60:
+        return f'{secs}s ago'
+    mins = secs // 60
+    if mins < 60:
+        return f'{mins}m ago'
+    hours = mins // 60
+    return f'{hours}h ago'
+
+if json_output:
+    output = {}
+    for host in sorted(by_host):
+        runners = []
+        for s in by_host[host]:
+            handled_map = {h.handler: {'handled': h.handled, 'not_handled': h.not_handled}
+                          for h in s.handled if h.handled > 0 or h.not_handled > 0}
+            runners.append({
+                'uuid': s.uuid,
+                'state': s.state,
+                'service_name': s.service_name,
+                'server_group': s.server_group,
+                'http_port': s.http_port,
+                'start_time': s.start_time,
+                'ping_time': s.ping_time,
+                'uptime': format_uptime(s.start_time),
+                'last_ping': format_ago(s.ping_time),
+                'topics': s.topics,
+                'handlers': s.handlers,
+                'handled': handled_map,
+            })
+        output[host] = {
+            'ips': by_host[host][0].server_ips,
+            'runner_count': len(runners),
+            'runners': runners,
+        }
+    print(json.dumps(output, indent=2))
+    sys.exit(0)
+
+# Tree view
+total_runners = len(servers)
+total_handlers = sum(len(s.handlers) for s in servers)
+host_count = len(by_host)
+
+print(f'AgentFlow Servers: {host_count} host(s), {total_runners} runner(s), {total_handlers} handler registration(s)')
+if state_filter:
+    print(f'  (filtered: state={state_filter})')
+print()
+
+for host in sorted(by_host):
+    runners = by_host[host]
+    ips = runners[0].server_ips
+    ip_str = ', '.join(ips) if ips else 'unknown'
+    print(f'{host} ({ip_str}) — {len(runners)} runner(s)')
+
+    for i, s in enumerate(runners):
+        is_last_runner = (i == len(runners) - 1)
+        branch = '└── ' if is_last_runner else '├── '
+        cont   = '    ' if is_last_runner else '│   '
+
+        state_icon = {'running': '+', 'shutdown': '-', 'startup': '~', 'error': '!'}.get(s.state, '?')
+        port_str = f'port={s.http_port}' if s.http_port > 0 else 'port=—'
+
+        print(f'  {branch}[{state_icon}] {s.uuid[:12]}  {s.state:<10} {port_str}  up={format_uptime(s.start_time)}  ping={format_ago(s.ping_time)}')
+
+        if s.topics:
+            print(f'  {cont}    topics: {\" \".join(s.topics)}')
+
+        # Show handlers grouped for readability
+        handlers = sorted(s.handlers)
+        if not handlers:
+            print(f'  {cont}    (no handlers)')
+        else:
+            # Group by namespace prefix
+            groups = defaultdict(list)
+            for h in handlers:
+                parts = h.rsplit('.', 1)
+                ns = parts[0] if len(parts) > 1 else '—'
+                name = parts[-1]
+                groups[ns].append(name)
+
+            handler_count = len(handlers)
+            print(f'  {cont}    handlers ({handler_count}):')
+            ns_list = sorted(groups)
+            for j, ns in enumerate(ns_list):
+                names = sorted(groups[ns])
+                is_last_ns = (j == len(ns_list) - 1)
+                ns_branch = '└─ ' if is_last_ns else '├─ '
+                print(f'  {cont}      {ns_branch}{ns}/ ({len(names)})')
+                ns_cont = '   ' if is_last_ns else '│  '
+                for k, name in enumerate(names):
+                    h_branch = '└─ ' if k == len(names) - 1 else '├─ '
+                    # Show handled stats if available
+                    full_name = f'{ns}.{name}' if ns != '—' else name
+                    stat = next((h for h in s.handled if h.handler == full_name), None)
+                    stat_str = ''
+                    if stat and (stat.handled > 0 or stat.not_handled > 0):
+                        stat_str = f'  ({stat.handled} handled, {stat.not_handled} skipped)'
+                    print(f'  {cont}      {ns_cont} {h_branch}{name}{stat_str}')
+
+        if i < len(runners) - 1:
+            print(f'  │')
+
+    print()
+"
