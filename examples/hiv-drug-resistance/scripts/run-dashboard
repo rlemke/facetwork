@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# One-command launcher for the HIV drug resistance pipeline on the dashboard.
+#
+# Steps:
+#   1. Generate synthetic FASTQ sample data at /tmp/hiv-fastq/
+#   2. Seed the HIV example to MongoDB (--clean to replace existing seeds)
+#   3. Start the runner + dashboard via scripts/start-runner
+#
+# Usage:
+#   examples/hiv-drug-resistance/scripts/run-dashboard
+#   examples/hiv-drug-resistance/scripts/run-dashboard -- --log-format text
+#   examples/hiv-drug-resistance/scripts/run-dashboard --no-seed
+#
+# Options:
+#   --no-seed   Skip steps 1 and 2 (data generation and seeding)
+#   --          Remaining args are passed to scripts/start-runner
+#   -h, --help  Show this help message
+#
+# After startup, open http://localhost:8080 and navigate to:
+#   Flows → hiv-drug-resistance → AnalyzeSample → Run
+#
+# Fill in:
+#   sample_id:  HIV-SRA-001
+#   fastq_path: /tmp/hiv-fastq/HIV-SRA-001.fastq.gz
+#   reference:  HXB2
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+SEED=true
+PASSTHROUGH_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --no-seed)
+            SEED=false; shift ;;
+        -h|--help)
+            sed -n '2,/^[^#]/{ /^#/s/^# \{0,1\}//p; }' "$0"
+            exit 0 ;;
+        --)
+            shift; PASSTHROUGH_ARGS=("$@"); break ;;
+        *)
+            echo "Unknown option: $1" >&2
+            echo "Usage: $0 [--no-seed] [-- RUNNER_ARGS...]" >&2
+            exit 1 ;;
+    esac
+done
+
+if [[ "$SEED" == "true" ]]; then
+    echo "=== Step 1/3: Generate synthetic FASTQ sample data ==="
+    echo ""
+    "$SCRIPT_DIR/generate-sample-data"
+
+    echo "=== Step 2/3: Seed HIV example to MongoDB ==="
+    echo ""
+    "$REPO_ROOT/scripts/seed-examples" --clean --include hiv-drug-resistance
+    echo ""
+fi
+
+echo "=== Step 3/3: Start runner + dashboard ==="
+echo ""
+exec "$REPO_ROOT/scripts/start-runner" --example hiv-drug-resistance ${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"}

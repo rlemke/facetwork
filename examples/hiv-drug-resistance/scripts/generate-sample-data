@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Generate synthetic FASTQ sample files for the HIV drug resistance pipeline.
+#
+# Creates three samples at /tmp/hiv-fastq/ with varying quality levels:
+#   HIV-SRA-001.fastq.gz — high quality (Q35, 5000 reads, 150bp) — passes QC
+#   HIV-SRA-002.fastq.gz — low quality (Q18, 500 reads, 100bp) — fails QC
+#   HIV-SRA-003.fastq.gz — medium quality (Q32, 3000 reads, 150bp) — passes QC
+#
+# Uses generate_synthetic_fastq() from handlers/shared/resistance_utils.py.
+#
+# Usage:
+#   examples/hiv-drug-resistance/scripts/generate-sample-data
+#
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+EXAMPLE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+OUTPUT_DIR="/tmp/hiv-fastq"
+
+env PYTHONPATH="$REPO_ROOT:$EXAMPLE_DIR" "$PYTHON" - "$OUTPUT_DIR" <<'PYEOF'
+import os
+import sys
+
+output_dir = sys.argv[1]
+os.makedirs(output_dir, exist_ok=True)
+
+from handlers.shared.resistance_utils import generate_synthetic_fastq
+
+samples = [
+    {
+        "id": "HIV-SRA-001",
+        "num_reads": 5000,
+        "read_length": 150,
+        "mean_quality": 35.0,
+        "quality_std": 3.0,
+        "seed": 101,
+        "desc": "high quality (Q35, 5000 reads, 150bp) — passes QC",
+    },
+    {
+        "id": "HIV-SRA-002",
+        "num_reads": 500,
+        "read_length": 100,
+        "mean_quality": 18.0,
+        "quality_std": 5.0,
+        "seed": 202,
+        "desc": "low quality (Q18, 500 reads, 100bp) — fails QC",
+    },
+    {
+        "id": "HIV-SRA-003",
+        "num_reads": 3000,
+        "read_length": 150,
+        "mean_quality": 32.0,
+        "quality_std": 3.0,
+        "seed": 303,
+        "desc": "medium quality (Q32, 3000 reads, 150bp) — passes QC",
+    },
+]
+
+print(f"Generating synthetic FASTQ files in {output_dir}/\n")
+
+for s in samples:
+    path = os.path.join(output_dir, f"{s['id']}.fastq.gz")
+    generate_synthetic_fastq(
+        output_path=path,
+        num_reads=s["num_reads"],
+        read_length=s["read_length"],
+        mean_quality=s["mean_quality"],
+        quality_std=s["quality_std"],
+        seed=s["seed"],
+    )
+    size_kb = os.path.getsize(path) / 1024
+    print(f"  {s['id']}.fastq.gz  ({size_kb:.0f} KB)  {s['desc']}")
+
+print(f"\nDone. {len(samples)} sample files generated.\n")
+print("Dashboard form inputs for AnalyzeSample workflow:")
+print("─" * 50)
+for s in samples:
+    print(f"  sample_id:  {s['id']}")
+    print(f"  fastq_path: {output_dir}/{s['id']}.fastq.gz")
+    print(f"  reference:  HXB2")
+    print()
+PYEOF
