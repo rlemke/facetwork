@@ -367,9 +367,39 @@ class ExecutionContext:
     ) -> StepDefinition | None:
         """Get a completed step by name within a block.
 
+        Searches the specified block first. If not found and a block_id
+        was given, falls back to a workflow-wide search to resolve
+        cross-block step references (e.g. ``qc.passed`` inside an
+        ``andThen when`` case that references a step from a prior
+        ``andThen`` block).
+
         Args:
             step_name: The step name to find
             block_id: The block containing the step
+
+        Returns:
+            The completed step, or None if not found
+        """
+        result = self._find_completed_step_in(step_name, block_id)
+        if result is not None:
+            return result
+
+        # Cross-block fallback: search all workflow steps
+        if block_id:
+            return self._find_completed_step_in(step_name, None)
+
+        return None
+
+    def _find_completed_step_in(
+        self,
+        step_name: str,
+        block_id: StepId | BlockId | None,
+    ) -> StepDefinition | None:
+        """Search for a completed step by name in a specific scope.
+
+        Args:
+            step_name: The step name to find
+            block_id: Block scope to search, or None for workflow-wide
 
         Returns:
             The completed step, or None if not found
@@ -398,7 +428,11 @@ class ExecutionContext:
         # Find by name
         for step in all_steps:
             if step.statement_id and step.is_complete:
-                # Get statement definition to check name
+                # Check statement_name directly (persisted on step)
+                if step.statement_name == step_name:
+                    self._completed_step_cache[cache_key] = step
+                    return step
+                # Fall back to AST-based name lookup (needs dependency graph)
                 stmt = self.get_statement_definition(step)
                 if stmt and stmt.name == step_name:
                     self._completed_step_cache[cache_key] = step

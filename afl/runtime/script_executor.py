@@ -115,6 +115,21 @@ _SAFE_BUILTIN_NAMES: list[str] = [
 # Allowed builtins for sandboxed execution (used by tests and reference)
 _SAFE_BUILTINS = {name: getattr(_builtins_mod, name) for name in _SAFE_BUILTIN_NAMES}
 
+# Standard library modules allowed in script blocks via `import`
+_SAFE_IMPORT_MODULES: list[str] = [
+    "json",
+    "math",
+    "re",
+    "copy",
+    "hashlib",
+    "collections",
+    "itertools",
+    "functools",
+    "datetime",
+    "statistics",
+    "string",
+]
+
 
 def _build_worker_script(code: str, params_json: str) -> str:
     """Build the Python source for the subprocess worker.
@@ -133,18 +148,25 @@ def _build_worker_script(code: str, params_json: str) -> str:
     """
     code_b64 = base64.b64encode(code.encode()).decode()
     names_repr = repr(_SAFE_BUILTIN_NAMES)
+    allowed_repr = repr(_SAFE_IMPORT_MODULES)
     params_repr = repr(params_json)
     code_repr = repr(code_b64)
     lines = [
         "import builtins as _b, base64 as _base64, io as _io, json as _json, sys as _sys",
         f"_names = {names_repr}",
+        f"_allowed_modules = {allowed_repr}",
         "_safe = {n: getattr(_b, n) for n in _names}",
+        "def _restricted_import(name, *a, **kw):",
+        "    if name not in _allowed_modules:",
+        "        raise ImportError(f'import of {name!r} is not allowed in script blocks')",
+        "    return __import__(name, *a, **kw)",
+        "_safe['__import__'] = _restricted_import",
         "_real_stdout = _sys.stdout",
         "_capture = _io.StringIO()",
         "_safe['print'] = lambda *a, **kw: print(*a, **kw, file=_capture)",
         "_result = {}",
         f"_params = _json.loads({params_repr})",
-        "_sandbox = {'__builtins__': _safe, 'params': _params, 'result': _result}",
+        "_sandbox = {'__builtins__': _safe, 'params': _params, 'result': _result, 'json': _json}",
         f"_code = _base64.b64decode({code_repr}).decode()",
         "try:",
         "    _compiled = compile(_code, '<script>', 'exec')",

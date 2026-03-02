@@ -171,6 +171,11 @@ class BlockExecutionBeginHandler(StateHandler):
         - Non-exclusive: ALL matching cases execute concurrently
         - Default case: executes ONLY if no other case matched
 
+        When blocks may reference steps from prior andThen blocks (e.g.
+        ``case qc.passed == false``). If a referenced step is not yet
+        complete, the when-block defers and will be re-evaluated on a
+        later iteration.
+
         Args:
             block_ast: The block AST with a "when" key
 
@@ -187,21 +192,20 @@ class BlockExecutionBeginHandler(StateHandler):
         # Build evaluation context from workflow inputs + parent step outputs
         inputs = self._build_foreach_eval_inputs()
 
-        # Also gather parent step outputs for step refs in conditions
+        # Step ref resolver — sets a flag when a referenced step is not
+        # yet complete, signalling the when-block to defer.
+        _step_not_ready = False
+
         def get_step_output(step_name: str, attr_name: str):
-            # Look up completed steps in the workflow
-            container = (
-                self.context._find_step(self.step.container_id) if self.step.container_id else None
-            )
-            if container:
-                # Search for completed sibling steps
-                siblings = list(self.context.persistence.get_steps_by_block(container.id))
-                for sibling in siblings:
-                    if sibling.statement_name == step_name and sibling.is_complete:
-                        ret = sibling.attributes.returns.get(attr_name)
-                        if ret:
-                            return ret.value
-            raise ValueError(f"Not found: {step_name}.{attr_name}")
+            nonlocal _step_not_ready
+            all_steps = list(self.context.persistence.get_steps_by_workflow(self.step.workflow_id))
+            for s in all_steps:
+                if s.statement_name == step_name and s.is_complete:
+                    ret = s.attributes.returns.get(attr_name)
+                    if ret:
+                        return ret.value
+            _step_not_ready = True
+            raise ValueError(f"{step_name}.{attr_name} not ready")
 
         eval_ctx = EvaluationContext(
             inputs=inputs,
@@ -220,7 +224,8 @@ class BlockExecutionBeginHandler(StateHandler):
                 if any_matched:
                     continue
             else:
-                # Evaluate condition
+                # Evaluate condition — defer the entire when-block if a
+                # step dependency is not ready yet.
                 condition = case.get("condition")
                 if condition is None:
                     continue
@@ -229,6 +234,12 @@ class BlockExecutionBeginHandler(StateHandler):
                     if not result:
                         continue
                 except Exception as e:
+                    if _step_not_ready:
+                        logger.debug(
+                            "When block deferred: step dependency not ready (block=%s)",
+                            self.step.id,
+                        )
+                        return self.stay(push=True)
                     logger.warning("When case %d condition evaluation failed: %s", i, e)
                     continue
                 any_matched = True
