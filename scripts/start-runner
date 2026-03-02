@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
-# Register handlers for examples, then start the runner with --registry.
+# Register handlers for examples, then start the runner and dashboard.
 #
 # Clears existing handler_registrations, registers handlers from one or more
-# examples, and starts the runner service in registry mode.
+# examples, starts the dashboard (port 8080), and starts the runner service
+# in registry mode. Use --no-dashboard to skip the dashboard.
 #
 # Usage:
 #   scripts/start-runner                                        # register ALL examples
 #   scripts/start-runner --example hiv-drug-resistance          # one example
 #   scripts/start-runner --example devops-deploy --example hiv-drug-resistance
+#   scripts/start-runner --no-dashboard                         # skip dashboard
 #   scripts/start-runner -- --log-format text                   # extra args passed to runner
-#   scripts/start-runner --instances 3                                   # 3 concurrent runner processes
+#   scripts/start-runner --instances 3                          # 3 concurrent runner processes
 #   scripts/start-runner --example hiv-drug-resistance -- --log-format text --max-concurrent 10
 #
 # Options:
 #   --example NAME   Register handlers from examples/NAME only (repeatable)
 #   --instances N    Start N runner processes (default: 1)
+#   --no-dashboard   Do not start the dashboard
 #   --              Remaining args are passed to the runner service
 #   -h, --help      Show this help message
 #
@@ -31,6 +34,7 @@ PYTHON="${REPO_ROOT}/.venv/bin/python3"
 EXAMPLES=()
 RUNNER_ARGS=()
 INSTANCES=1
+DASHBOARD=true
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -38,6 +42,8 @@ while [[ $# -gt 0 ]]; do
             EXAMPLES+=("$2"); shift 2 ;;
         --instances)
             INSTANCES="$2"; shift 2 ;;
+        --no-dashboard)
+            DASHBOARD=false; shift ;;
         -h|--help)
             sed -n '2,/^[^#]/{ /^#/s/^# \{0,1\}//p; }' "$0"
             exit 0 ;;
@@ -45,7 +51,7 @@ while [[ $# -gt 0 ]]; do
             shift; RUNNER_ARGS=("$@"); break ;;
         *)
             echo "Unknown option: $1" >&2
-            echo "Usage: scripts/start-runner [--example NAME]... [--instances N] [-- RUNNER_ARGS...]" >&2
+            echo "Usage: scripts/start-runner [--example NAME]... [--instances N] [--no-dashboard] [-- RUNNER_ARGS...]" >&2
             exit 1 ;;
     esac
 done
@@ -67,6 +73,7 @@ echo "=== AgentFlow: Register Handlers & Start Runner ==="
 echo ""
 echo "  Examples:  ${EXAMPLES[*]}"
 echo "  Instances: $INSTANCES"
+echo "  Dashboard: $DASHBOARD"
 echo ""
 
 # Register handlers via inline Python
@@ -131,20 +138,32 @@ print(f'Total: {total} handlers registered')
 print()
 "
 
-if [[ "$INSTANCES" -eq 1 ]]; then
+PIDS=()
+
+# Start dashboard
+if [[ "$DASHBOARD" == "true" ]]; then
+    echo "Starting dashboard on port 8080..."
+    env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m afl.dashboard &
+    PIDS+=($!)
+    echo "  Dashboard started (PID ${PIDS[-1]})"
+fi
+
+# Start runner(s)
+if [[ "$INSTANCES" -eq 1 && "$DASHBOARD" == "false" ]]; then
     echo "Starting runner with --registry..."
     exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m afl.runtime.runner --registry "${RUNNER_ARGS[@]}"
 else
-    echo "Starting $INSTANCES runner instances with --registry..."
-    PIDS=()
+    echo "Starting $INSTANCES runner instance(s) with --registry..."
     for i in $(seq 1 "$INSTANCES"); do
         env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m afl.runtime.runner --registry "${RUNNER_ARGS[@]}" &
         PIDS+=($!)
         echo "  Runner $i started (PID ${PIDS[-1]})"
     done
-    echo ""
-    echo "All $INSTANCES runners started. PIDs: ${PIDS[*]}"
-    echo "Use scripts/stop-runners to stop them."
-    # Wait for all — if any exits, report it
-    wait "${PIDS[@]}"
 fi
+
+echo ""
+echo "All processes started. PIDs: ${PIDS[*]}"
+echo "Use scripts/stop-runners to stop them."
+
+# Wait for all — if any exits, report it
+wait "${PIDS[@]}"
