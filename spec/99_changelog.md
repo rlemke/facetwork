@@ -1,6 +1,55 @@
 # Implementation Changelog
 
-**Current version: v0.33.0**
+**Current version: v0.33.1**
+
+## Completed (v0.33.1) - HIV Dashboard Scripts & AFL_LOCAL_OUTPUT_DIR Cleanup
+
+Convenience scripts for running the HIV drug resistance pipeline through the
+dashboard, plus a sweep of all examples to replace hardcoded `/tmp/` output
+paths with `AFL_LOCAL_OUTPUT_DIR`-based paths.
+
+**HIV dashboard scripts (`examples/hiv-drug-resistance/scripts/`):**
+- `generate-sample-data` — generates 3 synthetic FASTQ files at `/tmp/hiv-fastq/`
+  with varying quality levels: HIV-SRA-001 (Q35, 5000 reads, passes QC),
+  HIV-SRA-002 (Q18, 500 reads, fails QC), HIV-SRA-003 (Q32, 3000 reads, passes QC).
+  Reuses `generate_synthetic_fastq()` from `resistance_utils.py`. Prints suggested
+  dashboard form inputs.
+- `run-dashboard` — one-command wrapper: generates sample data → seeds HIV example
+  to MongoDB (`seed-examples --clean --include hiv-drug-resistance`) → starts
+  runner + dashboard (`start-runner --example hiv-drug-resistance`). Supports
+  `--no-seed` to skip data generation/seeding, `-- args` pass-through to runner.
+
+**`AFL_LOCAL_OUTPUT_DIR` cleanup (7 files across 5 examples):**
+
+All handler output paths now respect the `AFL_LOCAL_OUTPUT_DIR` environment
+variable (default: `/tmp`). Previously, several examples had hardcoded `/tmp/`
+subdirectories that ignored the env var.
+
+- `hiv-drug-resistance/handlers/shared/resistance_utils.py` — report paths
+  (`hiv-reports/`) and BAM alignment path (`hiv-align/`)
+- `monte-carlo-risk/handlers/reporting/report_handlers.py` — risk report path
+  (`risk-reports/`)
+- `maven/handlers/runner_handlers.py` — artifact cache (`maven-cache/`) and
+  workspace path (`workspace/`)
+- `osm-geocoder/handlers/boundaries/boundary_extractor.py` — boundary output
+  default (`osm-boundaries/`)
+- `osm-geocoder/handlers/roads/zoom_builder.py` — zoom builder output
+  (`zoom-builder/`)
+- `osm-geocoder/handlers/roads/zoom_handlers.py` — zoom export and build
+  defaults (`zoom-export/`, `zoom-builder/`)
+- `osm-geocoder/handlers/routes/gtfs_extractor.py` — GTFS cache fallback
+  (`afl_gtfs_cache/`)
+
+Files: `examples/hiv-drug-resistance/scripts/generate-sample-data` (new),
+`examples/hiv-drug-resistance/scripts/run-dashboard` (new),
+`examples/hiv-drug-resistance/handlers/shared/resistance_utils.py`,
+`examples/monte-carlo-risk/handlers/reporting/report_handlers.py`,
+`examples/maven/handlers/runner_handlers.py`,
+`examples/osm-geocoder/handlers/boundaries/boundary_extractor.py`,
+`examples/osm-geocoder/handlers/roads/zoom_builder.py`,
+`examples/osm-geocoder/handlers/roads/zoom_handlers.py`,
+`examples/osm-geocoder/handlers/routes/gtfs_extractor.py`,
+`CLAUDE.md`, `spec/90_nonfunctional.md`, `spec/99_changelog.md`
 
 ## Completed (v0.33.0) - Remote Runner Management & Rolling Deploy
 

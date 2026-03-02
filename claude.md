@@ -86,6 +86,10 @@ python -m afl.mcp                   # MCP server (stdio)
 scripts/start-runner --example hiv-drug-resistance -- --log-format text
 scripts/stop-runners
 
+# HIV pipeline one-command dashboard launch
+examples/hiv-drug-resistance/scripts/run-dashboard -- --log-format text
+examples/hiv-drug-resistance/scripts/generate-sample-data  # FASTQ only
+
 # Inspect runner fleet
 scripts/list-runners                   # tree view: servers → runners → handlers
 scripts/list-runners --state running   # filter by state
@@ -168,4 +172,4 @@ Copy `.env.example` to `.env` and edit to configure MongoDB, scaling, overlays, 
 - `spec/80_acceptance_tests.md` — test requirements
 - `spec/90_nonfunctional.md` — dependencies, build/run reference, Docker, configuration
 - `spec/95_self_assessment.md` — self-assessment across all fundamental areas
-- `spec/99_changelog.md` — implementation changelog (v0.1.0 through v0.33.0)
+- `spec/99_changelog.md` — implementation changelog (v0.1.0 through v0.33.1)

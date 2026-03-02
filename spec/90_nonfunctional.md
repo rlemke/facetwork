@@ -255,7 +255,7 @@ scripts/easy.sh        # runs the full pipeline using .env values
 | **OSM data paths** | | |
 | `AFL_CACHE_DIR` | `/tmp/osm-cache` | OSM cache directory (local path or HDFS URI) |
 | `AFL_OSM_OUTPUT_BASE` | `/tmp` | OSM extractor output base (local path or HDFS URI) |
-| `AFL_LOCAL_OUTPUT_DIR` | `/Volumes/afl_data/output` | Handler output files (HTML maps, stats, GeoJSON) |
+| `AFL_LOCAL_OUTPUT_DIR` | `/Volumes/afl_data/output` | Handler output files (reports, maps, stats, GeoJSON). Used by all examples: osm-geocoder, census-us, hiv-drug-resistance, monte-carlo-risk, maven. Falls back to `/tmp` when unset. |
 | **Remote runner management** | | |
 | `AFL_RUNNER_HOSTS` | *(empty)* | Space-separated hostnames for remote runner management |
 | `AFL_REMOTE_PATH` | *(same as local)* | Repo path on remote hosts |
