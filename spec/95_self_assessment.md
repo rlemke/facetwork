@@ -1,6 +1,6 @@
 # AgentFlow Self-Assessment
 
-A self-assessment across all fundamental areas, drawing on the full arc from v0.11 through v0.32.0+real.
+A self-assessment across all fundamental areas, drawing on the full arc from v0.11 through v0.33.0.
 
 ---
 
@@ -93,9 +93,11 @@ I treated the dashboard as "add the next feature to the template" rather than bu
 
 ---
 
-## Infrastructure (MCP, SDKs, CI) — B
+## Infrastructure (MCP, SDKs, CI) — B+
 
 Broad coverage — MCP server, 4 non-Python SDKs, Docker, CI pipeline. But depth varies: the Python SDK is production-quality while the others maintain feature parity through parallel implementation rather than shared abstractions.
+
+The v0.33.0 operations tooling is a meaningful step toward production readiness. Runner HTTP ports are now persisted in MongoDB (`ServerDefinition.http_port`), enabling remote health checks without out-of-band port discovery. The shared `_remote.sh` helpers (SSH wrapper, MongoDB query, state polling) provide a consistent foundation for multi-host management. `stop-runners` and `start-runner` gained `--all`/`--host` remote modes while preserving backward-compatible local behavior. `rolling-deploy` implements zero-downtime serial restart with drain → wait → start → health-check per server, abort-on-failure safety, and configurable timeouts. `list-runners` gives fleet visibility with a tree view (servers → runners → handlers) including uptime, last ping, namespace-grouped handler lists, and handled/skipped stats. The B → B+ upgrade reflects that the infrastructure now covers not just "how to run" but "how to operate" — deploying, inspecting, and cycling a multi-host runner fleet without downtime.
 
 ---
 
@@ -103,4 +105,4 @@ Broad coverage — MCP server, 4 non-Python SDKs, Docker, CI pipeline. But depth
 
 The system is genuinely functional and has grown from a parser experiment to a full compiler + runtime + multi-language platform. The strongest areas are where discipline was highest (emitter, tests, examples). The weakest are where complexity accumulated organically (runtime edge cases, dashboard frontend architecture). The v0.31.0 release addressed the two weakest areas identified in this assessment: the validator now infers parameter types (B- → B), and the dashboard has shared component partials (C+ → B-). The v0.32.0 HIV drug resistance example validates that the three most recent language features (`andThen when`, `catch`, `andThen foreach`) compose cleanly in a realistic domain.
 
-The v0.32.0+real work upgraded two grades: runtime B → B+ (3 cross-cutting bugs fixed by integration tests, full pipeline verified through MemoryStore, MongoStore, and dashboard runner) and testing A- → A (13 integration tests covering the compile→evaluate→dispatch→resume→completion cycle, plus script sandbox hardening with restricted `__import__`). The remaining systemic gap is step reference type resolution — the validator still returns "Unknown" for `step.field`, deferring return-type errors to runtime.
+The v0.32.0+real work upgraded two grades: runtime B → B+ (3 cross-cutting bugs fixed by integration tests, full pipeline verified through MemoryStore, MongoStore, and dashboard runner) and testing A- → A (13 integration tests covering the compile→evaluate→dispatch→resume→completion cycle, plus script sandbox hardening with restricted `__import__`). The v0.33.0 work upgraded infrastructure B → B+ with production operations tooling: remote runner management (`--all`/`--host` on start/stop), zero-downtime rolling deploy, fleet inspection (`list-runners`), HTTP port persistence, and shared SSH/MongoDB helpers. The remaining systemic gap is step reference type resolution — the validator still returns "Unknown" for `step.field`, deferring return-type errors to runtime.
