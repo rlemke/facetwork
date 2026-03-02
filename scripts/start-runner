@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# Register handlers for examples, then start the runner with --registry.
+#
+# Clears existing handler_registrations, registers handlers from one or more
+# examples, and starts the runner service in registry mode.
+#
+# Usage:
+#   scripts/start-runner                                        # register ALL examples
+#   scripts/start-runner --example hiv-drug-resistance          # one example
+#   scripts/start-runner --example devops-deploy --example hiv-drug-resistance
+#   scripts/start-runner -- --log-format text                   # extra args passed to runner
+#   scripts/start-runner --instances 3                                   # 3 concurrent runner processes
+#   scripts/start-runner --example hiv-drug-resistance -- --log-format text --max-concurrent 10
+#
+# Options:
+#   --example NAME   Register handlers from examples/NAME only (repeatable)
+#   --instances N    Start N runner processes (default: 1)
+#   --              Remaining args are passed to the runner service
+#   -h, --help      Show this help message
+#
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Load shared env (.env sets AFL_MONGODB_URL etc.)
+source "$(dirname "$0")/_env.sh"
+
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+EXAMPLES=()
+RUNNER_ARGS=()
+INSTANCES=1
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --example)
+            EXAMPLES+=("$2"); shift 2 ;;
+        --instances)
+            INSTANCES="$2"; shift 2 ;;
+        -h|--help)
+            sed -n '2,/^[^#]/{ /^#/s/^# \{0,1\}//p; }' "$0"
+            exit 0 ;;
+        --)
+            shift; RUNNER_ARGS=("$@"); break ;;
+        *)
+            echo "Unknown option: $1" >&2
+            echo "Usage: scripts/start-runner [--example NAME]... [--instances N] [-- RUNNER_ARGS...]" >&2
+            exit 1 ;;
+    esac
+done
+
+if ! [[ "$INSTANCES" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: --instances must be a positive integer, got '$INSTANCES'" >&2
+    exit 1
+fi
+
+# Default: all examples that have handlers/__init__.py
+if [[ ${#EXAMPLES[@]} -eq 0 ]]; then
+    for init in "$REPO_ROOT"/examples/*/handlers/__init__.py; do
+        example_dir="$(dirname "$(dirname "$init")")"
+        EXAMPLES+=("$(basename "$example_dir")")
+    done
+fi
+
+echo "=== AgentFlow: Register Handlers & Start Runner ==="
+echo ""
+echo "  Examples:  ${EXAMPLES[*]}"
+echo "  Instances: $INSTANCES"
+echo ""
+
+# Register handlers via inline Python
+env PYTHONPATH="$REPO_ROOT" "$PYTHON" -c "
+import sys, os
+
+repo = os.environ.get('REPO_ROOT', '$REPO_ROOT')
+examples = '${EXAMPLES[*]}'.split()
+
+from afl.runtime.mongo_store import MongoStore
+from afl.runtime import RegistryRunner, RegistryRunnerConfig, Evaluator, Telemetry
+
+mongo_url = os.environ.get('AFL_MONGODB_URL', 'mongodb://localhost:27018')
+store = MongoStore(mongo_url)
+telemetry = Telemetry()
+evaluator = Evaluator(store, telemetry)
+runner = RegistryRunner(store, evaluator)
+
+# Clear existing registrations
+store._db.handler_registrations.delete_many({})
+print('Cleared handler_registrations.')
+print()
+
+total = 0
+for name in examples:
+    example_dir = os.path.join(repo, 'examples', name)
+    handlers_dir = os.path.join(example_dir, 'handlers')
+    if not os.path.isdir(handlers_dir):
+        print(f'  {name}: SKIP (no handlers/)')
+        continue
+
+    # Add example dir to path so 'handlers' package resolves
+    if example_dir not in sys.path:
+        sys.path.insert(0, example_dir)
+
+    # Import and call register_all_registry_handlers
+    try:
+        # Fresh import each time
+        if 'handlers' in sys.modules:
+            del sys.modules['handlers']
+        # Also clear submodules to avoid cross-example pollution
+        to_remove = [k for k in sys.modules if k.startswith('handlers.')]
+        for k in to_remove:
+            del sys.modules[k]
+
+        from handlers import register_all_registry_handlers
+        before = store._db.handler_registrations.count_documents({})
+        register_all_registry_handlers(runner)
+        after = store._db.handler_registrations.count_documents({})
+        count = after - before
+        total += count
+        print(f'  {name}: {count} handlers registered')
+    except Exception as e:
+        print(f'  {name}: ERROR — {e}')
+    finally:
+        # Clean up for next example
+        if example_dir in sys.path:
+            sys.path.remove(example_dir)
+
+print()
+print(f'Total: {total} handlers registered')
+print()
+"
+
+if [[ "$INSTANCES" -eq 1 ]]; then
+    echo "Starting runner with --registry..."
+    exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m afl.runtime.runner --registry "${RUNNER_ARGS[@]}"
+else
+    echo "Starting $INSTANCES runner instances with --registry..."
+    PIDS=()
+    for i in $(seq 1 "$INSTANCES"); do
+        env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m afl.runtime.runner --registry "${RUNNER_ARGS[@]}" &
+        PIDS+=($!)
+        echo "  Runner $i started (PID ${PIDS[-1]})"
+    done
+    echo ""
+    echo "All $INSTANCES runners started. PIDs: ${PIDS[*]}"
+    echo "Use scripts/stop-runners to stop them."
+    # Wait for all — if any exits, report it
+    wait "${PIDS[@]}"
+fi

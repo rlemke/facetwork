@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Stop all running AFL runner processes.
+#
+# Finds processes matching "afl.runtime.runner", sends SIGTERM for graceful
+# shutdown, waits up to 5 seconds, then SIGKILL any survivors.
+#
+# Usage:
+#   scripts/stop-runners          # stop all runners
+#   scripts/stop-runners --help   # show this help
+#
+set -euo pipefail
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    sed -n '2,/^[^#]/{ /^#/s/^# \{0,1\}//p; }' "$0"
+    exit 0
+fi
+
+PIDS=$(pgrep -f 'afl\.runtime\.runner' 2>/dev/null || true)
+
+if [[ -z "$PIDS" ]]; then
+    echo "No runners found."
+    exit 0
+fi
+
+echo "Found runner PIDs: $PIDS"
+echo "Sending SIGTERM..."
+kill $PIDS 2>/dev/null || true
+
+# Wait up to 5 seconds for graceful exit
+for i in $(seq 1 10); do
+    REMAINING=$(pgrep -f 'afl\.runtime\.runner' 2>/dev/null || true)
+    if [[ -z "$REMAINING" ]]; then
+        echo "All runners stopped."
+        exit 0
+    fi
+    sleep 0.5
+done
+
+# Force kill survivors
+REMAINING=$(pgrep -f 'afl\.runtime\.runner' 2>/dev/null || true)
+if [[ -n "$REMAINING" ]]; then
+    echo "Runners still alive: $REMAINING — sending SIGKILL..."
+    kill -9 $REMAINING 2>/dev/null || true
+    echo "Done."
+else
+    echo "All runners stopped."
+fi
