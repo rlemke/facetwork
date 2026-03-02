@@ -61,4 +61,8 @@ fi
 
 echo "=== Step 3/3: Start runner + dashboard ==="
 echo ""
-exec "$REPO_ROOT/scripts/start-runner" --example hiv-drug-resistance ${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"}
+if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
+    exec "$REPO_ROOT/scripts/start-runner" --example hiv-drug-resistance -- "${PASSTHROUGH_ARGS[@]}"
+else
+    exec "$REPO_ROOT/scripts/start-runner" --example hiv-drug-resistance
+fi
