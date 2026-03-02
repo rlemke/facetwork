@@ -1,6 +1,6 @@
 # AgentFlow Self-Assessment
 
-A self-assessment across all fundamental areas, drawing on the full arc from v0.11 through v0.31.0.
+A self-assessment across all fundamental areas, drawing on the full arc from v0.11 through v0.32.0.
 
 ---
 
@@ -42,7 +42,7 @@ The most ambitious and complex area. The iterative state machine with ~25 states
 
 ## Testing — A-
 
-3,432 tests with good discipline: every grammar construct has parser tests, emitter round-trips, validator error cases, and runtime behavior tests. The structure (test classes per feature, consistent fixtures) is consistent. Knock: runtime tests sometimes don't match actual runtime patterns (the `_create_context` mistake this session), suggesting the test infrastructure could use helper factories that mirror real execution more closely.
+3,470 tests with good discipline: every grammar construct has parser tests, emitter round-trips, validator error cases, and runtime behavior tests. Each example ships with a full test suite (8 classes per example is now standard: utils, per-category handlers, dispatch, compilation, agent integration). The structure is consistent. Knock: runtime tests sometimes don't match actual runtime patterns (the `_create_context` mistake earlier), suggesting the test infrastructure could use helper factories that mirror real execution more closely.
 
 ---
 
@@ -54,7 +54,7 @@ Comprehensive — 10 spec files covering language, semantics, validation, runtim
 
 ## Examples — A
 
-12 examples forming a genuine progression from simple (`monte-carlo-risk`) to complex (`site-selection-debate`, `devops-deploy`). Each showcases specific features and has full handler implementations plus tests. The RegistryRunner-first pattern in later examples is a good architectural evolution. These are probably the strongest proof that the system works end-to-end.
+13 examples forming a genuine progression from simple (`monte-carlo-risk`) to complex (`site-selection-debate`, `devops-deploy`, `hiv-drug-resistance`). Each showcases specific features and has full handler implementations plus tests. The RegistryRunner-first pattern in later examples is a good architectural evolution. The v0.32.0 HIV drug resistance example is the first to combine `andThen when`, `catch`, and `andThen foreach` in a single example — demonstrating that these features compose naturally for real-world bioinformatics pipelines (QC branching, per-sample error recovery, batch processing). The example pattern is now well-templated: 8 test classes, 4 handler categories, shared utils, dual agent entry points. These are probably the strongest proof that the system works end-to-end.
 
 ---
 
@@ -95,4 +95,4 @@ Broad coverage — MCP server, 4 non-Python SDKs, Docker, CI pipeline. But depth
 
 ## Overall — B+
 
-The system is genuinely functional and has grown from a parser experiment to a full compiler + runtime + multi-language platform. The strongest areas are where discipline was highest (emitter, tests, examples). The weakest are where complexity accumulated organically (runtime edge cases, dashboard frontend architecture). The v0.31.0 release addressed the two weakest areas identified in this assessment: the validator now infers parameter types (B- → B), and the dashboard has shared component partials (C+ → B-). The remaining systemic gap is step reference type resolution — the validator still returns "Unknown" for `step.field`, deferring return-type errors to runtime.
+The system is genuinely functional and has grown from a parser experiment to a full compiler + runtime + multi-language platform. The strongest areas are where discipline was highest (emitter, tests, examples). The weakest are where complexity accumulated organically (runtime edge cases, dashboard frontend architecture). The v0.31.0 release addressed the two weakest areas identified in this assessment: the validator now infers parameter types (B- → B), and the dashboard has shared component partials (C+ → B-). The v0.32.0 HIV drug resistance example validates that the three most recent language features (`andThen when`, `catch`, `andThen foreach`) compose cleanly in a realistic domain. The remaining systemic gap is step reference type resolution — the validator still returns "Unknown" for `step.field`, deferring return-type errors to runtime.
