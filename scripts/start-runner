@@ -175,7 +175,7 @@ if [[ "$MODE" == "local" ]]; then
         echo "Starting dashboard on port 8080..."
         env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m afl.dashboard &
         PIDS+=($!)
-        echo "  Dashboard started (PID ${PIDS[-1]})"
+        echo "  Dashboard started (PID $!)"
     fi
 
     # Start runner(s)
@@ -187,7 +187,7 @@ if [[ "$MODE" == "local" ]]; then
         for i in $(seq 1 "$INSTANCES"); do
             env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m afl.runtime.runner --registry "${RUNNER_ARGS[@]}" &
             PIDS+=($!)
-            echo "  Runner $i started (PID ${PIDS[-1]})"
+            echo "  Runner $i started (PID $!)"
         done
     fi
 
