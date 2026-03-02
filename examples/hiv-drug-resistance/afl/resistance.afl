@@ -1,0 +1,167 @@
+// HIV Drug Resistance Genotyping Pipeline
+// Demonstrates andThen when (QC pass/fail branching), catch (per-sample
+// error recovery), andThen foreach (batch processing), prompt blocks,
+// script blocks, schemas, mixins+implicits, and RegistryRunner-first approach.
+
+namespace hiv.types {
+    schema QCThresholds {
+        min_read_quality: Int,
+        min_depth: Int,
+        min_coverage_pct: Double,
+        min_length: Int
+    }
+
+    schema AlignmentResult {
+        bam_path: String,
+        mapped_reads: Int,
+        coverage_pct: Double,
+        mean_depth: Int
+    }
+
+    schema VariantCall {
+        gene: String,
+        position: Int,
+        ref_aa: String,
+        alt_aa: String,
+        frequency: Double,
+        depth: Int,
+        is_drm: Boolean
+    }
+
+    schema DrugScore {
+        drug_name: String,
+        drug_class: String,
+        score: Int,
+        level: String,
+        interpretation: String
+    }
+
+    schema ResistanceProfile {
+        sample_id: String,
+        subtype: String,
+        mutations: Json,
+        drug_scores: Json
+    }
+
+    schema BatchSummary {
+        batch_id: String,
+        total_samples: Int,
+        passed_qc: Int,
+        failed_qc: Int,
+        resistance_detected: Int
+    }
+}
+
+namespace hiv.mixins {
+    facet QualityPolicy(min_read_quality: Int = 30, min_depth: Int = 100) => (min_read_quality: Int, min_depth: Int)
+    facet RetryPolicy(max_retries: Int = 3, backoff_ms: Int = 2000) => (max_retries: Int, backoff_ms: Int)
+
+    implicit default_quality = QualityPolicy()
+    implicit default_retry = RetryPolicy()
+}
+
+namespace hiv.Sequencing {
+    use hiv.types
+
+    /** Assess quality of raw FASTQ sequencing reads. */
+    event facet AssessQuality(sample_id: String, fastq_path: String, min_quality: Int = 30, min_depth: Int = 100) => (passed: Boolean, total_reads: Int, mean_quality: Double, coverage_depth: Int, message: String) with QualityPolicy()
+
+    /** Align reads against HIV-1 HXB2 reference genome. */
+    event facet AlignReads(sample_id: String, fastq_path: String, reference: String = "HXB2") => (alignment: AlignmentResult) with RetryPolicy()
+}
+
+namespace hiv.Analysis {
+    use hiv.types
+
+    /** Call amino acid variants from aligned reads. */
+    event facet CallVariants(sample_id: String, bam_path: String, min_frequency: Double = 0.01, min_depth: Int = 100) => (variants: Json, total_variants: Int, drm_count: Int)
+
+    /** Generate consensus sequence resolving ambiguous positions. */
+    event facet GenerateConsensus(sample_id: String, bam_path: String, coverage_threshold: Int = 50) => (consensus_length: Int, ambiguous_positions: Int, subtype: String) prompt {
+        system "You are a bioinformatics specialist for HIV genomic analysis."
+        template "Generate consensus sequence for sample {sample_id} from {bam_path} with coverage threshold {coverage_threshold}. Resolve ambiguous base calls using IUPAC codes."
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Classify variants as drug resistance mutations using Stanford HIVdb. */
+    event facet ClassifyMutations(sample_id: String, variants: Json, gene_region: String = "PR+RT+IN") => (mutations: Json, drm_count: Int, apobec_count: Int) script python "
+import json
+variants = params.get('variants', [])
+if isinstance(variants, str):
+    variants = json.loads(variants)
+drm_positions = {'PR': [30,32,33,46,47,48,50,54,76,82,84,88,90], 'RT': [41,65,67,69,70,74,75,100,101,103,106,108,115,138,151,179,181,184,188,190,210,215,219,221,225,227,230], 'IN': [51,66,92,118,121,140,143,148,155,263]}
+mutations = []
+drm_count = 0
+apobec_count = 0
+for v in variants:
+    gene = v.get('gene', '')
+    pos = v.get('position', 0)
+    is_drm = pos in drm_positions.get(gene, [])
+    if is_drm:
+        drm_count += 1
+    if v.get('ref_aa', '') == 'G' and v.get('alt_aa', '') in ('A', 'R', 'E'):
+        apobec_count += 1
+    mutations.append({**v, 'is_drm': is_drm})
+result['mutations'] = json.dumps(mutations)
+result['drm_count'] = drm_count
+result['apobec_count'] = apobec_count
+"
+}
+
+namespace hiv.Interpretation {
+    use hiv.types
+
+    /** Score drug resistance using Stanford HIVdb algorithm. */
+    event facet ScoreResistance(sample_id: String, mutations: Json, drug_classes: [String] = ["NRTI", "NNRTI", "PI", "INSTI"]) => (drug_scores: Json, total_drugs_scored: Int, highest_level: String) prompt {
+        system "You are a clinical pharmacologist specializing in antiretroviral therapy."
+        template "Score drug resistance for sample {sample_id} with mutations {mutations} across drug classes {drug_classes}. Use Stanford HIVdb 5-level scoring."
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Generate clinical interpretation of resistance profile. */
+    event facet InterpretResults(sample_id: String, drug_scores: Json, subtype: String = "B", clinical_context: String = "") => (summary: String, recommendations: Json, resistance_level: String) prompt {
+        system "You are an infectious disease specialist providing antiretroviral therapy guidance."
+        template "Interpret resistance profile for sample {sample_id} (subtype {subtype}): {drug_scores}. Clinical context: {clinical_context}"
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+namespace hiv.Reporting {
+    use hiv.types
+
+    /** Generate individual sample resistance report. */
+    event facet GenerateSampleReport(sample_id: String, qc_passed: Boolean, alignment: Json, variants: Json, resistance: Json) => (report_path: String, report_summary: String)
+
+    /** Generate batch summary report across all samples. */
+    event facet GenerateBatchReport(batch_id: String, sample_count: Int, results: Json) => (report_path: String, summary: BatchSummary)
+}
+
+namespace hiv.workflows {
+    use hiv.types
+
+    /** Analyze a single HIV sample: QC, align, call variants, classify, score, interpret, report. */
+    workflow AnalyzeSample(sample_id: String, fastq_path: String, reference: String = "HXB2", clinical_context: String = "") => (status: String, detail: String) andThen {
+        qc = AssessQuality(sample_id = $.sample_id, fastq_path = $.fastq_path)
+    } andThen when {
+        case qc.passed == false => {
+            yield AnalyzeSample(status = "qc_failed", detail = "QC failed: " ++ qc.message)
+        }
+        case _ => {
+            align = AlignReads(sample_id = $.sample_id, fastq_path = $.fastq_path, reference = $.reference)
+            variants = CallVariants(sample_id = $.sample_id, bam_path = align.alignment.bam_path)
+            consensus = GenerateConsensus(sample_id = $.sample_id, bam_path = align.alignment.bam_path)
+            classify = ClassifyMutations(sample_id = $.sample_id, variants = variants.variants)
+            score = ScoreResistance(sample_id = $.sample_id, mutations = classify.mutations)
+            interpret = InterpretResults(sample_id = $.sample_id, drug_scores = score.drug_scores, subtype = consensus.subtype, clinical_context = $.clinical_context)
+            report = GenerateSampleReport(sample_id = $.sample_id, qc_passed = true, alignment = align.alignment, variants = variants.variants, resistance = #{"sample_id": $.sample_id, "subtype": consensus.subtype, "mutations": classify.mutations, "drug_scores": score.drug_scores})
+            yield AnalyzeSample(status = "completed", detail = "Resistance level: " ++ score.highest_level)
+        }
+    }
+
+    /** Analyze a batch of HIV samples with per-sample error recovery. */
+    workflow BatchAnalysis(batch_id: String, sample_ids: [String], fastq_dir: String, reference: String = "HXB2") => (status: String) andThen foreach sample in $.sample_ids {
+        analysis = AnalyzeSample(sample_id = $.sample, fastq_path = $.fastq_dir ++ "/" ++ $.sample ++ ".fastq.gz", reference = $.reference) catch {
+            err_report = GenerateBatchReport(batch_id = $.batch_id, sample_count = 1, results = [#{"sample_id": $.sample, "status": "error", "error": analysis.error}])
+        }
+    }
+}

@@ -1,6 +1,41 @@
 # Implementation Changelog
 
-**Current version: v0.31.0**
+**Current version: v0.32.0**
+
+## Completed (v0.32.0) - HIV Drug Resistance Genotyping Example
+
+13th AgentFlow example: an HIV drug resistance genotyping pipeline modeled after
+real-world tools (HIVGenoPipe, QuasiFlow). Showcases AFL's workflow orchestration
+for bioinformatics — QC, alignment, variant calling, resistance scoring, and
+LLM-driven clinical interpretation.
+
+**AFL (`afl/resistance.afl`, ~160 lines):**
+- 7 namespaces, 6 schemas (`QCThresholds`, `AlignmentResult`, `VariantCall`,
+  `DrugScore`, `ResistanceProfile`, `BatchSummary`)
+- 9 event facets: `AssessQuality`, `AlignReads`, `CallVariants`,
+  `GenerateConsensus` (prompt), `ClassifyMutations` (script),
+  `ScoreResistance` (prompt), `InterpretResults` (prompt),
+  `GenerateSampleReport`, `GenerateBatchReport`
+- 2 workflows: `AnalyzeSample` (single sample with `andThen when` QC pass/fail
+  branching), `BatchAnalysis` (`andThen foreach` with per-sample `catch` error
+  recovery)
+- Feature showcase: `andThen when`, `catch`, `andThen foreach`, 3 prompt blocks,
+  1 script block, 6 schemas, mixins+implicits, `[String]` array type, `++`
+  concatenation, `==` comparison
+
+**Handlers (4 categories, 9 handlers):**
+- `sequencing/` (2): AssessQuality, AlignReads
+- `analysis/` (3): CallVariants, GenerateConsensus, ClassifyMutations
+- `interpretation/` (2): ScoreResistance, InterpretResults
+- `reporting/` (2): GenerateSampleReport, GenerateBatchReport
+- `shared/resistance_utils.py`: 12 pure deterministic functions (hashlib-based)
+  covering HIV pol gene regions (PR/RT/IN), Stanford HIVdb DRM positions, NRTI/
+  NNRTI/PI/INSTI drug classes, 5-level resistance scoring, APOBEC detection
+
+**Tests:** 38 new tests across 8 classes (8 utils, 3 sequencing, 4 analysis,
+4 interpretation, 3 reporting, 5 dispatch, 9 compilation, 2 agent integration)
+
+Files: `examples/hiv-drug-resistance/` (17 files), `CLAUDE.md`, `spec/99_changelog.md`
 
 ## Completed (v0.31.0) - Validator Parameter Type Inference + Dashboard Shared Components
 
