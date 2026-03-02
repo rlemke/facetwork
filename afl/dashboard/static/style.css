@@ -662,6 +662,11 @@ pre code {
 .step-tree-container details summary .badge {
     margin-right: 0.4em;
 }
+.tree-block-type {
+    color: var(--primary, #1a73e8);
+    font-size: 0.85em;
+    font-style: italic;
+}
 .tree-facet {
     color: var(--muted-color, #6c757d);
     font-size: 0.85em;

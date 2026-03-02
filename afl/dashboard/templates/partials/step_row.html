@@ -1,5 +1,5 @@
 <tr data-state-category="{{ step.state|step_category }}" class="{{ step.state|step_state_bg }}">
-    <td><a href="/steps/{{ step.id }}">{{ step.statement_name or step.statement_id or step.id|truncate_uuid }}</a></td>
+    <td><a href="/steps/{{ step.id }}">{% if step.statement_name %}{{ step.statement_name }}{% elif step.object_type|block_label %}<span class="tree-block-type">{{ step.object_type|block_label }}</span> {{ step.id|truncate_uuid }}{% else %}{{ step.statement_id or step.id|truncate_uuid }}{% endif %}</a></td>
     <td>{% if step.facet_name %}{{ step.facet_name.split('.')[-1] }}{% else %}{{ step.object_type }}{% endif %}</td>
     <td>{% with state=step.state, label=step.state|state_label %}{% include "partials/_state_badge.html" %}{% endwith %}</td>
     <td>{% if step.start_time %}{{ (step.last_modified - step.start_time)|duration }}{% else %}&mdash;{% endif %}</td>

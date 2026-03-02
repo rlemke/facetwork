@@ -2,7 +2,7 @@
 <details class="step-tree-node" data-state-category="{{ node.step.state|step_category }}" data-step-name="{{ node.step.statement_name or '' }}" data-facet-name="{{ node.step.facet_name or '' }}" {% if node.depth < 2 %}open{% endif %}>
     <summary class="{{ node.step.state|step_state_bg }}">
         {% with state=node.step.state, label=node.step.state|state_label %}{% include "partials/_state_badge.html" %}{% endwith %}
-        <a href="/steps/{{ node.step.id }}">{{ node.step.statement_name or node.step.id|truncate_uuid }}</a>
+        <a href="/steps/{{ node.step.id }}">{% if node.step.statement_name %}{{ node.step.statement_name }}{% elif node.step.object_type|block_label %}<span class="tree-block-type">{{ node.step.object_type|block_label }}</span> {{ node.step.id|truncate_uuid }}{% else %}{{ node.step.id|truncate_uuid }}{% endif %}</a>
         {% if node.step.facet_name %}<span class="tree-facet">{{ node.step.facet_name.split('.')[-1] }}</span>{% endif %}
         {% if node.step.start_time %}<span class="tree-duration">{{ (node.step.last_modified - node.step.start_time)|duration }}</span>{% endif %}
         {% if step_log_counts is defined and step_log_counts.get(node.step.id, 0) > 0 %}<a href="/steps/{{ node.step.id }}#step-logs" class="tree-log-badge badge badge-primary">{{ step_log_counts[node.step.id] }}</a>{% endif %}

@@ -188,6 +188,24 @@ def namespace_of_filter(name: str) -> str:
     return extract_namespace(name)
 
 
+_BLOCK_LABELS: dict[str, str] = {
+    "AndThen": "andThen",
+    "AndMap": "andThen foreach",
+    "AndWhen": "andThen when",
+    "AndCatch": "catch",
+    "Block": "block",
+    "Before": "before",
+    "After": "after",
+}
+
+
+def block_label(object_type: str | None) -> str:
+    """Return a human-readable label for block object types."""
+    if not object_type:
+        return ""
+    return _BLOCK_LABELS.get(object_type, "")
+
+
 def filesizeformat(value: int | float) -> str:
     """Format byte count as human-readable size (B/KB/MB/GB)."""
     value = float(value)
@@ -226,4 +244,5 @@ def register_filters(env: Environment) -> None:
     env.filters["namespace_of"] = namespace_of_filter
     env.filters["filesizeformat"] = filesizeformat
     env.filters["file_timestamp"] = file_timestamp
+    env.filters["block_label"] = block_label
     env.filters["categorize_step_state"] = step_category_filter
