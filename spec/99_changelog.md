@@ -34,6 +34,11 @@ fallback, and runtime integration tests to the NOAA weather example.
 
 **Files:** 4 modified
 
+**Fix (v0.35.0):** `scripts/run-workflow` used `program_dict.get('workflows', [])`
+which doesn't work with the declarations-only emitter format — replaced with
+`find_workflow()` from `ast_utils`. Added `ANTHROPIC_API_KEY` placeholder to
+`.env.example`.
+
 ## Completed (v0.34.4) - Foreach Cross-Block Step Reference Resolution
 
 Fixes `andThen foreach` failing when the iterable expression references a step
