@@ -1,0 +1,195 @@
+// NOAA Weather Station Analysis Pipeline
+// Demonstrates real HTTP downloads (ISD-Lite, station inventory, OSM Nominatim),
+// andThen when (QC branching), catch (download error recovery), andThen foreach
+// (batch station processing), prompt blocks, script blocks, schemas,
+// mixins+implicits, ++ concatenation, == comparison, and RegistryRunner-first approach.
+
+namespace weather.types {
+    schema StationMeta {
+        usaf: String,
+        wban: String,
+        station_name: String,
+        country: String,
+        state: String,
+        lat: Double,
+        lon: Double,
+        elevation: Double,
+        begin_date: String,
+        end_date: String
+    }
+
+    schema HourlyObs {
+        date: String,
+        hour: Int,
+        air_temp: Double,
+        dew_point: Double,
+        sea_level_pressure: Double,
+        wind_direction: Int,
+        wind_speed: Double,
+        precipitation: Double,
+        sky_condition: Int
+    }
+
+    schema QCResult {
+        plausible: Boolean,
+        total_records: Int,
+        missing_pct: Double,
+        temp_range_ok: Boolean,
+        message: String
+    }
+
+    schema DailyStats {
+        date: String,
+        temp_min: Double,
+        temp_max: Double,
+        temp_mean: Double,
+        precip_total: Double,
+        wind_max: Double,
+        obs_count: Int
+    }
+
+    schema GeoContext {
+        display_name: String,
+        city: String,
+        state: String,
+        country: String,
+        county: String
+    }
+
+    schema StationReport {
+        station_id: String,
+        station_name: String,
+        year: Int,
+        location: String,
+        total_days: Int,
+        annual_precip: Double,
+        temp_range: String,
+        narrative: String,
+        report_path: String
+    }
+}
+
+namespace weather.mixins {
+    facet RetryPolicy(max_retries: Int = 3, backoff_ms: Int = 2000) => (max_retries: Int, backoff_ms: Int)
+    facet RateLimit(requests_per_sec: Int = 1, burst: Int = 1) => (requests_per_sec: Int, burst: Int)
+
+    implicit default_retry = RetryPolicy()
+    implicit default_rate = RateLimit()
+}
+
+namespace weather.Discovery {
+    use weather.types
+
+    /** Discover active weather stations by country and optional state filter. */
+    event facet DiscoverStations(country: String = "US", state: String = "", max_stations: Int = 10) => (stations: Json, station_count: Int) with RetryPolicy()
+}
+
+namespace weather.Ingest {
+    use weather.types
+
+    /** Download ISD-Lite hourly observation file for a station-year. */
+    event facet DownloadObservations(usaf: String, wban: String, year: Int) => (raw_path: String, file_size: Int, station_id: String) with RetryPolicy()
+
+    /** Parse ISD-Lite fixed-width file into structured observations. */
+    event facet ParseObservations(raw_path: String, station_id: String) => (observations: Json, record_count: Int)
+}
+
+namespace weather.QC {
+    use weather.types
+
+    /** Validate observation quality: missing data percentage and temperature plausibility. */
+    event facet ValidateQuality(observations: Json, station_id: String, max_missing_pct: Double = 20.0) => (qc: QCResult) script python "
+import json
+obs = params.get('observations', [])
+if isinstance(obs, str):
+    obs = json.loads(obs)
+total = len(obs)
+missing = sum(1 for o in obs if o.get('air_temp') is None)
+missing_pct = (missing / total * 100) if total > 0 else 100.0
+temps = [o['air_temp'] for o in obs if o.get('air_temp') is not None]
+temp_ok = all(-90 <= t <= 60 for t in temps) if temps else False
+max_miss = float(params.get('max_missing_pct', 20.0))
+plausible = missing_pct <= max_miss and temp_ok
+msg = 'QC passed' if plausible else f'QC failed: missing={missing_pct:.1f}%, temp_ok={temp_ok}'
+result['qc'] = json.dumps({'plausible': plausible, 'total_records': total, 'missing_pct': round(missing_pct, 2), 'temp_range_ok': temp_ok, 'message': msg})
+"
+}
+
+namespace weather.Analysis {
+    use weather.types
+
+    /** Compute daily aggregate statistics from hourly observations. */
+    event facet ComputeDailyStats(observations: Json, station_id: String) => (daily_stats: Json, total_days: Int, annual_precip: Double)
+
+    /** Lightweight analysis for sparse/low-quality observation sets. */
+    event facet SparseAnalysis(observations: Json, station_id: String) => (summary: String, record_count: Int, coverage_pct: Double)
+}
+
+namespace weather.Geocode {
+    use weather.types
+
+    /** Reverse geocode station coordinates via OSM Nominatim. */
+    event facet ReverseGeocode(lat: Double, lon: Double) => (geo: GeoContext) with RateLimit()
+}
+
+namespace weather.Interpret {
+    use weather.types
+
+    /** Generate a meteorologist-style narrative summary of station weather. */
+    event facet GenerateNarrative(station_name: String, year: Int, daily_stats: Json, geo_context: Json) => (narrative: String, highlights: Json) prompt {
+        system "You are a meteorologist writing a concise annual weather summary for a station."
+        template "Write a narrative summary for {station_name} in {year}. Daily statistics: {daily_stats}. Location context: {geo_context}. Highlight extremes (hottest day, coldest day, wettest day) and seasonal patterns."
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+namespace weather.Report {
+    use weather.types
+
+    /** Generate a JSON station report combining all analysis results. */
+    event facet GenerateStationReport(station_id: String, station_name: String, year: Int, location: String, daily_stats: Json, annual_precip: Double, narrative: String) => (report: StationReport)
+
+    /** Generate a batch summary across multiple station analyses. */
+    event facet GenerateBatchSummary(batch_id: String, station_count: Int, results: Json) => (report_path: String, completed: Int, failed: Int, summary: String)
+}
+
+namespace weather.workflows {
+    use weather.types
+
+    /** Analyze a single weather station: download, parse, QC, stats, geocode, narrative, report. */
+    workflow AnalyzeStation(usaf: String, wban: String, station_name: String, lat: Double, lon: Double, year: Int) => (status: String, detail: String) andThen {
+        dl = DownloadObservations(usaf = $.usaf, wban = $.wban, year = $.year) catch {
+            yield AnalyzeStation(status = "download_failed", detail = "Download failed for " ++ $.usaf ++ "-" ++ $.wban)
+        }
+    } andThen {
+        parsed = ParseObservations(raw_path = dl.raw_path, station_id = dl.station_id)
+        geo = ReverseGeocode(lat = $.lat, lon = $.lon)
+        qc_check = ValidateQuality(observations = parsed.observations, station_id = dl.station_id)
+    } andThen when {
+        case qc_check.qc.plausible == false => {
+            sparse = SparseAnalysis(observations = parsed.observations, station_id = dl.station_id)
+            yield AnalyzeStation(status = "sparse", detail = "Sparse analysis: " ++ sparse.summary)
+        }
+        case _ => {
+            stats = ComputeDailyStats(observations = parsed.observations, station_id = dl.station_id)
+            narr = GenerateNarrative(station_name = $.station_name, year = $.year, daily_stats = stats.daily_stats, geo_context = #{"city": geo.geo.city, "state": geo.geo.state, "country": geo.geo.country})
+            report = GenerateStationReport(station_id = $.usaf ++ "-" ++ $.wban, station_name = $.station_name, year = $.year, location = geo.geo.display_name, daily_stats = stats.daily_stats, annual_precip = stats.annual_precip, narrative = narr.narrative)
+            yield AnalyzeStation(status = "completed", detail = "Report: " ++ report.report.report_path)
+        }
+    }
+
+    /** Analyze a batch of weather stations with per-station error recovery. */
+    workflow BatchWeatherAnalysis(country: String = "US", state: String = "", max_stations: Int = 10, year: Int = 2023) => (status: String) andThen {
+        discovery = DiscoverStations(country = $.country, state = $.state, max_stations = $.max_stations)
+    } andThen foreach station in discovery.stations {
+        analysis = AnalyzeStation(usaf = $.station.usaf, wban = $.station.wban, station_name = $.station.station_name, lat = $.station.lat, lon = $.station.lon, year = $.year) catch {
+            err = GenerateBatchSummary(batch_id = $.country ++ "-" ++ $.state, station_count = 1, results = [#{"station_id": $.station.usaf ++ "-" ++ $.station.wban, "status": "error", "error": analysis.error}])
+        }
+    }
+
+    /** Analyze a single known station (convenience for dashboard use — skip discovery). */
+    workflow AnalyzeKnownStation(usaf: String, wban: String, station_name: String, lat: Double, lon: Double, year: Int) => (status: String, detail: String) andThen {
+        result = AnalyzeStation(usaf = $.usaf, wban = $.wban, station_name = $.station_name, lat = $.lat, lon = $.lon, year = $.year)
+        yield AnalyzeKnownStation(status = result.status, detail = result.detail)
+    }
+}

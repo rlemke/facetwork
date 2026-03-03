@@ -1,6 +1,56 @@
 # Implementation Changelog
 
-**Current version: v0.33.1**
+**Current version: v0.34.0**
+
+## Completed (v0.34.0) - NOAA Weather Station Example
+
+14th AgentFlow example. A real-data weather analysis pipeline that downloads
+ISD-Lite hourly observations from NOAA (no auth required), applies QC with
+branching, computes daily statistics, reverse-geocodes station coordinates via
+OSM Nominatim, and generates LLM-driven weather narratives. First example to
+combine real HTTP downloads with OSM integration.
+
+**AFL definition (`examples/noaa-weather/afl/weather.afl`):**
+- 8 namespaces, 6 schemas, 10 event facets, 3 workflows (~170 lines)
+- `AnalyzeStation`: download → parse → QC + geocode → `andThen when` (sparse vs
+  full analysis) → narrative → report; `catch` on download step
+- `BatchWeatherAnalysis`: `DiscoverStations` → `andThen foreach` station with
+  per-station `catch` error recovery
+- `AnalyzeKnownStation`: convenience wrapper for dashboard (skip discovery)
+- Features: `andThen when`, `catch`, `andThen foreach`, `prompt` block,
+  `script` block, schemas, mixins+implicits, `++` concatenation, `==` comparison
+
+**Handler modules (7 files, 10 handlers):**
+- `discovery_handlers.py` — downloads isd-history.csv, filters by country/state
+- `ingest_handlers.py` — downloads ISD-Lite .gz files, parses fixed-width format
+- `qc_handlers.py` — validates missing data % and temperature plausibility
+- `analysis_handlers.py` — daily stats aggregation + sparse analysis fallback
+- `geocode_handlers.py` — OSM Nominatim reverse geocoding with filesystem cache
+- `interpret_handlers.py` — narrative generation (prompt block fallback)
+- `report_handlers.py` — JSON station report + batch summary generation
+
+**Shared utilities (`handlers/shared/weather_utils.py`, ~400 lines):**
+- ISD-Lite fixed-width parsing (`parse_isd_lite_line`, `parse_isd_lite_file`)
+- Station inventory CSV parsing and filtering
+- QC: missing percentage, temperature range validation
+- Daily stats grouping and annual summary computation
+- Nominatim geocoding with filesystem cache and rate limiting
+- Downloads with `HAS_REQUESTS` guard, per-path locks, file cache
+- Hash helpers (`_hash_int`, `_hash_float`) for deterministic mock data
+- Narrative fallback (hottest/coldest/wettest day template)
+
+**Tests (`examples/noaa-weather/tests/test_weather_handlers.py`):**
+- 51 tests across 11 classes: TestWeatherUtils (10), TestDiscoveryHandlers (3),
+  TestIngestHandlers (3), TestQCHandlers (3), TestAnalysisHandlers (4),
+  TestGeocodeHandlers (3), TestInterpretHandlers (3), TestReportHandlers (3),
+  TestDispatch (8), TestCompilation (9), TestAgentIntegration (2)
+
+**Data sources (no authentication):**
+- ISD-Lite files: `https://www.ncei.noaa.gov/pub/data/noaa/isd-lite/{YYYY}/{USAF}-{WBAN}-{YYYY}.gz`
+- Station inventory: `https://www.ncei.noaa.gov/pub/data/noaa/isd-history.csv`
+- OSM Nominatim: `https://nominatim.openstreetmap.org/reverse`
+
+**Files:** 21 new files, 2 modified (CLAUDE.md, spec/99_changelog.md)
 
 ## Completed (v0.33.1) - HIV Dashboard Scripts & AFL_LOCAL_OUTPUT_DIR Cleanup
 

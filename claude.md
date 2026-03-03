@@ -130,6 +130,7 @@ Copy `.env.example` to `.env` and edit to configure MongoDB, scaling, overlays, 
 | `examples/event-driven-etl/` | Event-driven ETL — extract/transform/load pipeline (3 schemas, 6 event facets, 2 workflows, andThen chaining, foreach, schema instantiation, map literals, RegistryRunner-first) |
 | `examples/devops-deploy/` | DevOps deployment pipeline — first `andThen when` showcase (3 when blocks incl. nested, foreach, 3 schemas, 10 event facets, 2 workflows, prompt/script blocks, mixins+implicits, `++`/`==`/`&&`, RegistryRunner-first) |
 | `examples/hiv-drug-resistance/` | HIV drug resistance genotyping — bioinformatics pipeline (6 schemas, 9 event facets, 2 workflows, `andThen when` QC branching, `catch` per-sample error recovery, `andThen foreach` batch, 3 prompt blocks, 1 script block, mixins+implicits, RegistryRunner-first) |
+| `examples/noaa-weather/` | NOAA weather station analysis — real-data pipeline (ISD-Lite downloads, OSM Nominatim geocoding, 6 schemas, 10 event facets, 3 workflows, `andThen when` QC branching, `catch` download recovery, `andThen foreach` batch, prompt+script blocks, `++`/`==`, RegistryRunner-first) |
 | `spec/` | Language and runtime specifications |
 | `docker/` | Dockerfiles for all services |
 | `scripts/` | Convenience scripts (setup, compile, runner, dashboard, rolling-deploy, etc.) |
