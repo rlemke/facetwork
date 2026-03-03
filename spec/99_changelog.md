@@ -1,6 +1,38 @@
 # Implementation Changelog
 
-**Current version: v0.34.4**
+**Current version: v0.35.0**
+
+## Completed (v0.35.0) - NOAA Weather Multi-Year Workflows, LLM Narratives, Integration Tests
+
+Adds multi-year composition workflows, Claude API narrative generation with
+fallback, and runtime integration tests to the NOAA weather example.
+
+**New workflows (`examples/noaa-weather/afl/weather.afl`):**
+- `AnalyzeStationHistory` — foreach over input array of years for a single
+  station; each iteration calls `AnalyzeStation` with per-year catch block
+- `AnalyzeRegion` — foreach over years calling `BatchWeatherAnalysis` per year;
+  nested composition via workflow boundaries (BatchWeatherAnalysis itself
+  does foreach over stations)
+- Total: 5 workflows, 12 event facets, 6 schemas
+
+**Claude API narrative path (`examples/noaa-weather/handlers/interpret/interpret_handlers.py`):**
+- `HAS_ANTHROPIC` guard: tries `import anthropic` + checks `ANTHROPIC_API_KEY`
+- `_generate_with_claude()`: summarizes daily stats, calls Claude Sonnet 4
+  with JSON response format, falls back to data-derived highlights on parse error
+- `handle_generate_narrative()` tries Claude first, catches any Exception and
+  falls back to `generate_narrative_fallback()`
+
+**Runtime integration tests (`examples/noaa-weather/tests/test_weather_handlers.py`):**
+- `TestAnalyzeStationIntegration` (3 tests): compiles weather.afl, runs
+  AnalyzeStation through Evaluator with InMemoryDispatcher and mock handlers;
+  verifies completion, yield outputs, and step count (>= 10)
+- `TestBatchWeatherAnalysisIntegration` (2 tests): runs BatchWeatherAnalysis
+  with 3 mock stations; verifies completion and foreach sub-block creation
+
+**Tests:** 10 new tests (3 compilation + 2 Claude path + 5 integration);
+74 NOAA weather tests total.
+
+**Files:** 4 modified
 
 ## Completed (v0.34.4) - Foreach Cross-Block Step Reference Resolution
 

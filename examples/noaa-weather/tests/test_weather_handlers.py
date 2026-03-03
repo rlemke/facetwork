@@ -423,6 +423,56 @@ class TestInterpretHandlers:
         assert len(messages) == 1
         assert "Narrative" in messages[0][0]
 
+    def test_handle_generate_narrative_claude_path(self, monkeypatch):
+        """When HAS_ANTHROPIC is True, Claude response flows through."""
+        import handlers.interpret.interpret_handlers as mod
+
+        monkeypatch.setattr(mod, "HAS_ANTHROPIC", True)
+        monkeypatch.setattr(
+            mod,
+            "_generate_with_claude",
+            lambda *args, **kwargs: (
+                "Claude narrative text",
+                [{"type": "hottest", "date": "2023-07-15", "value": "40°C"}],
+            ),
+        )
+        result = mod.handle_generate_narrative(
+            {
+                "station_name": "CLAUDE TEST",
+                "year": 2023,
+                "daily_stats": [
+                    {"date": "2023-07-15", "temp_max": 40, "temp_min": 25, "precip_total": 0}
+                ],
+            }
+        )
+        assert result["narrative"] == "Claude narrative text"
+        assert len(result["highlights"]) == 1
+        assert result["highlights"][0]["type"] == "hottest"
+
+    def test_handle_generate_narrative_claude_fallback_on_error(self, monkeypatch):
+        """When Claude raises, fallback produces valid output."""
+        import handlers.interpret.interpret_handlers as mod
+
+        monkeypatch.setattr(mod, "HAS_ANTHROPIC", True)
+        monkeypatch.setattr(
+            mod,
+            "_generate_with_claude",
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("API error")),
+        )
+        result = mod.handle_generate_narrative(
+            {
+                "station_name": "FALLBACK TEST",
+                "year": 2023,
+                "daily_stats": [
+                    {"date": "2023-07-15", "temp_max": 38, "temp_min": 25, "precip_total": 0},
+                    {"date": "2023-01-10", "temp_max": 5, "temp_min": -12, "precip_total": 15},
+                ],
+            }
+        )
+        assert "narrative" in result
+        assert "highlights" in result
+        assert "FALLBACK TEST" in result["narrative"]
+
 
 # ---------------------------------------------------------------------------
 # TestReportHandlers — report generation handler tests
@@ -791,7 +841,7 @@ class TestCompilation:
         workflows = []
         for ns in parsed_ast.namespaces:
             workflows.extend(ns.workflows)
-        assert len(workflows) == 3
+        assert len(workflows) == 5
 
     def test_namespace_count(self, parsed_ast):
         assert len(parsed_ast.namespaces) == 11
@@ -844,6 +894,52 @@ class TestCompilation:
         first_block = body[0]
         step = first_block.block.steps[0]
         assert step.catch is not None
+
+    def test_analyze_station_history_foreach(self, parsed_ast):
+        """AnalyzeStationHistory uses foreach over years."""
+        from afl.ast import AndThenBlock
+
+        wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "weather.workflows"]
+        wf = [w for w in wf_ns[0].workflows if w.sig.name == "AnalyzeStationHistory"][0]
+        body = wf.body
+        # Single andThen foreach → body is a single AndThenBlock (not a list)
+        if isinstance(body, list):
+            block = body[0]
+        else:
+            block = body
+        assert isinstance(block, AndThenBlock)
+        assert block.foreach is not None
+        assert block.foreach.variable == "year"
+
+    def test_analyze_region_foreach(self, parsed_ast):
+        """AnalyzeRegion uses foreach over years."""
+        from afl.ast import AndThenBlock
+
+        wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "weather.workflows"]
+        wf = [w for w in wf_ns[0].workflows if w.sig.name == "AnalyzeRegion"][0]
+        body = wf.body
+        if isinstance(body, list):
+            block = body[0]
+        else:
+            block = body
+        assert isinstance(block, AndThenBlock)
+        assert block.foreach is not None
+        assert block.foreach.variable == "year"
+
+    def test_analyze_station_history_catch(self, parsed_ast):
+        """AnalyzeStationHistory has catch on analysis step."""
+        wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "weather.workflows"]
+        wf = [w for w in wf_ns[0].workflows if w.sig.name == "AnalyzeStationHistory"][0]
+        body = wf.body
+        # Steps live in AndThenBlock.block, foreach clause is on the AndThenBlock
+        if isinstance(body, list):
+            atb = body[0]
+        else:
+            atb = body
+        assert atb.foreach is not None
+        steps = atb.block.steps
+        analysis_step = [s for s in steps if s.name == "analysis"][0]
+        assert analysis_step.catch is not None
 
 
 # ---------------------------------------------------------------------------
@@ -909,3 +1005,370 @@ class TestAgentIntegration:
         )
         assert len(all_names) == 12
         assert all(n.startswith("weather.") for n in all_names)
+
+
+# ---------------------------------------------------------------------------
+# Runtime integration tests — compile AFL, dispatch inline, verify completion
+# ---------------------------------------------------------------------------
+
+
+def _compile_weather_afl():
+    """Compile weather.afl and return the program dict."""
+    from afl.emitter import emit_dict
+    from afl.parser import AFLParser
+
+    afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.afl")
+    with open(afl_path) as f:
+        source = f.read()
+    ast = AFLParser().parse(source)
+    return emit_dict(ast, include_locations=False)
+
+
+def _make_dispatcher():
+    """Create an InMemoryDispatcher with mock handlers for all weather facets."""
+    from afl.runtime.dispatcher import InMemoryDispatcher
+
+    dispatcher = InMemoryDispatcher()
+
+    dispatcher.register(
+        "weather.Discovery.DiscoverStations",
+        lambda p: {
+            "stations": [
+                {
+                    "usaf": "725030",
+                    "wban": "14732",
+                    "station_name": "LA GUARDIA",
+                    "lat": 40.779,
+                    "lon": -73.88,
+                },
+                {
+                    "usaf": "722020",
+                    "wban": "12839",
+                    "station_name": "MIAMI INTL",
+                    "lat": 25.791,
+                    "lon": -80.316,
+                },
+                {
+                    "usaf": "723060",
+                    "wban": "13874",
+                    "station_name": "RALEIGH DURHAM",
+                    "lat": 35.878,
+                    "lon": -78.787,
+                },
+            ][: int(p.get("max_stations", 10))],
+            "station_count": min(3, int(p.get("max_stations", 10))),
+        },
+    )
+
+    dispatcher.register(
+        "weather.Ingest.DownloadObservations",
+        lambda p: {
+            "raw_path": f"/tmp/isd-lite/{p['usaf']}-{p['wban']}-{p.get('year', 2023)}.txt",
+            "file_size": 50000,
+            "station_id": f"{p['usaf']}-{p['wban']}",
+        },
+    )
+
+    dispatcher.register(
+        "weather.Ingest.ParseObservations",
+        lambda p: {
+            "observations": [
+                {
+                    "date": "2023-01-01",
+                    "hour": 0,
+                    "air_temp": 5.0,
+                    "dew_point": 2.0,
+                    "sea_level_pressure": 1013.0,
+                    "wind_direction": 180,
+                    "wind_speed": 3.0,
+                    "precipitation": 1.0,
+                    "sky_condition": 0,
+                },
+                {
+                    "date": "2023-07-15",
+                    "hour": 12,
+                    "air_temp": 35.0,
+                    "dew_point": 20.0,
+                    "sea_level_pressure": 1010.0,
+                    "wind_direction": 220,
+                    "wind_speed": 5.0,
+                    "precipitation": 0.0,
+                    "sky_condition": 2,
+                },
+            ],
+            "record_count": 2,
+        },
+    )
+
+    dispatcher.register(
+        "weather.QC.ValidateQuality",
+        lambda p: {
+            "qc": json.dumps(
+                {
+                    "plausible": True,
+                    "total_records": 2,
+                    "missing_pct": 0.0,
+                    "temp_range_ok": True,
+                    "message": "QC passed",
+                }
+            ),
+        },
+    )
+
+    dispatcher.register(
+        "weather.Analysis.ComputeDailyStats",
+        lambda p: {
+            "daily_stats": [
+                {
+                    "date": "2023-01-01",
+                    "temp_min": 5.0,
+                    "temp_max": 8.0,
+                    "temp_mean": 6.5,
+                    "precip_total": 1.0,
+                    "wind_max": 3.0,
+                    "obs_count": 1,
+                },
+                {
+                    "date": "2023-07-15",
+                    "temp_min": 28.0,
+                    "temp_max": 35.0,
+                    "temp_mean": 31.5,
+                    "precip_total": 0.0,
+                    "wind_max": 5.0,
+                    "obs_count": 1,
+                },
+            ],
+            "total_days": 2,
+            "annual_precip": 1.0,
+        },
+    )
+
+    dispatcher.register(
+        "weather.Analysis.SparseAnalysis",
+        lambda p: {
+            "summary": "Sparse analysis complete",
+            "record_count": 2,
+            "coverage_pct": 0.5,
+        },
+    )
+
+    dispatcher.register(
+        "weather.Geocode.ReverseGeocode",
+        lambda p: {
+            "geo": {
+                "display_name": "New York, NY, USA",
+                "city": "New York",
+                "state": "New York",
+                "country": "US",
+                "county": "Queens",
+            },
+        },
+    )
+
+    dispatcher.register(
+        "weather.Interpret.GenerateNarrative",
+        lambda p: {
+            "narrative": f"Weather summary for {p.get('station_name', 'station')} in {p.get('year', 2023)}.",
+            "highlights": [
+                {"type": "hottest", "date": "2023-07-15", "value": "35.0°C"},
+                {"type": "coldest", "date": "2023-01-01", "value": "5.0°C"},
+            ],
+        },
+    )
+
+    dispatcher.register(
+        "weather.Report.GenerateStationReport",
+        lambda p: {
+            "report": {
+                "station_id": p.get("station_id", ""),
+                "station_name": p.get("station_name", ""),
+                "year": int(p.get("year", 2023)),
+                "location": p.get("location", ""),
+                "total_days": 2,
+                "annual_precip": float(p.get("annual_precip", 0)),
+                "temp_range": "5.0°C to 35.0°C",
+                "narrative": p.get("narrative", ""),
+                "report_id": f"weather://{p.get('station_id', '')}/{p.get('year', 2023)}",
+            },
+        },
+    )
+
+    dispatcher.register(
+        "weather.Report.GenerateBatchSummary",
+        lambda p: {
+            "report_id": f"weather://batch/{p.get('batch_id', '')}",
+            "completed": int(p.get("station_count", 0)),
+            "failed": 0,
+            "summary": "Batch complete",
+        },
+    )
+
+    dispatcher.register(
+        "weather.Visualize.RenderHTMLReport",
+        lambda p: {
+            "report_id": f"weather://{p.get('station_id', '')}/{p.get('year', 2023)}",
+        },
+    )
+
+    dispatcher.register(
+        "weather.Visualize.RenderStationMap",
+        lambda p: {
+            "report_id": f"weather://{p.get('station_id', '')}/{p.get('year', 2023)}",
+        },
+    )
+
+    return dispatcher
+
+
+class TestAnalyzeStationIntegration:
+    """Integration tests: compile weather.afl, run AnalyzeStation with mock dispatch."""
+
+    @pytest.fixture()
+    def compiled(self):
+        return _compile_weather_afl()
+
+    @pytest.fixture()
+    def store(self):
+        from afl.runtime import MemoryStore
+
+        return MemoryStore()
+
+    @pytest.fixture()
+    def evaluator(self, store):
+        from afl.runtime import Evaluator, Telemetry
+
+        return Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
+
+    @pytest.fixture()
+    def dispatcher(self):
+        return _make_dispatcher()
+
+    def test_analyze_station_completes(self, compiled, store, evaluator, dispatcher):
+        """AnalyzeStation completes with mock dispatch — no PAUSED."""
+        from afl.ast_utils import find_workflow
+        from afl.runtime import ExecutionStatus
+
+        wf_ast = find_workflow(compiled, "AnalyzeStation")
+        assert wf_ast is not None
+
+        result = evaluator.execute(
+            wf_ast,
+            inputs={
+                "usaf": "725030",
+                "wban": "14732",
+                "station_name": "LA GUARDIA",
+                "lat": 40.779,
+                "lon": -73.88,
+                "year": 2023,
+            },
+            program_ast=compiled,
+            dispatcher=dispatcher,
+        )
+        assert result.success
+        assert result.status == ExecutionStatus.COMPLETED
+
+    def test_analyze_station_outputs(self, compiled, store, evaluator, dispatcher):
+        """AnalyzeStation produces expected yield outputs."""
+        from afl.ast_utils import find_workflow
+
+        wf_ast = find_workflow(compiled, "AnalyzeStation")
+        result = evaluator.execute(
+            wf_ast,
+            inputs={
+                "usaf": "725030",
+                "wban": "14732",
+                "station_name": "LA GUARDIA",
+                "lat": 40.779,
+                "lon": -73.88,
+                "year": 2023,
+            },
+            program_ast=compiled,
+            dispatcher=dispatcher,
+        )
+        assert result.outputs["status"] == "completed"
+        assert "Report:" in result.outputs["detail"]
+
+    def test_analyze_station_step_count(self, compiled, store, evaluator, dispatcher):
+        """AnalyzeStation creates at least 10 steps (root + blocks + event steps)."""
+        from afl.ast_utils import find_workflow
+
+        wf_ast = find_workflow(compiled, "AnalyzeStation")
+        result = evaluator.execute(
+            wf_ast,
+            inputs={
+                "usaf": "725030",
+                "wban": "14732",
+                "station_name": "LA GUARDIA",
+                "lat": 40.779,
+                "lon": -73.88,
+                "year": 2023,
+            },
+            program_ast=compiled,
+            dispatcher=dispatcher,
+        )
+        assert result.success
+        steps = store.get_steps_by_workflow(result.workflow_id)
+        assert len(steps) >= 10, f"Expected >= 10 steps, got {len(steps)}"
+
+
+class TestBatchWeatherAnalysisIntegration:
+    """Integration tests: compile weather.afl, run BatchWeatherAnalysis with mock dispatch."""
+
+    @pytest.fixture()
+    def compiled(self):
+        return _compile_weather_afl()
+
+    @pytest.fixture()
+    def store(self):
+        from afl.runtime import MemoryStore
+
+        return MemoryStore()
+
+    @pytest.fixture()
+    def evaluator(self, store):
+        from afl.runtime import Evaluator, Telemetry
+
+        return Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
+
+    @pytest.fixture()
+    def dispatcher(self):
+        return _make_dispatcher()
+
+    def test_batch_analysis_completes(self, compiled, store, evaluator, dispatcher):
+        """BatchWeatherAnalysis with 3 mock stations completes."""
+        from afl.ast_utils import find_workflow
+        from afl.runtime import ExecutionStatus
+
+        wf_ast = find_workflow(compiled, "BatchWeatherAnalysis")
+        assert wf_ast is not None
+
+        result = evaluator.execute(
+            wf_ast,
+            inputs={"country": "US", "state": "", "max_stations": 3, "year": 2023},
+            program_ast=compiled,
+            dispatcher=dispatcher,
+        )
+        assert result.success
+        assert result.status == ExecutionStatus.COMPLETED
+
+    def test_batch_creates_foreach_sub_blocks(self, compiled, store, evaluator, dispatcher):
+        """BatchWeatherAnalysis creates foreach sub-blocks for each station."""
+        from afl.ast_utils import find_workflow
+
+        wf_ast = find_workflow(compiled, "BatchWeatherAnalysis")
+        result = evaluator.execute(
+            wf_ast,
+            inputs={"country": "US", "state": "", "max_stations": 3, "year": 2023},
+            program_ast=compiled,
+            dispatcher=dispatcher,
+        )
+        assert result.success
+        steps = store.get_steps_by_workflow(result.workflow_id)
+        foreach_steps = [
+            s
+            for s in steps
+            if getattr(s, "statement_id", "") and "foreach-" in getattr(s, "statement_id", "")
+        ]
+        assert len(foreach_steps) >= 3, (
+            f"Expected >= 3 foreach sub-blocks, got {len(foreach_steps)}"
+        )
