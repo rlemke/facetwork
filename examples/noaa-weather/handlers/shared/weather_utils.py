@@ -9,6 +9,7 @@ they fall back to hash-based mock data.
 from __future__ import annotations
 
 import csv
+import datetime
 import hashlib
 import html as _html_mod
 import io
@@ -18,7 +19,6 @@ import threading
 from typing import Any
 
 _LOCAL_OUTPUT = os.environ.get("AFL_LOCAL_OUTPUT_DIR", "/tmp")
-_WEATHER_REPORTS_DIR = os.path.join(_LOCAL_OUTPUT, "weather-reports")
 _WEATHER_CACHE_DIR = os.path.join(_LOCAL_OUTPUT, "weather-cache")
 _GEOCODE_CACHE_DIR = os.path.join(_LOCAL_OUTPUT, "weather-geocode-cache")
 
@@ -35,6 +35,131 @@ try:
     HAS_FOLIUM = True
 except ImportError:
     HAS_FOLIUM = False
+
+# ---------------------------------------------------------------------------
+# MongoDB store for weather reports
+# ---------------------------------------------------------------------------
+
+
+def get_weather_db(db: Any = None) -> Any:
+    """Return a MongoDB database handle for weather report storage.
+
+    If *db* is already provided (e.g. for testing), return it as-is.
+    Otherwise connect via ``AFL_MONGODB_URL`` / ``AFL_MONGODB_DATABASE``.
+    """
+    if db is not None:
+        return db
+    from pymongo import MongoClient
+
+    url = os.environ.get("AFL_MONGODB_URL", "mongodb://localhost:27017")
+    db_name = os.environ.get("AFL_MONGODB_DATABASE", "afl")
+    return MongoClient(url)[db_name]
+
+
+class WeatherReportStore:
+    """Lightweight wrapper around two MongoDB collections for weather outputs."""
+
+    def __init__(self, db: Any) -> None:
+        self.reports = db["weather_reports"]
+        self.batches = db["weather_batch_summaries"]
+        self._ensure_indexes()
+
+    def _ensure_indexes(self) -> None:
+        self.reports.create_index([("station_id", 1), ("year", 1)], unique=True)
+        self.reports.create_index([("updated_at", -1)])
+        self.batches.create_index([("batch_id", 1)], unique=True)
+
+    # -- report fields --------------------------------------------------------
+
+    def upsert_report(
+        self,
+        station_id: str,
+        station_name: str,
+        year: int,
+        location: str,
+        report: dict[str, Any],
+        daily_stats: list[dict[str, Any]],
+    ) -> str:
+        """Upsert the core report fields into *weather_reports*."""
+        now = datetime.datetime.now(datetime.UTC)
+        self.reports.update_one(
+            {"station_id": station_id, "year": year},
+            {
+                "$set": {
+                    "station_name": station_name,
+                    "location": location,
+                    "report": report,
+                    "daily_stats": daily_stats,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=True,
+        )
+        return f"weather://{station_id}/{year}"
+
+    def upsert_html(self, station_id: str, year: int, html_content: str) -> str:
+        """Set *html_content* on the report document."""
+        now = datetime.datetime.now(datetime.UTC)
+        self.reports.update_one(
+            {"station_id": station_id, "year": year},
+            {
+                "$set": {"html_content": html_content, "updated_at": now},
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=True,
+        )
+        return f"weather://{station_id}/{year}"
+
+    def upsert_map(self, station_id: str, year: int, map_content: str) -> str:
+        """Set *map_content* on the report document."""
+        now = datetime.datetime.now(datetime.UTC)
+        self.reports.update_one(
+            {"station_id": station_id, "year": year},
+            {
+                "$set": {"map_content": map_content, "updated_at": now},
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=True,
+        )
+        return f"weather://{station_id}/{year}"
+
+    def upsert_batch(
+        self,
+        batch_id: str,
+        station_count: int,
+        completed: int,
+        failed: int,
+        results: list[dict[str, Any]],
+        summary: str,
+    ) -> str:
+        """Upsert a batch summary document."""
+        now = datetime.datetime.now(datetime.UTC)
+        self.batches.update_one(
+            {"batch_id": batch_id},
+            {
+                "$set": {
+                    "station_count": station_count,
+                    "completed": completed,
+                    "failed": failed,
+                    "results": results,
+                    "summary": summary,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=True,
+        )
+        return f"weather://batch/{batch_id}"
+
+    def get_report(self, station_id: str, year: int) -> dict[str, Any] | None:
+        """Retrieve a single report document."""
+        return self.reports.find_one({"station_id": station_id, "year": year}, {"_id": 0})
+
+    def list_reports(self, limit: int = 20) -> list[dict[str, Any]]:
+        """List recent reports, newest first."""
+        return list(self.reports.find({}, {"_id": 0}).sort("updated_at", -1).limit(limit))
+
 
 # Per-path download locks
 _download_locks: dict[str, threading.Lock] = {}
@@ -469,14 +594,32 @@ def generate_station_report(
     daily_stats: list[dict[str, Any]],
     annual_precip: float,
     narrative: str,
+    db: Any = None,
 ) -> dict[str, Any]:
-    """Generate a JSON station report and write to disk."""
+    """Generate a station report and upsert to MongoDB."""
     summary = compute_annual_summary(daily_stats)
     temp_min = summary.get("temp_min")
     temp_max = summary.get("temp_max")
     temp_range = f"{temp_min}°C to {temp_max}°C" if temp_min is not None else "N/A"
 
-    report = {
+    report_data = {
+        "total_days": summary["total_days"],
+        "annual_precip": annual_precip,
+        "temp_range": temp_range,
+        "narrative": narrative,
+    }
+
+    store = WeatherReportStore(get_weather_db(db))
+    report_id = store.upsert_report(
+        station_id,
+        station_name,
+        year,
+        location,
+        report_data,
+        daily_stats,
+    )
+
+    return {
         "station_id": station_id,
         "station_name": station_name,
         "year": year,
@@ -485,47 +628,36 @@ def generate_station_report(
         "annual_precip": annual_precip,
         "temp_range": temp_range,
         "narrative": narrative,
-        "report_path": "",
+        "report_id": report_id,
     }
-
-    os.makedirs(_WEATHER_REPORTS_DIR, exist_ok=True)
-    report_path = os.path.join(_WEATHER_REPORTS_DIR, f"{station_id}-{year}.json")
-    with open(report_path, "w") as f:
-        json.dump(report, f, indent=2)
-    report["report_path"] = report_path
-    return report
 
 
 def generate_batch_summary(
     batch_id: str,
     station_count: int,
     results: list[dict[str, Any]],
+    db: Any = None,
 ) -> tuple[str, int, int, str]:
-    """Generate a batch summary report.
+    """Generate a batch summary and upsert to MongoDB.
 
-    Returns (report_path, completed_count, failed_count, summary_text).
+    Returns (report_id, completed_count, failed_count, summary_text).
     """
     completed = sum(1 for r in results if r.get("status") == "completed")
     failed = station_count - completed
 
     summary_text = f"Batch {batch_id}: {completed}/{station_count} completed, {failed} failed"
 
-    os.makedirs(_WEATHER_REPORTS_DIR, exist_ok=True)
-    report_path = os.path.join(_WEATHER_REPORTS_DIR, f"batch-{batch_id}.json")
-    with open(report_path, "w") as f:
-        json.dump(
-            {
-                "batch_id": batch_id,
-                "station_count": station_count,
-                "completed": completed,
-                "failed": failed,
-                "results": results,
-            },
-            f,
-            indent=2,
-        )
+    store = WeatherReportStore(get_weather_db(db))
+    report_id = store.upsert_batch(
+        batch_id,
+        station_count,
+        completed,
+        failed,
+        results,
+        summary_text,
+    )
 
-    return report_path, completed, failed, summary_text
+    return report_id, completed, failed, summary_text
 
 
 # ---------------------------------------------------------------------------
@@ -612,10 +744,11 @@ def render_html_report(
     annual_precip: float,
     temp_range: str,
     narrative: str,
+    db: Any = None,
 ) -> str:
-    """Generate a self-contained HTML report with a daily statistics table.
+    """Generate a self-contained HTML report and upsert to MongoDB.
 
-    Returns the output file path.
+    Returns a ``weather://`` report ID.
     """
     total_days = len(daily_stats)
     esc = _html_mod.escape
@@ -662,11 +795,8 @@ td:first-child, th:first-child {{ text-align: left; }}
 {rows}</table>
 </body></html>"""
 
-    os.makedirs(_WEATHER_REPORTS_DIR, exist_ok=True)
-    out_path = os.path.join(_WEATHER_REPORTS_DIR, f"{station_id}-{year}.html")
-    with open(out_path, "w") as f:
-        f.write(html)
-    return out_path
+    store = WeatherReportStore(get_weather_db(db))
+    return store.upsert_html(station_id, year, html)
 
 
 # ---------------------------------------------------------------------------
@@ -681,10 +811,11 @@ def render_station_map(
     lon: float,
     year: int,
     temp_range: str,
+    db: Any = None,
 ) -> str:
-    """Generate an interactive folium map with the station pinned.
+    """Generate an interactive folium map and upsert to MongoDB.
 
-    Returns the output file path, or empty string if folium is unavailable.
+    Returns a ``weather://`` report ID, or empty string if folium is unavailable.
     """
     if not HAS_FOLIUM:
         return ""
@@ -711,7 +842,7 @@ def render_station_map(
     )
     m.get_root().html.add_child(folium.Element(title_html))
 
-    os.makedirs(_WEATHER_REPORTS_DIR, exist_ok=True)
-    out_path = os.path.join(_WEATHER_REPORTS_DIR, f"{station_id}-{year}-map.html")
-    m.save(out_path)
-    return out_path
+    map_content = m.get_root().render()
+
+    store = WeatherReportStore(get_weather_db(db))
+    return store.upsert_map(station_id, year, map_content)

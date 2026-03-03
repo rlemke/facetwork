@@ -65,7 +65,7 @@ namespace weather.types {
         annual_precip: Double,
         temp_range: String,
         narrative: String,
-        report_path: String
+        report_id: String
     }
 }
 
@@ -150,17 +150,17 @@ namespace weather.Report {
     event facet GenerateStationReport(station_id: String, station_name: String, year: Int, location: String, daily_stats: Json, annual_precip: Double, narrative: String) => (report: StationReport)
 
     /** Generate a batch summary across multiple station analyses. */
-    event facet GenerateBatchSummary(batch_id: String, station_count: Int, results: Json) => (report_path: String, completed: Int, failed: Int, summary: String)
+    event facet GenerateBatchSummary(batch_id: String, station_count: Int, results: Json) => (report_id: String, completed: Int, failed: Int, summary: String)
 }
 
 namespace weather.Visualize {
     use weather.types
 
     /** Render an HTML table report of daily weather statistics. */
-    event facet RenderHTMLReport(station_id: String, station_name: String, year: Int, location: String, daily_stats: Json, annual_precip: Double, temp_range: String, narrative: String) => (html_path: String)
+    event facet RenderHTMLReport(station_id: String, station_name: String, year: Int, location: String, daily_stats: Json, annual_precip: Double, temp_range: String, narrative: String) => (report_id: String)
 
     /** Render an interactive map with the station pin-pointed. */
-    event facet RenderStationMap(station_id: String, station_name: String, lat: Double, lon: Double, year: Int, temp_range: String) => (map_path: String)
+    event facet RenderStationMap(station_id: String, station_name: String, lat: Double, lon: Double, year: Int, temp_range: String) => (report_id: String)
 }
 
 namespace weather.workflows {
@@ -186,7 +186,7 @@ namespace weather.workflows {
             report = GenerateStationReport(station_id = $.usaf ++ "-" ++ $.wban, station_name = $.station_name, year = $.year, location = geo.geo.display_name, daily_stats = stats.daily_stats, annual_precip = stats.annual_precip, narrative = narr.narrative)
             html_report = RenderHTMLReport(station_id = $.usaf ++ "-" ++ $.wban, station_name = $.station_name, year = $.year, location = geo.geo.display_name, daily_stats = stats.daily_stats, annual_precip = stats.annual_precip, temp_range = report.report.temp_range, narrative = narr.narrative)
             station_map = RenderStationMap(station_id = $.usaf ++ "-" ++ $.wban, station_name = $.station_name, lat = $.lat, lon = $.lon, year = $.year, temp_range = report.report.temp_range)
-            yield AnalyzeStation(status = "completed", detail = "Report: " ++ html_report.html_path)
+            yield AnalyzeStation(status = "completed", detail = "Report: " ++ report.report.report_id)
         }
     }
 

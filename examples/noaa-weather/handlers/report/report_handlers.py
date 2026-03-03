@@ -39,7 +39,7 @@ def handle_generate_station_report(params: dict[str, Any]) -> dict[str, Any]:
 
     step_log = params.get("_step_log")
     if step_log is not None:
-        msg = f"Station report generated: {report.get('report_path', '')}"
+        msg = f"Station report generated: {report.get('report_id', '')}"
         if callable(step_log):
             step_log(msg, "success")
         else:
@@ -58,7 +58,7 @@ def handle_generate_batch_summary(params: dict[str, Any]) -> dict[str, Any]:
     if isinstance(results, str):
         results = json.loads(results)
 
-    report_path, completed, failed, summary = generate_batch_summary(
+    report_id, completed, failed, summary = generate_batch_summary(
         batch_id,
         station_count,
         results,
@@ -73,7 +73,7 @@ def handle_generate_batch_summary(params: dict[str, Any]) -> dict[str, Any]:
             step_log.append({"message": msg, "level": "success"})
 
     return {
-        "report_path": report_path,
+        "report_id": report_id,
         "completed": completed,
         "failed": failed,
         "summary": summary,

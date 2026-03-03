@@ -28,7 +28,7 @@ def handle_render_html_report(params: dict[str, Any]) -> dict[str, Any]:
     if isinstance(annual_precip, str):
         annual_precip = float(annual_precip)
 
-    html_path = render_html_report(
+    report_id = render_html_report(
         station_id,
         station_name,
         year,
@@ -41,13 +41,13 @@ def handle_render_html_report(params: dict[str, Any]) -> dict[str, Any]:
 
     step_log = params.get("_step_log")
     if step_log is not None:
-        msg = f"HTML report generated: {html_path}"
+        msg = f"HTML report stored: {report_id}"
         if callable(step_log):
             step_log(msg, "success")
         else:
             step_log.append({"message": msg, "level": "success"})
 
-    return {"html_path": html_path}
+    return {"report_id": report_id}
 
 
 def handle_render_station_map(params: dict[str, Any]) -> dict[str, Any]:
@@ -65,7 +65,7 @@ def handle_render_station_map(params: dict[str, Any]) -> dict[str, Any]:
     if isinstance(year, str):
         year = int(year)
 
-    map_path = render_station_map(
+    report_id = render_station_map(
         station_id,
         station_name,
         lat,
@@ -77,14 +77,14 @@ def handle_render_station_map(params: dict[str, Any]) -> dict[str, Any]:
     step_log = params.get("_step_log")
     if step_log is not None:
         msg = (
-            f"Station map generated: {map_path}" if map_path else "Map skipped (folium unavailable)"
+            f"Station map stored: {report_id}" if report_id else "Map skipped (folium unavailable)"
         )
         if callable(step_log):
             step_log(msg, "success")
         else:
             step_log.append({"message": msg, "level": "success"})
 
-    return {"map_path": map_path}
+    return {"report_id": report_id}
 
 
 _DISPATCH: dict[str, Any] = {

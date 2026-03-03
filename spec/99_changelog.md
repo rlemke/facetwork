@@ -1,6 +1,53 @@
 # Implementation Changelog
 
-**Current version: v0.34.2**
+**Current version: v0.34.3**
+
+## Completed (v0.34.3) - NOAA Weather MongoDB Report Storage
+
+Replaces file-based report outputs with MongoDB collections.  Station reports,
+HTML table reports, and station maps are now stored as documents in
+`weather_reports` (one per station-year) and `weather_batch_summaries` (one per
+batch).  Download caches (ISD-Lite, station inventory, geocode) remain as local
+files.
+
+**New store (`examples/noaa-weather/handlers/shared/weather_utils.py`):**
+- `get_weather_db(db=None)` — MongoDB connection via `AFL_MONGODB_URL` /
+  `AFL_MONGODB_DATABASE` (same env vars as AFL runtime)
+- `WeatherReportStore` class — wraps `weather_reports` and
+  `weather_batch_summaries` collections with unique indexes
+  (`(station_id, year)` and `(batch_id)`); provides `upsert_report()`,
+  `upsert_html()`, `upsert_map()`, `upsert_batch()`, `get_report()`,
+  `list_reports()`
+- Report IDs: `weather://{station_id}/{year}` and
+  `weather://batch/{batch_id}`
+- Three concurrent facets (report, html, map) use field-level `$set` with
+  `upsert=True` — no cross-write conflicts
+
+**Utility function changes:**
+- `generate_station_report()` — upserts to MongoDB, returns dict with
+  `report_id` instead of `report_path`
+- `render_html_report()` — generates HTML string, upserts `html_content`,
+  returns `report_id`
+- `render_station_map()` — uses `m.get_root().render()` for string, upserts
+  `map_content`, returns `report_id`
+- `generate_batch_summary()` — upserts to MongoDB, returns `report_id`
+- Removed `_WEATHER_REPORTS_DIR` and all `os.makedirs`/file writes
+
+**AFL definition (`examples/noaa-weather/afl/weather.afl`):**
+- `StationReport` schema: `report_path` → `report_id`
+- `GenerateBatchSummary` return: `report_path` → `report_id`
+- `RenderHTMLReport` return: `html_path` → `report_id`
+- `RenderStationMap` return: `map_path` → `report_id`
+- Workflow yield: `html_report.html_path` → `report.report.report_id`
+
+**Handler changes:**
+- `report_handlers.py`: return key `report_path` → `report_id`
+- `visualize_handlers.py`: return keys `html_path` / `map_path` → `report_id`
+
+**Tests:** 6 new tests (`TestWeatherReportStore`); 64 NOAA weather tests total.
+All handler tests use `autouse` mock fixture for `get_weather_db`.
+
+**Files:** 5 modified
 
 ## Completed (v0.34.2) - NOAA Weather HTML Report & Station Map
 

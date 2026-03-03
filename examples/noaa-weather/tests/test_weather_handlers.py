@@ -4,8 +4,20 @@ from __future__ import annotations
 
 import json
 import os
+from unittest.mock import MagicMock
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _mock_weather_db(monkeypatch):
+    """Patch get_weather_db to return a MagicMock for all tests."""
+    mock_db = MagicMock()
+    monkeypatch.setattr(
+        "handlers.shared.weather_utils.get_weather_db",
+        lambda db=None: db if db is not None else mock_db,
+    )
+    return mock_db
 
 
 # ---------------------------------------------------------------------------
@@ -443,7 +455,7 @@ class TestReportHandlers:
         report = result["report"]
         assert report["station_id"] == "725030-14732"
         assert report["year"] == 2023
-        assert report["report_path"].endswith(".json")
+        assert report["report_id"].startswith("weather://")
 
     def test_handle_generate_batch_summary(self):
         from handlers.report.report_handlers import handle_generate_batch_summary
@@ -459,7 +471,8 @@ class TestReportHandlers:
                 ],
             }
         )
-        assert "report_path" in result
+        assert "report_id" in result
+        assert result["report_id"].startswith("weather://batch/")
         assert "completed" in result
         assert "failed" in result
         assert "summary" in result
@@ -490,7 +503,7 @@ class TestReportHandlers:
 # TestVisualizeHandlers — HTML report and map handler tests
 # ---------------------------------------------------------------------------
 class TestVisualizeHandlers:
-    def test_render_html_report(self):
+    def test_render_html_report(self, _mock_weather_db):
         from handlers.visualize.visualize_handlers import handle_render_html_report
 
         daily = [
@@ -525,15 +538,16 @@ class TestVisualizeHandlers:
                 "narrative": "A cold start to the year.",
             }
         )
-        assert "html_path" in result
-        path = result["html_path"]
-        assert path.endswith(".html")
-        assert os.path.exists(path)
-        with open(path) as f:
-            content = f.read()
-        assert "<table>" in content
-        assert "TEST STATION" in content
-        assert "2023-01-01" in content
+        assert "report_id" in result
+        assert result["report_id"].startswith("weather://")
+        # Verify HTML content was stored via update_one
+        coll = _mock_weather_db["weather_reports"]
+        coll.update_one.assert_called()
+        call_args = coll.update_one.call_args
+        html_content = call_args[0][1]["$set"]["html_content"]
+        assert "<table>" in html_content
+        assert "TEST STATION" in html_content
+        assert "2023-01-01" in html_content
 
     def test_render_html_report_empty_stats(self):
         from handlers.visualize.visualize_handlers import handle_render_html_report
@@ -550,8 +564,8 @@ class TestVisualizeHandlers:
                 "narrative": "",
             }
         )
-        assert "html_path" in result
-        assert os.path.exists(result["html_path"])
+        assert "report_id" in result
+        assert result["report_id"].startswith("weather://")
 
     def test_render_html_report_step_log(self):
         from handlers.visualize.visualize_handlers import handle_render_html_report
@@ -586,11 +600,10 @@ class TestVisualizeHandlers:
                 "temp_range": "-10°C to 35°C",
             }
         )
-        assert "map_path" in result
-        # map_path is either a real path (folium available) or ""
-        if result["map_path"]:
-            assert result["map_path"].endswith("-map.html")
-            assert os.path.exists(result["map_path"])
+        assert "report_id" in result
+        # report_id is either a weather:// URI (folium available) or ""
+        if result["report_id"]:
+            assert result["report_id"].startswith("weather://")
 
     def test_render_station_map_step_log(self):
         from handlers.visualize.visualize_handlers import handle_render_station_map
@@ -613,6 +626,69 @@ class TestVisualizeHandlers:
         from handlers.visualize.visualize_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 2
+
+
+# ---------------------------------------------------------------------------
+# TestWeatherReportStore — MongoDB store tests
+# ---------------------------------------------------------------------------
+class TestWeatherReportStore:
+    def test_index_creation(self):
+        from handlers.shared.weather_utils import WeatherReportStore
+
+        reports_coll = MagicMock()
+        batches_coll = MagicMock()
+        db = {"weather_reports": reports_coll, "weather_batch_summaries": batches_coll}
+        WeatherReportStore(db)
+        assert reports_coll.create_index.call_count == 2
+        assert batches_coll.create_index.call_count == 1
+
+    def test_upsert_report_returns_id(self):
+        from handlers.shared.weather_utils import WeatherReportStore
+
+        db = MagicMock()
+        store = WeatherReportStore(db)
+        rid = store.upsert_report("725030-14732", "LA GUARDIA", 2023, "NY", {}, [])
+        assert rid == "weather://725030-14732/2023"
+        db["weather_reports"].update_one.assert_called_once()
+
+    def test_upsert_html_returns_id(self):
+        from handlers.shared.weather_utils import WeatherReportStore
+
+        db = MagicMock()
+        store = WeatherReportStore(db)
+        rid = store.upsert_html("725030-14732", 2023, "<html>test</html>")
+        assert rid == "weather://725030-14732/2023"
+        call_args = db["weather_reports"].update_one.call_args
+        assert call_args[0][1]["$set"]["html_content"] == "<html>test</html>"
+
+    def test_upsert_map_returns_id(self):
+        from handlers.shared.weather_utils import WeatherReportStore
+
+        db = MagicMock()
+        store = WeatherReportStore(db)
+        rid = store.upsert_map("725030-14732", 2023, "<html>map</html>")
+        assert rid == "weather://725030-14732/2023"
+        call_args = db["weather_reports"].update_one.call_args
+        assert call_args[0][1]["$set"]["map_content"] == "<html>map</html>"
+
+    def test_upsert_batch_returns_id(self):
+        from handlers.shared.weather_utils import WeatherReportStore
+
+        db = MagicMock()
+        store = WeatherReportStore(db)
+        rid = store.upsert_batch("US-NY", 5, 3, 2, [], "summary")
+        assert rid == "weather://batch/US-NY"
+        db["weather_batch_summaries"].update_one.assert_called_once()
+
+    def test_report_id_format(self):
+        from handlers.shared.weather_utils import WeatherReportStore
+
+        db = MagicMock()
+        store = WeatherReportStore(db)
+        assert store.upsert_report("A-B", "X", 2024, "", {}, []) == "weather://A-B/2024"
+        assert store.upsert_html("A-B", 2024, "") == "weather://A-B/2024"
+        assert store.upsert_map("A-B", 2024, "") == "weather://A-B/2024"
+        assert store.upsert_batch("X-Y", 1, 1, 0, [], "") == "weather://batch/X-Y"
 
 
 # ---------------------------------------------------------------------------
