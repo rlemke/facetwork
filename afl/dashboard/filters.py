@@ -53,7 +53,7 @@ def duration_fmt(ms: int | float | None) -> str:
 
 
 _STATE_COLORS: dict[str, str] = {
-    # Runner states
+    # Runner states — badge-{value} class maps to --state-{color} CSS vars
     "created": "primary",
     "running": "primary",
     "completed": "success",

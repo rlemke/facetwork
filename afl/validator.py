@@ -96,6 +96,7 @@ class FacetInfo:
     name: str
     params: set[str]  # Input parameter names
     returns: set[str]  # Return parameter names
+    returns_types: dict[str, str] = field(default_factory=dict)  # Return field name → type
     location: SourceLocation | None = None
 
 
@@ -105,6 +106,7 @@ class SchemaInfo:
 
     name: str
     fields: set[str]  # Field names
+    fields_types: dict[str, str] = field(default_factory=dict)  # Field name → type
     location: SourceLocation | None = None
 
 
@@ -194,15 +196,31 @@ class AFLValidator:
             for schema in namespace.schemas:
                 self._register_schema(schema, namespace.name)
 
+    @staticmethod
+    def _type_ref_to_str(type_ref) -> str:
+        """Convert a type reference to a type string for inference."""
+        if isinstance(type_ref, ArrayType):
+            return "Array"
+        if isinstance(type_ref, TypeRef):
+            name = type_ref.name
+            if name in ("String", "Int", "Long", "Double", "Boolean"):
+                return name
+        return "Unknown"
+
     def _register_facet(self, sig: FacetSig, namespace: str = "") -> None:
         """Register a facet definition."""
         full_name = f"{namespace}.{sig.name}" if namespace else sig.name
         params = {p.name for p in sig.params}
         returns = {p.name for p in sig.returns.params} if sig.returns else set()
+        returns_types: dict[str, str] = {}
+        if sig.returns:
+            for p in sig.returns.params:
+                returns_types[p.name] = self._type_ref_to_str(p.type)
         self._facets[full_name] = FacetInfo(
             name=sig.name,
             params=params,
             returns=returns,
+            returns_types=returns_types,
             location=sig.location,
         )
         # Track by short name for ambiguity detection
@@ -215,9 +233,13 @@ class AFLValidator:
         """Register a schema definition for instantiation validation."""
         full_name = f"{namespace}.{schema.name}" if namespace else schema.name
         fields = {f.name for f in schema.fields}
+        fields_types: dict[str, str] = {}
+        for f in schema.fields:
+            fields_types[f.name] = self._type_ref_to_str(f.type)
         self._schema_info[full_name] = SchemaInfo(
             name=schema.name,
             fields=fields,
+            fields_types=fields_types,
             location=schema.location,
         )
         # Track by short name for ambiguity detection
@@ -715,6 +737,7 @@ class AFLValidator:
         # Track steps and their return attributes
         steps: dict[str, StepInfo] = {}
         step_returns: dict[str, set[str]] = {}
+        step_returns_types: dict[str, dict[str, str]] = {}  # step → {field → type}
 
         # If foreach, add the iteration variable
         foreach_var: str | None = None
@@ -743,16 +766,19 @@ class AFLValidator:
                 schema_info = None
                 if facet_info:
                     step_returns[step.name] = facet_info.returns
+                    step_returns_types[step.name] = facet_info.returns_types
                 else:
                     # Try to resolve as schema instantiation
                     schema_info = self._resolve_schema_name(step.call.name, step.call.location)
                     if schema_info:
                         # Schema fields become the step's "returns" (accessible via step.field)
                         step_returns[step.name] = schema_info.fields
+                        step_returns_types[step.name] = schema_info.fields_types
                         # Validate schema instantiation
                         self._validate_schema_instantiation(step.call, schema_info)
                     else:
                         step_returns[step.name] = set()  # Unknown facet or schema
+                        step_returns_types[step.name] = {}
 
             # Validate mixin references in step call (only for non-schema instantiations)
             for mixin_call in step.call.mixins:
@@ -766,6 +792,7 @@ class AFLValidator:
                 step_returns,
                 foreach_var,
                 step.name,  # Current step being defined
+                step_returns_types,
             )
 
             # Validate inline step body if present
@@ -783,7 +810,13 @@ class AFLValidator:
         yield_targets_used: set[str] = set()
         for yield_stmt in body.block.yield_stmts:
             self._validate_yield(
-                yield_stmt, valid_yield_targets, steps, step_returns, input_attrs, foreach_var
+                yield_stmt,
+                valid_yield_targets,
+                steps,
+                step_returns,
+                input_attrs,
+                foreach_var,
+                step_returns_types,
             )
             target = yield_stmt.call.name.split(".")[-1]
             if target in yield_targets_used:
@@ -918,7 +951,7 @@ class AFLValidator:
     _ORDERED_COMPARISON_OPS = {">", "<", ">=", "<="}
     _ARITHMETIC_OPS = {"+", "-", "*", "/", "%"}
 
-    def _infer_type(self, expr) -> str:
+    def _infer_type(self, expr, step_returns_types: dict[str, dict[str, str]] | None = None) -> str:
         """Infer the type of an expression for type checking.
 
         Returns:
@@ -938,12 +971,17 @@ class AFLValidator:
         if isinstance(expr, Reference):
             if expr.is_input and expr.path:
                 return self._param_scope.get(expr.path[0], "Unknown")
+            # Step references: resolve return type from facet/schema declarations
+            if not expr.is_input and len(expr.path) >= 2 and step_returns_types:
+                step_name, attr_name = expr.path[0], expr.path[1]
+                types = step_returns_types.get(step_name, {})
+                return types.get(attr_name, "Unknown")
             return "Unknown"
         if isinstance(expr, ConcatExpr):
             return "String"
         if isinstance(expr, BinaryExpr):
-            left_type = self._infer_type(expr.left)
-            right_type = self._infer_type(expr.right)
+            left_type = self._infer_type(expr.left, step_returns_types)
+            right_type = self._infer_type(expr.right, step_returns_types)
 
             # Boolean operators: && ||
             if expr.operator in self._BOOLEAN_OPS:
@@ -1002,7 +1040,7 @@ class AFLValidator:
                 return "Int"
             return "Unknown"
         if isinstance(expr, UnaryExpr):
-            operand_type = self._infer_type(expr.operand)
+            operand_type = self._infer_type(expr.operand, step_returns_types)
             # Logical NOT
             if expr.operator == "!":
                 if operand_type != "Unknown" and operand_type != "Boolean":
@@ -1045,6 +1083,7 @@ class AFLValidator:
         step_returns: dict[str, set[str]],
         foreach_var: str | None,
         current_step: str | None = None,
+        step_returns_types: dict[str, dict[str, str]] | None = None,
     ) -> None:
         """Validate references in a call expression."""
         for arg in call.args:
@@ -1053,7 +1092,7 @@ class AFLValidator:
                     ref, input_attrs, steps, step_returns, foreach_var, current_step
                 )
             # Type check expressions
-            self._infer_type(arg.value)
+            self._infer_type(arg.value, step_returns_types)
 
         # Also validate mixin call arguments
         for mixin in call.mixins:
@@ -1135,6 +1174,7 @@ class AFLValidator:
         step_returns: dict[str, set[str]],
         input_attrs: set[str],
         foreach_var: str | None,
+        step_returns_types: dict[str, dict[str, str]] | None = None,
     ) -> None:
         """Validate a yield statement."""
         target = yield_stmt.call.name.split(".")[-1]  # Use short name
@@ -1148,7 +1188,12 @@ class AFLValidator:
 
         # Validate references in yield arguments
         self._validate_call_references(
-            yield_stmt.call, input_attrs, steps, step_returns, foreach_var
+            yield_stmt.call,
+            input_attrs,
+            steps,
+            step_returns,
+            foreach_var,
+            step_returns_types=step_returns_types,
         )
 
     def _validate_schema_instantiation(self, call: CallExpr, schema_info: SchemaInfo) -> None:

@@ -1,6 +1,36 @@
 # Implementation Changelog
 
-**Current version: v0.35.0**
+**Current version: v0.36.0**
+
+## Completed (v0.36.0) — TokenUsage, LLMHandler, Documentation
+
+**Runtime (`afl/runtime/`):**
+- `TokenUsage` dataclass: tracks input/output/total tokens and API call count
+- `LLMHandler` + `LLMHandlerConfig`: configurable LLM dispatch with token budget
+- `TokenBudgetExceededError`: raised when cumulative usage exceeds budget
+- Exported from `afl.runtime.__init__`
+
+**Compiler (`afl/validator.py`):**
+- Type inference Phase 2: step references (`step.field`) now resolve return types
+  from facet/schema declarations instead of defaulting to `Unknown`
+- `FacetInfo.returns_types` and `SchemaInfo.fields_types` track field-level types
+- Type errors caught at compile time: `s1.name + 1` (String + Int), `!s1.count`
+  (Long), `-s1.name` (String), `s1.flag > 0` (Boolean ordered comparison)
+
+**Dashboard (`afl/dashboard/`):**
+- CSS design tokens: `:root` custom properties for state colors, layout, typography
+- ES module conversion: command_palette, list_filter, log_stream, step_tree
+- New modules: auto_refresh.js, state_utils.js, timestamp.js
+- State color consolidation: filters.py uses CSS variable names
+
+**Documentation:**
+- spec/61: §2.7 "Implementation Status" — summarizes built features (prompt blocks,
+  token tracking, JFK narrative)
+- spec/90: ANTHROPIC_API_KEY in env var table
+- examples/noaa-weather/USER_GUIDE.md: full pipeline walkthrough, LLM integration,
+  dashboard usage
+- examples/README.md: 5 missing examples added to both tables
+- CLAUDE.md: ANTHROPIC_API_KEY note under environment configuration
 
 ## Completed (v0.35.0) - NOAA Weather Multi-Year Workflows, LLM Narratives, Integration Tests
 

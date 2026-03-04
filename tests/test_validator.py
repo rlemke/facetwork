@@ -2079,8 +2079,8 @@ class TestParameterTypeInference:
         result = validator.validate(ast)
         assert result.is_valid, [str(e) for e in result.errors]
 
-    def test_step_ref_remains_unknown(self, validator):
-        """step.field + 1 should pass (step refs remain Unknown)."""
+    def test_step_ref_type_resolved(self, validator):
+        """step.field type is resolved from facet returns (Long + Int = valid)."""
         ast = parse("""
         facet V(x: Long) => (output: Long)
         workflow Test(a: Long) andThen {
@@ -2196,6 +2196,264 @@ class TestParameterTypeInference:
                 f = DoFallback()
                 yield Test(output = f.value)
             }
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+
+class TestStepReturnTypeInference:
+    """Test that step return types from facet/schema declarations are used in type checking."""
+
+    def test_step_string_plus_int_error(self, validator):
+        """s1.name + 1 where name: String should error."""
+        ast = parse("""
+        facet GetName(id: Int) => (name: String)
+        facet Process(x: Long)
+        workflow Test(id: Int) andThen {
+            s1 = GetName(id = $.id)
+            s2 = Process(x = s1.name + 1)
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("String" in str(e) and "arithmetic" in str(e) for e in result.errors)
+
+    def test_step_long_and_true_error(self, validator):
+        """s1.count && true where count: Long should error."""
+        ast = parse("""
+        facet Count() => (count: Long)
+        facet Check(x: Boolean)
+        workflow Test() andThen {
+            s1 = Count()
+            s2 = Check(x = s1.count && true)
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("Boolean operands" in str(e) and "Long" in str(e) for e in result.errors)
+
+    def test_step_not_long_error(self, validator):
+        """!s1.count where count: Long should error."""
+        ast = parse("""
+        facet Count() => (count: Long)
+        facet Check(x: Boolean)
+        workflow Test() andThen {
+            s1 = Count()
+            s2 = Check(x = !s1.count)
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("'!'" in str(e) and "Long" in str(e) for e in result.errors)
+
+    def test_step_bool_ordered_comparison_error(self, validator):
+        """s1.flag > 0 where flag: Boolean should error."""
+        ast = parse("""
+        facet GetFlag() => (flag: Boolean)
+        facet Process(x: Boolean)
+        workflow Test() andThen {
+            s1 = GetFlag()
+            s2 = Process(x = s1.flag > 0)
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("ordered comparison" in str(e) and "Boolean" in str(e) for e in result.errors)
+
+    def test_step_negate_string_error(self, validator):
+        """-s1.name where name: String should error."""
+        ast = parse("""
+        facet GetName() => (name: String)
+        facet Process(x: Long)
+        workflow Test() andThen {
+            s1 = GetName()
+            s2 = Process(x = -s1.name)
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("String" in str(e) for e in result.errors)
+
+    def test_step_long_plus_int_valid(self, validator):
+        """s1.count + 1 where count: Long should pass (Long + Int = Long)."""
+        ast = parse("""
+        facet Count() => (count: Long)
+        facet Process(x: Long)
+        workflow Test() andThen {
+            s1 = Count()
+            s2 = Process(x = s1.count + 1)
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_step_double_plus_long_valid(self, validator):
+        """s1.rate + s2.count where rate: Double, count: Long should pass (promotion)."""
+        ast = parse("""
+        facet GetRate() => (rate: Double)
+        facet GetCount() => (count: Long)
+        facet Process(x: Double)
+        workflow Test() andThen {
+            s1 = GetRate()
+            s2 = GetCount()
+            s3 = Process(x = s1.rate + s2.count)
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_step_not_boolean_valid(self, validator):
+        """!s1.enabled where enabled: Boolean should pass."""
+        ast = parse("""
+        facet GetEnabled() => (enabled: Boolean)
+        facet Check(x: Boolean)
+        workflow Test() andThen {
+            s1 = GetEnabled()
+            s2 = Check(x = !s1.enabled)
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_step_string_equality_valid(self, validator):
+        """s1.x == s2.y where both String should pass (comparison always valid)."""
+        ast = parse("""
+        facet GetA() => (x: String)
+        facet GetB() => (y: String)
+        facet Check(result: Boolean)
+        workflow Test() andThen {
+            s1 = GetA()
+            s2 = GetB()
+            s3 = Check(result = s1.x == s2.y)
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_step_int_arithmetic_chain_valid(self, validator):
+        """Chained step ref arithmetic should pass: s1.x + s2.y * 2."""
+        ast = parse("""
+        facet GetX() => (x: Int)
+        facet GetY() => (y: Int)
+        facet Process(result: Int)
+        workflow Test() andThen {
+            s1 = GetX()
+            s2 = GetY()
+            s3 = Process(result = s1.x + s2.y * 2)
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_step_string_bool_op_error(self, validator):
+        """s1.name || true where name: String should error."""
+        ast = parse("""
+        facet GetName() => (name: String)
+        facet Check(x: Boolean)
+        workflow Test() andThen {
+            s1 = GetName()
+            s2 = Check(x = s1.name || true)
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("Boolean operands" in str(e) and "String" in str(e) for e in result.errors)
+
+    def test_step_negate_boolean_error(self, validator):
+        """-s1.flag where flag: Boolean should error (arithmetic negation)."""
+        ast = parse("""
+        facet GetFlag() => (flag: Boolean)
+        facet Process(x: Long)
+        workflow Test() andThen {
+            s1 = GetFlag()
+            s2 = Process(x = -s1.flag)
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("Boolean" in str(e) for e in result.errors)
+
+    def test_schema_field_type_resolved(self, validator):
+        """Schema field types should be resolved for step refs."""
+        ast = parse("""
+        namespace ns {
+            schema Config { name: String, count: Long }
+            facet Process(x: Long)
+            workflow Test() andThen {
+                cfg = Config(name = "test", count = 42)
+                s = Process(x = cfg.name + 1)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("String" in str(e) and "arithmetic" in str(e) for e in result.errors)
+
+    def test_schema_field_long_valid(self, validator):
+        """Schema Long field in arithmetic should pass."""
+        ast = parse("""
+        namespace ns {
+            schema Config { count: Long }
+            facet Process(x: Long)
+            workflow Test() andThen {
+                cfg = Config(count = 42)
+                s = Process(x = cfg.count + 1)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_unknown_facet_step_ref_passes(self, validator):
+        """Step ref to unknown facet returns Unknown — no type error."""
+        ast = parse("""
+        facet Process(x: Long)
+        workflow Test() andThen {
+            s1 = ExternalFacet(id = 1)
+            s2 = Process(x = s1.output + 1)
+        }
+        """)
+        result = validator.validate(ast)
+        # Should have no arithmetic type errors (Unknown + Int = Unknown, which passes)
+        assert not any("arithmetic" in str(e) for e in result.errors)
+
+    def test_yield_step_ref_type_checked(self, validator):
+        """Step ref type checking also works in yield arguments."""
+        ast = parse("""
+        facet GetName() => (name: String)
+        workflow Test() => (output: Long) andThen {
+            s1 = GetName()
+            yield Test(output = s1.name + 1)
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("String" in str(e) and "arithmetic" in str(e) for e in result.errors)
+
+    def test_step_ref_concat_valid(self, validator):
+        """s1.name ++ s2.name where both String should pass (concat always valid)."""
+        ast = parse("""
+        facet GetFirst() => (name: String)
+        facet GetLast() => (name: String)
+        facet Display(label: String)
+        workflow Test() andThen {
+            s1 = GetFirst()
+            s2 = GetLast()
+            s3 = Display(label = s1.name ++ " " ++ s2.name)
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_step_double_multiply_valid(self, validator):
+        """s1.rate * 100 where rate: Double should pass."""
+        ast = parse("""
+        facet GetRate() => (rate: Double)
+        facet Process(x: Double)
+        workflow Test() andThen {
+            s1 = GetRate()
+            s2 = Process(x = s1.rate * 100)
         }
         """)
         result = validator.validate(ast)

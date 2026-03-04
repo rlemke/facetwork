@@ -1,5 +1,6 @@
 /* Command palette — Cmd+K / Ctrl+K global search */
-(function() {
+
+export function initCommandPalette() {
     var overlay = document.getElementById("cmd-palette");
     var input = document.getElementById("cmd-palette-input");
     if (!overlay || !input) return;
@@ -68,4 +69,4 @@
             }
         }
     });
-})();
+}

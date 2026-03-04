@@ -6,11 +6,12 @@
     <title>{% block title %}AgentFlow Dashboard{% endblock %}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github.min.css">
-    <link rel="stylesheet" href="/static/style.css?v=23.1">
+    <link rel="stylesheet" href="/static/style.css?v=24">
     <style>
     /* Critical sidebar layout — inline to prevent cache/CDN race with Pico CSS */
+    :root{--sidebar-width:220px}
     body.sidebar-layout{display:flex!important;flex-direction:row!important;min-height:100vh;padding:0!important;margin:0!important;max-width:none!important;width:100%!important}
-    aside.sidebar{width:220px;min-width:220px;max-width:220px;display:flex!important;flex-direction:column!important;position:sticky;top:0;height:100vh;flex-shrink:0}
+    aside.sidebar{width:var(--sidebar-width);min-width:var(--sidebar-width);max-width:var(--sidebar-width);display:flex!important;flex-direction:column!important;position:sticky;top:0;height:100vh;flex-shrink:0}
     nav.sidebar-nav{flex:1;display:flex!important;flex-direction:column!important;justify-content:flex-start!important;align-items:stretch!important}
     a.sidebar-link{display:flex!important;align-items:center;gap:0.6rem;padding:0.45rem 1rem;text-decoration:none!important;width:100%;box-sizing:border-box}
     .sidebar-group{display:flex;flex-direction:column}
@@ -105,25 +106,36 @@
     {% include "partials/command_palette.html" %}
 
     <script>hljs.highlightAll();</script>
-    <script>
-    // Convert UTC timestamps to the viewer's local timezone
-    document.querySelectorAll("time[data-ts]").forEach(function(el) {
-        var ms = parseInt(el.getAttribute("data-ts"), 10);
-        if (isNaN(ms)) return;
-        var d = new Date(ms);
-        var pad = function(n) { return n < 10 ? "0" + n : n; };
-        el.textContent = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" +
-            pad(d.getDate()) + " " + pad(d.getHours()) + ":" +
-            pad(d.getMinutes()) + ":" + pad(d.getSeconds());
-    });
+    <script type="module">
+    import { formatTimestamps } from "/static/timestamp.js";
+    import { initFilters } from "/static/list_filter.js";
+    import { initCommandPalette } from "/static/command_palette.js";
+    import { initLogStream } from "/static/log_stream.js";
+    import { initStepTree } from "/static/step_tree.js";
+
+    // Convert UTC timestamps to local timezone
+    formatTimestamps();
 
     // Sidebar toggle
     document.getElementById("sidebar-toggle").addEventListener("click", function() {
         document.body.classList.toggle("sidebar-collapsed");
     });
+
+    // Initialize shared modules
+    initFilters();
+    initCommandPalette();
+    initLogStream();
+
+    // Re-init on HTMX swaps
+    document.body.addEventListener("htmx:afterSwap", function() {
+        formatTimestamps();
+        initFilters();
+        initStepTree();
+    });
+
+    // Init step tree if present
+    initStepTree();
     </script>
-    <script src="/static/list_filter.js"></script>
-    <script src="/static/command_palette.js"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>
