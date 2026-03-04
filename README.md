@@ -901,6 +901,8 @@ The `examples/osm-geocoder/` directory contains detailed documentation for the O
 
 ## Examples
 
+See [examples/README.md](examples/README.md) for a complete overview of all 14 examples with feature matrices and complexity progression.
+
 ### OSM Geocoder
 
 A full-scale example agent demonstrating schemas, event facets, namespaced workflows, and the AgentPoller library. Located in `examples/osm-geocoder/` — see the [documentation section](#osm-geocoder-documentation) above for detailed guides.
