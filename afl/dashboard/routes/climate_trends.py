@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -17,6 +18,11 @@ def _get_climate_db(store):
     return store._db
 
 
+def _strip_dates(doc: dict[str, Any]) -> dict[str, Any]:
+    """Remove datetime fields that aren't JSON-serializable."""
+    return {k: v for k, v in doc.items() if not isinstance(v, datetime.datetime)}
+
+
 def _list_states(db) -> list[dict[str, str]]:
     """Return states that have climate trend data."""
     states = db["climate_trends"].distinct("state")
@@ -25,13 +31,14 @@ def _list_states(db) -> list[dict[str, str]]:
 
 def _get_yearly_data(db, state: str) -> list[dict[str, Any]]:
     """Get yearly climate summaries for a state."""
-    return list(db["climate_state_years"].find({"state": state}, {"_id": 0}).sort("year", 1))
+    docs = db["climate_state_years"].find({"state": state}, {"_id": 0}).sort("year", 1)
+    return [_strip_dates(d) for d in docs]
 
 
 def _get_trend(db, state: str) -> dict[str, Any]:
     """Get the climate trend document for a state."""
     doc = db["climate_trends"].find_one({"state": state}, {"_id": 0})
-    return doc or {}
+    return _strip_dates(doc) if doc else {}
 
 
 @router.get("/")
