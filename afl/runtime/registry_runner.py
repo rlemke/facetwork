@@ -797,3 +797,57 @@ class RegistryRunner:
             logger.exception("Error deregistering server")
 
         logger.info("RegistryRunner stopped: server_id=%s", self._server_id)
+
+
+# =========================================================================
+# Factory Helper
+# =========================================================================
+
+
+def create_registry_runner(
+    service_name: str,
+    *,
+    server_group: str = "default",
+    max_concurrent: int | None = None,
+    poll_interval_ms: int | None = None,
+    topics: list[str] | None = None,
+    telemetry_enabled: bool = True,
+) -> RegistryRunner:
+    """Create a fully-wired RegistryRunner with sensible defaults.
+
+    This is a convenience factory that sets up MongoStore, Evaluator, and
+    RegistryRunnerConfig from the standard AFL configuration.  It eliminates
+    the 7-line bootstrap that every example otherwise duplicates.
+
+    Args:
+        service_name: Logical service name (e.g. "noaa-weather").
+        server_group: Server group for clustering (default "default").
+        max_concurrent: Override for AFL_MAX_CONCURRENT env var.
+        poll_interval_ms: Override for AFL_POLL_INTERVAL_MS env var.
+        topics: Optional topic/glob filters for handler selection.
+        telemetry_enabled: Whether to enable telemetry (default True).
+
+    Returns:
+        A ready-to-use :class:`RegistryRunner` — call ``start()`` to begin.
+    """
+    from ..config import load_config
+    from .mongo_store import MongoStore
+    from .telemetry import Telemetry
+
+    config = load_config()
+    store = MongoStore.from_config(config.mongodb)
+    evaluator = Evaluator(
+        persistence=store,
+        telemetry=Telemetry(enabled=telemetry_enabled),
+    )
+
+    kwargs: dict[str, Any] = {"service_name": service_name, "server_group": server_group}
+    if max_concurrent is not None:
+        kwargs["max_concurrent"] = max_concurrent
+    if poll_interval_ms is not None:
+        kwargs["poll_interval_ms"] = poll_interval_ms
+    if topics is not None:
+        kwargs["topics"] = topics
+
+    runner_config = RegistryRunnerConfig(**kwargs)
+    return RegistryRunner(persistence=store, evaluator=evaluator, config=runner_config)

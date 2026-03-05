@@ -114,7 +114,7 @@ from .evaluator import Evaluator, ExecutionContext, ExecutionResult, ExecutionSt
 from .expression import EvaluationContext, ExpressionEvaluator, evaluate_args
 from .memory_store import MemoryStore
 from .persistence import IterationChanges, PersistenceAPI
-from .registry_runner import RegistryRunner, RegistryRunnerConfig
+from .registry_runner import RegistryRunner, RegistryRunnerConfig, create_registry_runner
 from .runner import RunnerConfig, RunnerService
 from .states import (
     BLOCK_TRANSITIONS,
@@ -210,6 +210,7 @@ __all__ = [
     # Registry Runner
     "RegistryRunner",
     "RegistryRunnerConfig",
+    "create_registry_runner",
     "HandlerRegistration",
     # Dispatchers
     "HandlerDispatcher",
