@@ -31,6 +31,8 @@ import logging
 import sys
 import time
 
+from .expression import evaluate_default
+
 logger = logging.getLogger(__name__)
 
 
@@ -242,10 +244,7 @@ def main(args: list[str] | None = None) -> int:
     for param in workflow_ast.get("params", []):
         default_val = param.get("default")
         if default_val is not None:
-            if isinstance(default_val, dict) and "value" in default_val:
-                inputs[param["name"]] = default_val["value"]
-            else:
-                inputs[param["name"]] = default_val
+            inputs[param["name"]] = evaluate_default(default_val)
 
     try:
         user_inputs = json.loads(parsed.inputs) if parsed.inputs else {}

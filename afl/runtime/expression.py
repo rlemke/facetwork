@@ -415,3 +415,30 @@ def evaluate_args(
         result[name] = evaluator.evaluate(value_expr, ctx)
 
     return result
+
+
+def evaluate_default(expr: Any) -> Any:
+    """Evaluate a compile-time constant AST expression (parameter default).
+
+    Recursively converts AST literal nodes to Python values.
+    No EvaluationContext needed since defaults can't contain InputRef or StepRef.
+    """
+    if not isinstance(expr, dict) or "type" not in expr:
+        return expr
+    t = expr["type"]
+    if t in ("String", "Int", "Float"):
+        return expr["value"]
+    if t == "Double":
+        return float(expr.get("value", 0.0))
+    if t == "Boolean":
+        return bool(expr.get("value", False))
+    if t == "Null":
+        return None
+    if t == "ArrayLiteral":
+        return [evaluate_default(e) for e in expr.get("elements", [])]
+    if t == "MapLiteral":
+        return {e["key"]: evaluate_default(e.get("value")) for e in expr.get("entries", [])}
+    if t == "UnaryExpr" and expr.get("operator") == "-":
+        return -evaluate_default(expr.get("operand"))
+    # Fallback: return the value field if present, else the dict as-is
+    return expr.get("value", expr)

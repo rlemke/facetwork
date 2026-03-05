@@ -19,6 +19,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 
+from afl.runtime.expression import evaluate_default
+
 from ..dependencies import get_store
 
 router = APIRouter(prefix="/flows")
@@ -230,9 +232,7 @@ def flow_run_form(
                         param_descs[pd.get("name", "")] = pd.get("description", "")
 
                 for p in wf_ast.get("params", []):
-                    default_val = p.get("default")
-                    if isinstance(default_val, dict) and "value" in default_val:
-                        default_val = default_val["value"]
+                    default_val = evaluate_default(p.get("default"))
                     params.append(
                         {
                             "name": p.get("name", ""),
@@ -314,10 +314,7 @@ def flow_run_execute(
                 for param in wf_ast.get("params", []):
                     default_val = param.get("default")
                     if default_val is not None:
-                        if isinstance(default_val, dict) and "value" in default_val:
-                            inputs[param["name"]] = default_val["value"]
-                        else:
-                            inputs[param["name"]] = default_val
+                        inputs[param["name"]] = evaluate_default(default_val)
         except Exception:
             pass
 

@@ -22,6 +22,8 @@ import time
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 
+from afl.runtime.expression import evaluate_default
+
 from ..dependencies import get_store
 
 router = APIRouter(prefix="/workflows")
@@ -230,9 +232,7 @@ def workflow_compile(request: Request, source: str = Form(...)):
             params_with_defaults = []
             for p in wf.get("params", []):
                 default_val = p.get("default")
-                # Extract the raw value from emitter's literal dict format
-                if isinstance(default_val, dict) and "value" in default_val:
-                    default_val = default_val["value"]
+                default_val = evaluate_default(default_val)
                 params_with_defaults.append(
                     {
                         "name": p.get("name", ""),
@@ -301,10 +301,7 @@ def workflow_run(
         for param in wf_ast.get("params", []):
             default_val = param.get("default")
             if default_val is not None:
-                if isinstance(default_val, dict) and "value" in default_val:
-                    inputs[param["name"]] = default_val["value"]
-                else:
-                    inputs[param["name"]] = default_val
+                inputs[param["name"]] = evaluate_default(default_val)
 
     # Override with user-provided inputs from form
     try:

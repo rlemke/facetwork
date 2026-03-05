@@ -111,7 +111,7 @@ from .errors import (
     VersionMismatchError,
 )
 from .evaluator import Evaluator, ExecutionContext, ExecutionResult, ExecutionStatus
-from .expression import EvaluationContext, ExpressionEvaluator, evaluate_args
+from .expression import EvaluationContext, ExpressionEvaluator, evaluate_args, evaluate_default
 from .memory_store import MemoryStore
 from .persistence import IterationChanges, PersistenceAPI
 from .registry_runner import RegistryRunner, RegistryRunnerConfig, create_registry_runner
@@ -181,6 +181,7 @@ __all__ = [
     "ExpressionEvaluator",
     "EvaluationContext",
     "evaluate_args",
+    "evaluate_default",
     # Evaluator
     "Evaluator",
     "ExecutionContext",

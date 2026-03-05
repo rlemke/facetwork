@@ -29,14 +29,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+import time as _time
+
 from .block import StatementDefinition
 from .changers import get_state_changer
 from .dependency import DependencyGraph
+from .entities import StepLogEntry, StepLogLevel, StepLogSource
+from .expression import evaluate_default
 from .persistence import IterationChanges, PersistenceAPI
 from .states import StepState
 from .step import StepDefinition
 from .telemetry import Telemetry
-from .types import BlockId, ObjectType, StepId, WorkflowId, workflow_id
+from .types import BlockId, ObjectType, StepId, WorkflowId, generate_id, workflow_id
 
 
 class ExecutionStatus:
@@ -835,12 +839,7 @@ class Evaluator:
             # The default would be in the param dict if present
             # For now, we check if there's a literal default
             if "default" in param:
-                default_val = param["default"]
-                # AST default values may be literal dicts with "type"/"value"
-                if isinstance(default_val, dict) and "value" in default_val:
-                    defaults[name] = default_val["value"]
-                else:
-                    defaults[name] = default_val
+                defaults[name] = evaluate_default(param["default"])
 
         # Override with provided inputs
         defaults.update(inputs)
@@ -991,6 +990,16 @@ class Evaluator:
                 state_before,
                 result.step.state,
             )
+            # Emit step log when a step transitions to an error state
+            if result.step.is_error:
+                error_msg = str(result.step.transition.error or result.error or "Unknown error")
+                self._emit_step_log(
+                    step_id=step.id,
+                    workflow_id=step.workflow_id,
+                    message=error_msg,
+                    level=StepLogLevel.ERROR,
+                    facet_name=step.facet_name,
+                )
             # Mark parent blocks as needing re-evaluation
             context.mark_block_dirty(result.step.block_id)
             context.mark_block_dirty(result.step.container_id)
@@ -1005,6 +1014,30 @@ class Evaluator:
             return True
 
         return False
+
+    def _emit_step_log(
+        self,
+        step_id: str,
+        workflow_id: str,
+        message: str,
+        level: str = StepLogLevel.INFO,
+        facet_name: str = "",
+    ) -> None:
+        """Write a step log entry for evaluator-managed state transitions."""
+        entry = StepLogEntry(
+            uuid=generate_id(),
+            step_id=step_id,
+            workflow_id=workflow_id,
+            source=StepLogSource.FRAMEWORK,
+            level=level,
+            message=message,
+            facet_name=facet_name,
+            time=int(_time.time() * 1000),
+        )
+        try:
+            self.persistence.save_step_log(entry)
+        except Exception:
+            logger.debug("Could not save step log for step %s", step_id, exc_info=True)
 
     def _build_result(self, wf_id: str, iteration: int) -> ExecutionResult:
         """Build the final execution result.

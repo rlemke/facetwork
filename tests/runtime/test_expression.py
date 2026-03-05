@@ -20,6 +20,7 @@ from afl.runtime import (
     EvaluationContext,
     ExpressionEvaluator,
     evaluate_args,
+    evaluate_default,
 )
 from afl.runtime.errors import EvaluationError, ReferenceError
 
@@ -930,3 +931,95 @@ class TestBooleanOperators:
             },
         }
         assert evaluator.evaluate(expr, ctx) is True
+
+
+class TestEvaluateDefault:
+    """Tests for evaluate_default() — compile-time constant AST evaluation."""
+
+    def test_string_literal(self):
+        assert evaluate_default({"type": "String", "value": "hello"}) == "hello"
+
+    def test_int_literal(self):
+        assert evaluate_default({"type": "Int", "value": 42}) == 42
+
+    def test_float_literal(self):
+        assert evaluate_default({"type": "Float", "value": 3.14}) == 3.14
+
+    def test_double_literal(self):
+        assert evaluate_default({"type": "Double", "value": 2.718}) == 2.718
+
+    def test_boolean_true(self):
+        assert evaluate_default({"type": "Boolean", "value": True}) is True
+
+    def test_boolean_false(self):
+        assert evaluate_default({"type": "Boolean", "value": False}) is False
+
+    def test_null_literal(self):
+        assert evaluate_default({"type": "Null"}) is None
+
+    def test_array_literal(self):
+        expr = {
+            "type": "ArrayLiteral",
+            "elements": [
+                {"type": "String", "value": "AL"},
+                {"type": "String", "value": "AK"},
+                {"type": "String", "value": "AZ"},
+            ],
+        }
+        assert evaluate_default(expr) == ["AL", "AK", "AZ"]
+
+    def test_map_literal(self):
+        expr = {
+            "type": "MapLiteral",
+            "entries": [
+                {"key": "name", "value": {"type": "String", "value": "test"}},
+                {"key": "count", "value": {"type": "Int", "value": 5}},
+            ],
+        }
+        assert evaluate_default(expr) == {"name": "test", "count": 5}
+
+    def test_nested_array_with_maps(self):
+        expr = {
+            "type": "ArrayLiteral",
+            "elements": [
+                {
+                    "type": "MapLiteral",
+                    "entries": [
+                        {"key": "id", "value": {"type": "Int", "value": 1}},
+                    ],
+                },
+                {
+                    "type": "MapLiteral",
+                    "entries": [
+                        {"key": "id", "value": {"type": "Int", "value": 2}},
+                    ],
+                },
+            ],
+        }
+        assert evaluate_default(expr) == [{"id": 1}, {"id": 2}]
+
+    def test_unary_negation(self):
+        expr = {
+            "type": "UnaryExpr",
+            "operator": "-",
+            "operand": {"type": "Int", "value": 10},
+        }
+        assert evaluate_default(expr) == -10
+
+    def test_passthrough_plain_string(self):
+        assert evaluate_default("plain") == "plain"
+
+    def test_passthrough_plain_int(self):
+        assert evaluate_default(99) == 99
+
+    def test_passthrough_none(self):
+        assert evaluate_default(None) is None
+
+    def test_passthrough_plain_list(self):
+        assert evaluate_default(["a", "b"]) == ["a", "b"]
+
+    def test_empty_array(self):
+        assert evaluate_default({"type": "ArrayLiteral", "elements": []}) == []
+
+    def test_empty_map(self):
+        assert evaluate_default({"type": "MapLiteral", "entries": []}) == {}
