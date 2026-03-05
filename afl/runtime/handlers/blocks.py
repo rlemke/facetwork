@@ -65,7 +65,10 @@ class MixinBlocksContinueHandler(StateHandler):
 
         if analysis.done:
             if analysis.has_errors:
+                errors = [b.transition.error for b in analysis.errored if b.transition.error]
                 msg = f"{len(analysis.errored)} mixin block(s) errored"
+                if errors:
+                    msg += f": {errors[0]}"
                 self.step.mark_error(RuntimeError(msg))
                 return StateChangeResult(step=self.step)
             self.step.request_state_change(True)
@@ -216,7 +219,10 @@ class StatementBlocksContinueHandler(StateHandler):
                     self.step.change_state(StepState.CATCH_BEGIN)
                     self.step.request_state_change(True)
                     return StateChangeResult(step=self.step)
+                errors = [b.transition.error for b in analysis.errored if b.transition.error]
                 msg = f"{len(analysis.errored)} block(s) errored"
+                if errors:
+                    msg += f": {errors[0]}"
                 self.step.mark_error(RuntimeError(msg))
                 return StateChangeResult(step=self.step)
             self.step.request_state_change(True)

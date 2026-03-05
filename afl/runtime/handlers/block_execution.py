@@ -572,7 +572,10 @@ class BlockExecutionContinueHandler(StateHandler):
 
         if terminal == total:
             if errored:
+                errors = [s.transition.error for s in errored if s.transition.error]
                 msg = f"Foreach block has {len(errored)} errored sub-block(s)"
+                if errors:
+                    msg += f": {errors[0]}"
                 self.step.mark_error(RuntimeError(msg))
                 return StateChangeResult(step=self.step)
             self.step.request_state_change(True)
@@ -621,7 +624,10 @@ class BlockExecutionContinueHandler(StateHandler):
 
         if terminal == total:
             if errored:
+                errors = [s.transition.error for s in errored if s.transition.error]
                 msg = f"When block has {len(errored)} errored sub-block(s)"
+                if errors:
+                    msg += f": {errors[0]}"
                 self.step.mark_error(RuntimeError(msg))
                 return StateChangeResult(step=self.step)
             self.step.request_state_change(True)
