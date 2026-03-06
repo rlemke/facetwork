@@ -343,14 +343,25 @@ def handle_analyze_station_climate(params: dict[str, Any]) -> dict[str, Any]:
     end_year = int(params.get("end_year", 2024))
     max_missing_pct = float(params.get("max_missing_pct", 20.0))
 
+    force = bool(params.get("force", False))
     station_id = f"{usaf}-{wban}"
     db = get_weather_db()
     store = WeatherReportStore(db)
     yearly_summaries: list[dict[str, Any]] = []
     years_ok = 0
+    years_cached = 0
 
     for year in range(start_year, end_year + 1):
         try:
+            # Skip years that already have reports in MongoDB
+            if not force:
+                existing = store.get_report(station_id, year)
+                if existing and existing.get("report"):
+                    yearly_summaries.append({"year": year, "status": "cached"})
+                    years_ok += 1
+                    years_cached += 1
+                    continue
+
             raw_path = download_isd_lite(usaf, wban, year)
             observations = parse_isd_lite_file(raw_path)
 
@@ -384,13 +395,16 @@ def handle_analyze_station_climate(params: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             yearly_summaries.append({"year": year, "status": "error", "error": str(exc)})
 
+    total = end_year - start_year + 1 if end_year >= start_year else 0
+    cached_msg = f", {years_cached} cached" if years_cached else ""
     _log(
         params,
-        f"AnalyzeStationClimate {station_id}: {years_ok}/{end_year - start_year + 1} years OK",
+        f"AnalyzeStationClimate {station_id}: {years_ok}/{total} years OK{cached_msg}",
     )
     return {
         "yearly_summaries": yearly_summaries,
         "years_analyzed": years_ok,
+        "years_cached": years_cached,
         "station_id": station_id,
     }
 

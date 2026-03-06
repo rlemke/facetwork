@@ -418,6 +418,115 @@ class TestAnalyzeStationClimateHandler:
         assert len(result["yearly_summaries"]) == 2
         assert all(s["status"] == "error" for s in result["yearly_summaries"])
 
+    def test_skips_cached_reports(self, monkeypatch):
+        """Years with existing MongoDB reports are skipped (status='cached')."""
+        import mongomock
+        from handlers.climate.climate_handlers import handle_analyze_station_climate
+
+        mock_client = mongomock.MongoClient()
+        db = mock_client["test_cached"]
+        monkeypatch.setattr(
+            "handlers.climate.climate_handlers.get_weather_db",
+            lambda: db,
+        )
+
+        # Pre-seed a report for 2022
+        db["weather_reports"].insert_one(
+            {
+                "station_id": "725030-14732",
+                "year": 2022,
+                "station_name": "LA GUARDIA",
+                "report": {"total_days": 365, "annual_precip": 50.0},
+                "daily_stats": [],
+            }
+        )
+
+        # download_isd_lite should NOT be called for 2022 — only 2023
+        download_calls: list[int] = []
+
+        def mock_download(usaf, wban, year, cache_dir=None):
+            download_calls.append(year)
+            raise RuntimeError("should only be called for uncached years")
+
+        monkeypatch.setattr(
+            "handlers.climate.climate_handlers.download_isd_lite",
+            mock_download,
+        )
+
+        result = handle_analyze_station_climate(
+            {
+                "usaf": "725030",
+                "wban": "14732",
+                "station_name": "LA GUARDIA",
+                "lat": 40.779,
+                "lon": -73.88,
+                "start_year": 2022,
+                "end_year": 2023,
+            }
+        )
+
+        # 2022 was cached, 2023 errored (mock raises)
+        assert result["years_analyzed"] == 1
+        assert result["years_cached"] == 1
+        assert download_calls == [2023]  # only uncached year attempted
+        statuses = {s["year"]: s["status"] for s in result["yearly_summaries"]}
+        assert statuses[2022] == "cached"
+        assert statuses[2023] == "error"
+
+    def test_force_skips_cache(self, tmp_path, monkeypatch):
+        """force=True re-processes even years with existing reports."""
+        import mongomock
+        from handlers.climate.climate_handlers import handle_analyze_station_climate
+
+        mock_client = mongomock.MongoClient()
+        db = mock_client["test_force"]
+        monkeypatch.setattr(
+            "handlers.climate.climate_handlers.get_weather_db",
+            lambda: db,
+        )
+
+        # Pre-seed a report for 2022
+        db["weather_reports"].insert_one(
+            {
+                "station_id": "725030-14732",
+                "year": 2022,
+                "station_name": "LA GUARDIA",
+                "report": {"total_days": 365, "annual_precip": 50.0},
+                "daily_stats": [],
+            }
+        )
+
+        def mock_download(usaf, wban, year, cache_dir=None):
+            path = str(tmp_path / f"{usaf}-{wban}-{year}.txt")
+            with open(path, "w") as f:
+                for hour in [0, 12]:
+                    f.write(
+                        f"{year:4d} 07 15 {hour:02d}   250   -50 10100   180    30     2    10 -9999\n"
+                    )
+            return path
+
+        monkeypatch.setattr(
+            "handlers.climate.climate_handlers.download_isd_lite",
+            mock_download,
+        )
+
+        result = handle_analyze_station_climate(
+            {
+                "usaf": "725030",
+                "wban": "14732",
+                "station_name": "LA GUARDIA",
+                "lat": 40.779,
+                "lon": -73.88,
+                "start_year": 2022,
+                "end_year": 2022,
+                "force": True,
+            }
+        )
+
+        assert result["years_cached"] == 0
+        assert result["years_analyzed"] == 1
+        assert result["yearly_summaries"][0]["status"] == "ok"
+
 
 # ---------------------------------------------------------------------------
 # ComputeRegionTrend handler tests
@@ -589,3 +698,47 @@ class TestBulkCacheHandler:
 
         assert result["files_cached"] == 2  # 2020 and 2022 succeed, 2021 fails
         assert call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Station inventory cache TTL tests
+# ---------------------------------------------------------------------------
+
+
+class TestStationInventoryCache:
+    """Tests for download_station_inventory TTL-based caching."""
+
+    def test_fresh_cache_returns_without_download(self, tmp_path):
+        """A cache file newer than max_age_hours is returned directly."""
+        from handlers.shared.weather_utils import download_station_inventory
+
+        cache_path = str(tmp_path / "isd-history.csv")
+        # Write a fresh cache file
+        with open(cache_path, "w") as f:
+            f.write("USAF,WBAN,STATION NAME\n")
+
+        # Should return cached content (no network call)
+        result = download_station_inventory(cache_path=cache_path)
+        assert result == "USAF,WBAN,STATION NAME\n"
+
+    def test_stale_cache_triggers_redownload(self, tmp_path, monkeypatch):
+        """A cache file older than max_age_hours triggers a re-download."""
+        import time as _time
+
+        from handlers.shared.weather_utils import download_station_inventory
+
+        cache_path = str(tmp_path / "isd-history.csv")
+        with open(cache_path, "w") as f:
+            f.write("OLD DATA\n")
+
+        # Age the file by backdating mtime by 25 hours
+        old_mtime = _time.time() - 25 * 3600
+        os.utime(cache_path, (old_mtime, old_mtime))
+
+        # Patch requests away so it falls through to mock
+        monkeypatch.setattr("handlers.shared.weather_utils.HAS_REQUESTS", False)
+
+        result = download_station_inventory(cache_path=cache_path, max_age_hours=24.0)
+        # Should return mock data (not the stale "OLD DATA")
+        assert "OLD DATA" not in result
+        assert "USAF" in result  # mock CSV header

@@ -473,10 +473,14 @@ def _get_lock(path: str) -> threading.Lock:
         return _download_locks[path]
 
 
-def download_station_inventory(cache_path: str | None = None) -> str:
+def download_station_inventory(
+    cache_path: str | None = None,
+    max_age_hours: float = 24.0,
+) -> str:
     """Download isd-history.csv from NOAA, returning the CSV text.
 
-    Uses a file cache at *cache_path*.  Returns hash-based mock if requests
+    Uses a file cache at *cache_path*.  Skips re-download if the cached file
+    is less than *max_age_hours* old.  Returns hash-based mock if requests
     is unavailable.
     """
     if cache_path is None:
@@ -485,8 +489,20 @@ def download_station_inventory(cache_path: str | None = None) -> str:
     lock = _get_lock(cache_path)
     with lock:
         if os.path.exists(cache_path) and os.path.getsize(cache_path) > 0:
-            with open(cache_path) as f:
-                return f.read()
+            age_s = time.time() - os.path.getmtime(cache_path)
+            if age_s < max_age_hours * 3600:
+                logger.info(
+                    "Station inventory cache hit (%s, %.1fh old)",
+                    cache_path,
+                    age_s / 3600,
+                )
+                with open(cache_path) as f:
+                    return f.read()
+            logger.info(
+                "Station inventory cache stale (%.1fh > %.1fh), re-downloading",
+                age_s / 3600,
+                max_age_hours,
+            )
 
         if HAS_REQUESTS:
             try:
