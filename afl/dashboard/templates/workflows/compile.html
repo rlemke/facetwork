@@ -43,7 +43,7 @@
                                class="param-input"
                                data-workflow="{{ wf.name }}"
                                data-param="{{ p.name }}"
-                               value="{% if p.default is not none %}{{ p.default }}{% endif %}"
+                               value="{% if p.default is not none %}{{ p.default_json }}{% endif %}"
                                {% if p.default is none %}required{% endif %}>
                     </td>
                 </tr>

@@ -1,126 +1,72 @@
-"""Ingest handlers for the noaa-weather example."""
+"""Ingest handlers — GHCN-Daily CSV download with catalog verification."""
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from typing import Any
 
-from handlers.shared.weather_utils import (
-    ISD_LITE_URL_TEMPLATE,
-    download_isd_lite,
-    parse_isd_lite_file,
+from handlers.shared.ghcn_utils import (
+    download_station_csv,
+    parse_ghcn_csv,
 )
 
-NAMESPACE = "weather.Ingest"
+logger = logging.getLogger("ghcn.ingest")
+NAMESPACE = "ghcn.Ingest"
 
 
-def _step_log_append(step_log, msg: str, level: str = "info") -> None:
-    """Write a message to the step log (callable or list form)."""
+def _step_log(step_log: Any, msg: str, level: str = "info") -> None:
     if step_log is None:
         return
     if callable(step_log):
         step_log(msg, level)
-    else:
-        step_log.append({"message": msg, "level": level})
 
 
-def handle_download_observations(params: dict[str, Any]) -> dict[str, Any]:
-    """Handle DownloadObservations event facet."""
-    usaf = params.get("usaf", "")
-    wban = params.get("wban", "")
-    year = params.get("year", 2023)
-    if isinstance(year, str):
-        year = int(year)
+def handle_fetch_station_data(params: dict[str, Any]) -> dict[str, Any]:
+    """Handle FetchStationData — download one CSV per station from S3.
 
-    station_id = f"{usaf}-{wban}"
+    GHCN-Daily stores all years for a station in a single CSV file.
+    Downloads once (cached), then filters to the requested year range.
+    """
+    station_id = params.get("station_id", "")
+    start_year = int(params.get("start_year", 1944))
+    end_year = int(params.get("end_year", 2024))
     step_log = params.get("_step_log")
 
-    url = ISD_LITE_URL_TEMPLATE.format(year=year, usaf=usaf, wban=wban)
-    _step_log_append(step_log, f"Starting download {station_id}-{year} from {url}")
+    _step_log(step_log, f"Fetching GHCN data for {station_id} ({start_year}-{end_year})")
     t0 = time.monotonic()
-    raw_path = download_isd_lite(usaf, wban, year)
+
+    # Download CSV (cached)
+    csv_path = download_station_csv(station_id)
+
+    # Parse and filter to year range
+    daily_data = parse_ghcn_csv(csv_path, start_year, end_year)
+
+    # Count unique years with data
+    years_seen = set()
+    for d in daily_data:
+        date_str = d.get("date", "")
+        if len(date_str) >= 4:
+            years_seen.add(int(date_str[:4]))
+
     elapsed = time.monotonic() - t0
-
-    file_size = 0
-    if os.path.exists(raw_path):
-        file_size = os.path.getsize(raw_path)
-
-    _step_log_append(
+    _step_log(
         step_log,
-        f"Completed {station_id}-{year}: {file_size:,} bytes in {elapsed:.1f}s — {raw_path}",
+        f"Fetched {len(daily_data)} daily records across {len(years_seen)} years in {elapsed:.1f}s",
         "success",
     )
 
     return {
-        "raw_path": raw_path,
-        "file_size": file_size,
+        "record_count": len(daily_data),
+        "years_with_data": len(years_seen),
         "station_id": station_id,
     }
 
 
-def handle_parse_observations(params: dict[str, Any]) -> dict[str, Any]:
-    """Handle ParseObservations event facet."""
-    raw_path = params.get("raw_path", "")
-    station_id = params.get("station_id", "")
-
-    if raw_path and os.path.exists(raw_path):
-        observations = parse_isd_lite_file(raw_path)
-    else:
-        observations = []
-
-    step_log = params.get("_step_log")
-    if step_log is not None:
-        msg = f"Parsed {len(observations)} records for {station_id}"
-        if callable(step_log):
-            step_log(msg, "success")
-        else:
-            step_log.append({"message": msg, "level": "success"})
-
-    return {
-        "observations": observations,
-        "record_count": len(observations),
-    }
-
-
-def handle_cache_bulk_station_data(params: dict[str, Any]) -> dict[str, Any]:
-    """Download ISD-Lite files for one station across its active date range.
-
-    Clips [start_year, end_year] to the station's begin_date/end_date so
-    we never request years that NOAA cannot have data for.
-    """
-    usaf = params.get("usaf", "")
-    wban = params.get("wban", "")
-    start_year = int(params.get("start_year", 1944))
-    end_year = int(params.get("end_year", 2024))
-    begin_date = str(params.get("begin_date", "19440101"))
-    end_date = str(params.get("end_date", "20241231"))
-
-    # Clip year range to station's active period
-    lo = max(start_year, int(begin_date[:4]))
-    hi = min(end_year, int(end_date[:4]))
-
-    station_id = f"{usaf}-{wban}"
-    step_log = params.get("_step_log")
-    files_cached = 0
-
-    for year in range(lo, hi + 1):
-        try:
-            download_isd_lite(usaf, wban, year)
-            files_cached += 1
-        except Exception as exc:
-            _step_log_append(step_log, f"Cache error {station_id}-{year}: {exc}", "warning")
-
-    _step_log_append(
-        step_log, f"Cached {files_cached} files for {station_id} ({lo}-{hi})", "success"
-    )
-    return {"files_cached": files_cached, "station_id": station_id}
-
-
+# Dispatch table
 _DISPATCH: dict[str, Any] = {
-    f"{NAMESPACE}.DownloadObservations": handle_download_observations,
-    f"{NAMESPACE}.ParseObservations": handle_parse_observations,
-    "weather.BulkCache.CacheBulkStationData": handle_cache_bulk_station_data,
+    f"{NAMESPACE}.FetchStationData": handle_fetch_station_data,
 }
 
 

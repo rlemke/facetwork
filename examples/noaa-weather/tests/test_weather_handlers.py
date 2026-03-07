@@ -1,4 +1,4 @@
-"""Tests for the noaa-weather example handlers."""
+"""Tests for the noaa-weather utility functions and legacy weather_utils."""
 
 from __future__ import annotations
 
@@ -21,13 +21,12 @@ def _mock_weather_db(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# TestWeatherUtils — utility function tests
+# TestWeatherUtils — ISD-Lite utility function tests (weather_utils.py)
 # ---------------------------------------------------------------------------
 class TestWeatherUtils:
     def test_parse_isd_lite_line_valid(self):
         from handlers.shared.weather_utils import parse_isd_lite_line
 
-        # ISD-Lite fixed-width: 4d year, 02d month/day/hour, then 6d fields
         line = "2023 01 15 12   -50   -80 10130   270    30     4    10 -9999"
         rec = parse_isd_lite_line(line)
         assert rec is not None
@@ -47,1600 +46,255 @@ class TestWeatherUtils:
         rec = parse_isd_lite_line(line)
         assert rec is not None
         assert rec["air_temp"] is None
-        assert rec["wind_speed"] is None
-        assert rec["precipitation"] is None
+        assert rec["dew_point"] is None
 
-    def test_parse_isd_lite_line_short(self):
+    def test_parse_isd_lite_line_malformed(self):
         from handlers.shared.weather_utils import parse_isd_lite_line
 
-        rec = parse_isd_lite_line("short")
-        assert rec is None
-
-    def test_parse_isd_lite_file(self, tmp_path):
-        from handlers.shared.weather_utils import parse_isd_lite_file
-
-        content = (
-            "2023 01 01 00   100    50 10100   180    20     2     0 -9999\n"
-            "2023 01 01 06   120    60 10110   200    30     3     5 -9999\n"
-        )
-        f = tmp_path / "test.txt"
-        f.write_text(content)
-        recs = parse_isd_lite_file(str(f))
-        assert len(recs) == 2
-        assert recs[0]["air_temp"] == 10.0
-        assert recs[1]["air_temp"] == 12.0
-
-    def test_station_inventory_filter(self):
-        from handlers.shared.weather_utils import (
-            filter_active_stations,
-            parse_station_inventory,
-        )
-
-        csv = (
-            '"USAF","WBAN","STATION NAME","CTRY","STATE","LAT","LON","ELEV(M)","BEGIN","END"\n'
-            '"725030","14732","LA GUARDIA","US","NY","40.779","-73.880","3.4","19730101","20231231"\n'
-            '"722020","12839","MIAMI","US","FL","25.791","-80.316","8.8","19730101","20231231"\n'
-            '"012345","99999","LONDON","UK","","51.5","-0.12","24.0","19730101","20231231"\n'
-        )
-        stations = parse_station_inventory(csv)
-        assert len(stations) == 3
-        us = filter_active_stations(stations, country="US")
-        assert len(us) == 2
-        ny = filter_active_stations(stations, country="US", state="NY")
-        assert len(ny) == 1
-        assert ny[0]["station_name"] == "LA GUARDIA"
-
-    def test_compute_missing_pct(self):
-        from handlers.shared.weather_utils import compute_missing_pct
-
-        obs = [{"air_temp": 10}, {"air_temp": None}, {"air_temp": 20}, {"air_temp": None}]
-        assert compute_missing_pct(obs) == 50.0
-        assert compute_missing_pct([]) == 100.0
-
-    def test_validate_temperature_range(self):
-        from handlers.shared.weather_utils import validate_temperature_range
-
-        assert validate_temperature_range([{"air_temp": 20}, {"air_temp": -10}]) is True
-        assert validate_temperature_range([{"air_temp": 70}]) is False  # >60
-        assert validate_temperature_range([{"air_temp": None}]) is False  # no valid temps
+        assert parse_isd_lite_line("short") is None
+        assert parse_isd_lite_line("") is None
 
     def test_compute_daily_stats(self):
         from handlers.shared.weather_utils import compute_daily_stats
 
         obs = [
-            {"date": "2023-01-01", "air_temp": 5, "wind_speed": 10, "precipitation": 2},
-            {"date": "2023-01-01", "air_temp": 10, "wind_speed": 15, "precipitation": 3},
-            {"date": "2023-01-02", "air_temp": -2, "wind_speed": 5, "precipitation": 0},
-        ]
-        daily = compute_daily_stats(obs)
-        assert len(daily) == 2
-        assert daily[0]["date"] == "2023-01-01"
-        assert daily[0]["temp_min"] == 5
-        assert daily[0]["temp_max"] == 10
-        assert daily[0]["temp_mean"] == 7.5
-        assert daily[0]["precip_total"] == 5.0
-        assert daily[0]["wind_max"] == 15
-
-    def test_narrative_fallback(self):
-        from handlers.shared.weather_utils import generate_narrative_fallback
-
-        daily = [
-            {"date": "2023-07-15", "temp_max": 38, "temp_min": 25, "precip_total": 0},
-            {"date": "2023-01-10", "temp_max": 5, "temp_min": -12, "precip_total": 15},
-            {"date": "2023-03-20", "temp_max": 15, "temp_min": 3, "precip_total": 25},
-        ]
-        narrative, highlights = generate_narrative_fallback("TEST STATION", 2023, daily)
-        assert "TEST STATION" in narrative
-        assert "2023" in narrative
-        assert len(highlights) >= 2
-        types = {h["type"] for h in highlights}
-        assert "hottest" in types
-        assert "coldest" in types
-
-    def test_narrative_fallback_empty(self):
-        from handlers.shared.weather_utils import generate_narrative_fallback
-
-        narrative, highlights = generate_narrative_fallback("EMPTY", 2023, [])
-        assert "No data" in narrative
-        assert highlights == []
-
-
-# ---------------------------------------------------------------------------
-# TestDiscoveryHandlers — station discovery handler tests
-# ---------------------------------------------------------------------------
-class TestDiscoveryHandlers:
-    def test_handle_discover_stations(self):
-        from handlers.discovery.discovery_handlers import handle_discover_stations
-
-        result = handle_discover_stations({"country": "US", "max_stations": 5})
-        assert "stations" in result
-        assert "station_count" in result
-        assert result["station_count"] <= 5
-        assert isinstance(result["stations"], list)
-
-    def test_handle_discover_stations_state_filter(self):
-        from handlers.discovery.discovery_handlers import handle_discover_stations
-
-        result = handle_discover_stations({"country": "US", "state": "NY", "max_stations": 10})
-        for s in result["stations"]:
-            assert s["state"] == "NY"
-
-    def test_handle_discover_stations_canada(self):
-        from handlers.discovery.discovery_handlers import handle_discover_stations
-
-        result = handle_discover_stations({"country": "CA", "state": "ON", "max_stations": 5})
-        assert result["station_count"] >= 1
-        for s in result["stations"]:
-            assert s["country"] == "CA"
-            assert s["state"] == "ON"
-
-    def test_handle_discover_stations_international(self):
-        from handlers.discovery.discovery_handlers import handle_discover_stations
-
-        for country in ["UK", "RS", "IN", "JA", "AY"]:
-            result = handle_discover_stations({"country": country, "max_stations": 5})
-            assert result["station_count"] >= 1, f"No stations found for country={country}"
-            assert result["stations"][0]["country"] == country
-
-    def test_handle_discover_stations_step_log(self):
-        from handlers.discovery.discovery_handlers import handle_discover_stations
-
-        messages: list[tuple[str, str]] = []
-        handle_discover_stations(
             {
-                "country": "US",
-                "max_stations": 3,
-                "_step_log": lambda msg, level: messages.append((msg, level)),
-            }
-        )
-        assert len(messages) == 2
-        assert "Discovering" in messages[0][0]
-        assert "Discovered" in messages[1][0]
-
-
-# ---------------------------------------------------------------------------
-# TestIngestHandlers — download and parse handler tests
-# ---------------------------------------------------------------------------
-class TestIngestHandlers:
-    def test_handle_download_observations(self):
-        from handlers.ingest.ingest_handlers import handle_download_observations
-
-        result = handle_download_observations(
-            {
-                "usaf": "725030",
-                "wban": "14732",
-                "year": 2023,
-            }
-        )
-        assert "raw_path" in result
-        assert "file_size" in result
-        assert "station_id" in result
-        assert result["station_id"] == "725030-14732"
-
-    def test_handle_parse_observations(self, tmp_path):
-        from handlers.ingest.ingest_handlers import handle_parse_observations
-
-        content = "2023 01 01 00   100    50 10100   180    20     2     0 -9999\n"
-        f = tmp_path / "test.txt"
-        f.write_text(content)
-        result = handle_parse_observations(
-            {
-                "raw_path": str(f),
-                "station_id": "TEST-001",
-            }
-        )
-        assert "observations" in result
-        assert "record_count" in result
-        assert result["record_count"] == 1
-
-    def test_handle_parse_empty(self):
-        from handlers.ingest.ingest_handlers import handle_parse_observations
-
-        result = handle_parse_observations(
-            {
-                "raw_path": "/nonexistent/path.txt",
-                "station_id": "NONE",
-            }
-        )
-        assert result["record_count"] == 0
-        assert result["observations"] == []
-
-
-# ---------------------------------------------------------------------------
-# TestQCHandlers — quality validation handler tests
-# ---------------------------------------------------------------------------
-class TestQCHandlers:
-    def test_handle_validate_quality_pass(self):
-        from handlers.qc.qc_handlers import handle_validate_quality
-
-        obs = [{"air_temp": 20}, {"air_temp": 15}, {"air_temp": 25}]
-        result = handle_validate_quality({"observations": obs, "station_id": "TEST"})
-        assert "qc" in result
-        assert result["qc"]["plausible"] is True
-        assert result["qc"]["missing_pct"] == 0.0
-        assert result["qc"]["temp_range_ok"] is True
-
-    def test_handle_validate_quality_fail(self):
-        from handlers.qc.qc_handlers import handle_validate_quality
-
-        # 60% missing → should fail with default 20% threshold
-        obs = [
-            {"air_temp": None},
-            {"air_temp": None},
-            {"air_temp": None},
-            {"air_temp": 10},
-            {"air_temp": 15},
-        ]
-        result = handle_validate_quality({"observations": obs, "station_id": "TEST"})
-        assert result["qc"]["plausible"] is False
-        assert result["qc"]["missing_pct"] == 60.0
-
-    def test_handle_validate_quality_step_log(self):
-        from handlers.qc.qc_handlers import handle_validate_quality
-
-        messages: list[tuple[str, str]] = []
-        handle_validate_quality(
-            {
-                "observations": [{"air_temp": 20}],
-                "station_id": "TEST",
-                "_step_log": lambda msg, level: messages.append((msg, level)),
-            }
-        )
-        assert len(messages) == 1
-        assert "QC" in messages[0][0]
-
-
-# ---------------------------------------------------------------------------
-# TestAnalysisHandlers — daily stats and sparse analysis handler tests
-# ---------------------------------------------------------------------------
-class TestAnalysisHandlers:
-    def test_handle_compute_daily_stats(self):
-        from handlers.analysis.analysis_handlers import handle_compute_daily_stats
-
-        obs = [
-            {"date": "2023-01-01", "air_temp": 5, "wind_speed": 10, "precipitation": 2},
-            {"date": "2023-01-01", "air_temp": 10, "wind_speed": 15, "precipitation": 3},
-            {"date": "2023-01-02", "air_temp": -2, "wind_speed": 5, "precipitation": 1},
-        ]
-        result = handle_compute_daily_stats({"observations": obs, "station_id": "TEST"})
-        assert "daily_stats" in result
-        assert "total_days" in result
-        assert "annual_precip" in result
-        assert result["total_days"] == 2
-        assert result["annual_precip"] == 6.0
-
-    def test_handle_compute_daily_stats_json_string(self):
-        from handlers.analysis.analysis_handlers import handle_compute_daily_stats
-
-        obs = [{"date": "2023-06-01", "air_temp": 30, "wind_speed": 5, "precipitation": 0}]
-        result = handle_compute_daily_stats({"observations": json.dumps(obs), "station_id": "T"})
-        assert result["total_days"] == 1
-
-    def test_handle_sparse_analysis(self):
-        from handlers.analysis.analysis_handlers import handle_sparse_analysis
-
-        obs = [{"air_temp": 10} for _ in range(100)]
-        result = handle_sparse_analysis({"observations": obs, "station_id": "SPARSE"})
-        assert "summary" in result
-        assert "record_count" in result
-        assert "coverage_pct" in result
-        assert result["record_count"] == 100
-        assert result["coverage_pct"] > 0
-
-    def test_handle_compute_daily_stats_step_log(self):
-        from handlers.analysis.analysis_handlers import handle_compute_daily_stats
-
-        messages: list[tuple[str, str]] = []
-        handle_compute_daily_stats(
-            {
-                "observations": [
-                    {"date": "2023-01-01", "air_temp": 10, "wind_speed": 5, "precipitation": 0}
-                ],
-                "station_id": "TEST",
-                "_step_log": lambda msg, level: messages.append((msg, level)),
-            }
-        )
-        assert len(messages) == 1
-        assert "daily stats" in messages[0][0]
-
-
-# ---------------------------------------------------------------------------
-# TestGeocodeHandlers — reverse geocode handler tests
-# ---------------------------------------------------------------------------
-class TestGeocodeHandlers:
-    def test_handle_reverse_geocode(self):
-        from handlers.geocode.geocode_handlers import handle_reverse_geocode
-
-        result = handle_reverse_geocode({"lat": 40.779, "lon": -73.88})
-        assert "geo" in result
-        geo = result["geo"]
-        assert "display_name" in geo
-        assert "city" in geo
-        assert "state" in geo
-        assert "country" in geo
-
-    def test_handle_reverse_geocode_deterministic(self):
-        from handlers.geocode.geocode_handlers import handle_reverse_geocode
-
-        r1 = handle_reverse_geocode({"lat": 40.779, "lon": -73.88})
-        r2 = handle_reverse_geocode({"lat": 40.779, "lon": -73.88})
-        assert r1 == r2
-
-    def test_handle_reverse_geocode_step_log(self):
-        from handlers.geocode.geocode_handlers import handle_reverse_geocode
-
-        messages: list[tuple[str, str]] = []
-        handle_reverse_geocode(
-            {
-                "lat": 40.0,
-                "lon": -74.0,
-                "_step_log": lambda msg, level: messages.append((msg, level)),
-            }
-        )
-        assert len(messages) == 1
-        assert "Geocoded" in messages[0][0]
-
-
-# ---------------------------------------------------------------------------
-# TestInterpretHandlers — narrative generation handler tests
-# ---------------------------------------------------------------------------
-class TestInterpretHandlers:
-    def test_handle_generate_narrative(self):
-        from handlers.interpret.interpret_handlers import handle_generate_narrative
-
-        daily = [
-            {"date": "2023-07-15", "temp_max": 38, "temp_min": 25, "precip_total": 0},
-            {"date": "2023-01-10", "temp_max": 5, "temp_min": -12, "precip_total": 15},
-        ]
-        result = handle_generate_narrative(
-            {
-                "station_name": "LA GUARDIA",
-                "year": 2023,
-                "daily_stats": daily,
-                "geo_context": {"city": "New York", "state": "New York"},
-            }
-        )
-        assert "narrative" in result
-        assert "highlights" in result
-        assert "LA GUARDIA" in result["narrative"]
-
-    def test_handle_generate_narrative_highlights(self):
-        from handlers.interpret.interpret_handlers import handle_generate_narrative
-
-        daily = [
-            {"date": "2023-07-15", "temp_max": 40, "temp_min": 28, "precip_total": 0},
-            {"date": "2023-01-10", "temp_max": 2, "temp_min": -15, "precip_total": 20},
-            {"date": "2023-09-01", "temp_max": 30, "temp_min": 22, "precip_total": 50},
-        ]
-        result = handle_generate_narrative(
-            {
-                "station_name": "TEST",
-                "year": 2023,
-                "daily_stats": daily,
-            }
-        )
-        types = {h["type"] for h in result["highlights"]}
-        assert "hottest" in types
-        assert "coldest" in types
-        assert "wettest" in types
-
-    def test_handle_generate_narrative_step_log(self):
-        from handlers.interpret.interpret_handlers import handle_generate_narrative
-
-        messages: list[tuple[str, str]] = []
-        handle_generate_narrative(
-            {
-                "station_name": "TEST",
-                "year": 2023,
-                "daily_stats": [
-                    {"date": "2023-01-01", "temp_max": 10, "temp_min": 0, "precip_total": 5}
-                ],
-                "_step_log": lambda msg, level: messages.append((msg, level)),
-            }
-        )
-        assert len(messages) == 1
-        assert "Narrative" in messages[0][0]
-
-    def test_handle_generate_narrative_claude_path(self, monkeypatch):
-        """When HAS_ANTHROPIC is True, Claude response flows through."""
-        import handlers.interpret.interpret_handlers as mod
-
-        monkeypatch.setattr(mod, "HAS_ANTHROPIC", True)
-        monkeypatch.setattr(
-            mod,
-            "_generate_with_claude",
-            lambda *args, **kwargs: (
-                "Claude narrative text",
-                [{"type": "hottest", "date": "2023-07-15", "value": "40°C"}],
-            ),
-        )
-        result = mod.handle_generate_narrative(
-            {
-                "station_name": "CLAUDE TEST",
-                "year": 2023,
-                "daily_stats": [
-                    {"date": "2023-07-15", "temp_max": 40, "temp_min": 25, "precip_total": 0}
-                ],
-            }
-        )
-        assert result["narrative"] == "Claude narrative text"
-        assert len(result["highlights"]) == 1
-        assert result["highlights"][0]["type"] == "hottest"
-
-    def test_handle_generate_narrative_claude_fallback_on_error(self, monkeypatch):
-        """When Claude raises, fallback produces valid output."""
-        import handlers.interpret.interpret_handlers as mod
-
-        monkeypatch.setattr(mod, "HAS_ANTHROPIC", True)
-        monkeypatch.setattr(
-            mod,
-            "_generate_with_claude",
-            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("API error")),
-        )
-        result = mod.handle_generate_narrative(
-            {
-                "station_name": "FALLBACK TEST",
-                "year": 2023,
-                "daily_stats": [
-                    {"date": "2023-07-15", "temp_max": 38, "temp_min": 25, "precip_total": 0},
-                    {"date": "2023-01-10", "temp_max": 5, "temp_min": -12, "precip_total": 15},
-                ],
-            }
-        )
-        assert "narrative" in result
-        assert "highlights" in result
-        assert "FALLBACK TEST" in result["narrative"]
-
-
-# ---------------------------------------------------------------------------
-# TestReportHandlers — report generation handler tests
-# ---------------------------------------------------------------------------
-class TestReportHandlers:
-    def test_handle_generate_station_report(self):
-        from handlers.report.report_handlers import handle_generate_station_report
-
-        result = handle_generate_station_report(
-            {
-                "station_id": "725030-14732",
-                "station_name": "LA GUARDIA AIRPORT",
-                "year": 2023,
-                "location": "New York, NY",
-                "daily_stats": [
-                    {
-                        "date": "2023-01-01",
-                        "temp_min": -5,
-                        "temp_max": 5,
-                        "precip_total": 2,
-                        "wind_max": 10,
-                        "obs_count": 8,
-                    },
-                ],
-                "annual_precip": 1100.0,
-                "narrative": "A typical year.",
-            }
-        )
-        assert "report" in result
-        report = result["report"]
-        assert report["station_id"] == "725030-14732"
-        assert report["year"] == 2023
-        assert report["report_id"].startswith("weather://")
-
-    def test_handle_generate_batch_summary(self):
-        from handlers.report.report_handlers import handle_generate_batch_summary
-
-        result = handle_generate_batch_summary(
-            {
-                "batch_id": "US-NY",
-                "station_count": 5,
-                "results": [
-                    {"status": "completed"},
-                    {"status": "completed"},
-                    {"status": "error"},
-                ],
-            }
-        )
-        assert "report_id" in result
-        assert result["report_id"].startswith("weather://batch/")
-        assert "completed" in result
-        assert "failed" in result
-        assert "summary" in result
-        assert result["completed"] == 2
-        assert result["failed"] == 3
-
-    def test_handle_generate_station_report_step_log(self):
-        from handlers.report.report_handlers import handle_generate_station_report
-
-        messages: list[tuple[str, str]] = []
-        handle_generate_station_report(
-            {
-                "station_id": "TEST-001",
-                "station_name": "TEST",
-                "year": 2023,
-                "location": "Somewhere",
-                "daily_stats": [],
-                "annual_precip": 0,
-                "narrative": "N/A",
-                "_step_log": lambda msg, level: messages.append((msg, level)),
-            }
-        )
-        assert len(messages) == 1
-        assert "report" in messages[0][0].lower()
-
-
-# ---------------------------------------------------------------------------
-# TestVisualizeHandlers — HTML report and map handler tests
-# ---------------------------------------------------------------------------
-class TestVisualizeHandlers:
-    def test_render_html_report(self, _mock_weather_db):
-        from handlers.visualize.visualize_handlers import handle_render_html_report
-
-        daily = [
-            {
-                "date": "2023-01-01",
-                "temp_min": -5,
-                "temp_max": 5,
-                "temp_mean": 0.0,
-                "precip_total": 2,
-                "wind_max": 10,
-                "obs_count": 8,
+                "date": "2023-01-15",
+                "hour": 0,
+                "air_temp": -5.0,
+                "dew_point": -8.0,
+                "precipitation": 2.0,
             },
             {
-                "date": "2023-01-02",
-                "temp_min": -3,
-                "temp_max": 7,
-                "temp_mean": 2.0,
-                "precip_total": 0,
-                "wind_max": 5,
-                "obs_count": 8,
+                "date": "2023-01-15",
+                "hour": 12,
+                "air_temp": 5.0,
+                "dew_point": 0.0,
+                "precipitation": 0.0,
+            },
+            {
+                "date": "2023-01-16",
+                "hour": 0,
+                "air_temp": 3.0,
+                "dew_point": 1.0,
+                "precipitation": None,
             },
         ]
-        result = handle_render_html_report(
+        stats = compute_daily_stats(obs)
+        assert len(stats) == 2
+        day1 = [s for s in stats if s["date"] == "2023-01-15"][0]
+        assert day1["temp_mean"] == 0.0
+        assert day1["temp_min"] == -5.0
+        assert day1["temp_max"] == 5.0
+        assert day1["precip_total"] == 2.0
+
+    def test_compute_annual_summary(self):
+        from handlers.shared.weather_utils import compute_annual_summary
+
+        daily = [
             {
-                "station_id": "TEST-001",
-                "station_name": "TEST STATION",
-                "year": 2023,
-                "location": "Somewhere, USA",
-                "daily_stats": daily,
-                "annual_precip": 1100.0,
-                "temp_range": "-5°C to 5°C",
-                "narrative": "A cold start to the year.",
-            }
-        )
-        assert "report_id" in result
-        assert result["report_id"].startswith("weather://")
-        # Verify HTML content was stored via update_one
-        coll = _mock_weather_db["weather_reports"]
-        coll.update_one.assert_called()
-        call_args = coll.update_one.call_args
-        html_content = call_args[0][1]["$set"]["html_content"]
-        assert "<table>" in html_content
-        assert "TEST STATION" in html_content
-        assert "2023-01-01" in html_content
-
-    def test_render_html_report_empty_stats(self):
-        from handlers.visualize.visualize_handlers import handle_render_html_report
-
-        result = handle_render_html_report(
+                "date": "2023-07-15",
+                "temp_mean": 30.0,
+                "temp_min": 22.0,
+                "temp_max": 38.0,
+                "precip_total": 5.0,
+            },
             {
-                "station_id": "EMPTY-001",
-                "station_name": "EMPTY",
-                "year": 2023,
-                "location": "",
-                "daily_stats": [],
-                "annual_precip": 0,
-                "temp_range": "N/A",
-                "narrative": "",
-            }
-        )
-        assert "report_id" in result
-        assert result["report_id"].startswith("weather://")
+                "date": "2023-01-15",
+                "temp_mean": -5.0,
+                "temp_min": -10.0,
+                "temp_max": 0.0,
+                "precip_total": 0.0,
+            },
+        ]
+        summary = compute_annual_summary(daily)
+        assert summary["total_days"] == 2
+        assert summary["annual_precip"] == 5.0
+        assert summary["temp_max"] == 38.0
+        assert summary["temp_min"] == -10.0
 
-    def test_render_html_report_step_log(self):
-        from handlers.visualize.visualize_handlers import handle_render_html_report
+    def test_compute_missing_pct(self):
+        from handlers.shared.weather_utils import compute_missing_pct
 
-        messages: list[tuple[str, str]] = []
-        handle_render_html_report(
-            {
-                "station_id": "LOG-001",
-                "station_name": "LOG",
-                "year": 2023,
-                "location": "",
-                "daily_stats": [],
-                "annual_precip": 0,
-                "temp_range": "N/A",
-                "narrative": "",
-                "_step_log": lambda msg, level: messages.append((msg, level)),
-            }
-        )
-        assert len(messages) == 1
-        assert "HTML report" in messages[0][0]
+        obs = [
+            {"air_temp": 10.0},
+            {"air_temp": None},
+            {"air_temp": 15.0},
+            {"air_temp": None},
+        ]
+        pct = compute_missing_pct(obs)
+        assert pct == 50.0
 
-    def test_render_station_map(self):
-        from handlers.visualize.visualize_handlers import handle_render_station_map
+    def test_validate_temperature_range(self):
+        from handlers.shared.weather_utils import validate_temperature_range
 
-        result = handle_render_station_map(
-            {
-                "station_id": "MAP-001",
-                "station_name": "MAP STATION",
-                "lat": 40.779,
-                "lon": -73.88,
-                "year": 2023,
-                "temp_range": "-10°C to 35°C",
-            }
-        )
-        assert "report_id" in result
-        # report_id is either a weather:// URI (folium available) or ""
-        if result["report_id"]:
-            assert result["report_id"].startswith("weather://")
+        # Valid range
+        assert validate_temperature_range([{"air_temp": 20.0}, {"air_temp": -10.0}]) is True
+        # Out of range
+        assert validate_temperature_range([{"air_temp": 200.0}]) is False
+        assert validate_temperature_range([{"air_temp": -200.0}]) is False
+        # All None values → no temps → False
+        assert validate_temperature_range([{"air_temp": None}]) is False
 
-    def test_render_station_map_step_log(self):
-        from handlers.visualize.visualize_handlers import handle_render_station_map
+    def test_simple_linear_regression(self):
+        from handlers.shared.weather_utils import simple_linear_regression
 
-        messages: list[tuple[str, str]] = []
-        handle_render_station_map(
-            {
-                "station_id": "MAP-002",
-                "station_name": "MAP LOG",
-                "lat": 40.0,
-                "lon": -74.0,
-                "year": 2023,
-                "temp_range": "N/A",
-                "_step_log": lambda msg, level: messages.append((msg, level)),
-            }
-        )
-        assert len(messages) == 1
+        slope, intercept = simple_linear_regression([1, 2, 3, 4], [2, 4, 6, 8])
+        assert abs(slope - 2.0) < 1e-9
+        assert abs(intercept - 0.0) < 1e-9
 
-    def test_visualize_dispatch_count(self):
-        from handlers.visualize.visualize_handlers import _DISPATCH
+    def test_linear_regression_flat(self):
+        from handlers.shared.weather_utils import simple_linear_regression
 
-        assert len(_DISPATCH) == 2
+        slope, intercept = simple_linear_regression([1, 2, 3], [5, 5, 5])
+        assert abs(slope) < 1e-9
+
+    def test_linear_regression_empty(self):
+        from handlers.shared.weather_utils import simple_linear_regression
+
+        slope, intercept = simple_linear_regression([], [])
+        assert slope == 0.0
+        assert intercept == 0.0
 
 
 # ---------------------------------------------------------------------------
-# TestWeatherReportStore — MongoDB store tests
-# ---------------------------------------------------------------------------
-class TestWeatherReportStore:
-    def test_index_creation(self):
-        from handlers.shared.weather_utils import WeatherReportStore
-
-        reports_coll = MagicMock()
-        batches_coll = MagicMock()
-        db = {"weather_reports": reports_coll, "weather_batch_summaries": batches_coll}
-        WeatherReportStore(db)
-        assert reports_coll.create_index.call_count == 2
-        assert batches_coll.create_index.call_count == 1
-
-    def test_upsert_report_returns_id(self):
-        from handlers.shared.weather_utils import WeatherReportStore
-
-        db = MagicMock()
-        store = WeatherReportStore(db)
-        rid = store.upsert_report("725030-14732", "LA GUARDIA", 2023, "NY", {}, [])
-        assert rid == "weather://725030-14732/2023"
-        db["weather_reports"].update_one.assert_called_once()
-
-    def test_upsert_html_returns_id(self):
-        from handlers.shared.weather_utils import WeatherReportStore
-
-        db = MagicMock()
-        store = WeatherReportStore(db)
-        rid = store.upsert_html("725030-14732", 2023, "<html>test</html>")
-        assert rid == "weather://725030-14732/2023"
-        call_args = db["weather_reports"].update_one.call_args
-        assert call_args[0][1]["$set"]["html_content"] == "<html>test</html>"
-
-    def test_upsert_map_returns_id(self):
-        from handlers.shared.weather_utils import WeatherReportStore
-
-        db = MagicMock()
-        store = WeatherReportStore(db)
-        rid = store.upsert_map("725030-14732", 2023, "<html>map</html>")
-        assert rid == "weather://725030-14732/2023"
-        call_args = db["weather_reports"].update_one.call_args
-        assert call_args[0][1]["$set"]["map_content"] == "<html>map</html>"
-
-    def test_upsert_batch_returns_id(self):
-        from handlers.shared.weather_utils import WeatherReportStore
-
-        db = MagicMock()
-        store = WeatherReportStore(db)
-        rid = store.upsert_batch("US-NY", 5, 3, 2, [], "summary")
-        assert rid == "weather://batch/US-NY"
-        db["weather_batch_summaries"].update_one.assert_called_once()
-
-    def test_report_id_format(self):
-        from handlers.shared.weather_utils import WeatherReportStore
-
-        db = MagicMock()
-        store = WeatherReportStore(db)
-        assert store.upsert_report("A-B", "X", 2024, "", {}, []) == "weather://A-B/2024"
-        assert store.upsert_html("A-B", 2024, "") == "weather://A-B/2024"
-        assert store.upsert_map("A-B", 2024, "") == "weather://A-B/2024"
-        assert store.upsert_batch("X-Y", 1, 1, 0, [], "") == "weather://batch/X-Y"
-
-
-# ---------------------------------------------------------------------------
-# TestDispatch — dispatch table structure and routing
-# ---------------------------------------------------------------------------
-class TestDispatch:
-    def test_discovery_dispatch_count(self):
-        from handlers.discovery.discovery_handlers import _DISPATCH
-
-        assert len(_DISPATCH) == 1
-
-    def test_ingest_dispatch_count(self):
-        from handlers.ingest.ingest_handlers import _DISPATCH
-
-        assert len(_DISPATCH) == 3
-
-    def test_qc_dispatch_count(self):
-        from handlers.qc.qc_handlers import _DISPATCH
-
-        assert len(_DISPATCH) == 1
-
-    def test_analysis_dispatch_count(self):
-        from handlers.analysis.analysis_handlers import _DISPATCH
-
-        assert len(_DISPATCH) == 2
-
-    def test_geocode_dispatch_count(self):
-        from handlers.geocode.geocode_handlers import _DISPATCH
-
-        assert len(_DISPATCH) == 1
-
-    def test_interpret_dispatch_count(self):
-        from handlers.interpret.interpret_handlers import _DISPATCH
-
-        assert len(_DISPATCH) == 1
-
-    def test_report_dispatch_count(self):
-        from handlers.report.report_handlers import _DISPATCH
-
-        assert len(_DISPATCH) == 2
-
-    def test_visualize_dispatch_count(self):
-        from handlers.visualize.visualize_handlers import _DISPATCH
-
-        assert len(_DISPATCH) == 2
-
-    def test_all_dispatch_names_have_namespace_prefix(self):
-        from handlers.analysis.analysis_handlers import _DISPATCH as d1
-        from handlers.climate.climate_handlers import _DISPATCH as d9
-        from handlers.discovery.discovery_handlers import _DISPATCH as d2
-        from handlers.geocode.geocode_handlers import _DISPATCH as d3
-        from handlers.ingest.ingest_handlers import _DISPATCH as d4
-        from handlers.interpret.interpret_handlers import _DISPATCH as d5
-        from handlers.qc.qc_handlers import _DISPATCH as d6
-        from handlers.report.report_handlers import _DISPATCH as d7
-        from handlers.visualize.visualize_handlers import _DISPATCH as d8
-
-        all_names = (
-            list(d1.keys())
-            + list(d2.keys())
-            + list(d3.keys())
-            + list(d4.keys())
-            + list(d5.keys())
-            + list(d6.keys())
-            + list(d7.keys())
-            + list(d8.keys())
-            + list(d9.keys())
-        )
-        assert len(all_names) == 18
-        # All handlers start with weather. or climate.
-        assert all(n.startswith("weather.") or n.startswith("climate.") for n in all_names)
-        # Verify the new consolidated handlers are present
-        assert any(n.startswith("climate.Station.") for n in all_names)
-        assert any(n.startswith("climate.Aggregate.ComputeRegionTrend") for n in all_names)
-        assert any(n.startswith("weather.BulkCache.") for n in all_names)
-
-
-# ---------------------------------------------------------------------------
-# TestCompilation — AFL parsing and AST checks
+# Compilation test — AFL compiles to JSON
 # ---------------------------------------------------------------------------
 class TestCompilation:
-    @pytest.fixture()
-    def parsed_ast(self):
-        from afl.parser import AFLParser
+    def test_weather_afl_compiles(self):
+        from afl import parse, validate
 
         afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.afl")
         with open(afl_path) as f:
             source = f.read()
-        return AFLParser().parse(source)
+        program = parse(source)
+        result = validate(program)
+        assert not result.errors, f"Validation errors: {result.errors}"
 
-    def test_afl_parses(self, parsed_ast):
-        assert parsed_ast is not None
+    def test_weather_json_exists(self):
+        json_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.json")
+        assert os.path.exists(json_path), (
+            "weather.json not found — run: python3 -m afl.cli weather.afl -o weather.json"
+        )
+        with open(json_path) as f:
+            data = json.load(f)
+        assert "declarations" in data
 
-    def test_schema_count(self, parsed_ast):
-        schemas = []
-        for ns in parsed_ast.namespaces:
-            schemas.extend(ns.schemas)
-        assert len(schemas) == 8
+    def test_namespaces_present(self):
+        from afl import parse
 
-    def test_event_facet_count(self, parsed_ast):
-        event_facets = []
-        for ns in parsed_ast.namespaces:
-            event_facets.extend(ns.event_facets)
-        assert len(event_facets) == 18
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.afl")
+        with open(afl_path) as f:
+            program = parse(f.read())
+        ns_names = [ns.name for ns in program.namespaces]
+        assert "ghcn.types" in ns_names
+        assert "ghcn.Catalog" in ns_names
+        assert "ghcn.Ingest" in ns_names
+        assert "ghcn.Analysis" in ns_names
+        assert "ghcn.Geocode" in ns_names
+        assert "ghcn.workflows" in ns_names
+        assert "ghcn.Cache" in ns_names
 
-    def test_workflow_count(self, parsed_ast):
-        workflows = []
-        for ns in parsed_ast.namespaces:
-            workflows.extend(ns.workflows)
-        assert len(workflows) == 34
+    def test_event_facets_defined(self):
+        from afl import parse
 
-    def test_namespace_count(self, parsed_ast):
-        assert len(parsed_ast.namespaces) == 21
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.afl")
+        with open(afl_path) as f:
+            program = parse(f.read())
 
-    def test_prompt_block_present(self, parsed_ast):
-        """Verify prompt block appears on GenerateNarrative."""
-        from afl.ast import PromptBlock
-
-        prompt_count = 0
-        for ns in parsed_ast.namespaces:
+        event_names = set()
+        for ns in program.namespaces:
             for ef in ns.event_facets:
-                body = ef.body
-                if isinstance(body, PromptBlock):
-                    prompt_count += 1
-        assert prompt_count == 2, f"Expected 2 prompt blocks, got {prompt_count}"
+                event_names.add(ef.sig.name)
 
-    def test_script_block_present(self, parsed_ast):
-        """Verify script block appears on ValidateQuality."""
-        from afl.ast import ScriptBlock
+        assert "DiscoverStations" in event_names
+        assert "FetchStationData" in event_names
+        assert "AnalyzeStationClimate" in event_names
+        assert "ComputeRegionTrend" in event_names
+        assert "ReverseGeocode" in event_names
 
-        script_count = 0
-        for ns in parsed_ast.namespaces:
-            for ef in ns.event_facets:
-                if isinstance(ef.body, ScriptBlock):
-                    script_count += 1
-                elif hasattr(ef, "pre_script") and ef.pre_script is not None:
-                    script_count += 1
-        assert script_count >= 1, "Expected at least 1 script block"
+    def test_workflows_defined(self):
+        from afl import parse
 
-    def test_when_block_present(self, parsed_ast):
-        """Verify andThen when block appears as step_body on qc_check in AnalyzeStation."""
-        from afl.ast import AndThenBlock, WhenBlock
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.afl")
+        with open(afl_path) as f:
+            program = parse(f.read())
 
-        wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "weather.workflows"]
-        analyze_wf = [w for w in wf_ns[0].workflows if w.sig.name == "AnalyzeStation"][0]
-        body = analyze_wf.body
-        # Now a single AndThenBlock (not a list of sibling blocks)
-        if isinstance(body, list):
-            block = body[0]
-        else:
-            block = body
-        assert isinstance(block, AndThenBlock)
-        # qc_check step has andThen when as step_body
-        qc_step = [s for s in block.block.steps if s.name == "qc_check"][0]
-        assert qc_step.body is not None
-        assert isinstance(qc_step.body, AndThenBlock)
-        assert qc_step.body.when is not None
-        assert isinstance(qc_step.body.when, WhenBlock)
-        assert len(qc_step.body.when.cases) == 2
+        workflow_names = set()
+        for ns in program.namespaces:
+            for wf in ns.workflows:
+                workflow_names.add(wf.sig.name)
 
-    def test_catch_present(self, parsed_ast):
-        """Verify catch block appears in AnalyzeStation (download step)."""
-        from afl.ast import AndThenBlock
+        assert "AnalyzeStation" in workflow_names
+        assert "AnalyzeStateTrends" in workflow_names
+        assert "AnalyzeAllStates" in workflow_names
+        assert "CacheStateData" in workflow_names
+        assert "CacheAllUSData" in workflow_names
+        # International
+        assert "AnalyzeCanada" in workflow_names
+        assert "AnalyzeEurope" in workflow_names
 
-        wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "weather.workflows"]
-        analyze_wf = [w for w in wf_ns[0].workflows if w.sig.name == "AnalyzeStation"][0]
-        body = analyze_wf.body
-        # Single andThen block → .block → steps[0] has catch
-        if isinstance(body, list):
-            block = body[0]
-        else:
-            block = body
-        assert isinstance(block, AndThenBlock)
-        step = block.block.steps[0]
-        assert step.catch is not None
+    def test_schemas_defined(self):
+        from afl import parse
 
-    def test_analyze_station_history_foreach(self, parsed_ast):
-        """AnalyzeStationHistory uses foreach over years."""
-        from afl.ast import AndThenBlock
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.afl")
+        with open(afl_path) as f:
+            program = parse(f.read())
 
-        wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "weather.workflows"]
-        wf = [w for w in wf_ns[0].workflows if w.sig.name == "AnalyzeStationHistory"][0]
-        body = wf.body
-        # Single andThen foreach → body is a single AndThenBlock (not a list)
-        if isinstance(body, list):
-            block = body[0]
-        else:
-            block = body
-        assert isinstance(block, AndThenBlock)
-        assert block.foreach is not None
-        assert block.foreach.variable == "year"
+        schema_names = set()
+        for ns in program.namespaces:
+            for s in ns.schemas:
+                schema_names.add(s.name)
 
-    def test_analyze_region_foreach(self, parsed_ast):
-        """AnalyzeRegion uses foreach over years."""
-        from afl.ast import AndThenBlock
-
-        wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "weather.workflows"]
-        wf = [w for w in wf_ns[0].workflows if w.sig.name == "AnalyzeRegion"][0]
-        body = wf.body
-        if isinstance(body, list):
-            block = body[0]
-        else:
-            block = body
-        assert isinstance(block, AndThenBlock)
-        assert block.foreach is not None
-        assert block.foreach.variable == "year"
-
-    def test_analyze_station_history_catch(self, parsed_ast):
-        """AnalyzeStationHistory has catch on analysis step."""
-        wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "weather.workflows"]
-        wf = [w for w in wf_ns[0].workflows if w.sig.name == "AnalyzeStationHistory"][0]
-        body = wf.body
-        # Steps live in AndThenBlock.block, foreach clause is on the AndThenBlock
-        if isinstance(body, list):
-            atb = body[0]
-        else:
-            atb = body
-        assert atb.foreach is not None
-        steps = atb.block.steps
-        analysis_step = [s for s in steps if s.name == "analysis"][0]
-        assert analysis_step.catch is not None
-
-    def test_international_workflow_count(self, parsed_ast):
-        """Verify 10 international analysis workflows are present."""
-        climate_wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "climate.workflows"]
-        all_wfs = []
-        for ns in climate_wf_ns:
-            all_wfs.extend(ns.workflows)
-        intl_names = {
-            "AnalyzeCanada",
-            "AnalyzeRussia",
-            "AnalyzeIndia",
-            "AnalyzeMexico",
-            "AnalyzeAntarctica",
-            "AnalyzeSouthAmerica",
-            "AnalyzeEurope",
-            "AnalyzeAfrica",
-            "AnalyzeAsia",
-            "AnalyzeArctic",
-        }
-        found = {w.sig.name for w in all_wfs} & intl_names
-        assert found == intl_names, f"Missing: {intl_names - found}"
-
-    def test_international_cache_workflow_count(self, parsed_ast):
-        """Verify 10 international cache workflows are present."""
-        cache_ns = [ns for ns in parsed_ast.namespaces if ns.name == "weather.Cache"]
-        all_wfs = []
-        for ns in cache_ns:
-            all_wfs.extend(ns.workflows)
-        intl_names = {
-            "CacheCanadaData",
-            "CacheRussiaData",
-            "CacheIndiaData",
-            "CacheMexicoData",
-            "CacheAntarcticaData",
-            "CacheSouthAmericaData",
-            "CacheEuropeData",
-            "CacheAfricaData",
-            "CacheAsiaData",
-            "CacheArcticData",
-        }
-        found = {w.sig.name for w in all_wfs} & intl_names
-        assert found == intl_names, f"Missing: {intl_names - found}"
+        assert "StationInfo" in schema_names
+        assert "YearlyClimate" in schema_names
+        assert "ClimateTrend" in schema_names
+        assert "GeoContext" in schema_names
 
 
 # ---------------------------------------------------------------------------
-# TestAgentIntegration — end-to-end handler registration
-# ---------------------------------------------------------------------------
-class TestAgentIntegration:
-    def test_registry_runner_poll_once(self):
-        """RegistryRunner dispatches all handlers via ToolRegistry."""
-        from handlers.analysis.analysis_handlers import _DISPATCH as d1
-        from handlers.discovery.discovery_handlers import _DISPATCH as d2
-        from handlers.geocode.geocode_handlers import _DISPATCH as d3
-        from handlers.ingest.ingest_handlers import _DISPATCH as d4
-        from handlers.interpret.interpret_handlers import _DISPATCH as d5
-        from handlers.qc.qc_handlers import _DISPATCH as d6
-        from handlers.report.report_handlers import _DISPATCH as d7
-        from handlers.visualize.visualize_handlers import _DISPATCH as d8
-
-        from afl.runtime.agent import ToolRegistry
-
-        registry = ToolRegistry()
-        for dispatch in [d1, d2, d3, d4, d5, d6, d7, d8]:
-            for facet_name, handler in dispatch.items():
-                tool_name = facet_name.split(".")[-1]
-                registry.register(tool_name, handler)
-
-        tool_names = [
-            "DiscoverStations",
-            "DownloadObservations",
-            "ParseObservations",
-            "ValidateQuality",
-            "ComputeDailyStats",
-            "SparseAnalysis",
-            "ReverseGeocode",
-            "GenerateNarrative",
-            "GenerateStationReport",
-            "GenerateBatchSummary",
-            "RenderHTMLReport",
-            "RenderStationMap",
-        ]
-        for name in tool_names:
-            assert registry.has_handler(name), f"Missing handler: {name}"
-
-    def test_registry_runner_handler_names(self):
-        """Verify all dispatch tables have correct namespace prefixes."""
-        from handlers.analysis.analysis_handlers import _DISPATCH as d1
-        from handlers.discovery.discovery_handlers import _DISPATCH as d2
-        from handlers.geocode.geocode_handlers import _DISPATCH as d3
-        from handlers.ingest.ingest_handlers import _DISPATCH as d4
-        from handlers.interpret.interpret_handlers import _DISPATCH as d5
-        from handlers.qc.qc_handlers import _DISPATCH as d6
-        from handlers.report.report_handlers import _DISPATCH as d7
-        from handlers.visualize.visualize_handlers import _DISPATCH as d8
-
-        all_names = (
-            list(d1.keys())
-            + list(d2.keys())
-            + list(d3.keys())
-            + list(d4.keys())
-            + list(d5.keys())
-            + list(d6.keys())
-            + list(d7.keys())
-            + list(d8.keys())
-        )
-        assert len(all_names) == 13
-        assert all(n.startswith("weather.") for n in all_names)
-
-
-# ---------------------------------------------------------------------------
-# Runtime integration tests — compile AFL, dispatch inline, verify completion
+# WeatherReportStore (from weather_utils.py — still valid)
 # ---------------------------------------------------------------------------
 
+try:
+    import mongomock
 
-def _compile_weather_afl():
-    """Compile weather.afl and return the program dict."""
-    from afl.emitter import emit_dict
-    from afl.parser import AFLParser
-
-    afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.afl")
-    with open(afl_path) as f:
-        source = f.read()
-    ast = AFLParser().parse(source)
-    return emit_dict(ast, include_locations=False)
+    HAS_MONGOMOCK = True
+except ImportError:
+    HAS_MONGOMOCK = False
 
 
-def _make_dispatcher():
-    """Create an InMemoryDispatcher with mock handlers for all weather facets."""
-    from afl.runtime.dispatcher import InMemoryDispatcher
-
-    dispatcher = InMemoryDispatcher()
-
-    dispatcher.register(
-        "weather.Discovery.DiscoverStations",
-        lambda p: {
-            "stations": [
-                {
-                    "usaf": "725030",
-                    "wban": "14732",
-                    "station_name": "LA GUARDIA",
-                    "lat": 40.779,
-                    "lon": -73.88,
-                },
-                {
-                    "usaf": "722020",
-                    "wban": "12839",
-                    "station_name": "MIAMI INTL",
-                    "lat": 25.791,
-                    "lon": -80.316,
-                },
-                {
-                    "usaf": "723060",
-                    "wban": "13874",
-                    "station_name": "RALEIGH DURHAM",
-                    "lat": 35.878,
-                    "lon": -78.787,
-                },
-            ][: int(p.get("max_stations", 10))],
-            "station_count": min(3, int(p.get("max_stations", 10))),
-        },
-    )
-
-    dispatcher.register(
-        "weather.Ingest.DownloadObservations",
-        lambda p: {
-            "raw_path": f"/tmp/isd-lite/{p['usaf']}-{p['wban']}-{p.get('year', 2023)}.txt",
-            "file_size": 50000,
-            "station_id": f"{p['usaf']}-{p['wban']}",
-        },
-    )
-
-    dispatcher.register(
-        "weather.Ingest.ParseObservations",
-        lambda p: {
-            "observations": [
-                {
-                    "date": "2023-01-01",
-                    "hour": 0,
-                    "air_temp": 5.0,
-                    "dew_point": 2.0,
-                    "sea_level_pressure": 1013.0,
-                    "wind_direction": 180,
-                    "wind_speed": 3.0,
-                    "precipitation": 1.0,
-                    "sky_condition": 0,
-                },
-                {
-                    "date": "2023-07-15",
-                    "hour": 12,
-                    "air_temp": 35.0,
-                    "dew_point": 20.0,
-                    "sea_level_pressure": 1010.0,
-                    "wind_direction": 220,
-                    "wind_speed": 5.0,
-                    "precipitation": 0.0,
-                    "sky_condition": 2,
-                },
-            ],
-            "record_count": 2,
-        },
-    )
-
-    dispatcher.register(
-        "weather.QC.ValidateQuality",
-        lambda p: {
-            "qc": json.dumps(
-                {
-                    "plausible": True,
-                    "total_records": 2,
-                    "missing_pct": 0.0,
-                    "temp_range_ok": True,
-                    "message": "QC passed",
-                }
-            ),
-        },
-    )
-
-    dispatcher.register(
-        "weather.Analysis.ComputeDailyStats",
-        lambda p: {
-            "daily_stats": [
-                {
-                    "date": "2023-01-01",
-                    "temp_min": 5.0,
-                    "temp_max": 8.0,
-                    "temp_mean": 6.5,
-                    "precip_total": 1.0,
-                    "wind_max": 3.0,
-                    "obs_count": 1,
-                },
-                {
-                    "date": "2023-07-15",
-                    "temp_min": 28.0,
-                    "temp_max": 35.0,
-                    "temp_mean": 31.5,
-                    "precip_total": 0.0,
-                    "wind_max": 5.0,
-                    "obs_count": 1,
-                },
-            ],
-            "total_days": 2,
-            "annual_precip": 1.0,
-        },
-    )
-
-    dispatcher.register(
-        "weather.Analysis.SparseAnalysis",
-        lambda p: {
-            "summary": "Sparse analysis complete",
-            "record_count": 2,
-            "coverage_pct": 0.5,
-        },
-    )
-
-    dispatcher.register(
-        "weather.Geocode.ReverseGeocode",
-        lambda p: {
-            "geo": {
-                "display_name": "New York, NY, USA",
-                "city": "New York",
-                "state": "New York",
-                "country": "US",
-                "county": "Queens",
-            },
-        },
-    )
-
-    dispatcher.register(
-        "weather.Interpret.GenerateNarrative",
-        lambda p: {
-            "narrative": f"Weather summary for {p.get('station_name', 'station')} in {p.get('year', 2023)}.",
-            "highlights": [
-                {"type": "hottest", "date": "2023-07-15", "value": "35.0°C"},
-                {"type": "coldest", "date": "2023-01-01", "value": "5.0°C"},
-            ],
-        },
-    )
-
-    dispatcher.register(
-        "weather.Report.GenerateStationReport",
-        lambda p: {
-            "report": {
-                "station_id": p.get("station_id", ""),
-                "station_name": p.get("station_name", ""),
-                "year": int(p.get("year", 2023)),
-                "location": p.get("location", ""),
-                "total_days": 2,
-                "annual_precip": float(p.get("annual_precip", 0)),
-                "temp_range": "5.0°C to 35.0°C",
-                "narrative": p.get("narrative", ""),
-                "report_id": f"weather://{p.get('station_id', '')}/{p.get('year', 2023)}",
-            },
-        },
-    )
-
-    dispatcher.register(
-        "weather.Report.GenerateBatchSummary",
-        lambda p: {
-            "report_id": f"weather://batch/{p.get('batch_id', '')}",
-            "completed": int(p.get("station_count", 0)),
-            "failed": 0,
-            "summary": "Batch complete",
-        },
-    )
-
-    dispatcher.register(
-        "weather.Visualize.RenderHTMLReport",
-        lambda p: {
-            "report_id": f"weather://{p.get('station_id', '')}/{p.get('year', 2023)}",
-        },
-    )
-
-    dispatcher.register(
-        "weather.Visualize.RenderStationMap",
-        lambda p: {
-            "report_id": f"weather://{p.get('station_id', '')}/{p.get('year', 2023)}",
-        },
-    )
-
-    # Consolidated fast-path handlers
-    dispatcher.register(
-        "climate.Station.AnalyzeStationClimate",
-        lambda p: {
-            "yearly_summaries": [
-                {"year": y, "status": "ok", "total_days": 365}
-                for y in range(int(p.get("start_year", 1944)), int(p.get("end_year", 2024)) + 1)
-            ],
-            "years_analyzed": int(p.get("end_year", 2024)) - int(p.get("start_year", 1944)) + 1,
-            "station_id": f"{p.get('usaf', '')}-{p.get('wban', '')}",
-        },
-    )
-
-    dispatcher.register(
-        "climate.Aggregate.ComputeRegionTrend",
-        lambda p: {
-            "trend": {
-                "state": p.get("state", ""),
-                "start_year": int(p.get("start_year", 1944)),
-                "end_year": int(p.get("end_year", 2024)),
-                "warming_rate_per_decade": 0.15,
-                "precip_change_pct": 5.0,
-                "decades": {},
-            },
-            "narrative": f"Climate trend for {p.get('state', '')}.",
-            "highlights": [],
-        },
-    )
-
-    dispatcher.register(
-        "weather.BulkCache.CacheBulkStationData",
-        lambda p: {
-            "files_cached": max(
-                0, int(p.get("end_year", 2024)) - int(p.get("start_year", 1944)) + 1
-            ),
-            "station_id": f"{p.get('usaf', '')}-{p.get('wban', '')}",
-        },
-    )
-
-    # Climate Aggregate handlers (existing fine-grained path also needed for some tests)
-    dispatcher.register(
-        "climate.Aggregate.AggregateStateYear",
-        lambda p: {
-            "yearly": {
-                "state": p.get("state", ""),
-                "year": int(p.get("year", 2023)),
-                "station_count": 3,
-                "temp_mean": 15.0,
-                "temp_min_avg": 5.0,
-                "temp_max_avg": 25.0,
-                "precip_annual": 1000.0,
-                "hot_days": 10,
-                "frost_days": 50,
-                "precip_days": 100,
-            },
-        },
-    )
-
-    dispatcher.register(
-        "climate.Aggregate.ComputeClimateTrend",
-        lambda p: {
-            "trend": {
-                "state": p.get("state", ""),
-                "start_year": int(p.get("start_year", 1944)),
-                "end_year": int(p.get("end_year", 2024)),
-                "warming_rate_per_decade": 0.15,
-                "precip_change_pct": 5.0,
-                "decades": {},
-            },
-        },
-    )
-
-    dispatcher.register(
-        "climate.Aggregate.GenerateClimateNarrative",
-        lambda p: {
-            "narrative": f"Climate trend for {p.get('state', '')}.",
-            "highlights": [],
-        },
-    )
-
-    return dispatcher
-
-
-class TestAnalyzeStationIntegration:
-    """Integration tests: compile weather.afl, run AnalyzeStation with mock dispatch."""
-
-    @pytest.fixture()
-    def compiled(self):
-        return _compile_weather_afl()
-
+@pytest.mark.skipif(not HAS_MONGOMOCK, reason="mongomock not installed")
+class TestWeatherReportStore:
     @pytest.fixture()
     def store(self):
-        from afl.runtime import MemoryStore
+        client = mongomock.MongoClient()
+        db = client["test_weather"]
+        from handlers.shared.weather_utils import WeatherReportStore
 
-        return MemoryStore()
+        return WeatherReportStore(db)
 
-    @pytest.fixture()
-    def evaluator(self, store):
-        from afl.runtime import Evaluator, Telemetry
-
-        return Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
-
-    @pytest.fixture()
-    def dispatcher(self):
-        return _make_dispatcher()
-
-    def test_analyze_station_completes(self, compiled, store, evaluator, dispatcher):
-        """AnalyzeStation completes with mock dispatch — no PAUSED."""
-        from afl.ast_utils import find_workflow
-        from afl.runtime import ExecutionStatus
-
-        wf_ast = find_workflow(compiled, "AnalyzeStation")
-        assert wf_ast is not None
-
-        result = evaluator.execute(
-            wf_ast,
-            inputs={
-                "usaf": "725030",
-                "wban": "14732",
-                "station_name": "LA GUARDIA",
-                "lat": 40.779,
-                "lon": -73.88,
-                "year": 2023,
-            },
-            program_ast=compiled,
-            dispatcher=dispatcher,
+    def test_upsert_and_find(self, store):
+        store.upsert_report(
+            station_id="USW00014732",
+            station_name="LA GUARDIA",
+            year=2020,
+            location="NY",
+            report={"temp_mean": 12.5},
+            daily_stats=[],
         )
-        assert result.success
-        assert result.status == ExecutionStatus.COMPLETED
+        recs = list(store.reports.find({"station_id": "USW00014732"}))
+        assert len(recs) == 1
+        assert recs[0]["year"] == 2020
 
-    def test_analyze_station_outputs(self, compiled, store, evaluator, dispatcher):
-        """AnalyzeStation produces expected yield outputs."""
-        from afl.ast_utils import find_workflow
-
-        wf_ast = find_workflow(compiled, "AnalyzeStation")
-        result = evaluator.execute(
-            wf_ast,
-            inputs={
-                "usaf": "725030",
-                "wban": "14732",
-                "station_name": "LA GUARDIA",
-                "lat": 40.779,
-                "lon": -73.88,
-                "year": 2023,
-            },
-            program_ast=compiled,
-            dispatcher=dispatcher,
-        )
-        assert result.outputs["status"] == "completed"
-        assert "Report:" in result.outputs["detail"]
-
-    def test_analyze_station_step_count(self, compiled, store, evaluator, dispatcher):
-        """AnalyzeStation creates at least 10 steps (root + blocks + event steps)."""
-        from afl.ast_utils import find_workflow
-
-        wf_ast = find_workflow(compiled, "AnalyzeStation")
-        result = evaluator.execute(
-            wf_ast,
-            inputs={
-                "usaf": "725030",
-                "wban": "14732",
-                "station_name": "LA GUARDIA",
-                "lat": 40.779,
-                "lon": -73.88,
-                "year": 2023,
-            },
-            program_ast=compiled,
-            dispatcher=dispatcher,
-        )
-        assert result.success
-        steps = store.get_steps_by_workflow(result.workflow_id)
-        assert len(steps) >= 10, f"Expected >= 10 steps, got {len(steps)}"
-
-
-class TestBatchWeatherAnalysisIntegration:
-    """Integration tests: compile weather.afl, run BatchWeatherAnalysis with mock dispatch."""
-
-    @pytest.fixture()
-    def compiled(self):
-        return _compile_weather_afl()
-
-    @pytest.fixture()
-    def store(self):
-        from afl.runtime import MemoryStore
-
-        return MemoryStore()
-
-    @pytest.fixture()
-    def evaluator(self, store):
-        from afl.runtime import Evaluator, Telemetry
-
-        return Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
-
-    @pytest.fixture()
-    def dispatcher(self):
-        return _make_dispatcher()
-
-    def test_batch_analysis_completes(self, compiled, store, evaluator, dispatcher):
-        """BatchWeatherAnalysis with 3 mock stations completes."""
-        from afl.ast_utils import find_workflow
-        from afl.runtime import ExecutionStatus
-
-        wf_ast = find_workflow(compiled, "BatchWeatherAnalysis")
-        assert wf_ast is not None
-
-        result = evaluator.execute(
-            wf_ast,
-            inputs={"country": "US", "state": "", "max_stations": 3, "year": 2023},
-            program_ast=compiled,
-            dispatcher=dispatcher,
-        )
-        assert result.success
-        assert result.status == ExecutionStatus.COMPLETED
-
-    def test_batch_creates_foreach_sub_blocks(self, compiled, store, evaluator, dispatcher):
-        """BatchWeatherAnalysis creates foreach sub-blocks for each station."""
-        from afl.ast_utils import find_workflow
-
-        wf_ast = find_workflow(compiled, "BatchWeatherAnalysis")
-        result = evaluator.execute(
-            wf_ast,
-            inputs={"country": "US", "state": "", "max_stations": 3, "year": 2023},
-            program_ast=compiled,
-            dispatcher=dispatcher,
-        )
-        assert result.success
-        steps = store.get_steps_by_workflow(result.workflow_id)
-        foreach_steps = [
-            s
-            for s in steps
-            if getattr(s, "statement_id", "") and "foreach-" in getattr(s, "statement_id", "")
-        ]
-        assert len(foreach_steps) >= 3, (
-            f"Expected >= 3 foreach sub-blocks, got {len(foreach_steps)}"
-        )
-
-
-class TestAnalyzeStateTrendsFastIntegration:
-    """Integration tests for the fast-path AnalyzeStateTrendsFast workflow."""
-
-    @pytest.fixture()
-    def compiled(self):
-        return _compile_weather_afl()
-
-    @pytest.fixture()
-    def store(self):
-        from afl.runtime import MemoryStore
-
-        return MemoryStore()
-
-    @pytest.fixture()
-    def evaluator(self, store):
-        from afl.runtime import Evaluator, Telemetry
-
-        return Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
-
-    @pytest.fixture()
-    def dispatcher(self):
-        return _make_dispatcher()
-
-    def test_fast_completes(self, compiled, store, evaluator, dispatcher):
-        """AnalyzeStateTrendsFast completes with mock dispatch."""
-        from afl.ast_utils import find_workflow
-        from afl.runtime import ExecutionStatus
-
-        wf_ast = find_workflow(compiled, "AnalyzeStateTrendsFast")
-        assert wf_ast is not None
-
-        result = evaluator.execute(
-            wf_ast,
-            inputs={
-                "country": "US",
-                "state": "NY",
-                "max_stations": 3,
-                "start_year": 2020,
-                "end_year": 2023,
-            },
-            program_ast=compiled,
-            dispatcher=dispatcher,
-        )
-        assert result.success
-        assert result.status == ExecutionStatus.COMPLETED
-
-    def test_fast_step_count(self, compiled, store, evaluator, dispatcher):
-        """AnalyzeStateTrendsFast creates far fewer steps than AnalyzeStateTrends."""
-        from afl.ast_utils import find_workflow
-
-        wf_ast = find_workflow(compiled, "AnalyzeStateTrendsFast")
-        result = evaluator.execute(
-            wf_ast,
-            inputs={
-                "country": "US",
-                "state": "NY",
-                "max_stations": 3,
-                "start_year": 2020,
-                "end_year": 2023,
-            },
-            program_ast=compiled,
-            dispatcher=dispatcher,
-        )
-        assert result.success
-        steps = store.get_steps_by_workflow(result.workflow_id)
-        # Should be ~12 steps (1 discover + 3×2 foreach + 1 trend + root/blocks)
-        # Much less than the old path's ~3,240 per state
-        assert len(steps) <= 30, f"Expected <= 30 steps, got {len(steps)}"
-
-    def test_fast_outputs(self, compiled, store, evaluator, dispatcher):
-        """AnalyzeStateTrendsFast yields status and narrative."""
-        from afl.ast_utils import find_workflow
-
-        wf_ast = find_workflow(compiled, "AnalyzeStateTrendsFast")
-        result = evaluator.execute(
-            wf_ast,
-            inputs={
-                "country": "US",
-                "state": "NY",
-                "max_stations": 3,
-                "start_year": 2020,
-                "end_year": 2023,
-            },
-            program_ast=compiled,
-            dispatcher=dispatcher,
-        )
-        assert result.outputs["status"] == "completed"
-        assert "NY" in result.outputs["narrative"]
-
-    def test_fast_all_states_completes(self, compiled, store, evaluator, dispatcher):
-        """AnalyzeAllStatesFast with 2 mock states completes."""
-        from afl.ast_utils import find_workflow
-        from afl.runtime import ExecutionStatus
-
-        wf_ast = find_workflow(compiled, "AnalyzeAllStatesFast")
-        assert wf_ast is not None
-
-        result = evaluator.execute(
-            wf_ast,
-            inputs={
-                "states": ["NY", "CA"],
-                "max_stations": 2,
-                "start_year": 2022,
-                "end_year": 2023,
-            },
-            program_ast=compiled,
-            dispatcher=dispatcher,
-        )
-        assert result.success
-        assert result.status == ExecutionStatus.COMPLETED
+    def test_upsert_idempotent(self, store):
+        for _ in range(3):
+            store.upsert_report(
+                station_id="USW00014732",
+                station_name="TEST",
+                year=2020,
+                location="NY",
+                report={},
+                daily_stats=[],
+            )
+        assert store.reports.count_documents({"station_id": "USW00014732", "year": 2020}) == 1

@@ -233,11 +233,18 @@ def flow_run_form(
 
                 for p in wf_ast.get("params", []):
                     default_val = evaluate_default(p.get("default"))
+                    # Render as JSON for complex types so the form round-trips correctly
+                    default_json: str | None
+                    if isinstance(default_val, (list, dict)):
+                        default_json = json.dumps(default_val)
+                    else:
+                        default_json = str(default_val) if default_val is not None else None
                     params.append(
                         {
                             "name": p.get("name", ""),
                             "type": p.get("type", ""),
                             "default": default_val,
+                            "default_json": default_json,
                             "description": param_descs.get(p.get("name", ""), ""),
                         }
                     )

@@ -12,44 +12,24 @@ from __future__ import annotations
 def register_all_handlers(poller) -> None:
     """Register all handlers with an AgentPoller."""
     from .analysis.analysis_handlers import register_analysis_handlers
-    from .climate.climate_handlers import register_climate_handlers
-    from .discovery.discovery_handlers import register_discovery_handlers
+    from .catalog.catalog_handlers import register_catalog_handlers
     from .geocode.geocode_handlers import register_geocode_handlers
     from .ingest.ingest_handlers import register_ingest_handlers
-    from .interpret.interpret_handlers import register_interpret_handlers
-    from .qc.qc_handlers import register_qc_handlers
-    from .report.report_handlers import register_report_handlers
-    from .visualize.visualize_handlers import register_visualize_handlers
 
-    register_discovery_handlers(poller)
+    register_catalog_handlers(poller)
     register_ingest_handlers(poller)
-    register_qc_handlers(poller)
     register_analysis_handlers(poller)
     register_geocode_handlers(poller)
-    register_interpret_handlers(poller)
-    register_report_handlers(poller)
-    register_visualize_handlers(poller)
-    register_climate_handlers(poller)
 
 
 def register_all_registry_handlers(runner) -> None:
     """Register all handlers with a RegistryRunner."""
     from .analysis.analysis_handlers import register_handlers as reg_analysis
-    from .climate.climate_handlers import register_handlers as reg_climate
-    from .discovery.discovery_handlers import register_handlers as reg_discovery
+    from .catalog.catalog_handlers import register_handlers as reg_catalog
     from .geocode.geocode_handlers import register_handlers as reg_geocode
     from .ingest.ingest_handlers import register_handlers as reg_ingest
-    from .interpret.interpret_handlers import register_handlers as reg_interpret
-    from .qc.qc_handlers import register_handlers as reg_qc
-    from .report.report_handlers import register_handlers as reg_report
-    from .visualize.visualize_handlers import register_handlers as reg_visualize
 
-    reg_discovery(runner)
+    reg_catalog(runner)
     reg_ingest(runner)
-    reg_qc(runner)
     reg_analysis(runner)
     reg_geocode(runner)
-    reg_interpret(runner)
-    reg_report(runner)
-    reg_visualize(runner)
-    reg_climate(runner)

@@ -1,37 +1,38 @@
-"""Geocode handlers for the noaa-weather example."""
+"""Geocode handlers — reverse geocode station coordinates via OSM Nominatim."""
 
 from __future__ import annotations
 
 import os
 from typing import Any
 
-from handlers.shared.weather_utils import reverse_geocode_nominatim
+from handlers.shared.ghcn_utils import reverse_geocode_nominatim
 
-NAMESPACE = "weather.Geocode"
+NAMESPACE = "ghcn.Geocode"
+
+
+def _step_log(step_log: Any, msg: str, level: str = "info") -> None:
+    if step_log is None:
+        return
+    if callable(step_log):
+        step_log(msg, level)
 
 
 def handle_reverse_geocode(params: dict[str, Any]) -> dict[str, Any]:
-    """Handle ReverseGeocode event facet."""
-    lat = params.get("lat", 0.0)
-    lon = params.get("lon", 0.0)
-    if isinstance(lat, str):
-        lat = float(lat)
-    if isinstance(lon, str):
-        lon = float(lon)
+    """Handle ReverseGeocode — reverse geocode lat/lon via Nominatim."""
+    lat = float(params.get("lat", 0.0))
+    lon = float(params.get("lon", 0.0))
+    step_log = params.get("_step_log")
+
+    _step_log(step_log, f"Geocoding ({lat}, {lon})")
 
     geo = reverse_geocode_nominatim(lat, lon)
 
-    step_log = params.get("_step_log")
-    if step_log is not None:
-        msg = f"Geocoded ({lat}, {lon}): {geo.get('display_name', '')}"
-        if callable(step_log):
-            step_log(msg, "success")
-        else:
-            step_log.append({"message": msg, "level": "success"})
+    _step_log(step_log, f"Geocoded: {geo.get('display_name', '')}", "success")
 
     return {"geo": geo}
 
 
+# Dispatch table
 _DISPATCH: dict[str, Any] = {
     f"{NAMESPACE}.ReverseGeocode": handle_reverse_geocode,
 }

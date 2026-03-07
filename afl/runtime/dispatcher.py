@@ -24,6 +24,7 @@ import importlib
 import importlib.util
 import inspect
 import logging
+import threading
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
@@ -82,6 +83,7 @@ class RegistryDispatcher:
         self._persistence = persistence
         self._topics = topics or []
         self._module_cache: dict[tuple[str, str], Callable] = {}
+        self._import_lock = threading.Lock()
 
     def can_dispatch(self, facet_name: str) -> bool:
         """Check if a handler registration exists for the facet."""
@@ -134,9 +136,13 @@ class RegistryDispatcher:
         if cache_key in self._module_cache:
             return self._module_cache[cache_key]
 
-        handler = self._import_handler(reg)
-        self._module_cache[cache_key] = handler
-        return handler
+        with self._import_lock:
+            # Double-check after acquiring lock
+            if cache_key in self._module_cache:
+                return self._module_cache[cache_key]
+            handler = self._import_handler(reg)
+            self._module_cache[cache_key] = handler
+            return handler
 
     def _import_handler(self, reg: Any) -> Callable:
         """Import and return the handler callable from a registration.
@@ -191,7 +197,22 @@ class RegistryDispatcher:
         if current not in sys.path:
             sys.path.insert(0, current)
 
-        return importlib.import_module(dotted_name)
+        logger.debug(
+            "_import_from_file: importing %s from %s (package_root_parent=%s)",
+            dotted_name,
+            file_path,
+            current,
+        )
+        try:
+            return importlib.import_module(dotted_name)
+        except ImportError:
+            logger.exception(
+                "Failed to import %s (sys.path[:5]=%s, handlers_in_modules=%s)",
+                dotted_name,
+                sys.path[:5],
+                "handlers" in sys.modules,
+            )
+            raise
 
     @property
     def module_cache(self) -> dict[tuple[str, str], Callable]:

@@ -233,11 +233,17 @@ def workflow_compile(request: Request, source: str = Form(...)):
             for p in wf.get("params", []):
                 default_val = p.get("default")
                 default_val = evaluate_default(default_val)
+                default_json: str | None
+                if isinstance(default_val, (list, dict)):
+                    default_json = json.dumps(default_val)
+                else:
+                    default_json = str(default_val) if default_val is not None else None
                 params_with_defaults.append(
                     {
                         "name": p.get("name", ""),
                         "type": p.get("type", ""),
                         "default": default_val,
+                        "default_json": default_json,
                     }
                 )
             workflows.append(
