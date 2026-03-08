@@ -34,6 +34,7 @@ services:
     environment:
       - AFL_MONGODB_URL=mongodb://mongodb:27017
       - AFL_MONGODB_DATABASE=afl
+      - AFL_EXAMPLES_DATABASE=${AFL_EXAMPLES_DATABASE:-afl_examples}
       - AFL_LOCAL_OUTPUT_DIR=${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
     volumes:
       - ${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:/Volumes/afl_data/output:ro
