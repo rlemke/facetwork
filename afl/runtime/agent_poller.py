@@ -793,11 +793,11 @@ class AgentPoller:
                 workflow_id, workflow_ast, program_ast=program_ast, runner_id=runner_id
             )
 
-        if runner_id and result.status in (
-            ExecutionStatus.COMPLETED,
-            ExecutionStatus.ERROR,
-        ):
-            self._update_runner_state(runner_id, result)
+        if result.status in (ExecutionStatus.COMPLETED, ExecutionStatus.ERROR):
+            if runner_id:
+                self._update_runner_state(runner_id, result)
+            else:
+                self._update_runner_terminal_state(workflow_id, result)
 
     def _update_runner_state(self, runner_id: str, result: ExecutionResult) -> None:
         """Update runner state based on execution result."""
@@ -818,6 +818,36 @@ class AgentPoller:
                 logger.info("Updated runner %s state to %s", runner_id, runner.state)
         except Exception:
             logger.debug("Could not update runner %s", runner_id, exc_info=True)
+
+    def _update_runner_terminal_state(self, workflow_id: str, result: ExecutionResult) -> None:
+        """Update runner entity when workflow reaches a terminal state.
+
+        Used when runner_id is not available (e.g. stuck-step sweep).
+        Looks up runners by workflow_id instead.
+        """
+        if not hasattr(self._persistence, "get_runners_by_workflow"):
+            return
+        try:
+            now = _current_time_ms()
+            target_state = (
+                RunnerState.COMPLETED
+                if result.status == ExecutionStatus.COMPLETED
+                else RunnerState.FAILED
+            )
+            for runner in self._persistence.get_runners_by_workflow(workflow_id):
+                if runner.state not in (RunnerState.COMPLETED, RunnerState.FAILED):
+                    runner.state = target_state
+                    runner.end_time = now
+                    runner.duration = now - runner.start_time if runner.start_time else 0
+                    self._persistence.save_runner(runner)
+                    logger.info(
+                        "Runner %s updated to %s for workflow %s",
+                        runner.uuid,
+                        target_state,
+                        workflow_id,
+                    )
+        except Exception:
+            logger.debug("Could not update runners for workflow %s", workflow_id, exc_info=True)
 
     # =========================================================================
     # Shutdown
