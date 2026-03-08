@@ -79,7 +79,8 @@ def handle_analyze_station_climate(params: dict[str, Any]) -> dict[str, Any]:
                 daily_stats=[],
             )
     except Exception as exc:
-        logger.warning("Failed to write reports for %s: %s", station_id, exc)
+        logger.error("Failed to write reports for %s: %s", station_id, exc)
+        raise
 
     elapsed = time.monotonic() - t0
     _step_log(

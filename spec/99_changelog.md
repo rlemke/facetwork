@@ -158,7 +158,7 @@ files.
 
 **New store (`examples/noaa-weather/handlers/shared/weather_utils.py`):**
 - `get_weather_db(db=None)` — MongoDB connection via `AFL_MONGODB_URL` /
-  `AFL_MONGODB_DATABASE` (same env vars as AFL runtime)
+  `AFL_EXAMPLES_DATABASE` (separate database from AFL runtime, default `afl_examples`)
 - `WeatherReportStore` class — wraps `weather_reports` and
   `weather_batch_summaries` collections with unique indexes
   (`(station_id, year)` and `(batch_id)`); provides `upsert_report()`,
@@ -1832,7 +1832,7 @@ New ingestion pipeline that reads upstream handler output files (GeoJSON, CSV, J
 - `ingest_csv()`: reads CSV via `DictReader`, bulk upsert rows
 - `ingest_json()`: reads JSON file, single `replace_one(upsert=True)`
 - Indexes: compound unique `(dataset_key, feature_key)` on `handler_output`, `2dsphere` sparse on `geometry`, unique `dataset_key` on `handler_output_meta`
-- `get_mongo_db()` uses same `AFL_MONGODB_URL` / `AFL_MONGODB_DATABASE` env vars as runtime
+- `get_mongo_db()` uses `AFL_MONGODB_URL` / `AFL_EXAMPLES_DATABASE` (separate database from AFL runtime, default `afl_examples`)
 
 **`ingestion_handlers.py`** — 8 ToDB handler functions:
 - `PopulationToDB`, `IncomeToDB`, `HousingToDB`, `EducationToDB`, `CommutingToDB` — ACS CSV → MongoDB (factory via `_make_acs_db_handler`)

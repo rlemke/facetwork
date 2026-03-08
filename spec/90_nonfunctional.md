@@ -240,7 +240,8 @@ scripts/easy.sh        # runs the full pipeline using .env values
 | **MongoDB** | | |
 | `MONGODB_PORT` | `27018` | Host port for MongoDB container |
 | `AFL_MONGODB_URL` | `mongodb://localhost:27018` | MongoDB connection URL |
-| `AFL_MONGODB_DATABASE` | `afl` | Database name |
+| `AFL_MONGODB_DATABASE` | `afl` | Database name (runtime: steps, tasks, runners, flows) |
+| `AFL_EXAMPLES_DATABASE` | `afl_examples` | Database for example handler data (weather reports, census output) |
 | `MONGODB_DATA_DIR` | *(Docker volume)* | Host path for MongoDB data |
 | **Scaling** | | |
 | `AFL_RUNNERS` | `1` | Number of runner service instances |

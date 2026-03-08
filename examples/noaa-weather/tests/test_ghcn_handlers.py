@@ -805,8 +805,8 @@ class TestAnalysisHandlers:
         assert result["years_analyzed"] == 0
         assert json.loads(result["yearly_summaries"]) == []
 
-    def test_analyze_station_db_error_graceful(self, tmp_path, monkeypatch):
-        """MongoDB write failure does not crash the handler."""
+    def test_analyze_station_db_error_raises(self, tmp_path, monkeypatch):
+        """MongoDB write failure propagates so the task fails visibly."""
         rows = [
             ("20200101", "TMAX", "250", ""),
             ("20200101", "TMIN", "100", ""),
@@ -823,17 +823,16 @@ class TestAnalysisHandlers:
 
         from handlers.analysis.analysis_handlers import handle_analyze_station_climate
 
-        # Should not raise — MongoDB failure is caught
-        result = handle_analyze_station_climate(
-            {
-                "station_id": "USW00094728",
-                "station_name": "TEST",
-                "start_year": 2020,
-                "end_year": 2020,
-                "state": "NY",
-            }
-        )
-        assert result["years_analyzed"] == 1
+        with pytest.raises(RuntimeError, match="no mongo"):
+            handle_analyze_station_climate(
+                {
+                    "station_id": "USW00094728",
+                    "station_name": "TEST",
+                    "start_year": 2020,
+                    "end_year": 2020,
+                    "state": "NY",
+                }
+            )
 
     def test_compute_region_trend_no_db(self, monkeypatch):
         """When MongoDB is unavailable, returns empty trend."""
