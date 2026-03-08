@@ -67,8 +67,15 @@ _STATE_NAMES: dict[str, str] = {
 
 
 def _get_climate_db(store):
-    """Return the raw MongoDB database from the store."""
-    return store._db
+    """Return the examples MongoDB database for climate data.
+
+    Climate data lives in ``AFL_EXAMPLES_DATABASE`` (default ``afl_examples``),
+    separate from the AFL runtime database.
+    """
+    import os
+
+    db_name = os.environ.get("AFL_EXAMPLES_DATABASE", "afl_examples")
+    return store._db.client[db_name]
 
 
 def _strip_dates(doc: dict[str, Any]) -> dict[str, Any]:

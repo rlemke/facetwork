@@ -44,9 +44,17 @@ def client():
     store.close()
 
 
+def _examples_db(store):
+    """Return the examples database from the mongomock client."""
+    import os
+
+    db_name = os.environ.get("AFL_EXAMPLES_DATABASE", "afl_examples")
+    return store._db.client[db_name]
+
+
 def _seed_state_year(store, state: str, year: int, temp_mean: float = 12.0, precip: float = 900.0):
     """Insert a climate_state_years document."""
-    store._db["climate_state_years"].insert_one(
+    _examples_db(store)["climate_state_years"].insert_one(
         {
             "state": state,
             "year": year,
@@ -64,7 +72,7 @@ def _seed_state_year(store, state: str, year: int, temp_mean: float = 12.0, prec
 
 def _seed_trend(store, state: str, warming: float = 0.15, precip_pct: float = 5.0):
     """Insert a climate_trends document."""
-    store._db["climate_trends"].insert_one(
+    _examples_db(store)["climate_trends"].insert_one(
         {
             "state": state,
             "start_year": 1944,
