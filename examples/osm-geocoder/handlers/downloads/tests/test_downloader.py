@@ -210,8 +210,8 @@ class TestDownloadHttpError:
 class TestDownloadMirror:
     """Tests for AFL_GEOFABRIK_MIRROR local mirror support."""
 
-    def test_mirror_hit_copies_to_cache(self, tmp_path):
-        """When mirror has the file, copies to cache and returns wasInCache=False."""
+    def test_mirror_hit_uses_mirror_directly(self, tmp_path):
+        """When mirror has the file and cache is local, returns mirror path directly."""
         mirror_dir = str(tmp_path / "mirror")
         region = "africa/algeria"
         ext = FORMAT_EXTENSIONS["pbf"]
@@ -222,19 +222,45 @@ class TestDownloadMirror:
 
         with (
             mock.patch.object(_downloader_mod, "GEOFABRIK_MIRROR", mirror_dir),
-            mock.patch(f"{MODULE}.os.path.exists", return_value=False),
-            mock.patch(f"{MODULE}.os.makedirs"),
-            mock.patch(f"{MODULE}.shutil.copy2"),
-            mock.patch(f"{MODULE}.os.replace"),
-            mock.patch(f"{MODULE}.os.path.getsize", return_value=13),
+            mock.patch.object(_downloader_mod, "_storage") as mock_storage,
             mock.patch(f"{MODULE}.requests.get") as mock_get,
         ):
+            mock_storage.exists.return_value = False  # cache miss
+            result = download(region)
+
+        assert result["wasInCache"] is True
+        assert result["source"] == "mirror"
+        assert result["path"] == mirror_file
+        assert result["url"] == geofabrik_url(region)
+        assert result["size"] == 13
+        mock_get.assert_not_called()
+
+    def test_mirror_hit_copies_to_hdfs_cache(self, tmp_path):
+        """When mirror has the file and cache is HDFS, copies to HDFS cache."""
+        mirror_dir = str(tmp_path / "mirror")
+        region = "africa/algeria"
+        ext = FORMAT_EXTENSIONS["pbf"]
+        mirror_file = os.path.join(mirror_dir, f"{region}-latest.{ext}")
+        os.makedirs(os.path.dirname(mirror_file), exist_ok=True)
+        with open(mirror_file, "wb") as f:
+            f.write(b"fake-pbf-data")
+
+        with (
+            mock.patch.object(_downloader_mod, "GEOFABRIK_MIRROR", mirror_dir),
+            mock.patch.object(_downloader_mod, "CACHE_DIR", "hdfs://namenode:8020/cache"),
+            mock.patch.object(_downloader_mod, "_storage") as mock_storage,
+            mock.patch(f"{MODULE}.requests.get") as mock_get,
+        ):
+            mock_storage.exists.return_value = False
+            mock_storage.join.return_value = f"hdfs://namenode:8020/cache/{region}-latest.{ext}"
+            mock_storage.dirname.return_value = "hdfs://namenode:8020/cache/africa"
+            mock_storage.getsize.return_value = 13
+            mock_storage.open.return_value.__enter__ = mock.Mock()
+            mock_storage.open.return_value.__exit__ = mock.Mock(return_value=False)
             result = download(region)
 
         assert result["wasInCache"] is False
-        assert result["path"] == cache_path(region)
-        assert result["url"] == geofabrik_url(region)
-        assert result["size"] == 13
+        assert result["source"] == "mirror"
         mock_get.assert_not_called()
 
     def test_mirror_miss_falls_through_to_download(self, tmp_path):
@@ -281,7 +307,7 @@ class TestDownloadMirror:
         mock_isfile.assert_not_called()
 
     def test_mirror_path_structure(self, tmp_path):
-        """Mirror file is found and copied to cache — result path is the cache path."""
+        """Mirror file is found — result path is the mirror path (local cache)."""
         mirror_dir = str(tmp_path / "mirror")
         for fmt, ext in FORMAT_EXTENSIONS.items():
             region = "north-america/us/california"
@@ -292,21 +318,17 @@ class TestDownloadMirror:
 
             with (
                 mock.patch.object(_downloader_mod, "GEOFABRIK_MIRROR", mirror_dir),
-                mock.patch(f"{MODULE}.os.path.exists", return_value=False),
-                mock.patch(f"{MODULE}.os.makedirs"),
-                mock.patch(f"{MODULE}.shutil.copy2"),
-                mock.patch(f"{MODULE}.os.replace"),
-                mock.patch(f"{MODULE}.os.path.getsize", return_value=7),
+                mock.patch.object(_downloader_mod, "_storage") as mock_storage,
             ):
+                mock_storage.exists.return_value = False
                 result = download(region, fmt=fmt)
 
-            assert result["path"] == cache_path(region, fmt)
-            assert result["wasInCache"] is False
+            assert result["path"] == mirror_file
+            assert result["wasInCache"] is True
+            assert result["source"] == "mirror"
 
-    def test_mirror_copies_to_cache(self, tmp_path):
-        """Mirror file is physically copied to the cache directory."""
-        from afl.runtime.storage import get_storage_backend
-
+    def test_mirror_uses_path_directly_local_cache(self, tmp_path):
+        """With local cache, mirror path is returned directly — no copy."""
         mirror_dir = str(tmp_path / "mirror")
         test_cache_dir = str(tmp_path / "cache")
         region = "africa/algeria"
@@ -318,8 +340,9 @@ class TestDownloadMirror:
         with open(mirror_file, "wb") as f:
             f.write(b"mirror-data-here")
 
+        from afl.runtime.storage import get_storage_backend
+
         test_storage = get_storage_backend(test_cache_dir)
-        expected_cache_file = test_storage.join(test_cache_dir, f"{region}-latest.{ext}")
 
         with (
             mock.patch.object(_downloader_mod, "GEOFABRIK_MIRROR", mirror_dir),
@@ -329,11 +352,10 @@ class TestDownloadMirror:
         ):
             result = download(region)
 
-        assert os.path.isfile(expected_cache_file)
-        with open(expected_cache_file, "rb") as f:
-            assert f.read() == b"mirror-data-here"
-        assert result["path"] == expected_cache_file
-        assert result["wasInCache"] is False
+        # Mirror path returned directly, no copy to cache
+        assert result["path"] == mirror_file
+        assert result["wasInCache"] is True
+        assert result["source"] == "mirror"
         mock_get.assert_not_called()
 
     def test_mirror_skips_copy_when_cache_exists(self, tmp_path):

@@ -167,12 +167,18 @@ def cache_path(region_path: str, fmt: str = "pbf") -> str:
     return _storage.join(CACHE_DIR, f"{region_path}-latest.{ext}")
 
 
+def _cache_is_hdfs() -> bool:
+    """Return True when the cache directory is an HDFS URI."""
+    return CACHE_DIR.startswith("hdfs://")
+
+
 def download(region_path: str, fmt: str = "pbf") -> dict:
     """Download an OSM region file, using the local cache if available.
 
-    When ``AFL_GEOFABRIK_MIRROR`` is set, mirror files act as a seed source:
-    data is copied from the mirror into the configured cache directory, and the
-    cache path is returned (not the mirror path).
+    When ``AFL_GEOFABRIK_MIRROR`` is set and the cache is local (not HDFS),
+    the mirror path is returned directly — no copy needed.  When the cache
+    is on HDFS, mirror files are still copied so that distributed agents
+    can access the data.
 
     Args:
         region_path: Geofabrik region path (e.g. "africa/algeria").
@@ -194,24 +200,44 @@ def download(region_path: str, fmt: str = "pbf") -> dict:
         log.info("cache-hit: %s (%s)", region_path, _fmt_bytes(result["size"]))
         return result
 
-    # Check local mirror — seed source, not the cache itself
+    # Check local mirror
     if GEOFABRIK_MIRROR:
         ext = FORMAT_EXTENSIONS[fmt]
         mirror_path = os.path.join(GEOFABRIK_MIRROR, f"{region_path}-latest.{ext}")
         if os.path.isfile(mirror_path):
-            with _get_path_lock(local_path):
-                if _storage.exists(local_path):
-                    result = _cache_hit(url, local_path)
-                    result["source"] = "cache"
-                    log.info(
-                        "cache-hit: %s (after lock, %s)", region_path, _fmt_bytes(result["size"])
-                    )
-                    return result
-                _copy_to_cache(mirror_path, local_path)
-            result = _cache_miss(url, local_path)
-            result["source"] = "mirror"
-            log.info("cache-seeded: %s from mirror (%s)", region_path, _fmt_bytes(result["size"]))
-            return result
+            if _cache_is_hdfs():
+                # HDFS cache: copy so distributed agents can access it
+                with _get_path_lock(local_path):
+                    if _storage.exists(local_path):
+                        result = _cache_hit(url, local_path)
+                        result["source"] = "cache"
+                        log.info(
+                            "cache-hit: %s (after lock, %s)",
+                            region_path,
+                            _fmt_bytes(result["size"]),
+                        )
+                        return result
+                    _copy_to_cache(mirror_path, local_path)
+                result = _cache_miss(url, local_path)
+                result["source"] = "mirror"
+                log.info(
+                    "cache-seeded: %s from mirror (%s)",
+                    region_path,
+                    _fmt_bytes(result["size"]),
+                )
+                return result
+            else:
+                # Local cache: use the mirror path directly, no copy
+                mirror_size = os.path.getsize(mirror_path)
+                log.info("mirror-direct: %s (%s)", region_path, _fmt_bytes(mirror_size))
+                return {
+                    "url": url,
+                    "path": mirror_path,
+                    "date": datetime.now(UTC).isoformat(),
+                    "size": mirror_size,
+                    "wasInCache": True,
+                    "source": "mirror",
+                }
 
     with _get_path_lock(local_path):
         # Re-check after acquiring lock
