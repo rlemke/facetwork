@@ -252,7 +252,7 @@ scripts/easy.sh        # runs the full pipeline using .env values
 | `AFL_HDFS` | `false` | Enable HDFS overlay compose file and profile |
 | `AFL_POSTGIS` | `false` | Enable PostGIS overlay compose file and profile |
 | `AFL_JENKINS` | `false` | Enable Jenkins profile |
-| `AFL_GEOFABRIK_MIRROR` | *(empty)* | Path to local Geofabrik mirror; enables mirror overlay |
+| `AFL_GEOFABRIK_MIRROR` | `/Volumes/afl_data/osm` | Path to local Geofabrik mirror; mounted read-only at `/data/osm-mirror` in containers |
 | **OSM data paths** | | |
 | `AFL_CACHE_DIR` | `/tmp/osm-cache` | OSM cache directory (local path or HDFS URI) |
 | `AFL_OSM_OUTPUT_BASE` | `/tmp` | OSM extractor output base (local path or HDFS URI) |

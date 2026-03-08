@@ -30,6 +30,13 @@ from handlers.shared.downloader import (  # noqa: E402
 MODULE = "handlers.downloader"
 
 
+@pytest.fixture(autouse=True)
+def _disable_mirror():
+    """Disable mirror by default so cache-miss tests hit HTTP, not the real mirror dir."""
+    with mock.patch.object(_downloader_mod, "GEOFABRIK_MIRROR", None):
+        yield
+
+
 class TestGeofabrikUrl:
     def test_simple_region(self):
         assert geofabrik_url("africa/algeria") == (

@@ -299,9 +299,12 @@ if [ -n "${GRAPHHOPPER_DATA_DIR:-}" ]; then
     echo ""
 fi
 if [ "$MIRROR" = true ]; then
-    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mirror.yml"
-    echo "Geofabrik mirror enabled: $AFL_GEOFABRIK_MIRROR"
+    echo "Geofabrik mirror: $AFL_GEOFABRIK_MIRROR"
     echo "  Mounted read-only at /data/osm-mirror in OSM agent containers"
+    echo ""
+else
+    echo "Geofabrik mirror: /Volumes/afl_data/osm (default)"
+    echo "  Set AFL_GEOFABRIK_MIRROR in .env to override"
     echo ""
 fi
 

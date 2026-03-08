@@ -57,11 +57,12 @@ services:
       - AFL_MONGODB_DATABASE=afl
       - AFL_OSM_OUTPUT_BASE=${AFL_OSM_OUTPUT_BASE:-}
       - AFL_CACHE_DIR=${AFL_CACHE_DIR:-}
-      - AFL_GEOFABRIK_MIRROR=${AFL_GEOFABRIK_MIRROR:-}
+      - AFL_GEOFABRIK_MIRROR=/data/osm-mirror
       - AFL_LOCAL_OUTPUT_DIR=${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
       - PYTHONPATH=/app:/app/examples/noaa-weather:/app/examples/osm-geocoder
     volumes:
       - ${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:/Volumes/afl_data/output
+      - ${AFL_GEOFABRIK_MIRROR:-/Volumes/afl_data/osm}:/data/osm-mirror:ro
       - ./examples:/app/examples:ro
     depends_on:
       mongodb:
@@ -126,11 +127,12 @@ services:
       - AFL_MONGODB_DATABASE=afl
       - AFL_OSM_OUTPUT_BASE=${AFL_OSM_OUTPUT_BASE:-}
       - AFL_CACHE_DIR=${AFL_CACHE_DIR:-}
-      - AFL_GEOFABRIK_MIRROR=${AFL_GEOFABRIK_MIRROR:-}
+      - AFL_GEOFABRIK_MIRROR=/data/osm-mirror
       - AFL_LOCAL_OUTPUT_DIR=${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
     volumes:
       - ${GRAPHHOPPER_DATA_DIR:-graphhopper_data}:/data/graphhopper
       - ${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:/Volumes/afl_data/output
+      - ${AFL_GEOFABRIK_MIRROR:-/Volumes/afl_data/osm}:/data/osm-mirror:ro
     depends_on:
       mongodb:
         condition: service_healthy
@@ -146,10 +148,11 @@ services:
       - AFL_MONGODB_DATABASE=afl
       - AFL_OSM_OUTPUT_BASE=${AFL_OSM_OUTPUT_BASE:-}
       - AFL_CACHE_DIR=${AFL_CACHE_DIR:-}
-      - AFL_GEOFABRIK_MIRROR=${AFL_GEOFABRIK_MIRROR:-}
+      - AFL_GEOFABRIK_MIRROR=/data/osm-mirror
       - AFL_LOCAL_OUTPUT_DIR=${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
     volumes:
       - ${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:/Volumes/afl_data/output
+      - ${AFL_GEOFABRIK_MIRROR:-/Volumes/afl_data/osm}:/data/osm-mirror:ro
     depends_on:
       mongodb:
         condition: service_healthy

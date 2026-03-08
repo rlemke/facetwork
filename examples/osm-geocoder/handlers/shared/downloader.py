@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 CACHE_DIR = os.environ.get("AFL_CACHE_DIR", os.path.join(tempfile.gettempdir(), "osm-cache"))
 _storage = get_storage_backend(CACHE_DIR)
 GEOFABRIK_BASE = "https://download.geofabrik.de"
-GEOFABRIK_MIRROR = os.environ.get("AFL_GEOFABRIK_MIRROR")
+GEOFABRIK_MIRROR = os.environ.get("AFL_GEOFABRIK_MIRROR", "/Volumes/afl_data/osm")
 USER_AGENT = "AgentFlow-OSM-Example/1.0"
 
 FORMAT_EXTENSIONS = {

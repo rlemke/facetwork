@@ -1,23 +1,9 @@
-# Docker Compose override for local Geofabrik mirror.
+# Docker Compose override for local Geofabrik mirror (DEPRECATED).
 #
-# Usage:
-#   AFL_GEOFABRIK_MIRROR=/path/to/mirror \
-#     docker compose -f docker-compose.yml -f docker-compose.mirror.yml up -d
+# Mirror support is now built into the base docker-compose.yml.
+# The host directory ${AFL_GEOFABRIK_MIRROR:-/Volumes/afl_data/osm} is
+# mounted read-only at /data/osm-mirror in runner and OSM agent containers.
 #
-# This override:
-#   - Mounts the host mirror directory read-only at /data/osm-mirror
-#   - Sets AFL_GEOFABRIK_MIRROR=/data/osm-mirror in agent containers
-#   - Agents check the mirror before downloading from Geofabrik
+# This file is kept for backward compatibility but has no effect.
 
-services:
-  agent-osm-geocoder:
-    environment:
-      - AFL_GEOFABRIK_MIRROR=/data/osm-mirror
-    volumes:
-      - ${AFL_GEOFABRIK_MIRROR:?Set AFL_GEOFABRIK_MIRROR to mirror directory}:/data/osm-mirror:ro
-
-  agent-osm-geocoder-lite:
-    environment:
-      - AFL_GEOFABRIK_MIRROR=/data/osm-mirror
-    volumes:
-      - ${AFL_GEOFABRIK_MIRROR}:/data/osm-mirror:ro
+services: {}
