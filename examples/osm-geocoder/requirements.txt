@@ -1,5 +1,6 @@
 requests>=2.28
 osmium>=4.0
+osm2geojson>=0.3
 shapely>=2.0
 pyproj>=3.0
 folium>=0.14

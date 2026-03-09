@@ -8,10 +8,16 @@ COPY pyproject.toml .
 RUN pip install --no-cache-dir -e ".[mongodb]" || \
     pip install --no-cache-dir lark pymongo
 
+# System packages for osmium-tool (boundary extraction)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    osmium-tool \
+    && rm -rf /var/lib/apt/lists/*
+
 # HDFS support uses WebHDFS REST API via requests (no native libs needed)
 # pyshp needed for census-us TIGER shapefiles
 # folium needed for noaa-weather station maps
-RUN pip install --no-cache-dir requests pyshp folium
+# osm2geojson needed for boundary extraction (type=boundary relations)
+RUN pip install --no-cache-dir requests pyshp folium osm2geojson
 
 # Copy application code
 COPY afl/ ./afl/
