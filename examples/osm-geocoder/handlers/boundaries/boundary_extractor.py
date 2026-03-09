@@ -223,7 +223,10 @@ def extract_boundaries(
 
     # Extract boundaries
     handler = BoundaryHandler(admin_levels=admin_levels, natural_types=natural_types)
-    handler.apply_file(str(pbf_path), locations=True)
+    # idx='flex_mem' builds areas from both type=multipolygon AND type=boundary
+    # relations.  Without it, state/county boundary relations (type=boundary)
+    # are silently skipped and produce 0 features.
+    handler.apply_file(str(pbf_path), locations=True, idx="flex_mem")
 
     # Convert to GeoJSON
     geojson = _features_to_geojson(handler.features)
