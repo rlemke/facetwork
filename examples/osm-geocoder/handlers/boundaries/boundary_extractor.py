@@ -137,18 +137,65 @@ def _matches_natural(tags: dict[str, str], natural_types: list[str]) -> str | No
     return None
 
 
+def _get_pbf_bbox(pbf_path: str) -> tuple[float, float, float, float] | None:
+    """Read the bounding box from a PBF file header via ``osmium fileinfo``."""
+    try:
+        result = subprocess.run(
+            ["osmium", "fileinfo", "-j", pbf_path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+        info = json.loads(result.stdout)
+        boxes = info.get("header", {}).get("boxes", [])
+        if boxes:
+            return tuple(boxes[0])  # (min_lon, min_lat, max_lon, max_lat)
+    except Exception:
+        pass
+    return None
+
+
+def _region_name_from_pbf(pbf_path: str) -> str | None:
+    """Extract the region name from a Geofabrik PBF filename.
+
+    ``california-latest.osm.pbf`` → ``california``
+    ``district-of-columbia-latest.osm.pbf`` → ``district of columbia``
+    ``new-york-latest.osm.pbf`` → ``new york``
+    """
+    stem = Path(pbf_path).stem  # e.g. "california-latest.osm" or "california-latest"
+    # Remove common suffixes
+    for suffix in (".osm", "-latest", "-internal"):
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)]
+    return stem.replace("-", " ").lower() if stem else None
+
+
+def _name_matches_region(feature_name: str, region: str) -> bool:
+    """Check if a feature name matches the expected region (case-insensitive)."""
+    return feature_name.lower().strip() == region
+
+
 def _extract_via_osm2geojson(
     pbf_path: str,
     admin_levels: list[int] | None,
     natural_types: list[str] | None,
 ) -> list[BoundaryFeature]:
-    """Extract using ``osmium tags-filter`` → ``osm2geojson``."""
+    """Extract using ``osmium tags-filter`` → ``osm2geojson``.
+
+    For admin boundaries, filters to the region matching the PBF filename
+    to exclude neighboring regions that overlap the extract.  Natural
+    boundaries are filtered by centroid-in-bbox instead.
+    """
     tag_filters = _build_tag_filters(admin_levels, natural_types)
     if not tag_filters:
         return []
 
     admin_set = set(admin_levels) if admin_levels else set()
     natural_list = natural_types or []
+    region_name = _region_name_from_pbf(pbf_path)
+    bbox = _get_pbf_bbox(pbf_path) if natural_types else None
 
     with tempfile.NamedTemporaryFile(suffix=".osm", delete=False) as tmp:
         tmp_path = tmp.name
@@ -191,6 +238,10 @@ def _extract_via_osm2geojson(
 
         # Match against requested criteria
         if _matches_admin(tags, admin_set):
+            # For admin boundaries, filter to the region matching the PBF
+            # filename to exclude neighboring states/counties
+            if region_name and not _name_matches_region(name, region_name):
+                continue
             features.append(
                 BoundaryFeature(
                     osm_id=osm_id,
@@ -205,6 +256,18 @@ def _extract_via_osm2geojson(
         elif natural_list:
             nt = _matches_natural(tags, natural_list)
             if nt:
+                # For natural boundaries, use bbox filtering to exclude
+                # features from neighboring extracts
+                if bbox and geometry:
+                    try:
+                        from shapely.geometry import shape as _shape
+
+                        pt = _shape(geometry).representative_point()
+                        min_lon, min_lat, max_lon, max_lat = bbox
+                        if not (min_lon <= pt.x <= max_lon and min_lat <= pt.y <= max_lat):
+                            continue
+                    except Exception:
+                        pass
                 features.append(
                     BoundaryFeature(
                         osm_id=osm_id,

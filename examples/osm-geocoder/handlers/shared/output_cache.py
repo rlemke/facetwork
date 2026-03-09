@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 # that invalidates all cached outputs (e.g. GeoJSON schema change).
 # Minor handler fixes that only affect a single handler should bump a
 # per-handler version via ``cache_params`` instead.
-_APP_VERSION = "4"
+_APP_VERSION = "5"
 
 
 def _version_key(
