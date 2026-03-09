@@ -98,6 +98,7 @@ class BoundaryHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
         self.admin_levels = set(admin_levels) if admin_levels else set()
         self.natural_types = natural_types or []
         self.features: list[BoundaryFeature] = []
+        self._seen_ids: set[int] = set()  # track IDs captured via area()
         self._wkb_factory = osmium.geom.WKBFactory() if HAS_OSMIUM else None
 
     def _matches_natural_type(self, tags: osm.TagList) -> str | None:
@@ -152,8 +153,10 @@ class BoundaryHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
                 admin_level = None
 
             if admin_level is not None and admin_level in self.admin_levels:
+                oid = a.orig_id()
+                self._seen_ids.add(oid)
                 feature = BoundaryFeature(
-                    osm_id=a.orig_id(),
+                    osm_id=oid,
                     osm_type="relation" if a.from_way() is False else "way",
                     name=tags.get("name", ""),
                     admin_level=admin_level,
@@ -167,8 +170,10 @@ class BoundaryHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
         # Check for natural boundary
         natural_type = self._matches_natural_type(tags)
         if natural_type:
+            oid = a.orig_id()
+            self._seen_ids.add(oid)
             feature = BoundaryFeature(
-                osm_id=a.orig_id(),
+                osm_id=oid,
                 osm_type="relation" if a.from_way() is False else "way",
                 name=tags.get("name", ""),
                 admin_level=None,
@@ -177,6 +182,53 @@ class BoundaryHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
                 geometry=self._get_geometry(a, "area"),
             )
             self.features.append(feature)
+
+    def relation(self, r) -> None:
+        """Capture boundary relations not assembled into areas.
+
+        Large or complex boundary relations (e.g. Alaska at admin_level=4)
+        may fail area assembly in pyosmium.  This callback catches them
+        without geometry so they still appear in the output with feature
+        count > 0.  Deduplication against area() uses ``_seen_ids``.
+        """
+        tags = r.tags
+
+        if "boundary" in tags and tags["boundary"] == "administrative":
+            admin_level_str = tags.get("admin_level", "")
+            try:
+                admin_level = int(admin_level_str)
+            except ValueError:
+                return
+
+            if admin_level in self.admin_levels and r.id not in self._seen_ids:
+                self._seen_ids.add(r.id)
+                self.features.append(
+                    BoundaryFeature(
+                        osm_id=r.id,
+                        osm_type="relation",
+                        name=tags.get("name", ""),
+                        admin_level=admin_level,
+                        boundary_type="administrative",
+                        tags=self._extract_tags(tags),
+                        geometry=None,
+                    )
+                )
+                return
+
+        natural_type = self._matches_natural_type(tags)
+        if natural_type and r.id not in self._seen_ids:
+            self._seen_ids.add(r.id)
+            self.features.append(
+                BoundaryFeature(
+                    osm_id=r.id,
+                    osm_type="relation",
+                    name=tags.get("name", ""),
+                    admin_level=None,
+                    boundary_type=natural_type,
+                    tags=self._extract_tags(tags),
+                    geometry=None,
+                )
+            )
 
 
 def extract_boundaries(
