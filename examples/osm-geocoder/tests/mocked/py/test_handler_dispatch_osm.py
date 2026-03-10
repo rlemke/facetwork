@@ -278,20 +278,20 @@ class TestOsmTigerHandlers:
 
 class TestOsmBoundaryHandlers:
     def test_dispatch_keys(self):
+        """Boundary extraction moved to CombinedScan — _DISPATCH is empty."""
         mod = _osm_import("boundary_handlers")
-        assert len(mod._DISPATCH) > 0
+        assert len(mod._DISPATCH) == 0
 
-    def test_handle_dispatches(self):
+    def test_handle_raises_for_unknown(self):
         mod = _osm_import("boundary_handlers")
-        facet = next(iter(mod._DISPATCH))
-        result = mod.handle({"_facet_name": facet})
-        assert isinstance(result, dict)
+        with pytest.raises(ValueError, match="Unknown facet"):
+            mod.handle({"_facet_name": "osm.geo.Boundaries.Fake"})
 
     def test_register_handlers(self):
         mod = _osm_import("boundary_handlers")
         runner = MagicMock()
         mod.register_handlers(runner)
-        assert runner.register_handler.call_count == len(mod._DISPATCH)
+        assert runner.register_handler.call_count == 0
 
 
 class TestOsmPopulationHandlers:

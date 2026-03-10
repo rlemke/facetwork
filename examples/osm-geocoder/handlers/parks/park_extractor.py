@@ -15,26 +15,21 @@ from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
-from afl.runtime.storage import get_storage_backend, localize
+from afl.runtime.storage import get_storage_backend
 
-from ..shared._output import ensure_dir, open_output, resolve_output_dir, uri_stem
+from ..shared._output import open_output, uri_stem
 
 _storage = get_storage_backend()
 
 log = logging.getLogger(__name__)
 
-# Check for pyosmium availability
-try:
-    import osmium
+import importlib.util
 
-    HAS_OSMIUM = True
-except ImportError:
-    HAS_OSMIUM = False
+HAS_OSMIUM = importlib.util.find_spec("osmium") is not None
 
 # Check for shapely availability
 try:
-    from shapely import wkb
-    from shapely.geometry import mapping, shape
+    from shapely.geometry import shape
     from shapely.ops import transform
 
     HAS_SHAPELY = True
@@ -285,148 +280,6 @@ def calculate_area_km2(geometry: dict) -> float:
     except Exception as e:
         log.debug("Could not calculate area: %s", e)
         return 0.0
-
-
-class ParkHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
-    """Handler for extracting parks from OSM data."""
-
-    def __init__(
-        self,
-        park_type: ParkType = ParkType.ALL,
-        protect_classes: set[str] | None = None,
-        min_area_km2: float = 0.0,
-    ):
-        if HAS_OSMIUM:
-            super().__init__()
-        self.park_type = park_type
-        self.protect_classes = protect_classes
-        self.min_area_km2 = min_area_km2
-        self.features: list[dict] = []
-        self._wkb_factory = osmium.geom.WKBFactory() if HAS_OSMIUM else None
-
-    def _tags_to_dict(self, tags) -> dict[str, str]:
-        """Convert osmium tags to a dictionary."""
-        return {t.k: t.v for t in tags}
-
-    def _get_geometry(self, area) -> dict | None:
-        """Extract geometry from an area."""
-        if not HAS_SHAPELY or not self._wkb_factory:
-            return None
-        try:
-            wkb_data = self._wkb_factory.create_multipolygon(area)
-            geom = wkb.loads(wkb_data, hex=True)
-            return mapping(geom)
-        except Exception as e:
-            log.debug("Could not extract geometry: %s", e)
-            return None
-
-    def area(self, a):
-        """Process an area (closed way or multipolygon relation)."""
-        tags = self._tags_to_dict(a.tags)
-
-        if not matches_park_type(tags, self.park_type, self.protect_classes):
-            return
-
-        geometry = self._get_geometry(a)
-        area_km2 = calculate_area_km2(geometry) if geometry else 0.0
-
-        # Apply minimum area filter
-        if self.min_area_km2 > 0 and area_km2 < self.min_area_km2:
-            return
-
-        classification = classify_park(tags)
-
-        self.features.append(
-            {
-                "type": "Feature",
-                "properties": {
-                    "osm_id": a.orig_id(),
-                    "osm_type": "relation" if a.from_way() is False else "way",
-                    "name": tags.get("name", ""),
-                    "park_type": classification,
-                    "protect_class": tags.get("protect_class", ""),
-                    "designation": tags.get("designation", ""),
-                    "operator": tags.get("operator", ""),
-                    "area_km2": round(area_km2, 2),
-                    **{
-                        k: v
-                        for k, v in tags.items()
-                        if k not in ("name", "protect_class", "designation", "operator")
-                    },
-                },
-                "geometry": geometry,
-            }
-        )
-
-
-def extract_parks(
-    pbf_path: str | Path,
-    park_type: str | ParkType = ParkType.ALL,
-    protect_classes: str = "*",
-    min_area_km2: float = 0.0,
-    output_path: str | Path | None = None,
-) -> ParkResult:
-    """Extract parks from a PBF file.
-
-    Args:
-        pbf_path: Path to input PBF file
-        park_type: Type of park to extract
-        protect_classes: Comma-separated protect classes or "*" for all
-        min_area_km2: Minimum area in km² (0 for no minimum)
-        output_path: Path to output GeoJSON file
-
-    Returns:
-        ParkResult with output path and statistics
-    """
-    if not HAS_OSMIUM:
-        raise RuntimeError("pyosmium is required for park extraction")
-
-    pbf_path = Path(localize(str(pbf_path)))
-
-    # Parse park type
-    if isinstance(park_type, str):
-        park_type = ParkType.from_string(park_type)
-
-    # Parse protect classes
-    protect_class_set = parse_protect_classes(protect_classes)
-
-    # Generate output path if not provided
-    if output_path is None:
-        out_dir = resolve_output_dir("osm-parks")
-        output_path_str = f"{out_dir}/{pbf_path.stem}_{park_type.value}_parks.geojson"
-    else:
-        output_path_str = str(output_path)
-    ensure_dir(output_path_str)
-
-    # Extract parks
-    handler = ParkHandler(
-        park_type=park_type,
-        protect_classes=protect_class_set if protect_classes != "*" else None,
-        min_area_km2=min_area_km2,
-    )
-    handler.apply_file(str(pbf_path), locations=True)
-
-    # Calculate total area
-    total_area = sum(f["properties"].get("area_km2", 0.0) for f in handler.features)
-
-    # Build output GeoJSON
-    geojson = {
-        "type": "FeatureCollection",
-        "features": handler.features,
-    }
-
-    # Write output
-    with open_output(output_path_str) as f:
-        json.dump(geojson, f, indent=2)
-
-    return ParkResult(
-        output_path=output_path_str,
-        feature_count=len(handler.features),
-        park_type=park_type.value,
-        protect_classes=protect_classes,
-        total_area_km2=round(total_area, 2),
-        extraction_date=datetime.now(UTC).isoformat(),
-    )
 
 
 def filter_parks_by_type(

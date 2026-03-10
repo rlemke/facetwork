@@ -11,20 +11,17 @@ from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
-from afl.runtime.storage import get_storage_backend, localize
+from afl.runtime.storage import get_storage_backend
 
-from ..shared._output import ensure_dir, open_output, resolve_output_dir, uri_stem
+from ..shared._output import open_output, uri_stem
 
 _storage = get_storage_backend()
 
 log = logging.getLogger(__name__)
 
-try:
-    import osmium
+import importlib.util
 
-    HAS_OSMIUM = True
-except ImportError:
-    HAS_OSMIUM = False
+HAS_OSMIUM = importlib.util.find_spec("osmium") is not None
 
 
 class AmenityCategory(Enum):
@@ -185,129 +182,6 @@ def classify_amenity(tags: dict[str, str]) -> str:
         return AmenityCategory.ENTERTAINMENT.value
 
     return "other"
-
-
-class AmenityHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
-    """Handler for extracting amenities from OSM data."""
-
-    def __init__(
-        self,
-        category: AmenityCategory = AmenityCategory.ALL,
-        amenity_types: set[str] | None = None,
-    ):
-        if HAS_OSMIUM:
-            super().__init__()
-        self.category = category
-        self.amenity_types = amenity_types
-        self.features: list[dict] = []
-
-    def _tags_to_dict(self, tags) -> dict[str, str]:
-        return {t.k: t.v for t in tags}
-
-    def _matches(self, tags: dict[str, str]) -> bool:
-        """Check if tags match the filter criteria."""
-        amenity = tags.get("amenity", "")
-        shop = tags.get("shop", "")
-
-        # Must have amenity or shop tag
-        if not amenity and not shop:
-            return False
-
-        # Check specific amenity types
-        if self.amenity_types:
-            return amenity in self.amenity_types or shop in self.amenity_types
-
-        # Check category
-        if self.category != AmenityCategory.ALL:
-            classification = classify_amenity(tags)
-            return classification == self.category.value
-
-        return True
-
-    def node(self, n):
-        """Process a node (most amenities are nodes)."""
-        tags = self._tags_to_dict(n.tags)
-        if not self._matches(tags):
-            return
-
-        self.features.append(
-            {
-                "type": "Feature",
-                "properties": {
-                    "osm_id": n.id,
-                    "osm_type": "node",
-                    "amenity": tags.get("amenity", ""),
-                    "shop": tags.get("shop", ""),
-                    "category": classify_amenity(tags),
-                    "name": tags.get("name", ""),
-                    "opening_hours": tags.get("opening_hours", ""),
-                    "phone": tags.get("phone", ""),
-                    "website": tags.get("website", ""),
-                    "cuisine": tags.get("cuisine", ""),
-                    "brand": tags.get("brand", ""),
-                    **{
-                        k: v
-                        for k, v in tags.items()
-                        if k
-                        not in (
-                            "amenity",
-                            "shop",
-                            "name",
-                            "opening_hours",
-                            "phone",
-                            "website",
-                            "cuisine",
-                            "brand",
-                        )
-                    },
-                },
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [n.location.lon, n.location.lat],
-                },
-            }
-        )
-
-
-def extract_amenities(
-    pbf_path: str | Path,
-    category: str | AmenityCategory = AmenityCategory.ALL,
-    amenity_types: set[str] | None = None,
-    output_path: str | Path | None = None,
-) -> AmenityResult:
-    """Extract amenities from a PBF file."""
-    if not HAS_OSMIUM:
-        raise RuntimeError("pyosmium is required for amenity extraction")
-
-    pbf_path = Path(localize(str(pbf_path)))
-
-    if isinstance(category, str):
-        category = AmenityCategory.from_string(category)
-
-    if output_path is None:
-        out_dir = resolve_output_dir("osm-amenities")
-        output_path_str = f"{out_dir}/{pbf_path.stem}_{category.value}_amenities.geojson"
-    else:
-        output_path_str = str(output_path)
-    ensure_dir(output_path_str)
-
-    handler = AmenityHandler(category=category, amenity_types=amenity_types)
-    handler.apply_file(str(pbf_path), locations=True)
-
-    geojson = {"type": "FeatureCollection", "features": handler.features}
-
-    with open_output(output_path_str) as f:
-        json.dump(geojson, f, indent=2)
-
-    types_str = ",".join(sorted(amenity_types)) if amenity_types else category.value
-
-    return AmenityResult(
-        output_path=output_path_str,
-        feature_count=len(handler.features),
-        amenity_category=category.value,
-        amenity_types=types_str,
-        extraction_date=datetime.now(UTC).isoformat(),
-    )
 
 
 def calculate_amenity_stats(input_path: str | Path) -> AmenityStats:

@@ -3,7 +3,7 @@
 import json
 import os
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from handlers.population.population_filter import (
@@ -27,7 +27,6 @@ from handlers.population.population_handlers import (
     _make_filter_by_population_handler,
     _make_filter_by_population_range_handler,
     _make_population_stats_handler,
-    _make_typed_place_handler,
     _result_to_dict,
     _stats_to_dict,
     register_population_handlers,
@@ -514,51 +513,34 @@ class TestHandlerFactories:
         result = handler({})
         assert result["stats"]["total_places"] == 0
 
-    def test_typed_handler_no_osmium(self):
-        """Test typed handler returns empty when no osmium."""
-        handler = _make_typed_place_handler("Cities", "city")
-        with patch("handlers.population_handlers.HAS_OSMIUM", False):
-            result = handler({"cache": {"path": "/tmp/test.pbf"}})
-            assert result["result"]["feature_count"] == 0
-            assert result["result"]["place_type"] == "city"
-
 
 class TestHandlerRegistration:
     """Tests for handler registration."""
 
     def test_population_facets_count(self):
         """Test expected number of population facets."""
-        assert len(POPULATION_FACETS) == 11
+        assert len(POPULATION_FACETS) == 3
 
     def test_population_facets_names(self):
         """Test population facet names."""
         names = [name for name, _ in POPULATION_FACETS]
         assert "FilterByPopulation" in names
         assert "FilterByPopulationRange" in names
-        assert "ExtractPlacesWithPopulation" in names
         assert "PopulationStatistics" in names
-        assert "Cities" in names
-        assert "Towns" in names
-        assert "Villages" in names
-        assert "Countries" in names
-        assert "States" in names
-        assert "Counties" in names
-        assert "AllPopulatedPlaces" in names
 
-    def test_register_population_handlers(self, monkeypatch):
+    def test_register_population_handlers(self):
         """Test handler registration with mock poller."""
-        monkeypatch.setitem(register_population_handlers.__globals__, "HAS_OSMIUM", True)
         poller = MagicMock()
         register_population_handlers(poller)
 
-        # Should register 11 handlers
-        assert poller.register.call_count == 11
+        # Should register 3 handlers
+        assert poller.register.call_count == 3
 
         # Verify qualified names are used
         call_args = [call[0][0] for call in poller.register.call_args_list]
         assert f"{NAMESPACE}.FilterByPopulation" in call_args
-        assert f"{NAMESPACE}.Cities" in call_args
-        assert f"{NAMESPACE}.Countries" in call_args
+        assert f"{NAMESPACE}.FilterByPopulationRange" in call_args
+        assert f"{NAMESPACE}.PopulationStatistics" in call_args
 
     def test_namespace_value(self):
         """Test namespace is correct."""

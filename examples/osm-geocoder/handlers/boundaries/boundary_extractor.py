@@ -22,6 +22,7 @@ from typing import Any
 from afl.runtime.storage import get_storage_backend, localize
 
 from ..shared._output import ensure_dir, open_output, resolve_output_dir
+from ..shared.scan_progress import ScanProgressTracker, get_file_size
 
 _storage = get_storage_backend()
 
@@ -295,12 +296,14 @@ if HAS_OSMIUM:
             self,
             admin_levels: list[int] | None = None,
             natural_types: list[str] | None = None,
+            progress=None,
         ):
             super().__init__()
             self.admin_levels = set(admin_levels) if admin_levels else set()
             self.natural_types = natural_types or []
             self.features: list[BoundaryFeature] = []
             self._seen_ids: set[int] = set()
+            self._progress = progress
 
             try:
                 from shapely import wkb as _wkb
@@ -339,6 +342,8 @@ if HAS_OSMIUM:
             return None
 
         def area(self, a) -> None:
+            if self._progress:
+                self._progress.tick("area")
             tags = a.tags
             if "boundary" in tags and tags["boundary"] == "administrative":
                 try:
@@ -378,6 +383,8 @@ if HAS_OSMIUM:
                 )
 
         def relation(self, r) -> None:
+            if self._progress:
+                self._progress.tick("relation")
             tags = r.tags
             if "boundary" in tags and tags["boundary"] == "administrative":
                 try:
@@ -419,10 +426,16 @@ def _extract_via_pyosmium(
     pbf_path: str,
     admin_levels: list[int] | None,
     natural_types: list[str] | None,
+    step_log=None,
 ) -> list[BoundaryFeature]:
     """Fallback extraction via pyosmium (no geometry for type=boundary)."""
-    handler = _PyosmiumHandler(admin_levels=admin_levels, natural_types=natural_types)
+    file_size = get_file_size(pbf_path)
+    progress = ScanProgressTracker(file_size, step_log, label="Boundaries")
+    handler = _PyosmiumHandler(
+        admin_levels=admin_levels, natural_types=natural_types, progress=progress
+    )
     handler.apply_file(pbf_path, locations=True, idx="flex_mem")
+    progress.finish()
     return handler.features
 
 

@@ -7,127 +7,17 @@ import logging
 import os
 from datetime import UTC, datetime
 
-from ..shared.output_cache import cached_result, save_result_meta, with_output_cache
+from ..shared.output_cache import cached_result, save_result_meta
 from .amenity_extractor import (
-    EDUCATION_AMENITIES,
-    ENTERTAINMENT_AMENITIES,
-    FOOD_AMENITIES,
-    HAS_OSMIUM,
-    HEALTHCARE_AMENITIES,
-    SHOPPING_TAGS,
     AmenityResult,
     AmenityStats,
     calculate_amenity_stats,
-    extract_amenities,
     search_amenities,
 )
 
 log = logging.getLogger(__name__)
 
 NAMESPACE = "osm.geo.Amenities"
-
-
-def _make_extract_amenities_handler(facet_name: str):
-    """Create handler for ExtractAmenities event facet."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        category = payload.get("category", "all")
-        step_log = payload.get("_step_log")
-
-        # Dynamic cache check (category comes from payload)
-        hit = cached_result(qualified, cache, {"category": category}, step_log)
-        if hit is not None:
-            return hit
-
-        if step_log:
-            step_log(f"{facet_name}: extracting {category} amenities from {pbf_path}")
-        log.info("%s extracting %s amenities from %s", facet_name, category, pbf_path)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result(category)}
-
-        try:
-            result = extract_amenities(pbf_path, category=category)
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} {category} amenities",
-                    level="success",
-                )
-            rv = {"result": _result_to_dict(result)}
-            save_result_meta(qualified, cache, {"category": category}, rv)
-            return rv
-        except Exception as e:
-            log.error("Failed to extract amenities: %s", e)
-            return {"result": _empty_result(category)}
-
-    return handler
-
-
-def _make_typed_amenity_handler(facet_name: str, amenity_types: set[str], category: str):
-    """Create handler for a specific amenity type."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-    cache_params = {"amenity_types": sorted(amenity_types), "category": category}
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        step_log = payload.get("_step_log")
-
-        if step_log:
-            step_log(f"{facet_name}: extracting {category} amenities from {pbf_path}")
-        log.info("%s extracting from %s", facet_name, pbf_path)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result(category)}
-
-        try:
-            result = extract_amenities(pbf_path, amenity_types=amenity_types)
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} {category} amenities",
-                    level="success",
-                )
-            return {"result": _result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to extract %s amenities: %s", category, e)
-            return {"result": _empty_result(category)}
-
-    return with_output_cache(handler, qualified, cache_params)
-
-
-def _make_single_amenity_handler(facet_name: str, amenity_type: str, category: str):
-    """Create handler for a single amenity type."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-    cache_params = {"amenity_type": amenity_type, "category": category}
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        step_log = payload.get("_step_log")
-
-        if step_log:
-            step_log(f"{facet_name}: extracting {amenity_type} from {pbf_path}")
-        log.info("%s extracting from %s", facet_name, pbf_path)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result(category)}
-
-        try:
-            result = extract_amenities(pbf_path, amenity_types={amenity_type})
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} {amenity_type}",
-                    level="success",
-                )
-            return {"result": _result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to extract %s: %s", amenity_type, e)
-            return {"result": _empty_result(category)}
-
-    return with_output_cache(handler, qualified, cache_params)
 
 
 def _make_amenity_stats_handler(facet_name: str):
@@ -345,42 +235,6 @@ def _empty_stats() -> dict:
 
 
 AMENITY_FACETS = [
-    # General extraction
-    ("ExtractAmenities", _make_extract_amenities_handler),
-    # Food & Drink
-    ("FoodAndDrink", lambda n: _make_typed_amenity_handler(n, FOOD_AMENITIES, "food")),
-    ("Restaurants", lambda n: _make_single_amenity_handler(n, "restaurant", "food")),
-    ("Cafes", lambda n: _make_single_amenity_handler(n, "cafe", "food")),
-    ("Bars", lambda n: _make_single_amenity_handler(n, "bar", "food")),
-    ("FastFood", lambda n: _make_single_amenity_handler(n, "fast_food", "food")),
-    # Shopping
-    ("Shopping", lambda n: _make_typed_amenity_handler(n, SHOPPING_TAGS, "shopping")),
-    ("Supermarkets", lambda n: _make_single_amenity_handler(n, "supermarket", "shopping")),
-    # Services
-    ("Banks", lambda n: _make_single_amenity_handler(n, "bank", "services")),
-    ("ATMs", lambda n: _make_single_amenity_handler(n, "atm", "services")),
-    ("PostOffices", lambda n: _make_single_amenity_handler(n, "post_office", "services")),
-    ("FuelStations", lambda n: _make_single_amenity_handler(n, "fuel", "services")),
-    ("ChargingStations", lambda n: _make_single_amenity_handler(n, "charging_station", "services")),
-    ("Parking", lambda n: _make_single_amenity_handler(n, "parking", "services")),
-    # Healthcare
-    ("Healthcare", lambda n: _make_typed_amenity_handler(n, HEALTHCARE_AMENITIES, "healthcare")),
-    ("Hospitals", lambda n: _make_single_amenity_handler(n, "hospital", "healthcare")),
-    ("Clinics", lambda n: _make_single_amenity_handler(n, "clinic", "healthcare")),
-    ("Pharmacies", lambda n: _make_single_amenity_handler(n, "pharmacy", "healthcare")),
-    ("Dentists", lambda n: _make_single_amenity_handler(n, "dentist", "healthcare")),
-    # Education
-    ("Education", lambda n: _make_typed_amenity_handler(n, EDUCATION_AMENITIES, "education")),
-    ("Schools", lambda n: _make_single_amenity_handler(n, "school", "education")),
-    ("Universities", lambda n: _make_single_amenity_handler(n, "university", "education")),
-    ("Libraries", lambda n: _make_single_amenity_handler(n, "library", "education")),
-    # Entertainment
-    (
-        "Entertainment",
-        lambda n: _make_typed_amenity_handler(n, ENTERTAINMENT_AMENITIES, "entertainment"),
-    ),
-    ("Cinemas", lambda n: _make_single_amenity_handler(n, "cinema", "entertainment")),
-    ("Theatres", lambda n: _make_single_amenity_handler(n, "theatre", "entertainment")),
     # Statistics and filtering
     ("AmenityStatistics", _make_amenity_stats_handler),
     ("SearchAmenities", _make_search_amenities_handler),
@@ -421,8 +275,6 @@ def register_handlers(runner) -> None:
 
 def register_amenity_handlers(poller) -> None:
     """Register all amenity event facet handlers."""
-    if not HAS_OSMIUM:
-        return
     for facet_name, handler_factory in AMENITY_FACETS:
         qualified_name = f"{NAMESPACE}.{facet_name}"
         poller.register(qualified_name, handler_factory(facet_name))

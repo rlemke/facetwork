@@ -9,30 +9,22 @@ import json
 import logging
 import math
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
-from afl.runtime.storage import get_storage_backend, localize
-
-from ..shared._output import ensure_dir, open_output, resolve_output_dir
+from afl.runtime.storage import get_storage_backend
 
 _storage = get_storage_backend()
 
 log = logging.getLogger(__name__)
 
-# Check for pyosmium availability
-try:
-    import osmium
+import importlib.util
 
-    HAS_OSMIUM = True
-except ImportError:
-    HAS_OSMIUM = False
+HAS_OSMIUM = importlib.util.find_spec("osmium") is not None
 
 # Check for shapely availability
 try:
-    from shapely import wkb
-    from shapely.geometry import mapping
+    import shapely  # noqa: F401
 
     HAS_SHAPELY = True
 except ImportError:
@@ -212,148 +204,6 @@ def calculate_building_area(geometry: dict) -> float:
         return geom.area * m_per_deg * m_per_deg
     except Exception:
         return 0.0
-
-
-class BuildingHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
-    """Handler for extracting buildings from OSM data."""
-
-    def __init__(
-        self,
-        building_type: BuildingType = BuildingType.ALL,
-        min_area_m2: float = 0.0,
-        require_height: bool = False,
-    ):
-        if HAS_OSMIUM:
-            super().__init__()
-        self.building_type = building_type
-        self.min_area_m2 = min_area_m2
-        self.require_height = require_height
-        self.features: list[dict] = []
-        self._wkb_factory = osmium.geom.WKBFactory() if HAS_OSMIUM else None
-
-    def _tags_to_dict(self, tags) -> dict[str, str]:
-        """Convert osmium tags to a dictionary."""
-        return {t.k: t.v for t in tags}
-
-    def _get_geometry(self, area) -> dict | None:
-        """Extract geometry from an area."""
-        if not HAS_SHAPELY or not self._wkb_factory:
-            return None
-        try:
-            wkb_data = self._wkb_factory.create_multipolygon(area)
-            geom = wkb.loads(wkb_data, hex=True)
-            return mapping(geom)
-        except Exception:
-            return None
-
-    def area(self, a):
-        """Process an area (building footprint)."""
-        tags = self._tags_to_dict(a.tags)
-
-        # Must have building tag
-        if "building" not in tags:
-            return
-
-        classification = classify_building(tags)
-
-        # Filter by building type
-        if self.building_type != BuildingType.ALL:
-            if classification != self.building_type.value:
-                return
-
-        geometry = self._get_geometry(a)
-
-        # Check height requirement
-        height = parse_height(tags.get("height") or tags.get("building:height"))
-        levels = parse_levels(tags.get("building:levels"))
-        has_height = height is not None or levels is not None
-
-        if self.require_height and not has_height:
-            return
-
-        # Calculate area and filter
-        area_m2 = calculate_building_area(geometry)
-        if self.min_area_m2 > 0 and area_m2 < self.min_area_m2:
-            return
-
-        self.features.append(
-            {
-                "type": "Feature",
-                "properties": {
-                    "osm_id": a.orig_id(),
-                    "osm_type": "way" if a.from_way() else "relation",
-                    "building_type": classification,
-                    "name": tags.get("name", ""),
-                    "height": height,
-                    "levels": levels,
-                    "area_m2": round(area_m2, 1),
-                    "building": tags.get("building", "yes"),
-                    **{
-                        k: v
-                        for k, v in tags.items()
-                        if k
-                        not in ("building", "name", "height", "building:height", "building:levels")
-                    },
-                },
-                "geometry": geometry,
-            }
-        )
-
-
-def extract_buildings(
-    pbf_path: str | Path,
-    building_type: str | BuildingType = BuildingType.ALL,
-    min_area_m2: float = 0.0,
-    require_height: bool = False,
-    output_path: str | Path | None = None,
-) -> BuildingResult:
-    """Extract buildings from a PBF file."""
-    if not HAS_OSMIUM:
-        raise RuntimeError("pyosmium is required for building extraction")
-
-    pbf_path = Path(localize(str(pbf_path)))
-
-    if isinstance(building_type, str):
-        building_type = BuildingType.from_string(building_type)
-
-    if output_path is None:
-        out_dir = resolve_output_dir("osm-buildings")
-        output_path_str = f"{out_dir}/{pbf_path.stem}_{building_type.value}_buildings.geojson"
-    else:
-        output_path_str = str(output_path)
-    ensure_dir(output_path_str)
-
-    handler = BuildingHandler(
-        building_type=building_type,
-        min_area_m2=min_area_m2,
-        require_height=require_height,
-    )
-    handler.apply_file(str(pbf_path), locations=True)
-
-    # Calculate totals
-    total_area = sum(f["properties"].get("area_m2", 0) for f in handler.features)
-    with_height = sum(
-        1
-        for f in handler.features
-        if f["properties"].get("height") or f["properties"].get("levels")
-    )
-
-    geojson = {
-        "type": "FeatureCollection",
-        "features": handler.features,
-    }
-
-    with open_output(output_path_str) as f:
-        json.dump(geojson, f, indent=2)
-
-    return BuildingResult(
-        output_path=output_path_str,
-        feature_count=len(handler.features),
-        building_type=building_type.value,
-        total_area_km2=round(total_area / 1_000_000, 4),
-        with_height_data=with_height,
-        extraction_date=datetime.now(UTC).isoformat(),
-    )
 
 
 def calculate_building_stats(input_path: str | Path) -> BuildingStats:

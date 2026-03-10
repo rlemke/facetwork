@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from afl.runtime.storage import localize
 
 from ..shared._output import ensure_dir, open_output
+from ..shared.scan_progress import ScanProgressTracker, get_file_size
 
 log = logging.getLogger(__name__)
 
@@ -371,9 +372,10 @@ class TopologyHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
     finalize(): identify decision nodes, split ways, merge degree-2 chains.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, progress: ScanProgressTracker | None = None) -> None:
         if HAS_OSMIUM:
             super().__init__()
+        self._progress = progress
         self._node_coords: dict[int, tuple[float, float]] = {}
         self._ways: list[_WayData] = []
         self._node_way_count: dict[int, int] = defaultdict(int)
@@ -384,9 +386,13 @@ class TopologyHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
         return {t.k: t.v for t in tags}
 
     def node(self, n) -> None:
+        if self._progress:
+            self._progress.tick("node")
         self._node_coords[n.id] = (n.location.lon, n.location.lat)
 
     def way(self, w) -> None:
+        if self._progress:
+            self._progress.tick("way")
         tags = self._tags_to_dict(w.tags)
         highway = tags.get("highway", "")
         fc = _classify_fc(highway)
@@ -574,12 +580,13 @@ class TopologyHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
         return graph
 
 
-def build_logical_graph(pbf_path: str, output_path: str | None = None) -> RoadGraph:
+def build_logical_graph(pbf_path: str, output_path: str | None = None, step_log=None) -> RoadGraph:
     """Build logical edge graph from a PBF file.
 
     Args:
         pbf_path: Path to the OSM PBF file.
         output_path: Optional path to save the graph JSON.
+        step_log: Optional callback for progress reporting.
 
     Returns:
         RoadGraph instance.
@@ -587,8 +594,13 @@ def build_logical_graph(pbf_path: str, output_path: str | None = None) -> RoadGr
     if not HAS_OSMIUM:
         raise RuntimeError("pyosmium is required for graph construction")
 
-    handler = TopologyHandler()
-    handler.apply_file(localize(pbf_path), locations=False)
+    local_path = localize(pbf_path)
+    file_size = get_file_size(str(local_path))
+    progress = ScanProgressTracker(file_size, step_log, label="BuildGraph")
+
+    handler = TopologyHandler(progress=progress)
+    handler.apply_file(str(local_path), locations=False)
+    progress.finish()
     graph = handler.finalize()
 
     if output_path:

@@ -13,6 +13,8 @@ from datetime import UTC, datetime
 
 from afl.runtime.storage import localize
 
+from ..shared.scan_progress import ScanProgressTracker, get_file_size
+
 log = logging.getLogger(__name__)
 
 try:
@@ -137,16 +139,19 @@ def ensure_schema(conn) -> None:
 class NodeCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
     """Collects OSM nodes and flushes them to PostGIS in batches."""
 
-    def __init__(self, conn, batch_size: int = 10000):
+    def __init__(self, conn, batch_size: int = 10000, progress=None):
         if HAS_OSMIUM:
             super().__init__()
         self.conn = conn
         self.batch_size = batch_size
         self.batch: list[tuple] = []
         self.total_count: int = 0
+        self._progress = progress
 
     def node(self, n) -> None:
         """Process a single OSM node."""
+        if self._progress:
+            self._progress.tick("node")
         tags = {t.k: t.v for t in n.tags}
         if not tags:
             return
@@ -188,7 +193,7 @@ class WayCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
     second pass builds LINESTRING geometries from node refs.
     """
 
-    def __init__(self, conn, batch_size: int = 10000):
+    def __init__(self, conn, batch_size: int = 10000, progress=None):
         if HAS_OSMIUM:
             super().__init__()
         self.conn = conn
@@ -197,13 +202,18 @@ class WayCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
         self.total_count: int = 0
         self._node_cache: dict[int, tuple[float, float]] = {}
         self._pending_ways: list[tuple[int, dict, list[int]]] = []
+        self._progress = progress
 
     def node(self, n) -> None:
         """Cache node locations for way geometry construction."""
+        if self._progress:
+            self._progress.tick("node")
         self._node_cache[n.id] = (n.location.lon, n.location.lat)
 
     def way(self, w) -> None:
         """Store way data for later geometry construction."""
+        if self._progress:
+            self._progress.tick("way")
         tags = {t.k: t.v for t in w.tags}
         if not tags:
             return
@@ -259,6 +269,7 @@ def import_to_postgis(
     postgis_url: str | None = None,
     source_url: str = "",
     batch_size: int = 10000,
+    step_log=None,
 ) -> ImportResult:
     """Import OSM nodes and ways from a PBF file into PostGIS.
 
@@ -301,16 +312,21 @@ def import_to_postgis(
 
         # Pass 1: import nodes
         log.info("Importing nodes from %s", pbf_path)
-        node_collector = NodeCollector(conn, batch_size=batch_size)
+        file_size = get_file_size(str(pbf_path))
+        node_progress = ScanProgressTracker(file_size, step_log, label="PostGIS Nodes")
+        node_collector = NodeCollector(conn, batch_size=batch_size, progress=node_progress)
         node_collector.apply_file(pbf_path, locations=True)
         node_count = node_collector.finalize()
+        node_progress.finish()
         log.info("Imported %d nodes", node_count)
 
         # Pass 2: import ways (needs node locations)
         log.info("Importing ways from %s", pbf_path)
-        way_collector = WayCollector(conn, batch_size=batch_size)
+        way_progress = ScanProgressTracker(file_size, step_log, label="PostGIS Ways")
+        way_collector = WayCollector(conn, batch_size=batch_size, progress=way_progress)
         way_collector.apply_file(pbf_path, locations=True)
         way_count = way_collector.finalize()
+        way_progress.finish()
         log.info("Imported %d ways", way_count)
 
         # Log the import

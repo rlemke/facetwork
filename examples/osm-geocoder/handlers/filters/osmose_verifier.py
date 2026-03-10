@@ -21,6 +21,7 @@ from typing import Any
 from afl.runtime.storage import localize
 
 from ..shared._output import ensure_dir, open_output, resolve_output_dir
+from ..shared.scan_progress import ScanProgressTracker, get_file_size
 
 log = logging.getLogger(__name__)
 
@@ -156,6 +157,7 @@ class VerificationHandler(osmium.SimpleHandler if HAS_OSMIUM else object):  # ty
         check_coordinates: bool = True,
         check_duplicates: bool = True,
         required_tags: list[str] | None = None,
+        progress: ScanProgressTracker | None = None,
     ) -> None:
         if HAS_OSMIUM:
             super().__init__()
@@ -165,6 +167,7 @@ class VerificationHandler(osmium.SimpleHandler if HAS_OSMIUM else object):  # ty
         self.check_coordinates = check_coordinates
         self.check_duplicates = check_duplicates
         self.required_tags = required_tags or []
+        self._progress = progress
 
         # Collected issues
         self.issues: list[dict[str, Any]] = []
@@ -248,6 +251,8 @@ class VerificationHandler(osmium.SimpleHandler if HAS_OSMIUM else object):  # ty
 
     def node(self, n) -> None:  # type: ignore[override]
         self.node_count += 1
+        if self._progress:
+            self._progress.tick("node")
         nid = n.id
 
         # Duplicate check
@@ -314,6 +319,8 @@ class VerificationHandler(osmium.SimpleHandler if HAS_OSMIUM else object):  # ty
 
     def way(self, w) -> None:  # type: ignore[override]
         self.way_count += 1
+        if self._progress:
+            self._progress.tick("way")
         wid = w.id
 
         # Duplicate check
@@ -380,6 +387,8 @@ class VerificationHandler(osmium.SimpleHandler if HAS_OSMIUM else object):  # ty
 
     def relation(self, r) -> None:  # type: ignore[override]
         self.relation_count += 1
+        if self._progress:
+            self._progress.tick("relation")
         rid = r.id
 
         # Reference integrity
@@ -487,6 +496,7 @@ def verify_pbf(
     check_coordinates: bool = True,
     check_duplicates: bool = True,
     required_tags: list[str] | None = None,
+    step_log=None,
 ) -> tuple[VerifyResult, VerifySummaryData]:
     """Run verification on a .osm.pbf file and write issues GeoJSON.
 
@@ -506,6 +516,10 @@ def verify_pbf(
     if not HAS_OSMIUM:
         raise RuntimeError("pyosmium is required for PBF verification")
 
+    local_path = localize(str(pbf_path))
+    file_size = get_file_size(str(local_path))
+    progress = ScanProgressTracker(file_size, step_log, label="OSMOSE Verify")
+
     handler = VerificationHandler(
         check_geometry=check_geometry,
         check_tags=check_tags,
@@ -513,9 +527,11 @@ def verify_pbf(
         check_coordinates=check_coordinates,
         check_duplicates=check_duplicates,
         required_tags=required_tags,
+        progress=progress,
     )
 
-    handler.apply_file(localize(str(pbf_path)), locations=True)
+    handler.apply_file(str(local_path), locations=True)
+    progress.finish()
 
     # Write issues GeoJSON
     out_subdir = resolve_output_dir("osm-osmose", default_local=output_dir)

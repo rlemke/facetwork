@@ -7,77 +7,17 @@ import logging
 import os
 from datetime import UTC, datetime
 
-from ..shared.output_cache import cached_result, save_result_meta, with_output_cache
+from ..shared.output_cache import cached_result, save_result_meta
 from .route_extractor import (
-    HAS_OSMIUM,
     RouteResult,
     RouteStats,
     calculate_route_stats,
-    extract_routes,
     filter_routes_by_type,
 )
 
 log = logging.getLogger(__name__)
 
 NAMESPACE = "osm.geo.Routes"
-
-
-def _make_extract_routes_handler(facet_name: str):
-    """Create handler for ExtractRoutes event facet."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        route_type = payload.get("route_type", "bicycle")
-        network = payload.get("network", "*")
-        include_infrastructure = payload.get("include_infrastructure", True)
-        step_log = payload.get("_step_log")
-
-        # Dynamic cache check (route_type, network, include_infrastructure from payload)
-        dyn_params = {
-            "route_type": route_type,
-            "network": network,
-            "include_infrastructure": include_infrastructure,
-        }
-        hit = cached_result(qualified, cache, dyn_params, step_log)
-        if hit is not None:
-            return hit
-
-        if step_log:
-            step_log(f"{facet_name}: extracting {route_type} routes from {pbf_path}")
-        log.info(
-            "%s extracting %s routes from %s (network=%s, infra=%s)",
-            facet_name,
-            route_type,
-            pbf_path,
-            network,
-            include_infrastructure,
-        )
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result(route_type, network, include_infrastructure)}
-
-        try:
-            result = extract_routes(
-                pbf_path,
-                route_type=route_type,
-                network=network,
-                include_infrastructure=include_infrastructure,
-            )
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} {route_type} routes",
-                    level="success",
-                )
-            rv = {"result": _result_to_dict(result)}
-            save_result_meta(qualified, cache, dyn_params, rv)
-            return rv
-        except Exception as e:
-            log.error("Failed to extract routes: %s", e)
-            return {"result": _empty_result(route_type, network, include_infrastructure)}
-
-    return handler
 
 
 def _make_filter_routes_handler(facet_name: str):
@@ -170,98 +110,6 @@ def _make_route_stats_handler(facet_name: str):
     return handler
 
 
-def _make_typed_route_handler(facet_name: str, route_type: str):
-    """Create handler for a specific route type (BicycleRoutes, HikingTrails, etc.)."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        network = payload.get("network", "*")
-        include_infrastructure = payload.get("include_infrastructure", True)
-        step_log = payload.get("_step_log")
-
-        # Dynamic cache check (route_type fixed, network/include_infrastructure from payload)
-        dyn_params = {
-            "route_type": route_type,
-            "network": network,
-            "include_infrastructure": include_infrastructure,
-        }
-        hit = cached_result(qualified, cache, dyn_params, step_log)
-        if hit is not None:
-            return hit
-
-        if step_log:
-            step_log(f"{facet_name}: extracting {route_type} routes from {pbf_path}")
-        log.info(
-            "%s extracting from %s (network=%s, infra=%s)",
-            facet_name,
-            pbf_path,
-            network,
-            include_infrastructure,
-        )
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result(route_type, network, include_infrastructure)}
-
-        try:
-            result = extract_routes(
-                pbf_path,
-                route_type=route_type,
-                network=network,
-                include_infrastructure=include_infrastructure,
-            )
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} {route_type} routes",
-                    level="success",
-                )
-            rv = {"result": _result_to_dict(result)}
-            save_result_meta(qualified, cache, dyn_params, rv)
-            return rv
-        except Exception as e:
-            log.error("Failed to extract %s routes: %s", route_type, e)
-            return {"result": _empty_result(route_type, network, include_infrastructure)}
-
-    return handler
-
-
-def _make_public_transport_handler(facet_name: str):
-    """Create handler for PublicTransport event facet."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-    cache_params = {"route_type": "public_transport", "include_infrastructure": True}
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        step_log = payload.get("_step_log")
-
-        if step_log:
-            step_log(f"{facet_name}: extracting public transport from {pbf_path}")
-        log.info("%s extracting public transport from %s", facet_name, pbf_path)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result("public_transport", "*", True)}
-
-        try:
-            result = extract_routes(
-                pbf_path,
-                route_type="public_transport",
-                include_infrastructure=True,
-            )
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} public transport routes",
-                    level="success",
-                )
-            return {"result": _result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to extract public transport: %s", e)
-            return {"result": _empty_result("public_transport", "*", True)}
-
-    return with_output_cache(handler, qualified, cache_params)
-
-
 def _file_size(path: str) -> int:
     """Get file size, returning 0 if the file doesn't exist or is remote."""
     if not path or path.startswith("hdfs://"):
@@ -320,16 +168,8 @@ def _empty_stats() -> dict:
 
 # Event facet definitions for handler registration
 ROUTE_FACETS = [
-    # Generic extractors
-    ("ExtractRoutes", _make_extract_routes_handler),
     ("FilterRoutesByType", _make_filter_routes_handler),
     ("RouteStatistics", _make_route_stats_handler),
-    # Typed convenience facets
-    ("BicycleRoutes", lambda name: _make_typed_route_handler(name, "bicycle")),
-    ("HikingTrails", lambda name: _make_typed_route_handler(name, "hiking")),
-    ("TrainRoutes", lambda name: _make_typed_route_handler(name, "train")),
-    ("BusRoutes", lambda name: _make_typed_route_handler(name, "bus")),
-    ("PublicTransport", _make_public_transport_handler),
 ]
 
 
@@ -366,8 +206,6 @@ def register_handlers(runner) -> None:
 
 def register_route_handlers(poller) -> None:
     """Register all route event facet handlers with the poller."""
-    if not HAS_OSMIUM:
-        return
     for facet_name, handler_factory in ROUTE_FACETS:
         qualified_name = f"{NAMESPACE}.{facet_name}"
         poller.register(qualified_name, handler_factory(facet_name))

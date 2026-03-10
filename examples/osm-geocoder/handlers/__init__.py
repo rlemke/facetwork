@@ -127,6 +127,7 @@ from .amenities.amenity_handlers import register_amenity_handlers
 from .boundaries.boundary_handlers import register_boundary_handlers
 from .buildings.building_handlers import register_building_handlers
 from .cache.region_handlers import register_region_handlers
+from .combined.combined_handlers import register_combined_handlers
 from .downloads.operations_handlers import register_operations_handlers
 from .downloads.postgis_handlers import register_postgis_handlers
 from .filters.filter_handlers import register_filter_handlers
@@ -149,6 +150,7 @@ from .voting.tiger_handlers import register_tiger_handlers
 __all__ = [
     "register_all_handlers",
     "register_all_registry_handlers",
+    "register_combined_handlers",
     "register_airquality_handlers",
     "register_amenity_handlers",
     "register_boundary_handlers",
@@ -199,6 +201,7 @@ def register_all_handlers(poller) -> None:
     register_validation_handlers(poller)
     register_visualization_handlers(poller)
     register_zoom_handlers(poller)
+    register_combined_handlers(poller)
 
 
 def register_all_registry_handlers(runner) -> None:
@@ -248,3 +251,7 @@ def register_all_registry_handlers(runner) -> None:
     reg_validation(runner)
     reg_visualization(runner)
     reg_zoom(runner)
+
+    from .combined.combined_handlers import register_handlers as reg_combined
+
+    reg_combined(runner)

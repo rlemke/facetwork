@@ -7,159 +7,15 @@ import logging
 import os
 from datetime import UTC, datetime
 
-from ..shared.output_cache import cached_result, save_result_meta, with_output_cache
+from ..shared.output_cache import cached_result, save_result_meta
 from .building_extractor import (
-    HAS_OSMIUM,
-    BuildingResult,
     BuildingStats,
     calculate_building_stats,
-    extract_buildings,
 )
 
 log = logging.getLogger(__name__)
 
 NAMESPACE = "osm.geo.Buildings"
-
-
-def _make_extract_buildings_handler(facet_name: str):
-    """Create handler for ExtractBuildings event facet."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        building_type = payload.get("building_type", "all")
-        step_log = payload.get("_step_log")
-
-        # Dynamic cache check (building_type comes from payload)
-        hit = cached_result(qualified, cache, {"building_type": building_type}, step_log)
-        if hit is not None:
-            return hit
-
-        if step_log:
-            step_log(f"{facet_name}: extracting {building_type} buildings from {pbf_path}")
-        log.info("%s extracting %s buildings from %s", facet_name, building_type, pbf_path)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result(building_type)}
-
-        try:
-            result = extract_buildings(pbf_path, building_type=building_type)
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} {building_type} buildings",
-                    level="success",
-                )
-            rv = {"result": _result_to_dict(result)}
-            save_result_meta(qualified, cache, {"building_type": building_type}, rv)
-            return rv
-        except Exception as e:
-            log.error("Failed to extract buildings: %s", e)
-            return {"result": _empty_result(building_type)}
-
-    return handler
-
-
-def _make_typed_building_handler(facet_name: str, building_type: str):
-    """Create handler for a specific building type."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-    cache_params = {"building_type": building_type}
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        step_log = payload.get("_step_log")
-
-        if step_log:
-            step_log(f"{facet_name}: extracting {building_type} buildings from {pbf_path}")
-        log.info("%s extracting from %s", facet_name, pbf_path)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result(building_type)}
-
-        try:
-            result = extract_buildings(pbf_path, building_type=building_type)
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} {building_type} buildings",
-                    level="success",
-                )
-            return {"result": _result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to extract %s buildings: %s", building_type, e)
-            return {"result": _empty_result(building_type)}
-
-    return with_output_cache(handler, qualified, cache_params)
-
-
-def _make_buildings_3d_handler(facet_name: str):
-    """Create handler for Buildings3D (buildings with height data)."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-    cache_params = {"building_type": "all", "require_height": True}
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        step_log = payload.get("_step_log")
-
-        if step_log:
-            step_log(f"{facet_name}: extracting 3D buildings from {pbf_path}")
-        log.info("%s extracting 3D buildings from %s", facet_name, pbf_path)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result("all")}
-
-        try:
-            result = extract_buildings(pbf_path, building_type="all", require_height=True)
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} 3D buildings", level="success"
-                )
-            return {"result": _result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to extract 3D buildings: %s", e)
-            return {"result": _empty_result("all")}
-
-    return with_output_cache(handler, qualified, cache_params)
-
-
-def _make_large_buildings_handler(facet_name: str):
-    """Create handler for LargeBuildings."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        min_area_m2 = payload.get("min_area_m2", 1000.0)
-        step_log = payload.get("_step_log")
-
-        # Dynamic cache check (min_area_m2 comes from payload)
-        hit = cached_result(qualified, cache, {"min_area_m2": min_area_m2}, step_log)
-        if hit is not None:
-            return hit
-
-        if step_log:
-            step_log(f"{facet_name}: extracting buildings >= {min_area_m2:.0f} m2 from {pbf_path}")
-        log.info("%s extracting buildings >= %.0f m² from %s", facet_name, min_area_m2, pbf_path)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result("all")}
-
-        try:
-            result = extract_buildings(pbf_path, building_type="all", min_area_m2=min_area_m2)
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} buildings >= {min_area_m2:.0f} m2",
-                    level="success",
-                )
-            rv = {"result": _result_to_dict(result)}
-            save_result_meta(qualified, cache, {"min_area_m2": min_area_m2}, rv)
-            return rv
-        except Exception as e:
-            log.error("Failed to extract large buildings: %s", e)
-            return {"result": _empty_result("all")}
-
-    return handler
 
 
 def _make_building_stats_handler(facet_name: str):
@@ -299,19 +155,6 @@ def _make_filter_buildings_handler(facet_name: str):
     return handler
 
 
-def _result_to_dict(result: BuildingResult) -> dict:
-    """Convert BuildingResult to dict."""
-    return {
-        "output_path": result.output_path,
-        "feature_count": result.feature_count,
-        "building_type": result.building_type,
-        "total_area_km2": result.total_area_km2,
-        "with_height_data": result.with_height_data,
-        "format": result.format,
-        "extraction_date": result.extraction_date,
-    }
-
-
 def _stats_to_dict(stats: BuildingStats) -> dict:
     """Convert BuildingStats to dict."""
     return {
@@ -356,13 +199,6 @@ def _empty_stats() -> dict:
 
 
 BUILDING_FACETS = [
-    ("ExtractBuildings", _make_extract_buildings_handler),
-    ("ResidentialBuildings", lambda n: _make_typed_building_handler(n, "residential")),
-    ("CommercialBuildings", lambda n: _make_typed_building_handler(n, "commercial")),
-    ("IndustrialBuildings", lambda n: _make_typed_building_handler(n, "industrial")),
-    ("RetailBuildings", lambda n: _make_typed_building_handler(n, "retail")),
-    ("Buildings3D", _make_buildings_3d_handler),
-    ("LargeBuildings", _make_large_buildings_handler),
     ("BuildingStatistics", _make_building_stats_handler),
     ("FilterBuildingsByType", _make_filter_buildings_handler),
 ]
@@ -401,8 +237,6 @@ def register_handlers(runner) -> None:
 
 def register_building_handlers(poller) -> None:
     """Register all building event facet handlers."""
-    if not HAS_OSMIUM:
-        return
     for facet_name, handler_factory in BUILDING_FACETS:
         qualified_name = f"{NAMESPACE}.{facet_name}"
         poller.register(qualified_name, handler_factory(facet_name))

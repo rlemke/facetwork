@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
-from afl.runtime.storage import get_storage_backend, localize
+from afl.runtime.storage import get_storage_backend
 
 from ..shared._output import ensure_dir, open_output, resolve_output_dir, uri_stem
 
@@ -19,13 +19,9 @@ _storage = get_storage_backend()
 
 log = logging.getLogger(__name__)
 
-# Check for pyosmium availability
-try:
-    import osmium
+import importlib.util
 
-    HAS_OSMIUM = True
-except ImportError:
-    HAS_OSMIUM = False
+HAS_OSMIUM = importlib.util.find_spec("osmium") is not None
 
 
 class PlaceType(Enum):
@@ -377,146 +373,6 @@ def filter_geojson_by_population(
         min_population=min_population,
         max_population=max_population if max_population is not None else 0,
         filter_applied=describe_filter(place_type, min_population, max_population, operator),
-        extraction_date=datetime.now(UTC).isoformat(),
-    )
-
-
-class PopulationHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
-    """Handler for extracting places with population from OSM data."""
-
-    def __init__(
-        self,
-        place_type: PlaceType = PlaceType.ALL,
-        min_population: int = 0,
-    ):
-        if HAS_OSMIUM:
-            super().__init__()
-        self.place_type = place_type
-        self.min_population = min_population
-        self.features: list[dict] = []
-
-    def _tags_to_dict(self, tags) -> dict[str, str]:
-        """Convert osmium tags to a dictionary."""
-        return {t.k: t.v for t in tags}
-
-    def _process_element(
-        self, osm_id: int, osm_type: str, tags: dict[str, str], geometry: dict | None
-    ):
-        """Process an OSM element for population data."""
-        # Check if it has population
-        population = parse_population(tags.get("population"))
-        if population is None:
-            return
-
-        # Check place type
-        if not matches_place_type(tags, self.place_type):
-            return
-
-        # Check minimum population
-        if population < self.min_population:
-            return
-
-        # Determine the specific place type
-        detected_type = "unknown"
-        if "place" in tags:
-            detected_type = tags["place"]
-        elif tags.get("boundary") == "administrative":
-            admin_level = tags.get("admin_level", "")
-            level_map = {"2": "country", "4": "state", "6": "county", "8": "municipality"}
-            detected_type = level_map.get(admin_level, f"admin_level_{admin_level}")
-
-        self.features.append(
-            {
-                "type": "Feature",
-                "properties": {
-                    "osm_id": osm_id,
-                    "osm_type": osm_type,
-                    "place_type": detected_type,
-                    "population": population,
-                    "name": tags.get("name", ""),
-                    **{k: v for k, v in tags.items() if k not in ("population", "name")},
-                },
-                "geometry": geometry,
-            }
-        )
-
-    def node(self, n):
-        """Process a node."""
-        tags = self._tags_to_dict(n.tags)
-        if "population" in tags:
-            geometry = {
-                "type": "Point",
-                "coordinates": [n.location.lon, n.location.lat],
-            }
-            self._process_element(n.id, "node", tags, geometry)
-
-    def relation(self, r):
-        """Process a relation."""
-        tags = self._tags_to_dict(r.tags)
-        if "population" in tags:
-            # Relations don't have simple geometry - store without it
-            self._process_element(r.id, "relation", tags, None)
-
-
-def extract_places_with_population(
-    pbf_path: str | Path,
-    place_type: str | PlaceType = PlaceType.ALL,
-    min_population: int = 0,
-    output_path: str | Path | None = None,
-) -> PopulationFilterResult:
-    """Extract places with population from a PBF file.
-
-    Args:
-        pbf_path: Path to input PBF file
-        place_type: Type of place to extract
-        min_population: Minimum population threshold
-        output_path: Path to output GeoJSON file
-
-    Returns:
-        PopulationFilterResult with output path and statistics
-    """
-    if not HAS_OSMIUM:
-        raise RuntimeError("pyosmium is required for PBF extraction")
-
-    pbf_path = Path(localize(str(pbf_path)))
-
-    # Parse place type
-    if isinstance(place_type, str):
-        place_type = PlaceType.from_string(place_type)
-
-    # Generate output path if not provided
-    if output_path is None:
-        out_dir = resolve_output_dir("osm-population")
-        suffix = f"_{place_type.value}_pop"
-        if min_population > 0:
-            suffix += f"_{min_population}"
-        output_path_str = f"{out_dir}/{pbf_path.stem}{suffix}.geojson"
-    else:
-        output_path_str = str(output_path)
-    ensure_dir(output_path_str)
-
-    # Extract places
-    handler = PopulationHandler(place_type=place_type, min_population=min_population)
-    handler.apply_file(str(pbf_path), locations=True)
-
-    # Build output GeoJSON
-    geojson = {
-        "type": "FeatureCollection",
-        "features": handler.features,
-    }
-
-    # Write output
-    with open_output(output_path_str) as f:
-        json.dump(geojson, f, indent=2)
-
-    return PopulationFilterResult(
-        output_path=output_path_str,
-        feature_count=len(handler.features),
-        original_count=len(handler.features),  # All extracted features match criteria
-        place_type=place_type.value,
-        min_population=min_population,
-        max_population=0,
-        filter_applied=f"{place_type.value} with population >= {min_population:,}",
         extraction_date=datetime.now(UTC).isoformat(),
     )
 

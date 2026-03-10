@@ -3,7 +3,7 @@
 import json
 import os
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from handlers.routes.route_extractor import (
@@ -19,11 +19,8 @@ from handlers.routes.route_handlers import (
     ROUTE_FACETS,
     _empty_result,
     _empty_stats,
-    _make_extract_routes_handler,
     _make_filter_routes_handler,
-    _make_public_transport_handler,
     _make_route_stats_handler,
-    _make_typed_route_handler,
     _result_to_dict,
     _stats_to_dict,
     register_route_handlers,
@@ -164,19 +161,6 @@ class TestResultConversions:
 class TestHandlerFactories:
     """Tests for handler factory functions."""
 
-    def test_extract_routes_handler_no_osmium(self):
-        """Test extract routes handler returns empty when no osmium."""
-        handler = _make_extract_routes_handler("ExtractRoutes")
-        with patch("handlers.route_handlers.HAS_OSMIUM", False):
-            result = handler({"cache": {"path": "/tmp/test.pbf"}})
-            assert result["result"]["feature_count"] == 0
-
-    def test_extract_routes_handler_no_path(self):
-        """Test extract routes handler returns empty when no path."""
-        handler = _make_extract_routes_handler("ExtractRoutes")
-        result = handler({"cache": {}})
-        assert result["result"]["feature_count"] == 0
-
     def test_filter_routes_handler_no_path(self):
         """Test filter routes handler returns empty when no path."""
         handler = _make_filter_routes_handler("FilterRoutesByType")
@@ -188,22 +172,6 @@ class TestHandlerFactories:
         handler = _make_route_stats_handler("RouteStatistics")
         result = handler({})
         assert result["stats"]["route_count"] == 0
-
-    def test_typed_route_handler_no_osmium(self):
-        """Test typed route handler returns empty when no osmium."""
-        handler = _make_typed_route_handler("BicycleRoutes", "bicycle")
-        with patch("handlers.route_handlers.HAS_OSMIUM", False):
-            result = handler({"cache": {"path": "/tmp/test.pbf"}})
-            assert result["result"]["feature_count"] == 0
-            assert result["result"]["route_type"] == "bicycle"
-
-    def test_public_transport_handler_no_osmium(self):
-        """Test public transport handler returns empty when no osmium."""
-        handler = _make_public_transport_handler("PublicTransport")
-        with patch("handlers.route_handlers.HAS_OSMIUM", False):
-            result = handler({"cache": {"path": "/tmp/test.pbf"}})
-            assert result["result"]["feature_count"] == 0
-            assert result["result"]["route_type"] == "public_transport"
 
 
 class TestRouteStats:
@@ -280,37 +248,26 @@ class TestHandlerRegistration:
 
     def test_route_facets_count(self):
         """Test expected number of route facets."""
-        assert len(ROUTE_FACETS) == 8
+        assert len(ROUTE_FACETS) == 2
 
     def test_route_facets_names(self):
         """Test route facet names."""
         names = [name for name, _ in ROUTE_FACETS]
-        assert "ExtractRoutes" in names
         assert "FilterRoutesByType" in names
         assert "RouteStatistics" in names
-        assert "BicycleRoutes" in names
-        assert "HikingTrails" in names
-        assert "TrainRoutes" in names
-        assert "BusRoutes" in names
-        assert "PublicTransport" in names
 
-    def test_register_route_handlers(self, monkeypatch):
+    def test_register_route_handlers(self):
         """Test handler registration with mock poller."""
-        monkeypatch.setitem(register_route_handlers.__globals__, "HAS_OSMIUM", True)
         poller = MagicMock()
         register_route_handlers(poller)
 
-        # Should register 8 handlers
-        assert poller.register.call_count == 8
+        # Should register 2 handlers
+        assert poller.register.call_count == 2
 
         # Verify qualified names are used
         call_args = [call[0][0] for call in poller.register.call_args_list]
-        assert f"{NAMESPACE}.ExtractRoutes" in call_args
-        assert f"{NAMESPACE}.BicycleRoutes" in call_args
-        assert f"{NAMESPACE}.HikingTrails" in call_args
-        assert f"{NAMESPACE}.TrainRoutes" in call_args
-        assert f"{NAMESPACE}.BusRoutes" in call_args
-        assert f"{NAMESPACE}.PublicTransport" in call_args
+        assert f"{NAMESPACE}.FilterRoutesByType" in call_args
+        assert f"{NAMESPACE}.RouteStatistics" in call_args
 
     def test_namespace_value(self):
         """Test namespace is correct."""

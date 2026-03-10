@@ -7,230 +7,17 @@ import logging
 import os
 from datetime import UTC, datetime
 
-from ..shared.output_cache import cached_result, save_result_meta, with_output_cache
+from ..shared.output_cache import cached_result, save_result_meta
 from .park_extractor import (
-    HAS_OSMIUM,
     ParkResult,
     ParkStats,
-    ParkType,
     calculate_park_stats,
-    extract_parks,
     filter_parks_by_type,
 )
 
 log = logging.getLogger(__name__)
 
 NAMESPACE = "osm.geo.Parks"
-
-
-def _make_national_parks_handler(facet_name: str):
-    """Create handler for NationalParks event facet."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-    cache_params = {"park_type": "national"}
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        step_log = payload.get("_step_log")
-
-        if step_log:
-            step_log(f"{facet_name}: extracting national parks from {pbf_path}")
-        log.info("%s extracting national parks from %s", facet_name, pbf_path)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result("national", "*")}
-
-        try:
-            result = extract_parks(
-                pbf_path,
-                park_type=ParkType.NATIONAL,
-            )
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} national parks",
-                    level="success",
-                )
-            return {"result": _result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to extract national parks: %s", e)
-            return {"result": _empty_result("national", "*")}
-
-    return with_output_cache(handler, qualified, cache_params)
-
-
-def _make_state_parks_handler(facet_name: str):
-    """Create handler for StateParks event facet."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-    cache_params = {"park_type": "state"}
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        step_log = payload.get("_step_log")
-
-        if step_log:
-            step_log(f"{facet_name}: extracting state parks from {pbf_path}")
-        log.info("%s extracting state parks from %s", facet_name, pbf_path)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result("state", "*")}
-
-        try:
-            result = extract_parks(
-                pbf_path,
-                park_type=ParkType.STATE,
-            )
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} state parks", level="success"
-                )
-            return {"result": _result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to extract state parks: %s", e)
-            return {"result": _empty_result("state", "*")}
-
-    return with_output_cache(handler, qualified, cache_params)
-
-
-def _make_nature_reserves_handler(facet_name: str):
-    """Create handler for NatureReserves event facet."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-    cache_params = {"park_type": "nature_reserve"}
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        step_log = payload.get("_step_log")
-
-        if step_log:
-            step_log(f"{facet_name}: extracting nature reserves from {pbf_path}")
-        log.info("%s extracting nature reserves from %s", facet_name, pbf_path)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result("nature_reserve", "*")}
-
-        try:
-            result = extract_parks(
-                pbf_path,
-                park_type=ParkType.NATURE_RESERVE,
-            )
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} nature reserves",
-                    level="success",
-                )
-            return {"result": _result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to extract nature reserves: %s", e)
-            return {"result": _empty_result("nature_reserve", "*")}
-
-    return with_output_cache(handler, qualified, cache_params)
-
-
-def _make_protected_areas_handler(facet_name: str):
-    """Create handler for ProtectedAreas event facet.
-
-    Uses dynamic cache_params since protect_classes comes from payload.
-    """
-    qualified = f"{NAMESPACE}.{facet_name}"
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        protect_classes = payload.get("protect_classes", "*")
-        step_log = payload.get("_step_log")
-
-        # Dynamic cache check
-        cp = {"park_type": "protected_area", "protect_classes": protect_classes}
-        hit = cached_result(qualified, cache, cp, step_log)
-        if hit is not None:
-            return hit
-
-        if step_log:
-            step_log(f"{facet_name}: extracting protected areas from {pbf_path}")
-        log.info(
-            "%s extracting protected areas from %s (classes=%s)",
-            facet_name,
-            pbf_path,
-            protect_classes,
-        )
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result("protected_area", protect_classes)}
-
-        try:
-            result = extract_parks(
-                pbf_path,
-                park_type=ParkType.PROTECTED_AREA,
-                protect_classes=protect_classes,
-            )
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} protected areas",
-                    level="success",
-                )
-            rv = {"result": _result_to_dict(result)}
-            save_result_meta(qualified, cache, cp, rv)
-            return rv
-        except Exception as e:
-            log.error("Failed to extract protected areas: %s", e)
-            return {"result": _empty_result("protected_area", protect_classes)}
-
-    return handler
-
-
-def _make_extract_parks_handler(facet_name: str):
-    """Create handler for ExtractParks event facet.
-
-    Uses dynamic cache_params since park_type and protect_classes come from payload.
-    """
-    qualified = f"{NAMESPACE}.{facet_name}"
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        park_type = payload.get("park_type", "all")
-        protect_classes = payload.get("protect_classes", "*")
-        step_log = payload.get("_step_log")
-
-        # Dynamic cache check
-        cp = {"park_type": park_type, "protect_classes": protect_classes}
-        hit = cached_result(qualified, cache, cp, step_log)
-        if hit is not None:
-            return hit
-
-        if step_log:
-            step_log(f"{facet_name}: extracting {park_type} parks from {pbf_path}")
-        log.info(
-            "%s extracting %s parks from %s (classes=%s)",
-            facet_name,
-            park_type,
-            pbf_path,
-            protect_classes,
-        )
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result(park_type, protect_classes)}
-
-        try:
-            result = extract_parks(
-                pbf_path,
-                park_type=park_type,
-                protect_classes=protect_classes,
-            )
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} {park_type} parks",
-                    level="success",
-                )
-            rv = {"result": _result_to_dict(result)}
-            save_result_meta(qualified, cache, cp, rv)
-            return rv
-        except Exception as e:
-            log.error("Failed to extract parks: %s", e)
-            return {"result": _empty_result(park_type, protect_classes)}
-
-    return handler
 
 
 def _make_filter_parks_handler(facet_name: str):
@@ -332,62 +119,6 @@ def _make_park_stats_handler(facet_name: str):
     return handler
 
 
-def _make_large_parks_handler(facet_name: str):
-    """Create handler for LargeParks event facet.
-
-    Uses dynamic cache_params since min_area_km2 and park_type come from payload.
-    """
-    qualified = f"{NAMESPACE}.{facet_name}"
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        min_area_km2 = payload.get("min_area_km2", 100.0)
-        park_type = payload.get("park_type", "all")
-        step_log = payload.get("_step_log")
-
-        # Dynamic cache check
-        cp = {"park_type": park_type, "min_area_km2": min_area_km2}
-        hit = cached_result(qualified, cache, cp, step_log)
-        if hit is not None:
-            return hit
-
-        if step_log:
-            step_log(
-                f"{facet_name}: extracting {park_type} parks >= {min_area_km2:.1f} km2 from {pbf_path}"
-            )
-        log.info(
-            "%s extracting %s parks >= %.1f km² from %s",
-            facet_name,
-            park_type,
-            min_area_km2,
-            pbf_path,
-        )
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result(park_type, "*")}
-
-        try:
-            result = extract_parks(
-                pbf_path,
-                park_type=park_type,
-                min_area_km2=min_area_km2,
-            )
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} large {park_type} parks (>= {min_area_km2:.1f} km2)",
-                    level="success",
-                )
-            rv = {"result": _result_to_dict(result)}
-            save_result_meta(qualified, cache, cp, rv)
-            return rv
-        except Exception as e:
-            log.error("Failed to extract large parks: %s", e)
-            return {"result": _empty_result(park_type, "*")}
-
-    return handler
-
-
 def _file_size(path: str) -> int:
     """Return file size in bytes, or 0 if the file doesn't exist."""
     try:
@@ -450,14 +181,8 @@ def _empty_stats() -> dict:
 
 # Event facet definitions for handler registration
 PARK_FACETS = [
-    ("NationalParks", _make_national_parks_handler),
-    ("StateParks", _make_state_parks_handler),
-    ("NatureReserves", _make_nature_reserves_handler),
-    ("ProtectedAreas", _make_protected_areas_handler),
-    ("ExtractParks", _make_extract_parks_handler),
     ("FilterParksByType", _make_filter_parks_handler),
     ("ParkStatistics", _make_park_stats_handler),
-    ("LargeParks", _make_large_parks_handler),
 ]
 
 
@@ -494,8 +219,6 @@ def register_handlers(runner) -> None:
 
 def register_park_handlers(poller) -> None:
     """Register all park event facet handlers with the poller."""
-    if not HAS_OSMIUM:
-        return
     for facet_name, handler_factory in PARK_FACETS:
         qualified_name = f"{NAMESPACE}.{facet_name}"
         poller.register(qualified_name, handler_factory(facet_name))

@@ -8,14 +8,12 @@ import logging
 import os
 from datetime import UTC, datetime
 
-from ..shared.output_cache import cached_result, save_result_meta, with_output_cache
+from ..shared.output_cache import cached_result, save_result_meta
 from .population_filter import (
-    HAS_OSMIUM,
     Operator,
     PopulationFilterResult,
     PopulationStats,
     calculate_population_stats,
-    extract_places_with_population,
     filter_geojson_by_population,
 )
 
@@ -146,139 +144,6 @@ def _make_filter_by_population_range_handler(facet_name: str):
     return handler
 
 
-def _make_extract_places_handler(facet_name: str):
-    """Create handler for ExtractPlacesWithPopulation event facet."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        place_type = payload.get("place_type", "all")
-        min_population = payload.get("min_population", 0)
-        step_log = payload.get("_step_log")
-
-        # Dynamic cache check (place_type and min_population come from payload)
-        cache_params = {"place_type": place_type, "min_population": min_population}
-        hit = cached_result(qualified, cache, cache_params, step_log)
-        if hit is not None:
-            return hit
-
-        if step_log:
-            step_log(
-                f"{facet_name}: extracting {place_type} from {pbf_path} (min_pop={min_population})"
-            )
-        log.info(
-            "%s extracting %s from %s (min_pop=%d)",
-            facet_name,
-            place_type,
-            pbf_path,
-            min_population,
-        )
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result(place_type, min_population, 0)}
-
-        try:
-            result = extract_places_with_population(
-                pbf_path,
-                place_type=place_type,
-                min_population=min_population,
-            )
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} {place_type} places (min_pop={min_population})",
-                    level="success",
-                )
-            rv = {"result": _result_to_dict(result)}
-            save_result_meta(qualified, cache, cache_params, rv)
-            return rv
-        except Exception as e:
-            log.error("Failed to extract places with population: %s", e)
-            return {"result": _empty_result(place_type, min_population, 0)}
-
-    return handler
-
-
-def _make_typed_place_handler(facet_name: str, place_type: str):
-    """Create handler for a specific place type (Cities, Towns, etc.)."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        min_population = payload.get("min_population", 0)
-        step_log = payload.get("_step_log")
-
-        # Dynamic cache check (min_population comes from payload)
-        cache_params = {"place_type": place_type, "min_population": min_population}
-        hit = cached_result(qualified, cache, cache_params, step_log)
-        if hit is not None:
-            return hit
-
-        if step_log:
-            step_log(
-                f"{facet_name}: extracting {place_type} from {pbf_path} (min_pop={min_population})"
-            )
-        log.info("%s extracting from %s (min_pop=%d)", facet_name, pbf_path, min_population)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result(place_type, min_population, 0)}
-
-        try:
-            result = extract_places_with_population(
-                pbf_path,
-                place_type=place_type,
-                min_population=min_population,
-            )
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} {place_type}", level="success"
-                )
-            rv = {"result": _result_to_dict(result)}
-            save_result_meta(qualified, cache, cache_params, rv)
-            return rv
-        except Exception as e:
-            log.error("Failed to extract %s: %s", place_type, e)
-            return {"result": _empty_result(place_type, min_population, 0)}
-
-    return handler
-
-
-def _make_admin_handler(facet_name: str, place_type: str):
-    """Create handler for administrative boundaries (Countries, States, Counties)."""
-    qualified = f"{NAMESPACE}.{facet_name}"
-    cache_params = {"place_type": place_type}
-
-    def handler(payload: dict) -> dict:
-        cache = payload.get("cache", {})
-        pbf_path = cache.get("path", "")
-        step_log = payload.get("_step_log")
-
-        if step_log:
-            step_log(f"{facet_name}: extracting {place_type} from {pbf_path}")
-        log.info("%s extracting from %s", facet_name, pbf_path)
-
-        if not HAS_OSMIUM or not pbf_path:
-            return {"result": _empty_result(place_type, 0, 0)}
-
-        try:
-            result = extract_places_with_population(
-                pbf_path,
-                place_type=place_type,
-                min_population=0,
-            )
-            if step_log:
-                step_log(
-                    f"{facet_name}: extracted {result.feature_count} {place_type}", level="success"
-                )
-            return {"result": _result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to extract %s: %s", place_type, e)
-            return {"result": _empty_result(place_type, 0, 0)}
-
-    return with_output_cache(handler, qualified, cache_params)
-
-
 def _make_population_stats_handler(facet_name: str):
     """Create handler for PopulationStatistics event facet."""
     qualified = f"{NAMESPACE}.{facet_name}"
@@ -378,16 +243,7 @@ POPULATION_FACETS = [
     # Generic filters
     ("FilterByPopulation", _make_filter_by_population_handler),
     ("FilterByPopulationRange", _make_filter_by_population_range_handler),
-    ("ExtractPlacesWithPopulation", _make_extract_places_handler),
     ("PopulationStatistics", _make_population_stats_handler),
-    # Typed convenience facets
-    ("Cities", lambda name: _make_typed_place_handler(name, "city")),
-    ("Towns", lambda name: _make_typed_place_handler(name, "town")),
-    ("Villages", lambda name: _make_typed_place_handler(name, "village")),
-    ("Countries", lambda name: _make_admin_handler(name, "country")),
-    ("States", lambda name: _make_admin_handler(name, "state")),
-    ("Counties", lambda name: _make_admin_handler(name, "county")),
-    ("AllPopulatedPlaces", lambda name: _make_typed_place_handler(name, "all")),
 ]
 
 
@@ -424,8 +280,6 @@ def register_handlers(runner) -> None:
 
 def register_population_handlers(poller) -> None:
     """Register all population event facet handlers with the poller."""
-    if not HAS_OSMIUM:
-        return
     for facet_name, handler_factory in POPULATION_FACETS:
         qualified_name = f"{NAMESPACE}.{facet_name}"
         poller.register(qualified_name, handler_factory(facet_name))

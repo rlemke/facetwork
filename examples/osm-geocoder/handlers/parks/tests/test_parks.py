@@ -3,7 +3,7 @@
 import json
 import os
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from handlers.parks.park_extractor import (
@@ -25,12 +25,8 @@ from handlers.parks.park_handlers import (
     PARK_FACETS,
     _empty_result,
     _empty_stats,
-    _make_extract_parks_handler,
     _make_filter_parks_handler,
-    _make_large_parks_handler,
-    _make_national_parks_handler,
     _make_park_stats_handler,
-    _make_state_parks_handler,
     _result_to_dict,
     _stats_to_dict,
     register_park_handlers,
@@ -442,28 +438,6 @@ class TestResultConversions:
 class TestHandlerFactories:
     """Tests for handler factory functions."""
 
-    def test_national_parks_handler_no_osmium(self):
-        """Test national parks handler returns empty when no osmium."""
-        handler = _make_national_parks_handler("NationalParks")
-        with patch("handlers.park_handlers.HAS_OSMIUM", False):
-            result = handler({"cache": {"path": "/tmp/test.pbf"}})
-            assert result["result"]["feature_count"] == 0
-            assert result["result"]["park_type"] == "national"
-
-    def test_state_parks_handler_no_osmium(self):
-        """Test state parks handler returns empty when no osmium."""
-        handler = _make_state_parks_handler("StateParks")
-        with patch("handlers.park_handlers.HAS_OSMIUM", False):
-            result = handler({"cache": {"path": "/tmp/test.pbf"}})
-            assert result["result"]["feature_count"] == 0
-            assert result["result"]["park_type"] == "state"
-
-    def test_extract_parks_handler_no_path(self):
-        """Test extract parks handler returns empty when no path."""
-        handler = _make_extract_parks_handler("ExtractParks")
-        result = handler({"cache": {}})
-        assert result["result"]["feature_count"] == 0
-
     def test_filter_parks_handler_no_path(self):
         """Test filter parks handler returns empty when no path."""
         handler = _make_filter_parks_handler("FilterParksByType")
@@ -476,48 +450,32 @@ class TestHandlerFactories:
         result = handler({})
         assert result["stats"]["total_parks"] == 0
 
-    def test_large_parks_handler_no_osmium(self):
-        """Test large parks handler returns empty when no osmium."""
-        handler = _make_large_parks_handler("LargeParks")
-        with patch("handlers.park_handlers.HAS_OSMIUM", False):
-            result = handler({"cache": {"path": "/tmp/test.pbf"}, "min_area_km2": 100})
-            assert result["result"]["feature_count"] == 0
-
 
 class TestHandlerRegistration:
     """Tests for handler registration."""
 
     def test_park_facets_count(self):
         """Test expected number of park facets."""
-        assert len(PARK_FACETS) == 8
+        assert len(PARK_FACETS) == 2
 
     def test_park_facets_names(self):
         """Test park facet names."""
         names = [name for name, _ in PARK_FACETS]
-        assert "NationalParks" in names
-        assert "StateParks" in names
-        assert "NatureReserves" in names
-        assert "ProtectedAreas" in names
-        assert "ExtractParks" in names
         assert "FilterParksByType" in names
         assert "ParkStatistics" in names
-        assert "LargeParks" in names
 
-    def test_register_park_handlers(self, monkeypatch):
+    def test_register_park_handlers(self):
         """Test handler registration with mock poller."""
-        monkeypatch.setitem(register_park_handlers.__globals__, "HAS_OSMIUM", True)
         poller = MagicMock()
         register_park_handlers(poller)
 
-        # Should register 8 handlers
-        assert poller.register.call_count == 8
+        # Should register 2 handlers
+        assert poller.register.call_count == 2
 
         # Verify qualified names are used
         call_args = [call[0][0] for call in poller.register.call_args_list]
-        assert f"{NAMESPACE}.NationalParks" in call_args
-        assert f"{NAMESPACE}.StateParks" in call_args
-        assert f"{NAMESPACE}.NatureReserves" in call_args
-        assert f"{NAMESPACE}.ProtectedAreas" in call_args
+        assert f"{NAMESPACE}.FilterParksByType" in call_args
+        assert f"{NAMESPACE}.ParkStatistics" in call_args
 
     def test_namespace_value(self):
         """Test namespace is correct."""

@@ -16,6 +16,7 @@ from pathlib import Path
 from afl.runtime.storage import get_storage_backend, localize
 
 from ..shared._output import ensure_dir, open_output, resolve_output_dir, uri_stem
+from ..shared.scan_progress import ScanProgressTracker, get_file_size
 
 _storage = get_storage_backend()
 
@@ -182,6 +183,7 @@ class OSMTypeHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
         tag_key: str | None = None,
         tag_value: str | None = None,
         include_dependencies: bool = False,
+        progress=None,
     ):
         if HAS_OSMIUM:
             super().__init__()
@@ -189,6 +191,7 @@ class OSMTypeHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
         self.tag_key = tag_key
         self.tag_value = tag_value if tag_value != "*" else None
         self.include_dependencies = include_dependencies
+        self._progress = progress
 
         # Collected elements
         self.elements: list[OSMElement] = []
@@ -217,6 +220,8 @@ class OSMTypeHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
     def node(self, n):
         """Process a node."""
         self.total_count += 1
+        if self._progress:
+            self._progress.tick("node")
 
         # Check if this is a dependency node we need
         if self.include_dependencies and n.id in self.needed_node_ids:
@@ -236,6 +241,8 @@ class OSMTypeHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
     def way(self, w):
         """Process a way."""
         self.total_count += 1
+        if self._progress:
+            self._progress.tick("way")
 
         if self._matches_filter(w.tags, OSMType.WAY):
             node_refs = [n.ref for n in w.nodes]
@@ -254,6 +261,8 @@ class OSMTypeHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
     def relation(self, r):
         """Process a relation."""
         self.total_count += 1
+        if self._progress:
+            self._progress.tick("relation")
 
         if self._matches_filter(r.tags, OSMType.RELATION):
             members = [{"type": m.type, "ref": m.ref, "role": m.role} for m in r.members]
@@ -274,6 +283,7 @@ def filter_pbf_by_type(
     tag_value: str | None = None,
     include_dependencies: bool = False,
     output_path: str | Path | None = None,
+    step_log=None,
 ) -> OSMFilterResult:
     """Filter a PBF file by OSM element type and/or tags.
 
@@ -284,6 +294,7 @@ def filter_pbf_by_type(
         tag_value: Optional tag value (use "*" or None for any value)
         include_dependencies: If True, include referenced nodes for ways
         output_path: Path to output GeoJSON file (default: adds _filtered suffix)
+        step_log: Optional callback for progress reporting.
 
     Returns:
         OSMFilterResult with output path and counts
@@ -304,15 +315,20 @@ def filter_pbf_by_type(
         osm_type = OSMType.from_string(osm_type)
 
     # Create handler and process file
+    file_size = get_file_size(str(input_path))
+    progress = ScanProgressTracker(file_size, step_log, label="ExtractAndFilter")
+
     handler = OSMTypeHandler(
         osm_type=osm_type,
         tag_key=tag_key,
         tag_value=tag_value,
         include_dependencies=include_dependencies,
+        progress=progress,
     )
 
     # First pass: collect matching elements and identify needed nodes
     handler.apply_file(str(input_path))
+    progress.finish()
 
     # Second pass: collect dependency nodes if needed
     if include_dependencies and handler.needed_node_ids:
