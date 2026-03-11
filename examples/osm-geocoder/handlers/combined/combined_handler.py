@@ -89,11 +89,13 @@ class _CombinedHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
         self,
         plugins: list[ExtractorPlugin],
         progress: ScanProgressTracker | None = None,
+        step_log: Any = None,
     ):
         if HAS_OSMIUM:
             super().__init__()
         self._plugins = plugins
         self._progress = progress
+        self._step_log = step_log
 
         # Pre-partition plugins by element type for fast dispatch
         self._node_plugins = [p for p in plugins if ElementType.NODE in p.element_types]
@@ -126,6 +128,11 @@ class _CombinedHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
                         n.id,
                         exc,
                     )
+                    if self._step_log:
+                        self._step_log(
+                            f"{plugin.category}: error processing node {n.id}: {exc}",
+                            level="warning",
+                        )
 
     def way(self, w):
         if self._progress:
@@ -155,6 +162,11 @@ class _CombinedHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
                         w.id,
                         exc,
                     )
+                    if self._step_log:
+                        self._step_log(
+                            f"{plugin.category}: error processing way {w.id}: {exc}",
+                            level="warning",
+                        )
 
     def area(self, a):
         if self._progress:
@@ -189,6 +201,11 @@ class _CombinedHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
                         a.id,
                         exc,
                     )
+                    if self._step_log:
+                        self._step_log(
+                            f"{plugin.category}: error processing area {a.id}: {exc}",
+                            level="warning",
+                        )
 
     def relation(self, r):
         if self._progress:
@@ -212,6 +229,11 @@ class _CombinedHandler(osmium.SimpleHandler if HAS_OSMIUM else object):
                         r.id,
                         exc,
                     )
+                    if self._step_log:
+                        self._step_log(
+                            f"{plugin.category}: error processing relation {r.id}: {exc}",
+                            level="warning",
+                        )
 
 
 def combined_scan(
@@ -259,7 +281,7 @@ def combined_scan(
     )
 
     # Single-pass scan
-    handler = _CombinedHandler(plugins, progress=progress)
+    handler = _CombinedHandler(plugins, progress=progress, step_log=step_log)
     t0 = time.monotonic()
     handler.apply_file(pbf_path, locations=True)
     scan_seconds = time.monotonic() - t0
