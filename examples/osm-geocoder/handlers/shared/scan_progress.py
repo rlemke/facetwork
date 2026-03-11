@@ -46,6 +46,9 @@ class ScanProgressTracker:
         self._next_checkpoint = 1  # 1..NUM_CHECKPOINTS
         self._estimated_total = 0
         self._t0 = time.monotonic()
+        self._current_phase: str = ""  # tracks element type for phase-change logs
+        self._phase_t0 = self._t0
+        self._last_heartbeat = self._t0
 
         # Pre-compute milestone interval using PBF heuristic.
         # Compressed PBF averages ~40-80 bytes per element; use 60 as midpoint.
@@ -64,6 +67,10 @@ class ScanProgressTracker:
         elif element_type == "relation":
             self._relations += 1
 
+        # Log phase transitions (node → way → area → relation)
+        if element_type != self._current_phase:
+            self._log_phase_change(element_type)
+
         # After calibration window, refine the estimate using actual density
         if self._elements == self.CALIBRATION_WINDOW:
             self._recalibrate()
@@ -80,16 +87,67 @@ class ScanProgressTracker:
                 self._report()
                 self._next_checkpoint += 1
 
+        # Time-based heartbeat: emit a log every 30s even if no milestone hit
+        self._maybe_heartbeat()
+
+    def _log_phase_change(self, new_phase: str) -> None:
+        """Emit a step log when the element type changes."""
+        now = time.monotonic()
+        if self._step_log and self._current_phase:
+            phase_elapsed = now - self._phase_t0
+            phase_labels = {
+                "node": "nodes",
+                "way": "ways",
+                "area": "areas",
+                "relation": "relations",
+            }
+            prev_label = phase_labels.get(self._current_phase, self._current_phase)
+            count = getattr(self, f"_{self._current_phase}s", 0)
+            self._step_log(
+                f"{self._label}: finished {prev_label} ({count:,}) in {phase_elapsed:.1f}s, "
+                f"starting {phase_labels.get(new_phase, new_phase)}"
+            )
+        self._current_phase = new_phase
+        self._phase_t0 = now
+
+    HEARTBEAT_INTERVAL = 30.0  # seconds between heartbeat logs
+
+    def _maybe_heartbeat(self) -> None:
+        """Emit a periodic heartbeat log so the step never appears stuck."""
+        if not self._step_log:
+            return
+        now = time.monotonic()
+        if now - self._last_heartbeat < self.HEARTBEAT_INTERVAL:
+            return
+        self._last_heartbeat = now
+        elapsed = now - self._t0
+        phase_elapsed = now - self._phase_t0
+        phase_labels = {
+            "node": "nodes",
+            "way": "ways",
+            "area": "areas",
+            "relation": "relations",
+        }
+        phase = phase_labels.get(self._current_phase, self._current_phase)
+        count = getattr(self, f"_{self._current_phase}s", 0) if self._current_phase else 0
+        self._step_log(
+            f"{self._label}: processing {phase} — "
+            f"{count:,} so far in {phase_elapsed:.0f}s "
+            f"(total: {self._elements:,} elements in {elapsed:.0f}s)"
+        )
+
     def _recalibrate(self) -> None:
         """Refine total element estimate from observed density."""
         if self._elements == 0:
             return
-        # Estimate bytes per element from calibration window.
-        # PBF is read sequentially, so assume uniform density.
-        bytes_per_element = self._file_size / max(1, self._elements * 3)
+        # Nodes are densely packed (~20-30 bytes each in PBF), but ways/areas
+        # are much larger (~100-500 bytes). The calibration window is typically
+        # all nodes, so the observed density is too optimistic. Apply a 10x
+        # factor to avoid exhausting all checkpoints during the node pass.
+        bytes_per_element = self._file_size / max(1, self._elements * 10)
         self._estimated_total = int(self._file_size / max(1, bytes_per_element))
-        # Ensure estimate is at least double current count
-        self._estimated_total = max(self._estimated_total, self._elements * 2)
+        # Ensure estimate is at least 5x current count
+        self._estimated_total = max(self._estimated_total, self._elements * 5)
 
     def _report(self) -> None:
         if not self._step_log:
@@ -118,11 +176,26 @@ class ScanProgressTracker:
         """Log final scan completion."""
         if not self._step_log:
             return
+        # Log final phase duration
+        if self._current_phase:
+            phase_elapsed = time.monotonic() - self._phase_t0
+            phase_labels = {
+                "node": "nodes",
+                "way": "ways",
+                "area": "areas",
+                "relation": "relations",
+            }
+            prev_label = phase_labels.get(self._current_phase, self._current_phase)
+            count = getattr(self, f"_{self._current_phase}s", 0)
+            self._step_log(
+                f"{self._label}: finished {prev_label} ({count:,}) in {phase_elapsed:.1f}s"
+            )
         elapsed = time.monotonic() - self._t0
         size_mb = self._file_size / (1024 * 1024)
         rate = self._elements / elapsed if elapsed > 0 else 0
         self._step_log(
-            f"{self._label}: complete — {self._elements:,} elements "
+            f"{self._label}: scan complete — {self._elements:,} elements "
+            f"({self._nodes:,}N/{self._ways:,}W/{self._areas:,}A/{self._relations:,}R) "
             f"from {size_mb:.1f}MB in {elapsed:.1f}s ({rate:,.0f} elem/s)",
             level="success",
         )
