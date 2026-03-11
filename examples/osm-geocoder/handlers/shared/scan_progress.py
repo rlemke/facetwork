@@ -6,8 +6,18 @@ progress is estimated from element counts using a calibration window.
 """
 
 import os
+import resource
 import time
 from collections.abc import Callable
+
+
+def _memory_mb() -> float:
+    """Return current process RSS in MB."""
+    # ru_maxrss is in bytes on Linux, KB on macOS
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if os.uname().sysname == "Darwin":
+        return rss / (1024 * 1024)  # macOS: bytes → MB
+    return rss / 1024  # Linux: KB → MB
 
 
 class ScanProgressTracker:
@@ -103,9 +113,11 @@ class ScanProgressTracker:
             }
             prev_label = phase_labels.get(self._current_phase, self._current_phase)
             count = getattr(self, f"_{self._current_phase}s", 0)
+            mem = _memory_mb()
             self._step_log(
                 f"{self._label}: finished {prev_label} ({count:,}) in {phase_elapsed:.1f}s, "
-                f"starting {phase_labels.get(new_phase, new_phase)}"
+                f"starting {phase_labels.get(new_phase, new_phase)} "
+                f"(mem: {mem:,.0f}MB)"
             )
         self._current_phase = new_phase
         self._phase_t0 = now
@@ -130,10 +142,12 @@ class ScanProgressTracker:
         }
         phase = phase_labels.get(self._current_phase, self._current_phase)
         count = getattr(self, f"_{self._current_phase}s", 0) if self._current_phase else 0
+        mem = _memory_mb()
         self._step_log(
             f"{self._label}: processing {phase} — "
             f"{count:,} so far in {phase_elapsed:.0f}s "
-            f"(total: {self._elements:,} elements in {elapsed:.0f}s)"
+            f"(total: {self._elements:,} elements in {elapsed:.0f}s, "
+            f"mem: {mem:,.0f}MB)"
         )
 
     def _recalibrate(self) -> None:
@@ -193,10 +207,12 @@ class ScanProgressTracker:
         elapsed = time.monotonic() - self._t0
         size_mb = self._file_size / (1024 * 1024)
         rate = self._elements / elapsed if elapsed > 0 else 0
+        mem = _memory_mb()
         self._step_log(
             f"{self._label}: scan complete — {self._elements:,} elements "
             f"({self._nodes:,}N/{self._ways:,}W/{self._areas:,}A/{self._relations:,}R) "
-            f"from {size_mb:.1f}MB in {elapsed:.1f}s ({rate:,.0f} elem/s)",
+            f"from {size_mb:.1f}MB in {elapsed:.1f}s ({rate:,.0f} elem/s, "
+            f"peak mem: {mem:,.0f}MB)",
             level="success",
         )
 
