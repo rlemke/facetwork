@@ -112,7 +112,7 @@ export AFL_MONGODB_URL="mongodb://localhost:${MONGODB_PORT:-27018}"
 "$PYTHON" -m afl.runtime.submit \
     --primary "$AFL_FILE" \
     "${LIB_ARGS[@]}" \
-    --workflow "osm.geo.UnitedStates.analysis.AnalyzeAllStates"
+    --workflow "osm.UnitedStates.analysis.AnalyzeAllStates"
 echo ""
 
 # ---------------------------------------------------------------------------

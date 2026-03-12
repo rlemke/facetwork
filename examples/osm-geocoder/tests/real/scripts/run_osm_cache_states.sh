@@ -97,14 +97,14 @@ echo ""
 # ---------------------------------------------------------------------------
 # 5. Submit the workflow
 # ---------------------------------------------------------------------------
-echo "=== Submitting DownloadAllStates workflow ==="
+echo "=== Submitting DownloadBatchStates workflow ==="
 export AFL_MONGODB_URL="mongodb://localhost:${MONGODB_PORT:-27018}"
 python -m afl.runtime.submit \
     --primary "$AFL_FILE" \
     --library "$EXAMPLE_DIR/afl/osmtypes.afl" \
     --library "$EXAMPLE_DIR/afl/osmoperations.afl" \
     --library "$EXAMPLE_DIR/afl/osmcache.afl" \
-    --workflow "osm.geo.UnitedStates.cache.DownloadAllStates"
+    --workflow "osm.UnitedStates.cache.DownloadBatchStates"
 echo ""
 
 # ---------------------------------------------------------------------------

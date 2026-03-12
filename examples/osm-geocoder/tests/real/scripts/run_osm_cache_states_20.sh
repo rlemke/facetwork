@@ -104,7 +104,7 @@ python -m afl.runtime.submit \
     --library "$EXAMPLE_DIR/handlers/cache/afl/osmtypes.afl" \
     --library "$EXAMPLE_DIR/handlers/downloads/afl/osmoperations.afl" \
     --library "$EXAMPLE_DIR/handlers/cache/afl/osmcache.afl" \
-    --workflow "osm.geo.UnitedStates.cache.DownloadStates_20"
+    --workflow "osm.UnitedStates.cache.DownloadStates_20"
 echo ""
 
 # ---------------------------------------------------------------------------
