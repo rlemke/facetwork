@@ -33,7 +33,7 @@ This was a complete rewrite of the NOAA weather example from ISD-Lite to GHCN-Da
 - Data source changed from ISD-Lite (per-year fixed-width .gz files) to GHCN-Daily (AWS S3 public bucket)
 - Catalog-first approach: `ghcnd-stations.txt` + `ghcnd-inventory.txt` verify data availability before downloading
 - One CSV per station (`csv/by_station/{ID}.csv`) replaces per-year download loops — dramatically fewer steps
-- Reduced from 10+ event facets (7 namespaces) to 5 event facets (4 namespaces): `ghcn.Catalog.DiscoverStations`, `ghcn.Ingest.FetchStationData`, `ghcn.Analysis.AnalyzeStationClimate`, `ghcn.Analysis.ComputeRegionTrend`, `ghcn.Geocode.ReverseGeocode`
+- Reduced from 10+ event facets (7 namespaces) to 5 event facets (4 namespaces): `weather.Catalog.DiscoverStations`, `weather.Ingest.FetchStationData`, `weather.Analysis.AnalyzeStationClimate`, `weather.Analysis.ComputeRegionTrend`, `weather.Geocode.ReverseGeocode`
 - 4 schemas: `StationInfo`, `YearlyClimate`, `ClimateTrend`, `GeoContext`
 - Removed: ParseObservations, ValidateQuality (script block), SparseAnalysis, GenerateNarrative (prompt block), RenderHTMLReport, RenderStationMap, related handler modules
 - New fast-path workflows: `AnalyzeStateTrends` (discover → foreach station → fetch+analyze+geocode → trend), `AnalyzeAllStates` (foreach 50 states)
@@ -1139,7 +1139,7 @@ evaluation) are composed into a unified pipeline.
 - `EvaluationRound` (composed facet): 3× PresentAnalysis (financial_analyst, community_analyst, competitive_strategist) with DebatePolicy() → 3× ChallengePosition → ScoreArguments → SummarizeRound → yield
 
 ### Feature showcase locations
-- **12 prompt-block event facets**: all event facets across ssd.Spatial, ssd.Research, ssd.Debate, ssd.Synthesis
+- **12 prompt-block event facets**: all event facets across siteselection.Spatial, siteselection.Research, siteselection.Debate, siteselection.Synthesis
 - **Composed facet**: EvaluationRound encapsulates 10 steps (3 present + 3 challenge + score + summarize + yield)
 - **Cross-round state**: `r1.synthesis → r2.prev_synthesis`, `r1.rankings → r2.prev_rankings`
 - **Statement-level andThen**: `access = ComputeAccessibility(...) andThen { regs = ... }`
@@ -1287,7 +1287,7 @@ calls it 3 times sequentially with cross-round state. Also demonstrates converge
 metrics, arithmetic (`%`, `/`), and `++` string concatenation.
 
 #### AFL definitions
-- `rounds.afl`: 5 schemas, 8 event facets across 4 namespaces (Setup, Argumentation, Scoring, Synthesis), 2 mixin facets + 1 composed facet (DebateRound), 2 implicits, 2 workflows
+- `rounds.afl`: 5 schemas, 8 event facets across 4 namespaces (multidebate.Setup, multidebate.Argumentation, multidebate.Scoring, multidebate.Synthesis), 2 mixin facets + 1 composed facet (DebateRound), 2 implicits, 2 workflows
 - `DebateRound` (composed facet): 12 steps — init → assign → 3× refine with RoundConfig mixin → 3× challenge (agent-to-agent) → score → converge → summarize
 - `IterativeDebate`: pre-script → r1=DebateRound → r2=DebateRound(prev_synthesis=r1.synthesis, prev_scores=r1.scores) → r3=DebateRound(prev=r2) → DeclareOutcome → yield with `++` → andThen script
 - `AgentFocusedDebate`: DebateRound → SummarizeRound → yield with `++` + andThen foreach per agent with statement-level andThen (RefineArgument → ChallengeArgument)
@@ -2160,7 +2160,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 ## Completed (v0.12.78) - DownloadStates and AnalyzeStates scaling workflow variants
 
 ### Scaling workflow variants
-- **DownloadStates**: 10 AFL workflow variants (`DownloadStates_02` through `_45`) for benchmarking parallel OSM PBF cache downloads at different scales (2, 5, 10, 15, 20, 25, 30, 35, 40, 45 states); each calls individual state cache facets from `osm.geo.cache.UnitedStates` and concatenates results via `++`; Georgia uses FQN `osm.geo.cache.UnitedStates.Georgia()` to avoid ambiguity with `osm.geo.cache.Europe.Georgia`
+- **DownloadStates**: 10 AFL workflow variants (`DownloadStates_02` through `_45`) for benchmarking parallel OSM PBF cache downloads at different scales (2, 5, 10, 15, 20, 25, 30, 35, 40, 45 states); each calls individual state cache facets from `osm.cache.UnitedStates` and concatenates results via `++`; Georgia uses FQN `osm.cache.UnitedStates.Georgia()` to avoid ambiguity with `osm.cache.Europe.Georgia`
 - **AnalyzeStates**: 11 AFL workflow variants (`AnalyzeStates_01` through `_45`) for benchmarking parallel composed analysis (10 analysis workflows per state via `AnalyzeRegion`); each variant file references `AnalyzeRegion` from the base `osm_analyze_states.afl` included as a library
 - **Run scripts**: 21 shell scripts (`run_osm_cache_states_{02..45}.sh`, `run_osm_analyze_states_{01..45}.sh`) — each boots Docker stack, compiles AFL, and submits the workflow; analyze scripts auto-discover all library AFL files via `find`
 
@@ -2262,7 +2262,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 
 ## Completed (v0.12.68) - Add v2 handlers page with namespace-tabbed list and inline detail
 - **5 new handler endpoints** in `routes/dashboard_v2.py` under `/v2` prefix: handler list with namespace-prefix tabs (`GET /v2/handlers`), HTMX partial for 5s auto-refresh (`GET /v2/handlers/partial`), handler detail (`GET /v2/handlers/{facet_name:path}`), detail partial for live refresh (`GET /v2/handlers/{facet_name:path}/partial`), and delete (`POST /v2/handlers/{facet_name:path}/delete`)
-- **Namespace-prefix sub-tabs**: dynamically discovered prefixes (first dotted segment of `facet_name`, e.g. `osm` from `osm.geo.Cache`) with per-tab counts — "All" tab shows everything; tab filtering via `_filter_handlers_by_prefix()` and `_count_handlers_by_prefix()` helpers
+- **Namespace-prefix sub-tabs**: dynamically discovered prefixes (first dotted segment of `facet_name`, e.g. `osm` from `osm.Cache`) with per-tab counts — "All" tab shows everything; tab filtering via `_filter_handlers_by_prefix()` and `_count_handlers_by_prefix()` helpers
 - **Namespace-group accordion**: handlers grouped by full namespace (all segments except last) using `<details class="ns-group">` — each group shows a table with short facet name, module URI, entrypoint, version, timeout, and registered timestamp
 - **Handler detail page**: summary cards (module URI, entrypoint, timeout), two-column layout (details table + actions/requirements/metadata), delete button with HTMX confirm — all with HTMX 5s polling for live updates
 - **New helpers** in `helpers.py`: `extract_handler_prefix()` (first dotted segment or `(top-level)`) and `group_handlers_by_namespace()` (groups by full namespace, returns sorted `{"namespace", "handlers", "total"}` dicts) — reuses existing `extract_namespace()` for grouping
@@ -2353,7 +2353,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **Root cause**: Cache steps return HDFS URIs (`hdfs://namenode:8020/osm-cache/...`), but all extractors converted these to `Path` objects — `Path.exists()` always returned `False` for HDFS URIs, and pyosmium cannot read HDFS URIs directly
 
 ## Completed (v0.12.58) - Fix route visualization workflows to use Cache(region) parameter
-- **Replaced 8 hardcoded `osm.geo.cache.Europe.Liechtenstein()` calls** with `Cache(region = $.region_name)` in `examples/osm-geocoder/afl/example_routes_visualization.afl` — all 8 workflows (`BicycleRoutesMap`, `HikingTrailsMap`, `TrainRoutesMap`, `BusRoutesMap`, `PublicTransportMap`, `BicycleRoutesWithStats`, `HikingTrailsWithStats`, `NationalCycleNetwork`) now use their `region_name` parameter instead of ignoring it
+- **Replaced 8 hardcoded `osm.cache.Europe.Liechtenstein()` calls** with `Cache(region = $.region_name)` in `examples/osm-geocoder/afl/example_routes_visualization.afl` — all 8 workflows (`BicycleRoutesMap`, `HikingTrailsMap`, `TrainRoutesMap`, `BusRoutesMap`, `PublicTransportMap`, `BicycleRoutesWithStats`, `HikingTrailsWithStats`, `NationalCycleNetwork`) now use their `region_name` parameter instead of ignoring it
 
 ## Completed (v0.12.57) - Fix genomics.afl parse error
 - **Reordered comments in `examples/genomics/afl/genomics.afl`**: moved `//` line comments before `/** */` doc comments on both `SamplePipeline` and `CohortAnalysis` workflows — doc comments must be immediately followed by a declaration keyword, not separated by other comments
@@ -2448,14 +2448,14 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - Added `tests/test_ast_utils.py` with 29 tests covering normalize, find_workflow, find_all_workflows, and compile-normalize-find round-trips
 
 ## Completed (v0.12.49) - Add AnalyzeRegion and AnalyzeAllStates Workflows
-- Added `osm_analyze_states.afl` with two workflows in namespace `osm.geo.UnitedStates.analysis`:
+- Added `osm_analyze_states.afl` with two workflows in namespace `osm.UnitedStates.analysis`:
   - `AnalyzeRegion(region)`: runs 10 composed workflows (VisualizeBicycleRoutes, AnalyzeParks, LargeCitiesMap, TransportOverview, NationalParksAnalysis, CityAnalysis, TransportMap, StateBoundariesWithStats, DiscoverCitiesAndTowns, RegionalAnalysis) for a single region
   - `AnalyzeAllStates()`: calls AnalyzeRegion for all 50 US states plus DC (51 steps, each expanding to 10 sub-workflow calls)
 - Added `run_osm_analyze_states.sh` convenience script: sets up Docker stack, compiles with all OSM library files, and submits the workflow
 
 ## Completed (v0.12.48) - Rename osmstates30 to osm_cache_states with All 50 States
 - Renamed `osmstates30.afl` → `osm_cache_states.afl`; expanded from 30 states to all 50 US states plus DC
-- Renamed workflow `Download30States` → `DownloadAllStates` (namespace `osm.geo.UnitedStates.cache`)
+- Renamed workflow `Download30States` → `DownloadAllStates` (namespace `osm.UnitedStates.cache`)
 - Renamed `run_30states.sh` → `run_osm_cache_states.sh` with updated AFL path, output path, and workflow name
 - Removed tracked `osmstates30.json` compiled artifact; updated `.gitignore` for new output filename
 
@@ -2614,7 +2614,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - 13 operations event facets: Download, Tile, RoutingGraph, Status, PostGisImport, DownloadShapefile (plus *All variants) (`osmoperations.afl`)
 - 8 POI event facets: POI, Cities, Towns, Suburbs, Villages, Hamlets, Countries (`osmpoi.afl`)
 - **GraphHopper routing graph integration**:
-  - 6 operation facets: BuildGraph, BuildMultiProfile, BuildGraphAll, ImportGraph, ValidateGraph, CleanGraph (`osmgraphhopper.afl`)
+  - 6 operation facets: BuildGraph, BuildMultiProfile, BuildGraphBatch, ImportGraph, ValidateGraph, CleanGraph (`osmgraphhopper.afl`)
   - ~200 per-region cache facets across 9 namespaces (`osmgraphhoppercache.afl`)
   - Regional workflow compositions: BuildMajorEuropeGraphs, BuildNorthAmericaGraphs, BuildWestCoastGraphs, BuildEastCoastGraphs (`osmgraphhopper_workflows.afl`)
   - `recreate` flag parameter to control graph rebuilding (default: use cached graph if exists)
@@ -2733,15 +2733,15 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 
 ## Completed (v0.9.4) - Cross-Namespace Composition & Generic Cache Delegation
 - **osmoperations.afl fixes**: removed double `=>` on `Cache` event facet, fixed `OsmCache` → `OSMCache` typo on `Download`
-- **FormatGeoJSON**: new event facet in `osm.geo.Visualization` with `FormatResult` schema (`output_path`, `text`, `feature_count`, `format`, `title`)
+- **FormatGeoJSON**: new event facet in `osm.viz` with `FormatResult` schema (`output_path`, `text`, `feature_count`, `format`, `title`)
 - **osmcache.afl refactor**: 280 event facets across 11 namespaces (`Africa`, `Asia`, `Australia`, `Europe`, `NorthAmerica`, `Canada`, `CentralAmerica`, `SouthAmerica`, `UnitedStates`, `Antarctica`, `Continents`) converted from `event facet` to composed `facet` with `andThen` body delegating to generic `Cache(region = "<Name>")`
 - **osmgraphhoppercache.afl refactor**: 262 event facets across 8 namespaces converted from `event facet` to composed `facet` with `andThen` body delegating to generic `BuildGraph(cache, profile, recreate)`
-- **volcano-query rewrite**: replaced all custom schemas and 7 event facets with cross-namespace composition using `osm.geo.Operations` (Cache, Download), `osm.geo.Filters` (FilterByOSMTag), `osm.geo.Elevation` (FilterByMaxElevation), `osm.geo.Visualization` (RenderMap, FormatGeoJSON)
+- **volcano-query rewrite**: replaced all custom schemas and 7 event facets with cross-namespace composition using `osm.ops` (Cache, Download), `osm.Filters` (FilterByOSMTag), `osm.Elevation` (FilterByMaxElevation), `osm.viz` (RenderMap, FormatGeoJSON)
 - **AFL-only example**: removed volcano-query handlers, test runner, and agent — now relies entirely on existing OSM geocoder infrastructure
 - **dl_*.downloadCache fix**: 254 attribute references across 10 continent workflow files corrected from `dl_*.cache` to `dl_*.downloadCache` (latent bug exposed by `OsmCache` → `OSMCache` type fix)
 - **osmvoting.afl fix**: moved `TIGERCache` and `VotingDistrictResult` schemas into `census.types` namespace (schemas cannot be top-level); added `use census.types` to `Districts`, `Processing`, and `Workflows` namespaces
-- **osmworkflows_composed.afl fix**: corrected `osm.geo.POI` → `osm.geo.POIs` namespace reference; fixed return attribute names (`pois` → `cities`/`towns`/`villages`)
-- **Cross-example disambiguation**: qualified `Download` as `osm.geo.Operations.Download` in volcano.afl; added `use genomics.cache.Operations` to genomics_cache_workflows.afl to resolve ambiguous facet references when compiling all examples together
+- **osmworkflows_composed.afl fix**: corrected `osm.POI` → `osm.POIs` namespace reference; fixed return attribute names (`pois` → `cities`/`towns`/`villages`)
+- **Cross-example disambiguation**: qualified `Download` as `osm.ops.Download` in volcano.afl; added `use genomics.cache.Operations` to genomics_cache_workflows.afl to resolve ambiguous facet references when compiling all examples together
 - **All examples compile together**: 47 AFL sources (volcano-query + osm-geocoder + genomics), 0 errors
 - 1056 tests passing
 
@@ -2756,7 +2756,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - 1092 tests passing
 
 ## Completed (v0.9.6) - GTFS Transit Feed Support
-- **osmgtfs.afl**: new `osm.geo.Transit.GTFS` namespace with `use osm.types`; 9 schemas (`StopResult`, `RouteResult`, `FrequencyResult`, `TransitStats`, `NearestStopResult`, `AccessibilityResult`, `CoverageResult`, `DensityResult`, `TransitReport`) and 10 event facets
+- **osmgtfs.afl**: new `osm.Transit.GTFS` namespace with `use osm.types`; 9 schemas (`StopResult`, `RouteFeatures`, `FrequencyResult`, `TransitStats`, `NearestStopResult`, `AccessibilityResult`, `CoverageResult`, `DensityResult`, `TransitReport`) and 10 event facets
 - **GTFSFeed schema**: added to `osm.types` namespace (url, path, date, size, wasInCache, agency_name, has_shapes) — analogous to `OSMCache` and `GraphHopperCache`
 - **Core event facets**: `DownloadFeed` (ZIP download with URL-hash caching), `ExtractStops` (stops.txt → GeoJSON points, location_type=0 filter), `ExtractRoutes` (shapes.txt linestrings with stop-sequence fallback), `ServiceFrequency` (trips-per-stop-per-day from stop_times.txt + calendar.txt), `TransitStatistics` (aggregate counts by route type)
 - **OSM integration facets**: `NearestStops` (brute-force haversine nearest-neighbor lookup), `StopAccessibility` (400m/800m/beyond walk-distance bands)
@@ -2768,7 +2768,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - 1092 tests passing
 
 ## Completed (v0.9.7) - Low-Zoom Road Infrastructure Builder (Zoom 2–7)
-- **osmzoombuilder.afl**: new `osm.geo.Roads.ZoomBuilder` namespace with `use osm.types`; 6 schemas (`LogicalEdge`, `ZoomEdgeResult`, `ZoomBuilderResult`, `ZoomBuilderMetrics`, `ZoomBuilderConfig`, `CellBudget`) and 9 event facets (`BuildLogicalGraph`, `BuildAnchors`, `ComputeSBS`, `ComputeScores`, `DetectBypasses`, `DetectRings`, `SelectEdges`, `ExportZoomLayers`, `BuildZoomLayers`)
+- **osmzoombuilder.afl**: new `osm.Roads.ZoomBuilder` namespace with `use osm.types`; 6 schemas (`LogicalEdge`, `ZoomEdgeResult`, `ZoomBuilderResult`, `ZoomBuilderMetrics`, `ZoomBuilderConfig`, `CellBudget`) and 9 event facets (`BuildLogicalGraph`, `BuildAnchors`, `ComputeSBS`, `ComputeScores`, `DetectBypasses`, `DetectRings`, `SelectEdges`, `ExportZoomLayers`, `BuildZoomLayers`)
 - **zoom_graph.py**: `TopologyHandler(osmium.SimpleHandler)` for two-pass PBF processing — caches node coordinates, collects highway-tagged ways, identifies decision nodes (degree ≥ 3, FC change, ref change, endpoints), splits ways at decision nodes, merges degree-2 chains into logical edges; `LogicalEdge` dataclass with FC scoring (base score + ref/bridge/tunnel/surface/access modifiers); `RoadGraph` class with adjacency lists, Dijkstra shortest path for backbone repair, JSON serialization/deserialization
 - **zoom_sbs.py**: Structural Betweenness Sampling — `SegmentIndex` grid-based spatial index (~500m cells) for route-to-logical-edge snapping with point-to-segment perpendicular distance; `build_anchors()` snaps cities to nearest graph nodes with population thresholds per zoom level; `sample_od_pairs()` with minimum straight-line distance filtering and deterministic RNG; `route_batch_parallel()` via `ThreadPoolExecutor` hitting GraphHopper HTTP API; `accumulate_votes()` and `normalize_sbs()` (log-normalized against P95)
 - **zoom_detection.py**: bypass detection via settlement models (city/town/village core radii), entry/exit node identification at outer boundary crossings, route comparison (unconstrained vs through-center waypoint) with time ratio, core fraction, and FC advantage thresholds; ring road detection for cities ≥ 100K population using radial entry nodes, orbital candidate vote accumulation, and geometry validation (coefficient of variation ≤ 0.35, mean radius range check)
@@ -2779,7 +2779,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - 1092 tests passing
 
 ## Completed (v0.9.8) - Fix Hardcoded Cache Calls in Composed Workflows
-- **osmworkflows_composed.afl**: 13 workflows accepted a `region: String` parameter but hardcoded the cache call to `osm.geo.cache.Europe.Liechtenstein()`, ignoring the parameter entirely; replaced all 13 with `osm.geo.Operations.Cache(region = $.region)` so the region parameter is actually respected
+- **osmworkflows_composed.afl**: 13 workflows accepted a `region: String` parameter but hardcoded the cache call to `osm.cache.Europe.Liechtenstein()`, ignoring the parameter entirely; replaced all 13 with `osm.ops.Cache(region = $.region)` so the region parameter is actually respected
 - **Affected workflows**: `VisualizeBicycleRoutes`, `AnalyzeParks`, `LargeCitiesMap`, `TransportOverview`, `NationalParksAnalysis`, `TransportMap`, `StateBoundariesWithStats`, `DiscoverCitiesAndTowns`, `RegionalAnalysis`, `ValidateAndSummarize`, `OsmoseQualityCheck`, `TransitAccessibility`, `RoadZoomBuilder`
 - **Unchanged** (correctly hardcoded — no `region` parameter): `GermanyCityAnalysis` (`Europe.Germany()`), `FranceCityAnalysis` (`Europe.France()`), `TransitAnalysis` (no cache, takes `gtfs_url` only)
 - 1174 tests passing
@@ -2788,8 +2788,8 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **AgentPoller program_ast propagation**: `_resume_workflow()` was calling `evaluator.resume(workflow_id, workflow_ast)` without `program_ast`, causing `get_facet_definition()` to return `None` for all facets; `EventTransmitHandler` then passed through without blocking, so event facet steps completed immediately with empty outputs
 - **New `_program_ast_cache`**: `AgentPoller` now maintains a separate `_program_ast_cache` dict alongside `_ast_cache`; `cache_workflow_ast()` accepts optional `program_ast` parameter; `_resume_workflow()` looks up and passes cached `program_ast` to `evaluator.resume()`
 - **`run_to_completion()` fix**: integration test helper now passes `program_ast` when calling `poller.cache_workflow_ast()`
-- **`osm.geo.Operations.Cache` handler**: new `_cache_handler()` in `operations_handlers.py` resolves region names to Geofabrik paths via flat lookup built from `cache_handlers.REGION_REGISTRY`, with case-insensitive fallback; downloads PBF and returns `cache: OSMCache`
-- **`osm.geo.Operations.Validation.*` handlers**: new `validation_handlers.py` with 5 handlers (`ValidateCache`, `ValidateGeometry`, `ValidateTags`, `ValidateBounds`, `ValidationSummary`) delegating to `osmose_verifier`; registered in `handlers/__init__.py` via `register_validation_handlers(poller)`
+- **`osm.ops.Cache` handler**: new `_cache_handler()` in `operations_handlers.py` resolves region names to Geofabrik paths via flat lookup built from `cache_handlers.REGION_REGISTRY`, with case-insensitive fallback; downloads PBF and returns `cache: OSMCache`
+- **`osm.ops.Validation.*` handlers**: new `validation_handlers.py` with 5 handlers (`ValidateCache`, `ValidateGeometry`, `ValidateTags`, `ValidateBounds`, `ValidationSummary`) delegating to `osmose_verifier`; registered in `handlers/__init__.py` via `register_validation_handlers(poller)`
 - **Unit test updates**: `test_agent_poller_extended.py` updated for `program_ast=None` keyword argument; new `test_resume_with_cached_program_ast` test
 - 1121 unit tests, 29 integration tests passing
 
@@ -2807,7 +2807,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **`PublishedSource` entity**: new dataclass in `afl/runtime/entities.py` with `uuid`, `namespace_name`, `source_text`, `namespaces_defined`, `version`, `published_at`, `origin`, `checksum`
 - **MongoStore extensions**: `afl_sources` collection with `(namespace_name, version)` unique compound index and `namespaces_defined` multikey index; new methods `save_published_source()`, `get_source_by_namespace()`, `get_sources_by_namespaces()` (batch `$in`), `delete_published_source()`, `list_published_sources()`
 - **CLI subcommands**: `afl compile` (default, backward-compatible) with new `--auto-resolve`, `--source-path PATH`, `--mongo-resolve` flags; `afl publish` subcommand with `--version`, `--force`, `--list`, `--unpublish` options
-- **Qualified call resolution**: resolver scans `CallExpr` names (e.g. `osm.geo.Operations.Cache`) to extract candidate namespace prefixes, not just `use` statements; candidates are matched against the filesystem index so only real namespaces are loaded; enables `--auto-resolve` for files like `osmworkflows_composed.afl` that reference facets by fully-qualified names without `use` imports
+- **Qualified call resolution**: resolver scans `CallExpr` names (e.g. `osm.ops.Cache`) to extract candidate namespace prefixes, not just `use` statements; candidates are matched against the filesystem index so only real namespaces are loaded; enables `--auto-resolve` for files like `osmworkflows_composed.afl` that reference facets by fully-qualified names without `use` imports
 - **OSM geocoder verified**: `afl compile --primary osmworkflows_composed.afl --auto-resolve` resolves 29 namespaces in 3 iterations from a single primary file
 - **Backward compatibility**: bare `afl input.afl -o out.json` still works unchanged; subcommand routing treats non-subcommand first arguments as compile input
 - 1159 tests passing
@@ -2849,7 +2849,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 
 ## Completed (v0.10.4) - Topic-Based Filtering for RegistryRunner
 - **`RegistryRunnerConfig.topics`**: new `list[str]` field (default empty) accepting glob patterns to filter which registered facets a runner will handle; when empty, all registrations are polled (backward-compatible default)
-- **`RegistryRunner._matches_topics()`**: new helper using `fnmatch.fnmatch()` to match facet names against configured topic patterns; supports exact names (`ns.A`), glob wildcards (`osm.geo.cache.*`), prefix patterns (`genomics.*`), and `?`/`[seq]` syntax
+- **`RegistryRunner._matches_topics()`**: new helper using `fnmatch.fnmatch()` to match facet names against configured topic patterns; supports exact names (`ns.A`), glob wildcards (`osm.cache.*`), prefix patterns (`genomics.*`), and `?`/`[seq]` syntax
 - **`_refresh_registry()` filtering**: when `topics` is non-empty, filters `_registered_names` to only include facet names matching at least one pattern; downstream methods (`poll_once`, `_poll_cycle`, `_register_server`, `claim_task`) automatically use the filtered list
 - **`AFL_RUNNER_TOPICS` env var**: both `examples/osm-geocoder/agent.py` and `examples/genomics/agent.py` read comma-separated topic patterns from `AFL_RUNNER_TOPICS` and pass to `RegistryRunnerConfig(topics=...)`; prints active filter when set
 - **5 new tests** in `TestRegistryRunnerTopics`: exact match filtering, glob pattern filtering, empty-means-all default, poll_once topic-scoped claiming, server definition topics reflection
@@ -3209,7 +3209,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **Download facet signature change** (`osmoperations.afl`): `event facet Download(cache:OSMCache)` → `event facet Download(url:String, path:String, force:Boolean) => (downloadCache:OSMCache)` — Download is now a general-purpose file downloader accepting any URL and any destination path (local or HDFS), decoupled from OSM-specific cache semantics
 - **`download_url()` function** (`handlers/downloader.py`): new generic download function that fetches any URL to any file path; uses `get_storage_backend(path)` so HDFS URIs (`hdfs://namenode:8020/...`) work transparently; `force=True` re-downloads even when the file exists; returns OSMCache-compatible dict with `url`, `path`, `date`, `size`, `wasInCache` fields
 - **Custom `_download_handler`** (`operations_handlers.py`): replaces the generic `_make_operation_handler` passthrough with a dedicated handler that extracts `url`, `path`, `force` from the payload and calls `download_url()`; registered in both `register_operations_handlers()` and `_build_dispatch()`; `"Download"` removed from the generic `OPERATIONS_FACETS` map
-- **Removed redundant Download steps from 9 regional AFL files** (`osmafrica.afl`, `osmasia.afl`, `osmaustralia.afl`, `osmcanada.afl`, `osmcentralamerica.afl`, `osmeurope.afl`, `osmnorthamerica.afl`, `osmsouthamerica.afl`, `osmunitedstates.afl`): all `dl_xxx = Download(cache = xxx.cache)` steps removed; yield statements now reference `xxx.cache` directly since the Cache facet already performs the download; `use osm.geo.Operations` import removed from all 9 files
+- **Removed redundant Download steps from 9 regional AFL files** (`osmafrica.afl`, `osmasia.afl`, `osmaustralia.afl`, `osmcanada.afl`, `osmcentralamerica.afl`, `osmeurope.afl`, `osmnorthamerica.afl`, `osmsouthamerica.afl`, `osmunitedstates.afl`): all `dl_xxx = Download(cache = xxx.cache)` steps removed; yield statements now reference `xxx.cache` directly since the Cache facet already performs the download; `use osm.ops` import removed from all 9 files
 - **Cleaned up `osmcontinents.afl`**: removed Download references from commented-out code block
 - **6 new tests** (`test_downloader.py`): `TestDownloadUrlCacheHit` (cache hit returns without HTTP, force re-downloads), `TestDownloadUrlCacheMiss` (downloads and returns, streams to storage, HDFS path routing), `TestDownloadUrlHttpError` (HTTP errors propagate)
 - 2157 passed, 80 skipped (without `--hdfs`/`--mongodb`/`--postgis`/`--boto3`)
@@ -3244,7 +3244,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **Source concatenation**: all AFL source texts concatenated into a single `compiled_sources` entry, as required by `RunnerService._execute_workflow` which reads `compiled_sources[0].content`
 - **Console script**: `afl-submit` entry point added to `pyproject.toml`
 - **`run_30states.sh` updated**: step 5 now passes AFL source files via `--primary`/`--library` instead of pre-compiled JSON
-- **Flat namespace fix**: `_find_workflow_in_program` in both `submit.py` and `RunnerService` now handles flat dotted namespace names (e.g. `osm.geo.UnitedStates.sample`) that the emitter produces for multi-file compilations — tries flat prefix matching before falling back to step-by-step nested navigation
+- **Flat namespace fix**: `_find_workflow_in_program` in both `submit.py` and `RunnerService` now handles flat dotted namespace names (e.g. `osm.UnitedStates.sample`) that the emitter produces for multi-file compilations — tries flat prefix matching before falling back to step-by-step nested navigation
 - **`run_30states.sh` MongoDB port**: sets `AFL_MONGODB_URL` to use `MONGODB_PORT` (default 27018) matching the Docker Compose host-side port mapping
 - **WebHDFS storage backend**: replaced pyarrow's native `HadoopFileSystem` (requires libhdfs.so JNI library) with WebHDFS REST API via `requests` — works on any platform (ARM64/macOS/Linux) without Hadoop native libraries; uses `AFL_WEBHDFS_PORT` env var (default 9870)
 - **Docker simplification**: removed `INSTALL_HDFS` build arg and pyarrow from all Dockerfiles (runner, osm-geocoder, osm-geocoder-lite); HDFS support now only requires `requests`
@@ -3263,15 +3263,15 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - 2098 passed, 80 skipped (without `--hdfs`/`--mongodb`/`--postgis`/`boto3`)
 
 ## Completed (v0.12.18) - Remove Dead Handler Registrations for Non-Event Facets
-- **`cache_handlers.py` stripped to data-only module**: removed `register_cache_handlers()`, `_DISPATCH`, `_build_dispatch()`, `handle()`, and `register_handlers()` — these registered ~250 handlers for regular facets (e.g., `osm.geo.cache.Africa.Malawi`) that expand inline via `andThen` bodies and never produce event tasks; retained `REGION_REGISTRY` (used by `operations_handlers.py` and `region_resolver.py`) and `_make_handler()`
-- **`graphhopper_handlers.py` cache portion removed**: deleted `_make_cache_handler()`, `GRAPHHOPPER_CACHE_REGISTRY` (~250 entries across 9 namespaces), and cache registration loops from `_build_dispatch()` and `register_graphhopper_handlers()`; only the 6 `osm.geo.Operations.GraphHopper.*` event facet handlers remain
+- **`cache_handlers.py` stripped to data-only module**: removed `register_cache_handlers()`, `_DISPATCH`, `_build_dispatch()`, `handle()`, and `register_handlers()` — these registered ~250 handlers for regular facets (e.g., `osm.cache.Africa.Malawi`) that expand inline via `andThen` bodies and never produce event tasks; retained `REGION_REGISTRY` (used by `operations_handlers.py` and `region_resolver.py`) and `_make_handler()`
+- **`graphhopper_handlers.py` cache portion removed**: deleted `_make_cache_handler()`, `GRAPHHOPPER_CACHE_REGISTRY` (~250 entries across 9 namespaces), and cache registration loops from `_build_dispatch()` and `register_graphhopper_handlers()`; only the 6 `osm.ops.GraphHopper.*` event facet handlers remain
 - **`handlers/__init__.py` updated**: removed `register_cache_handlers` import/call from `register_all_handlers()` and `reg_cache` import/call from `register_all_registry_handlers()`
-- **Tests updated**: deleted `TestOsmCacheHandlers` class (3 tests); `TestOsmGraphhopperHandlers.test_dispatch_keys` now asserts `== 6` with `osm.geo.Operations.GraphHopper.*` prefix check; `TestOsmInitRegistryHandlers` threshold adjusted
+- **Tests updated**: deleted `TestOsmCacheHandlers` class (3 tests); `TestOsmGraphhopperHandlers.test_dispatch_keys` now asserts `== 6` with `osm.ops.GraphHopper.*` prefix check; `TestOsmInitRegistryHandlers` threshold adjusted
 - ~500 dead handler registrations removed, reducing Dashboard Handlers page clutter and memory usage
 - 1684 passed, 36 skipped (without `--hdfs`/`--mongodb`/`--postgis`)
 
 ## Completed (v0.12.17) - 30-State OSM Download Workflow
-- **`osmstates30.afl`** (`examples/osm-geocoder/afl/osmstates30.afl`): new AFL workflow in `osm.geo.UnitedStates.sample` namespace; `Download30States` workflow downloads OSM data for 30 randomly chosen US states (Alaska, Arizona, California, Colorado, Connecticut, Florida, Georgia, Idaho, Illinois, Indiana, Iowa, Kansas, Kentucky, Louisiana, Maine, Maryland, Michigan, Minnesota, Missouri, Montana, Nevada, NewYork, NorthCarolina, Ohio, Oregon, Pennsylvania, Tennessee, Texas, Virginia, Washington); follows the `UnitedStatesIndividually` pattern — calls each state's cache facet, downloads via `Download(cache = ...)`, yields concatenated `downloadCache` results using `++`
+- **`osmstates30.afl`** (`examples/osm-geocoder/afl/osmstates30.afl`): new AFL workflow in `osm.UnitedStates.sample` namespace; `Download30States` workflow downloads OSM data for 30 randomly chosen US states (Alaska, Arizona, California, Colorado, Connecticut, Florida, Georgia, Idaho, Illinois, Indiana, Iowa, Kansas, Kentucky, Louisiana, Maine, Maryland, Michigan, Minnesota, Missouri, Montana, Nevada, NewYork, NorthCarolina, Ohio, Oregon, Pennsylvania, Tennessee, Texas, Virginia, Washington); follows the `UnitedStatesIndividually` pattern — calls each state's cache facet, downloads via `Download(cache = ...)`, yields concatenated `downloadCache` results using `++`
 - **`run_30states.sh`** (`examples/osm-geocoder/run_30states.sh`): convenience startup script that creates `~/data/hdfs/{namenode,datanode}` and `~/data/mongodb` directories, bootstraps the Docker stack via `scripts/setup` with `--hdfs`, `--hdfs-namenode-dir`, `--hdfs-datanode-dir`, `--mongodb-data-dir`, and `--osm-agents 1`, waits for MongoDB readiness, compiles the AFL file with all library dependencies, submits the workflow, and prints dashboard access instructions
 - 1697 passed, 35 skipped (without `--hdfs`/`--mongodb`/`--postgis`)
 

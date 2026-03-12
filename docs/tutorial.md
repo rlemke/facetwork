@@ -228,7 +228,7 @@ The `examples/osm-geocoder/afl/geocoder.afl` file in this repository shows
 schemas and event facets working together:
 
 ```afl
-namespace osm.geo {
+namespace osm.geocode {
     schema GeoCoordinate {
         lat: String,
         lon: String,
@@ -356,7 +356,7 @@ Key points:
 The OSM geocoder example uses `foreach` for batch processing:
 
 ```afl
-namespace osm.geo {
+namespace osm.geocode {
     schema GeoCoordinate {
         lat: String,
         lon: String,
@@ -713,8 +713,8 @@ wraps cache lookup and data download into a single reusable step:
 
 ```afl
 facet LoadVolcanoData(region: String = "US") => (cache: OSMCache) andThen {
-    c = Cache(region = $.region)
-    d = osm.geo.Operations.Download(cache = c.cache)
+    c = CacheRegion(region = $.region)
+    d = osm.ops.DownloadPBF(cache = c.cache)
     yield LoadVolcanoData(cache = d.downloadCache)
 }
 ```

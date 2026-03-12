@@ -101,7 +101,7 @@ workflow FindVolcanoes(state: String, min_elevation_ft: Long)
 **Schemas** define typed structures that flow between steps:
 
 ```afl
-namespace osm.geo.Visualization {
+namespace osm.viz {
     schema MapResult {
         output_path: String,
         format: String,
@@ -173,7 +173,7 @@ For large workflows (500K+ steps), the `resume_step()` optimization walks only t
 Steps within an `andThen` block execute concurrently by default. The dependency graph tracks which steps reference other steps' outputs:
 
 ```afl
-cache = osm.geo.Operations.Cache(region = $.region)
+cache = osm.ops.Cache(region = $.region)
 // These all depend on `cache` and execute in parallel once it completes:
 bicycleRoutes = osm.workflows.VisualizeBicycleRoutesFromCache(cache = cache.cache)
 parks = osm.workflows.AnalyzeParksFromCache(cache = cache.cache)
@@ -221,7 +221,7 @@ Verified with 3 concurrent evaluators producing zero duplicate steps.
 
 ```python
 register_handler(
-    facet_name="osm.geo.Visualization.RenderMap",
+    facet_name="osm.viz.RenderMap",
     module_uri="file:///handlers/visualization/map_renderer.py",
     entrypoint="handle"
 )
@@ -299,10 +299,10 @@ The composed workflows demonstrate real-world pipeline patterns in AFL:
 /** Caches a region, extracts bicycle routes, and renders them on a map. */
 workflow VisualizeBicycleRoutes(region: String = "Liechtenstein")
     => (map_path: String, route_count: Long) andThen {
-    cache = osm.geo.Operations.Cache(region = $.region)
-    routes = osm.geo.Routes.BicycleRoutes(cache = cache.cache,
+    cache = osm.ops.Cache(region = $.region)
+    routes = osm.Routes.BicycleRoutes(cache = cache.cache,
         include_infrastructure = true)
-    map = osm.geo.Visualization.RenderMap(
+    map = osm.viz.RenderMap(
         geojson_path = routes.result.output_path,
         title = "Bicycle Routes", color = "#27ae60")
     yield VisualizeBicycleRoutes(
@@ -316,11 +316,11 @@ workflow VisualizeBicycleRoutes(region: String = "Liechtenstein")
 /** Extracts cities, filters by population, renders qualifying cities on a map. */
 facet LargeCitiesMapFromCache(cache: OSMCache, min_pop: Long = 10000)
     => (map_path: String, city_count: Long) andThen {
-    cities = osm.geo.Population.Cities(cache = $.cache, min_population = 0)
-    large = osm.geo.Population.FilterByPopulation(
+    cities = osm.Population.Cities(cache = $.cache, min_population = 0)
+    large = osm.Population.FilterByPopulation(
         input_path = cities.result.output_path,
         min_population = $.min_pop, place_type = "city", operator = "gte")
-    map = osm.geo.Visualization.RenderMap(
+    map = osm.viz.RenderMap(
         geojson_path = large.result.output_path,
         title = "Large Cities", color = "#e74c3c")
     yield LargeCitiesMapFromCache(
@@ -336,17 +336,17 @@ facet LargeCitiesMapFromCache(cache: OSMCache, min_pop: Long = 10000)
 facet TransportOverviewFromCache(cache: OSMCache)
     => (bicycle_km: Double, hiking_km: Double,
         train_km: Double, bus_routes: Long) andThen {
-    bicycle = osm.geo.Routes.BicycleRoutes(cache = $.cache)
-    hiking  = osm.geo.Routes.HikingTrails(cache = $.cache)
-    train   = osm.geo.Routes.TrainRoutes(cache = $.cache)
-    bus     = osm.geo.Routes.BusRoutes(cache = $.cache)
-    bicycle_stats = osm.geo.Routes.RouteStatistics(
+    bicycle = osm.Routes.BicycleRoutes(cache = $.cache)
+    hiking  = osm.Routes.HikingTrails(cache = $.cache)
+    train   = osm.Routes.TrainRoutes(cache = $.cache)
+    bus     = osm.Routes.BusRoutes(cache = $.cache)
+    bicycle_stats = osm.Routes.RouteStatistics(
         input_path = bicycle.result.output_path)
-    hiking_stats  = osm.geo.Routes.RouteStatistics(
+    hiking_stats  = osm.Routes.RouteStatistics(
         input_path = hiking.result.output_path)
-    train_stats   = osm.geo.Routes.RouteStatistics(
+    train_stats   = osm.Routes.RouteStatistics(
         input_path = train.result.output_path)
-    bus_stats     = osm.geo.Routes.RouteStatistics(
+    bus_stats     = osm.Routes.RouteStatistics(
         input_path = bus.result.output_path)
     yield TransportOverviewFromCache(
         bicycle_km = bicycle_stats.stats.total_length_km,
@@ -365,7 +365,7 @@ The crown jewel is `AnalyzeRegion` — a workflow that runs **10 composed analys
     using a shared cache. */
 workflow AnalyzeRegion(region: String = "Liechtenstein")
     => (completed_region: String) andThen {
-    cache          = osm.geo.Operations.Cache(region = $.region)
+    cache          = osm.ops.Cache(region = $.region)
     bicycleRoutes  = osm.workflows.VisualizeBicycleRoutesFromCache(cache = cache.cache)
     parks          = osm.workflows.AnalyzeParksFromCache(cache = cache.cache)
     largeCities    = osm.workflows.LargeCitiesMapFromCache(cache = cache.cache, min_pop = 10000)

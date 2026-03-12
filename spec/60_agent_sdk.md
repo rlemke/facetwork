@@ -873,8 +873,8 @@ When `topics` is set in the config, the RegistryRunner only handles
 facets matching at least one glob pattern:
 
 ```python
-config = RegistryRunnerConfig(topics=["osm.geo.*", "validation.*"])
-# Handles: osm.geo.cache.Africa, validation.CheckBounds
+config = RegistryRunnerConfig(topics=["osm.*", "validation.*"])
+# Handles: osm.cache.Africa, validation.CheckBounds
 # Ignores: billing.ProcessPayment
 ```
 
