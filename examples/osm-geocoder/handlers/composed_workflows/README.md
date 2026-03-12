@@ -13,16 +13,16 @@ workflow VisualizeBicycleRoutes(region: String = "Liechtenstein")
     => (map_path: String, route_count: Long) andThen {
 
     // Stage 1: Get cached region data
-    cache = osm.geo.Operations.Cache(region = $.region)
+    cache = osm.ops.CacheRegion(region = $.region)
 
     // Stage 2: Extract bicycle routes
-    routes = osm.geo.Routes.BicycleRoutes(
+    routes = osm.Routes.BicycleRoutes(
         cache = cache.cache,
         include_infrastructure = true
     )
 
     // Stage 3: Visualize on map
-    map = osm.geo.Visualization.RenderMap(
+    map = osm.viz.RenderMap(
         geojson_path = routes.result.output_path,
         title = "Bicycle Routes",
         color = "#27ae60"
@@ -43,9 +43,9 @@ Analysis pipeline without visualization.
 workflow AnalyzeParks(region: String = "Liechtenstein")
     => (total_parks: Long, total_area: Double, national: Long, state: Long) andThen {
 
-    cache = osm.geo.Operations.Cache(region = $.region)
-    parks = osm.geo.Parks.ExtractParks(cache = cache.cache, park_type = "all")
-    stats = osm.geo.Parks.ParkStatistics(input_path = parks.result.output_path)
+    cache = osm.ops.CacheRegion(region = $.region)
+    parks = osm.Parks.ExtractParks(cache = cache.cache, park_type = "all")
+    stats = osm.Parks.ParkStatistics(input_path = parks.result.output_path)
 
     yield AnalyzeParks(
         total_parks = stats.stats.total_parks,
@@ -64,18 +64,18 @@ Four-stage pipeline with filtering.
 workflow LargeCitiesMap(region: String = "Liechtenstein", min_pop: Long = 10000)
     => (map_path: String, city_count: Long) andThen {
 
-    cache = osm.geo.Operations.Cache(region = $.region)
-    cities = osm.geo.Population.Cities(cache = cache.cache, min_population = 0)
+    cache = osm.ops.CacheRegion(region = $.region)
+    cities = osm.Population.Cities(cache = cache.cache, min_population = 0)
 
     // Filter by population
-    large = osm.geo.Population.FilterByPopulation(
+    large = osm.Population.FilterByPopulation(
         input_path = cities.result.output_path,
         min_population = $.min_pop,
         place_type = "city",
         operator = "gte"
     )
 
-    map = osm.geo.Visualization.RenderMap(
+    map = osm.viz.RenderMap(
         geojson_path = large.result.output_path,
         title = "Large Cities",
         color = "#e74c3c"
@@ -97,19 +97,19 @@ workflow TransportOverview(region: String = "Liechtenstein")
     => (bicycle_km: Double, hiking_km: Double, train_km: Double, bus_routes: Long) andThen {
 
     // Shared cache
-    cache = osm.geo.Operations.Cache(region = $.region)
+    cache = osm.ops.CacheRegion(region = $.region)
 
     // Parallel extraction (conceptually)
-    bicycle = osm.geo.Routes.BicycleRoutes(cache = cache.cache, include_infrastructure = false)
-    hiking = osm.geo.Routes.HikingTrails(cache = cache.cache, include_infrastructure = false)
-    train = osm.geo.Routes.TrainRoutes(cache = cache.cache, include_infrastructure = false)
-    bus = osm.geo.Routes.BusRoutes(cache = cache.cache, include_infrastructure = false)
+    bicycle = osm.Routes.BicycleRoutes(cache = cache.cache, include_infrastructure = false)
+    hiking = osm.Routes.HikingTrails(cache = cache.cache, include_infrastructure = false)
+    train = osm.Routes.TrainRoutes(cache = cache.cache, include_infrastructure = false)
+    bus = osm.Routes.BusRoutes(cache = cache.cache, include_infrastructure = false)
 
     // Statistics for each
-    bicycle_stats = osm.geo.Routes.RouteStatistics(input_path = bicycle.result.output_path)
-    hiking_stats = osm.geo.Routes.RouteStatistics(input_path = hiking.result.output_path)
-    train_stats = osm.geo.Routes.RouteStatistics(input_path = train.result.output_path)
-    bus_stats = osm.geo.Routes.RouteStatistics(input_path = bus.result.output_path)
+    bicycle_stats = osm.Routes.RouteStatistics(input_path = bicycle.result.output_path)
+    hiking_stats = osm.Routes.RouteStatistics(input_path = hiking.result.output_path)
+    train_stats = osm.Routes.RouteStatistics(input_path = train.result.output_path)
+    bus_stats = osm.Routes.RouteStatistics(input_path = bus.result.output_path)
 
     yield TransportOverview(
         bicycle_km = bicycle_stats.stats.total_length_km,
@@ -128,18 +128,18 @@ Cache → Extract → Filter → Statistics → Visualize
 workflow NationalParksAnalysis(region: String = "Liechtenstein")
     => (map_path: String, park_count: Long, total_area: Double, avg_area: Double) andThen {
 
-    cache = osm.geo.Operations.Cache(region = $.region)
-    all_parks = osm.geo.Parks.ExtractParks(cache = cache.cache, park_type = "all")
+    cache = osm.ops.CacheRegion(region = $.region)
+    all_parks = osm.Parks.ExtractParks(cache = cache.cache, park_type = "all")
 
     // Filter to national parks only
-    national = osm.geo.Parks.FilterParksByType(
+    national = osm.Parks.FilterParksByType(
         input_path = all_parks.result.output_path,
         park_type = "national"
     )
 
-    stats = osm.geo.Parks.ParkStatistics(input_path = national.result.output_path)
+    stats = osm.Parks.ParkStatistics(input_path = national.result.output_path)
 
-    map = osm.geo.Visualization.RenderMap(
+    map = osm.viz.RenderMap(
         geojson_path = national.result.output_path,
         title = "National Parks",
         color = "#2ecc71"
@@ -162,13 +162,13 @@ City extraction and statistics with configurable region and population threshold
 workflow CityAnalysis(region: String = "Liechtenstein", min_population: Long = 100000)
     => (map_path: String, large_cities: Long, total_pop: Long) andThen {
 
-    cache = osm.geo.Operations.Cache(region = $.region)
-    cities = osm.geo.Population.Cities(cache = cache.cache, min_population = $.min_population)
-    stats = osm.geo.Population.PopulationStatistics(
+    cache = osm.ops.CacheRegion(region = $.region)
+    cities = osm.Population.Cities(cache = cache.cache, min_population = $.min_population)
+    stats = osm.Population.PopulationStatistics(
         input_path = cities.result.output_path,
         place_type = "city"
     )
-    map = osm.geo.Visualization.RenderMap(
+    map = osm.viz.RenderMap(
         geojson_path = cities.result.output_path,
         title = "Cities",
         color = "#3498db"
@@ -190,14 +190,14 @@ Combining multiple extractions into one visual output.
 workflow TransportMap(region: String = "Liechtenstein")
     => (map_path: String) andThen {
 
-    cache = osm.geo.Operations.Cache(region = $.region)
+    cache = osm.ops.CacheRegion(region = $.region)
 
     // Extract different transport types
-    bicycle = osm.geo.Routes.BicycleRoutes(cache = cache.cache, include_infrastructure = false)
-    hiking = osm.geo.Routes.HikingTrails(cache = cache.cache, include_infrastructure = false)
+    bicycle = osm.Routes.BicycleRoutes(cache = cache.cache, include_infrastructure = false)
+    hiking = osm.Routes.HikingTrails(cache = cache.cache, include_infrastructure = false)
 
     // Create map from primary layer
-    bicycle_map = osm.geo.Visualization.RenderMap(
+    bicycle_map = osm.viz.RenderMap(
         geojson_path = bicycle.result.output_path,
         title = "Bicycle Routes",
         color = "#27ae60"
@@ -215,10 +215,10 @@ Administrative boundary extraction with visualization.
 workflow StateBoundariesWithStats(region: String = "Liechtenstein")
     => (map_path: String, state_count: Long) andThen {
 
-    cache = osm.geo.Operations.Cache(region = $.region)
-    boundaries = osm.geo.Boundaries.StateBoundaries(cache = cache.cache)
+    cache = osm.ops.CacheRegion(region = $.region)
+    boundaries = osm.Boundaries.StateBoundaries(cache = cache.cache)
 
-    map = osm.geo.Visualization.RenderMap(
+    map = osm.viz.RenderMap(
         geojson_path = boundaries.result.output_path,
         title = "State Boundaries",
         color = "#9b59b6"
@@ -239,14 +239,14 @@ Find and visualize points of interest at multiple settlement levels.
 workflow DiscoverCitiesAndTowns(region: String = "Liechtenstein")
     => (map_path: String, cities: Long, towns: Long, villages: Long) andThen {
 
-    cache = osm.geo.Operations.Cache(region = $.region)
+    cache = osm.ops.CacheRegion(region = $.region)
 
     // Extract settlements at different levels
-    city_data = osm.geo.POIs.Cities(cache = cache.cache)
-    town_data = osm.geo.POIs.Towns(cache = cache.cache)
-    village_data = osm.geo.POIs.Villages(cache = cache.cache)
+    city_data = osm.POIs.Cities(cache = cache.cache)
+    town_data = osm.POIs.Towns(cache = cache.cache)
+    village_data = osm.POIs.Villages(cache = cache.cache)
 
-    map = osm.geo.Visualization.RenderMap(
+    map = osm.viz.RenderMap(
         geojson_path = city_data.cities.path,
         title = "Cities",
         color = "#e74c3c"
@@ -271,22 +271,22 @@ workflow RegionalAnalysis(region: String = "Liechtenstein")
         cities_count: Long, map_path: String) andThen {
 
     // Shared cache across all extractions
-    cache = osm.geo.Operations.Cache(region = $.region)
+    cache = osm.ops.CacheRegion(region = $.region)
 
     // Extract multiple feature types
-    parks = osm.geo.Parks.ExtractParks(cache = cache.cache, park_type = "all")
-    routes = osm.geo.Routes.BicycleRoutes(cache = cache.cache, include_infrastructure = false)
-    cities = osm.geo.Population.Cities(cache = cache.cache, min_population = 0)
+    parks = osm.Parks.ExtractParks(cache = cache.cache, park_type = "all")
+    routes = osm.Routes.BicycleRoutes(cache = cache.cache, include_infrastructure = false)
+    cities = osm.Population.Cities(cache = cache.cache, min_population = 0)
 
     // Calculate statistics for each
-    park_stats = osm.geo.Parks.ParkStatistics(input_path = parks.result.output_path)
-    route_stats = osm.geo.Routes.RouteStatistics(input_path = routes.result.output_path)
-    city_stats = osm.geo.Population.PopulationStatistics(
+    park_stats = osm.Parks.ParkStatistics(input_path = parks.result.output_path)
+    route_stats = osm.Routes.RouteStatistics(input_path = routes.result.output_path)
+    city_stats = osm.Population.PopulationStatistics(
         input_path = cities.result.output_path,
         place_type = "city"
     )
 
-    map = osm.geo.Visualization.RenderMap(
+    map = osm.viz.RenderMap(
         geojson_path = parks.result.output_path,
         title = "Regional Overview - Parks",
         color = "#2ecc71"
@@ -310,17 +310,17 @@ Data quality validation pipeline.
 workflow ValidateAndSummarize(region: String = "Liechtenstein", output_dir: String = "/tmp")
     => (total: Long, valid: Long, invalid: Long, output_path: String) andThen {
 
-    cache = osm.geo.Operations.Cache(region = $.region)
+    cache = osm.ops.CacheRegion(region = $.region)
 
     // Run full validation on the cache
-    validation = osm.geo.Operations.Validation.ValidateCache(
+    validation = osm.ops.Validation.ValidateCache(
         cache = cache.cache,
         output_dir = $.output_dir,
         use_hdfs = false
     )
 
     // Compute summary statistics from validation output
-    summary = osm.geo.Operations.Validation.ValidationSummary(
+    summary = osm.ops.Validation.ValidationSummary(
         input_path = validation.result.output_path
     )
 
@@ -350,16 +350,16 @@ workflow OsmoseQualityCheck(
     output_path: String
 ) andThen {
 
-    cache = osm.geo.Operations.Cache(region = $.region)
+    cache = osm.ops.CacheRegion(region = $.region)
 
     // Run full local verification on the PBF
-    verify = osm.geo.Operations.OSMOSE.VerifyAll(
+    verify = osm.ops.OSMOSE.VerifyAll(
         cache = cache.cache,
         output_dir = $.output_dir
     )
 
     // Compute summary statistics from verification output
-    summary = osm.geo.Operations.OSMOSE.ComputeVerifySummary(
+    summary = osm.ops.OSMOSE.ComputeVerifySummary(
         input_path = verify.result.output_path
     )
 
@@ -392,14 +392,14 @@ workflow TransitAnalysis(
 ) andThen {
 
     // Download and cache the GTFS feed
-    dl = osm.geo.Transit.GTFS.DownloadFeed(url = $.gtfs_url)
+    dl = osm.Transit.GTFS.DownloadFeed(url = $.gtfs_url)
 
     // Extract stops and routes in parallel
-    stops = osm.geo.Transit.GTFS.ExtractStops(feed = dl.feed)
-    routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = dl.feed)
+    stops = osm.Transit.GTFS.ExtractStops(feed = dl.feed)
+    routes = osm.Transit.GTFS.ExtractRoutes(feed = dl.feed)
 
     // Compute aggregate statistics
-    stats = osm.geo.Transit.GTFS.TransitStatistics(feed = dl.feed)
+    stats = osm.Transit.GTFS.TransitStatistics(feed = dl.feed)
 
     yield TransitAnalysis(
         agency_name = stats.stats.agency_name,
@@ -431,22 +431,22 @@ workflow TransitAccessibility(
 ) andThen {
 
     // Get OSM cache and download GTFS feed in parallel
-    cache = osm.geo.Operations.Cache(region = $.region)
-    dl = osm.geo.Transit.GTFS.DownloadFeed(url = $.gtfs_url)
+    cache = osm.ops.CacheRegion(region = $.region)
+    dl = osm.Transit.GTFS.DownloadFeed(url = $.gtfs_url)
 
     // Extract buildings from OSM and stops from GTFS in parallel
-    buildings = osm.geo.Buildings.ExtractBuildings(cache = cache.cache)
-    stops = osm.geo.Transit.GTFS.ExtractStops(feed = dl.feed)
+    buildings = osm.Buildings.ExtractBuildings(cache = cache.cache)
+    stops = osm.Transit.GTFS.ExtractStops(feed = dl.feed)
 
     // Compute walk-distance accessibility bands
-    access = osm.geo.Transit.GTFS.StopAccessibility(
+    access = osm.Transit.GTFS.StopAccessibility(
         osm_geojson_path = buildings.result.output_path,
         stops_geojson_path = stops.result.output_path,
         walk_threshold_m = 400
     )
 
     // Detect coverage gaps
-    gaps = osm.geo.Transit.GTFS.CoverageGaps(
+    gaps = osm.Transit.GTFS.CoverageGaps(
         stops_geojson_path = stops.result.output_path,
         osm_geojson_path = buildings.result.output_path,
         cell_size_m = 500
@@ -480,13 +480,13 @@ workflow RoadZoomBuilder(
     metrics_path: String
 ) andThen {
 
-    cache = osm.geo.Operations.Cache(region = $.region)
+    cache = osm.ops.CacheRegion(region = $.region)
 
     // Build GraphHopper graph for routing
-    graph = osm.geo.Operations.GraphHopper.BuildGraph(cache = cache.cache)
+    graph = osm.ops.GraphHopper.BuildGraph(cache = cache.cache)
 
     // Run full zoom builder pipeline
-    zoom = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+    zoom = osm.Roads.ZoomBuilder.BuildZoomLayers(
         cache = cache.cache,
         graph = graph.graph,
         output_dir = $.output_dir,
@@ -516,22 +516,22 @@ workflow RoadZoomBuilder(
 
 | Category | Namespace | Description |
 |----------|-----------|-------------|
-| Cache | `osm.geo.cache.*` | ~250 geographic region caches |
-| Operations | `osm.geo.Operations` | Download, tile, validation, routing graph |
-| OSMOSE | `osm.geo.Operations.OSMOSE` | Local PBF/GeoJSON quality verification |
-| POI | `osm.geo.POIs` | Points of interest |
-| Boundaries | `osm.geo.Boundaries` | Administrative/natural boundaries |
-| Routes | `osm.geo.Routes` | Transportation routes |
-| Parks | `osm.geo.Parks` | Parks and protected areas |
-| Population | `osm.geo.Population` | Population-based filtering |
-| Buildings | `osm.geo.Buildings` | Building footprints |
-| Amenities | `osm.geo.Amenities` | Services and facilities |
-| Roads | `osm.geo.Roads` | Road network |
-| Zoom Builder | `osm.geo.Roads.ZoomBuilder` | Low-zoom road layer generation (z2-z7) |
-| Transit | `osm.geo.Transit.GTFS` | GTFS transit feed analysis |
-| Filters | `osm.geo.Filters` | Radius and type filtering |
-| Visualization | `osm.geo.Visualization` | Map rendering |
-| TIGER | `osm.geo.TIGER` | US Census voting districts |
+| Cache | `osm.cache.*` | ~250 geographic region caches |
+| Operations | `osm.ops` | Download, tile, validation, routing graph |
+| OSMOSE | `osm.ops.OSMOSE` | Local PBF/GeoJSON quality verification |
+| POI | `osm.POIs` | Points of interest |
+| Boundaries | `osm.Boundaries` | Administrative/natural boundaries |
+| Routes | `osm.Routes` | Transportation routes |
+| Parks | `osm.Parks` | Parks and protected areas |
+| Population | `osm.Population` | Population-based filtering |
+| Buildings | `osm.Buildings` | Building footprints |
+| Amenities | `osm.Amenities` | Services and facilities |
+| Roads | `osm.Roads` | Road network |
+| Zoom Builder | `osm.Roads.ZoomBuilder` | Low-zoom road layer generation (z2-z7) |
+| Transit | `osm.Transit.GTFS` | GTFS transit feed analysis |
+| Filters | `osm.Filters` | Radius and type filtering |
+| Visualization | `osm.viz` | Map rendering |
+| TIGER | `osm.TIGER` | US Census voting districts |
 
 ## See Also
 

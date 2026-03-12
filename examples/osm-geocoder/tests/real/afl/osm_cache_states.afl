@@ -1,11 +1,11 @@
 /** Downloads OSM PBF caches for all US states in parallel. */
-namespace osm.geo.UnitedStates.cache {
+namespace osm.UnitedStates.cache {
   use osm.types
-  use osm.geo.Operations
-  use osm.geo.cache.UnitedStates
+  use osm.ops
+  use osm.cache.UnitedStates
 
   /** Fetches and aggregates OSM cache data for all 50 US states plus DC. */
-  workflow DownloadAllStates() => (cache: [OSMCache]) andThen {
+  workflow DownloadBatchStates() => (cache: [OSMCache]) andThen {
 
     alabama = Alabama()
     alaska = Alaska()
@@ -17,7 +17,7 @@ namespace osm.geo.UnitedStates.cache {
     delaware = Delaware()
     districtOfColumbia = DistrictOfColumbia()
     florida = Florida()
-    georgia = osm.geo.cache.UnitedStates.Georgia()
+    georgia = osm.cache.UnitedStates.Georgia()
     hawaii = Hawaii()
     idaho = Idaho()
     illinois = Illinois()
@@ -59,7 +59,7 @@ namespace osm.geo.UnitedStates.cache {
     wisconsin = Wisconsin()
     wyoming = Wyoming()
 
-    yield DownloadAllStates(cache = alabama.cache ++
+    yield DownloadBatchStates(cache = alabama.cache ++
                                    alaska.cache ++
                                    arizona.cache ++
                                    arkansas.cache ++

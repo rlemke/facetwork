@@ -66,7 +66,7 @@ PROGRAM_AST = {
                                         {"name": "route_type", "type": "String"},
                                         {"name": "network", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "RouteResult"}],
+                                    [{"name": "result", "type": "RouteFeatures"}],
                                 ),
                             ],
                         },
@@ -81,7 +81,7 @@ PROGRAM_AST = {
                                         {"name": "dem_source", "type": "String"},
                                         {"name": "sample_interval_m", "type": "Long"},
                                     ],
-                                    [{"name": "result", "type": "ElevatedRouteResult"}],
+                                    [{"name": "result", "type": "ElevatedRouteFeatures"}],
                                 ),
                                 _ef(
                                     "FilterByMaxElevation",
@@ -89,7 +89,7 @@ PROGRAM_AST = {
                                         {"name": "input_path", "type": "String"},
                                         {"name": "min_max_elevation_ft", "type": "Long"},
                                     ],
-                                    [{"name": "result", "type": "ElevatedRouteResult"}],
+                                    [{"name": "result", "type": "ElevatedRouteFeatures"}],
                                 ),
                             ],
                         },
@@ -124,7 +124,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow RouteMapByRegion(
         region: String,
         route_type: String,
@@ -189,7 +189,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "Switzerland",
-            "region_namespace": "osm.geo.cache.Europe",
+            "region_namespace": "osm.cache.Europe",
             "continent": "Europe",
             "geofabrik_path": "europe/switzerland",
             "is_ambiguous": False,

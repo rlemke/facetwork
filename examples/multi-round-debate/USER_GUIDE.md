@@ -120,7 +120,7 @@ python -m pytest examples/multi-round-debate/tests/ -v
 The PRIMARY architectural pattern. A composed facet wraps multiple steps into a reusable unit:
 
 ```afl
-namespace rounds.composition {
+namespace multidebate.composition {
     facet DebateRound(...) => (...) andThen {
         // 12 internal steps
         yield DebateRound(...)

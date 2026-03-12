@@ -13,7 +13,7 @@ Render GeoJSON files as interactive HTML maps or static PNG images with OpenStre
 
 ## AFL Facets
 
-All facets are defined in `osmvisualization.afl` under `osm.geo.Visualization`.
+All facets are defined in `osmvisualization.afl` under `osm.viz`.
 
 ### RenderMap
 

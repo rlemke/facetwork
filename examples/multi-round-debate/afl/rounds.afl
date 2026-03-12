@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
-namespace rounds.types {
+namespace multidebate.types {
     schema RoundState {
         round_num: Int,
         topic: String,
@@ -51,7 +51,7 @@ namespace rounds.types {
 // ---------------------------------------------------------------------------
 // Mixins and implicits
 // ---------------------------------------------------------------------------
-namespace rounds.mixins {
+namespace multidebate.mixins {
     facet RoundConfig(max_rounds: Int = 3, convergence_threshold: Double = 0.1)
     facet ConvergenceThreshold(min_agreement: Double = 0.7, max_drift: Double = 0.2)
 
@@ -62,8 +62,8 @@ namespace rounds.mixins {
 // ---------------------------------------------------------------------------
 // Setup -- InitiateRound, AssignPositions
 // ---------------------------------------------------------------------------
-namespace rounds.Setup {
-    use rounds.types
+namespace multidebate.Setup {
+    use multidebate.types
 
     /** Initialize a debate round with context from previous rounds. */
     event facet InitiateRound(
@@ -92,8 +92,8 @@ namespace rounds.Setup {
 // ---------------------------------------------------------------------------
 // Argumentation -- RefineArgument, ChallengeArgument
 // ---------------------------------------------------------------------------
-namespace rounds.Argumentation {
-    use rounds.types
+namespace multidebate.Argumentation {
+    use multidebate.types
 
     /** Refine an argument incorporating feedback from previous rounds. */
     event facet RefineArgument(
@@ -124,8 +124,8 @@ namespace rounds.Argumentation {
 // ---------------------------------------------------------------------------
 // Scoring -- ScoreRound, EvaluateConvergence
 // ---------------------------------------------------------------------------
-namespace rounds.Scoring {
-    use rounds.types
+namespace multidebate.Scoring {
+    use multidebate.types
 
     /** Score the current round comparing against previous performance. */
     event facet ScoreRound(
@@ -154,8 +154,8 @@ namespace rounds.Scoring {
 // ---------------------------------------------------------------------------
 // Synthesis -- SummarizeRound, DeclareOutcome
 // ---------------------------------------------------------------------------
-namespace rounds.Synthesis {
-    use rounds.types
+namespace multidebate.Synthesis {
+    use multidebate.types
 
     /** Summarize a round capturing key shifts and new insights. */
     event facet SummarizeRound(
@@ -185,13 +185,13 @@ namespace rounds.Synthesis {
 // ---------------------------------------------------------------------------
 // Composed facet -- DebateRound (12 steps)
 // ---------------------------------------------------------------------------
-namespace rounds.composition {
-    use rounds.types
-    use rounds.mixins
-    use rounds.Setup
-    use rounds.Argumentation
-    use rounds.Scoring
-    use rounds.Synthesis
+namespace multidebate.composition {
+    use multidebate.types
+    use multidebate.mixins
+    use multidebate.Setup
+    use multidebate.Argumentation
+    use multidebate.Scoring
+    use multidebate.Synthesis
 
     /** A complete debate round: init -> assign -> 3x refine -> 3x challenge -> score -> converge -> summarize. */
     facet DebateRound(
@@ -219,14 +219,14 @@ namespace rounds.composition {
 // ---------------------------------------------------------------------------
 // Workflows
 // ---------------------------------------------------------------------------
-namespace rounds.workflows {
-    use rounds.types
-    use rounds.mixins
-    use rounds.Setup
-    use rounds.Argumentation
-    use rounds.Scoring
-    use rounds.Synthesis
-    use rounds.composition
+namespace multidebate.workflows {
+    use multidebate.types
+    use multidebate.mixins
+    use multidebate.Setup
+    use multidebate.Argumentation
+    use multidebate.Scoring
+    use multidebate.Synthesis
+    use multidebate.composition
 
     /** Three-round iterative debate with cross-round state and convergence tracking. */
     workflow IterativeDebate(

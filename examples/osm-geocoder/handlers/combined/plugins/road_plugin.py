@@ -2,6 +2,7 @@
 
 Extracts roads with classification, speed limits, surface, and lane data.
 Coordinates are resolved via ``locations=True`` — no node cache needed.
+Features are streamed to disk during scanning.
 """
 
 from __future__ import annotations
@@ -40,7 +41,12 @@ class RoadPlugin(ExtractorPlugin):
         return TagInterest(keys={"highway"})
 
     def __init__(self) -> None:
-        self.features: list[dict] = []
+        self._total_km = 0.0
+        self._with_speed = 0
+
+    def begin(self, pbf_stem: str, output_dir: str) -> None:
+        path = f"{output_dir}/{pbf_stem}_roads.geojson"
+        self._open_writer(path)
 
     def process_way(
         self,
@@ -62,7 +68,7 @@ class RoadPlugin(ExtractorPlugin):
         }
         length_km = _haversine_length(coords)
 
-        self.features.append(
+        self._writer.write_feature(
             {
                 "type": "Feature",
                 "properties": {
@@ -83,21 +89,24 @@ class RoadPlugin(ExtractorPlugin):
                 "geometry": geometry,
             }
         )
+        self._total_km += length_km
+        if speed_limit:
+            self._with_speed += 1
 
     def finalize(self, pbf_stem: str, output_dir: str) -> PluginResult:
-        path = f"{output_dir}/{pbf_stem}_roads.geojson"
-        count = self._write_geojson(self.features, path)
+        if self._writer is None:
+            # begin() was never called — legacy path
+            path = f"{output_dir}/{pbf_stem}_roads.geojson"
+            return PluginResult(category=self.category, output_path=path, feature_count=0)
 
-        total_km = sum(f["properties"].get("length_km", 0) for f in self.features)
-        with_speed = sum(1 for f in self.features if f["properties"].get("maxspeed"))
-
+        self._writer.close()
         return PluginResult(
             category=self.category,
-            output_path=path,
-            feature_count=count,
+            output_path=self._writer.path,
+            feature_count=self._writer.feature_count,
             metadata={
-                "total_length_km": round(total_km, 2),
-                "with_speed_limit": with_speed,
+                "total_length_km": round(self._total_km, 2),
+                "with_speed_limit": self._with_speed,
             },
         )
 

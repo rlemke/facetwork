@@ -1,6 +1,7 @@
 """Building footprint extractor plugin — area-based.
 
 Extracts building footprints with type classification and height data.
+Features are streamed to disk during scanning.
 """
 
 from __future__ import annotations
@@ -32,7 +33,11 @@ class BuildingPlugin(ExtractorPlugin):
         return TagInterest(keys={"building"})
 
     def __init__(self) -> None:
-        self.features: list[dict] = []
+        self._type_counts: dict[str, int] = {}
+
+    def begin(self, pbf_stem: str, output_dir: str) -> None:
+        path = f"{output_dir}/{pbf_stem}_buildings.geojson"
+        self._open_writer(path)
 
     def process_area(
         self,
@@ -67,7 +72,9 @@ class BuildingPlugin(ExtractorPlugin):
             except Exception:
                 pass
 
-        self.features.append(
+        self._type_counts[classification] = self._type_counts.get(classification, 0) + 1
+
+        self._writer.write_feature(
             {
                 "type": "Feature",
                 "properties": {
@@ -85,19 +92,16 @@ class BuildingPlugin(ExtractorPlugin):
         )
 
     def finalize(self, pbf_stem: str, output_dir: str) -> PluginResult:
-        path = f"{output_dir}/{pbf_stem}_buildings.geojson"
-        count = self._write_geojson(self.features, path)
+        if self._writer is None:
+            path = f"{output_dir}/{pbf_stem}_buildings.geojson"
+            return PluginResult(category=self.category, output_path=path, feature_count=0)
 
-        type_counts: dict[str, int] = {}
-        for f in self.features:
-            bt = f["properties"].get("building_type", "other")
-            type_counts[bt] = type_counts.get(bt, 0) + 1
-
+        self._writer.close()
         return PluginResult(
             category=self.category,
-            output_path=path,
-            feature_count=count,
-            metadata={"building_types": type_counts},
+            output_path=self._writer.path,
+            feature_count=self._writer.feature_count,
+            metadata={"building_types": self._type_counts},
         )
 
 

@@ -71,7 +71,7 @@ All old flat imports (e.g. `from handlers.cache_handlers import REGION_REGISTRY`
 The simplest operation in this example:
 
 ```afl
-namespace osm.geo {
+namespace osm.geocode {
     event facet Geocode(address: String) => (result: GeoCoordinate)
 
     workflow GeocodeAddress(address: String) => (location: GeoCoordinate) andThen {
@@ -162,12 +162,12 @@ See [downloads README](handlers/downloads/README.md) for all prefetch options an
 Each category of operations gets its own namespace:
 
 ```
-osm.geo           — core geocoding
+osm.geocode          — core geocoding
 osm.cache.*       — per-region caching (11 geographic namespaces)
-osm.geo.Operations — data processing
-osm.geo.Boundaries — boundary extraction
-osm.geo.Routes     — route extraction
-osm.geo.Filters    — spatial filtering
+osm.ops — data processing
+osm.Boundaries — boundary extraction
+osm.Routes     — route extraction
+osm.Filters    — spatial filtering
 ```
 
 This keeps namespaces focused and allows selective imports.
@@ -206,11 +206,11 @@ namespace osm.library {
     facet PrepareRegion(region: String) => (cache: OSMCache,
             tile_path: String) andThen {
 
-        cached = osm.geo.Operations.Cache(region = $.region)
+        cached = osm.ops.CacheRegion(region = $.region)
 
-        downloaded = osm.geo.Operations.Download(cache = cached.cache)
+        downloaded = osm.ops.DownloadPBF(cache = cached.cache)
 
-        tiled = osm.geo.Operations.Tile(cache = downloaded.downloadCache)
+        tiled = osm.ops.Tile(cache = downloaded.downloadCache)
 
         yield PrepareRegion(
             cache = downloaded.downloadCache,
@@ -222,11 +222,11 @@ namespace osm.library {
     facet BuildRoutingData(region: String) => (cache: OSMCache,
             graph_path: String) andThen {
 
-        cached = osm.geo.Operations.Cache(region = $.region)
+        cached = osm.ops.CacheRegion(region = $.region)
 
-        downloaded = osm.geo.Operations.Download(cache = cached.cache)
+        downloaded = osm.ops.DownloadPBF(cache = cached.cache)
 
-        graph = osm.geo.Operations.RoutingGraph(cache = downloaded.downloadCache)
+        graph = osm.ops.RoutingGraph(cache = downloaded.downloadCache)
 
         yield BuildRoutingData(
             cache = downloaded.downloadCache,
@@ -238,11 +238,11 @@ namespace osm.library {
     facet ImportToPostGIS(region: String) => (cache: OSMCache,
             import_status: String) andThen {
 
-        cached = osm.geo.Operations.Cache(region = $.region)
+        cached = osm.ops.CacheRegion(region = $.region)
 
-        downloaded = osm.geo.Operations.Download(cache = cached.cache)
+        downloaded = osm.ops.DownloadPBF(cache = cached.cache)
 
-        imported = osm.geo.Operations.PostGisImport(cache = downloaded.downloadCache)
+        imported = osm.ops.PostGisImport(cache = downloaded.downloadCache)
 
         yield ImportToPostGIS(
             cache = downloaded.downloadCache,
@@ -304,7 +304,7 @@ namespace osm.africa {
 You don't need to register all 580+ handlers. Use topic filtering:
 
 ```bash
-AFL_USE_REGISTRY=1 AFL_RUNNER_TOPICS=osm.geo,osm.cache.Europe \
+AFL_USE_REGISTRY=1 AFL_RUNNER_TOPICS=osm.geocode,osm.cache.Europe \
     PYTHONPATH=. python examples/osm-geocoder/agent.py
 ```
 

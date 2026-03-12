@@ -2,7 +2,7 @@
 
 Handles ValidateCache, ValidateGeometry, ValidateTags, ValidateBounds, and
 ValidationSummary event facets defined in osmvalidation.afl under the
-osm.geo.Operations.Validation namespace.
+osm.ops.Validation namespace.
 
 Delegates to the OSMOSE verifier for actual PBF analysis.
 """
@@ -15,7 +15,7 @@ from .osmose_verifier import VerifyResult, VerifySummaryData, compute_verify_sum
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Operations.Validation"
+NAMESPACE = "osm.ops.Validation"
 
 
 def _stats_dict(summary: VerifySummaryData) -> dict:

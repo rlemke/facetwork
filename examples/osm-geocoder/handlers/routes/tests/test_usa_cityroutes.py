@@ -70,7 +70,7 @@ PROGRAM_AST = {
                                         {"name": "place_type", "type": "String"},
                                         {"name": "min_population", "type": "Long"},
                                     ],
-                                    [{"name": "result", "type": "PopulationFilterResult"}],
+                                    [{"name": "result", "type": "PopulationFilteredFeatures"}],
                                 ),
                                 _ef(
                                     "FilterByPopulationRange",
@@ -79,7 +79,7 @@ PROGRAM_AST = {
                                         {"name": "min_population", "type": "Long"},
                                         {"name": "max_population", "type": "Long"},
                                     ],
-                                    [{"name": "result", "type": "PopulationFilterResult"}],
+                                    [{"name": "result", "type": "PopulationFilteredFeatures"}],
                                 ),
                             ],
                         },
@@ -130,7 +130,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow CityRouteMapByRegion(
         region: String,
         min_population: Long = 1000000,
@@ -418,7 +418,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "United States",
-            "region_namespace": "osm.geo.cache.NorthAmerica",
+            "region_namespace": "osm.cache.NorthAmerica",
             "continent": "North America",
             "geofabrik_path": "north-america/us",
             "is_ambiguous": False,

@@ -27,10 +27,10 @@ You want to find volcanoes in a US state above a certain elevation. The OSM geoc
 ```afl
 namespace volcano {
     use osm.types              // OSMCache schema
-    use osm.geo.Operations     // Cache, Download
-    use osm.geo.Filters        // FilterByOSMTag
-    use osm.geo.Elevation      // FilterByMaxElevation
-    use osm.geo.Visualization  // RenderMap, FormatGeoJSON
+    use osm.ops     // Cache, Download
+    use osm.Filters        // FilterByOSMTag
+    use osm.Elevation      // FilterByMaxElevation
+    use osm.viz  // RenderMap, FormatGeoJSON
 ```
 
 The `use` statement imports all public names from a namespace, making them available without qualification.
@@ -42,7 +42,7 @@ The `LoadVolcanoData` facet wraps two steps into a reusable unit:
 ```afl
 facet LoadVolcanoData(region: String = "US") => (cache: OSMCache) andThen {
     c = Cache(region = $.region)
-    d = osm.geo.Operations.Download(cache = c.cache)
+    d = osm.ops.DownloadPBF(cache = c.cache)
     yield LoadVolcanoData(cache = d.downloadCache)
 }
 ```
@@ -119,8 +119,8 @@ workflow FindAndCountVolcanoes(...) => (...) andThen {
 
 ```afl
 namespace myquery {
-    use osm.geo.Operations
-    use osm.geo.Filters
+    use osm.ops
+    use osm.Filters
 
     facet LoadData(region: String) => (cache: OSMCache) andThen {
         c = Cache(region = $.region)

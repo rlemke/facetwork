@@ -5,11 +5,11 @@
 // pairwise driving routes between all qualifying cities, and renders a map.
 //
 // This is a real end-to-end pipeline using existing event facets:
-//   - osm.geo.Region.ResolveRegion          (region_resolver.py)
-//   - osm.geo.Operations.Download           (operations_handlers.py → downloader.py)
-//   - osm.geo.Operations.GraphHopper.*      (graphhopper_handlers.py)
-//   - osm.geo.Population.*                  (osmfilters_population.afl handlers)
-//   - osm.geo.Visualization.RenderLayers    (visualization handlers)
+//   - osm.Region.ResolveRegion          (region_resolver.py)
+//   - osm.ops.DownloadPBF           (operations_handlers.py → downloader.py)
+//   - osm.ops.GraphHopper.*      (graphhopper_handlers.py)
+//   - osm.Population.*                  (osmfilters_population.afl handlers)
+//   - osm.viz.RenderLayers    (visualization handlers)
 //
 // Prerequisites: Compile with osmtypes.afl, osmregion.afl, osmoperations.afl,
 //   osmgraphhopper.afl, osmfilters_population.afl, osmvisualization.afl
@@ -17,7 +17,7 @@
 // --- New event facet: compute pairwise driving routes via GraphHopper ---
 
 /** Pairwise driving-route computation between cities using a GraphHopper routing graph. */
-namespace osm.geo.Routing {
+namespace osm.Routing {
     use osm.types
 
     /** Aggregate result of all-pairs shortest-path routing between cities. */
@@ -43,14 +43,14 @@ namespace osm.geo.Routing {
 // --- Workflow: full pipeline from region name to rendered route map ---
 
 /** End-to-end city routing: resolves a region, builds a graph, filters cities by population, routes pairwise, and renders. */
-namespace osm.geo.CityRouting {
+namespace osm.CityRouting {
     use osm.types
-    use osm.geo.Region
-    use osm.geo.Operations
-    use osm.geo.Operations.GraphHopper
-    use osm.geo.Population
-    use osm.geo.Routing
-    use osm.geo.Visualization
+    use osm.Region
+    use osm.ops
+    use osm.ops.GraphHopper
+    use osm.Population
+    use osm.Routing
+    use osm.viz
 
     /** Resolves a region, builds a routing graph, selects cities by population, computes pairwise driving routes, and renders a two-layer map. */
     workflow CityRouteMap(
@@ -82,7 +82,7 @@ namespace osm.geo.CityRouting {
 
         // 2. Download the .osm.pbf file if not already in the local cache
         //    The handler checks resolved.cache.wasInCache and skips if true
-        downloaded = Download(cache = resolved.cache)
+        downloaded = DownloadPBF(cache = resolved.cache)
 
         // 3. Build a GraphHopper routing graph from the PBF
         //    If recreate=false and graph directory exists, returns the cached graph

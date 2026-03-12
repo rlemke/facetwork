@@ -1,14 +1,14 @@
 /** Aggregates all continental OSM caches into a single world-level dataset. */
-namespace osm.geo.World.cache {
+namespace osm.World.cache {
     use osm.types
-    use osm.geo.Africa.cache
-    use osm.geo.Australia.cache
-    use osm.geo.Canada.cache
-    use osm.geo.CentralAmerica.cache
-    use osm.geo.Europe.cache
-    use osm.geo.NorthAmerica.cache
-    use osm.geo.SouthAmerica.cache
-    use osm.geo.UnitedStates.cache
+    use osm.Africa.cache
+    use osm.Australia.cache
+    use osm.Canada.cache
+    use osm.CentralAmerica.cache
+    use osm.Europe.cache
+    use osm.NorthAmerica.cache
+    use osm.SouthAmerica.cache
+    use osm.UnitedStates.cache
 
 
     /** Downloads and caches OSM data for every continent, returning the combined result. */

@@ -1,5 +1,5 @@
 /** Air quality data schemas and event facets for OpenAQ integration. */
-namespace osm.geo.AirQuality {
+namespace osm.AirQuality {
     schema AirQualityResult {
         output_path: String,
         station_count: Long,
@@ -50,12 +50,12 @@ namespace osm.geo.AirQuality {
 }
 
 /** School air quality exposure pipeline combining OSM schools with OpenAQ sensor data. */
-namespace osm.geo.SchoolAirQuality {
+namespace osm.SchoolAirQuality {
     use osm.types
-    use osm.geo.Region
-    use osm.geo.Amenities
-    use osm.geo.AirQuality
-    use osm.geo.Visualization
+    use osm.Region
+    use osm.Amenities
+    use osm.AirQuality
+    use osm.viz
 
     workflow SchoolAirQualityMap(
         region: String,

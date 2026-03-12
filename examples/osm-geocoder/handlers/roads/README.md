@@ -13,42 +13,42 @@ Extract road networks from OSM data with classification and attributes.
 ## AFL Facets
 
 ```afl
-namespace osm.geo.Roads {
+namespace osm.Roads {
     // General extraction
-    event facet ExtractRoads(cache: OSMCache, road_class: String = "all") => (result: RoadResult)
+    event facet ExtractRoads(cache: OSMCache, road_class: String = "all") => (result: RoadFeatures)
 
     // By classification
-    event facet Motorways(cache: OSMCache) => (result: RoadResult)
-    event facet PrimaryRoads(cache: OSMCache) => (result: RoadResult)
-    event facet SecondaryRoads(cache: OSMCache) => (result: RoadResult)
-    event facet TertiaryRoads(cache: OSMCache) => (result: RoadResult)
-    event facet ResidentialRoads(cache: OSMCache) => (result: RoadResult)
+    event facet Motorways(cache: OSMCache) => (result: RoadFeatures)
+    event facet PrimaryRoads(cache: OSMCache) => (result: RoadFeatures)
+    event facet SecondaryRoads(cache: OSMCache) => (result: RoadFeatures)
+    event facet TertiaryRoads(cache: OSMCache) => (result: RoadFeatures)
+    event facet ResidentialRoads(cache: OSMCache) => (result: RoadFeatures)
 
     // Combined extractions
-    event facet MajorRoads(cache: OSMCache) => (result: RoadResult)  // motorway + trunk + primary + secondary
+    event facet MajorRoads(cache: OSMCache) => (result: RoadFeatures)  // motorway + trunk + primary + secondary
 
     // Special types
-    event facet Bridges(cache: OSMCache) => (result: RoadResult)
-    event facet Tunnels(cache: OSMCache) => (result: RoadResult)
+    event facet Bridges(cache: OSMCache) => (result: RoadFeatures)
+    event facet Tunnels(cache: OSMCache) => (result: RoadFeatures)
 
     // By surface
-    event facet PavedRoads(cache: OSMCache) => (result: RoadResult)
-    event facet UnpavedRoads(cache: OSMCache) => (result: RoadResult)
+    event facet PavedRoads(cache: OSMCache) => (result: RoadFeatures)
+    event facet UnpavedRoads(cache: OSMCache) => (result: RoadFeatures)
 
     // With attributes
-    event facet RoadsWithSpeedLimit(cache: OSMCache) => (result: RoadResult)
+    event facet RoadsWithSpeedLimit(cache: OSMCache) => (result: RoadFeatures)
 
     // Statistics and filtering
     event facet RoadStatistics(input_path: String) => (stats: RoadStats)
-    event facet FilterRoadsByClass(input_path: String, road_class: String) => (result: RoadResult)
-    event facet FilterBySpeedLimit(input_path: String, min_speed: Long, max_speed: Long) => (result: RoadResult)
+    event facet FilterRoadsByClass(input_path: String, road_class: String) => (result: RoadFeatures)
+    event facet FilterBySpeedLimit(input_path: String, min_speed: Long, max_speed: Long) => (result: RoadFeatures)
 }
 ```
 
 ## Result Schemas
 
 ```afl
-schema RoadResult {
+schema RoadFeatures {
     output_path: String
     feature_count: Long
     road_class: String
@@ -102,13 +102,13 @@ workflow AnalyzeRoadNetwork(region: String = "Liechtenstein")
     => (total_km: Double, motorway_km: Double, primary_km: Double, with_speed: Long) andThen {
 
     // Stage 1: Get cached region data
-    cache = osm.geo.Operations.Cache(region = $.region)
+    cache = osm.ops.CacheRegion(region = $.region)
 
     // Stage 2: Extract all roads
-    roads = osm.geo.Roads.ExtractRoads(cache = cache.cache, road_class = "all")
+    roads = osm.Roads.ExtractRoads(cache = cache.cache, road_class = "all")
 
     // Stage 3: Calculate statistics
-    stats = osm.geo.Roads.RoadStatistics(input_path = roads.result.output_path)
+    stats = osm.Roads.RoadStatistics(input_path = roads.result.output_path)
 
     yield AnalyzeRoadNetwork(
         total_km = stats.stats.total_length_km,
@@ -125,17 +125,17 @@ workflow AnalyzeRoadNetwork(region: String = "Liechtenstein")
 workflow HighSpeedRoads(region: String = "Liechtenstein")
     => (map_path: String, road_count: Long) andThen {
 
-    cache = osm.geo.Operations.Cache(region = $.region)
-    roads = osm.geo.Roads.RoadsWithSpeedLimit(cache = cache.cache)
+    cache = osm.ops.CacheRegion(region = $.region)
+    roads = osm.Roads.RoadsWithSpeedLimit(cache = cache.cache)
 
     // Filter to roads with speed > 80 km/h
-    high_speed = osm.geo.Roads.FilterBySpeedLimit(
+    high_speed = osm.Roads.FilterBySpeedLimit(
         input_path = roads.result.output_path,
         min_speed = 80,
         max_speed = 999
     )
 
-    map = osm.geo.Visualization.RenderMap(
+    map = osm.viz.RenderMap(
         geojson_path = high_speed.result.output_path,
         title = "High Speed Roads (>80 km/h)",
         color = "#e74c3c"

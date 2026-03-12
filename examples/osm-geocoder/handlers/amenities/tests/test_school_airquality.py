@@ -68,7 +68,7 @@ PROGRAM_AST = {
                                         {"name": "cache", "type": "OSMCache"},
                                         {"name": "category", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "AmenityResult"}],
+                                    [{"name": "result", "type": "AmenityFeatures"}],
                                 ),
                             ],
                         },
@@ -133,7 +133,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.SchoolAirQuality {
+namespace osm.SchoolAirQuality {
     workflow SchoolAirQualityMap(
         region: String,
         prefer_continent: String = "",
@@ -292,7 +292,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "England",
-            "region_namespace": "osm.geo.cache.Europe",
+            "region_namespace": "osm.cache.Europe",
             "continent": "Europe",
             "geofabrik_path": "europe/great-britain/england",
             "is_ambiguous": False,

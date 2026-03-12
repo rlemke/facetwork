@@ -25,7 +25,7 @@ event facet ExtractRoutes(
     route_type: String,          // "bicycle", "hiking", "train", "bus"
     network: String = "*",       // Network level filter
     include_infrastructure: Boolean = true
-) => (result: RouteResult)
+) => (result: RouteFeatures)
 ```
 
 #### FilterRoutesByType
@@ -36,7 +36,7 @@ event facet FilterRoutesByType(
     input_path: String,
     route_type: String,
     network: String = "*"
-) => (result: RouteResult)
+) => (result: RouteFeatures)
 ```
 
 #### RouteStatistics
@@ -52,18 +52,18 @@ Pre-configured facets for specific route types:
 
 ```afl
 event facet BicycleRoutes(cache: OSMCache, network: String = "*",
-    include_infrastructure: Boolean = true) => (result: RouteResult)
+    include_infrastructure: Boolean = true) => (result: RouteFeatures)
 
 event facet HikingTrails(cache: OSMCache, network: String = "*",
-    include_infrastructure: Boolean = true) => (result: RouteResult)
+    include_infrastructure: Boolean = true) => (result: RouteFeatures)
 
 event facet TrainRoutes(cache: OSMCache,
-    include_infrastructure: Boolean = true) => (result: RouteResult)
+    include_infrastructure: Boolean = true) => (result: RouteFeatures)
 
 event facet BusRoutes(cache: OSMCache,
-    include_infrastructure: Boolean = true) => (result: RouteResult)
+    include_infrastructure: Boolean = true) => (result: RouteFeatures)
 
-event facet PublicTransport(cache: OSMCache) => (result: RouteResult)
+event facet PublicTransport(cache: OSMCache) => (result: RouteFeatures)
 ```
 
 ## Network Levels
@@ -204,9 +204,9 @@ Routes are output as GeoJSON FeatureCollections with the following feature types
 
 ## Result Schemas
 
-### RouteResult
+### RouteFeatures
 ```afl
-schema RouteResult {
+schema RouteFeatures {
     output_path: String        // Path to output GeoJSON file
     feature_count: Long        // Total features extracted
     route_type: String         // "bicycle", "hiking", etc.

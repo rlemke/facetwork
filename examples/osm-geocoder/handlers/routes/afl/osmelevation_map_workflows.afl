@@ -6,11 +6,11 @@
 // Prerequisites: Compile with osmtypes.afl, osmroutes.afl, osmelevation.afl, osmvisualization.afl
 
 /** End-to-end pipelines that extract routes, enrich with SRTM elevation data, filter, and render maps. */
-namespace osm.geo.ElevationMap {
+namespace osm.ElevationMap {
     use osm.types
-    use osm.geo.Routes
-    use osm.geo.Elevation
-    use osm.geo.Visualization
+    use osm.Routes
+    use osm.Elevation
+    use osm.viz
 
     /** Filters bicycle routes by peak elevation and renders the survivors on an interactive map. */
     workflow BicycleElevationMap(
@@ -81,7 +81,7 @@ namespace osm.geo.ElevationMap {
         title: String = "High Elevation Routes",
         color: String = "#3498db"
     ) => (map_path: String, feature_count: Long, matched_count: Long) andThen {
-        routes = osm.geo.Routes.ExtractRoutes(
+        routes = osm.Routes.ExtractRoutes(
             cache = $.cache,
             route_type = $.route_type,
             network = $.network
@@ -112,7 +112,7 @@ namespace osm.geo.ElevationMap {
         title: String = "Climbing Routes",
         color: String = "#9b59b6"
     ) => (map_path: String, feature_count: Long, matched_count: Long) andThen {
-        routes = osm.geo.Routes.ExtractRoutes(
+        routes = osm.Routes.ExtractRoutes(
             cache = $.cache,
             route_type = $.route_type,
             network = $.network

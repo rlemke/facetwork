@@ -8,10 +8,10 @@ The `volcano` namespace imports and composes event facets from four OSM namespac
 
 | Import | Event facets used | Purpose |
 |--------|-------------------|---------|
-| `osm.geo.Operations` | `Cache`, `Download` | Load OSM data for a region |
-| `osm.geo.Filters` | `FilterByOSMTag` | Filter features by `natural=volcano` tag |
-| `osm.geo.Elevation` | `FilterByMaxElevation` | Filter by elevation threshold |
-| `osm.geo.Visualization` | `RenderMap`, `FormatGeoJSON` | Map rendering and text formatting |
+| `osm.ops` | `Cache`, `Download` | Load OSM data for a region |
+| `osm.Filters` | `FilterByOSMTag` | Filter features by `natural=volcano` tag |
+| `osm.Elevation` | `FilterByMaxElevation` | Filter by elevation threshold |
+| `osm.viz` | `RenderMap`, `FormatGeoJSON` | Map rendering and text formatting |
 
 **1 composed facet:**
 
@@ -34,10 +34,10 @@ This example has **no handlers, no agent, no test runner**. It relies entirely o
 ```afl
 namespace volcano {
     use osm.types
-    use osm.geo.Operations
-    use osm.geo.Filters
-    use osm.geo.Elevation
-    use osm.geo.Visualization
+    use osm.ops
+    use osm.Filters
+    use osm.Elevation
+    use osm.viz
 
     facet LoadVolcanoData(region: String = "US") => (cache: OSMCache) andThen {
         c = Cache(region = $.region)

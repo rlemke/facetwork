@@ -1,6 +1,6 @@
 """Park extraction event facet handlers.
 
-Handles park extraction events defined in osmparks.afl under osm.geo.Parks.
+Handles park extraction events defined in osmparks.afl under osm.Parks.
 """
 
 import logging
@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 from ..shared.output_cache import cached_result, save_result_meta
 from .park_extractor import (
-    ParkResult,
+    ParkFeatures,
     ParkStats,
     calculate_park_stats,
     filter_parks_by_type,
@@ -17,7 +17,7 @@ from .park_extractor import (
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Parks"
+NAMESPACE = "osm.Parks"
 
 
 def _make_filter_parks_handler(facet_name: str):
@@ -127,8 +127,8 @@ def _file_size(path: str) -> int:
         return 0
 
 
-def _result_to_dict(result: ParkResult) -> dict:
-    """Convert a ParkResult to a dictionary."""
+def _result_to_dict(result: ParkFeatures) -> dict:
+    """Convert a ParkFeatures to a dictionary."""
     return {
         "output_path": result.output_path,
         "feature_count": result.feature_count,

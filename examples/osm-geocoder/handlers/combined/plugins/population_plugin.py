@@ -1,6 +1,7 @@
 """Population/places extractor plugin — nodes and relations.
 
 Extracts places (cities, towns, villages, etc.) with population data.
+Features are streamed to disk during scanning.
 """
 
 from __future__ import annotations
@@ -37,7 +38,12 @@ class PopulationPlugin(ExtractorPlugin):
         return TagInterest(keys={"place"})
 
     def __init__(self) -> None:
-        self.features: list[dict] = []
+        self._type_counts: dict[str, int] = {}
+        self._total_pop = 0
+
+    def begin(self, pbf_stem: str, output_dir: str) -> None:
+        path = f"{output_dir}/{pbf_stem}_population.geojson"
+        self._open_writer(path)
 
     def process_node(self, node_id: int, tags: dict[str, str], lon: float, lat: float) -> None:
         place = tags.get("place", "")
@@ -50,7 +56,10 @@ class PopulationPlugin(ExtractorPlugin):
         except ValueError:
             population = 0
 
-        self.features.append(
+        self._type_counts[place] = self._type_counts.get(place, 0) + 1
+        self._total_pop += population
+
+        self._writer.write_feature(
             {
                 "type": "Feature",
                 "properties": {
@@ -69,21 +78,14 @@ class PopulationPlugin(ExtractorPlugin):
         )
 
     def finalize(self, pbf_stem: str, output_dir: str) -> PluginResult:
-        path = f"{output_dir}/{pbf_stem}_population.geojson"
-        count = self._write_geojson(self.features, path)
+        if self._writer is None:
+            path = f"{output_dir}/{pbf_stem}_population.geojson"
+            return PluginResult(category=self.category, output_path=path, feature_count=0)
 
-        # Summarize by place type
-        type_counts: dict[str, int] = {}
-        total_pop = 0
-        for f in self.features:
-            p = f["properties"]
-            pt = p.get("place", "other")
-            type_counts[pt] = type_counts.get(pt, 0) + 1
-            total_pop += p.get("population", 0)
-
+        self._writer.close()
         return PluginResult(
             category=self.category,
-            output_path=path,
-            feature_count=count,
-            metadata={"place_types": type_counts, "total_population": total_pop},
+            output_path=self._writer.path,
+            feature_count=self._writer.feature_count,
+            metadata={"place_types": self._type_counts, "total_population": self._total_pop},
         )

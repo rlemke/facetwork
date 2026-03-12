@@ -64,7 +64,7 @@ PROGRAM_AST = {
                                         {"name": "cache", "type": "OSMCache"},
                                         {"name": "category", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "AmenityResult"}],
+                                    [{"name": "result", "type": "AmenityFeatures"}],
                                 ),
                                 _ef(
                                     "AmenityStatistics",
@@ -104,7 +104,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow AmenityMapByRegion(
         region: String,
         category: String = "all",
@@ -218,7 +218,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "France",
-            "region_namespace": "osm.geo.cache.Europe",
+            "region_namespace": "osm.cache.Europe",
             "continent": "Europe",
             "geofabrik_path": "europe/france/ile-de-france",
             "is_ambiguous": False,

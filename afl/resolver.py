@@ -81,7 +81,7 @@ def _collect_qualified_namespace_refs(program: Program) -> set[str]:
     """Scan all call expressions in *program* for qualified namespace references.
 
     Returns a set of candidate namespace names extracted from dotted call names
-    (e.g., ``osm.geo.Operations.Cache`` → ``osm.geo.Operations``).
+    (e.g., ``osm.ops.CacheRegion`` → ``osm.ops``).
     """
     candidates: set[str] = set()
 
@@ -277,7 +277,7 @@ class DependencyResolver:
             defined = {ns.name for ns in program.namespaces}
 
             # Collect needed namespaces from both `use` statements AND
-            # qualified call expressions (e.g. osm.geo.Operations.Cache).
+            # qualified call expressions (e.g. osm.ops.CacheRegion).
             needed: set[str] = set()
             for ns in program.namespaces:
                 for use in ns.uses:

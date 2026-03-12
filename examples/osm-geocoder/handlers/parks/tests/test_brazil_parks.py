@@ -65,7 +65,7 @@ PROGRAM_AST = {
                                         {"name": "park_type", "type": "String"},
                                         {"name": "protect_classes", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "ParkResult"}],
+                                    [{"name": "result", "type": "ParkFeatures"}],
                                 ),
                                 _ef(
                                     "ParkStatistics",
@@ -105,7 +105,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow ParkMapByRegion(
         region: String,
         park_type: String = "all",
@@ -277,7 +277,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "Brazil",
-            "region_namespace": "osm.geo.cache.SouthAmerica",
+            "region_namespace": "osm.cache.SouthAmerica",
             "continent": "SouthAmerica",
             "geofabrik_path": "south-america/brazil",
             "is_ambiguous": False,

@@ -212,7 +212,7 @@ class TestDistributed:
         task_id = submit_workflow(
             docker_db,
             flow_id,
-            "osm.geo.CityRouteMap",
+            "osm.CityRouteMap",
             inputs={
                 "region": "germany",
                 "minPopulation": 500000,

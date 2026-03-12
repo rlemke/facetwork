@@ -15,7 +15,7 @@ from .building_extractor import (
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Buildings"
+NAMESPACE = "osm.Buildings"
 
 
 def _make_building_stats_handler(facet_name: str):

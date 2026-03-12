@@ -2,7 +2,7 @@
 
 Thin wrappers that delegate to osmose_verifier for the VerifyAll,
 VerifyGeometry, VerifyTags, VerifyGeoJSON, and VerifySummary event facets
-defined in osmosmose.afl under osm.geo.Operations.OSMOSE namespace.
+defined in osmosmose.afl under osm.ops.OSMOSE namespace.
 
 Performs deep quality analysis directly on .osm.pbf and GeoJSON files with
 no network dependency.
@@ -23,7 +23,7 @@ from .osmose_verifier import (
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Operations.OSMOSE"
+NAMESPACE = "osm.ops.OSMOSE"
 
 
 def _result_dict(result: VerifyResult) -> dict[str, Any]:

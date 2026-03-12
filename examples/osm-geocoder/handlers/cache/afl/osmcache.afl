@@ -1,1143 +1,1143 @@
 /** OSM data cache facets for African countries and the continent. */
-namespace osm.geo.cache.Africa {
+namespace osm.cache.Africa {
     use osm.types
-    use osm.geo.Operations
+    use osm.ops
 
     /** Caches all African countries as a single combined dataset. */
     facet AllAfrica() => (cache: OSMCache) andThen {
-        allAfrica = Cache(region = "AllAfrica")
+        allAfrica = CacheRegion(region = "AllAfrica")
         yield AllAfrica(cache = allAfrica.cache)
     }
     facet Africa() => (cache: OSMCache) andThen {
-        africa = Cache(region = "Africa")
+        africa = CacheRegion(region = "Africa")
         yield Africa(cache = africa.cache)
     }
     facet Algeria() => (cache: OSMCache) andThen {
-        algeria = Cache(region = "Algeria")
+        algeria = CacheRegion(region = "Algeria")
         yield Algeria(cache = algeria.cache)
     }
     facet Angola() => (cache: OSMCache) andThen {
-        angola = Cache(region = "Angola")
+        angola = CacheRegion(region = "Angola")
         yield Angola(cache = angola.cache)
     }
     facet Benin() => (cache: OSMCache) andThen {
-        benin = Cache(region = "Benin")
+        benin = CacheRegion(region = "Benin")
         yield Benin(cache = benin.cache)
     }
     facet Botswana() => (cache: OSMCache) andThen {
-        botswana = Cache(region = "Botswana")
+        botswana = CacheRegion(region = "Botswana")
         yield Botswana(cache = botswana.cache)
     }
     facet BurkinaFaso() => (cache: OSMCache) andThen {
-        burkinaFaso = Cache(region = "BurkinaFaso")
+        burkinaFaso = CacheRegion(region = "BurkinaFaso")
         yield BurkinaFaso(cache = burkinaFaso.cache)
     }
     facet Burundi() => (cache: OSMCache) andThen {
-        burundi = Cache(region = "Burundi")
+        burundi = CacheRegion(region = "Burundi")
         yield Burundi(cache = burundi.cache)
     }
     facet CapeVerde() => (cache: OSMCache) andThen {
-        capeVerde = Cache(region = "CapeVerde")
+        capeVerde = CacheRegion(region = "CapeVerde")
         yield CapeVerde(cache = capeVerde.cache)
     }
     facet Cameroon() => (cache: OSMCache) andThen {
-        cameroon = Cache(region = "Cameroon")
+        cameroon = CacheRegion(region = "Cameroon")
         yield Cameroon(cache = cameroon.cache)
     }
     facet CentralAfricanRepublic() => (cache: OSMCache) andThen {
-        centralAfricanRepublic = Cache(region = "CentralAfricanRepublic")
+        centralAfricanRepublic = CacheRegion(region = "CentralAfricanRepublic")
         yield CentralAfricanRepublic(cache = centralAfricanRepublic.cache)
     }
     facet Chad() => (cache: OSMCache) andThen {
-        chad = Cache(region = "Chad")
+        chad = CacheRegion(region = "Chad")
         yield Chad(cache = chad.cache)
     }
     facet Comores() => (cache: OSMCache) andThen {
-        comores = Cache(region = "Comores")
+        comores = CacheRegion(region = "Comores")
         yield Comores(cache = comores.cache)
     }
     facet Congo_Brazzaville() => (cache: OSMCache) andThen {
-        congo_Brazzaville = Cache(region = "Congo_Brazzaville")
+        congo_Brazzaville = CacheRegion(region = "Congo_Brazzaville")
         yield Congo_Brazzaville(cache = congo_Brazzaville.cache)
     }
     facet Congo_Kinshasa() => (cache: OSMCache) andThen {
-        congo_Kinshasa = Cache(region = "Congo_Kinshasa")
+        congo_Kinshasa = CacheRegion(region = "Congo_Kinshasa")
         yield Congo_Kinshasa(cache = congo_Kinshasa.cache)
     }
     facet Djibouti() => (cache: OSMCache) andThen {
-        djibouti = Cache(region = "Djibouti")
+        djibouti = CacheRegion(region = "Djibouti")
         yield Djibouti(cache = djibouti.cache)
     }
     facet Egypt() => (cache: OSMCache) andThen {
-        egypt = Cache(region = "Egypt")
+        egypt = CacheRegion(region = "Egypt")
         yield Egypt(cache = egypt.cache)
     }
     facet EquatorialGuinea() => (cache: OSMCache) andThen {
-        equatorialGuinea = Cache(region = "EquatorialGuinea")
+        equatorialGuinea = CacheRegion(region = "EquatorialGuinea")
         yield EquatorialGuinea(cache = equatorialGuinea.cache)
     }
     facet Eritrea() => (cache: OSMCache) andThen {
-        eritrea = Cache(region = "Eritrea")
+        eritrea = CacheRegion(region = "Eritrea")
         yield Eritrea(cache = eritrea.cache)
     }
     facet Eswatini() => (cache: OSMCache) andThen {
-        eswatini = Cache(region = "Eswatini")
+        eswatini = CacheRegion(region = "Eswatini")
         yield Eswatini(cache = eswatini.cache)
     }
     facet Ethiopia() => (cache: OSMCache) andThen {
-        ethiopia = Cache(region = "Ethiopia")
+        ethiopia = CacheRegion(region = "Ethiopia")
         yield Ethiopia(cache = ethiopia.cache)
     }
     facet Gabon() => (cache: OSMCache) andThen {
-        gabon = Cache(region = "Gabon")
+        gabon = CacheRegion(region = "Gabon")
         yield Gabon(cache = gabon.cache)
     }
     facet Gambia() => (cache: OSMCache) andThen {
-        gambia = Cache(region = "Gambia")
+        gambia = CacheRegion(region = "Gambia")
         yield Gambia(cache = gambia.cache)
     }
     facet Ghana() => (cache: OSMCache) andThen {
-        ghana = Cache(region = "Ghana")
+        ghana = CacheRegion(region = "Ghana")
         yield Ghana(cache = ghana.cache)
     }
     facet Guinea() => (cache: OSMCache) andThen {
-        guinea = Cache(region = "Guinea")
+        guinea = CacheRegion(region = "Guinea")
         yield Guinea(cache = guinea.cache)
     }
     facet GuineaBissau() => (cache: OSMCache) andThen {
-        guineaBissau = Cache(region = "GuineaBissau")
+        guineaBissau = CacheRegion(region = "GuineaBissau")
         yield GuineaBissau(cache = guineaBissau.cache)
     }
     facet Kenya() => (cache: OSMCache) andThen {
-        kenya = Cache(region = "Kenya")
+        kenya = CacheRegion(region = "Kenya")
         yield Kenya(cache = kenya.cache)
     }
     facet Lesotho() => (cache: OSMCache) andThen {
-        lesotho = Cache(region = "Lesotho")
+        lesotho = CacheRegion(region = "Lesotho")
         yield Lesotho(cache = lesotho.cache)
     }
     facet Liberia() => (cache: OSMCache) andThen {
-        liberia = Cache(region = "Liberia")
+        liberia = CacheRegion(region = "Liberia")
         yield Liberia(cache = liberia.cache)
     }
     facet Libya() => (cache: OSMCache) andThen {
-        libya = Cache(region = "Libya")
+        libya = CacheRegion(region = "Libya")
         yield Libya(cache = libya.cache)
     }
     facet Madagascar() => (cache: OSMCache) andThen {
-        madagascar = Cache(region = "Madagascar")
+        madagascar = CacheRegion(region = "Madagascar")
         yield Madagascar(cache = madagascar.cache)
     }
     facet Malawi() => (cache: OSMCache) andThen {
-        malawi = Cache(region = "Malawi")
+        malawi = CacheRegion(region = "Malawi")
         yield Malawi(cache = malawi.cache)
     }
     facet Mali() => (cache: OSMCache) andThen {
-        mali = Cache(region = "Mali")
+        mali = CacheRegion(region = "Mali")
         yield Mali(cache = mali.cache)
     }
     facet Mauritania() => (cache: OSMCache) andThen {
-        mauritania = Cache(region = "Mauritania")
+        mauritania = CacheRegion(region = "Mauritania")
         yield Mauritania(cache = mauritania.cache)
     }
     facet Mauritius() => (cache: OSMCache) andThen {
-        mauritius = Cache(region = "Mauritius")
+        mauritius = CacheRegion(region = "Mauritius")
         yield Mauritius(cache = mauritius.cache)
     }
     facet Morocco() => (cache: OSMCache) andThen {
-        morocco = Cache(region = "Morocco")
+        morocco = CacheRegion(region = "Morocco")
         yield Morocco(cache = morocco.cache)
     }
     facet Mozambique() => (cache: OSMCache) andThen {
-        mozambique = Cache(region = "Mozambique")
+        mozambique = CacheRegion(region = "Mozambique")
         yield Mozambique(cache = mozambique.cache)
     }
     facet Namibia() => (cache: OSMCache) andThen {
-        namibia = Cache(region = "Namibia")
+        namibia = CacheRegion(region = "Namibia")
         yield Namibia(cache = namibia.cache)
     }
     facet Niger() => (cache: OSMCache) andThen {
-        niger = Cache(region = "Niger")
+        niger = CacheRegion(region = "Niger")
         yield Niger(cache = niger.cache)
     }
     facet Nigeria() => (cache: OSMCache) andThen {
-        nigeria = Cache(region = "Nigeria")
+        nigeria = CacheRegion(region = "Nigeria")
         yield Nigeria(cache = nigeria.cache)
     }
     facet Rwanda() => (cache: OSMCache) andThen {
-        rwanda = Cache(region = "Rwanda")
+        rwanda = CacheRegion(region = "Rwanda")
         yield Rwanda(cache = rwanda.cache)
     }
     facet SaoTomeAndPrincipe() => (cache: OSMCache) andThen {
-        saoTomeAndPrincipe = Cache(region = "SaoTomeAndPrincipe")
+        saoTomeAndPrincipe = CacheRegion(region = "SaoTomeAndPrincipe")
         yield SaoTomeAndPrincipe(cache = saoTomeAndPrincipe.cache)
     }
     facet Senegal() => (cache: OSMCache) andThen {
-        senegal = Cache(region = "Senegal")
+        senegal = CacheRegion(region = "Senegal")
         yield Senegal(cache = senegal.cache)
     }
     facet Seychelles() => (cache: OSMCache) andThen {
-        seychelles = Cache(region = "Seychelles")
+        seychelles = CacheRegion(region = "Seychelles")
         yield Seychelles(cache = seychelles.cache)
     }
     facet SierraLeone() => (cache: OSMCache) andThen {
-        sierraLeone = Cache(region = "SierraLeone")
+        sierraLeone = CacheRegion(region = "SierraLeone")
         yield SierraLeone(cache = sierraLeone.cache)
     }
     facet Somalia() => (cache: OSMCache) andThen {
-        somalia = Cache(region = "Somalia")
+        somalia = CacheRegion(region = "Somalia")
         yield Somalia(cache = somalia.cache)
     }
     facet SouthAfrica() => (cache: OSMCache) andThen {
-        southAfrica = Cache(region = "SouthAfrica")
+        southAfrica = CacheRegion(region = "SouthAfrica")
         yield SouthAfrica(cache = southAfrica.cache)
     }
     facet SouthSudan() => (cache: OSMCache) andThen {
-        southSudan = Cache(region = "SouthSudan")
+        southSudan = CacheRegion(region = "SouthSudan")
         yield SouthSudan(cache = southSudan.cache)
     }
     facet Sudan() => (cache: OSMCache) andThen {
-        sudan = Cache(region = "Sudan")
+        sudan = CacheRegion(region = "Sudan")
         yield Sudan(cache = sudan.cache)
     }
     facet Tanzania() => (cache: OSMCache) andThen {
-        tanzania = Cache(region = "Tanzania")
+        tanzania = CacheRegion(region = "Tanzania")
         yield Tanzania(cache = tanzania.cache)
     }
     facet Togo() => (cache: OSMCache) andThen {
-        togo = Cache(region = "Togo")
+        togo = CacheRegion(region = "Togo")
         yield Togo(cache = togo.cache)
     }
     facet Tunisia() => (cache: OSMCache) andThen {
-        tunisia = Cache(region = "Tunisia")
+        tunisia = CacheRegion(region = "Tunisia")
         yield Tunisia(cache = tunisia.cache)
     }
     facet Uganda() => (cache: OSMCache) andThen {
-        uganda = Cache(region = "Uganda")
+        uganda = CacheRegion(region = "Uganda")
         yield Uganda(cache = uganda.cache)
     }
     facet Zambia() => (cache: OSMCache) andThen {
-        zambia = Cache(region = "Zambia")
+        zambia = CacheRegion(region = "Zambia")
         yield Zambia(cache = zambia.cache)
     }
     facet Zimbabwe() => (cache: OSMCache) andThen {
-        zimbabwe = Cache(region = "Zimbabwe")
+        zimbabwe = CacheRegion(region = "Zimbabwe")
         yield Zimbabwe(cache = zimbabwe.cache)
     }
 
 }
 
 /** OSM data cache facets for Asian countries and the continent. */
-namespace osm.geo.cache.Asia {
+namespace osm.cache.Asia {
     use osm.types
-    use osm.geo.Operations
+    use osm.ops
 
     /** Caches all Asian countries as a single combined dataset. */
     facet AllAsia() => (cache: OSMCache) andThen {
-        allAsia = Cache(region = "AllAsia")
+        allAsia = CacheRegion(region = "AllAsia")
         yield AllAsia(cache = allAsia.cache)
     }
     facet Asia() => (cache: OSMCache) andThen {
-        asia = Cache(region = "Asia")
+        asia = CacheRegion(region = "Asia")
         yield Asia(cache = asia.cache)
     }
     facet Afghanistan() => (cache: OSMCache) andThen {
-        afghanistan = Cache(region = "Afghanistan")
+        afghanistan = CacheRegion(region = "Afghanistan")
         yield Afghanistan(cache = afghanistan.cache)
     }
     facet Armenia() => (cache: OSMCache) andThen {
-        armenia = Cache(region = "Armenia")
+        armenia = CacheRegion(region = "Armenia")
         yield Armenia(cache = armenia.cache)
     }
     facet Azerbaijan() => (cache: OSMCache) andThen {
-        azerbaijan = Cache(region = "Azerbaijan")
+        azerbaijan = CacheRegion(region = "Azerbaijan")
         yield Azerbaijan(cache = azerbaijan.cache)
     }
     facet Bangladesh() => (cache: OSMCache) andThen {
-        bangladesh = Cache(region = "Bangladesh")
+        bangladesh = CacheRegion(region = "Bangladesh")
         yield Bangladesh(cache = bangladesh.cache)
     }
     facet Bhutan() => (cache: OSMCache) andThen {
-        bhutan = Cache(region = "Bhutan")
+        bhutan = CacheRegion(region = "Bhutan")
         yield Bhutan(cache = bhutan.cache)
     }
     facet Brunei() => (cache: OSMCache) andThen {
-        brunei = Cache(region = "Brunei")
+        brunei = CacheRegion(region = "Brunei")
         yield Brunei(cache = brunei.cache)
     }
     facet Cambodia() => (cache: OSMCache) andThen {
-        cambodia = Cache(region = "Cambodia")
+        cambodia = CacheRegion(region = "Cambodia")
         yield Cambodia(cache = cambodia.cache)
     }
     facet China() => (cache: OSMCache) andThen {
-        china = Cache(region = "China")
+        china = CacheRegion(region = "China")
         yield China(cache = china.cache)
     }
     facet EastTimor() => (cache: OSMCache) andThen {
-        eastTimor = Cache(region = "EastTimor")
+        eastTimor = CacheRegion(region = "EastTimor")
         yield EastTimor(cache = eastTimor.cache)
     }
     facet GCCStates() => (cache: OSMCache) andThen {
-        gCCStates = Cache(region = "GCCStates")
+        gCCStates = CacheRegion(region = "GCCStates")
         yield GCCStates(cache = gCCStates.cache)
     }
     facet India() => (cache: OSMCache) andThen {
-        india = Cache(region = "India")
+        india = CacheRegion(region = "India")
         yield India(cache = india.cache)
     }
     facet Indonesia() => (cache: OSMCache) andThen {
-        indonesia = Cache(region = "Indonesia")
+        indonesia = CacheRegion(region = "Indonesia")
         yield Indonesia(cache = indonesia.cache)
     }
     facet Iran() => (cache: OSMCache) andThen {
-        iran = Cache(region = "Iran")
+        iran = CacheRegion(region = "Iran")
         yield Iran(cache = iran.cache)
     }
     facet Iraq() => (cache: OSMCache) andThen {
-        iraq = Cache(region = "Iraq")
+        iraq = CacheRegion(region = "Iraq")
         yield Iraq(cache = iraq.cache)
     }
     facet Japan() => (cache: OSMCache) andThen {
-        japan = Cache(region = "Japan")
+        japan = CacheRegion(region = "Japan")
         yield Japan(cache = japan.cache)
     }
     facet Jordan() => (cache: OSMCache) andThen {
-        jordan = Cache(region = "Jordan")
+        jordan = CacheRegion(region = "Jordan")
         yield Jordan(cache = jordan.cache)
     }
     facet Kazakhstan() => (cache: OSMCache) andThen {
-        kazakhstan = Cache(region = "Kazakhstan")
+        kazakhstan = CacheRegion(region = "Kazakhstan")
         yield Kazakhstan(cache = kazakhstan.cache)
     }
     facet Kyrgyzstan() => (cache: OSMCache) andThen {
-        kyrgyzstan = Cache(region = "Kyrgyzstan")
+        kyrgyzstan = CacheRegion(region = "Kyrgyzstan")
         yield Kyrgyzstan(cache = kyrgyzstan.cache)
     }
     facet Laos() => (cache: OSMCache) andThen {
-        laos = Cache(region = "Laos")
+        laos = CacheRegion(region = "Laos")
         yield Laos(cache = laos.cache)
     }
     facet Lebanon() => (cache: OSMCache) andThen {
-        lebanon = Cache(region = "Lebanon")
+        lebanon = CacheRegion(region = "Lebanon")
         yield Lebanon(cache = lebanon.cache)
     }
     facet Malaysia() => (cache: OSMCache) andThen {
-        malaysia = Cache(region = "Malaysia")
+        malaysia = CacheRegion(region = "Malaysia")
         yield Malaysia(cache = malaysia.cache)
     }
     facet Maldives() => (cache: OSMCache) andThen {
-        maldives = Cache(region = "Maldives")
+        maldives = CacheRegion(region = "Maldives")
         yield Maldives(cache = maldives.cache)
     }
     facet Mongolia() => (cache: OSMCache) andThen {
-        mongolia = Cache(region = "Mongolia")
+        mongolia = CacheRegion(region = "Mongolia")
         yield Mongolia(cache = mongolia.cache)
     }
     facet Myanmar() => (cache: OSMCache) andThen {
-        myanmar = Cache(region = "Myanmar")
+        myanmar = CacheRegion(region = "Myanmar")
         yield Myanmar(cache = myanmar.cache)
     }
     facet Nepal() => (cache: OSMCache) andThen {
-        nepal = Cache(region = "Nepal")
+        nepal = CacheRegion(region = "Nepal")
         yield Nepal(cache = nepal.cache)
     }
     facet NorthKorea() => (cache: OSMCache) andThen {
-        northKorea = Cache(region = "NorthKorea")
+        northKorea = CacheRegion(region = "NorthKorea")
         yield NorthKorea(cache = northKorea.cache)
     }
     facet Pakistan() => (cache: OSMCache) andThen {
-        pakistan = Cache(region = "Pakistan")
+        pakistan = CacheRegion(region = "Pakistan")
         yield Pakistan(cache = pakistan.cache)
     }
     facet IsraelAndPalestine() => (cache: OSMCache) andThen {
-        israelAndPalestine = Cache(region = "IsraelAndPalestine")
+        israelAndPalestine = CacheRegion(region = "IsraelAndPalestine")
         yield IsraelAndPalestine(cache = israelAndPalestine.cache)
     }
     facet Philippines() => (cache: OSMCache) andThen {
-        philippines = Cache(region = "Philippines")
+        philippines = CacheRegion(region = "Philippines")
         yield Philippines(cache = philippines.cache)
     }
     facet SaudiArabia() => (cache: OSMCache) andThen {
-        saudiArabia = Cache(region = "SaudiArabia")
+        saudiArabia = CacheRegion(region = "SaudiArabia")
         yield SaudiArabia(cache = saudiArabia.cache)
     }
     facet Singapore() => (cache: OSMCache) andThen {
-        singapore = Cache(region = "Singapore")
+        singapore = CacheRegion(region = "Singapore")
         yield Singapore(cache = singapore.cache)
     }
     facet SouthKorea() => (cache: OSMCache) andThen {
-        southKorea = Cache(region = "SouthKorea")
+        southKorea = CacheRegion(region = "SouthKorea")
         yield SouthKorea(cache = southKorea.cache)
     }
     facet SriLanka() => (cache: OSMCache) andThen {
-        sriLanka = Cache(region = "SriLanka")
+        sriLanka = CacheRegion(region = "SriLanka")
         yield SriLanka(cache = sriLanka.cache)
     }
     facet Syria() => (cache: OSMCache) andThen {
-        syria = Cache(region = "Syria")
+        syria = CacheRegion(region = "Syria")
         yield Syria(cache = syria.cache)
     }
     facet Tajikistan() => (cache: OSMCache) andThen {
-        tajikistan = Cache(region = "Tajikistan")
+        tajikistan = CacheRegion(region = "Tajikistan")
         yield Tajikistan(cache = tajikistan.cache)
     }
     facet Thailand() => (cache: OSMCache) andThen {
-        thailand = Cache(region = "Thailand")
+        thailand = CacheRegion(region = "Thailand")
         yield Thailand(cache = thailand.cache)
     }
     facet Turkmenistan() => (cache: OSMCache) andThen {
-        turkmenistan = Cache(region = "Turkmenistan")
+        turkmenistan = CacheRegion(region = "Turkmenistan")
         yield Turkmenistan(cache = turkmenistan.cache)
     }
     facet UnitedArabEmirates() => (cache: OSMCache) andThen {
-        unitedArabEmirates = Cache(region = "UnitedArabEmirates")
+        unitedArabEmirates = CacheRegion(region = "UnitedArabEmirates")
         yield UnitedArabEmirates(cache = unitedArabEmirates.cache)
     }
     facet Uzbekistan() => (cache: OSMCache) andThen {
-        uzbekistan = Cache(region = "Uzbekistan")
+        uzbekistan = CacheRegion(region = "Uzbekistan")
         yield Uzbekistan(cache = uzbekistan.cache)
     }
     facet Vietnam() => (cache: OSMCache) andThen {
-        vietnam = Cache(region = "Vietnam")
+        vietnam = CacheRegion(region = "Vietnam")
         yield Vietnam(cache = vietnam.cache)
     }
     facet Yemen() => (cache: OSMCache) andThen {
-        yemen = Cache(region = "Yemen")
+        yemen = CacheRegion(region = "Yemen")
         yield Yemen(cache = yemen.cache)
     }
 
 }
 
 /** OSM data cache facets for Australia, Oceania, and Pacific island nations. */
-namespace osm.geo.cache.Australia {
+namespace osm.cache.Australia {
     use osm.types
-    use osm.geo.Operations
+    use osm.ops
 
     /** Caches all Australia/Oceania regions as a single combined dataset. */
     facet AllAustralia() => (cache: OSMCache) andThen {
-        allAustralia = Cache(region = "AllAustralia")
+        allAustralia = CacheRegion(region = "AllAustralia")
         yield AllAustralia(cache = allAustralia.cache)
     }
     facet Australia() => (cache: OSMCache) andThen {
-        australia = Cache(region = "Australia")
+        australia = CacheRegion(region = "Australia")
         yield Australia(cache = australia.cache)
     }
     facet AmericanOceania() => (cache: OSMCache) andThen {
-        americanOceania = Cache(region = "AmericanOceania")
+        americanOceania = CacheRegion(region = "AmericanOceania")
         yield AmericanOceania(cache = americanOceania.cache)
     }
     facet CookIslands() => (cache: OSMCache) andThen {
-        cookIslands = Cache(region = "CookIslands")
+        cookIslands = CacheRegion(region = "CookIslands")
         yield CookIslands(cache = cookIslands.cache)
     }
     facet Fiji() => (cache: OSMCache) andThen {
-        fiji = Cache(region = "Fiji")
+        fiji = CacheRegion(region = "Fiji")
         yield Fiji(cache = fiji.cache)
     }
     facet Kiribati() => (cache: OSMCache) andThen {
-        kiribati = Cache(region = "Kiribati")
+        kiribati = CacheRegion(region = "Kiribati")
         yield Kiribati(cache = kiribati.cache)
     }
     facet IleDeClipperton() => (cache: OSMCache) andThen {
-        ileDeClipperton = Cache(region = "IleDeClipperton")
+        ileDeClipperton = CacheRegion(region = "IleDeClipperton")
         yield IleDeClipperton(cache = ileDeClipperton.cache)
     }
     facet MarshallIslands() => (cache: OSMCache) andThen {
-        marshallIslands = Cache(region = "MarshallIslands")
+        marshallIslands = CacheRegion(region = "MarshallIslands")
         yield MarshallIslands(cache = marshallIslands.cache)
     }
     facet Micronesia() => (cache: OSMCache) andThen {
-        micronesia = Cache(region = "Micronesia")
+        micronesia = CacheRegion(region = "Micronesia")
         yield Micronesia(cache = micronesia.cache)
     }
     facet Nauru() => (cache: OSMCache) andThen {
-        nauru = Cache(region = "Nauru")
+        nauru = CacheRegion(region = "Nauru")
         yield Nauru(cache = nauru.cache)
     }
     facet NewCaledonia() => (cache: OSMCache) andThen {
-        newCaledonia = Cache(region = "NewCaledonia")
+        newCaledonia = CacheRegion(region = "NewCaledonia")
         yield NewCaledonia(cache = newCaledonia.cache)
     }
     facet NewZealand() => (cache: OSMCache) andThen {
-        newZealand = Cache(region = "NewZealand")
+        newZealand = CacheRegion(region = "NewZealand")
         yield NewZealand(cache = newZealand.cache)
     }
     facet Palau() => (cache: OSMCache) andThen {
-        palau = Cache(region = "Palau")
+        palau = CacheRegion(region = "Palau")
         yield Palau(cache = palau.cache)
     }
     facet PapuaNewGuinea() => (cache: OSMCache) andThen {
-        papuaNewGuinea = Cache(region = "PapuaNewGuinea")
+        papuaNewGuinea = CacheRegion(region = "PapuaNewGuinea")
         yield PapuaNewGuinea(cache = papuaNewGuinea.cache)
     }
     facet Samoa() => (cache: OSMCache) andThen {
-        samoa = Cache(region = "Samoa")
+        samoa = CacheRegion(region = "Samoa")
         yield Samoa(cache = samoa.cache)
     }
     facet SolomonIslands() => (cache: OSMCache) andThen {
-        solomonIslands = Cache(region = "SolomonIslands")
+        solomonIslands = CacheRegion(region = "SolomonIslands")
         yield SolomonIslands(cache = solomonIslands.cache)
     }
     facet Tokelau() => (cache: OSMCache) andThen {
-        tokelau = Cache(region = "Tokelau")
+        tokelau = CacheRegion(region = "Tokelau")
         yield Tokelau(cache = tokelau.cache)
     }
     facet Tonga() => (cache: OSMCache) andThen {
-        tonga = Cache(region = "Tonga")
+        tonga = CacheRegion(region = "Tonga")
         yield Tonga(cache = tonga.cache)
     }
     facet Tuvalu() => (cache: OSMCache) andThen {
-        tuvalu = Cache(region = "Tuvalu")
+        tuvalu = CacheRegion(region = "Tuvalu")
         yield Tuvalu(cache = tuvalu.cache)
     }
     facet Vanuatu() => (cache: OSMCache) andThen {
-        vanuatu = Cache(region = "Vanuatu")
+        vanuatu = CacheRegion(region = "Vanuatu")
         yield Vanuatu(cache = vanuatu.cache)
     }
     facet WallisAndFutuna() => (cache: OSMCache) andThen {
-        wallisAndFutuna = Cache(region = "WallisAndFutuna")
+        wallisAndFutuna = CacheRegion(region = "WallisAndFutuna")
         yield WallisAndFutuna(cache = wallisAndFutuna.cache)
     }
 }
 
 /** OSM data cache facets for European countries and the continent. */
-namespace osm.geo.cache.Europe {
+namespace osm.cache.Europe {
     use osm.types
-    use osm.geo.Operations
+    use osm.ops
 
     /** Caches all European countries as a single combined dataset. */
     facet AllEurope() => (cache: OSMCache) andThen {
-        allEurope = Cache(region = "AllEurope")
+        allEurope = CacheRegion(region = "AllEurope")
         yield AllEurope(cache = allEurope.cache)
     }
     facet Europe() => (cache: OSMCache) andThen {
-        europe = Cache(region = "Europe")
+        europe = CacheRegion(region = "Europe")
         yield Europe(cache = europe.cache)
     }
     facet Albania() => (cache: OSMCache) andThen {
-        albania = Cache(region = "Albania")
+        albania = CacheRegion(region = "Albania")
         yield Albania(cache = albania.cache)
     }
     facet Andorra() => (cache: OSMCache) andThen {
-        andorra = Cache(region = "Andorra")
+        andorra = CacheRegion(region = "Andorra")
         yield Andorra(cache = andorra.cache)
     }
     facet Austria() => (cache: OSMCache) andThen {
-        austria = Cache(region = "Austria")
+        austria = CacheRegion(region = "Austria")
         yield Austria(cache = austria.cache)
     }
     facet Belarus() => (cache: OSMCache) andThen {
-        belarus = Cache(region = "Belarus")
+        belarus = CacheRegion(region = "Belarus")
         yield Belarus(cache = belarus.cache)
     }
     facet Belgium() => (cache: OSMCache) andThen {
-        belgium = Cache(region = "Belgium")
+        belgium = CacheRegion(region = "Belgium")
         yield Belgium(cache = belgium.cache)
     }
     facet BosniaAndHerzegovina() => (cache: OSMCache) andThen {
-        bosniaAndHerzegovina = Cache(region = "BosniaAndHerzegovina")
+        bosniaAndHerzegovina = CacheRegion(region = "BosniaAndHerzegovina")
         yield BosniaAndHerzegovina(cache = bosniaAndHerzegovina.cache)
     }
     facet Bulgaria() => (cache: OSMCache) andThen {
-        bulgaria = Cache(region = "Bulgaria")
+        bulgaria = CacheRegion(region = "Bulgaria")
         yield Bulgaria(cache = bulgaria.cache)
     }
     facet Croatia() => (cache: OSMCache) andThen {
-        croatia = Cache(region = "Croatia")
+        croatia = CacheRegion(region = "Croatia")
         yield Croatia(cache = croatia.cache)
     }
     facet Cyprus() => (cache: OSMCache) andThen {
-        cyprus = Cache(region = "Cyprus")
+        cyprus = CacheRegion(region = "Cyprus")
         yield Cyprus(cache = cyprus.cache)
     }
     facet CzechRepublic() => (cache: OSMCache) andThen {
-        czechRepublic = Cache(region = "CzechRepublic")
+        czechRepublic = CacheRegion(region = "CzechRepublic")
         yield CzechRepublic(cache = czechRepublic.cache)
     }
     facet Denmark() => (cache: OSMCache) andThen {
-        denmark = Cache(region = "Denmark")
+        denmark = CacheRegion(region = "Denmark")
         yield Denmark(cache = denmark.cache)
     }
     facet Estonia() => (cache: OSMCache) andThen {
-        estonia = Cache(region = "Estonia")
+        estonia = CacheRegion(region = "Estonia")
         yield Estonia(cache = estonia.cache)
     }
     facet Finland() => (cache: OSMCache) andThen {
-        finland = Cache(region = "Finland")
+        finland = CacheRegion(region = "Finland")
         yield Finland(cache = finland.cache)
     }
     facet France() => (cache: OSMCache) andThen {
-        france = Cache(region = "France")
+        france = CacheRegion(region = "France")
         yield France(cache = france.cache)
     }
     facet Germany() => (cache: OSMCache) andThen {
-        germany = Cache(region = "Germany")
+        germany = CacheRegion(region = "Germany")
         yield Germany(cache = germany.cache)
     }
     facet Greece() => (cache: OSMCache) andThen {
-        greece = Cache(region = "Greece")
+        greece = CacheRegion(region = "Greece")
         yield Greece(cache = greece.cache)
     }
     facet Georgia() => (cache: OSMCache) andThen {
-        georgia = Cache(region = "GeorgiaEU")
+        georgia = CacheRegion(region = "GeorgiaEU")
         yield Georgia(cache = georgia.cache)
     }
     facet Hungary() => (cache: OSMCache) andThen {
-        hungary = Cache(region = "Hungary")
+        hungary = CacheRegion(region = "Hungary")
         yield Hungary(cache = hungary.cache)
     }
     facet Iceland() => (cache: OSMCache) andThen {
-        iceland = Cache(region = "Iceland")
+        iceland = CacheRegion(region = "Iceland")
         yield Iceland(cache = iceland.cache)
     }
     facet Ireland() => (cache: OSMCache) andThen {
-        ireland = Cache(region = "Ireland")
+        ireland = CacheRegion(region = "Ireland")
         yield Ireland(cache = ireland.cache)
     }
     facet Italy() => (cache: OSMCache) andThen {
-        italy = Cache(region = "Italy")
+        italy = CacheRegion(region = "Italy")
         yield Italy(cache = italy.cache)
     }
     facet Kosovo() => (cache: OSMCache) andThen {
-        kosovo = Cache(region = "Kosovo")
+        kosovo = CacheRegion(region = "Kosovo")
         yield Kosovo(cache = kosovo.cache)
     }
     facet Latvia() => (cache: OSMCache) andThen {
-        latvia = Cache(region = "Latvia")
+        latvia = CacheRegion(region = "Latvia")
         yield Latvia(cache = latvia.cache)
     }
     facet Liechtenstein() => (cache: OSMCache) andThen {
-        liechtenstein = Cache(region = "Liechtenstein")
+        liechtenstein = CacheRegion(region = "Liechtenstein")
         yield Liechtenstein(cache = liechtenstein.cache)
     }
     facet Lithuania() => (cache: OSMCache) andThen {
-        lithuania = Cache(region = "Lithuania")
+        lithuania = CacheRegion(region = "Lithuania")
         yield Lithuania(cache = lithuania.cache)
     }
     facet Luxembourg() => (cache: OSMCache) andThen {
-        luxembourg = Cache(region = "Luxembourg")
+        luxembourg = CacheRegion(region = "Luxembourg")
         yield Luxembourg(cache = luxembourg.cache)
     }
     facet Macedonia() => (cache: OSMCache) andThen {
-        macedonia = Cache(region = "Macedonia")
+        macedonia = CacheRegion(region = "Macedonia")
         yield Macedonia(cache = macedonia.cache)
     }
     facet Malta() => (cache: OSMCache) andThen {
-        malta = Cache(region = "Malta")
+        malta = CacheRegion(region = "Malta")
         yield Malta(cache = malta.cache)
     }
     facet Moldova() => (cache: OSMCache) andThen {
-        moldova = Cache(region = "Moldova")
+        moldova = CacheRegion(region = "Moldova")
         yield Moldova(cache = moldova.cache)
     }
     facet Monaco() => (cache: OSMCache) andThen {
-        monaco = Cache(region = "Monaco")
+        monaco = CacheRegion(region = "Monaco")
         yield Monaco(cache = monaco.cache)
     }
     facet Montenegro() => (cache: OSMCache) andThen {
-        montenegro = Cache(region = "Montenegro")
+        montenegro = CacheRegion(region = "Montenegro")
         yield Montenegro(cache = montenegro.cache)
     }
     facet Netherlands() => (cache: OSMCache) andThen {
-        netherlands = Cache(region = "Netherlands")
+        netherlands = CacheRegion(region = "Netherlands")
         yield Netherlands(cache = netherlands.cache)
     }
     facet Norway() => (cache: OSMCache) andThen {
-        norway = Cache(region = "Norway")
+        norway = CacheRegion(region = "Norway")
         yield Norway(cache = norway.cache)
     }
     facet Poland() => (cache: OSMCache) andThen {
-        poland = Cache(region = "Poland")
+        poland = CacheRegion(region = "Poland")
         yield Poland(cache = poland.cache)
     }
     facet Portugal() => (cache: OSMCache) andThen {
-        portugal = Cache(region = "Portugal")
+        portugal = CacheRegion(region = "Portugal")
         yield Portugal(cache = portugal.cache)
     }
     facet Romania() => (cache: OSMCache) andThen {
-        romania = Cache(region = "Romania")
+        romania = CacheRegion(region = "Romania")
         yield Romania(cache = romania.cache)
     }
     facet Russia() => (cache: OSMCache) andThen {
-        russia = Cache(region = "Russia")
+        russia = CacheRegion(region = "Russia")
         yield Russia(cache = russia.cache)
     }
     facet Serbia() => (cache: OSMCache) andThen {
-        serbia = Cache(region = "Serbia")
+        serbia = CacheRegion(region = "Serbia")
         yield Serbia(cache = serbia.cache)
     }
     facet Slovakia() => (cache: OSMCache) andThen {
-        slovakia = Cache(region = "Slovakia")
+        slovakia = CacheRegion(region = "Slovakia")
         yield Slovakia(cache = slovakia.cache)
     }
     facet Slovenia() => (cache: OSMCache) andThen {
-        slovenia = Cache(region = "Slovenia")
+        slovenia = CacheRegion(region = "Slovenia")
         yield Slovenia(cache = slovenia.cache)
     }
     facet Spain() => (cache: OSMCache) andThen {
-        spain = Cache(region = "Spain")
+        spain = CacheRegion(region = "Spain")
         yield Spain(cache = spain.cache)
     }
     facet Sweden() => (cache: OSMCache) andThen {
-        sweden = Cache(region = "Sweden")
+        sweden = CacheRegion(region = "Sweden")
         yield Sweden(cache = sweden.cache)
     }
     facet Switzerland() => (cache: OSMCache) andThen {
-        switzerland = Cache(region = "Switzerland")
+        switzerland = CacheRegion(region = "Switzerland")
         yield Switzerland(cache = switzerland.cache)
     }
     facet Turkey() => (cache: OSMCache) andThen {
-        turkey = Cache(region = "Turkey")
+        turkey = CacheRegion(region = "Turkey")
         yield Turkey(cache = turkey.cache)
     }
     facet Ukraine() => (cache: OSMCache) andThen {
-        ukraine = Cache(region = "Ukraine")
+        ukraine = CacheRegion(region = "Ukraine")
         yield Ukraine(cache = ukraine.cache)
     }
     facet UnitedKingdom() => (cache: OSMCache) andThen {
-        unitedKingdom = Cache(region = "UnitedKingdom")
+        unitedKingdom = CacheRegion(region = "UnitedKingdom")
         yield UnitedKingdom(cache = unitedKingdom.cache)
     }
 
 }
 
 /** OSM data cache facets for North American countries and the continent. */
-namespace osm.geo.cache.NorthAmerica {
+namespace osm.cache.NorthAmerica {
     use osm.types
-    use osm.geo.Operations
+    use osm.ops
 
     /** Caches all North American countries as a single combined dataset. */
     facet AllNorthAmerica() => (cache: OSMCache) andThen {
-        allNorthAmerica = Cache(region = "AllNorthAmerica")
+        allNorthAmerica = CacheRegion(region = "AllNorthAmerica")
         yield AllNorthAmerica(cache = allNorthAmerica.cache)
     }
     facet NorthAmerica() => (cache: OSMCache) andThen {
-        northAmerica = Cache(region = "NorthAmerica")
+        northAmerica = CacheRegion(region = "NorthAmerica")
         yield NorthAmerica(cache = northAmerica.cache)
     }
     facet Canada() => (cache: OSMCache) andThen {
-        canada = Cache(region = "Canada")
+        canada = CacheRegion(region = "Canada")
         yield Canada(cache = canada.cache)
     }
     facet Mexico() => (cache: OSMCache) andThen {
-        mexico = Cache(region = "Mexico")
+        mexico = CacheRegion(region = "Mexico")
         yield Mexico(cache = mexico.cache)
     }
     facet UnitedStates() => (cache: OSMCache) andThen {
-        unitedStates = Cache(region = "UnitedStates")
+        unitedStates = CacheRegion(region = "UnitedStates")
         yield UnitedStates(cache = unitedStates.cache)
     }
     facet Greenland() => (cache: OSMCache) andThen {
-        greenland = Cache(region = "Greenland")
+        greenland = CacheRegion(region = "Greenland")
         yield Greenland(cache = greenland.cache)
     }
 
 }
 
 /** OSM data cache facets for Canadian provinces and territories. */
-namespace osm.geo.cache.Canada {
+namespace osm.cache.Canada {
     use osm.types
-    use osm.geo.Operations
+    use osm.ops
 
     /** Caches all Canadian provinces and territories as a single combined dataset. */
     facet AllCanada() => (cache: OSMCache) andThen {
-        allCanada = Cache(region = "AllCanada")
+        allCanada = CacheRegion(region = "AllCanada")
         yield AllCanada(cache = allCanada.cache)
     }
     facet Canada() => (cache: OSMCache) andThen {
-        canada = Cache(region = "Canada")
+        canada = CacheRegion(region = "Canada")
         yield Canada(cache = canada.cache)
     }
     facet Alberta() => (cache: OSMCache) andThen {
-        alberta = Cache(region = "Alberta")
+        alberta = CacheRegion(region = "Alberta")
         yield Alberta(cache = alberta.cache)
     }
     facet BritishColumbia() => (cache: OSMCache) andThen {
-        britishColumbia = Cache(region = "BritishColumbia")
+        britishColumbia = CacheRegion(region = "BritishColumbia")
         yield BritishColumbia(cache = britishColumbia.cache)
     }
     facet Manitoba() => (cache: OSMCache) andThen {
-        manitoba = Cache(region = "Manitoba")
+        manitoba = CacheRegion(region = "Manitoba")
         yield Manitoba(cache = manitoba.cache)
     }
     facet NewBrunswick() => (cache: OSMCache) andThen {
-        newBrunswick = Cache(region = "NewBrunswick")
+        newBrunswick = CacheRegion(region = "NewBrunswick")
         yield NewBrunswick(cache = newBrunswick.cache)
     }
     facet NewfoundlandAndLabrador() => (cache: OSMCache) andThen {
-        newfoundlandAndLabrador = Cache(region = "NewfoundlandAndLabrador")
+        newfoundlandAndLabrador = CacheRegion(region = "NewfoundlandAndLabrador")
         yield NewfoundlandAndLabrador(cache = newfoundlandAndLabrador.cache)
     }
     facet NovaScotia() => (cache: OSMCache) andThen {
-        novaScotia = Cache(region = "NovaScotia")
+        novaScotia = CacheRegion(region = "NovaScotia")
         yield NovaScotia(cache = novaScotia.cache)
     }
     facet Ontario() => (cache: OSMCache) andThen {
-        ontario = Cache(region = "Ontario")
+        ontario = CacheRegion(region = "Ontario")
         yield Ontario(cache = ontario.cache)
     }
     facet PrinceEdwardIsland() => (cache: OSMCache) andThen {
-        princeEdwardIsland = Cache(region = "PrinceEdwardIsland")
+        princeEdwardIsland = CacheRegion(region = "PrinceEdwardIsland")
         yield PrinceEdwardIsland(cache = princeEdwardIsland.cache)
     }
     facet Quebec() => (cache: OSMCache) andThen {
-        quebec = Cache(region = "Quebec")
+        quebec = CacheRegion(region = "Quebec")
         yield Quebec(cache = quebec.cache)
     }
     facet Saskatchewan() => (cache: OSMCache) andThen {
-        saskatchewan = Cache(region = "Saskatchewan")
+        saskatchewan = CacheRegion(region = "Saskatchewan")
         yield Saskatchewan(cache = saskatchewan.cache)
     }
     facet Yukon() => (cache: OSMCache) andThen {
-        yukon = Cache(region = "Yukon")
+        yukon = CacheRegion(region = "Yukon")
         yield Yukon(cache = yukon.cache)
     }
 }
 
 /** OSM data cache facets for Central American and Caribbean countries. */
-namespace osm.geo.cache.CentralAmerica {
+namespace osm.cache.CentralAmerica {
     use osm.types
-    use osm.geo.Operations
+    use osm.ops
 
     /** Caches all Central American and Caribbean countries as a single combined dataset. */
     facet AllCentralAmerica() => (cache: OSMCache) andThen {
-        allCentralAmerica = Cache(region = "AllCentralAmerica")
+        allCentralAmerica = CacheRegion(region = "AllCentralAmerica")
         yield AllCentralAmerica(cache = allCentralAmerica.cache)
     }
     facet CentralAmerica() => (cache: OSMCache) andThen {
-        centralAmerica = Cache(region = "CentralAmerica")
+        centralAmerica = CacheRegion(region = "CentralAmerica")
         yield CentralAmerica(cache = centralAmerica.cache)
     }
     facet Bahamas() => (cache: OSMCache) andThen {
-        bahamas = Cache(region = "Bahamas")
+        bahamas = CacheRegion(region = "Bahamas")
         yield Bahamas(cache = bahamas.cache)
     }
     facet Belize() => (cache: OSMCache) andThen {
-        belize = Cache(region = "Belize")
+        belize = CacheRegion(region = "Belize")
         yield Belize(cache = belize.cache)
     }
     facet CostaRica() => (cache: OSMCache) andThen {
-        costaRica = Cache(region = "CostaRica")
+        costaRica = CacheRegion(region = "CostaRica")
         yield CostaRica(cache = costaRica.cache)
     }
     facet Cuba() => (cache: OSMCache) andThen {
-        cuba = Cache(region = "Cuba")
+        cuba = CacheRegion(region = "Cuba")
         yield Cuba(cache = cuba.cache)
     }
     facet ElSalvador() => (cache: OSMCache) andThen {
-        elSalvador = Cache(region = "ElSalvador")
+        elSalvador = CacheRegion(region = "ElSalvador")
         yield ElSalvador(cache = elSalvador.cache)
     }
     facet DominicanRepublic() => (cache: OSMCache) andThen {
-        dominicanRepublic = Cache(region = "DominicanRepublic")
+        dominicanRepublic = CacheRegion(region = "DominicanRepublic")
         yield DominicanRepublic(cache = dominicanRepublic.cache)
     }
     facet Guatemala() => (cache: OSMCache) andThen {
-        guatemala = Cache(region = "Guatemala")
+        guatemala = CacheRegion(region = "Guatemala")
         yield Guatemala(cache = guatemala.cache)
     }
     facet Haiti() => (cache: OSMCache) andThen {
-        haiti = Cache(region = "Haiti")
+        haiti = CacheRegion(region = "Haiti")
         yield Haiti(cache = haiti.cache)
     }
     facet Honduras() => (cache: OSMCache) andThen {
-        honduras = Cache(region = "Honduras")
+        honduras = CacheRegion(region = "Honduras")
         yield Honduras(cache = honduras.cache)
     }
     facet Jamaica() => (cache: OSMCache) andThen {
-        jamaica = Cache(region = "Jamaica")
+        jamaica = CacheRegion(region = "Jamaica")
         yield Jamaica(cache = jamaica.cache)
     }
     facet Nicaragua() => (cache: OSMCache) andThen {
-        nicaragua = Cache(region = "Nicaragua")
+        nicaragua = CacheRegion(region = "Nicaragua")
         yield Nicaragua(cache = nicaragua.cache)
     }
     facet Panama() => (cache: OSMCache) andThen {
-        panama = Cache(region = "Panama")
+        panama = CacheRegion(region = "Panama")
         yield Panama(cache = panama.cache)
     }
 }
 
 /** OSM data cache facets for South American countries and the continent. */
-namespace osm.geo.cache.SouthAmerica {
+namespace osm.cache.SouthAmerica {
     use osm.types
-    use osm.geo.Operations
+    use osm.ops
 
     /** Caches all South American countries as a single combined dataset. */
     facet AllSouthAmerica() => (cache: OSMCache) andThen {
-        allSouthAmerica = Cache(region = "AllSouthAmerica")
+        allSouthAmerica = CacheRegion(region = "AllSouthAmerica")
         yield AllSouthAmerica(cache = allSouthAmerica.cache)
     }
     facet SouthAmerica() => (cache: OSMCache) andThen {
-        southAmerica = Cache(region = "SouthAmerica")
+        southAmerica = CacheRegion(region = "SouthAmerica")
         yield SouthAmerica(cache = southAmerica.cache)
     }
     facet Argentina() => (cache: OSMCache) andThen {
-        argentina = Cache(region = "Argentina")
+        argentina = CacheRegion(region = "Argentina")
         yield Argentina(cache = argentina.cache)
     }
     facet Bolivia() => (cache: OSMCache) andThen {
-        bolivia = Cache(region = "Bolivia")
+        bolivia = CacheRegion(region = "Bolivia")
         yield Bolivia(cache = bolivia.cache)
     }
     facet Brazil() => (cache: OSMCache) andThen {
-        brazil = Cache(region = "Brazil")
+        brazil = CacheRegion(region = "Brazil")
         yield Brazil(cache = brazil.cache)
     }
     facet Chile() => (cache: OSMCache) andThen {
-        chile = Cache(region = "Chile")
+        chile = CacheRegion(region = "Chile")
         yield Chile(cache = chile.cache)
     }
     facet Colombia() => (cache: OSMCache) andThen {
-        colombia = Cache(region = "Colombia")
+        colombia = CacheRegion(region = "Colombia")
         yield Colombia(cache = colombia.cache)
     }
     facet Ecuador() => (cache: OSMCache) andThen {
-        ecuador = Cache(region = "Ecuador")
+        ecuador = CacheRegion(region = "Ecuador")
         yield Ecuador(cache = ecuador.cache)
     }
     facet Guyana() => (cache: OSMCache) andThen {
-        guyana = Cache(region = "Guyana")
+        guyana = CacheRegion(region = "Guyana")
         yield Guyana(cache = guyana.cache)
     }
     facet Paraguay() => (cache: OSMCache) andThen {
-        paraguay = Cache(region = "Paraguay")
+        paraguay = CacheRegion(region = "Paraguay")
         yield Paraguay(cache = paraguay.cache)
     }
     facet Peru() => (cache: OSMCache) andThen {
-        peru = Cache(region = "Peru")
+        peru = CacheRegion(region = "Peru")
         yield Peru(cache = peru.cache)
     }
     facet Suriname() => (cache: OSMCache) andThen {
-        suriname = Cache(region = "Suriname")
+        suriname = CacheRegion(region = "Suriname")
         yield Suriname(cache = suriname.cache)
     }
     facet Uruguay() => (cache: OSMCache) andThen {
-        uruguay = Cache(region = "Uruguay")
+        uruguay = CacheRegion(region = "Uruguay")
         yield Uruguay(cache = uruguay.cache)
     }
     facet Venezuela() => (cache: OSMCache) andThen {
-        venezuela = Cache(region = "Venezuela")
+        venezuela = CacheRegion(region = "Venezuela")
         yield Venezuela(cache = venezuela.cache)
     }
 }
 
 /** OSM data cache facets for US states and territories. */
-namespace osm.geo.cache.UnitedStates {
+namespace osm.cache.UnitedStates {
     use osm.types
-    use osm.geo.Operations
+    use osm.ops
 
     /** Caches all US states and territories as a single combined dataset. */
     facet AllUnitedStates() => (cache: OSMCache) andThen {
-        allUnitedStates = Cache(region = "AllUnitedStates")
+        allUnitedStates = CacheRegion(region = "AllUnitedStates")
         yield AllUnitedStates(cache = allUnitedStates.cache)
     }
     facet UnitedStates() => (cache: OSMCache) andThen {
-        unitedStates = Cache(region = "UnitedStates")
+        unitedStates = CacheRegion(region = "UnitedStates")
         yield UnitedStates(cache = unitedStates.cache)
     }
     facet Alabama() => (cache: OSMCache) andThen {
-        alabama = Cache(region = "Alabama")
+        alabama = CacheRegion(region = "Alabama")
         yield Alabama(cache = alabama.cache)
     }
     facet Alaska() => (cache: OSMCache) andThen {
-        alaska = Cache(region = "Alaska")
+        alaska = CacheRegion(region = "Alaska")
         yield Alaska(cache = alaska.cache)
     }
     facet Arizona() => (cache: OSMCache) andThen {
-        arizona = Cache(region = "Arizona")
+        arizona = CacheRegion(region = "Arizona")
         yield Arizona(cache = arizona.cache)
     }
     facet Arkansas() => (cache: OSMCache) andThen {
-        arkansas = Cache(region = "Arkansas")
+        arkansas = CacheRegion(region = "Arkansas")
         yield Arkansas(cache = arkansas.cache)
     }
     facet California() => (cache: OSMCache) andThen {
-        california = Cache(region = "California")
+        california = CacheRegion(region = "California")
         yield California(cache = california.cache)
     }
     facet Colorado() => (cache: OSMCache) andThen {
-        colorado = Cache(region = "Colorado")
+        colorado = CacheRegion(region = "Colorado")
         yield Colorado(cache = colorado.cache)
     }
     facet Connecticut() => (cache: OSMCache) andThen {
-        connecticut = Cache(region = "Connecticut")
+        connecticut = CacheRegion(region = "Connecticut")
         yield Connecticut(cache = connecticut.cache)
     }
     facet Delaware() => (cache: OSMCache) andThen {
-        delaware = Cache(region = "Delaware")
+        delaware = CacheRegion(region = "Delaware")
         yield Delaware(cache = delaware.cache)
     }
     facet DistrictOfColumbia() => (cache: OSMCache) andThen {
-        districtOfColumbia = Cache(region = "DistrictOfColumbia")
+        districtOfColumbia = CacheRegion(region = "DistrictOfColumbia")
         yield DistrictOfColumbia(cache = districtOfColumbia.cache)
     }
     facet Florida() => (cache: OSMCache) andThen {
-        florida = Cache(region = "Florida")
+        florida = CacheRegion(region = "Florida")
         yield Florida(cache = florida.cache)
     }
     facet Georgia() => (cache: OSMCache) andThen {
-        georgia = Cache(region = "GeorgiaUS")
+        georgia = CacheRegion(region = "GeorgiaUS")
         yield Georgia(cache = georgia.cache)
     }
     facet Hawaii() => (cache: OSMCache) andThen {
-        hawaii = Cache(region = "Hawaii")
+        hawaii = CacheRegion(region = "Hawaii")
         yield Hawaii(cache = hawaii.cache)
     }
     facet Idaho() => (cache: OSMCache) andThen {
-        idaho = Cache(region = "Idaho")
+        idaho = CacheRegion(region = "Idaho")
         yield Idaho(cache = idaho.cache)
     }
     facet Illinois() => (cache: OSMCache) andThen {
-        illinois = Cache(region = "Illinois")
+        illinois = CacheRegion(region = "Illinois")
         yield Illinois(cache = illinois.cache)
     }
     facet Indiana() => (cache: OSMCache) andThen {
-        indiana = Cache(region = "Indiana")
+        indiana = CacheRegion(region = "Indiana")
         yield Indiana(cache = indiana.cache)
     }
     facet Iowa() => (cache: OSMCache) andThen {
-        iowa = Cache(region = "Iowa")
+        iowa = CacheRegion(region = "Iowa")
         yield Iowa(cache = iowa.cache)
     }
     facet Kansas() => (cache: OSMCache) andThen {
-        kansas = Cache(region = "Kansas")
+        kansas = CacheRegion(region = "Kansas")
         yield Kansas(cache = kansas.cache)
     }
     facet Kentucky() => (cache: OSMCache) andThen {
-        kentucky = Cache(region = "Kentucky")
+        kentucky = CacheRegion(region = "Kentucky")
         yield Kentucky(cache = kentucky.cache)
     }
     facet Louisiana() => (cache: OSMCache) andThen {
-        louisiana = Cache(region = "Louisiana")
+        louisiana = CacheRegion(region = "Louisiana")
         yield Louisiana(cache = louisiana.cache)
     }
     facet Maine() => (cache: OSMCache) andThen {
-        maine = Cache(region = "Maine")
+        maine = CacheRegion(region = "Maine")
         yield Maine(cache = maine.cache)
     }
     facet Maryland() => (cache: OSMCache) andThen {
-        maryland = Cache(region = "Maryland")
+        maryland = CacheRegion(region = "Maryland")
         yield Maryland(cache = maryland.cache)
     }
     facet Massachusetts() => (cache: OSMCache) andThen {
-        massachusetts = Cache(region = "Massachusetts")
+        massachusetts = CacheRegion(region = "Massachusetts")
         yield Massachusetts(cache = massachusetts.cache)
     }
     facet Michigan() => (cache: OSMCache) andThen {
-        michigan = Cache(region = "Michigan")
+        michigan = CacheRegion(region = "Michigan")
         yield Michigan(cache = michigan.cache)
     }
     facet Minnesota() => (cache: OSMCache) andThen {
-        minnesota = Cache(region = "Minnesota")
+        minnesota = CacheRegion(region = "Minnesota")
         yield Minnesota(cache = minnesota.cache)
     }
     facet Mississippi() => (cache: OSMCache) andThen {
-        mississippi = Cache(region = "Mississippi")
+        mississippi = CacheRegion(region = "Mississippi")
         yield Mississippi(cache = mississippi.cache)
     }
     facet Missouri() => (cache: OSMCache) andThen {
-        missouri = Cache(region = "Missouri")
+        missouri = CacheRegion(region = "Missouri")
         yield Missouri(cache = missouri.cache)
     }
     facet Montana() => (cache: OSMCache) andThen {
-        montana = Cache(region = "Montana")
+        montana = CacheRegion(region = "Montana")
         yield Montana(cache = montana.cache)
     }
     facet Nebraska() => (cache: OSMCache) andThen {
-        nebraska = Cache(region = "Nebraska")
+        nebraska = CacheRegion(region = "Nebraska")
         yield Nebraska(cache = nebraska.cache)
     }
     facet Nevada() => (cache: OSMCache) andThen {
-        nevada = Cache(region = "Nevada")
+        nevada = CacheRegion(region = "Nevada")
         yield Nevada(cache = nevada.cache)
     }
     facet NewHampshire() => (cache: OSMCache) andThen {
-        newHampshire = Cache(region = "NewHampshire")
+        newHampshire = CacheRegion(region = "NewHampshire")
         yield NewHampshire(cache = newHampshire.cache)
     }
     facet NewJersey() => (cache: OSMCache) andThen {
-        newJersey = Cache(region = "NewJersey")
+        newJersey = CacheRegion(region = "NewJersey")
         yield NewJersey(cache = newJersey.cache)
     }
     facet NewMexico() => (cache: OSMCache) andThen {
-        newMexico = Cache(region = "NewMexico")
+        newMexico = CacheRegion(region = "NewMexico")
         yield NewMexico(cache = newMexico.cache)
     }
     facet NewYork() => (cache: OSMCache) andThen {
-        newYork = Cache(region = "NewYork")
+        newYork = CacheRegion(region = "NewYork")
         yield NewYork(cache = newYork.cache)
     }
     facet NorthCarolina() => (cache: OSMCache) andThen {
-        northCarolina = Cache(region = "NorthCarolina")
+        northCarolina = CacheRegion(region = "NorthCarolina")
         yield NorthCarolina(cache = northCarolina.cache)
     }
     facet NorthDakota() => (cache: OSMCache) andThen {
-        northDakota = Cache(region = "NorthDakota")
+        northDakota = CacheRegion(region = "NorthDakota")
         yield NorthDakota(cache = northDakota.cache)
     }
     facet Ohio() => (cache: OSMCache) andThen {
-        ohio = Cache(region = "Ohio")
+        ohio = CacheRegion(region = "Ohio")
         yield Ohio(cache = ohio.cache)
     }
     facet Oklahoma() => (cache: OSMCache) andThen {
-        oklahoma = Cache(region = "Oklahoma")
+        oklahoma = CacheRegion(region = "Oklahoma")
         yield Oklahoma(cache = oklahoma.cache)
     }
     facet Oregon() => (cache: OSMCache) andThen {
-        oregon = Cache(region = "Oregon")
+        oregon = CacheRegion(region = "Oregon")
         yield Oregon(cache = oregon.cache)
     }
     facet Pennsylvania() => (cache: OSMCache) andThen {
-        pennsylvania = Cache(region = "Pennsylvania")
+        pennsylvania = CacheRegion(region = "Pennsylvania")
         yield Pennsylvania(cache = pennsylvania.cache)
     }
     facet RhodeIsland() => (cache: OSMCache) andThen {
-        rhodeIsland = Cache(region = "RhodeIsland")
+        rhodeIsland = CacheRegion(region = "RhodeIsland")
         yield RhodeIsland(cache = rhodeIsland.cache)
     }
     facet SouthCarolina() => (cache: OSMCache) andThen {
-        southCarolina = Cache(region = "SouthCarolina")
+        southCarolina = CacheRegion(region = "SouthCarolina")
         yield SouthCarolina(cache = southCarolina.cache)
     }
     facet SouthDakota() => (cache: OSMCache) andThen {
-        southDakota = Cache(region = "SouthDakota")
+        southDakota = CacheRegion(region = "SouthDakota")
         yield SouthDakota(cache = southDakota.cache)
     }
     facet Tennessee() => (cache: OSMCache) andThen {
-        tennessee = Cache(region = "Tennessee")
+        tennessee = CacheRegion(region = "Tennessee")
         yield Tennessee(cache = tennessee.cache)
     }
     facet Texas() => (cache: OSMCache) andThen {
-        texas = Cache(region = "Texas")
+        texas = CacheRegion(region = "Texas")
         yield Texas(cache = texas.cache)
     }
     facet Utah() => (cache: OSMCache) andThen {
-        utah = Cache(region = "Utah")
+        utah = CacheRegion(region = "Utah")
         yield Utah(cache = utah.cache)
     }
     facet Vermont() => (cache: OSMCache) andThen {
-        vermont = Cache(region = "Vermont")
+        vermont = CacheRegion(region = "Vermont")
         yield Vermont(cache = vermont.cache)
     }
     facet Virginia() => (cache: OSMCache) andThen {
-        virginia = Cache(region = "Virginia")
+        virginia = CacheRegion(region = "Virginia")
         yield Virginia(cache = virginia.cache)
     }
     facet Washington() => (cache: OSMCache) andThen {
-        washington = Cache(region = "Washington")
+        washington = CacheRegion(region = "Washington")
         yield Washington(cache = washington.cache)
     }
     facet WestVirginia() => (cache: OSMCache) andThen {
-        westVirginia = Cache(region = "WestVirginia")
+        westVirginia = CacheRegion(region = "WestVirginia")
         yield WestVirginia(cache = westVirginia.cache)
     }
     facet Wisconsin() => (cache: OSMCache) andThen {
-        wisconsin = Cache(region = "Wisconsin")
+        wisconsin = CacheRegion(region = "Wisconsin")
         yield Wisconsin(cache = wisconsin.cache)
     }
     facet Wyoming() => (cache: OSMCache) andThen {
-        wyoming = Cache(region = "Wyoming")
+        wyoming = CacheRegion(region = "Wyoming")
         yield Wyoming(cache = wyoming.cache)
     }
 
@@ -1145,69 +1145,69 @@ namespace osm.geo.cache.UnitedStates {
 
 
 /** OSM data cache facets for Antarctica. */
-namespace osm.geo.cache.Antarctica {
+namespace osm.cache.Antarctica {
     use osm.types
-    use osm.geo.Operations
+    use osm.ops
 
     /** Caches all Antarctic regions as a single combined dataset. */
     facet AllAntarctica() => (cache: OSMCache) andThen {
-        allAntarctica = Cache(region = "AllAntarctica")
+        allAntarctica = CacheRegion(region = "AllAntarctica")
         yield AllAntarctica(cache = allAntarctica.cache)
     }
     facet Antarctica() => (cache: OSMCache) andThen {
-        antarctica = Cache(region = "Antarctica")
+        antarctica = CacheRegion(region = "Antarctica")
         yield Antarctica(cache = antarctica.cache)
     }
 }
 
 /** OSM data cache facets for continent-level and planetary extracts. */
-namespace osm.geo.cache.Continents {
+namespace osm.cache.Continents {
     use osm.types
-    use osm.geo.Operations
+    use osm.ops
 
     /** Caches all continents as a single combined dataset. */
     facet AllContinents() => (cache: OSMCache) andThen {
-        allContinents = Cache(region = "AllContinents")
+        allContinents = CacheRegion(region = "AllContinents")
         yield AllContinents(cache = allContinents.cache)
     }
     facet Planet() => (cache: OSMCache) andThen {
-        planet = Cache(region = "Planet")
+        planet = CacheRegion(region = "Planet")
         yield Planet(cache = planet.cache)
     }
     facet Africa() => (cache: OSMCache) andThen {
-        africa = Cache(region = "Africa")
+        africa = CacheRegion(region = "Africa")
         yield Africa(cache = africa.cache)
     }
     facet Antarctica() => (cache: OSMCache) andThen {
-        antarctica = Cache(region = "Antarctica")
+        antarctica = CacheRegion(region = "Antarctica")
         yield Antarctica(cache = antarctica.cache)
     }
     facet Asia() => (cache: OSMCache) andThen {
-        asia = Cache(region = "Asia")
+        asia = CacheRegion(region = "Asia")
         yield Asia(cache = asia.cache)
     }
     facet Australia() => (cache: OSMCache) andThen {
-        australia = Cache(region = "Australia")
+        australia = CacheRegion(region = "Australia")
         yield Australia(cache = australia.cache)
     }
     facet CentralAmerica() => (cache: OSMCache) andThen {
-        centralAmerica = Cache(region = "CentralAmerica")
+        centralAmerica = CacheRegion(region = "CentralAmerica")
         yield CentralAmerica(cache = centralAmerica.cache)
     }
     facet Europe() => (cache: OSMCache) andThen {
-        europe = Cache(region = "Europe")
+        europe = CacheRegion(region = "Europe")
         yield Europe(cache = europe.cache)
     }
     facet SouthAmerica() => (cache: OSMCache) andThen {
-        southAmerica = Cache(region = "SouthAmerica")
+        southAmerica = CacheRegion(region = "SouthAmerica")
         yield SouthAmerica(cache = southAmerica.cache)
     }
     facet NorthAmerica() => (cache: OSMCache) andThen {
-        northAmerica = Cache(region = "NorthAmerica")
+        northAmerica = CacheRegion(region = "NorthAmerica")
         yield NorthAmerica(cache = northAmerica.cache)
     }
     facet Russia() => (cache: OSMCache) andThen {
-        russia = Cache(region = "Russia")
+        russia = CacheRegion(region = "Russia")
         yield Russia(cache = russia.cache)
     }
 }

@@ -4,7 +4,7 @@
 // or static PNG images for embedding in documents.
 
 /** Map rendering and GeoJSON formatting using Leaflet.js with OSM tiles. */
-namespace osm.geo.Visualization {
+namespace osm.viz {
     /** Rendered map output with bounds, format, and feature count. */
     schema MapResult {
         output_path: String,

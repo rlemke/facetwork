@@ -115,7 +115,7 @@ UNPAVED_SURFACES = {
 
 
 @dataclass
-class RoadResult:
+class RoadFeatures:
     """Result of a road extraction operation."""
 
     output_path: str
@@ -280,7 +280,7 @@ def filter_roads_by_class(
     input_path: str | Path,
     road_class: str,
     output_path: str | Path | None = None,
-) -> RoadResult:
+) -> RoadFeatures:
     """Filter roads by classification."""
     input_path = str(input_path)
 
@@ -308,7 +308,7 @@ def filter_roads_by_class(
     total_length = sum(f["properties"].get("length_km", 0) for f in filtered)
     with_speed = sum(1 for f in filtered if f["properties"].get("maxspeed"))
 
-    return RoadResult(
+    return RoadFeatures(
         output_path=output_path_str,
         feature_count=len(filtered),
         road_class=road_class,
@@ -323,7 +323,7 @@ def filter_by_speed_limit(
     min_speed: int,
     max_speed: int,
     output_path: str | Path | None = None,
-) -> RoadResult:
+) -> RoadFeatures:
     """Filter roads by speed limit range."""
     input_path = str(input_path)
 
@@ -350,7 +350,7 @@ def filter_by_speed_limit(
 
     total_length = sum(f["properties"].get("length_km", 0) for f in filtered)
 
-    return RoadResult(
+    return RoadFeatures(
         output_path=output_path_str,
         feature_count=len(filtered),
         road_class="filtered",

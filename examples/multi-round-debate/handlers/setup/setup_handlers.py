@@ -8,7 +8,7 @@ from typing import Any
 
 from handlers.shared.rounds_utils import assign_positions, initiate_round
 
-NAMESPACE = "rounds.Setup"
+NAMESPACE = "multidebate.Setup"
 
 
 def handle_initiate_round(params: dict[str, Any]) -> dict[str, Any]:

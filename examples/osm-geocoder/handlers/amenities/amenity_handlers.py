@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 from ..shared.output_cache import cached_result, save_result_meta
 from .amenity_extractor import (
-    AmenityResult,
+    AmenityFeatures,
     AmenityStats,
     calculate_amenity_stats,
     search_amenities,
@@ -17,7 +17,7 @@ from .amenity_extractor import (
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Amenities"
+NAMESPACE = "osm.Amenities"
 
 
 def _make_amenity_stats_handler(facet_name: str):
@@ -176,8 +176,8 @@ def _file_size(path: str) -> int:
         return 0
 
 
-def _result_to_dict(result: AmenityResult) -> dict:
-    """Convert AmenityResult to dict."""
+def _result_to_dict(result: AmenityFeatures) -> dict:
+    """Convert AmenityFeatures to dict."""
     return {
         "output_path": result.output_path,
         "feature_count": result.feature_count,

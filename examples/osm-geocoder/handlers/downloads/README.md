@@ -8,10 +8,10 @@ All operations are defined in `afl/osmoperations.afl` under two namespaces.
 
 ### Data facets
 
-The `osm.geo.Operations.Data` namespace defines metadata facets used as parameters:
+The `osm.ops.Data` namespace defines metadata facets used as parameters:
 
 ```afl
-namespace osm.geo.Operations.Data {
+namespace osm.ops.Data {
     facet OsmDate(date: String = "latest")
     facet OsmDownloadUrl(url: String = null)
     facet OsmCachedLocation(location: String = null)
@@ -23,23 +23,23 @@ These are plain facets (not event facets) — they carry configuration values bu
 
 ### Event facets
 
-The `osm.geo.Operations` namespace defines 13 event facets:
+The `osm.ops` namespace defines 13 event facets:
 
 ```afl
-namespace osm.geo.Operations {
+namespace osm.ops {
     event facet Download(cache:OSMCache) => ()
     event facet Tile(cache:OSMCache) => (tiles:OSMCache)
     event facet RoutingGraph(cache:OSMCache) => (graph:OSMCache)
     event facet Status(cache:OSMCache) => (stats:OSMCache)
     event facet GeoOSMCache(cache:OSMCache) => (graph:OSMCache)
     event facet PostGisImport(cache:OSMCache) => (stats:OSMCache)
-    event facet DownloadAll(cache:OSMCache) => ()
-    event facet TileAll(cache:OSMCache) => (tiles:OSMCache)
-    event facet RoutingGraphAll(cache:OSMCache) => (graph:OSMCache)
-    event facet StatusAll(cache:OSMCache) => (stats:OSMCache)
-    event facet GeoOSMCacheAll(cache:OSMCache) => (graph:OSMCache)
+    event facet DownloadBatch(cache:OSMCache) => ()
+    event facet TileBatch(cache:OSMCache) => (tiles:OSMCache)
+    event facet RoutingGraphBatch(cache:OSMCache) => (graph:OSMCache)
+    event facet StatusBatch(cache:OSMCache) => (stats:OSMCache)
+    event facet GeoOSMCacheBatch(cache:OSMCache) => (graph:OSMCache)
     event facet DownloadShapefile(cache:OSMCache) => ()
-    event facet DownloadShapefileAll(cache:OSMCache) => ()
+    event facet DownloadShapefileBatch(cache:OSMCache) => ()
 }
 ```
 
@@ -48,17 +48,17 @@ namespace osm.geo.Operations {
 | Facet | Return | Description |
 |-------|--------|-------------|
 | `Download` | `()` | Download a PBF file for a single region |
-| `DownloadAll` | `()` | Download a PBF file for a bulk/aggregate region |
+| `DownloadBatch` | `()` | Download a PBF file for a bulk/aggregate region |
 | `DownloadShapefile` | `()` | Download a Geofabrik free shapefile for a single region |
-| `DownloadShapefileAll` | `()` | Download a shapefile for a bulk/aggregate region |
+| `DownloadShapefileBatch` | `()` | Download a shapefile for a bulk/aggregate region |
 | `Tile` | `tiles:OSMCache` | Generate map tiles from a single region's PBF |
-| `TileAll` | `tiles:OSMCache` | Generate map tiles from a bulk region |
+| `TileBatch` | `tiles:OSMCache` | Generate map tiles from a bulk region |
 | `RoutingGraph` | `graph:OSMCache` | Build a routing graph from a single region's PBF |
-| `RoutingGraphAll` | `graph:OSMCache` | Build a routing graph from a bulk region |
+| `RoutingGraphBatch` | `graph:OSMCache` | Build a routing graph from a bulk region |
 | `Status` | `stats:OSMCache` | Report processing status for a single region |
-| `StatusAll` | `stats:OSMCache` | Report processing status for a bulk region |
+| `StatusBatch` | `stats:OSMCache` | Report processing status for a bulk region |
 | `GeoOSMCache` | `graph:OSMCache` | Generate GeoJSON cache from a single region |
-| `GeoOSMCacheAll` | `graph:OSMCache` | Generate GeoJSON cache from a bulk region |
+| `GeoOSMCacheBatch` | `graph:OSMCache` | Generate GeoJSON cache from a bulk region |
 | `PostGisImport` | `stats:OSMCache` | Import a region into PostGIS |
 
 The `*All` variants are identical in signature to their single-region counterparts. The distinction is semantic — workflows use them to signal that the input is a continent or aggregate extract rather than a single country.
@@ -89,7 +89,7 @@ Facets with `=> ()` (no return) use `return_param=None` and return an empty dict
 
 ### Shapefile handler
 
-`DownloadShapefile` and `DownloadShapefileAll` use a specialized handler that extracts the region path from the cache URL and downloads in shapefile format. See [shapefiles README](../shapefiles/README.md) for details.
+`DownloadShapefile` and `DownloadShapefileBatch` use a specialized handler that extracts the region path from the cache URL and downloads in shapefile format. See [shapefiles README](../shapefiles/README.md) for details.
 
 ### Handler dispatch
 
@@ -103,17 +103,17 @@ OPERATIONS_FACETS = {
     "Status": "stats",
     "GeoOSMCache": "graph",
     "PostGisImport": "stats",
-    "DownloadAll": None,
-    "TileAll": "tiles",
-    "RoutingGraphAll": "graph",
-    "StatusAll": "stats",
-    "GeoOSMCacheAll": "graph",
+    "DownloadBatch": None,
+    "TileBatch": "tiles",
+    "RoutingGraphBatch": "graph",
+    "StatusBatch": "stats",
+    "GeoOSMCacheBatch": "graph",
     "DownloadShapefile": None,
-    "DownloadShapefileAll": None,
+    "DownloadShapefileBatch": None,
 }
 ```
 
-All handlers are registered under the qualified name `osm.geo.Operations.<FacetName>`.
+All handlers are registered under the qualified name `osm.ops.<FacetName>`.
 
 ## Downloader module
 

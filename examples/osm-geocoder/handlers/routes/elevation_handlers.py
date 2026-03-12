@@ -608,15 +608,15 @@ def handle_climbing_routes(params: dict[str, Any]) -> dict[str, Any]:
 
 # RegistryRunner dispatch adapter
 _DISPATCH = {
-    "osm.geo.Elevation.EnrichWithElevation": handle_enrich_with_elevation,
-    "osm.geo.Elevation.FilterByMaxElevation": handle_filter_by_max_elevation,
-    "osm.geo.Elevation.FilterByMinElevation": handle_filter_by_min_elevation,
-    "osm.geo.Elevation.FilterByElevationGain": handle_filter_by_elevation_gain,
-    "osm.geo.Elevation.FilterByElevationRange": handle_filter_by_elevation_range,
-    "osm.geo.Elevation.HighElevationHikingTrails": handle_high_elevation_hiking_trails,
-    "osm.geo.Elevation.HighElevationCyclingRoutes": handle_high_elevation_cycling_routes,
-    "osm.geo.Elevation.HighElevationRoutes": handle_high_elevation_routes,
-    "osm.geo.Elevation.ClimbingRoutes": handle_climbing_routes,
+    "osm.Elevation.EnrichWithElevation": handle_enrich_with_elevation,
+    "osm.Elevation.FilterByMaxElevation": handle_filter_by_max_elevation,
+    "osm.Elevation.FilterByMinElevation": handle_filter_by_min_elevation,
+    "osm.Elevation.FilterByElevationGain": handle_filter_by_elevation_gain,
+    "osm.Elevation.FilterByElevationRange": handle_filter_by_elevation_range,
+    "osm.Elevation.HighElevationHikingTrails": handle_high_elevation_hiking_trails,
+    "osm.Elevation.HighElevationCyclingRoutes": handle_high_elevation_cycling_routes,
+    "osm.Elevation.HighElevationRoutes": handle_high_elevation_routes,
+    "osm.Elevation.ClimbingRoutes": handle_climbing_routes,
 }
 
 
@@ -642,15 +642,15 @@ def register_handlers(runner) -> None:
 def register_elevation_handlers(poller) -> None:
     """Register all elevation-related handlers with the poller."""
     handlers = {
-        "osm.geo.Elevation.EnrichWithElevation": handle_enrich_with_elevation,
-        "osm.geo.Elevation.FilterByMaxElevation": handle_filter_by_max_elevation,
-        "osm.geo.Elevation.FilterByMinElevation": handle_filter_by_min_elevation,
-        "osm.geo.Elevation.FilterByElevationGain": handle_filter_by_elevation_gain,
-        "osm.geo.Elevation.FilterByElevationRange": handle_filter_by_elevation_range,
-        "osm.geo.Elevation.HighElevationHikingTrails": handle_high_elevation_hiking_trails,
-        "osm.geo.Elevation.HighElevationCyclingRoutes": handle_high_elevation_cycling_routes,
-        "osm.geo.Elevation.HighElevationRoutes": handle_high_elevation_routes,
-        "osm.geo.Elevation.ClimbingRoutes": handle_climbing_routes,
+        "osm.Elevation.EnrichWithElevation": handle_enrich_with_elevation,
+        "osm.Elevation.FilterByMaxElevation": handle_filter_by_max_elevation,
+        "osm.Elevation.FilterByMinElevation": handle_filter_by_min_elevation,
+        "osm.Elevation.FilterByElevationGain": handle_filter_by_elevation_gain,
+        "osm.Elevation.FilterByElevationRange": handle_filter_by_elevation_range,
+        "osm.Elevation.HighElevationHikingTrails": handle_high_elevation_hiking_trails,
+        "osm.Elevation.HighElevationCyclingRoutes": handle_high_elevation_cycling_routes,
+        "osm.Elevation.HighElevationRoutes": handle_high_elevation_routes,
+        "osm.Elevation.ClimbingRoutes": handle_climbing_routes,
     }
 
     for facet_name, handler in handlers.items():

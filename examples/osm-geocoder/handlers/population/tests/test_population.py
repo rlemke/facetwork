@@ -10,7 +10,7 @@ from handlers.population.population_filter import (
     HAS_OSMIUM,
     Operator,
     PlaceType,
-    PopulationFilterResult,
+    PopulationFilteredFeatures,
     PopulationStats,
     calculate_population_stats,
     describe_filter,
@@ -459,8 +459,8 @@ class TestResultConversions:
     """Tests for result conversion functions."""
 
     def test_result_to_dict(self):
-        """Test PopulationFilterResult to dict conversion."""
-        result = PopulationFilterResult(
+        """Test PopulationFilteredFeatures to dict conversion."""
+        result = PopulationFilteredFeatures(
             output_path="/tmp/filtered.geojson",
             feature_count=42,
             original_count=100,
@@ -544,4 +544,4 @@ class TestHandlerRegistration:
 
     def test_namespace_value(self):
         """Test namespace is correct."""
-        assert NAMESPACE == "osm.geo.Population"
+        assert NAMESPACE == "osm.Population"

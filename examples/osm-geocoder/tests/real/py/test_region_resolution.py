@@ -108,7 +108,7 @@ class TestRegionResolutionIntegration:
         program = _compile_region_test()
         workflow = extract_workflow(program, "ResolveRegionTest")
 
-        poller.register("osm.geo.Region.ResolveRegion", _resolve_region_handler)
+        poller.register("osm.Region.ResolveRegion", _resolve_region_handler)
 
         result = run_to_completion(
             evaluator,
@@ -129,7 +129,7 @@ class TestRegionResolutionIntegration:
         program = _compile_region_test()
         workflow = extract_workflow(program, "ResolveRegionTest")
 
-        poller.register("osm.geo.Region.ResolveRegion", _resolve_region_handler)
+        poller.register("osm.Region.ResolveRegion", _resolve_region_handler)
 
         result = run_to_completion(
             evaluator,
@@ -149,7 +149,7 @@ class TestRegionResolutionIntegration:
         program = _compile_region_test()
         workflow = extract_workflow(program, "ResolveRegionTest")
 
-        poller.register("osm.geo.Region.ResolveRegion", _resolve_region_handler)
+        poller.register("osm.Region.ResolveRegion", _resolve_region_handler)
 
         # Georgia (US state) with UnitedStates preference
         # (the resolver uses "UnitedStates" as the continent for US states)
@@ -172,7 +172,7 @@ class TestRegionResolutionIntegration:
         program = _compile_region_test()
         workflow = extract_workflow(program, "ResolveRegionTest")
 
-        poller.register("osm.geo.Region.ResolveRegion", _resolve_region_handler)
+        poller.register("osm.Region.ResolveRegion", _resolve_region_handler)
 
         result = run_to_completion(
             evaluator,

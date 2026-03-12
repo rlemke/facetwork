@@ -69,7 +69,7 @@ PROGRAM_AST = {
                                         {"name": "unit", "type": "String"},
                                         {"name": "operator", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "FilterResult"}],
+                                    [{"name": "result", "type": "FilteredFeatures"}],
                                 ),
                                 _ef(
                                     "FilterByTypeAndRadius",
@@ -80,7 +80,7 @@ PROGRAM_AST = {
                                         {"name": "unit", "type": "String"},
                                         {"name": "operator", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "FilterResult"}],
+                                    [{"name": "result", "type": "FilteredFeatures"}],
                                 ),
                                 _ef(
                                     "FilterByRadius",
@@ -90,7 +90,7 @@ PROGRAM_AST = {
                                         {"name": "unit", "type": "String"},
                                         {"name": "operator", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "FilterResult"}],
+                                    [{"name": "result", "type": "FilteredFeatures"}],
                                 ),
                             ],
                         },
@@ -126,7 +126,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow FilteredBoundaryMap(
         region: String,
         min_radius_km: Double = 50,
@@ -227,7 +227,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "India",
-            "region_namespace": "osm.geo.cache.Asia",
+            "region_namespace": "osm.cache.Asia",
             "continent": "Asia",
             "geofabrik_path": "asia/india",
             "is_ambiguous": False,

@@ -6,7 +6,7 @@ A geocoding agent that resolves street addresses to geographic coordinates using
 
 This example demonstrates:
 - **Schema declarations** for typed data structures (`GeoCoordinate`, `OSMCache`)
-- **Event facets** for external agent dispatch (`osm.geo.Geocode`, cache, operations, POI)
+- **Event facets** for external agent dispatch (`osm.Geocode`, cache, operations, POI)
 - **AgentPoller** for building a standalone agent service
 - **Foreach iteration** for batch geocoding (`GeocodeAll`)
 - **Namespace-qualified handlers** registered programmatically from region registries
@@ -21,7 +21,7 @@ schema GeoCoordinate {
     display_name: String
 }
 
-namespace osm.geo {
+namespace osm.geocode {
     event facet Geocode(address: String) => (result: GeoCoordinate)
 
     workflow GeocodeAddress(address: String) => (location: GeoCoordinate) andThen {
@@ -74,7 +74,7 @@ All assertions passed.
 PYTHONPATH=. python examples/osm-geocoder/agent.py
 ```
 
-This starts a long-running agent that polls for `osm.geo.Geocode` tasks and ~330 OSM data events (caching, boundaries, routes, parks, population, visualization, etc.). In production, you would pair it with a runner service that executes workflows.
+This starts a long-running agent that polls for `osm.Geocode` tasks and ~330 OSM data events (caching, boundaries, routes, parks, population, visualization, etc.). In production, you would pair it with a runner service that executes workflows.
 
 ### Compile check
 

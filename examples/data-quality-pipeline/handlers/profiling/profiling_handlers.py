@@ -8,7 +8,7 @@ from typing import Any
 
 from handlers.shared.quality_utils import detect_anomalies, profile_dataset
 
-NAMESPACE = "dq.Profiling"
+NAMESPACE = "dataquality.Profiling"
 
 
 def handle_profile_dataset(params: dict[str, Any]) -> dict[str, Any]:

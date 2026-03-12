@@ -177,7 +177,7 @@ ROUTE_TAGS = {
 
 
 @dataclass
-class RouteResult:
+class RouteFeatures:
     """Result of a route extraction operation."""
 
     output_path: str
@@ -204,7 +204,7 @@ def filter_routes_by_type(
     route_type: str | RouteType,
     network: str = "*",
     output_path: str | Path | None = None,
-) -> RouteResult:
+) -> RouteFeatures:
     """Filter already-extracted GeoJSON by route type.
 
     Args:
@@ -214,7 +214,7 @@ def filter_routes_by_type(
         output_path: Path to output GeoJSON file
 
     Returns:
-        RouteResult with output path and statistics
+        RouteFeatures with output path and statistics
     """
     input_path = str(input_path)
     if output_path is None:
@@ -265,7 +265,7 @@ def filter_routes_by_type(
     with open_output(str(output_path)) as f:
         json.dump(output_geojson, f, indent=2)
 
-    return RouteResult(
+    return RouteFeatures(
         output_path=str(output_path),
         feature_count=len(filtered),
         route_type=route_type.value,

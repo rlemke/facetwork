@@ -1,5 +1,5 @@
 /** Points of interest extraction from OSM data: settlements, landmarks, and facilities. */
-namespace osm.geo.POIs {
+namespace osm.POIs {
     use osm.types
 
     /** Extracts all points of interest from cached OSM data. */

@@ -271,8 +271,10 @@ def combined_scan(
     if output_dir is None:
         output_dir = resolve_output_dir("osm-combined")
 
-    # Instantiate selected plugins
+    # Instantiate selected plugins and open output streams
     plugins = [registry[cat]() for cat in categories]
+    for plugin in plugins:
+        plugin.begin(pbf_stem, output_dir)
 
     # Progress tracker
     file_size = get_file_size(pbf_path)
@@ -280,30 +282,23 @@ def combined_scan(
         file_size, step_log, label=f"CombinedScan[{','.join(categories)}]"
     )
 
-    # Single-pass scan
+    # Single-pass scan — features stream to disk via each plugin's writer
     handler = _CombinedHandler(plugins, progress=progress, step_log=step_log)
     t0 = time.monotonic()
     handler.apply_file(pbf_path, locations=True)
     scan_seconds = time.monotonic() - t0
     progress.finish()
 
-    # Finalize each plugin — write GeoJSON, collect results
+    # Finalize each plugin — close writers, collect results
     results: dict[str, PluginResult] = {}
     total_features = 0
     num_plugins = len(plugins)
     for idx, plugin in enumerate(plugins, 1):
         if step_log:
-            feat_count = len(getattr(plugin, "features", []))
-            # Some plugins store features in multiple lists
-            if hasattr(plugin, "way_features"):
-                feat_count += len(plugin.way_features)
-            if hasattr(plugin, "relation_features"):
-                feat_count += len(plugin.relation_features)
-            if hasattr(plugin, "infra_features"):
-                feat_count += len(plugin.infra_features)
+            feat_count = plugin._writer.feature_count if plugin._writer else 0
             step_log(
                 f"Finalizing {plugin.category} ({idx}/{num_plugins}): "
-                f"writing {feat_count:,} features to GeoJSON"
+                f"closing stream with {feat_count:,} features"
             )
         t_fin = time.monotonic()
         try:

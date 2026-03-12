@@ -157,8 +157,8 @@ namespace myregion {
     use osm.types
     workflow BuildMyRegion() => (...) andThen {
         cache = osm.cache.Europe.Netherlands()
-        download = osm.geo.Operations.Download(cache = cache.cache)
-        graph = osm.geo.GraphHopper.BuildGraph(pbf_path = download.downloadCache.path)
+        download = osm.ops.DownloadPBF(cache = cache.cache)
+        graph = osm.GraphHopper.BuildGraph(pbf_path = download.downloadCache.path)
         yield BuildMyRegion(...)
     }
 }

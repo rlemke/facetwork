@@ -151,9 +151,9 @@ def handle_list_regions(params: dict[str, Any]) -> dict[str, Any]:
 
 # RegistryRunner dispatch adapter
 _DISPATCH = {
-    "osm.geo.Region.ResolveRegion": handle_resolve_region,
-    "osm.geo.Region.ResolveRegions": handle_resolve_regions,
-    "osm.geo.Region.ListRegions": handle_list_regions,
+    "osm.Region.ResolveRegion": handle_resolve_region,
+    "osm.Region.ResolveRegions": handle_resolve_regions,
+    "osm.Region.ListRegions": handle_list_regions,
 }
 
 
@@ -179,9 +179,9 @@ def register_handlers(runner) -> None:
 def register_region_handlers(poller) -> None:
     """Register all region resolution handlers with the poller."""
     handlers = {
-        "osm.geo.Region.ResolveRegion": handle_resolve_region,
-        "osm.geo.Region.ResolveRegions": handle_resolve_regions,
-        "osm.geo.Region.ListRegions": handle_list_regions,
+        "osm.Region.ResolveRegion": handle_resolve_region,
+        "osm.Region.ResolveRegions": handle_resolve_regions,
+        "osm.Region.ListRegions": handle_list_regions,
     }
 
     for facet_name, handler in handlers.items():

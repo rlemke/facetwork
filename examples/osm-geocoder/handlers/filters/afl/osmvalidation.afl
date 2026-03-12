@@ -9,7 +9,7 @@
 // Produces good/bad statistics and writes invalid entries to output file.
 
 /** OSM data quality validation: tag completeness, geometry, bounds, and duplicates. */
-namespace osm.geo.Operations.Validation {
+namespace osm.ops.Validation {
     use osm.types
 
     /** Validation summary with counts by error category. */

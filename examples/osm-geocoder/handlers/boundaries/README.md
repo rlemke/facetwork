@@ -22,10 +22,10 @@ pip install pyosmium shapely
 
 The boundary extraction is defined in `afl/osmboundaries.afl`:
 
-### BoundaryResult Schema
+### BoundaryFeatures Schema
 
 ```afl
-schema BoundaryResult {
+schema BoundaryFeatures {
     output_path: String       // Path to the output GeoJSON file
     feature_count: Long       // Number of features extracted
     boundary_type: String     // Human-readable boundary type description
@@ -37,7 +37,7 @@ schema BoundaryResult {
 
 ### Event Facets
 
-All event facets are in the `osm.geo.Boundaries` namespace.
+All event facets are in the `osm.Boundaries` namespace.
 
 #### Administrative Boundaries
 
@@ -97,7 +97,7 @@ The extractor matches these OSM tag combinations:
 ### In AFL Workflows
 
 ```afl
-workflow ExtractUSCounties(cache: OSMCache) => (boundaries: BoundaryResult) andThen {
+workflow ExtractUSCounties(cache: OSMCache) => (boundaries: BoundaryFeatures) andThen {
     counties = CountyBoundaries(cache = $.cache)
     yield ExtractUSCounties(boundaries = counties.result)
 }
@@ -106,7 +106,7 @@ workflow ExtractUSCounties(cache: OSMCache) => (boundaries: BoundaryResult) andT
 ### With Configurable Admin Level
 
 ```afl
-workflow ExtractAdminLevel(cache: OSMCache, level: Long) => (boundaries: BoundaryResult) andThen {
+workflow ExtractAdminLevel(cache: OSMCache, level: Long) => (boundaries: BoundaryFeatures) andThen {
     admin = AdminBoundary(cache = $.cache, admin_level = $.level)
     yield ExtractAdminLevel(boundaries = admin.result)
 }
@@ -179,10 +179,10 @@ This tests the workflow execution without requiring actual PBF files or pyosmium
 
 ## Integration with OSM Cache
 
-The boundary facets accept an `OSMCache` parameter, which is the output of the regional cache facets (e.g., `osm.geo.Europe.Monaco.Cache`). This allows chaining cache lookups with boundary extraction:
+The boundary facets accept an `OSMCache` parameter, which is the output of the regional cache facets (e.g., `osm.Europe.Monaco.Cache`). This allows chaining cache lookups with boundary extraction:
 
 ```afl
-workflow MonacoBoundaries() => (boundaries: BoundaryResult) andThen {
+workflow MonacoBoundaries() => (boundaries: BoundaryFeatures) andThen {
     cache = Monaco.Cache()
     countries = CountryBoundaries(cache = cache.result)
     yield MonacoBoundaries(boundaries = countries.result)

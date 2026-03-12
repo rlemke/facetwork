@@ -284,29 +284,29 @@ class TestDispatch:
         from handlers.profiling.profiling_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 2
-        assert "dq.Profiling.ProfileDataset" in _DISPATCH
-        assert "dq.Profiling.DetectAnomalies" in _DISPATCH
+        assert "dataquality.Profiling.ProfileDataset" in _DISPATCH
+        assert "dataquality.Profiling.DetectAnomalies" in _DISPATCH
 
     def test_validation_dispatch(self):
         from handlers.validation.validation_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 2
-        assert "dq.Validation.ValidateCompleteness" in _DISPATCH
-        assert "dq.Validation.ValidateAccuracy" in _DISPATCH
+        assert "dataquality.Validation.ValidateCompleteness" in _DISPATCH
+        assert "dataquality.Validation.ValidateAccuracy" in _DISPATCH
 
     def test_scoring_dispatch(self):
         from handlers.scoring.scoring_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 2
-        assert "dq.Scoring.ComputeScores" in _DISPATCH
-        assert "dq.Scoring.AssignGrade" in _DISPATCH
+        assert "dataquality.Scoring.ComputeScores" in _DISPATCH
+        assert "dataquality.Scoring.AssignGrade" in _DISPATCH
 
     def test_remediation_dispatch(self):
         from handlers.remediation.remediation_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 2
-        assert "dq.Remediation.PlanRemediation" in _DISPATCH
-        assert "dq.Remediation.GenerateReport" in _DISPATCH
+        assert "dataquality.Remediation.PlanRemediation" in _DISPATCH
+        assert "dataquality.Remediation.GenerateReport" in _DISPATCH
 
     def test_total_handler_count(self):
         from handlers.profiling.profiling_handlers import _DISPATCH as d1
@@ -362,7 +362,7 @@ class TestCompilation:
         assert count == 8
 
     def test_mixin_facet_count(self, parsed_ast):
-        mixins_ns = [ns for ns in parsed_ast.namespaces if ns.name == "dq.mixins"][0]
+        mixins_ns = [ns for ns in parsed_ast.namespaces if ns.name == "dataquality.mixins"][0]
         assert len(mixins_ns.facets) == 2
 
     def test_implicit_count(self, parsed_ast):

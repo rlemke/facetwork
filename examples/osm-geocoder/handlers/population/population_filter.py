@@ -152,7 +152,7 @@ PLACE_TAGS = {
 
 
 @dataclass
-class PopulationFilterResult:
+class PopulationFilteredFeatures:
     """Result of a population filter operation."""
 
     output_path: str
@@ -297,7 +297,7 @@ def filter_geojson_by_population(
     place_type: str | PlaceType = PlaceType.ALL,
     operator: str | Operator = Operator.GTE,
     output_path: str | Path | None = None,
-) -> PopulationFilterResult:
+) -> PopulationFilteredFeatures:
     """Filter a GeoJSON file by population.
 
     Args:
@@ -309,7 +309,7 @@ def filter_geojson_by_population(
         output_path: Path to output GeoJSON file
 
     Returns:
-        PopulationFilterResult with output path and statistics
+        PopulationFilteredFeatures with output path and statistics
     """
     input_path = str(input_path)
 
@@ -365,7 +365,7 @@ def filter_geojson_by_population(
     with open_output(output_path_str) as f:
         json.dump(output_geojson, f, indent=2)
 
-    return PopulationFilterResult(
+    return PopulationFilteredFeatures(
         output_path=output_path_str,
         feature_count=len(filtered),
         original_count=original_count,

@@ -13,7 +13,7 @@
 //   3 (info)    — empty tag values
 
 /** Standalone local PBF/GeoJSON quality analysis with severity-graded issue detection. */
-namespace osm.geo.Operations.OSMOSE {
+namespace osm.ops.OSMOSE {
 
     use osm.types
 

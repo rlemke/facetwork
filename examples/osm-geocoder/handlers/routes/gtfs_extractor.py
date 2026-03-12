@@ -100,7 +100,7 @@ class StopResult:
 
 
 @dataclass
-class GTFSRouteResult:
+class GTFSRouteFeatures:
     """Result of route extraction."""
 
     output_path: str
@@ -492,7 +492,7 @@ def extract_stops(feed_path: str, output_path: str = "") -> StopResult:
     )
 
 
-def extract_routes(feed_path: str, output_path: str = "") -> GTFSRouteResult:
+def extract_routes(feed_path: str, output_path: str = "") -> GTFSRouteFeatures:
     """Extract route geometries from shapes.txt (or stop sequences) to GeoJSON.
 
     When shapes.txt is available, builds linestrings from shape points.
@@ -503,7 +503,7 @@ def extract_routes(feed_path: str, output_path: str = "") -> GTFSRouteResult:
         output_path: Path for output GeoJSON (auto-generated if empty)
 
     Returns:
-        GTFSRouteResult with output path and route info
+        GTFSRouteFeatures with output path and route info
     """
     if not output_path:
         output_path = os.path.join(feed_path, "routes.geojson")
@@ -662,7 +662,7 @@ def extract_routes(feed_path: str, output_path: str = "") -> GTFSRouteResult:
         rt = GTFSRouteType.from_string(rt_str)
         rt_labels.append(rt.label() if rt else f"Type {rt_str}")
 
-    return GTFSRouteResult(
+    return GTFSRouteFeatures(
         output_path=output_path,
         route_count=len(features),
         has_shapes=has_shapes,

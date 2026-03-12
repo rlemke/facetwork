@@ -18,7 +18,7 @@ from afl.runtime.registry_runner import create_registry_runner
 
 def main() -> None:
     """Start the RegistryRunner with all weather handlers."""
-    runner = create_registry_runner("noaa-weather", topics=["ghcn.*"])
+    runner = create_registry_runner("noaa-weather", topics=["weather.*"])
     register_all_registry_handlers(runner)
     print(f"NOAA Weather RegistryRunner started with {len(runner.registered_names())} handlers")
     runner.start()

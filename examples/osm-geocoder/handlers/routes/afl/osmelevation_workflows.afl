@@ -3,16 +3,16 @@
 // Example workflows demonstrating how to find routes based on elevation criteria.
 
 /** Workflows that filter routes by elevation criteria such as peak height, gain, and alpine zones. */
-namespace osm.geo.Elevation.Workflows {
+namespace osm.Elevation.Workflows {
     use osm.types
-    use osm.geo.Routes
-    use osm.geo.Elevation
+    use osm.Routes
+    use osm.Elevation
 
     /** Finds hiking trails whose maximum elevation exceeds a threshold (default 2000 ft). */
     workflow FindHighElevationHikingTrails(
         cache: OSMCache,
         min_elevation_ft: Long = 2000
-    ) => (result: ElevatedRouteResult) andThen {
+    ) => (result: ElevatedRouteFeatures) andThen {
         // Step 1: Extract hiking trails from OSM data
         trails = HikingTrails(cache = $.cache)
 
@@ -33,7 +33,7 @@ namespace osm.geo.Elevation.Workflows {
         cache: OSMCache,
         min_elevation_ft: Long = 2000,
         network: String = "*"
-    ) => (result: ElevatedRouteResult) andThen {
+    ) => (result: ElevatedRouteFeatures) andThen {
         routes = BicycleRoutes(cache = $.cache, network = $.network)
         enriched = EnrichWithElevation(input_path = routes.result.output_path)
         filtered = FilterByMaxElevation(
@@ -48,8 +48,8 @@ namespace osm.geo.Elevation.Workflows {
         cache: OSMCache,
         route_type: String = "hiking",
         min_gain_ft: Long = 1000
-    ) => (result: ElevatedRouteResult) andThen {
-        routes = osm.geo.Routes.ExtractRoutes(cache = $.cache, route_type = $.route_type)
+    ) => (result: ElevatedRouteFeatures) andThen {
+        routes = osm.Routes.ExtractRoutes(cache = $.cache, route_type = $.route_type)
         enriched = EnrichWithElevation(input_path = routes.result.output_path)
         filtered = FilterByElevationGain(
             input_path = enriched.result.output_path,
@@ -64,8 +64,8 @@ namespace osm.geo.Elevation.Workflows {
         route_type: String = "hiking",
         min_elevation_ft: Long = 8000,
         max_elevation_ft: Long = 14500
-    ) => (result: ElevatedRouteResult) andThen {
-        routes = osm.geo.Routes.ExtractRoutes(cache = $.cache, route_type = $.route_type)
+    ) => (result: ElevatedRouteFeatures) andThen {
+        routes = osm.Routes.ExtractRoutes(cache = $.cache, route_type = $.route_type)
         enriched = EnrichWithElevation(input_path = routes.result.output_path)
         filtered = FilterByElevationRange(
             input_path = enriched.result.output_path,
@@ -79,7 +79,7 @@ namespace osm.geo.Elevation.Workflows {
     workflow FindLowElevationTrails(
         cache: OSMCache,
         max_elevation_ft: Long = 500
-    ) => (result: ElevatedRouteResult) andThen {
+    ) => (result: ElevatedRouteFeatures) andThen {
         trails = HikingTrails(cache = $.cache)
         enriched = EnrichWithElevation(input_path = trails.result.output_path)
         filtered = FilterByMinElevation(

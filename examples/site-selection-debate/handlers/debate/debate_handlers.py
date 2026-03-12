@@ -8,7 +8,7 @@ from typing import Any
 
 from handlers.shared.debate_utils import challenge_position, present_analysis, score_arguments
 
-NAMESPACE = "ssd.Debate"
+NAMESPACE = "siteselection.Debate"
 
 
 def handle_present_analysis(params: dict[str, Any]) -> dict[str, Any]:

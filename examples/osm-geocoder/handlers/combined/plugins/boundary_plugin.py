@@ -2,6 +2,7 @@
 
 Extracts administrative boundaries (country, state, county, city) and
 natural boundaries (water, forest, park).
+Features are streamed to disk during scanning.
 """
 
 from __future__ import annotations
@@ -53,7 +54,12 @@ class BoundaryPlugin(ExtractorPlugin):
         return TagInterest(keys={"boundary", "natural", "landuse", "water"})
 
     def __init__(self) -> None:
-        self.features: list[dict] = []
+        self._admin_count = 0
+        self._natural_count = 0
+
+    def begin(self, pbf_stem: str, output_dir: str) -> None:
+        path = f"{output_dir}/{pbf_stem}_boundaries.geojson"
+        self._open_writer(path)
 
     def process_area(
         self,
@@ -93,7 +99,8 @@ class BoundaryPlugin(ExtractorPlugin):
             return
 
         area_km2 = self._calc_area(geometry)
-        self.features.append(
+        self._admin_count += 1
+        self._writer.write_feature(
             {
                 "type": "Feature",
                 "properties": {
@@ -118,7 +125,8 @@ class BoundaryPlugin(ExtractorPlugin):
         natural_type: str,
     ) -> None:
         area_km2 = self._calc_area(geometry)
-        self.features.append(
+        self._natural_count += 1
+        self._writer.write_feature(
             {
                 "type": "Feature",
                 "properties": {
@@ -144,20 +152,17 @@ class BoundaryPlugin(ExtractorPlugin):
             return 0.0
 
     def finalize(self, pbf_stem: str, output_dir: str) -> PluginResult:
-        path = f"{output_dir}/{pbf_stem}_boundaries.geojson"
-        count = self._write_geojson(self.features, path)
+        if self._writer is None:
+            path = f"{output_dir}/{pbf_stem}_boundaries.geojson"
+            return PluginResult(category=self.category, output_path=path, feature_count=0)
 
-        admin_count = sum(
-            1 for f in self.features if f["properties"].get("boundary_type") == "administrative"
-        )
-        natural_count = count - admin_count
-
+        self._writer.close()
         return PluginResult(
             category=self.category,
-            output_path=path,
-            feature_count=count,
+            output_path=self._writer.path,
+            feature_count=self._writer.feature_count,
             metadata={
-                "administrative": admin_count,
-                "natural": natural_count,
+                "administrative": self._admin_count,
+                "natural": self._natural_count,
             },
         )

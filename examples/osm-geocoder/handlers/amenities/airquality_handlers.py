@@ -1,7 +1,7 @@
 """Air quality event facet handlers.
 
 Handles the FetchAirQuality, CorrelateSchoolAirQuality, and ExposureStatistics
-event facets defined in osmairquality.afl under osm.geo.AirQuality namespace.
+event facets defined in osmairquality.afl under osm.AirQuality namespace.
 
 Fetches air quality readings from the OpenAQ v3 API, correlates schools with
 their nearest sensor using haversine distance, and classifies exposure using
@@ -26,7 +26,7 @@ try:
 except ImportError:
     HAS_REQUESTS = False
 
-NAMESPACE = "osm.geo.AirQuality"
+NAMESPACE = "osm.AirQuality"
 
 # OpenAQ API configuration
 OPENAQ_API_URL = os.environ.get("OPENAQ_API_URL", "https://api.openaq.org/v3")

@@ -12,58 +12,58 @@ Extract amenities (points of interest with services) from OSM data with automati
 ## AFL Facets
 
 ```afl
-namespace osm.geo.Amenities {
+namespace osm.Amenities {
     // General extraction
-    event facet ExtractAmenities(cache: OSMCache, category: String = "all") => (result: AmenityResult)
+    event facet ExtractAmenities(cache: OSMCache, category: String = "all") => (result: AmenityFeatures)
 
     // Food & Drink
-    event facet FoodAndDrink(cache: OSMCache) => (result: AmenityResult)
-    event facet Restaurants(cache: OSMCache) => (result: AmenityResult)
-    event facet Cafes(cache: OSMCache) => (result: AmenityResult)
-    event facet Bars(cache: OSMCache) => (result: AmenityResult)
-    event facet FastFood(cache: OSMCache) => (result: AmenityResult)
+    event facet FoodAndDrink(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Restaurants(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Cafes(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Bars(cache: OSMCache) => (result: AmenityFeatures)
+    event facet FastFood(cache: OSMCache) => (result: AmenityFeatures)
 
     // Shopping
-    event facet Shopping(cache: OSMCache) => (result: AmenityResult)
-    event facet Supermarkets(cache: OSMCache) => (result: AmenityResult)
+    event facet Shopping(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Supermarkets(cache: OSMCache) => (result: AmenityFeatures)
 
     // Services
-    event facet Banks(cache: OSMCache) => (result: AmenityResult)
-    event facet ATMs(cache: OSMCache) => (result: AmenityResult)
-    event facet PostOffices(cache: OSMCache) => (result: AmenityResult)
-    event facet FuelStations(cache: OSMCache) => (result: AmenityResult)
-    event facet ChargingStations(cache: OSMCache) => (result: AmenityResult)
-    event facet Parking(cache: OSMCache) => (result: AmenityResult)
+    event facet Banks(cache: OSMCache) => (result: AmenityFeatures)
+    event facet ATMs(cache: OSMCache) => (result: AmenityFeatures)
+    event facet PostOffices(cache: OSMCache) => (result: AmenityFeatures)
+    event facet FuelStations(cache: OSMCache) => (result: AmenityFeatures)
+    event facet ChargingStations(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Parking(cache: OSMCache) => (result: AmenityFeatures)
 
     // Healthcare
-    event facet Healthcare(cache: OSMCache) => (result: AmenityResult)
-    event facet Hospitals(cache: OSMCache) => (result: AmenityResult)
-    event facet Clinics(cache: OSMCache) => (result: AmenityResult)
-    event facet Pharmacies(cache: OSMCache) => (result: AmenityResult)
-    event facet Dentists(cache: OSMCache) => (result: AmenityResult)
+    event facet Healthcare(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Hospitals(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Clinics(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Pharmacies(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Dentists(cache: OSMCache) => (result: AmenityFeatures)
 
     // Education
-    event facet Education(cache: OSMCache) => (result: AmenityResult)
-    event facet Schools(cache: OSMCache) => (result: AmenityResult)
-    event facet Universities(cache: OSMCache) => (result: AmenityResult)
-    event facet Libraries(cache: OSMCache) => (result: AmenityResult)
+    event facet Education(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Schools(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Universities(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Libraries(cache: OSMCache) => (result: AmenityFeatures)
 
     // Entertainment
-    event facet Entertainment(cache: OSMCache) => (result: AmenityResult)
-    event facet Cinemas(cache: OSMCache) => (result: AmenityResult)
-    event facet Theatres(cache: OSMCache) => (result: AmenityResult)
+    event facet Entertainment(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Cinemas(cache: OSMCache) => (result: AmenityFeatures)
+    event facet Theatres(cache: OSMCache) => (result: AmenityFeatures)
 
     // Statistics and filtering
     event facet AmenityStatistics(input_path: String) => (stats: AmenityStats)
-    event facet SearchAmenities(input_path: String, name_pattern: String) => (result: AmenityResult)
-    event facet FilterByCategory(input_path: String, category: String) => (result: AmenityResult)
+    event facet SearchAmenities(input_path: String, name_pattern: String) => (result: AmenityFeatures)
+    event facet FilterByCategory(input_path: String, category: String) => (result: AmenityFeatures)
 }
 ```
 
 ## Result Schemas
 
 ```afl
-schema AmenityResult {
+schema AmenityFeatures {
     output_path: String
     feature_count: Long
     amenity_category: String
@@ -106,13 +106,13 @@ workflow FindRestaurants(region: String = "Liechtenstein")
     => (map_path: String, restaurant_count: Long) andThen {
 
     // Stage 1: Get cached region data
-    cache = osm.geo.Operations.Cache(region = $.region)
+    cache = osm.ops.CacheRegion(region = $.region)
 
     // Stage 2: Extract restaurants
-    restaurants = osm.geo.Amenities.Restaurants(cache = cache.cache)
+    restaurants = osm.Amenities.Restaurants(cache = cache.cache)
 
     // Stage 3: Visualize on map
-    map = osm.geo.Visualization.RenderMap(
+    map = osm.viz.RenderMap(
         geojson_path = restaurants.result.output_path,
         title = "Restaurants",
         color = "#e74c3c"
@@ -131,11 +131,11 @@ workflow FindRestaurants(region: String = "Liechtenstein")
 workflow FindCoffeeShops(region: String = "Liechtenstein")
     => (result_path: String, count: Long) andThen {
 
-    cache = osm.geo.Operations.Cache(region = $.region)
-    cafes = osm.geo.Amenities.Cafes(cache = cache.cache)
+    cache = osm.ops.CacheRegion(region = $.region)
+    cafes = osm.Amenities.Cafes(cache = cache.cache)
 
     // Search by name pattern (regex)
-    starbucks = osm.geo.Amenities.SearchAmenities(
+    starbucks = osm.Amenities.SearchAmenities(
         input_path = cafes.result.output_path,
         name_pattern = "(?i)starbucks|costa|nero"
     )

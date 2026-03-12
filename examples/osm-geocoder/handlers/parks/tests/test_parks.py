@@ -10,7 +10,7 @@ from handlers.parks.park_extractor import (
     HAS_OSMIUM,
     HAS_SHAPELY,
     PROTECT_CLASS_ALL,
-    ParkResult,
+    ParkFeatures,
     ParkStats,
     ParkType,
     calculate_area_km2,
@@ -402,8 +402,8 @@ class TestResultConversions:
     """Tests for result conversion functions."""
 
     def test_result_to_dict(self):
-        """Test ParkResult to dict conversion."""
-        result = ParkResult(
+        """Test ParkFeatures to dict conversion."""
+        result = ParkFeatures(
             output_path="/tmp/parks.geojson",
             feature_count=42,
             park_type="national",
@@ -479,4 +479,4 @@ class TestHandlerRegistration:
 
     def test_namespace_value(self):
         """Test namespace is correct."""
-        assert NAMESPACE == "osm.geo.Parks"
+        assert NAMESPACE == "osm.Parks"

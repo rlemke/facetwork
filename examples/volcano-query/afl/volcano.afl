@@ -1,23 +1,23 @@
 // Volcano Query — cross-namespace composition using OSM event facets
 //
 // No custom event facets. Composes operations from:
-//   osm.geo.Operations (Cache, Download)
-//   osm.geo.Filters (FilterByOSMTag)
-//   osm.geo.Elevation (FilterByMaxElevation)
-//   osm.geo.Visualization (RenderMap, FormatGeoJSON)
+//   osm.ops (Cache, Download)
+//   osm.Filters (FilterByOSMTag)
+//   osm.Elevation (FilterByMaxElevation)
+//   osm.viz (RenderMap, FormatGeoJSON)
 
 /** Cross-namespace composition that finds volcanoes in OSM data by tag and elevation. */
 namespace volcano {
     use osm.types
-    use osm.geo.Operations
-    use osm.geo.Filters
-    use osm.geo.Elevation
-    use osm.geo.Visualization
+    use osm.ops
+    use osm.Filters
+    use osm.Elevation
+    use osm.viz
 
     /** Downloads and caches OSM data for a given region. */
     facet LoadVolcanoData(region: String = "US") => (cache: OSMCache) andThen {
-        loadVolcanoData = Cache(region = $.region)
-        d = osm.geo.Operations.Download(cache = loadVolcanoData.cache)
+        loadVolcanoData = CacheRegion(region = $.region)
+        d = osm.ops.DownloadPBF(cache = loadVolcanoData.cache)
         yield LoadVolcanoData(cache = d.downloadCache)
     }
 

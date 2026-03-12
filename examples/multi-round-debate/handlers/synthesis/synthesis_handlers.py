@@ -8,7 +8,7 @@ from typing import Any
 
 from handlers.shared.rounds_utils import declare_outcome, summarize_round
 
-NAMESPACE = "rounds.Synthesis"
+NAMESPACE = "multidebate.Synthesis"
 
 
 def handle_summarize_round(params: dict[str, Any]) -> dict[str, Any]:

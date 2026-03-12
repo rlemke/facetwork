@@ -61,12 +61,12 @@ PROGRAM_AST = {
                                 _ef(
                                     "StateBoundaries",
                                     [{"name": "cache", "type": "OSMCache"}],
-                                    [{"name": "result", "type": "BoundaryResult"}],
+                                    [{"name": "result", "type": "BoundaryFeatures"}],
                                 ),
                                 _ef(
                                     "LakeBoundaries",
                                     [{"name": "cache", "type": "OSMCache"}],
-                                    [{"name": "result", "type": "BoundaryResult"}],
+                                    [{"name": "result", "type": "BoundaryFeatures"}],
                                 ),
                             ],
                         },
@@ -101,7 +101,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow BoundaryMapByRegion(
         region: String,
         prefer_continent: String = "",
@@ -265,7 +265,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "Canada",
-            "region_namespace": "osm.geo.cache.NorthAmerica",
+            "region_namespace": "osm.cache.NorthAmerica",
             "continent": "NorthAmerica",
             "geofabrik_path": "north-america/canada",
             "is_ambiguous": False,

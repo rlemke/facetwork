@@ -32,13 +32,13 @@ The `protect_class` tag in OSM corresponds to IUCN protected area categories:
 
 ```afl
 // Extract national parks (boundary=national_park or protect_class=2)
-event facet NationalParks(cache: OSMCache) => (result: ParkResult)
+event facet NationalParks(cache: OSMCache) => (result: ParkFeatures)
 
 // Extract state/regional parks (protect_class=5 or state-designated)
-event facet StateParks(cache: OSMCache) => (result: ParkResult)
+event facet StateParks(cache: OSMCache) => (result: ParkFeatures)
 
 // Extract nature reserves (leisure=nature_reserve)
-event facet NatureReserves(cache: OSMCache) => (result: ParkResult)
+event facet NatureReserves(cache: OSMCache) => (result: ParkFeatures)
 ```
 
 ### Configurable Extraction
@@ -47,16 +47,16 @@ event facet NatureReserves(cache: OSMCache) => (result: ParkResult)
 // Extract all protected areas with optional protect_class filter
 // protect_classes: comma-separated like "1a,1b,2" or "*" for all
 event facet ProtectedAreas(cache: OSMCache,
-    protect_classes: String = "*") => (result: ParkResult)
+    protect_classes: String = "*") => (result: ParkFeatures)
 
 // Extract parks by type
 // park_type: "national", "state", "nature_reserve", "protected_area", "all"
 event facet ExtractParks(cache: OSMCache, park_type: String = "all",
-    protect_classes: String = "*") => (result: ParkResult)
+    protect_classes: String = "*") => (result: ParkFeatures)
 
 // Extract parks with minimum area threshold (in km²)
 event facet LargeParks(cache: OSMCache, min_area_km2: Double = 100,
-    park_type: String = "all") => (result: ParkResult)
+    park_type: String = "all") => (result: ParkFeatures)
 ```
 
 ### Filtering and Statistics
@@ -64,7 +64,7 @@ event facet LargeParks(cache: OSMCache, min_area_km2: Double = 100,
 ```afl
 // Filter existing GeoJSON by park type
 event facet FilterParksByType(input_path: String, park_type: String,
-    protect_classes: String = "*") => (result: ParkResult)
+    protect_classes: String = "*") => (result: ParkFeatures)
 
 // Get park statistics
 event facet ParkStatistics(input_path: String) => (stats: ParkStats)
@@ -72,9 +72,9 @@ event facet ParkStatistics(input_path: String) => (stats: ParkStats)
 
 ## Result Schemas
 
-### ParkResult
+### ParkFeatures
 ```afl
-schema ParkResult {
+schema ParkFeatures {
     output_path: String      // Path to output GeoJSON file
     feature_count: Long      // Number of parks extracted
     park_type: String        // Park type filter used
@@ -128,9 +128,9 @@ Parks are output as GeoJSON with detailed properties:
 
 ### Extract All US National Parks
 ```afl
-workflow USNationalParks() => (result: ParkResult) andThen {
-    cache = osm.geo.cache.NorthAmerica.US.UnitedStates()
-    parks = osm.geo.Parks.NationalParks(cache = cache.cache)
+workflow USNationalParks() => (result: ParkFeatures) andThen {
+    cache = osm.cache.NorthAmerica.US.UnitedStates()
+    parks = osm.Parks.NationalParks(cache = cache.cache)
     yield USNationalParks(result = parks.result)
 }
 ```
@@ -138,16 +138,16 @@ workflow USNationalParks() => (result: ParkResult) andThen {
 ### Extract Large Parks with Statistics
 ```afl
 workflow LargeParksWithStats() => (map_path: String, total_area: Double) andThen {
-    cache = osm.geo.cache.NorthAmerica.US.California()
+    cache = osm.cache.NorthAmerica.US.California()
 
     // Extract parks >= 100 km²
-    parks = osm.geo.Parks.LargeParks(cache = cache.cache, min_area_km2 = 100)
+    parks = osm.Parks.LargeParks(cache = cache.cache, min_area_km2 = 100)
 
     // Get statistics
-    stats = osm.geo.Parks.ParkStatistics(input_path = parks.result.output_path)
+    stats = osm.Parks.ParkStatistics(input_path = parks.result.output_path)
 
     // Visualize
-    map = osm.geo.Visualization.RenderMap(
+    map = osm.viz.RenderMap(
         geojson_path = parks.result.output_path,
         title = "Large Parks",
         color = "#27ae60"
@@ -162,11 +162,11 @@ workflow LargeParksWithStats() => (map_path: String, total_area: Double) andThen
 
 ### Filter by Protection Class
 ```afl
-workflow StrictReserves() => (result: ParkResult) andThen {
-    cache = osm.geo.cache.Europe.Germany()
+workflow StrictReserves() => (result: ParkFeatures) andThen {
+    cache = osm.cache.Europe.Germany()
 
     // Extract only strict nature reserves (IUCN 1a, 1b)
-    reserves = osm.geo.Parks.ProtectedAreas(
+    reserves = osm.Parks.ProtectedAreas(
         cache = cache.cache,
         protect_classes = "1a,1b"
     )

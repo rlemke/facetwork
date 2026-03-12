@@ -30,10 +30,10 @@ Use this example if you need to:
 
 ### 1. Schemas Define the Domain Model
 
-Eight schemas in `ssd.types` cover the full pipeline:
+Eight schemas in `siteselection.types` cover the full pipeline:
 
 ```afl
-namespace ssd.types {
+namespace siteselection.types {
     schema SpatialScore { candidate_id: String, overall_score: Double, ... }
     schema MarketResearch { growth_rate: Double, risk_factors: Json, ... }
     schema AgentPosition { agent_role: String, confidence: Double, ... }
@@ -48,7 +48,7 @@ namespace ssd.types {
 ### 2. Mixins Provide Reusable Configuration
 
 ```afl
-namespace ssd.mixins {
+namespace siteselection.mixins {
     facet ResearchConfig(depth: Int = 3, market_area: String = "default")
     facet DebatePolicy(max_challenges: Int = 3, require_evidence: Boolean = true)
     implicit defaultResearch = ResearchConfig(...)
@@ -60,10 +60,10 @@ namespace ssd.mixins {
 
 Each event facet has a prompt block for LLM execution:
 
-- **ssd.Spatial**: `ScoreCandidate`, `RankCandidates`, `ComputeAccessibility`
-- **ssd.Research**: `SearchMarketTrends`, `GatherRegulations`, `AnalyzeCompetitors`
-- **ssd.Debate**: `PresentAnalysis`, `ChallengePosition`, `ScoreArguments`
-- **ssd.Synthesis**: `SummarizeRound`, `ProduceRanking`, `GenerateReport`
+- **siteselection.Spatial**: `ScoreCandidate`, `RankCandidates`, `ComputeAccessibility`
+- **siteselection.Research**: `SearchMarketTrends`, `GatherRegulations`, `AnalyzeCompetitors`
+- **siteselection.Debate**: `PresentAnalysis`, `ChallengePosition`, `ScoreArguments`
+- **siteselection.Synthesis**: `SummarizeRound`, `ProduceRanking`, `GenerateReport`
 
 ### 4. Composed Facet Encapsulates a Debate Round
 

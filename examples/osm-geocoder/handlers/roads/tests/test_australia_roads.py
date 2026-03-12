@@ -64,7 +64,7 @@ PROGRAM_AST = {
                                         {"name": "cache", "type": "OSMCache"},
                                         {"name": "road_class", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "RoadResult"}],
+                                    [{"name": "result", "type": "RoadFeatures"}],
                                 ),
                                 _ef(
                                     "RoadStatistics",
@@ -104,7 +104,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow RoadMapByRegion(
         region: String,
         road_class: String = "all",
@@ -253,7 +253,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "Australia",
-            "region_namespace": "osm.geo.cache.Australia",
+            "region_namespace": "osm.cache.Australia",
             "continent": "Australia",
             "geofabrik_path": "australia-oceania/australia",
             "is_ambiguous": False,

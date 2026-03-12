@@ -18,8 +18,8 @@ from handlers.shared.ghcn_utils import (
     simple_linear_regression,
 )
 
-logger = logging.getLogger("ghcn.analysis")
-NAMESPACE = "ghcn.Analysis"
+logger = logging.getLogger("weather.analysis")
+NAMESPACE = "weather.Analysis"
 
 
 def _step_log(step_log: Any, msg: str, level: str = "info") -> None:

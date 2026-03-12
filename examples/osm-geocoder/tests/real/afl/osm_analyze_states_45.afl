@@ -1,5 +1,5 @@
 /** Runs composed analysis workflows for 45 US states in parallel. */
-namespace osm.geo.UnitedStates.analysis {
+namespace osm.UnitedStates.analysis {
   use osm.types
 
   /** Runs AnalyzeRegion for 45 US states. */

@@ -12,8 +12,8 @@ from handlers.shared.ghcn_utils import (
     parse_ghcn_csv,
 )
 
-logger = logging.getLogger("ghcn.ingest")
-NAMESPACE = "ghcn.Ingest"
+logger = logging.getLogger("weather.ingest")
+NAMESPACE = "weather.Ingest"
 
 
 def _step_log(step_log: Any, msg: str, level: str = "info") -> None:

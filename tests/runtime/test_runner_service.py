@@ -399,7 +399,7 @@ class TestRunnerServicePolling:
 
         task = TaskDefinition(
             uuid=generate_id(),
-            name="osm.geo.Operations.Cache",
+            name="osm.ops.CacheRegion",
             runner_id="r1",
             workflow_id="w1",
             flow_id="f1",

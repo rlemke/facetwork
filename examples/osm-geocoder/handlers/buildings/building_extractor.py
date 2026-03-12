@@ -114,7 +114,7 @@ BUILDING_TYPE_MAP = {
 
 
 @dataclass
-class BuildingResult:
+class BuildingFeatures:
     """Result of a building extraction operation."""
 
     output_path: str

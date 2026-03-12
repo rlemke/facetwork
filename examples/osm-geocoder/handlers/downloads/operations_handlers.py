@@ -1,7 +1,7 @@
 """Operations event facet handlers for OSM data processing.
 
 Handles Download, Tile, RoutingGraph, Status, Cache, and related operations
-defined in osmoperations.afl under the osm.geo.Operations namespace.
+defined in osmoperations.afl under the osm.ops namespace.
 """
 
 import logging
@@ -12,22 +12,22 @@ from ..cache.cache_handlers import REGION_REGISTRY
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Operations"
+NAMESPACE = "osm.ops"
 
-# All event facets in osm.geo.Operations and their return parameter names.
+# All event facets in osm.ops and their return parameter names.
 # NOTE: Cache is handled separately (takes region:String, not cache:OSMCache).
 OPERATIONS_FACETS: dict[str, str | None] = {
     "Tile": "tiles",
     "RoutingGraph": "graph",
     "Status": "stats",
     "GeoOSMCache": "graph",
-    "DownloadAll": None,  # => ()
-    "TileAll": "tiles",
-    "RoutingGraphAll": "graph",
-    "StatusAll": "stats",
-    "GeoOSMCacheAll": "graph",
+    "DownloadBatch": None,  # => ()
+    "TileBatch": "tiles",
+    "RoutingGraphBatch": "graph",
+    "StatusBatch": "stats",
+    "GeoOSMCacheBatch": "graph",
     "DownloadShapefile": None,  # => ()
-    "DownloadShapefileAll": None,  # => ()
+    "DownloadShapefileBatch": None,  # => ()
 }
 
 # Flat lookup: region name -> Geofabrik path (built from cache_handlers registry)
@@ -227,11 +227,11 @@ def _cache_handler(payload: dict) -> dict:
 def register_operations_handlers(poller) -> None:
     """Register all operations event facet handlers with the poller."""
     # Register the Cache handler (takes region:String, not cache:OSMCache)
-    poller.register(f"{NAMESPACE}.Cache", _cache_handler)
+    poller.register(f"{NAMESPACE}.CacheRegion", _cache_handler)
     # Register the Download handler (takes url:String, path:String, force:Boolean)
-    poller.register(f"{NAMESPACE}.Download", _download_handler)
+    poller.register(f"{NAMESPACE}.DownloadPBF", _download_handler)
 
-    shapefile_facets = {"DownloadShapefile", "DownloadShapefileAll"}
+    shapefile_facets = {"DownloadShapefile", "DownloadShapefileBatch"}
     for facet_name, return_param in OPERATIONS_FACETS.items():
         qualified_name = f"{NAMESPACE}.{facet_name}"
         if facet_name in shapefile_facets:
@@ -245,9 +245,9 @@ _DISPATCH: dict[str, callable] = {}
 
 
 def _build_dispatch() -> None:
-    _DISPATCH[f"{NAMESPACE}.Cache"] = _cache_handler
-    _DISPATCH[f"{NAMESPACE}.Download"] = _download_handler
-    shapefile_facets = {"DownloadShapefile", "DownloadShapefileAll"}
+    _DISPATCH[f"{NAMESPACE}.CacheRegion"] = _cache_handler
+    _DISPATCH[f"{NAMESPACE}.DownloadPBF"] = _download_handler
+    shapefile_facets = {"DownloadShapefile", "DownloadShapefileBatch"}
     for facet_name, return_param in OPERATIONS_FACETS.items():
         qualified_name = f"{NAMESPACE}.{facet_name}"
         if facet_name in shapefile_facets:

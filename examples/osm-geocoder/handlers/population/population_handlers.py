@@ -1,7 +1,7 @@
 """Population filter event facet handlers.
 
 Handles population filtering events defined in osmfilters_population.afl
-under osm.geo.Population namespace.
+under osm.Population namespace.
 """
 
 import logging
@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from ..shared.output_cache import cached_result, save_result_meta
 from .population_filter import (
     Operator,
-    PopulationFilterResult,
+    PopulationFilteredFeatures,
     PopulationStats,
     calculate_population_stats,
     filter_geojson_by_population,
@@ -19,7 +19,7 @@ from .population_filter import (
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Population"
+NAMESPACE = "osm.Population"
 
 
 def _make_filter_by_population_handler(facet_name: str):
@@ -184,8 +184,8 @@ def _make_population_stats_handler(facet_name: str):
     return handler
 
 
-def _result_to_dict(result: PopulationFilterResult) -> dict:
-    """Convert a PopulationFilterResult to a dictionary."""
+def _result_to_dict(result: PopulationFilteredFeatures) -> dict:
+    """Convert a PopulationFilteredFeatures to a dictionary."""
     return {
         "output_path": result.output_path,
         "feature_count": result.feature_count,

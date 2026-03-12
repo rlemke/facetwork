@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 from ..shared.output_cache import cached_result, save_result_meta
 from .road_extractor import (
-    RoadResult,
+    RoadFeatures,
     RoadStats,
     calculate_road_stats,
     filter_by_speed_limit,
@@ -18,7 +18,7 @@ from .road_extractor import (
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Roads"
+NAMESPACE = "osm.Roads"
 
 
 def _make_road_stats_handler(facet_name: str):
@@ -140,8 +140,8 @@ def _make_filter_by_speed_handler(facet_name: str):
     return handler
 
 
-def _result_to_dict(result: RoadResult) -> dict:
-    """Convert RoadResult to dict."""
+def _result_to_dict(result: RoadFeatures) -> dict:
+    """Convert RoadFeatures to dict."""
     return {
         "output_path": result.output_path,
         "feature_count": result.feature_count,

@@ -2,6 +2,7 @@
 
 Extracts cycle routes, hiking trails, train lines, bus routes, and
 associated infrastructure (bike parking, shelters, stations, etc.).
+Features are streamed to disk during scanning.
 """
 
 from __future__ import annotations
@@ -39,9 +40,10 @@ class RoutePlugin(ExtractorPlugin):
         return TagInterest(keys=_ALL_KEYS)
 
     def __init__(self) -> None:
-        self.infra_features: list[dict] = []
-        self.way_features: list[dict] = []
-        self.relation_features: list[dict] = []
+        self._infra_count = 0
+        self._way_count = 0
+        self._relation_count = 0
+        self._total_way_km = 0.0
 
     def _classify(self, tags: dict[str, str]) -> list[str]:
         """Return list of route types this element belongs to."""
@@ -58,9 +60,14 @@ class RoutePlugin(ExtractorPlugin):
                 break
         return types or ["other"]
 
+    def begin(self, pbf_stem: str, output_dir: str) -> None:
+        path = f"{output_dir}/{pbf_stem}_routes.geojson"
+        self._open_writer(path)
+
     def process_node(self, node_id: int, tags: dict[str, str], lon: float, lat: float) -> None:
         route_types = self._classify(tags)
-        self.infra_features.append(
+        self._infra_count += 1
+        self._writer.write_feature(
             {
                 "type": "Feature",
                 "properties": {
@@ -87,7 +94,9 @@ class RoutePlugin(ExtractorPlugin):
             return
         route_types = self._classify(tags)
         length_km = _haversine_length(coords)
-        self.way_features.append(
+        self._way_count += 1
+        self._total_way_km += length_km
+        self._writer.write_feature(
             {
                 "type": "Feature",
                 "properties": {
@@ -110,7 +119,8 @@ class RoutePlugin(ExtractorPlugin):
 
     def process_relation(self, relation_id: int, tags: dict[str, str], members: list[dict]) -> None:
         route_types = self._classify(tags)
-        self.relation_features.append(
+        self._relation_count += 1
+        self._writer.write_feature(
             {
                 "type": "Feature",
                 "properties": {
@@ -129,20 +139,20 @@ class RoutePlugin(ExtractorPlugin):
         )
 
     def finalize(self, pbf_stem: str, output_dir: str) -> PluginResult:
-        all_features = self.infra_features + self.way_features + self.relation_features
-        path = f"{output_dir}/{pbf_stem}_routes.geojson"
-        count = self._write_geojson(all_features, path)
+        if self._writer is None:
+            path = f"{output_dir}/{pbf_stem}_routes.geojson"
+            return PluginResult(category=self.category, output_path=path, feature_count=0)
 
-        total_km = sum(f["properties"].get("length_km", 0) for f in self.way_features)
+        self._writer.close()
         return PluginResult(
             category=self.category,
-            output_path=path,
-            feature_count=count,
+            output_path=self._writer.path,
+            feature_count=self._writer.feature_count,
             metadata={
-                "infrastructure": len(self.infra_features),
-                "ways": len(self.way_features),
-                "relations": len(self.relation_features),
-                "total_way_km": round(total_km, 2),
+                "infrastructure": self._infra_count,
+                "ways": self._way_count,
+                "relations": self._relation_count,
+                "total_way_km": round(self._total_way_km, 2),
             },
         )
 

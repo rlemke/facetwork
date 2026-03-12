@@ -99,25 +99,32 @@ class TestAmenityPlugin:
         from ..plugins.amenity_plugin import AmenityPlugin
 
         plugin = AmenityPlugin()
-        plugin.process_node(1, {"amenity": "restaurant", "name": "Pizza Place"}, -86.5, 34.7)
-        assert len(plugin.features) == 1
-        assert plugin.features[0]["properties"]["name"] == "Pizza Place"
-        assert plugin.features[0]["geometry"]["coordinates"] == [-86.5, 34.7]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_node(1, {"amenity": "restaurant", "name": "Pizza Place"}, -86.5, 34.7)
+            assert plugin._writer.feature_count == 1
+            result = plugin.finalize("test-pbf", tmpdir)
+            with open(result.output_path) as f:
+                geojson = json.load(f)
+            assert geojson["features"][0]["properties"]["name"] == "Pizza Place"
+            assert geojson["features"][0]["geometry"]["coordinates"] == [-86.5, 34.7]
 
     def test_ignores_non_amenity(self):
         from ..plugins.amenity_plugin import AmenityPlugin
 
         plugin = AmenityPlugin()
-        plugin.process_node(1, {"highway": "primary"}, 0, 0)
-        assert len(plugin.features) == 0
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_node(1, {"highway": "primary"}, 0, 0)
+            assert plugin._writer.feature_count == 0
 
     def test_finalize_writes_geojson(self):
         from ..plugins.amenity_plugin import AmenityPlugin
 
         plugin = AmenityPlugin()
-        plugin.process_node(1, {"amenity": "cafe", "name": "Coffee"}, -86.5, 34.7)
-
         with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_node(1, {"amenity": "cafe", "name": "Coffee"}, -86.5, 34.7)
             result = plugin.finalize("test-pbf", tmpdir)
             assert result.feature_count == 1
             assert os.path.exists(result.output_path)
@@ -135,29 +142,41 @@ class TestPopulationPlugin:
         from ..plugins.population_plugin import PopulationPlugin
 
         plugin = PopulationPlugin()
-        plugin.process_node(
-            1,
-            {"place": "city", "name": "Birmingham", "population": "200000"},
-            -86.8,
-            33.5,
-        )
-        assert len(plugin.features) == 1
-        assert plugin.features[0]["properties"]["population"] == 200000
-        assert plugin.features[0]["properties"]["place"] == "city"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_node(
+                1,
+                {"place": "city", "name": "Birmingham", "population": "200000"},
+                -86.8,
+                33.5,
+            )
+            assert plugin._writer.feature_count == 1
+            result = plugin.finalize("test-pbf", tmpdir)
+            with open(result.output_path) as f:
+                geojson = json.load(f)
+            assert geojson["features"][0]["properties"]["population"] == 200000
+            assert geojson["features"][0]["properties"]["place"] == "city"
 
     def test_ignores_non_place(self):
         from ..plugins.population_plugin import PopulationPlugin
 
         plugin = PopulationPlugin()
-        plugin.process_node(1, {"amenity": "school"}, 0, 0)
-        assert len(plugin.features) == 0
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_node(1, {"amenity": "school"}, 0, 0)
+            assert plugin._writer.feature_count == 0
 
     def test_handles_missing_population(self):
         from ..plugins.population_plugin import PopulationPlugin
 
         plugin = PopulationPlugin()
-        plugin.process_node(1, {"place": "village", "name": "Tiny"}, 0, 0)
-        assert plugin.features[0]["properties"]["population"] == 0
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_node(1, {"place": "village", "name": "Tiny"}, 0, 0)
+            result = plugin.finalize("test-pbf", tmpdir)
+            with open(result.output_path) as f:
+                geojson = json.load(f)
+            assert geojson["features"][0]["properties"]["population"] == 0
 
 
 # ── Road plugin unit tests ───────────────────────────────────────────
@@ -168,29 +187,38 @@ class TestRoadPlugin:
         from ..plugins.road_plugin import RoadPlugin
 
         plugin = RoadPlugin()
-        coords = [(-86.5, 34.7), (-86.6, 34.8)]
-        plugin.process_way(
-            1, {"highway": "primary", "name": "Main St", "maxspeed": "45 mph"}, coords
-        )
-        assert len(plugin.features) == 1
-        props = plugin.features[0]["properties"]
-        assert props["road_class"] == "primary"
-        assert props["maxspeed"] == 72  # 45 mph → ~72 km/h
-        assert props["length_km"] > 0
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            coords = [(-86.5, 34.7), (-86.6, 34.8)]
+            plugin.process_way(
+                1, {"highway": "primary", "name": "Main St", "maxspeed": "45 mph"}, coords
+            )
+            assert plugin._writer.feature_count == 1
+            result = plugin.finalize("test-pbf", tmpdir)
+            with open(result.output_path) as f:
+                geojson = json.load(f)
+            props = geojson["features"][0]["properties"]
+            assert props["road_class"] == "primary"
+            assert props["maxspeed"] == 72  # 45 mph → ~72 km/h
+            assert props["length_km"] > 0
 
     def test_ignores_non_highway(self):
         from ..plugins.road_plugin import RoadPlugin
 
         plugin = RoadPlugin()
-        plugin.process_way(1, {"building": "yes"}, [(0, 0), (1, 1)])
-        assert len(plugin.features) == 0
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_way(1, {"building": "yes"}, [(0, 0), (1, 1)])
+            assert plugin._writer.feature_count == 0
 
     def test_requires_min_coords(self):
         from ..plugins.road_plugin import RoadPlugin
 
         plugin = RoadPlugin()
-        plugin.process_way(1, {"highway": "primary"}, [(0, 0)])
-        assert len(plugin.features) == 0
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_way(1, {"highway": "primary"}, [(0, 0)])
+            assert plugin._writer.feature_count == 0
 
 
 # ── Park plugin unit tests ───────────────────────────────────────────
@@ -201,22 +229,29 @@ class TestParkPlugin:
         from ..plugins.park_plugin import ParkPlugin
 
         plugin = ParkPlugin()
-        plugin.process_area(
-            1,
-            {"boundary": "national_park", "name": "Yellowstone"},
-            None,  # no geometry in unit test
-            100,
-            False,
-        )
-        assert len(plugin.features) == 1
-        assert plugin.features[0]["properties"]["park_type"] == "national"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_area(
+                1,
+                {"boundary": "national_park", "name": "Yellowstone"},
+                None,  # no geometry in unit test
+                100,
+                False,
+            )
+            assert plugin._writer.feature_count == 1
+            result = plugin.finalize("test-pbf", tmpdir)
+            with open(result.output_path) as f:
+                geojson = json.load(f)
+            assert geojson["features"][0]["properties"]["park_type"] == "national"
 
     def test_ignores_non_park(self):
         from ..plugins.park_plugin import ParkPlugin
 
         plugin = ParkPlugin()
-        plugin.process_area(1, {"building": "house"}, None, 100, True)
-        assert len(plugin.features) == 0
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_area(1, {"building": "house"}, None, 100, True)
+            assert plugin._writer.feature_count == 0
 
 
 # ── Building plugin unit tests ───────────────────────────────────────
@@ -227,23 +262,30 @@ class TestBuildingPlugin:
         from ..plugins.building_plugin import BuildingPlugin
 
         plugin = BuildingPlugin()
-        plugin.process_area(
-            1,
-            {"building": "residential", "name": "Home", "building:levels": "2"},
-            None,
-            100,
-            True,
-        )
-        assert len(plugin.features) == 1
-        assert plugin.features[0]["properties"]["building_type"] == "residential"
-        assert plugin.features[0]["properties"]["levels"] == 2
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_area(
+                1,
+                {"building": "residential", "name": "Home", "building:levels": "2"},
+                None,
+                100,
+                True,
+            )
+            assert plugin._writer.feature_count == 1
+            result = plugin.finalize("test-pbf", tmpdir)
+            with open(result.output_path) as f:
+                geojson = json.load(f)
+            assert geojson["features"][0]["properties"]["building_type"] == "residential"
+            assert geojson["features"][0]["properties"]["levels"] == 2
 
     def test_ignores_non_building(self):
         from ..plugins.building_plugin import BuildingPlugin
 
         plugin = BuildingPlugin()
-        plugin.process_area(1, {"leisure": "park"}, None, 100, True)
-        assert len(plugin.features) == 0
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_area(1, {"leisure": "park"}, None, 100, True)
+            assert plugin._writer.feature_count == 0
 
 
 # ── Boundary plugin unit tests ───────────────────────────────────────
@@ -254,43 +296,55 @@ class TestBoundaryPlugin:
         from ..plugins.boundary_plugin import BoundaryPlugin
 
         plugin = BoundaryPlugin()
-        plugin.process_area(
-            1,
-            {"boundary": "administrative", "admin_level": "4", "name": "Alabama"},
-            None,
-            100,
-            False,
-        )
-        assert len(plugin.features) == 1
-        assert plugin.features[0]["properties"]["admin_type"] == "state"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_area(
+                1,
+                {"boundary": "administrative", "admin_level": "4", "name": "Alabama"},
+                None,
+                100,
+                False,
+            )
+            assert plugin._writer.feature_count == 1
+            result = plugin.finalize("test-pbf", tmpdir)
+            with open(result.output_path) as f:
+                geojson = json.load(f)
+            assert geojson["features"][0]["properties"]["admin_type"] == "state"
 
     def test_ignores_non_admin_levels(self):
         from ..plugins.boundary_plugin import BoundaryPlugin
 
         plugin = BoundaryPlugin()
-        # admin_level 10 is not in ADMIN_LEVELS
-        plugin.process_area(
-            1,
-            {"boundary": "administrative", "admin_level": "10"},
-            None,
-            100,
-            False,
-        )
-        assert len(plugin.features) == 0
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            # admin_level 10 is not in ADMIN_LEVELS
+            plugin.process_area(
+                1,
+                {"boundary": "administrative", "admin_level": "10"},
+                None,
+                100,
+                False,
+            )
+            assert plugin._writer.feature_count == 0
 
     def test_processes_water(self):
         from ..plugins.boundary_plugin import BoundaryPlugin
 
         plugin = BoundaryPlugin()
-        plugin.process_area(
-            1,
-            {"natural": "water", "name": "Lake Test"},
-            None,
-            100,
-            True,
-        )
-        assert len(plugin.features) == 1
-        assert plugin.features[0]["properties"]["natural_type"] == "water"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_area(
+                1,
+                {"natural": "water", "name": "Lake Test"},
+                None,
+                100,
+                True,
+            )
+            assert plugin._writer.feature_count == 1
+            result = plugin.finalize("test-pbf", tmpdir)
+            with open(result.output_path) as f:
+                geojson = json.load(f)
+            assert geojson["features"][0]["properties"]["natural_type"] == "water"
 
 
 # ── Route plugin unit tests ──────────────────────────────────────────
@@ -301,21 +355,28 @@ class TestRoutePlugin:
         from ..plugins.route_plugin import RoutePlugin
 
         plugin = RoutePlugin()
-        coords = [(-86.5, 34.7), (-86.6, 34.8)]
-        plugin.process_way(1, {"highway": "cycleway", "name": "Bike Path"}, coords)
-        assert len(plugin.way_features) == 1
-        assert "bicycle" in plugin.way_features[0]["properties"]["route_types"]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            coords = [(-86.5, 34.7), (-86.6, 34.8)]
+            plugin.process_way(1, {"highway": "cycleway", "name": "Bike Path"}, coords)
+            assert plugin._way_count == 1
+            result = plugin.finalize("test-pbf", tmpdir)
+            with open(result.output_path) as f:
+                geojson = json.load(f)
+            assert "bicycle" in geojson["features"][0]["properties"]["route_types"]
 
     def test_processes_route_relation(self):
         from ..plugins.route_plugin import RoutePlugin
 
         plugin = RoutePlugin()
-        plugin.process_relation(
-            1,
-            {"route": "hiking", "name": "Appalachian Trail"},
-            [{"type": "w", "ref": 100, "role": ""}],
-        )
-        assert len(plugin.relation_features) == 1
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugin.begin("test-pbf", tmpdir)
+            plugin.process_relation(
+                1,
+                {"route": "hiking", "name": "Appalachian Trail"},
+                [{"type": "w", "ref": 100, "role": ""}],
+            )
+            assert plugin._relation_count == 1
 
 
 # ── Combined handler dispatch tests ──────────────────────────────────
@@ -486,3 +547,67 @@ class TestCombinedScanResult:
                 combined_scan("/tmp/fake.pbf", ["nonexistent_plugin"])
         finally:
             combined_handler.HAS_OSMIUM = orig
+
+
+# ── GeoJSON streaming writer tests ──────────────────────────────────
+
+
+class TestGeoJSONStreamWriter:
+    def test_empty_collection(self):
+        from ...shared.geojson_writer import GeoJSONStreamWriter
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = f"{tmpdir}/empty.geojson"
+            with GeoJSONStreamWriter(path) as w:
+                pass
+            assert w.feature_count == 0
+            with open(path) as f:
+                geojson = json.load(f)
+            assert geojson == {"type": "FeatureCollection", "features": []}
+
+    def test_single_feature(self):
+        from ...shared.geojson_writer import GeoJSONStreamWriter
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = f"{tmpdir}/one.geojson"
+            feature = {"type": "Feature", "properties": {"a": 1}, "geometry": None}
+            with GeoJSONStreamWriter(path) as w:
+                w.write_feature(feature)
+            assert w.feature_count == 1
+            with open(path) as f:
+                geojson = json.load(f)
+            assert len(geojson["features"]) == 1
+            assert geojson["features"][0]["properties"]["a"] == 1
+
+    def test_multiple_features(self):
+        from ...shared.geojson_writer import GeoJSONStreamWriter
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = f"{tmpdir}/multi.geojson"
+            with GeoJSONStreamWriter(path) as w:
+                for i in range(100):
+                    w.write_feature({"type": "Feature", "properties": {"idx": i}, "geometry": None})
+            assert w.feature_count == 100
+            with open(path) as f:
+                geojson = json.load(f)
+            assert len(geojson["features"]) == 100
+            assert geojson["features"][99]["properties"]["idx"] == 99
+
+    def test_write_after_close_raises(self):
+        from ...shared.geojson_writer import GeoJSONStreamWriter
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = f"{tmpdir}/closed.geojson"
+            w = GeoJSONStreamWriter(path)
+            w.close()
+            with pytest.raises(RuntimeError, match="closed"):
+                w.write_feature({"type": "Feature"})
+
+    def test_double_close_safe(self):
+        from ...shared.geojson_writer import GeoJSONStreamWriter
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = f"{tmpdir}/double.geojson"
+            w = GeoJSONStreamWriter(path)
+            w.close()
+            w.close()  # should not raise

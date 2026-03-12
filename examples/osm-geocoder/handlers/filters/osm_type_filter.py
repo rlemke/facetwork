@@ -61,7 +61,7 @@ class OSMType(Enum):
 
 
 @dataclass
-class OSMFilterResult:
+class OSMFilteredFeatures:
     """Result of an OSM filtering operation."""
 
     output_path: str
@@ -284,7 +284,7 @@ def filter_pbf_by_type(
     include_dependencies: bool = False,
     output_path: str | Path | None = None,
     step_log=None,
-) -> OSMFilterResult:
+) -> OSMFilteredFeatures:
     """Filter a PBF file by OSM element type and/or tags.
 
     Args:
@@ -297,7 +297,7 @@ def filter_pbf_by_type(
         step_log: Optional callback for progress reporting.
 
     Returns:
-        OSMFilterResult with output path and counts
+        OSMFilteredFeatures with output path and counts
     """
     if not HAS_OSMIUM:
         raise RuntimeError("pyosmium is required for PBF filtering")
@@ -368,7 +368,7 @@ def filter_pbf_by_type(
     # Build filter description
     filter_desc = _describe_osm_filter(osm_type, tag_key, tag_value, include_dependencies)
 
-    return OSMFilterResult(
+    return OSMFilteredFeatures(
         output_path=output_path_str,
         feature_count=len(features),
         original_count=handler.total_count,
@@ -386,7 +386,7 @@ def filter_geojson_by_osm_type(
     tag_key: str | None = None,
     tag_value: str | None = None,
     output_path: str | Path | None = None,
-) -> OSMFilterResult:
+) -> OSMFilteredFeatures:
     """Filter a GeoJSON file by OSM element type and/or tags.
 
     This filters GeoJSON features that have osm_type and tag properties.
@@ -399,7 +399,7 @@ def filter_geojson_by_osm_type(
         output_path: Path to output GeoJSON file (default: adds _filtered suffix)
 
     Returns:
-        OSMFilterResult with output path and counts
+        OSMFilteredFeatures with output path and counts
     """
     input_path = str(input_path)
     if output_path is None:
@@ -452,7 +452,7 @@ def filter_geojson_by_osm_type(
 
     filter_desc = _describe_osm_filter(osm_type, tag_key, tag_value, False)
 
-    return OSMFilterResult(
+    return OSMFilteredFeatures(
         output_path=output_path_str,
         feature_count=len(filtered_features),
         original_count=original_count,

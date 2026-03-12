@@ -1,15 +1,15 @@
 /** Aggregates individual North American country OSM data downloads. */
-namespace osm.geo.NorthAmerica.cache {
+namespace osm.NorthAmerica.cache {
   use osm.types
-  use osm.geo.cache.NorthAmerica
+  use osm.cache.NorthAmerica
 
   /** Caches each North American country individually in parallel. */
   facet NorthAmericaIndividually () => (cache: [OSMCache]) andThen {
 
-    canada = osm.geo.cache.NorthAmerica.Canada()
-    mexico = osm.geo.cache.NorthAmerica.Mexico()
-    unitedStates = osm.geo.cache.NorthAmerica.UnitedStates()
-    greenland = osm.geo.cache.NorthAmerica.Greenland()
+    canada = osm.cache.NorthAmerica.Canada()
+    mexico = osm.cache.NorthAmerica.Mexico()
+    unitedStates = osm.cache.NorthAmerica.UnitedStates()
+    greenland = osm.cache.NorthAmerica.Greenland()
 
     yield NorthAmericaIndividually(cache = canada.cache ++
                                    mexico.cache ++

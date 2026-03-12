@@ -1,8 +1,9 @@
 """Base class and types for extractor plugins.
 
 Each plugin declares which OSM element types and tags it cares about,
-then receives matching elements via process_* callbacks.  After the
-single-pass scan completes, ``finalize()`` builds the output GeoJSON.
+then receives matching elements via process_* callbacks.  Features are
+streamed to disk via :class:`GeoJSONStreamWriter` during the scan —
+plugins no longer need to accumulate features in memory.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from enum import Flag, auto
 from typing import Any
 
 from ..shared._output import ensure_dir, open_output
+from ..shared.geojson_writer import GeoJSONStreamWriter
 
 log = logging.getLogger(__name__)
 
@@ -64,7 +66,16 @@ class PluginResult:
 
 
 class ExtractorPlugin(ABC):
-    """Abstract base for combined-scan extractor plugins."""
+    """Abstract base for combined-scan extractor plugins.
+
+    Plugins stream features to disk via :class:`GeoJSONStreamWriter`.
+    Call :meth:`begin` before the scan to open the output file, then
+    write features via ``self._writer.write_feature(...)`` in the
+    ``process_*`` callbacks.  :meth:`finalize` closes the writer and
+    returns the result.
+    """
+
+    _writer: GeoJSONStreamWriter | None = None
 
     @property
     @abstractmethod
@@ -80,6 +91,13 @@ class ExtractorPlugin(ABC):
     @abstractmethod
     def tag_interest(self) -> TagInterest:
         """Tag filter for pre-screening elements."""
+
+    def begin(self, pbf_stem: str, output_dir: str) -> None:  # noqa: B027
+        """Open the output stream before scanning.
+
+        Subclasses can override to open additional writers, but should
+        call ``super().begin(...)`` or set ``self._writer`` themselves.
+        """
 
     def process_node(  # noqa: B027
         self, node_id: int, tags: dict[str, str], lon: float, lat: float
@@ -117,10 +135,19 @@ class ExtractorPlugin(ABC):
 
     @abstractmethod
     def finalize(self, pbf_stem: str, output_dir: str) -> PluginResult:
-        """Write output and return result.  Called after the scan completes."""
+        """Close output stream and return result.  Called after the scan."""
+
+    def _open_writer(self, output_path: str) -> GeoJSONStreamWriter:
+        """Open a streaming GeoJSON writer for the given path."""
+        writer = GeoJSONStreamWriter(output_path)
+        self._writer = writer
+        return writer
 
     def _write_geojson(self, features: list[dict], output_path: str) -> int:
-        """Helper: write a GeoJSON FeatureCollection and return feature count."""
+        """Helper: write a GeoJSON FeatureCollection and return feature count.
+
+        .. deprecated:: Use streaming via ``_open_writer`` / ``_writer.write_feature`` instead.
+        """
         ensure_dir(output_path)
         geojson = {"type": "FeatureCollection", "features": features}
         with open_output(output_path) as f:

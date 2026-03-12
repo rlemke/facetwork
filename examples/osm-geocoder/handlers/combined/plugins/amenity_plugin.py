@@ -1,6 +1,7 @@
 """Amenity extractor plugin — node-only.
 
 Extracts amenities (food, shopping, healthcare, etc.) from OSM nodes.
+Features are streamed to disk during scanning.
 """
 
 from __future__ import annotations
@@ -25,7 +26,11 @@ class AmenityPlugin(ExtractorPlugin):
         return TagInterest(keys={"amenity", "shop", "tourism"})
 
     def __init__(self) -> None:
-        self.features: list[dict] = []
+        self._category_counts: dict[str, int] = {}
+
+    def begin(self, pbf_stem: str, output_dir: str) -> None:
+        path = f"{output_dir}/{pbf_stem}_amenities.geojson"
+        self._open_writer(path)
 
     def process_node(self, node_id: int, tags: dict[str, str], lon: float, lat: float) -> None:
         amenity = tags.get("amenity", "")
@@ -34,7 +39,10 @@ class AmenityPlugin(ExtractorPlugin):
         if not amenity and not shop and not tourism:
             return
 
-        self.features.append(
+        cat = classify_amenity(tags)
+        self._category_counts[cat] = self._category_counts.get(cat, 0) + 1
+
+        self._writer.write_feature(
             {
                 "type": "Feature",
                 "properties": {
@@ -43,7 +51,7 @@ class AmenityPlugin(ExtractorPlugin):
                     "amenity": amenity,
                     "shop": shop,
                     "tourism": tourism,
-                    "category": classify_amenity(tags),
+                    "category": cat,
                     "name": tags.get("name", ""),
                     "opening_hours": tags.get("opening_hours", ""),
                     "phone": tags.get("phone", ""),
@@ -59,19 +67,14 @@ class AmenityPlugin(ExtractorPlugin):
         )
 
     def finalize(self, pbf_stem: str, output_dir: str) -> PluginResult:
-        path = f"{output_dir}/{pbf_stem}_amenities.geojson"
-        count = self._write_geojson(self.features, path)
+        if self._writer is None:
+            path = f"{output_dir}/{pbf_stem}_amenities.geojson"
+            return PluginResult(category=self.category, output_path=path, feature_count=0)
+
+        self._writer.close()
         return PluginResult(
             category=self.category,
-            output_path=path,
-            feature_count=count,
-            metadata={"categories": _count_categories(self.features)},
+            output_path=self._writer.path,
+            feature_count=self._writer.feature_count,
+            metadata={"categories": self._category_counts},
         )
-
-
-def _count_categories(features: list[dict]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for f in features:
-        cat = f["properties"].get("category", "other")
-        counts[cat] = counts.get(cat, 0) + 1
-    return counts

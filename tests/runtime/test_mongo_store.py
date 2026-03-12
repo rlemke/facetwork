@@ -318,7 +318,7 @@ class TestStepDedupIndex:
 
         orphan_task = TaskDefinition(
             uuid=str(step_id()),
-            name="osm.geo.Test",
+            name="osm.Test",
             runner_id="r1",
             workflow_id=str(wf_id),
             flow_id="f1",
@@ -355,7 +355,7 @@ class TestStepDedupIndex:
 
         task1 = TaskDefinition(
             uuid=str(step_id()),
-            name="osm.geo.Test",
+            name="osm.Test",
             runner_id="r1",
             workflow_id=str(wf_id),
             flow_id="f1",

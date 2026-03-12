@@ -559,7 +559,7 @@ class ExecutionContext:
         facet_short = parts[-1]
 
         # Strategy 1: flat namespace match — try every possible split point.
-        # e.g. "osm.geo.Region.ResolveRegion" tries namespace "osm.geo.Region"
+        # e.g. "osm.Region.ResolveRegion" tries namespace "osm.Region"
         for i in range(len(parts) - 1, 0, -1):
             ns_name = ".".join(parts[:i])
             for decl in declarations:

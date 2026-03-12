@@ -66,7 +66,7 @@ PROGRAM_AST = {
                                         {"name": "place_type", "type": "String"},
                                         {"name": "min_population", "type": "Long"},
                                     ],
-                                    [{"name": "result", "type": "PopulationFilterResult"}],
+                                    [{"name": "result", "type": "PopulationFilteredFeatures"}],
                                 ),
                                 _ef(
                                     "FilterByPopulation",
@@ -76,7 +76,7 @@ PROGRAM_AST = {
                                         {"name": "place_type", "type": "String"},
                                         {"name": "operator", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "PopulationFilterResult"}],
+                                    [{"name": "result", "type": "PopulationFilteredFeatures"}],
                                 ),
                                 _ef(
                                     "PopulationStatistics",
@@ -119,7 +119,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow PopulationMapByRegion(
         region: String,
         min_population: Long = 500000,
@@ -220,7 +220,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "Nigeria",
-            "region_namespace": "osm.geo.cache.Africa",
+            "region_namespace": "osm.cache.Africa",
             "continent": "Africa",
             "geofabrik_path": "africa/nigeria",
             "is_ambiguous": False,

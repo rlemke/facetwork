@@ -40,7 +40,7 @@ from afl.dashboard.helpers import extract_handler_prefix, group_handlers_by_name
 
 class TestExtractHandlerPrefix:
     def test_dotted_name(self):
-        assert extract_handler_prefix("osm.geo.Cache") == "osm"
+        assert extract_handler_prefix("osm.Cache") == "osm"
 
     def test_deeply_dotted(self):
         assert extract_handler_prefix("aws.lambda.deploy.CreateFunction") == "aws"
@@ -64,15 +64,15 @@ class TestGroupHandlersByNamespace:
 
     def test_groups_by_namespace(self):
         handlers = [
-            self._make_handler("osm.geo.Cache"),
-            self._make_handler("osm.geo.Routes"),
+            self._make_handler("osm.Cache"),
+            self._make_handler("osm.Routes"),
             self._make_handler("aws.lambda.Deploy"),
         ]
         groups = group_handlers_by_namespace(handlers)
         assert len(groups) == 2
         assert groups[0]["namespace"] == "aws.lambda"
         assert groups[0]["total"] == 1
-        assert groups[1]["namespace"] == "osm.geo"
+        assert groups[1]["namespace"] == "osm"
         assert groups[1]["total"] == 2
 
     def test_single_namespace(self):
@@ -103,7 +103,7 @@ class TestGroupHandlersByNamespace:
 
     def test_mixed_namespaces_and_top_level(self):
         handlers = [
-            self._make_handler("osm.geo.Cache"),
+            self._make_handler("osm.Cache"),
             self._make_handler("TopLevel"),
             self._make_handler("osm.boundaries.Extract"),
         ]
@@ -112,7 +112,7 @@ class TestGroupHandlersByNamespace:
         ns_names = [g["namespace"] for g in groups]
         assert "(top-level)" in ns_names
         assert "osm.boundaries" in ns_names
-        assert "osm.geo" in ns_names
+        assert "osm" in ns_names
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ pytestmark_routes = pytest.mark.skipif(
 
 
 def _make_handler_entity(
-    facet_name="osm.geo.Cache",
+    facet_name="osm.Cache",
     module_uri="osm.handlers.cache",
     entrypoint="handle",
     version="1.0.0",
@@ -173,15 +173,15 @@ class TestV2HandlerList:
 
     def test_handler_list_with_handlers(self, client):
         tc, store = client
-        store.save_handler_registration(_make_handler_entity("osm.geo.Cache"))
+        store.save_handler_registration(_make_handler_entity("osm.Cache"))
         resp = tc.get("/v2/handlers?tab=all")
         assert resp.status_code == 200
-        assert "osm.geo" in resp.text
+        assert ">osm<" in resp.text or "osm" in resp.text
         assert "Cache" in resp.text
 
     def test_handler_list_tab_filter(self, client):
         tc, store = client
-        store.save_handler_registration(_make_handler_entity("osm.geo.Cache"))
+        store.save_handler_registration(_make_handler_entity("osm.Cache"))
         store.save_handler_registration(
             _make_handler_entity("aws.lambda.Deploy", module_uri="aws.handlers.deploy")
         )
@@ -193,14 +193,14 @@ class TestV2HandlerList:
 
     def test_handler_list_tab_excludes_other_prefixes(self, client):
         tc, store = client
-        store.save_handler_registration(_make_handler_entity("osm.geo.Cache"))
+        store.save_handler_registration(_make_handler_entity("osm.Cache"))
         resp = tc.get("/v2/handlers?tab=aws")
         assert resp.status_code == 200
         assert "No handlers" in resp.text
 
     def test_handler_list_all_tab_shows_everything(self, client):
         tc, store = client
-        store.save_handler_registration(_make_handler_entity("osm.geo.Cache"))
+        store.save_handler_registration(_make_handler_entity("osm.Cache"))
         store.save_handler_registration(
             _make_handler_entity("aws.lambda.Deploy", module_uri="aws.handlers.deploy")
         )
@@ -211,7 +211,7 @@ class TestV2HandlerList:
 
     def test_handler_list_tab_counts(self, client):
         tc, store = client
-        store.save_handler_registration(_make_handler_entity("osm.geo.Cache"))
+        store.save_handler_registration(_make_handler_entity("osm.Cache"))
         store.save_handler_registration(
             _make_handler_entity("osm.boundaries.Extract", module_uri="osm.handlers.extract")
         )
@@ -225,10 +225,10 @@ class TestV2HandlerList:
 
     def test_handler_list_partial(self, client):
         tc, store = client
-        store.save_handler_registration(_make_handler_entity("osm.geo.Cache"))
+        store.save_handler_registration(_make_handler_entity("osm.Cache"))
         resp = tc.get("/v2/handlers/partial?tab=all")
         assert resp.status_code == 200
-        assert "osm.geo" in resp.text
+        assert "osm" in resp.text
 
 
 @pytestmark_routes
@@ -241,17 +241,17 @@ class TestV2HandlerDetail:
 
     def test_detail_with_handler(self, client):
         tc, store = client
-        store.save_handler_registration(_make_handler_entity("osm.geo.Cache"))
-        resp = tc.get("/v2/handlers/osm.geo.Cache")
+        store.save_handler_registration(_make_handler_entity("osm.Cache"))
+        resp = tc.get("/v2/handlers/osm.Cache")
         assert resp.status_code == 200
         assert "Cache" in resp.text
-        assert "osm.geo.Cache" in resp.text
+        assert "osm.Cache" in resp.text
         assert "osm.handlers.cache" in resp.text
 
     def test_detail_partial(self, client):
         tc, store = client
-        store.save_handler_registration(_make_handler_entity("osm.geo.Cache"))
-        resp = tc.get("/v2/handlers/osm.geo.Cache/partial")
+        store.save_handler_registration(_make_handler_entity("osm.Cache"))
+        resp = tc.get("/v2/handlers/osm.Cache/partial")
         assert resp.status_code == 200
         assert "osm.handlers.cache" in resp.text
 
@@ -262,36 +262,36 @@ class TestV2HandlerDetail:
 
     def test_detail_shows_version(self, client):
         tc, store = client
-        store.save_handler_registration(_make_handler_entity("osm.geo.Cache", version="2.1.0"))
-        resp = tc.get("/v2/handlers/osm.geo.Cache")
+        store.save_handler_registration(_make_handler_entity("osm.Cache", version="2.1.0"))
+        resp = tc.get("/v2/handlers/osm.Cache")
         assert resp.status_code == 200
         assert "2.1.0" in resp.text
 
     def test_delete_handler(self, client):
         tc, store = client
-        store.save_handler_registration(_make_handler_entity("osm.geo.Cache"))
-        resp = tc.post("/v2/handlers/osm.geo.Cache/delete", follow_redirects=False)
+        store.save_handler_registration(_make_handler_entity("osm.Cache"))
+        resp = tc.post("/v2/handlers/osm.Cache/delete", follow_redirects=False)
         assert resp.status_code == 303
         assert resp.headers["location"] == "/v2/handlers"
         # Handler should be gone
-        assert store.get_handler_registration("osm.geo.Cache") is None
+        assert store.get_handler_registration("osm.Cache") is None
 
     def test_detail_with_requirements(self, client):
         tc, store = client
-        h = _make_handler_entity("osm.geo.Cache")
+        h = _make_handler_entity("osm.Cache")
         h.requirements = ["numpy>=1.0", "pandas"]
         store.save_handler_registration(h)
-        resp = tc.get("/v2/handlers/osm.geo.Cache")
+        resp = tc.get("/v2/handlers/osm.Cache")
         assert resp.status_code == 200
         assert "numpy&gt;=1.0" in resp.text or "numpy>=1.0" in resp.text
         assert "pandas" in resp.text
 
     def test_detail_with_metadata(self, client):
         tc, store = client
-        h = _make_handler_entity("osm.geo.Cache")
+        h = _make_handler_entity("osm.Cache")
         h.metadata = {"author": "test-user"}
         store.save_handler_registration(h)
-        resp = tc.get("/v2/handlers/osm.geo.Cache")
+        resp = tc.get("/v2/handlers/osm.Cache")
         assert resp.status_code == 200
         assert "author" in resp.text
         assert "test-user" in resp.text
@@ -358,11 +358,11 @@ class TestV2HandlerCreateEdit:
 
     def test_edit_form_renders(self, client):
         tc, store = client
-        store.save_handler_registration(_make_handler_entity("osm.geo.Cache"))
-        resp = tc.get("/v2/handlers/osm.geo.Cache/edit")
+        store.save_handler_registration(_make_handler_entity("osm.Cache"))
+        resp = tc.get("/v2/handlers/osm.Cache/edit")
         assert resp.status_code == 200
         assert "Edit Handler" in resp.text
-        assert "osm.geo.Cache" in resp.text
+        assert "osm.Cache" in resp.text
         assert "disabled" in resp.text  # facet_name disabled on edit
 
     def test_edit_form_missing_handler_redirects(self, client):
@@ -372,14 +372,14 @@ class TestV2HandlerCreateEdit:
 
     def test_update_handler(self, client):
         tc, store = client
-        store.save_handler_registration(_make_handler_entity("osm.geo.Cache"))
+        store.save_handler_registration(_make_handler_entity("osm.Cache"))
         resp = tc.post(
-            "/v2/handlers/osm.geo.Cache/edit",
+            "/v2/handlers/osm.Cache/edit",
             data={"module_uri": "new.module", "entrypoint": "run"},
             follow_redirects=False,
         )
         assert resp.status_code == 303
-        updated = store.get_handler_registration("osm.geo.Cache")
+        updated = store.get_handler_registration("osm.Cache")
         assert updated.module_uri == "new.module"
         assert updated.entrypoint == "run"
 

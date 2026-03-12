@@ -8,7 +8,7 @@ from typing import Any
 
 from handlers.shared.rounds_utils import evaluate_convergence, score_round
 
-NAMESPACE = "rounds.Scoring"
+NAMESPACE = "multidebate.Scoring"
 
 
 def handle_score_round(params: dict[str, Any]) -> dict[str, Any]:

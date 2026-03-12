@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
-namespace dq.types {
+namespace dataquality.types {
     schema ColumnProfile {
         column_name: String,
         missing_count: Int,
@@ -64,7 +64,7 @@ namespace dq.types {
 // ---------------------------------------------------------------------------
 // Mixins and implicits
 // ---------------------------------------------------------------------------
-namespace dq.mixins {
+namespace dataquality.mixins {
     facet Strictness(fail_fast: Boolean = false, min_score: Double = 0.7)
     facet Freshness(max_age_hours: Int = 24, check_timestamps: Boolean = true)
 
@@ -75,8 +75,8 @@ namespace dq.mixins {
 // ---------------------------------------------------------------------------
 // Profiling -- ProfileDataset, DetectAnomalies
 // ---------------------------------------------------------------------------
-namespace dq.Profiling {
-    use dq.types
+namespace dataquality.Profiling {
+    use dataquality.types
 
     /** Profile all columns in a dataset and compute statistics. */
     event facet ProfileDataset(
@@ -103,8 +103,8 @@ namespace dq.Profiling {
 // ---------------------------------------------------------------------------
 // Validation -- ValidateCompleteness, ValidateAccuracy
 // ---------------------------------------------------------------------------
-namespace dq.Validation {
-    use dq.types
+namespace dataquality.Validation {
+    use dataquality.types
 
     /** Check missing rates per column against threshold. */
     event facet ValidateCompleteness(
@@ -131,8 +131,8 @@ namespace dq.Validation {
 // ---------------------------------------------------------------------------
 // Scoring -- ComputeScores, AssignGrade
 // ---------------------------------------------------------------------------
-namespace dq.Scoring {
-    use dq.types
+namespace dataquality.Scoring {
+    use dataquality.types
 
     /** Compute weighted quality scores from validation results. */
     event facet ComputeScores(
@@ -161,8 +161,8 @@ namespace dq.Scoring {
 // ---------------------------------------------------------------------------
 // Remediation -- PlanRemediation, GenerateReport
 // ---------------------------------------------------------------------------
-namespace dq.Remediation {
-    use dq.types
+namespace dataquality.Remediation {
+    use dataquality.types
 
     /** Plan remediation actions for failed checks. */
     event facet PlanRemediation(
@@ -192,13 +192,13 @@ namespace dq.Remediation {
 // ---------------------------------------------------------------------------
 // Workflows
 // ---------------------------------------------------------------------------
-namespace dq.workflows {
-    use dq.types
-    use dq.mixins
-    use dq.Profiling
-    use dq.Validation
-    use dq.Scoring
-    use dq.Remediation
+namespace dataquality.workflows {
+    use dataquality.types
+    use dataquality.mixins
+    use dataquality.Profiling
+    use dataquality.Validation
+    use dataquality.Scoring
+    use dataquality.Remediation
 
     /** Assess quality of a single dataset end-to-end. */
     workflow AssessQuality(

@@ -175,9 +175,9 @@ Steps within an `andThen` block execute concurrently by default. The dependency 
 ```afl
 cache = osm.geo.Operations.Cache(region = $.region)
 // These all depend on `cache` and execute in parallel once it completes:
-bicycleRoutes = examples.composed.VisualizeBicycleRoutesFromCache(cache = cache.cache)
-parks = examples.composed.AnalyzeParksFromCache(cache = cache.cache)
-largeCities = examples.composed.LargeCitiesMapFromCache(cache = cache.cache)
+bicycleRoutes = osm.workflows.VisualizeBicycleRoutesFromCache(cache = cache.cache)
+parks = osm.workflows.AnalyzeParksFromCache(cache = cache.cache)
+largeCities = osm.workflows.LargeCitiesMapFromCache(cache = cache.cache)
 ```
 
 Yields are deferred until all non-yield statements in their block are terminal — ensuring complete results before aggregation.
@@ -366,16 +366,16 @@ The crown jewel is `AnalyzeRegion` — a workflow that runs **10 composed analys
 workflow AnalyzeRegion(region: String = "Liechtenstein")
     => (completed_region: String) andThen {
     cache          = osm.geo.Operations.Cache(region = $.region)
-    bicycleRoutes  = examples.composed.VisualizeBicycleRoutesFromCache(cache = cache.cache)
-    parks          = examples.composed.AnalyzeParksFromCache(cache = cache.cache)
-    largeCities    = examples.composed.LargeCitiesMapFromCache(cache = cache.cache, min_pop = 10000)
-    transport      = examples.composed.TransportOverviewFromCache(cache = cache.cache)
-    nationalParks  = examples.composed.NationalParksAnalysisFromCache(cache = cache.cache)
-    cityAnalysis   = examples.composed.CityAnalysisFromCache(cache = cache.cache, min_population = 100000)
-    transportMap   = examples.composed.TransportMapFromCache(cache = cache.cache)
-    boundaries     = examples.composed.StateBoundariesWithStatsFromCache(cache = cache.cache)
-    cities         = examples.composed.DiscoverCitiesAndTownsFromCache(cache = cache.cache)
-    regional       = examples.composed.RegionalAnalysisFromCache(cache = cache.cache)
+    bicycleRoutes  = osm.workflows.VisualizeBicycleRoutesFromCache(cache = cache.cache)
+    parks          = osm.workflows.AnalyzeParksFromCache(cache = cache.cache)
+    largeCities    = osm.workflows.LargeCitiesMapFromCache(cache = cache.cache, min_pop = 10000)
+    transport      = osm.workflows.TransportOverviewFromCache(cache = cache.cache)
+    nationalParks  = osm.workflows.NationalParksAnalysisFromCache(cache = cache.cache)
+    cityAnalysis   = osm.workflows.CityAnalysisFromCache(cache = cache.cache, min_population = 100000)
+    transportMap   = osm.workflows.TransportMapFromCache(cache = cache.cache)
+    boundaries     = osm.workflows.StateBoundariesWithStatsFromCache(cache = cache.cache)
+    cities         = osm.workflows.DiscoverCitiesAndTownsFromCache(cache = cache.cache)
+    regional       = osm.workflows.RegionalAnalysisFromCache(cache = cache.cache)
     yield AnalyzeRegion(completed_region = $.region)
 }
 ```

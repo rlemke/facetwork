@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
-namespace ssd.types {
+namespace siteselection.types {
     schema SpatialScore {
         candidate_id: String,
         demographics_score: Double,
@@ -83,7 +83,7 @@ namespace ssd.types {
 // ---------------------------------------------------------------------------
 // Mixins and implicits
 // ---------------------------------------------------------------------------
-namespace ssd.mixins {
+namespace siteselection.mixins {
     facet ResearchConfig(depth: Int = 3, market_area: String = "default")
     facet DebatePolicy(max_challenges: Int = 3, require_evidence: Boolean = true)
 
@@ -94,8 +94,8 @@ namespace ssd.mixins {
 // ---------------------------------------------------------------------------
 // Spatial -- ScoreCandidate, RankCandidates, ComputeAccessibility
 // ---------------------------------------------------------------------------
-namespace ssd.Spatial {
-    use ssd.types
+namespace siteselection.Spatial {
+    use siteselection.types
 
     /** Score a candidate site using demographics, competition, and accessibility data. */
     event facet ScoreCandidate(
@@ -135,8 +135,8 @@ namespace ssd.Spatial {
 // ---------------------------------------------------------------------------
 // Research -- SearchMarketTrends, GatherRegulations, AnalyzeCompetitors
 // ---------------------------------------------------------------------------
-namespace ssd.Research {
-    use ssd.types
+namespace siteselection.Research {
+    use siteselection.types
 
     /** Search for market trends and growth indicators in the candidate area. */
     event facet SearchMarketTrends(
@@ -172,8 +172,8 @@ namespace ssd.Research {
 // ---------------------------------------------------------------------------
 // Debate -- PresentAnalysis, ChallengePosition, ScoreArguments
 // ---------------------------------------------------------------------------
-namespace ssd.Debate {
-    use ssd.types
+namespace siteselection.Debate {
+    use siteselection.types
 
     /** An agent presents their analysis of the candidate site. */
     event facet PresentAnalysis(
@@ -216,8 +216,8 @@ namespace ssd.Debate {
 // ---------------------------------------------------------------------------
 // Synthesis -- SummarizeRound, ProduceRanking, GenerateReport
 // ---------------------------------------------------------------------------
-namespace ssd.Synthesis {
-    use ssd.types
+namespace siteselection.Synthesis {
+    use siteselection.types
 
     /** Summarize a debate round with key arguments and shifts. */
     event facet SummarizeRound(
@@ -258,11 +258,11 @@ namespace ssd.Synthesis {
 // ---------------------------------------------------------------------------
 // Composed facet -- EvaluationRound (10 steps)
 // ---------------------------------------------------------------------------
-namespace ssd.composition {
-    use ssd.types
-    use ssd.mixins
-    use ssd.Debate
-    use ssd.Synthesis
+namespace siteselection.composition {
+    use siteselection.types
+    use siteselection.mixins
+    use siteselection.Debate
+    use siteselection.Synthesis
 
     /** A complete evaluation round: 3 agents present, 3 challenge, score, summarize. */
     facet EvaluationRound(
@@ -288,14 +288,14 @@ namespace ssd.composition {
 // ---------------------------------------------------------------------------
 // Workflows
 // ---------------------------------------------------------------------------
-namespace ssd.workflows {
-    use ssd.types
-    use ssd.mixins
-    use ssd.Spatial
-    use ssd.Research
-    use ssd.Debate
-    use ssd.Synthesis
-    use ssd.composition
+namespace siteselection.workflows {
+    use siteselection.types
+    use siteselection.mixins
+    use siteselection.Spatial
+    use siteselection.Research
+    use siteselection.Debate
+    use siteselection.Synthesis
+    use siteselection.composition
 
     /** Full site evaluation: spatial scoring -> research enrichment -> 3-round debate -> report. */
     workflow EvaluateSites(

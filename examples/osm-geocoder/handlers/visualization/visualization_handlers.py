@@ -1,6 +1,6 @@
 """Visualization event facet handlers for GeoJSON map rendering.
 
-Handles visualization events defined in osmvisualization.afl under osm.geo.Visualization.
+Handles visualization events defined in osmvisualization.afl under osm.viz.
 """
 
 import logging
@@ -20,7 +20,7 @@ from .map_renderer import (
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Visualization"
+NAMESPACE = "osm.viz"
 
 
 def _cache_dict_from_path(path: str) -> dict:

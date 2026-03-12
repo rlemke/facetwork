@@ -65,7 +65,7 @@ PROGRAM_AST = {
                                         {"name": "cache", "type": "OSMCache"},
                                         {"name": "category", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "AmenityResult"}],
+                                    [{"name": "result", "type": "AmenityFeatures"}],
                                 ),
                                 _ef(
                                     "SearchAmenities",
@@ -73,7 +73,7 @@ PROGRAM_AST = {
                                         {"name": "input_path", "type": "String"},
                                         {"name": "name_pattern", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "AmenityResult"}],
+                                    [{"name": "result", "type": "AmenityFeatures"}],
                                 ),
                             ],
                         },
@@ -87,7 +87,7 @@ PROGRAM_AST = {
                                         {"name": "cache", "type": "OSMCache"},
                                         {"name": "admin_level", "type": "Long"},
                                     ],
-                                    [{"name": "result", "type": "BoundaryResult"}],
+                                    [{"name": "result", "type": "BoundaryFeatures"}],
                                 ),
                             ],
                         },
@@ -123,7 +123,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow VotingLocationMap(
         region: String,
         search_pattern: String = "poll|vot|election|IEC",
@@ -274,7 +274,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "SouthAfrica",
-            "region_namespace": "osm.geo.cache.Africa",
+            "region_namespace": "osm.cache.Africa",
             "continent": "Africa",
             "geofabrik_path": "africa/south-africa",
             "is_ambiguous": False,

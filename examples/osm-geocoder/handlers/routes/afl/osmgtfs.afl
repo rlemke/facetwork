@@ -13,7 +13,7 @@
 // - Route density heatmaps
 
 /** GTFS transit feed extraction, OSM integration, and coverage analysis. */
-namespace osm.geo.Transit.GTFS {
+namespace osm.Transit.GTFS {
     use osm.types
 
     /** Extracted transit stop locations with bounding box. */
@@ -29,7 +29,7 @@ namespace osm.geo.Transit.GTFS {
     }
 
     /** Extracted transit route geometries. */
-    schema RouteResult {
+    schema RouteFeatures {
         output_path: String,
         route_count: Long,
         has_shapes: Boolean,
@@ -130,7 +130,7 @@ namespace osm.geo.Transit.GTFS {
     event facet ExtractStops(feed: GTFSFeed) => (result: StopResult)
 
     /** Extracts route geometries to GeoJSON linestrings. */
-    event facet ExtractRoutes(feed: GTFSFeed) => (result: RouteResult)
+    event facet ExtractRoutes(feed: GTFSFeed) => (result: RouteFeatures)
 
     /** Computes trips-per-stop-per-day from stop_times and calendar. */
     event facet ServiceFrequency(feed: GTFSFeed) => (result: FrequencyResult)

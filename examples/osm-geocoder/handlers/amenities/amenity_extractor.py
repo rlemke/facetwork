@@ -136,7 +136,7 @@ ENTERTAINMENT_AMENITIES = {"cinema", "theatre", "nightclub", "casino", "arts_cen
 
 
 @dataclass
-class AmenityResult:
+class AmenityFeatures:
     """Result of an amenity extraction."""
 
     output_path: str
@@ -238,7 +238,7 @@ def calculate_amenity_stats(input_path: str | Path) -> AmenityStats:
 
 def search_amenities(
     input_path: str | Path, name_pattern: str, output_path: str | Path | None = None
-) -> AmenityResult:
+) -> AmenityFeatures:
     """Search amenities by name pattern."""
     input_path = str(input_path)
 
@@ -265,7 +265,7 @@ def search_amenities(
     with open_output(output_path_str) as f:
         json.dump(output_geojson, f, indent=2)
 
-    return AmenityResult(
+    return AmenityFeatures(
         output_path=output_path_str,
         feature_count=len(filtered),
         amenity_category="search",

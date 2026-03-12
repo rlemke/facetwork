@@ -65,7 +65,7 @@ PROGRAM_AST = {
                                         {"name": "cache", "type": "OSMCache"},
                                         {"name": "network", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "RouteResult"}],
+                                    [{"name": "result", "type": "RouteFeatures"}],
                                 ),
                             ],
                         },
@@ -80,7 +80,7 @@ PROGRAM_AST = {
                                         {"name": "dem_source", "type": "String"},
                                         {"name": "sample_interval_m", "type": "Long"},
                                     ],
-                                    [{"name": "result", "type": "ElevatedRouteResult"}],
+                                    [{"name": "result", "type": "ElevatedRouteFeatures"}],
                                 ),
                                 _ef(
                                     "FilterByMaxElevation",
@@ -88,7 +88,7 @@ PROGRAM_AST = {
                                         {"name": "input_path", "type": "String"},
                                         {"name": "min_max_elevation_ft", "type": "Long"},
                                     ],
-                                    [{"name": "result", "type": "ElevatedRouteResult"}],
+                                    [{"name": "result", "type": "ElevatedRouteFeatures"}],
                                 ),
                             ],
                         },
@@ -123,7 +123,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow BicycleElevationMapByRegion(
         region: String,
         min_elevation_ft: Long = 4000,
@@ -184,7 +184,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "Austria",
-            "region_namespace": "osm.geo.cache.Europe",
+            "region_namespace": "osm.cache.Europe",
             "continent": "Europe",
             "geofabrik_path": "europe/austria",
             "is_ambiguous": False,

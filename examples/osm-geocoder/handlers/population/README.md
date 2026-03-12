@@ -30,7 +30,7 @@ event facet FilterByPopulation(
     min_population: Long,
     place_type: String = "all",     // "city", "town", "state", etc.
     operator: String = "gte"         // "gt", "gte", "lt", "lte", "eq", "ne"
-) => (result: PopulationFilterResult)
+) => (result: PopulationFilteredFeatures)
 ```
 
 #### FilterByPopulationRange
@@ -42,7 +42,7 @@ event facet FilterByPopulationRange(
     min_population: Long,
     max_population: Long,
     place_type: String = "all"
-) => (result: PopulationFilterResult)
+) => (result: PopulationFilteredFeatures)
 ```
 
 #### ExtractPlacesWithPopulation
@@ -53,7 +53,7 @@ event facet ExtractPlacesWithPopulation(
     cache: OSMCache,
     place_type: String = "all",
     min_population: Long = 0
-) => (result: PopulationFilterResult)
+) => (result: PopulationFilteredFeatures)
 ```
 
 #### PopulationStatistics
@@ -72,17 +72,17 @@ Pre-configured facets for common place types:
 
 ```afl
 // Urban places
-event facet Cities(cache: OSMCache, min_population: Long = 0) => (result: PopulationFilterResult)
-event facet Towns(cache: OSMCache, min_population: Long = 0) => (result: PopulationFilterResult)
-event facet Villages(cache: OSMCache, min_population: Long = 0) => (result: PopulationFilterResult)
+event facet Cities(cache: OSMCache, min_population: Long = 0) => (result: PopulationFilteredFeatures)
+event facet Towns(cache: OSMCache, min_population: Long = 0) => (result: PopulationFilteredFeatures)
+event facet Villages(cache: OSMCache, min_population: Long = 0) => (result: PopulationFilteredFeatures)
 
 // Administrative divisions
-event facet Countries(cache: OSMCache) => (result: PopulationFilterResult)
-event facet States(cache: OSMCache) => (result: PopulationFilterResult)
-event facet Counties(cache: OSMCache) => (result: PopulationFilterResult)
+event facet Countries(cache: OSMCache) => (result: PopulationFilteredFeatures)
+event facet States(cache: OSMCache) => (result: PopulationFilteredFeatures)
+event facet Counties(cache: OSMCache) => (result: PopulationFilteredFeatures)
 
 // All populated places
-event facet AllPopulatedPlaces(cache: OSMCache, min_population: Long = 0) => (result: PopulationFilterResult)
+event facet AllPopulatedPlaces(cache: OSMCache, min_population: Long = 0) => (result: PopulationFilteredFeatures)
 ```
 
 ## Operators
@@ -99,9 +99,9 @@ event facet AllPopulatedPlaces(cache: OSMCache, min_population: Long = 0) => (re
 
 ## Result Schemas
 
-### PopulationFilterResult
+### PopulationFilteredFeatures
 ```afl
-schema PopulationFilterResult {
+schema PopulationFilteredFeatures {
     output_path: String        // Path to output GeoJSON file
     feature_count: Long        // Number of features after filtering
     original_count: Long       // Number of features before filtering
@@ -141,9 +141,9 @@ Population data in OSM comes from the `population` tag. The parser handles vario
 ### Extract Large Cities
 ```afl
 workflow LargeCities() => (map_path: String) andThen {
-    cache = osm.geo.cache.Europe.Germany()
-    cities = osm.geo.Population.Cities(cache = cache.cache, min_population = 100000)
-    map = osm.geo.Visualization.RenderMap(
+    cache = osm.cache.Europe.Germany()
+    cities = osm.Population.Cities(cache = cache.cache, min_population = 100000)
+    map = osm.viz.RenderMap(
         geojson_path = cities.result.output_path,
         title = "Cities over 100,000",
         color = "#e74c3c"
@@ -154,10 +154,10 @@ workflow LargeCities() => (map_path: String) andThen {
 
 ### Filter by Population Range
 ```afl
-workflow MediumCities() => (result: PopulationFilterResult) andThen {
-    cache = osm.geo.cache.Europe.France()
-    all_cities = osm.geo.Population.Cities(cache = cache.cache)
-    filtered = osm.geo.Population.FilterByPopulationRange(
+workflow MediumCities() => (result: PopulationFilteredFeatures) andThen {
+    cache = osm.cache.Europe.France()
+    all_cities = osm.Population.Cities(cache = cache.cache)
+    filtered = osm.Population.FilterByPopulationRange(
         input_path = all_cities.result.output_path,
         min_population = 50000,
         max_population = 500000,
@@ -170,9 +170,9 @@ workflow MediumCities() => (result: PopulationFilterResult) andThen {
 ### Get Population Statistics
 ```afl
 workflow CityStats() => (total: Long, largest: Long, average: Long) andThen {
-    cache = osm.geo.cache.NorthAmerica.US.California()
-    cities = osm.geo.Population.Cities(cache = cache.cache)
-    stats = osm.geo.Population.PopulationStatistics(
+    cache = osm.cache.NorthAmerica.US.California()
+    cities = osm.Population.Cities(cache = cache.cache)
+    stats = osm.Population.PopulationStatistics(
         input_path = cities.result.output_path,
         place_type = "city"
     )

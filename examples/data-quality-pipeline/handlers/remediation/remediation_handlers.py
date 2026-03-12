@@ -8,7 +8,7 @@ from typing import Any
 
 from handlers.shared.quality_utils import generate_report, plan_remediation
 
-NAMESPACE = "dq.Remediation"
+NAMESPACE = "dataquality.Remediation"
 
 
 def handle_plan_remediation(params: dict[str, Any]) -> dict[str, Any]:

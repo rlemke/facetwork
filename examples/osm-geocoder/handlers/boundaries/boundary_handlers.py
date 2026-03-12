@@ -1,7 +1,7 @@
 """Boundary event facet handlers for OSM boundary extraction.
 
 Handles administrative and natural boundary extraction events defined
-in osmboundaries.afl under osm.geo.Boundaries.
+in osmboundaries.afl under osm.Boundaries.
 
 All extraction-based handlers have been removed. This module is retained
 for structural compatibility with the handler registration system.
@@ -11,7 +11,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Boundaries"
+NAMESPACE = "osm.Boundaries"
 
 
 def register_boundary_handlers(poller) -> None:

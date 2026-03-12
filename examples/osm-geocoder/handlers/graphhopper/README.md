@@ -29,13 +29,13 @@ schema GraphHopperCache {
 
 ## Operation Facets
 
-The `osm.geo.Operations.GraphHopper` namespace provides core operations:
+The `osm.ops.GraphHopper` namespace provides core operations:
 
 | Facet | Parameters | Returns | Description |
 |-------|-----------|---------|-------------|
 | `BuildGraph` | `cache: OSMCache, profile: String = "car", recreate: Boolean = false` | `graph: GraphHopperCache` | Build routing graph from OSM cache |
 | `BuildMultiProfile` | `cache: OSMCache, profiles: [String], recreate: Boolean = false` | `graphs: [GraphHopperCache]` | Build graphs for multiple profiles |
-| `BuildGraphAll` | `cache: OSMCache, profile: String = "car", recreate: Boolean = false` | `graph: GraphHopperCache` | Bulk variant for batch processing |
+| `BuildGraphBatch` | `cache: OSMCache, profile: String = "car", recreate: Boolean = false` | `graph: GraphHopperCache` | Bulk variant for batch processing |
 | `ImportGraph` | `cache: OSMCache, profile: String = "car", recreate: Boolean = false` | `graph: GraphHopperCache` | Import/load existing graph (builds if not found) |
 | `ValidateGraph` | `graph: GraphHopperCache` | `valid: Boolean, nodeCount: Long, edgeCount: Long` | Validate graph and return statistics |
 | `CleanGraph` | `graph: GraphHopperCache` | `deleted: Boolean` | Delete routing graph directory |
@@ -55,20 +55,20 @@ Per-region cache facets are organized by geographic namespace. Each facet takes 
 
 | Namespace | Regions |
 |-----------|---------|
-| `osm.geo.cache.GraphHopper.Africa` | 54 countries |
-| `osm.geo.cache.GraphHopper.Asia` | 43 countries |
-| `osm.geo.cache.GraphHopper.Australia` | 16 countries/territories |
-| `osm.geo.cache.GraphHopper.Europe` | 48 countries |
-| `osm.geo.cache.GraphHopper.NorthAmerica` | 4 countries |
-| `osm.geo.cache.GraphHopper.SouthAmerica` | 12 countries |
-| `osm.geo.cache.GraphHopper.CentralAmerica` | 10 countries |
-| `osm.geo.cache.GraphHopper.UnitedStates` | 51 states/territories |
-| `osm.geo.cache.GraphHopper.Canada` | 13 provinces/territories |
+| `osm.cache.GraphHopper.Africa` | 54 countries |
+| `osm.cache.GraphHopper.Asia` | 43 countries |
+| `osm.cache.GraphHopper.Australia` | 16 countries/territories |
+| `osm.cache.GraphHopper.Europe` | 48 countries |
+| `osm.cache.GraphHopper.NorthAmerica` | 4 countries |
+| `osm.cache.GraphHopper.SouthAmerica` | 12 countries |
+| `osm.cache.GraphHopper.CentralAmerica` | 10 countries |
+| `osm.cache.GraphHopper.UnitedStates` | 51 states/territories |
+| `osm.cache.GraphHopper.Canada` | 13 provinces/territories |
 
 ### Example: Europe
 
 ```afl
-namespace osm.geo.cache.GraphHopper.Europe {
+namespace osm.cache.GraphHopper.Europe {
     event facet Germany(cache: OSMCache, profile: String = "car", recreate: Boolean = false) => (graph: GraphHopperCache)
     event facet France(cache: OSMCache, profile: String = "car", recreate: Boolean = false) => (graph: GraphHopperCache)
     event facet Spain(cache: OSMCache, profile: String = "car", recreate: Boolean = false) => (graph: GraphHopperCache)
@@ -98,7 +98,7 @@ Pre-built workflows for common regional graph building:
 ### Europe
 
 ```afl
-namespace osm.geo.GraphHopper.Europe {
+namespace osm.GraphHopper.Europe {
     // Build graphs for 10 major European countries
     workflow BuildMajorEuropeGraphs(profile: String = "car", recreate: Boolean = false)
         => (graphs: [GraphHopperCache])
@@ -112,7 +112,7 @@ namespace osm.geo.GraphHopper.Europe {
 ### North America
 
 ```afl
-namespace osm.geo.GraphHopper.NorthAmerica {
+namespace osm.GraphHopper.NorthAmerica {
     // Build graphs for USA, Canada, Mexico
     workflow BuildNorthAmericaGraphs(profile: String = "car", recreate: Boolean = false)
         => (graphs: [GraphHopperCache])
@@ -122,7 +122,7 @@ namespace osm.geo.GraphHopper.NorthAmerica {
 ### United States
 
 ```afl
-namespace osm.geo.GraphHopper.UnitedStates {
+namespace osm.GraphHopper.UnitedStates {
     // West Coast: California, Oregon, Washington
     workflow BuildWestCoastGraphs(profile: String = "car", recreate: Boolean = false)
         => (graphs: [GraphHopperCache])
@@ -139,15 +139,15 @@ namespace osm.geo.GraphHopper.UnitedStates {
 
 ```afl
 namespace myapp {
-    uses osm.geo.cache.Europe
-    uses osm.geo.cache.GraphHopper.Europe
+    uses osm.cache.Europe
+    uses osm.cache.GraphHopper.Europe
 
     workflow BuildGermanyRouting() => (graph: GraphHopperCache) andThen {
         // Get the OSM cache for Germany
-        osm = osm.geo.cache.Europe.Germany()
+        osm = osm.cache.Europe.Germany()
 
         // Build the routing graph (uses cache if available)
-        gh = osm.geo.cache.GraphHopper.Europe.Germany(
+        gh = osm.cache.GraphHopper.Europe.Germany(
             cache = osm.cache,
             profile = "car",
             recreate = false
@@ -162,11 +162,11 @@ namespace myapp {
 
 ```afl
 namespace myapp {
-    uses osm.geo.cache.Europe
-    uses osm.geo.Operations.GraphHopper
+    uses osm.cache.Europe
+    uses osm.ops.GraphHopper
 
     workflow BuildMultiModalRouting() => (graphs: [GraphHopperCache]) andThen {
-        osm = osm.geo.cache.Europe.Germany()
+        osm = osm.cache.Europe.Germany()
 
         // Build car, bike, and foot routing graphs
         gh = BuildMultiProfile(
@@ -184,7 +184,7 @@ namespace myapp {
 
 ```afl
 // Force rebuild even if cached graph exists
-gh = osm.geo.cache.GraphHopper.Europe.Germany(
+gh = osm.cache.GraphHopper.Europe.Germany(
     cache = osm.cache,
     profile = "car",
     recreate = true  // Always rebuild

@@ -52,7 +52,7 @@ class TestOsmParkHandlers:
         mod = _osm_import("park_handlers")
         assert len(mod._DISPATCH) > 0
         for key in mod._DISPATCH:
-            assert key.startswith("osm.geo.Parks.")
+            assert key.startswith("osm.Parks.")
 
     def test_handle_dispatches(self):
         mod = _osm_import("park_handlers")
@@ -63,7 +63,7 @@ class TestOsmParkHandlers:
     def test_handle_unknown_facet(self):
         mod = _osm_import("park_handlers")
         with pytest.raises(ValueError, match="Unknown facet"):
-            mod.handle({"_facet_name": "osm.geo.Parks.NonExistent"})
+            mod.handle({"_facet_name": "osm.Parks.NonExistent"})
 
     def test_register_handlers(self):
         mod = _osm_import("park_handlers")
@@ -77,7 +77,7 @@ class TestOsmAmenityHandlers:
         mod = _osm_import("amenity_handlers")
         assert len(mod._DISPATCH) > 0
         for key in mod._DISPATCH:
-            assert key.startswith("osm.geo.Amenities.")
+            assert key.startswith("osm.Amenities.")
 
     def test_handle_dispatches(self):
         mod = _osm_import("amenity_handlers")
@@ -97,7 +97,7 @@ class TestOsmFilterHandlers:
         mod = _osm_import("filter_handlers")
         assert len(mod._DISPATCH) > 0
         for key in mod._DISPATCH:
-            assert key.startswith("osm.geo.Filters.")
+            assert key.startswith("osm.Filters.")
 
     def test_handle_dispatches(self):
         mod = _osm_import("filter_handlers")
@@ -116,11 +116,11 @@ class TestOsmRegionHandlers:
     def test_dispatch_keys(self):
         mod = _osm_import("region_handlers")
         assert len(mod._DISPATCH) == 3
-        assert "osm.geo.Region.ResolveRegion" in mod._DISPATCH
+        assert "osm.Region.ResolveRegion" in mod._DISPATCH
 
     def test_handle_dispatches(self):
         mod = _osm_import("region_handlers")
-        result = mod.handle({"_facet_name": "osm.geo.Region.ListRegions"})
+        result = mod.handle({"_facet_name": "osm.Region.ListRegions"})
         assert isinstance(result, dict)
 
     def test_register_handlers(self):
@@ -146,7 +146,7 @@ class TestOsmRoutingHandlers:
     def test_dispatch_keys(self):
         mod = _osm_import("routing_handlers")
         assert len(mod._DISPATCH) == 1
-        assert "osm.geo.Routing.ComputePairwiseRoutes" in mod._DISPATCH
+        assert "osm.Routing.ComputePairwiseRoutes" in mod._DISPATCH
 
     def test_register_handlers(self):
         mod = _osm_import("routing_handlers")
@@ -180,7 +180,7 @@ class TestOsmValidationHandlers:
 
     def test_handle_dispatches(self):
         mod = _osm_import("validation_handlers")
-        result = mod.handle({"_facet_name": "osm.geo.Operations.Validation.ValidateCache"})
+        result = mod.handle({"_facet_name": "osm.ops.Validation.ValidateCache"})
         assert isinstance(result, dict)
 
     def test_register_handlers(self):
@@ -249,7 +249,7 @@ class TestOsmGraphhopperHandlers:
         mod = _osm_import("graphhopper_handlers")
         assert len(mod._DISPATCH) == 6
         for key in mod._DISPATCH:
-            assert key.startswith("osm.geo.Operations.GraphHopper.")
+            assert key.startswith("osm.ops.GraphHopper.")
 
     def test_register_handlers(self):
         mod = _osm_import("graphhopper_handlers")
@@ -285,7 +285,7 @@ class TestOsmBoundaryHandlers:
     def test_handle_raises_for_unknown(self):
         mod = _osm_import("boundary_handlers")
         with pytest.raises(ValueError, match="Unknown facet"):
-            mod.handle({"_facet_name": "osm.geo.Boundaries.Fake"})
+            mod.handle({"_facet_name": "osm.Boundaries.Fake"})
 
     def test_register_handlers(self):
         mod = _osm_import("boundary_handlers")
@@ -383,7 +383,7 @@ class TestOsmPostgisHandlers:
         mod = _osm_import("postgis_handlers")
         assert len(mod._DISPATCH) > 0
         for key in mod._DISPATCH:
-            assert key.startswith("osm.geo.Operations.")
+            assert key.startswith("osm.ops.")
 
     def test_handle_dispatches(self):
         mod = _osm_import("postgis_handlers")
@@ -395,7 +395,7 @@ class TestOsmPostgisHandlers:
     def test_handle_unknown_facet(self):
         mod = _osm_import("postgis_handlers")
         with pytest.raises(ValueError, match="Unknown facet"):
-            mod.handle({"_facet_name": "osm.geo.Operations.NonExistent"})
+            mod.handle({"_facet_name": "osm.ops.NonExistent"})
 
     def test_register_handlers(self):
         mod = _osm_import("postgis_handlers")

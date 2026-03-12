@@ -18,7 +18,7 @@ Filter by OSM element type (node, way, relation) and/or tag key/value pairs. Opt
 
 ## AFL Facets
 
-All filter facets are defined in `osmfilters.afl` under the `osm.geo.Filters` namespace.
+All filter facets are defined in `osmfilters.afl` under the `osm.Filters` namespace.
 
 ### FilterByRadius
 
@@ -30,7 +30,7 @@ event facet FilterByRadius(
     radius: Double,           // Threshold value
     unit: String = "kilometers",  // meters, kilometers, miles
     operator: String = "gte"  // gt, gte, lt, lte, eq, ne
-) => (result: FilterResult)
+) => (result: FilteredFeatures)
 ```
 
 ### FilterByRadiusRange
@@ -43,7 +43,7 @@ event facet FilterByRadiusRange(
     min_radius: Double,       // Lower bound (inclusive)
     max_radius: Double,       // Upper bound (inclusive)
     unit: String = "kilometers"
-) => (result: FilterResult)
+) => (result: FilteredFeatures)
 ```
 
 ### FilterByTypeAndRadius
@@ -57,7 +57,7 @@ event facet FilterByTypeAndRadius(
     radius: Double,
     unit: String = "kilometers",
     operator: String = "gte"
-) => (result: FilterResult)
+) => (result: FilteredFeatures)
 ```
 
 ### ExtractAndFilterByRadius
@@ -72,7 +72,7 @@ event facet ExtractAndFilterByRadius(
     radius: Double,
     unit: String = "kilometers",
     operator: String = "gte"
-) => (result: FilterResult)
+) => (result: FilteredFeatures)
 ```
 
 ### FilterByOSMType
@@ -84,7 +84,7 @@ event facet FilterByOSMType(
     input_path: String,              // Path to input PBF file
     osm_type: String,                // node, way, relation, or * for all
     include_dependencies: Boolean = false  // Include referenced nodes for ways
-) => (result: OSMFilterResult)
+) => (result: OSMFilteredFeatures)
 ```
 
 ### FilterByOSMTag
@@ -98,7 +98,7 @@ event facet FilterByOSMTag(
     tag_value: String = "*",         // Tag value, or "*" for any value
     osm_type: String = "*",          // Element type filter, or "*" for all
     include_dependencies: Boolean = false
-) => (result: OSMFilterResult)
+) => (result: OSMFilteredFeatures)
 ```
 
 ### FilterGeoJSONByOSMType
@@ -111,13 +111,13 @@ event facet FilterGeoJSONByOSMType(
     osm_type: String,                // node, way, relation, or * for all
     tag_key: String = "",            // Optional tag key filter
     tag_value: String = "*"          // Tag value, or "*" for any value
-) => (result: OSMFilterResult)
+) => (result: OSMFilteredFeatures)
 ```
 
-## OSMFilterResult Schema
+## OSMFilteredFeatures Schema
 
 ```afl
-schema OSMFilterResult {
+schema OSMFilteredFeatures {
     output_path: String              // Path to filtered GeoJSON
     feature_count: Long              // Features after filtering
     original_count: Long             // Elements scanned
@@ -159,10 +159,10 @@ schema OSMFilterResult {
 | `kilometers` | `km`, `kilometer` |
 | `miles` | `mi`, `mile` |
 
-## FilterResult Schema
+## FilteredFeatures Schema
 
 ```afl
-schema FilterResult {
+schema FilteredFeatures {
     output_path: String       // Path to filtered GeoJSON
     feature_count: Long       // Features after filtering
     original_count: Long      // Features before filtering
@@ -178,7 +178,7 @@ schema FilterResult {
 ### Filter large lakes (>= 5km radius)
 
 ```afl
-workflow LargeLakes(input: String) => (result: FilterResult) andThen {
+workflow LargeLakes(input: String) => (result: FilteredFeatures) andThen {
     filtered = FilterByRadius(
         input_path = $.input,
         radius = 5.0,
@@ -192,7 +192,7 @@ workflow LargeLakes(input: String) => (result: FilterResult) andThen {
 ### Filter medium-sized parks (1-10km radius)
 
 ```afl
-workflow MediumParks(input: String) => (result: FilterResult) andThen {
+workflow MediumParks(input: String) => (result: FilteredFeatures) andThen {
     filtered = FilterByRadiusRange(
         input_path = $.input,
         min_radius = 1.0,
@@ -206,7 +206,7 @@ workflow MediumParks(input: String) => (result: FilterResult) andThen {
 ### Extract and filter state boundaries from PBF
 
 ```afl
-workflow LargeStates() => (result: FilterResult)
+workflow LargeStates() => (result: FilteredFeatures)
     with Germany()
 andThen {
     filtered = ExtractAndFilterByRadius(
@@ -224,7 +224,7 @@ andThen {
 ### Extract all restaurants from PBF
 
 ```afl
-workflow Restaurants(pbf_path: String) => (result: OSMFilterResult) andThen {
+workflow Restaurants(pbf_path: String) => (result: OSMFilteredFeatures) andThen {
     filtered = FilterByOSMTag(
         input_path = $.pbf_path,
         tag_key = "amenity",
@@ -239,7 +239,7 @@ workflow Restaurants(pbf_path: String) => (result: OSMFilterResult) andThen {
 ### Extract all highways with full geometry
 
 ```afl
-workflow Highways(pbf_path: String) => (result: OSMFilterResult) andThen {
+workflow Highways(pbf_path: String) => (result: OSMFilteredFeatures) andThen {
     filtered = FilterByOSMTag(
         input_path = $.pbf_path,
         tag_key = "highway",
@@ -254,7 +254,7 @@ workflow Highways(pbf_path: String) => (result: OSMFilterResult) andThen {
 ### Filter existing GeoJSON by type
 
 ```afl
-workflow JustNodes(geojson_path: String) => (result: OSMFilterResult) andThen {
+workflow JustNodes(geojson_path: String) => (result: OSMFilteredFeatures) andThen {
     filtered = FilterGeoJSONByOSMType(
         input_path = $.geojson_path,
         osm_type = "node"

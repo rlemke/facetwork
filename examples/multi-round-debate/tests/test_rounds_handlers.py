@@ -289,29 +289,29 @@ class TestDispatch:
         from handlers.setup.setup_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 2
-        assert "rounds.Setup.InitiateRound" in _DISPATCH
-        assert "rounds.Setup.AssignPositions" in _DISPATCH
+        assert "multidebate.Setup.InitiateRound" in _DISPATCH
+        assert "multidebate.Setup.AssignPositions" in _DISPATCH
 
     def test_argumentation_dispatch(self):
         from handlers.argumentation.argumentation_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 2
-        assert "rounds.Argumentation.RefineArgument" in _DISPATCH
-        assert "rounds.Argumentation.ChallengeArgument" in _DISPATCH
+        assert "multidebate.Argumentation.RefineArgument" in _DISPATCH
+        assert "multidebate.Argumentation.ChallengeArgument" in _DISPATCH
 
     def test_scoring_dispatch(self):
         from handlers.scoring.scoring_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 2
-        assert "rounds.Scoring.ScoreRound" in _DISPATCH
-        assert "rounds.Scoring.EvaluateConvergence" in _DISPATCH
+        assert "multidebate.Scoring.ScoreRound" in _DISPATCH
+        assert "multidebate.Scoring.EvaluateConvergence" in _DISPATCH
 
     def test_synthesis_dispatch(self):
         from handlers.synthesis.synthesis_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 2
-        assert "rounds.Synthesis.SummarizeRound" in _DISPATCH
-        assert "rounds.Synthesis.DeclareOutcome" in _DISPATCH
+        assert "multidebate.Synthesis.SummarizeRound" in _DISPATCH
+        assert "multidebate.Synthesis.DeclareOutcome" in _DISPATCH
 
     def test_total_handler_count(self):
         from handlers.argumentation.argumentation_handlers import _DISPATCH as d2
@@ -367,7 +367,7 @@ class TestCompilation:
         assert count == 8
 
     def test_mixin_facet_count(self, parsed_ast):
-        mixins_ns = [ns for ns in parsed_ast.namespaces if ns.name == "rounds.mixins"][0]
+        mixins_ns = [ns for ns in parsed_ast.namespaces if ns.name == "multidebate.mixins"][0]
         assert len(mixins_ns.facets) == 2
 
     def test_implicit_count(self, parsed_ast):
@@ -377,7 +377,7 @@ class TestCompilation:
         assert len(implicits) == 2
 
     def test_foreach_present(self, parsed_ast):
-        workflows_ns = [ns for ns in parsed_ast.namespaces if ns.name == "rounds.workflows"][0]
+        workflows_ns = [ns for ns in parsed_ast.namespaces if ns.name == "multidebate.workflows"][0]
         agent_focused = [w for w in workflows_ns.workflows if w.sig.name == "AgentFocusedDebate"][0]
         has_foreach = any(block.foreach is not None for block in agent_focused.body)
         assert has_foreach

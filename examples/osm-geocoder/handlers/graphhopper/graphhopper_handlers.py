@@ -341,12 +341,12 @@ def clean_graph_handler(payload: dict) -> dict:
 
 # Operations handlers
 GRAPHHOPPER_OPERATIONS_HANDLERS = {
-    "osm.geo.Operations.GraphHopper.BuildGraph": build_graph_handler,
-    "osm.geo.Operations.GraphHopper.BuildMultiProfile": build_multi_profile_handler,
-    "osm.geo.Operations.GraphHopper.BuildGraphAll": build_graph_handler,
-    "osm.geo.Operations.GraphHopper.ImportGraph": import_graph_handler,
-    "osm.geo.Operations.GraphHopper.ValidateGraph": validate_graph_handler,
-    "osm.geo.Operations.GraphHopper.CleanGraph": clean_graph_handler,
+    "osm.ops.GraphHopper.BuildGraph": build_graph_handler,
+    "osm.ops.GraphHopper.BuildMultiProfile": build_multi_profile_handler,
+    "osm.ops.GraphHopper.BuildGraphBatch": build_graph_handler,
+    "osm.ops.GraphHopper.ImportGraph": import_graph_handler,
+    "osm.ops.GraphHopper.ValidateGraph": validate_graph_handler,
+    "osm.ops.GraphHopper.CleanGraph": clean_graph_handler,
 }
 
 

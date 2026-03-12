@@ -5,7 +5,7 @@
 // the latitude/longitude result.
 
 /** Address-to-coordinate geocoding using OSM Nominatim. */
-namespace osm.geo {
+namespace osm.geocode {
 
     /** Geographic coordinate with human-readable display name. */
     schema GeoCoordinate {

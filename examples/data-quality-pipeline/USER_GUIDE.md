@@ -195,7 +195,7 @@ def profile_dataset(dataset, columns=None):
 Define a new event facet:
 
 ```afl
-namespace dq.Validation {
+namespace dataquality.Validation {
     event facet ValidateFreshness(
         dataset: String,
         max_age_hours: Int = 24

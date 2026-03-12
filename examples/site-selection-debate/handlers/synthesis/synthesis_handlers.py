@@ -8,7 +8,7 @@ from typing import Any
 
 from handlers.shared.debate_utils import generate_report, produce_ranking, summarize_round
 
-NAMESPACE = "ssd.Synthesis"
+NAMESPACE = "siteselection.Synthesis"
 
 
 def handle_summarize_round(params: dict[str, Any]) -> dict[str, Any]:

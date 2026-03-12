@@ -282,33 +282,33 @@ class TestDispatch:
         from handlers.spatial.spatial_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 3
-        assert "ssd.Spatial.ScoreCandidate" in _DISPATCH
-        assert "ssd.Spatial.RankCandidates" in _DISPATCH
-        assert "ssd.Spatial.ComputeAccessibility" in _DISPATCH
+        assert "siteselection.Spatial.ScoreCandidate" in _DISPATCH
+        assert "siteselection.Spatial.RankCandidates" in _DISPATCH
+        assert "siteselection.Spatial.ComputeAccessibility" in _DISPATCH
 
     def test_research_dispatch(self):
         from handlers.research.research_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 3
-        assert "ssd.Research.SearchMarketTrends" in _DISPATCH
-        assert "ssd.Research.GatherRegulations" in _DISPATCH
-        assert "ssd.Research.AnalyzeCompetitors" in _DISPATCH
+        assert "siteselection.Research.SearchMarketTrends" in _DISPATCH
+        assert "siteselection.Research.GatherRegulations" in _DISPATCH
+        assert "siteselection.Research.AnalyzeCompetitors" in _DISPATCH
 
     def test_debate_dispatch(self):
         from handlers.debate.debate_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 3
-        assert "ssd.Debate.PresentAnalysis" in _DISPATCH
-        assert "ssd.Debate.ChallengePosition" in _DISPATCH
-        assert "ssd.Debate.ScoreArguments" in _DISPATCH
+        assert "siteselection.Debate.PresentAnalysis" in _DISPATCH
+        assert "siteselection.Debate.ChallengePosition" in _DISPATCH
+        assert "siteselection.Debate.ScoreArguments" in _DISPATCH
 
     def test_synthesis_dispatch(self):
         from handlers.synthesis.synthesis_handlers import _DISPATCH
 
         assert len(_DISPATCH) == 3
-        assert "ssd.Synthesis.SummarizeRound" in _DISPATCH
-        assert "ssd.Synthesis.ProduceRanking" in _DISPATCH
-        assert "ssd.Synthesis.GenerateReport" in _DISPATCH
+        assert "siteselection.Synthesis.SummarizeRound" in _DISPATCH
+        assert "siteselection.Synthesis.ProduceRanking" in _DISPATCH
+        assert "siteselection.Synthesis.GenerateReport" in _DISPATCH
 
     def test_total_handler_count(self):
         from handlers.debate.debate_handlers import _DISPATCH as d3
@@ -364,7 +364,7 @@ class TestCompilation:
         assert count == 12
 
     def test_mixin_facet_count(self, parsed_ast):
-        mixins_ns = [ns for ns in parsed_ast.namespaces if ns.name == "ssd.mixins"][0]
+        mixins_ns = [ns for ns in parsed_ast.namespaces if ns.name == "siteselection.mixins"][0]
         assert len(mixins_ns.facets) == 2
 
     def test_implicit_count(self, parsed_ast):
@@ -387,7 +387,7 @@ class TestCompilation:
 
     def test_composed_facet_present(self, parsed_ast):
         """Verify EvaluationRound composed facet exists with internal steps."""
-        comp_ns = [ns for ns in parsed_ast.namespaces if ns.name == "ssd.composition"][0]
+        comp_ns = [ns for ns in parsed_ast.namespaces if ns.name == "siteselection.composition"][0]
         assert len(comp_ns.facets) == 1
         eval_round = comp_ns.facets[0]
         assert eval_round.sig.name == "EvaluationRound"

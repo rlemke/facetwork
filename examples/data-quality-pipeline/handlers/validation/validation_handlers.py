@@ -8,7 +8,7 @@ from typing import Any
 
 from handlers.shared.quality_utils import validate_accuracy, validate_completeness
 
-NAMESPACE = "dq.Validation"
+NAMESPACE = "dataquality.Validation"
 
 
 def handle_validate_completeness(params: dict[str, Any]) -> dict[str, Any]:

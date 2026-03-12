@@ -838,4 +838,4 @@ class TestHandlerRegistration:
 
     def test_namespace_value(self):
         """Namespace matches AFL namespace."""
-        assert NAMESPACE == "osm.geo.Roads.ZoomBuilder"
+        assert NAMESPACE == "osm.Roads.ZoomBuilder"

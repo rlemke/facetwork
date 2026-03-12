@@ -10,7 +10,7 @@ Demonstrates the boundary extraction workflow with a mock handler
 from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
 from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
 
-# Runtime AST for BoundaryResult schema and event facets
+# Runtime AST for BoundaryFeatures schema and event facets
 PROGRAM_AST = {
     "type": "Program",
     "declarations": [
@@ -27,7 +27,7 @@ PROGRAM_AST = {
         },
         {
             "type": "SchemaDecl",
-            "name": "BoundaryResult",
+            "name": "BoundaryFeatures",
             "fields": [
                 {"name": "output_path", "type": "String"},
                 {"name": "feature_count", "type": "Long"},
@@ -53,7 +53,7 @@ PROGRAM_AST = {
                                     "type": "EventFacetDecl",
                                     "name": "CountryBoundaries",
                                     "params": [{"name": "cache", "type": "OSMCache"}],
-                                    "returns": [{"name": "result", "type": "BoundaryResult"}],
+                                    "returns": [{"name": "result", "type": "BoundaryFeatures"}],
                                 },
                                 {
                                     "type": "EventFacetDecl",
@@ -66,13 +66,13 @@ PROGRAM_AST = {
                                             "default": 2,
                                         },
                                     ],
-                                    "returns": [{"name": "result", "type": "BoundaryResult"}],
+                                    "returns": [{"name": "result", "type": "BoundaryFeatures"}],
                                 },
                                 {
                                     "type": "EventFacetDecl",
                                     "name": "LakeBoundaries",
                                     "params": [{"name": "cache", "type": "OSMCache"}],
-                                    "returns": [{"name": "result", "type": "BoundaryResult"}],
+                                    "returns": [{"name": "result", "type": "BoundaryFeatures"}],
                                 },
                             ],
                         },
@@ -88,7 +88,7 @@ WORKFLOW_AST = {
     "type": "WorkflowDecl",
     "name": "ExtractCountryBoundaries",
     "params": [{"name": "cache", "type": "OSMCache"}],
-    "returns": [{"name": "boundaries", "type": "BoundaryResult"}],
+    "returns": [{"name": "boundaries", "type": "BoundaryFeatures"}],
     "body": {
         "type": "AndThenBlock",
         "steps": [
@@ -152,7 +152,7 @@ def main() -> None:
         evaluator=evaluator,
         config=AgentPollerConfig(service_name="test-boundaries"),
     )
-    poller.register("osm.geo.Boundaries.CountryBoundaries", mock_country_boundaries_handler)
+    poller.register("osm.Boundaries.CountryBoundaries", mock_country_boundaries_handler)
 
     # Test input: a cached PBF file
     test_cache = {

@@ -41,7 +41,7 @@ The catalog-first approach means `DiscoverStations` reads the station and invent
 
 ### 3. Schemas — Typed Data Structures
 
-Four schemas in `ghcn.types` define the data flowing between steps:
+Four schemas in `weather.types` define the data flowing between steps:
 
 | Schema | Purpose |
 |--------|---------|
@@ -56,11 +56,11 @@ Five event facets across four namespaces:
 
 | Namespace | Event Facet | Purpose |
 |-----------|-------------|---------|
-| `ghcn.Catalog` | `DiscoverStations` | Download and parse station/inventory catalogs, filter by country/state/coverage |
-| `ghcn.Ingest` | `FetchStationData` | Download one CSV per station from S3, filter to year range |
-| `ghcn.Analysis` | `AnalyzeStationClimate` | Compute per-year climate summaries from downloaded CSV, write to MongoDB |
-| `ghcn.Analysis` | `ComputeRegionTrend` | Aggregate station results, run linear regression, generate narrative |
-| `ghcn.Geocode` | `ReverseGeocode` | Reverse geocode station coordinates via OSM Nominatim |
+| `weather.Catalog` | `DiscoverStations` | Download and parse station/inventory catalogs, filter by country/state/coverage |
+| `weather.Ingest` | `FetchStationData` | Download one CSV per station from S3, filter to year range |
+| `weather.Analysis` | `AnalyzeStationClimate` | Compute per-year climate summaries from downloaded CSV, write to MongoDB |
+| `weather.Analysis` | `ComputeRegionTrend` | Aggregate station results, run linear regression, generate narrative |
+| `weather.Geocode` | `ReverseGeocode` | Reverse geocode station coordinates via OSM Nominatim |
 
 ### 5. The AnalyzeStation Workflow
 
@@ -245,7 +245,7 @@ The pipeline works identically for international stations. GHCN station IDs enco
 
 ### Add a new analysis facet
 
-1. Define the event facet in the `ghcn.Analysis` namespace:
+1. Define the event facet in the `weather.Analysis` namespace:
 ```afl
 event facet ComputeExtremes(station_id: String, start_year: Int, end_year: Int)
     => (hottest_day: String, coldest_day: String, wettest_day: String)

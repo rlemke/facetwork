@@ -187,13 +187,13 @@ class TestCompilation:
         with open(afl_path) as f:
             program = parse(f.read())
         ns_names = [ns.name for ns in program.namespaces]
-        assert "ghcn.types" in ns_names
-        assert "ghcn.Catalog" in ns_names
-        assert "ghcn.Ingest" in ns_names
-        assert "ghcn.Analysis" in ns_names
-        assert "ghcn.Geocode" in ns_names
-        assert "ghcn.workflows" in ns_names
-        assert "ghcn.Cache" in ns_names
+        assert "weather.types" in ns_names
+        assert "weather.Catalog" in ns_names
+        assert "weather.Ingest" in ns_names
+        assert "weather.Analysis" in ns_names
+        assert "weather.Geocode" in ns_names
+        assert "weather.workflows" in ns_names
+        assert "weather.Cache" in ns_names
 
     def test_event_facets_defined(self):
         from afl import parse

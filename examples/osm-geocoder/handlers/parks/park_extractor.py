@@ -90,7 +90,7 @@ PROTECT_CLASS_ALL = {"1a", "1b", "2", "3", "4", "5", "6"}
 
 
 @dataclass
-class ParkResult:
+class ParkFeatures:
     """Result of a park extraction operation."""
 
     output_path: str
@@ -287,7 +287,7 @@ def filter_parks_by_type(
     park_type: str | ParkType,
     protect_classes: str = "*",
     output_path: str | Path | None = None,
-) -> ParkResult:
+) -> ParkFeatures:
     """Filter existing GeoJSON by park type.
 
     Args:
@@ -297,7 +297,7 @@ def filter_parks_by_type(
         output_path: Path to output GeoJSON file
 
     Returns:
-        ParkResult with output path and statistics
+        ParkFeatures with output path and statistics
     """
     input_path = str(input_path)
 
@@ -354,7 +354,7 @@ def filter_parks_by_type(
     with open_output(str(output_path)) as f:
         json.dump(output_geojson, f, indent=2)
 
-    return ParkResult(
+    return ParkFeatures(
         output_path=str(output_path),
         feature_count=len(filtered),
         park_type=park_type.value,

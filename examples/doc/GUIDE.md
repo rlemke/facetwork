@@ -212,9 +212,9 @@ Wrap low-level event facets in composed facets to expose simple, domain-focused 
 
 ```afl
 // Low-level: 3 separate event facets (agent developers write handlers for these)
-cached = osm.geo.Operations.Cache(region = "Belgium")
-downloaded = osm.geo.Operations.Download(cache = cached.cache)
-graph = osm.geo.Operations.RoutingGraph(cache = downloaded.downloadCache)
+cached = osm.ops.CacheRegion(region = "Belgium")
+downloaded = osm.ops.DownloadPBF(cache = cached.cache)
+graph = osm.ops.RoutingGraph(cache = downloaded.downloadCache)
 
 // Encapsulated: 1 composed facet (workflow authors use this)
 routable = BuildRoutingData(region = "Belgium")
@@ -239,8 +239,8 @@ Import facets from other namespaces to compose new workflows.
 ```afl
 // volcano-query: compose OSM facets
 namespace volcano {
-    use osm.geo.Operations
-    use osm.geo.Filters
+    use osm.ops
+    use osm.Filters
     workflow FindVolcanoes(...) => (...) andThen {
         data = LoadVolcanoData(region = $.state)
         filtered = FilterByOSMTag(...)

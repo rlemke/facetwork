@@ -29,7 +29,7 @@ schema OSMCache {
 Cache event facets are defined in `afl/osmcache.afl` across 11 geographic namespaces. Each facet takes no parameters and returns an `OSMCache`:
 
 ```afl
-namespace osm.geo.cache.Africa {
+namespace osm.cache.Africa {
     event facet AllAfrica() => (cache: OSMCache)
     event facet Algeria() => (cache: OSMCache)
     event facet Angola() => (cache: OSMCache)
@@ -41,17 +41,17 @@ namespace osm.geo.cache.Africa {
 
 | Namespace | Regions | Description |
 |-----------|---------|-------------|
-| `osm.geo.cache.Africa` | ~57 | African countries + continent aggregate |
-| `osm.geo.cache.Asia` | ~44 | Asian countries + continent aggregate |
-| `osm.geo.cache.Australia` | ~21 | Australia, New Zealand, Pacific islands |
-| `osm.geo.cache.Europe` | ~45 | European countries + continent aggregate |
-| `osm.geo.cache.NorthAmerica` | 4 | Canada, Mexico, United States, Greenland |
-| `osm.geo.cache.Canada` | ~12 | Canadian provinces and territories |
-| `osm.geo.cache.CentralAmerica` | ~13 | Central American and Caribbean countries |
-| `osm.geo.cache.SouthAmerica` | ~13 | South American countries |
-| `osm.geo.cache.UnitedStates` | ~52 | US states + District of Columbia |
-| `osm.geo.cache.Antarctica` | 1 | Antarctica |
-| `osm.geo.cache.Continents` | ~10 | Continent-level aggregates + planet |
+| `osm.cache.Africa` | ~57 | African countries + continent aggregate |
+| `osm.cache.Asia` | ~44 | Asian countries + continent aggregate |
+| `osm.cache.Australia` | ~21 | Australia, New Zealand, Pacific islands |
+| `osm.cache.Europe` | ~45 | European countries + continent aggregate |
+| `osm.cache.NorthAmerica` | 4 | Canada, Mexico, United States, Greenland |
+| `osm.cache.Canada` | ~12 | Canadian provinces and territories |
+| `osm.cache.CentralAmerica` | ~13 | Central American and Caribbean countries |
+| `osm.cache.SouthAmerica` | ~13 | South American countries |
+| `osm.cache.UnitedStates` | ~52 | US states + District of Columbia |
+| `osm.cache.Antarctica` | 1 | Antarctica |
+| `osm.cache.Continents` | ~10 | Continent-level aggregates + planet |
 
 Each namespace also includes an `All*` facet (e.g. `AllAfrica`, `AllEurope`) that resolves to the continent-level aggregate download.
 
@@ -61,13 +61,13 @@ Cache handlers are registered in `handlers/cache_handlers.py`. The module define
 
 ```python
 REGION_REGISTRY = {
-    "osm.geo.cache.Africa": {
+    "osm.cache.Africa": {
         "AllAfrica": "africa",
         "Algeria": "africa/algeria",
         "Angola": "africa/angola",
         # ...
     },
-    "osm.geo.cache.Europe": {
+    "osm.cache.Europe": {
         "AllEurope": "europe",
         "Albania": "europe/albania",
         # ...
@@ -95,9 +95,9 @@ Regional workflows (e.g. `osmafrica.afl`, `osmeurope.afl`) follow a two-phase pa
 2. **Operation** — pass the cache result to a processing facet like `Download` or `DownloadShapefile`
 
 ```afl
-namespace osm.geo.Africa.cache {
-  use osm.geo.Operations
-  use osm.geo.cache.Africa
+namespace osm.Africa.cache {
+  use osm.ops
+  use osm.cache.Africa
 
   facet AfricaIndividually() => (cache: [OSMCache]) andThen {
     algeria = Algeria()                              // phase 1: cache lookup
@@ -155,7 +155,7 @@ To add a new region to the cache system:
 
 2. Add the region path to `REGION_REGISTRY` in `handlers/cache_handlers.py`:
    ```python
-   "osm.geo.cache.Europe": {
+   "osm.cache.Europe": {
        # ...
        "NewRegion": "europe/new-region",
    }

@@ -8,7 +8,7 @@ from typing import Any
 
 from handlers.shared.debate_utils import compute_accessibility, rank_candidates, score_candidate
 
-NAMESPACE = "ssd.Spatial"
+NAMESPACE = "siteselection.Spatial"
 
 
 def handle_score_candidate(params: dict[str, Any]) -> dict[str, Any]:

@@ -1,7 +1,7 @@
 """Zoom builder event facet handlers.
 
 Handles zoom-level road infrastructure events defined in osmzoombuilder.afl
-under osm.geo.Roads.ZoomBuilder.
+under osm.Roads.ZoomBuilder.
 """
 
 import json
@@ -49,7 +49,7 @@ from .zoom_selection import (
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Roads.ZoomBuilder"
+NAMESPACE = "osm.Roads.ZoomBuilder"
 
 
 def _make_build_logical_graph_handler(facet_name: str):

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 from handlers.routes.route_extractor import (
     HAS_OSMIUM,
-    RouteResult,
+    RouteFeatures,
     RouteStats,
     RouteType,
     _haversine_distance,
@@ -124,8 +124,8 @@ class TestResultConversions:
     """Tests for result conversion functions."""
 
     def test_result_to_dict(self):
-        """Test RouteResult to dict conversion."""
-        result = RouteResult(
+        """Test RouteFeatures to dict conversion."""
+        result = RouteFeatures(
             output_path="/tmp/routes.geojson",
             feature_count=42,
             route_type="bicycle",
@@ -271,4 +271,4 @@ class TestHandlerRegistration:
 
     def test_namespace_value(self):
         """Test namespace is correct."""
-        assert NAMESPACE == "osm.geo.Routes"
+        assert NAMESPACE == "osm.Routes"

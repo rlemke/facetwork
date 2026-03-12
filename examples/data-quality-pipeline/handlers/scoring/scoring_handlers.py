@@ -7,7 +7,7 @@ from typing import Any
 
 from handlers.shared.quality_utils import assign_grade, compute_scores
 
-NAMESPACE = "dq.Scoring"
+NAMESPACE = "dataquality.Scoring"
 
 
 def handle_compute_scores(params: dict[str, Any]) -> dict[str, Any]:

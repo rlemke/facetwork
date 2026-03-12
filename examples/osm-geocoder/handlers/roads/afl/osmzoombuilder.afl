@@ -8,7 +8,7 @@
 // → enforce monotonic reveal → export.
 
 /** Low-zoom road infrastructure builder for progressive map rendering at zoom levels 2-7. */
-namespace osm.geo.Roads.ZoomBuilder {
+namespace osm.Roads.ZoomBuilder {
     use osm.types
 
     /** Merged road segment between decision nodes with classification attributes. */

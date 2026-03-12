@@ -25,14 +25,14 @@ Both formats are cached independently in the local filesystem cache (`/tmp/osm-c
 
 ## AFL facets
 
-Two event facets are defined in `osmoperations.afl` under the `osm.geo.Operations` namespace:
+Two event facets are defined in `osmoperations.afl` under the `osm.ops` namespace:
 
 ```afl
 event facet DownloadShapefile(cache:OSMCache) => ()
-event facet DownloadShapefileAll(cache:OSMCache) => ()
+event facet DownloadShapefileBatch(cache:OSMCache) => ()
 ```
 
-These mirror the existing `Download` and `DownloadAll` facets. The `cache` parameter receives an `OSMCache` struct from a preceding cache-lookup step. The return type is `()` (no return value) — the handler performs the download as a side effect.
+These mirror the existing `Download` and `DownloadBatch` facets. The `cache` parameter receives an `OSMCache` struct from a preceding cache-lookup step. The return type is `()` (no return value) — the handler performs the download as a side effect.
 
 ## AFL workflow example
 
@@ -42,9 +42,9 @@ These mirror the existing `Download` and `DownloadAll` facets. The `cache` param
 2. **Shapefile download** — pass the cache result to `DownloadShapefile`
 
 ```afl
-namespace osm.geo.Europe.shapefiles {
-  use osm.geo.Operations
-  use osm.geo.cache.Europe
+namespace osm.Europe.shapefiles {
+  use osm.ops
+  use osm.cache.Europe
 
   facet EuropeShapefiles () => (cache: [OSMCache]) andThen {
     albania = Albania()
@@ -60,7 +60,7 @@ namespace osm.geo.Europe.shapefiles {
 }
 ```
 
-The workflow uses the same `osm.geo.cache.Europe` cache facets as `osmeurope.afl`. Only the download step differs — `DownloadShapefile` instead of `Download`.
+The workflow uses the same `osm.cache.Europe` cache facets as `osmeurope.afl`. Only the download step differs — `DownloadShapefile` instead of `Download`.
 
 ## Python handler
 
@@ -111,9 +111,9 @@ To add shapefile downloads for another region (e.g. Africa):
 
 1. Create a new namespace in `osmshapefiles.afl` (or a new file):
    ```afl
-   namespace osm.geo.Africa.shapefiles {
-     use osm.geo.Operations
-     use osm.geo.cache.Africa
+   namespace osm.Africa.shapefiles {
+     use osm.ops
+     use osm.cache.Africa
 
      facet AfricaShapefiles () => (cache: [OSMCache]) andThen {
        algeria = Algeria()

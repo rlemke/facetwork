@@ -7,7 +7,7 @@ from typing import Any
 
 from handlers.shared.ghcn_utils import reverse_geocode_nominatim
 
-NAMESPACE = "ghcn.Geocode"
+NAMESPACE = "weather.Geocode"
 
 
 def _step_log(step_log: Any, msg: str, level: str = "info") -> None:

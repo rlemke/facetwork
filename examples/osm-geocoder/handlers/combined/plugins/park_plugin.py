@@ -1,6 +1,7 @@
 """Park/protected area extractor plugin — area-based.
 
 Extracts national parks, state parks, nature reserves, and other protected areas.
+Features are streamed to disk during scanning.
 """
 
 from __future__ import annotations
@@ -27,7 +28,12 @@ class ParkPlugin(ExtractorPlugin):
         )
 
     def __init__(self) -> None:
-        self.features: list[dict] = []
+        self._total_area = 0.0
+        self._type_counts: dict[str, int] = {}
+
+    def begin(self, pbf_stem: str, output_dir: str) -> None:
+        path = f"{output_dir}/{pbf_stem}_parks.geojson"
+        self._open_writer(path)
 
     def process_area(
         self,
@@ -43,7 +49,10 @@ class ParkPlugin(ExtractorPlugin):
         area_km2 = calculate_area_km2(geometry) if geometry else 0.0
         classification = classify_park(tags)
 
-        self.features.append(
+        self._total_area += area_km2
+        self._type_counts[classification] = self._type_counts.get(classification, 0) + 1
+
+        self._writer.write_feature(
             {
                 "type": "Feature",
                 "properties": {
@@ -61,21 +70,17 @@ class ParkPlugin(ExtractorPlugin):
         )
 
     def finalize(self, pbf_stem: str, output_dir: str) -> PluginResult:
-        path = f"{output_dir}/{pbf_stem}_parks.geojson"
-        count = self._write_geojson(self.features, path)
+        if self._writer is None:
+            path = f"{output_dir}/{pbf_stem}_parks.geojson"
+            return PluginResult(category=self.category, output_path=path, feature_count=0)
 
-        total_area = sum(f["properties"].get("area_km2", 0.0) for f in self.features)
-        type_counts: dict[str, int] = {}
-        for f in self.features:
-            pt = f["properties"].get("park_type", "other")
-            type_counts[pt] = type_counts.get(pt, 0) + 1
-
+        self._writer.close()
         return PluginResult(
             category=self.category,
-            output_path=path,
-            feature_count=count,
+            output_path=self._writer.path,
+            feature_count=self._writer.feature_count,
             metadata={
-                "total_area_km2": round(total_area, 2),
-                "park_types": type_counts,
+                "total_area_km2": round(self._total_area, 2),
+                "park_types": self._type_counts,
             },
         )

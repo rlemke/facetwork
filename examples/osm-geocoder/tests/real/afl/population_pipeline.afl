@@ -8,8 +8,8 @@
 /** Integration test for the end-to-end population analysis pipeline. */
 namespace test.population {
     use osm.types
-    use osm.geo.Region
-    use osm.geo.Population
+    use osm.Region
+    use osm.Population
 
     /** Resolves a region, extracts cities, filters by population range, and computes statistics. */
     workflow PopulationPipeline(

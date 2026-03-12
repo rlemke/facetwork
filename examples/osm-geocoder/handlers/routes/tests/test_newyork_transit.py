@@ -60,7 +60,7 @@ PROGRAM_AST = {
                                 _ef(
                                     "PublicTransport",
                                     [{"name": "cache", "type": "OSMCache"}],
-                                    [{"name": "result", "type": "RouteResult"}],
+                                    [{"name": "result", "type": "RouteFeatures"}],
                                 ),
                             ],
                         },
@@ -95,7 +95,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow PublicTransportMapByRegion(
         region: String,
         prefer_continent: String = "",
@@ -172,7 +172,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "NewYork",
-            "region_namespace": "osm.geo.cache.NorthAmerica.UnitedStates",
+            "region_namespace": "osm.cache.NorthAmerica.UnitedStates",
             "continent": "NorthAmerica",
             "geofabrik_path": "north-america/us/new-york",
             "is_ambiguous": False,

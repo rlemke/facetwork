@@ -7,12 +7,12 @@
 //   osmelevation.afl, osmvisualization.afl
 
 /** Region-name-driven pipelines that resolve a name, extract routes, filter by elevation, and render maps. */
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     use osm.types
-    use osm.geo.Region
-    use osm.geo.Routes
-    use osm.geo.Elevation
-    use osm.geo.Visualization
+    use osm.Region
+    use osm.Routes
+    use osm.Elevation
+    use osm.viz
 
     /** Resolves a region name, extracts bicycle routes, filters by elevation, and renders a map. */
     workflow BicycleElevationMapByRegion(
@@ -94,7 +94,7 @@ namespace osm.geo.RegionMap {
     ) => (map_path: String, feature_count: Long, matched_count: Long, region_name: String) andThen {
         resolved = ResolveRegion(name = $.region, prefer_continent = $.prefer_continent)
 
-        routes = osm.geo.Routes.ExtractRoutes(
+        routes = osm.Routes.ExtractRoutes(
             cache = resolved.cache,
             route_type = $.route_type,
             network = $.network

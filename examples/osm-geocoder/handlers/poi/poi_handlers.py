@@ -1,7 +1,7 @@
 """POI event facet handlers for OSM point-of-interest extraction.
 
 Handles Cities, Towns, Suburbs, Villages, Hamlets, Countries, POI,
-and GeoOSMCache events defined in osmpoi.afl under osm.geo.POIs.
+and GeoOSMCache events defined in osmpoi.afl under osm.POIs.
 
 Delegates to combined_scan() from combined_handler.py for actual PBF
 extraction via pyosmium, then filters the resulting GeoJSON for the
@@ -18,7 +18,7 @@ from ..shared.output_cache import cached_result, save_result_meta
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.POIs"
+NAMESPACE = "osm.POIs"
 
 # Maps POI facet names to (return_param, place_type, min_population)
 POI_FACETS: dict[str, tuple[str, str, int]] = {

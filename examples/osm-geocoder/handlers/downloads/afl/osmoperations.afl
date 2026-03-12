@@ -1,5 +1,5 @@
 /** Default parameters for OSM download operations. */
-namespace osm.geo.Operations.Data {
+namespace osm.ops.Data {
 
     /** Target date for OSM data snapshot. */
     facet OsmDate(date: String = "latest")
@@ -13,13 +13,13 @@ namespace osm.geo.Operations.Data {
 }
 
 /** Core OSM data operations: caching, downloading, tiling, routing graph generation, and shapefile extraction. */
-namespace osm.geo.Operations {
+namespace osm.ops {
     use osm.types
 
     /** Resolves a region name to a cached OSM data file, downloading if needed. */
-    event facet Cache(region:String) => (cache:OSMCache)
+    event facet CacheRegion(region:String) => (cache:OSMCache)
     /** Downloads an OSM file from a URL to a local path. */
-    event facet Download(url:String, path:String, force:Boolean) => (downloadCache:OSMCache)
+    event facet DownloadPBF(url:String, path:String, force:Boolean) => (downloadCache:OSMCache)
     /** Generates map tiles from cached OSM data. */
     event facet Tile(cache:OSMCache) => (tiles:OSMCache)
     /** Builds a routing graph from cached OSM data. */
@@ -31,19 +31,19 @@ namespace osm.geo.Operations {
     /** Imports cached OSM data into a PostGIS database. */
     event facet PostGisImport(cache:OSMCache) => (stats:OSMCache)
     /** Downloads all sub-regions for a cached OSM dataset. */
-    event facet DownloadAll(cache:OSMCache) => ()
+    event facet DownloadBatch(cache:OSMCache) => ()
     /** Generates tiles for all sub-regions in a cached dataset. */
-    event facet TileAll(cache:OSMCache) => (tiles:OSMCache)
+    event facet TileBatch(cache:OSMCache) => (tiles:OSMCache)
     /** Builds routing graphs for all sub-regions in a cached dataset. */
-    event facet RoutingGraphAll(cache:OSMCache) => (graph:OSMCache)
+    event facet RoutingGraphBatch(cache:OSMCache) => (graph:OSMCache)
     /** Reports status for all sub-regions in a cached dataset. */
-    event facet StatusAll(cache:OSMCache) => (stats:OSMCache)
+    event facet StatusBatch(cache:OSMCache) => (stats:OSMCache)
     /** Generates geocoding caches for all sub-regions. */
-    event facet GeoOSMCacheAll(cache:OSMCache) => (graph:OSMCache)
+    event facet GeoOSMCacheBatch(cache:OSMCache) => (graph:OSMCache)
     /** Downloads shapefiles derived from a cached OSM region. */
     event facet DownloadShapefile(cache:OSMCache) => ()
     /** Downloads shapefiles for all sub-regions in a cached dataset. */
-    event facet DownloadShapefileAll(cache:OSMCache) => ()
+    event facet DownloadShapefileBatch(cache:OSMCache) => ()
 
 }
 

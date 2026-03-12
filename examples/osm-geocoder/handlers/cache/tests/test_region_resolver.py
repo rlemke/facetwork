@@ -63,7 +63,7 @@ class TestNormalize:
 class TestRegionMatch:
     def test_continent_extraction(self):
         m = RegionMatch(
-            namespace="osm.geo.cache.Europe",
+            namespace="osm.cache.Europe",
             facet_name="France",
             geofabrik_path="europe/france",
         )
@@ -71,15 +71,15 @@ class TestRegionMatch:
 
     def test_qualified_name(self):
         m = RegionMatch(
-            namespace="osm.geo.cache.Europe",
+            namespace="osm.cache.Europe",
             facet_name="France",
             geofabrik_path="europe/france",
         )
-        assert m.qualified_name == "osm.geo.cache.Europe.France"
+        assert m.qualified_name == "osm.cache.Europe.France"
 
     def test_frozen(self):
         m = RegionMatch(
-            namespace="osm.geo.cache.Europe",
+            namespace="osm.cache.Europe",
             facet_name="France",
             geofabrik_path="europe/france",
         )

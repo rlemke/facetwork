@@ -9,7 +9,7 @@
 namespace continental.transit {
     use osm.types
     use continental.types
-    uses osm.geo.Transit.GTFS
+    uses osm.Transit.GTFS
 
     // ══════════════════════════════════════════════════════════════════
     // United States Agencies (4)
@@ -17,45 +17,45 @@ namespace continental.transit {
 
     /** Downloads and analyzes the Amtrak national rail GTFS feed. */
     workflow AnalyzeAmtrak() => (result: TransitAgencyResult) andThen {
-        feed = osm.geo.Transit.GTFS.DownloadFeed(
+        feed = osm.Transit.GTFS.DownloadFeed(
             url = "https://content.amtrak.com/content/gtfs/GTFS.zip"
         )
-        stats = osm.geo.Transit.GTFS.TransitStatistics(feed = feed.feed)
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = feed.feed)
-        routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = feed.feed)
+        stats = osm.Transit.GTFS.TransitStatistics(feed = feed.feed)
+        stops = osm.Transit.GTFS.ExtractStops(feed = feed.feed)
+        routes = osm.Transit.GTFS.ExtractRoutes(feed = feed.feed)
         yield AnalyzeAmtrak(result = stats.stats)
     }
 
     /** Downloads and analyzes the MBTA (Boston) GTFS feed. */
     workflow AnalyzeMBTA() => (result: TransitAgencyResult) andThen {
-        feed = osm.geo.Transit.GTFS.DownloadFeed(
+        feed = osm.Transit.GTFS.DownloadFeed(
             url = "https://cdn.mbta.com/MBTA_GTFS.zip"
         )
-        stats = osm.geo.Transit.GTFS.TransitStatistics(feed = feed.feed)
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = feed.feed)
-        routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = feed.feed)
+        stats = osm.Transit.GTFS.TransitStatistics(feed = feed.feed)
+        stops = osm.Transit.GTFS.ExtractStops(feed = feed.feed)
+        routes = osm.Transit.GTFS.ExtractRoutes(feed = feed.feed)
         yield AnalyzeMBTA(result = stats.stats)
     }
 
     /** Downloads and analyzes the CTA (Chicago) GTFS feed. */
     workflow AnalyzeCTA() => (result: TransitAgencyResult) andThen {
-        feed = osm.geo.Transit.GTFS.DownloadFeed(
+        feed = osm.Transit.GTFS.DownloadFeed(
             url = "https://www.transitchicago.com/downloads/sch_data/google_transit.zip"
         )
-        stats = osm.geo.Transit.GTFS.TransitStatistics(feed = feed.feed)
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = feed.feed)
-        routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = feed.feed)
+        stats = osm.Transit.GTFS.TransitStatistics(feed = feed.feed)
+        stops = osm.Transit.GTFS.ExtractStops(feed = feed.feed)
+        routes = osm.Transit.GTFS.ExtractRoutes(feed = feed.feed)
         yield AnalyzeCTA(result = stats.stats)
     }
 
     /** Downloads and analyzes the MTA (New York City Subway) GTFS feed. */
     workflow AnalyzeMTA() => (result: TransitAgencyResult) andThen {
-        feed = osm.geo.Transit.GTFS.DownloadFeed(
+        feed = osm.Transit.GTFS.DownloadFeed(
             url = "http://web.mta.info/developers/data/nyct/subway/google_transit.zip"
         )
-        stats = osm.geo.Transit.GTFS.TransitStatistics(feed = feed.feed)
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = feed.feed)
-        routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = feed.feed)
+        stats = osm.Transit.GTFS.TransitStatistics(feed = feed.feed)
+        stops = osm.Transit.GTFS.ExtractStops(feed = feed.feed)
+        routes = osm.Transit.GTFS.ExtractRoutes(feed = feed.feed)
         yield AnalyzeMTA(result = stats.stats)
     }
 
@@ -65,34 +65,34 @@ namespace continental.transit {
 
     /** Downloads and analyzes the TransLink (Vancouver) GTFS feed. */
     workflow AnalyzeTransLink() => (result: TransitAgencyResult) andThen {
-        feed = osm.geo.Transit.GTFS.DownloadFeed(
+        feed = osm.Transit.GTFS.DownloadFeed(
             url = "https://gtfs.translink.ca/static/latest"
         )
-        stats = osm.geo.Transit.GTFS.TransitStatistics(feed = feed.feed)
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = feed.feed)
-        routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = feed.feed)
+        stats = osm.Transit.GTFS.TransitStatistics(feed = feed.feed)
+        stops = osm.Transit.GTFS.ExtractStops(feed = feed.feed)
+        routes = osm.Transit.GTFS.ExtractRoutes(feed = feed.feed)
         yield AnalyzeTransLink(result = stats.stats)
     }
 
     /** Downloads and analyzes the TTC (Toronto) GTFS feed. */
     workflow AnalyzeTTC() => (result: TransitAgencyResult) andThen {
-        feed = osm.geo.Transit.GTFS.DownloadFeed(
+        feed = osm.Transit.GTFS.DownloadFeed(
             url = "http://opendata.toronto.ca/toronto.transit.commission/ttc-routes-and-schedules/OpenData_TTC_Schedules.zip"
         )
-        stats = osm.geo.Transit.GTFS.TransitStatistics(feed = feed.feed)
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = feed.feed)
-        routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = feed.feed)
+        stats = osm.Transit.GTFS.TransitStatistics(feed = feed.feed)
+        stops = osm.Transit.GTFS.ExtractStops(feed = feed.feed)
+        routes = osm.Transit.GTFS.ExtractRoutes(feed = feed.feed)
         yield AnalyzeTTC(result = stats.stats)
     }
 
     /** Downloads and analyzes the OC Transpo (Ottawa) GTFS feed. */
     workflow AnalyzeOCTranspo() => (result: TransitAgencyResult) andThen {
-        feed = osm.geo.Transit.GTFS.DownloadFeed(
+        feed = osm.Transit.GTFS.DownloadFeed(
             url = "https://www.octranspo.com/files/google_transit.zip"
         )
-        stats = osm.geo.Transit.GTFS.TransitStatistics(feed = feed.feed)
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = feed.feed)
-        routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = feed.feed)
+        stats = osm.Transit.GTFS.TransitStatistics(feed = feed.feed)
+        stops = osm.Transit.GTFS.ExtractStops(feed = feed.feed)
+        routes = osm.Transit.GTFS.ExtractRoutes(feed = feed.feed)
         yield AnalyzeOCTranspo(result = stats.stats)
     }
 
@@ -102,45 +102,45 @@ namespace continental.transit {
 
     /** Downloads and analyzes the Deutsche Bahn (Germany) GTFS feed. */
     workflow AnalyzeDeutscheBahn() => (result: TransitAgencyResult) andThen {
-        feed = osm.geo.Transit.GTFS.DownloadFeed(
+        feed = osm.Transit.GTFS.DownloadFeed(
             url = "https://download.gtfs.de/germany/fv/latest.zip"
         )
-        stats = osm.geo.Transit.GTFS.TransitStatistics(feed = feed.feed)
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = feed.feed)
-        routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = feed.feed)
+        stats = osm.Transit.GTFS.TransitStatistics(feed = feed.feed)
+        stops = osm.Transit.GTFS.ExtractStops(feed = feed.feed)
+        routes = osm.Transit.GTFS.ExtractRoutes(feed = feed.feed)
         yield AnalyzeDeutscheBahn(result = stats.stats)
     }
 
     /** Downloads and analyzes the SNCF TER (France regional rail) GTFS feed. */
     workflow AnalyzeSNCF() => (result: TransitAgencyResult) andThen {
-        feed = osm.geo.Transit.GTFS.DownloadFeed(
+        feed = osm.Transit.GTFS.DownloadFeed(
             url = "https://eu.ftp.opendatasoft.com/sncf/gtfs/export-ter-gtfs-last.zip"
         )
-        stats = osm.geo.Transit.GTFS.TransitStatistics(feed = feed.feed)
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = feed.feed)
-        routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = feed.feed)
+        stats = osm.Transit.GTFS.TransitStatistics(feed = feed.feed)
+        stops = osm.Transit.GTFS.ExtractStops(feed = feed.feed)
+        routes = osm.Transit.GTFS.ExtractRoutes(feed = feed.feed)
         yield AnalyzeSNCF(result = stats.stats)
     }
 
     /** Downloads and analyzes the Renfe (Spain) GTFS feed. */
     workflow AnalyzeRenfe() => (result: TransitAgencyResult) andThen {
-        feed = osm.geo.Transit.GTFS.DownloadFeed(
+        feed = osm.Transit.GTFS.DownloadFeed(
             url = "https://ssl.renfe.com/ftransit/Fichero_CER_FEVE/feve.zip"
         )
-        stats = osm.geo.Transit.GTFS.TransitStatistics(feed = feed.feed)
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = feed.feed)
-        routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = feed.feed)
+        stats = osm.Transit.GTFS.TransitStatistics(feed = feed.feed)
+        stops = osm.Transit.GTFS.ExtractStops(feed = feed.feed)
+        routes = osm.Transit.GTFS.ExtractRoutes(feed = feed.feed)
         yield AnalyzeRenfe(result = stats.stats)
     }
 
     /** Downloads and analyzes the Trenitalia (Italy) GTFS feed. */
     workflow AnalyzeTrenitalia() => (result: TransitAgencyResult) andThen {
-        feed = osm.geo.Transit.GTFS.DownloadFeed(
+        feed = osm.Transit.GTFS.DownloadFeed(
             url = "https://www.trenitalia.com/content/dam/tcom/google-transit/google_transit.zip"
         )
-        stats = osm.geo.Transit.GTFS.TransitStatistics(feed = feed.feed)
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = feed.feed)
-        routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = feed.feed)
+        stats = osm.Transit.GTFS.TransitStatistics(feed = feed.feed)
+        stops = osm.Transit.GTFS.ExtractStops(feed = feed.feed)
+        routes = osm.Transit.GTFS.ExtractRoutes(feed = feed.feed)
         yield AnalyzeTrenitalia(result = stats.stats)
     }
 

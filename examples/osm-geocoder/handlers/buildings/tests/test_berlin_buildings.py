@@ -64,7 +64,7 @@ PROGRAM_AST = {
                                         {"name": "cache", "type": "OSMCache"},
                                         {"name": "building_type", "type": "String"},
                                     ],
-                                    [{"name": "result", "type": "BuildingResult"}],
+                                    [{"name": "result", "type": "BuildingFeatures"}],
                                 ),
                                 _ef(
                                     "BuildingStatistics",
@@ -104,7 +104,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow BuildingMapByRegion(
         region: String,
         building_type: String = "all",
@@ -215,7 +215,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "Berlin",
-            "region_namespace": "osm.geo.cache.Europe",
+            "region_namespace": "osm.cache.Europe",
             "continent": "Europe",
             "geofabrik_path": "europe/germany/berlin",
             "is_ambiguous": False,

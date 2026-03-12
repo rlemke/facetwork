@@ -1,7 +1,7 @@
 """GTFS transit feed event facet handlers.
 
 Handles transit extraction events defined in osmgtfs.afl under
-osm.geo.Transit.GTFS.
+osm.Transit.GTFS.
 """
 
 import logging
@@ -13,7 +13,7 @@ from .gtfs_extractor import (
     CoverageResult,
     DensityResult,
     FrequencyResult,
-    GTFSRouteResult,
+    GTFSRouteFeatures,
     NearestStopResult,
     StopResult,
     TransitStats,
@@ -31,7 +31,7 @@ from .gtfs_extractor import (
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Transit.GTFS"
+NAMESPACE = "osm.Transit.GTFS"
 
 
 # ── Result converters ───────────────────────────────────────────────────
@@ -51,8 +51,8 @@ def _stop_result_to_dict(result: StopResult) -> dict:
     }
 
 
-def _route_result_to_dict(result: GTFSRouteResult) -> dict:
-    """Convert a GTFSRouteResult to a dictionary."""
+def _route_result_to_dict(result: GTFSRouteFeatures) -> dict:
+    """Convert a GTFSRouteFeatures to a dictionary."""
     return {
         "output_path": result.output_path,
         "route_count": result.route_count,

@@ -70,7 +70,7 @@ PROGRAM_AST = {
                                         {"name": "place_type", "type": "String"},
                                         {"name": "min_population", "type": "Long"},
                                     ],
-                                    [{"name": "result", "type": "PopulationFilterResult"}],
+                                    [{"name": "result", "type": "PopulationFilteredFeatures"}],
                                 ),
                                 _ef(
                                     "FilterByPopulationRange",
@@ -79,7 +79,7 @@ PROGRAM_AST = {
                                         {"name": "min_population", "type": "Long"},
                                         {"name": "max_population", "type": "Long"},
                                     ],
-                                    [{"name": "result", "type": "PopulationFilterResult"}],
+                                    [{"name": "result", "type": "PopulationFilteredFeatures"}],
                                 ),
                             ],
                         },
@@ -130,7 +130,7 @@ PROGRAM_AST = {
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
-namespace osm.geo.RegionMap {
+namespace osm.RegionMap {
     workflow CityRouteMapByRegion(
         region: String,
         min_population: Long = 1100000,
@@ -392,7 +392,7 @@ MOCK_HANDLERS = {
         "resolution": {
             "query": p["name"],
             "matched_name": "France",
-            "region_namespace": "osm.geo.cache.Europe",
+            "region_namespace": "osm.cache.Europe",
             "continent": "Europe",
             "geofabrik_path": "europe/france",
             "is_ambiguous": False,

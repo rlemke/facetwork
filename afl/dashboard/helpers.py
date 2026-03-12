@@ -44,8 +44,8 @@ def effective_server_state(server: ServerDefinition) -> str:
 def extract_namespace(workflow_name: str) -> str:
     """Extract the namespace prefix from a qualified workflow name.
 
-    >>> extract_namespace("osm.geo.Routes.BicycleRoutes")
-    'osm.geo.Routes'
+    >>> extract_namespace("osm.Routes.BicycleRoutes")
+    'osm.Routes'
     >>> extract_namespace("SimpleWorkflow")
     '(top-level)'
     """
@@ -58,7 +58,7 @@ def extract_namespace(workflow_name: str) -> str:
 def short_workflow_name(workflow_name: str) -> str:
     """Extract the short name from a qualified workflow name.
 
-    >>> short_workflow_name("osm.geo.Routes.BicycleRoutes")
+    >>> short_workflow_name("osm.Routes.BicycleRoutes")
     'BicycleRoutes'
     >>> short_workflow_name("SimpleWorkflow")
     'SimpleWorkflow'
@@ -107,7 +107,7 @@ def group_runners_by_namespace(
     """Group runners by their workflow namespace.
 
     Returns a sorted list of dicts:
-        [{"namespace": "osm.geo", "runners": [...], "counts": {...}, "total": N}]
+        [{"namespace": "osm.geocode", "runners": [...], "counts": {...}, "total": N}]
     """
     ns_map: dict[str, list[RunnerDefinition]] = {}
     for r in runners:
@@ -136,7 +136,7 @@ def extract_handler_prefix(facet_name: str) -> str:
 
     Returns the first dotted segment, or ``(top-level)`` if there are no dots.
 
-    >>> extract_handler_prefix("osm.geo.Cache")
+    >>> extract_handler_prefix("osm.Cache")
     'osm'
     >>> extract_handler_prefix("SimpleHandler")
     '(top-level)'
@@ -152,7 +152,7 @@ def group_handlers_by_namespace(
     """Group handlers by their full namespace (all segments except last).
 
     Returns a sorted list of dicts:
-        [{"namespace": "osm.geo", "handlers": [...], "total": N}]
+        [{"namespace": "osm.geocode", "handlers": [...], "total": N}]
     """
     ns_map: dict[str, list[HandlerRegistration]] = {}
     for h in handlers:

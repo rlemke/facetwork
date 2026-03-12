@@ -85,7 +85,7 @@ def cached_result(
     """Check if a cached output is still valid.
 
     Args:
-        handler_name: Qualified facet name (e.g. ``osm.geo.Boundaries.StateBoundaries``).
+        handler_name: Qualified facet name (e.g. ``osm.Boundaries.StateBoundaries``).
         cache: The ``cache`` dict from the payload.  Must contain ``path``
             and ``size``; alternatively pass ``{"path": some_file_path}``
             and the size will be read from the filesystem.

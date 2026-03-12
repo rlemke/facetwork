@@ -1,11 +1,11 @@
 /** Runs all composed analysis workflows for US states. */
-namespace osm.geo.UnitedStates.analysis {
+namespace osm.UnitedStates.analysis {
   use osm.types
 
   /** Runs comprehensive analysis for a single region using one CombinedScan pass. */
   workflow AnalyzeRegion(region: String = "Liechtenstein") => (completed_region: String) andThen {
     // Stage 1: Cache the PBF file
-    cache = osm.geo.Operations.Cache(region = $.region)
+    cache = osm.ops.CacheRegion(region = $.region)
 
     // Stage 2: Single-pass extraction for all needed categories
     scan = osm.Combined.CombinedScan(cache = cache.cache, categories = ["routes", "parks", "population", "boundaries"])
@@ -19,50 +19,50 @@ namespace osm.geo.UnitedStates.analysis {
     // Stage 4: Post-processing — all steps below run in parallel where dependencies allow
 
     // -- Bicycle routes visualization (was VisualizeBicycleRoutesFromCache)
-    bicycleRoutes = osm.geo.Routes.FilterRoutesByType(input_path = routesData.output_path, route_type = "bicycle")
-    bicycleMap = osm.geo.Visualization.RenderMap(geojson_path = bicycleRoutes.result.output_path, title = "Bicycle Routes", color = "#27ae60")
+    bicycleRoutes = osm.Routes.FilterRoutesByType(input_path = routesData.output_path, route_type = "bicycle")
+    bicycleMap = osm.viz.RenderMap(geojson_path = bicycleRoutes.result.output_path, title = "Bicycle Routes", color = "#27ae60")
 
     // -- Transport overview: 4 route types with stats (was TransportOverviewFromCache)
-    hikingRoutes = osm.geo.Routes.FilterRoutesByType(input_path = routesData.output_path, route_type = "hiking")
-    trainRoutes = osm.geo.Routes.FilterRoutesByType(input_path = routesData.output_path, route_type = "train")
-    busRoutes = osm.geo.Routes.FilterRoutesByType(input_path = routesData.output_path, route_type = "bus")
-    bicycleStats = osm.geo.Routes.RouteStatistics(input_path = bicycleRoutes.result.output_path)
-    hikingStats = osm.geo.Routes.RouteStatistics(input_path = hikingRoutes.result.output_path)
-    trainStats = osm.geo.Routes.RouteStatistics(input_path = trainRoutes.result.output_path)
-    busStats = osm.geo.Routes.RouteStatistics(input_path = busRoutes.result.output_path)
+    hikingRoutes = osm.Routes.FilterRoutesByType(input_path = routesData.output_path, route_type = "hiking")
+    trainRoutes = osm.Routes.FilterRoutesByType(input_path = routesData.output_path, route_type = "train")
+    busRoutes = osm.Routes.FilterRoutesByType(input_path = routesData.output_path, route_type = "bus")
+    bicycleStats = osm.Routes.RouteStatistics(input_path = bicycleRoutes.result.output_path)
+    hikingStats = osm.Routes.RouteStatistics(input_path = hikingRoutes.result.output_path)
+    trainStats = osm.Routes.RouteStatistics(input_path = trainRoutes.result.output_path)
+    busStats = osm.Routes.RouteStatistics(input_path = busRoutes.result.output_path)
 
     // -- Park analysis with stats (was AnalyzeParksFromCache)
-    parkStats = osm.geo.Parks.ParkStatistics(input_path = parksData.output_path)
+    parkStats = osm.Parks.ParkStatistics(input_path = parksData.output_path)
 
     // -- National parks: filter + stats + map (was NationalParksAnalysisFromCache)
-    nationalParks = osm.geo.Parks.FilterParksByType(input_path = parksData.output_path, park_type = "national")
-    nationalParkStats = osm.geo.Parks.ParkStatistics(input_path = nationalParks.result.output_path)
-    nationalParkMap = osm.geo.Visualization.RenderMap(geojson_path = nationalParks.result.output_path, title = "National Parks", color = "#2ecc71")
+    nationalParks = osm.Parks.FilterParksByType(input_path = parksData.output_path, park_type = "national")
+    nationalParkStats = osm.Parks.ParkStatistics(input_path = nationalParks.result.output_path)
+    nationalParkMap = osm.viz.RenderMap(geojson_path = nationalParks.result.output_path, title = "National Parks", color = "#2ecc71")
 
     // -- Large cities map (was LargeCitiesMapFromCache)
-    largeCities = osm.geo.Population.FilterByPopulation(input_path = populationData.output_path, min_population = 10000, place_type = "city", operator = "gte")
-    largeCitiesMap = osm.geo.Visualization.RenderMap(geojson_path = largeCities.result.output_path, title = "Large Cities", color = "#e74c3c")
+    largeCities = osm.Population.FilterByPopulation(input_path = populationData.output_path, min_population = 10000, place_type = "city", operator = "gte")
+    largeCitiesMap = osm.viz.RenderMap(geojson_path = largeCities.result.output_path, title = "Large Cities", color = "#e74c3c")
 
     // -- City analysis: filter + stats + map (was CityAnalysisFromCache)
-    analysisCities = osm.geo.Population.FilterByPopulation(input_path = populationData.output_path, min_population = 100000, place_type = "city", operator = "gte")
-    cityStats = osm.geo.Population.PopulationStatistics(input_path = analysisCities.result.output_path, place_type = "city")
-    cityMap = osm.geo.Visualization.RenderMap(geojson_path = analysisCities.result.output_path, title = "Cities", color = "#3498db")
+    analysisCities = osm.Population.FilterByPopulation(input_path = populationData.output_path, min_population = 100000, place_type = "city", operator = "gte")
+    cityStats = osm.Population.PopulationStatistics(input_path = analysisCities.result.output_path, place_type = "city")
+    cityMap = osm.viz.RenderMap(geojson_path = analysisCities.result.output_path, title = "Cities", color = "#3498db")
 
     // -- Transport map: bicycle layer (was TransportMapFromCache)
-    transportMap = osm.geo.Visualization.RenderMap(geojson_path = bicycleRoutes.result.output_path, title = "Transport - Bicycle", color = "#27ae60")
+    transportMap = osm.viz.RenderMap(geojson_path = bicycleRoutes.result.output_path, title = "Transport - Bicycle", color = "#27ae60")
 
     // -- Discover cities/towns/villages (was DiscoverCitiesAndTownsFromCache)
-    discoverCities = osm.geo.Population.FilterByPopulation(input_path = populationData.output_path, min_population = 0, place_type = "city", operator = "gte")
-    discoverTowns = osm.geo.Population.FilterByPopulation(input_path = populationData.output_path, min_population = 0, place_type = "town", operator = "gte")
-    discoverVillages = osm.geo.Population.FilterByPopulation(input_path = populationData.output_path, min_population = 0, place_type = "village", operator = "gte")
-    discoverMap = osm.geo.Visualization.RenderMap(geojson_path = discoverCities.result.output_path, title = "Cities and Towns", color = "#e74c3c")
+    discoverCities = osm.Population.FilterByPopulation(input_path = populationData.output_path, min_population = 0, place_type = "city", operator = "gte")
+    discoverTowns = osm.Population.FilterByPopulation(input_path = populationData.output_path, min_population = 0, place_type = "town", operator = "gte")
+    discoverVillages = osm.Population.FilterByPopulation(input_path = populationData.output_path, min_population = 0, place_type = "village", operator = "gte")
+    discoverMap = osm.viz.RenderMap(geojson_path = discoverCities.result.output_path, title = "Cities and Towns", color = "#e74c3c")
 
     // -- State boundaries map (was StateBoundariesWithStatsFromCache)
-    boundaryMap = osm.geo.Visualization.RenderMap(geojson_path = boundariesData.output_path, title = "State Boundaries", color = "#9b59b6")
+    boundaryMap = osm.viz.RenderMap(geojson_path = boundariesData.output_path, title = "State Boundaries", color = "#9b59b6")
 
     // -- Regional analysis: reuses parks/routes/population data (was RegionalAnalysisFromCache)
-    regionalCityStats = osm.geo.Population.PopulationStatistics(input_path = populationData.output_path, place_type = "city")
-    parksMap = osm.geo.Visualization.RenderMap(geojson_path = parksData.output_path, title = "Regional Overview - Parks", color = "#2ecc71")
+    regionalCityStats = osm.Population.PopulationStatistics(input_path = populationData.output_path, place_type = "city")
+    parksMap = osm.viz.RenderMap(geojson_path = parksData.output_path, title = "Regional Overview - Parks", color = "#2ecc71")
 
     yield AnalyzeRegion(completed_region = $.region)
   }

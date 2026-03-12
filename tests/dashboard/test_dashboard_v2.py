@@ -45,7 +45,7 @@ from afl.dashboard.helpers import (
 
 class TestExtractNamespace:
     def test_qualified_name(self):
-        assert extract_namespace("osm.geo.Routes.BicycleRoutes") == "osm.geo.Routes"
+        assert extract_namespace("osm.Routes.BicycleRoutes") == "osm.Routes"
 
     def test_simple_name(self):
         assert extract_namespace("SimpleWorkflow") == "(top-level)"
@@ -62,7 +62,7 @@ class TestExtractNamespace:
 
 class TestShortWorkflowName:
     def test_qualified_name(self):
-        assert short_workflow_name("osm.geo.Routes.BicycleRoutes") == "BicycleRoutes"
+        assert short_workflow_name("osm.Routes.BicycleRoutes") == "BicycleRoutes"
 
     def test_simple_name(self):
         assert short_workflow_name("SimpleWorkflow") == "SimpleWorkflow"
@@ -119,15 +119,15 @@ class TestGroupRunnersByNamespace:
 
     def test_groups_by_namespace(self):
         runners = [
-            self._make_runner("osm.geo.BicycleRoutes"),
-            self._make_runner("osm.geo.WalkingRoutes"),
+            self._make_runner("osm.BicycleRoutes"),
+            self._make_runner("osm.WalkingRoutes"),
             self._make_runner("aws.Lambda"),
         ]
         groups = group_runners_by_namespace(runners)
         assert len(groups) == 2
         assert groups[0]["namespace"] == "aws"
         assert groups[0]["total"] == 1
-        assert groups[1]["namespace"] == "osm.geo"
+        assert groups[1]["namespace"] == "osm"
         assert groups[1]["total"] == 2
 
     def test_top_level(self):
@@ -159,7 +159,7 @@ pytestmark_routes = pytest.mark.skipif(
 )
 
 
-def _make_workflow(uuid="wf-1", name="osm.geo.TestWF"):
+def _make_workflow(uuid="wf-1", name="osm.TestWF"):
     from afl.runtime.entities import WorkflowDefinition
 
     return WorkflowDefinition(
@@ -219,7 +219,7 @@ class TestV2WorkflowList:
         store.save_runner(_make_runner("r-1", state="running"))
         resp = tc.get("/v2/workflows?tab=running")
         assert resp.status_code == 200
-        assert "osm.geo" in resp.text
+        assert ">osm<" in resp.text or "osm" in resp.text
         assert "TestWF" in resp.text
 
     def test_workflow_list_completed_tab(self, client):
@@ -248,7 +248,7 @@ class TestV2WorkflowList:
         store.save_runner(_make_runner("r-1", state="running"))
         resp = tc.get("/v2/workflows/partial?tab=running")
         assert resp.status_code == 200
-        assert "osm.geo" in resp.text
+        assert "osm" in resp.text
 
 
 @pytestmark_routes
@@ -344,7 +344,7 @@ class TestV2WorkflowOtherTab:
 
 @pytestmark_routes
 class TestV2HandlerDetail:
-    def _make_handler(self, facet_name="osm.geo.Cache"):
+    def _make_handler(self, facet_name="osm.Cache"):
         from afl.runtime.entities import HandlerRegistration
 
         return HandlerRegistration(
@@ -357,14 +357,14 @@ class TestV2HandlerDetail:
     def test_handler_detail_has_small_font_class(self, client):
         tc, store = client
         store.save_handler_registration(self._make_handler())
-        resp = tc.get("/v2/handlers/osm.geo.Cache")
+        resp = tc.get("/v2/handlers/osm.Cache")
         assert resp.status_code == 200
         assert "summary-value-sm" in resp.text
 
     def test_handler_detail_shows_activity_section(self, client):
         tc, store = client
         store.save_handler_registration(self._make_handler())
-        resp = tc.get("/v2/handlers/osm.geo.Cache")
+        resp = tc.get("/v2/handlers/osm.Cache")
         assert resp.status_code == 200
         assert "Current Activity" in resp.text
         assert "Recent Logs" in resp.text
@@ -379,7 +379,7 @@ class TestV2HandlerDetail:
         store.save_task(
             TaskDefinition(
                 uuid="task-1",
-                name="osm.geo.Cache",
+                name="osm.Cache",
                 runner_id="r-1",
                 workflow_id="wf-1",
                 flow_id="flow-1",
@@ -388,7 +388,7 @@ class TestV2HandlerDetail:
                 created=1000,
             )
         )
-        resp = tc.get("/v2/handlers/osm.geo.Cache")
+        resp = tc.get("/v2/handlers/osm.Cache")
         assert resp.status_code == 200
         assert "step-1" in resp.text
         assert "No active tasks" not in resp.text
@@ -404,12 +404,12 @@ class TestV2HandlerDetail:
                 step_id="step-1",
                 workflow_id="wf-1",
                 runner_id="r-1",
-                facet_name="osm.geo.Cache",
+                facet_name="osm.Cache",
                 message="Task completed",
                 time=1000,
             )
         )
-        resp = tc.get("/v2/handlers/osm.geo.Cache")
+        resp = tc.get("/v2/handlers/osm.Cache")
         assert resp.status_code == 200
         assert "Task completed" in resp.text
         assert "No recent logs" not in resp.text
@@ -417,7 +417,7 @@ class TestV2HandlerDetail:
     def test_handler_partial_includes_activity(self, client):
         tc, store = client
         store.save_handler_registration(self._make_handler())
-        resp = tc.get("/v2/handlers/osm.geo.Cache/partial")
+        resp = tc.get("/v2/handlers/osm.Cache/partial")
         assert resp.status_code == 200
         assert "Current Activity" in resp.text
 
@@ -500,7 +500,7 @@ class TestGlobalSearch:
         tc, store = client
         store.save_handler_registration(
             HandlerRegistration(
-                facet_name="osm.geo.Cache",
+                facet_name="osm.Cache",
                 module_uri="examples.handlers.cache",
                 entrypoint="handle",
                 version="1.0",
@@ -508,7 +508,7 @@ class TestGlobalSearch:
         )
         resp = tc.get("/v2/search?q=Cache")
         assert resp.status_code == 200
-        assert "osm.geo.Cache" in resp.text
+        assert "osm.Cache" in resp.text
 
     def test_search_case_insensitive(self, client):
         tc, store = client

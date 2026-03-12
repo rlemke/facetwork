@@ -8,7 +8,7 @@
 /** Integration test that wraps ResolveRegion in a workflow for end-to-end execution. */
 namespace test.region {
     use osm.types
-    use osm.geo.Region
+    use osm.Region
 
     /** Resolves a geographic name to its Geofabrik download path and metadata. */
     workflow ResolveRegionTest(

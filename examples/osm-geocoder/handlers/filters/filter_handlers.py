@@ -1,6 +1,6 @@
 """Filter event facet handlers for OSM filtering.
 
-Handles filtering events defined in osmfilters.afl under osm.geo.Filters:
+Handles filtering events defined in osmfilters.afl under osm.Filters:
 - Radius-based filtering (by equivalent circular radius)
 - OSM type filtering (node, way, relation)
 - OSM tag filtering (by key/value)
@@ -15,20 +15,20 @@ from .osm_type_filter import (
     HAS_OSMIUM as HAS_OSMIUM_TYPE,
 )
 from .osm_type_filter import (
-    OSMFilterResult,
+    OSMFilteredFeatures,
     filter_geojson_by_osm_type,
     filter_pbf_by_type,
 )
 from .radius_filter import (
     HAS_SHAPELY,
-    FilterResult,
+    FilteredFeatures,
     filter_geojson,
     parse_criteria,
 )
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Filters"
+NAMESPACE = "osm.Filters"
 
 
 def _file_size(path: str) -> int:
@@ -356,8 +356,8 @@ def _make_extract_and_filter_handler(facet_name: str):
     return handler
 
 
-def _result_to_dict(result: FilterResult) -> dict:
-    """Convert a FilterResult to a dictionary."""
+def _result_to_dict(result: FilteredFeatures) -> dict:
+    """Convert a FilteredFeatures to a dictionary."""
     return {
         "output_path": result.output_path,
         "feature_count": result.feature_count,
@@ -588,8 +588,8 @@ def _make_geojson_osm_type_filter_handler(facet_name: str):
     return handler
 
 
-def _osm_result_to_dict(result: OSMFilterResult) -> dict:
-    """Convert an OSMFilterResult to a dictionary."""
+def _osm_result_to_dict(result: OSMFilteredFeatures) -> dict:
+    """Convert an OSMFilteredFeatures to a dictionary."""
     return {
         "output_path": result.output_path,
         "feature_count": result.feature_count,

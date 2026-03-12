@@ -139,7 +139,7 @@ ALL_WORKFLOW_NAMES = [
     "RoadZoomBuilder",
 ]
 
-# Workflows that use osm.geo.Operations.Cache(region = $.region)
+# Workflows that use osm.ops.CacheRegion(region = $.region)
 _OPERATIONS_CACHE_WORKFLOWS = [
     "VisualizeBicycleRoutes",
     "AnalyzeParks",
@@ -212,7 +212,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "VisualizeBicycleRoutesFromCache"
 
     def test_visualize_bicycle_routes_from_cache(self, program):
@@ -241,7 +241,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "AnalyzeParksFromCache"
 
     def test_analyze_parks_from_cache(self, program):
@@ -264,7 +264,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "LargeCitiesMapFromCache"
 
     def test_large_cities_map_from_cache(self, program):
@@ -292,7 +292,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "TransportOverviewFromCache"
 
     def test_transport_overview_from_cache(self, program):
@@ -330,7 +330,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "NationalParksAnalysisFromCache"
 
     def test_national_parks_analysis_from_cache(self, program):
@@ -357,7 +357,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "CityAnalysisFromCache"
 
     def test_city_analysis_from_cache(self, program):
@@ -380,7 +380,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "TransportMapFromCache"
 
     def test_transport_map_from_cache(self, program):
@@ -403,7 +403,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "StateBoundariesWithStatsFromCache"
 
     def test_state_boundaries_from_cache(self, program):
@@ -431,7 +431,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "DiscoverCitiesAndTownsFromCache"
 
     def test_discover_cities_and_towns_from_cache(self, program):
@@ -460,7 +460,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "RegionalAnalysisFromCache"
 
     def test_regional_analysis_from_cache(self, program):
@@ -496,7 +496,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "ValidateAndSummarizeFromCache"
 
     def test_validate_and_summarize_from_cache(self, program):
@@ -526,7 +526,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "OsmoseQualityCheckFromCache"
 
     def test_osmose_quality_check_from_cache(self, program):
@@ -558,7 +558,7 @@ class TestComposedWorkflows:
         assert len(_steps(wf)) == 4
         assert _step_names(wf) == ["dl", "stops", "routes", "stats"]
         # No cache step — first step downloads GTFS feed
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Transit.GTFS.DownloadFeed"
+        assert _step_call_target(_steps(wf)[0]) == "osm.Transit.GTFS.DownloadFeed"
 
     # ------------------------------------------------------------------
     # Pattern 14: GTFS Transit Accessibility
@@ -580,7 +580,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "TransitAccessibilityFromCache"
 
     def test_transit_accessibility_from_cache(self, program):
@@ -613,7 +613,7 @@ class TestComposedWorkflows:
 
         assert len(_steps(wf)) == 2
         assert _step_names(wf) == ["cache", "f"]
-        assert _step_call_target(_steps(wf)[0]) == "osm.geo.Operations.Cache"
+        assert _step_call_target(_steps(wf)[0]) == "osm.ops.CacheRegion"
         assert _step_call_target(_steps(wf)[1]) == "RoadZoomBuilderFromCache"
 
     def test_road_zoom_builder_from_cache(self, program):
@@ -632,7 +632,7 @@ class TestComposedWorkflows:
     # ------------------------------------------------------------------
 
     def test_generic_cache_workflows_use_operations_cache(self, program):
-        """Regression guard: 14 workflows must use osm.geo.Operations.Cache."""
+        """Regression guard: 14 workflows must use osm.ops.CacheRegion."""
         for name in _OPERATIONS_CACHE_WORKFLOWS:
             wf = _find_wf(program, name)
             assert wf is not None, f"{name} not found"
@@ -640,8 +640,8 @@ class TestComposedWorkflows:
             assert cache_step["name"] == "cache", (
                 f"{name}: first step should be 'cache', got {cache_step['name']!r}"
             )
-            assert _step_call_target(cache_step) == "osm.geo.Operations.Cache", (
-                f"{name}: cache step should target osm.geo.Operations.Cache, "
+            assert _step_call_target(cache_step) == "osm.ops.CacheRegion", (
+                f"{name}: cache step should target osm.ops.CacheRegion, "
                 f"got {_step_call_target(cache_step)!r}"
             )
 

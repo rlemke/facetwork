@@ -1,7 +1,7 @@
 /** Aggregates continent-level OSM data downloads. */
-namespace osm.geo.Continents.cache {
+namespace osm.Continents.cache {
   use osm.types
-  use osm.geo.cache.Continents
+  use osm.cache.Continents
 
   /** Caches each continent individually in parallel. */
   facet ContinentsIndividually() => (cache: [OSMCache]) andThen {

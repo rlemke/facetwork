@@ -6,7 +6,7 @@
 // Prerequisites: Compile with osmtypes.afl
 
 /** Resolves human-friendly region names to Geofabrik download URLs and OSMCache structures. */
-namespace osm.geo.Region {
+namespace osm.Region {
     use osm.types
 
     /** Single region match with continent and Geofabrik path info. */

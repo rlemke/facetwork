@@ -3,9 +3,9 @@
 Provides REGION_REGISTRY mapping namespace → { FacetName: geofabrik_path }
 and a _make_handler() factory used by operations_handlers.py.
 
-Note: The actual event facet for cache operations is osm.geo.Operations.Cache,
+Note: The actual event facet for cache operations is osm.ops.CacheRegion,
 handled by operations_handlers.py. The individual region facets (e.g.,
-osm.geo.cache.Africa.Malawi) are regular facets with andThen bodies that
+osm.cache.Africa.Malawi) are regular facets with andThen bodies that
 expand inline — they never produce event tasks.
 """
 
@@ -28,7 +28,7 @@ def _make_handler(region_path: str):
 
 # Namespace → { FacetName: geofabrik_path }
 REGION_REGISTRY: dict[str, dict[str, str]] = {
-    "osm.geo.cache.Africa": {
+    "osm.cache.Africa": {
         "AllAfrica": "africa",
         "Africa": "africa",
         "Algeria": "africa/algeria",
@@ -85,7 +85,7 @@ REGION_REGISTRY: dict[str, dict[str, str]] = {
         "Zambia": "africa/zambia",
         "Zimbabwe": "africa/zimbabwe",
     },
-    "osm.geo.cache.Asia": {
+    "osm.cache.Asia": {
         "AllAsia": "asia",
         "Asia": "asia",
         "Afghanistan": "asia/afghanistan",
@@ -130,7 +130,7 @@ REGION_REGISTRY: dict[str, dict[str, str]] = {
         "Vietnam": "asia/vietnam",
         "Yemen": "asia/yemen",
     },
-    "osm.geo.cache.Australia": {
+    "osm.cache.Australia": {
         "AllAustralia": "australia-oceania",
         "Australia": "australia-oceania/australia",
         "AmericanOceania": "australia-oceania/american-oceania",
@@ -153,7 +153,7 @@ REGION_REGISTRY: dict[str, dict[str, str]] = {
         "Vanuatu": "australia-oceania/vanuatu",
         "WallisAndFutuna": "australia-oceania/wallis-et-futuna",
     },
-    "osm.geo.cache.Europe": {
+    "osm.cache.Europe": {
         "AllEurope": "europe",
         "Europe": "europe",
         "Albania": "europe/albania",
@@ -203,7 +203,7 @@ REGION_REGISTRY: dict[str, dict[str, str]] = {
         "Ukraine": "europe/ukraine",
         "UnitedKingdom": "europe/great-britain",
     },
-    "osm.geo.cache.NorthAmerica": {
+    "osm.cache.NorthAmerica": {
         "AllNorthAmerica": "north-america",
         "NorthAmerica": "north-america",
         "Canada": "north-america/canada",
@@ -211,7 +211,7 @@ REGION_REGISTRY: dict[str, dict[str, str]] = {
         "UnitedStates": "north-america/us",
         "Greenland": "north-america/greenland",
     },
-    "osm.geo.cache.Canada": {
+    "osm.cache.Canada": {
         "AllCanada": "north-america/canada",
         "Canada": "north-america/canada",
         "Alberta": "north-america/canada/alberta",
@@ -226,7 +226,7 @@ REGION_REGISTRY: dict[str, dict[str, str]] = {
         "Saskatchewan": "north-america/canada/saskatchewan",
         "Yukon": "north-america/canada/yukon",
     },
-    "osm.geo.cache.CentralAmerica": {
+    "osm.cache.CentralAmerica": {
         "AllCentralAmerica": "central-america",
         "CentralAmerica": "central-america",
         "Bahamas": "central-america/bahamas",
@@ -242,7 +242,7 @@ REGION_REGISTRY: dict[str, dict[str, str]] = {
         "Nicaragua": "central-america/nicaragua",
         "Panama": "central-america/panama",
     },
-    "osm.geo.cache.SouthAmerica": {
+    "osm.cache.SouthAmerica": {
         "AllSouthAmerica": "south-america",
         "SouthAmerica": "south-america",
         "Argentina": "south-america/argentina",
@@ -258,7 +258,7 @@ REGION_REGISTRY: dict[str, dict[str, str]] = {
         "Uruguay": "south-america/uruguay",
         "Venezuela": "south-america/venezuela",
     },
-    "osm.geo.cache.UnitedStates": {
+    "osm.cache.UnitedStates": {
         "AllUnitedStates": "north-america/us",
         "UnitedStates": "north-america/us",
         "Alabama": "north-america/us/alabama",
@@ -313,11 +313,11 @@ REGION_REGISTRY: dict[str, dict[str, str]] = {
         "Wisconsin": "north-america/us/wisconsin",
         "Wyoming": "north-america/us/wyoming",
     },
-    "osm.geo.cache.Antarctica": {
+    "osm.cache.Antarctica": {
         "AllAntarctica": "antarctica",
         "Antarctica": "antarctica",
     },
-    "osm.geo.cache.Continents": {
+    "osm.cache.Continents": {
         "AllContinents": "planet",
         "Planet": "planet",
         "Africa": "africa",

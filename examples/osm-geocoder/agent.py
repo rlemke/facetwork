@@ -2,10 +2,10 @@
 """OSM Geocoder Agent — handles geocoding and OSM data processing events.
 
 This agent polls for event tasks across all OSM namespaces:
-- osm.geo.Geocode: address geocoding via Nominatim API
-- osm.geo.cache.*: ~250 region cache handlers (Geofabrik URLs)
-- osm.geo.Operations.*: download, tile, routing graph operations
-- osm.geo.POIs.*: point-of-interest extraction
+- osm.Geocode: address geocoding via Nominatim API
+- osm.cache.*: ~250 region cache handlers (Geofabrik URLs)
+- osm.ops.*: download, tile, routing graph operations
+- osm.POIs.*: point-of-interest extraction
 
 Usage:
     PYTHONPATH=. python examples/osm-geocoder/agent.py
@@ -77,11 +77,11 @@ def register(poller=None, runner=None):
     from handlers import register_all_handlers, register_all_registry_handlers
 
     if poller:
-        poller.register("osm.geo.Geocode", geocode_handler)
+        poller.register("osm.Geocode", geocode_handler)
         register_all_handlers(poller)
     if runner:
         runner.register_handler(
-            facet_name="osm.geo.Geocode",
+            facet_name="osm.Geocode",
             module_uri=f"file://{os.path.abspath(__file__)}",
             entrypoint="geocode_handler",
         )

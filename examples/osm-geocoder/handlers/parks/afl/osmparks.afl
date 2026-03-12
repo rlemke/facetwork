@@ -7,11 +7,11 @@
 // - All protected areas (boundary=protected_area)
 
 /** National parks, state parks, nature reserves, and protected area extraction. */
-namespace osm.geo.Parks {
+namespace osm.Parks {
     use osm.types
 
     /** Extracted park data with protection class and total area. */
-    schema ParkResult {
+    schema ParkFeatures {
         output_path: String,
         feature_count: Long,
         park_type: String,
@@ -44,30 +44,30 @@ namespace osm.geo.Parks {
     }
 
     /** Extracts national parks (boundary=national_park or protect_class=2). */
-    event facet NationalParks(cache: OSMCache) => (result: ParkResult)
+    event facet NationalParks(cache: OSMCache) => (result: ParkFeatures)
 
     /** Extracts state and regional parks (protect_class=5). */
-    event facet StateParks(cache: OSMCache) => (result: ParkResult)
+    event facet StateParks(cache: OSMCache) => (result: ParkFeatures)
 
     /** Extracts nature reserves (leisure=nature_reserve). */
-    event facet NatureReserves(cache: OSMCache) => (result: ParkResult)
+    event facet NatureReserves(cache: OSMCache) => (result: ParkFeatures)
 
     /** Extracts all protected areas, optionally filtered by protect_class. */
     event facet ProtectedAreas(cache: OSMCache,
-        protect_classes: String = "*") => (result: ParkResult)
+        protect_classes: String = "*") => (result: ParkFeatures)
 
     /** Extracts parks by configurable type and protection class. */
     event facet ExtractParks(cache: OSMCache, park_type: String = "all",
-        protect_classes: String = "*") => (result: ParkResult)
+        protect_classes: String = "*") => (result: ParkFeatures)
 
     /** Filters pre-extracted GeoJSON by park type. */
     event facet FilterParksByType(input_path: String, park_type: String,
-        protect_classes: String = "*") => (result: ParkResult)
+        protect_classes: String = "*") => (result: ParkFeatures)
 
     /** Computes aggregate park statistics. */
     event facet ParkStatistics(input_path: String) => (stats: ParkStats)
 
     /** Extracts parks above a minimum area threshold. */
     event facet LargeParks(cache: OSMCache, min_area_km2: Double = 100,
-        park_type: String = "all") => (result: ParkResult)
+        park_type: String = "all") => (result: ParkFeatures)
 }

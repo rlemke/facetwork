@@ -1,7 +1,7 @@
 """PostGIS import event facet handler for OSM data.
 
 Handles the PostGisImport event facet defined in osmoperations.afl
-under the osm.geo.Operations namespace.
+under the osm.ops namespace.
 """
 
 import logging
@@ -11,7 +11,7 @@ from .postgis_importer import HAS_OSMIUM, HAS_PSYCOPG2
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Operations"
+NAMESPACE = "osm.ops"
 
 
 def _postgis_import_handler(payload: dict) -> dict:

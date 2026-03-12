@@ -12,7 +12,7 @@
 // Schemas
 // ---------------------------------------------------------------------------
 
-namespace ghcn.types {
+namespace weather.types {
     schema StationInfo {
         station_id: String,
         name: String,
@@ -61,7 +61,7 @@ namespace ghcn.types {
 // Mixins and implicits
 // ---------------------------------------------------------------------------
 
-namespace ghcn.mixins {
+namespace weather.mixins {
     facet RetryPolicy(max_retries: Int = 3, backoff_ms: Int = 2000) => (max_retries: Int, backoff_ms: Int)
     facet RateLimit(requests_per_sec: Int = 1, burst: Int = 1) => (requests_per_sec: Int, burst: Int)
 
@@ -73,8 +73,8 @@ namespace ghcn.mixins {
 // Catalog — discovery with inventory verification
 // ---------------------------------------------------------------------------
 
-namespace ghcn.Catalog {
-    use ghcn.types
+namespace weather.Catalog {
+    use weather.types
 
     /** Discover GHCN-Daily stations by country and optional state filter.
       * Reads ghcnd-stations.txt and ghcnd-inventory.txt to verify data availability
@@ -86,8 +86,8 @@ namespace ghcn.Catalog {
 // Ingest — single CSV download per station (all years in one file)
 // ---------------------------------------------------------------------------
 
-namespace ghcn.Ingest {
-    use ghcn.types
+namespace weather.Ingest {
+    use weather.types
 
     /** Download the GHCN-Daily CSV for a station from S3.
       * One file per station contains ALL years — no per-year loop needed.
@@ -99,8 +99,8 @@ namespace ghcn.Ingest {
 // Analysis — climate analysis from GHCN-Daily records
 // ---------------------------------------------------------------------------
 
-namespace ghcn.Analysis {
-    use ghcn.types
+namespace weather.Analysis {
+    use weather.types
 
     /** Analyze a station across its full date range in one handler call.
       * Reads the downloaded CSV, computes daily/yearly aggregates (TMAX, TMIN, PRCP),
@@ -119,8 +119,8 @@ namespace ghcn.Analysis {
 // Geocode — reverse geocode station coordinates
 // ---------------------------------------------------------------------------
 
-namespace ghcn.Geocode {
-    use ghcn.types
+namespace weather.Geocode {
+    use weather.types
 
     /** Reverse geocode station coordinates via OSM Nominatim. */
     event facet ReverseGeocode(lat: Double, lon: Double) => (geo: GeoContext) with RateLimit()
@@ -130,8 +130,8 @@ namespace ghcn.Geocode {
 // Workflows — single station
 // ---------------------------------------------------------------------------
 
-namespace ghcn.workflows {
-    use ghcn.types
+namespace weather.workflows {
+    use weather.types
 
     /** Analyze a single GHCN-Daily station: fetch CSV, analyze climate, reverse geocode. */
     workflow AnalyzeStation(station_id: String, station_name: String, lat: Double, lon: Double, start_year: Int = 1944, end_year: Int = 2024) => (status: String, detail: String) andThen {
@@ -171,8 +171,8 @@ namespace ghcn.workflows {
 // International Analysis Workflows
 // ---------------------------------------------------------------------------
 
-namespace ghcn.workflows {
-    use ghcn.types
+namespace weather.workflows {
+    use weather.types
 
     /** Analyze climate trends for all 13 Canadian provinces/territories. */
     workflow AnalyzeCanada(provinces: [String] = ["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT"], max_stations: Int = 5, start_year: Int = 1944, end_year: Int = 2024) => (status: String = "completed") andThen foreach province in $.provinces {
@@ -245,8 +245,8 @@ namespace ghcn.workflows {
 // Cache Warmup — pre-download GHCN-Daily CSVs without running analysis
 // ---------------------------------------------------------------------------
 
-namespace ghcn.Cache {
-    use ghcn.types
+namespace weather.Cache {
+    use weather.types
 
     /** Cache GHCN-Daily data for one state: discover stations, download each station's CSV.
       * One FetchStationData per station (all years in one CSV). */
@@ -271,8 +271,8 @@ namespace ghcn.Cache {
 // International Cache Warmup Workflows
 // ---------------------------------------------------------------------------
 
-namespace ghcn.Cache {
-    use ghcn.types
+namespace weather.Cache {
+    use weather.types
 
     /** Cache GHCN-Daily data for all 13 Canadian provinces/territories. */
     workflow CacheCanadaData(provinces: [String] = ["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT"], max_stations: Int = 5, start_year: Int = 1944, end_year: Int = 2024) => (status: String = "completed") andThen foreach province in $.provinces {

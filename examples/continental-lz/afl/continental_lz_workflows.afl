@@ -12,11 +12,11 @@
 namespace continental.lz {
     use osm.types
     use continental.types
-    uses osm.geo.cache.NorthAmerica
-    uses osm.geo.cache.GraphHopper.NorthAmerica
-    uses osm.geo.cache.Europe
-    uses osm.geo.cache.GraphHopper.Europe
-    uses osm.geo.Roads.ZoomBuilder
+    uses osm.cache.NorthAmerica
+    uses osm.cache.GraphHopper.NorthAmerica
+    uses osm.cache.Europe
+    uses osm.cache.GraphHopper.Europe
+    uses osm.Roads.ZoomBuilder
 
     // ── United States LZ ──────────────────────────────────────────────
 
@@ -25,15 +25,15 @@ namespace continental.lz {
         result: RegionLZResult
     ) andThen {
         // Step 1: Get OSM cache for full US
-        us_osm = osm.geo.cache.NorthAmerica.UnitedStates()
+        us_osm = osm.cache.NorthAmerica.UnitedStates()
 
         // Step 2: Build routing graph
-        us_gh = osm.geo.cache.GraphHopper.NorthAmerica.UnitedStates(
+        us_gh = osm.cache.GraphHopper.NorthAmerica.UnitedStates(
             cache = us_osm.cache
         )
 
         // Step 3: Run LZ pipeline
-        lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = us_osm.cache,
             graph = us_gh.graph,
             min_population = 50000,
@@ -50,15 +50,15 @@ namespace continental.lz {
         result: RegionLZResult
     ) andThen {
         // Step 1: Get OSM cache for full Canada
-        ca_osm = osm.geo.cache.NorthAmerica.Canada()
+        ca_osm = osm.cache.NorthAmerica.Canada()
 
         // Step 2: Build routing graph
-        ca_gh = osm.geo.cache.GraphHopper.NorthAmerica.Canada(
+        ca_gh = osm.cache.GraphHopper.NorthAmerica.Canada(
             cache = ca_osm.cache
         )
 
         // Step 3: Run LZ pipeline
-        lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = ca_osm.cache,
             graph = ca_gh.graph,
             min_population = 30000,
@@ -75,79 +75,79 @@ namespace continental.lz {
         results: [RegionLZResult]
     ) andThen {
         // Step 1: Get OSM caches (all parallel)
-        de_osm = osm.geo.cache.Europe.Germany()
-        fr_osm = osm.geo.cache.Europe.France()
-        uk_osm = osm.geo.cache.Europe.UnitedKingdom()
-        es_osm = osm.geo.cache.Europe.Spain()
-        it_osm = osm.geo.cache.Europe.Italy()
-        pl_osm = osm.geo.cache.Europe.Poland()
-        nl_osm = osm.geo.cache.Europe.Netherlands()
-        be_osm = osm.geo.cache.Europe.Belgium()
-        ch_osm = osm.geo.cache.Europe.Switzerland()
-        at_osm = osm.geo.cache.Europe.Austria()
-        se_osm = osm.geo.cache.Europe.Sweden()
-        no_osm = osm.geo.cache.Europe.Norway()
+        de_osm = osm.cache.Europe.Germany()
+        fr_osm = osm.cache.Europe.France()
+        uk_osm = osm.cache.Europe.UnitedKingdom()
+        es_osm = osm.cache.Europe.Spain()
+        it_osm = osm.cache.Europe.Italy()
+        pl_osm = osm.cache.Europe.Poland()
+        nl_osm = osm.cache.Europe.Netherlands()
+        be_osm = osm.cache.Europe.Belgium()
+        ch_osm = osm.cache.Europe.Switzerland()
+        at_osm = osm.cache.Europe.Austria()
+        se_osm = osm.cache.Europe.Sweden()
+        no_osm = osm.cache.Europe.Norway()
 
         // Step 2: Build routing graphs (all parallel)
-        de_gh = osm.geo.cache.GraphHopper.Europe.Germany(cache = de_osm.cache)
-        fr_gh = osm.geo.cache.GraphHopper.Europe.France(cache = fr_osm.cache)
-        uk_gh = osm.geo.cache.GraphHopper.Europe.UnitedKingdom(cache = uk_osm.cache)
-        es_gh = osm.geo.cache.GraphHopper.Europe.Spain(cache = es_osm.cache)
-        it_gh = osm.geo.cache.GraphHopper.Europe.Italy(cache = it_osm.cache)
-        pl_gh = osm.geo.cache.GraphHopper.Europe.Poland(cache = pl_osm.cache)
-        nl_gh = osm.geo.cache.GraphHopper.Europe.Netherlands(cache = nl_osm.cache)
-        be_gh = osm.geo.cache.GraphHopper.Europe.Belgium(cache = be_osm.cache)
-        ch_gh = osm.geo.cache.GraphHopper.Europe.Switzerland(cache = ch_osm.cache)
-        at_gh = osm.geo.cache.GraphHopper.Europe.Austria(cache = at_osm.cache)
-        se_gh = osm.geo.cache.GraphHopper.Europe.Sweden(cache = se_osm.cache)
-        no_gh = osm.geo.cache.GraphHopper.Europe.Norway(cache = no_osm.cache)
+        de_gh = osm.cache.GraphHopper.Europe.Germany(cache = de_osm.cache)
+        fr_gh = osm.cache.GraphHopper.Europe.France(cache = fr_osm.cache)
+        uk_gh = osm.cache.GraphHopper.Europe.UnitedKingdom(cache = uk_osm.cache)
+        es_gh = osm.cache.GraphHopper.Europe.Spain(cache = es_osm.cache)
+        it_gh = osm.cache.GraphHopper.Europe.Italy(cache = it_osm.cache)
+        pl_gh = osm.cache.GraphHopper.Europe.Poland(cache = pl_osm.cache)
+        nl_gh = osm.cache.GraphHopper.Europe.Netherlands(cache = nl_osm.cache)
+        be_gh = osm.cache.GraphHopper.Europe.Belgium(cache = be_osm.cache)
+        ch_gh = osm.cache.GraphHopper.Europe.Switzerland(cache = ch_osm.cache)
+        at_gh = osm.cache.GraphHopper.Europe.Austria(cache = at_osm.cache)
+        se_gh = osm.cache.GraphHopper.Europe.Sweden(cache = se_osm.cache)
+        no_gh = osm.cache.GraphHopper.Europe.Norway(cache = no_osm.cache)
 
         // Step 3: Run LZ pipelines (all parallel)
-        de_lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        de_lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = de_osm.cache, graph = de_gh.graph,
             min_population = 40000, output_dir = $.output_base ++ "/europe/germany"
         )
-        fr_lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        fr_lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = fr_osm.cache, graph = fr_gh.graph,
             min_population = 40000, output_dir = $.output_base ++ "/europe/france"
         )
-        uk_lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        uk_lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = uk_osm.cache, graph = uk_gh.graph,
             min_population = 40000, output_dir = $.output_base ++ "/europe/uk"
         )
-        es_lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        es_lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = es_osm.cache, graph = es_gh.graph,
             min_population = 40000, output_dir = $.output_base ++ "/europe/spain"
         )
-        it_lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        it_lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = it_osm.cache, graph = it_gh.graph,
             min_population = 40000, output_dir = $.output_base ++ "/europe/italy"
         )
-        pl_lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        pl_lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = pl_osm.cache, graph = pl_gh.graph,
             min_population = 30000, output_dir = $.output_base ++ "/europe/poland"
         )
-        nl_lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        nl_lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = nl_osm.cache, graph = nl_gh.graph,
             min_population = 30000, output_dir = $.output_base ++ "/europe/netherlands"
         )
-        be_lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        be_lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = be_osm.cache, graph = be_gh.graph,
             min_population = 20000, output_dir = $.output_base ++ "/europe/belgium"
         )
-        ch_lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        ch_lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = ch_osm.cache, graph = ch_gh.graph,
             min_population = 20000, output_dir = $.output_base ++ "/europe/switzerland"
         )
-        at_lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        at_lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = at_osm.cache, graph = at_gh.graph,
             min_population = 20000, output_dir = $.output_base ++ "/europe/austria"
         )
-        se_lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        se_lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = se_osm.cache, graph = se_gh.graph,
             min_population = 20000, output_dir = $.output_base ++ "/europe/sweden"
         )
-        no_lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        no_lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = no_osm.cache, graph = no_gh.graph,
             min_population = 20000, output_dir = $.output_base ++ "/europe/norway"
         )

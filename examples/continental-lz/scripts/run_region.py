@@ -8,7 +8,7 @@ Usage:
     cd examples/continental-lz
     PYTHONPATH=../.. python scripts/run_region.py --region Belgium --output-dir /tmp/lz-belgium
 
-Regions correspond to osm.geo.cache.Europe.<Region> facet names.
+Regions correspond to osm.cache.Europe.<Region> facet names.
 For North America: UnitedStates, Canada
 """
 
@@ -30,21 +30,21 @@ from afl.validator import validate
 # Mapping of region names to (cache namespace, GH namespace) pairs
 REGION_MAP = {
     # Europe
-    "Germany": ("osm.geo.cache.Europe", "osm.geo.cache.GraphHopper.Europe"),
-    "France": ("osm.geo.cache.Europe", "osm.geo.cache.GraphHopper.Europe"),
-    "UnitedKingdom": ("osm.geo.cache.Europe", "osm.geo.cache.GraphHopper.Europe"),
-    "Spain": ("osm.geo.cache.Europe", "osm.geo.cache.GraphHopper.Europe"),
-    "Italy": ("osm.geo.cache.Europe", "osm.geo.cache.GraphHopper.Europe"),
-    "Poland": ("osm.geo.cache.Europe", "osm.geo.cache.GraphHopper.Europe"),
-    "Netherlands": ("osm.geo.cache.Europe", "osm.geo.cache.GraphHopper.Europe"),
-    "Belgium": ("osm.geo.cache.Europe", "osm.geo.cache.GraphHopper.Europe"),
-    "Switzerland": ("osm.geo.cache.Europe", "osm.geo.cache.GraphHopper.Europe"),
-    "Austria": ("osm.geo.cache.Europe", "osm.geo.cache.GraphHopper.Europe"),
-    "Sweden": ("osm.geo.cache.Europe", "osm.geo.cache.GraphHopper.Europe"),
-    "Norway": ("osm.geo.cache.Europe", "osm.geo.cache.GraphHopper.Europe"),
+    "Germany": ("osm.cache.Europe", "osm.cache.GraphHopper.Europe"),
+    "France": ("osm.cache.Europe", "osm.cache.GraphHopper.Europe"),
+    "UnitedKingdom": ("osm.cache.Europe", "osm.cache.GraphHopper.Europe"),
+    "Spain": ("osm.cache.Europe", "osm.cache.GraphHopper.Europe"),
+    "Italy": ("osm.cache.Europe", "osm.cache.GraphHopper.Europe"),
+    "Poland": ("osm.cache.Europe", "osm.cache.GraphHopper.Europe"),
+    "Netherlands": ("osm.cache.Europe", "osm.cache.GraphHopper.Europe"),
+    "Belgium": ("osm.cache.Europe", "osm.cache.GraphHopper.Europe"),
+    "Switzerland": ("osm.cache.Europe", "osm.cache.GraphHopper.Europe"),
+    "Austria": ("osm.cache.Europe", "osm.cache.GraphHopper.Europe"),
+    "Sweden": ("osm.cache.Europe", "osm.cache.GraphHopper.Europe"),
+    "Norway": ("osm.cache.Europe", "osm.cache.GraphHopper.Europe"),
     # North America
-    "UnitedStates": ("osm.geo.cache.NorthAmerica", "osm.geo.cache.GraphHopper.NorthAmerica"),
-    "Canada": ("osm.geo.cache.NorthAmerica", "osm.geo.cache.GraphHopper.NorthAmerica"),
+    "UnitedStates": ("osm.cache.NorthAmerica", "osm.cache.GraphHopper.NorthAmerica"),
+    "Canada": ("osm.cache.NorthAmerica", "osm.cache.GraphHopper.NorthAmerica"),
 }
 
 
@@ -57,7 +57,7 @@ namespace single.region {{
     use osm.types
     uses {cache_ns}
     uses {gh_ns}
-    uses osm.geo.Roads.ZoomBuilder
+    uses osm.Roads.ZoomBuilder
 
     workflow Build{region}LZ(output_dir: String = "{output_dir}") => (
         total_edges: Long,
@@ -65,7 +65,7 @@ namespace single.region {{
     ) andThen {{
         osm = {cache_ns}.{region}()
         gh = {gh_ns}.{region}(cache = osm.cache)
-        lz = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        lz = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = osm.cache,
             graph = gh.graph,
             min_population = 20000,

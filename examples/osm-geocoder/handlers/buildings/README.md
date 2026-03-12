@@ -12,30 +12,30 @@ Extract building footprints from OSM data with automatic classification.
 ## AFL Facets
 
 ```afl
-namespace osm.geo.Buildings {
+namespace osm.Buildings {
     // General extraction
-    event facet ExtractBuildings(cache: OSMCache, building_type: String = "all") => (result: BuildingResult)
+    event facet ExtractBuildings(cache: OSMCache, building_type: String = "all") => (result: BuildingFeatures)
 
     // By classification
-    event facet ResidentialBuildings(cache: OSMCache) => (result: BuildingResult)
-    event facet CommercialBuildings(cache: OSMCache) => (result: BuildingResult)
-    event facet IndustrialBuildings(cache: OSMCache) => (result: BuildingResult)
-    event facet RetailBuildings(cache: OSMCache) => (result: BuildingResult)
+    event facet ResidentialBuildings(cache: OSMCache) => (result: BuildingFeatures)
+    event facet CommercialBuildings(cache: OSMCache) => (result: BuildingFeatures)
+    event facet IndustrialBuildings(cache: OSMCache) => (result: BuildingFeatures)
+    event facet RetailBuildings(cache: OSMCache) => (result: BuildingFeatures)
 
     // Special extractions
-    event facet Buildings3D(cache: OSMCache) => (result: BuildingResult)      // Buildings with height data
-    event facet LargeBuildings(cache: OSMCache, min_area_m2: Double = 1000.0) => (result: BuildingResult)
+    event facet Buildings3D(cache: OSMCache) => (result: BuildingFeatures)      // Buildings with height data
+    event facet LargeBuildings(cache: OSMCache, min_area_m2: Double = 1000.0) => (result: BuildingFeatures)
 
     // Statistics and filtering
     event facet BuildingStatistics(input_path: String) => (stats: BuildingStats)
-    event facet FilterBuildingsByType(input_path: String, building_type: String) => (result: BuildingResult)
+    event facet FilterBuildingsByType(input_path: String, building_type: String) => (result: BuildingFeatures)
 }
 ```
 
 ## Result Schemas
 
 ```afl
-schema BuildingResult {
+schema BuildingFeatures {
     output_path: String
     feature_count: Long
     building_type: String
@@ -77,13 +77,13 @@ workflow AnalyzeResidentialBuildings(region: String = "Liechtenstein")
     => (building_count: Long, total_area: Double, with_height: Long) andThen {
 
     // Stage 1: Get cached region data
-    cache = osm.geo.Operations.Cache(region = $.region)
+    cache = osm.ops.CacheRegion(region = $.region)
 
     // Stage 2: Extract residential buildings
-    buildings = osm.geo.Buildings.ResidentialBuildings(cache = cache.cache)
+    buildings = osm.Buildings.ResidentialBuildings(cache = cache.cache)
 
     // Stage 3: Calculate statistics
-    stats = osm.geo.Buildings.BuildingStatistics(input_path = buildings.result.output_path)
+    stats = osm.Buildings.BuildingStatistics(input_path = buildings.result.output_path)
 
     yield AnalyzeResidentialBuildings(
         building_count = stats.stats.residential,

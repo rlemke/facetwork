@@ -589,7 +589,7 @@ class TestCatalogHandlers:
 
         result = handle(
             {
-                "_facet_name": "ghcn.Catalog.DiscoverStations",
+                "_facet_name": "weather.Catalog.DiscoverStations",
                 "country": "US",
                 "state": "NY",
                 "max_stations": 5,
@@ -611,7 +611,7 @@ class TestCatalogHandlers:
         runner = FakeRunner()
         register_handlers(runner)
         assert len(runner.registered) == 1
-        assert runner.registered[0]["facet_name"] == "ghcn.Catalog.DiscoverStations"
+        assert runner.registered[0]["facet_name"] == "weather.Catalog.DiscoverStations"
 
     def test_register_catalog_handlers(self):
         from handlers.catalog.catalog_handlers import register_catalog_handlers
@@ -625,7 +625,7 @@ class TestCatalogHandlers:
 
         poller = FakePoller()
         register_catalog_handlers(poller)
-        assert "ghcn.Catalog.DiscoverStations" in poller.registered
+        assert "weather.Catalog.DiscoverStations" in poller.registered
 
 
 # ---------------------------------------------------------------------------
@@ -693,7 +693,7 @@ class TestIngestHandlers:
 
         result = handle(
             {
-                "_facet_name": "ghcn.Ingest.FetchStationData",
+                "_facet_name": "weather.Ingest.FetchStationData",
                 "station_id": "USW00094728",
                 "start_year": 2020,
                 "end_year": 2020,
@@ -714,7 +714,7 @@ class TestIngestHandlers:
         runner = FakeRunner()
         register_handlers(runner)
         assert len(runner.registered) == 1
-        assert runner.registered[0]["facet_name"] == "ghcn.Ingest.FetchStationData"
+        assert runner.registered[0]["facet_name"] == "weather.Ingest.FetchStationData"
 
     def test_register_ingest_handlers(self):
         from handlers.ingest.ingest_handlers import register_ingest_handlers
@@ -728,7 +728,7 @@ class TestIngestHandlers:
 
         poller = FakePoller()
         register_ingest_handlers(poller)
-        assert "ghcn.Ingest.FetchStationData" in poller.registered
+        assert "weather.Ingest.FetchStationData" in poller.registered
 
 
 # ---------------------------------------------------------------------------
@@ -871,7 +871,7 @@ class TestAnalysisHandlers:
 
         result = handle(
             {
-                "_facet_name": "ghcn.Analysis.AnalyzeStationClimate",
+                "_facet_name": "weather.Analysis.AnalyzeStationClimate",
                 "station_id": "USW00094728",
                 "station_name": "TEST",
                 "start_year": 2020,
@@ -891,7 +891,7 @@ class TestAnalysisHandlers:
 
         result = handle(
             {
-                "_facet_name": "ghcn.Analysis.ComputeRegionTrend",
+                "_facet_name": "weather.Analysis.ComputeRegionTrend",
                 "country": "US",
                 "state": "CA",
                 "start_year": 2000,
@@ -915,8 +915,8 @@ class TestAnalysisHandlers:
         register_handlers(runner)
         assert len(runner.registered) == 2
         names = {r["facet_name"] for r in runner.registered}
-        assert "ghcn.Analysis.AnalyzeStationClimate" in names
-        assert "ghcn.Analysis.ComputeRegionTrend" in names
+        assert "weather.Analysis.AnalyzeStationClimate" in names
+        assert "weather.Analysis.ComputeRegionTrend" in names
 
     def test_register_analysis_handlers(self):
         from handlers.analysis.analysis_handlers import register_analysis_handlers
@@ -930,8 +930,8 @@ class TestAnalysisHandlers:
 
         poller = FakePoller()
         register_analysis_handlers(poller)
-        assert "ghcn.Analysis.AnalyzeStationClimate" in poller.registered
-        assert "ghcn.Analysis.ComputeRegionTrend" in poller.registered
+        assert "weather.Analysis.AnalyzeStationClimate" in poller.registered
+        assert "weather.Analysis.ComputeRegionTrend" in poller.registered
 
 
 @pytest.mark.skipif(not HAS_MONGOMOCK, reason="mongomock not installed")
@@ -1072,7 +1072,7 @@ class TestGeocodeHandlers:
 
         result = handle(
             {
-                "_facet_name": "ghcn.Geocode.ReverseGeocode",
+                "_facet_name": "weather.Geocode.ReverseGeocode",
                 "lat": 40.78,
                 "lon": -73.97,
             }
@@ -1092,7 +1092,7 @@ class TestGeocodeHandlers:
         runner = FakeRunner()
         register_handlers(runner)
         assert len(runner.registered) == 1
-        assert runner.registered[0]["facet_name"] == "ghcn.Geocode.ReverseGeocode"
+        assert runner.registered[0]["facet_name"] == "weather.Geocode.ReverseGeocode"
 
     def test_register_geocode_handlers(self):
         from handlers.geocode.geocode_handlers import register_geocode_handlers
@@ -1106,7 +1106,7 @@ class TestGeocodeHandlers:
 
         poller = FakePoller()
         register_geocode_handlers(poller)
-        assert "ghcn.Geocode.ReverseGeocode" in poller.registered
+        assert "weather.Geocode.ReverseGeocode" in poller.registered
 
 
 # ---------------------------------------------------------------------------

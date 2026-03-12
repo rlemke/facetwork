@@ -8,7 +8,7 @@ from typing import Any
 
 from handlers.shared.rounds_utils import challenge_argument, refine_argument
 
-NAMESPACE = "rounds.Argumentation"
+NAMESPACE = "multidebate.Argumentation"
 
 
 def handle_refine_argument(params: dict[str, Any]) -> dict[str, Any]:

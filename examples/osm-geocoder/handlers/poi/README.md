@@ -4,10 +4,10 @@ The POI layer extracts geographic features — cities, towns, villages, and othe
 
 ## AFL facets
 
-POI facets are defined in `afl/osmpoi.afl` under the `osm.geo.POIs` namespace:
+POI facets are defined in `afl/osmpoi.afl` under the `osm.POIs` namespace:
 
 ```afl
-namespace osm.geo.POIs {
+namespace osm.POIs {
     event facet POI(cache: OSMCache) => (pois: OSMCache)
 
     facet Volcanos(cache: OSMCache, elevation: Long, active: Boolean) => (pois: OSMCache)
@@ -82,7 +82,7 @@ def _make_poi_handler(facet_name: str, return_param: str):
     return handler
 ```
 
-All handlers are registered under the qualified name `osm.geo.POIs.<FacetName>`.
+All handlers are registered under the qualified name `osm.POIs.<FacetName>`.
 
 ### Return parameter grouping
 
@@ -103,9 +103,9 @@ This grouping means that `Towns` and `Suburbs` results can be used interchangeab
 POI facets are typically chained after a download operation:
 
 ```afl
-use osm.geo.Operations
-use osm.geo.POIs
-use osm.geo.cache.Europe
+use osm.ops
+use osm.POIs
+use osm.cache.Europe
 
 facet ExtractFranceCities() => (cities: OSMCache) andThen {
     france = France()                              // cache lookup

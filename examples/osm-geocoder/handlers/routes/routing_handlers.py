@@ -1,7 +1,7 @@
 """Pairwise routing event facet handlers.
 
 Handles the ComputePairwiseRoutes event facet defined in osmcityrouting.afl
-under osm.geo.Routing namespace. Computes all-pairs shortest-path driving
+under osm.Routing namespace. Computes all-pairs shortest-path driving
 routes between cities using a pre-built GraphHopper routing graph.
 """
 
@@ -14,7 +14,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Routing"
+NAMESPACE = "osm.Routing"
 
 # GraphHopper API endpoint (local instance)
 GRAPHHOPPER_API_URL = os.environ.get("GRAPHHOPPER_API_URL", "http://localhost:8989")

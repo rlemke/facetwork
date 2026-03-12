@@ -119,7 +119,7 @@ class TestPostgisHandlerDispatch:
 
     def test_dispatch_key_present(self):
         mod = _osm_import("postgis_handlers")
-        assert "osm.geo.Operations.PostGisImport" in mod._DISPATCH
+        assert "osm.ops.PostGisImport" in mod._DISPATCH
 
     def test_dispatch_count_is_1(self):
         mod = _osm_import("postgis_handlers")
@@ -129,7 +129,7 @@ class TestPostgisHandlerDispatch:
         mod = _osm_import("postgis_handlers")
         result = mod.handle(
             {
-                "_facet_name": "osm.geo.Operations.PostGisImport",
+                "_facet_name": "osm.ops.PostGisImport",
                 "cache": {"url": "http://example.com/test.pbf", "path": "", "date": "", "size": 0},
             }
         )
@@ -139,7 +139,7 @@ class TestPostgisHandlerDispatch:
     def test_handle_unknown_facet_raises(self):
         mod = _osm_import("postgis_handlers")
         with pytest.raises(ValueError, match="Unknown facet"):
-            mod.handle({"_facet_name": "osm.geo.Operations.NonExistent"})
+            mod.handle({"_facet_name": "osm.ops.NonExistent"})
 
     def test_register_handlers_call_count(self):
         mod = _osm_import("postgis_handlers")

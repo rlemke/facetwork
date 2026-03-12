@@ -12,7 +12,7 @@ from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
 
 # Runtime AST for:
 #
-#   namespace osm.geo {
+#   namespace osm.geocode {
 #       event Geocode(address: String) => (result: GeoCoordinate)
 #   }
 #
@@ -111,7 +111,7 @@ def main() -> None:
         evaluator=evaluator,
         config=AgentPollerConfig(service_name="test-geocoder"),
     )
-    poller.register("osm.geo.Geocode", mock_geocode_handler)
+    poller.register("osm.Geocode", mock_geocode_handler)
 
     # 1. Execute workflow — pauses at the Geocode event step
     print("Executing GeocodeAddress workflow...")

@@ -17,7 +17,7 @@ namespace osm.Combined {
         total_features: Long,
         scan_duration: Double,
         category_count: Long
-    ) with Timeout(minutes = 10)
+    ) with Timeout(minutes = 120)
 
     /** Extracts a single category's output path from CombinedScan results.
      *

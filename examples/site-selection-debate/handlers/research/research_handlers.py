@@ -11,7 +11,7 @@ from handlers.shared.debate_utils import (
     search_market_trends,
 )
 
-NAMESPACE = "ssd.Research"
+NAMESPACE = "siteselection.Research"
 
 
 def handle_search_market_trends(params: dict[str, Any]) -> dict[str, Any]:

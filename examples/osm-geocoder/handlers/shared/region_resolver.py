@@ -26,12 +26,12 @@ class RegionMatch:
 
     @property
     def continent(self) -> str:
-        """Extract continent from namespace (e.g. 'Africa' from 'osm.geo.cache.Africa')."""
+        """Extract continent from namespace (e.g. 'Africa' from 'osm.cache.Africa')."""
         return self.namespace.rsplit(".", 1)[-1]
 
     @property
     def qualified_name(self) -> str:
-        """Full qualified facet name (e.g. 'osm.geo.cache.Africa.Algeria')."""
+        """Full qualified facet name (e.g. 'osm.cache.Africa.Algeria')."""
         return f"{self.namespace}.{self.facet_name}"
 
 
@@ -388,7 +388,7 @@ def resolve(name: str, prefer_continent: str | None = None) -> ResolutionResult:
         # Check if matches span multiple continents (true ambiguity)
         _continents = {m.continent for m in matches}
         # Filter out "Continents" namespace entries for ambiguity check
-        non_continent_matches = [m for m in matches if m.namespace != "osm.geo.cache.Continents"]
+        non_continent_matches = [m for m in matches if m.namespace != "osm.cache.Continents"]
         non_continent_continents = {m.continent for m in non_continent_matches}
         if len(non_continent_continents) > 1:
             is_ambiguous = True

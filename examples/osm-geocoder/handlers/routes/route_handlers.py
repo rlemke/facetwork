@@ -1,6 +1,6 @@
 """Route extraction event facet handlers.
 
-Handles route extraction events defined in osmroutes.afl under osm.geo.Routes.
+Handles route extraction events defined in osmroutes.afl under osm.Routes.
 """
 
 import logging
@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 from ..shared.output_cache import cached_result, save_result_meta
 from .route_extractor import (
-    RouteResult,
+    RouteFeatures,
     RouteStats,
     calculate_route_stats,
     filter_routes_by_type,
@@ -17,7 +17,7 @@ from .route_extractor import (
 
 log = logging.getLogger(__name__)
 
-NAMESPACE = "osm.geo.Routes"
+NAMESPACE = "osm.Routes"
 
 
 def _make_filter_routes_handler(facet_name: str):
@@ -120,8 +120,8 @@ def _file_size(path: str) -> int:
         return 0
 
 
-def _result_to_dict(result: RouteResult) -> dict:
-    """Convert a RouteResult to a dictionary."""
+def _result_to_dict(result: RouteFeatures) -> dict:
+    """Convert a RouteFeatures to a dictionary."""
     return {
         "output_path": result.output_path,
         "feature_count": result.feature_count,

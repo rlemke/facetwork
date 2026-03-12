@@ -274,7 +274,7 @@ def parse_criteria(
 
 
 @dataclass
-class FilterResult:
+class FilteredFeatures:
     """Result of a filtering operation."""
 
     output_path: str
@@ -291,7 +291,7 @@ def filter_geojson(
     criteria: RadiusCriteria,
     output_path: str | Path | None = None,
     boundary_type: str | None = None,
-) -> FilterResult:
+) -> FilteredFeatures:
     """Filter GeoJSON features by equivalent radius.
 
     Args:
@@ -301,7 +301,7 @@ def filter_geojson(
         boundary_type: Optional boundary type to filter by (from properties)
 
     Returns:
-        FilterResult with output path and counts
+        FilteredFeatures with output path and counts
     """
     if not HAS_SHAPELY:
         raise RuntimeError("shapely is required for GeoJSON filtering")
@@ -368,7 +368,7 @@ def filter_geojson(
 
     from datetime import datetime
 
-    return FilterResult(
+    return FilteredFeatures(
         output_path=str(output_path),
         feature_count=len(filtered_features),
         original_count=original_count,

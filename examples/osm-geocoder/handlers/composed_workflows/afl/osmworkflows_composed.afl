@@ -10,7 +10,7 @@
 // This demonstrates the power of facet-based workflow composition.
 
 /** Multi-stage composition patterns demonstrating cache, extraction, filtering, statistics, and visualization. */
-namespace examples.composed {
+namespace osm.workflows {
     use osm.types
 
     // ==========================================================================
@@ -20,15 +20,15 @@ namespace examples.composed {
 
     /** Caches a region, extracts bicycle routes, and renders them on a map (three-stage pipeline). */
     workflow VisualizeBicycleRoutes(region: String = "Liechtenstein") => (map_path: String, route_count: Long) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = VisualizeBicycleRoutesFromCache(cache = cache.cache)
         yield VisualizeBicycleRoutes(map_path = f.map_path, route_count = f.route_count)
     }
 
     /** Cache-dependent logic for VisualizeBicycleRoutes. */
     facet VisualizeBicycleRoutesFromCache(cache: OSMCache) => (map_path: String, route_count: Long) andThen {
-        routes = osm.geo.Routes.BicycleRoutes(cache = $.cache, include_infrastructure = true)
-        map = osm.geo.Visualization.RenderMap(
+        routes = osm.Routes.BicycleRoutes(cache = $.cache, include_infrastructure = true)
+        map = osm.viz.RenderMap(
             geojson_path = routes.result.output_path,
             title = "Bicycle Routes",
             color = "#27ae60"
@@ -43,7 +43,7 @@ namespace examples.composed {
 
     /** Extracts all parks from a region and computes aggregate statistics without visualization. */
     workflow AnalyzeParks(region: String = "Liechtenstein") => (total_parks: Long, total_area: Double, national: Long, state: Long) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = AnalyzeParksFromCache(cache = cache.cache)
         yield AnalyzeParks(
             total_parks = f.total_parks,
@@ -55,8 +55,8 @@ namespace examples.composed {
 
     /** Cache-dependent logic for AnalyzeParks. */
     facet AnalyzeParksFromCache(cache: OSMCache) => (total_parks: Long, total_area: Double, national: Long, state: Long) andThen {
-        parks = osm.geo.Parks.ExtractParks(cache = $.cache, park_type = "all")
-        stats = osm.geo.Parks.ParkStatistics(input_path = parks.result.output_path)
+        parks = osm.Parks.ExtractParks(cache = $.cache, park_type = "all")
+        stats = osm.Parks.ParkStatistics(input_path = parks.result.output_path)
         yield AnalyzeParksFromCache(
             total_parks = stats.stats.total_parks,
             total_area = stats.stats.total_area_km2,
@@ -72,21 +72,21 @@ namespace examples.composed {
 
     /** Extracts cities, filters by minimum population, and renders the qualifying cities on a map. */
     workflow LargeCitiesMap(region: String = "Liechtenstein", min_pop: Long = 10000) => (map_path: String, city_count: Long) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = LargeCitiesMapFromCache(cache = cache.cache, min_pop = $.min_pop)
         yield LargeCitiesMap(map_path = f.map_path, city_count = f.city_count)
     }
 
     /** Cache-dependent logic for LargeCitiesMap. */
     facet LargeCitiesMapFromCache(cache: OSMCache, min_pop: Long = 10000) => (map_path: String, city_count: Long) andThen {
-        cities = osm.geo.Population.Cities(cache = $.cache, min_population = 0)
-        large = osm.geo.Population.FilterByPopulation(
+        cities = osm.Population.Cities(cache = $.cache, min_population = 0)
+        large = osm.Population.FilterByPopulation(
             input_path = cities.result.output_path,
             min_population = $.min_pop,
             place_type = "city",
             operator = "gte"
         )
-        map = osm.geo.Visualization.RenderMap(
+        map = osm.viz.RenderMap(
             geojson_path = large.result.output_path,
             title = "Large Cities",
             color = "#e74c3c"
@@ -101,7 +101,7 @@ namespace examples.composed {
 
     /** Extracts bicycle, hiking, train, and bus routes in parallel and aggregates length statistics. */
     workflow TransportOverview(region: String = "Liechtenstein") => (bicycle_km: Double, hiking_km: Double, train_km: Double, bus_routes: Long) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = TransportOverviewFromCache(cache = cache.cache)
         yield TransportOverview(
             bicycle_km = f.bicycle_km,
@@ -113,14 +113,14 @@ namespace examples.composed {
 
     /** Cache-dependent logic for TransportOverview. */
     facet TransportOverviewFromCache(cache: OSMCache) => (bicycle_km: Double, hiking_km: Double, train_km: Double, bus_routes: Long) andThen {
-        bicycle = osm.geo.Routes.BicycleRoutes(cache = $.cache, include_infrastructure = false)
-        hiking = osm.geo.Routes.HikingTrails(cache = $.cache, include_infrastructure = false)
-        train = osm.geo.Routes.TrainRoutes(cache = $.cache, include_infrastructure = false)
-        bus = osm.geo.Routes.BusRoutes(cache = $.cache, include_infrastructure = false)
-        bicycle_stats = osm.geo.Routes.RouteStatistics(input_path = bicycle.result.output_path)
-        hiking_stats = osm.geo.Routes.RouteStatistics(input_path = hiking.result.output_path)
-        train_stats = osm.geo.Routes.RouteStatistics(input_path = train.result.output_path)
-        bus_stats = osm.geo.Routes.RouteStatistics(input_path = bus.result.output_path)
+        bicycle = osm.Routes.BicycleRoutes(cache = $.cache, include_infrastructure = false)
+        hiking = osm.Routes.HikingTrails(cache = $.cache, include_infrastructure = false)
+        train = osm.Routes.TrainRoutes(cache = $.cache, include_infrastructure = false)
+        bus = osm.Routes.BusRoutes(cache = $.cache, include_infrastructure = false)
+        bicycle_stats = osm.Routes.RouteStatistics(input_path = bicycle.result.output_path)
+        hiking_stats = osm.Routes.RouteStatistics(input_path = hiking.result.output_path)
+        train_stats = osm.Routes.RouteStatistics(input_path = train.result.output_path)
+        bus_stats = osm.Routes.RouteStatistics(input_path = bus.result.output_path)
         yield TransportOverviewFromCache(
             bicycle_km = bicycle_stats.stats.total_length_km,
             hiking_km = hiking_stats.stats.total_length_km,
@@ -136,7 +136,7 @@ namespace examples.composed {
 
     /** Extracts parks, filters to national parks, computes area statistics, and renders a map. */
     workflow NationalParksAnalysis(region: String = "Liechtenstein") => (map_path: String, park_count: Long, total_area: Double, avg_area: Double) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = NationalParksAnalysisFromCache(cache = cache.cache)
         yield NationalParksAnalysis(
             map_path = f.map_path,
@@ -148,13 +148,13 @@ namespace examples.composed {
 
     /** Cache-dependent logic for NationalParksAnalysis. */
     facet NationalParksAnalysisFromCache(cache: OSMCache) => (map_path: String, park_count: Long, total_area: Double, avg_area: Double) andThen {
-        all_parks = osm.geo.Parks.ExtractParks(cache = $.cache, park_type = "all")
-        national = osm.geo.Parks.FilterParksByType(
+        all_parks = osm.Parks.ExtractParks(cache = $.cache, park_type = "all")
+        national = osm.Parks.FilterParksByType(
             input_path = all_parks.result.output_path,
             park_type = "national"
         )
-        stats = osm.geo.Parks.ParkStatistics(input_path = national.result.output_path)
-        map = osm.geo.Visualization.RenderMap(
+        stats = osm.Parks.ParkStatistics(input_path = national.result.output_path)
+        map = osm.viz.RenderMap(
             geojson_path = national.result.output_path,
             title = "National Parks",
             color = "#2ecc71"
@@ -174,7 +174,7 @@ namespace examples.composed {
 
     /** Extracts cities above a population threshold, computes statistics, and renders a map. */
     workflow CityAnalysis(region: String = "Liechtenstein", min_population: Long = 100000) => (map_path: String, large_cities: Long, total_pop: Long) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = CityAnalysisFromCache(cache = cache.cache, min_population = $.min_population)
         yield CityAnalysis(
             map_path = f.map_path,
@@ -185,12 +185,12 @@ namespace examples.composed {
 
     /** Cache-dependent logic for CityAnalysis. */
     facet CityAnalysisFromCache(cache: OSMCache, min_population: Long = 100000) => (map_path: String, large_cities: Long, total_pop: Long) andThen {
-        cities = osm.geo.Population.Cities(cache = $.cache, min_population = $.min_population)
-        stats = osm.geo.Population.PopulationStatistics(
+        cities = osm.Population.Cities(cache = $.cache, min_population = $.min_population)
+        stats = osm.Population.PopulationStatistics(
             input_path = cities.result.output_path,
             place_type = "city"
         )
-        map = osm.geo.Visualization.RenderMap(
+        map = osm.viz.RenderMap(
             geojson_path = cities.result.output_path,
             title = "Cities",
             color = "#3498db"
@@ -209,16 +209,16 @@ namespace examples.composed {
 
     /** Extracts bicycle and hiking routes and renders the bicycle layer on a map. */
     workflow TransportMap(region: String = "Liechtenstein") => (map_path: String) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = TransportMapFromCache(cache = cache.cache)
         yield TransportMap(map_path = f.map_path)
     }
 
     /** Cache-dependent logic for TransportMap. */
     facet TransportMapFromCache(cache: OSMCache) => (map_path: String) andThen {
-        bicycle = osm.geo.Routes.BicycleRoutes(cache = $.cache, include_infrastructure = false)
-        hiking = osm.geo.Routes.HikingTrails(cache = $.cache, include_infrastructure = false)
-        bicycle_map = osm.geo.Visualization.RenderMap(
+        bicycle = osm.Routes.BicycleRoutes(cache = $.cache, include_infrastructure = false)
+        hiking = osm.Routes.HikingTrails(cache = $.cache, include_infrastructure = false)
+        bicycle_map = osm.viz.RenderMap(
             geojson_path = bicycle.result.output_path,
             title = "Bicycle Routes",
             color = "#27ae60"
@@ -233,7 +233,7 @@ namespace examples.composed {
 
     /** Extracts state-level administrative boundaries and renders them on a map with counts. */
     workflow StateBoundariesWithStats(region: String = "Liechtenstein") => (map_path: String, state_count: Long) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = StateBoundariesWithStatsFromCache(cache = cache.cache)
         yield StateBoundariesWithStats(
             map_path = f.map_path,
@@ -243,8 +243,8 @@ namespace examples.composed {
 
     /** Cache-dependent logic for StateBoundariesWithStats. */
     facet StateBoundariesWithStatsFromCache(cache: OSMCache) => (map_path: String, state_count: Long) andThen {
-        boundaries = osm.geo.Boundaries.StateBoundaries(cache = $.cache)
-        map = osm.geo.Visualization.RenderMap(
+        boundaries = osm.Boundaries.StateBoundaries(cache = $.cache)
+        map = osm.viz.RenderMap(
             geojson_path = boundaries.result.output_path,
             title = "State Boundaries",
             color = "#9b59b6"
@@ -262,7 +262,7 @@ namespace examples.composed {
 
     /** Discovers cities, towns, and villages in a region and renders cities on a map. */
     workflow DiscoverCitiesAndTowns(region: String = "Liechtenstein") => (map_path: String, cities: Long, towns: Long, villages: Long) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = DiscoverCitiesAndTownsFromCache(cache = cache.cache)
         yield DiscoverCitiesAndTowns(
             map_path = f.map_path,
@@ -274,10 +274,10 @@ namespace examples.composed {
 
     /** Cache-dependent logic for DiscoverCitiesAndTowns. */
     facet DiscoverCitiesAndTownsFromCache(cache: OSMCache) => (map_path: String, cities: Long, towns: Long, villages: Long) andThen {
-        city_data = osm.geo.POIs.Cities(cache = $.cache)
-        town_data = osm.geo.POIs.Towns(cache = $.cache)
-        village_data = osm.geo.POIs.Villages(cache = $.cache)
-        map = osm.geo.Visualization.RenderMap(
+        city_data = osm.POIs.Cities(cache = $.cache)
+        town_data = osm.POIs.Towns(cache = $.cache)
+        village_data = osm.POIs.Villages(cache = $.cache)
+        map = osm.viz.RenderMap(
             geojson_path = city_data.cities.path,
             title = "Cities",
             color = "#e74c3c"
@@ -297,7 +297,7 @@ namespace examples.composed {
 
     /** Comprehensive analysis extracting parks, routes, and cities with statistics and a park map overlay. */
     workflow RegionalAnalysis(region: String = "Liechtenstein") => (parks_count: Long, parks_area: Double, routes_km: Double, cities_count: Long, map_path: String) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = RegionalAnalysisFromCache(cache = cache.cache)
         yield RegionalAnalysis(
             parks_count = f.parks_count,
@@ -310,16 +310,16 @@ namespace examples.composed {
 
     /** Cache-dependent logic for RegionalAnalysis. */
     facet RegionalAnalysisFromCache(cache: OSMCache) => (parks_count: Long, parks_area: Double, routes_km: Double, cities_count: Long, map_path: String) andThen {
-        parks = osm.geo.Parks.ExtractParks(cache = $.cache, park_type = "all")
-        routes = osm.geo.Routes.BicycleRoutes(cache = $.cache, include_infrastructure = false)
-        cities = osm.geo.Population.Cities(cache = $.cache, min_population = 0)
-        park_stats = osm.geo.Parks.ParkStatistics(input_path = parks.result.output_path)
-        route_stats = osm.geo.Routes.RouteStatistics(input_path = routes.result.output_path)
-        city_stats = osm.geo.Population.PopulationStatistics(
+        parks = osm.Parks.ExtractParks(cache = $.cache, park_type = "all")
+        routes = osm.Routes.BicycleRoutes(cache = $.cache, include_infrastructure = false)
+        cities = osm.Population.Cities(cache = $.cache, min_population = 0)
+        park_stats = osm.Parks.ParkStatistics(input_path = parks.result.output_path)
+        route_stats = osm.Routes.RouteStatistics(input_path = routes.result.output_path)
+        city_stats = osm.Population.PopulationStatistics(
             input_path = cities.result.output_path,
             place_type = "city"
         )
-        map = osm.geo.Visualization.RenderMap(
+        map = osm.viz.RenderMap(
             geojson_path = parks.result.output_path,
             title = "Regional Overview - Parks",
             color = "#2ecc71"
@@ -340,7 +340,7 @@ namespace examples.composed {
 
     /** Validates a cached region's OSM data and produces a summary of valid/invalid entries. */
     workflow ValidateAndSummarize(region: String = "Liechtenstein", output_dir: String = "/tmp") => (total: Long, valid: Long, invalid: Long, output_path: String) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = ValidateAndSummarizeFromCache(cache = cache.cache, output_dir = $.output_dir)
         yield ValidateAndSummarize(
             total = f.total,
@@ -352,12 +352,12 @@ namespace examples.composed {
 
     /** Cache-dependent logic for ValidateAndSummarize. */
     facet ValidateAndSummarizeFromCache(cache: OSMCache, output_dir: String = "/tmp") => (total: Long, valid: Long, invalid: Long, output_path: String) andThen {
-        validation = osm.geo.Operations.Validation.ValidateCache(
+        validation = osm.ops.Validation.ValidateCache(
             cache = $.cache,
             output_dir = $.output_dir,
             use_hdfs = false
         )
-        summary = osm.geo.Operations.Validation.ValidationSummary(
+        summary = osm.ops.Validation.ValidationSummary(
             input_path = validation.result.output_path
         )
         yield ValidateAndSummarizeFromCache(
@@ -385,7 +385,7 @@ namespace examples.composed {
         tag_coverage_pct: Double,
         output_path: String
     ) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = OsmoseQualityCheckFromCache(cache = cache.cache, output_dir = $.output_dir)
         yield OsmoseQualityCheck(
             total_issues = f.total_issues,
@@ -406,11 +406,11 @@ namespace examples.composed {
         tag_coverage_pct: Double,
         output_path: String
     ) andThen {
-        verify = osm.geo.Operations.OSMOSE.VerifyAll(
+        verify = osm.ops.OSMOSE.VerifyAll(
             cache = $.cache,
             output_dir = $.output_dir
         )
-        summary = osm.geo.Operations.OSMOSE.ComputeVerifySummary(
+        summary = osm.ops.OSMOSE.ComputeVerifySummary(
             input_path = verify.result.output_path
         )
         yield OsmoseQualityCheckFromCache(
@@ -441,14 +441,14 @@ namespace examples.composed {
         routes_path: String
     ) andThen {
         // Stage 1: Download and cache the GTFS feed
-        dl = osm.geo.Transit.GTFS.DownloadFeed(url = $.gtfs_url)
+        dl = osm.Transit.GTFS.DownloadFeed(url = $.gtfs_url)
 
         // Stage 2: Extract stops and routes in parallel
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = dl.feed)
-        routes = osm.geo.Transit.GTFS.ExtractRoutes(feed = dl.feed)
+        stops = osm.Transit.GTFS.ExtractStops(feed = dl.feed)
+        routes = osm.Transit.GTFS.ExtractRoutes(feed = dl.feed)
 
         // Stage 3: Compute aggregate statistics
-        stats = osm.geo.Transit.GTFS.TransitStatistics(feed = dl.feed)
+        stats = osm.Transit.GTFS.TransitStatistics(feed = dl.feed)
 
         yield TransitAnalysis(
             agency_name = stats.stats.agency_name,
@@ -478,7 +478,7 @@ namespace examples.composed {
         accessibility_path: String,
         coverage_path: String
     ) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = TransitAccessibilityFromCache(cache = cache.cache, gtfs_url = $.gtfs_url)
         yield TransitAccessibility(
             pct_within_400m = f.pct_within_400m,
@@ -499,15 +499,15 @@ namespace examples.composed {
         accessibility_path: String,
         coverage_path: String
     ) andThen {
-        dl = osm.geo.Transit.GTFS.DownloadFeed(url = $.gtfs_url)
-        buildings = osm.geo.Buildings.ExtractBuildings(cache = $.cache)
-        stops = osm.geo.Transit.GTFS.ExtractStops(feed = dl.feed)
-        access = osm.geo.Transit.GTFS.StopAccessibility(
+        dl = osm.Transit.GTFS.DownloadFeed(url = $.gtfs_url)
+        buildings = osm.Buildings.ExtractBuildings(cache = $.cache)
+        stops = osm.Transit.GTFS.ExtractStops(feed = dl.feed)
+        access = osm.Transit.GTFS.StopAccessibility(
             osm_geojson_path = buildings.result.output_path,
             stops_geojson_path = stops.result.output_path,
             walk_threshold_m = 400
         )
-        gaps = osm.geo.Transit.GTFS.CoverageGaps(
+        gaps = osm.Transit.GTFS.CoverageGaps(
             stops_geojson_path = stops.result.output_path,
             osm_geojson_path = buildings.result.output_path,
             cell_size_m = 500
@@ -539,7 +539,7 @@ namespace examples.composed {
         csv_path: String,
         metrics_path: String
     ) andThen {
-        cache = osm.geo.Operations.Cache(region = $.region)
+        cache = osm.ops.CacheRegion(region = $.region)
         f = RoadZoomBuilderFromCache(cache = cache.cache, output_dir = $.output_dir, max_concurrent = $.max_concurrent)
         yield RoadZoomBuilder(
             total_edges = f.total_edges,
@@ -558,8 +558,8 @@ namespace examples.composed {
         csv_path: String,
         metrics_path: String
     ) andThen {
-        graph = osm.geo.Operations.GraphHopper.BuildGraph(cache = $.cache)
-        zoom = osm.geo.Roads.ZoomBuilder.BuildZoomLayers(
+        graph = osm.ops.GraphHopper.BuildGraph(cache = $.cache)
+        zoom = osm.Roads.ZoomBuilder.BuildZoomLayers(
             cache = $.cache,
             graph = graph.graph,
             output_dir = $.output_dir,

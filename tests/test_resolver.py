@@ -20,11 +20,11 @@ class TestNamespaceIndex:
     def test_scan_directory(self, tmp_path):
         """Scan a directory and find namespaces in AFL files."""
         (tmp_path / "types.afl").write_text("namespace osm.types { facet Addr() }")
-        (tmp_path / "geo.afl").write_text("namespace osm.geo { facet Geo() }")
+        (tmp_path / "geo.afl").write_text("namespace osm.geocode { facet Geo() }")
 
         index = NamespaceIndex([tmp_path])
         assert index.find_namespace("osm.types") is not None
-        assert index.find_namespace("osm.geo") is not None
+        assert index.find_namespace("osm.geocode") is not None
         assert index.find_namespace("osm.missing") is None
 
     def test_multiple_namespaces_per_file(self, tmp_path):
@@ -281,15 +281,13 @@ class TestDependencyResolver:
     def test_qualified_call_resolution(self, tmp_path):
         """Resolve namespaces referenced by qualified call names (no use statement)."""
         (tmp_path / "ops.afl").write_text(
-            "namespace osm.geo.Operations {\n"
-            "    event facet Cache(region: String) => (cache: String)\n"
-            "}\n"
+            "namespace osm.ops {\n    event facet Cache(region: String) => (cache: String)\n}\n"
         )
 
         program, registry, ci = self._make_input(
             "namespace app {\n"
             "    workflow Run() andThen {\n"
-            "        c = osm.geo.Operations.Cache(region = $.region)\n"
+            "        c = osm.ops.CacheRegion(region = $.region)\n"
             "    }\n"
             "}\n"
         )
@@ -298,7 +296,7 @@ class TestDependencyResolver:
         result_prog, _, _ = resolver.resolve(program, registry, ci)
 
         ns_names = {ns.name for ns in result_prog.namespaces}
-        assert "osm.geo.Operations" in ns_names
+        assert "osm.ops" in ns_names
 
     def test_qualified_call_transitive(self, tmp_path):
         """Qualified call triggers loading, which may bring in use-based transitive deps."""
