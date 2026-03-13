@@ -33,7 +33,6 @@ from .block import BlockAnalysis, StatementDefinition, StepAnalysis
 from .dao import (
     DataServices,
     FlowDefinitionDAO,
-    KeyLockDAO,
     LogDefinitionDAO,
     RunnerDefinitionDAO,
     ServerDefinitionDAO,
@@ -62,8 +61,6 @@ from .entities import (
     HandlerRegistration,
     InlineSource,
     JarArtifact,
-    LockDefinition,
-    LockMetaData,
     LogDefinition,
     MixinDefinition,
     # Flow types
@@ -265,8 +262,6 @@ __all__ = [
     "ServerDefinition",
     "ServerState",
     "HandledCount",
-    "LockDefinition",
-    "LockMetaData",
     "StepLogEntry",
     "StepLogLevel",
     "StepLogSource",
@@ -278,6 +273,5 @@ __all__ = [
     "TaskDefinitionDAO",
     "LogDefinitionDAO",
     "ServerDefinitionDAO",
-    "KeyLockDAO",
     "DataServices",
 ]

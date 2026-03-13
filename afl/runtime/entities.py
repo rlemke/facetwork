@@ -537,26 +537,3 @@ class PublishedSource:
     published_at: int = 0
     origin: str = ""
     checksum: str = ""
-
-
-@dataclass
-class LockMetaData:
-    """Lock metadata."""
-
-    topic: str | None = None
-    handler: str | None = None
-    step_name: str | None = None
-    step_id: str | None = None
-
-
-@dataclass
-class LockDefinition:
-    """Distributed lock.
-
-    Stored in the `locks` collection.
-    """
-
-    key: str
-    acquired_at: int = 0  # Acquisition timestamp (ms)
-    expires_at: int = 0  # Expiration timestamp (ms)
-    meta: LockMetaData | None = None

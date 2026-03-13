@@ -80,12 +80,6 @@ def main() -> None:
         help="Max concurrent work items (default: from config or 2)",
     )
     parser.add_argument(
-        "--lock-duration",
-        type=int,
-        default=None,
-        help="Lock TTL in ms (default: from config or 60000)",
-    )
-    parser.add_argument(
         "--port",
         type=int,
         default=8080,
@@ -142,8 +136,6 @@ def main() -> None:
         args.heartbeat_interval = config.runner.heartbeat_interval_ms
     if args.max_concurrent is None:
         args.max_concurrent = config.runner.max_concurrent
-    if args.lock_duration is None:
-        args.lock_duration = config.runner.lock_duration_ms
     if args.registry is None:
         args.registry = config.runner.use_registry
 
@@ -179,7 +171,6 @@ def main() -> None:
         task_list=args.task_list,
         poll_interval_ms=args.poll_interval,
         heartbeat_interval_ms=args.heartbeat_interval,
-        lock_duration_ms=args.lock_duration,
         max_concurrent=args.max_concurrent,
         http_port=args.port,
     )

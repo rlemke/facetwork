@@ -105,7 +105,6 @@ class RunnerConfig:
         poll_interval_ms: Polling interval in milliseconds
         max_concurrent: Maximum concurrent work items
         heartbeat_interval_ms: Heartbeat interval in milliseconds
-        lock_duration_ms: Distributed lock TTL in milliseconds
         sweep_interval_ms: Stuck-step sweep interval in milliseconds
         use_registry: Use RegistryRunner mode
         topics: Topic/glob filters for handler selection
@@ -114,7 +113,6 @@ class RunnerConfig:
     poll_interval_ms: int = 1000
     max_concurrent: int = 2
     heartbeat_interval_ms: int = 10000
-    lock_duration_ms: int = 60000
     sweep_interval_ms: int = 5000
     use_registry: bool = False
     topics: list[str] = field(default_factory=list)
@@ -125,7 +123,6 @@ class RunnerConfig:
             "pollIntervalMs": self.poll_interval_ms,
             "maxConcurrent": self.max_concurrent,
             "heartbeatIntervalMs": self.heartbeat_interval_ms,
-            "lockDurationMs": self.lock_duration_ms,
             "sweepIntervalMs": self.sweep_interval_ms,
             "useRegistry": self.use_registry,
             "topics": list(self.topics),
@@ -152,7 +149,6 @@ class RunnerConfig:
             poll_interval_ms=_int("pollIntervalMs", "poll_interval_ms", 1000),
             max_concurrent=_int("maxConcurrent", "max_concurrent", 2),
             heartbeat_interval_ms=_int("heartbeatIntervalMs", "heartbeat_interval_ms", 10000),
-            lock_duration_ms=_int("lockDurationMs", "lock_duration_ms", 60000),
             sweep_interval_ms=_int("sweepIntervalMs", "sweep_interval_ms", 5000),
             use_registry=_bool("useRegistry", "use_registry", False),
             topics=list(topics_raw),
@@ -166,7 +162,6 @@ class RunnerConfig:
             AFL_POLL_INTERVAL_MS
             AFL_MAX_CONCURRENT
             AFL_HEARTBEAT_INTERVAL_MS
-            AFL_LOCK_DURATION_MS
             AFL_SWEEP_INTERVAL_MS
             AFL_USE_REGISTRY  ("true"/"1" to enable)
             AFL_RUNNER_TOPICS  (comma-separated)
@@ -181,9 +176,6 @@ class RunnerConfig:
             max_concurrent=int(os.environ.get("AFL_MAX_CONCURRENT", str(defaults.max_concurrent))),
             heartbeat_interval_ms=int(
                 os.environ.get("AFL_HEARTBEAT_INTERVAL_MS", str(defaults.heartbeat_interval_ms))
-            ),
-            lock_duration_ms=int(
-                os.environ.get("AFL_LOCK_DURATION_MS", str(defaults.lock_duration_ms))
             ),
             sweep_interval_ms=int(
                 os.environ.get("AFL_SWEEP_INTERVAL_MS", str(defaults.sweep_interval_ms))
@@ -442,7 +434,6 @@ def _apply_env_overrides(config: AFLConfig) -> AFLConfig:
         "poll_interval_ms": runner.poll_interval_ms,
         "max_concurrent": runner.max_concurrent,
         "heartbeat_interval_ms": runner.heartbeat_interval_ms,
-        "lock_duration_ms": runner.lock_duration_ms,
         "sweep_interval_ms": runner.sweep_interval_ms,
         "use_registry": runner.use_registry,
         "topics": list(runner.topics),
@@ -451,7 +442,6 @@ def _apply_env_overrides(config: AFLConfig) -> AFLConfig:
         ("AFL_POLL_INTERVAL_MS", "poll_interval_ms", int),
         ("AFL_MAX_CONCURRENT", "max_concurrent", int),
         ("AFL_HEARTBEAT_INTERVAL_MS", "heartbeat_interval_ms", int),
-        ("AFL_LOCK_DURATION_MS", "lock_duration_ms", int),
         ("AFL_SWEEP_INTERVAL_MS", "sweep_interval_ms", int),
     ]
     for env_var, field_name, conv in env_map_runner:

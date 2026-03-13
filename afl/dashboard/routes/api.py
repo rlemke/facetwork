@@ -443,30 +443,6 @@ def api_server_detail(server_id: str, store=Depends(get_store)):
 # -- Locks -------------------------------------------------------------------
 
 
-@router.get("/locks")
-def api_locks(store=Depends(get_store)):
-    """Return all locks as JSON."""
-    locks = store.get_all_locks()
-    return JSONResponse(
-        [
-            {
-                "key": lock.key,
-                "acquired_at": lock.acquired_at,
-                "expires_at": lock.expires_at,
-                "meta": {
-                    "topic": lock.meta.topic,
-                    "handler": lock.meta.handler,
-                    "step_name": lock.meta.step_name,
-                    "step_id": lock.meta.step_id,
-                }
-                if lock.meta
-                else None,
-            }
-            for lock in locks
-        ]
-    )
-
-
 # -- Sources -----------------------------------------------------------------
 
 

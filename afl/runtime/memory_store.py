@@ -18,11 +18,10 @@ import threading
 import time
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from .entities import (
     HandlerRegistration,
-    LockDefinition,
     LogDefinition,
     RunnerDefinition,
     ServerDefinition,
@@ -32,9 +31,6 @@ from .entities import (
 from .persistence import IterationChanges, PersistenceAPI
 from .step import StepDefinition
 from .types import BlockId, StepId
-
-if TYPE_CHECKING:
-    from .persistence import LockMetaData
 
 
 def _current_time_ms() -> int:
@@ -64,7 +60,6 @@ class MemoryStore(PersistenceAPI):
         self._runners: dict[str, RunnerDefinition] = {}
         self._tasks: dict[str, TaskDefinition] = {}
         self._logs: list[LogDefinition] = []
-        self._locks: dict[str, LockDefinition] = {}
         self._servers: dict[str, ServerDefinition] = {}
         self._handler_registrations: dict[str, HandlerRegistration] = {}
         self._step_logs: list[StepLogEntry] = []
@@ -235,7 +230,6 @@ class MemoryStore(PersistenceAPI):
         self._runners.clear()
         self._tasks.clear()
         self._logs.clear()
-        self._locks.clear()
         self._servers.clear()
         self._handler_registrations.clear()
         self._step_logs.clear()
@@ -433,74 +427,3 @@ class MemoryStore(PersistenceAPI):
             del self._handler_registrations[facet_name]
             return True
         return False
-
-    # =========================================================================
-    # Lock Operations
-    # =========================================================================
-
-    def acquire_lock(
-        self, key: str, duration_ms: int, meta: Optional["LockMetaData"] = None
-    ) -> bool:
-        """Acquire a distributed lock."""
-        from .entities import LockDefinition
-
-        now = _current_time_ms()
-
-        # Check if lock exists and is still valid
-        if key in self._locks:
-            existing = self._locks[key]
-            if existing.expires_at > now:
-                return False  # Lock still held
-            # Lock expired, can be replaced
-
-        # Acquire the lock
-        self._locks[key] = LockDefinition(
-            key=key,
-            acquired_at=now,
-            expires_at=now + duration_ms,
-            meta=meta,
-        )
-        return True
-
-    def release_lock(self, key: str) -> bool:
-        """Release a distributed lock."""
-        if key in self._locks:
-            del self._locks[key]
-            return True
-        return False
-
-    def check_lock(self, key: str) -> Optional["LockDefinition"]:
-        """Check if a lock exists and is valid."""
-        if key not in self._locks:
-            return None
-
-        lock = self._locks[key]
-        now = _current_time_ms()
-
-        if lock.expires_at <= now:
-            # Lock expired, clean it up
-            del self._locks[key]
-            return None
-
-        return lock
-
-    def extend_lock(self, key: str, duration_ms: int) -> bool:
-        """Extend a lock's expiration."""
-        if key not in self._locks:
-            return False
-
-        lock = self._locks[key]
-        now = _current_time_ms()
-
-        if lock.expires_at <= now:
-            # Lock expired
-            del self._locks[key]
-            return False
-
-        # Extend the lock
-        lock.expires_at = now + duration_ms
-        return True
-
-    def get_all_locks(self) -> list[LockDefinition]:
-        """Get all locks (including expired) for dashboard visibility."""
-        return list(self._locks.values())

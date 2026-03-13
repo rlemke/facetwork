@@ -587,44 +587,6 @@ class TestSourceEdgeCases:
 
 
 # =============================================================================
-# TestLockEdgeCases
-# =============================================================================
-
-
-class TestLockEdgeCases:
-    def _make_lock(self, store, key="lock-1", duration_ms=60000, topic=None, handler=None):
-        from afl.runtime.entities import LockMetaData
-
-        meta = None
-        if topic or handler:
-            meta = LockMetaData(topic=topic, handler=handler)
-        store.acquire_lock(key, duration_ms, meta=meta)
-
-    def test_lock_with_expired_ttl_still_displayed(self, client):
-        tc, store = client
-        # Acquire a lock with very short TTL (1ms) -- it'll be expired
-        self._make_lock(store, "expired-lock", duration_ms=1)
-        import time
-
-        time.sleep(0.01)  # Ensure it expires
-        resp = tc.get("/locks")
-        assert resp.status_code == 200
-        # The lock page should still render (expired locks are listed)
-
-    def test_release_nonexistent_lock_returns_redirect(self, client):
-        tc, store = client
-        resp = tc.post("/locks/nonexistent-lock/release", follow_redirects=False)
-        assert resp.status_code == 303
-
-    def test_lock_with_no_metadata(self, client):
-        tc, store = client
-        self._make_lock(store, "bare-lock", duration_ms=60000)
-        resp = tc.get("/locks/bare-lock")
-        assert resp.status_code == 200
-        assert "bare-lock" in resp.text
-
-
-# =============================================================================
 # TestFilteringEdgeCases
 # =============================================================================
 

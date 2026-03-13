@@ -29,10 +29,6 @@
         <p>Sources</p>
     </article>
     <article class="summary-card">
-        <h2>{{ active_lock_count }}</h2>
-        <p>Active Locks</p>
-    </article>
-    <article class="summary-card">
         <h2>{{ task_counts.get("pending", 0) }}</h2>
         <p>Pending Tasks</p>
     </article>
@@ -47,7 +43,6 @@
         <li><a href="/handlers">Handler Registrations</a></li>
         <li><a href="/events">Events (Tasks)</a></li>
         <li><a href="/sources">Published Sources</a></li>
-        <li><a href="/locks">Active Locks</a></li>
         <li><a href="/tasks">Task Queue</a></li>
     </ul>
 </section>

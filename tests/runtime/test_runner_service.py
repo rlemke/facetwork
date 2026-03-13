@@ -218,8 +218,6 @@ class TestRunnerConfig:
         assert config.task_list == "default"
         assert config.poll_interval_ms == 1000
         assert config.heartbeat_interval_ms == 10000
-        assert config.lock_duration_ms == 60000
-        assert config.lock_extend_interval_ms == 20000
         assert config.max_concurrent == 2
         assert config.shutdown_timeout_ms == 30000
         assert config.http_port == 8080
@@ -348,69 +346,25 @@ class TestRunnerServicePolling:
         steps = svc._poll_event_steps()
         assert len(steps) == 0
 
-    def test_poll_pending_tasks(self, store, evaluator):
-        """Pending tasks with a built-in handler are found."""
+    def test_builtin_task_names_includes_execute(self, store, evaluator):
+        """Built-in task names include afl:execute handler."""
         registry = ToolRegistry()
         config = RunnerConfig(task_list="mylist")
         svc = RunnerService(store, evaluator, config, registry)
 
-        # Create a pending afl:execute task (built-in handler)
-        task = TaskDefinition(
-            uuid=generate_id(),
-            name="afl:execute",
-            runner_id="r1",
-            workflow_id="w1",
-            flow_id="f1",
-            step_id="s1",
-            state=TaskState.PENDING,
-            task_list_name="mylist",
-        )
-        store.save_task(task)
+        # afl:execute is a built-in handler registered by RunnerService
+        names = svc._get_builtin_task_names()
+        assert "afl:execute" in names
 
-        tasks = svc._poll_pending_tasks()
-        assert len(tasks) == 1
-        assert tasks[0].uuid == task.uuid
-
-    def test_poll_ignores_wrong_task_list(self, store, evaluator):
-        """Tasks from a different list are not returned."""
+    def test_builtin_task_names_excludes_event_handlers(self, store, evaluator):
+        """Event handler names are excluded from built-in task names."""
         registry = ToolRegistry()
+        registry.register("osm.ops.CacheRegion", lambda p: {})
         config = RunnerConfig(task_list="mylist")
         svc = RunnerService(store, evaluator, config, registry)
 
-        task = TaskDefinition(
-            uuid=generate_id(),
-            name="afl:execute",
-            runner_id="r1",
-            workflow_id="w1",
-            flow_id="f1",
-            step_id="s1",
-            state=TaskState.PENDING,
-            task_list_name="otherlist",
-        )
-        store.save_task(task)
-
-        tasks = svc._poll_pending_tasks()
-        assert len(tasks) == 0
-
-    def test_poll_ignores_unhandled_tasks(self, store, registry, evaluator):
-        """Tasks with no registered handler are not returned."""
-        config = RunnerConfig(task_list="mylist")
-        svc = RunnerService(store, evaluator, config, registry)
-
-        task = TaskDefinition(
-            uuid=generate_id(),
-            name="osm.ops.CacheRegion",
-            runner_id="r1",
-            workflow_id="w1",
-            flow_id="f1",
-            step_id="s1",
-            state=TaskState.PENDING,
-            task_list_name="mylist",
-        )
-        store.save_task(task)
-
-        tasks = svc._poll_pending_tasks()
-        assert len(tasks) == 0
+        names = svc._get_builtin_task_names()
+        assert "osm.ops.CacheRegion" not in names
 
     def test_run_once_respects_capacity(self, store, evaluator, workflow_ast, program_ast):
         """run_once dispatches up to max_concurrent items."""
@@ -428,105 +382,6 @@ class TestRunnerServicePolling:
         dispatched = svc.run_once()
         # Should dispatch at most 1 (max_concurrent)
         assert dispatched <= 1
-
-
-# =========================================================================
-# TestRunnerServiceLocking
-# =========================================================================
-
-
-class TestRunnerServiceLocking:
-    """Tests for distributed lock acquisition and release."""
-
-    def test_claim_step_acquires_lock(self, store, evaluator, registry, workflow_ast, program_ast):
-        """Claiming a step acquires a distributed lock."""
-        registry.register("CountDocuments", lambda p: {"output": 1})
-        config = RunnerConfig()
-        svc = RunnerService(store, evaluator, config, registry)
-
-        _execute_until_paused(evaluator, workflow_ast, {"x": 1}, program_ast)
-        steps = svc._poll_event_steps()
-        assert len(steps) >= 1
-
-        step = steps[0]
-        assert svc._try_claim_step(step) is True
-
-        # Lock should exist
-        lock = store.check_lock(f"runner:step:{step.id}")
-        assert lock is not None
-
-    def test_double_claim_fails(self, store, evaluator, registry, workflow_ast, program_ast):
-        """Second claim on same step fails."""
-        registry.register("CountDocuments", lambda p: {"output": 1})
-        config = RunnerConfig()
-        svc = RunnerService(store, evaluator, config, registry)
-
-        _execute_until_paused(evaluator, workflow_ast, {"x": 1}, program_ast)
-        steps = svc._poll_event_steps()
-        step = steps[0]
-
-        assert svc._try_claim_step(step) is True
-        assert svc._try_claim_step(step) is False
-
-    def test_release_step_lock(self, store, evaluator, registry, workflow_ast, program_ast):
-        """Releasing a step lock frees it for others."""
-        registry.register("CountDocuments", lambda p: {"output": 1})
-        config = RunnerConfig()
-        svc = RunnerService(store, evaluator, config, registry)
-
-        _execute_until_paused(evaluator, workflow_ast, {"x": 1}, program_ast)
-        steps = svc._poll_event_steps()
-        step = steps[0]
-
-        svc._try_claim_step(step)
-        svc._release_step_lock(step)
-
-        # Lock should be gone
-        lock = store.check_lock(f"runner:step:{step.id}")
-        assert lock is None
-
-        # Can re-acquire
-        assert svc._try_claim_step(step) is True
-
-    def test_claim_task_acquires_lock(self, store, evaluator, registry):
-        """Claiming a task acquires a distributed lock."""
-        config = RunnerConfig()
-        svc = RunnerService(store, evaluator, config, registry)
-
-        task = TaskDefinition(
-            uuid=generate_id(),
-            name="SomeTask",
-            runner_id="r1",
-            workflow_id="w1",
-            flow_id="f1",
-            step_id="s1",
-        )
-        store.save_task(task)
-
-        assert svc._try_claim_task(task) is True
-        lock = store.check_lock(f"runner:task:{task.uuid}")
-        assert lock is not None
-
-    def test_concurrent_claim_only_one_wins(self, store, evaluator, workflow_ast, program_ast):
-        """Two services trying to claim the same step: only one succeeds."""
-        reg1 = ToolRegistry()
-        reg1.register("CountDocuments", lambda p: {"output": 1})
-        reg2 = ToolRegistry()
-        reg2.register("CountDocuments", lambda p: {"output": 2})
-
-        config = RunnerConfig()
-        svc1 = RunnerService(store, evaluator, config, reg1)
-        svc2 = RunnerService(store, evaluator, config, reg2)
-
-        _execute_until_paused(evaluator, workflow_ast, {"x": 1}, program_ast)
-        steps = svc1._poll_event_steps()
-        step = steps[0]
-
-        claim1 = svc1._try_claim_step(step)
-        claim2 = svc2._try_claim_step(step)
-
-        assert claim1 is True
-        assert claim2 is False
 
 
 # =========================================================================
@@ -554,7 +409,7 @@ class TestRunnerServiceEventProcessing:
         step = steps[0]
 
         # Claim and process
-        svc._try_claim_step(step)
+        # Step claimed via atomic find_one_and_update (no separate lock needed)
 
         # Cache AST for resume
         svc.cache_workflow_ast(result.workflow_id, workflow_ast)
@@ -565,14 +420,8 @@ class TestRunnerServiceEventProcessing:
         updated_step = store.get_step(step.id)
         assert updated_step.state != StepState.EVENT_TRANSMIT
 
-        # Lock should be released
-        lock = store.check_lock(f"runner:step:{step.id}")
-        assert lock is None
-
-    def test_process_step_no_handler_releases_lock(
-        self, store, evaluator, workflow_ast, program_ast
-    ):
-        """If no handler returns None, lock is released, step unchanged."""
+    def test_process_step_no_handler_leaves_step(self, store, evaluator, workflow_ast, program_ast):
+        """If no handler returns None, step unchanged."""
         registry = ToolRegistry()
         # Register handler so polling finds it, then unregister
         registry.register("CountDocuments", lambda p: {"output": 1})
@@ -586,21 +435,15 @@ class TestRunnerServiceEventProcessing:
         # Replace handler to return None
         svc._tool_registry = ToolRegistry()
 
-        svc._try_claim_step(step)
+        # Step claimed via atomic find_one_and_update (no separate lock needed)
         svc._process_step(step)
 
         # Step should still be at EVENT_TRANSMIT
         updated = store.get_step(step.id)
         assert updated.state == StepState.EVENT_TRANSMIT
 
-        # Lock released
-        lock = store.check_lock(f"runner:step:{step.id}")
-        assert lock is None
-
-    def test_process_step_handler_error_releases_lock(
-        self, store, evaluator, workflow_ast, program_ast
-    ):
-        """If the handler raises, the lock is still released."""
+    def test_process_step_handler_error_handled(self, store, evaluator, workflow_ast, program_ast):
+        """If the handler raises, the error is handled gracefully."""
 
         def failing_handler(payload):
             raise ValueError("handler error")
@@ -614,12 +457,8 @@ class TestRunnerServiceEventProcessing:
         steps = svc._poll_event_steps()
         step = steps[0]
 
-        svc._try_claim_step(step)
+        # Step claimed via atomic find_one_and_update (no separate lock needed)
         svc._process_step(step)  # Should not raise
-
-        # Lock should be released despite error
-        lock = store.check_lock(f"runner:step:{step.id}")
-        assert lock is None
 
     def test_handled_stats_updated_on_success(self, store, evaluator, workflow_ast, program_ast):
         """Successful processing increments handled count."""
@@ -633,7 +472,7 @@ class TestRunnerServiceEventProcessing:
         steps = svc._poll_event_steps()
         step = steps[0]
 
-        svc._try_claim_step(step)
+        # Step claimed via atomic find_one_and_update (no separate lock needed)
         svc.cache_workflow_ast(result.workflow_id, workflow_ast)
         svc._process_step(step)
 
@@ -656,7 +495,7 @@ class TestRunnerServiceEventProcessing:
         steps = svc._poll_event_steps()
         step = steps[0]
 
-        svc._try_claim_step(step)
+        # Step claimed via atomic find_one_and_update (no separate lock needed)
         svc._process_step(step)
 
         assert svc._handled_counts["CountDocuments"].not_handled == 1
@@ -690,15 +529,11 @@ class TestRunnerServiceTaskProcessing:
         )
         store.save_task(task)
 
-        svc._try_claim_task(task)
+        # Task claimed via atomic find_one_and_update (no separate lock needed)
         svc._process_task(task)
 
         updated = store._tasks[task.uuid]
         assert updated.state == TaskState.COMPLETED
-
-        # Lock released
-        lock = store.check_lock(f"runner:task:{task.uuid}")
-        assert lock is None
 
     def test_process_task_no_handler(self, store, evaluator):
         """Task with no handler transitions to FAILED."""
@@ -717,7 +552,7 @@ class TestRunnerServiceTaskProcessing:
         )
         store.save_task(task)
 
-        svc._try_claim_task(task)
+        # Task claimed via atomic find_one_and_update (no separate lock needed)
         svc._process_task(task)
 
         updated = store._tasks[task.uuid]
@@ -750,25 +585,17 @@ class TestRunnerServiceTaskProcessing:
 
         svc._tool_registry._handlers["Boom"] = bad_handler
 
-        svc._try_claim_task(task)
+        # Task claimed via atomic find_one_and_update (no separate lock needed)
         svc._process_task(task)
 
         updated = store._tasks[task.uuid]
         assert updated.state == TaskState.FAILED
         assert "oops" in updated.error["message"]
 
-    def test_process_task_marks_running_then_completed(self, store, evaluator):
-        """Task goes through RUNNING state before COMPLETED."""
-        states_seen = []
-
-        def capturing_handler(payload):
-            # At this point the task should be RUNNING
-            task_in_store = store._tasks[task_uuid]
-            states_seen.append(task_in_store.state)
-            return {"result": True}
-
+    def test_process_task_completes(self, store, evaluator):
+        """Task transitions to COMPLETED after processing."""
         registry = ToolRegistry()
-        registry.register("Track", capturing_handler)
+        registry.register("Track", lambda p: {"result": True})
         config = RunnerConfig()
         svc = RunnerService(store, evaluator, config, registry)
 
@@ -780,14 +607,12 @@ class TestRunnerServiceTaskProcessing:
             workflow_id="w1",
             flow_id="f1",
             step_id="s1",
-            state=TaskState.PENDING,
+            state=TaskState.RUNNING,  # claim_task sets RUNNING atomically
         )
         store.save_task(task)
 
-        svc._try_claim_task(task)
         svc._process_task(task)
 
-        assert TaskState.RUNNING in states_seen
         updated = store._tasks[task_uuid]
         assert updated.state == TaskState.COMPLETED
 
@@ -855,8 +680,8 @@ class TestRunnerServiceShutdown:
         assert server is not None
         assert server.state == ServerState.SHUTDOWN
 
-    def test_shutdown_releases_locks_via_process(self, store, evaluator, workflow_ast, program_ast):
-        """Locks are released after processing completes (even on shutdown)."""
+    def test_shutdown_processes_step(self, store, evaluator, workflow_ast, program_ast):
+        """Steps are processed correctly even during shutdown."""
         registry = ToolRegistry()
         registry.register("CountDocuments", lambda p: {"output": 1})
         config = RunnerConfig()
@@ -866,13 +691,12 @@ class TestRunnerServiceShutdown:
         steps = svc._poll_event_steps()
         step = steps[0]
 
-        svc._try_claim_step(step)
         svc.cache_workflow_ast(result.workflow_id, workflow_ast)
         svc._process_step(step)
 
-        # After processing, lock should be released
-        lock = store.check_lock(f"runner:step:{step.id}")
-        assert lock is None
+        # After processing, step should have progressed
+        updated = store.get_step(step.id)
+        assert updated.state != StepState.EVENT_TRANSMIT
 
 
 # =========================================================================
@@ -1149,7 +973,7 @@ class TestSubmitWithExecutor:
         steps = svc._poll_event_steps()
         step = steps[0]
 
-        svc._try_claim_step(step)
+        # Step claimed via atomic find_one_and_update (no separate lock needed)
         svc.cache_workflow_ast(result.workflow_id, workflow_ast)
 
         # Manually set up executor
@@ -1181,7 +1005,7 @@ class TestSubmitWithExecutor:
             state=TaskState.PENDING,
         )
         store.save_task(task)
-        svc._try_claim_task(task)
+        # Task claimed via atomic find_one_and_update (no separate lock needed)
 
         svc._executor = ThreadPoolExecutor(max_workers=2)
         try:
@@ -1265,8 +1089,6 @@ class TestResumeWorkflowEdgeCases:
                 "get_workflow",
                 "get_steps_by_state",
                 "get_pending_tasks",
-                "acquire_lock",
-                "release_lock",
             ]
         )
         mock_wf = MagicMock()
@@ -1473,70 +1295,6 @@ workflow CacheTest(x: Long) => (result: Long) andThen {
         # AST should now be cached
         assert "wf-1" in svc._ast_cache
         assert svc._ast_cache["wf-1"]["name"] == "CacheTest"
-
-
-# =========================================================================
-# TestExtendLockLoop
-# =========================================================================
-
-
-class TestExtendLockLoop:
-    """Tests for _extend_lock_loop behavior."""
-
-    def test_extend_lock_runs_and_stops(self, store, evaluator, registry):
-        """Lock extension loop runs until stop event is set."""
-        config = RunnerConfig(lock_extend_interval_ms=30, lock_duration_ms=5000)
-        svc = RunnerService(store, evaluator, config, registry)
-
-        # Acquire a lock
-        store.acquire_lock("test:lock", 5000)
-
-        stop = threading.Event()
-        thread = threading.Thread(
-            target=svc._extend_lock_loop, args=("test:lock", stop), daemon=True
-        )
-        thread.start()
-
-        time.sleep(0.1)  # Let at least one extension happen
-        stop.set()
-        thread.join(timeout=1)
-
-        # Lock should still be valid (was extended)
-        lock = store.check_lock("test:lock")
-        assert lock is not None
-
-    def test_extend_lock_stops_on_failure(self, store, evaluator, registry):
-        """Lock extension loop stops when extend_lock returns False."""
-        config = RunnerConfig(lock_extend_interval_ms=20, lock_duration_ms=5000)
-        svc = RunnerService(store, evaluator, config, registry)
-
-        # Don't acquire a lock, so extend will fail immediately
-        stop = threading.Event()
-        thread = threading.Thread(
-            target=svc._extend_lock_loop, args=("nonexistent:lock", stop), daemon=True
-        )
-        thread.start()
-        thread.join(timeout=2)
-
-        # Thread should have exited on its own (extend_lock returned False)
-        assert not thread.is_alive()
-
-    def test_extend_lock_stops_on_exception(self, evaluator, registry):
-        """Lock extension loop stops on exception from extend_lock."""
-        mock_store = MagicMock()
-        mock_store.extend_lock.side_effect = RuntimeError("db error")
-
-        config = RunnerConfig(lock_extend_interval_ms=20, lock_duration_ms=5000)
-        svc = RunnerService(mock_store, evaluator, config, registry)
-
-        stop = threading.Event()
-        thread = threading.Thread(
-            target=svc._extend_lock_loop, args=("err:lock", stop), daemon=True
-        )
-        thread.start()
-        thread.join(timeout=2)
-
-        assert not thread.is_alive()
 
 
 # =========================================================================
@@ -1970,11 +1728,8 @@ workflow TaskWF(x: Long) => (result: Long) andThen {
         mock_store.save_task.return_value = None
         mock_store.get_pending_tasks.return_value = [task]
         mock_store.get_steps_by_state.return_value = []
-        mock_store.claim_task.return_value = None
-        mock_store.acquire_lock.return_value = True
-        mock_store.release_lock.return_value = None
-        mock_store.extend_lock.return_value = True
-
+        # claim_task called: 1) resume (None), 2) builtin (task), 3) builtin (None)
+        mock_store.claim_task.side_effect = [None, task, None]
         real_store = MemoryStore()
         real_evaluator = Evaluator(persistence=real_store, telemetry=Telemetry(enabled=False))
 

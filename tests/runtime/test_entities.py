@@ -23,8 +23,6 @@ from afl.runtime.entities import (
     FlowDefinition,
     FlowIdentity,
     HandledCount,
-    LockDefinition,
-    LockMetaData,
     LogDefinition,
     NamespaceDefinition,
     NoteImportance,
@@ -288,23 +286,6 @@ class TestServerAndLocks:
         assert count.handled == 100
         assert count.not_handled == 5
 
-    def test_lock_definition(self):
-        """Test LockDefinition dataclass."""
-        meta = LockMetaData(topic="workflow.events", handler="StepHandler", step_id="step-123")
-        lock = LockDefinition(key="step:step-123", acquired_at=1000, expires_at=2000, meta=meta)
-        assert lock.key == "step:step-123"
-        assert lock.acquired_at == 1000
-        assert lock.expires_at == 2000
-        assert lock.meta.step_id == "step-123"
-
-    def test_lock_metadata(self):
-        """Test LockMetaData dataclass."""
-        meta = LockMetaData(topic="events", handler="Handler")
-        assert meta.topic == "events"
-        assert meta.handler == "Handler"
-        assert meta.step_name is None
-        assert meta.step_id is None
-
 
 class TestSerialization:
     """Tests for dataclass serialization."""
@@ -320,15 +301,6 @@ class TestSerialization:
         identity = FlowIdentity(name="Test", path="/test", uuid="123")
         data = asdict(identity)
         assert data == {"name": "Test", "path": "/test", "uuid": "123"}
-
-    def test_asdict_lock_with_metadata(self):
-        """Test LockDefinition with metadata serializes correctly."""
-        meta = LockMetaData(topic="events", step_id="step-1")
-        lock = LockDefinition(key="test", acquired_at=100, expires_at=200, meta=meta)
-        data = asdict(lock)
-        assert data["key"] == "test"
-        assert data["meta"]["topic"] == "events"
-        assert data["meta"]["step_id"] == "step-1"
 
     def test_asdict_runner_definition(self):
         """Test RunnerDefinition serializes to dict."""

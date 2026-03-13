@@ -30,8 +30,6 @@ if TYPE_CHECKING:
     from .entities import (
         FlowDefinition,
         HandlerRegistration,
-        LockDefinition,
-        LockMetaData,
         LogDefinition,
         RunnerDefinition,
         ServerDefinition,
@@ -519,61 +517,6 @@ class PersistenceAPI(Protocol):
             Recent step log entries for the facet
         """
         return []
-
-    # Lock operations
-
-    @abstractmethod
-    def acquire_lock(
-        self, key: str, duration_ms: int, meta: Optional["LockMetaData"] = None
-    ) -> bool:
-        """Acquire a distributed lock.
-
-        Args:
-            key: The lock key
-            duration_ms: Lock duration in milliseconds
-            meta: Optional metadata for the lock
-
-        Returns:
-            True if lock was acquired, False if already held
-        """
-        ...
-
-    @abstractmethod
-    def release_lock(self, key: str) -> bool:
-        """Release a distributed lock.
-
-        Args:
-            key: The lock key
-
-        Returns:
-            True if lock was released, False if not held
-        """
-        ...
-
-    @abstractmethod
-    def check_lock(self, key: str) -> Optional["LockDefinition"]:
-        """Check if a lock exists and is valid.
-
-        Args:
-            key: The lock key
-
-        Returns:
-            The lock definition if valid, None otherwise
-        """
-        ...
-
-    @abstractmethod
-    def extend_lock(self, key: str, duration_ms: int) -> bool:
-        """Extend a lock's expiration.
-
-        Args:
-            key: The lock key
-            duration_ms: Additional duration in milliseconds
-
-        Returns:
-            True if lock was extended, False if not held
-        """
-        ...
 
     # Handler registration operations
 

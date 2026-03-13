@@ -376,29 +376,11 @@ class TestResumeTaskPolling:
         saved_task = store._tasks[resume_task.uuid]
         assert saved_task.state == TaskState.COMPLETED
 
-    def test_resume_task_excluded_from_pending_poll(self, store, evaluator, config, registry):
-        """afl:resume tasks should not be returned by _poll_pending_tasks."""
+    def test_resume_task_excluded_from_builtin_names(self, store, evaluator, config, registry):
+        """afl:resume should not be in _get_builtin_task_names."""
         svc = RunnerService(store, evaluator, config, registry)
-
-        now = _current_time_ms()
-        resume_task = TaskDefinition(
-            uuid=generate_id(),
-            name=RESUME_TASK_NAME,
-            runner_id="",
-            workflow_id="wf1",
-            flow_id="",
-            step_id="s1",
-            state=TaskState.PENDING,
-            created=now,
-            updated=now,
-            task_list_name="default",
-            data_type="resume",
-            data={"step_id": "s1", "workflow_id": "wf1"},
-        )
-        store.save_task(resume_task)
-
-        pending = svc._poll_pending_tasks()
-        assert len(pending) == 0
+        builtin_names = svc._get_builtin_task_names()
+        assert RESUME_TASK_NAME not in builtin_names
 
 
 # =========================================================================

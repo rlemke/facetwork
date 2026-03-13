@@ -265,7 +265,6 @@ class TestRunnerConfig:
         assert cfg.poll_interval_ms == 1000
         assert cfg.max_concurrent == 2
         assert cfg.heartbeat_interval_ms == 10000
-        assert cfg.lock_duration_ms == 60000
         assert cfg.sweep_interval_ms == 5000
         assert cfg.use_registry is False
         assert cfg.topics == []
@@ -275,7 +274,6 @@ class TestRunnerConfig:
             "pollIntervalMs": 500,
             "maxConcurrent": 8,
             "heartbeatIntervalMs": 5000,
-            "lockDurationMs": 30000,
             "sweepIntervalMs": 2000,
             "useRegistry": True,
             "topics": ["ns.*"],
@@ -284,7 +282,6 @@ class TestRunnerConfig:
         assert cfg.poll_interval_ms == 500
         assert cfg.max_concurrent == 8
         assert cfg.heartbeat_interval_ms == 5000
-        assert cfg.lock_duration_ms == 30000
         assert cfg.sweep_interval_ms == 2000
         assert cfg.use_registry is True
         assert cfg.topics == ["ns.*"]

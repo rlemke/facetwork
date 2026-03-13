@@ -23,8 +23,6 @@ from typing import Protocol, runtime_checkable
 
 from .entities import (
     FlowDefinition,
-    LockDefinition,
-    LockMetaData,
     LogDefinition,
     RunnerDefinition,
     ServerDefinition,
@@ -202,58 +200,6 @@ class ServerDefinitionDAO(Protocol):
 
 
 @runtime_checkable
-class KeyLockDAO(Protocol):
-    """Data access for distributed locks."""
-
-    def acquire(self, key: str, duration_ms: int, meta: LockMetaData | None = None) -> bool:
-        """Acquire a lock.
-
-        Args:
-            key: The lock key
-            duration_ms: Lock duration in milliseconds
-            meta: Optional metadata for the lock
-
-        Returns:
-            True if lock was acquired, False if already held
-        """
-        ...
-
-    def release(self, key: str) -> bool:
-        """Release a lock.
-
-        Args:
-            key: The lock key
-
-        Returns:
-            True if lock was released, False if not held
-        """
-        ...
-
-    def check(self, key: str) -> LockDefinition | None:
-        """Check if a lock exists and is valid.
-
-        Args:
-            key: The lock key
-
-        Returns:
-            The lock definition if valid, None otherwise
-        """
-        ...
-
-    def extend(self, key: str, duration_ms: int) -> bool:
-        """Extend a lock's expiration.
-
-        Args:
-            key: The lock key
-            duration_ms: Additional duration in milliseconds
-
-        Returns:
-            True if lock was extended, False if not held
-        """
-        ...
-
-
-@runtime_checkable
 class DataServices(Protocol):
     """Protocol providing access to all DAOs.
 
@@ -293,9 +239,4 @@ class DataServices(Protocol):
     @property
     def server(self) -> ServerDefinitionDAO:
         """Server registration."""
-        ...
-
-    @property
-    def locks(self) -> KeyLockDAO:
-        """Distributed locking."""
         ...

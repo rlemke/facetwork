@@ -36,7 +36,6 @@ from afl.runtime.entities import (
     FlowDefinition,
     FlowIdentity,
     HandledCount,
-    LockMetaData,
     LogDefinition,
     Parameter,
     RunnerDefinition,
@@ -591,65 +590,6 @@ class TestLogOperations:
         assert len(logs) == 2
         # Should be ordered by 'order' field
         assert logs[0].message == "Step started"
-
-
-class TestLockOperations:
-    """Tests for distributed lock operations."""
-
-    def test_acquire_lock(self, mongo_store):
-        """Test acquiring a lock."""
-        result = mongo_store.acquire_lock("test-key", 5000)
-        assert result is True
-
-    def test_acquire_already_held_lock(self, mongo_store):
-        """Test acquiring a lock that's already held."""
-        mongo_store.acquire_lock("test-key", 60000)
-        result = mongo_store.acquire_lock("test-key", 5000)
-        assert result is False
-
-    def test_release_lock(self, mongo_store):
-        """Test releasing a lock."""
-        mongo_store.acquire_lock("test-key", 5000)
-        result = mongo_store.release_lock("test-key")
-        assert result is True
-
-        # Should be able to acquire again
-        result = mongo_store.acquire_lock("test-key", 5000)
-        assert result is True
-
-    def test_release_nonexistent_lock(self, mongo_store):
-        """Test releasing a lock that doesn't exist."""
-        result = mongo_store.release_lock("nonexistent")
-        assert result is False
-
-    def test_check_lock(self, mongo_store):
-        """Test checking a lock."""
-        meta = LockMetaData(topic="events", step_id="step-1")
-        mongo_store.acquire_lock("test-key", 60000, meta)
-
-        lock = mongo_store.check_lock("test-key")
-        assert lock is not None
-        assert lock.key == "test-key"
-        assert lock.meta.topic == "events"
-
-    def test_check_nonexistent_lock(self, mongo_store):
-        """Test checking a lock that doesn't exist."""
-        lock = mongo_store.check_lock("nonexistent")
-        assert lock is None
-
-    def test_extend_lock(self, mongo_store):
-        """Test extending a lock."""
-        mongo_store.acquire_lock("test-key", 1000)
-        result = mongo_store.extend_lock("test-key", 60000)
-        assert result is True
-
-        lock = mongo_store.check_lock("test-key")
-        assert lock is not None
-
-    def test_extend_nonexistent_lock(self, mongo_store):
-        """Test extending a lock that doesn't exist."""
-        result = mongo_store.extend_lock("nonexistent", 5000)
-        assert result is False
 
 
 class TestNewQueryMethods:

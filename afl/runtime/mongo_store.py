@@ -60,8 +60,6 @@ from .entities import (
     FlowIdentity,
     HandledCount,
     HandlerRegistration,
-    LockDefinition,
-    LockMetaData,
     LogDefinition,
     Parameter,
     PublishedSource,
@@ -215,11 +213,6 @@ class MongoStore(PersistenceAPI):
         # Servers collection
         servers = self._db.servers
         servers.create_index("uuid", unique=True, name="server_uuid_index")
-
-        # Locks collection
-        locks = self._db.locks
-        locks.create_index("key", unique=True, name="lock_key_index")
-        locks.create_index("expires_at", name="lock_expires_at_index")
 
         # Published sources collection
         sources = self._db.afl_sources
@@ -681,57 +674,6 @@ class MongoStore(PersistenceAPI):
         """Get recent step logs for a facet, ordered by time descending."""
         docs = self._db.step_logs.find({"facet_name": facet_name}).sort("time", -1).limit(limit)
         return [self._doc_to_step_log(doc) for doc in docs]
-
-    # =========================================================================
-    # Lock Operations
-    # =========================================================================
-
-    def acquire_lock(self, key: str, duration_ms: int, meta: LockMetaData | None = None) -> bool:
-        """Acquire a distributed lock."""
-        now = _current_time_ms()
-        expires_at = now + duration_ms
-
-        # First, try to remove any expired lock
-        self._db.locks.delete_one({"key": key, "expires_at": {"$lt": now}})
-
-        # Try to insert the lock
-        doc = {
-            "key": key,
-            "acquired_at": now,
-            "expires_at": expires_at,
-            "meta": asdict(meta) if meta else None,
-        }
-
-        try:
-            self._db.locks.insert_one(doc)
-            return True
-        except DuplicateKeyError:
-            return False
-
-    def release_lock(self, key: str) -> bool:
-        """Release a distributed lock."""
-        result = self._db.locks.delete_one({"key": key})
-        return result.deleted_count > 0
-
-    def check_lock(self, key: str) -> LockDefinition | None:
-        """Check if a lock exists and is valid."""
-        now = _current_time_ms()
-        doc = self._db.locks.find_one({"key": key, "expires_at": {"$gt": now}})
-        return self._doc_to_lock(doc) if doc else None
-
-    def extend_lock(self, key: str, duration_ms: int) -> bool:
-        """Extend a lock's expiration."""
-        now = _current_time_ms()
-        new_expires = now + duration_ms
-        result = self._db.locks.update_one(
-            {"key": key, "expires_at": {"$gt": now}}, {"$set": {"expires_at": new_expires}}
-        )
-        return result.modified_count > 0
-
-    def get_all_locks(self) -> list[LockDefinition]:
-        """Get all locks (including expired) for dashboard visibility."""
-        docs = self._db.locks.find()
-        return [self._doc_to_lock(doc) for doc in docs]
 
     # =========================================================================
     # Handler Registration Operations
@@ -1298,28 +1240,6 @@ class MongoStore(PersistenceAPI):
             http_port=doc.get("http_port", 0),
             manager=doc.get("manager", ""),
             error=doc.get("error"),
-        )
-
-    def _lock_to_doc(self, lock: LockDefinition) -> dict:
-        """Convert LockDefinition to MongoDB document."""
-        return {
-            "key": lock.key,
-            "acquired_at": lock.acquired_at,
-            "expires_at": lock.expires_at,
-            "meta": asdict(lock.meta) if lock.meta else None,
-        }
-
-    def _doc_to_lock(self, doc: dict) -> LockDefinition:
-        """Convert MongoDB document to LockDefinition."""
-        meta = None
-        if doc.get("meta"):
-            meta = LockMetaData(**doc["meta"])
-
-        return LockDefinition(
-            key=doc["key"],
-            acquired_at=doc.get("acquired_at", 0),
-            expires_at=doc.get("expires_at", 0),
-            meta=meta,
         )
 
     def _flow_to_doc(self, flow: FlowDefinition) -> dict:

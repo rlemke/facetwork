@@ -15,11 +15,12 @@
 """AFL distributed runner service.
 
 A long-lived process that polls MongoDB for blocked steps and pending tasks,
-acquires distributed locks, dispatches events to registered ToolRegistry
-handlers, and resumes workflows via the Evaluator.
+dispatches events to registered ToolRegistry handlers, and resumes workflows
+via the Evaluator.
 
 Multiple instances can run concurrently on different machines, coordinated
-through MongoDB locks and server registration.
+through MongoDB atomic ``find_one_and_update`` task claiming and server
+registration.
 """
 
 import json as _json
@@ -36,7 +37,6 @@ from typing import Any
 from ..agent import ToolRegistry
 from ..entities import (
     HandledCount,
-    LockMetaData,
     RunnerState,
     ServerDefinition,
     ServerState,
@@ -97,8 +97,6 @@ class RunnerConfig:
     task_list: str = "default"
     poll_interval_ms: int = _SENTINEL
     heartbeat_interval_ms: int = _SENTINEL
-    lock_duration_ms: int = _SENTINEL
-    lock_extend_interval_ms: int = 20000
     max_concurrent: int = _SENTINEL
     shutdown_timeout_ms: int = 30000
     http_port: int = 8080
@@ -119,10 +117,6 @@ class RunnerConfig:
             from ...config import get_config
 
             self.heartbeat_interval_ms = get_config().runner.heartbeat_interval_ms
-        if self.lock_duration_ms == _SENTINEL:
-            from ...config import get_config
-
-            self.lock_duration_ms = get_config().runner.lock_duration_ms
 
 
 class _StatusHandler(BaseHTTPRequestHandler):
@@ -172,9 +166,9 @@ class _StatusHandler(BaseHTTPRequestHandler):
 class RunnerService:
     """Distributed runner service for processing event steps and tasks.
 
-    Polls the persistence store for steps blocked at EVENT_TRANSMIT and
-    pending tasks, acquires distributed locks, dispatches events to
-    ToolRegistry handlers, and resumes workflows via the Evaluator.
+    Polls the persistence store for pending tasks, claims them atomically
+    via ``find_one_and_update``, dispatches events to ToolRegistry handlers,
+    and resumes workflows via the Evaluator.
     """
 
     def __init__(
@@ -380,12 +374,17 @@ class RunnerService:
             capacity -= 1
             dispatched += 1
 
-        # Poll pending tasks (non-event tasks like afl:execute)
-        tasks = self._poll_pending_tasks()
-        for task in tasks:
-            if capacity <= 0:
-                break
-            if self._try_claim_task(task):
+        # Claim built-in tasks (like afl:execute) via atomic find_one_and_update
+        builtin_names = self._get_builtin_task_names()
+        if builtin_names:
+            while capacity > 0:
+                task = self._persistence.claim_task(
+                    task_names=builtin_names,
+                    task_list=self._config.task_list,
+                    server_id=self._server_id,
+                )
+                if task is None:
+                    break
                 self._submit_task(task)
                 capacity -= 1
                 dispatched += 1
@@ -442,68 +441,18 @@ class RunnerService:
         # Return handler names that are not built-in task handlers
         return [name for name in self._tool_registry._handlers.keys() if name != "afl:execute"]
 
-    def _poll_pending_tasks(self) -> list:
-        """Find pending tasks for this runner's task list.
+    def _get_builtin_task_names(self) -> list[str]:
+        """Get task names for built-in handlers (e.g. afl:execute).
 
-        Only returns tasks for built-in handlers (like afl:execute).
-        User-registered event handlers are processed via claim_task
-        (which respects topics filtering). Tasks with no handler at all
-        are left untouched for the correct external agent.
+        These are claimed via ``claim_task()`` separately from event tasks
+        so that topic filtering does not interfere.  Only returns names
+        that start with ``afl:`` (protocol tasks), not event handler names.
         """
-        tasks = list(self._persistence.get_pending_tasks(self._config.task_list))
-        # Event handler names: user-registered handlers (everything except afl:execute)
-        event_handler_names = {
-            name for name in self._tool_registry._handlers.keys() if name != "afl:execute"
-        }
         return [
-            t
-            for t in tasks
-            if t.name not in event_handler_names
-            and t.name in self._tool_registry._handlers
-            and t.name != RESUME_TASK_NAME
+            name
+            for name in self._tool_registry._handlers.keys()
+            if name.startswith("afl:") and name != RESUME_TASK_NAME
         ]
-
-    # =========================================================================
-    # Locking
-    # =========================================================================
-
-    def _step_lock_key(self, step: StepDefinition) -> str:
-        """Get the lock key for a step."""
-        return f"runner:step:{step.id}"
-
-    def _task_lock_key(self, task: Any) -> str:
-        """Get the lock key for a task."""
-        return f"runner:task:{task.uuid}"
-
-    def _try_claim_step(self, step: StepDefinition) -> bool:
-        """Try to acquire a distributed lock for a step."""
-        key = self._step_lock_key(step)
-        meta = LockMetaData(
-            topic=step.facet_name,
-            handler=step.facet_name,
-            step_name=step.facet_name,
-            step_id=step.id,
-        )
-        return self._persistence.acquire_lock(key, self._config.lock_duration_ms, meta)
-
-    def _try_claim_task(self, task: Any) -> bool:
-        """Try to acquire a distributed lock for a task."""
-        key = self._task_lock_key(task)
-        meta = LockMetaData(
-            topic=task.name,
-            handler=task.name,
-            step_name=task.name,
-            step_id=task.step_id,
-        )
-        return self._persistence.acquire_lock(key, self._config.lock_duration_ms, meta)
-
-    def _release_step_lock(self, step: StepDefinition) -> None:
-        """Release the lock for a step."""
-        self._persistence.release_lock(self._step_lock_key(step))
-
-    def _release_task_lock(self, task: Any) -> None:
-        """Release the lock for a task."""
-        self._persistence.release_lock(self._task_lock_key(task))
 
     # =========================================================================
     # Work Submission
@@ -562,16 +511,7 @@ class RunnerService:
         3. Call evaluator.continue_step() with result
         4. Resume the workflow
         5. Update handled stats
-        6. Release lock
         """
-        lock_extend_stop = threading.Event()
-        extend_thread = threading.Thread(
-            target=self._extend_lock_loop,
-            args=(self._step_lock_key(step), lock_extend_stop),
-            daemon=True,
-        )
-        extend_thread.start()
-
         try:
             # Build payload
             payload = {name: attr.value for name, attr in step.attributes.params.items()}
@@ -583,7 +523,7 @@ class RunnerService:
                 result = self._tool_registry.handle(short_name, payload)
 
             if result is None:
-                # No handler available — release lock, leave for another server
+                # No handler available — leave for another server
                 logger.warning(
                     "No handler for facet '%s' on step %s",
                     step.facet_name,
@@ -613,10 +553,6 @@ class RunnerService:
                 step.id,
                 step.facet_name,
             )
-        finally:
-            lock_extend_stop.set()
-            extend_thread.join(timeout=1)
-            self._release_step_lock(step)
 
     # =========================================================================
     # Event Task Processing
@@ -779,27 +715,12 @@ class RunnerService:
     # =========================================================================
 
     def _process_task(self, task: Any) -> None:
-        """Process a single pending task.
+        """Process a single task (already claimed atomically via claim_task).
 
-        1. Mark task as running
-        2. Dispatch to handler
-        3. Mark task as completed/failed
-        4. Release lock
+        1. Dispatch to handler
+        2. Mark task as completed/failed
         """
-        lock_extend_stop = threading.Event()
-        extend_thread = threading.Thread(
-            target=self._extend_lock_loop,
-            args=(self._task_lock_key(task), lock_extend_stop),
-            daemon=True,
-        )
-        extend_thread.start()
-
         try:
-            # Mark as running
-            task.state = TaskState.RUNNING
-            task.updated = _current_time_ms()
-            self._persistence.save_task(task)
-
             # Dispatch
             payload = task.data or {}
             result = self._tool_registry.handle(task.name, payload)
@@ -821,10 +742,6 @@ class RunnerService:
             task.updated = _current_time_ms()
             self._persistence.save_task(task)
             logger.exception("Error processing task %s", task.uuid)
-        finally:
-            lock_extend_stop.set()
-            extend_thread.join(timeout=1)
-            self._release_task_lock(task)
 
     # =========================================================================
     # Built-in Task Handlers
@@ -1152,22 +1069,6 @@ class RunnerService:
             ast: The compiled workflow AST dict
         """
         self._ast_cache[workflow_id] = ast
-
-    # =========================================================================
-    # Lock Extension
-    # =========================================================================
-
-    def _extend_lock_loop(self, lock_key: str, stop_event: threading.Event) -> None:
-        """Periodically extend a lock until the stop event is set."""
-        interval_s = self._config.lock_extend_interval_ms / 1000.0
-        while not stop_event.wait(interval_s):
-            try:
-                if not self._persistence.extend_lock(lock_key, self._config.lock_duration_ms):
-                    logger.warning("Failed to extend lock: %s", lock_key)
-                    break
-            except Exception:
-                logger.exception("Error extending lock: %s", lock_key)
-                break
 
     # =========================================================================
     # Stats
