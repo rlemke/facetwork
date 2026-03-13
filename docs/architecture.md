@@ -111,7 +111,7 @@ Available in Python, Scala, Go, TypeScript, and Java.
 
 `afl/runtime/runner/service.py`
 
-Distributed orchestration with distributed locking, thread pool, HTTP status endpoints, and heartbeat-based health checking. Designed for production multi-node deployments.
+Distributed orchestration with atomic task claiming, thread pool, HTTP status endpoints, and heartbeat-based health checking. Designed for production multi-node deployments.
 
 ### ClaudeAgentRunner
 

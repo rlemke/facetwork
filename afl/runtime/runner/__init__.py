@@ -15,8 +15,8 @@
 """AFL distributed runner service.
 
 Polls MongoDB for blocked steps (EVENT_TRANSMIT) and pending tasks,
-acquires distributed locks, dispatches events to registered ToolRegistry
-handlers, and calls Evaluator.continue_step() with results.
+atomically claims tasks via claim_task(), dispatches events to registered
+ToolRegistry handlers, and calls Evaluator.continue_step() with results.
 """
 
 from .service import RunnerConfig, RunnerService

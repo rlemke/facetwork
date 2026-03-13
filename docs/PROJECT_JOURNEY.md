@@ -215,7 +215,7 @@ Verified with 3 concurrent evaluators producing zero duplicate steps.
 └──────────────┴──────────────┴────────────────────────────────┘
 ```
 
-**Runners** poll MongoDB for pending tasks, acquire distributed locks, and dispatch event facets to the appropriate agent handlers. Multiple runners operate concurrently with no coordination beyond the database.
+**Runners** poll MongoDB for pending tasks, atomically claim them via `claim_task()`, and dispatch event facets to the appropriate agent handlers. Multiple runners operate concurrently with no coordination beyond the database.
 
 **Agents** register handlers for specific event facets. The recommended approach is **RegistryRunner** — handlers are registered in the database and auto-loaded at startup, requiring no custom service code:
 

@@ -35,7 +35,7 @@ AgentFlow separates workflow design from handler implementation:
 ### Agent execution models
 - **RegistryRunner** (recommended): auto-loads handlers from DB — no custom service code needed. Register handlers via `register_handler()` or MCP tool `afl_manage_handlers`.
 - **AgentPoller**: standalone agent services with `register()` callback.
-- **RunnerService**: distributed orchestration with locking, thread pool, and HTTP status.
+- **RunnerService**: distributed orchestration with thread pool, HTTP status, and heartbeat-based health checking.
 - **ClaudeAgentRunner**: LLM-driven in-process execution via Claude API.
 
 ### Composition features

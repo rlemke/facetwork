@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Start the AFL distributed runner service.
 #
-# The runner polls MongoDB for blocked steps and pending tasks, acquires
-# distributed locks, and dispatches events to registered tool handlers.
+# The runner polls MongoDB for blocked steps and pending tasks, atomically
+# claims tasks via claim_task(), and dispatches events to registered tool handlers.
 # Multiple instances can run concurrently on different machines.
 #
 # Usage:

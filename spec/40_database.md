@@ -19,7 +19,6 @@ The system uses 8 MongoDB collections to persist workflow definitions, execution
 | `tasks` | Task queue for event dispatch and async operations | `TaskDefinition` |
 | `logs` | Audit and execution logs | `LogDefinition` |
 | `servers` | Agent/server registration | `ServerDefinition` |
-| `locks` | Distributed locking | `LockDefinition` |
 
 ---
 
@@ -512,47 +511,6 @@ class HandledCount:
 
 ---
 
-## Collection: `locks`
-
-Distributed locking for workflow coordination.
-
-**DAO:** `KeyLockDAO`
-**Entity:** `LockDefinition`
-
-### Entity Definition
-
-```python
-@dataclass
-class LockMetaData:
-    """Lock metadata."""
-    topic: Optional[str] = None
-    handler: Optional[str] = None
-    step_name: Optional[str] = None
-    step_id: Optional[str] = None
-
-
-@dataclass
-class LockDefinition:
-    """Distributed lock."""
-    key: str
-    acquired_at: int = 0   # Acquisition timestamp (ms)
-    expires_at: int = 0    # Expiration timestamp (ms)
-    meta: Optional[LockMetaData] = None
-```
-
-### Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `key` | str | Lock key (primary key) |
-| `acquired_at` | int | Acquisition timestamp (ms) |
-| `expires_at` | int | Expiration timestamp (ms) |
-| `meta` | Optional[LockMetaData] | Lock metadata |
-
-### Indexes
-
-- Unique index on `key` (auto-created)
-
 ---
 
 ## Entity Relationships
@@ -643,10 +601,6 @@ class DataServices(Protocol):
         """Server registration."""
         ...
 
-    @property
-    def locks(self) -> KeyLockDAO:
-        """Distributed locking."""
-        ...
 ```
 
 ### DAO Protocol Definitions
@@ -778,27 +732,6 @@ class ServerDefinitionDAO(Protocol):
         ...
 
 
-@runtime_checkable
-class KeyLockDAO(Protocol):
-    """Data access for distributed locks."""
-
-    def acquire(
-        self, key: str, duration_ms: int, meta: Optional[LockMetaData] = None
-    ) -> bool:
-        """Acquire a lock. Returns True if acquired."""
-        ...
-
-    def release(self, key: str) -> bool:
-        """Release a lock. Returns True if released."""
-        ...
-
-    def check(self, key: str) -> Optional[LockDefinition]:
-        """Check if a lock exists and is valid."""
-        ...
-
-    def extend(self, key: str, duration_ms: int) -> bool:
-        """Extend a lock's expiration. Returns True if extended."""
-        ...
 ```
 
 ---

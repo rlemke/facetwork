@@ -93,7 +93,7 @@ docker compose --profile mcp run --rm mcp
 
 ## Scaling
 
-Runner and agent services can be horizontally scaled. Each instance connects to the same MongoDB and coordinates via distributed locking.
+Runner and agent services can be horizontally scaled. Each instance connects to the same MongoDB and coordinates via atomic task claiming (`claim_task()`).
 
 ```bash
 # Scale using docker compose directly

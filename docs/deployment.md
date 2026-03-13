@@ -64,7 +64,7 @@ For production, run MongoDB on dedicated infrastructure and distribute services 
 - **Runners**: Multiple instances on worker nodes
 - **Agents**: Multiple instances, scaled per workload
 
-All services connect to the same MongoDB instance and coordinate via distributed locking.
+All services connect to the same MongoDB instance and coordinate via atomic task claiming (`claim_task()`).
 
 ## Configuration Reference
 
@@ -218,7 +218,7 @@ curl http://localhost:8080/api/flows
 
 ### Runners
 
-- Scale horizontally: each runner coordinates via distributed locks
+- Scale horizontally: each runner coordinates via atomic `claim_task()`
 - Set `--max-concurrent` based on available CPU/memory (default: 5)
 - Set `--poll-interval` lower (500ms) for latency-sensitive workloads
 - Use `--topics` to partition work across runner groups

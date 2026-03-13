@@ -466,7 +466,7 @@ The dashboard uses a 2-tab navigation (**Workflows** / **Servers**) with a **Mor
 
 ## Distributed Runner Service
 
-The runner service is a long-lived process that polls MongoDB for blocked steps and pending tasks, acquires distributed locks, and dispatches events to registered tool handlers. Multiple instances can run concurrently on different machines.
+The runner service is a long-lived process that polls MongoDB for blocked steps and pending tasks, atomically claims tasks via `claim_task()`, and dispatches events to registered tool handlers. Multiple instances can run concurrently on different machines.
 
 ### Launch
 

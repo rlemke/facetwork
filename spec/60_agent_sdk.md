@@ -652,8 +652,6 @@ class RunnerConfig:
     task_list: str = "default"
     poll_interval_ms: int = 2000
     heartbeat_interval_ms: int = 10000
-    lock_duration_ms: int = 60000
-    lock_extend_interval_ms: int = 20000
     max_concurrent: int = 5
     shutdown_timeout_ms: int = 30000
     http_port: int = 8080
@@ -666,11 +664,9 @@ class RunnerConfig:
 |------------|-------------|---------------|
 | Task queue polling | Yes | Yes |
 | Handler registration | `register()` | `ToolRegistry` |
-| Distributed locking | No | Yes (`acquire_lock` / `extend_lock` / `release_lock`) |
 | HTTP status server | No | Yes (`/health`, `/status`) |
 | Non-event tasks (`afl:execute`) | No | Yes |
 | ThreadPoolExecutor concurrency | No | Yes |
-| Per-work-item lock extension | No | Yes (background threads) |
 | Signal handling (SIGTERM/SIGINT) | No | Yes |
 | Graceful shutdown timeout | No | Yes (`shutdown_timeout_ms`) |
 
@@ -683,22 +679,7 @@ of direct callback registration. The registry supports:
 - Short-name fallback matching.
 - A default handler fallback for unmatched tasks.
 
-### 8.4 Distributed Locking
-
-The `RunnerService` acquires a distributed lock before processing each
-work item. A background thread extends the lock at `lock_extend_interval_ms`
-while processing is in progress. This prevents other runner instances
-from claiming the same work.
-
-Lock methods on `PersistenceAPI`:
-
-```python
-def acquire_lock(self, key: str, duration_ms: int, meta: Optional[LockMetaData] = None) -> bool
-def extend_lock(self, key: str, duration_ms: int) -> bool
-def release_lock(self, key: str) -> bool
-```
-
-### 8.5 HTTP Status Server
+### 8.4 HTTP Status Server
 
 The `RunnerService` starts an embedded HTTP server with two endpoints:
 
@@ -1231,17 +1212,7 @@ receives a given task:
 - A partial unique index on `(step_id, state=running)` ensures at most
   one agent processes a given event step at any time.
 
-### 11.5 Distributed Locking (RunnerService)
-
-The `RunnerService` acquires a distributed lock per work item before
-processing. A background thread extends the lock at
-`lock_extend_interval_ms` for the duration of processing. This prevents
-other runner instances from claiming the same work concurrently.
-
-The `AgentPoller` does not use distributed locks. It relies on the
-atomic `claim_task()` semantics to prevent duplicate processing.
-
-### 11.6 Isolation Guarantees
+### 11.5 Isolation Guarantees
 
 | Layer | Mechanism | Scope |
 |-------|-----------|-------|
@@ -1250,9 +1221,8 @@ atomic `claim_task()` semantics to prevent duplicate processing.
 | `StepDefinition` reads | Deep copy (`clone()`) in MemoryStore; deserialization in MongoStore | Per-read |
 | `StepDefinition` writes | Clone before store (MemoryStore); serialize to document (MongoStore) | Per-write |
 | Task claiming | `threading.Lock` (memory) / `find_one_and_update` (MongoDB) | Global |
-| Work-item locking | `acquire_lock()` / `extend_lock()` (RunnerService only) | Per-work-item |
 
-### 11.7 Known Benign Races
+### 11.6 Known Benign Races
 
 The following shared state is accessed without synchronization. These
 races are benign and do not affect correctness:
