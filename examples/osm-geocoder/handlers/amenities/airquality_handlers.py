@@ -12,8 +12,9 @@ import json
 import logging
 import math
 import os
-import tempfile
 from typing import Any
+
+from afl.config import get_output_base
 
 from ..shared.output_cache import cached_result, save_result_meta
 
@@ -146,7 +147,7 @@ def handle_fetch_air_quality(payload: dict) -> dict:
                 )
 
         # Write GeoJSON
-        output_dir = os.path.join(tempfile.gettempdir(), "osm-airquality")
+        output_dir = os.path.join(get_output_base(), "osm", "airquality")
         os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(output_dir, f"airquality-{parameter}.geojson")
 
@@ -277,7 +278,7 @@ def handle_correlate(payload: dict) -> dict:
             )
 
     # Write correlated GeoJSON
-    output_dir = os.path.join(tempfile.gettempdir(), "osm-airquality")
+    output_dir = os.path.join(get_output_base(), "osm", "airquality")
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, "school-exposure.geojson")
 

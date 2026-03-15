@@ -6,16 +6,17 @@ Supports Congressional Districts, State Legislative Districts, and Voting Precin
 
 import logging
 import os
-import tempfile
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 import requests
 
+from afl.config import get_output_base
+
 log = logging.getLogger(__name__)
 
-CACHE_DIR = os.path.join(tempfile.gettempdir(), "tiger-cache")
+CACHE_DIR = os.path.join(get_output_base(), "census", "tiger-cache")
 TIGER_BASE = "https://www2.census.gov/geo/tiger"
 USER_AGENT = "AgentFlow-Census-Example/1.0"
 

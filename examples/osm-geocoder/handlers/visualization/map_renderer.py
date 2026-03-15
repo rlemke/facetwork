@@ -8,12 +8,12 @@ import json
 import logging
 import os
 import posixpath
-import tempfile
 import webbrowser
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from afl.config import get_temp_dir
 from afl.runtime.storage import localize
 
 from ..shared._output import resolve_local_output_dir, uri_stem
@@ -552,7 +552,7 @@ def preview_map(geojson_path: str | Path) -> MapResult:
     # Create temp file for preview
     geojson_path_str = str(geojson_path)
     stem = uri_stem(geojson_path_str)
-    output_path = os.path.join(tempfile.gettempdir(), f"preview_{stem}.html")
+    output_path = os.path.join(get_temp_dir(), f"preview_{stem}.html")
 
     result = render_map_html(
         geojson_path_str, output_path, title=f"Preview: {posixpath.basename(geojson_path_str)}"

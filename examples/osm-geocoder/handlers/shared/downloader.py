@@ -18,11 +18,12 @@ from datetime import UTC, datetime
 
 import requests
 
+from afl.config import get_output_base
 from afl.runtime.storage import get_storage_backend
 
 log = logging.getLogger(__name__)
 
-CACHE_DIR = os.environ.get("AFL_CACHE_DIR", os.path.join(tempfile.gettempdir(), "osm-cache"))
+CACHE_DIR = os.environ.get("AFL_CACHE_DIR", os.path.join(get_output_base(), "cache", "osm"))
 _storage = get_storage_backend(CACHE_DIR)
 GEOFABRIK_BASE = "https://download.geofabrik.de"
 GEOFABRIK_MIRROR = os.environ.get("AFL_GEOFABRIK_MIRROR", "/Volumes/afl_data/osm")

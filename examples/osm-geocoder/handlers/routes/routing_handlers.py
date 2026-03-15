@@ -8,9 +8,10 @@ routes between cities using a pre-built GraphHopper routing graph.
 import json
 import logging
 import os
-import tempfile
 from itertools import combinations
 from typing import Any
+
+from afl.config import get_output_base
 
 log = logging.getLogger(__name__)
 
@@ -184,7 +185,7 @@ def compute_pairwise_routes(payload: dict) -> dict:
         )
 
     # Write output GeoJSON
-    output_dir = os.path.join(tempfile.gettempdir(), "osm-routing")
+    output_dir = os.path.join(get_output_base(), "osm", "routing")
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(
         output_dir,
