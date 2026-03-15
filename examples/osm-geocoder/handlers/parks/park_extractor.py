@@ -330,7 +330,26 @@ def filter_parks_by_type(
     for feature in features:
         props = feature.get("properties", {})
 
-        # Build tags dict for matching
+        # Features from the combined scan already have a `park_type`
+        # classification — match against it directly.  Fall back to
+        # raw OSM tag matching only when `park_type` is absent.
+        classified = props.get("park_type", "")
+        if classified:
+            if park_type == ParkType.ALL:
+                match = True
+            elif park_type == ParkType.PROTECTED_AREA:
+                match = classified in ("protected_area", "national", "state", "nature_reserve")
+            else:
+                match = classified == park_type.value
+            if match:
+                pc = props.get("protect_class", "")
+                if protect_classes != "*" and protect_class_set and pc and pc not in protect_class_set:
+                    continue
+                filtered.append(feature)
+                total_area += props.get("area_km2", 0.0)
+            continue
+
+        # Raw OSM tags — used when filtering PBF-extracted data directly
         tags = {
             "boundary": props.get("boundary", ""),
             "leisure": props.get("leisure", ""),

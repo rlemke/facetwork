@@ -1,0 +1,2 @@
+scripts/start-runner --no-dashboard --instances 2 -- --log-format text
+
