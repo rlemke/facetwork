@@ -150,6 +150,22 @@ STATE_NAMES = {
 }
 
 
+def _congress_for_year(year: int) -> int:
+    """Derive the TIGER Congress number from a data year.
+
+    TIGER files use the congress whose districts are in effect for elections
+    in or after that year.  Known mappings from Census.gov:
+    2020 → 116, 2021-2022 → 116, 2023 → 118, 2024 → 119.
+    """
+    # Known TIGER year → congress mappings
+    _KNOWN = {2020: 116, 2021: 116, 2022: 116, 2023: 118, 2024: 119}
+    if year in _KNOWN:
+        return _KNOWN[year]
+    # Extrapolate: odd years start a new congress
+    # 119th started 2025, 120th starts 2027, etc.
+    return 119 + (year - 2025) // 2
+
+
 def resolve_state_fips(state: str) -> str:
     """Resolve a state name, abbreviation, or FIPS code to a FIPS code.
 
@@ -202,9 +218,14 @@ def tiger_url(
 
     if district_type == DISTRICT_CONGRESSIONAL:
         if congress_number is None:
-            raise ValueError("congress_number required for Congressional Districts")
-        # Congressional districts are nationwide: tl_2023_us_cd118.zip
-        return f"{base}/CD/tl_{year_str}_us_cd{congress_number}.zip"
+            congress_number = _congress_for_year(year)
+        # Pre-2023: nationwide (tl_2020_us_cd116.zip)
+        # 2023+: per-state (tl_2023_01_cd118.zip) — state_fips required
+        if year < 2023:
+            return f"{base}/CD/tl_{year_str}_us_cd{congress_number}.zip"
+        if state_fips is None:
+            raise ValueError("state_fips required for Congressional Districts (year >= 2023)")
+        return f"{base}/CD/tl_{year_str}_{state_fips}_cd{congress_number}.zip"
 
     if district_type == DISTRICT_STATE_SENATE:
         if state_fips is None:
@@ -233,7 +254,12 @@ def cache_path(
     year_str = str(year)
 
     if district_type == DISTRICT_CONGRESSIONAL:
-        filename = f"tl_{year_str}_us_cd{congress_number}.zip"
+        if congress_number is None:
+            congress_number = _congress_for_year(year)
+        if year < 2023 or state_fips is None:
+            filename = f"tl_{year_str}_us_cd{congress_number}.zip"
+        else:
+            filename = f"tl_{year_str}_{state_fips}_cd{congress_number}.zip"
         subdir = "CD"
     elif district_type == DISTRICT_STATE_SENATE:
         filename = f"tl_{year_str}_{state_fips}_sldu.zip"
@@ -287,7 +313,7 @@ def download_tiger(
             "wasInCache": True,
             "year": year,
             "district_type": district_type,
-            "state_fips": state_fips or "US",
+            "state": FIPS_TO_STATE.get(state_fips, state_fips) if state_fips else "US",
         }
 
     log.info("Downloading: %s", url)
@@ -311,7 +337,7 @@ def download_tiger(
         "wasInCache": False,
         "year": year,
         "district_type": district_type,
-        "state_fips": state_fips or "US",
+        "state": FIPS_TO_STATE.get(state_fips, state_fips) if state_fips else "US",
     }
 
 
@@ -341,9 +367,17 @@ def extract_shapefile(zip_path: str, output_dir: str | None = None) -> str:
     return str(shp_files[0])
 
 
-def download_congressional_districts(year: int = 2023, congress_number: int = 118) -> dict:
-    """Download Congressional District boundaries."""
-    return download_tiger(DISTRICT_CONGRESSIONAL, year, congress_number=congress_number)
+def download_congressional_districts(
+    year: int = 2024, congress_number: int | None = None, state_fips: str | None = None
+) -> dict:
+    """Download Congressional District boundaries.
+
+    For year >= 2023, state_fips is required (files are per-state).
+    congress_number is auto-derived from year if not specified.
+    """
+    if congress_number is None:
+        congress_number = _congress_for_year(year)
+    return download_tiger(DISTRICT_CONGRESSIONAL, year, state_fips=state_fips, congress_number=congress_number)
 
 
 def download_state_senate_districts(state_fips: str, year: int = 2023) -> dict:

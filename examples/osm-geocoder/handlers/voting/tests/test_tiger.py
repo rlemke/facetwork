@@ -68,12 +68,20 @@ class TestStateFIPSResolution:
 class TestTigerURL:
     """Tests for tiger_url()."""
 
-    def test_congressional_url(self):
-        url = tiger_url(DISTRICT_CONGRESSIONAL, 2023, congress_number=118)
-        assert url == "https://www2.census.gov/geo/tiger/TIGER2023/CD/tl_2023_us_cd118.zip"
+    def test_congressional_url_pre2023(self):
+        url = tiger_url(DISTRICT_CONGRESSIONAL, 2020, congress_number=116)
+        assert url == "https://www2.census.gov/geo/tiger/TIGER2020/CD/tl_2020_us_cd116.zip"
 
-    def test_congressional_requires_congress_number(self):
-        with pytest.raises(ValueError, match="congress_number required"):
+    def test_congressional_url_2023_per_state(self):
+        url = tiger_url(DISTRICT_CONGRESSIONAL, 2023, state_fips="06", congress_number=118)
+        assert url == "https://www2.census.gov/geo/tiger/TIGER2023/CD/tl_2023_06_cd118.zip"
+
+    def test_congressional_url_2024_auto_congress(self):
+        url = tiger_url(DISTRICT_CONGRESSIONAL, 2024, state_fips="36")
+        assert url == "https://www2.census.gov/geo/tiger/TIGER2024/CD/tl_2024_36_cd119.zip"
+
+    def test_congressional_2023_requires_state(self):
+        with pytest.raises(ValueError, match="state_fips required"):
             tiger_url(DISTRICT_CONGRESSIONAL, 2023)
 
     def test_state_senate_url(self):
@@ -156,20 +164,20 @@ class TestTigerHandlers:
         with patch("handlers.tiger_handlers.download_congressional_districts") as mock_dl:
             mock_dl.return_value = {
                 "url": "https://example.com/cd.zip",
-                "path": "/tmp/cd.zip",
+                "path": "/Volumes/afl_data/output/census/tiger-cache/cd.zip",
                 "date": "2024-01-01T00:00:00Z",
                 "size": 1000,
                 "wasInCache": True,
-                "year": 2023,
+                "year": 2024,
                 "district_type": DISTRICT_CONGRESSIONAL,
-                "state_fips": "US",
+                "state": "CA",
             }
 
-            result = handler({"year": 2023, "congress_number": 118})
+            result = handler({"state": "CA", "year": 2024, "congress_number": 119})
 
-            assert result["cache"]["path"] == "/tmp/cd.zip"
-            assert result["cache"]["year"] == 2023
-            mock_dl.assert_called_once_with(2023, 118)
+            assert result["cache"]["path"] == "/Volumes/afl_data/output/census/tiger-cache/cd.zip"
+            assert result["cache"]["year"] == 2024
+            mock_dl.assert_called_once_with(2024, 119, state_fips="06")
 
     def test_state_senate_handler_mock(self):
         """Test State Senate Districts handler with mock download."""
@@ -180,19 +188,19 @@ class TestTigerHandlers:
         with patch("handlers.tiger_handlers.download_state_senate_districts") as mock_dl:
             mock_dl.return_value = {
                 "url": "https://example.com/sldu.zip",
-                "path": "/tmp/sldu.zip",
+                "path": "/Volumes/afl_data/output/census/tiger-cache/sldu.zip",
                 "date": "2024-01-01T00:00:00Z",
                 "size": 500,
                 "wasInCache": False,
-                "year": 2023,
+                "year": 2024,
                 "district_type": DISTRICT_STATE_SENATE,
-                "state_fips": "06",
+                "state": "CA",
             }
 
-            result = handler({"state_fips": "CA", "year": 2023})
+            result = handler({"state": "CA", "year": 2024})
 
-            assert result["cache"]["state_fips"] == "06"
-            mock_dl.assert_called_once_with("CA", 2023)
+            assert result["cache"]["state"] == "CA"
+            mock_dl.assert_called_once_with("CA", 2024)
 
     def test_handler_error_returns_empty_cache(self):
         """Test that handler errors return empty cache."""
@@ -203,7 +211,7 @@ class TestTigerHandlers:
         with patch("handlers.tiger_handlers.download_voting_precincts") as mock_dl:
             mock_dl.side_effect = Exception("Network error")
 
-            result = handler({"state_fips": "06", "year": 2020})
+            result = handler({"state": "CA", "year": 2020})
 
             assert result["cache"]["path"] == ""
             assert result["cache"]["size"] == 0

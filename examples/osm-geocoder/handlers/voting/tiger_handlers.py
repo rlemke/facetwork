@@ -16,7 +16,6 @@ from .tiger_downloader import (
     DISTRICT_STATE_HOUSE,
     DISTRICT_STATE_SENATE,
     DISTRICT_VOTING_PRECINCT,
-    FIPS_TO_STATE,
     download_congressional_districts,
     download_state_house_districts,
     download_state_senate_districts,
@@ -76,16 +75,25 @@ def _make_congressional_handler(facet_name: str):
     """Create handler for CongressionalDistricts event facet."""
 
     def handler(payload: dict) -> dict:
-        year = payload.get("year", 2023)
-        congress_number = payload.get("congress_number", 118)
+        state = payload.get("state", "")
+        year = payload.get("year", 2024)
+        congress_number = payload.get("congress_number")
         step_log = payload.get("_step_log")
 
+        # Resolve state to FIPS
+        state_fips = None
+        if state:
+            try:
+                state_fips = resolve_state_fips(state)
+            except ValueError:
+                state_fips = state  # pass through if already a FIPS code
+
         if step_log:
-            step_log(f"{facet_name}: downloading CD for {congress_number}th Congress (year {year})")
-        log.info("%s downloading CD for %dth Congress (year %d)", facet_name, congress_number, year)
+            step_log(f"{facet_name}: downloading CD for {state or 'US'} (year {year})")
+        log.info("%s downloading CD for %s (year %d)", facet_name, state or "US", year)
 
         try:
-            cache = download_congressional_districts(year, congress_number)
+            cache = download_congressional_districts(year, congress_number, state_fips=state_fips)
             if step_log:
                 step_log(
                     f"{facet_name}: downloaded CD (size={cache.get('size', 0)})", level="success"
@@ -102,7 +110,7 @@ def _make_congressional_handler(facet_name: str):
                     "wasInCache": False,
                     "year": year,
                     "district_type": DISTRICT_CONGRESSIONAL,
-                    "state_fips": "US",
+                    "state": state,
                 }
             }
 
@@ -113,16 +121,16 @@ def _make_state_senate_handler(facet_name: str):
     """Create handler for StateSenateDistricts event facet."""
 
     def handler(payload: dict) -> dict:
-        state_fips = payload.get("state_fips", "")
-        year = payload.get("year", 2023)
+        state = payload.get("state", "")
+        year = payload.get("year", 2024)
         step_log = payload.get("_step_log")
 
         if step_log:
-            step_log(f"{facet_name}: downloading SLDU for state {state_fips} (year {year})")
-        log.info("%s downloading SLDU for state %s (year %d)", facet_name, state_fips, year)
+            step_log(f"{facet_name}: downloading SLDU for {state} (year {year})")
+        log.info("%s downloading SLDU for %s (year %d)", facet_name, state, year)
 
         try:
-            cache = download_state_senate_districts(state_fips, year)
+            cache = download_state_senate_districts(state, year)
             if step_log:
                 step_log(
                     f"{facet_name}: downloaded SLDU (size={cache.get('size', 0)})", level="success"
@@ -139,7 +147,7 @@ def _make_state_senate_handler(facet_name: str):
                     "wasInCache": False,
                     "year": year,
                     "district_type": DISTRICT_STATE_SENATE,
-                    "state_fips": state_fips,
+                    "state": state,
                 }
             }
 
@@ -150,16 +158,16 @@ def _make_state_house_handler(facet_name: str):
     """Create handler for StateHouseDistricts event facet."""
 
     def handler(payload: dict) -> dict:
-        state_fips = payload.get("state_fips", "")
-        year = payload.get("year", 2023)
+        state = payload.get("state", "")
+        year = payload.get("year", 2024)
         step_log = payload.get("_step_log")
 
         if step_log:
-            step_log(f"{facet_name}: downloading SLDL for state {state_fips} (year {year})")
-        log.info("%s downloading SLDL for state %s (year %d)", facet_name, state_fips, year)
+            step_log(f"{facet_name}: downloading SLDL for {state} (year {year})")
+        log.info("%s downloading SLDL for %s (year %d)", facet_name, state, year)
 
         try:
-            cache = download_state_house_districts(state_fips, year)
+            cache = download_state_house_districts(state, year)
             if step_log:
                 step_log(
                     f"{facet_name}: downloaded SLDL (size={cache.get('size', 0)})", level="success"
@@ -176,7 +184,7 @@ def _make_state_house_handler(facet_name: str):
                     "wasInCache": False,
                     "year": year,
                     "district_type": DISTRICT_STATE_HOUSE,
-                    "state_fips": state_fips,
+                    "state": state,
                 }
             }
 
@@ -187,16 +195,16 @@ def _make_voting_precincts_handler(facet_name: str):
     """Create handler for VotingPrecincts event facet."""
 
     def handler(payload: dict) -> dict:
-        state_fips = payload.get("state_fips", "")
+        state = payload.get("state", "")
         year = payload.get("year", 2020)
         step_log = payload.get("_step_log")
 
         if step_log:
-            step_log(f"{facet_name}: downloading VTD for state {state_fips} (year {year})")
-        log.info("%s downloading VTD for state %s (year %d)", facet_name, state_fips, year)
+            step_log(f"{facet_name}: downloading VTD for {state} (year {year})")
+        log.info("%s downloading VTD for %s (year %d)", facet_name, state, year)
 
         try:
-            cache = download_voting_precincts(state_fips, year)
+            cache = download_voting_precincts(state, year)
             if step_log:
                 step_log(
                     f"{facet_name}: downloaded VTD (size={cache.get('size', 0)})", level="success"
@@ -213,7 +221,7 @@ def _make_voting_precincts_handler(facet_name: str):
                     "wasInCache": False,
                     "year": year,
                     "district_type": DISTRICT_VOTING_PRECINCT,
-                    "state_fips": state_fips,
+                    "state": state,
                 }
             }
 
@@ -228,12 +236,12 @@ def _make_shapefile_to_geojson_handler(facet_name: str):
         cache = payload.get("cache", {})
         zip_path = cache.get("path", "")
         district_type = cache.get("district_type", "")
-        state_fips = cache.get("state_fips", "US")
+        state = cache.get("state", "")
         year = cache.get("year", 0)
         step_log = payload.get("_step_log")
 
-        # Dynamic cache check (district_type/state_fips/year come from cache dict)
-        cp = {"district_type": district_type, "state_fips": state_fips, "year": year}
+        # Dynamic cache check
+        cp = {"district_type": district_type, "state": state, "year": year}
         hit = cached_result(qualified, cache, cp, step_log)
         if hit is not None:
             return hit
@@ -248,7 +256,7 @@ def _make_shapefile_to_geojson_handler(facet_name: str):
                     "output_path": "",
                     "feature_count": 0,
                     "district_type": _district_type_name(district_type),
-                    "state": FIPS_TO_STATE.get(state_fips, state_fips),
+                    "state": state,
                     "year": year,
                     "format": "GeoJSON",
                     "extraction_date": datetime.now(UTC).isoformat(),
@@ -277,7 +285,7 @@ def _make_shapefile_to_geojson_handler(facet_name: str):
                     "output_path": output_path,
                     "feature_count": feature_count,
                     "district_type": _district_type_name(district_type),
-                    "state": FIPS_TO_STATE.get(state_fips, state_fips),
+                    "state": state,
                     "year": year,
                     "format": "GeoJSON",
                     "extraction_date": datetime.now(UTC).isoformat(),
@@ -292,7 +300,7 @@ def _make_shapefile_to_geojson_handler(facet_name: str):
                     "output_path": "",
                     "feature_count": 0,
                     "district_type": _district_type_name(district_type),
-                    "state": FIPS_TO_STATE.get(state_fips, state_fips),
+                    "state": state,
                     "year": year,
                     "format": "GeoJSON",
                     "extraction_date": datetime.now(UTC).isoformat(),
