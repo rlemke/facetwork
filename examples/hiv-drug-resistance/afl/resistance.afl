@@ -74,9 +74,9 @@ namespace hiv.mixins {
      */
     facet RetryPolicy(max_retries: Int = 3, backoff_ms: Int = 2000) => (max_retries: Int, backoff_ms: Int)
 
-    /** Default quality policy: Q30 reads, 100x depth. */
+    // Default quality policy: Q30 reads, 100x depth.
     implicit default_quality = QualityPolicy()
-    /** Default retry policy: 3 retries with 2s backoff. */
+    // Default retry policy: 3 retries with 2s backoff.
     implicit default_retry = RetryPolicy()
 }
 

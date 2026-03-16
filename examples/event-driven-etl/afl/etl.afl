@@ -2,19 +2,23 @@
 // Demonstrates extract→transform→load with schemas, event facets,
 // andThen chaining, schema instantiation as steps, and RegistryRunner-first approach.
 
+/** Shared type definitions for ETL pipelines. */
 namespace etl.types {
+    /** A data source with name, format, and file path. */
     schema DataSource {
         name: String,
         format: String,
         path: String
     }
 
+    /** Configuration for record transformation including filtering and deduplication. */
     schema TransformConfig {
         filter_expr: String,
         rename_map: Json,
         deduplicate: Boolean
     }
 
+    /** Result of loading records into a target store. */
     schema LoadResult {
         target: String,
         rows_written: Int,
@@ -23,6 +27,7 @@ namespace etl.types {
     }
 }
 
+/** Data extraction and schema validation. */
 namespace etl.Extract {
     use etl.types
 
@@ -48,6 +53,7 @@ namespace etl.Extract {
     }
 }
 
+/** Record transformation with filtering and deduplication. */
 namespace etl.Transform {
     use etl.types
 
@@ -59,6 +65,7 @@ namespace etl.Transform {
     }
 }
 
+/** Data loading and ETL report generation. */
 namespace etl.Load {
     use etl.types
 
@@ -77,6 +84,7 @@ namespace etl.Load {
     }
 }
 
+/** Top-level ETL pipeline workflows. */
 namespace etl.Pipelines {
     use etl.types
 

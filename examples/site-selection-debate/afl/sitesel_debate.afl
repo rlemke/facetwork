@@ -14,7 +14,9 @@
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
+/** Type definitions for spatial scoring, market research, debate, and reporting. */
 namespace siteselection.types {
+    /** Composite spatial score for a candidate site across multiple dimensions. */
     schema SpatialScore {
         candidate_id: String,
         demographics_score: Double,
@@ -24,6 +26,7 @@ namespace siteselection.types {
         penalty_applied: Double
     }
 
+    /** Market research data including growth rate and risk factors for a candidate. */
     schema MarketResearch {
         candidate_id: String,
         growth_rate: Double,
@@ -32,6 +35,7 @@ namespace siteselection.types {
         market_area: String
     }
 
+    /** An agent's position on a candidate site with confidence and supporting factors. */
     schema AgentPosition {
         agent_role: String,
         candidate_id: String,
@@ -40,6 +44,7 @@ namespace siteselection.types {
         key_factors: Json
     }
 
+    /** Rankings and convergence metrics for a single debate round. */
     schema RoundRankings {
         consensus_level: Double,
         score_delta: Double,
@@ -48,12 +53,14 @@ namespace siteselection.types {
         round_num: Int
     }
 
+    /** Configuration for the debate process including penalties and convergence. */
     schema DebateConfig {
         below_market_penalty: Double,
         max_rounds: Int,
         convergence_threshold: Double
     }
 
+    /** Transportation and accessibility metrics for a candidate site. */
     schema AccessibilityMetrics {
         candidate_id: String,
         walk_score: Int,
@@ -61,6 +68,7 @@ namespace siteselection.types {
         highway_distance_km: Double
     }
 
+    /** Regulatory and zoning assessment for a candidate site's jurisdiction. */
     schema RegulationSummary {
         candidate_id: String,
         permit_difficulty: Int,
@@ -69,6 +77,7 @@ namespace siteselection.types {
         jurisdiction: String
     }
 
+    /** Final evaluation report with ranked candidates and recommendation. */
     schema FinalReport {
         top_candidate: String,
         confidence: Double,
@@ -83,17 +92,29 @@ namespace siteselection.types {
 // ---------------------------------------------------------------------------
 // Mixins and implicits
 // ---------------------------------------------------------------------------
+/** Reusable research and debate policies. */
 namespace siteselection.mixins {
+    /** Configures research depth and market area scope.
+     * @param depth Number of research sources to consult
+     * @param market_area Geographic market area identifier
+     */
     facet ResearchConfig(depth: Int = 3, market_area: String = "default")
+    /** Configures debate rules for challenges and evidence requirements.
+     * @param max_challenges Maximum number of challenges per agent per round
+     * @param require_evidence Whether agents must cite evidence in arguments
+     */
     facet DebatePolicy(max_challenges: Int = 3, require_evidence: Boolean = true)
 
+    // Default research config: depth 3, default market area.
     implicit defaultResearch = ResearchConfig(depth = 3, market_area = "default")
+    // Default debate policy: 3 challenges, evidence required.
     implicit defaultDebatePolicy = DebatePolicy(max_challenges = 3, require_evidence = true)
 }
 
 // ---------------------------------------------------------------------------
 // Spatial -- ScoreCandidate, RankCandidates, ComputeAccessibility
 // ---------------------------------------------------------------------------
+/** Spatial scoring, ranking, and accessibility analysis. */
 namespace siteselection.Spatial {
     use siteselection.types
 
@@ -135,6 +156,7 @@ namespace siteselection.Spatial {
 // ---------------------------------------------------------------------------
 // Research -- SearchMarketTrends, GatherRegulations, AnalyzeCompetitors
 // ---------------------------------------------------------------------------
+/** Market research, regulatory analysis, and competitor intelligence. */
 namespace siteselection.Research {
     use siteselection.types
 
@@ -172,6 +194,7 @@ namespace siteselection.Research {
 // ---------------------------------------------------------------------------
 // Debate -- PresentAnalysis, ChallengePosition, ScoreArguments
 // ---------------------------------------------------------------------------
+/** Multi-agent debate: analysis presentation, challenges, and argument scoring. */
 namespace siteselection.Debate {
     use siteselection.types
 
@@ -216,6 +239,7 @@ namespace siteselection.Debate {
 // ---------------------------------------------------------------------------
 // Synthesis -- SummarizeRound, ProduceRanking, GenerateReport
 // ---------------------------------------------------------------------------
+/** Round summarization, final ranking, and report generation. */
 namespace siteselection.Synthesis {
     use siteselection.types
 
@@ -258,6 +282,7 @@ namespace siteselection.Synthesis {
 // ---------------------------------------------------------------------------
 // Composed facet -- EvaluationRound (10 steps)
 // ---------------------------------------------------------------------------
+/** Composed evaluation round facet encapsulating the full debate lifecycle. */
 namespace siteselection.composition {
     use siteselection.types
     use siteselection.mixins
@@ -288,6 +313,7 @@ namespace siteselection.composition {
 // ---------------------------------------------------------------------------
 // Workflows
 // ---------------------------------------------------------------------------
+/** Workflows for single-site evaluation and batch candidate assessment. */
 namespace siteselection.workflows {
     use siteselection.types
     use siteselection.mixins

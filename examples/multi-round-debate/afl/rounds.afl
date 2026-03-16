@@ -70,9 +70,9 @@ namespace multidebate.mixins {
      */
     facet ConvergenceThreshold(min_agreement: Double = 0.7, max_drift: Double = 0.2)
 
-    /** Default round config: 3 rounds, 0.1 convergence threshold. */
+    // Default round config: 3 rounds, 0.1 convergence threshold.
     implicit defaultRoundConfig = RoundConfig(max_rounds = 3, convergence_threshold = 0.1)
-    /** Default convergence threshold: 0.7 agreement, 0.2 max drift. */
+    // Default convergence threshold: 0.7 agreement, 0.2 max drift.
     implicit defaultConvergenceThreshold = ConvergenceThreshold(min_agreement = 0.7, max_drift = 0.2)
 }
 

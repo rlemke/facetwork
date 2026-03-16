@@ -110,6 +110,7 @@ namespace debate.Framing {
 // -----------------------------------------------------------------------
 // Argumentation
 // -----------------------------------------------------------------------
+/** Argument generation and rebuttal for debate agents. */
 namespace debate.Argumentation {
     use debate.types
 
@@ -138,6 +139,7 @@ namespace debate.Argumentation {
 // -----------------------------------------------------------------------
 // Evaluation
 // -----------------------------------------------------------------------
+/** Scoring and judging of debate arguments. */
 namespace debate.Evaluation {
     use debate.types
 
@@ -166,6 +168,7 @@ namespace debate.Evaluation {
 // -----------------------------------------------------------------------
 // Synthesis
 // -----------------------------------------------------------------------
+/** Position synthesis and consensus building. */
 namespace debate.Synthesis {
     use debate.types
 
@@ -195,6 +198,7 @@ namespace debate.Synthesis {
 // -----------------------------------------------------------------------
 // Workflows
 // -----------------------------------------------------------------------
+/** Top-level debate workflows. */
 namespace debate.workflows {
     use debate.types
     use debate.mixins

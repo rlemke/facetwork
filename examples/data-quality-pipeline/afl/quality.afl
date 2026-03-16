@@ -85,13 +85,16 @@ namespace dataquality.mixins {
      */
     facet Freshness(max_age_hours: Int = 24, check_timestamps: Boolean = true)
 
+    // Default strictness: no fail-fast, 0.7 minimum score.
     implicit defaultStrictness = Strictness(fail_fast = false, min_score = 0.7)
+    // Default freshness: 24-hour max age with timestamp checking.
     implicit defaultFreshness = Freshness(max_age_hours = 24, check_timestamps = true)
 }
 
 // ---------------------------------------------------------------------------
 // Profiling -- ProfileDataset, DetectAnomalies
 // ---------------------------------------------------------------------------
+/** Dataset profiling and anomaly detection. */
 namespace dataquality.Profiling {
     use dataquality.types
 
@@ -120,6 +123,7 @@ namespace dataquality.Profiling {
 // ---------------------------------------------------------------------------
 // Validation -- ValidateCompleteness, ValidateAccuracy
 // ---------------------------------------------------------------------------
+/** Completeness and accuracy validation checks. */
 namespace dataquality.Validation {
     use dataquality.types
 
@@ -148,6 +152,7 @@ namespace dataquality.Validation {
 // ---------------------------------------------------------------------------
 // Scoring -- ComputeScores, AssignGrade
 // ---------------------------------------------------------------------------
+/** Weighted scoring and letter grade assignment. */
 namespace dataquality.Scoring {
     use dataquality.types
 
@@ -178,6 +183,7 @@ namespace dataquality.Scoring {
 // ---------------------------------------------------------------------------
 // Remediation -- PlanRemediation, GenerateReport
 // ---------------------------------------------------------------------------
+/** Remediation planning and report generation. */
 namespace dataquality.Remediation {
     use dataquality.types
 
@@ -209,6 +215,7 @@ namespace dataquality.Remediation {
 // ---------------------------------------------------------------------------
 // Workflows
 // ---------------------------------------------------------------------------
+/** Workflows for single-dataset and batch quality assessment. */
 namespace dataquality.workflows {
     use dataquality.types
     use dataquality.mixins

@@ -51,11 +51,11 @@ namespace deploy.mixins {
      */
     facet Credentials(registry_secret: String = "default-secret") => (registry_secret: String)
 
-    /** Default retry policy: 3 retries with 1s backoff. */
+    // Default retry policy: 3 retries with 1s backoff.
     implicit default_retry = RetryPolicy()
-    /** Default timeout: 300 seconds. */
+    // Default timeout: 300 seconds.
     implicit default_timeout = Timeout()
-    /** Default credentials using the default-secret. */
+    // Default credentials using the default-secret.
     implicit default_credentials = Credentials()
 }
 

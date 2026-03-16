@@ -78,9 +78,9 @@ namespace monitor.mixins {
      */
     facet AlertConfig(channel: String = "default", escalate: Boolean = false)
 
-    /** Default retry policy: 3 retries with 1s backoff. */
+    // Default retry policy: 3 retries with 1s backoff.
     implicit defaultRetry = RetryPolicy(max_retries = 3, backoff_ms = 1000)
-    /** Default alert config: default channel, no escalation. */
+    // Default alert config: default channel, no escalation.
     implicit defaultAlert = AlertConfig(channel = "default", escalate = false)
 }
 

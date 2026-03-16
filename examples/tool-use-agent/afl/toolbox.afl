@@ -10,7 +10,9 @@
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
+/** Shared type definitions for tool-use agent operations. */
 namespace tools.types {
+    /** A plan specifying which tools to invoke and in what order. */
     schema ToolPlan {
         strategy: String,
         search_queries: Json,
@@ -19,6 +21,7 @@ namespace tools.types {
         tool_order: Json
     }
 
+    /** Results from a web search with relevance scoring. */
     schema SearchResult {
         query: String,
         results: Json,
@@ -26,6 +29,7 @@ namespace tools.types {
         source_count: Int
     }
 
+    /** Result of a mathematical calculation with step-by-step breakdown. */
     schema Calculation {
         expression: String,
         result: Double,
@@ -33,6 +37,7 @@ namespace tools.types {
         precision: Int
     }
 
+    /** Output from sandboxed code execution. */
     schema CodeResult {
         code: String,
         output: String,
@@ -40,6 +45,7 @@ namespace tools.types {
         runtime_ms: Long
     }
 
+    /** A knowledge base entry with topic summary and source citations. */
     schema KnowledgeEntry {
         topic: String,
         summary: String,
@@ -47,6 +53,7 @@ namespace tools.types {
         sources: Json
     }
 
+    /** Final formatted answer with citations and tool usage metadata. */
     schema FormattedAnswer {
         answer: String,
         citations: Json,
@@ -58,8 +65,11 @@ namespace tools.types {
 // ---------------------------------------------------------------------------
 // Mixins and implicits
 // ---------------------------------------------------------------------------
+/** Tool configuration and safety constraint mixins. */
 namespace tools.mixins {
+    /** Default tool behavior settings for result limits and timeouts. */
     facet ToolConfig(max_results: Int = 5, timeout_ms: Long = 30000)
+    /** Safety constraints controlling code execution and web access. */
     facet SafetyCheck(allow_code_exec: Boolean = false, allow_web: Boolean = true)
 
     implicit defaultToolConfig = ToolConfig(max_results = 5, timeout_ms = 30000)
@@ -69,6 +79,7 @@ namespace tools.mixins {
 // ---------------------------------------------------------------------------
 // Planning -- PlanToolUse, SelectNextTool
 // ---------------------------------------------------------------------------
+/** Tool usage planning and selection. */
 namespace tools.Planning {
     use tools.types
 
@@ -97,6 +108,7 @@ namespace tools.Planning {
 // ---------------------------------------------------------------------------
 // Search -- WebSearch, DeepSearch
 // ---------------------------------------------------------------------------
+/** Web search and deep research tools. */
 namespace tools.Search {
     use tools.types
 
@@ -125,6 +137,7 @@ namespace tools.Search {
 // ---------------------------------------------------------------------------
 // Compute -- Calculate, ExecuteCode
 // ---------------------------------------------------------------------------
+/** Mathematical calculation and code execution tools. */
 namespace tools.Compute {
     use tools.types
 
@@ -152,6 +165,7 @@ namespace tools.Compute {
 // ---------------------------------------------------------------------------
 // Output -- SynthesizeResults, FormatAnswer
 // ---------------------------------------------------------------------------
+/** Result synthesis and answer formatting. */
 namespace tools.Output {
     use tools.types
 
@@ -183,6 +197,7 @@ namespace tools.Output {
 // ---------------------------------------------------------------------------
 // Workflows
 // ---------------------------------------------------------------------------
+/** Top-level tool-use workflows. */
 namespace tools.workflows {
     use tools.types
     use tools.mixins
