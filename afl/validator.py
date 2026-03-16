@@ -782,6 +782,7 @@ class AFLValidator:
         parent_steps: dict[str, "StepInfo"] | None = None,
         parent_step_returns: dict[str, set[str]] | None = None,
         parent_step_returns_types: dict[str, dict[str, str]] | None = None,
+        parent_foreach_var: str | None = None,
     ) -> None:
         """Validate an andThen block."""
         # andThen script variant
@@ -830,10 +831,12 @@ class AFLValidator:
             for name, types in parent_step_returns_types.items():
                 step_returns_types[name] = types
 
-        # If foreach, add the iteration variable
+        # If foreach, add the iteration variable; inherit from parent if not set
         foreach_var: str | None = None
         if body.foreach:
             foreach_var = body.foreach.variable
+        elif parent_foreach_var:
+            foreach_var = parent_foreach_var
 
         # Validate each step
         for step in body.block.steps:
@@ -901,7 +904,29 @@ class AFLValidator:
 
             # Validate inline catch clause if present
             if step.catch:
-                self._validate_catch_clause(step.catch, containing_sig)
+                # In catch blocks, the caught step's .error and .error_type are accessible
+                catch_step_returns = dict(step_returns)
+                catch_step_returns_types = dict(step_returns_types)
+                if step.name in catch_step_returns:
+                    catch_step_returns[step.name] = catch_step_returns[step.name] | {"error", "error_type"}
+                else:
+                    catch_step_returns[step.name] = {"error", "error_type"}
+                if step.name in catch_step_returns_types:
+                    catch_step_returns_types[step.name] = {
+                        **catch_step_returns_types[step.name],
+                        "error": "String",
+                        "error_type": "String",
+                    }
+                else:
+                    catch_step_returns_types[step.name] = {"error": "String", "error_type": "String"}
+                self._validate_catch_clause(
+                    step.catch,
+                    containing_sig,
+                    parent_steps=steps,
+                    parent_step_returns=catch_step_returns,
+                    parent_step_returns_types=catch_step_returns_types,
+                    parent_foreach_var=foreach_var,
+                )
 
         # Validate yield statements and check for duplicate targets
         yield_targets_used: set[str] = set()
@@ -1022,6 +1047,10 @@ class AFLValidator:
         catch: CatchClause,
         containing_sig: FacetSig,
         extra_yield_targets: set[str] | None = None,
+        parent_steps: dict[str, "StepInfo"] | None = None,
+        parent_step_returns: dict[str, set[str]] | None = None,
+        parent_step_returns_types: dict[str, dict[str, str]] | None = None,
+        parent_foreach_var: str | None = None,
     ) -> None:
         """Validate a catch clause.
 
@@ -1029,10 +1058,25 @@ class AFLValidator:
         For catch block: validates block contents using synthetic AndThenBlock.
         """
         if catch.when:
-            self._validate_when_block(catch.when, containing_sig, extra_yield_targets)
+            self._validate_when_block(
+                catch.when,
+                containing_sig,
+                extra_yield_targets,
+                step_returns_types=parent_step_returns_types,
+                steps=parent_steps,
+                step_returns=parent_step_returns,
+            )
         elif catch.block:
             synthetic = AndThenBlock(block=catch.block)
-            self._validate_and_then_block(synthetic, containing_sig, extra_yield_targets)
+            self._validate_and_then_block(
+                synthetic,
+                containing_sig,
+                extra_yield_targets,
+                parent_steps=parent_steps,
+                parent_step_returns=parent_step_returns,
+                parent_step_returns_types=parent_step_returns_types,
+                parent_foreach_var=parent_foreach_var,
+            )
 
     def _extract_references(self, expr) -> list[Reference]:
         """Recursively extract all Reference nodes from an expression tree."""
