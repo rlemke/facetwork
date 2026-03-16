@@ -52,7 +52,7 @@ The v0.32.0+real integration tests add a new tier: full-pipeline tests that exer
 
 ## Specs / Documentation — B+
 
-Comprehensive — 10 spec files covering language, semantics, validation, runtime, events, states, agents, examples, acceptance, and ops. They're the source of truth and generally accurate. But they lag behind implementation (I'm always updating them after the code) and the runtime spec (`30_runtime.md`) has grown to 1,400+ lines mixing formal specification with implementation details.
+Comprehensive — 11 spec files covering language, semantics, validation, runtime, events, states, agents, examples, acceptance, and ops. They're the source of truth and generally accurate. But they lag behind implementation (I'm always updating them after the code). The runtime spec was split in v0.40.1: `30_runtime.md` (~730 lines) contains the formal specification with catch block semantics (§8.4) and schema instantiation semantics (§8.5) promoted to normative sections; `31_runtime_impl.md` (~620 lines) contains the Python implementation guide with state changers, transition tables, handler code, and source file map.
 
 ---
 

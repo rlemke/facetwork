@@ -171,6 +171,7 @@ Set `AFL_LOCALIZE_MOUNTS` (comma-separated path prefixes) to copy Docker mount-b
 - `spec/12_validation.md` — semantic validation rules
 - `spec/20_compiler.md` — compiler architecture
 - `spec/30_runtime.md` — runtime specification
+- `spec/31_runtime_impl.md` — Python runtime implementation guide (state changers, handlers, source files)
 - `spec/50_event_system.md` — event lifecycle and task queue
 - `spec/51_state_system.md` — state machine transitions
 - `spec/60_agent_sdk.md` — agent integration SDK

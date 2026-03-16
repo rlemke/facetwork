@@ -18,6 +18,7 @@ Start here and follow this sequence to understand the system from the ground up:
 | Document | What You'll Learn |
 |----------|-------------------|
 | [30_runtime.md](30_runtime.md) | Execution model — iterations, determinism, idempotency |
+| [31_runtime_impl.md](31_runtime_impl.md) | Python implementation — state changers, handlers, source file map |
 | [51_state_system.md](51_state_system.md) | Step state machine — how steps transition through states |
 | [40_database.md](40_database.md) | MongoDB schema — collections, indexes, atomic commits |
 

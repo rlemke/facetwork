@@ -1,0 +1,802 @@
+# AFL Runtime Implementation Guide
+
+> This document describes the **Python reference implementation** of the AFL runtime.
+> For the formal specification, see [30_runtime.md](30_runtime.md).
+
+---
+
+## 1. Compilation Phase
+
+> Implements [20_compiler.md](20_compiler.md) and [30_runtime.md](30_runtime.md) §2.
+
+AFL source files are compiled by the AFL compiler (`afl/cli.py`):
+
+```
+AFL Source → Lark Parser → AST → JSON Emitter → MongoDB / JSON file
+```
+
+The compiled output contains:
+- **WorkflowDecl** - Named entrypoints with starting steps
+- **FacetDecl / EventFacetDecl** - Component templates with typed attributes
+- **StepStmt** - Individual operations (statements)
+- **AndThenBlock** - Control flow constructs with sequential execution
+
+---
+
+## 2. Iterative Execution
+
+> Implements [30_runtime.md](30_runtime.md) §9–10.
+
+The `Evaluator` (`afl/runtime/evaluator.py`) orchestrates execution:
+
+```
+Evaluator.run()
+    └── iterate() until fixed point
+            └── Process each eligible step via StateChanger
+                    └── Dispatch to StateHandler per state
+```
+
+---
+
+## 3. Step State Machine Overview
+
+> Implements [30_runtime.md](30_runtime.md) §6.
+
+Each step follows a state machine defined in `afl/runtime/states.py`:
+
+```
+Created
+    ↓
+FacetInitializationBegin → FacetInitializationEnd
+    ↓
+FacetScriptsBegin → FacetScriptsEnd
+    ↓
+MixinBlocksBegin → MixinBlocksContinue → MixinBlocksEnd
+    ↓
+MixinCaptureBegin → MixinCaptureEnd
+    ↓
+EventTransmit
+    ↓
+StatementBlocksBegin → StatementBlocksContinue → StatementBlocksEnd
+    ↓
+StatementCaptureBegin → StatementCaptureEnd
+    ↓
+StatementEnd → StatementComplete
+```
+
+**Error State:** `StatementError` (terminal state for failures)
+
+### State Constants (Hierarchical Naming)
+
+- **Facet Initialization:** `state.facet.initialization.Begin/End`
+- **Facet Scripts:** `state.facet.scripts.Begin/End`
+- **Statement Scripts:** `state.statement.scripts.Begin/End`
+- **Mixin Blocks:** `state.mixin.blocks.Begin/Continue/End`
+- **Mixin Capture:** `state.mixin.capture.Begin/End`
+- **Statement Blocks:** `state.statement.blocks.Begin/Continue/End`
+- **Block Execution:** `state.block.execution.Begin/Continue/End`
+- **Statement Capture:** `state.statement.capture.Begin/End`
+- **Completion:** `state.statement.End/Complete`
+
+---
+
+## 4. StateChanger Architecture
+
+> Implements [30_runtime.md](30_runtime.md) §6, §8, §9.
+
+### 4.1 StateChanger Base Class
+
+**Location:** `afl/runtime/changers/base.py`
+
+The `StateChanger` drives the state machine in a loop:
+
+```python
+class StateChanger(ABC):
+    """Abstract base for state machine orchestrators."""
+
+    def __init__(self, step: StepDefinition, context: ExecutionContext):
+        self.step = step
+        self.context = context
+
+    def process(self) -> StateChangeResult:
+        if self.step.is_complete:
+            return StateChangeResult(step=self.step, continue_processing=False)
+
+        while True:
+            if self.step.is_requesting_state_change:
+                next_state = self.select_state()
+                if next_state and next_state != self.step.current_state:
+                    self.step.change_state(next_state)
+
+            result = self.execute_state(self.step.current_state)
+            self.step = result.step
+
+            if self.step.is_terminal:
+                return StateChangeResult(step=self.step, continue_processing=False)
+
+            if not self.step.is_requesting_state_change:
+                break
+
+        return StateChangeResult(
+            step=self.step,
+            continue_processing=self.step.transition.is_requesting_push,
+        )
+
+    @abstractmethod
+    def select_state(self) -> Optional[str]: ...
+
+    @abstractmethod
+    def execute_state(self, state: str) -> StateChangeResult: ...
+```
+
+### 4.2 StateChanger Types
+
+Three StateChanger implementations handle different step types:
+
+| Type | Handles | State Machine |
+|------|---------|---------------|
+| `StepStateChanger` | `VariableAssignment` | Full state machine (all states) |
+| `BlockStateChanger` | `AndThen`, `AndMap`, `AndMatch` | Simplified: `BlockExecutionBegin → Continue → End` |
+| `YieldStateChanger` | `YieldAssignment` | Skips to end after facet initialization |
+| Schema steps | `SchemaInstantiation` | Minimal: `Created → FacetInit → End → Complete` (uses `SCHEMA_TRANSITIONS`) |
+
+**Factory function** (in `afl/runtime/evaluator.py`):
+
+```python
+def create_state_changer(
+    step: StepDefinition, context: ExecutionContext
+) -> StateChanger:
+    if step.object_type == ObjectType.VARIABLE_ASSIGNMENT:
+        return StepStateChanger(step, context)
+    elif step.object_type == ObjectType.YIELD_ASSIGNMENT:
+        return YieldStateChanger(step, context)
+    elif ObjectType.is_block(step.object_type):
+        return BlockStateChanger(step, context)
+```
+
+### 4.3 Transition Tables
+
+**Location:** `afl/runtime/states.py`
+
+#### Step Transitions (Full State Machine)
+
+```python
+class StepStateChanger(StateChanger):
+    """State changer for VariableAssignment steps.
+
+    Implements the full state machine with all phases:
+    facet initialization, facet scripts, mixin blocks, mixin capture,
+    event transmit, statement blocks, statement capture, completion.
+    """
+
+    def select_state(self) -> Optional[str]:
+        """Select next state using full transition table."""
+        current = self.step.current_state
+        next_state = STEP_TRANSITIONS.get(current)
+        if next_state is None or next_state == current:
+            return None
+        return next_state
+
+    def execute_state(self, state: str) -> StateChangeResult:
+        """Dispatch to the appropriate handler for the current state."""
+        handler = get_handler(state, self.step, self.context)
+        if handler is None:
+            self.step.request_state_change(True)
+            return StateChangeResult(step=self.step)
+        return handler.process()
+```
+
+```python
+STEP_TRANSITIONS: dict[str, str] = {
+    StepState.CREATED:                  StepState.FACET_INIT_BEGIN,
+    StepState.FACET_INIT_BEGIN:         StepState.FACET_INIT_END,
+    StepState.FACET_INIT_END:           StepState.FACET_SCRIPTS_BEGIN,
+    StepState.FACET_SCRIPTS_BEGIN:      StepState.FACET_SCRIPTS_END,
+    StepState.FACET_SCRIPTS_END:        StepState.MIXIN_BLOCKS_BEGIN,
+    StepState.MIXIN_BLOCKS_BEGIN:       StepState.MIXIN_BLOCKS_CONTINUE,
+    StepState.MIXIN_BLOCKS_CONTINUE:    StepState.MIXIN_BLOCKS_END,
+    StepState.MIXIN_BLOCKS_END:         StepState.MIXIN_CAPTURE_BEGIN,
+    StepState.MIXIN_CAPTURE_BEGIN:      StepState.MIXIN_CAPTURE_END,
+    StepState.MIXIN_CAPTURE_END:        StepState.EVENT_TRANSMIT,
+    StepState.EVENT_TRANSMIT:           StepState.STATEMENT_BLOCKS_BEGIN,
+    StepState.STATEMENT_BLOCKS_BEGIN:   StepState.STATEMENT_BLOCKS_CONTINUE,
+    StepState.STATEMENT_BLOCKS_CONTINUE: StepState.STATEMENT_BLOCKS_END,
+    StepState.STATEMENT_BLOCKS_END:     StepState.STATEMENT_CAPTURE_BEGIN,
+    StepState.CATCH_BEGIN:              StepState.CATCH_CONTINUE,
+    StepState.CATCH_CONTINUE:           StepState.CATCH_END,
+    StepState.CATCH_END:                StepState.STATEMENT_CAPTURE_BEGIN,
+    StepState.STATEMENT_CAPTURE_BEGIN:  StepState.STATEMENT_CAPTURE_END,
+    StepState.STATEMENT_CAPTURE_END:    StepState.STATEMENT_END,
+    StepState.STATEMENT_END:            StepState.STATEMENT_COMPLETE,
+}
+```
+
+#### Yield Transitions (Minimal State Machine)
+
+```python
+class YieldStateChanger(StateChanger):
+    """State changer for YieldAssignment steps.
+
+    Implements minimal state machine — skips blocks, goes directly
+    from facet scripts to statement end.
+    """
+
+    def select_state(self) -> Optional[str]:
+        current = self.step.current_state
+        next_state = YIELD_TRANSITIONS.get(current)
+        if next_state is None or next_state == current:
+            return None
+        return next_state
+```
+
+```python
+YIELD_TRANSITIONS: dict[str, str] = {
+    StepState.CREATED:             StepState.FACET_INIT_BEGIN,
+    StepState.FACET_INIT_BEGIN:    StepState.FACET_INIT_END,
+    StepState.FACET_INIT_END:      StepState.FACET_SCRIPTS_BEGIN,
+    StepState.FACET_SCRIPTS_BEGIN: StepState.FACET_SCRIPTS_END,
+    StepState.FACET_SCRIPTS_END:   StepState.STATEMENT_END,   # Skip blocks
+    StepState.STATEMENT_END:       StepState.STATEMENT_COMPLETE,
+}
+```
+
+#### Schema Instantiation Transitions
+
+Schema instantiation steps use a simplified state machine that evaluates arguments and stores them as **returns** (not params). See [30_runtime.md](30_runtime.md) §8.5 for the normative semantics.
+
+```python
+SCHEMA_TRANSITIONS: dict[str, str] = {
+    StepState.CREATED:          StepState.FACET_INIT_BEGIN,
+    StepState.FACET_INIT_BEGIN: StepState.FACET_INIT_END,
+    StepState.FACET_INIT_END:   StepState.STATEMENT_END,
+    StepState.STATEMENT_END:    StepState.STATEMENT_COMPLETE,
+}
+```
+
+#### Block Transitions
+
+```python
+class BlockStateChanger(StateChanger):
+    """State changer for block steps (AndThen, AndMap, etc.).
+
+    Simplified state machine: Created → BlockExecution → End → Complete.
+    """
+
+    def select_state(self) -> Optional[str]:
+        current = self.step.current_state
+        next_state = BLOCK_TRANSITIONS.get(current)
+        if next_state is None or next_state == current:
+            return None
+        return next_state
+```
+
+```python
+BLOCK_TRANSITIONS: dict[str, str] = {
+    StepState.CREATED:                    StepState.BLOCK_EXECUTION_BEGIN,
+    StepState.BLOCK_EXECUTION_BEGIN:      StepState.BLOCK_EXECUTION_CONTINUE,
+    StepState.BLOCK_EXECUTION_CONTINUE:   StepState.BLOCK_EXECUTION_END,
+    StepState.BLOCK_EXECUTION_END:        StepState.STATEMENT_END,
+    StepState.STATEMENT_END:              StepState.STATEMENT_COMPLETE,
+}
+```
+
+---
+
+## 5. Transition Control
+
+> Implements [30_runtime.md](30_runtime.md) §6 state guarantees.
+
+**Location:** `afl/runtime/step.py`
+
+The `StepTransition` dataclass manages state transitions with control flags:
+
+```python
+@dataclass
+class StepTransition:
+    """Manages state transition control for a step."""
+    original_state: str
+    current_state: str
+    changed: bool = False
+    request_transition: bool = False
+    push_me: bool = False
+    error: Optional[Exception] = None
+
+    def request_state_change(self, request: bool = True) -> None:
+        self.request_transition = request
+        if request:
+            self.changed = True
+
+    def change_and_transition(self) -> None:
+        self.changed = True
+        self.request_transition = True
+
+    def set_push_me(self, push: bool) -> None:
+        self.push_me = push
+```
+
+### Transition Methods
+
+| Method | Effect |
+|--------|--------|
+| `request_state_change()` | Trigger `select_state()` to advance to next state |
+| `set_push_me(True)` | Re-queue step for continued processing (polling loop) |
+| `change_and_transition()` | Mark changed + request transition |
+
+### Transition Semantics
+
+- **`request_transition`**: When `True`, StateChanger invokes `select_state()` to determine next state
+- **`push_me`**: When `True`, step is re-queued for continued processing (loops in same state)
+- **`changed`**: Marks step as modified for persistence
+- **`error`**: Contains error if step fails
+
+---
+
+## 6. StateHandler Base Class
+
+> Implements [30_runtime.md](30_runtime.md) §6 state execution.
+
+**Location:** `afl/runtime/handlers/base.py`
+
+```python
+class StateHandler(ABC):
+    """Abstract base for state handlers."""
+
+    def __init__(self, step: StepDefinition, context: ExecutionContext):
+        self.step = step
+        self.context = context
+
+    def process(self) -> StateChangeResult:
+        self.context.telemetry.log_state_begin(self.step, self.state_name)
+        try:
+            result = self.process_state()
+            self.context.telemetry.log_state_end(self.step, self.state_name)
+            return result
+        except Exception as e:
+            self.context.telemetry.log_error(self.step, self.state_name, e)
+            return StateChangeResult(step=self.step, success=False, error=e)
+
+    @abstractmethod
+    def process_state(self) -> StateChangeResult: ...
+
+    def transition(self) -> StateChangeResult:
+        """Request transition to next state."""
+        self.step.request_state_change(True)
+        return StateChangeResult(step=self.step)
+
+    def stay(self, push: bool = False) -> StateChangeResult:
+        """Stay in current state, optionally re-queuing."""
+        self.step.request_state_change(False)
+        self.step.transition.set_push_me(push)
+        return StateChangeResult(step=self.step, continue_processing=push)
+```
+
+---
+
+## 7. Block Execution Handlers
+
+> Implements [30_runtime.md](30_runtime.md) §8, §11.
+
+Blocks (AndThen, AndMap, AndMatch) follow a simplified state machine:
+
+```
+Created → BlockExecutionBegin → BlockExecutionContinue (loop) → BlockExecutionEnd → StatementEnd → StatementComplete
+```
+
+### BlockExecutionBegin
+
+**Location:** `afl/runtime/handlers/block_execution.py`
+
+```python
+class BlockExecutionBeginHandler(StateHandler):
+    """Initialize block execution: build dependency graph, create ready steps."""
+
+    def process_state(self) -> StateChangeResult:
+        block_ast = self.context.get_block_ast(self.step)
+        if block_ast is None:
+            self.step.request_state_change(True)
+            return StateChangeResult(step=self.step)
+
+        graph = DependencyGraph.from_ast(
+            block_ast, self._get_workflow_inputs(),
+            program_ast=self.context.program_ast,
+        )
+        self.context.set_block_graph(self.step.id, graph)
+        self._create_ready_steps(graph, completed=set())
+
+        self.step.request_state_change(True)
+        return StateChangeResult(step=self.step)
+```
+
+### BlockExecutionContinue
+
+**Location:** `afl/runtime/handlers/block_execution.py`
+
+Polls until all child steps complete:
+
+```python
+class BlockExecutionContinueHandler(StateHandler):
+    """Poll block progress, create newly eligible steps."""
+
+    def process_state(self) -> StateChangeResult:
+        graph = self.context.get_block_graph(self.step.id)
+        steps = list(self.context.persistence.get_steps_by_block(self.step.id))
+
+        analysis = StepAnalysis.load(
+            block=self.step,
+            statements=graph.get_all_statements(),
+            steps=steps,
+        )
+
+        if analysis.done:
+            self.step.request_state_change(True)
+            return StateChangeResult(step=self.step)
+
+        completed_ids = {
+            str(s.statement_id) for s in analysis.completed if s.statement_id
+        }
+        self._create_ready_steps(graph, completed_ids)
+        return self.stay(push=True)  # Re-queue for next iteration
+```
+
+### Step Creation Within Blocks
+
+**Location:** `afl/runtime/handlers/block_execution.py`
+
+```python
+def _create_ready_steps(
+    self,
+    graph: DependencyGraph,
+    completed: set[str],
+) -> None:
+    ready = graph.get_ready_statements(completed)
+    for stmt in ready:
+        if self.context.persistence.step_exists(stmt.id, self.step.id):
+            continue
+        step = StepDefinition.create(
+            workflow_id=self.step.workflow_id,
+            object_type=stmt.object_type,
+            facet_name=stmt.facet_name,
+            statement_id=stmt.id,
+            block_id=self.step.id,
+            container_id=self.step.container_id,
+            root_id=self.step.root_id or self.step.container_id,
+        )
+        self.context.changes.add_created_step(step)
+```
+
+---
+
+## 8. Dependency Resolution
+
+> Implements [30_runtime.md](30_runtime.md) §7, §11.
+
+**Location:** `afl/runtime/block.py`
+
+The `StepAnalysis` dataclass tracks block execution state:
+
+```python
+@dataclass
+class StepAnalysis:
+    """Analysis of step execution state within a block."""
+    block: StepDefinition
+    statements: Sequence[StatementDefinition]
+
+    missing: list[StatementDefinition] = field(default_factory=list)
+    steps: list[StepDefinition] = field(default_factory=list)
+    completed: list[StepDefinition] = field(default_factory=list)
+    requesting_push: list[StepDefinition] = field(default_factory=list)
+    requesting_transition: list[StepDefinition] = field(default_factory=list)
+    pending_event: list[StepDefinition] = field(default_factory=list)
+    pending_mixin: list[StepDefinition] = field(default_factory=list)
+    pending_blocks: list[StepDefinition] = field(default_factory=list)
+    done: bool = False
+```
+
+### Dependency Checking
+
+`can_be_created()` determines which statements can have steps created:
+
+```python
+def can_be_created(self) -> Sequence[StatementDefinition]:
+    """Return statements whose dependencies are all satisfied."""
+    completed_ids = {
+        str(s.statement_id) for s in self.completed if s.statement_id
+    }
+    ready = []
+    for stmt in self.missing:
+        if stmt.dependencies.issubset(completed_ids):
+            ready.append(stmt)
+    return ready
+```
+
+A step is created only when all its dependencies point to completed steps.
+
+---
+
+## 9. Mixin Blocks vs Statement Blocks
+
+> Implements [30_runtime.md](30_runtime.md) §8.2.
+
+Both follow the same Begin → Continue → End pattern:
+
+### Mixin Blocks
+
+Execute facet-level blocks (from mixin compositions):
+
+- **MixinBlocksBegin** - Creates block steps with `container_type="Facet"`
+- **MixinBlocksContinue** - Polls with `BlockAnalysis.load(step, blocks, mixins=True)`
+- **MixinBlocksEnd** - Advances to next state
+
+### Statement Blocks
+
+Execute statement-level blocks (from `andThen` bodies):
+
+- **StatementBlocksBegin** - Creates block steps for each `AndThenBlock`
+- **StatementBlocksContinue** - Polls with `BlockAnalysis.load(step, blocks, mixins=False)`
+- **StatementBlocksEnd** - Advances to capture phase
+
+---
+
+## 10. Catch Execution Handlers
+
+> Implements [30_runtime.md](30_runtime.md) §8.4.
+
+When a step errors and has a `catch` clause, execution enters the catch phase instead of transitioning to `STATEMENT_ERROR`. This allows error recovery.
+
+**Location:** `afl/runtime/handlers/catch_execution.py`
+
+### State Flow
+
+```
+Error path without catch:
+  ... → error → STATEMENT_ERROR (terminal)
+
+Error path with catch:
+  ... → error → CATCH_BEGIN → CATCH_CONTINUE → CATCH_END → STATEMENT_CAPTURE_BEGIN
+                                    ↓ (catch fails)
+                               STATEMENT_ERROR
+```
+
+### Catch Interception Points
+
+Two places check for catch before calling `mark_error()`:
+
+1. **`StatementBlocksContinueHandler`** — when child blocks error
+2. **`StateChanger.process()`** — when event handler errors
+
+### CatchBeginHandler
+
+- Stores error info as pseudo-returns: `step.set_attribute("error", ...)` and `step.set_attribute("error_type", ...)`
+- Simple catch: creates a single sub-block (`object_type=AND_CATCH`, `statement_id="catch-block-0"`)
+- Catch when: evaluates conditions, creates sub-blocks per matching case (`statement_id="catch-case-{i}"`)
+
+### CatchContinueHandler
+
+- Polls catch sub-blocks (same pattern as `BlockExecutionContinueHandler`)
+- All complete → transition to `CATCH_END`
+- Any errored → `mark_error()` (catch itself failed, propagate)
+- Not done → `stay(push=True)`
+
+### CatchEndHandler
+
+- Pass-through: transitions to `STATEMENT_CAPTURE_BEGIN` to resume normal flow
+
+### Object Type
+
+Catch sub-blocks use `ObjectType.AND_CATCH = "AndCatch"` (included in `is_block()`).
+
+---
+
+## 11. Capture/Yield System
+
+> Implements [30_runtime.md](30_runtime.md) §11.1.
+
+### StatementCaptureBegin
+
+**Location:** `afl/runtime/handlers/capture.py`
+
+Merges results from yield/capture blocks:
+
+```python
+class StatementCaptureBeginHandler(StateHandler):
+    """Merge yield results from statement blocks (andThen)."""
+
+    def process_state(self) -> StateChangeResult:
+        blocks = self.context.persistence.get_blocks_by_step(self.step.id)
+        statement_blocks = [b for b in blocks if b.is_complete]
+
+        for block in statement_blocks:
+            self._merge_yields_from_block(block)
+
+        self.step.request_state_change(True)
+        return StateChangeResult(step=self.step)
+
+    def _merge_yield(self, yield_step: StepDefinition) -> None:
+        for name, attr in yield_step.attributes.params.items():
+            self.step.attributes.set_return(name, attr.value, attr.type_hint)
+```
+
+---
+
+## 12. Completion and Notification
+
+> Implements [30_runtime.md](30_runtime.md) §12.
+
+### StatementComplete
+
+**Location:** `afl/runtime/handlers/completion.py`
+
+```python
+class StatementCompleteHandler(StateHandler):
+    """Mark step as complete and notify containing block."""
+
+    def process_state(self) -> StateChangeResult:
+        self.step.mark_completed()
+        self._notify_container()
+        return StateChangeResult(step=self.step, continue_processing=False)
+
+    def _notify_container(self) -> None:
+        # Container notification is handled implicitly through iteration:
+        # completed steps unblock dependent steps in the next iteration.
+        pass
+```
+
+### Container Notification
+
+In the Python implementation, container notification is handled implicitly by the iterative evaluator. When a step completes, the evaluator's next iteration detects that dependent steps are now unblocked and schedules them. This replaces the explicit event-based `NotifyContainingBlock` pattern with dependency-driven scheduling.
+
+---
+
+## 13. Object Types
+
+**Location:** `afl/runtime/types.py`
+
+```python
+class ObjectType:
+    """Object type constants for step classification."""
+    VARIABLE_ASSIGNMENT = "VariableAssignment"  # Regular statement
+    YIELD_ASSIGNMENT = "YieldAssignment"        # Capture/output statement
+    SCHEMA_INSTANTIATION = "SchemaInstantiation"  # Schema data object creation
+    WORKFLOW = "Workflow"
+
+    # Block types:
+    AND_THEN = "AndThen"     # Sequential execution
+    AND_MAP = "AndMap"       # Parallel/mapping
+    AND_MATCH = "AndMatch"   # Conditional/pattern matching
+
+    FACET = "Facet"          # Mixin/facet type
+    BEFORE = "Before"        # Mixin hook
+    AFTER = "After"          # Mixin hook
+    BLOCK = "Block"
+
+    @classmethod
+    def is_block(cls, object_type: str) -> bool:
+        return object_type in (cls.AND_THEN, cls.AND_MAP, cls.AND_MATCH, cls.BLOCK)
+
+    @classmethod
+    def is_statement(cls, object_type: str) -> bool:
+        return object_type in (cls.VARIABLE_ASSIGNMENT, cls.YIELD_ASSIGNMENT)
+```
+
+---
+
+## 14. Step Definition Structure
+
+**Location:** `afl/runtime/step.py`
+
+```python
+@dataclass
+class StepDefinition:
+    """Persistent step definition representing a runtime step instance."""
+    id: StepId
+    object_type: str
+
+    # Hierarchy
+    workflow_id: WorkflowId
+    statement_id: Optional[StatementId] = None
+    container_type: Optional[str] = None
+    container_id: Optional[StepId] = None
+    block_id: Optional[BlockId] = None
+    root_id: Optional[StepId] = None
+
+    # State machine
+    state: str = field(default=StepState.CREATED)
+    transition: StepTransition = field(default_factory=StepTransition.initial)
+
+    # Data
+    facet_name: str = ""
+    attributes: FacetAttributes = field(default_factory=FacetAttributes)
+
+    @classmethod
+    def create(cls, workflow_id, object_type, facet_name="",
+               statement_id=None, container_id=None,
+               block_id=None, root_id=None, **kwargs) -> "StepDefinition":
+        return cls(
+            id=step_id(),
+            object_type=object_type,
+            workflow_id=workflow_id,
+            statement_id=statement_id,
+            container_id=container_id,
+            block_id=block_id,
+            root_id=root_id,
+            facet_name=facet_name,
+        )
+```
+
+---
+
+## 15. Visual Execution Flow
+
+```
+Workflow Start
+    │
+    ▼
+┌─────────────────────────────────────────────────┐
+│  StepStateChanger (VariableAssignment)          │
+│  ┌─────────────────────────────────────────┐    │
+│  │ FacetInit → FacetScripts → MixinBlocks  │    │
+│  │     ↓                                    │    │
+│  │ EventTransmit → StatementBlocks          │    │
+│  │     ↓                                    │    │
+│  │ StatementCapture → Complete              │    │
+│  └─────────────────────────────────────────┘    │
+│                    │                            │
+│                    ▼                            │
+│  ┌─────────────────────────────────────────┐    │
+│  │ BlockStateChanger (AndThen block)       │    │
+│  │  BlockBegin → BlockContinue (loop)      │    │
+│  │       ↓            ↑                    │    │
+│  │  Create child   poll until              │    │
+│  │  steps          all done                │    │
+│  │       ↓                                 │    │
+│  │  BlockEnd → Complete                    │    │
+│  └─────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────┘
+    │
+    ▼
+Workflow Complete
+```
+
+---
+
+## 16. Key Architectural Patterns
+
+1. **State Machine Per Step**: Each step instance follows its own state machine lifecycle
+2. **Hierarchical Nesting**: Steps contain blocks, which contain statements, which contain steps (recursive)
+3. **Dependency Graph**: Next steps determined by `DependencyGraph` references between statements
+4. **Polling/Looping**: `BlockExecutionContinue` and `StatementBlocksContinue` use `set_push_me(True)` to re-queue for polling
+5. **Iterative Completion**: When a step completes, the evaluator's next iteration detects newly unblocked steps
+6. **Yield Merging**: Capture handlers merge yield step attributes into the containing step's returns
+
+---
+
+## 17. Key Python Source Files
+
+All source files are located in `afl/runtime/`.
+
+### State Handlers
+- `afl/runtime/handlers/base.py` — `StateHandler` abstract base class
+- `afl/runtime/changers/base.py` — `StateChanger` orchestrator + `StateChangeResult`
+- `afl/runtime/changers/step_changer.py` — `StepStateChanger` (full state machine)
+- `afl/runtime/changers/block_changer.py` — `BlockStateChanger` (block state machine)
+- `afl/runtime/changers/yield_changer.py` — `YieldStateChanger` (yield state machine)
+
+### Block Execution
+- `afl/runtime/handlers/block_execution.py` — `BlockExecutionBeginHandler`, `BlockExecutionContinueHandler`, `BlockExecutionEndHandler`
+- `afl/runtime/block.py` — `StepAnalysis`, `BlockAnalysis`, `StatementDefinition`
+
+### Capture and Completion
+- `afl/runtime/handlers/capture.py` — `StatementCaptureBeginHandler`, `MixinCaptureBeginHandler`
+- `afl/runtime/handlers/completion.py` — `StatementCompleteHandler`, `EventTransmitHandler`
+
+### Models
+- `afl/runtime/states.py` — `StepState` constants, transition tables (`STEP_TRANSITIONS`, `BLOCK_TRANSITIONS`, `YIELD_TRANSITIONS`, `SCHEMA_TRANSITIONS`)
+- `afl/runtime/step.py` — `StepDefinition`, `StepTransition`
+- `afl/runtime/types.py` — `ObjectType`, `FacetAttributes`, `AttributeValue`, ID types
+
+### Core Engine
+- `afl/runtime/evaluator.py` — `Evaluator`, `ExecutionContext`, iteration loop
+- `afl/runtime/dependency.py` — `DependencyGraph` from compiled AST
+- `afl/runtime/persistence.py` — `PersistenceAPI` protocol
+- `afl/runtime/memory_store.py` — In-memory persistence for testing
+- `afl/runtime/mongo_store.py` — MongoDB persistence implementation
