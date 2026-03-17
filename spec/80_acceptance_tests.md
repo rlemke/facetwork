@@ -2,6 +2,8 @@
 
 The implementation includes pytest tests that verify parser, emitter, validator, runtime, dashboard, and MCP correctness.
 
+**Current totals:** 3,888 passed, 81 skipped. Overall coverage: 87%.
+
 ---
 
 ## Test Summary
@@ -283,10 +285,10 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Run all tests
-pytest tests/ -v
+pytest tests/ examples/ -v
 
 # Run with coverage
-pytest tests/ --cov=afl --cov-report=term-missing
+pytest tests/ examples/ --cov=afl --cov-report=term-missing
 
 # Run specific test file
 pytest tests/test_parser.py -v
@@ -332,17 +334,17 @@ The runtime implementation includes pytest tests that verify evaluator, state ma
 
 ### Iteration Trace Acceptance Tests (all implemented)
 
-All 10 acceptance tests from `spec/70_examples.md` Examples 2–4 are implemented in `tests/runtime/test_evaluator.py::TestIterationTraces`:
+All 10 acceptance tests from `spec/70_examples.md` Examples 2-4 are implemented in `tests/runtime/test_evaluator.py::TestIterationTraces`:
 
 | Test Name | Validates | Spec Reference |
 |-----------|-----------|----------------|
 | `test_event_facet_blocks_at_transmit` | subStep1 calling event facet blocks at `EventTransmit` with `request_state_change(False)` | Example 4, §8.1 |
 | `test_step_continue_resumes_step` | `StepContinue` event unblocks step from `EventTransmit` | Example 4, §12.1 |
-| `test_nested_statement_block` | s1 with statement-level `andThen` creates `block_s1` | Examples 3–4, §8.2 |
+| `test_nested_statement_block` | s1 with statement-level `andThen` creates `block_s1` | Examples 3-4, §8.2 |
 | `test_facet_definition_lookup` | `EventTransmitHandler` detects `EventFacetDecl` via `get_facet_definition()` | Example 4, §11.1 |
 | `test_multi_run_execution` | Evaluator pauses at fixed point, resumes after external event processing | Example 4, §10.2 |
-| `test_facet_level_block_creation` | Step calling facet with `andThen` body creates block from facet definition | Examples 2–4, §8.2 |
-| `test_block_ast_resolution_nested` | `BlockExecutionBegin` resolves correct AST for nested statement-level blocks | Examples 3–4, §8.3 |
+| `test_facet_level_block_creation` | Step calling facet with `andThen` body creates block from facet definition | Examples 2-4, §8.2 |
+| `test_block_ast_resolution_nested` | `BlockExecutionBegin` resolves correct AST for nested statement-level blocks | Examples 3-4, §8.3 |
 | `test_example_2_full_trace` | Full iteration-by-iteration trace for Example 2 (8 steps, 8 iterations) | Example 2 |
 | `test_example_3_full_trace` | Full iteration-by-iteration trace for Example 3 (11 steps, 11 iterations) | Example 3 |
 | `test_example_4_full_trace` | Full iteration-by-iteration trace for Example 4 (11 steps, 2 evaluator runs) | Example 4 |

@@ -59,6 +59,21 @@ The `SourceRegistry` maps source IDs to their origins for provenance lookup.
 - **Output**: `Program` AST root node
 - **Features**: Source location tracking via `propagate_positions=True`
 
+The transformer uses internal helper methods to extract typed items from heterogeneous
+child lists produced by Lark:
+
+| Helper | Purpose |
+|--------|---------|
+| `_find_one(items, cls)` | Extract the first item of a given type, or `None` |
+| `_find_all(items, cls)` | Extract all items of a given type |
+| `_left_assoc_fixed_op(meta, items, operator)` | Build a left-associative `BinaryExpr` chain for a single operator (e.g. `||`, `&&`) |
+| `_left_assoc_interleaved(meta, items)` | Build a left-associative `BinaryExpr` chain where operator tokens are interleaved with operands (e.g. `add_expr`, `mul_expr`) |
+
+The `CATCH_KW` terminal handler discards the `catch` keyword token, preventing it
+from appearing as a raw string in child item lists. The `prompt_block` rule uses
+dict-based dispatch to map prompt directive names (`system`, `template`, `model`,
+`max_tokens`, `stop_sequences`) to `PromptBlock` fields.
+
 ### Stage 4: JSON Emission
 - **Input**: `Program` AST
 - **Tool**: `JSONEmitter`
