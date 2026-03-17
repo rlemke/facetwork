@@ -2857,3 +2857,90 @@ class TestSchemaReturnTypeInference:
         result = validator.validate(ast)
         assert not result.is_valid
         assert any("schema type" in str(e) and "negate" in str(e) for e in result.errors)
+
+
+class TestNestedSchemaFieldAccess:
+    """Test nested field access through schema-typed step references."""
+
+    def test_nested_field_resolves_type(self, validator):
+        """step.result.count where result is schema with count: Int."""
+        ast = parse("""
+        namespace ns {
+            schema Result { count: Int, label: String }
+            event facet Analyze(input: String) => (result: Result)
+            event facet Report(value: Int)
+            workflow Test(x: String = "a") andThen {
+                a = Analyze(input = $.x)
+                r = Report(value = a.result.count)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_nested_field_type_error(self, validator):
+        """step.result.count + 'hello' where count is Int → type error."""
+        ast = parse("""
+        namespace ns {
+            schema Result { count: Int, label: String }
+            event facet Analyze(input: String) => (result: Result)
+            event facet Report(value: String)
+            workflow Test(x: String = "a") andThen {
+                a = Analyze(input = $.x)
+                r = Report(value = a.result.count + "hello")
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        errors_str = " ".join(str(e) for e in result.errors)
+        assert "Int" in errors_str or "String" in errors_str
+
+    def test_nested_field_nonexistent_warns(self, validator):
+        """step.result.nonexistent in arithmetic triggers warning."""
+        ast = parse("""
+        namespace ns {
+            schema Result { count: Int }
+            event facet Analyze(input: String) => (result: Result)
+            event facet Report(value: Int)
+            workflow Test(x: String = "a") andThen {
+                a = Analyze(input = $.x)
+                r = Report(value = a.result.nonexistent + 1)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert any("nonexistent" in str(w) and "not found" in str(w) for w in result.warnings)
+
+    def test_deeply_nested_field_resolves(self, validator):
+        """step.result.nested.value where nested is also a schema."""
+        ast = parse("""
+        namespace ns {
+            schema Inner { value: Int }
+            schema Outer { nested: Inner }
+            event facet Analyze(input: String) => (result: Outer)
+            event facet Report(value: Int)
+            workflow Test(x: String = "a") andThen {
+                a = Analyze(input = $.x)
+                r = Report(value = a.result.nested.value)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_unknown_intermediate_returns_unknown(self, validator):
+        """step.unknown_field.whatever triggers invalid attribute error."""
+        ast = parse("""
+        namespace ns {
+            event facet Analyze(input: String) => (result: String)
+            event facet Report(value: String)
+            workflow Test(x: String = "a") andThen {
+                a = Analyze(input = $.x)
+                r = Report(value = a.nonexistent.whatever ++ "ok")
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        # Reference validation catches invalid first-level attribute
+        assert any("nonexistent" in str(e) and "Invalid attribute" in str(e) for e in result.errors)

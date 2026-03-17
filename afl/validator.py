@@ -77,6 +77,7 @@ class ValidationResult:
     """Result of validation containing any errors found."""
 
     errors: list[ValidationError] = field(default_factory=list)
+    warnings: list[ValidationError] = field(default_factory=list)
 
     @property
     def is_valid(self) -> bool:
@@ -87,6 +88,12 @@ class ValidationResult:
         line = location.line if location else None
         column = location.column if location else None
         self.errors.append(ValidationError(message, line, column))
+
+    def add_warning(self, message: str, location: SourceLocation | None = None) -> None:
+        """Add a validation warning."""
+        line = location.line if location else None
+        column = location.column if location else None
+        self.warnings.append(ValidationError(message, line, column))
 
 
 @dataclass
@@ -1140,6 +1147,39 @@ class AFLValidator:
         """Return True if the type name refers to a schema (not a primitive/builtin)."""
         return type_name not in cls._NON_SCHEMA_TYPES
 
+    def _resolve_nested_field_type(
+        self, current_type: str, remaining_path: list[str], location: SourceLocation | None
+    ) -> str:
+        """Resolve nested field access through schema types.
+
+        For a path like step.result.count where result is a schema type,
+        this resolves 'count' by looking up the schema's field types.
+        """
+        for field_name in remaining_path:
+            if current_type == "Unknown":
+                return "Unknown"
+            if not self._is_schema_type(current_type):
+                return "Unknown"
+            # Try resolve via current namespace context first, then fallback
+            # to short-name lookup (since _current_namespace may be cleared
+            # by the time _infer_type runs during cross-block validation).
+            schema_info = self._resolve_schema_name(current_type, location)
+            if schema_info is None:
+                # Fallback: check short name registry directly
+                candidates = self._schemas_by_short_name.get(current_type, [])
+                if len(candidates) == 1:
+                    schema_info = self._schema_info.get(candidates[0])
+            if schema_info is None:
+                return "Unknown"
+            if field_name not in schema_info.fields_types:
+                self._result.add_warning(
+                    f"Field '{field_name}' not found on schema '{schema_info.name}'",
+                    location,
+                )
+                return "Unknown"
+            current_type = schema_info.fields_types[field_name]
+        return current_type
+
     def _infer_type(self, expr, step_returns_types: dict[str, dict[str, str]] | None = None) -> str:
         """Infer the type of an expression for type checking.
 
@@ -1165,7 +1205,13 @@ class AFLValidator:
             if not expr.is_input and len(expr.path) >= 2 and step_returns_types:
                 step_name, attr_name = expr.path[0], expr.path[1]
                 types = step_returns_types.get(step_name, {})
-                return types.get(attr_name, "Unknown")
+                field_type = types.get(attr_name, "Unknown")
+                # For 3+ segment paths (e.g. step.result.count), resolve through schemas
+                if len(expr.path) > 2:
+                    return self._resolve_nested_field_type(
+                        field_type, expr.path[2:], getattr(expr, "location", None)
+                    )
+                return field_type
             return "Unknown"
         if isinstance(expr, ConcatExpr):
             return "String"
