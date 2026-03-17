@@ -52,7 +52,8 @@
     <span class="refresh-icon">&#x21bb;</span> Refresh
     <span class="loading-spinner htmx-indicator"></span>
 </button>
-<div id="server-groups">
+<div id="server-groups"
+     {% if tab == 'running' or tab == 'startup' %}hx-get="/v2/servers/partial?tab={{ tab }}" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
     {% include "v2/servers/_server_groups.html" %}
 </div>
 {% endblock %}

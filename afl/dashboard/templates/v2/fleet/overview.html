@@ -22,7 +22,8 @@
     <span class="loading-spinner htmx-indicator"></span>
 </button>
 
-<div id="fleet-content">
+<div id="fleet-content"
+     hx-get="/v2/fleet/partial" hx-trigger="every 5s" hx-swap="innerHTML">
     {% include "v2/fleet/_fleet_content.html" %}
 </div>
 {% endblock %}

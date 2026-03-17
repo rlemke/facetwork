@@ -17,8 +17,43 @@
     --seg-other: #e67e22;
     --seg-error: #c62828;
 
+    /* State background tints (table rows and tree summaries) */
+    --state-bg-complete: #e8f5e9;
+    --state-bg-error: #ffebee;
+    --state-bg-transmit: #fce4ec;
+    --state-bg-running: #e3f2fd;
+    --state-bg-continue: #fff8e1;
+    --state-bg-other: #f5f5f5;
+
+    /* Neutral colors */
+    --neutral-track: #e0e0e0;
+    --neutral-subtle: #f0f0f0;
+    --neutral-bg-alt: #fafafa;
+    --search-highlight: #fff3cd;
+
+    /* Badge colors */
+    --badge-text: #fff;
+    --badge-warning-text: #000;
+
+    /* Border accents */
+    --tab-border: #ddd;
+    --dag-stroke: #999;
+
+    /* Interactive highlight */
+    --hover-tint: rgba(0, 0, 0, 0.04);
+    --active-tint: rgba(16, 149, 193, 0.08);
+
     /* Layout */
     --sidebar-width: 220px;
+    --sidebar-collapsed-width: 52px;
+
+    /* Spacing */
+    --space-xs: 0.25rem;
+    --space-sm: 0.5rem;
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 2rem;
+    --space-xxl: 3rem;
 
     /* Typography */
     --heading-h1: 1.25rem;
@@ -26,6 +61,36 @@
     --heading-h3: 1.05rem;
     --body-small: 0.85rem;
     --mono-font: "Fira Code", "Cascadia Code", monospace;
+
+    /* Border radius */
+    --radius-sm: 3px;
+    --radius-md: 4px;
+    --radius-lg: 6px;
+    --radius-xl: 10px;
+}
+
+/* Dark mode overrides — activated when Pico CSS dark theme is enabled */
+[data-theme="dark"] {
+    --state-bg-complete: #1b3a1b;
+    --state-bg-error: #3a1b1b;
+    --state-bg-transmit: #3a1b2a;
+    --state-bg-running: #1b2a3a;
+    --state-bg-continue: #3a351b;
+    --state-bg-other: #2a2a2a;
+
+    --neutral-track: #404040;
+    --neutral-subtle: #2a2a2a;
+    --neutral-bg-alt: #1e1e1e;
+    --search-highlight: #5a4a1a;
+
+    --badge-text: #fff;
+    --badge-warning-text: #000;
+
+    --tab-border: #444;
+    --dag-stroke: #666;
+
+    --hover-tint: rgba(255, 255, 255, 0.06);
+    --active-tint: rgba(16, 149, 193, 0.15);
 }
 
 /* Global font size caps — override Pico CSS defaults */
@@ -166,11 +231,11 @@ a.sidebar-link {
     box-sizing: border-box;
 }
 a.sidebar-link:hover {
-    background: rgba(0, 0, 0, 0.04);
+    background: var(--hover-tint);
     text-decoration: none !important;
 }
 a.sidebar-link.active {
-    background: rgba(16, 149, 193, 0.08);
+    background: var(--active-tint);
     border-left-color: var(--primary);
     font-weight: 600;
     color: var(--primary) !important;
@@ -213,9 +278,9 @@ a.sidebar-link.active {
 
 /* Collapsed sidebar */
 body.sidebar-collapsed aside.sidebar {
-    width: 52px;
-    min-width: 52px;
-    max-width: 52px;
+    width: var(--sidebar-collapsed-width);
+    min-width: var(--sidebar-collapsed-width);
+    max-width: var(--sidebar-collapsed-width);
 }
 .sidebar-collapsed .sidebar-brand-text,
 .sidebar-collapsed .sidebar-search-text,
@@ -254,6 +319,14 @@ body.sidebar-collapsed aside.sidebar {
         left: 0;
         box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
     }
+    /* Overlay to close sidebar on tap */
+    body.sidebar-open::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.3);
+        z-index: 99;
+    }
     .sidebar-toggle {
         position: fixed;
         top: 0.5rem;
@@ -261,10 +334,58 @@ body.sidebar-collapsed aside.sidebar {
         z-index: 99;
         background: var(--background-color, #fff);
         border: 1px solid var(--muted-border-color, #ddd);
-        border-radius: 4px;
+        border-radius: var(--radius-md);
         padding: 0.3rem 0.5rem;
     }
-    .main-content { margin-left: 0; }
+    .main-content {
+        margin-left: 0;
+        /* Leave room for the hamburger toggle */
+        padding-top: 2.5rem;
+    }
+    /* Make tables horizontally scrollable */
+    figure, .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    /* Prevent wide tables from breaking layout */
+    table {
+        min-width: 600px;
+    }
+    /* Stack summary grid to single column */
+    .summary-grid {
+        grid-template-columns: 1fr;
+    }
+    /* Subnav tabs: scrollable on small screens */
+    .subnav {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap;
+    }
+    .subnav-pill {
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    /* Command palette full width on mobile */
+    .cmd-palette {
+        width: 95vw;
+        max-height: 70vh;
+    }
+    .cmd-palette-overlay {
+        padding-top: 5vh;
+    }
+    /* Timeline label narrower on mobile */
+    .timeline-label {
+        width: 100px;
+        min-width: 100px;
+    }
+    /* Step tree controls wrap on mobile */
+    .step-tree-controls {
+        flex-wrap: wrap;
+    }
+    .step-tree-controls input[type="search"] {
+        max-width: 100%;
+        width: 100%;
+    }
 }
 
 /* ========================================================================
@@ -354,7 +475,7 @@ body.sidebar-collapsed aside.sidebar {
 }
 .cmd-palette-item:hover,
 .cmd-palette-item.active {
-    background: rgba(16, 149, 193, 0.08);
+    background: var(--active-tint);
 }
 .cmd-palette-item-icon { width: 1.2rem; text-align: center; }
 .cmd-palette-item-name { flex: 1; }
@@ -418,7 +539,7 @@ body.sidebar-collapsed aside.sidebar {
 .progress-bar-wrap {
     width: 80px;
     height: 6px;
-    background: #e0e0e0;
+    background: var(--neutral-track);
     border-radius: 3px;
     overflow: hidden;
     display: inline-block;
@@ -446,7 +567,7 @@ body.sidebar-collapsed aside.sidebar {
     border-radius: 4px;
     overflow: hidden;
     margin-bottom: 1rem;
-    background: #e0e0e0;
+    background: var(--neutral-track);
 }
 .step-summary-bar .seg-complete { background: var(--seg-complete); }
 .step-summary-bar .seg-running { background: var(--seg-running); }
@@ -512,7 +633,7 @@ body.sidebar-collapsed aside.sidebar {
 
 /* Search highlight */
 .search-highlight {
-    background: #fff3cd;
+    background: var(--search-highlight);
     border-radius: 2px;
     padding: 0 1px;
 }
@@ -569,12 +690,12 @@ body.sidebar-collapsed aside.sidebar {
     border-radius: 4px;
     font-size: 0.8em;
     font-weight: 600;
-    color: #fff;
+    color: var(--badge-text);
 }
 .badge-primary   { background-color: var(--state-running); }
 .badge-success   { background-color: var(--state-completed); }
 .badge-danger    { background-color: var(--state-failed); }
-.badge-warning   { background-color: var(--state-warning); color: #000; }
+.badge-warning   { background-color: var(--state-warning); color: var(--badge-warning-text); }
 .badge-secondary { background-color: var(--state-pending); }
 
 /* Summary cards grid */
@@ -642,7 +763,7 @@ pre code {
     gap: 0;
     margin-bottom: 1rem;
     border: none;
-    border-bottom: 2px solid #ddd;
+    border-bottom: 2px solid var(--tab-border);
     border-radius: 0;
     overflow: visible;
 }
@@ -733,7 +854,7 @@ pre code {
     gap: 0;
     padding: 0;
     margin-bottom: 1rem;
-    border-bottom: 2px solid #ddd;
+    border-bottom: 2px solid var(--tab-border);
 }
 .subnav-pill {
     display: inline-block;
@@ -902,19 +1023,19 @@ pre code {
 }
 
 /* Step state row/tree background colours — use high specificity to override Pico CSS table styles */
-table tbody tr.state-bg-complete { background-color: #e8f5e9 !important; }
-table tbody tr.state-bg-error { background-color: #ffebee !important; }
-table tbody tr.state-bg-transmit { background-color: #fce4ec !important; }
-table tbody tr.state-bg-running { background-color: #e3f2fd !important; }
-table tbody tr.state-bg-continue { background-color: #fff8e1 !important; }
-table tbody tr.state-bg-other { background-color: #f5f5f5 !important; }
+table tbody tr.state-bg-complete { background-color: var(--state-bg-complete) !important; }
+table tbody tr.state-bg-error { background-color: var(--state-bg-error) !important; }
+table tbody tr.state-bg-transmit { background-color: var(--state-bg-transmit) !important; }
+table tbody tr.state-bg-running { background-color: var(--state-bg-running) !important; }
+table tbody tr.state-bg-continue { background-color: var(--state-bg-continue) !important; }
+table tbody tr.state-bg-other { background-color: var(--state-bg-other) !important; }
 /* Tree summary state tints */
-.step-tree-container summary.state-bg-complete { background-color: #e8f5e9; }
-.step-tree-container summary.state-bg-error { background-color: #ffebee; }
-.step-tree-container summary.state-bg-transmit { background-color: #fce4ec; }
-.step-tree-container summary.state-bg-running { background-color: #e3f2fd; }
-.step-tree-container summary.state-bg-continue { background-color: #fff8e1; }
-.step-tree-container summary.state-bg-other { background-color: #f5f5f5; }
+.step-tree-container summary.state-bg-complete { background-color: var(--state-bg-complete); }
+.step-tree-container summary.state-bg-error { background-color: var(--state-bg-error); }
+.step-tree-container summary.state-bg-transmit { background-color: var(--state-bg-transmit); }
+.step-tree-container summary.state-bg-running { background-color: var(--state-bg-running); }
+.step-tree-container summary.state-bg-continue { background-color: var(--state-bg-continue); }
+.step-tree-container summary.state-bg-other { background-color: var(--state-bg-other); }
 
 /* Output file browser */
 .output-breadcrumbs { margin-bottom: 1rem; font-size: 0.95em; }
@@ -935,7 +1056,7 @@ table tbody tr.state-bg-other { background-color: #f5f5f5 !important; }
     color: var(--primary);
     text-decoration: none;
 }
-.btn-view:hover { background: var(--primary); color: #fff; }
+.btn-view:hover { background: var(--primary); color: var(--badge-text); }
 
 /* ========================================================================
    TIMELINE VIEW
@@ -965,7 +1086,7 @@ table tbody tr.state-bg-other { background-color: #f5f5f5 !important; }
     flex: 1;
     position: relative;
     height: 20px;
-    background: #f0f0f0;
+    background: var(--neutral-subtle);
     border-radius: 3px;
 }
 .timeline-bar {
@@ -989,7 +1110,7 @@ table tbody tr.state-bg-other { background-color: #f5f5f5 !important; }
     max-height: 600px;
     border: 1px solid var(--muted-border-color, #ddd);
     border-radius: 4px;
-    background: #fafafa;
+    background: var(--neutral-bg-alt);
 }
 .dag-node rect {
     rx: 4;
@@ -1003,7 +1124,7 @@ table tbody tr.state-bg-other { background-color: #f5f5f5 !important; }
     dominant-baseline: central;
 }
 .dag-edge {
-    stroke: #999;
+    stroke: var(--dag-stroke);
     stroke-width: 1.5;
     fill: none;
     marker-end: url(#arrow);
