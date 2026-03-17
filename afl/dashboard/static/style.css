@@ -1129,3 +1129,17 @@ table tbody tr.state-bg-other { background-color: var(--state-bg-other) !importa
     fill: none;
     marker-end: url(#arrow);
 }
+
+/* ========================================================================
+   FORM VALIDATION
+   ======================================================================== */
+
+.validation-error {
+    border-color: var(--state-bg-error, #f44336) !important;
+}
+.validation-message {
+    color: var(--state-bg-error, #f44336);
+    display: block;
+    margin-top: var(--space-xs, 0.25rem);
+    font-size: 0.85em;
+}

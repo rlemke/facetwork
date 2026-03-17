@@ -1,13 +1,61 @@
 <div class="timeline-chart">
-{% for entry in timeline %}
-<div class="timeline-row">
-    <div class="timeline-label" title="{{ entry.label }}">{{ entry.label|truncate(24) }}</div>
-    <div class="timeline-track">
-        <div class="timeline-bar state-bg-{{ entry.state|categorize_step_state }}"
-             style="left:{{ entry.offset_pct }}%; width:{{ entry.width_pct }}%;"
-             title="{{ entry.label }} — {{ (entry.end_ms - entry.start_ms)|duration }}">
-        </div>
-    </div>
-</div>
-{% endfor %}
+{% if timeline %}
+<canvas id="timeline-canvas" style="width:100%; max-height:{{ [timeline|length * 28, 600]|max }}px;"></canvas>
+<script>
+(function() {
+    const STATE_COLORS = {
+        complete: 'rgba(76, 175, 80, 0.7)',
+        error: 'rgba(244, 67, 54, 0.7)',
+        transmit: 'rgba(33, 150, 243, 0.7)',
+        running: 'rgba(255, 193, 7, 0.7)',
+        continue: 'rgba(156, 39, 176, 0.7)',
+        other: 'rgba(158, 158, 158, 0.5)'
+    };
+    const entries = [
+    {% for entry in timeline %}
+        {label: {{ entry.label|tojson }}, start: {{ entry.offset_pct }}, width: {{ entry.width_pct }}, state: {{ entry.state|categorize_step_state|tojson }}, duration: {{ (entry.end_ms - entry.start_ms)|tojson }} },
+    {% endfor %}
+    ];
+    const ctx = document.getElementById('timeline-canvas');
+    if (ctx && typeof Chart !== 'undefined') {
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: entries.map(e => e.label),
+                datasets: [{
+                    data: entries.map(e => [e.start, e.start + e.width]),
+                    backgroundColor: entries.map(e => STATE_COLORS[e.state] || STATE_COLORS.other),
+                    borderWidth: 0,
+                    barPercentage: 0.7,
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                const e = entries[ctx.dataIndex];
+                                return e.label + ' — ' + (e.duration < 1000 ? e.duration + 'ms' : (e.duration/1000).toFixed(1) + 's');
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { min: 0, max: 100, display: false },
+                    y: {
+                        ticks: { font: { size: 11 }, callback: function(v) { return this.getLabelForValue(v).substring(0, 24); } }
+                    }
+                }
+            }
+        });
+    }
+})();
+</script>
+{% else %}
+<p class="empty-hint">No timeline data available.</p>
+{% endif %}
 </div>

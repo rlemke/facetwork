@@ -24,7 +24,7 @@
 </article>
 {% endif %}
 
-<form id="run-form" method="POST" action="/flows/{{ flow.uuid }}/run/{{ workflow_def.uuid }}">
+<form id="run-form" method="POST" action="/flows/{{ flow.uuid }}/run/{{ workflow_def.uuid }}" data-validate>
     <input type="hidden" name="inputs_json" id="inputs_json" value="{}">
 
     {% if params %}
