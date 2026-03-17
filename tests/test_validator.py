@@ -2717,3 +2717,143 @@ class TestWhenBlockStepReturnTypes:
         result = validator.validate(ast)
         assert not result.is_valid
         assert any("String" in str(e) and "arithmetic" in str(e) for e in result.errors)
+
+
+class TestSchemaReturnTypeInference:
+    """Test Phase 3: schema-typed return fields resolve to schema names."""
+
+    def test_schema_return_resolves_to_schema_name(self, validator):
+        """Schema-typed return should resolve to schema name, not Unknown."""
+        ast = parse("""
+        namespace ns {
+            schema Result { score: Int, label: String }
+            event facet Analyze(input: String) => (result: Result)
+            workflow Test(x: String) andThen {
+                a = Analyze(input = $.x)
+                b = Analyze(input = a.result ++ "ok")
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        # String concatenation with schema type should be fine (++ accepts any type)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_schema_return_plus_int_errors(self, validator):
+        """Schema-typed step ref + Int should produce a type error."""
+        ast = parse("""
+        namespace ns {
+            schema Result { score: Int }
+            event facet Analyze(input: String) => (result: Result)
+            workflow Test(x: String) andThen {
+                a = Analyze(input = $.x)
+                b = Analyze(input = a.result + 1)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("schema type" in str(e) and "arithmetic" in str(e) for e in result.errors)
+
+    def test_schema_return_ordered_comparison_errors(self, validator):
+        """Schema-typed step ref in ordered comparison should error."""
+        ast = parse("""
+        namespace ns {
+            schema Result { score: Int }
+            event facet Analyze(input: String) => (result: Result)
+            facet Report(flag: Boolean)
+            workflow Test(x: String) andThen {
+                a = Analyze(input = $.x)
+                r = Report(flag = a.result > 5)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any(
+            "schema type" in str(e) and "ordered comparison" in str(e) for e in result.errors
+        )
+
+    def test_schema_return_equality_allowed(self, validator):
+        """Schema-typed step ref in equality comparison (== / !=) should be allowed."""
+        ast = parse("""
+        namespace ns {
+            schema Result { score: Int }
+            event facet Analyze(input: String) => (result: Result)
+            facet Report(flag: Boolean)
+            workflow Test(x: String) andThen {
+                a = Analyze(input = $.x)
+                r = Report(flag = a.result == a.result)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_schema_return_concat_allowed(self, validator):
+        """Schema-typed step ref in string concatenation (++) should be allowed."""
+        ast = parse("""
+        namespace ns {
+            schema Result { score: Int }
+            event facet Analyze(input: String) => (result: Result)
+            event facet Log(message: String)
+            workflow Test(x: String) andThen {
+                a = Analyze(input = $.x)
+                l = Log(message = "result: " ++ a.result)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_schema_return_boolean_op_errors(self, validator):
+        """Schema-typed step ref in boolean op (&&) should error."""
+        ast = parse("""
+        namespace ns {
+            schema Result { score: Int }
+            event facet Analyze(input: String) => (result: Result)
+            facet Report(flag: Boolean)
+            workflow Test(x: String) andThen {
+                a = Analyze(input = $.x)
+                r = Report(flag = a.result && true)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("Boolean operands" in str(e) and "Result" in str(e) for e in result.errors)
+
+    def test_qualified_schema_return_resolves(self, validator):
+        """Fully-qualified schema type in return should resolve correctly."""
+        ast = parse("""
+        namespace data {
+            schema Report { summary: String }
+        }
+        namespace ops {
+            use data
+            event facet Generate(input: String) => (report: data.Report)
+            event facet Publish(content: String)
+            workflow Run(x: String) andThen {
+                g = Generate(input = $.x)
+                p = Publish(content = g.report ++ " done")
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_schema_return_negation_errors(self, validator):
+        """Negating a schema-typed step ref should error."""
+        ast = parse("""
+        namespace ns {
+            schema Result { score: Int }
+            event facet Analyze(input: String) => (result: Result)
+            event facet Log(value: Int)
+            workflow Test(x: String) andThen {
+                a = Analyze(input = $.x)
+                l = Log(value = -a.result)
+            }
+        }
+        """)
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("schema type" in str(e) and "negate" in str(e) for e in result.errors)

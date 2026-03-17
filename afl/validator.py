@@ -196,14 +196,21 @@ class AFLValidator:
             for schema in namespace.schemas:
                 self._register_schema(schema, namespace.name)
 
+    _PRIMITIVE_TYPES = {"String", "Int", "Long", "Double", "Boolean"}
+
     @staticmethod
     def _type_ref_to_str(type_ref) -> str:
-        """Convert a type reference to a type string for inference."""
+        """Convert a type reference to a type string for inference.
+
+        Returns primitive type names, "Array" for array types, or the schema
+        type name (e.g. "MySchema", "ns.SchemaName") for schema-typed references.
+        Returns "Unknown" only when the type reference cannot be resolved.
+        """
         if isinstance(type_ref, ArrayType):
             return "Array"
         if isinstance(type_ref, TypeRef):
             name = type_ref.name
-            if name in ("String", "Int", "Long", "Double", "Boolean"):
+            if name:
                 return name
         return "Unknown"
 
@@ -908,7 +915,10 @@ class AFLValidator:
                 catch_step_returns = dict(step_returns)
                 catch_step_returns_types = dict(step_returns_types)
                 if step.name in catch_step_returns:
-                    catch_step_returns[step.name] = catch_step_returns[step.name] | {"error", "error_type"}
+                    catch_step_returns[step.name] = catch_step_returns[step.name] | {
+                        "error",
+                        "error_type",
+                    }
                 else:
                     catch_step_returns[step.name] = {"error", "error_type"}
                 if step.name in catch_step_returns_types:
@@ -918,7 +928,10 @@ class AFLValidator:
                         "error_type": "String",
                     }
                 else:
-                    catch_step_returns_types[step.name] = {"error": "String", "error_type": "String"}
+                    catch_step_returns_types[step.name] = {
+                        "error": "String",
+                        "error_type": "String",
+                    }
                 self._validate_catch_clause(
                     step.catch,
                     containing_sig,
@@ -1110,13 +1123,30 @@ class AFLValidator:
     _BOOLEAN_OPS = {"&&", "||"}
     _ORDERED_COMPARISON_OPS = {">", "<", ">=", "<="}
     _ARITHMETIC_OPS = {"+", "-", "*", "/", "%"}
+    _NON_SCHEMA_TYPES = {
+        "String",
+        "Int",
+        "Long",
+        "Double",
+        "Boolean",
+        "Array",
+        "Map",
+        "Null",
+        "Unknown",
+    }
+
+    @classmethod
+    def _is_schema_type(cls, type_name: str) -> bool:
+        """Return True if the type name refers to a schema (not a primitive/builtin)."""
+        return type_name not in cls._NON_SCHEMA_TYPES
 
     def _infer_type(self, expr, step_returns_types: dict[str, dict[str, str]] | None = None) -> str:
         """Infer the type of an expression for type checking.
 
         Returns:
             Type name string: "String", "Int", "Long", "Double", "Boolean", "Null",
-            "Array", "Map", or "Unknown" for references and complex expressions.
+            "Array", "Map", a schema type name (e.g. "MySchema"), or "Unknown"
+            for unresolvable references and complex expressions.
         """
         if isinstance(expr, Literal):
             if expr.kind == "string":
@@ -1172,6 +1202,14 @@ class AFLValidator:
                             getattr(expr, "location", None),
                         )
                         return "Unknown"
+                    for t in (left_type, right_type):
+                        if self._is_schema_type(t):
+                            self._result.add_error(
+                                f"Type error: cannot use ordered comparison '{expr.operator}' "
+                                f"with schema type '{t}'",
+                                getattr(expr, "location", None),
+                            )
+                            return "Unknown"
                 return "Boolean"
 
             # Arithmetic operators: + - * / %
@@ -1190,6 +1228,15 @@ class AFLValidator:
                         getattr(expr, "location", None),
                     )
                     return "Unknown"
+                # Schema types cannot be used in arithmetic
+                for t in (left_type, right_type):
+                    if self._is_schema_type(t):
+                        self._result.add_error(
+                            f"Type error: cannot use arithmetic operator '{expr.operator}' "
+                            f"with schema type '{t}'",
+                            getattr(expr, "location", None),
+                        )
+                        return "Unknown"
             # If either is Unknown, allow it (runtime will catch errors)
             if left_type in self._NUMERIC_TYPES and right_type in self._NUMERIC_TYPES:
                 # Promote to widest type
@@ -1221,6 +1268,12 @@ class AFLValidator:
                 if operand_type == "Boolean":
                     self._result.add_error(
                         "Type error: cannot negate Boolean operand",
+                        getattr(expr, "location", None),
+                    )
+                    return "Unknown"
+                if self._is_schema_type(operand_type):
+                    self._result.add_error(
+                        f"Type error: cannot negate schema type '{operand_type}'",
                         getattr(expr, "location", None),
                     )
                     return "Unknown"
