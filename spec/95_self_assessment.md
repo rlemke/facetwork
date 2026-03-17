@@ -6,7 +6,7 @@ A self-assessment across all fundamental areas, drawing on the full arc from v0.
 
 ## Grammar / Parser — B+
 
-The Lark LALR grammar works and has grown to handle a complex language. But it's accumulated workarounds: priority tokens (`CATCH_KW.2`, `NULL.2`, `WHEN_KW.2`) to avoid IDENT conflicts, a preprocessor for brace-delimited scripts, and rigid same-line constraints (no newlines between `)` and `andThen`, `=>`, `with`, `catch`). Each feature addition requires careful token choreography. It works, but a more experienced language designer might have structured the lexical rules to avoid this accumulation.
+The Lark LALR grammar is compact at 160 lines and handles a complex language. Priority tokens (`CATCH_KW.2`, `NULL.2`, `BOOLEAN.2`, `TYPE_BUILTIN.2`, `COMP_OP.2`, `FLOAT.2`, `DOC_COMMENT.3`) are standard LALR practice for keyword/identifier disambiguation — they're necessary, not workarounds. The preprocessor for brace-delimited scripts (`preprocess.py`) is the right approach for embedding Python inside an LALR-parsed language. The rigid same-line constraints (no newlines between `)` and `andThen`, `=>`, `with`, `catch`) are the one real ergonomic limitation — relaxing them would require `_NL*` insertions that risk LALR conflicts.
 
 ---
 
@@ -16,9 +16,9 @@ Clean dataclass design with consistent patterns. New nodes like `CatchClause`, `
 
 ---
 
-## Transformer — B+
+## Transformer — A-
 
-Improved in v0.30.1. The `items` list filtering by type was a recurring error-prone pattern — each new clause meant updating multiple methods with ad-hoc isinstance loops. The v0.30.1 refactoring extracted `_find_one`/`_find_all`/`_find_rest` helpers, consolidated the triplicated declaration logic into `_build_declaration`, and unified item segregation via `_segregate_declarations` with a type map. This removed 72 lines of duplication and means adding future grammar clauses touches fewer methods. The `CATCH_KW` token-leaking class of bug is still possible (items are untyped lists from Lark), but the helpers make the filtering consistent and less likely to diverge across methods.
+Improved through v0.41.0. The v0.30.1 refactoring extracted `_find_one`/`_find_all`/`_find_rest` helpers, consolidated declaration logic into `_build_declaration`, and unified item segregation via `_segregate_declarations`. The v0.41.0 cleanup went further: extracted `_left_assoc_fixed_op` and `_left_assoc_interleaved` helpers to deduplicate 4 binary expression builders, added explicit `CATCH_KW` terminal handler to prevent token-leaking, refactored `facet_sig`/`mixin_call`/`block` to use helpers consistently, and simplified `prompt_block` directive dispatch to dict-based lookup. All methods that previously used manual isinstance loops now use the shared helpers. The remaining risk (Lark's untyped item lists) is well-mitigated by the helper pattern.
 
 ---
 

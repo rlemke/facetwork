@@ -231,6 +231,9 @@ class AFLTransformer(Transformer):
     def NULL(self, token: Token) -> None:
         return None
 
+    def CATCH_KW(self, token: Token) -> str:
+        return str(token)
+
     def INPUT_REF(self, token: Token) -> list[str]:
         # $.field.subfield -> ["field", "subfield"]
         return str(token)[2:].split(".")
@@ -260,6 +263,7 @@ class AFLTransformer(Transformer):
     @v_args(meta=True)
     def literal(self, meta, items: list) -> Literal:
         value = items[0]
+        # bool must be checked before int — bool is a subclass of int in Python
         if isinstance(value, str):
             kind = "string"
         elif isinstance(value, bool):
@@ -290,91 +294,81 @@ class AFLTransformer(Transformer):
         path = [str(item) for item in items]
         return Reference(path=path, is_input=False, location=self._loc(meta))
 
+    # --- Left-associative expression helpers ---
+
+    def _left_assoc_fixed_op(self, meta, items: list, operator: str):
+        """Build left-associative BinaryExpr chain with a fixed operator.
+
+        Used for or_expr (||) and and_expr (&&) where the grammar strips
+        the operator token and items contains only operands.
+        """
+        if len(items) == 1:
+            return items[0]
+        result = items[0]
+        for i in range(1, len(items)):
+            result = BinaryExpr(
+                operator=operator, left=result, right=items[i], location=self._loc(meta)
+            )
+        return result
+
+    def _left_assoc_interleaved(self, meta, items: list):
+        """Build left-associative BinaryExpr chain from [expr, op, expr, ...].
+
+        Used for additive_expr and multiplicative_expr where operators are
+        interleaved with operands.
+        """
+        if len(items) == 1:
+            return items[0]
+        result = items[0]
+        i = 1
+        while i < len(items):
+            op = str(items[i])
+            result = BinaryExpr(
+                operator=op, left=result, right=items[i + 1], location=self._loc(meta)
+            )
+            i += 2
+        return result
+
     # Expressions
     def expr(self, items: list):
         return items[0]
 
     @v_args(meta=True)
     def or_expr(self, meta, items: list):
-        # items alternates: expr, expr, expr, ...
-        if len(items) == 1:
-            return items[0]
-        # Left-associative binary tree
-        result = items[0]
-        for i in range(1, len(items)):
-            result = BinaryExpr(
-                operator="||", left=result, right=items[i], location=self._loc(meta)
-            )
-        return result
+        return self._left_assoc_fixed_op(meta, items, "||")
 
     @v_args(meta=True)
     def and_expr(self, meta, items: list):
-        # items alternates: expr, expr, expr, ...
-        if len(items) == 1:
-            return items[0]
-        # Left-associative binary tree
-        result = items[0]
-        for i in range(1, len(items)):
-            result = BinaryExpr(
-                operator="&&", left=result, right=items[i], location=self._loc(meta)
-            )
-        return result
+        return self._left_assoc_fixed_op(meta, items, "&&")
 
     @v_args(meta=True)
     def comparison_expr(self, meta, items: list):
-        # items = [left] or [left, COMP_OP, right]
         if len(items) == 1:
             return items[0]
-        left = items[0]
-        op = str(items[1])
-        right = items[2]
-        return BinaryExpr(operator=op, left=left, right=right, location=self._loc(meta))
+        return BinaryExpr(
+            operator=str(items[1]), left=items[0], right=items[2], location=self._loc(meta)
+        )
 
     def COMP_OP(self, token: Token) -> str:
         return str(token)
 
     @v_args(meta=True)
     def not_expr(self, meta, items: list):
-        # items = [operand] (the "!" is consumed by the grammar)
         return UnaryExpr(operator="!", operand=items[0], location=self._loc(meta))
 
     @v_args(meta=True)
     def concat_expr(self, meta, items: list):
-        # If there's only one operand, return it directly
         if len(items) == 1:
             return items[0]
-        # Otherwise create a ConcatExpr with all operands
         return ConcatExpr(operands=list(items), location=self._loc(meta))
 
     @v_args(meta=True)
     def additive_expr(self, meta, items: list):
-        # items alternates: expr, op, expr, op, expr, ...
-        if len(items) == 1:
-            return items[0]
-        # Left-associative binary tree
-        result = items[0]
-        i = 1
-        while i < len(items):
-            op = str(items[i])
-            right = items[i + 1]
-            result = BinaryExpr(operator=op, left=result, right=right, location=self._loc(meta))
-            i += 2
-        return result
+        return self._left_assoc_interleaved(meta, items)
 
     @v_args(meta=True)
     def multiplicative_expr(self, meta, items: list):
-        # items alternates: expr, op, expr, op, expr, ...
-        if len(items) == 1:
-            return items[0]
-        # Left-associative binary tree
-        result = items[0]
-        i = 1
-        while i < len(items):
-            op = str(items[i])
-            right = items[i + 1]
-            result = BinaryExpr(operator=op, left=result, right=right, location=self._loc(meta))
-            i += 2
-        return result
+        return self._left_assoc_interleaved(meta, items)
 
     @v_args(meta=True)
     def unary_expr(self, meta, items: list):
@@ -440,13 +434,8 @@ class AFLTransformer(Transformer):
     @v_args(meta=True)
     def mixin_call(self, meta, items: list) -> MixinCall:
         name = items[0]
-        args = []
-        alias = None
-        for item in items[1:]:
-            if isinstance(item, list):
-                args = item
-            elif isinstance(item, str):
-                alias = item
+        args = self._find_one(items[1:], list) or []
+        alias = self._find_one(items[1:], str)
         return MixinCall(name=name, args=args, alias=alias, location=self._loc(meta))
 
     # Call expressions
@@ -484,17 +473,10 @@ class AFLTransformer(Transformer):
         if items and isinstance(items[0], tuple):
             steps, yield_stmts = items[0]
         else:
-            # Flatten items
-            steps = []
-            yield_stmts = []
-            for item in items:
-                if isinstance(item, StepStmt):
-                    steps.append(item)
-                elif isinstance(item, YieldStmt):
-                    yield_stmts.append(item)
-                elif isinstance(item, tuple):
-                    steps.extend(item[0])
-                    yield_stmts.extend(item[1])
+            # Defensive fallback — block_body should always produce a tuple,
+            # but Lark's untyped items lists make this a reasonable guard.
+            steps = self._find_all(items, StepStmt)
+            yield_stmts = self._find_all(items, YieldStmt)
         return Block(steps=steps, yield_stmts=yield_stmts, location=self._loc(meta))
 
     @v_args(meta=True)
@@ -584,21 +566,14 @@ class AFLTransformer(Transformer):
     @v_args(meta=True)
     def prompt_block(self, meta, items: list) -> PromptBlock:
         """Convert prompt_block rule to PromptBlock AST node."""
-        system = None
-        template = None
-        model = None
-        # Flatten items - prompt_body returns a list, so items may be nested
         directives = items[0] if items and isinstance(items[0], list) else items
-        for item in directives:
-            if isinstance(item, tuple):
-                key, value = item
-                if key == "system":
-                    system = value
-                elif key == "template":
-                    template = value
-                elif key == "model":
-                    model = value
-        return PromptBlock(system=system, template=template, model=model, location=self._loc(meta))
+        fields = {k: v for item in directives if isinstance(item, tuple) for k, v in [item]}
+        return PromptBlock(
+            system=fields.get("system"),
+            template=fields.get("template"),
+            model=fields.get("model"),
+            location=self._loc(meta),
+        )
 
     def prompt_body(self, items: list) -> list:
         """Collect prompt directives."""
@@ -640,16 +615,15 @@ class AFLTransformer(Transformer):
     @v_args(meta=True)
     def facet_sig(self, meta, items: list) -> FacetSig:
         name = items[0]
-        params = []
-        returns = None
-        mixins = []
-        for item in items[1:]:
-            if isinstance(item, list) and item and isinstance(item[0], Parameter):
-                params = item
-            elif isinstance(item, ReturnClause):
-                returns = item
-            elif isinstance(item, MixinSig):
-                mixins.append(item)
+        rest = items[1:]
+        params_list = self._find_one(rest, list)
+        params = (
+            params_list
+            if params_list and params_list and isinstance(params_list[0], Parameter)
+            else []
+        )
+        returns = self._find_one(rest, ReturnClause)
+        mixins = self._find_all(rest, MixinSig)
         return FacetSig(
             name=name, params=params, returns=returns, mixins=mixins, location=self._loc(meta)
         )

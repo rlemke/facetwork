@@ -1,6 +1,35 @@
 # Implementation Changelog
 
-**Current version: v0.40.0**
+**Current version: v0.41.0**
+
+## Completed (v0.41.0) — Runtime Spec Split, Validator Phase 2, Dashboard Improvements
+
+Split the runtime specification, completed validator step return type inference, and consolidated the dashboard.
+
+**Spec refactoring:**
+- Split `spec/30_runtime.md` (1,479 → 735 lines) into formal specification and new `spec/31_runtime_impl.md` (802 lines) — Python implementation guide with state changers, transition tables, handler code, source file map
+- Promoted catch block semantics (§8.4) and schema instantiation semantics (§8.5) to normative sections in the formal spec
+- Cross-references between formal spec and implementation guide
+
+**Validator Phase 2 (`afl/validator.py`):**
+- Thread `step_returns_types` into when block condition type checking — errors like `s1.name + 1` (String + Int) now caught in `andThen when` conditions
+- Cross-block step visibility — `andThen { s1 = F() } andThen when { case s1.field == "x" }` now resolves types from prior blocks
+- Step reference validation in when conditions — undefined steps and invalid attributes detected
+- 11 new tests in `TestWhenBlockStepReturnTypes`
+
+**Dashboard improvements:**
+- Old `/runners` and `/handlers` routes redirect (307) to v2 equivalents
+- Tasks and events pages migrated to v2 subnav pattern with breadcrumbs and tab counts
+- Inline JS extracted into shared ES modules (`state_filter.js`, `view_toggle.js`); fixed `step_tree.js` double-loading
+- HTMX auto-refresh on tasks and events list pages (partial endpoints, 5s polling for active states)
+- Global search results rendered via Jinja2 partial (`_search_results.html`) instead of f-string HTML — fixes XSS risk
+
+**Other:**
+- Doc comments added to 9 remaining example AFL files
+
+**Tests:** 29 new tests. Total: 3,825 passed, 81 skipped.
+
+**Self-assessment updates:** Validator B → B+, Dashboard B- → B, Specs updated for runtime split.
 
 ## Completed (v0.40.0) — External Infrastructure, Lock Removal, Mount Localization
 
