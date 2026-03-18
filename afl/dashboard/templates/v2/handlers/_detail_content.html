@@ -1,4 +1,55 @@
 {% if handler %}
+
+{% if facet_info and (facet_info.description or facet_info.params or facet_info.returns) %}
+<article>
+    <header>Documentation</header>
+    {% if facet_info.description %}
+    <div class="doc-description">{{ facet_info.doc|doc_description }}</div>
+    {% endif %}
+
+    {% if facet_info.params %}
+    <h4>Parameters</h4>
+    <figure>
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Type</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+        {% for p in facet_info.params %}
+            <tr>
+                <td><code>{{ p.name }}</code></td>
+                <td class="mono">{{ p.type if p.type is string else (p.type.element_type ~ "[]" if p.type is mapping and p.type.element_type is defined else p.type|default("—")) }}</td>
+                <td class="mono">{% if p.default is defined and p.default is not none %}{{ p.default.value if p.default is mapping else p.default }}{% else %}—{% endif %}</td>
+                <td>{% for dp in facet_info.doc|doc_params if facet_info.doc %}{% if dp.name == p.name %}{{ dp.description }}{% endif %}{% endfor %}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </figure>
+    {% endif %}
+
+    {% if facet_info.returns %}
+    <h4>Returns</h4>
+    <figure>
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+        {% for r in facet_info.returns %}
+            <tr>
+                <td><code>{{ r.name }}</code></td>
+                <td class="mono">{{ r.type if r.type is string else (r.type.element_type ~ "[]" if r.type is mapping and r.type.element_type is defined else r.type|default("—")) }}</td>
+                <td>{% for dr in facet_info.doc|doc_returns if facet_info.doc %}{% if dr.name == r.name %}{{ dr.description }}{% endif %}{% endfor %}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </figure>
+    {% endif %}
+</article>
+{% endif %}
+
 <div class="grid">
     <div>
         <article>

@@ -1,22 +1,22 @@
 // City-to-city driving route workflows
 //
-// Resolves a region, downloads OSM data, builds a GraphHopper routing graph,
+// Resolves a region, downloads OSM data, builds a pgRouting topology,
 // extracts cities with population, filters by population range, computes
 // pairwise driving routes between all qualifying cities, and renders a map.
 //
 // This is a real end-to-end pipeline using existing event facets:
 //   - osm.Region.ResolveRegion          (region_resolver.py)
 //   - osm.ops.DownloadPBF           (operations_handlers.py → downloader.py)
-//   - osm.ops.GraphHopper.*      (graphhopper_handlers.py)
+//   - osm.ops.PgRouting.*           (pgrouting_handlers.py)
 //   - osm.Population.*                  (osmfilters_population.afl handlers)
 //   - osm.viz.RenderLayers    (visualization handlers)
 //
 // Prerequisites: Compile with osmtypes.afl, osmregion.afl, osmoperations.afl,
-//   osmgraphhopper.afl, osmfilters_population.afl, osmvisualization.afl
+//   osmpgrouting.afl, osmfilters_population.afl, osmvisualization.afl
 
-// --- New event facet: compute pairwise driving routes via GraphHopper ---
+// --- Event facet: compute pairwise driving routes ---
 
-/** Pairwise driving-route computation between cities using a GraphHopper routing graph. */
+/** Pairwise driving-route computation between cities using pgRouting or GraphHopper. */
 namespace osm.Routing {
     use osm.types
 
@@ -36,23 +36,23 @@ namespace osm.Routing {
     /** Computes all-pairs shortest-path routes between cities and returns LineString geometries. */
     event facet ComputePairwiseRoutes(
         cities_path: String,
-        graph: GraphHopperCache
+        topology: RoutingTopology
     ) => (result: PairwiseRoutingResult)
 }
 
 // --- Workflow: full pipeline from region name to rendered route map ---
 
-/** End-to-end city routing: resolves a region, builds a graph, filters cities by population, routes pairwise, and renders. */
+/** End-to-end city routing: resolves a region, builds a pgRouting topology, filters cities by population, routes pairwise, and renders. */
 namespace osm.CityRouting {
     use osm.types
     use osm.Region
     use osm.ops
-    use osm.ops.GraphHopper
+    use osm.ops.PgRouting
     use osm.Population
     use osm.Routing
     use osm.viz
 
-    /** Resolves a region, builds a routing graph, selects cities by population, computes pairwise driving routes, and renders a two-layer map. */
+    /** Resolves a region, builds a routing topology, selects cities by population, computes pairwise driving routes, and renders a two-layer map. */
     workflow CityRouteMap(
         region: String,
         min_population: Long = 1000000,
@@ -84,17 +84,18 @@ namespace osm.CityRouting {
         //    The handler checks resolved.cache.wasInCache and skips if true
         downloaded = DownloadPBF(cache = resolved.cache)
 
-        // 3. Build a GraphHopper routing graph from the PBF
-        //    If recreate=false and graph directory exists, returns the cached graph
-        //    Otherwise: PBF → OSM import → contraction hierarchy → graph directory
-        graph = BuildGraph(
+        // 3. Build a pgRouting topology from the PBF via osm2pgrouting
+        //    If recreate=false and topology exists, returns the cached topology
+        //    Otherwise: PBF → osm2pgrouting → routing tables in PostGIS
+        topo = BuildRoutingTopology(
             cache = resolved.cache,
+            region = $.region,
             profile = $.profile,
             recreate = $.recreate
         )
 
-        // 4. Validate the graph is usable and get node/edge statistics
-        validation = ValidateGraph(graph = graph.graph)
+        // 4. Validate the topology and get node/edge statistics
+        validation = ValidateTopology(topology = topo.topology)
 
         // 5. Extract all cities with population tags from the same PBF
         //    Reads place=city nodes, writes GeoJSON with name + population
@@ -118,11 +119,11 @@ namespace osm.CityRouting {
         )
 
         // 8. Compute all-pairs driving routes between filtered cities
-        //    Uses the GraphHopper graph to find shortest paths
+        //    Uses pgRouting (pgr_dijkstra) for shortest paths
         //    N cities → C(N,2) route segments as LineString geometries
         routes = ComputePairwiseRoutes(
             cities_path = filtered.result.output_path,
-            graph = graph.graph
+            topology = topo.topology
         )
 
         // 9. Render the cities + routes as a two-layer map

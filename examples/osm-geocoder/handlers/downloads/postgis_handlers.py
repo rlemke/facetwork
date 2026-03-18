@@ -1,7 +1,7 @@
 """PostGIS import event facet handler for OSM data.
 
-Handles the PostGisImport event facet defined in osmoperations.afl
-under the osm.ops namespace.
+Handles the PostGisImport and PostGisImportBatch event facets defined
+in osmoperations.afl under the osm.ops namespace.
 """
 
 import logging
@@ -18,16 +18,18 @@ def _postgis_import_handler(payload: dict) -> dict:
     """Handle the PostGisImport event facet.
 
     Extracts cache metadata from the payload, imports the PBF file
-    into PostGIS, and returns stats in OSMCache-shaped format.
+    into PostGIS for a specific region, and returns stats in OSMCache-shaped format.
     """
     cache = payload.get("cache", {})
     pbf_path = cache.get("path", "")
     source_url = cache.get("url", "")
+    region = payload.get("region", "")
+    force = payload.get("force", False)
     step_log = payload.get("_step_log")
 
     if step_log:
-        step_log(f"PostGisImport: processing cache {source_url or pbf_path}")
-    log.info("PostGisImport processing cache: %s", source_url or pbf_path)
+        step_log(f"PostGisImport: processing {region or 'unknown'} from {source_url or pbf_path}")
+    log.info("PostGisImport processing region=%s cache=%s", region, source_url or pbf_path)
 
     if not HAS_OSMIUM or not HAS_PSYCOPG2 or not pbf_path:
         log.warning(
@@ -49,12 +51,21 @@ def _postgis_import_handler(payload: dict) -> dict:
     try:
         from .postgis_importer import import_to_postgis
 
-        result = import_to_postgis(pbf_path, source_url=source_url)
+        result = import_to_postgis(
+            pbf_path, source_url=source_url, region=region, force=force,
+        )
         if step_log:
-            step_log(
-                f"PostGisImport: imported {result.node_count + result.way_count} elements (nodes={result.node_count}, ways={result.way_count})",
-                level="success",
-            )
+            if result.was_prior_import and not force:
+                step_log(
+                    f"PostGisImport: region '{region}' already imported "
+                    f"({result.node_count} nodes, {result.way_count} ways), skipped",
+                )
+            else:
+                step_log(
+                    f"PostGisImport: imported {result.node_count + result.way_count} elements "
+                    f"(nodes={result.node_count}, ways={result.way_count}, region={region})",
+                    level="success",
+                )
         return {
             "stats": {
                 "url": source_url,
@@ -65,7 +76,7 @@ def _postgis_import_handler(payload: dict) -> dict:
             }
         }
     except Exception:
-        log.exception("PostGisImport failed for %s", pbf_path)
+        log.exception("PostGisImport failed for region=%s path=%s", region, pbf_path)
         return {
             "stats": {
                 "url": source_url,
@@ -77,8 +88,84 @@ def _postgis_import_handler(payload: dict) -> dict:
         }
 
 
+def _postgis_import_batch_handler(payload: dict) -> dict:
+    """Handle the PostGisImportBatch event facet.
+
+    Imports multiple regions from their cached PBF files into PostGIS
+    sequentially. Each region is cached and imported independently.
+    """
+    regions = payload.get("regions", [])
+    force = payload.get("force", False)
+    step_log = payload.get("_step_log")
+
+    if step_log:
+        step_log(f"PostGisImportBatch: importing {len(regions)} regions")
+    log.info("PostGisImportBatch: %d regions, force=%s", len(regions), force)
+
+    if not HAS_OSMIUM or not HAS_PSYCOPG2:
+        log.warning(
+            "PostGisImportBatch: skipping (osmium=%s, psycopg2=%s)",
+            HAS_OSMIUM, HAS_PSYCOPG2,
+        )
+        return {"stats": {"url": "", "path": "", "date": "", "size": 0, "wasInCache": False}}
+
+    from ..shared.downloader import download
+
+    from .postgis_importer import import_to_postgis
+
+    total_nodes = 0
+    total_ways = 0
+    imported = 0
+    skipped = 0
+
+    for region_name in regions:
+        try:
+            cache = download(region_name)
+            pbf_path = cache.get("path", "")
+            source_url = cache.get("url", "")
+            if not pbf_path:
+                log.warning("PostGisImportBatch: no PBF for region '%s', skipping", region_name)
+                continue
+
+            result = import_to_postgis(
+                pbf_path, source_url=source_url, region=region_name, force=force,
+            )
+            total_nodes += result.node_count
+            total_ways += result.way_count
+            if result.was_prior_import and not force:
+                skipped += 1
+            else:
+                imported += 1
+
+            if step_log:
+                step_log(
+                    f"PostGisImportBatch: {region_name} done "
+                    f"({result.node_count} nodes, {result.way_count} ways)"
+                )
+        except Exception:
+            log.exception("PostGisImportBatch: failed for region '%s'", region_name)
+
+    if step_log:
+        step_log(
+            f"PostGisImportBatch: complete — {imported} imported, {skipped} skipped, "
+            f"{total_nodes + total_ways} total elements",
+            level="success",
+        )
+
+    return {
+        "stats": {
+            "url": "",
+            "path": "",
+            "date": "",
+            "size": total_nodes + total_ways,
+            "wasInCache": skipped > 0,
+        }
+    }
+
+
 _DISPATCH: dict[str, callable] = {
     f"{NAMESPACE}.PostGisImport": _postgis_import_handler,
+    f"{NAMESPACE}.PostGisImportBatch": _postgis_import_batch_handler,
 }
 
 

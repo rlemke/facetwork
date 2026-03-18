@@ -28,8 +28,10 @@ namespace osm.ops {
     event facet Status(cache:OSMCache) => (stats:OSMCache)
     /** Converts cached OSM data into a geocoding-optimized cache format. */
     event facet GeoOSMCache(cache:OSMCache) => (graph:OSMCache)
-    /** Imports cached OSM data into a PostGIS database. */
-    event facet PostGisImport(cache:OSMCache) => (stats:OSMCache)
+    /** Imports a single region's cached OSM data into PostGIS. */
+    event facet PostGisImport(cache:OSMCache, region:String, force:Boolean = false) => (stats:OSMCache)
+    /** Imports multiple regions into PostGIS from their cached PBF files. */
+    event facet PostGisImportBatch(regions:[String], force:Boolean = false) => (stats:OSMCache)
     /** Downloads all sub-regions for a cached OSM dataset. */
     event facet DownloadBatch(cache:OSMCache) => ()
     /** Generates tiles for all sub-regions in a cached dataset. */

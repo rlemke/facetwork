@@ -69,6 +69,11 @@ class TestPostgisImporterModule:
         mod = _osm_import("postgis_importer")
         assert isinstance(mod.HAS_PSYCOPG2, bool)
 
+    def test_default_url_points_to_osm_database(self):
+        mod = _osm_import("postgis_importer")
+        assert "osm" in mod.DEFAULT_POSTGIS_URL
+        assert "afl_osm" in mod.DEFAULT_POSTGIS_URL
+
     def test_get_postgis_url_default(self):
         mod = _osm_import("postgis_importer")
         with patch.dict(os.environ, {}, clear=True):
@@ -101,6 +106,17 @@ class TestPostgisImporterModule:
         sanitized = mod.sanitize_url(url)
         assert sanitized == url
 
+    def test_ddl_contains_region_column(self):
+        mod = _osm_import("postgis_importer")
+        assert "region" in mod.CREATE_NODES_TABLE.lower()
+        assert "region" in mod.CREATE_WAYS_TABLE.lower()
+        assert "region" in mod.CREATE_IMPORT_LOG_TABLE.lower()
+
+    def test_ddl_composite_primary_key(self):
+        mod = _osm_import("postgis_importer")
+        assert "osm_id, region" in mod.CREATE_NODES_TABLE
+        assert "osm_id, region" in mod.CREATE_WAYS_TABLE
+
     def test_ddl_contains_expected_keywords(self):
         mod = _osm_import("postgis_importer")
         assert "postgis" in mod.CREATE_POSTGIS_EXT.lower()
@@ -113,6 +129,36 @@ class TestPostgisImporterModule:
         assert "gist" in mod.CREATE_NODES_GEOM_IDX.lower()
         assert "gin" in mod.CREATE_NODES_TAGS_IDX.lower()
 
+    def test_upsert_sql_includes_region(self):
+        mod = _osm_import("postgis_importer")
+        assert "region" in mod.UPSERT_NODES_SQL
+        assert "region" in mod.UPSERT_WAYS_SQL
+        assert "osm_id, region" in mod.UPSERT_NODES_SQL
+        assert "osm_id, region" in mod.UPSERT_WAYS_SQL
+
+    def test_region_indexes_defined(self):
+        mod = _osm_import("postgis_importer")
+        assert hasattr(mod, "CREATE_NODES_REGION_IDX")
+        assert hasattr(mod, "CREATE_WAYS_REGION_IDX")
+        assert "region" in mod.CREATE_NODES_REGION_IDX
+        assert "region" in mod.CREATE_WAYS_REGION_IDX
+
+    def test_import_result_has_region_field(self):
+        mod = _osm_import("postgis_importer")
+        result = mod.ImportResult(
+            node_count=10, way_count=5, postgis_url="x",
+            was_prior_import=False, imported_at="now", region="france",
+        )
+        assert result.region == "france"
+
+    def test_check_prior_import_filters_by_region(self):
+        mod = _osm_import("postgis_importer")
+        assert "region" in mod.CHECK_PRIOR_IMPORT_SQL
+
+    def test_insert_log_includes_region(self):
+        mod = _osm_import("postgis_importer")
+        assert "region" in mod.INSERT_LOG_SQL
+
 
 class TestPostgisHandlerDispatch:
     """Test postgis_handlers dispatch adapter pattern."""
@@ -121,9 +167,13 @@ class TestPostgisHandlerDispatch:
         mod = _osm_import("postgis_handlers")
         assert "osm.ops.PostGisImport" in mod._DISPATCH
 
-    def test_dispatch_count_is_1(self):
+    def test_dispatch_batch_key_present(self):
         mod = _osm_import("postgis_handlers")
-        assert len(mod._DISPATCH) == 1
+        assert "osm.ops.PostGisImportBatch" in mod._DISPATCH
+
+    def test_dispatch_count_is_2(self):
+        mod = _osm_import("postgis_handlers")
+        assert len(mod._DISPATCH) == 2
 
     def test_handle_returns_dict_with_stats(self):
         mod = _osm_import("postgis_handlers")
@@ -131,6 +181,8 @@ class TestPostgisHandlerDispatch:
             {
                 "_facet_name": "osm.ops.PostGisImport",
                 "cache": {"url": "http://example.com/test.pbf", "path": "", "date": "", "size": 0},
+                "region": "test-region",
+                "force": False,
             }
         )
         assert isinstance(result, dict)
@@ -145,7 +197,7 @@ class TestPostgisHandlerDispatch:
         mod = _osm_import("postgis_handlers")
         runner = MagicMock()
         mod.register_handlers(runner)
-        assert runner.register_handler.call_count == 1
+        assert runner.register_handler.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +242,36 @@ class TestPostgisImportLive:
         finally:
             conn.close()
 
+    def test_region_column_exists(self):
+        conn, mod = self._get_conn()
+        try:
+            mod.ensure_schema(conn)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'osm_nodes' AND column_name = 'region'"
+                )
+                row = cur.fetchone()
+            assert row is not None, "region column missing from osm_nodes"
+        finally:
+            conn.close()
+
+    def test_composite_primary_key(self):
+        conn, mod = self._get_conn()
+        try:
+            mod.ensure_schema(conn)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT a.attname FROM pg_index i "
+                    "JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "
+                    "WHERE i.indrelid = 'osm_nodes'::regclass AND i.indisprimary "
+                    "ORDER BY a.attnum"
+                )
+                pk_cols = [row[0] for row in cur.fetchall()]
+            assert pk_cols == ["osm_id", "region"]
+        finally:
+            conn.close()
+
     def test_spatial_indexes_exist(self):
         conn, mod = self._get_conn()
         try:
@@ -203,8 +285,10 @@ class TestPostgisImportLive:
                 indexes = [row[0] for row in cur.fetchall()]
             assert "idx_osm_nodes_geom" in indexes
             assert "idx_osm_nodes_tags" in indexes
+            assert "idx_osm_nodes_region" in indexes
             assert "idx_osm_ways_geom" in indexes
             assert "idx_osm_ways_tags" in indexes
+            assert "idx_osm_ways_region" in indexes
         finally:
             conn.close()
 
@@ -213,11 +297,12 @@ class TestPostgisImportLive:
         try:
             mod.ensure_schema(conn)
             test_url = "http://test.example.com/test-log-entry.osm.pbf"
+            test_region = "test-log-region"
             with conn.cursor() as cur:
-                cur.execute(mod.INSERT_LOG_SQL, (test_url, "/tmp/test.pbf", 42, 7))
+                cur.execute(mod.INSERT_LOG_SQL, (test_url, "/tmp/test.pbf", test_region, 42, 7))
             conn.commit()
             with conn.cursor() as cur:
-                cur.execute(mod.CHECK_PRIOR_IMPORT_SQL, (test_url,))
+                cur.execute(mod.CHECK_PRIOR_IMPORT_SQL, (test_region,))
                 row = cur.fetchone()
             assert row is not None
             assert row[1] == 42  # node_count
@@ -234,18 +319,53 @@ class TestPostgisImportLive:
         try:
             mod.ensure_schema(conn)
             test_url = "http://test.example.com/reimport-test.osm.pbf"
+            test_region = "test-reimport-region"
             # Insert a prior import record
             with conn.cursor() as cur:
-                cur.execute(mod.INSERT_LOG_SQL, (test_url, "/tmp/test.pbf", 10, 5))
+                cur.execute(mod.INSERT_LOG_SQL, (test_url, "/tmp/test.pbf", test_region, 10, 5))
             conn.commit()
             # Check that prior import is detected
             with conn.cursor() as cur:
-                cur.execute(mod.CHECK_PRIOR_IMPORT_SQL, (test_url,))
+                cur.execute(mod.CHECK_PRIOR_IMPORT_SQL, (test_region,))
                 row = cur.fetchone()
             assert row is not None
         finally:
             # Clean up test data
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM osm_import_log WHERE url = %s", (test_url,))
+            conn.commit()
+            conn.close()
+
+    def test_same_osm_id_different_regions(self):
+        """Verify composite PK allows same osm_id in different regions."""
+        conn, mod = self._get_conn()
+        try:
+            mod.ensure_schema(conn)
+            import psycopg2.extras
+
+            # Insert same osm_id for two different regions
+            rows = [
+                (1, "france", '{"name": "Paris"}', "SRID=4326;POINT(2.35 48.85)"),
+                (1, "germany", '{"name": "Berlin"}', "SRID=4326;POINT(13.40 52.52)"),
+            ]
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur, mod.UPSERT_NODES_SQL, rows,
+                    template="(%s, %s, %s, ST_GeomFromEWKT(%s))",
+                )
+            conn.commit()
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT region, tags->>'name' FROM osm_nodes "
+                    "WHERE osm_id = 1 ORDER BY region"
+                )
+                results = cur.fetchall()
+            assert len(results) == 2
+            assert results[0] == ("france", "Paris")
+            assert results[1] == ("germany", "Berlin")
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM osm_nodes WHERE osm_id = 1")
             conn.commit()
             conn.close()

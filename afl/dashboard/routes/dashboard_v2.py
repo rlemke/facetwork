@@ -36,6 +36,7 @@ from ..helpers import (
     group_handlers_by_namespace,
     group_runners_by_namespace,
     group_servers_by_group,
+    lookup_facet_info,
     search_all,
 )
 from ..tree import build_step_tree
@@ -479,12 +480,14 @@ def handler_detail_partial(
     handler = store.get_handler_registration(facet_name)
     active_tasks = store.get_tasks_by_facet_name(facet_name, states=["pending", "running"])
     recent_logs = store.get_step_logs_by_facet(facet_name, limit=20)
+    facet_info = lookup_facet_info(facet_name, store)
     return request.app.state.templates.TemplateResponse(
         request,
         "v2/handlers/_detail_content.html",
         {
             "handler": handler,
             "active_tasks": active_tasks,
+            "facet_info": facet_info,
             "recent_logs": recent_logs,
         },
     )
@@ -631,6 +634,7 @@ def handler_detail(
     handler = store.get_handler_registration(facet_name)
     active_tasks = store.get_tasks_by_facet_name(facet_name, states=["pending", "running"])
     recent_logs = store.get_step_logs_by_facet(facet_name, limit=20)
+    facet_info = lookup_facet_info(facet_name, store)
     return request.app.state.templates.TemplateResponse(
         request,
         "v2/handlers/detail.html",
@@ -639,6 +643,7 @@ def handler_detail(
             "active_tab": "handlers",
             "active_tasks": active_tasks,
             "recent_logs": recent_logs,
+            "facet_info": facet_info,
         },
     )
 

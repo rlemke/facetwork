@@ -352,3 +352,119 @@ def search_all(query: str, store: Any) -> list[dict]:
 
     # Limit to top 20 results
     return results[:20]
+
+
+# ---------------------------------------------------------------------------
+# Facet definition lookup
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FacetInfo:
+    """Extracted facet metadata for display on handler detail pages."""
+
+    description: str = ""
+    params: list[dict[str, Any]] = None  # type: ignore[assignment]
+    returns: list[dict[str, Any]] = None  # type: ignore[assignment]
+    doc: dict[str, Any] | None = None
+    kind: str = ""  # "event facet", "facet", "workflow"
+
+    def __post_init__(self):
+        if self.params is None:
+            self.params = []
+        if self.returns is None:
+            self.returns = []
+
+
+def lookup_facet_info(facet_name: str, store) -> FacetInfo | None:
+    """Look up facet definition from published AFL sources.
+
+    Given a fully-qualified facet name like ``deploy.Rollback.RollbackDeployment``,
+    searches published sources for the namespace and extracts the facet's
+    documentation, parameters, and return types.
+
+    Returns None if the source is not published or parsing fails.
+    """
+    try:
+        from afl import emit_dict, parse
+    except ImportError:
+        return None
+
+    # Try progressively shorter namespace prefixes
+    # e.g. "a.b.C" → try "a.b", then "a"
+    parts = facet_name.rsplit(".", 1)
+    if len(parts) < 2:
+        return None
+
+    namespace_name = parts[0]
+    short_name = parts[1]
+
+    # Collect candidate namespace names (exact + parent prefixes)
+    candidates = []
+    ns_parts = namespace_name.split(".")
+    for i in range(len(ns_parts), 0, -1):
+        candidates.append(".".join(ns_parts[:i]))
+
+    source = None
+    for candidate in candidates:
+        try:
+            source = store.get_source_by_namespace(candidate)
+            if source is not None:
+                break
+        except Exception:
+            continue
+
+    if source is None:
+        return None
+
+    try:
+        tree = parse(source.source_text)
+        program = emit_dict(tree)
+    except Exception:
+        return None
+
+    # Walk the declarations tree to find the matching facet
+    return _find_facet_in_declarations(
+        program.get("declarations", []), facet_name, short_name
+    )
+
+
+def _find_facet_in_declarations(
+    declarations: list[dict], full_name: str, short_name: str, prefix: str = ""
+) -> FacetInfo | None:
+    """Recursively search declarations for a facet matching the given name."""
+    for decl in declarations:
+        decl_type = decl.get("type", "")
+
+        if decl_type == "Namespace":
+            ns_name = decl.get("name", "")
+            qualified = f"{prefix}.{ns_name}" if prefix else ns_name
+            result = _find_facet_in_declarations(
+                decl.get("declarations", []), full_name, short_name, qualified
+            )
+            if result is not None:
+                return result
+
+        elif decl_type in ("EventFacetDecl", "FacetDecl", "WorkflowDecl"):
+            decl_name = decl.get("name", "")
+            qualified = f"{prefix}.{decl_name}" if prefix else decl_name
+
+            if qualified == full_name or decl_name == short_name:
+                kind_map = {
+                    "EventFacetDecl": "event facet",
+                    "FacetDecl": "facet",
+                    "WorkflowDecl": "workflow",
+                }
+                doc = decl.get("doc")
+                params = decl.get("params", [])
+                returns = decl.get("returns", [])
+
+                return FacetInfo(
+                    description=doc.get("description", "") if doc else "",
+                    params=params,
+                    returns=returns,
+                    doc=doc,
+                    kind=kind_map.get(decl_type, ""),
+                )
+
+    return None

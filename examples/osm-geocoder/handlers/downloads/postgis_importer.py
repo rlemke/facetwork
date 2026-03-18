@@ -1,7 +1,8 @@
 """PostGIS import engine for OSM PBF files.
 
 Parses PBF files via pyosmium and imports nodes/ways into PostGIS
-via psycopg2. Supports batched inserts and upsert semantics.
+via psycopg2. Supports batched inserts, upsert semantics, and
+per-region partitioned imports with skip-if-imported logic.
 """
 
 import json
@@ -34,24 +35,29 @@ except ImportError:
     HAS_PSYCOPG2 = False
     psycopg2 = None
 
-DEFAULT_POSTGIS_URL = "postgresql://afl:afl@localhost:5432/afl_gis"
+DEFAULT_POSTGIS_URL = "postgresql://afl_osm:afl_osm_2024@localhost:5432/osm"
 
 # DDL statements
 CREATE_POSTGIS_EXT = "CREATE EXTENSION IF NOT EXISTS postgis"
+CREATE_HSTORE_EXT = "CREATE EXTENSION IF NOT EXISTS hstore"
 
 CREATE_NODES_TABLE = """
 CREATE TABLE IF NOT EXISTS osm_nodes (
-    osm_id BIGINT PRIMARY KEY,
+    osm_id BIGINT NOT NULL,
+    region TEXT NOT NULL DEFAULT '',
     tags JSONB,
-    geom geometry(Point, 4326)
+    geom geometry(Point, 4326),
+    PRIMARY KEY (osm_id, region)
 )
 """
 
 CREATE_WAYS_TABLE = """
 CREATE TABLE IF NOT EXISTS osm_ways (
-    osm_id BIGINT PRIMARY KEY,
+    osm_id BIGINT NOT NULL,
+    region TEXT NOT NULL DEFAULT '',
     tags JSONB,
-    geom geometry(LineString, 4326)
+    geom geometry(LineString, 4326),
+    PRIMARY KEY (osm_id, region)
 )
 """
 
@@ -60,6 +66,7 @@ CREATE TABLE IF NOT EXISTS osm_import_log (
     id SERIAL PRIMARY KEY,
     url TEXT,
     path TEXT,
+    region TEXT NOT NULL DEFAULT '',
     node_count INT,
     way_count INT,
     imported_at TIMESTAMPTZ DEFAULT NOW()
@@ -72,30 +79,36 @@ CREATE_NODES_GEOM_IDX = (
 CREATE_NODES_TAGS_IDX = (
     "CREATE INDEX IF NOT EXISTS idx_osm_nodes_tags ON osm_nodes USING GIN (tags)"
 )
+CREATE_NODES_REGION_IDX = (
+    "CREATE INDEX IF NOT EXISTS idx_osm_nodes_region ON osm_nodes (region)"
+)
 CREATE_WAYS_GEOM_IDX = "CREATE INDEX IF NOT EXISTS idx_osm_ways_geom ON osm_ways USING GIST (geom)"
 CREATE_WAYS_TAGS_IDX = "CREATE INDEX IF NOT EXISTS idx_osm_ways_tags ON osm_ways USING GIN (tags)"
+CREATE_WAYS_REGION_IDX = (
+    "CREATE INDEX IF NOT EXISTS idx_osm_ways_region ON osm_ways (region)"
+)
 
 UPSERT_NODES_SQL = """
-INSERT INTO osm_nodes (osm_id, tags, geom)
+INSERT INTO osm_nodes (osm_id, region, tags, geom)
 VALUES %s
-ON CONFLICT (osm_id) DO UPDATE SET tags = EXCLUDED.tags, geom = EXCLUDED.geom
+ON CONFLICT (osm_id, region) DO UPDATE SET tags = EXCLUDED.tags, geom = EXCLUDED.geom
 """
 
 UPSERT_WAYS_SQL = """
-INSERT INTO osm_ways (osm_id, tags, geom)
+INSERT INTO osm_ways (osm_id, region, tags, geom)
 VALUES %s
-ON CONFLICT (osm_id) DO UPDATE SET tags = EXCLUDED.tags, geom = EXCLUDED.geom
+ON CONFLICT (osm_id, region) DO UPDATE SET tags = EXCLUDED.tags, geom = EXCLUDED.geom
 """
 
 INSERT_LOG_SQL = """
-INSERT INTO osm_import_log (url, path, node_count, way_count)
-VALUES (%s, %s, %s, %s)
+INSERT INTO osm_import_log (url, path, region, node_count, way_count)
+VALUES (%s, %s, %s, %s, %s)
 """
 
 CHECK_PRIOR_IMPORT_SQL = """
 SELECT id, node_count, way_count, imported_at
 FROM osm_import_log
-WHERE url = %s
+WHERE region = %s
 ORDER BY imported_at DESC
 LIMIT 1
 """
@@ -110,6 +123,7 @@ class ImportResult:
     postgis_url: str
     was_prior_import: bool
     imported_at: str
+    region: str
 
 
 def get_postgis_url() -> str:
@@ -126,23 +140,27 @@ def ensure_schema(conn) -> None:
     """Create PostGIS extension and tables if they don't exist."""
     with conn.cursor() as cur:
         cur.execute(CREATE_POSTGIS_EXT)
+        cur.execute(CREATE_HSTORE_EXT)
         cur.execute(CREATE_NODES_TABLE)
         cur.execute(CREATE_WAYS_TABLE)
         cur.execute(CREATE_IMPORT_LOG_TABLE)
         cur.execute(CREATE_NODES_GEOM_IDX)
         cur.execute(CREATE_NODES_TAGS_IDX)
+        cur.execute(CREATE_NODES_REGION_IDX)
         cur.execute(CREATE_WAYS_GEOM_IDX)
         cur.execute(CREATE_WAYS_TAGS_IDX)
+        cur.execute(CREATE_WAYS_REGION_IDX)
     conn.commit()
 
 
 class NodeCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
     """Collects OSM nodes and flushes them to PostGIS in batches."""
 
-    def __init__(self, conn, batch_size: int = 10000, progress=None):
+    def __init__(self, conn, region: str = "", batch_size: int = 10000, progress=None):
         if HAS_OSMIUM:
             super().__init__()
         self.conn = conn
+        self.region = region
         self.batch_size = batch_size
         self.batch: list[tuple] = []
         self.total_count: int = 0
@@ -159,7 +177,7 @@ class NodeCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
         lon = n.location.lon
         lat = n.location.lat
         ewkt = f"SRID=4326;POINT({lon} {lat})"
-        self.batch.append((n.id, json.dumps(tags), ewkt))
+        self.batch.append((n.id, self.region, json.dumps(tags), ewkt))
 
         if len(self.batch) >= self.batch_size:
             self._flush()
@@ -173,7 +191,7 @@ class NodeCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
                 cur,
                 UPSERT_NODES_SQL,
                 self.batch,
-                template="(%s, %s, ST_GeomFromEWKT(%s))",
+                template="(%s, %s, %s, ST_GeomFromEWKT(%s))",
             )
         self.conn.commit()
         self.total_count += len(self.batch)
@@ -193,10 +211,11 @@ class WayCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
     second pass builds LINESTRING geometries from node refs.
     """
 
-    def __init__(self, conn, batch_size: int = 10000, progress=None):
+    def __init__(self, conn, region: str = "", batch_size: int = 10000, progress=None):
         if HAS_OSMIUM:
             super().__init__()
         self.conn = conn
+        self.region = region
         self.batch_size = batch_size
         self.batch: list[tuple] = []
         self.total_count: int = 0
@@ -233,7 +252,7 @@ class WayCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
                 continue
 
             ewkt = f"SRID=4326;LINESTRING({', '.join(coords)})"
-            self.batch.append((osm_id, json.dumps(tags), ewkt))
+            self.batch.append((osm_id, self.region, json.dumps(tags), ewkt))
 
             if len(self.batch) >= self.batch_size:
                 self._flush_batch()
@@ -251,7 +270,7 @@ class WayCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
                 cur,
                 UPSERT_WAYS_SQL,
                 self.batch,
-                template="(%s, %s, ST_GeomFromEWKT(%s))",
+                template="(%s, %s, %s, ST_GeomFromEWKT(%s))",
             )
         self.conn.commit()
         self.total_count += len(self.batch)
@@ -268,6 +287,8 @@ def import_to_postgis(
     pbf_path: str,
     postgis_url: str | None = None,
     source_url: str = "",
+    region: str = "",
+    force: bool = False,
     batch_size: int = 10000,
     step_log=None,
 ) -> ImportResult:
@@ -277,7 +298,10 @@ def import_to_postgis(
         pbf_path: Path to the OSM PBF file
         postgis_url: PostgreSQL connection URL (reads AFL_POSTGIS_URL if None)
         source_url: Original download URL for import log
+        region: Region identifier (e.g. "france", "california")
+        force: Re-import even if region was previously imported
         batch_size: Number of rows per batch insert
+        step_log: Optional callback for progress reporting
 
     Returns:
         ImportResult with counts and metadata
@@ -294,53 +318,67 @@ def import_to_postgis(
     try:
         ensure_schema(conn)
 
-        # Check for prior import
-        was_prior = False
-        if source_url:
+        # Check for prior import of this region
+        if region:
             with conn.cursor() as cur:
-                cur.execute(CHECK_PRIOR_IMPORT_SQL, (source_url,))
+                cur.execute(CHECK_PRIOR_IMPORT_SQL, (region,))
                 row = cur.fetchone()
                 if row is not None:
-                    was_prior = True
+                    if not force:
+                        log.info(
+                            "Region '%s' already imported (nodes=%d, ways=%d, at=%s), skipping",
+                            region, row[1], row[2], row[3],
+                        )
+                        if step_log:
+                            step_log(
+                                f"PostGisImport: region '{region}' already imported "
+                                f"({row[1]} nodes, {row[2]} ways), skipping",
+                            )
+                        return ImportResult(
+                            node_count=row[1],
+                            way_count=row[2],
+                            postgis_url=sanitize_url(postgis_url),
+                            was_prior_import=True,
+                            imported_at=str(row[3]),
+                            region=region,
+                        )
                     log.info(
-                        "Prior import found (id=%d, nodes=%d, ways=%d, at=%s)",
-                        row[0],
-                        row[1],
-                        row[2],
-                        row[3],
+                        "Re-importing region '%s' (force=True, prior: nodes=%d, ways=%d)",
+                        region, row[1], row[2],
                     )
 
         # Pass 1: import nodes
-        log.info("Importing nodes from %s", pbf_path)
+        log.info("Importing nodes from %s (region=%s)", pbf_path, region or "<global>")
         file_size = get_file_size(str(pbf_path))
         node_progress = ScanProgressTracker(file_size, step_log, label="PostGIS Nodes")
-        node_collector = NodeCollector(conn, batch_size=batch_size, progress=node_progress)
+        node_collector = NodeCollector(conn, region=region, batch_size=batch_size, progress=node_progress)
         node_collector.apply_file(pbf_path, locations=True)
         node_count = node_collector.finalize()
         node_progress.finish()
-        log.info("Imported %d nodes", node_count)
+        log.info("Imported %d nodes (region=%s)", node_count, region or "<global>")
 
         # Pass 2: import ways (needs node locations)
-        log.info("Importing ways from %s", pbf_path)
+        log.info("Importing ways from %s (region=%s)", pbf_path, region or "<global>")
         way_progress = ScanProgressTracker(file_size, step_log, label="PostGIS Ways")
-        way_collector = WayCollector(conn, batch_size=batch_size, progress=way_progress)
+        way_collector = WayCollector(conn, region=region, batch_size=batch_size, progress=way_progress)
         way_collector.apply_file(pbf_path, locations=True)
         way_count = way_collector.finalize()
         way_progress.finish()
-        log.info("Imported %d ways", way_count)
+        log.info("Imported %d ways (region=%s)", way_count, region or "<global>")
 
         # Log the import
         now = datetime.now(UTC).isoformat()
         with conn.cursor() as cur:
-            cur.execute(INSERT_LOG_SQL, (source_url, pbf_path, node_count, way_count))
+            cur.execute(INSERT_LOG_SQL, (source_url, pbf_path, region, node_count, way_count))
         conn.commit()
 
         return ImportResult(
             node_count=node_count,
             way_count=way_count,
             postgis_url=sanitize_url(postgis_url),
-            was_prior_import=was_prior,
+            was_prior_import=False,
             imported_at=now,
+            region=region,
         )
     finally:
         conn.close()

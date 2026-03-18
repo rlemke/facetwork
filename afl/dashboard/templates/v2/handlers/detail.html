@@ -11,6 +11,9 @@
     <p>
         <span class="mono">{{ handler.facet_name }}</span>
         &mdash; v{{ handler.version }}
+        {% if facet_info and facet_info.kind %}
+        <span class="badge badge-primary" style="margin-left:0.5em">{{ facet_info.kind }}</span>
+        {% endif %}
     </p>
 </hgroup>
 

@@ -1,0 +1,29 @@
+// pgRouting topology construction and validation.
+//
+// Uses osm2pgrouting to import OSM road network into pgRouting tables,
+// and pgr_dijkstra for shortest-path queries.
+//
+// Prerequisites: Compile with osmtypes.afl
+
+/** pgRouting topology construction, validation, and cleanup. */
+namespace osm.ops.PgRouting {
+    use osm.types
+
+    /** Builds a pgRouting topology from a cached OSM PBF file for a region. */
+    event facet BuildRoutingTopology(
+        cache: OSMCache,
+        region: String,
+        profile: String = "car",
+        recreate: Boolean = false
+    ) => (topology: RoutingTopology)
+
+    /** Validates that the routing topology has connected nodes and edges. */
+    event facet ValidateTopology(
+        topology: RoutingTopology
+    ) => (valid: Boolean, nodeCount: Long, edgeCount: Long, components: Long)
+
+    /** Drops the routing topology tables for a region. */
+    event facet CleanTopology(
+        region: String
+    ) => (deleted: Boolean)
+}

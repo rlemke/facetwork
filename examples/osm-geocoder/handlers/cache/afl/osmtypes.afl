@@ -22,6 +22,17 @@ namespace osm.types {
       edgeCount: Long
    }
 
+   /** pgRouting topology built from OSM road network data. */
+   schema RoutingTopology {
+      postgisUrl: String,
+      region: String,
+      profile: String,
+      nodeCount: Long,
+      edgeCount: Long,
+      date: String,
+      wasCached: Boolean
+   }
+
    /** GTFS public transit feed with agency and shape metadata. */
    schema GTFSFeed {
       url: String,
