@@ -8,6 +8,13 @@
         <tr><th>Statement</th><td>{% if step.statement_name %}<strong>{{ step.statement_name }}</strong>{% elif names.statement %}<strong>{{ names.statement }}</strong>{% endif %}{% if step.statement_name or names.statement %} — {% endif %}<span class="mono">{{ step.statement_id or "—" }}</span></td></tr>
         <tr><th>Container</th><td>{% if names.container %}<strong>{{ names.container }}</strong> — {% endif %}<span class="mono">{{ step.container_id or "—" }}</span></td></tr>
         <tr><th>Block</th><td>{% if names.block %}<strong>{{ names.block }}</strong> — {% endif %}<span class="mono">{{ step.block_id or "—" }}</span></td></tr>
+        {% if step_logs %}
+        <tr><th>Started</th><td>{{ step_logs[0].time|timestamp }}</td></tr>
+        <tr><th>Last Activity</th><td>{{ step_logs[-1].time|timestamp }}</td></tr>
+        {% if step_logs|length > 1 %}
+        <tr><th>Duration</th><td>{{ (step_logs[-1].time - step_logs[0].time)|duration_long }}</td></tr>
+        {% endif %}
+        {% endif %}
     </table>
 </article>
 
