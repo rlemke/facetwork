@@ -516,6 +516,7 @@ def handler_create(
     facet_name: str = Form(""),
     module_uri: str = Form(""),
     entrypoint: str = Form("handle"),
+    timeout_ms: int = Form(30000),
     description: str = Form(""),
     store=Depends(get_store),
 ):
@@ -550,6 +551,7 @@ def handler_create(
         facet_name=facet_name.strip(),
         module_uri=module_uri.strip(),
         entrypoint=entrypoint.strip() or "handle",
+        timeout_ms=timeout_ms if timeout_ms > 0 else 30000,
         metadata={"description": description.strip()} if description.strip() else {},
         created=now_ms,
         updated=now_ms,
@@ -585,6 +587,7 @@ def handler_update(
     request: Request,
     module_uri: str = Form(""),
     entrypoint: str = Form("handle"),
+    timeout_ms: int = Form(0),
     description: str = Form(""),
     store=Depends(get_store),
 ):
@@ -602,7 +605,7 @@ def handler_update(
         entrypoint=entrypoint.strip() or handler.entrypoint,
         version=handler.version,
         checksum=handler.checksum,
-        timeout_ms=handler.timeout_ms,
+        timeout_ms=timeout_ms if timeout_ms > 0 else handler.timeout_ms,
         requirements=handler.requirements,
         metadata={**handler.metadata, "description": description.strip()}
         if description.strip()

@@ -56,6 +56,15 @@
                placeholder="handle">
     </label>
 
+    <label for="timeout_ms">
+        Timeout (ms)
+        <input type="number" id="timeout_ms" name="timeout_ms"
+               value="{{ handler.timeout_ms if handler else 30000 }}"
+               min="1000" step="1000"
+               placeholder="30000">
+        <small>Maximum execution time in milliseconds. Default: 30000 (30s).</small>
+    </label>
+
     <label for="description">
         Description
         <textarea id="description" name="description" rows="3"
