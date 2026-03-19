@@ -11,7 +11,6 @@ import logging
 import os
 import re
 import subprocess
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
@@ -25,9 +24,7 @@ NAMESPACE = "osm.ops.PgRouting"
 OSM2PGROUTING_BIN = os.environ.get("OSM2PGROUTING_BIN", "osm2pgrouting")
 
 # osm2pgrouting mapconfig files (ship with the osm2pgrouting package)
-_MAPCONFIG_DIR = os.environ.get(
-    "OSM2PGROUTING_MAPCONFIG_DIR", "/usr/share/osm2pgrouting"
-)
+_MAPCONFIG_DIR = os.environ.get("OSM2PGROUTING_MAPCONFIG_DIR", "/usr/share/osm2pgrouting")
 
 PROFILE_CONFIGS = {
     "car": "mapconfig_for_cars.xml",
@@ -140,13 +137,20 @@ def _run_osm2pgrouting(
 
     cmd = [
         OSM2PGROUTING_BIN,
-        "--f", pbf_path,
-        "--dbname", dsn["dbname"],
-        "--username", dsn["user"],
-        "--host", dsn["host"],
-        "--port", dsn["port"],
-        "--prefix", f"{prefix}_",
-        "--conf", mapconfig_path,
+        "--f",
+        pbf_path,
+        "--dbname",
+        dsn["dbname"],
+        "--username",
+        dsn["user"],
+        "--host",
+        dsn["host"],
+        "--port",
+        dsn["port"],
+        "--prefix",
+        f"{prefix}_",
+        "--conf",
+        mapconfig_path,
     ]
     if dsn["password"]:
         cmd.extend(["--password", dsn["password"]])
@@ -243,8 +247,13 @@ def _build_topology_handler(payload: dict) -> dict:
                         )
                     return {
                         "topology": _make_topology_result(
-                            postgis_url, region, profile, edge_count, node_count,
-                            True, str(row[3]),
+                            postgis_url,
+                            region,
+                            profile,
+                            edge_count,
+                            node_count,
+                            True,
+                            str(row[3]),
                         )
                     }
 
@@ -268,7 +277,12 @@ def _build_topology_handler(payload: dict) -> dict:
 
         return {
             "topology": _make_topology_result(
-                postgis_url, region, profile, edge_count, node_count, False,
+                postgis_url,
+                region,
+                profile,
+                edge_count,
+                node_count,
+                False,
             )
         }
     finally:

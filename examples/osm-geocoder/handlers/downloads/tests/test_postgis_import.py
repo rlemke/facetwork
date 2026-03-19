@@ -146,8 +146,12 @@ class TestPostgisImporterModule:
     def test_import_result_has_region_field(self):
         mod = _osm_import("postgis_importer")
         result = mod.ImportResult(
-            node_count=10, way_count=5, postgis_url="x",
-            was_prior_import=False, imported_at="now", region="france",
+            node_count=10,
+            way_count=5,
+            postgis_url="x",
+            was_prior_import=False,
+            imported_at="now",
+            region="france",
         )
         assert result.region == "france"
 
@@ -350,15 +354,16 @@ class TestPostgisImportLive:
             ]
             with conn.cursor() as cur:
                 psycopg2.extras.execute_values(
-                    cur, mod.UPSERT_NODES_SQL, rows,
+                    cur,
+                    mod.UPSERT_NODES_SQL,
+                    rows,
                     template="(%s, %s, %s, ST_GeomFromEWKT(%s))",
                 )
             conn.commit()
 
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT region, tags->>'name' FROM osm_nodes "
-                    "WHERE osm_id = 1 ORDER BY region"
+                    "SELECT region, tags->>'name' FROM osm_nodes WHERE osm_id = 1 ORDER BY region"
                 )
                 results = cur.fetchall()
             assert len(results) == 2

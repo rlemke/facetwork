@@ -48,7 +48,9 @@ while True:
 
 def _local_cache_dir() -> str:
     from afl.config import get_output_base
+
     return os.path.join(get_output_base(), "cache", "osm-local")
+
 
 # Files larger than this are copied locally before parsing (100 MB)
 _SIZE_THRESHOLD = 100 * 1024 * 1024

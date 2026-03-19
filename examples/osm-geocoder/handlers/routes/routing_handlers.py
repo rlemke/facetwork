@@ -249,14 +249,16 @@ def compute_pairwise_routes(payload: dict) -> dict:
         region = topology.get("region", "")
         profile = topology.get("profile", "car")
         import re
+
         prefix = re.sub(r"[^a-z0-9]", "_", region.lower().strip())
     else:
-        graph_dir = graph.get("graphDir", "")
         profile = graph.get("profile", "car")
 
     if step_log:
         backend = "pgRouting" if use_pgrouting else "GraphHopper"
-        step_log(f"ComputePairwiseRoutes: computing routes from {cities_path} ({profile} profile, {backend})")
+        step_log(
+            f"ComputePairwiseRoutes: computing routes from {cities_path} ({profile} profile, {backend})"
+        )
     if not cities_path or not os.path.exists(cities_path):
         return {"result": _empty_result(profile)}
 

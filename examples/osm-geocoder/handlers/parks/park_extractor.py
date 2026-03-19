@@ -343,7 +343,12 @@ def filter_parks_by_type(
                 match = classified == park_type.value
             if match:
                 pc = props.get("protect_class", "")
-                if protect_classes != "*" and protect_class_set and pc and pc not in protect_class_set:
+                if (
+                    protect_classes != "*"
+                    and protect_class_set
+                    and pc
+                    and pc not in protect_class_set
+                ):
                     continue
                 filtered.append(feature)
                 total_area += props.get("area_km2", 0.0)

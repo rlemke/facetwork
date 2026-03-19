@@ -377,7 +377,9 @@ def download_congressional_districts(
     """
     if congress_number is None:
         congress_number = _congress_for_year(year)
-    return download_tiger(DISTRICT_CONGRESSIONAL, year, state_fips=state_fips, congress_number=congress_number)
+    return download_tiger(
+        DISTRICT_CONGRESSIONAL, year, state_fips=state_fips, congress_number=congress_number
+    )
 
 
 def download_state_senate_districts(state_fips: str, year: int = 2023) -> dict:

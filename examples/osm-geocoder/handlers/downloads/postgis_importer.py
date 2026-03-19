@@ -79,14 +79,10 @@ CREATE_NODES_GEOM_IDX = (
 CREATE_NODES_TAGS_IDX = (
     "CREATE INDEX IF NOT EXISTS idx_osm_nodes_tags ON osm_nodes USING GIN (tags)"
 )
-CREATE_NODES_REGION_IDX = (
-    "CREATE INDEX IF NOT EXISTS idx_osm_nodes_region ON osm_nodes (region)"
-)
+CREATE_NODES_REGION_IDX = "CREATE INDEX IF NOT EXISTS idx_osm_nodes_region ON osm_nodes (region)"
 CREATE_WAYS_GEOM_IDX = "CREATE INDEX IF NOT EXISTS idx_osm_ways_geom ON osm_ways USING GIST (geom)"
 CREATE_WAYS_TAGS_IDX = "CREATE INDEX IF NOT EXISTS idx_osm_ways_tags ON osm_ways USING GIN (tags)"
-CREATE_WAYS_REGION_IDX = (
-    "CREATE INDEX IF NOT EXISTS idx_osm_ways_region ON osm_ways (region)"
-)
+CREATE_WAYS_REGION_IDX = "CREATE INDEX IF NOT EXISTS idx_osm_ways_region ON osm_ways (region)"
 
 UPSERT_NODES_SQL = """
 INSERT INTO osm_nodes (osm_id, region, tags, geom)
@@ -327,7 +323,10 @@ def import_to_postgis(
                     if not force:
                         log.info(
                             "Region '%s' already imported (nodes=%d, ways=%d, at=%s), skipping",
-                            region, row[1], row[2], row[3],
+                            region,
+                            row[1],
+                            row[2],
+                            row[3],
                         )
                         if step_log:
                             step_log(
@@ -344,14 +343,18 @@ def import_to_postgis(
                         )
                     log.info(
                         "Re-importing region '%s' (force=True, prior: nodes=%d, ways=%d)",
-                        region, row[1], row[2],
+                        region,
+                        row[1],
+                        row[2],
                     )
 
         # Pass 1: import nodes
         log.info("Importing nodes from %s (region=%s)", pbf_path, region or "<global>")
         file_size = get_file_size(str(pbf_path))
         node_progress = ScanProgressTracker(file_size, step_log, label="PostGIS Nodes")
-        node_collector = NodeCollector(conn, region=region, batch_size=batch_size, progress=node_progress)
+        node_collector = NodeCollector(
+            conn, region=region, batch_size=batch_size, progress=node_progress
+        )
         node_collector.apply_file(pbf_path, locations=True)
         node_count = node_collector.finalize()
         node_progress.finish()
@@ -360,7 +363,9 @@ def import_to_postgis(
         # Pass 2: import ways (needs node locations)
         log.info("Importing ways from %s (region=%s)", pbf_path, region or "<global>")
         way_progress = ScanProgressTracker(file_size, step_log, label="PostGIS Ways")
-        way_collector = WayCollector(conn, region=region, batch_size=batch_size, progress=way_progress)
+        way_collector = WayCollector(
+            conn, region=region, batch_size=batch_size, progress=way_progress
+        )
         way_collector.apply_file(pbf_path, locations=True)
         way_count = way_collector.finalize()
         way_progress.finish()

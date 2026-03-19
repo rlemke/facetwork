@@ -18,10 +18,9 @@ Run with:
 """
 
 import importlib
-import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -149,36 +148,44 @@ class TestPgroutingDispatch:
     def test_build_requires_path(self):
         mod = _osm_import("pgrouting_handlers")
         with pytest.raises(ValueError, match="No PBF path"):
-            mod.handle({
-                "_facet_name": "osm.ops.PgRouting.BuildRoutingTopology",
-                "cache": {"path": ""},
-                "region": "test",
-            })
+            mod.handle(
+                {
+                    "_facet_name": "osm.ops.PgRouting.BuildRoutingTopology",
+                    "cache": {"path": ""},
+                    "region": "test",
+                }
+            )
 
     def test_build_requires_region(self):
         mod = _osm_import("pgrouting_handlers")
         with pytest.raises(ValueError, match="Region is required"):
-            mod.handle({
-                "_facet_name": "osm.ops.PgRouting.BuildRoutingTopology",
-                "cache": {"path": "/tmp/test.pbf"},
-                "region": "",
-            })
+            mod.handle(
+                {
+                    "_facet_name": "osm.ops.PgRouting.BuildRoutingTopology",
+                    "cache": {"path": "/tmp/test.pbf"},
+                    "region": "",
+                }
+            )
 
     def test_validate_returns_invalid_for_empty(self):
         mod = _osm_import("pgrouting_handlers")
-        result = mod.handle({
-            "_facet_name": "osm.ops.PgRouting.ValidateTopology",
-            "topology": {"region": ""},
-        })
+        result = mod.handle(
+            {
+                "_facet_name": "osm.ops.PgRouting.ValidateTopology",
+                "topology": {"region": ""},
+            }
+        )
         assert result["valid"] is False
         assert result["nodeCount"] == 0
 
     def test_clean_returns_false_for_empty(self):
         mod = _osm_import("pgrouting_handlers")
-        result = mod.handle({
-            "_facet_name": "osm.ops.PgRouting.CleanTopology",
-            "region": "",
-        })
+        result = mod.handle(
+            {
+                "_facet_name": "osm.ops.PgRouting.CleanTopology",
+                "region": "",
+            }
+        )
         assert result["deleted"] is False
 
 
@@ -212,9 +219,7 @@ class TestPgroutingLive:
         try:
             pgr_mod._ensure_pgrouting(conn)
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT 1 FROM pg_extension WHERE extname = 'pgrouting'"
-                )
+                cur.execute("SELECT 1 FROM pg_extension WHERE extname = 'pgrouting'")
                 assert cur.fetchone() is not None
         finally:
             conn.close()

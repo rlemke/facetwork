@@ -515,7 +515,9 @@ def verify_pbf(
     """
     if output_dir is None:
         import os
+
         from afl.config import get_output_base
+
         output_dir = os.path.join(get_output_base(), "osm", "osmose")
 
     if not HAS_OSMIUM:
@@ -577,7 +579,9 @@ def verify_geojson(
     """
     if output_dir is None:
         import os
+
         from afl.config import get_output_base
+
         output_dir = os.path.join(get_output_base(), "osm", "osmose")
 
     issues: list[dict[str, Any]] = []

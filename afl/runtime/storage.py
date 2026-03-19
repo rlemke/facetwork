@@ -368,8 +368,10 @@ class _WebHDFSWriteStream:
 _local_backend: LocalStorageBackend | None = None
 _hdfs_backends: dict[str, HDFSStorageBackend] = {}
 
+
 def _default_local_cache() -> str:
     from afl.config import get_output_base
+
     return os.path.join(get_output_base(), "cache", "osm-local")
 
 

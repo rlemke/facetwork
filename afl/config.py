@@ -242,7 +242,9 @@ class StorageConfig:
     def from_dict(cls, data: dict[str, Any]) -> StorageConfig:
         """Create from a dictionary (supports camelCase and snake_case keys)."""
         return cls(
-            local_output_dir=str(data.get("local_output_dir", data.get("localOutputDir", _OUTPUT_BASE_DEFAULT))),
+            local_output_dir=str(
+                data.get("local_output_dir", data.get("localOutputDir", _OUTPUT_BASE_DEFAULT))
+            ),
             hdfs_webhdfs_port=int(data.get("hdfs_webhdfs_port", data.get("hdfsWebhdfsPort", 9870))),
             hdfs_max_retries=int(data.get("hdfs_max_retries", data.get("hdfsMaxRetries", 3))),
             hdfs_retry_delay=float(data.get("hdfs_retry_delay", data.get("hdfsRetryDelay", 1.0))),

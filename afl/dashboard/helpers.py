@@ -424,9 +424,7 @@ def lookup_facet_info(facet_name: str, store) -> FacetInfo | None:
         return None
 
     # Walk the declarations tree to find the matching facet
-    return _find_facet_in_declarations(
-        program.get("declarations", []), facet_name, short_name
-    )
+    return _find_facet_in_declarations(program.get("declarations", []), facet_name, short_name)
 
 
 def _find_facet_in_declarations(

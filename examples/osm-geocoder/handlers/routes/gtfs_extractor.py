@@ -36,7 +36,9 @@ except ImportError:
 from afl.config import get_output_base
 
 _LOCAL_OUTPUT = get_output_base()
-GTFS_CACHE_DIR = os.environ.get("AFL_GTFS_CACHE_DIR", os.path.join(_LOCAL_OUTPUT, "osm", "gtfs-cache"))
+GTFS_CACHE_DIR = os.environ.get(
+    "AFL_GTFS_CACHE_DIR", os.path.join(_LOCAL_OUTPUT, "osm", "gtfs-cache")
+)
 
 # Safety cap for grid-based analyses
 MAX_GRID_CELLS = 10_000

@@ -29,7 +29,7 @@ namespace osm.Transit.GTFS {
     }
 
     /** Extracted transit route geometries. */
-    schema RouteFeatures {
+    schema GTFSRouteFeatures {
         output_path: String,
         route_count: Long,
         has_shapes: Boolean,
@@ -130,7 +130,7 @@ namespace osm.Transit.GTFS {
     event facet ExtractStops(feed: GTFSFeed) => (result: StopResult)
 
     /** Extracts route geometries to GeoJSON linestrings. */
-    event facet ExtractRoutes(feed: GTFSFeed) => (result: RouteFeatures)
+    event facet ExtractRoutes(feed: GTFSFeed) => (result: GTFSRouteFeatures)
 
     /** Computes trips-per-stop-per-day from stop_times and calendar. */
     event facet ServiceFrequency(feed: GTFSFeed) => (result: FrequencyResult)

@@ -52,7 +52,10 @@ def _postgis_import_handler(payload: dict) -> dict:
         from .postgis_importer import import_to_postgis
 
         result = import_to_postgis(
-            pbf_path, source_url=source_url, region=region, force=force,
+            pbf_path,
+            source_url=source_url,
+            region=region,
+            force=force,
         )
         if step_log:
             if result.was_prior_import and not force:
@@ -105,12 +108,12 @@ def _postgis_import_batch_handler(payload: dict) -> dict:
     if not HAS_OSMIUM or not HAS_PSYCOPG2:
         log.warning(
             "PostGisImportBatch: skipping (osmium=%s, psycopg2=%s)",
-            HAS_OSMIUM, HAS_PSYCOPG2,
+            HAS_OSMIUM,
+            HAS_PSYCOPG2,
         )
         return {"stats": {"url": "", "path": "", "date": "", "size": 0, "wasInCache": False}}
 
     from ..shared.downloader import download
-
     from .postgis_importer import import_to_postgis
 
     total_nodes = 0
@@ -128,7 +131,10 @@ def _postgis_import_batch_handler(payload: dict) -> dict:
                 continue
 
             result = import_to_postgis(
-                pbf_path, source_url=source_url, region=region_name, force=force,
+                pbf_path,
+                source_url=source_url,
+                region=region_name,
+                force=force,
             )
             total_nodes += result.node_count
             total_ways += result.way_count
