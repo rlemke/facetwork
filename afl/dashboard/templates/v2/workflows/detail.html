@@ -55,7 +55,7 @@
 </hgroup>
 
 <div id="workflow-summary"
-     {% if runner.state == 'running' or runner.state == 'paused' %}hx-get="/v2/workflows/{{ runner.uuid }}/summary/partial" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
+     {% if runner.state == 'running' or runner.state == 'paused' %}hx-get="/v2/workflows/{{ runner.uuid }}/summary/partial" hx-trigger="every 300s" hx-swap="innerHTML"{% endif %}>
     {% include "v2/workflows/_summary.html" %}
 </div>
 
@@ -112,7 +112,7 @@
     </button>
 </div>
 <div class="step-tree-container" id="v2-step-tree-content"
-     {% if runner.state == 'running' %}hx-get="/v2/workflows/{{ runner.uuid }}/steps/partial?view=tree" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
+     {% if runner.state == 'running' %}hx-get="/v2/workflows/{{ runner.uuid }}/steps/partial?view=tree" hx-trigger="every 300s" hx-swap="innerHTML"{% endif %}>
     {% with tree=tree %}{% include "partials/step_tree.html" %}{% endwith %}
 </div>
 </div>

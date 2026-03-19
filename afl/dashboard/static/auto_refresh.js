@@ -1,7 +1,7 @@
 /* auto_refresh.js — HTMX auto-refresh helper */
 
 export function setupAutoRefresh(selector, url, intervalMs) {
-    if (intervalMs === undefined) intervalMs = 5000;
+    if (intervalMs === undefined) intervalMs = 300000;
     var el = document.querySelector(selector);
     if (!el) return null;
     el.setAttribute("hx-get", url);

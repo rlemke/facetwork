@@ -45,7 +45,7 @@
     <span class="loading-spinner htmx-indicator"></span>
 </button>
 <div id="runner-groups"
-     {% if tab == 'running' %}hx-get="/v2/workflows/partial?tab=running" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
+     {% if tab == 'running' %}hx-get="/v2/workflows/partial?tab=running" hx-trigger="every 300s" hx-swap="innerHTML"{% endif %}>
     {% include "v2/workflows/_runner_groups.html" %}
 </div>
 {% endblock %}

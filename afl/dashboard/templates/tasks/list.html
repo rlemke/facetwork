@@ -56,7 +56,7 @@
 </button>
 
 <div id="task-table-content"
-     {% if filter_state == 'pending' or filter_state == 'running' %}hx-get="/tasks/partial{% if filter_state %}?state={{ filter_state }}{% endif %}" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
+     {% if filter_state == 'pending' or filter_state == 'running' %}hx-get="/tasks/partial{% if filter_state %}?state={{ filter_state }}{% endif %}" hx-trigger="every 300s" hx-swap="innerHTML"{% endif %}>
     {% include "tasks/_table_content.html" %}
 </div>
 {% endblock %}

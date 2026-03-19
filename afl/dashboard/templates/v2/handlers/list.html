@@ -45,7 +45,7 @@
     <span class="loading-spinner htmx-indicator"></span>
 </button>
 <div id="handler-groups"
-     hx-get="/v2/handlers/partial?tab={{ tab }}" hx-trigger="every 5s" hx-swap="innerHTML">
+     hx-get="/v2/handlers/partial?tab={{ tab }}" hx-trigger="every 300s" hx-swap="innerHTML">
     {% include "v2/handlers/_handler_groups.html" %}
 </div>
 {% endblock %}

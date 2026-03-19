@@ -6,9 +6,60 @@
  *
  * For <details> elements the filter also shows/hides the entire group and
  * auto-opens groups with matches.
+ *
+ * Also preserves <details class="ns-group"> open/closed state across
+ * HTMX auto-refresh swaps so that browsing an expanded accordion doesn't
+ * collapse when the page refreshes.
  */
 
+/* Track which ns-group accordions are open by namespace text */
+var _nsGroupOpenSet = {};
+var _nsGroupStateInitialized = false;
+
+function _initNsGroupPreservation() {
+    if (_nsGroupStateInitialized) return;
+    _nsGroupStateInitialized = true;
+
+    document.body.addEventListener("htmx:beforeSwap", function(evt) {
+        /* Only capture state for containers that hold ns-group elements */
+        var target = evt.detail.target;
+        if (!target) return;
+        var groups = target.querySelectorAll("details.ns-group");
+        if (groups.length === 0) return;
+
+        _nsGroupOpenSet = {};
+        for (var i = 0; i < groups.length; i++) {
+            var key = _nsGroupKey(groups[i]);
+            if (key) {
+                _nsGroupOpenSet[key] = groups[i].open;
+            }
+        }
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function(evt) {
+        var target = evt.detail.target;
+        if (!target) return;
+        var groups = target.querySelectorAll("details.ns-group");
+        if (groups.length === 0) return;
+
+        for (var i = 0; i < groups.length; i++) {
+            var key = _nsGroupKey(groups[i]);
+            if (key && key in _nsGroupOpenSet) {
+                groups[i].open = _nsGroupOpenSet[key];
+            }
+        }
+    });
+}
+
+function _nsGroupKey(details) {
+    /* Use the namespace text from <summary><strong> as a stable key */
+    var strong = details.querySelector("summary strong");
+    return strong ? strong.textContent.trim() : null;
+}
+
 export function initFilters() {
+    _initNsGroupPreservation();
+
     var inputs = document.querySelectorAll("[data-list-filter]");
     for (var i = 0; i < inputs.length; i++) {
         (function(input) {

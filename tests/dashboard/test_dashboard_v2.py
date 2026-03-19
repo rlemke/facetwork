@@ -603,13 +603,13 @@ class TestWorkflowListRedesign:
         tc, store = client
         resp = tc.get("/v2/workflows?tab=running")
         assert resp.status_code == 200
-        assert 'hx-trigger="every 5s"' in resp.text
+        assert 'hx-trigger="every 300s"' in resp.text
 
     def test_list_no_auto_refresh_on_completed(self, client):
         tc, store = client
         resp = tc.get("/v2/workflows?tab=completed")
         assert resp.status_code == 200
-        assert 'hx-trigger="every 5s"' not in resp.text
+        assert 'hx-trigger="every 300s"' not in resp.text
 
     def test_list_has_progress_column(self, client):
         tc, store = client
@@ -686,14 +686,14 @@ class TestStepTreeControls:
         store.save_runner(_make_runner("r-1", state="running"))
         resp = tc.get("/v2/workflows/r-1")
         assert resp.status_code == 200
-        assert 'hx-trigger="every 5s"' in resp.text
+        assert 'hx-trigger="every 300s"' in resp.text
 
     def test_detail_no_auto_refresh_for_completed(self, client):
         tc, store = client
         store.save_runner(_make_runner("r-1", state="completed"))
         resp = tc.get("/v2/workflows/r-1")
         assert resp.status_code == 200
-        assert 'hx-trigger="every 5s"' not in resp.text
+        assert 'hx-trigger="every 300s"' not in resp.text
 
     def test_detail_has_breadcrumb(self, client):
         tc, store = client
@@ -731,7 +731,7 @@ class TestAutoRefreshPartials:
         assert resp.status_code == 200
         assert "workflow-summary" in resp.text
         assert "/summary/partial" in resp.text
-        assert 'hx-trigger="every 5s"' in resp.text
+        assert 'hx-trigger="every 300s"' in resp.text
 
     def test_workflow_summary_no_auto_refresh_for_completed(self, client):
         tc, store = client

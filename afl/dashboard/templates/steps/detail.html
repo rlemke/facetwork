@@ -7,7 +7,7 @@
 <h1>Step {% if step.statement_name %}<strong>{{ step.statement_name }}</strong> {% endif %}<span class="mono">{{ step.id|truncate_uuid }}</span></h1>
 
 <div id="step-detail-content"
-     {% if not step.state.endswith("Complete") and not step.state.endswith("Error") %}hx-get="/steps/{{ step.id }}/partial" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
+     {% if not step.state.endswith("Complete") and not step.state.endswith("Error") %}hx-get="/steps/{{ step.id }}/partial" hx-trigger="every 300s" hx-swap="innerHTML"{% endif %}>
     {% include "steps/_detail_content.html" %}
 </div>
 
