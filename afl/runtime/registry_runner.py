@@ -723,6 +723,13 @@ class RegistryRunner:
                             task.server_id = ""
                             task.updated = _current_time_ms()
                             self._persistence.save_task(task)
+                            self._emit_step_log(
+                                step_id=task.step_id,
+                                workflow_id=task.workflow_id,
+                                message=f"Step restarted after timeout — task reset to pending: {task.name}",
+                                level=StepLogLevel.WARNING,
+                                facet_name=task.name,
+                            )
                             logger.warning(
                                 "Handler timed out for '%s' (step=%s, "
                                 "elapsed=%dms, limit=%dms), resetting to pending",

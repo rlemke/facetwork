@@ -174,10 +174,19 @@ def step_detail_partial(step_id: str, request: Request, store=Depends(get_store)
 @router.post("/{step_id}/retry")
 def retry_step(step_id: str, store=Depends(get_store)):
     """Retry a failed step by resetting it to EVENT_TRANSMIT."""
+    import time as _time
+
+    from afl.runtime.entities import (
+        StepLogEntry,
+        StepLogLevel,
+        StepLogSource,
+    )
     from afl.runtime.states import StepState
 
     step = store.get_step(step_id)
     if step:
+        prev_state = step.state
+
         # Reset step state to EVENT_TRANSMIT (matches evaluator.retry_step logic)
         step.state = StepState.EVENT_TRANSMIT
         step.transition.current_state = StepState.EVENT_TRANSMIT
@@ -192,4 +201,19 @@ def retry_step(step_id: str, store=Depends(get_store)):
             task.state = "pending"
             task.error = None
             store.save_task(task)
+
+        # Emit step log entry for the manual retry
+        from afl.runtime.types import generate_id
+
+        entry = StepLogEntry(
+            uuid=generate_id(),
+            step_id=step_id,
+            workflow_id=step.workflow_id,
+            facet_name=step.facet_name or "",
+            source=StepLogSource.FRAMEWORK,
+            level=StepLogLevel.WARNING,
+            message=f"Step manually restarted via dashboard (was {prev_state})",
+            time=int(_time.time() * 1000),
+        )
+        store.save_step_log(entry)
     return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
