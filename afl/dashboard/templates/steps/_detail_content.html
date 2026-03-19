@@ -49,7 +49,7 @@
 <figure>
 <table>
     <thead>
-        <tr><th>Time</th><th>Source</th><th>Level</th><th>Message</th></tr>
+        <tr><th>Time</th><th>Source</th><th>Level</th><th>Message</th><th>Duration</th></tr>
     </thead>
     <tbody>
         {% for log in step_logs %}
@@ -58,6 +58,7 @@
             <td>{{ log.source }}</td>
             <td><span class="badge badge-{{ log.level|step_log_color }}">{{ log.level }}</span></td>
             <td>{{ log.message }}</td>
+            <td>{% if loop.last and step_logs|length > 1 %}{{ (log.time - step_logs[0].time)|duration_long }}{% endif %}</td>
         </tr>
         {% endfor %}
     </tbody>

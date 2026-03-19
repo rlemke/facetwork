@@ -52,6 +52,22 @@ def duration_fmt(ms: int | float | None) -> str:
     return f"{hours}h {mins}m"
 
 
+def duration_long_fmt(ms: int | float | None) -> str:
+    """Format a duration in milliseconds as ``D:HH:MM:SS``.
+
+    Omits the days component when zero (returns ``H:MM:SS``).
+    """
+    if not ms:
+        return "—"
+    total_seconds = int(ms) // 1000
+    days, remainder = divmod(total_seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if days > 0:
+        return f"{days}:{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return f"{hours}:{minutes:02d}:{seconds:02d}"
+
+
 _STATE_COLORS: dict[str, str] = {
     # Runner states — badge-{value} class maps to --state-{color} CSS vars
     "created": "primary",
@@ -245,4 +261,5 @@ def register_filters(env: Environment) -> None:
     env.filters["filesizeformat"] = filesizeformat
     env.filters["file_timestamp"] = file_timestamp
     env.filters["block_label"] = block_label
+    env.filters["duration_long"] = duration_long_fmt
     env.filters["categorize_step_state"] = step_category_filter
