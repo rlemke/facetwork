@@ -32,6 +32,7 @@ def _get_store(config_path: str | None = None) -> MongoStore:
     from afl.runtime.mongo_store import MongoStore
 
     config = load_config(config_path)
+    print(f"Connecting to MongoDB: {config.mongodb.url}/{config.mongodb.database}")
     return MongoStore.from_config(config.mongodb)
 
 

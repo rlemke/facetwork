@@ -90,7 +90,7 @@ class MongoStore(PersistenceAPI):
     transactions, and serialization.
 
     Usage:
-        store = MongoStore("mongodb://localhost:27017", "afl")
+        store = MongoStore("mongodb://afl-mongodb:27017", "afl")
         store.get_step(step_id)
 
         # Or create from an AFLConfig / MongoDBConfig:

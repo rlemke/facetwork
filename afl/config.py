@@ -39,7 +39,7 @@ class MongoDBConfig:
         database: Target database name (e.g. "afl", "afl_test", "afl_dev_alice")
     """
 
-    url: str = "mongodb://localhost:27017"
+    url: str = "mongodb://afl-mongodb:27017"
     username: str = ""
     password: str = ""
     auth_source: str = "admin"
