@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Run VACUUM ANALYZE on PostGIS OSM tables.
+#
+# Reclaims dead-tuple space and updates query planner statistics.
+# Run this after a large import batch completes, before starting the next.
+#
+# Usage:
+#   scripts/postgis-vacuum              # vacuum both tables
+#   scripts/postgis-vacuum --nodes      # vacuum osm_nodes only
+#   scripts/postgis-vacuum --ways       # vacuum osm_ways only
+#   scripts/postgis-vacuum --full       # VACUUM FULL (rewrites tables, takes longer)
+
+set -euo pipefail
+source "$(dirname "$0")/_env.sh"
+
+POSTGIS_URL="${AFL_POSTGIS_URL:-postgresql://afl_osm:afl_osm_2024@localhost:5432/osm}"
+
+# Parse DSN for psql
+DB_HOST=$(echo "$POSTGIS_URL" | sed -n 's|.*@\([^:/]*\).*|\1|p')
+DB_PORT=$(echo "$POSTGIS_URL" | sed -n 's|.*:\([0-9]*\)/.*|\1|p')
+DB_NAME=$(echo "$POSTGIS_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
+DB_USER=$(echo "$POSTGIS_URL" | sed -n 's|.*://\([^:]*\):.*|\1|p')
+
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-5432}"
+DB_NAME="${DB_NAME:-osm}"
+DB_USER="${DB_USER:-afl_osm}"
+
+TABLES=("osm_nodes" "osm_ways")
+FULL=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --nodes)  TABLES=("osm_nodes"); shift ;;
+        --ways)   TABLES=("osm_ways"); shift ;;
+        --full)   FULL="FULL"; shift ;;
+        --help|-h)
+            awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+for table in "${TABLES[@]}"; do
+    echo "Running VACUUM ${FULL:+FULL }ANALYZE on ${table}..."
+    start=$(date +%s)
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+        -c "VACUUM ${FULL} ANALYZE ${table};"
+    elapsed=$(( $(date +%s) - start ))
+    echo "  Done in ${elapsed}s"
+done
+
+echo "Vacuum complete."

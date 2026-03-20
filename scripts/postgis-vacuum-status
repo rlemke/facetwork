@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Check if a vacuum or analyze is currently running on PostGIS tables.
+#
+# Shows active vacuum/analyze processes and when each table was last
+# vacuumed/analyzed.
+#
+# Usage:
+#   scripts/postgis-vacuum-status
+
+set -euo pipefail
+source "$(dirname "$0")/_env.sh"
+
+POSTGIS_URL="${AFL_POSTGIS_URL:-postgresql://afl_osm:afl_osm_2024@localhost:5432/osm}"
+
+DB_HOST=$(echo "$POSTGIS_URL" | sed -n 's|.*@\([^:/]*\).*|\1|p')
+DB_PORT=$(echo "$POSTGIS_URL" | sed -n 's|.*:\([0-9]*\)/.*|\1|p')
+DB_NAME=$(echo "$POSTGIS_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
+
+# Use superuser for pg_stat_activity access
+SU_USER="${AFL_POSTGIS_SUPERUSER:-ralph_lemke}"
+
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-5432}"
+DB_NAME="${DB_NAME:-osm}"
+
+echo "=== Active Vacuum/Analyze Processes ==="
+psql -h "$DB_HOST" -p "$DB_PORT" -U "$SU_USER" -d "$DB_NAME" -c "
+SELECT pid, state, now() - query_start AS duration, left(query, 80) AS query
+FROM pg_stat_activity
+WHERE datname = '${DB_NAME}'
+  AND (query ILIKE '%vacuum%' OR query ILIKE '%analyze%')
+  AND pid != pg_backend_pid()
+ORDER BY query_start;
+"
+
+echo "=== Last Vacuum/Analyze Times ==="
+psql -h "$DB_HOST" -p "$DB_PORT" -U "$SU_USER" -d "$DB_NAME" -c "
+SELECT relname AS table,
+       n_live_tup AS live_rows,
+       n_dead_tup AS dead_rows,
+       last_vacuum,
+       last_autovacuum,
+       last_analyze,
+       last_autoanalyze
+FROM pg_stat_user_tables
+WHERE relname IN ('osm_nodes', 'osm_ways', 'osm_import_log')
+ORDER BY relname;
+"
+
+echo "=== Table Sizes ==="
+psql -h "$DB_HOST" -p "$DB_PORT" -U "$SU_USER" -d "$DB_NAME" -c "
+SELECT tablename AS table,
+       pg_size_pretty(pg_total_relation_size('public.' || tablename)) AS total_size,
+       pg_size_pretty(pg_relation_size('public.' || tablename)) AS data_size,
+       pg_size_pretty(pg_total_relation_size('public.' || tablename) - pg_relation_size('public.' || tablename)) AS index_size
+FROM pg_tables
+WHERE schemaname = 'public' AND tablename LIKE 'osm_%'
+ORDER BY pg_total_relation_size('public.' || tablename) DESC;
+"

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Kill running autovacuum processes on PostGIS OSM tables.
+#
+# Use this when autovacuum is blocking imports. PostgreSQL will
+# re-trigger autovacuum automatically once the load settles.
+#
+# Usage:
+#   scripts/postgis-kill-vacuum          # kill all autovacuum on osm db
+#   scripts/postgis-kill-vacuum --dry    # show what would be killed
+
+set -euo pipefail
+source "$(dirname "$0")/_env.sh"
+
+POSTGIS_URL="${AFL_POSTGIS_URL:-postgresql://afl_osm:afl_osm_2024@localhost:5432/osm}"
+
+DB_HOST=$(echo "$POSTGIS_URL" | sed -n 's|.*@\([^:/]*\).*|\1|p')
+DB_PORT=$(echo "$POSTGIS_URL" | sed -n 's|.*:\([0-9]*\)/.*|\1|p')
+DB_NAME=$(echo "$POSTGIS_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
+
+# Need superuser to terminate backends
+SU_USER="${AFL_POSTGIS_SUPERUSER:-ralph_lemke}"
+
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-5432}"
+DB_NAME="${DB_NAME:-osm}"
+
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry)    DRY_RUN=true; shift ;;
+        --help|-h)
+            awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+echo "=== Autovacuum processes on ${DB_NAME} ==="
+psql -h "$DB_HOST" -p "$DB_PORT" -U "$SU_USER" -d "$DB_NAME" -c "
+SELECT pid, now() - query_start AS duration, left(query, 80) AS query
+FROM pg_stat_activity
+WHERE datname = '${DB_NAME}'
+  AND query ILIKE 'autovacuum%'
+  AND pid != pg_backend_pid();
+"
+
+if [ "$DRY_RUN" = true ]; then
+    echo "(dry run — no processes killed)"
+    exit 0
+fi
+
+KILLED=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$SU_USER" -d "$DB_NAME" -tAc "
+SELECT count(*) FROM (
+    SELECT pg_terminate_backend(pid)
+    FROM pg_stat_activity
+    WHERE datname = '${DB_NAME}'
+      AND query ILIKE 'autovacuum%'
+      AND pid != pg_backend_pid()
+) t;
+")
+
+echo "Killed ${KILLED} autovacuum process(es)."
