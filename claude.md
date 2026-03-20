@@ -1,203 +1,211 @@
-# CLAUDE.md — AgentFlow Repo Guide
+# CLAUDE.md — AgentFlow
 
-## Purpose
-This repository contains the **AgentFlow** platform:
-- **AFL compiler**: parses AFL source (Lark LALR) and emits JSON workflow definitions (declarations-only format)
-- **AFL runtime**: executes compiled workflows with iterative evaluation and dependency-driven step creation
-- **Agent libraries**: Python, Scala, Go, TypeScript, Java
-- **Dashboard, Runner, MCP server**: operational infrastructure
+AgentFlow is a platform for defining and executing distributed workflows. You write workflows in **AFL** (Agent Flow Language), and the runtime handles execution, dependency resolution, retries, and monitoring.
 
-## Terminology
-- **AgentFlow**: The platform for distributed workflow execution (compiler + runtime + agents)
-- **AFL**: Agent Flow Language — the DSL for defining workflows (`.afl` files)
-- **AFL Agent**: A service that processes event facet tasks. The **recommended approach** is `RegistryRunner`: register handler implementations in the database, then start the runner — it dynamically loads and dispatches handlers without requiring custom agent code.
-- **RegistryRunner**: Universal runner that reads `HandlerRegistration` entries from persistence, dynamically loads Python modules, and dispatches event tasks. Handlers are registered via `register_handler()` or the MCP `afl_manage_handlers` tool.
+## Getting Started
 
-## Authoring roles
+| Guide | Audience | What You'll Learn |
+|-------|----------|-------------------|
+| **[Beginner's Guide](docs/beginners-guide.md)** | New users | Local setup, running your first workflow from the UI, writing basic AFL |
+| **[README](README.md)** | Developers | Installation, Docker setup, parser/emitter API, CLI usage |
+| **[Full Technical Reference](#full-technical-reference)** | Contributors | Compiler internals, runtime architecture, all commands, code conventions |
 
-AgentFlow separates workflow design from handler implementation:
+## Quick Start (Local)
 
-- **Domain programmers** write AFL (`.afl` files) to define workflows, facets, schemas, and composition logic. They do not need to write Python or any handler code.
-- **Service provider programmers** write handler implementations (Python modules) for event facets. They implement the actual computation, API calls, or LLM inference that event facets require.
-- **Claude** can author both AFL definitions and handler implementations when given a description of the desired workflow or service behavior. Use Claude to generate `.afl` files from requirements, scaffold handler modules, or build complete end-to-end examples.
+```bash
+# Docker: start everything
+docker compose up
+docker compose run seed
+# Open http://localhost:8080
+
+# Or without Docker:
+pip install -e ".[dev,test,dashboard,mcp,mongodb]"
+cp .env.example .env              # edit MongoDB connection
+scripts/seed-examples             # seed example workflows
+python -m afl.dashboard --log-format text
+# Open http://localhost:8080
+```
+
+## Running Workflows from the Dashboard
+
+1. Open http://localhost:8080 and click **Workflows**
+2. Click **New** to create a run
+3. Select a workflow, fill in parameters, click **Run**
+4. Watch execution on the detail page — steps, logs, and progress update live
+
+To find running workflows, use the **Running** tab. Use **Cmd+K** to search by name.
+
+## Common Operations
+
+```bash
+# Start/stop runners
+scripts/start-runner --example osm-geocoder -- --log-format text
+scripts/stop-runners
+scripts/drain-runners              # stop + reset running tasks to pending
+
+# Monitor
+scripts/list-runners               # show runner fleet
+scripts/db-stats                   # database document counts
+
+# PostGIS maintenance (after large imports)
+scripts/postgis-vacuum             # reclaim space + update statistics
+scripts/postgis-vacuum-status      # check vacuum progress and table sizes
+scripts/postgis-kill-vacuum        # kill autovacuum blocking imports
+```
+
+## Key Concepts
+
+| Term | Meaning |
+|------|---------|
+| **Workflow** | Entry point for execution — defined in AFL with `andThen` steps |
+| **Event Facet** | A step that requires a handler (external code) to execute |
+| **Handler** | Python module that implements an event facet's logic |
+| **Runner** | Service that picks up tasks and dispatches them to handlers |
+| **Step** | A single unit of work within a workflow execution |
+
+## Project Layout
+
+| Directory | What's There |
+|-----------|-------------|
+| `afl/` | Compiler + runtime engine |
+| `afl/dashboard/` | Web monitoring UI (FastAPI) |
+| `examples/` | 15+ example workflows with AFL, handlers, and tests |
+| `spec/` | Language and runtime specifications |
+| `scripts/` | Operations scripts (start, stop, deploy, vacuum, etc.) |
+| `agents/` | Multi-language agent libraries (Python, Scala, Go, TypeScript, Java) |
+
+## Documentation Map
+
+| Topic | Document |
+|-------|----------|
+| AFL syntax | [spec/10_language.md](spec/10_language.md) |
+| Runtime execution model | [spec/30_runtime.md](spec/30_runtime.md) |
+| Building handlers | [spec/60_agent_sdk.md](spec/60_agent_sdk.md) |
+| LLM integration | [spec/61_llm_agent_integration.md](spec/61_llm_agent_integration.md) |
+| AFL examples | [spec/70_examples.md](spec/70_examples.md) |
+| Deployment & Docker | [spec/90_nonfunctional.md](spec/90_nonfunctional.md) |
+| Architecture overview | [architecture.md](architecture.md) |
+| Deployment guide | [deployment.md](deployment.md) |
+| Tutorial | [tutorial.md](tutorial.md) |
 
 ---
 
-## Conceptual model (use these terms consistently)
+## Full Technical Reference
+
+*Everything below is detailed reference for contributors and operators.*
+
+### Terminology
+- **AgentFlow**: The platform (compiler + runtime + agents)
+- **AFL**: Agent Flow Language — the `.afl` DSL for defining workflows
+- **RegistryRunner** (recommended): Universal runner that auto-loads handlers from DB. Register handlers via `register_handler()` or the MCP `afl_manage_handlers` tool.
+
+### Authoring roles
+
+- **Domain programmers** write AFL to define workflows, facets, schemas, and composition logic — no Python needed.
+- **Service provider programmers** write handler implementations (Python modules) for event facets.
+- **Claude** can author both AFL definitions and handler implementations from requirements descriptions.
 
 ### Core constructs
-- **Facet**: a typed attribute structure with parameters and optional return clause.
-- **Event Facet**: a facet prefixed with `event` that triggers agent execution.
-- **Workflow**: a facet designated as an entry point for execution.
-- **Step**: an assignment of a call expression within an `andThen` block.
-- **Schema**: a named typed structure (`schema Name { field: Type }`) used as a type in parameter signatures. **Schemas must be defined inside a namespace.** When referencing a schema from another namespace, either use a fully-qualified name (`ns.SchemaName`) or import the namespace with `use ns` (if unambiguous).
+- **Facet**: typed attribute structure with parameters and optional return clause
+- **Event Facet**: facet prefixed with `event` — triggers agent execution
+- **Workflow**: facet designated as an entry point for execution
+- **Step**: assignment of a call expression within an `andThen` block
+- **Schema**: named typed structure (`schema Name { field: Type }`) — must be defined inside a namespace
 
 ### Agent execution models
-- **RegistryRunner** (recommended): auto-loads handlers from DB — no custom service code needed. Register handlers via `register_handler()` or MCP tool `afl_manage_handlers`.
-- **AgentPoller**: standalone agent services with `register()` callback.
-- **RunnerService**: distributed orchestration with thread pool, HTTP status, and heartbeat-based health checking.
-- **ClaudeAgentRunner**: LLM-driven in-process execution via Claude API.
+- **RegistryRunner** (recommended): auto-loads handlers from DB
+- **AgentPoller**: standalone agent services with `register()` callback
+- **RunnerService**: distributed orchestration with thread pool and heartbeat
+- **ClaudeAgentRunner**: LLM-driven in-process execution via Claude API
 
 ### Composition features
-- **Mixins**: `with FacetA() with FacetB()` composes normalized facets.
-- **Implicit facets**: `implicit name = Call()` declares default values.
-- **andThen / yield blocks**: compose multi-step internal logic. Facets/workflows support multiple concurrent `andThen` blocks.
-- **andThen foreach**: iterate over collections with parallel execution.
-- **Statement-level andThen body**: steps can have inline `andThen` blocks (`s = F(x = 1) andThen { ... }`).
-- **catch blocks**: `catch { ... }` or `catch when { ... }` for error recovery on steps, facets, and workflows.
-- **prompt blocks**: `prompt { system "..." template "..." model "..." }` for LLM-driven event facets.
-- **script blocks**: `script python "code..."` for inline sandboxed Python execution. Code receives `params` dict and writes to `result` dict.
+- **Mixins**: `with FacetA() with FacetB()`
+- **Implicit facets**: `implicit name = Call()`
+- **andThen / yield**: multi-step logic with concurrent `andThen` blocks
+- **andThen foreach**: iterate over collections with parallel execution
+- **Statement-level andThen**: `s = F(x = 1) andThen { ... }`
+- **catch blocks**: `catch { ... }` or `catch when { ... }` for error recovery
+- **prompt blocks**: `prompt { system "..." template "..." model "..." }`
+- **script blocks**: `script python "code..."` — sandboxed Python
 
 ### Expression features
-- **Arithmetic operators**: `+`, `-`, `*`, `/`, `%` with standard precedence (`*/%` > `+-` > `++`).
-- **Concatenation**: `++` operator for string concatenation.
-- **Comparison operators**: `==`, `!=`, `>`, `<`, `>=`, `<=` — return `Boolean`. Ordered comparisons reject Boolean operands.
-- **Boolean operators**: `&&`, `||` (short-circuit), `!` (unary NOT) — require Boolean operands.
-- **Precedence** (lowest→highest): `||` < `&&` < comparison < `++` < `+/-` < `*/%` < unary (`-`, `!`).
-- **Collection literals**: arrays `[1, 2, 3]`, maps `#{"key": "value"}`, indexing `arr[0]`, grouping `(expr)`.
-- **andThen when blocks**: `andThen when { case condition => { ... } case _ => { ... } }` — conditional branching. Non-exclusive: all matching cases execute concurrently. Default case (`case _ =>`) is **required** and runs only if no other case matched.
-- **catch blocks**: `catch { ... }` or `catch when { case ... }` — error recovery. Where `andThen` runs on success, `catch` runs on error. Available on steps, facets, and workflows. Error data accessible via `s.error` and `s.error_type`. Default case required for `catch when`.
-- **Type checking**: validator catches string+int and bool+arithmetic errors at compile time; unknown-type refs pass through.
+- Arithmetic: `+`, `-`, `*`, `/`, `%`; concatenation: `++`
+- Comparison: `==`, `!=`, `>`, `<`, `>=`, `<=`
+- Boolean: `&&`, `||`, `!`
+- Collections: `[1, 2, 3]`, `#{"key": "value"}`, `arr[0]`
+- Conditional: `andThen when { case condition => { ... } case _ => { ... } }`
 
----
-
-## Quick commands
+### All commands
 
 ```bash
 # Tests
-pytest tests/ examples/ -v          # full suite
-pytest tests/ examples/ -v -x      # stop on first failure
-pytest tests/ examples/ --cov=afl --cov-report=term-missing  # with coverage
-pytest tests/ examples/ --cov=afl --cov-report=html          # HTML coverage report
-pytest tests/runtime/test_mongo_store.py --mongodb -v  # real MongoDB
-pytest examples/osm-geocoder/tests/ -v               # single example
+pytest tests/ examples/ -v
+pytest tests/ examples/ -v -x
+pytest tests/ examples/ --cov=afl --cov-report=term-missing
 
 # CLI
-afl input.afl -o output.json       # compile
-afl input.afl --check              # syntax check only
+afl input.afl -o output.json
+afl input.afl --check
 
-# Services (--log-format json|text; default: json for Splunk)
-python -m afl.dashboard             # web UI (port 8080)
-python -m afl.dashboard --log-format text  # plain-text logs
-python -m afl.runtime.runner        # runner service
-python -m afl.mcp                   # MCP server (stdio)
+# Services
+python -m afl.dashboard --log-format text   # web UI (port 8080)
+python -m afl.runtime.runner                # runner service
+python -m afl.mcp                           # MCP server (stdio)
 
-# Local runner management
+# Runner management
 scripts/start-runner --example hiv-drug-resistance -- --log-format text
 scripts/stop-runners
+scripts/drain-runners                  # stop + reset running tasks
+scripts/drain-runners --tasks-only     # reset tasks without stopping
+scripts/drain-runners --dry            # preview
 
-# HIV pipeline one-command dashboard launch
-examples/hiv-drug-resistance/scripts/run-dashboard -- --log-format text
-examples/hiv-drug-resistance/scripts/generate-sample-data  # FASTQ only
+# Fleet inspection
+scripts/list-runners
+scripts/list-runners --state running
+scripts/list-runners --json
 
-# Inspect runner fleet
-scripts/list-runners                   # tree view: servers → runners → handlers
-scripts/list-runners --state running   # filter by state
-scripts/list-runners --json            # machine-readable output
-
-# Remote runner management (requires AFL_RUNNER_HOSTS or --host)
+# Remote management (requires AFL_RUNNER_HOSTS or --host)
 scripts/start-runner --all --example hiv-drug-resistance
 scripts/stop-runners --all
 scripts/rolling-deploy --example hiv-drug-resistance
 
-# Graceful shutdown: stop runners and reset running tasks to pending
-scripts/drain-runners                  # stop processes + reset tasks
-scripts/drain-runners --tasks-only     # just reset tasks, don't stop processes
-scripts/drain-runners --dry            # preview what would be reset
-
-# PostGIS vacuum management (run after large import batches)
-scripts/postgis-vacuum                 # VACUUM ANALYZE both osm_nodes and osm_ways
-scripts/postgis-vacuum --nodes         # vacuum osm_nodes only
-scripts/postgis-vacuum --ways          # vacuum osm_ways only
-scripts/postgis-vacuum --full          # VACUUM FULL (rewrites tables, slower)
-scripts/postgis-vacuum-status          # show active vacuums, last vacuum times, table sizes
-scripts/postgis-kill-vacuum            # kill autovacuum processes blocking imports
-scripts/postgis-kill-vacuum --dry      # preview without killing
+# PostGIS vacuum management
+scripts/postgis-vacuum                 # VACUUM ANALYZE osm_nodes + osm_ways
+scripts/postgis-vacuum --nodes         # nodes only
+scripts/postgis-vacuum --ways          # ways only
+scripts/postgis-vacuum --full          # VACUUM FULL (rewrites tables)
+scripts/postgis-vacuum-status          # active vacuums, last times, table sizes
+scripts/postgis-kill-vacuum            # kill autovacuum blocking imports
+scripts/postgis-kill-vacuum --dry      # preview
 ```
 
 ### Environment configuration
-Copy `.env.example` to `.env` and edit to configure MongoDB, scaling, overlays, and data directories. All `scripts/` commands source `_env.sh` which loads `.env` without overriding already-set vars. `scripts/easy.sh` runs the full pipeline (teardown → rebuild → setup → seed) from `.env` alone. See `spec/90_nonfunctional.md` for the full variable reference.
+Copy `.env.example` to `.env` to configure MongoDB, scaling, overlays, and data directories. All `scripts/` commands source `_env.sh` which loads `.env` without overriding already-set vars. See `spec/90_nonfunctional.md` for the full variable reference.
 
 MongoDB and HDFS run on external servers (defined in `/etc/hosts`): `afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn` — they are **not** managed by Docker Compose.
 
-Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets. When unset, LLM handlers fall back to deterministic stubs.
-
-Set `AFL_LOCALIZE_MOUNTS` (comma-separated path prefixes) to copy Docker mount-backed files to container-local storage before processing, avoiding VirtioFS hangs on large files.
+Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets.
 
 ### PostGIS data management
-PostGIS data directory lives at `/Volumes/afl_data/osm/postgis`. After large import batches (e.g., importing all US states), run `scripts/postgis-vacuum` to reclaim space and update query planner statistics. During bulk imports, PostgreSQL's autovacuum may trigger and compete for I/O — use `scripts/postgis-kill-vacuum` to terminate it and `scripts/postgis-vacuum-status` to monitor. The `osm_nodes` and `osm_ways` tables have `autovacuum_analyze_threshold` set to 1,000,000 to reduce autovacuum frequency during imports.
+PostGIS data directory: `/Volumes/afl_data/osm/postgis`. After large import batches, run `scripts/postgis-vacuum` to reclaim space and update statistics. During bulk imports, autovacuum may compete for I/O — kill it with `scripts/postgis-kill-vacuum`. Tables have `autovacuum_analyze_threshold = 1,000,000` to reduce frequency during imports.
 
 ### Graceful runner shutdown
-Use `scripts/drain-runners` instead of `scripts/stop-runners` when you need to ensure running tasks are reset to pending. This prevents tasks from being stuck in "running" state after shutdown. Each drained task gets a step log entry for audit visibility.
+Use `scripts/drain-runners` instead of `scripts/stop-runners` when you need running tasks reset to pending. Each drained task gets a step log entry for audit visibility.
 
----
+### How Claude should review changes
 
-## Key directories
-
-| Directory | Purpose |
-|-----------|---------|
-| `afl/` | Compiler package (parser, transformer, emitter, validator, AST, grammar) |
-| `afl/runtime/` | Runtime engine (evaluator, state machine, persistence, changers, handlers) |
-| `afl/runtime/runner/` | Distributed runner service |
-| `afl/mcp/` | MCP server for LLM agents |
-| `afl/dashboard/` | FastAPI web monitoring dashboard |
-| `tests/` | Core tests (compiler, runtime, dashboard, MCP) |
-| `agents/` | Multi-language agent libraries (Python, Scala, Go, TypeScript, Java) |
-| `examples/osm-geocoder/` | OSM geocoding example (42 AFL files, 16 handler categories, ~80 handler modules) |
-| `examples/monte-carlo-risk/` | Monte Carlo portfolio risk analysis (GBM simulation, VaR/CVaR, Greeks, stress testing) |
-| `examples/ml-hyperparam-sweep/` | ML hyperparameter sweep (statement-level andThen, prompt blocks, map literals, andThen foreach) |
-| `examples/research-agent/` | AI research agent — first LLM integration showcase (8 prompt-block event facets, chained LLM steps, ClaudeAgentRunner) |
-| `examples/multi-agent-debate/` | Multi-agent debate — first multi-agent interaction example (3 debate agents, scoring/voting, agent-to-agent dependency) |
-| `examples/multi-round-debate/` | Multi-round debate — composed facets as primary pattern (DebateRound encapsulates 12 steps, cross-round state, convergence metrics) |
-| `examples/tool-use-agent/` | Tool-use agent — tool-as-event-facet pattern (6 tools as event facets, planning facet, `++` and `%`/`/` arithmetic) |
-| `examples/data-quality-pipeline/` | Data quality pipeline — schema instantiation as steps, array type annotations `[Type]`, parenthesized expression grouping `(a+b)*c` |
-| `examples/sensor-monitoring/` | Sensor monitoring — unary negation, null literals, computed map indexing, mixin alias, RegistryRunner-first |
-| `examples/site-selection-debate/` | Site-selection debate — spatial + research + debate combined (12 prompt-block event facets, composed facet, cross-round state, map literals, null/unary negation, mixin alias) |
-| `examples/event-driven-etl/` | Event-driven ETL — extract/transform/load pipeline (3 schemas, 6 event facets, 2 workflows, andThen chaining, foreach, schema instantiation, map literals, RegistryRunner-first) |
-| `examples/devops-deploy/` | DevOps deployment pipeline — first `andThen when` showcase (3 when blocks incl. nested, foreach, 3 schemas, 10 event facets, 2 workflows, prompt/script blocks, mixins+implicits, `++`/`==`/`&&`, RegistryRunner-first) |
-| `examples/hiv-drug-resistance/` | HIV drug resistance genotyping — bioinformatics pipeline (6 schemas, 9 event facets, 2 workflows, `andThen when` QC branching, `catch` per-sample error recovery, `andThen foreach` batch, 3 prompt blocks, 1 script block, mixins+implicits, RegistryRunner-first) |
-| `examples/noaa-weather/` | NOAA GHCN-Daily climate analysis — catalog-first real-data pipeline (AWS S3 public bucket, 4 schemas, 5 event facets, 25+ workflows incl. international/cache, `catch` download recovery, `andThen foreach` batch, linear regression trends, `++`/`==`, RegistryRunner-first) |
-| `spec/` | Language and runtime specifications |
-| `docker/` | Dockerfiles for all services |
-| `scripts/` | Convenience scripts (setup, compile, runner, dashboard, rolling-deploy, drain-runners, postgis-vacuum, etc.) |
-
----
-
-## How Claude should review changes
-
-### Language/compiler correctness
+**Language/compiler correctness:**
 - Parsing errors must include line/column
 - Grammar must be LALR-compatible (no conflicts)
 - AST nodes must use dataclasses
-- JSON output must be stable and consistent
-- **Emitter output uses `declarations` only** — the emitter does not produce categorized keys (`namespaces`, `facets`, `eventFacets`, `workflows`, `implicits`, `schemas`). All declaration nodes appear in a single `declarations` list. `normalize_program_ast()` in `afl/ast_utils.py` still handles old/external JSON that uses categorized keys.
+- Emitter output uses `declarations` only (not categorized keys)
 
-### Testing requirements
+**Testing requirements:**
 - All grammar constructs must have parser tests
 - Error cases must verify line/column reporting
 - Emitter must round-trip all AST node types
 
-### Code quality
+**Code quality:**
 - Type hints on all functions
 - Docstrings on public API
 - No runtime dependencies beyond lark (dashboard, mcp deps are optional)
-
----
-
-## Further reference
-- `spec/00_overview.md` — implementation constraints and glossary
-- `spec/10_language.md` — AFL syntax (EBNF grammar)
-- `spec/11_semantics.md` — AST requirements
-- `spec/12_validation.md` — semantic validation rules
-- `spec/20_compiler.md` — compiler architecture
-- `spec/30_runtime.md` — runtime specification
-- `spec/31_runtime_impl.md` — Python runtime implementation guide (state changers, handlers, source files)
-- `spec/50_event_system.md` — event lifecycle and task queue
-- `spec/51_state_system.md` — state machine transitions
-- `spec/60_agent_sdk.md` — agent integration SDK
-- `spec/61_llm_agent_integration.md` — LLM integration and MCP protocol reference
-- `spec/70_examples.md` — iteration traces for Examples 2, 3, 4
-- `spec/80_acceptance_tests.md` — test requirements
-- `spec/90_nonfunctional.md` — dependencies, build/run reference, Docker, configuration
-- `spec/95_self_assessment.md` — self-assessment across all fundamental areas
-- `spec/99_changelog.md` — implementation changelog (v0.1.0 through v0.39.0)
