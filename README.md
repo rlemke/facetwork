@@ -103,6 +103,58 @@ You write the workflow logic in AFL. A Python handler does the real work (API ca
 
 To learn more: [AFL Tutorial](tutorial.md) | [Language Reference](spec/10_language.md) | [Examples](spec/70_examples.md)
 
+## Sharing Workflows Like Libraries
+
+AFL workflows are designed to be shared and composed — just like importing a library in a regular programming language. Teams publish their facets, schemas, and workflows as **namespaces** that other teams can `use` in their own workflows.
+
+```afl
+namespace analytics.reports {
+    use data.warehouse        // import another team's data facets
+    use ml.predictions        // import the ML team's prediction facets
+
+    workflow MonthlyReport(month: String) => (report_path: String) andThen {
+        // Use the data team's extraction facet — you didn't write it, just call it
+        raw = ExtractSalesData(period = $.month)
+
+        // Use the ML team's forecasting facet
+        forecast = PredictNextMonth(history = raw.data)
+
+        // Your team's rendering step
+        report = RenderReport(sales = raw.data, forecast = forecast.prediction)
+        yield MonthlyReport(report_path = report.output_path)
+    }
+}
+```
+
+**How sharing works:**
+- Teams publish their AFL namespaces to MongoDB via `scripts/publish mylib.afl`
+- Other teams import published namespaces with `use team.namespace`
+- The compiler resolves and validates all cross-team references at compile time
+- Handlers are registered independently — teams deploy and update their own handlers without affecting other teams' workflows
+
+This means a domain expert can build a workflow by composing facets from across the organization — data engineering, ML, visualization, notification — without needing to know how any of them are implemented. It's the same idea as `pip install` or `npm install`, but for workflow steps.
+
+## Built for Long-Running, Distributed Work
+
+AgentFlow doesn't run workflows on a single machine and hope for the best. It runs on a **cluster of runner servers** backed by MongoDB, designed for workloads that take minutes, hours, or days.
+
+**How it works:**
+- When a workflow reaches a step that needs work (an *event facet*), the runtime creates a **task** in MongoDB
+- Any available **runner server** in the cluster picks up the task, executes the handler, and writes the result back
+- The workflow automatically advances to the next step — no single machine needs to stay alive the whole time
+
+**Why this matters:**
+
+| Capability | How AgentFlow handles it |
+|-----------|--------------------------|
+| **Long-running jobs** | A step can take hours (e.g., importing geographic data, training a model). If a runner crashes or times out, the task is automatically reset to pending and another runner picks it up. |
+| **Scalability** | Add more runner servers to handle more tasks in parallel. Each runner independently polls MongoDB for work — no central coordinator needed. |
+| **Rolling updates** | Update handler code on runners one at a time with `scripts/rolling-deploy`. Running tasks finish on the old code; new tasks pick up the new code. No downtime. |
+| **Fault tolerance** | If a server goes down, its orphaned tasks are automatically detected and reassigned. Workflows resume from exactly where they left off. |
+| **Monitoring** | The dashboard shows every runner's health, active tasks, step logs, and execution duration in real time. |
+
+A local Docker setup is great for development, but production workflows run on a cluster. See the [Deployment Guide](deployment.md) for setting up multiple runners across machines.
+
 ---
 
 ## Developer Guide

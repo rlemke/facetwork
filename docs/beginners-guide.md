@@ -143,6 +143,49 @@ afl myworkflow.afl --check        # syntax check
 afl myworkflow.afl -o output.json # compile to JSON
 ```
 
+## Using Other Teams' Workflows
+
+You don't have to build everything from scratch. AFL namespaces work like libraries — other teams publish their facets, and you `use` them in your workflow:
+
+```afl
+namespace my.analysis {
+    use data.warehouse        // the data team's extraction facets
+    use ml.predictions        // the ML team's forecasting facets
+
+    workflow QuarterlyForecast(quarter: String) => (report: String) andThen {
+        raw = ExtractSalesData(period = $.quarter)         // data team's facet
+        forecast = PredictNextQuarter(history = raw.data)  // ML team's facet
+        report = RenderReport(data = forecast.prediction)  // your facet
+        yield QuarterlyForecast(report = report.output_path)
+    }
+}
+```
+
+To publish your own workflows for others to use:
+```bash
+scripts/publish my_workflows.afl              # publish to MongoDB
+scripts/publish my_workflows.afl --version 2.0  # with a version tag
+```
+
+Other teams then import your namespace with `use` — the compiler validates all cross-team references at compile time. Each team deploys and updates their own handlers independently.
+
+## How AgentFlow Runs Your Workflows
+
+When you click **Run** in the dashboard, your workflow doesn't execute on a single machine. AgentFlow distributes the work across a **cluster of runner servers**:
+
+1. The runtime breaks your workflow into **steps**
+2. Each step that needs work creates a **task** in the database
+3. An available **runner server** picks up the task, runs the handler, and writes the result
+4. The workflow advances to the next step automatically
+
+This means:
+- **Long jobs are safe** — if a step takes hours (importing a large dataset, training a model), and a server goes down, the task is automatically reassigned to another server. Nothing is lost.
+- **More servers = more throughput** — add runner servers to handle more tasks in parallel. No code changes needed.
+- **Updates without downtime** — handler code can be updated on servers one at a time. Running tasks finish on the old code; new tasks use the new code.
+- **Everything is visible** — the dashboard shows every server's health, active tasks, step logs, and timing in real time.
+
+For local development, Docker runs everything on your machine. For production, see the [Deployment Guide](../deployment.md).
+
 ## What's Next?
 
 - **[AFL Language Reference](../spec/10_language.md)** — full syntax guide with all constructs
