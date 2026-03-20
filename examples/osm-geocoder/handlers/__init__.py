@@ -40,6 +40,7 @@ _MODULE_MAP = {
     "handlers.postgis_importer": "handlers.downloads.postgis_importer",
     "handlers.postgis_handlers": "handlers.downloads.postgis_handlers",
     "handlers.pgrouting_handlers": "handlers.downloads.pgrouting_handlers",
+    "handlers.summary_handlers": "handlers.downloads.summary_handlers",
     # filters
     "handlers.filter_handlers": "handlers.filters.filter_handlers",
     "handlers.radius_filter": "handlers.filters.radius_filter",
@@ -133,6 +134,7 @@ from .db.import_handlers import register_import_handlers
 from .downloads.operations_handlers import register_operations_handlers
 from .downloads.pgrouting_handlers import register_pgrouting_handlers
 from .downloads.postgis_handlers import register_postgis_handlers
+from .downloads.summary_handlers import register_summary_handlers
 from .filters.filter_handlers import register_filter_handlers
 from .filters.osmose_handlers import register_osmose_handlers
 from .filters.validation_handlers import register_validation_handlers
@@ -168,6 +170,7 @@ __all__ = [
     "register_park_handlers",
     "register_pgrouting_handlers",
     "register_postgis_handlers",
+    "register_summary_handlers",
     "register_poi_handlers",
     "register_population_handlers",
     "register_region_handlers",
@@ -197,6 +200,7 @@ def register_all_handlers(poller) -> None:
     register_park_handlers(poller)
     register_pgrouting_handlers(poller)
     register_postgis_handlers(poller)
+    register_summary_handlers(poller)
     register_poi_handlers(poller)
     register_population_handlers(poller)
     register_region_handlers(poller)
@@ -221,6 +225,7 @@ def register_all_registry_handlers(runner) -> None:
     from .downloads.operations_handlers import register_handlers as reg_operations
     from .downloads.pgrouting_handlers import register_handlers as reg_pgrouting
     from .downloads.postgis_handlers import register_handlers as reg_postgis
+    from .downloads.summary_handlers import register_handlers as reg_summary
     from .filters.filter_handlers import register_handlers as reg_filter
     from .filters.osmose_handlers import register_handlers as reg_osmose
     from .filters.validation_handlers import register_handlers as reg_validation
@@ -250,6 +255,7 @@ def register_all_registry_handlers(runner) -> None:
     reg_park(runner)
     reg_pgrouting(runner)
     reg_postgis(runner)
+    reg_summary(runner)
     reg_poi(runner)
     reg_population(runner)
     reg_region(runner)

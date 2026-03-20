@@ -1,0 +1,34 @@
+// PostGIS database summary and analysis.
+//
+// Queries osm_nodes and osm_ways tables to produce a structured
+// summary of imported regions with node/way counts and POI breakdowns.
+
+/** PostGIS database analysis — region summaries and POI statistics. */
+namespace osm.ops.Summary {
+    use osm.types
+
+    /** Summary statistics for a single imported region. */
+    schema RegionSummary {
+        region: String,
+        node_count: Long,
+        way_count: Long,
+        poi_count: Long,
+        named_count: Long,
+        imported_at: String
+    }
+
+    /** Complete database summary with per-region and per-country breakdowns. */
+    schema DatabaseSummary {
+        total_regions: Long,
+        total_nodes: Long,
+        total_ways: Long,
+        total_pois: Long,
+        output_path: String
+    }
+
+    /** Analyzes the PostGIS database and returns per-region summary with POI counts. */
+    event facet AnalyzeDatabase(
+        country: String = "",
+        include_pois: Boolean = true
+    ) => (summary: DatabaseSummary)
+}

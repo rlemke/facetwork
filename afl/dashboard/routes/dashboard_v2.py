@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import TYPE_CHECKING
 
@@ -647,6 +648,96 @@ def handler_detail(
             "active_tasks": active_tasks,
             "recent_logs": recent_logs,
             "facet_info": facet_info,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# PostGIS Summary
+# ---------------------------------------------------------------------------
+
+
+def _get_postgis_summary() -> dict | None:
+    """Query PostGIS for region summary data."""
+    try:
+        import psycopg2
+    except ImportError:
+        return None
+
+    postgis_url = os.environ.get(
+        "AFL_POSTGIS_URL", "postgresql://afl_osm:afl_osm_2024@localhost:5432/osm"
+    )
+    try:
+        conn = psycopg2.connect(postgis_url)
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT il.region, il.node_count, il.way_count,
+                       il.imported_at::text
+                FROM osm_import_log il
+                WHERE il.id IN (
+                    SELECT DISTINCT ON (region) id
+                    FROM osm_import_log
+                    ORDER BY region, imported_at DESC
+                )
+                ORDER BY il.region
+            """)
+            rows = cur.fetchall()
+
+            cur.execute("""
+                SELECT pg_size_pretty(pg_database_size(current_database()))
+            """)
+            db_size = cur.fetchone()[0]
+        conn.close()
+
+        regions = []
+        total_nodes = 0
+        total_ways = 0
+        for region, nodes, ways, imported_at in rows:
+            total_nodes += nodes or 0
+            total_ways += ways or 0
+            regions.append({
+                "region": region,
+                "node_count": nodes or 0,
+                "way_count": ways or 0,
+                "total": (nodes or 0) + (ways or 0),
+                "imported_at": imported_at or "",
+            })
+
+        return {
+            "regions": regions,
+            "total_regions": len(regions),
+            "total_nodes": total_nodes,
+            "total_ways": total_ways,
+            "total_elements": total_nodes + total_ways,
+            "db_size": db_size,
+        }
+    except Exception:
+        return None
+
+
+@router.get("/postgis")
+def postgis_summary(request: Request):
+    """PostGIS database summary page."""
+    data = _get_postgis_summary()
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v2/postgis/summary.html",
+        {
+            "active_tab": "postgis",
+            "data": data,
+        },
+    )
+
+
+@router.get("/postgis/partial")
+def postgis_summary_partial(request: Request):
+    """HTMX partial for PostGIS summary refresh."""
+    data = _get_postgis_summary()
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v2/postgis/_summary_content.html",
+        {
+            "data": data,
         },
     )
 

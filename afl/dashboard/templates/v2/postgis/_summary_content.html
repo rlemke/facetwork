@@ -1,0 +1,57 @@
+{% if data and data.regions %}
+
+<h2>Imported Regions</h2>
+<div>
+    <input type="search" placeholder="Filter regions..."
+           data-list-filter=".postgis-regions tbody tr"
+           style="max-width: 300px; margin-bottom: 1rem;">
+</div>
+<figure>
+<table class="postgis-regions" role="grid">
+    <thead>
+        <tr>
+            <th>Region</th>
+            <th style="text-align:right">Nodes</th>
+            <th style="text-align:right">Ways</th>
+            <th style="text-align:right">Total</th>
+            <th>Imported</th>
+            <th style="width: 30%">Distribution</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for r in data.regions %}
+        <tr>
+            <td><strong>{{ r.region }}</strong></td>
+            <td style="text-align:right">{{ "{:,}".format(r.node_count) }}</td>
+            <td style="text-align:right">{{ "{:,}".format(r.way_count) }}</td>
+            <td style="text-align:right">{{ "{:,}".format(r.total) }}</td>
+            <td>{{ r.imported_at[:10] if r.imported_at else "—" }}</td>
+            <td>
+                {% if data.total_elements > 0 %}
+                {% set pct = (r.total / data.total_elements * 100) %}
+                <div style="background: var(--pico-primary-background); height: 1.2rem; border-radius: 4px; width: {{ pct }}%; min-width: 2px;" title="{{ '%.1f'|format(pct) }}%"></div>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr style="font-weight: bold;">
+            <td>Total ({{ data.total_regions }} regions)</td>
+            <td style="text-align:right">{{ "{:,}".format(data.total_nodes) }}</td>
+            <td style="text-align:right">{{ "{:,}".format(data.total_ways) }}</td>
+            <td style="text-align:right">{{ "{:,}".format(data.total_elements) }}</td>
+            <td>{{ data.db_size }}</td>
+            <td></td>
+        </tr>
+    </tfoot>
+</table>
+</figure>
+
+{% elif data %}
+<p>No regions have been imported yet.</p>
+{% else %}
+<article class="error-box" style="border-left: 4px solid var(--pico-color-red-500); padding: 1rem;">
+    <strong>PostGIS unavailable</strong> — could not connect to the database. Check that PostgreSQL is running and <code>AFL_POSTGIS_URL</code> is set correctly.
+</article>
+{% endif %}
