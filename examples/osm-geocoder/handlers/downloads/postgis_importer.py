@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -152,7 +153,9 @@ def ensure_schema(conn) -> None:
 class NodeCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
     """Collects OSM nodes and flushes them to PostGIS in batches."""
 
-    def __init__(self, conn, region: str = "", batch_size: int = 10000, progress=None):
+    PROGRESS_INTERVAL = 300.0  # seconds between progress logs
+
+    def __init__(self, conn, region: str = "", batch_size: int = 10000, progress=None, step_log=None):
         if HAS_OSMIUM:
             super().__init__()
         self.conn = conn
@@ -161,6 +164,9 @@ class NodeCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
         self.batch: list[tuple] = []
         self.total_count: int = 0
         self._progress = progress
+        self._step_log = step_log
+        self._t0 = time.monotonic()
+        self._last_progress = self._t0
 
     def node(self, n) -> None:
         """Process a single OSM node."""
@@ -193,6 +199,22 @@ class NodeCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
         self.total_count += len(self.batch)
         log.debug("Flushed %d nodes (total: %d)", len(self.batch), self.total_count)
         self.batch.clear()
+        self._maybe_progress()
+
+    def _maybe_progress(self) -> None:
+        """Emit a step log every PROGRESS_INTERVAL seconds."""
+        if not self._step_log:
+            return
+        now = time.monotonic()
+        if now - self._last_progress < self.PROGRESS_INTERVAL:
+            return
+        self._last_progress = now
+        elapsed = now - self._t0
+        rate = self.total_count / elapsed if elapsed > 0 else 0
+        self._step_log(
+            f"PostGIS Nodes ({self.region}): {self.total_count:,} nodes inserted "
+            f"({elapsed:.0f}s elapsed, {rate:,.0f} nodes/s)"
+        )
 
     def finalize(self) -> int:
         """Flush remaining batch and return total count."""
@@ -207,7 +229,9 @@ class WayCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
     second pass builds LINESTRING geometries from node refs.
     """
 
-    def __init__(self, conn, region: str = "", batch_size: int = 10000, progress=None):
+    PROGRESS_INTERVAL = 300.0  # seconds between progress logs
+
+    def __init__(self, conn, region: str = "", batch_size: int = 10000, progress=None, step_log=None):
         if HAS_OSMIUM:
             super().__init__()
         self.conn = conn
@@ -218,6 +242,9 @@ class WayCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
         self._node_cache: dict[int, tuple[float, float]] = {}
         self._pending_ways: list[tuple[int, dict, list[int]]] = []
         self._progress = progress
+        self._step_log = step_log
+        self._t0 = time.monotonic()
+        self._last_progress = self._t0
 
     def node(self, n) -> None:
         """Cache node locations for way geometry construction."""
@@ -272,6 +299,22 @@ class WayCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
         self.total_count += len(self.batch)
         log.debug("Flushed %d ways (total: %d)", len(self.batch), self.total_count)
         self.batch.clear()
+        self._maybe_progress()
+
+    def _maybe_progress(self) -> None:
+        """Emit a step log every PROGRESS_INTERVAL seconds."""
+        if not self._step_log:
+            return
+        now = time.monotonic()
+        if now - self._last_progress < self.PROGRESS_INTERVAL:
+            return
+        self._last_progress = now
+        elapsed = now - self._t0
+        rate = self.total_count / elapsed if elapsed > 0 else 0
+        self._step_log(
+            f"PostGIS Ways ({self.region}): {self.total_count:,} ways inserted "
+            f"({elapsed:.0f}s elapsed, {rate:,.0f} ways/s)"
+        )
 
     def finalize(self) -> int:
         """Build geometries, flush, and return total count."""
@@ -353,7 +396,7 @@ def import_to_postgis(
         file_size = get_file_size(str(pbf_path))
         node_progress = ScanProgressTracker(file_size, step_log, label="PostGIS Nodes")
         node_collector = NodeCollector(
-            conn, region=region, batch_size=batch_size, progress=node_progress
+            conn, region=region, batch_size=batch_size, progress=node_progress, step_log=step_log,
         )
         node_collector.apply_file(pbf_path, locations=True)
         node_count = node_collector.finalize()
@@ -364,7 +407,7 @@ def import_to_postgis(
         log.info("Importing ways from %s (region=%s)", pbf_path, region or "<global>")
         way_progress = ScanProgressTracker(file_size, step_log, label="PostGIS Ways")
         way_collector = WayCollector(
-            conn, region=region, batch_size=batch_size, progress=way_progress
+            conn, region=region, batch_size=batch_size, progress=way_progress, step_log=step_log,
         )
         way_collector.apply_file(pbf_path, locations=True)
         way_count = way_collector.finalize()
