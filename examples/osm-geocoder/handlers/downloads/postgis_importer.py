@@ -134,19 +134,38 @@ def sanitize_url(url: str) -> str:
 
 
 def ensure_schema(conn) -> None:
-    """Create PostGIS extension and tables if they don't exist."""
+    """Create PostGIS extension and tables if they don't exist.
+
+    Index creation is skipped when the indexes already exist, since
+    ``CREATE INDEX IF NOT EXISTS`` on large GIST/GIN indexes can block
+    for hours even when the index is already present.
+    """
     with conn.cursor() as cur:
         cur.execute(CREATE_POSTGIS_EXT)
         cur.execute(CREATE_HSTORE_EXT)
         cur.execute(CREATE_NODES_TABLE)
         cur.execute(CREATE_WAYS_TABLE)
         cur.execute(CREATE_IMPORT_LOG_TABLE)
-        cur.execute(CREATE_NODES_GEOM_IDX)
-        cur.execute(CREATE_NODES_TAGS_IDX)
-        cur.execute(CREATE_NODES_REGION_IDX)
-        cur.execute(CREATE_WAYS_GEOM_IDX)
-        cur.execute(CREATE_WAYS_TAGS_IDX)
-        cur.execute(CREATE_WAYS_REGION_IDX)
+
+        # Only create indexes if they don't already exist
+        cur.execute(
+            "SELECT indexname FROM pg_indexes "
+            "WHERE tablename IN ('osm_nodes', 'osm_ways')"
+        )
+        existing = {row[0] for row in cur.fetchall()}
+
+        if "idx_osm_nodes_geom" not in existing:
+            cur.execute(CREATE_NODES_GEOM_IDX)
+        if "idx_osm_nodes_tags" not in existing:
+            cur.execute(CREATE_NODES_TAGS_IDX)
+        if "idx_osm_nodes_region" not in existing:
+            cur.execute(CREATE_NODES_REGION_IDX)
+        if "idx_osm_ways_geom" not in existing:
+            cur.execute(CREATE_WAYS_GEOM_IDX)
+        if "idx_osm_ways_tags" not in existing:
+            cur.execute(CREATE_WAYS_TAGS_IDX)
+        if "idx_osm_ways_region" not in existing:
+            cur.execute(CREATE_WAYS_REGION_IDX)
     conn.commit()
 
 
@@ -204,21 +223,35 @@ class NodeCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
     def _maybe_progress(self) -> None:
         """Emit a step log every PROGRESS_INTERVAL seconds."""
         if not self._step_log:
+            log.debug("NodeCollector._maybe_progress: no step_log callback")
             return
         now = time.monotonic()
-        if now - self._last_progress < self.PROGRESS_INTERVAL:
+        elapsed_since_last = now - self._last_progress
+        if elapsed_since_last < self.PROGRESS_INTERVAL:
             return
         self._last_progress = now
         elapsed = now - self._t0
         rate = self.total_count / elapsed if elapsed > 0 else 0
-        self._step_log(
+        msg = (
             f"PostGIS Nodes ({self.region}): {self.total_count:,} nodes inserted "
             f"({elapsed:.0f}s elapsed, {rate:,.0f} nodes/s)"
         )
+        log.info(msg)
+        try:
+            self._step_log(msg)
+        except Exception:
+            log.exception("NodeCollector._maybe_progress: step_log callback failed")
 
     def finalize(self) -> int:
         """Flush remaining batch and return total count."""
         self._flush()
+        if self._step_log and self.total_count > 0:
+            elapsed = time.monotonic() - self._t0
+            rate = self.total_count / elapsed if elapsed > 0 else 0
+            self._step_log(
+                f"PostGIS Nodes ({self.region}): complete — {self.total_count:,} nodes "
+                f"in {elapsed:.0f}s ({rate:,.0f} nodes/s)"
+            )
         return self.total_count
 
 
@@ -311,14 +344,26 @@ class WayCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
         self._last_progress = now
         elapsed = now - self._t0
         rate = self.total_count / elapsed if elapsed > 0 else 0
-        self._step_log(
+        msg = (
             f"PostGIS Ways ({self.region}): {self.total_count:,} ways inserted "
             f"({elapsed:.0f}s elapsed, {rate:,.0f} ways/s)"
         )
+        log.info(msg)
+        try:
+            self._step_log(msg)
+        except Exception:
+            log.exception("WayCollector._maybe_progress: step_log callback failed")
 
     def finalize(self) -> int:
         """Build geometries, flush, and return total count."""
         self._build_and_flush()
+        if self._step_log and self.total_count > 0:
+            elapsed = time.monotonic() - self._t0
+            rate = self.total_count / elapsed if elapsed > 0 else 0
+            self._step_log(
+                f"PostGIS Ways ({self.region}): complete — {self.total_count:,} ways "
+                f"in {elapsed:.0f}s ({rate:,.0f} ways/s)"
+            )
         return self.total_count
 
 
