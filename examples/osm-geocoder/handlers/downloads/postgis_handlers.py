@@ -56,6 +56,7 @@ def _postgis_import_handler(payload: dict) -> dict:
             source_url=source_url,
             region=region,
             force=force,
+            step_log=step_log,
         )
         if step_log:
             if result.was_prior_import and not force:
@@ -135,6 +136,7 @@ def _postgis_import_batch_handler(payload: dict) -> dict:
                 source_url=source_url,
                 region=region_name,
                 force=force,
+                step_log=step_log,
             )
             total_nodes += result.node_count
             total_ways += result.way_count
