@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# Gracefully drain AFL runners: stop processes and reset running tasks to pending.
+#
+# This ensures no tasks are left in a stuck "running" state after shutdown.
+# Running tasks are reset to "pending" so they'll be picked up when runners restart.
+#
+# Usage:
+#   scripts/drain-runners              # stop local runners + reset tasks
+#   scripts/drain-runners --tasks-only # just reset tasks, don't stop processes
+#   scripts/drain-runners --dry        # show what would be reset without changing anything
+#
+# Environment:
+#   AFL_MONGODB_URL    MongoDB connection string (default from .env)
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$(dirname "$0")/_env.sh"
+
+TASKS_ONLY=false
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --tasks-only) TASKS_ONLY=true; shift ;;
+        --dry)        DRY_RUN=true; shift ;;
+        -h|--help)
+            awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+# --- Step 1: Stop runner processes ---
+
+if [[ "$TASKS_ONLY" == "false" && "$DRY_RUN" == "false" ]]; then
+    echo "=== Stopping runners ==="
+    "$REPO_ROOT/scripts/stop-runners"
+    echo ""
+fi
+
+# --- Step 2: Reset running tasks to pending ---
+
+echo "=== Resetting running tasks to pending ==="
+
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -c "
+import sys
+import time
+
+dry_run = '$DRY_RUN' == 'true'
+
+from afl.config import load_config
+
+try:
+    from pymongo import MongoClient
+except ImportError:
+    print('Error: pymongo is required', file=sys.stderr)
+    sys.exit(1)
+
+config = load_config()
+client = MongoClient(config.mongodb.connection_string())
+db = client[config.mongodb.database]
+
+# Find all running tasks
+running = list(db.tasks.find({'state': 'running'}))
+print(f'Found {len(running)} running task(s)')
+
+if not running:
+    print('Nothing to reset.')
+    sys.exit(0)
+
+# Show details
+for t in running:
+    step_id = t.get('step_id', '')[:12]
+    facet = t.get('facet_name', '') or ''
+    server = t.get('server_id', '')[:12]
+    updated = t.get('updated', 0)
+    if updated:
+        age_min = int((time.time() * 1000 - updated) / 60000)
+        age_str = f'{age_min}m ago'
+    else:
+        age_str = 'unknown'
+    # Look up facet from step if not on task
+    if not facet:
+        step = db.steps.find_one({'uuid': t.get('step_id', '')})
+        facet = step.get('facet_name', '?') if step else '?'
+    print(f'  step={step_id}  facet={facet}  server={server}  updated={age_str}')
+
+if dry_run:
+    print()
+    print(f'(dry run — {len(running)} task(s) would be reset)')
+    sys.exit(0)
+
+# Reset to pending
+result = db.tasks.update_many(
+    {'state': 'running'},
+    {'\$set': {'state': 'pending', 'server_id': '', 'error': None, 'updated': int(time.time() * 1000)}}
+)
+print(f'Reset {result.modified_count} task(s) to pending')
+
+# Also emit step logs for visibility
+try:
+    import uuid as _uuid
+    now_ms = int(time.time() * 1000)
+    logs = []
+    for t in running:
+        step = db.steps.find_one({'uuid': t.get('step_id', '')})
+        facet = ''
+        wf_id = ''
+        if step:
+            facet = step.get('facet_name', '')
+            wf_id = step.get('workflow_id', '')
+        logs.append({
+            'uuid': str(_uuid.uuid4()),
+            'step_id': t.get('step_id', ''),
+            'workflow_id': wf_id,
+            'runner_id': '',
+            'facet_name': facet,
+            'source': 'framework',
+            'level': 'warning',
+            'message': f'Step drained — task reset to pending (runner shutdown)',
+            'details': {},
+            'time': now_ms,
+        })
+    if logs:
+        db.step_logs.insert_many(logs)
+        print(f'Emitted {len(logs)} step log entries')
+except Exception as e:
+    print(f'Warning: failed to emit step logs: {e}', file=sys.stderr)
+
+client.close()
+print('Done.')
+"
