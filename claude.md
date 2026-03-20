@@ -99,6 +99,20 @@ scripts/list-runners --json            # machine-readable output
 scripts/start-runner --all --example hiv-drug-resistance
 scripts/stop-runners --all
 scripts/rolling-deploy --example hiv-drug-resistance
+
+# Graceful shutdown: stop runners and reset running tasks to pending
+scripts/drain-runners                  # stop processes + reset tasks
+scripts/drain-runners --tasks-only     # just reset tasks, don't stop processes
+scripts/drain-runners --dry            # preview what would be reset
+
+# PostGIS vacuum management (run after large import batches)
+scripts/postgis-vacuum                 # VACUUM ANALYZE both osm_nodes and osm_ways
+scripts/postgis-vacuum --nodes         # vacuum osm_nodes only
+scripts/postgis-vacuum --ways          # vacuum osm_ways only
+scripts/postgis-vacuum --full          # VACUUM FULL (rewrites tables, slower)
+scripts/postgis-vacuum-status          # show active vacuums, last vacuum times, table sizes
+scripts/postgis-kill-vacuum            # kill autovacuum processes blocking imports
+scripts/postgis-kill-vacuum --dry      # preview without killing
 ```
 
 ### Environment configuration
@@ -109,6 +123,12 @@ MongoDB and HDFS run on external servers (defined in `/etc/hosts`): `afl-mongodb
 Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets. When unset, LLM handlers fall back to deterministic stubs.
 
 Set `AFL_LOCALIZE_MOUNTS` (comma-separated path prefixes) to copy Docker mount-backed files to container-local storage before processing, avoiding VirtioFS hangs on large files.
+
+### PostGIS data management
+PostGIS data directory lives at `/Volumes/afl_data/osm/postgis`. After large import batches (e.g., importing all US states), run `scripts/postgis-vacuum` to reclaim space and update query planner statistics. During bulk imports, PostgreSQL's autovacuum may trigger and compete for I/O — use `scripts/postgis-kill-vacuum` to terminate it and `scripts/postgis-vacuum-status` to monitor. The `osm_nodes` and `osm_ways` tables have `autovacuum_analyze_threshold` set to 1,000,000 to reduce autovacuum frequency during imports.
+
+### Graceful runner shutdown
+Use `scripts/drain-runners` instead of `scripts/stop-runners` when you need to ensure running tasks are reset to pending. This prevents tasks from being stuck in "running" state after shutdown. Each drained task gets a step log entry for audit visibility.
 
 ---
 
@@ -139,7 +159,7 @@ Set `AFL_LOCALIZE_MOUNTS` (comma-separated path prefixes) to copy Docker mount-b
 | `examples/noaa-weather/` | NOAA GHCN-Daily climate analysis — catalog-first real-data pipeline (AWS S3 public bucket, 4 schemas, 5 event facets, 25+ workflows incl. international/cache, `catch` download recovery, `andThen foreach` batch, linear regression trends, `++`/`==`, RegistryRunner-first) |
 | `spec/` | Language and runtime specifications |
 | `docker/` | Dockerfiles for all services |
-| `scripts/` | Convenience scripts (setup, compile, runner, dashboard, rolling-deploy, etc.) |
+| `scripts/` | Convenience scripts (setup, compile, runner, dashboard, rolling-deploy, drain-runners, postgis-vacuum, etc.) |
 
 ---
 
