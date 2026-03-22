@@ -9,7 +9,7 @@ number of times.
 import importlib
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -216,7 +216,16 @@ class TestOsmOperationsHandlers:
     def test_handle_dispatches(self):
         mod = _osm_import("operations_handlers")
         facet = next(iter(mod._DISPATCH))
-        result = mod.handle({"_facet_name": facet})
+        mock_cache = {
+            "url": "https://example.com/test.osm.pbf",
+            "path": "/tmp/test.osm.pbf",
+            "date": "2026-01-01",
+            "size": 100,
+            "wasInCache": True,
+            "source": "cache",
+        }
+        with patch("handlers.shared.downloader.download", return_value=mock_cache):
+            result = mod.handle({"_facet_name": facet, "region": "TestRegion"})
         assert isinstance(result, dict)
 
     def test_register_handlers(self):

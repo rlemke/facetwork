@@ -29,6 +29,9 @@ from handlers.shared.downloader import (  # noqa: E402
 
 MODULE = "handlers.downloader"
 
+# Minimal valid PBF header (32+ bytes with OSMHeader marker) for integrity checks
+_FAKE_PBF = b"\x00\x00\x00\x0e\x0a\x09OSMHeader\x18" + b"\x00" * 19
+
 
 @pytest.fixture(autouse=True)
 def _disable_mirror():
@@ -124,15 +127,15 @@ class TestDownloadCacheMiss:
 
     def _setup_mocks(self, mock_get):
         mock_response = mock.Mock()
-        mock_response.iter_content.return_value = [b"fake-pbf-data"]
+        mock_response.iter_content.return_value = [_FAKE_PBF]
         mock_response.raise_for_status.return_value = None
         mock_get.return_value = mock_response
         return mock_response
 
     @mock.patch(f"{MODULE}.os.replace")
-    @mock.patch(f"{MODULE}.os.path.getsize", return_value=13)
+    @mock.patch(f"{MODULE}.os.path.getsize", return_value=len(_FAKE_PBF))
     @mock.patch(f"{MODULE}.os.makedirs")
-    @mock.patch("builtins.open", new_callable=mock.mock_open)
+    @mock.patch("builtins.open", new_callable=lambda: mock.mock_open(read_data=_FAKE_PBF))
     @mock.patch(f"{MODULE}.requests.get")
     @mock.patch(f"{MODULE}.os.path.exists", return_value=False)
     def test_returns_cache_miss(
@@ -143,14 +146,14 @@ class TestDownloadCacheMiss:
         result = download("africa/algeria")
 
         assert result["wasInCache"] is False
-        assert result["size"] == 13
+        assert result["size"] == len(_FAKE_PBF)
         assert result["url"] == geofabrik_url("africa/algeria")
         assert result["path"] == cache_path("africa/algeria")
 
     @mock.patch(f"{MODULE}.os.replace")
-    @mock.patch(f"{MODULE}.os.path.getsize", return_value=13)
+    @mock.patch(f"{MODULE}.os.path.getsize", return_value=len(_FAKE_PBF))
     @mock.patch(f"{MODULE}.os.makedirs")
-    @mock.patch("builtins.open", new_callable=mock.mock_open)
+    @mock.patch("builtins.open", new_callable=lambda: mock.mock_open(read_data=_FAKE_PBF))
     @mock.patch(f"{MODULE}.requests.get")
     @mock.patch(f"{MODULE}.os.path.exists", return_value=False)
     def test_streams_to_file(
@@ -162,12 +165,12 @@ class TestDownloadCacheMiss:
 
         mock_get.assert_called_once()
         assert mock_get.call_args.kwargs["stream"] is True
-        mock_open().write.assert_called_once_with(b"fake-pbf-data")
+        mock_open().write.assert_called_once_with(_FAKE_PBF)
 
     @mock.patch(f"{MODULE}.os.replace")
-    @mock.patch(f"{MODULE}.os.path.getsize", return_value=13)
+    @mock.patch(f"{MODULE}.os.path.getsize", return_value=len(_FAKE_PBF))
     @mock.patch(f"{MODULE}.os.makedirs")
-    @mock.patch("builtins.open", new_callable=mock.mock_open)
+    @mock.patch("builtins.open", new_callable=lambda: mock.mock_open(read_data=_FAKE_PBF))
     @mock.patch(f"{MODULE}.requests.get")
     @mock.patch(f"{MODULE}.os.path.exists", return_value=False)
     def test_creates_parent_directories(
@@ -181,9 +184,9 @@ class TestDownloadCacheMiss:
         mock_makedirs.assert_called_once_with(expected_dir, exist_ok=True)
 
     @mock.patch(f"{MODULE}.os.replace")
-    @mock.patch(f"{MODULE}.os.path.getsize", return_value=13)
+    @mock.patch(f"{MODULE}.os.path.getsize", return_value=len(_FAKE_PBF))
     @mock.patch(f"{MODULE}.os.makedirs")
-    @mock.patch("builtins.open", new_callable=mock.mock_open)
+    @mock.patch("builtins.open", new_callable=lambda: mock.mock_open(read_data=_FAKE_PBF))
     @mock.patch(f"{MODULE}.requests.get")
     @mock.patch(f"{MODULE}.os.path.exists", return_value=False)
     def test_sets_user_agent(
@@ -225,7 +228,7 @@ class TestDownloadMirror:
         mirror_file = os.path.join(mirror_dir, f"{region}-latest.{ext}")
         os.makedirs(os.path.dirname(mirror_file), exist_ok=True)
         with open(mirror_file, "wb") as f:
-            f.write(b"fake-pbf-data")
+            f.write(_FAKE_PBF)
 
         with (
             mock.patch.object(_downloader_mod, "GEOFABRIK_MIRROR", mirror_dir),
@@ -239,7 +242,7 @@ class TestDownloadMirror:
         assert result["source"] == "mirror"
         assert result["path"] == mirror_file
         assert result["url"] == geofabrik_url(region)
-        assert result["size"] == 13
+        assert result["size"] == len(_FAKE_PBF)
         mock_get.assert_not_called()
 
     def test_mirror_hit_copies_to_hdfs_cache(self, tmp_path):
@@ -250,7 +253,7 @@ class TestDownloadMirror:
         mirror_file = os.path.join(mirror_dir, f"{region}-latest.{ext}")
         os.makedirs(os.path.dirname(mirror_file), exist_ok=True)
         with open(mirror_file, "wb") as f:
-            f.write(b"fake-pbf-data")
+            f.write(_FAKE_PBF)
 
         with (
             mock.patch.object(_downloader_mod, "GEOFABRIK_MIRROR", mirror_dir),
@@ -276,16 +279,16 @@ class TestDownloadMirror:
         os.makedirs(mirror_dir, exist_ok=True)
 
         mock_response = mock.Mock()
-        mock_response.iter_content.return_value = [b"downloaded"]
+        mock_response.iter_content.return_value = [_FAKE_PBF]
         mock_response.raise_for_status.return_value = None
 
         with (
             mock.patch.object(_downloader_mod, "GEOFABRIK_MIRROR", mirror_dir),
             mock.patch(f"{MODULE}.os.path.exists", return_value=False),
             mock.patch(f"{MODULE}.os.makedirs"),
-            mock.patch(f"{MODULE}.os.path.getsize", return_value=10),
+            mock.patch(f"{MODULE}.os.path.getsize", return_value=len(_FAKE_PBF)),
             mock.patch(f"{MODULE}.os.replace"),
-            mock.patch("builtins.open", new_callable=mock.mock_open),
+            mock.patch("builtins.open", new_callable=lambda: mock.mock_open(read_data=_FAKE_PBF)),
             mock.patch(f"{MODULE}.requests.get", return_value=mock_response) as mock_get,
         ):
             result = download("africa/algeria")
@@ -296,7 +299,7 @@ class TestDownloadMirror:
     def test_mirror_not_set_skips_check(self):
         """Without AFL_GEOFABRIK_MIRROR, goes straight to HTTP."""
         mock_response = mock.Mock()
-        mock_response.iter_content.return_value = [b"data"]
+        mock_response.iter_content.return_value = [_FAKE_PBF]
         mock_response.raise_for_status.return_value = None
 
         with (
@@ -304,9 +307,9 @@ class TestDownloadMirror:
             mock.patch(f"{MODULE}.os.path.exists", return_value=False),
             mock.patch(f"{MODULE}.os.path.isfile") as mock_isfile,
             mock.patch(f"{MODULE}.os.makedirs"),
-            mock.patch(f"{MODULE}.os.path.getsize", return_value=4),
+            mock.patch(f"{MODULE}.os.path.getsize", return_value=len(_FAKE_PBF)),
             mock.patch(f"{MODULE}.os.replace"),
-            mock.patch("builtins.open", new_callable=mock.mock_open),
+            mock.patch("builtins.open", new_callable=lambda: mock.mock_open(read_data=_FAKE_PBF)),
             mock.patch(f"{MODULE}.requests.get", return_value=mock_response),
         ):
             download("africa/algeria")
@@ -321,7 +324,7 @@ class TestDownloadMirror:
             mirror_file = os.path.join(mirror_dir, f"{region}-latest.{ext}")
             os.makedirs(os.path.dirname(mirror_file), exist_ok=True)
             with open(mirror_file, "wb") as f:
-                f.write(b"x" * 7)
+                f.write(_FAKE_PBF if fmt == "pbf" else b"x" * 7)
 
             with (
                 mock.patch.object(_downloader_mod, "GEOFABRIK_MIRROR", mirror_dir),
@@ -345,7 +348,7 @@ class TestDownloadMirror:
         mirror_file = os.path.join(mirror_dir, f"{region}-latest.{ext}")
         os.makedirs(os.path.dirname(mirror_file), exist_ok=True)
         with open(mirror_file, "wb") as f:
-            f.write(b"mirror-data-here")
+            f.write(_FAKE_PBF)
 
         from afl.runtime.storage import get_storage_backend
 
@@ -378,14 +381,14 @@ class TestDownloadMirror:
         mirror_file = os.path.join(mirror_dir, f"{region}-latest.{ext}")
         os.makedirs(os.path.dirname(mirror_file), exist_ok=True)
         with open(mirror_file, "wb") as f:
-            f.write(b"mirror-data")
+            f.write(_FAKE_PBF)
 
         # Create cache file (already exists)
         test_storage = get_storage_backend(test_cache_dir)
         cache_file = test_storage.join(test_cache_dir, f"{region}-latest.{ext}")
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
         with open(cache_file, "wb") as f:
-            f.write(b"cached-data")
+            f.write(_FAKE_PBF)
 
         with (
             mock.patch.object(_downloader_mod, "GEOFABRIK_MIRROR", mirror_dir),
@@ -428,9 +431,9 @@ class TestDownloadShapefileCacheMiss:
         return mock_response
 
     @mock.patch(f"{MODULE}.os.replace")
-    @mock.patch(f"{MODULE}.os.path.getsize", return_value=13)
+    @mock.patch(f"{MODULE}.os.path.getsize", return_value=len(_FAKE_PBF))
     @mock.patch(f"{MODULE}.os.makedirs")
-    @mock.patch("builtins.open", new_callable=mock.mock_open)
+    @mock.patch("builtins.open", new_callable=lambda: mock.mock_open(read_data=_FAKE_PBF))
     @mock.patch(f"{MODULE}.requests.get")
     @mock.patch(f"{MODULE}.os.path.exists", return_value=False)
     def test_returns_cache_miss_shp(
@@ -445,9 +448,9 @@ class TestDownloadShapefileCacheMiss:
         assert result["path"] == cache_path("africa/algeria", fmt="shp")
 
     @mock.patch(f"{MODULE}.os.replace")
-    @mock.patch(f"{MODULE}.os.path.getsize", return_value=13)
+    @mock.patch(f"{MODULE}.os.path.getsize", return_value=len(_FAKE_PBF))
     @mock.patch(f"{MODULE}.os.makedirs")
-    @mock.patch("builtins.open", new_callable=mock.mock_open)
+    @mock.patch("builtins.open", new_callable=lambda: mock.mock_open(read_data=_FAKE_PBF))
     @mock.patch(f"{MODULE}.requests.get")
     @mock.patch(f"{MODULE}.os.path.exists", return_value=False)
     def test_requests_shp_url(
@@ -631,15 +634,15 @@ class TestDownloadLockDeduplication:
             downloaded["done"] = True
 
         mock_response = mock.Mock()
-        mock_response.iter_content.return_value = [b"fake-data"]
+        mock_response.iter_content.return_value = [_FAKE_PBF]
         mock_response.raise_for_status.return_value = None
 
         with (
             mock.patch(f"{MODULE}.os.path.exists", side_effect=exists_effect),
             mock.patch(f"{MODULE}.os.makedirs"),
-            mock.patch(f"{MODULE}.os.path.getsize", return_value=13),
+            mock.patch(f"{MODULE}.os.path.getsize", return_value=len(_FAKE_PBF)),
             mock.patch(f"{MODULE}.os.replace", side_effect=replace_effect),
-            mock.patch("builtins.open", new_callable=mock.mock_open),
+            mock.patch("builtins.open", new_callable=lambda: mock.mock_open(read_data=_FAKE_PBF)),
             mock.patch(f"{MODULE}.requests.get", return_value=mock_response) as mock_get,
         ):
             results = []
@@ -690,15 +693,15 @@ class TestDownloadLockDeduplication:
     def test_different_paths_not_blocked(self):
         """Concurrent downloads to different paths both proceed independently."""
         mock_response = mock.Mock()
-        mock_response.iter_content.return_value = [b"data"]
+        mock_response.iter_content.return_value = [_FAKE_PBF]
         mock_response.raise_for_status.return_value = None
 
         with (
             mock.patch(f"{MODULE}.os.path.exists", return_value=False),
             mock.patch(f"{MODULE}.os.makedirs"),
-            mock.patch(f"{MODULE}.os.path.getsize", return_value=13),
+            mock.patch(f"{MODULE}.os.path.getsize", return_value=len(_FAKE_PBF)),
             mock.patch(f"{MODULE}.os.replace"),
-            mock.patch("builtins.open", new_callable=mock.mock_open),
+            mock.patch("builtins.open", new_callable=lambda: mock.mock_open(read_data=_FAKE_PBF)),
             mock.patch(f"{MODULE}.requests.get", return_value=mock_response) as mock_get,
         ):
             results = []
@@ -800,11 +803,11 @@ class TestDownloadAtomicWrite:
         local_path = cache_path("africa/algeria")
 
         mock_response = mock.Mock()
-        mock_response.iter_content.return_value = [b"data"]
+        mock_response.iter_content.return_value = [_FAKE_PBF]
         mock_response.raise_for_status.return_value = None
 
         paths_opened = []
-        mock_file = mock.mock_open()
+        mock_file = mock.mock_open(read_data=_FAKE_PBF)
 
         def track_open(path, mode="r"):
             paths_opened.append(path)
@@ -813,7 +816,7 @@ class TestDownloadAtomicWrite:
         with (
             mock.patch(f"{MODULE}.os.path.exists", return_value=False),
             mock.patch(f"{MODULE}.os.makedirs"),
-            mock.patch(f"{MODULE}.os.path.getsize", return_value=13),
+            mock.patch(f"{MODULE}.os.path.getsize", return_value=len(_FAKE_PBF)),
             mock.patch(f"{MODULE}.os.replace") as mock_replace,
             mock.patch("builtins.open", side_effect=track_open),
             mock.patch(f"{MODULE}.requests.get", return_value=mock_response),

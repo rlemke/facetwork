@@ -39,6 +39,52 @@ _path_locks_guard = threading.Lock()
 
 _LOG_INTERVAL = 100 * 1024 * 1024  # log every 100 MB
 
+# PBF files start with a 4-byte big-endian blob header size, then a protobuf
+# field containing the string "OSMHeader".  We read the first 32 bytes and
+# check for this marker to reject corrupt/HTML downloads.
+_PBF_MARKER = b"OSMHeader"
+_PBF_CHECK_BYTES = 32
+
+
+def verify_pbf(path: str, storage=None) -> None:
+    """Verify that a file is a valid OSM PBF by checking the header.
+
+    Args:
+        path: Path to the file to verify.
+        storage: Optional storage backend. When None, uses os.path / open()
+            directly (local filesystem).
+
+    Raises:
+        ValueError: If the file is missing, too small, or not a valid PBF.
+    """
+    try:
+        size = storage.getsize(path) if storage else os.path.getsize(path)
+    except OSError as e:
+        raise ValueError(f"Cannot read file: {e}") from e
+
+    if size < _PBF_CHECK_BYTES:
+        raise ValueError(
+            f"File too small to be a valid PBF ({size} bytes): {path}"
+        )
+
+    try:
+        if storage:
+            with storage.open(path, "rb") as f:
+                header = f.read(_PBF_CHECK_BYTES)
+        else:
+            with open(path, "rb") as f:
+                header = f.read(_PBF_CHECK_BYTES)
+    except OSError as e:
+        raise ValueError(f"Cannot read file: {e}") from e
+
+    if _PBF_MARKER not in header:
+        # Try to detect what the file actually is
+        if header.lstrip().startswith(b"<"):
+            detail = "file contains HTML/XML (likely an error page)"
+        else:
+            detail = f"missing OSMHeader marker in first {_PBF_CHECK_BYTES} bytes"
+        raise ValueError(f"Not a valid PBF file ({detail}): {path}")
+
 
 def _fmt_bytes(n: int) -> str:
     """Format byte count as human-readable string."""
@@ -239,10 +285,26 @@ def download(region_path: str, fmt: str = "pbf") -> dict:
 
     # Fast path — already cached, no lock needed
     if _storage.exists(local_path):
-        result = _cache_hit(url, local_path)
-        result["source"] = "cache"
-        log.info("cache-hit: %s (%s)", region_path, _fmt_bytes(result["size"]))
-        return result
+        if fmt == "pbf":
+            try:
+                verify_pbf(local_path, _storage)
+            except ValueError as e:
+                log.warning("cache-corrupt: %s — %s, removing", region_path, e)
+                try:
+                    _storage.remove(local_path)
+                except OSError:
+                    pass
+                # Fall through to re-download
+            else:
+                result = _cache_hit(url, local_path)
+                result["source"] = "cache"
+                log.info("cache-hit: %s (%s)", region_path, _fmt_bytes(result["size"]))
+                return result
+        else:
+            result = _cache_hit(url, local_path)
+            result["source"] = "cache"
+            log.info("cache-hit: %s (%s)", region_path, _fmt_bytes(result["size"]))
+            return result
 
     # Check local mirror
     if GEOFABRIK_MIRROR:
@@ -272,16 +334,34 @@ def download(region_path: str, fmt: str = "pbf") -> dict:
                 return result
             else:
                 # Local cache: use the mirror path directly, no copy
-                mirror_size = _mirror_file_size(mirror_path)
-                log.info("mirror-direct: %s (%s)", region_path, _fmt_bytes(mirror_size))
-                return {
-                    "url": url,
-                    "path": mirror_path,
-                    "date": datetime.now(UTC).isoformat(),
-                    "size": mirror_size,
-                    "wasInCache": True,
-                    "source": "mirror",
-                }
+                if fmt == "pbf":
+                    try:
+                        verify_pbf(mirror_path)
+                    except ValueError as e:
+                        log.warning("mirror-corrupt: %s — %s, skipping", region_path, e)
+                        # Fall through to download from Geofabrik
+                    else:
+                        mirror_size = _mirror_file_size(mirror_path)
+                        log.info("mirror-direct: %s (%s)", region_path, _fmt_bytes(mirror_size))
+                        return {
+                            "url": url,
+                            "path": mirror_path,
+                            "date": datetime.now(UTC).isoformat(),
+                            "size": mirror_size,
+                            "wasInCache": True,
+                            "source": "mirror",
+                        }
+                else:
+                    mirror_size = _mirror_file_size(mirror_path)
+                    log.info("mirror-direct: %s (%s)", region_path, _fmt_bytes(mirror_size))
+                    return {
+                        "url": url,
+                        "path": mirror_path,
+                        "date": datetime.now(UTC).isoformat(),
+                        "size": mirror_size,
+                        "wasInCache": True,
+                        "source": "mirror",
+                    }
 
     with _get_path_lock(local_path):
         # Re-check after acquiring lock
@@ -297,6 +377,8 @@ def download(region_path: str, fmt: str = "pbf") -> dict:
         tmp_path = local_path + f".tmp.{os.getpid()}.{threading.get_ident()}"
         try:
             _stream_to_file(url, tmp_path, _storage)
+            if fmt == "pbf":
+                verify_pbf(tmp_path)
             os.replace(tmp_path, local_path)
         except BaseException:
             try:
