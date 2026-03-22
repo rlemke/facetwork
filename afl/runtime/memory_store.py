@@ -127,6 +127,37 @@ class MemoryStore(PersistenceAPI):
         # Update indexes
         self._add_to_indexes(step)
 
+    def delete_steps(self, step_ids: Sequence[str]) -> int:
+        """Delete steps by their UUIDs."""
+        count = 0
+        for sid in step_ids:
+            step = self._steps.get(sid)
+            if step:
+                self._remove_from_indexes(step)
+                del self._steps[sid]
+                count += 1
+        return count
+
+    def delete_tasks_for_steps(self, step_ids: Sequence[str]) -> int:
+        """Delete tasks associated with the given step IDs."""
+        ids_set = set(step_ids)
+        to_remove = [tid for tid, t in self._tasks.items() if t.step_id in ids_set]
+        for tid in to_remove:
+            task = self._tasks.pop(tid)
+            if task.workflow_id in self._tasks_by_workflow:
+                wf_tasks = self._tasks_by_workflow[task.workflow_id]
+                if tid in wf_tasks:
+                    wf_tasks.remove(tid)
+        return len(to_remove)
+
+    def delete_step_logs_for_steps(self, step_ids: Sequence[str]) -> int:
+        """Delete step log entries for the given step IDs."""
+        ids_set = set(step_ids)
+        to_remove = [k for k, entry in self._step_logs.items() if entry.step_id in ids_set]
+        for k in to_remove:
+            del self._step_logs[k]
+        return len(to_remove)
+
     def _add_to_indexes(self, step: StepDefinition) -> None:
         """Add step to all indexes."""
         self._steps_by_workflow[step.workflow_id].append(step.id)

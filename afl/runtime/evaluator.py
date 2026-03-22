@@ -1232,7 +1232,8 @@ class Evaluator:
 
         Resets a step from STATEMENT_ERROR back to EVENT_TRANSMIT so that
         the agent can re-execute it. Also resets the associated task from
-        failed back to pending.
+        failed back to pending, and resets any errored ancestor blocks so
+        execution can continue once the retried step completes.
 
         Args:
             step_id: The step ID to retry
@@ -1260,6 +1261,196 @@ class Evaluator:
             task.state = "pending"
             task.error = None
             self.persistence.save_task(task)
+
+        # Reset errored ancestor blocks/containers so execution resumes
+        self._reset_errored_ancestors(step)
+
+    def retry_block(self, step_id: StepId) -> int:
+        """Retry all errored leaf steps under a block, recursively.
+
+        Finds every step in STATEMENT_ERROR under the given block (walking
+        nested blocks), resets each leaf error to EVENT_TRANSMIT, resets
+        its task, and resets all errored ancestor blocks/containers so
+        execution can resume.
+
+        Args:
+            step_id: The block or container step ID to retry from.
+
+        Returns:
+            Number of leaf steps retried.
+        """
+        logger.info("Retry block: step_id=%s", step_id)
+        root = self.persistence.get_step(step_id)
+        if root is None:
+            raise ValueError(f"Step {step_id} not found")
+
+        # Collect all steps in this workflow
+        all_steps = list(self.persistence.get_steps_by_workflow(root.workflow_id))
+
+        # Build parent->children maps on block_id and container_id
+        by_block: dict[str, list[StepDefinition]] = {}
+        by_container: dict[str, list[StepDefinition]] = {}
+        for s in all_steps:
+            if s.block_id:
+                by_block.setdefault(s.block_id, []).append(s)
+            if s.container_id:
+                by_container.setdefault(s.container_id, []).append(s)
+
+        # Walk down to find all errored leaf steps (event facet steps)
+        errored_leaves: list[StepDefinition] = []
+        stack = [step_id]
+        seen: set[str] = set()
+        while stack:
+            sid = stack.pop()
+            if sid in seen:
+                continue
+            seen.add(sid)
+            children = by_block.get(sid, []) + by_container.get(sid, [])
+            if not children:
+                # Leaf — check if errored
+                step = next((s for s in all_steps if s.id == sid), None)
+                if step and step.state == StepState.STATEMENT_ERROR:
+                    errored_leaves.append(step)
+            else:
+                for child in children:
+                    if child.state == StepState.STATEMENT_ERROR:
+                        stack.append(child.id)
+
+        # Retry each errored leaf
+        for leaf in errored_leaves:
+            leaf.state = StepState.EVENT_TRANSMIT
+            leaf.transition.current_state = StepState.EVENT_TRANSMIT
+            leaf.transition.clear_error()
+            leaf.transition.request_transition = False
+            leaf.transition.changed = True
+            self.persistence.save_step(leaf)
+
+            task = self.persistence.get_task_for_step(leaf.id)
+            if task is not None:
+                task.state = "pending"
+                task.error = None
+                self.persistence.save_task(task)
+
+            self._reset_errored_ancestors(leaf)
+
+        logger.info("Retry block done: step_id=%s retried=%d", step_id, len(errored_leaves))
+        return len(errored_leaves)
+
+    def reset_block(self, step_id: StepId) -> int:
+        """Reset a block by deleting all descendant steps and restarting it.
+
+        Recursively deletes every step, task, and step log under the given
+        block, then resets the block step itself to BLOCK_EXECUTION_BEGIN
+        so it re-executes from scratch as if it had never run.  Also resets
+        errored ancestors so the workflow can continue.
+
+        Args:
+            step_id: The block or container step ID to reset.
+
+        Returns:
+            Number of descendant steps deleted.
+        """
+        logger.info("Reset block: step_id=%s", step_id)
+        block = self.persistence.get_step(step_id)
+        if block is None:
+            raise ValueError(f"Step {step_id} not found")
+
+        # Collect all descendant step IDs recursively
+        all_steps = list(self.persistence.get_steps_by_workflow(block.workflow_id))
+        by_block: dict[str, list[str]] = {}
+        by_container: dict[str, list[str]] = {}
+        for s in all_steps:
+            if s.block_id:
+                by_block.setdefault(s.block_id, []).append(s.id)
+            if s.container_id:
+                by_container.setdefault(s.container_id, []).append(s.id)
+
+        descendant_ids: list[str] = []
+        stack = [step_id]
+        seen: set[str] = set()
+        while stack:
+            sid = stack.pop()
+            if sid in seen:
+                continue
+            seen.add(sid)
+            children = by_block.get(sid, []) + by_container.get(sid, [])
+            for child_id in children:
+                descendant_ids.append(child_id)
+                stack.append(child_id)
+
+        # Delete descendants (steps, tasks, logs)
+        if descendant_ids:
+            self.persistence.delete_step_logs_for_steps(descendant_ids)
+            self.persistence.delete_tasks_for_steps(descendant_ids)
+            self.persistence.delete_steps(descendant_ids)
+
+        # Reset the block itself to BLOCK_EXECUTION_BEGIN
+        block.state = StepState.BLOCK_EXECUTION_BEGIN
+        block.transition.current_state = StepState.BLOCK_EXECUTION_BEGIN
+        block.transition.clear_error()
+        block.transition.request_transition = False
+        block.transition.changed = True
+        self.persistence.save_step(block)
+
+        # Reset errored ancestors so the workflow resumes
+        self._reset_errored_ancestors(block)
+
+        logger.info(
+            "Reset block done: step_id=%s deleted=%d", step_id, len(descendant_ids)
+        )
+        return len(descendant_ids)
+
+    def _reset_errored_ancestors(self, step: StepDefinition) -> None:
+        """Reset errored ancestor blocks/containers so execution can resume.
+
+        Walks up the block_id and container_id chain from *step*, resetting
+        any ancestor that is in STATEMENT_ERROR back to its appropriate
+        continue state (BLOCK_EXECUTION_CONTINUE for andThen blocks,
+        STATEMENT_BLOCKS_CONTINUE for statement containers).
+        """
+        seen: set[str] = set()
+
+        # Walk up block_id chain (andThen blocks)
+        current_id = step.block_id
+        while current_id and current_id not in seen:
+            seen.add(current_id)
+            ancestor = self.persistence.get_step(current_id)
+            if ancestor is None:
+                break
+            if ancestor.state == StepState.STATEMENT_ERROR:
+                ancestor.state = StepState.BLOCK_EXECUTION_CONTINUE
+                ancestor.transition.current_state = StepState.BLOCK_EXECUTION_CONTINUE
+                ancestor.transition.clear_error()
+                ancestor.transition.request_transition = False
+                ancestor.transition.changed = True
+                self.persistence.save_step(ancestor)
+                logger.info(
+                    "Reset ancestor block: step_id=%s to BLOCK_EXECUTION_CONTINUE",
+                    current_id,
+                )
+            current_id = ancestor.block_id
+
+        # Walk up container_id chain (statement containers)
+        current_id = step.container_id
+        while current_id and current_id not in seen:
+            seen.add(current_id)
+            ancestor = self.persistence.get_step(current_id)
+            if ancestor is None:
+                break
+            if ancestor.state == StepState.STATEMENT_ERROR:
+                ancestor.state = StepState.STATEMENT_BLOCKS_CONTINUE
+                ancestor.transition.current_state = StepState.STATEMENT_BLOCKS_CONTINUE
+                ancestor.transition.clear_error()
+                ancestor.transition.request_transition = False
+                ancestor.transition.changed = True
+                self.persistence.save_step(ancestor)
+                logger.info(
+                    "Reset ancestor container: step_id=%s to STATEMENT_BLOCKS_CONTINUE",
+                    current_id,
+                )
+            # Continue up: block_id then container_id
+            next_id = ancestor.block_id or ancestor.container_id
+            current_id = next_id
 
     def resume(
         self,

@@ -303,6 +303,27 @@ class MongoStore(PersistenceAPI):
         doc = self._step_to_doc(step)
         self._db.steps.replace_one({"uuid": step.id}, doc, upsert=True)
 
+    def delete_steps(self, step_ids: Sequence[str]) -> int:
+        """Delete steps by their UUIDs."""
+        if not step_ids:
+            return 0
+        result = self._db.steps.delete_many({"uuid": {"$in": list(step_ids)}})
+        return result.deleted_count
+
+    def delete_tasks_for_steps(self, step_ids: Sequence[str]) -> int:
+        """Delete tasks associated with the given step IDs."""
+        if not step_ids:
+            return 0
+        result = self._db.tasks.delete_many({"step_id": {"$in": list(step_ids)}})
+        return result.deleted_count
+
+    def delete_step_logs_for_steps(self, step_ids: Sequence[str]) -> int:
+        """Delete step log entries for the given step IDs."""
+        if not step_ids:
+            return 0
+        result = self._db.step_logs.delete_many({"step_id": {"$in": list(step_ids)}})
+        return result.deleted_count
+
     def get_blocks_by_step(self, step_id: str) -> Sequence[StepDefinition]:
         """Fetch all block steps for a containing step."""
         docs = self._db.steps.find(

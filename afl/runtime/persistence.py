@@ -231,6 +231,39 @@ class PersistenceAPI(Protocol):
         """
         ...
 
+    def delete_steps(self, step_ids: Sequence[str]) -> int:
+        """Delete steps by their UUIDs.
+
+        Args:
+            step_ids: The step UUIDs to delete
+
+        Returns:
+            Number of steps deleted
+        """
+        raise NotImplementedError
+
+    def delete_tasks_for_steps(self, step_ids: Sequence[str]) -> int:
+        """Delete tasks associated with the given step IDs.
+
+        Args:
+            step_ids: The step UUIDs whose tasks should be deleted
+
+        Returns:
+            Number of tasks deleted
+        """
+        raise NotImplementedError
+
+    def delete_step_logs_for_steps(self, step_ids: Sequence[str]) -> int:
+        """Delete step log entries for the given step IDs.
+
+        Args:
+            step_ids: The step UUIDs whose logs should be deleted
+
+        Returns:
+            Number of log entries deleted
+        """
+        raise NotImplementedError
+
     # Atomic operations
     @abstractmethod
     def commit(self, changes: IterationChanges) -> None:

@@ -16,6 +16,12 @@
     <button hx-post="/steps/{{ step.id }}/retry"
             hx-confirm="Retry this step? This will reset it to EventTransmit."
             class="outline">Retry</button>
+    <button hx-post="/steps/{{ step.id }}/retry-block"
+            hx-confirm="Retry all errored steps under this block recursively?"
+            class="outline">Retry All Errors</button>
+    <button hx-post="/steps/{{ step.id }}/reset-block"
+            hx-confirm="Reset this block? All descendant steps will be deleted and the block will restart from scratch."
+            class="outline contrast">Reset Block</button>
     {% endif %}
     <button class="outline"
             data-log-stream="/api/steps/{{ step.id }}/logs/stream"

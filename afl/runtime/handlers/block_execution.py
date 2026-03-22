@@ -515,21 +515,31 @@ class BlockExecutionContinueHandler(StateHandler):
             analysis.is_blocked(),
         )
 
-        if analysis.done:
-            # All statements terminal (complete or error)
-            if analysis.has_errors:
+        if analysis.has_errors:
+            # Stop the block as soon as any step errors — do not let
+            # downstream steps (e.g. yield) run against errored deps.
+            # Wait for any still-running siblings to finish first.
+            running = [
+                s for s in analysis.steps
+                if not s.is_terminal
+            ]
+            if not running:
                 errors = [s.transition.error for s in analysis.errored if s.transition.error]
                 msg = f"Block has {len(analysis.errored)} errored step(s)"
                 if errors:
                     msg += f": {errors[0]}"
                 self.step.mark_error(RuntimeError(msg))
                 return StateChangeResult(step=self.step)
+            # Still have running steps — wait for them before erroring
+            return self.stay(push=True)
+
+        if analysis.done:
+            # All statements completed successfully
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
 
-        # Create steps for newly ready statements (errored deps also satisfy)
+        # Create steps for newly ready statements (only completed deps satisfy)
         terminal_ids = {str(s.statement_id) for s in analysis.completed if s.statement_id}
-        terminal_ids |= {str(s.statement_id) for s in analysis.errored if s.statement_id}
         self._create_ready_steps(graph, terminal_ids)
 
         # Check if we made progress

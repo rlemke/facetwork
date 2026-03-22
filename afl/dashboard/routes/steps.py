@@ -202,6 +202,9 @@ def retry_step(step_id: str, store=Depends(get_store)):
             task.error = None
             store.save_task(task)
 
+        # Reset errored ancestor blocks/containers so execution resumes
+        _reset_errored_ancestors(step, store)
+
         # Emit step log entry for the manual retry
         from afl.runtime.types import generate_id
 
@@ -217,3 +220,199 @@ def retry_step(step_id: str, store=Depends(get_store)):
         )
         store.save_step_log(entry)
     return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+
+
+@router.post("/{step_id}/retry-block")
+def retry_block(step_id: str, store=Depends(get_store)):
+    """Retry all errored leaf steps under a block recursively."""
+    import time as _time
+
+    from afl.runtime.entities import (
+        StepLogEntry,
+        StepLogLevel,
+        StepLogSource,
+    )
+    from afl.runtime.states import StepState
+    from afl.runtime.types import generate_id
+
+    root = store.get_step(step_id)
+    if not root:
+        return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+
+    # Collect all steps in the workflow
+    all_steps = list(store.get_steps_by_workflow(root.workflow_id))
+
+    # Build parent->children maps
+    by_block: dict[str, list] = {}
+    by_container: dict[str, list] = {}
+    step_by_id: dict[str, object] = {}
+    for s in all_steps:
+        step_by_id[s.id] = s
+        if s.block_id:
+            by_block.setdefault(s.block_id, []).append(s)
+        if s.container_id:
+            by_container.setdefault(s.container_id, []).append(s)
+
+    # Walk down to find errored leaf steps
+    errored_leaves = []
+    stack = [step_id]
+    seen: set[str] = set()
+    while stack:
+        sid = stack.pop()
+        if sid in seen:
+            continue
+        seen.add(sid)
+        children = by_block.get(sid, []) + by_container.get(sid, [])
+        if not children:
+            s = step_by_id.get(sid)
+            if s and s.state == StepState.STATEMENT_ERROR:
+                errored_leaves.append(s)
+        else:
+            for child in children:
+                if child.state == StepState.STATEMENT_ERROR:
+                    stack.append(child.id)
+
+    # Retry each leaf
+    for leaf in errored_leaves:
+        leaf.state = StepState.EVENT_TRANSMIT
+        leaf.transition.current_state = StepState.EVENT_TRANSMIT
+        leaf.transition.clear_error()
+        leaf.transition.request_transition = False
+        leaf.transition.changed = True
+        store.save_step(leaf)
+
+        task = store.get_task_for_step(leaf.id)
+        if task is not None:
+            task.state = "pending"
+            task.error = None
+            store.save_task(task)
+
+        _reset_errored_ancestors(leaf, store)
+
+    # Log the bulk retry
+    entry = StepLogEntry(
+        uuid=generate_id(),
+        step_id=step_id,
+        workflow_id=root.workflow_id,
+        facet_name=root.facet_name or "",
+        source=StepLogSource.FRAMEWORK,
+        level=StepLogLevel.WARNING,
+        message=f"Block retry: {len(errored_leaves)} errored step(s) restarted",
+        time=int(_time.time() * 1000),
+    )
+    store.save_step_log(entry)
+
+    return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+
+
+@router.post("/{step_id}/reset-block")
+def reset_block(step_id: str, store=Depends(get_store)):
+    """Reset a block: delete all descendant steps and restart from scratch."""
+    import time as _time
+
+    from afl.runtime.entities import (
+        StepLogEntry,
+        StepLogLevel,
+        StepLogSource,
+    )
+    from afl.runtime.states import StepState
+    from afl.runtime.types import generate_id
+
+    block = store.get_step(step_id)
+    if not block:
+        return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+
+    # Collect all descendant step IDs recursively
+    all_steps = list(store.get_steps_by_workflow(block.workflow_id))
+    by_block: dict[str, list[str]] = {}
+    by_container: dict[str, list[str]] = {}
+    for s in all_steps:
+        if s.block_id:
+            by_block.setdefault(s.block_id, []).append(s.id)
+        if s.container_id:
+            by_container.setdefault(s.container_id, []).append(s.id)
+
+    descendant_ids: list[str] = []
+    stack = [step_id]
+    seen: set[str] = set()
+    while stack:
+        sid = stack.pop()
+        if sid in seen:
+            continue
+        seen.add(sid)
+        children = by_block.get(sid, []) + by_container.get(sid, [])
+        for child_id in children:
+            descendant_ids.append(child_id)
+            stack.append(child_id)
+
+    # Delete descendants
+    if descendant_ids:
+        store.delete_step_logs_for_steps(descendant_ids)
+        store.delete_tasks_for_steps(descendant_ids)
+        store.delete_steps(descendant_ids)
+
+    # Reset the block to BLOCK_EXECUTION_BEGIN
+    block.state = StepState.BLOCK_EXECUTION_BEGIN
+    block.transition.current_state = StepState.BLOCK_EXECUTION_BEGIN
+    block.transition.clear_error()
+    block.transition.request_transition = False
+    block.transition.changed = True
+    store.save_step(block)
+
+    # Reset errored ancestors
+    _reset_errored_ancestors(block, store)
+
+    # Log
+    entry = StepLogEntry(
+        uuid=generate_id(),
+        step_id=step_id,
+        workflow_id=block.workflow_id,
+        facet_name=block.facet_name or "",
+        source=StepLogSource.FRAMEWORK,
+        level=StepLogLevel.WARNING,
+        message=f"Block reset: {len(descendant_ids)} step(s) deleted, block restarted",
+        time=int(_time.time() * 1000),
+    )
+    store.save_step_log(entry)
+
+    return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+
+
+def _reset_errored_ancestors(step, store) -> None:
+    """Reset errored ancestor blocks/containers so execution can resume."""
+    from afl.runtime.states import StepState
+
+    seen: set[str] = set()
+
+    # Walk up block_id chain (andThen blocks)
+    current_id = step.block_id
+    while current_id and current_id not in seen:
+        seen.add(current_id)
+        ancestor = store.get_step(current_id)
+        if ancestor is None:
+            break
+        if ancestor.state == StepState.STATEMENT_ERROR:
+            ancestor.state = StepState.BLOCK_EXECUTION_CONTINUE
+            ancestor.transition.current_state = StepState.BLOCK_EXECUTION_CONTINUE
+            ancestor.transition.clear_error()
+            ancestor.transition.request_transition = False
+            ancestor.transition.changed = True
+            store.save_step(ancestor)
+        current_id = ancestor.block_id
+
+    # Walk up container_id chain (statement containers)
+    current_id = step.container_id
+    while current_id and current_id not in seen:
+        seen.add(current_id)
+        ancestor = store.get_step(current_id)
+        if ancestor is None:
+            break
+        if ancestor.state == StepState.STATEMENT_ERROR:
+            ancestor.state = StepState.STATEMENT_BLOCKS_CONTINUE
+            ancestor.transition.current_state = StepState.STATEMENT_BLOCKS_CONTINUE
+            ancestor.transition.clear_error()
+            ancestor.transition.request_transition = False
+            ancestor.transition.changed = True
+            store.save_step(ancestor)
+        next_id = ancestor.block_id or ancestor.container_id
+        current_id = next_id
