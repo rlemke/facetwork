@@ -141,8 +141,14 @@ def ensure_schema(conn) -> None:
     for hours even when the index is already present.
     """
     with conn.cursor() as cur:
-        cur.execute(CREATE_POSTGIS_EXT)
-        cur.execute(CREATE_HSTORE_EXT)
+        try:
+            cur.execute(CREATE_POSTGIS_EXT)
+        except psycopg2.errors.DuplicateObject:
+            conn.rollback()
+        try:
+            cur.execute(CREATE_HSTORE_EXT)
+        except psycopg2.errors.DuplicateObject:
+            conn.rollback()
         cur.execute(CREATE_NODES_TABLE)
         cur.execute(CREATE_WAYS_TABLE)
         cur.execute(CREATE_IMPORT_LOG_TABLE)

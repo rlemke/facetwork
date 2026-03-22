@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Drop OSM import tables from PostGIS (osm_nodes, osm_ways, osm_import_log).
+#
+# Usage:
+#   scripts/postgis-drop-tables           # prompt for confirmation
+#   scripts/postgis-drop-tables --yes     # skip confirmation
+
+set -euo pipefail
+source "$(dirname "$0")/_env.sh"
+
+POSTGIS_URL="${AFL_POSTGIS_URL:-postgresql://afl:afl@localhost:5432/afl_gis}"
+
+TABLES="osm_nodes osm_ways osm_import_log"
+
+if [ "${1:-}" != "--yes" ]; then
+    echo "This will DROP the following tables from $POSTGIS_URL:"
+    for t in $TABLES; do echo "  - $t"; done
+    printf "Continue? [y/N] "
+    read -r answer
+    if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+        echo "Aborted."
+        exit 0
+    fi
+fi
+
+for t in $TABLES; do
+    psql "$POSTGIS_URL" -c "DROP TABLE IF EXISTS $t CASCADE;" 2>&1
+    echo "Dropped $t"
+done
+
+echo "Done."

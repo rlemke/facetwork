@@ -32,12 +32,13 @@ def _postgis_import_handler(payload: dict) -> dict:
     log.info("PostGisImport processing region=%s cache=%s", region, source_url or pbf_path)
 
     if not HAS_OSMIUM or not HAS_PSYCOPG2 or not pbf_path:
-        log.warning(
-            "PostGisImport: skipping import (osmium=%s, psycopg2=%s, path=%s)",
-            HAS_OSMIUM,
-            HAS_PSYCOPG2,
-            bool(pbf_path),
+        msg = (
+            f"PostGisImport: skipping import — missing dependencies "
+            f"(osmium={HAS_OSMIUM}, psycopg2={HAS_PSYCOPG2}, path={bool(pbf_path)})"
         )
+        log.warning(msg)
+        if step_log:
+            step_log(msg, level="warning")
         return {
             "stats": {
                 "url": source_url,
@@ -79,17 +80,14 @@ def _postgis_import_handler(payload: dict) -> dict:
                 "wasInCache": result.was_prior_import,
             }
         }
-    except Exception:
+    except Exception as exc:
         log.exception("PostGisImport failed for region=%s path=%s", region, pbf_path)
-        return {
-            "stats": {
-                "url": source_url,
-                "path": "",
-                "date": cache.get("date", ""),
-                "size": 0,
-                "wasInCache": False,
-            }
-        }
+        if step_log:
+            step_log(
+                f"PostGisImport: FAILED for region '{region}': {exc}",
+                level="error",
+            )
+        raise
 
 
 def _postgis_import_batch_handler(payload: dict) -> dict:

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Start a local PostgreSQL/PostGIS server (outside Docker).
+#
+# Data directory: /Volumes/afl_data/local_servers/postgis/data
+# Log file:       /Volumes/afl_data/local_servers/postgis/log/postgres.log
+# Port:           5432
+#
+# First-time setup creates the data directory, initialises the cluster,
+# creates the 'afl' user and 'afl_gis' database, and enables PostGIS.
+
+set -euo pipefail
+
+DATA_DIR="/Volumes/afl_data/local_servers/postgis/data"
+LOG_DIR="/Volumes/afl_data/local_servers/postgis/log"
+LOG_FILE="$LOG_DIR/postgres.log"
+DB_USER="afl"
+DB_NAME="afl_gis"
+
+# Check if already running
+if pg_isready -q 2>/dev/null; then
+    echo "PostgreSQL is already running."
+    exit 0
+fi
+
+# First-time initialisation
+if [ ! -d "$DATA_DIR/base" ]; then
+    echo "Initialising PostgreSQL data directory at $DATA_DIR ..."
+    mkdir -p "$DATA_DIR" "$LOG_DIR"
+    initdb -D "$DATA_DIR" --username="$DB_USER" --auth=trust
+    echo "Data directory initialised."
+fi
+
+mkdir -p "$LOG_DIR"
+
+echo "Starting PostgreSQL ..."
+pg_ctl -D "$DATA_DIR" -l "$LOG_FILE" -o "-p 5432" start
+
+# Wait for readiness
+for i in $(seq 1 10); do
+    if pg_isready -q 2>/dev/null; then break; fi
+    sleep 1
+done
+
+if ! pg_isready -q 2>/dev/null; then
+    echo "ERROR: PostgreSQL did not start. Check $LOG_FILE"
+    exit 1
+fi
+
+# Create database and enable PostGIS if needed
+if ! psql -U "$DB_USER" -lqt 2>/dev/null | grep -qw "$DB_NAME"; then
+    echo "Creating database $DB_NAME ..."
+    createdb -U "$DB_USER" "$DB_NAME"
+    psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+    echo "Database $DB_NAME created with PostGIS extension."
+fi
+
+echo "PostgreSQL is running on port 5432 (data: $DATA_DIR)"
