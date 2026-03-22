@@ -48,13 +48,13 @@ class TestExtractNamespace:
         assert extract_namespace("osm.Routes.BicycleRoutes") == "osm.Routes"
 
     def test_simple_name(self):
-        assert extract_namespace("SimpleWorkflow") == "(top-level)"
+        assert extract_namespace("SimpleWorkflow") == "system.unnamespaced"
 
     def test_two_parts(self):
         assert extract_namespace("ns.Workflow") == "ns"
 
     def test_empty_string(self):
-        assert extract_namespace("") == "(top-level)"
+        assert extract_namespace("") == "system.unnamespaced"
 
     def test_deeply_nested(self):
         assert extract_namespace("a.b.c.d.e.F") == "a.b.c.d.e"
@@ -134,7 +134,7 @@ class TestGroupRunnersByNamespace:
         runners = [self._make_runner("SimpleWorkflow")]
         groups = group_runners_by_namespace(runners)
         assert len(groups) == 1
-        assert groups[0]["namespace"] == "(top-level)"
+        assert groups[0]["namespace"] == "system.unnamespaced"
 
     def test_empty(self):
         groups = group_runners_by_namespace([])

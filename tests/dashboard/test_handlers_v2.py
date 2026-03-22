@@ -46,7 +46,7 @@ class TestExtractHandlerPrefix:
         assert extract_handler_prefix("aws.lambda.deploy.CreateFunction") == "aws"
 
     def test_simple_name(self):
-        assert extract_handler_prefix("SimpleHandler") == "(top-level)"
+        assert extract_handler_prefix("SimpleHandler") == "system.unnamespaced"
 
     def test_two_segments(self):
         assert extract_handler_prefix("jenkins.Build") == "jenkins"
@@ -86,7 +86,7 @@ class TestGroupHandlersByNamespace:
         handlers = [self._make_handler("SimpleHandler")]
         groups = group_handlers_by_namespace(handlers)
         assert len(groups) == 1
-        assert groups[0]["namespace"] == "(top-level)"
+        assert groups[0]["namespace"] == "system.unnamespaced"
 
     def test_empty(self):
         groups = group_handlers_by_namespace([])
@@ -110,7 +110,7 @@ class TestGroupHandlersByNamespace:
         groups = group_handlers_by_namespace(handlers)
         assert len(groups) == 3
         ns_names = [g["namespace"] for g in groups]
-        assert "(top-level)" in ns_names
+        assert "system.unnamespaced" in ns_names
         assert "osm.boundaries" in ns_names
         assert "osm" in ns_names
 

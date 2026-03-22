@@ -113,7 +113,7 @@ def workflow_new(request: Request, store=Depends(get_store)):
             qualified = f"{ns}.{wf['name']}" if ns else wf["name"]
             wf_uuid = wf_name_to_uuid.get(qualified, "")
             item: dict = {
-                "ns": ns or "(top-level)",
+                "ns": ns or "system.unnamespaced",
                 "name": wf.get("name", ""),
                 "qualified_name": qualified,
                 "afl_source": _build_afl_snippet(ns, wf),

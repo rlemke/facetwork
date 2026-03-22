@@ -47,12 +47,12 @@ def extract_namespace(workflow_name: str) -> str:
     >>> extract_namespace("osm.Routes.BicycleRoutes")
     'osm.Routes'
     >>> extract_namespace("SimpleWorkflow")
-    '(top-level)'
+    'system.unnamespaced'
     """
     if "." in workflow_name:
         ns, _ = workflow_name.rsplit(".", 1)
         return ns
-    return "(top-level)"
+    return "system.unnamespaced"
 
 
 def short_workflow_name(workflow_name: str) -> str:
@@ -143,7 +143,7 @@ def extract_handler_prefix(facet_name: str) -> str:
     """
     if "." in facet_name:
         return facet_name.split(".", 1)[0]
-    return "(top-level)"
+    return "system.unnamespaced"
 
 
 def group_handlers_by_namespace(

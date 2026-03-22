@@ -124,7 +124,7 @@ class TestWorkflowLookup:
     @pytest.fixture
     def simple_wf(self, tmp_path):
         f = tmp_path / "simple.afl"
-        f.write_text("workflow Run()")
+        f.write_text("namespace test {\n  workflow Run()\n}")
         return f
 
     @pytest.fixture
@@ -141,7 +141,7 @@ class TestWorkflowLookup:
 
     def test_simple_workflow_found(self, simple_wf, capsys):
         """Simple name lookup — fails at MongoDB step (workflow was found)."""
-        _result = main([str(simple_wf), "--workflow", "Run"])
+        _result = main([str(simple_wf), "--workflow", "test.Run"])
         captured = capsys.readouterr()
         # Should fail at MongoDB connection, not "not found"
         assert "not found" not in captured.err
@@ -221,11 +221,11 @@ class TestMongoSubmit:
 
     def test_submit_simple_workflow(self, tmp_path, mock_store, capsys):
         f = tmp_path / "wf.afl"
-        f.write_text("workflow Run()")
-        result = self._run_with_mock_store(mock_store, [str(f), "--workflow", "Run"])
+        f.write_text("namespace test {\n  workflow Run()\n}")
+        result = self._run_with_mock_store(mock_store, [str(f), "--workflow", "test.Run"])
         assert result == 0
         captured = capsys.readouterr()
-        assert "Submitted workflow 'Run'" in captured.out
+        assert "Submitted workflow 'test.Run'" in captured.out
         ids = self._parse_ids(captured.out)
         assert "runner_id" in ids
         assert "flow_id" in ids
@@ -238,7 +238,7 @@ class TestMongoSubmit:
         task = mock_store.get_tasks_by_runner(ids["runner_id"])[0]
         assert task.name == "afl:execute"
         assert task.state == "pending"
-        assert task.data["workflow_name"] == "Run"
+        assert task.data["workflow_name"] == "test.Run"
 
     def test_submit_namespaced_workflow(self, tmp_path, mock_store, capsys):
         f = tmp_path / "ns.afl"
@@ -293,9 +293,9 @@ class TestMongoSubmit:
 
     def test_submit_custom_task_list(self, tmp_path, mock_store, capsys):
         f = tmp_path / "wf.afl"
-        f.write_text("workflow Run()")
+        f.write_text("namespace test {\n  workflow Run()\n}")
         result = self._run_with_mock_store(
-            mock_store, [str(f), "--workflow", "Run", "--task-list", "priority"]
+            mock_store, [str(f), "--workflow", "test.Run", "--task-list", "priority"]
         )
         assert result == 0
         ids = self._parse_ids(capsys.readouterr().out)
@@ -305,8 +305,8 @@ class TestMongoSubmit:
     def test_submit_creates_linked_entities(self, tmp_path, mock_store, capsys):
         """Verify flow, workflow, runner, and task are correctly linked."""
         f = tmp_path / "wf.afl"
-        f.write_text("workflow Run()")
-        result = self._run_with_mock_store(mock_store, [str(f), "--workflow", "Run"])
+        f.write_text("namespace test {\n  workflow Run()\n}")
+        result = self._run_with_mock_store(mock_store, [str(f), "--workflow", "test.Run"])
         assert result == 0
 
         ids = self._parse_ids(capsys.readouterr().out)
@@ -364,12 +364,12 @@ class TestMongoConnectionError:
 
     def test_connection_error(self, tmp_path, capsys):
         f = tmp_path / "wf.afl"
-        f.write_text("workflow Run()")
+        f.write_text("namespace test {\n  workflow Run()\n}")
         with patch(
             "afl.runtime.submit._connect_store",
             side_effect=ConnectionError("refused"),
         ):
-            result = main([str(f), "--workflow", "Run"])
+            result = main([str(f), "--workflow", "test.Run"])
         assert result == 1
         captured = capsys.readouterr()
         assert "Error connecting to MongoDB" in captured.err

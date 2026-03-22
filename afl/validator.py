@@ -504,6 +504,10 @@ class AFLValidator:
         for event_facet in program.event_facets:
             self._validate_event_facet_decl(event_facet)
         for workflow in program.workflows:
+            self._result.add_error(
+                f"Workflow '{workflow.sig.name}' must be declared inside a namespace",
+                workflow.location,
+            )
             self._validate_workflow_decl(workflow)
         for implicit in program.implicits:
             self._validate_implicit_decl(implicit)

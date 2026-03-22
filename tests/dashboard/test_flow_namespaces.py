@@ -128,7 +128,7 @@ class TestFlowDetailNamespaces:
         # Should show namespace names, not individual workflow names
         assert "osm.RegionMap" in resp.text
         assert "osm.Geocode" in resp.text
-        assert "(top-level)" in resp.text
+        assert "system.unnamespaced" in resp.text
 
     def test_namespace_links(self, client):
         """Detail page has links to /ns/ routes."""
@@ -166,7 +166,7 @@ class TestFlowDetailNamespaces:
         flow, wfs = _seed_namespaced_flow(store)
         resp = tc.get(f"/flows/{flow.uuid}")
         assert resp.status_code == 200
-        assert "(top-level)" in resp.text
+        assert "system.unnamespaced" in resp.text
         assert f"/flows/{flow.uuid}/ns/_top" in resp.text
 
     def test_no_flat_workflow_names(self, client):
@@ -278,7 +278,7 @@ class TestFlowNamespaceView:
         resp = tc.get(f"/flows/{flow.uuid}/ns/_top")
         assert resp.status_code == 200
         assert "SimpleWF" in resp.text
-        assert "(top-level)" in resp.text
+        assert "system.unnamespaced" in resp.text
         # Should not show namespaced workflows
         assert "Address" not in resp.text
         assert "BicycleMap" not in resp.text

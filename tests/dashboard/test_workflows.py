@@ -56,25 +56,29 @@ def client():
 
 
 VALID_AFL_SOURCE = """
-facet Compute(input: Long)
+namespace test {
+    facet Compute(input: Long)
 
-workflow SimpleWF(x: Long) => (result: Long) andThen {
-    s1 = Compute(input = $.x)
-    yield SimpleWF(result = s1.input)
+    workflow SimpleWF(x: Long) => (result: Long) andThen {
+        s1 = Compute(input = $.x)
+        yield SimpleWF(result = s1.input)
+    }
 }
 """
 
 MULTI_WORKFLOW_SOURCE = """
-facet Compute(input: Long)
+namespace test {
+    facet Compute(input: Long)
 
-workflow WF_A(x: Long) => (result: Long) andThen {
-    s1 = Compute(input = $.x)
-    yield WF_A(result = s1.input)
-}
+    workflow WF_A(x: Long) => (result: Long) andThen {
+        s1 = Compute(input = $.x)
+        yield WF_A(result = s1.input)
+    }
 
-workflow WF_B(y: String) => (out: String) andThen {
-    s1 = Compute(input = 1)
-    yield WF_B(out = "done")
+    workflow WF_B(y: String) => (out: String) andThen {
+        s1 = Compute(input = 1)
+        yield WF_B(out = "done")
+    }
 }
 """
 
@@ -230,7 +234,7 @@ class TestWorkflowNew:
 
         resp = tc.get("/workflows/new")
         assert resp.status_code == 200
-        assert "(top-level)" in resp.text
+        assert "system.unnamespaced" in resp.text
         assert "SimpleWF" in resp.text
 
     def test_new_page_afl_snippet_in_data_source(self, client):
@@ -353,7 +357,7 @@ class TestWorkflowRun:
             "/workflows/run",
             data={
                 "source": VALID_AFL_SOURCE,
-                "workflow_name": "SimpleWF",
+                "workflow_name": "test.SimpleWF",
             },
             follow_redirects=False,
         )
@@ -366,13 +370,13 @@ class TestWorkflowRun:
             "/workflows/run",
             data={
                 "source": VALID_AFL_SOURCE,
-                "workflow_name": "SimpleWF",
+                "workflow_name": "test.SimpleWF",
             },
             follow_redirects=False,
         )
         flows = store.get_all_flows()
         assert len(flows) == 1
-        assert flows[0].name.name == "SimpleWF"
+        assert flows[0].name.name == "test.SimpleWF"
         assert len(flows[0].compiled_sources) == 1
         assert flows[0].compiled_sources[0].name == "source.afl"
 
@@ -382,7 +386,7 @@ class TestWorkflowRun:
             "/workflows/run",
             data={
                 "source": VALID_AFL_SOURCE,
-                "workflow_name": "SimpleWF",
+                "workflow_name": "test.SimpleWF",
             },
             follow_redirects=False,
         )
@@ -390,7 +394,7 @@ class TestWorkflowRun:
         flow = flows[0]
         workflows = store.get_workflows_by_flow(flow.uuid)
         assert len(workflows) == 1
-        assert workflows[0].name == "SimpleWF"
+        assert workflows[0].name == "test.SimpleWF"
 
     def test_run_creates_runner(self, client):
         tc, store = client
@@ -398,7 +402,7 @@ class TestWorkflowRun:
             "/workflows/run",
             data={
                 "source": VALID_AFL_SOURCE,
-                "workflow_name": "SimpleWF",
+                "workflow_name": "test.SimpleWF",
             },
             follow_redirects=False,
         )
@@ -415,14 +419,14 @@ class TestWorkflowRun:
             "/workflows/run",
             data={
                 "source": VALID_AFL_SOURCE,
-                "workflow_name": "SimpleWF",
+                "workflow_name": "test.SimpleWF",
             },
             follow_redirects=False,
         )
         tasks = store.get_pending_tasks("default")
         assert len(tasks) == 1
         assert tasks[0].name == "afl:execute"
-        assert tasks[0].data["workflow_name"] == "SimpleWF"
+        assert tasks[0].data["workflow_name"] == "test.SimpleWF"
 
     def test_run_runner_has_snapshotted_asts(self, client):
         """Runner created by workflow_run has compiled_ast and workflow_ast."""
@@ -431,7 +435,7 @@ class TestWorkflowRun:
             "/workflows/run",
             data={
                 "source": VALID_AFL_SOURCE,
-                "workflow_name": "SimpleWF",
+                "workflow_name": "test.SimpleWF",
             },
             follow_redirects=False,
         )

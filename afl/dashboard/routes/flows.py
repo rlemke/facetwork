@@ -62,7 +62,7 @@ def flow_detail(flow_id: str, request: Request, store=Depends(get_store)):
 
     namespace_list = sorted(
         [
-            {"name": ns or "(top-level)", "prefix": ns or "_top", "count": len(wfs)}
+            {"name": ns or "system.unnamespaced", "prefix": ns or "_top", "count": len(wfs)}
             for ns, wfs in ns_groups.items()
         ],
         key=lambda x: str(x["name"]),
@@ -143,7 +143,7 @@ def flow_namespace(
     # Filter workflows by namespace prefix
     if namespace_name == "_top":
         filtered = [wf for wf in all_workflows if "." not in wf.name]
-        display_name = "(top-level)"
+        display_name = "system.unnamespaced"
     else:
         filtered = [
             wf

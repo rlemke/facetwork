@@ -290,9 +290,14 @@ def main(args: list[str] | None = None) -> int:
     runner_id = generate_id()
     task_id = generate_id()
 
+    # Qualify unnamespaced workflows with system.cli prefix
+    wf_name = parsed.workflow
+    if "." not in wf_name:
+        wf_name = f"system.cli.{wf_name}"
+
     flow = FlowDefinition(
         uuid=flow_id,
-        name=FlowIdentity(name=parsed.workflow, path="cli:submit", uuid=flow_id),
+        name=FlowIdentity(name=wf_name, path="cli:submit", uuid=flow_id),
         compiled_sources=[SourceText(name="source.afl", content=combined_source)],
         compiled_ast=program_dict,
     )
@@ -300,7 +305,7 @@ def main(args: list[str] | None = None) -> int:
 
     workflow = WorkflowDefinition(
         uuid=wf_id,
-        name=parsed.workflow,
+        name=wf_name,
         namespace_id="cli",
         facet_id=wf_id,
         flow_id=flow_id,
