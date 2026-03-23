@@ -66,9 +66,11 @@ def _make_filter_routes_handler(facet_name: str):
             rv = {"result": _result_to_dict(result)}
             save_result_meta(qualified, input_cache, dyn_params, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to filter routes: %s", e)
-            return {"result": _empty_result(route_type, network, False)}
+        except Exception as exc:
+            log.error("Failed to filter routes: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to filter routes: {exc}", level="error")
+            raise
 
     return handler
 
@@ -109,9 +111,11 @@ def _make_route_stats_handler(facet_name: str):
             rv = {"stats": _stats_to_dict(stats)}
             save_result_meta(qualified, input_cache, dyn_params, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to calculate stats: %s", e)
-            return {"stats": _empty_stats()}
+        except Exception as exc:
+            log.error("Failed to calculate stats: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to calculate stats: {exc}", level="error")
+            raise
 
     return handler
 

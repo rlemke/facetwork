@@ -87,9 +87,11 @@ def _make_build_logical_graph_handler(facet_name: str):
                 "node_count": len(graph.node_coords),
                 "graph_path": graph_path,
             }
-        except Exception as e:
-            log.error("Failed to build logical graph: %s", e)
-            return {"edge_count": 0, "node_count": 0, "graph_path": ""}
+        except Exception as exc:
+            log.error("Failed to build logical graph: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to build logical graph: {exc}", level="error")
+            raise
 
     return with_output_cache(handler, qualified, cache_params)
 
@@ -132,9 +134,11 @@ def _make_build_anchors_handler(facet_name: str):
             rv = {"anchors_path": anchors_path, "anchor_count": len(anchors)}
             save_result_meta(qualified, cache, {"zoom_level": zoom_level}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to build anchors: %s", e)
-            return {"anchors_path": "", "anchor_count": 0}
+        except Exception as exc:
+            log.error("Failed to build anchors: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to build anchors: {exc}", level="error")
+            raise
 
     return handler
 
@@ -193,9 +197,11 @@ def _make_compute_sbs_handler(facet_name: str):
             rv = {"sbs_path": sbs_path, "route_count": route_count}
             save_result_meta(qualified, cache, {"zoom_level": zoom_level, "k_pairs": k_pairs}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to compute SBS: %s", e)
-            return {"sbs_path": "", "route_count": 0}
+        except Exception as exc:
+            log.error("Failed to compute SBS: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to compute SBS: {exc}", level="error")
+            raise
 
     return handler
 
@@ -255,9 +261,11 @@ def _make_compute_scores_handler(facet_name: str):
             rv = {"scores_path": scores_path}
             save_result_meta(qualified, cache, {"sbs_paths": sbs_paths_str}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to compute scores: %s", e)
-            return {"scores_path": ""}
+        except Exception as exc:
+            log.error("Failed to compute scores: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to compute scores: {exc}", level="error")
+            raise
 
     return handler
 
@@ -301,9 +309,11 @@ def _make_detect_bypasses_handler(facet_name: str):
             rv = {"bypasses_path": bypasses_path, "bypass_count": bypass_count}
             save_result_meta(qualified, cache, {"kind": "bypasses"}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to detect bypasses: %s", e)
-            return {"bypasses_path": "", "bypass_count": 0}
+        except Exception as exc:
+            log.error("Failed to detect bypasses: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to detect bypasses: {exc}", level="error")
+            raise
 
     return handler
 
@@ -346,9 +356,11 @@ def _make_detect_rings_handler(facet_name: str):
             rv = {"rings_path": rings_path, "ring_count": len(flags)}
             save_result_meta(qualified, cache, {"kind": "rings"}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to detect rings: %s", e)
-            return {"rings_path": "", "ring_count": 0}
+        except Exception as exc:
+            log.error("Failed to detect rings: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to detect rings: {exc}", level="error")
+            raise
 
     return handler
 
@@ -419,9 +431,11 @@ def _make_select_edges_handler(facet_name: str):
             }
             save_result_meta(qualified, cache, {"scores_path": scores_path}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to select edges: %s", e)
-            return {"assignments_path": "", "selected_count": 0}
+        except Exception as exc:
+            log.error("Failed to select edges: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to select edges: {exc}", level="error")
+            raise
 
     return handler
 
@@ -488,9 +502,11 @@ def _make_export_zoom_layers_handler(facet_name: str):
             }
             save_result_meta(qualified, cache, {"assignments_path": assignments_path}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to export zoom layers: %s", e)
-            return {"result": _empty_result(output_dir)}
+        except Exception as exc:
+            log.error("Failed to export zoom layers: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to export zoom layers: {exc}", level="error")
+            raise
 
     return handler
 
@@ -535,9 +551,11 @@ def _make_build_zoom_layers_handler(facet_name: str):
             rv = {"result": result, "metrics": metrics}
             save_result_meta(qualified, cache, {"min_population": min_population}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to build zoom layers: %s", e)
-            return {"result": _empty_result(output_dir), "metrics": _empty_metrics()}
+        except Exception as exc:
+            log.error("Failed to build zoom layers: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to build zoom layers: {exc}", level="error")
+            raise
 
     return handler
 

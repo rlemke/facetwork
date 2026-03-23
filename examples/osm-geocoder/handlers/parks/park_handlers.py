@@ -68,9 +68,11 @@ def _make_filter_parks_handler(facet_name: str):
             rv = {"result": _result_to_dict(result)}
             save_result_meta(qualified, input_cache, cp, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to filter parks: %s", e)
-            return {"result": _empty_result(park_type, protect_classes)}
+        except Exception as exc:
+            log.error("Failed to filter parks: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to filter parks: {exc}", level="error")
+            raise
 
     return handler
 
@@ -112,9 +114,11 @@ def _make_park_stats_handler(facet_name: str):
             rv = {"stats": _stats_to_dict(stats)}
             save_result_meta(qualified, input_cache, cp, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to calculate park stats: %s", e)
-            return {"stats": _empty_stats()}
+        except Exception as exc:
+            log.error("Failed to calculate park stats: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to calculate park stats: {exc}", level="error")
+            raise
 
     return handler
 

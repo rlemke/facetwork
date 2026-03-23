@@ -51,9 +51,11 @@ def _make_amenity_stats_handler(facet_name: str):
             rv = {"stats": _stats_to_dict(stats)}
             save_result_meta(qualified, cache, {}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to calculate amenity stats: %s", e)
-            return {"stats": _empty_stats()}
+        except Exception as exc:
+            log.error("Failed to calculate amenity stats: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to calculate amenity stats: {exc}", level="error")
+            raise
 
     return handler
 
@@ -89,9 +91,11 @@ def _make_search_amenities_handler(facet_name: str):
             rv = {"result": _result_to_dict(result)}
             save_result_meta(qualified, cache, {"name_pattern": name_pattern}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to search amenities: %s", e)
-            return {"result": _empty_result("search")}
+        except Exception as exc:
+            log.error("Failed to search amenities: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to search amenities: {exc}", level="error")
+            raise
 
     return handler
 
@@ -161,9 +165,11 @@ def _make_filter_by_category_handler(facet_name: str):
             }
             save_result_meta(qualified, cache, {"category": category}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to filter amenities: %s", e)
-            return {"result": _empty_result(category)}
+        except Exception as exc:
+            log.error("Failed to filter amenities: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to filter amenities: {exc}", level="error")
+            raise
 
     return handler
 

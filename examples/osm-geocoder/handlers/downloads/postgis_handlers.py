@@ -148,8 +148,11 @@ def _postgis_import_batch_handler(payload: dict) -> dict:
                     f"PostGisImportBatch: {region_name} done "
                     f"({result.node_count} nodes, {result.way_count} ways)"
                 )
-        except Exception:
+        except Exception as exc:
             log.exception("PostGisImportBatch: failed for region '%s'", region_name)
+            if step_log:
+                step_log(f"PostGisImportBatch: FAILED for region '{region_name}': {exc}", level="error")
+            raise
 
     if step_log:
         step_log(

@@ -302,9 +302,11 @@ def _make_download_feed_handler(facet_name: str):
                     level="success",
                 )
             return {"feed": feed}
-        except Exception as e:
-            log.error("Failed to download GTFS feed: %s", e)
-            return {"feed": _empty_feed()}
+        except Exception as exc:
+            log.error("Failed to download GTFS feed: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to download GTFS feed: {exc}", level="error")
+            raise
 
     return handler
 
@@ -329,9 +331,11 @@ def _make_extract_stops_handler(facet_name: str):
             if step_log:
                 step_log(f"{facet_name}: extracted {result.stop_count} stops", level="success")
             return {"result": _stop_result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to extract stops: %s", e)
-            return {"result": _empty_stop_result()}
+        except Exception as exc:
+            log.error("Failed to extract stops: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to extract stops: {exc}", level="error")
+            raise
 
     return handler
 
@@ -356,9 +360,11 @@ def _make_extract_routes_handler(facet_name: str):
             if step_log:
                 step_log(f"{facet_name}: extracted {result.route_count} routes", level="success")
             return {"result": _route_result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to extract routes: %s", e)
-            return {"result": _empty_route_result()}
+        except Exception as exc:
+            log.error("Failed to extract routes: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to extract routes: {exc}", level="error")
+            raise
 
     return handler
 
@@ -386,9 +392,11 @@ def _make_service_frequency_handler(facet_name: str):
                     level="success",
                 )
             return {"result": _frequency_result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to compute service frequency: %s", e)
-            return {"result": _empty_frequency_result()}
+        except Exception as exc:
+            log.error("Failed to compute service frequency: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to compute service frequency: {exc}", level="error")
+            raise
 
     return handler
 
@@ -416,9 +424,11 @@ def _make_transit_statistics_handler(facet_name: str):
                     level="success",
                 )
             return {"stats": _stats_to_dict(stats)}
-        except Exception as e:
-            log.error("Failed to compute transit statistics: %s", e)
-            return {"stats": _empty_stats()}
+        except Exception as exc:
+            log.error("Failed to compute transit statistics: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to compute transit statistics: {exc}", level="error")
+            raise
 
     return handler
 
@@ -447,9 +457,11 @@ def _make_nearest_stops_handler(facet_name: str):
                     level="success",
                 )
             return {"result": _nearest_result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to find nearest stops: %s", e)
-            return {"result": _empty_nearest_result()}
+        except Exception as exc:
+            log.error("Failed to find nearest stops: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to find nearest stops: {exc}", level="error")
+            raise
 
     return handler
 
@@ -478,9 +490,11 @@ def _make_stop_accessibility_handler(facet_name: str):
                     level="success",
                 )
             return {"result": _accessibility_result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to compute stop accessibility: %s", e)
-            return {"result": _empty_accessibility_result()}
+        except Exception as exc:
+            log.error("Failed to compute stop accessibility: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to compute stop accessibility: {exc}", level="error")
+            raise
 
     return handler
 
@@ -509,9 +523,11 @@ def _make_coverage_gaps_handler(facet_name: str):
                     level="success",
                 )
             return {"result": _coverage_result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to compute coverage gaps: %s", e)
-            return {"result": _empty_coverage_result()}
+        except Exception as exc:
+            log.error("Failed to compute coverage gaps: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to compute coverage gaps: {exc}", level="error")
+            raise
 
     return handler
 
@@ -539,9 +555,11 @@ def _make_route_density_handler(facet_name: str):
                     level="success",
                 )
             return {"result": _density_result_to_dict(result)}
-        except Exception as e:
-            log.error("Failed to compute route density: %s", e)
-            return {"result": _empty_density_result()}
+        except Exception as exc:
+            log.error("Failed to compute route density: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to compute route density: {exc}", level="error")
+            raise
 
     return handler
 
@@ -570,9 +588,11 @@ def _make_generate_report_handler(facet_name: str):
                     level="success",
                 )
             return {"report": report}
-        except Exception as e:
-            log.error("Failed to generate transit report: %s", e)
-            return {"report": _empty_report()}
+        except Exception as exc:
+            log.error("Failed to generate transit report: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to generate transit report: {exc}", level="error")
+            raise
 
     return handler
 

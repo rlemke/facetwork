@@ -108,9 +108,11 @@ def _make_render_map_handler(facet_name: str):
             rv = {"result": _result_to_dict(result)}
             save_result_meta(qualified, cache, cache_params, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to render map: %s", e)
-            return {"result": _empty_result(title, format)}
+        except Exception as exc:
+            log.error("Failed to render map: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to render map: {exc}", level="error")
+            raise
 
     return handler
 
@@ -164,9 +166,11 @@ def _make_render_map_at_handler(facet_name: str):
             rv = {"result": _result_to_dict(result)}
             save_result_meta(qualified, cache, cache_params, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to render map: %s", e)
-            return {"result": _empty_result(title, "html")}
+        except Exception as exc:
+            log.error("Failed to render map: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to render map: {exc}", level="error")
+            raise
 
     return handler
 
@@ -220,9 +224,11 @@ def _make_render_layers_handler(facet_name: str):
             rv = {"result": _result_to_dict(result)}
             save_result_meta(qualified, cache, cache_params, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to render layers: %s", e)
-            return {"result": _empty_result(title, format)}
+        except Exception as exc:
+            log.error("Failed to render layers: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to render layers: {exc}", level="error")
+            raise
 
     return handler
 
@@ -282,9 +288,11 @@ def _make_render_styled_map_handler(facet_name: str):
             rv = {"result": _result_to_dict(result)}
             save_result_meta(qualified, cache, cache_params, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to render styled map: %s", e)
-            return {"result": _empty_result(title, "html")}
+        except Exception as exc:
+            log.error("Failed to render styled map: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to render styled map: {exc}", level="error")
+            raise
 
     return handler
 
@@ -323,9 +331,11 @@ def _make_preview_map_handler(facet_name: str):
             rv = {"result": _result_to_dict(result)}
             save_result_meta(qualified, cache, cache_params, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to preview map: %s", e)
-            return {"result": _empty_result("Preview", "html")}
+        except Exception as exc:
+            log.error("Failed to preview map: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to preview map: {exc}", level="error")
+            raise
 
     return handler
 

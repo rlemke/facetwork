@@ -112,11 +112,11 @@ def _make_poi_handler(facet_name: str, return_param: str, place_type: str, min_p
             }
             save_result_meta(qualified, cache, cache_params, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to extract %s from %s: %s", place_type, pbf_path, e)
+        except Exception as exc:
+            log.error("Failed to extract %s from %s: %s", place_type, pbf_path, exc)
             if step_log:
-                step_log(f"{facet_name}: extraction failed: {e}", level="error")
-            return {return_param: _empty_cache(cache)}
+                step_log(f"{facet_name}: FAILED to extract {place_type}: {exc}", level="error")
+            raise
 
     return handler
 

@@ -175,9 +175,11 @@ def handle_fetch_air_quality(payload: dict) -> dict:
         save_result_meta(f"{NAMESPACE}.FetchAirQuality", cache, cache_params, rv)
         return rv
 
-    except Exception as e:
-        log.error("Failed to fetch air quality data: %s", e)
-        return {"result": _empty_air_quality_result(parameter)}
+    except Exception as exc:
+        log.error("Failed to fetch air quality data: %s", exc)
+        if step_log:
+            step_log(f"FetchAirQuality: FAILED to fetch air quality data: {exc}", level="error")
+        raise
 
 
 def handle_correlate(payload: dict) -> dict:

@@ -59,9 +59,11 @@ def _make_building_stats_handler(facet_name: str):
             rv = {"stats": _stats_to_dict(stats)}
             save_result_meta(qualified, input_cache, {"stats": True}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to calculate building stats: %s", e)
-            return {"stats": _empty_stats()}
+        except Exception as exc:
+            log.error("Failed to calculate building stats: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to calculate building stats: {exc}", level="error")
+            raise
 
     return handler
 
@@ -148,9 +150,11 @@ def _make_filter_buildings_handler(facet_name: str):
             }
             save_result_meta(qualified, input_cache, {"building_type": building_type}, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to filter buildings: %s", e)
-            return {"result": _empty_result(building_type)}
+        except Exception as exc:
+            log.error("Failed to filter buildings: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to filter buildings: {exc}", level="error")
+            raise
 
     return handler
 

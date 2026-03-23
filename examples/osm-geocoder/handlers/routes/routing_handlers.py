@@ -99,8 +99,8 @@ def _query_graphhopper_route(
                 "duration_min": round(path.get("time", 0) / 60000, 1),
                 "coordinates": coords,
             }
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("GraphHopper API unavailable, falling back to estimate: %s", exc)
 
     # Fallback: great-circle distance estimate (no actual routing)
     return _estimate_route(from_city, to_city)
@@ -212,9 +212,9 @@ def _query_pgrouting_route(
                 }
         finally:
             conn.close()
-    except Exception:
+    except Exception as exc:
         log.exception("pgRouting query failed: %s -> %s", from_city["name"], to_city["name"])
-        return None
+        raise
 
 
 def compute_pairwise_routes(payload: dict) -> dict:

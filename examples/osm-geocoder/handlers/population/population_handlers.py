@@ -75,9 +75,11 @@ def _make_filter_by_population_handler(facet_name: str):
             rv = {"result": _result_to_dict(result)}
             save_result_meta(qualified, input_cache, cache_params, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to filter by population: %s", e)
-            return {"result": _empty_result(place_type, min_population, 0)}
+        except Exception as exc:
+            log.error("Failed to filter by population: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to filter by population: {exc}", level="error")
+            raise
 
     return handler
 
@@ -137,9 +139,11 @@ def _make_filter_by_population_range_handler(facet_name: str):
             rv = {"result": _result_to_dict(result)}
             save_result_meta(qualified, input_cache, cache_params, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to filter by population range: %s", e)
-            return {"result": _empty_result(place_type, min_population, max_population)}
+        except Exception as exc:
+            log.error("Failed to filter by population range: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to filter by population range: {exc}", level="error")
+            raise
 
     return handler
 
@@ -177,9 +181,11 @@ def _make_population_stats_handler(facet_name: str):
             rv = {"stats": _stats_to_dict(stats)}
             save_result_meta(qualified, input_cache, cache_params, rv)
             return rv
-        except Exception as e:
-            log.error("Failed to calculate population stats: %s", e)
-            return {"stats": _empty_stats()}
+        except Exception as exc:
+            log.error("Failed to calculate population stats: %s", exc)
+            if step_log:
+                step_log(f"{facet_name}: FAILED to calculate population stats: {exc}", level="error")
+            raise
 
     return handler
 
