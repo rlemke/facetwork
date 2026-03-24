@@ -169,7 +169,12 @@ scripts/start-runner --all --example hiv-drug-resistance
 scripts/stop-runners --all
 scripts/rolling-deploy --example hiv-drug-resistance
 
-# PostGIS vacuum management
+# PostGIS management
+scripts/start_postgres                 # start local PostgreSQL/PostGIS server
+scripts/postgis-tune                   # tune PostgreSQL for bulk imports (32GB)
+scripts/postgis-tune --show            # show current vs recommended settings
+scripts/postgis-drop-tables            # drop osm_nodes, osm_ways, osm_import_log
+scripts/postgis-drop-tables --yes      # skip confirmation
 scripts/postgis-vacuum                 # VACUUM ANALYZE osm_nodes + osm_ways
 scripts/postgis-vacuum --nodes         # nodes only
 scripts/postgis-vacuum --ways          # ways only
@@ -186,8 +191,34 @@ MongoDB and HDFS run on external servers (defined in `/etc/hosts`): `afl-mongodb
 
 Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets.
 
+Set `AFL_POSTGIS_URL` (e.g. `postgresql://afl:afl@localhost:5432/afl_gis`) for PostGIS imports. Without this, the importer falls back to a hardcoded default that may not match your setup.
+
+### MCP server
+
+The MCP server (`python -m afl.mcp`) exposes AFL compiler tools, runtime management, and a PostGIS query tool. Configure it in `.mcp.json` for Claude Code integration.
+
+**PostGIS query tool** (`afl_postgis_query`): runs read-only SQL against the OSM database. Write operations are blocked at two levels (SQL keyword filter + `default_transaction_read_only=on`). Schema:
+- `osm_nodes` (osm_id, region, tags JSONB, geom Point)
+- `osm_ways` (osm_id, region, tags JSONB, geom LineString)
+- `osm_import_log` (region, node_count, way_count, imported_at)
+
+Tags are JSONB — query with `tags->>'key'` or `tags?'key'`. Common tags: `amenity`, `shop`, `highway`, `building`, `name`, `cuisine`. Use `ST_*` functions for spatial queries.
+
+### Step recovery actions
+
+The dashboard step detail page provides four recovery actions for failed or completed steps:
+
+| Action | When | What it does |
+|--------|------|-------------|
+| **Retry** | Errored steps | Resets the step to EventTransmit; resets errored ancestor blocks |
+| **Retry All Errors** | Errored blocks | Recursively finds and retries all errored leaf steps under a block |
+| **Reset Block** | Errored blocks | Deletes all descendant steps/tasks/logs and restarts the block from scratch |
+| **Re-run From Here** | Completed or errored | Resets the step, clears its results, deletes all downstream dependent steps, and re-executes the block from that point |
+
+"Re-run From Here" is the primary tool for re-running a step after changing data or handler code — downstream steps are deleted and will be cleanly re-created with the new results.
+
 ### PostGIS data management
-PostGIS data directory: `/Volumes/afl_data/osm/postgis`. After large import batches, run `scripts/postgis-vacuum` to reclaim space and update statistics. During bulk imports, autovacuum may compete for I/O — kill it with `scripts/postgis-kill-vacuum`. Tables have `autovacuum_analyze_threshold = 1,000,000` to reduce frequency during imports.
+PostGIS data directory: `/Volumes/afl_data/local_servers/postgis/data`. Start with `scripts/start_postgres`, tune with `scripts/postgis-tune`. After large import batches, run `scripts/postgis-vacuum` to reclaim space and update statistics. During bulk imports, autovacuum may compete for I/O — kill it with `scripts/postgis-kill-vacuum`. Tables have `autovacuum_analyze_threshold = 1,000,000` to reduce frequency during imports.
 
 ### Graceful runner shutdown
 Use `scripts/drain-runners` instead of `scripts/stop-runners` when you need running tasks reset to pending. Each drained task gets a step log entry for audit visibility.
