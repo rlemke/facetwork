@@ -842,7 +842,7 @@ _FORBIDDEN_SQL = re.compile(
 )
 
 
-def _tool_postgis_query(arguments: dict[str, Any]) -> list["TextContent"]:
+def _tool_postgis_query(arguments: dict[str, Any]) -> list[TextContent]:
     """Execute a read-only SQL query against PostGIS."""
     from mcp.types import TextContent
 
@@ -854,22 +854,26 @@ def _tool_postgis_query(arguments: dict[str, Any]) -> list["TextContent"]:
 
     # Block write operations
     if _FORBIDDEN_SQL.search(sql):
-        return [TextContent(
-            type="text",
-            text=json.dumps({"error": "Only SELECT queries are allowed"}),
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps({"error": "Only SELECT queries are allowed"}),
+            )
+        ]
 
     try:
         import psycopg2
         import psycopg2.extras
     except ImportError:
-        return [TextContent(
-            type="text",
-            text=json.dumps({"error": "psycopg2 not installed"}),
-        )]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps({"error": "psycopg2 not installed"}),
+            )
+        ]
 
     postgis_url = os.environ.get(
-        "AFL_POSTGIS_URL", "postgresql://afl:afl@localhost:5432/afl_gis"
+        "AFL_POSTGIS_URL", "postgresql://afl:afl@afl-postgres:5432/afl_gis"
     )
 
     try:

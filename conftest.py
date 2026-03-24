@@ -80,7 +80,7 @@ def pytest_addoption(parser):
         "--postgis",
         action="store_true",
         default=False,
-        help="Run PostGIS integration tests against live containers (localhost:5432)",
+        help="Run PostGIS integration tests against live server (afl-postgres:5432)",
     )
     parser.addoption(
         "--sra",

@@ -42,7 +42,7 @@ except ImportError:
     HAS_PSYCOPG2 = False
     psycopg2 = None
 
-DEFAULT_POSTGIS_URL = "postgresql://afl_osm:afl_osm_2024@localhost:5432/osm"
+DEFAULT_POSTGIS_URL = "postgresql://afl_osm:afl_osm_2024@afl-postgres:5432/osm"
 DEFAULT_BATCH_SIZE = 50000
 
 # DDL statements
@@ -177,10 +177,7 @@ def ensure_schema(conn) -> None:
         cur.execute(CREATE_IMPORT_LOG_TABLE)
 
         # Only create indexes if they don't already exist
-        cur.execute(
-            "SELECT indexname FROM pg_indexes "
-            "WHERE tablename IN ('osm_nodes', 'osm_ways')"
-        )
+        cur.execute("SELECT indexname FROM pg_indexes WHERE tablename IN ('osm_nodes', 'osm_ways')")
         existing = {row[0] for row in cur.fetchall()}
 
         if "idx_osm_nodes_geom" not in existing:
@@ -303,14 +300,22 @@ class CombinedCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
         node_sql = UPSERT_NODES_SQL if use_upsert else INSERT_NODES_SQL
         way_sql = UPSERT_WAYS_SQL if use_upsert else INSERT_WAYS_SQL
         self._nodes = _BatchFlusher(
-            conn, node_sql,
+            conn,
+            node_sql,
             "(%s, %s, %s, ST_GeomFromEWKT(%s))",
-            "PostGIS Nodes", region, batch_size, step_log,
+            "PostGIS Nodes",
+            region,
+            batch_size,
+            step_log,
         )
         self._ways = _BatchFlusher(
-            conn, way_sql,
+            conn,
+            way_sql,
             "(%s, %s, %s, ST_GeomFromEWKT(%s))",
-            "PostGIS Ways", region, batch_size, step_log,
+            "PostGIS Ways",
+            region,
+            batch_size,
+            step_log,
         )
         self.region = region
 
@@ -372,7 +377,14 @@ class NodeCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
 
     PROGRESS_INTERVAL = 120.0
 
-    def __init__(self, conn, region: str = "", batch_size: int = DEFAULT_BATCH_SIZE, progress=None, step_log=None):
+    def __init__(
+        self,
+        conn,
+        region: str = "",
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        progress=None,
+        step_log=None,
+    ):
         if HAS_OSMIUM:
             super().__init__()
         self.conn = conn
@@ -422,7 +434,14 @@ class WayCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
 
     PROGRESS_INTERVAL = 120.0
 
-    def __init__(self, conn, region: str = "", batch_size: int = DEFAULT_BATCH_SIZE, progress=None, step_log=None):
+    def __init__(
+        self,
+        conn,
+        region: str = "",
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        progress=None,
+        step_log=None,
+    ):
         if HAS_OSMIUM:
             super().__init__()
         self.conn = conn
@@ -599,7 +618,9 @@ def import_to_postgis(
         progress.finish()
         log.info(
             "Imported %d nodes + %d ways (region=%s)",
-            node_count, way_count, region or "<global>",
+            node_count,
+            way_count,
+            region or "<global>",
         )
 
         # Log the import

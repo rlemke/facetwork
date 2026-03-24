@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 
@@ -243,9 +245,9 @@ def retry_block(step_id: str, store=Depends(get_store)):
     all_steps = list(store.get_steps_by_workflow(root.workflow_id))
 
     # Build parent->children maps
-    by_block: dict[str, list] = {}
-    by_container: dict[str, list] = {}
-    step_by_id: dict[str, object] = {}
+    by_block: dict[str, list[Any]] = {}
+    by_container: dict[str, list[Any]] = {}
+    step_by_id: dict[str, Any] = {}
     for s in all_steps:
         step_by_id[s.id] = s
         if s.block_id:
@@ -426,7 +428,10 @@ def rerun_step(step_id: str, store=Depends(get_store)):
         # Find steps that reference this step's statement_name in their params
         target_name = step.statement_name or ""
         downstream_stmts = _find_downstream_by_name(
-            target_name, all_steps, block_id, stmt_name_to_id,
+            target_name,
+            all_steps,
+            block_id,
+            stmt_name_to_id,
         )
 
         # Collect downstream step IDs and all their descendants
@@ -479,8 +484,7 @@ def rerun_step(step_id: str, store=Depends(get_store)):
         source=StepLogSource.FRAMEWORK,
         level=StepLogLevel.WARNING,
         message=(
-            f"Step re-run (was {prev_state}): "
-            f"{len(downstream_step_ids)} downstream step(s) deleted"
+            f"Step re-run (was {prev_state}): {len(downstream_step_ids)} downstream step(s) deleted"
         ),
         time=int(_time.time() * 1000),
     )
@@ -505,7 +509,7 @@ def _find_downstream_by_name(
     for s in siblings:
         stmt_id = str(s.statement_id)
         dep_names: set[str] = set()
-        for _, attr in s.attributes.params.items():
+        for _, _attr in s.attributes.params.items():
             # Attribute values that were resolved from step refs contain
             # data from other steps. We can't easily reverse this, so we
             # use statement ordering: if step B was created after step A

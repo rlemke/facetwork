@@ -143,20 +143,15 @@ class MemoryStore(PersistenceAPI):
         ids_set = set(step_ids)
         to_remove = [tid for tid, t in self._tasks.items() if t.step_id in ids_set]
         for tid in to_remove:
-            task = self._tasks.pop(tid)
-            if task.workflow_id in self._tasks_by_workflow:
-                wf_tasks = self._tasks_by_workflow[task.workflow_id]
-                if tid in wf_tasks:
-                    wf_tasks.remove(tid)
+            self._tasks.pop(tid)
         return len(to_remove)
 
     def delete_step_logs_for_steps(self, step_ids: Sequence[str]) -> int:
         """Delete step log entries for the given step IDs."""
         ids_set = set(step_ids)
-        to_remove = [k for k, entry in self._step_logs.items() if entry.step_id in ids_set]
-        for k in to_remove:
-            del self._step_logs[k]
-        return len(to_remove)
+        before = len(self._step_logs)
+        self._step_logs = [e for e in self._step_logs if e.step_id not in ids_set]
+        return before - len(self._step_logs)
 
     def _add_to_indexes(self, step: StepDefinition) -> None:
         """Add step to all indexes."""

@@ -665,7 +665,7 @@ def _get_postgis_summary() -> dict | None:
         return None
 
     postgis_url = os.environ.get(
-        "AFL_POSTGIS_URL", "postgresql://afl_osm:afl_osm_2024@localhost:5432/osm"
+        "AFL_POSTGIS_URL", "postgresql://afl_osm:afl_osm_2024@afl-postgres:5432/osm"
     )
     try:
         conn = psycopg2.connect(postgis_url)
@@ -695,13 +695,15 @@ def _get_postgis_summary() -> dict | None:
         for region, nodes, ways, imported_at in rows:
             total_nodes += nodes or 0
             total_ways += ways or 0
-            regions.append({
-                "region": region,
-                "node_count": nodes or 0,
-                "way_count": ways or 0,
-                "total": (nodes or 0) + (ways or 0),
-                "imported_at": imported_at or "",
-            })
+            regions.append(
+                {
+                    "region": region,
+                    "node_count": nodes or 0,
+                    "way_count": ways or 0,
+                    "total": (nodes or 0) + (ways or 0),
+                    "imported_at": imported_at or "",
+                }
+            )
 
         return {
             "regions": regions,

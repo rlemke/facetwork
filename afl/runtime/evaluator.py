@@ -1366,7 +1366,7 @@ class Evaluator:
                 by_container.setdefault(s.container_id, []).append(s.id)
 
         descendant_ids: list[str] = []
-        stack = [step_id]
+        stack: list[str] = [step_id]
         seen: set[str] = set()
         while stack:
             sid = stack.pop()
@@ -1395,9 +1395,7 @@ class Evaluator:
         # Reset errored ancestors so the workflow resumes
         self._reset_errored_ancestors(block)
 
-        logger.info(
-            "Reset block done: step_id=%s deleted=%d", step_id, len(descendant_ids)
-        )
+        logger.info("Reset block done: step_id=%s deleted=%d", step_id, len(descendant_ids))
         return len(descendant_ids)
 
     def rerun_step(self, step_id: StepId) -> dict:
@@ -1427,7 +1425,8 @@ class Evaluator:
         downstream_stmt_ids: set[str] = set()
         if block_id and step.statement_id:
             downstream_stmt_ids = self._find_downstream_statements(
-                step, all_steps,
+                step,
+                all_steps,
             )
 
         # Collect step IDs to delete: all steps in same block whose
@@ -1446,7 +1445,7 @@ class Evaluator:
             if s.block_id == block_id and str(s.statement_id) in downstream_stmt_ids:
                 to_delete.append(s.id)
                 # Also collect all descendants of this step
-                stack = [s.id]
+                stack: list[str] = [s.id]
                 seen: set[str] = {s.id}
                 while stack:
                     sid = stack.pop()
@@ -1483,7 +1482,8 @@ class Evaluator:
 
         logger.info(
             "Rerun step done: step_id=%s deleted=%d downstream",
-            step_id, len(to_delete),
+            step_id,
+            len(to_delete),
         )
         return {"reset": 1, "deleted": len(to_delete)}
 

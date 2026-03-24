@@ -187,11 +187,11 @@ scripts/postgis-kill-vacuum --dry      # preview
 ### Environment configuration
 Copy `.env.example` to `.env` to configure MongoDB, scaling, overlays, and data directories. All `scripts/` commands source `_env.sh` which loads `.env` without overriding already-set vars. See `spec/90_nonfunctional.md` for the full variable reference.
 
-MongoDB and HDFS run on external servers (defined in `/etc/hosts`): `afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn` — they are **not** managed by Docker Compose.
+MongoDB, HDFS, and PostGIS run on external servers (defined in `/etc/hosts`): `afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn`, `afl-postgres` — they are **not** managed by Docker Compose.
 
 Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets.
 
-Set `AFL_POSTGIS_URL` (e.g. `postgresql://afl:afl@localhost:5432/afl_gis`) for PostGIS imports. Without this, the importer falls back to a hardcoded default that may not match your setup.
+Set `AFL_POSTGIS_URL` (e.g. `postgresql://afl:afl@afl-postgres:5432/afl_gis`) for PostGIS imports. Without this, the importer falls back to a hardcoded default that may not match your setup.
 
 ### MCP server
 
