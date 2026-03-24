@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Tune PostgreSQL for bulk OSM imports on a 32GB machine.
+#
+# Applies settings that improve write throughput for large batch inserts.
+# Requires a PostgreSQL restart to take effect.
+#
+# Usage:
+#   scripts/postgis-tune              # apply and restart
+#   scripts/postgis-tune --show       # show current vs recommended
+
+set -euo pipefail
+source "$(dirname "$0")/_env.sh"
+
+POSTGIS_URL="${AFL_POSTGIS_URL:-postgresql://afl:afl@localhost:5432/afl_gis}"
+DATA_DIR="/Volumes/afl_data/local_servers/postgis/data"
+
+# Recommended settings for bulk import on 32GB machine
+KEYS="shared_buffers work_mem maintenance_work_mem effective_cache_size max_wal_size checkpoint_completion_target wal_buffers random_page_cost"
+val_for() {
+    case "$1" in
+        shared_buffers)                echo "2GB" ;;
+        work_mem)                      echo "64MB" ;;
+        maintenance_work_mem)          echo "1GB" ;;
+        effective_cache_size)          echo "24GB" ;;
+        max_wal_size)                  echo "4GB" ;;
+        checkpoint_completion_target)  echo "0.9" ;;
+        wal_buffers)                   echo "64MB" ;;
+        random_page_cost)              echo "1.1" ;;
+    esac
+}
+
+show_settings() {
+    printf "%-32s %-12s %-12s\n" "Setting" "Current" "Recommended"
+    printf "%-32s %-12s %-12s\n" "-------" "-------" "-----------"
+    for key in $KEYS; do
+        current=$(psql "$POSTGIS_URL" -t -A -c "SHOW $key" 2>/dev/null || echo "?")
+        printf "%-32s %-12s %-12s\n" "$key" "$current" "$(val_for "$key")"
+    done
+}
+
+if [ "${1:-}" = "--show" ]; then
+    show_settings
+    exit 0
+fi
+
+if [ ! -f "$DATA_DIR/postgresql.conf" ]; then
+    echo "ERROR: PostgreSQL config not found at $DATA_DIR/postgresql.conf"
+    echo "Is PostgreSQL running with data dir $DATA_DIR?"
+    exit 1
+fi
+
+echo "Current vs recommended settings:"
+show_settings
+
+echo ""
+echo "Applying settings to $DATA_DIR/postgresql.conf ..."
+
+for key in $KEYS; do
+    value="$(val_for "$key")"
+    # Remove existing setting (commented or not)
+    sed -i '' "/^#*${key} *=/d" "$DATA_DIR/postgresql.conf"
+    # Append new setting
+    echo "${key} = '${value}'" >> "$DATA_DIR/postgresql.conf"
+    echo "  ${key} = ${value}"
+done
+
+echo ""
+echo "Restarting PostgreSQL ..."
+pg_ctl -D "$DATA_DIR" restart -l /Volumes/afl_data/local_servers/postgis/log/postgres.log
+
+echo "Done. Verify with: scripts/postgis-tune --show"
