@@ -17,6 +17,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from typing import Any
 
 from mcp.server import Server
@@ -243,6 +245,33 @@ def create_server(
                     "required": ["action"],
                 },
             ),
+            Tool(
+                name="afl_postgis_query",
+                description=(
+                    "Run a read-only SQL query against the PostGIS/OSM database. "
+                    "Tables: osm_nodes (osm_id, region, tags JSONB, geom Point), "
+                    "osm_ways (osm_id, region, tags JSONB, geom LineString), "
+                    "osm_import_log (region, node_count, way_count, imported_at). "
+                    "Use ST_* functions for spatial queries. "
+                    "Tags are JSONB — query with tags->>'key' or tags?'key'. "
+                    "Common tags: amenity, shop, highway, building, name, cuisine, etc. "
+                    "Results limited to 500 rows by default."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "sql": {
+                            "type": "string",
+                            "description": "SQL query (SELECT only — writes are blocked)",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max rows to return (default 500, max 5000)",
+                        },
+                    },
+                    "required": ["sql"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -263,6 +292,8 @@ def create_server(
             return _tool_manage_runner(arguments, _get_store)
         elif name == "afl_manage_handlers":
             return _tool_manage_handlers(arguments, _get_store)
+        elif name == "afl_postgis_query":
+            return _tool_postgis_query(arguments)
         else:
             return [
                 TextContent(
@@ -795,3 +826,84 @@ def _find_workflow(compiled: dict, workflow_name: str) -> dict | None:
     from afl.ast_utils import find_workflow
 
     return find_workflow(compiled, workflow_name)
+
+
+# =============================================================================
+# PostGIS query tool
+# =============================================================================
+
+# SQL statements that are NOT allowed (anything that modifies data)
+_FORBIDDEN_SQL = re.compile(
+    r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|"
+    r"COPY|SET|RESET|VACUUM|ANALYZE|CLUSTER|REINDEX|LOCK|"
+    r"BEGIN|COMMIT|ROLLBACK|SAVEPOINT|EXECUTE|PREPARE|DEALLOCATE|"
+    r"DO\s+\$)\b",
+    re.IGNORECASE,
+)
+
+
+def _tool_postgis_query(arguments: dict[str, Any]) -> list["TextContent"]:
+    """Execute a read-only SQL query against PostGIS."""
+    from mcp.types import TextContent
+
+    sql = arguments.get("sql", "").strip()
+    limit = min(arguments.get("limit", 500), 5000)
+
+    if not sql:
+        return [TextContent(type="text", text=json.dumps({"error": "No SQL provided"}))]
+
+    # Block write operations
+    if _FORBIDDEN_SQL.search(sql):
+        return [TextContent(
+            type="text",
+            text=json.dumps({"error": "Only SELECT queries are allowed"}),
+        )]
+
+    try:
+        import psycopg2
+        import psycopg2.extras
+    except ImportError:
+        return [TextContent(
+            type="text",
+            text=json.dumps({"error": "psycopg2 not installed"}),
+        )]
+
+    postgis_url = os.environ.get(
+        "AFL_POSTGIS_URL", "postgresql://afl:afl@localhost:5432/afl_gis"
+    )
+
+    try:
+        conn = psycopg2.connect(postgis_url, options="-c default_transaction_read_only=on")
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql)
+                rows = cur.fetchmany(limit)
+                # Convert to serializable dicts
+                results = []
+                for row in rows:
+                    r = {}
+                    for k, v in row.items():
+                        if hasattr(v, "isoformat"):
+                            r[k] = v.isoformat()
+                        else:
+                            r[k] = v
+                    results.append(r)
+
+                total = cur.rowcount if cur.rowcount >= 0 else len(results)
+                truncated = total > limit
+
+                result = {
+                    "success": True,
+                    "rows": results,
+                    "row_count": len(results),
+                    "total_count": total,
+                    "truncated": truncated,
+                }
+        finally:
+            conn.close()
+    except psycopg2.errors.ReadOnlySqlTransaction:
+        result = {"error": "Only SELECT queries are allowed (read-only connection)"}
+    except Exception as e:
+        result = {"error": str(e)}
+
+    return [TextContent(type="text", text=json.dumps(result, default=str))]
