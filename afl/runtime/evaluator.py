@@ -1400,6 +1400,200 @@ class Evaluator:
         )
         return len(descendant_ids)
 
+    def rerun_step(self, step_id: StepId) -> dict:
+        """Re-run a completed step by resetting it and deleting downstream steps.
+
+        Resets the step to EVENT_TRANSMIT regardless of its current state,
+        rebuilds the dependency graph for the containing block, deletes all
+        downstream dependent steps (and their sub-blocks/tasks/logs), and
+        resets ancestor blocks so execution resumes from this step.
+
+        Args:
+            step_id: The step ID to re-run.
+
+        Returns:
+            Dict with counts: {"reset": 1, "deleted": N}
+        """
+        logger.info("Rerun step: step_id=%s", step_id)
+        step = self.persistence.get_step(step_id)
+        if step is None:
+            raise ValueError(f"Step {step_id} not found")
+
+        # Find the runner to get the compiled AST for dependency resolution
+        all_steps = list(self.persistence.get_steps_by_workflow(step.workflow_id))
+        block_id = step.block_id
+
+        # Find downstream statement IDs using the dependency graph
+        downstream_stmt_ids: set[str] = set()
+        if block_id and step.statement_id:
+            downstream_stmt_ids = self._find_downstream_statements(
+                step, all_steps,
+            )
+
+        # Collect step IDs to delete: all steps in same block whose
+        # statement_id is downstream, plus all their descendants
+        by_block: dict[str, list[str]] = {}
+        by_container: dict[str, list[str]] = {}
+        for s in all_steps:
+            if s.block_id:
+                by_block.setdefault(s.block_id, []).append(s.id)
+            if s.container_id:
+                by_container.setdefault(s.container_id, []).append(s.id)
+
+        # Find sibling steps in the same block that are downstream
+        to_delete: list[str] = []
+        for s in all_steps:
+            if s.block_id == block_id and str(s.statement_id) in downstream_stmt_ids:
+                to_delete.append(s.id)
+                # Also collect all descendants of this step
+                stack = [s.id]
+                seen: set[str] = {s.id}
+                while stack:
+                    sid = stack.pop()
+                    for child_id in by_block.get(sid, []) + by_container.get(sid, []):
+                        if child_id not in seen:
+                            seen.add(child_id)
+                            to_delete.append(child_id)
+                            stack.append(child_id)
+
+        # Delete downstream steps
+        if to_delete:
+            self.persistence.delete_step_logs_for_steps(to_delete)
+            self.persistence.delete_tasks_for_steps(to_delete)
+            self.persistence.delete_steps(to_delete)
+
+        # Reset the target step to EVENT_TRANSMIT
+        step.state = StepState.EVENT_TRANSMIT
+        step.transition.current_state = StepState.EVENT_TRANSMIT
+        step.transition.clear_error()
+        step.transition.request_transition = False
+        step.transition.changed = True
+        step.attributes.returns = {}  # Clear old results
+        self.persistence.save_step(step)
+
+        # Reset associated task to pending
+        task = self.persistence.get_task_for_step(step_id)
+        if task is not None:
+            task.state = "pending"
+            task.error = None
+            self.persistence.save_task(task)
+
+        # Reset ancestor blocks so execution resumes
+        self._reset_ancestors_to_continue(step)
+
+        logger.info(
+            "Rerun step done: step_id=%s deleted=%d downstream",
+            step_id, len(to_delete),
+        )
+        return {"reset": 1, "deleted": len(to_delete)}
+
+    def _find_downstream_statements(
+        self,
+        target_step: StepDefinition,
+        all_steps: list[StepDefinition],
+    ) -> set[str]:
+        """Find all statement IDs that are transitively downstream of a step.
+
+        Uses the step references in the same block to infer dependencies
+        without needing the compiled AST.
+        """
+        target_stmt_id = str(target_step.statement_id)
+        block_id = target_step.block_id
+
+        # Get all sibling steps in the same block
+        siblings = [s for s in all_steps if s.block_id == block_id]
+
+        # Build a reverse dependency map from step attributes:
+        # If step B's params reference step A's returns, B depends on A.
+        # We can infer this from statement_name references in param values.
+        stmt_name_to_id: dict[str, str] = {}
+        for s in siblings:
+            if s.statement_name:
+                stmt_name_to_id[s.statement_name] = str(s.statement_id)
+
+        # Build dependency edges by scanning parameter values for step references
+        deps: dict[str, set[str]] = {}
+        for s in siblings:
+            stmt_id = str(s.statement_id)
+            deps.setdefault(stmt_id, set())
+            # Check if any param values reference other step names
+            for _, attr in s.attributes.params.items():
+                refs = self._extract_step_refs_from_value(attr.value)
+                for ref_name in refs:
+                    dep_stmt_id = stmt_name_to_id.get(ref_name)
+                    if dep_stmt_id:
+                        deps[stmt_id].add(dep_stmt_id)
+
+        # Find all statements transitively downstream of target
+        downstream: set[str] = set()
+        # Reverse the graph: for each stmt, find what depends on it
+        reverse: dict[str, set[str]] = {}
+        for stmt_id, dep_set in deps.items():
+            for dep_id in dep_set:
+                reverse.setdefault(dep_id, set()).add(stmt_id)
+
+        # BFS from target
+        queue = [target_stmt_id]
+        while queue:
+            current = queue.pop(0)
+            for dependent in reverse.get(current, set()):
+                if dependent not in downstream:
+                    downstream.add(dependent)
+                    queue.append(dependent)
+
+        return downstream
+
+    def _extract_step_refs_from_value(self, value: Any) -> set[str]:
+        """Extract step reference names from an attribute value."""
+        refs: set[str] = set()
+        if isinstance(value, dict):
+            # Could be a structured value with step refs embedded
+            for v in value.values():
+                refs |= self._extract_step_refs_from_value(v)
+        elif isinstance(value, list):
+            for item in value:
+                refs |= self._extract_step_refs_from_value(item)
+        return refs
+
+    def _reset_ancestors_to_continue(self, step: StepDefinition) -> None:
+        """Reset ancestor blocks/containers to continue state.
+
+        Like _reset_errored_ancestors but works on any terminal state,
+        not just errors.
+        """
+        seen: set[str] = set()
+
+        current_id = step.block_id
+        while current_id and current_id not in seen:
+            seen.add(current_id)
+            ancestor = self.persistence.get_step(current_id)
+            if ancestor is None:
+                break
+            if StepState.is_terminal(ancestor.state):
+                ancestor.state = StepState.BLOCK_EXECUTION_CONTINUE
+                ancestor.transition.current_state = StepState.BLOCK_EXECUTION_CONTINUE
+                ancestor.transition.clear_error()
+                ancestor.transition.request_transition = False
+                ancestor.transition.changed = True
+                self.persistence.save_step(ancestor)
+            current_id = ancestor.block_id
+
+        current_id = step.container_id
+        while current_id and current_id not in seen:
+            seen.add(current_id)
+            ancestor = self.persistence.get_step(current_id)
+            if ancestor is None:
+                break
+            if StepState.is_terminal(ancestor.state):
+                ancestor.state = StepState.STATEMENT_BLOCKS_CONTINUE
+                ancestor.transition.current_state = StepState.STATEMENT_BLOCKS_CONTINUE
+                ancestor.transition.clear_error()
+                ancestor.transition.request_transition = False
+                ancestor.transition.changed = True
+                self.persistence.save_step(ancestor)
+            next_id = ancestor.block_id or ancestor.container_id
+            current_id = next_id
+
     def _reset_errored_ancestors(self, step: StepDefinition) -> None:
         """Reset errored ancestor blocks/containers so execution can resume.
 

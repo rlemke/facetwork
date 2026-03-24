@@ -23,6 +23,11 @@
             hx-confirm="Reset this block? All descendant steps will be deleted and the block will restart from scratch."
             class="outline contrast">Reset Block</button>
     {% endif %}
+    {% if step.state.endswith("Complete") or step.state.endswith("Error") %}
+    <button hx-post="/steps/{{ step.id }}/rerun"
+            hx-confirm="Re-run this step? It will be reset to EventTransmit and all downstream dependent steps will be deleted and re-executed."
+            class="outline">Re-run From Here</button>
+    {% endif %}
     <button class="outline"
             data-log-stream="/api/steps/{{ step.id }}/logs/stream"
             data-log-target="#step-log-stream-body">Live</button>
