@@ -634,6 +634,99 @@ class MongoStore(PersistenceAPI):
         )
         return reaped
 
+    def reap_stuck_tasks(self, default_stuck_ms: int = 14_400_000) -> list[dict[str, str]]:
+        """Reset tasks stuck in RUNNING state beyond their timeout.
+
+        Catches two cases:
+
+        1. **Explicit timeout** – the task has ``timeout_ms > 0`` and its last
+           activity (``max(task_heartbeat, updated)``) exceeds that timeout.
+        2. **Default timeout** – the task has no explicit timeout (``timeout_ms``
+           is 0 or missing) and its last activity exceeds *default_stuck_ms*.
+
+        Unlike ``reap_orphaned_tasks`` (which checks for dead *servers*), this
+        method catches tasks stuck on *live* servers — e.g. a handler blocked
+        on an unresponsive downstream service.
+
+        Returns a list of dicts describing each reaped task so callers can
+        emit step logs.
+        """
+        now = _current_time_ms()
+        reaped: list[dict[str, str]] = []
+        stuck_uuids: list[str] = []
+
+        # --- Pass 1: tasks with an explicit timeout_ms ---
+        candidates = self._db.tasks.find(
+            {"state": "running", "timeout_ms": {"$gt": 0}},
+            {
+                "uuid": 1, "step_id": 1, "workflow_id": 1, "name": 1,
+                "server_id": 1, "updated": 1, "task_heartbeat": 1,
+                "timeout_ms": 1,
+            },
+        )
+        for doc in candidates:
+            last_activity = max(doc.get("task_heartbeat", 0), doc.get("updated", 0))
+            if now - last_activity > doc["timeout_ms"]:
+                stuck_uuids.append(doc["uuid"])
+                reaped.append({
+                    "step_id": doc.get("step_id", ""),
+                    "workflow_id": doc.get("workflow_id", ""),
+                    "name": doc.get("name", ""),
+                    "server_id": doc.get("server_id", ""),
+                    "task_started_ms": str(doc.get("updated", 0)),
+                    "reason": "timeout",
+                    "timeout_ms": str(doc.get("timeout_ms", 0)),
+                })
+
+        # --- Pass 2: tasks without explicit timeout, using default ---
+        cutoff = now - default_stuck_ms
+        default_cursor = self._db.tasks.find(
+            {
+                "state": "running",
+                "$or": [{"timeout_ms": 0}, {"timeout_ms": {"$exists": False}}],
+                "updated": {"$lt": cutoff},
+                "$and": [
+                    {"$or": [
+                        {"task_heartbeat": {"$exists": False}},
+                        {"task_heartbeat": 0},
+                        {"task_heartbeat": {"$lt": cutoff}},
+                    ]},
+                ],
+            },
+            {
+                "uuid": 1, "step_id": 1, "workflow_id": 1, "name": 1,
+                "server_id": 1, "updated": 1,
+            },
+        )
+        for doc in default_cursor:
+            stuck_uuids.append(doc["uuid"])
+            reaped.append({
+                "step_id": doc.get("step_id", ""),
+                "workflow_id": doc.get("workflow_id", ""),
+                "name": doc.get("name", ""),
+                "server_id": doc.get("server_id", ""),
+                "task_started_ms": str(doc.get("updated", 0)),
+                "reason": "stuck",
+                "timeout_ms": str(default_stuck_ms),
+            })
+
+        if not stuck_uuids:
+            return []
+
+        # Reset stuck tasks back to pending
+        self._db.tasks.update_many(
+            {"uuid": {"$in": stuck_uuids}, "state": "running"},
+            {
+                "$set": {
+                    "state": "pending",
+                    "server_id": "",
+                    "task_heartbeat": 0,
+                    "updated": now,
+                },
+            },
+        )
+        return reaped
+
     # =========================================================================
     # Log Operations
     # =========================================================================

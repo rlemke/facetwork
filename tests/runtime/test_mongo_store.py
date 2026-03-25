@@ -1235,3 +1235,171 @@ class TestReapOrphanedTasks:
 
         doc = mongo_store._db.tasks.find_one({"uuid": "hb-update"})
         assert doc["task_heartbeat"] == now
+
+
+# =============================================================================
+# Stuck Task Watchdog Tests
+# =============================================================================
+
+
+class TestReapStuckTasks:
+    """Tests for reap_stuck_tasks on the MongoStore."""
+
+    def test_explicit_timeout_exceeded(self, mongo_store):
+        """A task with timeout_ms set whose last activity exceeds it is reaped."""
+        import time
+
+        now = int(time.time() * 1000)
+        task = TaskDefinition(
+            uuid="stuck-explicit",
+            name="SlowEvent",
+            runner_id="r1",
+            workflow_id="w1",
+            flow_id="f1",
+            step_id="s1",
+            state=TaskState.RUNNING,
+            task_list_name="default",
+        )
+        mongo_store.save_task(task)
+        # Set timeout_ms=5000 and updated to 6 seconds ago
+        mongo_store._db.tasks.update_one(
+            {"uuid": "stuck-explicit"},
+            {"$set": {"timeout_ms": 5000, "updated": now - 6000}},
+        )
+
+        reaped = mongo_store.reap_stuck_tasks(default_stuck_ms=999_999_999)
+        assert len(reaped) == 1
+        assert reaped[0]["step_id"] == "s1"
+        assert reaped[0]["reason"] == "timeout"
+
+        fetched = mongo_store.get_task("stuck-explicit")
+        assert fetched.state == TaskState.PENDING
+
+    def test_explicit_timeout_not_exceeded(self, mongo_store):
+        """A task within its timeout_ms is not reaped."""
+        import time
+
+        now = int(time.time() * 1000)
+        task = TaskDefinition(
+            uuid="ok-explicit",
+            name="FastEvent",
+            runner_id="r1",
+            workflow_id="w1",
+            flow_id="f1",
+            step_id="s1",
+            state=TaskState.RUNNING,
+            task_list_name="default",
+        )
+        mongo_store.save_task(task)
+        mongo_store._db.tasks.update_one(
+            {"uuid": "ok-explicit"},
+            {"$set": {"timeout_ms": 60000, "updated": now - 1000}},
+        )
+
+        reaped = mongo_store.reap_stuck_tasks(default_stuck_ms=999_999_999)
+        assert len(reaped) == 0
+        assert mongo_store.get_task("ok-explicit").state == TaskState.RUNNING
+
+    def test_heartbeat_protects_from_stuck_reaping(self, mongo_store):
+        """A task with a recent task_heartbeat is not reaped even if updated is old."""
+        import time
+
+        now = int(time.time() * 1000)
+        task = TaskDefinition(
+            uuid="hb-protects",
+            name="HeartbeatEvent",
+            runner_id="r1",
+            workflow_id="w1",
+            flow_id="f1",
+            step_id="s1",
+            state=TaskState.RUNNING,
+            task_list_name="default",
+        )
+        mongo_store.save_task(task)
+        # Explicit timeout: updated is old, but heartbeat is fresh
+        mongo_store._db.tasks.update_one(
+            {"uuid": "hb-protects"},
+            {"$set": {"timeout_ms": 5000, "updated": now - 60000, "task_heartbeat": now - 1000}},
+        )
+
+        reaped = mongo_store.reap_stuck_tasks(default_stuck_ms=999_999_999)
+        assert len(reaped) == 0
+        assert mongo_store.get_task("hb-protects").state == TaskState.RUNNING
+
+    def test_default_stuck_timeout(self, mongo_store):
+        """A task without timeout_ms exceeding the default threshold is reaped."""
+        import time
+
+        now = int(time.time() * 1000)
+        task = TaskDefinition(
+            uuid="stuck-default",
+            name="AbandonedEvent",
+            runner_id="r1",
+            workflow_id="w1",
+            flow_id="f1",
+            step_id="s1",
+            state=TaskState.RUNNING,
+            task_list_name="default",
+        )
+        mongo_store.save_task(task)
+        # timeout_ms=0 (default), updated 5 hours ago, no heartbeat
+        mongo_store._db.tasks.update_one(
+            {"uuid": "stuck-default"},
+            {"$set": {"timeout_ms": 0, "updated": now - 18_000_000}},
+        )
+
+        reaped = mongo_store.reap_stuck_tasks(default_stuck_ms=14_400_000)
+        assert len(reaped) == 1
+        assert reaped[0]["reason"] == "stuck"
+
+        fetched = mongo_store.get_task("stuck-default")
+        assert fetched.state == TaskState.PENDING
+
+    def test_default_stuck_not_exceeded(self, mongo_store):
+        """A task without timeout_ms within the default threshold is not reaped."""
+        import time
+
+        now = int(time.time() * 1000)
+        task = TaskDefinition(
+            uuid="ok-default",
+            name="RecentEvent",
+            runner_id="r1",
+            workflow_id="w1",
+            flow_id="f1",
+            step_id="s1",
+            state=TaskState.RUNNING,
+            task_list_name="default",
+        )
+        mongo_store.save_task(task)
+        mongo_store._db.tasks.update_one(
+            {"uuid": "ok-default"},
+            {"$set": {"timeout_ms": 0, "updated": now - 3_600_000}},  # 1h ago
+        )
+
+        reaped = mongo_store.reap_stuck_tasks(default_stuck_ms=14_400_000)
+        assert len(reaped) == 0
+        assert mongo_store.get_task("ok-default").state == TaskState.RUNNING
+
+    def test_pending_tasks_not_reaped(self, mongo_store):
+        """Only running tasks are reaped, not pending ones."""
+        import time
+
+        now = int(time.time() * 1000)
+        task = TaskDefinition(
+            uuid="pending-old",
+            name="OldPending",
+            runner_id="r1",
+            workflow_id="w1",
+            flow_id="f1",
+            step_id="s1",
+            state=TaskState.PENDING,
+            task_list_name="default",
+        )
+        mongo_store.save_task(task)
+        mongo_store._db.tasks.update_one(
+            {"uuid": "pending-old"},
+            {"$set": {"timeout_ms": 5000, "updated": now - 60000}},
+        )
+
+        reaped = mongo_store.reap_stuck_tasks(default_stuck_ms=1000)
+        assert len(reaped) == 0

@@ -432,6 +432,19 @@ class PersistenceAPI(Protocol):
         """
         return []
 
+    def reap_stuck_tasks(self, default_stuck_ms: int = 14_400_000) -> list[dict[str, str]]:
+        """Reset tasks stuck in RUNNING state beyond their timeout.
+
+        Catches tasks with an explicit ``timeout_ms`` exceeded, or tasks
+        without a timeout that have had no activity (no heartbeat or update)
+        for longer than *default_stuck_ms* (default: 4 hours).
+
+        Returns:
+            List of dicts with ``step_id``, ``workflow_id``, ``name``,
+            ``server_id``, ``reason``, and ``timeout_ms`` for each reaped task.
+        """
+        return []
+
     def update_task_heartbeat(self, task_id: str, heartbeat_time: int) -> None:
         """Update a running task's heartbeat timestamp.
 
