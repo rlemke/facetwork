@@ -1046,7 +1046,17 @@ class RunnerService:
             return
 
         program_ast = self._program_ast_cache.get(workflow_id)
-        result = self._evaluator.resume(workflow_id, workflow_ast, program_ast=program_ast)
+
+        # Look up the runner_id so resumed tasks inherit the workflow's runner
+        runner_id = ""
+        if hasattr(self._persistence, "get_runners_by_workflow"):
+            runners = self._persistence.get_runners_by_workflow(workflow_id)
+            if runners:
+                runner_id = runners[0].uuid
+
+        result = self._evaluator.resume(
+            workflow_id, workflow_ast, program_ast=program_ast, runner_id=runner_id,
+        )
 
         if result.status == ExecutionStatus.ERROR:
             logger.warning(
