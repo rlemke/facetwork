@@ -138,21 +138,18 @@ if [[ -z "$SERVERS" ]]; then
     exit 0
 fi
 
-# Group by hostname and send SIGTERM via SSH
-declare -A HOST_UUIDS=()
-while IFS= read -r line; do
-    read -r name port uuid <<< "$line"
-    HOST_UUIDS[$name]="${HOST_UUIDS[$name]:-} $uuid"
-done <<< "$SERVERS"
+# Collect unique hostnames and send SIGTERM via SSH
+UNIQUE_HOSTS=$(echo "$SERVERS" | awk '{print $1}' | sort -u)
 
 PATTERN='afl\.runtime\.runner|afl\.dashboard'
 
-for host in "${!HOST_UUIDS[@]}"; do
+while IFS= read -r host; do
+    [[ -z "$host" ]] && continue
     echo "Sending SIGTERM to runners on $host..."
     _afl_ssh "$host" "pgrep -f '$PATTERN' | xargs kill 2>/dev/null || true" || {
         echo "  Warning: SSH to $host failed"
     }
-done
+done <<< "$UNIQUE_HOSTS"
 
 echo ""
 echo "Waiting for servers to reach SHUTDOWN state (timeout: ${DRAIN_TIMEOUT}s)..."
@@ -173,9 +170,10 @@ done <<< "$SERVERS"
 if [[ "$ALL_OK" == "false" ]]; then
     echo ""
     echo "Some servers did not shut down gracefully. Sending SIGKILL..."
-    for host in "${!HOST_UUIDS[@]}"; do
+    while IFS= read -r host; do
+        [[ -z "$host" ]] && continue
         _afl_ssh "$host" "pgrep -f '$PATTERN' | xargs kill -9 2>/dev/null || true" || true
-    done
+    done <<< "$UNIQUE_HOSTS"
     echo "Force kill sent."
 fi
 

@@ -87,7 +87,13 @@
             <tbody>
             {% for task in group.tasks %}
             <tr class="{% if task.state == 'failed' %}task-row-failed{% elif task.state == 'running' %}task-row-running{% endif %}">
-                <td class="mono">{{ task.name }}</td>
+                <td class="mono">
+                    {% if task.step_id and task.runner_id %}
+                    <a href="/v2/workflows/{{ task.runner_id }}/steps/{{ task.step_id }}/expand">{{ task.name }}</a>
+                    {% else %}
+                    {{ task.name }}
+                    {% endif %}
+                </td>
                 <td>
                     {% with state=task.state %}{% include "partials/_state_badge.html" %}{% endwith %}
                 </td>
