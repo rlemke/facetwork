@@ -166,11 +166,11 @@ def ensure_schema(conn) -> None:
     with conn.cursor() as cur:
         try:
             cur.execute(CREATE_POSTGIS_EXT)
-        except psycopg2.errors.DuplicateObject:
+        except (psycopg2.errors.DuplicateObject, psycopg2.errors.UniqueViolation):
             conn.rollback()
         try:
             cur.execute(CREATE_HSTORE_EXT)
-        except psycopg2.errors.DuplicateObject:
+        except (psycopg2.errors.DuplicateObject, psycopg2.errors.UniqueViolation):
             conn.rollback()
         cur.execute(CREATE_NODES_TABLE)
         cur.execute(CREATE_WAYS_TABLE)
