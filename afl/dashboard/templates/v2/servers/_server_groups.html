@@ -1,40 +1,56 @@
 {% if groups %}
 {% for group in groups %}
-<details class="ns-group">
+<details class="ns-group" open>
     <summary>
         <strong>{{ group.group }}</strong>
         <span class="badge badge-secondary">{{ group.total }}</span>
     </summary>
-    <table role="grid">
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Service</th>
-                <th>State</th>
-                <th>IPs</th>
-                <th>Last Ping</th>
-                <th>Handlers</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for server in group.servers %}
-            <tr>
-                <td>
-                    <a href="/v2/servers/{{ server.uuid }}">
-                        {{ server.server_name }}
-                    </a>
-                </td>
-                <td>{{ server.service_name }}</td>
-                <td>
-                    {% with state=server.state %}{% include "partials/_state_badge.html" %}{% endwith %}
-                </td>
-                <td class="mono">{{ server.server_ips|join(", ") }}</td>
-                <td>{{ server.ping_time|timestamp }}</td>
-                <td>{{ server.handlers|length }}</td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+
+    {% for server in group.servers %}
+    <details class="server-node" {% if server.active_task_count|default(0) > 0 %}open{% endif %}>
+        <summary>
+            {% with state=server.state %}{% include "partials/_state_badge.html" %}{% endwith %}
+            <a href="/v2/servers/{{ server.uuid }}" class="server-name">{{ server.server_name }}</a>
+            <span class="server-meta mono">{{ server.server_ips|join(", ") }}</span>
+            <span class="server-meta">{{ server.ping_time|timestamp }}</span>
+            <span class="server-meta">{{ server.handlers|length }} handlers</span>
+            {% if server.active_task_count|default(0) > 0 %}
+            <span class="badge badge-running">{{ server.active_task_count }} active</span>
+            {% endif %}
+        </summary>
+
+        {% if server.active_tasks|default([])|length > 0 %}
+        <table class="server-tasks" role="grid">
+            <thead>
+                <tr>
+                    <th>Task</th>
+                    <th>State</th>
+                    <th>Input</th>
+                    <th>Runner</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for task in server.active_tasks %}
+                <tr>
+                    <td class="mono">{{ task.name }}</td>
+                    <td>
+                        {% with state=task.state %}{% include "partials/_state_badge.html" %}{% endwith %}
+                    </td>
+                    <td class="mono task-data">
+                        {% if task.data %}{{ task.data|tojson(indent=0)|truncate(80) }}{% endif %}
+                    </td>
+                    <td>
+                        <a href="/v2/workflows/{{ task.runner_id }}">{{ task.runner_id|truncate_uuid }}</a>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="no-tasks">No active tasks</p>
+        {% endif %}
+    </details>
+    {% endfor %}
 </details>
 {% endfor %}
 {% else %}

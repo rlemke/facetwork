@@ -546,12 +546,20 @@ class MongoStore(PersistenceAPI):
         docs = self._db.tasks.find({"runner_id": runner_id})
         return [self._doc_to_task(doc) for doc in docs]
 
+    def get_tasks_by_server_id(self, server_id: str, limit: int = 200) -> Sequence[TaskDefinition]:
+        """Get tasks claimed by a specific server, most recent first."""
+        docs = self._db.tasks.find({"server_id": server_id}).sort("updated", -1).limit(limit)
+        return [self._doc_to_task(doc) for doc in docs]
+
     def reap_orphaned_tasks(self, down_timeout_ms: int = 300_000) -> list[dict[str, str]]:
-        """Reset tasks stuck in RUNNING whose claiming server is dead.
+        """Reset tasks whose claiming server is dead.
 
         A server is dead if its state is running/startup but its ping_time
-        is older than *down_timeout_ms*.  Tasks with a ``server_id`` matching
-        a dead server are atomically reset to PENDING.
+        is older than *down_timeout_ms*.  Both running and pending tasks
+        pinned to dead servers are reset — running tasks go back to PENDING,
+        and pending tasks have their ``server_id`` cleared so any healthy
+        runner can claim them.  Dead servers are also marked as ``shutdown``
+        to prevent them from appearing as ghost runners.
 
         Returns a list of dicts describing each reaped task so callers can
         emit step logs.
@@ -581,19 +589,23 @@ class MongoStore(PersistenceAPI):
             doc["uuid"]: doc.get("ping_time", 0) for doc in dead_servers
         }
 
-        # Find tasks whose server is dead AND whose task-level heartbeat
-        # is also stale (or never set).  Tasks with a recent task_heartbeat
-        # are still making progress even if the server heartbeat is stale.
+        # Find running tasks whose server is dead AND whose task-level
+        # heartbeat is also stale (or never set).  Tasks with a recent
+        # task_heartbeat are still making progress even if the server
+        # heartbeat is stale.
         heartbeat_cutoff = now - down_timeout_ms
+        stale_heartbeat_filter = {
+            "$or": [
+                {"task_heartbeat": {"$exists": False}},
+                {"task_heartbeat": 0},
+                {"task_heartbeat": {"$lt": heartbeat_cutoff}},
+            ],
+        }
         orphan_cursor = self._db.tasks.find(
             {
                 "state": "running",
                 "server_id": {"$in": dead_ids},
-                "$or": [
-                    {"task_heartbeat": {"$exists": False}},
-                    {"task_heartbeat": 0},
-                    {"task_heartbeat": {"$lt": heartbeat_cutoff}},
-                ],
+                **stale_heartbeat_filter,
             },
             {"step_id": 1, "workflow_id": 1, "name": 1, "server_id": 1, "updated": 1},
         )
@@ -609,19 +621,33 @@ class MongoStore(PersistenceAPI):
             for doc in orphan_cursor
         ]
 
-        if not reaped:
-            return []
+        # Also find pending tasks pinned to dead servers — these are stuck
+        # because only the (now-dead) server could claim them.
+        pinned_cursor = self._db.tasks.find(
+            {
+                "state": "pending",
+                "server_id": {"$in": dead_ids},
+            },
+            {"step_id": 1, "workflow_id": 1, "name": 1, "server_id": 1, "updated": 1},
+        )
+        for doc in pinned_cursor:
+            reaped.append(
+                {
+                    "step_id": doc.get("step_id", ""),
+                    "workflow_id": doc.get("workflow_id", ""),
+                    "name": doc.get("name", ""),
+                    "server_id": doc.get("server_id", ""),
+                    "task_started_ms": str(doc.get("updated", 0)),
+                    "last_ping_ms": str(server_pings.get(doc.get("server_id", ""), 0)),
+                }
+            )
 
-        # Reset their running tasks back to pending (same filter as above)
+        # Reset running tasks back to pending
         self._db.tasks.update_many(
             {
                 "state": "running",
                 "server_id": {"$in": dead_ids},
-                "$or": [
-                    {"task_heartbeat": {"$exists": False}},
-                    {"task_heartbeat": 0},
-                    {"task_heartbeat": {"$lt": heartbeat_cutoff}},
-                ],
+                **stale_heartbeat_filter,
             },
             {
                 "$set": {
@@ -632,6 +658,27 @@ class MongoStore(PersistenceAPI):
                 },
             },
         )
+
+        # Clear server_id on pending tasks pinned to dead servers
+        self._db.tasks.update_many(
+            {
+                "state": "pending",
+                "server_id": {"$in": dead_ids},
+            },
+            {
+                "$set": {
+                    "server_id": "",
+                    "updated": now,
+                },
+            },
+        )
+
+        # Mark dead servers as shutdown so they don't appear as ghost runners
+        self._db.servers.update_many(
+            {"uuid": {"$in": dead_ids}},
+            {"$set": {"state": "shutdown", "ping_time": now}},
+        )
+
         return reaped
 
     def reap_stuck_tasks(self, default_stuck_ms: int = 14_400_000) -> list[dict[str, str]]:
@@ -659,8 +706,13 @@ class MongoStore(PersistenceAPI):
         candidates = self._db.tasks.find(
             {"state": "running", "timeout_ms": {"$gt": 0}},
             {
-                "uuid": 1, "step_id": 1, "workflow_id": 1, "name": 1,
-                "server_id": 1, "updated": 1, "task_heartbeat": 1,
+                "uuid": 1,
+                "step_id": 1,
+                "workflow_id": 1,
+                "name": 1,
+                "server_id": 1,
+                "updated": 1,
+                "task_heartbeat": 1,
                 "timeout_ms": 1,
             },
         )
@@ -668,15 +720,17 @@ class MongoStore(PersistenceAPI):
             last_activity = max(doc.get("task_heartbeat", 0), doc.get("updated", 0))
             if now - last_activity > doc["timeout_ms"]:
                 stuck_uuids.append(doc["uuid"])
-                reaped.append({
-                    "step_id": doc.get("step_id", ""),
-                    "workflow_id": doc.get("workflow_id", ""),
-                    "name": doc.get("name", ""),
-                    "server_id": doc.get("server_id", ""),
-                    "task_started_ms": str(doc.get("updated", 0)),
-                    "reason": "timeout",
-                    "timeout_ms": str(doc.get("timeout_ms", 0)),
-                })
+                reaped.append(
+                    {
+                        "step_id": doc.get("step_id", ""),
+                        "workflow_id": doc.get("workflow_id", ""),
+                        "name": doc.get("name", ""),
+                        "server_id": doc.get("server_id", ""),
+                        "task_started_ms": str(doc.get("updated", 0)),
+                        "reason": "timeout",
+                        "timeout_ms": str(doc.get("timeout_ms", 0)),
+                    }
+                )
 
         # --- Pass 2: tasks without explicit timeout, using default ---
         cutoff = now - default_stuck_ms
@@ -686,29 +740,37 @@ class MongoStore(PersistenceAPI):
                 "$or": [{"timeout_ms": 0}, {"timeout_ms": {"$exists": False}}],
                 "updated": {"$lt": cutoff},
                 "$and": [
-                    {"$or": [
-                        {"task_heartbeat": {"$exists": False}},
-                        {"task_heartbeat": 0},
-                        {"task_heartbeat": {"$lt": cutoff}},
-                    ]},
+                    {
+                        "$or": [
+                            {"task_heartbeat": {"$exists": False}},
+                            {"task_heartbeat": 0},
+                            {"task_heartbeat": {"$lt": cutoff}},
+                        ]
+                    },
                 ],
             },
             {
-                "uuid": 1, "step_id": 1, "workflow_id": 1, "name": 1,
-                "server_id": 1, "updated": 1,
+                "uuid": 1,
+                "step_id": 1,
+                "workflow_id": 1,
+                "name": 1,
+                "server_id": 1,
+                "updated": 1,
             },
         )
         for doc in default_cursor:
             stuck_uuids.append(doc["uuid"])
-            reaped.append({
-                "step_id": doc.get("step_id", ""),
-                "workflow_id": doc.get("workflow_id", ""),
-                "name": doc.get("name", ""),
-                "server_id": doc.get("server_id", ""),
-                "task_started_ms": str(doc.get("updated", 0)),
-                "reason": "stuck",
-                "timeout_ms": str(default_stuck_ms),
-            })
+            reaped.append(
+                {
+                    "step_id": doc.get("step_id", ""),
+                    "workflow_id": doc.get("workflow_id", ""),
+                    "name": doc.get("name", ""),
+                    "server_id": doc.get("server_id", ""),
+                    "task_started_ms": str(doc.get("updated", 0)),
+                    "reason": "stuck",
+                    "timeout_ms": str(default_stuck_ms),
+                }
+            )
 
         if not stuck_uuids:
             return []

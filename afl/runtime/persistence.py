@@ -415,12 +415,13 @@ class PersistenceAPI(Protocol):
         ...
 
     def reap_orphaned_tasks(self, down_timeout_ms: int = 300_000) -> list[dict[str, str]]:
-        """Reset tasks stuck in RUNNING state whose claiming server is down.
+        """Reset tasks whose claiming server is down.
 
         A server is considered down if its ``ping_time`` is stale (older than
         *down_timeout_ms*) while its state is still ``running`` or ``startup``.
-        Tasks claimed by such servers are reset to PENDING so they can be
-        picked up by a healthy runner.
+        Both running and pending tasks pinned to dead servers are reset so
+        they can be picked up by a healthy runner.  Dead servers are also
+        marked as ``shutdown``.
 
         Args:
             down_timeout_ms: How long a server's heartbeat can be stale

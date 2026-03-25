@@ -324,6 +324,12 @@ class MemoryStore(PersistenceAPI):
         """Get tasks by state."""
         return [t for t in self._tasks.values() if t.state == state]
 
+    def get_tasks_by_server_id(self, server_id: str, limit: int = 200) -> list["TaskDefinition"]:
+        """Get tasks claimed by a specific server, most recent first."""
+        tasks = [t for t in self._tasks.values() if getattr(t, "server_id", "") == server_id]
+        tasks.sort(key=lambda t: getattr(t, "updated", 0), reverse=True)
+        return tasks[:limit]
+
     def claim_task(
         self,
         task_names: list[str],

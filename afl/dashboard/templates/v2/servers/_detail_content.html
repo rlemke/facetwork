@@ -30,7 +30,7 @@
 
         {% if server.handlers %}
         <article>
-            <header>Handlers</header>
+            <header>Handlers <span class="badge badge-secondary">{{ server.handlers|length }}</span></header>
             <ul>
                 {% for handler in server.handlers %}
                 <li class="mono">{{ handler }}</li>
@@ -40,6 +40,79 @@
         {% endif %}
     </div>
 </div>
+
+{# ---- Task History ---- #}
+{% if task_counts is defined and task_counts.total > 0 %}
+<article>
+    <header>
+        Task History
+        <span class="badge badge-secondary">{{ task_counts.total }}</span>
+        {% if task_counts.running %}
+        <span class="badge badge-running">{{ task_counts.running }} running</span>
+        {% endif %}
+        {% if task_counts.pending %}
+        <span class="badge badge-warning">{{ task_counts.pending }} pending</span>
+        {% endif %}
+        {% if task_counts.completed %}
+        <span class="badge badge-success">{{ task_counts.completed }} completed</span>
+        {% endif %}
+        {% if task_counts.failed %}
+        <span class="badge badge-failed">{{ task_counts.failed }} failed</span>
+        {% endif %}
+    </header>
+
+    {% for group in task_groups %}
+    <details class="ns-group" {% if group.counts.running > 0 %}open{% endif %}>
+        <summary>
+            <a href="/v2/workflows/{{ group.runner_id }}">{{ group.workflow_name }}</a>
+            {% if group.runner_state %}
+            <span class="badge badge-{{ group.runner_state|state_color }}">{{ group.runner_state }}</span>
+            {% endif %}
+            <span class="badge badge-secondary">{{ group.total }} tasks</span>
+            {% if group.counts.failed %}
+            <span class="badge badge-failed">{{ group.counts.failed }} failed</span>
+            {% endif %}
+        </summary>
+        <table class="server-tasks" role="grid">
+            <thead>
+                <tr>
+                    <th>Task</th>
+                    <th>State</th>
+                    <th>Input</th>
+                    <th>Created</th>
+                    <th>Duration</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for task in group.tasks %}
+            <tr class="{% if task.state == 'failed' %}task-row-failed{% elif task.state == 'running' %}task-row-running{% endif %}">
+                <td class="mono">{{ task.name }}</td>
+                <td>
+                    {% with state=task.state %}{% include "partials/_state_badge.html" %}{% endwith %}
+                </td>
+                <td class="mono task-data">
+                    {% if task.data %}{{ task.data|tojson(indent=0)|truncate(60) }}{% endif %}
+                </td>
+                <td>{{ task.created|timestamp }}</td>
+                <td>
+                    {% if task.updated and task.created %}
+                    {{ (task.updated - task.created)|duration }}
+                    {% endif %}
+                </td>
+                <td>
+                    {% if task.error %}
+                    <pre class="task-error">{{ task.error|tojson(indent=2) }}</pre>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </details>
+    {% endfor %}
+</article>
+{% endif %}
 
 {% if server.handled %}
 <article>

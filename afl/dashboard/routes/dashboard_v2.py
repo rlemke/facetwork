@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -37,6 +37,8 @@ from ..helpers import (
     group_handlers_by_namespace,
     group_runners_by_namespace,
     group_servers_by_group,
+    group_tasks_by_runner,
+    group_tasks_by_state,
     lookup_facet_info,
     search_all,
 )
@@ -317,6 +319,21 @@ def _count_servers_by_tab(servers: list) -> dict[str, int]:
     return counts
 
 
+def _enrich_servers_with_tasks(servers: list, store: Any) -> None:
+    """Attach active tasks to each server, avoiding N+1 queries."""
+    # Bulk-fetch running + pending tasks and distribute by server_id
+    tasks_by_server: dict[str, list] = {}
+    for state in ("running", "pending"):
+        for t in store.get_tasks_by_state(state):
+            sid = getattr(t, "server_id", "") or ""
+            if sid:
+                tasks_by_server.setdefault(sid, []).append(t)
+
+    for s in servers:
+        s.active_tasks = tasks_by_server.get(s.uuid, [])
+        s.active_task_count = len(s.active_tasks)
+
+
 @router.get("/servers")
 def server_list(
     request: Request,
@@ -327,6 +344,7 @@ def server_list(
     all_servers = _apply_effective_state(list(store.get_all_servers()))
     tab_counts = _count_servers_by_tab(all_servers)
     filtered = _filter_servers(all_servers, tab)
+    _enrich_servers_with_tasks(filtered, store)
     groups = group_servers_by_group(filtered)
 
     return request.app.state.templates.TemplateResponse(
@@ -351,6 +369,7 @@ def server_list_partial(
     all_servers = _apply_effective_state(list(store.get_all_servers()))
     tab_counts = _count_servers_by_tab(all_servers)
     filtered = _filter_servers(all_servers, tab)
+    _enrich_servers_with_tasks(filtered, store)
     groups = group_servers_by_group(filtered)
 
     return request.app.state.templates.TemplateResponse(
@@ -364,6 +383,17 @@ def server_list_partial(
     )
 
 
+def _build_server_detail_context(server: Any, store: Any) -> dict:
+    """Build the template context for a server detail page."""
+    tasks = list(store.get_tasks_by_server_id(server.uuid, limit=500))
+    task_groups = group_tasks_by_runner(tasks, store)
+    task_counts = group_tasks_by_state(tasks)
+    return {
+        "task_groups": task_groups,
+        "task_counts": task_counts,
+    }
+
+
 @router.get("/servers/{server_id}")
 def server_detail(
     server_id: str,
@@ -374,13 +404,18 @@ def server_detail(
     server = store.get_server(server_id)
     if server:
         server.state = effective_server_state(server)
+    ctx = {
+        "server": server,
+        "active_tab": "servers",
+        "task_groups": [],
+        "task_counts": {"running": 0, "completed": 0, "failed": 0, "pending": 0, "total": 0},
+    }
+    if server:
+        ctx.update(_build_server_detail_context(server, store))
     return request.app.state.templates.TemplateResponse(
         request,
         "v2/servers/detail.html",
-        {
-            "server": server,
-            "active_tab": "servers",
-        },
+        ctx,
     )
 
 
@@ -394,12 +429,17 @@ def server_detail_partial(
     server = store.get_server(server_id)
     if server:
         server.state = effective_server_state(server)
+    ctx = {
+        "server": server,
+        "task_groups": [],
+        "task_counts": {"running": 0, "completed": 0, "failed": 0, "pending": 0, "total": 0},
+    }
+    if server:
+        ctx.update(_build_server_detail_context(server, store))
     return request.app.state.templates.TemplateResponse(
         request,
         "v2/servers/_detail_content.html",
-        {
-            "server": server,
-        },
+        ctx,
     )
 
 

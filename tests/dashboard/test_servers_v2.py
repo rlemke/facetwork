@@ -41,6 +41,8 @@ from afl.dashboard.helpers import (
     SERVER_DOWN_TIMEOUT_MS,
     effective_server_state,
     group_servers_by_group,
+    group_tasks_by_runner,
+    group_tasks_by_state,
 )
 
 
@@ -333,3 +335,195 @@ class TestV2ServerDownDetection:
         resp = tc.get("/v2/servers?tab=running")
         assert resp.status_code == 200
         assert "Down" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Task grouping helper tests
+# ---------------------------------------------------------------------------
+
+
+def _make_task(
+    uuid, name="SomeEvent", state="running", runner_id="r1", server_id="srv-1", data=None
+):
+    from types import SimpleNamespace
+
+    now = int(time.time() * 1000)
+    return SimpleNamespace(
+        uuid=uuid,
+        name=name,
+        state=state,
+        runner_id=runner_id,
+        server_id=server_id,
+        workflow_id="w1",
+        flow_id="f1",
+        step_id=f"step-{uuid}",
+        created=now - 10000,
+        updated=now,
+        error=None,
+        data=data,
+        task_list_name="default",
+    )
+
+
+class TestGroupTasksByState:
+    def test_counts_all_states(self):
+        tasks = [
+            _make_task("t1", state="running"),
+            _make_task("t2", state="completed"),
+            _make_task("t3", state="completed"),
+            _make_task("t4", state="failed"),
+            _make_task("t5", state="pending"),
+        ]
+        counts = group_tasks_by_state(tasks)
+        assert counts["running"] == 1
+        assert counts["completed"] == 2
+        assert counts["failed"] == 1
+        assert counts["pending"] == 1
+        assert counts["total"] == 5
+
+    def test_empty_tasks(self):
+        counts = group_tasks_by_state([])
+        assert counts["total"] == 0
+        assert counts["running"] == 0
+
+
+class TestGroupTasksByRunner:
+    def test_groups_by_runner_id(self):
+        tasks = [
+            _make_task("t1", runner_id="r1"),
+            _make_task("t2", runner_id="r2"),
+            _make_task("t3", runner_id="r1"),
+        ]
+
+        class FakeStore:
+            def get_runner(self, rid):
+                return None
+
+        groups = group_tasks_by_runner(tasks, FakeStore())
+        assert len(groups) == 2
+        r1_group = next(g for g in groups if g["runner_id"] == "r1")
+        assert r1_group["total"] == 2
+        r2_group = next(g for g in groups if g["runner_id"] == "r2")
+        assert r2_group["total"] == 1
+
+    def test_counts_per_state(self):
+        tasks = [
+            _make_task("t1", runner_id="r1", state="running"),
+            _make_task("t2", runner_id="r1", state="completed"),
+            _make_task("t3", runner_id="r1", state="failed"),
+        ]
+
+        class FakeStore:
+            def get_runner(self, rid):
+                return None
+
+        groups = group_tasks_by_runner(tasks, FakeStore())
+        assert len(groups) == 1
+        assert groups[0]["counts"]["running"] == 1
+        assert groups[0]["counts"]["completed"] == 1
+        assert groups[0]["counts"]["failed"] == 1
+
+    def test_empty_tasks(self):
+        class FakeStore:
+            def get_runner(self, rid):
+                return None
+
+        groups = group_tasks_by_runner([], FakeStore())
+        assert groups == []
+
+    def test_workflow_name_from_runner(self):
+        from types import SimpleNamespace
+
+        tasks = [_make_task("t1", runner_id="r1")]
+        runner = SimpleNamespace(
+            workflow=SimpleNamespace(name="osm.Routes.BicycleRoutes"),
+            state="running",
+        )
+
+        class FakeStore:
+            def get_runner(self, rid):
+                return runner
+
+        groups = group_tasks_by_runner(tasks, FakeStore())
+        assert groups[0]["workflow_name"] == "osm.Routes.BicycleRoutes"
+        assert groups[0]["runner_state"] == "running"
+
+
+# ---------------------------------------------------------------------------
+# Server tree view integration tests
+# ---------------------------------------------------------------------------
+
+
+def _make_task_entity(uuid, name="SomeEvent", state="running", runner_id="r1", server_id="srv-1"):
+    from afl.runtime.entities import TaskDefinition
+
+    return TaskDefinition(
+        uuid=uuid,
+        name=name,
+        state=state,
+        runner_id=runner_id,
+        workflow_id="w1",
+        flow_id="f1",
+        step_id=f"step-{uuid}",
+        task_list_name="default",
+    )
+
+
+@pytestmark_routes
+class TestV2ServerListWithTasks:
+    def test_active_tasks_shown(self, client):
+        tc, store = client
+        store.save_server(_make_server_entity("srv-1"))
+        task = _make_task_entity("t1", name="osm.ops.CacheRegion", server_id="srv-1")
+        store.save_task(task)
+        store._db.tasks.update_one({"uuid": "t1"}, {"$set": {"server_id": "srv-1"}})
+        resp = tc.get("/v2/servers?tab=running")
+        assert resp.status_code == 200
+        assert "osm.ops.CacheRegion" in resp.text
+        assert "1 active" in resp.text
+
+    def test_no_tasks_message(self, client):
+        tc, store = client
+        store.save_server(_make_server_entity("srv-1"))
+        resp = tc.get("/v2/servers?tab=running")
+        assert resp.status_code == 200
+        assert "No active tasks" in resp.text
+
+
+@pytestmark_routes
+class TestV2ServerDetailWithTasks:
+    def test_detail_shows_task_history(self, client):
+        tc, store = client
+        store.save_server(_make_server_entity("srv-1"))
+        for i, state in enumerate(["running", "completed", "failed"]):
+            task = _make_task_entity(f"t{i}", name=f"Event{i}", state=state)
+            store.save_task(task)
+            store._db.tasks.update_one({"uuid": f"t{i}"}, {"$set": {"server_id": "srv-1"}})
+        resp = tc.get("/v2/servers/srv-1")
+        assert resp.status_code == 200
+        assert "Task History" in resp.text
+        assert "3" in resp.text  # total count
+
+    def test_detail_shows_failed_error(self, client):
+        tc, store = client
+        store.save_server(_make_server_entity("srv-1"))
+        task = _make_task_entity("t1", name="FailEvent", state="failed")
+        store.save_task(task)
+        store._db.tasks.update_one(
+            {"uuid": "t1"},
+            {"$set": {"server_id": "srv-1", "error": {"message": "connection refused"}}},
+        )
+        resp = tc.get("/v2/servers/srv-1")
+        assert resp.status_code == 200
+        assert "connection refused" in resp.text
+
+    def test_detail_partial_includes_tasks(self, client):
+        tc, store = client
+        store.save_server(_make_server_entity("srv-1"))
+        task = _make_task_entity("t1", name="MyEvent", state="running")
+        store.save_task(task)
+        store._db.tasks.update_one({"uuid": "t1"}, {"$set": {"server_id": "srv-1"}})
+        resp = tc.get("/v2/servers/srv-1/partial")
+        assert resp.status_code == 200
+        assert "Task History" in resp.text
+        assert "MyEvent" in resp.text

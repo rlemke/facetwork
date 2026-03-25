@@ -1236,6 +1236,123 @@ class TestReapOrphanedTasks:
         doc = mongo_store._db.tasks.find_one({"uuid": "hb-update"})
         assert doc["task_heartbeat"] == now
 
+    def test_pending_tasks_pinned_to_dead_server_reaped(self, mongo_store):
+        """Pending tasks pinned to a dead server have server_id cleared."""
+        dead_server = ServerDefinition(
+            uuid="dead-pending",
+            server_group="test",
+            service_name="runner",
+            server_name="host-dead-pending",
+            state=ServerState.RUNNING,
+            ping_time=1000,  # ancient — definitely stale
+        )
+        mongo_store.save_server(dead_server)
+
+        task = TaskDefinition(
+            uuid="pinned-pending",
+            name="SomeEvent",
+            runner_id="r1",
+            workflow_id="w1",
+            flow_id="f1",
+            step_id="s1",
+            state=TaskState.PENDING,
+            task_list_name="default",
+        )
+        mongo_store.save_task(task)
+        mongo_store._db.tasks.update_one(
+            {"uuid": "pinned-pending"}, {"$set": {"server_id": "dead-pending"}}
+        )
+
+        reaped = mongo_store.reap_orphaned_tasks()
+        assert len(reaped) == 1
+        assert reaped[0]["step_id"] == "s1"
+
+        # Task should still be pending but with server_id cleared
+        fetched = mongo_store.get_task("pinned-pending")
+        assert fetched is not None
+        assert fetched.state == TaskState.PENDING
+        doc = mongo_store._db.tasks.find_one({"uuid": "pinned-pending"})
+        assert doc["server_id"] == ""
+
+    def test_dead_servers_marked_shutdown(self, mongo_store):
+        """Dead servers are marked as shutdown after reaping."""
+        dead_server = ServerDefinition(
+            uuid="dead-mark",
+            server_group="test",
+            service_name="runner",
+            server_name="host-dead-mark",
+            state=ServerState.RUNNING,
+            ping_time=1000,
+        )
+        mongo_store.save_server(dead_server)
+
+        # Need at least one task to trigger the reaper path
+        task = TaskDefinition(
+            uuid="task-mark",
+            name="E",
+            runner_id="r",
+            workflow_id="w",
+            flow_id="f",
+            step_id="s1",
+            state=TaskState.RUNNING,
+        )
+        mongo_store.save_task(task)
+        mongo_store._db.tasks.update_one(
+            {"uuid": "task-mark"}, {"$set": {"server_id": "dead-mark"}}
+        )
+
+        mongo_store.reap_orphaned_tasks()
+
+        # Server should now be marked as shutdown
+        doc = mongo_store._db.servers.find_one({"uuid": "dead-mark"})
+        assert doc["state"] == "shutdown"
+
+    def test_pending_tasks_without_server_id_not_affected(self, mongo_store):
+        """Pending tasks with no server_id are not touched by the reaper."""
+        dead_server = ServerDefinition(
+            uuid="dead-nopin",
+            server_group="test",
+            service_name="runner",
+            server_name="host-dead-nopin",
+            state=ServerState.RUNNING,
+            ping_time=1000,
+        )
+        mongo_store.save_server(dead_server)
+
+        # A normal pending task with no server_id
+        task = TaskDefinition(
+            uuid="free-pending",
+            name="FreeEvent",
+            runner_id="r1",
+            workflow_id="w1",
+            flow_id="f1",
+            step_id="s1",
+            state=TaskState.PENDING,
+            task_list_name="default",
+        )
+        mongo_store.save_task(task)
+
+        # Also create a running task on the dead server so reaper activates
+        t2 = TaskDefinition(
+            uuid="dead-running",
+            name="E",
+            runner_id="r",
+            workflow_id="w",
+            flow_id="f",
+            step_id="s2",
+            state=TaskState.RUNNING,
+        )
+        mongo_store.save_task(t2)
+        mongo_store._db.tasks.update_one(
+            {"uuid": "dead-running"}, {"$set": {"server_id": "dead-nopin"}}
+        )
+
+        mongo_store.reap_orphaned_tasks()
+
+        # The free pending task should be untouched
+        fetched = mongo_store.get_task("free-pending")
+        assert fetched.state == TaskState.PENDING
+
 
 # =============================================================================
 # Stuck Task Watchdog Tests

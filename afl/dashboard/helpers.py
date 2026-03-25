@@ -197,6 +197,76 @@ def group_servers_by_group(
     return groups
 
 
+def group_tasks_by_state(tasks: list) -> dict:
+    """Count tasks by state category.
+
+    Returns a dict with ``running``, ``completed``, ``failed``, ``pending``,
+    and ``total`` counts.
+    """
+    counts: dict[str, int] = {"running": 0, "completed": 0, "failed": 0, "pending": 0, "total": 0}
+    for t in tasks:
+        counts["total"] += 1
+        if t.state == "running":
+            counts["running"] += 1
+        elif t.state == "completed":
+            counts["completed"] += 1
+        elif t.state in ("failed", "error"):
+            counts["failed"] += 1
+        elif t.state == "pending":
+            counts["pending"] += 1
+    return counts
+
+
+def group_tasks_by_runner(tasks: list, store: object) -> list[dict]:
+    """Group tasks by runner_id and enrich with runner metadata.
+
+    Returns a sorted list (most recently active first) of dicts::
+
+        [{"runner_id": "...", "workflow_name": "...", "runner_state": "...",
+          "tasks": [...], "counts": {...}, "total": N}]
+    """
+    runner_map: dict[str, list] = {}
+    for t in tasks:
+        runner_map.setdefault(t.runner_id, []).append(t)
+
+    # Cache runner lookups
+    runner_cache: dict[str, object] = {}
+    groups = []
+    for runner_id, runner_tasks in runner_map.items():
+        if runner_id not in runner_cache:
+            runner_cache[runner_id] = getattr(store, "get_runner", lambda _: None)(runner_id)
+        runner = runner_cache[runner_id]
+
+        wf_name = ""
+        runner_state = ""
+        if runner is not None:
+            wf = getattr(runner, "workflow", None)
+            wf_name = getattr(wf, "name", "") if wf else ""
+            runner_state = getattr(runner, "state", "")
+
+        counts = group_tasks_by_state(runner_tasks)
+        max_updated = max((getattr(t, "updated", 0) or 0) for t in runner_tasks)
+        groups.append(
+            {
+                "runner_id": runner_id,
+                "workflow_name": wf_name or runner_id[:12],
+                "runner_state": runner_state,
+                "tasks": sorted(
+                    runner_tasks, key=lambda t: getattr(t, "updated", 0) or 0, reverse=True
+                ),
+                "counts": counts,
+                "total": len(runner_tasks),
+                "_max_updated": max_updated,
+            }
+        )
+
+    def _sort_key(g: dict) -> int:
+        return int(g.get("_max_updated") or 0)
+
+    groups.sort(key=_sort_key, reverse=True)
+    return groups
+
+
 def compute_step_progress(runner: RunnerDefinition, steps: list) -> dict:
     """Compute step completion progress for a runner.
 
