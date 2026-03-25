@@ -877,7 +877,7 @@ def _tool_postgis_query(arguments: dict[str, Any]) -> list[TextContent]:
     )
 
     try:
-        conn = psycopg2.connect(postgis_url, options="-c default_transaction_read_only=on")
+        conn = psycopg2.connect(postgis_url, options="-c default_transaction_read_only=on", gssencmode="disable")
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(sql)

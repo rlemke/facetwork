@@ -105,7 +105,7 @@ def _analyze_database(payload: dict) -> dict:
     import psycopg2
 
     postgis_url = get_postgis_url()
-    conn = psycopg2.connect(postgis_url)
+    conn = psycopg2.connect(postgis_url, gssencmode="disable")
     try:
         with conn.cursor() as cur:
             if country:

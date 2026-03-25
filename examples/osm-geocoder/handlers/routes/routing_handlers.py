@@ -155,7 +155,7 @@ def _query_pgrouting_route(
     avg_speed = profile_speeds.get(profile, 80)
 
     try:
-        conn = psycopg2.connect(postgis_url)
+        conn = psycopg2.connect(postgis_url, gssencmode="disable")
         try:
             with conn.cursor() as cur:
                 # Find nearest source vertex

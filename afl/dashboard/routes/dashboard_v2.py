@@ -708,7 +708,7 @@ def _get_postgis_summary() -> dict | None:
         "AFL_POSTGIS_URL", "postgresql://afl_osm:afl_osm_2024@afl-postgres:5432/osm"
     )
     try:
-        conn = psycopg2.connect(postgis_url)
+        conn = psycopg2.connect(postgis_url, gssencmode="disable")
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT il.region, il.node_count, il.way_count,

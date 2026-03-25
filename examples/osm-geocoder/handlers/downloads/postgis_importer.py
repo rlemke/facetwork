@@ -540,7 +540,7 @@ def import_to_postgis(
 
     pbf_path = localize(pbf_path)
     postgis_url = postgis_url or get_postgis_url()
-    conn = psycopg2.connect(postgis_url)
+    conn = psycopg2.connect(postgis_url, gssencmode="disable")
 
     try:
         ensure_schema(conn)

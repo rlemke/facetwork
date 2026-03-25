@@ -228,7 +228,7 @@ def _build_topology_handler(payload: dict) -> dict:
 
     import psycopg2
 
-    conn = psycopg2.connect(postgis_url)
+    conn = psycopg2.connect(postgis_url, gssencmode="disable")
     try:
         _ensure_pgrouting(conn)
         prefix = _prefix(region)
@@ -304,7 +304,7 @@ def _validate_topology_handler(payload: dict) -> dict:
     import psycopg2
 
     postgis_url = get_postgis_url()
-    conn = psycopg2.connect(postgis_url)
+    conn = psycopg2.connect(postgis_url, gssencmode="disable")
     prefix = _prefix(region)
     try:
         if not _tables_exist(conn, prefix):
@@ -359,7 +359,7 @@ def _clean_topology_handler(payload: dict) -> dict:
     import psycopg2
 
     postgis_url = get_postgis_url()
-    conn = psycopg2.connect(postgis_url)
+    conn = psycopg2.connect(postgis_url, gssencmode="disable")
     prefix = _prefix(region)
     try:
         if not _tables_exist(conn, prefix):
