@@ -371,6 +371,16 @@ class PersistenceAPI(Protocol):
         """
         ...
 
+    def get_task(self, task_id: str) -> Optional["TaskDefinition"]:
+        """Get a task by its unique identifier."""
+        return None
+
+    def get_tasks_by_server_id(
+        self, server_id: str, limit: int = 200
+    ) -> "Sequence[TaskDefinition]":
+        """Get tasks claimed by a specific server, most recent first."""
+        return []
+
     @abstractmethod
     def get_task_for_step(self, step_id: str) -> Optional["TaskDefinition"]:
         """Get the most recent task associated with a step.
@@ -446,12 +456,21 @@ class PersistenceAPI(Protocol):
         """
         return []
 
-    def update_task_heartbeat(self, task_id: str, heartbeat_time: int) -> None:
-        """Update a running task's heartbeat timestamp.
+    def update_task_heartbeat(
+        self,
+        task_id: str,
+        heartbeat_time: int,
+        progress_pct: int | None = None,
+        progress_message: str | None = None,
+    ) -> None:
+        """Update a running task's heartbeat timestamp and renew lease.
 
         Handlers call this periodically during long-running operations so the
         orphan reaper knows the task is still making progress even if the
         server's heartbeat is stale (e.g. due to I/O contention).
+
+        Optionally records ``progress_pct`` (0-100) and ``progress_message``
+        for the stuck-task watchdog.
         """
         return None
 

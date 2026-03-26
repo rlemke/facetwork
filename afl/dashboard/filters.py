@@ -126,7 +126,7 @@ def doc_description(doc: dict | str | None) -> str:
     if not text:
         return ""
     try:
-        import markdown as md  # type: ignore[import-untyped]
+        import markdown as md
         from markupsafe import Markup
 
         return Markup(md.markdown(text))

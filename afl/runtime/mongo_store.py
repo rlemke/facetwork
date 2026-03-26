@@ -19,6 +19,7 @@ It requires the pymongo package to be installed.
 """
 
 import logging
+import os
 import time
 from collections.abc import Sequence
 from dataclasses import asdict
@@ -496,6 +497,9 @@ class MongoStore(PersistenceAPI):
         doc = self._task_to_doc(task)
         self._db.tasks.replace_one({"uuid": task.uuid}, doc, upsert=True)
 
+    # Default lease duration: 5 minutes. Handlers must renew via heartbeat.
+    DEFAULT_LEASE_MS = 300_000
+
     def claim_task(
         self,
         task_names: list[str],
@@ -507,18 +511,41 @@ class MongoStore(PersistenceAPI):
         Uses find_one_and_update for atomic PENDING → RUNNING transition.
         The partial unique index on (step_id, state=running) ensures only
         one agent processes an event per step.
+
+        Also claims tasks whose lease has expired (i.e. still ``running``
+        but ``lease_expires < now``), allowing automatic failover without
+        relying solely on the orphan reaper.
         """
+        now = _current_time_ms()
+        lease_ms = int(os.environ.get("AFL_LEASE_DURATION_MS", str(self.DEFAULT_LEASE_MS)))
         update: dict[str, Any] = {
             "state": "running",
-            "updated": _current_time_ms(),
+            "updated": now,
+            "lease_expires": now + lease_ms,
         }
         if server_id:
             update["server_id"] = server_id
+
+        # First try to claim a pending task
         doc = self._db.tasks.find_one_and_update(
             {
                 "state": "pending",
                 "name": {"$in": task_names},
                 "task_list_name": task_list,
+            },
+            {"$set": update},
+            return_document=ReturnDocument.AFTER,
+        )
+        if doc:
+            return self._doc_to_task(doc)
+
+        # Then try to reclaim a running task whose lease has expired
+        doc = self._db.tasks.find_one_and_update(
+            {
+                "state": "running",
+                "name": {"$in": task_names},
+                "task_list_name": task_list,
+                "lease_expires": {"$lt": now, "$gt": 0},
             },
             {"$set": update},
             return_document=ReturnDocument.AFTER,
@@ -993,11 +1020,31 @@ class MongoStore(PersistenceAPI):
         """Update server ping time."""
         self._db.servers.update_one({"uuid": server_id}, {"$set": {"ping_time": ping_time}})
 
-    def update_task_heartbeat(self, task_id: str, heartbeat_time: int) -> None:
-        """Update a running task's heartbeat timestamp."""
+    def update_task_heartbeat(
+        self,
+        task_id: str,
+        heartbeat_time: int,
+        progress_pct: int | None = None,
+        progress_message: str | None = None,
+    ) -> None:
+        """Update a running task's heartbeat timestamp and renew lease.
+
+        Optionally records ``progress_pct`` (0-100) and ``progress_message``
+        so the stuck-task watchdog can distinguish truly stuck handlers from
+        those making slow but real progress.
+        """
+        lease_ms = int(os.environ.get("AFL_LEASE_DURATION_MS", str(self.DEFAULT_LEASE_MS)))
+        update: dict[str, Any] = {
+            "task_heartbeat": heartbeat_time,
+            "lease_expires": heartbeat_time + lease_ms,
+        }
+        if progress_pct is not None:
+            update["progress_pct"] = max(0, min(100, progress_pct))
+        if progress_message is not None:
+            update["progress_message"] = progress_message
         self._db.tasks.update_one(
             {"uuid": task_id, "state": "running"},
-            {"$set": {"task_heartbeat": heartbeat_time}},
+            {"$set": update},
         )
 
     # =========================================================================

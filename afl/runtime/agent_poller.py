@@ -185,7 +185,8 @@ class AgentPoller:
         self._running = False
         self._stopping = threading.Event()
         self._executor: ThreadPoolExecutor | None = None
-        self._active_futures: list[Future] = []
+        # Each entry: (future, task_id, claimed_at_ms)
+        self._active_futures: list[tuple[Future, str, int]] = []
         self._active_lock = threading.Lock()
         self._ast_cache: dict[str, dict] = {}
         self._program_ast_cache: dict[str, dict] = {}
@@ -195,6 +196,9 @@ class AgentPoller:
         self._resume_pending_lock = threading.Lock()
         self._last_reap: int = 0
         self._reap_interval_ms: int = 60000
+        self._execution_timeout_ms: int = int(
+            os.environ.get("AFL_TASK_EXECUTION_TIMEOUT_MS", "900000")
+        )
 
     @property
     def server_id(self) -> str:
@@ -569,7 +573,7 @@ class AgentPoller:
         self._last_reap = now
 
         try:
-            timeout_ms = int(os.environ.get("AFL_REAPER_TIMEOUT_MS", "300000"))
+            timeout_ms = int(os.environ.get("AFL_REAPER_TIMEOUT_MS", "120000"))
             reaped = self._persistence.reap_orphaned_tasks(down_timeout_ms=timeout_ms)
             if reaped:
                 logger.warning(
@@ -589,12 +593,8 @@ class AgentPoller:
 
         # --- Stuck task watchdog ---
         try:
-            stuck_timeout_ms = int(
-                os.environ.get("AFL_STUCK_TIMEOUT_MS", "14400000")
-            )
-            stuck = self._persistence.reap_stuck_tasks(
-                default_stuck_ms=stuck_timeout_ms
-            )
+            stuck_timeout_ms = int(os.environ.get("AFL_STUCK_TIMEOUT_MS", "1800000"))
+            stuck = self._persistence.reap_stuck_tasks(default_stuck_ms=stuck_timeout_ms)
             if stuck:
                 logger.warning(
                     "Stuck watchdog: reset %d task(s) exceeding timeout",
@@ -612,9 +612,61 @@ class AgentPoller:
             logger.debug("Stuck task watchdog failed", exc_info=True)
 
     def _cleanup_futures(self) -> None:
-        """Remove completed futures from the active list."""
+        """Remove completed futures and kill timed-out ones."""
+        now = _current_time_ms()
+        kept: list[tuple[Future, str, int]] = []
         with self._active_lock:
-            self._active_futures = [f for f in self._active_futures if not f.done()]
+            for future, task_id, claimed_at in self._active_futures:
+                if future.done():
+                    continue
+                elapsed = now - claimed_at
+                if self._execution_timeout_ms > 0 and elapsed > self._execution_timeout_ms:
+                    future.cancel()
+                    logger.warning(
+                        "Task %s timed out after %ds, resetting to pending",
+                        task_id,
+                        elapsed // 1000,
+                    )
+                    self._release_timed_out_task(task_id)
+                    continue
+                kept.append((future, task_id, claimed_at))
+            self._active_futures = kept
+
+    def _release_timed_out_task(self, task_id: str) -> None:
+        """Reset a timed-out task to pending so it can be reclaimed."""
+        try:
+            task = self._persistence.get_task(task_id)
+            if task and task.state == TaskState.RUNNING:
+                task.state = TaskState.PENDING
+                task.server_id = ""
+                task.error = None
+                task.updated = _current_time_ms()
+                self._safe_save_task(task)
+        except Exception:
+            logger.debug("Could not release timed-out task %s", task_id, exc_info=True)
+
+    def _safe_save_task(self, task: Any, retries: int = 3) -> None:
+        """Save task state with retries to survive transient DB failures."""
+        for attempt in range(retries):
+            try:
+                self._safe_save_task(task)
+                return
+            except Exception:
+                if attempt < retries - 1:
+                    logger.warning(
+                        "save_task failed for %s (attempt %d/%d), retrying",
+                        task.uuid,
+                        attempt + 1,
+                        retries,
+                    )
+                    time.sleep(0.5 * (attempt + 1))
+                else:
+                    logger.error(
+                        "save_task failed for %s after %d attempts",
+                        task.uuid,
+                        retries,
+                        exc_info=True,
+                    )
 
     def _submit_event(self, task: Any) -> None:
         """Submit an event task to the thread pool."""
@@ -623,8 +675,9 @@ class AgentPoller:
             return
 
         future = self._executor.submit(self._process_event, task)
+        now = _current_time_ms()
         with self._active_lock:
-            self._active_futures.append(future)
+            self._active_futures.append((future, task.uuid, now))
 
     # =========================================================================
     # Step Log Emission
@@ -701,7 +754,7 @@ class AgentPoller:
                 task.state = TaskState.FAILED
                 task.error = {"message": error_msg}
                 task.updated = _current_time_ms()
-                self._persistence.save_task(task)
+                self._safe_save_task(task)
                 logger.warning(
                     "No handler for event task '%s' (step=%s)",
                     task.name,
@@ -725,9 +778,17 @@ class AgentPoller:
 
             # Inject _task_heartbeat callback so long-running handlers can
             # signal progress and avoid being reaped by the orphan detector.
-            def _task_heartbeat_callback():
+            def _task_heartbeat_callback(
+                progress_pct: int | None = None,
+                progress_message: str | None = None,
+            ) -> None:
                 now = _current_time_ms()
-                self._persistence.update_task_heartbeat(task.uuid, now)
+                self._persistence.update_task_heartbeat(
+                    task.uuid,
+                    now,
+                    progress_pct=progress_pct,
+                    progress_message=progress_message,
+                )
 
             payload["_task_heartbeat"] = _task_heartbeat_callback
             payload["_task_uuid"] = task.uuid
@@ -771,7 +832,7 @@ class AgentPoller:
                         task.error = None
                         task.server_id = ""
                         task.updated = _current_time_ms()
-                        self._persistence.save_task(task)
+                        self._safe_save_task(task)
                         self._emit_step_log(
                             step_id=task.step_id,
                             workflow_id=task.workflow_id,
@@ -811,7 +872,7 @@ class AgentPoller:
             # Mark task completed
             task.state = TaskState.COMPLETED
             task.updated = _current_time_ms()
-            self._persistence.save_task(task)
+            self._safe_save_task(task)
 
             logger.info(
                 "Processed event task %s (name=%s, step=%s)",
@@ -840,7 +901,7 @@ class AgentPoller:
             task.state = TaskState.FAILED
             task.error = {"message": str(exc)}
             task.updated = _current_time_ms()
-            self._persistence.save_task(task)
+            self._safe_save_task(task)
             logger.exception(
                 "Error processing event task %s (name=%s)",
                 task.uuid,
@@ -994,7 +1055,7 @@ class AgentPoller:
         if self._executor:
             self._executor.shutdown(wait=True, cancel_futures=False)
             with self._active_lock:
-                for future in self._active_futures:
+                for future, _task_id, _claimed_at in self._active_futures:
                     try:
                         future.result(timeout=30)
                     except Exception:

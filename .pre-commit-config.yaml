@@ -17,6 +17,7 @@ repos:
           - jinja2>=3.1
           - mcp>=1.0
           - types-requests
+          - types-Markdown
         args: [--config-file=pyproject.toml]
         pass_filenames: false
         entry: mypy afl/

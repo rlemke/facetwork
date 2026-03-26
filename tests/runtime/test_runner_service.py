@@ -891,11 +891,11 @@ class TestPollCycleCapacityExhaustion:
         config = RunnerConfig(max_concurrent=1)
         svc = RunnerService(store, evaluator, config, registry)
 
-        # Simulate a running future
+        # Simulate a running future (tuple: future, task_id, claimed_at)
         mock_future = MagicMock(spec=Future)
         mock_future.done.return_value = False
         with svc._active_lock:
-            svc._active_futures.append(mock_future)
+            svc._active_futures.append((mock_future, "test-task", int(time.time() * 1000)))
 
         result = svc._poll_cycle()
         assert result == 0
@@ -1359,8 +1359,9 @@ class TestShutdownEdgeCases:
 
         # Submit a quick task
         future = executor.submit(lambda: time.sleep(0.01))
+        now = int(time.time() * 1000)
         with svc._active_lock:
-            svc._active_futures.append(future)
+            svc._active_futures.append((future, "test-task", now))
 
         svc._shutdown()
 
@@ -1382,8 +1383,9 @@ class TestShutdownEdgeCases:
             raise RuntimeError("task failed")
 
         future = executor.submit(failing_task)
+        now = int(time.time() * 1000)
         with svc._active_lock:
-            svc._active_futures.append(future)
+            svc._active_futures.append((future, "test-task", now))
 
         # Should not raise
         svc._shutdown()
@@ -1459,8 +1461,12 @@ class TestCleanupFutures:
         pending_future = MagicMock(spec=Future)
         pending_future.done.return_value = False
 
+        now = int(time.time() * 1000)
         with svc._active_lock:
-            svc._active_futures = [done_future, pending_future]
+            svc._active_futures = [
+                (done_future, "done-task", now),
+                (pending_future, "pending-task", now),
+            ]
 
         svc._cleanup_futures()
 

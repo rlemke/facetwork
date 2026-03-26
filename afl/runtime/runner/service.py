@@ -159,6 +159,7 @@ class _StatusHandler(BaseHTTPRequestHandler):
                     for name, c in svc._handled_counts.items()
                 },
                 "active_work_items": svc._active_count(),
+                "execution_timeout_ms": svc._execution_timeout_ms,
                 "config": {
                     "server_group": svc._config.server_group,
                     "service_name": svc._config.service_name,
@@ -208,7 +209,8 @@ class RunnerService:
         self._running = False
         self._stopping = threading.Event()
         self._executor: ThreadPoolExecutor | None = None
-        self._active_futures: list[Future] = []
+        # Each entry: (future, task_id, claimed_at_ms)
+        self._active_futures: list[tuple[Future, str, int]] = []
         self._active_lock = threading.Lock()
         self._handled_counts: dict[str, HandledCount] = {}
         self._ast_cache: dict[str, dict] = {}
@@ -220,6 +222,9 @@ class RunnerService:
         self._sweep_interval_ms: int = 5000
         self._last_reap: int = 0
         self._reap_interval_ms: int = 60000  # check for orphans every 60s
+        self._execution_timeout_ms: int = int(
+            os.environ.get("AFL_TASK_EXECUTION_TIMEOUT_MS", "900000")
+        )  # default 15 minutes
 
         # Register built-in task handler
         self._tool_registry.register("afl:execute", self._handle_execute_workflow)
@@ -342,11 +347,17 @@ class RunnerService:
     def _poll_loop(self) -> None:
         """Main loop: poll for work until stopped."""
         interval_s = self._config.poll_interval_ms / 1000.0
+        reconcile_counter = 0
         while not self._stopping.is_set():
             try:
                 self._poll_cycle()
                 self._maybe_sweep_stuck_steps()
                 self._maybe_reap_orphaned_tasks()
+                # Reconcile every 10 poll cycles to catch drift
+                reconcile_counter += 1
+                if reconcile_counter >= 10:
+                    self._reconcile_with_db()
+                    reconcile_counter = 0
             except Exception:
                 logger.exception("Poll cycle error")
             self._stopping.wait(interval_s)
@@ -418,9 +429,110 @@ class RunnerService:
             return len(self._active_futures)
 
     def _cleanup_futures(self) -> None:
-        """Remove completed futures from the active list."""
+        """Remove completed futures and kill timed-out ones.
+
+        If a future has been running longer than ``_execution_timeout_ms``,
+        the associated task is reset to PENDING so another runner can
+        claim it. The future itself is cancelled (best-effort).
+        """
+        now = _current_time_ms()
+        kept: list[tuple[Future, str, int]] = []
         with self._active_lock:
-            self._active_futures = [f for f in self._active_futures if not f.done()]
+            for future, task_id, claimed_at in self._active_futures:
+                if future.done():
+                    continue  # completed — drop from list
+                elapsed = now - claimed_at
+                if self._execution_timeout_ms > 0 and elapsed > self._execution_timeout_ms:
+                    # Timed out — cancel and release task
+                    future.cancel()
+                    logger.warning(
+                        "Task %s timed out after %ds, resetting to pending",
+                        task_id,
+                        elapsed // 1000,
+                    )
+                    self._release_timed_out_task(task_id)
+                    continue  # drop from list
+                kept.append((future, task_id, claimed_at))
+            self._active_futures = kept
+
+    def _release_timed_out_task(self, task_id: str) -> None:
+        """Reset a timed-out task to pending so it can be reclaimed."""
+        try:
+            task = self._persistence.get_task(task_id)
+            if task and task.state == TaskState.RUNNING:
+                task.state = TaskState.PENDING
+                task.server_id = ""
+                task.error = None
+                task.updated = _current_time_ms()
+                self._safe_save_task(task)
+        except Exception:
+            logger.debug("Could not release timed-out task %s", task_id, exc_info=True)
+
+    def _safe_save_task(self, task: Any, retries: int = 3) -> None:
+        """Save task state with retries to survive transient DB failures."""
+        for attempt in range(retries):
+            try:
+                self._persistence.save_task(task)
+                return
+            except Exception:
+                if attempt < retries - 1:
+                    logger.warning(
+                        "save_task failed for %s (attempt %d/%d), retrying",
+                        task.uuid,
+                        attempt + 1,
+                        retries,
+                    )
+                    time.sleep(0.5 * (attempt + 1))
+                else:
+                    logger.error(
+                        "save_task failed for %s after %d attempts, task may be stuck",
+                        task.uuid,
+                        retries,
+                        exc_info=True,
+                    )
+
+    def _reconcile_with_db(self) -> None:
+        """Reconcile in-memory active futures with actual DB state.
+
+        Detects tasks that the DB shows as no longer running for this
+        server (e.g. reaped by another runner) and releases the capacity
+        slot. Also detects tasks in DB that have no corresponding future
+        and resets them.
+        """
+        try:
+            db_tasks = {
+                t.uuid
+                for t in self._persistence.get_tasks_by_server_id(self._server_id, limit=500)
+                if t.state == TaskState.RUNNING
+            }
+        except Exception:
+            logger.debug("Reconciliation: could not query DB", exc_info=True)
+            return
+
+        with self._active_lock:
+            memory_task_ids = {task_id for _, task_id, _ in self._active_futures}
+
+        # Tasks in memory but not in DB → someone else reaped them, release slot
+        orphaned_memory = memory_task_ids - db_tasks
+        if orphaned_memory:
+            logger.info(
+                "Reconciliation: %d in-memory task(s) no longer running in DB, releasing slots",
+                len(orphaned_memory),
+            )
+            with self._active_lock:
+                self._active_futures = [
+                    entry for entry in self._active_futures if entry[1] not in orphaned_memory
+                ]
+
+        # Tasks in DB but not in memory → we lost track, reset to pending
+        orphaned_db = db_tasks - memory_task_ids
+        if orphaned_db:
+            logger.warning(
+                "Reconciliation: %d DB task(s) not in memory, resetting to pending",
+                len(orphaned_db),
+            )
+            for task_id in orphaned_db:
+                self._release_timed_out_task(task_id)
 
     # =========================================================================
     # Polling
@@ -482,13 +594,13 @@ class RunnerService:
     def _submit_step(self, step: StepDefinition) -> None:
         """Submit a step for processing in the thread pool."""
         if self._executor is None:
-            # Synchronous fallback (for run_once without start)
             self._process_step(step)
             return
 
         future = self._executor.submit(self._process_step, step)
+        now = _current_time_ms()
         with self._active_lock:
-            self._active_futures.append(future)
+            self._active_futures.append((future, getattr(step, "id", ""), now))
 
     def _submit_event_task(self, task: Any) -> None:
         """Submit an event task for processing in the thread pool."""
@@ -497,8 +609,9 @@ class RunnerService:
             return
 
         future = self._executor.submit(self._process_event_task, task)
+        now = _current_time_ms()
         with self._active_lock:
-            self._active_futures.append(future)
+            self._active_futures.append((future, task.uuid, now))
 
     def _submit_task(self, task: Any) -> None:
         """Submit a task for processing in the thread pool."""
@@ -507,8 +620,9 @@ class RunnerService:
             return
 
         future = self._executor.submit(self._process_task, task)
+        now = _current_time_ms()
         with self._active_lock:
-            self._active_futures.append(future)
+            self._active_futures.append((future, task.uuid, now))
 
     def _submit_resume_task(self, task: Any) -> None:
         """Submit a resume task for processing in the thread pool."""
@@ -517,8 +631,9 @@ class RunnerService:
             return
 
         future = self._executor.submit(self._process_resume_task, task)
+        now = _current_time_ms()
         with self._active_lock:
-            self._active_futures.append(future)
+            self._active_futures.append((future, task.uuid, now))
 
     # =========================================================================
     # Step Processing
@@ -613,10 +728,18 @@ class RunnerService:
             payload["_step_log"] = _step_log_callback
 
             # Inject _task_heartbeat callback so long-running handlers can
-            # signal progress and avoid being reaped by the orphan detector.
-            def _task_heartbeat_callback():
+            # signal progress, renew the lease, and avoid being reaped.
+            def _task_heartbeat_callback(
+                progress_pct: int | None = None,
+                progress_message: str | None = None,
+            ) -> None:
                 now = _current_time_ms()
-                self._persistence.update_task_heartbeat(task.uuid, now)
+                self._persistence.update_task_heartbeat(
+                    task.uuid,
+                    now,
+                    progress_pct=progress_pct,
+                    progress_message=progress_message,
+                )
 
             payload["_task_heartbeat"] = _task_heartbeat_callback
             payload["_task_uuid"] = task.uuid
@@ -636,7 +759,7 @@ class RunnerService:
                 task.state = TaskState.FAILED
                 task.error = {"message": error_msg}
                 task.updated = _current_time_ms()
-                self._persistence.save_task(task)
+                self._safe_save_task(task)
                 self._update_handled_stats(task.name, handled=False)
                 logger.warning(
                     "No handler for event task '%s' (step=%s)",
@@ -654,7 +777,7 @@ class RunnerService:
             # Mark task completed
             task.state = TaskState.COMPLETED
             task.updated = _current_time_ms()
-            self._persistence.save_task(task)
+            self._safe_save_task(task)
 
             # Update stats
             self._update_handled_stats(task.name, handled=True)
@@ -674,7 +797,7 @@ class RunnerService:
             task.error = None
             task.server_id = ""
             task.updated = _current_time_ms()
-            self._persistence.save_task(task)
+            self._safe_save_task(task)
             logger.warning(
                 "Cannot load handler for '%s', releasing task %s back to pending: %s",
                 task.name,
@@ -690,7 +813,7 @@ class RunnerService:
             task.state = TaskState.FAILED
             task.error = {"message": str(exc)}
             task.updated = _current_time_ms()
-            self._persistence.save_task(task)
+            self._safe_save_task(task)
             self._update_handled_stats(task.name, handled=False)
             logger.exception(
                 "Error processing event task %s (name=%s)",
@@ -729,7 +852,7 @@ class RunnerService:
             # Mark task completed
             task.state = TaskState.COMPLETED
             task.updated = _current_time_ms()
-            self._persistence.save_task(task)
+            self._safe_save_task(task)
 
             self._update_handled_stats(RESUME_TASK_NAME, handled=True)
 
@@ -744,7 +867,7 @@ class RunnerService:
             task.state = TaskState.FAILED
             task.error = {"message": str(exc)}
             task.updated = _current_time_ms()
-            self._persistence.save_task(task)
+            self._safe_save_task(task)
             self._update_handled_stats(RESUME_TASK_NAME, handled=False)
             logger.exception(
                 "Error processing resume task %s (step=%s)",
@@ -774,7 +897,7 @@ class RunnerService:
                 task.error = {"message": f"No handler for task '{task.name}'"}
 
             task.updated = _current_time_ms()
-            self._persistence.save_task(task)
+            self._safe_save_task(task)
 
             logger.info("Processed task %s (name=%s, state=%s)", task.uuid, task.name, task.state)
 
@@ -782,7 +905,7 @@ class RunnerService:
             task.state = TaskState.FAILED
             task.error = {"message": str(exc)}
             task.updated = _current_time_ms()
-            self._persistence.save_task(task)
+            self._safe_save_task(task)
             logger.exception("Error processing task %s", task.uuid)
 
     # =========================================================================
@@ -953,7 +1076,7 @@ class RunnerService:
         self._last_reap = now
 
         try:
-            timeout_ms = int(os.environ.get("AFL_REAPER_TIMEOUT_MS", "300000"))
+            timeout_ms = int(os.environ.get("AFL_REAPER_TIMEOUT_MS", "120000"))
             reaped = self._persistence.reap_orphaned_tasks(down_timeout_ms=timeout_ms)
             if reaped:
                 logger.warning(
@@ -985,12 +1108,8 @@ class RunnerService:
 
         # --- Stuck task watchdog ---
         try:
-            stuck_timeout_ms = int(
-                os.environ.get("AFL_STUCK_TIMEOUT_MS", "14400000")
-            )
-            stuck = self._persistence.reap_stuck_tasks(
-                default_stuck_ms=stuck_timeout_ms
-            )
+            stuck_timeout_ms = int(os.environ.get("AFL_STUCK_TIMEOUT_MS", "1800000"))
+            stuck = self._persistence.reap_stuck_tasks(default_stuck_ms=stuck_timeout_ms)
             if stuck:
                 logger.warning(
                     "Stuck watchdog: reset %d task(s) exceeding timeout",
@@ -1055,7 +1174,10 @@ class RunnerService:
                 runner_id = runners[0].uuid
 
         result = self._evaluator.resume(
-            workflow_id, workflow_ast, program_ast=program_ast, runner_id=runner_id,
+            workflow_id,
+            workflow_ast,
+            program_ast=program_ast,
+            runner_id=runner_id,
         )
 
         if result.status == ExecutionStatus.ERROR:
@@ -1251,7 +1373,7 @@ class RunnerService:
             self._executor.shutdown(wait=True, cancel_futures=False)
             # Wait for remaining futures
             with self._active_lock:
-                for future in self._active_futures:
+                for future, _task_id, _claimed_at in self._active_futures:
                     try:
                         future.result(timeout=timeout_s)
                     except Exception:

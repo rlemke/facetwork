@@ -193,6 +193,15 @@ Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event f
 
 Set `AFL_POSTGIS_URL` (e.g. `postgresql://afl:afl@afl-postgres:5432/afl_gis`) for PostGIS imports. Without this, the importer falls back to a hardcoded default that may not match your setup.
 
+### Runner resilience tuning
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AFL_REAPER_TIMEOUT_MS` | `120000` (2min) | Dead-server detection threshold |
+| `AFL_STUCK_TIMEOUT_MS` | `1800000` (30min) | Stuck-task watchdog timeout |
+| `AFL_TASK_EXECUTION_TIMEOUT_MS` | `900000` (15min) | Per-task execution timeout; timed-out tasks reset to pending |
+| `AFL_LEASE_DURATION_MS` | `300000` (5min) | Task lease duration; renewed by handler heartbeat |
+
 ### MCP server
 
 The MCP server (`python -m afl.mcp`) exposes AFL compiler tools, runtime management, and a PostGIS query tool. Configure it in `.mcp.json` for Claude Code integration.
