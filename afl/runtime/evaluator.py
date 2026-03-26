@@ -1120,7 +1120,18 @@ class Evaluator:
         if step is None:
             raise ValueError(f"Step {step_id} not found")
         if step.state != StepState.EVENT_TRANSMIT:
-            if step.is_terminal:
+            if StepState.is_error(step.state) and result is not None:
+                # Step was in Error but a retry succeeded — reset to
+                # EventTransmit so the result can be applied normally.
+                logger.info(
+                    "continue_step: step %s recovering from %s with successful result",
+                    step_id,
+                    step.state,
+                )
+                step.state = StepState.EVENT_TRANSMIT
+                step.transition.current_state = StepState.EVENT_TRANSMIT
+                step.error = None
+            elif step.is_terminal:
                 # Step already completed (e.g. task was reprocessed after
                 # a runner crash left it in running state).  Treat as no-op
                 # so the caller can mark the task completed.
@@ -1130,9 +1141,10 @@ class Evaluator:
                     step.state,
                 )
                 return
-            raise ValueError(
-                f"Step {step_id} is at {step.state}, expected {StepState.EVENT_TRANSMIT}"
-            )
+            else:
+                raise ValueError(
+                    f"Step {step_id} is at {step.state}, expected {StepState.EVENT_TRANSMIT}"
+                )
 
         # Apply result as return attributes
         if result:

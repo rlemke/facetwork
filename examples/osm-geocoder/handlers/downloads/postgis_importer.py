@@ -130,6 +130,105 @@ LIMIT 1
 DELETE_REGION_NODES_SQL = "DELETE FROM osm_nodes WHERE region = %s"
 DELETE_REGION_WAYS_SQL = "DELETE FROM osm_ways WHERE region = %s"
 
+# ---------------------------------------------------------------------------
+# osm2pgsql-compatible views — zero-storage compatibility layer
+# ---------------------------------------------------------------------------
+# These views expose the JSONB tags as named columns so tools expecting the
+# osm2pgsql schema (planet_osm_point, planet_osm_line, planet_osm_polygon,
+# planet_osm_roads) can query the data without a separate import.
+
+CREATE_PLANET_OSM_POINT_VIEW = """
+CREATE OR REPLACE VIEW planet_osm_point AS
+SELECT osm_id,
+       tags->>'name' AS name,
+       tags->>'amenity' AS amenity,
+       tags->>'shop' AS shop,
+       tags->>'highway' AS highway,
+       tags->>'building' AS building,
+       tags->>'tourism' AS tourism,
+       tags->>'natural' AS "natural",
+       tags->>'leisure' AS leisure,
+       tags->>'landuse' AS landuse,
+       tags->>'place' AS place,
+       tags->>'railway' AS railway,
+       tags->>'aeroway' AS aeroway,
+       tags->>'man_made' AS man_made,
+       tags->>'cuisine' AS cuisine,
+       tags->>'religion' AS religion,
+       tags->>'sport' AS sport,
+       tags->>'population' AS population,
+       tags->>'addr:street' AS "addr:street",
+       tags->>'addr:housenumber' AS "addr:housenumber",
+       tags->>'addr:city' AS "addr:city",
+       tags->>'addr:postcode' AS "addr:postcode",
+       tags,
+       region,
+       geom AS way
+FROM osm_nodes
+"""
+
+CREATE_PLANET_OSM_LINE_VIEW = """
+CREATE OR REPLACE VIEW planet_osm_line AS
+SELECT osm_id,
+       tags->>'name' AS name,
+       tags->>'highway' AS highway,
+       tags->>'railway' AS railway,
+       tags->>'waterway' AS waterway,
+       tags->>'aeroway' AS aeroway,
+       tags->>'route' AS route,
+       tags->>'barrier' AS barrier,
+       tags->>'boundary' AS boundary,
+       tags->>'power' AS power,
+       tags->>'surface' AS surface,
+       tags->>'lanes' AS lanes,
+       tags->>'maxspeed' AS maxspeed,
+       tags->>'oneway' AS oneway,
+       tags->>'bridge' AS bridge,
+       tags->>'tunnel' AS tunnel,
+       tags->>'ref' AS ref,
+       tags,
+       region,
+       geom AS way
+FROM osm_ways
+"""
+
+CREATE_PLANET_OSM_ROADS_VIEW = """
+CREATE OR REPLACE VIEW planet_osm_roads AS
+SELECT osm_id,
+       tags->>'name' AS name,
+       tags->>'highway' AS highway,
+       tags->>'railway' AS railway,
+       tags->>'ref' AS ref,
+       tags->>'surface' AS surface,
+       tags->>'lanes' AS lanes,
+       tags->>'maxspeed' AS maxspeed,
+       tags->>'oneway' AS oneway,
+       tags->>'bridge' AS bridge,
+       tags->>'tunnel' AS tunnel,
+       tags,
+       region,
+       geom AS way
+FROM osm_ways
+WHERE tags ? 'highway' OR tags ? 'railway'
+"""
+
+# Expression indexes for common tag lookups (partial — only rows with the tag)
+TAG_INDEXES = [
+    ("idx_osm_nodes_amenity", "osm_nodes", "amenity"),
+    ("idx_osm_nodes_shop", "osm_nodes", "shop"),
+    ("idx_osm_nodes_name", "osm_nodes", "name"),
+    ("idx_osm_nodes_place", "osm_nodes", "place"),
+    ("idx_osm_nodes_highway", "osm_nodes", "highway"),
+    ("idx_osm_nodes_building", "osm_nodes", "building"),
+    ("idx_osm_nodes_tourism", "osm_nodes", "tourism"),
+    ("idx_osm_nodes_leisure", "osm_nodes", "leisure"),
+    ("idx_osm_ways_highway", "osm_ways", "highway"),
+    ("idx_osm_ways_railway", "osm_ways", "railway"),
+    ("idx_osm_ways_waterway", "osm_ways", "waterway"),
+    ("idx_osm_ways_name", "osm_ways", "name"),
+    ("idx_osm_ways_building", "osm_ways", "building"),
+]
+
 # Commit after this many batches to balance speed vs memory
 _COMMIT_EVERY_N_BATCHES = 20
 
@@ -192,6 +291,22 @@ def ensure_schema(conn) -> None:
             cur.execute(CREATE_WAYS_TAGS_IDX)
         if "idx_osm_ways_region" not in existing:
             cur.execute(CREATE_WAYS_REGION_IDX)
+
+        # Expression indexes on common tags (partial, only rows with the tag)
+        for idx_name, table, tag in TAG_INDEXES:
+            if idx_name not in existing:
+                cur.execute(
+                    f'CREATE INDEX {idx_name} ON {table} '
+                    f"((tags->>'{tag}')) WHERE tags ? '{tag}'"
+                )
+
+    conn.commit()
+
+    # osm2pgsql-compatible views (CREATE OR REPLACE is idempotent)
+    with conn.cursor() as cur:
+        cur.execute(CREATE_PLANET_OSM_POINT_VIEW)
+        cur.execute(CREATE_PLANET_OSM_LINE_VIEW)
+        cur.execute(CREATE_PLANET_OSM_ROADS_VIEW)
     conn.commit()
 
 

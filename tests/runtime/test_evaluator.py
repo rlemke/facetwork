@@ -1791,6 +1791,47 @@ class TestEvaluatorEdgeCases:
         with pytest.raises(ValueError, match="expected"):
             evaluator.retry_step(step.id)
 
+    def test_continue_step_recovers_from_error(self, store, evaluator):
+        """continue_step with result recovers a step from STATEMENT_ERROR."""
+        from afl.runtime.step import StepDefinition
+        from afl.runtime.types import ObjectType
+
+        step = StepDefinition.create(
+            workflow_id="wf-1",
+            object_type=ObjectType.VARIABLE_ASSIGNMENT,
+        )
+        # Put step in error state
+        step.state = StepState.STATEMENT_ERROR
+        step.transition.current_state = StepState.STATEMENT_ERROR
+        step.error = "previous failure"
+        store.save_step(step)
+
+        # continue_step with a result should recover
+        evaluator.continue_step(step.id, result={"cache": {"path": "/tmp/test"}})
+
+        recovered = store.get_step(step.id)
+        assert recovered.state != StepState.STATEMENT_ERROR
+        assert recovered.error is None
+
+    def test_continue_step_skips_completed_terminal(self, store, evaluator):
+        """continue_step without result skips a COMPLETE step (no-op)."""
+        from afl.runtime.step import StepDefinition
+        from afl.runtime.types import ObjectType
+
+        step = StepDefinition.create(
+            workflow_id="wf-1",
+            object_type=ObjectType.VARIABLE_ASSIGNMENT,
+        )
+        step.state = StepState.STATEMENT_COMPLETE
+        step.transition.current_state = StepState.STATEMENT_COMPLETE
+        store.save_step(step)
+
+        # Should not raise, just skip
+        evaluator.continue_step(step.id, result={"foo": "bar"})
+
+        fetched = store.get_step(step.id)
+        assert fetched.state == StepState.STATEMENT_COMPLETE
+
     def test_retry_step_resets_to_event_transmit(self, store, evaluator):
         """retry_step resets step from STATEMENT_ERROR to EVENT_TRANSMIT."""
         from afl.runtime.entities import TaskDefinition

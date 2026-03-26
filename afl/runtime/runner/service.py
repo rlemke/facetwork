@@ -120,7 +120,7 @@ class RunnerConfig:
     heartbeat_interval_ms: int = _SENTINEL
     max_concurrent: int = _SENTINEL
     shutdown_timeout_ms: int = 30000
-    http_port: int = 8080
+    http_port: int = 8090
     http_max_port_attempts: int = 20
 
     def __post_init__(self) -> None:
