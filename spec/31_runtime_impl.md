@@ -770,9 +770,121 @@ Workflow Complete
 
 ---
 
-## 17. Key Python Source Files
+## 17. Task Resilience and Workflow Recovery
+
+> Long-running distributed workflows face compounding failure modes that don't appear in short test runs. This section documents the mechanisms that allow workflows to self-heal and run to completion despite infrastructure failures, process crashes, and transient errors.
+
+### 17.1 Task Lifecycle with Recovery States
+
+```
+PENDING ──claim_task()──► RUNNING ──handler succeeds──► COMPLETED
+   ▲                        │
+   │                        ├── handler fails ──► FAILED
+   │                        │                       │
+   │                        ├── server dies ────┐   │
+   │                        │                   │   │
+   │                        └── stuck (4h) ─────┤   │
+   │                                            │   │
+   └────── reaper / watchdog / dashboard ───────┘   │
+   └────── manual retry / dashboard retry ──────────┘
+```
+
+### 17.2 Layer 1: Orphan Reaper (v0.39.0)
+
+**Problem:** A runner crashes (OOM, SIGKILL, power loss) without graceful shutdown. Its in-flight tasks remain in `running` state forever.
+
+**Mechanism:** Every 60s, each runner's poll loop calls `reap_orphaned_tasks()`:
+1. Query servers where `state ∈ {running, startup}` AND `ping_time < now - 5min`
+2. Find tasks where `server_id ∈ dead_servers` AND `(task_heartbeat missing OR stale)`
+3. Atomically reset matching tasks to `pending` with empty `server_id`
+4. Write step log entries for audit visibility
+
+**Files:** `mongo_store.py:reap_orphaned_tasks()`, `runner/service.py:_maybe_reap_orphaned_tasks()`
+
+**Safety:** Servers in `shutdown` state (graceful drain) are not reaped. The 5-minute threshold avoids false positives from temporary network hiccups.
+
+### 17.3 Layer 2: Stuck Task Watchdog (v0.42.0)
+
+**Problem:** A runner is alive and pinging, but a handler is blocked indefinitely (e.g. waiting for a database connection during PostgreSQL WAL recovery). The orphan reaper won't catch this because the server isn't dead.
+
+**Mechanism:** `reap_stuck_tasks()` runs in the same 60s cycle:
+- **Pass 1 (explicit timeout):** Tasks with `timeout_ms > 0` where `now - max(task_heartbeat, updated) > timeout_ms`
+- **Pass 2 (default timeout):** Tasks without explicit timeout where `now - max(task_heartbeat, updated) > AFL_STUCK_TIMEOUT_MS` (default: 4 hours)
+
+**Heartbeat-aware:** Handlers calling `update_task_heartbeat()` during long operations (e.g. PostGIS bulk import) keep their tasks alive even if the server heartbeat is stale due to I/O contention.
+
+**Files:** `mongo_store.py:reap_stuck_tasks()`, `runner/service.py`, `agent_poller.py`
+
+### 17.4 Layer 3: Lease-Based Task Ownership (v0.43.0)
+
+**Problem:** The 5-minute reaper threshold is too slow for some failure modes. A runner that crashes during task execution leaves the task locked for 5 minutes before recovery.
+
+**Mechanism:**
+- Tasks have a `lease_expires` timestamp set at claim time
+- Runners renew leases via heartbeat during execution
+- Expired leases allow other runners to reclaim without waiting for the full reaper cycle
+- Execution timeout (default: 15 min, `AFL_EXECUTION_TIMEOUT_MS`) kills hung futures and releases capacity
+- `_safe_save_task()` retries with exponential backoff on transient MongoDB errors
+
+### 17.5 Layer 4: Errored Step Recovery (v0.44.0)
+
+**Problem:** A step fails (e.g. database connection refused during PostgreSQL restart). The step moves to `STATEMENT_ERROR`. Later, the task is reset to pending and a runner retries it. The handler succeeds. But `continue_step()` sees the step is already in a terminal state and silently skips. The step remains in `STATEMENT_ERROR` forever. Downstream steps never execute. The workflow is permanently stuck with no visible errors.
+
+**Mechanism:** `continue_step()` now detects when `step.state == STATEMENT_ERROR` and a result is provided:
+1. Reset step state to `EVENT_TRANSMIT`
+2. Clear the step's error field
+3. Apply the result as return attributes
+4. Continue normal state machine processing (blocks, capture, completion)
+
+**Files:** `evaluator.py:continue_step()`
+
+### 17.6 Layer 5: Dashboard Reaper (v0.44.0)
+
+**Problem:** All runners are at capacity with stale futures (the deadlock scenario). No runner can run the reaper because the reaper runs inside the poll loop which is gated by capacity. The system is stuck.
+
+**Mechanism:** The dashboard runs an independent asyncio background task:
+- Every 60s (configurable: `AFL_DASHBOARD_REAP_INTERVAL_S`), calls `reap_orphaned_tasks()` and `reap_stuck_tasks()`
+- Completely independent of runners — runs in the FastAPI lifespan
+- Breaks the deadlock: dashboard resets orphaned tasks → capacity freed → runners resume claiming
+
+**Files:** `dashboard/app.py:_reaper_loop()`
+
+### 17.7 Failure Modes and Which Layer Handles Them
+
+| Failure Mode | Example | Recovery Layer |
+|---|---|---|
+| Runner crash (OOM, kill -9) | Process killed during import | Layer 1: Orphan reaper (5 min) |
+| Handler blocked on dead resource | PostgreSQL in WAL recovery, DNS failure | Layer 2: Stuck watchdog (4h default) |
+| Handler timeout | Infinite loop, deadlocked connection | Layer 3: Execution timeout (15 min) |
+| Transient error, retry succeeds | Network blip, brief DB maintenance | Layer 4: Step recovery on retry |
+| All runners at capacity with stale futures | Handler succeeds but continue_step skipped | Layer 5: Dashboard reaper (60s) |
+| Missing dependency on runner | `psycopg2` not installed on remote machine | Manual: restart runner after install |
+| Concurrent resource contention | `CREATE EXTENSION` race condition | Code fix: catch both exception types |
+| Stale module state | Runner started before dep installed | Manual: restart runner |
+
+### 17.8 Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `AFL_REAPER_TIMEOUT_MS` | 300,000 (5 min) | Server heartbeat stale threshold |
+| `AFL_STUCK_TIMEOUT_MS` | 14,400,000 (4h) | Default stuck task timeout |
+| `AFL_EXECUTION_TIMEOUT_MS` | 900,000 (15 min) | Per-task execution timeout |
+| `AFL_DASHBOARD_REAP_INTERVAL_S` | 60 | Dashboard reaper cycle interval |
+| `AFL_MAX_CONCURRENT` | 2 | Max concurrent tasks per runner |
+| `AFL_POLL_INTERVAL_MS` | 1,000 | Runner poll cycle interval |
+
+---
+
+## 18. Key Python Source Files
 
 All source files are located in `afl/runtime/`.
+
+### Resilience
+- `afl/runtime/mongo_store.py` — `reap_orphaned_tasks()`, `reap_stuck_tasks()`, `claim_task()` with lease
+- `afl/runtime/runner/service.py` — `_maybe_reap_orphaned_tasks()`, stuck watchdog, execution timeout
+- `afl/runtime/agent_poller.py` — parallel reaper/watchdog for standalone pollers
+- `afl/runtime/evaluator.py` — `continue_step()` with errored step recovery
+- `afl/dashboard/app.py` — `_reaper_loop()` independent background reaper
 
 ### State Handlers
 - `afl/runtime/handlers/base.py` — `StateHandler` abstract base class

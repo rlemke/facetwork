@@ -1,6 +1,71 @@
 # Implementation Changelog
 
-**Current version: v0.41.0**
+**Current version: v0.44.0**
+
+## Completed (v0.44.0) — Workflow Resilience, Dashboard Reaper, osm2pgsql Compatibility
+
+Comprehensive resilience improvements for long-running workflows, independent task cleanup from the dashboard, and PostGIS compatibility with the osm2pgsql ecosystem.
+
+**Errored step recovery (`afl/runtime/evaluator.py`):**
+- `continue_step()` now recovers steps stuck in `STATEMENT_ERROR` when a retried handler succeeds — resets the step to `EVENT_TRANSMIT`, clears the error, and applies the result normally
+- Previously, retried tasks that succeeded were silently skipped because the step was already in a terminal state, leaving the workflow permanently stuck
+- 2 new tests: error recovery with result, completed terminal skip
+
+**Dashboard reaper (`afl/dashboard/app.py`):**
+- Background asyncio task runs orphan reaper + stuck task watchdog every 60s from the dashboard process
+- Independent of runners — cleans up stale tasks even when all runners are at capacity or offline
+- Prevents the deadlock scenario: runner claims task → handler succeeds → `continue_step` skips (old bug) → future stays active → runner permanently at capacity → no runner can run the reaper
+- Configurable via `AFL_DASHBOARD_REAP_INTERVAL_S` (default: 60)
+
+**osm2pgsql-compatible views (`examples/osm-geocoder/handlers/downloads/postgis_importer.py`):**
+- Three zero-storage views: `planet_osm_point`, `planet_osm_line`, `planet_osm_roads` — expose JSONB tags as named columns matching the osm2pgsql schema
+- 13 partial expression indexes on common tags (`amenity`, `shop`, `name`, `place`, `highway`, `building`, `tourism`, `leisure` on nodes; `highway`, `railway`, `waterway`, `name`, `building` on ways)
+- Tools expecting osm2pgsql output (Nominatim, Mapnik, QGIS styles) can query these views directly without a separate import
+
+**Runner port conflict fix:**
+- Default HTTP status port changed from 8080 to 8090 — runners no longer compete with the dashboard for port 8080
+- Runners auto-increment (8090, 8091, ...) on port conflicts, up to 20 attempts
+
+**Missing runner_id on resumed tasks (`afl/runtime/runner/service.py`):**
+- `_resume_workflow()` now looks up the runner entity from the workflow_id and passes `runner_id` to `evaluator.resume()` — tasks created in subsequent `andThen` blocks inherit the correct runner_id
+
+**Geofabrik URL fixes (`examples/osm-geocoder/handlers/cache/cache_handlers.py`):**
+- Gambia/Senegal → `africa/senegal-and-gambia` (combined file on Geofabrik)
+- Eswatini → `africa/swaziland` (Geofabrik uses old name)
+
+**PostgreSQL remote access:**
+- `gssencmode=disable` on all `psycopg2.connect()` calls — prevents GSSAPI/Kerberos failures on remote connections
+- Concurrent `CREATE EXTENSION` race condition: catch `UniqueViolation` alongside `DuplicateObject`
+
+**Bash 3.2 compatibility (`scripts/stop-runners`):**
+- Replace `declare -A` (bash 4+) with `sort -u` for macOS default bash 3.2
+
+**Server detail UI (`afl/dashboard/templates/v2/servers/_detail_content.html`):**
+- Task names in server detail now link to the step detail page
+
+**Tests:** 8 new tests. Total: ~3,850 passed, ~80 skipped.
+
+**Self-assessment updates:** Runtime B+ → A-, Infrastructure B+ → A-. See `spec/95_self_assessment.md`.
+
+## Completed (v0.43.0) — Lease-Based Tasks, Execution Timeout, Save Retries
+
+Runner resilience improvements: lease-based task ownership, execution timeout, and retry with backoff.
+
+*(See git log for details — changelog entry pending.)*
+
+## Completed (v0.42.0) — Stuck Task Watchdog, Server Tree View
+
+**Stuck task watchdog (`afl/runtime/mongo_store.py`, `runner/service.py`, `agent_poller.py`):**
+- `reap_stuck_tasks()` — two-pass detection of tasks stuck on *live* servers (unlike orphan reaper which only detects *dead* servers)
+- Pass 1: tasks with explicit `timeout_ms > 0` where `now - max(task_heartbeat, updated) > timeout_ms`
+- Pass 2: tasks without explicit timeout where last activity exceeds default threshold (4h)
+- Heartbeat-aware: handlers calling `update_task_heartbeat()` keep tasks alive
+- Runs every 60s in the existing reaper cycle in both `RunnerService` and `AgentPoller`
+- Configurable via `AFL_STUCK_TIMEOUT_MS` (default: 14,400,000ms = 4 hours)
+- Step log entries written for each reaped task with reason ("explicit timeout exceeded" vs "no progress for Xh")
+- 6 new tests in `TestReapStuckTasks`
+
+**Tests:** 6 new tests. Total: ~3,840 passed, ~80 skipped.
 
 ## Completed (v0.41.0) — Runtime Spec Split, Validator Phase 2, Dashboard Improvements
 
