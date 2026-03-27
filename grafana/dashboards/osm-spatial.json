@@ -1,0 +1,124 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "OSM Nodes — Amenity Distribution",
+      "type": "geomap",
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "PostGIS" },
+      "targets": [
+        {
+          "rawSql": "SELECT ST_Y(geom) AS latitude, ST_X(geom) AS longitude, tags->>'name' AS name, tags->>'amenity' AS amenity FROM osm_nodes WHERE tags ? 'amenity' AND tags->>'amenity' IN ('hospital', 'school', 'university') ORDER BY random() LIMIT 5000",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 5,
+          "lon": 20,
+          "zoom": 3
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "config": {
+              "showLegend": true,
+              "style": {
+                "size": { "fixed": 3 },
+                "color": { "field": "amenity" },
+                "opacity": 0.7
+              }
+            },
+            "location": {
+              "mode": "coords",
+              "latitude": "latitude",
+              "longitude": "longitude"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "title": "Road Network Density by Region",
+      "type": "barchart",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "postgres", "uid": "PostGIS" },
+      "targets": [
+        {
+          "rawSql": "SELECT region, COUNT(*) AS \"Roads\" FROM osm_ways WHERE tags ? 'highway' GROUP BY region ORDER BY COUNT(*) DESC LIMIT 20",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "title": "Highway Types",
+      "type": "piechart",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "postgres", "uid": "PostGIS" },
+      "targets": [
+        {
+          "rawSql": "SELECT tags->>'highway' AS highway, COUNT(*) AS count FROM osm_ways WHERE tags ? 'highway' GROUP BY tags->>'highway' ORDER BY count DESC LIMIT 12",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "legendPlacement": "right"
+      }
+    },
+    {
+      "title": "Places — Cities, Towns, Villages",
+      "type": "geomap",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 26 },
+      "datasource": { "type": "postgres", "uid": "PostGIS" },
+      "targets": [
+        {
+          "rawSql": "SELECT ST_Y(geom) AS latitude, ST_X(geom) AS longitude, tags->>'name' AS name, tags->>'place' AS place, tags->>'population' AS population FROM osm_nodes WHERE tags ? 'place' AND tags->>'place' IN ('city', 'town', 'village') AND tags ? 'name' ORDER BY CASE tags->>'place' WHEN 'city' THEN 1 WHEN 'town' THEN 2 ELSE 3 END LIMIT 5000",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 5,
+          "lon": 20,
+          "zoom": 3
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "config": {
+              "showLegend": true,
+              "style": {
+                "size": { "field": "place", "fixed": 5 },
+                "color": { "field": "place" },
+                "opacity": 0.8
+              }
+            },
+            "location": {
+              "mode": "coords",
+              "latitude": "latitude",
+              "longitude": "longitude"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["osm", "postgis", "spatial", "agentflow"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30d", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "OSM Spatial Explorer",
+  "uid": "osm-spatial-explorer"
+}

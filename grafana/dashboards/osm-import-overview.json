@@ -1,0 +1,152 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Imported Regions",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "PostGIS" },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(DISTINCT region) AS \"Regions\" FROM osm_import_log",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "yellow", "value": null },
+              { "color": "green", "value": 50 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Total Nodes",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "PostGIS" },
+      "targets": [
+        {
+          "rawSql": "SELECT SUM(node_count) AS \"Nodes\" FROM (SELECT DISTINCT ON (region) region, node_count FROM osm_import_log ORDER BY region, imported_at DESC) sub",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Total Ways",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "PostGIS" },
+      "targets": [
+        {
+          "rawSql": "SELECT SUM(way_count) AS \"Ways\" FROM (SELECT DISTINCT ON (region) region, way_count FROM osm_import_log ORDER BY region, imported_at DESC) sub",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Database Size",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "PostGIS" },
+      "targets": [
+        {
+          "rawSql": "SELECT pg_size_pretty(pg_database_size('afl_gis')) AS \"Size\"",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "title": "Import Timeline",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "PostGIS" },
+      "targets": [
+        {
+          "rawSql": "SELECT imported_at AS time, node_count + way_count AS \"elements\", region FROM osm_import_log ORDER BY imported_at",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": { "mode": "none" }
+          }
+        }
+      }
+    },
+    {
+      "title": "Regions by Element Count",
+      "type": "barchart",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "PostGIS" },
+      "targets": [
+        {
+          "rawSql": "SELECT region, node_count AS \"Nodes\", way_count AS \"Ways\" FROM (SELECT DISTINCT ON (region) region, node_count, way_count FROM osm_import_log ORDER BY region, imported_at DESC) sub ORDER BY node_count + way_count DESC",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "stacking": "normal",
+        "barWidth": 0.7
+      }
+    },
+    {
+      "title": "Top Amenities",
+      "type": "piechart",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 22 },
+      "datasource": { "type": "postgres", "uid": "PostGIS" },
+      "targets": [
+        {
+          "rawSql": "SELECT tags->>'amenity' AS amenity, COUNT(*) AS count FROM osm_nodes WHERE tags ? 'amenity' GROUP BY tags->>'amenity' ORDER BY count DESC LIMIT 15",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "legendPlacement": "right"
+      }
+    },
+    {
+      "title": "Regions by Import Date",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 22 },
+      "datasource": { "type": "postgres", "uid": "PostGIS" },
+      "targets": [
+        {
+          "rawSql": "SELECT region AS \"Region\", node_count AS \"Nodes\", way_count AS \"Ways\", imported_at AS \"Imported\" FROM (SELECT DISTINCT ON (region) region, node_count, way_count, imported_at FROM osm_import_log ORDER BY region, imported_at DESC) sub ORDER BY imported_at DESC",
+          "format": "table"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["osm", "postgis", "agentflow"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30d", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "OSM Import Overview",
+  "uid": "osm-import-overview"
+}

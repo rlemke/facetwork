@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Start Grafana for AgentFlow operational monitoring.
+#
+# Runs Grafana in Docker on port 3000 with pre-provisioned data sources
+# (PostGIS, OSM) and dashboards (import overview, spatial explorer).
+#
+# Usage:
+#   scripts/start-grafana              # start (or restart) Grafana
+#   scripts/start-grafana --stop       # stop Grafana
+#   scripts/start-grafana --status     # check if running
+#
+# Default login: admin / admin (change on first login)
+# URL: http://localhost:3000
+#
+# Data sources are auto-provisioned:
+#   - PostGIS (afl_gis database)
+#   - OSM (osm database)
+#
+# Dashboards are auto-provisioned:
+#   - OSM Import Overview: import stats, timelines, element counts
+#   - OSM Spatial Explorer: maps of amenities, roads, places
+#
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CONTAINER_NAME="afl-grafana"
+PORT="${AFL_GRAFANA_PORT:-3000}"
+GRAFANA_DIR="$REPO_ROOT/grafana"
+
+case "${1:-start}" in
+    --stop|stop)
+        docker stop "$CONTAINER_NAME" 2>/dev/null && echo "Grafana stopped." || echo "Grafana not running."
+        docker rm "$CONTAINER_NAME" 2>/dev/null || true
+        exit 0
+        ;;
+    --status|status)
+        if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            echo "Grafana is running on http://localhost:${PORT}"
+            docker ps --filter "name=${CONTAINER_NAME}" --format "table {{.Status}}\t{{.Ports}}"
+        else
+            echo "Grafana is not running."
+        fi
+        exit 0
+        ;;
+    start|--start)
+        ;;
+    -h|--help)
+        sed -n '2,/^[^#]/{ /^#/s/^# \{0,1\}//p; }' "$0"
+        exit 0
+        ;;
+    *)
+        echo "Unknown option: $1" >&2
+        exit 1
+        ;;
+esac
+
+# Stop existing container if running
+docker stop "$CONTAINER_NAME" 2>/dev/null || true
+docker rm "$CONTAINER_NAME" 2>/dev/null || true
+
+echo "=== AgentFlow: Starting Grafana ==="
+echo ""
+echo "  Port:        $PORT"
+echo "  Dashboards:  $(ls "$GRAFANA_DIR/dashboards/"*.json 2>/dev/null | wc -l | tr -d ' ') provisioned"
+echo "  Data sources: PostGIS (afl_gis), OSM (osm)"
+echo ""
+
+docker run -d \
+    --name "$CONTAINER_NAME" \
+    -p "${PORT}:3000" \
+    -e GF_SECURITY_ADMIN_PASSWORD=admin \
+    -e GF_USERS_ALLOW_SIGN_UP=false \
+    -e GF_INSTALL_PLUGINS=grafana-worldmap-panel \
+    -v "$GRAFANA_DIR/provisioning:/etc/grafana/provisioning" \
+    -v "$GRAFANA_DIR/dashboards:/var/lib/grafana/dashboards" \
+    --add-host=host.docker.internal:host-gateway \
+    grafana/grafana-oss:latest
+
+echo ""
+echo "Grafana starting at http://localhost:${PORT}"
+echo "Login: admin / admin"
+echo ""
+
+# Wait for Grafana to be ready
+for i in $(seq 1 15); do
+    if curl -s "http://localhost:${PORT}/api/health" | grep -q '"database": "ok"' 2>/dev/null; then
+        echo "Grafana is ready."
+        exit 0
+    fi
+    sleep 2
+done
+
+echo "Grafana started but may still be initializing. Check http://localhost:${PORT}"
