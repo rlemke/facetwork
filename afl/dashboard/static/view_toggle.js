@@ -7,7 +7,7 @@
  */
 
 export function switchView(name, btn) {
-    var views = ['flat', 'tree', 'graph', 'timeline'];
+    var views = ['tasks', 'flat', 'tree', 'graph', 'timeline'];
     for (var i = 0; i < views.length; i++) {
         var el = document.getElementById('v2-step-' + views[i]);
         if (el) el.style.display = (views[i] === name) ? '' : 'none';

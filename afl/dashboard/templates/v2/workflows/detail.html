@@ -79,10 +79,20 @@
 
 <h2>Steps</h2>
 <div class="view-toggle">
+    <button class="view-toggle-btn" data-view="tasks" onclick="switchView('tasks', this)">Tasks</button>
     <button class="view-toggle-btn" data-view="flat" onclick="switchView('flat', this)">Flat</button>
     <button class="view-toggle-btn active" data-view="tree" onclick="switchView('tree', this)">Tree</button>
     <button class="view-toggle-btn" data-view="graph" onclick="switchView('graph', this)">Graph</button>
     <button class="view-toggle-btn" data-view="timeline" onclick="switchView('timeline', this)">Timeline</button>
+</div>
+
+<div id="v2-step-tasks" style="display:none">
+<div id="task-progress-content"
+     hx-get="/v2/workflows/{{ runner.uuid }}/tasks/partial"
+     hx-trigger="revealed, every 30s"
+     hx-swap="innerHTML">
+    <p class="muted">Loading task progress...</p>
+</div>
 </div>
 
 <div id="v2-step-flat" style="display:none">

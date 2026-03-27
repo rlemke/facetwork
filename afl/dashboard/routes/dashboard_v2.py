@@ -208,6 +208,97 @@ def workflow_summary_partial(
     )
 
 
+@router.get("/workflows/{runner_id}/tasks/partial")
+def task_progress_partial(
+    runner_id: str,
+    request: Request,
+    store=Depends(get_store),
+):
+    """HTMX partial for task progress view with last log per task."""
+    runner = store.get_runner(runner_id)
+    if not runner:
+        return HTMLResponse("")
+
+    tasks = list(store.get_tasks_by_runner(runner_id))
+    now_ms = int(time.time() * 1000)
+
+    # Build server name lookup
+    server_names: dict[str, str] = {}
+    for t in tasks:
+        sid = t.server_id
+        if sid and sid not in server_names:
+            srv = store.get_server(sid)
+            server_names[sid] = srv.server_name if srv else sid[:12]
+
+    # Count states
+    from collections import Counter
+
+    state_counts = Counter(t.state for t in tasks)
+    total = len(tasks)
+    completed = state_counts.get("completed", 0)
+
+    # Build outstanding task list with last log
+    outstanding = []
+    for t in tasks:
+        if t.state == "completed":
+            continue
+        # Extract region from task data
+        data = t.data if isinstance(t.data, dict) else {}
+        region = data.get("region", "")
+        if not region and isinstance(data.get("cache"), dict):
+            region = data["cache"].get("region", "")
+
+        # Get last log for this step
+        last_log_entry = store._db.step_logs.find_one(
+            {"step_id": t.step_id}, sort=[("time", -1)]
+        )
+        last_log = ""
+        last_log_full = ""
+        last_log_age = ""
+        if last_log_entry:
+            age_s = (now_ms - last_log_entry.get("time", 0)) / 1000
+            if age_s < 60:
+                last_log_age = f"{age_s:.0f}s ago"
+            elif age_s < 3600:
+                last_log_age = f"{age_s / 60:.0f}m ago"
+            else:
+                last_log_age = f"{age_s / 3600:.1f}h ago"
+            last_log_full = last_log_entry.get("message", "")
+            last_log = last_log_full[:80]
+
+        outstanding.append(
+            {
+                "name": t.name,
+                "region": region,
+                "state": t.state,
+                "server_name": server_names.get(t.server_id, ""),
+                "step_id": t.step_id,
+                "runner_id": t.runner_id,
+                "last_log": last_log,
+                "last_log_full": last_log_full,
+                "last_log_age": last_log_age,
+            }
+        )
+
+    outstanding.sort(key=lambda x: (x["name"], x["region"]))
+
+    progress = {
+        "total": total,
+        "completed": completed,
+        "running": state_counts.get("running", 0),
+        "pending": state_counts.get("pending", 0),
+        "failed": state_counts.get("failed", 0),
+        "pct": round(completed * 100 / total) if total else 0,
+        "outstanding": outstanding,
+    }
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v2/workflows/_task_progress.html",
+        {"task_progress": progress, "runner": runner},
+    )
+
+
 @router.get("/workflows/{runner_id}/steps/partial")
 def step_rows_partial(
     runner_id: str,
