@@ -1,9 +1,20 @@
 {% if groups %}
 {% for group in groups %}
+{% set ns_active = namespace(has_active=false, has_busy=false) %}
+{% for handler in group.handlers %}
+  {% if handler.facet_name in active_handlers|default({}) %}
+    {% set ns_active.has_active = true %}
+  {% endif %}
+  {% if handler.facet_name in busy_handlers|default({}) %}
+    {% set ns_active.has_busy = true %}
+  {% endif %}
+{% endfor %}
 <details class="ns-group">
     <summary>
-        <strong>{{ group.namespace }}</strong>
+        <strong{% if ns_active.has_busy %} style="color: var(--primary, #546de5)"{% elif ns_active.has_active %} style="color: var(--ins-color, #4caf50)"{% endif %}>{{ group.namespace }}</strong>
         <span class="badge badge-secondary">{{ group.total }}</span>
+        {% if ns_active.has_busy %}<span class="badge" style="background: var(--primary, #546de5); color: #fff; font-size: 0.7rem; margin-left: 0.3rem;">WORKING</span>{% endif %}
+        {% if ns_active.has_active %}<span class="badge" style="background: var(--ins-color, #4caf50); color: #fff; font-size: 0.7rem; margin-left: 0.3rem;">ACTIVE</span>{% endif %}
     </summary>
     <table role="grid">
         <thead>
@@ -11,22 +22,34 @@
                 <th>Facet Name</th>
                 <th>Module URI</th>
                 <th>Entrypoint</th>
-                <th>Version</th>
+                <th>Handled</th>
                 <th>Timeout</th>
                 <th>Registered</th>
             </tr>
         </thead>
         <tbody>
         {% for handler in group.handlers %}
-            <tr>
+            {% set stats = handler_stats.get(handler.facet_name, {}) if handler_stats is defined else {} %}
+            {% set is_active = handler.facet_name in active_handlers|default({}) %}
+            {% set is_busy = handler.facet_name in busy_handlers|default({}) %}
+            <tr{% if is_busy %} style="border-left: 3px solid var(--primary, #546de5)"{% elif is_active %} style="border-left: 3px solid var(--ins-color, #4caf50)"{% endif %}>
                 <td>
                     <a href="/v2/handlers/{{ handler.facet_name }}">
                         {{ handler.facet_name|short_workflow_name }}
                     </a>
+                    {% if is_busy %}<span style="color: var(--primary, #546de5); font-size: 0.75rem;" title="Handler is currently processing a task"> &#x25B6;</span>{% elif is_active %}<span style="color: var(--ins-color, #4caf50); font-size: 0.75rem;" title="Handler is registered on a live runner"> &#x25CF;</span>{% endif %}
                 </td>
                 <td class="mono">{{ handler.module_uri }}</td>
                 <td class="mono">{{ handler.entrypoint }}</td>
-                <td>{{ handler.version }}</td>
+                <td>
+                    {% if stats %}
+                    <span title="{{ stats.get('handled', 0) }} handled, {{ stats.get('not_handled', 0) }} skipped">
+                        {{ stats.get('handled', 0) }}{% if stats.get('not_handled', 0) %} <span class="muted">({{ stats.get('not_handled', 0) }} skipped)</span>{% endif %}
+                    </span>
+                    {% else %}
+                    <span class="muted">0</span>
+                    {% endif %}
+                </td>
                 <td>{{ handler.timeout_ms }}ms</td>
                 <td>{{ handler.created|timestamp }}</td>
             </tr>

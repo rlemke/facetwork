@@ -636,6 +636,45 @@ def _filter_handlers_by_prefix(handlers: list, tab: str) -> list:
     return [h for h in handlers if extract_handler_prefix(h.facet_name) == tab]
 
 
+def _build_handler_stats(
+    store: Any,
+) -> tuple[set[str], set[str], dict[str, dict[str, int]]]:
+    """Build active/busy handler sets and aggregate handled counts.
+
+    Returns:
+        (active_handlers, busy_handlers, handler_stats) where:
+        - active_handlers: facet names with at least one live runner
+        - busy_handlers: facet names currently processing a running task
+        - handler_stats: facet_name -> {"handled": N, "not_handled": N}
+    """
+    now_ms = int(time.time() * 1000)
+    active_handlers: set[str] = set()
+    handler_stats: dict[str, dict[str, int]] = {}
+
+    for srv in store._db.servers.find():
+        is_alive = (
+            srv.get("state") == "running"
+            and (now_ms - srv.get("ping_time", 0)) < 60_000
+        )
+        if is_alive:
+            for h_name in srv.get("handlers", []):
+                active_handlers.add(h_name)
+
+        for entry in srv.get("handled", []):
+            name = entry.get("handler", "")
+            if name not in handler_stats:
+                handler_stats[name] = {"handled": 0, "not_handled": 0}
+            handler_stats[name]["handled"] += entry.get("handled", 0)
+            handler_stats[name]["not_handled"] += entry.get("not_handled", 0)
+
+    # Busy handlers: currently processing at least one running task
+    busy_handlers: set[str] = set()
+    for task in store._db.tasks.find({"state": "running"}, {"name": 1}):
+        busy_handlers.add(task.get("name", ""))
+
+    return active_handlers, busy_handlers, handler_stats
+
+
 @router.get("/handlers")
 def handler_list(
     request: Request,
@@ -650,6 +689,8 @@ def handler_list(
     filtered = _filter_handlers_by_prefix(all_handlers, tab)
     groups = group_handlers_by_namespace(filtered)
 
+    active_handlers, busy_handlers, handler_stats = _build_handler_stats(store)
+
     return request.app.state.templates.TemplateResponse(
         request,
         "v2/handlers/list.html",
@@ -659,6 +700,9 @@ def handler_list(
             "tab_counts": tab_counts,
             "prefixes": prefixes,
             "active_tab": "handlers",
+            "active_handlers": active_handlers,
+            "busy_handlers": busy_handlers,
+            "handler_stats": handler_stats,
         },
     )
 
@@ -674,11 +718,16 @@ def handler_list_partial(
     filtered = _filter_handlers_by_prefix(all_handlers, tab)
     groups = group_handlers_by_namespace(filtered)
 
+    active_handlers, busy_handlers, handler_stats = _build_handler_stats(store)
+
     return request.app.state.templates.TemplateResponse(
         request,
         "v2/handlers/_handler_groups.html",
         {
             "groups": groups,
+            "active_handlers": active_handlers,
+            "busy_handlers": busy_handlers,
+            "handler_stats": handler_stats,
         },
     )
 

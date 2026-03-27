@@ -24,7 +24,8 @@ def _postgis_import_handler(payload: dict) -> dict:
     pbf_path = cache.get("path", "")
     source_url = cache.get("url", "")
     region = payload.get("region", "")
-    force = payload.get("force", False)
+    force_raw = payload.get("force", False)
+    force = force_raw if isinstance(force_raw, bool) else str(force_raw).lower() in ("true", "1", "yes")
     step_log = payload.get("_step_log")
 
     if step_log:
@@ -97,7 +98,8 @@ def _postgis_import_batch_handler(payload: dict) -> dict:
     sequentially. Each region is cached and imported independently.
     """
     regions = payload.get("regions", [])
-    force = payload.get("force", False)
+    force_raw = payload.get("force", False)
+    force = force_raw if isinstance(force_raw, bool) else str(force_raw).lower() in ("true", "1", "yes")
     step_log = payload.get("_step_log")
 
     if step_log:
