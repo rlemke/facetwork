@@ -82,8 +82,8 @@ def main() -> None:
     parser.add_argument(
         "--port",
         type=int,
-        default=8080,
-        help="HTTP status port (auto-increments if in use; default: 8080)",
+        default=8090,
+        help="HTTP status port (auto-increments if in use; default: 8090)",
     )
     parser.add_argument(
         "--log-level",

@@ -1151,7 +1151,15 @@ class Evaluator:
             for name, value in result.items():
                 step.set_attribute(name, value, is_return=True)
 
-        # Request state change to continue processing
+        # Advance the step past EventTransmit so it won't trigger a new
+        # task even if the subsequent resume() times out or the server dies.
+        # The transition table says EventTransmit → StatementBlocksBegin.
+        from .states import STEP_TRANSITIONS
+
+        next_state = STEP_TRANSITIONS.get(step.state)
+        if next_state:
+            step.state = next_state
+            step.transition.current_state = next_state
         step.request_state_change(True)
 
         # Save directly to persistence

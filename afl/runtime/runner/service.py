@@ -256,11 +256,11 @@ class RunnerService:
         self._executor = ThreadPoolExecutor(max_workers=self._config.max_concurrent)
 
         try:
-            self._start_http_server()
-            self._register_server()
             from afl import __full_version__
 
             self._version = __full_version__
+            self._start_http_server()
+            self._register_server()
             logger.info(
                 "Runner started: server_id=%s, server_name=%s, group=%s, version=%s",
                 self._server_id,
