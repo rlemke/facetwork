@@ -488,6 +488,7 @@ class ServerDefinition:
     handled: list[HandledCount] = field(default_factory=list)
     state: str = ServerState.STARTUP
     http_port: int = 0
+    version: str = ""
     manager: str = ""
     error: dict | None = None
 

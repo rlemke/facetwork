@@ -70,7 +70,32 @@ from .source import (
 )
 from .validator import AFLValidator, ValidationError, ValidationResult, validate
 
-__version__ = "0.29.0"
+__version__ = "0.44.0"
+
+
+def _git_version() -> str:
+    """Get the git commit hash and dirty status for precise version tracking."""
+    import subprocess
+
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short=8", "HEAD"],
+            cwd=__path__[0] if __path__ else None,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        dirty = subprocess.call(
+            ["git", "diff", "--quiet", "HEAD"],
+            cwd=__path__[0] if __path__ else None,
+            stderr=subprocess.DEVNULL,
+        )
+        return f"{commit}{'*' if dirty else ''}"
+    except Exception:
+        return "unknown"
+
+
+__git_commit__ = _git_version()
+__full_version__ = f"{__version__}+{__git_commit__}"
 
 __all__ = [
     # AST utilities

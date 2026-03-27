@@ -152,6 +152,7 @@ class _StatusHandler(BaseHTTPRequestHandler):
             uptime_ms = now - svc._start_time_ms if svc._start_time_ms else 0
             data = {
                 "server_id": svc.server_id,
+                "version": getattr(svc, "_version", "unknown"),
                 "running": svc.is_running,
                 "uptime_ms": uptime_ms,
                 "handled": {
@@ -257,11 +258,15 @@ class RunnerService:
         try:
             self._start_http_server()
             self._register_server()
+            from afl import __full_version__
+
+            self._version = __full_version__
             logger.info(
-                "Runner started: server_id=%s, server_name=%s, group=%s",
+                "Runner started: server_id=%s, server_name=%s, group=%s, version=%s",
                 self._server_id,
                 self._config.server_name,
                 self._config.server_group,
+                self._version,
             )
 
             # Start heartbeat daemon
@@ -308,6 +313,7 @@ class RunnerService:
             handled=[],
             state=ServerState.RUNNING,
             http_port=self.http_port or 0,
+            version=getattr(self, "_version", ""),
         )
         self._persistence.save_server(server)
 
@@ -433,7 +439,11 @@ class RunnerService:
 
         If a future has been running longer than ``_execution_timeout_ms``,
         the associated task is reset to PENDING so another runner can
-        claim it. The future itself is cancelled (best-effort).
+        claim it. The future itself is cancelled (best-effort), but it is
+        **always dropped from the active list** — ``Future.cancel()`` cannot
+        interrupt a thread blocked in a C extension (e.g. psycopg2), so we
+        must not keep it in the list or the runner will be permanently at
+        capacity.
         """
         now = _current_time_ms()
         kept: list[tuple[Future, str, int]] = []
@@ -443,15 +453,15 @@ class RunnerService:
                     continue  # completed — drop from list
                 elapsed = now - claimed_at
                 if self._execution_timeout_ms > 0 and elapsed > self._execution_timeout_ms:
-                    # Timed out — cancel and release task
+                    # Timed out — cancel (best-effort) and always drop.
                     future.cancel()
                     logger.warning(
-                        "Task %s timed out after %ds, resetting to pending",
+                        "Task %s timed out after %ds, releasing capacity",
                         task_id,
                         elapsed // 1000,
                     )
                     self._release_timed_out_task(task_id)
-                    continue  # drop from list
+                    continue  # always drop — do not keep zombie futures
                 kept.append((future, task_id, claimed_at))
             self._active_futures = kept
 
@@ -1194,12 +1204,33 @@ class RunnerService:
             if runners:
                 runner_id = runners[0].uuid
 
-        result = self._evaluator.resume(
-            workflow_id,
-            workflow_ast,
-            program_ast=program_ast,
-            runner_id=runner_id,
+        # Run resume with a timeout to prevent blocking the handler thread
+        # indefinitely. Large workflows (100+ steps) can have long iteration
+        # loops that consume the thread, preventing capacity from being freed.
+        import concurrent.futures
+        resume_timeout_s = int(
+            os.environ.get("AFL_RESUME_TIMEOUT_S", "120")
         )
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            future = executor.submit(
+                self._evaluator.resume,
+                workflow_id,
+                workflow_ast,
+                program_ast=program_ast,
+                runner_id=runner_id,
+            )
+            result = future.result(timeout=resume_timeout_s)
+        except concurrent.futures.TimeoutError:
+            logger.warning(
+                "Workflow resume timed out after %ds for workflow %s — "
+                "will retry on next sweep",
+                resume_timeout_s,
+                workflow_id,
+            )
+            return
+        finally:
+            executor.shutdown(wait=False)
 
         if result.status == ExecutionStatus.ERROR:
             logger.warning(
