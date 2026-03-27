@@ -30,6 +30,9 @@ router = APIRouter(prefix="/flows")
 def flow_list(request: Request, q: str | None = None, store=Depends(get_store)):
     """List all flows, optionally filtered by name search."""
     flows = store.get_all_flows()
+    # Filter out auto-generated CLI submissions (Run, app.Execute, test.Run, etc.)
+    # These have path=cli:submit; seeded examples have path=cli:seed.
+    flows = [f for f in flows if getattr(f.name, "path", "") != "cli:submit"]
     if q:
         flows = [f for f in flows if q.lower() in f.name.name.lower()]
     return request.app.state.templates.TemplateResponse(
