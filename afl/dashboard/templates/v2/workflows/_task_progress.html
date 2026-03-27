@@ -21,6 +21,14 @@
     </div>
     {% endif %}
 
+    {% if task_progress.insights %}
+    <div class="task-insights" style="margin: 1rem 0; padding: 0.75rem 1rem; border: 1px solid var(--muted-border-color, #333); border-radius: 6px; border-left: 3px solid var(--primary, #546de5); font-size: 0.9rem; line-height: 1.6; color: var(--color, inherit);">
+        {% for insight in task_progress.insights %}
+        <div style="margin-bottom: 0.25rem;">{{ insight }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {% if task_progress.outstanding %}
     <table class="server-tasks" role="grid" style="margin-top: 1rem;">
         <thead>

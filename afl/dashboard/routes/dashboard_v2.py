@@ -255,16 +255,19 @@ def task_progress_partial(
         last_log = ""
         last_log_full = ""
         last_log_age = ""
+        last_log_age_s = 0.0
+        last_log_level = ""
         if last_log_entry:
-            age_s = (now_ms - last_log_entry.get("time", 0)) / 1000
-            if age_s < 60:
-                last_log_age = f"{age_s:.0f}s ago"
-            elif age_s < 3600:
-                last_log_age = f"{age_s / 60:.0f}m ago"
+            last_log_age_s = (now_ms - last_log_entry.get("time", 0)) / 1000
+            if last_log_age_s < 60:
+                last_log_age = f"{last_log_age_s:.0f}s ago"
+            elif last_log_age_s < 3600:
+                last_log_age = f"{last_log_age_s / 60:.0f}m ago"
             else:
-                last_log_age = f"{age_s / 3600:.1f}h ago"
+                last_log_age = f"{last_log_age_s / 3600:.1f}h ago"
             last_log_full = last_log_entry.get("message", "")
             last_log = last_log_full[:80]
+            last_log_level = last_log_entry.get("level", "")
 
         outstanding.append(
             {
@@ -277,10 +280,87 @@ def task_progress_partial(
                 "last_log": last_log,
                 "last_log_full": last_log_full,
                 "last_log_age": last_log_age,
+                "last_log_age_s": last_log_age_s,
+                "last_log_level": last_log_level,
             }
         )
 
     outstanding.sort(key=lambda x: (x["name"], x["region"]))
+
+    # --- Generate insights ---
+    insights: list[str] = []
+    running_tasks = [t for t in outstanding if t["state"] == "running"]
+    pending_tasks = [t for t in outstanding if t["state"] == "pending"]
+    failed_tasks = [t for t in outstanding if t["state"] == "failed"]
+    active_tasks = [t for t in running_tasks if t["last_log_age_s"] < 300]
+    stale_tasks = [t for t in running_tasks if t["last_log_age_s"] >= 1800]
+
+    if active_tasks:
+        names = ", ".join(t["region"] or t["name"] for t in active_tasks)
+        insights.append(f"Actively processing: {names}")
+
+    if stale_tasks:
+        names = ", ".join(t["region"] or t["name"] for t in stale_tasks)
+        stale_age = max(t["last_log_age_s"] for t in stale_tasks)
+        if stale_age < 7200:
+            age_str = f"{stale_age / 60:.0f}m"
+        else:
+            age_str = f"{stale_age / 3600:.1f}h"
+        if len(active_tasks) >= 3:
+            insights.append(
+                f"Stale ({names}): no log activity for ~{age_str} "
+                f"— likely waiting for DB connections while "
+                f"{len(active_tasks)} other imports are active. "
+                f"Will proceed when active imports finish."
+            )
+        else:
+            insights.append(
+                f"Stale ({names}): no log activity for ~{age_str} "
+                f"— may be blocked or waiting for resources."
+            )
+
+    if pending_tasks:
+        names = ", ".join(t["region"] or t["name"] for t in pending_tasks)
+        # Check if already imported
+        already_imported = [
+            t for t in pending_tasks
+            if t["last_log_level"] == "success"
+            or "imported" in t.get("last_log_full", "").lower()
+        ]
+        if already_imported:
+            imported_names = ", ".join(
+                t["region"] or t["name"] for t in already_imported
+            )
+            insights.append(
+                f"Pending — already imported ({imported_names}): "
+                f"will skip automatically when claimed."
+            )
+            remaining = [t for t in pending_tasks if t not in already_imported]
+            if remaining:
+                rem_names = ", ".join(t["region"] or t["name"] for t in remaining)
+                insights.append(f"Pending — awaiting runner capacity: {rem_names}")
+        else:
+            insights.append(
+                f"Pending ({names}): waiting for runner capacity "
+                f"({len(running_tasks)} task(s) currently running)."
+            )
+
+    if failed_tasks:
+        for t in failed_tasks:
+            error_hint = ""
+            log = t.get("last_log_full", "")
+            if "connection" in log.lower() or "password" in log.lower():
+                error_hint = " — likely a database connection issue"
+            elif "duplicate key" in log.lower():
+                error_hint = " — concurrent resource contention"
+            insights.append(
+                f"Failed ({t['region'] or t['name']}): "
+                f"{t['last_log']}{error_hint}. "
+                f"Will be retried by the stuck task watchdog."
+            )
+
+    if not outstanding:
+        insights.append("All tasks completed successfully.")
 
     progress = {
         "total": total,
@@ -290,6 +370,7 @@ def task_progress_partial(
         "failed": state_counts.get("failed", 0),
         "pct": round(completed * 100 / total) if total else 0,
         "outstanding": outstanding,
+        "insights": insights,
     }
 
     return request.app.state.templates.TemplateResponse(
