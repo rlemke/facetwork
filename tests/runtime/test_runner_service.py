@@ -220,7 +220,7 @@ class TestRunnerConfig:
         assert config.heartbeat_interval_ms == 10000
         assert config.max_concurrent == 2
         assert config.shutdown_timeout_ms == 30000
-        assert config.http_port == 8080
+        assert config.http_port == 8090
         assert config.http_max_port_attempts == 20
 
     def test_custom_values(self):

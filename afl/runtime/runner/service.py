@@ -768,13 +768,27 @@ class RunnerService:
                 )
                 return
 
-            # Continue the step with the result
-            self._evaluator.continue_step(task.step_id, result)
+            # Continue the step and resume the workflow.
+            # These can fail (e.g. step in wrong state, evaluator error)
+            # but the handler already succeeded — always mark the task
+            # completed so the future finishes and capacity is freed.
+            resume_error = None
+            try:
+                self._evaluator.continue_step(task.step_id, result)
+                self._resume_workflow(task.workflow_id)
+            except Exception as resume_exc:
+                resume_error = resume_exc
+                logger.warning(
+                    "Post-handler resume failed for task %s (step=%s): %s — "
+                    "task will be marked completed (handler succeeded)",
+                    task.uuid,
+                    task.step_id,
+                    resume_exc,
+                )
 
-            # Resume the workflow
-            self._resume_workflow(task.workflow_id)
-
-            # Mark task completed
+            # Always mark task completed — the handler produced a result.
+            # If resume failed, the workflow will be retried on the next
+            # resume cycle or manual retry.
             task.state = TaskState.COMPLETED
             task.updated = _current_time_ms()
             self._safe_save_task(task)
@@ -782,12 +796,19 @@ class RunnerService:
             # Update stats
             self._update_handled_stats(task.name, handled=True)
 
-            logger.info(
-                "Processed event task %s (name=%s, step=%s)",
-                task.uuid,
-                task.name,
-                task.step_id,
-            )
+            if resume_error:
+                logger.info(
+                    "Task %s completed (handler OK, resume needs retry): %s",
+                    task.uuid,
+                    task.name,
+                )
+            else:
+                logger.info(
+                    "Processed event task %s (name=%s, step=%s)",
+                    task.uuid,
+                    task.name,
+                    task.step_id,
+                )
 
         except (ImportError, ModuleNotFoundError) as exc:
             # Handler module can't be loaded on this runner (e.g. file://
