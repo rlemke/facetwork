@@ -73,6 +73,7 @@ scripts/postgis-kill-vacuum        # kill autovacuum blocking imports
 | `spec/` | Language and runtime specifications |
 | `scripts/` | Operations scripts (start, stop, deploy, vacuum, etc.) |
 | `agents/` | Multi-language agent libraries (Python, Scala, Go, TypeScript, Java) |
+| `grafana/` | Grafana provisioning: data sources, dashboards (OSM overview, spatial explorer) |
 
 ## Documentation Map
 
@@ -182,6 +183,11 @@ scripts/postgis-vacuum --full          # VACUUM FULL (rewrites tables)
 scripts/postgis-vacuum-status          # active vacuums, last times, table sizes
 scripts/postgis-kill-vacuum            # kill autovacuum blocking imports
 scripts/postgis-kill-vacuum --dry      # preview
+
+# Grafana (operational monitoring — independent of dashboard)
+scripts/start-grafana                  # start Grafana on port 3000
+scripts/start-grafana --stop           # stop Grafana
+scripts/start-grafana --status         # check if running
 ```
 
 ### Environment configuration
@@ -212,6 +218,19 @@ The MCP server (`python -m afl.mcp`) exposes AFL compiler tools, runtime managem
 - `osm_import_log` (region, node_count, way_count, imported_at)
 
 Tags are JSONB — query with `tags->>'key'` or `tags?'key'`. Common tags: `amenity`, `shop`, `highway`, `building`, `name`, `cuisine`. Use `ST_*` functions for spatial queries.
+
+osm2pgsql-compatible views (zero-storage, auto-created by `ensure_schema`):
+- `planet_osm_point` — nodes with flattened tag columns (name, amenity, shop, highway, building, tourism, place, etc.)
+- `planet_osm_line` — ways with flattened tag columns (highway, railway, waterway, surface, lanes, etc.)
+- `planet_osm_roads` — filtered ways where `highway` or `railway` is present
+
+### Grafana monitoring
+
+Grafana runs independently of the dashboard for operational monitoring. Start with `scripts/start-grafana` (Docker, port 3000). Pre-provisioned dashboards:
+- **OSM Import Overview** — region counts, total nodes/ways, database size, import timeline, top amenities
+- **OSM Spatial Explorer** — geomap of amenities (hospitals, schools), road density, highway types, city/town/village map
+
+Data sources connect to PostGIS (`afl_gis`) and OSM (`osm`) databases via `host.docker.internal`.
 
 ### Step recovery actions
 
