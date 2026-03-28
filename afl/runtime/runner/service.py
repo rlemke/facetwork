@@ -1209,7 +1209,7 @@ class RunnerService:
         # loops that consume the thread, preventing capacity from being freed.
         import concurrent.futures
         resume_timeout_s = int(
-            os.environ.get("AFL_RESUME_TIMEOUT_S", "120")
+            os.environ.get("AFL_RESUME_TIMEOUT_S", "600")
         )
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         try:
