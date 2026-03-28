@@ -276,13 +276,25 @@ class MongoStore(PersistenceAPI):
         return [self._doc_to_step(doc) for doc in docs]
 
     def get_pending_resume_workflow_ids(self) -> list[str]:
-        """Get workflow IDs with EventTransmit steps awaiting resume.
+        """Get workflow IDs with steps that need resume processing.
 
-        Uses a MongoDB distinct query for efficiency.
+        Finds workflows with steps at EventTransmit (awaiting result) or
+        at intermediate states like StatementBlocksBegin/Continue that
+        need the evaluator to advance them to completion.
         """
         return self._db.steps.distinct(
             "workflow_id",
-            {"state": StepState.EVENT_TRANSMIT, "request_transition": True},
+            {
+                "state": {
+                    "$in": [
+                        StepState.EVENT_TRANSMIT,
+                        StepState.STATEMENT_BLOCKS_BEGIN,
+                        StepState.STATEMENT_BLOCKS_CONTINUE,
+                        StepState.BLOCK_EXECUTION_BEGIN,
+                        StepState.BLOCK_EXECUTION_CONTINUE,
+                    ]
+                },
+            },
         )
 
     def get_steps_by_state(self, state: str) -> Sequence[StepDefinition]:
