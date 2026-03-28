@@ -1067,12 +1067,12 @@ class RunnerService:
     # =========================================================================
 
     def _maybe_sweep_stuck_steps(self) -> None:
-        """Periodically resume workflows with steps stuck at EventTransmit.
+        """Periodically resume steps stuck at intermediate states.
 
-        After continue_step() persists request_transition=True, the
-        subsequent _resume_workflow() may fail silently (AST not found,
-        evaluator exception, etc.).  This sweep retries the resume so
-        that steps don't stay stuck indefinitely.
+        Uses resume_step() per stuck step (O(depth) each) instead of
+        full resume() (which can hang on large workflows).  For steps
+        at EventTransmit that need tasks created, creates the tasks
+        directly.
         """
         now = _current_time_ms()
         if now - self._last_sweep < self._sweep_interval_ms:
@@ -1081,15 +1081,106 @@ class RunnerService:
 
         try:
             workflow_ids = self._persistence.get_pending_resume_workflow_ids()
-            if workflow_ids:
-                logger.info(
-                    "Stuck-step sweep: %d workflow(s) need resume",
-                    len(workflow_ids),
-                )
+            if not workflow_ids:
+                return
+
+            logger.info(
+                "Stuck-step sweep: %d workflow(s) need resume",
+                len(workflow_ids),
+            )
+
             for wf_id in workflow_ids:
-                self._resume_workflow(wf_id)
+                try:
+                    self._sweep_workflow_steps(wf_id)
+                except Exception:
+                    logger.debug(
+                        "Sweep failed for workflow %s", wf_id, exc_info=True
+                    )
         except Exception:
             logger.debug("Stuck-step sweep failed", exc_info=True)
+
+    def _sweep_workflow_steps(self, workflow_id: str) -> None:
+        """Resume individual stuck steps in a workflow using resume_step().
+
+        Processes leaf steps (EventTransmit) first, then block steps,
+        so parent blocks see completed children.
+        """
+        from .states import StepState
+
+        # Get all non-terminal steps for this workflow
+        stuck_steps = list(self._persistence._db.steps.find({
+            "workflow_id": workflow_id,
+            "state": {
+                "$in": [
+                    StepState.EVENT_TRANSMIT,
+                    StepState.STATEMENT_BLOCKS_BEGIN,
+                    StepState.STATEMENT_BLOCKS_CONTINUE,
+                    StepState.BLOCK_EXECUTION_BEGIN,
+                    StepState.BLOCK_EXECUTION_CONTINUE,
+                ]
+            },
+        }))
+
+        if not stuck_steps:
+            return
+
+        # Process leaf steps (EventTransmit) first, then blocks
+        leaf_steps = [s for s in stuck_steps if s["state"] == StepState.EVENT_TRANSMIT]
+        block_steps = [s for s in stuck_steps if s["state"] != StepState.EVENT_TRANSMIT]
+
+        logger.info(
+            "Sweep workflow %s: %d leaf + %d block steps stuck",
+            workflow_id[:12], len(leaf_steps), len(block_steps),
+        )
+
+        # For EventTransmit steps without tasks, create tasks so handlers run.
+        # resume_step() can't do this — it only walks the ancestor chain.
+        for step_doc in leaf_steps:
+            step_id = step_doc["uuid"]
+            facet_name = step_doc.get("facet_name")
+            if not facet_name:
+                continue  # block-level step, not an event facet
+            existing_task = self._persistence._db.tasks.find_one(
+                {"step_id": step_id, "state": {"$in": ["pending", "running"]}}
+            )
+            if not existing_task:
+                # Find runner_id for this workflow
+                runner_id = ""
+                if hasattr(self._persistence, "get_runners_by_workflow"):
+                    runners = self._persistence.get_runners_by_workflow(workflow_id)
+                    if runners:
+                        runner_id = runners[0].uuid
+
+                from .entities import TaskDefinition, TaskState
+                from ..utils import generate_id
+
+                task = TaskDefinition(
+                    uuid=generate_id(),
+                    name=facet_name,
+                    runner_id=runner_id,
+                    workflow_id=workflow_id,
+                    flow_id=step_doc.get("flow_id", ""),
+                    step_id=step_id,
+                    state=TaskState.PENDING,
+                    task_list_name=self._config.task_list,
+                    data=step_doc.get("attributes", {}),
+                )
+                self._persistence.save_task(task)
+                logger.info(
+                    "Sweep created task for stuck step: %s (%s)",
+                    step_id[:12], facet_name,
+                )
+
+        # Resume block steps to cascade completion
+        for step_doc in block_steps:
+            step_id = step_doc["uuid"]
+            try:
+                self._resume_workflow_for_step(workflow_id, step_id)
+            except Exception:
+                logger.debug(
+                    "Sweep resume_step failed: workflow=%s step=%s",
+                    workflow_id[:12], step_id[:12], exc_info=True,
+                )
 
     # =========================================================================
     # Orphaned Task Reaper
