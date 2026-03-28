@@ -220,7 +220,9 @@ class RunnerService:
         self._http_server: HTTPServer | None = None
         self._http_thread: threading.Thread | None = None
         self._last_sweep: int = 0
-        self._sweep_interval_ms: int = 5000
+        self._sweep_interval_ms: int = 300_000  # 5 min — safety net only
+        self._workflow_locks: dict[str, threading.Lock] = {}
+        self._workflow_locks_lock = threading.Lock()
         self._last_reap: int = 0
         self._reap_interval_ms: int = 60000  # check for orphans every 60s
         self._execution_timeout_ms: int = int(
@@ -779,13 +781,13 @@ class RunnerService:
                 return
 
             # Continue the step and resume the workflow.
-            # These can fail (e.g. step in wrong state, evaluator error)
-            # but the handler already succeeded — always mark the task
-            # completed so the future finishes and capacity is freed.
+            # Uses resume_step (O(depth)) instead of resume (O(all steps)).
+            # These can fail but the handler already succeeded — always mark
+            # the task completed so the future finishes and capacity is freed.
             resume_error = None
             try:
                 self._evaluator.continue_step(task.step_id, result)
-                self._resume_workflow(task.workflow_id)
+                self._resume_workflow_for_step(task.workflow_id, task.step_id)
             except Exception as resume_exc:
                 resume_error = resume_exc
                 logger.warning(
@@ -877,8 +879,8 @@ class RunnerService:
             # because the external agent already wrote return attributes.
             self._evaluator.continue_step(step_id, {})
 
-            # Resume the workflow
-            self._resume_workflow(workflow_id)
+            # Resume scoped to the continued step (O(depth))
+            self._resume_workflow_for_step(workflow_id, step_id)
 
             # Mark task completed
             task.state = TaskState.COMPLETED
@@ -1242,6 +1244,83 @@ class RunnerService:
         # Update runner state on terminal status
         if result.status in (ExecutionStatus.COMPLETED, ExecutionStatus.ERROR):
             self._update_runner_terminal_state(workflow_id, result.status)
+
+    def _get_workflow_lock(self, workflow_id: str) -> threading.Lock:
+        """Get or create a per-workflow lock for serializing resume calls."""
+        with self._workflow_locks_lock:
+            if workflow_id not in self._workflow_locks:
+                self._workflow_locks[workflow_id] = threading.Lock()
+            return self._workflow_locks[workflow_id]
+
+    def _resume_workflow_for_step(
+        self, workflow_id: str, step_id: str
+    ) -> None:
+        """Resume a workflow scoped to a single completed step.
+
+        Uses ``evaluator.resume_step()`` which walks the ancestor chain
+        (step → block → parent block → root) — O(depth) instead of
+        scanning all steps.  Falls back to full ``_resume_workflow()``
+        on error.
+
+        A per-workflow lock prevents concurrent resume_step calls from
+        different handler threads for the same workflow.  If the lock is
+        held, the call is skipped — the active resume will see all
+        completed children.
+        """
+        lock = self._get_workflow_lock(workflow_id)
+        if not lock.acquire(blocking=False):
+            logger.debug(
+                "Skipping resume_step for workflow %s — another thread is resuming",
+                workflow_id,
+            )
+            return
+
+        try:
+            workflow_ast = self._ast_cache.get(workflow_id)
+            if workflow_ast is None:
+                workflow_ast = self._load_workflow_ast(workflow_id)
+                if workflow_ast:
+                    self._ast_cache[workflow_id] = workflow_ast
+
+            if workflow_ast is None:
+                logger.warning(
+                    "No AST for workflow %s, falling back to full resume",
+                    workflow_id,
+                )
+                return
+
+            program_ast = self._program_ast_cache.get(workflow_id)
+
+            runner_id = ""
+            if hasattr(self._persistence, "get_runners_by_workflow"):
+                runners = self._persistence.get_runners_by_workflow(workflow_id)
+                if runners:
+                    runner_id = runners[0].uuid
+
+            result = self._evaluator.resume_step(
+                workflow_id, step_id, workflow_ast,
+                program_ast=program_ast, runner_id=runner_id,
+            )
+
+            if result.status in (ExecutionStatus.COMPLETED, ExecutionStatus.ERROR):
+                self._update_runner_terminal_state(workflow_id, result.status)
+
+            logger.debug(
+                "resume_step done: workflow=%s step=%s status=%s",
+                workflow_id, step_id, result.status,
+            )
+        except Exception:
+            logger.warning(
+                "resume_step failed for workflow %s step %s, "
+                "falling back to full resume",
+                workflow_id, step_id, exc_info=True,
+            )
+            try:
+                self._resume_workflow(workflow_id)
+            except Exception:
+                logger.debug("Fallback resume also failed", exc_info=True)
+        finally:
+            lock.release()
 
     def _update_runner_terminal_state(self, workflow_id: str, status: str) -> None:
         """Update runner entity when workflow reaches a terminal state."""
