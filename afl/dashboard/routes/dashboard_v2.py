@@ -932,7 +932,7 @@ def _get_postgis_summary() -> dict | None:
         return None
 
     postgis_url = os.environ.get(
-        "AFL_POSTGIS_URL", "postgresql://afl_osm:afl_osm_2024@afl-postgres:5432/osm"
+        "AFL_POSTGIS_URL", "postgresql://afl:afl@afl-postgres:5432/afl_gis"
     )
     try:
         conn = psycopg2.connect(postgis_url, gssencmode="disable")
