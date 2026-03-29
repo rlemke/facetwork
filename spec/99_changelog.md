@@ -6,6 +6,18 @@
 
 Comprehensive resilience improvements for long-running workflows, independent task cleanup from the dashboard, and PostGIS compatibility with the osm2pgsql ecosystem.
 
+**Event-driven step resume (`afl/runtime/evaluator.py`, `runner/service.py`):**
+- New `resume_step()` walks only the ancestor chain (step → block → parent → root) instead of scanning all workflow steps — O(depth) vs O(N²)
+- `continue_step()` advances step past `EventTransmit` to `STATEMENT_BLOCKS_BEGIN` before persisting, preventing duplicate tasks on crash recovery
+- Per-workflow locking serializes concurrent `resume_step()` calls from sibling handlers; non-blocking skip if lock held
+- 303-step Africa OSM workflow: resume dropped from 2+ min (hanging with MongoDB issues) to 22ms
+
+**Stuck-step sweep (`runner/service.py`):**
+- Safety net runs every 5 minutes (was every 5 seconds with old `resume()` approach)
+- Finds steps at intermediate states (`EventTransmit`, `blocks.Begin/Continue`, `block.execution.*`)
+- Creates tasks for orphaned `EventTransmit` steps (event facet but no pending/running task)
+- Calls `resume_step()` per stuck step instead of full `resume()`, avoiding O(N²) scans
+
 **Errored step recovery (`afl/runtime/evaluator.py`):**
 - `continue_step()` now recovers steps stuck in `STATEMENT_ERROR` when a retried handler succeeds — resets the step to `EVENT_TRANSMIT`, clears the error, and applies the result normally
 - Previously, retried tasks that succeeded were silently skipped because the step was already in a terminal state, leaving the workflow permanently stuck

@@ -834,9 +834,67 @@ PENDING ──claim_task()──► RUNNING ──handler succeeds──► COMP
 1. Reset step state to `EVENT_TRANSMIT`
 2. Clear the step's error field
 3. Apply the result as return attributes
-4. Continue normal state machine processing (blocks, capture, completion)
+4. Advance the step to `STATEMENT_BLOCKS_BEGIN` (next state in transition table)
+5. Continue normal state machine processing (blocks, capture, completion)
 
 **Files:** `evaluator.py:continue_step()`
+
+### 17.5.1 Notification-Driven Resume: `resume_step()` (v0.44.0)
+
+**Problem:** After a handler completes at `EventTransmit`, the workflow needs to advance the step through its remaining states and cascade completion up to parent blocks. The original approach was to call `evaluator.resume()` which scans ALL steps in the workflow and iterates until a fixed point. For a 303-step workflow, this is O(N²) MongoDB queries per iteration — each iteration loads all non-terminal steps, and each `BlockExecutionContinueHandler` queries its children. Combined with MongoDB connection timeouts (30s each), a single resume could take hours or hang indefinitely.
+
+**Mechanism:** The runner uses `evaluator.resume_step()` (O(depth)) instead of `evaluator.resume()` (O(all steps)). Rather than walking the ancestor chain, `resume_step()` uses a **parent notification cascade**:
+
+```
+Handler completes
+  → continue_step(step_id, result)
+      Advances step past EventTransmit to StatementBlocksBegin
+      Saves directly to persistence (step is no longer at EventTransmit)
+  → resume_step(workflow_id, step_id, ...)
+      Round 1: process the continued step
+        StatementBlocksBeginHandler creates andThen children (if any)
+        Step advances through blocks → capture → complete
+        _process_step notifies parent: marks block_id + container_id dirty
+      Round 2: process only the notified parents
+        Parent block checks children → all done → completes
+        Notifies its own parent
+      Round 3+: cascade continues until no more notifications
+```
+
+Each round only loads steps that received a child-completion notification. Steps that don't need re-evaluation are never touched.
+
+**Key design decisions:**
+
+1. **Step state advanced before save, without request_transition:** `continue_step()` advances the step to `STATEMENT_BLOCKS_BEGIN` (the next state after `EventTransmit`) before saving to persistence but does NOT set `request_transition=True`. This is critical for two reasons: (a) the step is past `EventTransmit` so it won't trigger a duplicate task on crash recovery, and (b) the `StatementBlocksBeginHandler` must execute (to create andThen children) before the step transitions to `StatementBlocksContinue`. Setting `request_transition=True` would cause the state changer loop to skip the Begin handler entirely.
+
+2. **Per-workflow locking:** A per-workflow in-memory `threading.Lock` prevents concurrent `resume_step()` calls from sibling handler threads. Non-blocking: if the lock is held, the call is skipped — the active resume will see all completed children when it checks the block.
+
+3. **Always complete the task:** `_process_event_task()` always marks the task as `COMPLETED` after the handler returns a result, even if `continue_step()` or `resume_step()` throws. This ensures the thread future always finishes and capacity is always freed. If the resume failed, the stuck-step sweep will retry.
+
+4. **Resume timeout:** `_resume_workflow()` (the full `resume()` fallback) runs with a configurable timeout (`AFL_RESUME_TIMEOUT_S`, default 10 min). On timeout, the resume is abandoned and the sweep retries on the next cycle.
+
+**Performance comparison (303-step Africa OSM import):**
+
+| Approach | Steps processed | Queries | Time |
+|---|---|---|---|
+| `resume()` | All 303 per iteration | O(N²) | 2+ min per iteration, hangs with MongoDB issues |
+| `resume_step()` | ~4-6 (notified parents) | O(depth) | 22ms |
+
+**Files:** `runner/service.py:_resume_workflow_for_step()`, `evaluator.py:resume_step()`
+
+### 17.5.2 Stuck-Step Sweep (safety net)
+
+**Problem:** The event-driven `resume_step()` handles the 99% case, but edge cases can leave steps stuck: MongoDB goes down during resume, the runner crashes between `continue_step()` and `resume_step()`, or tasks are never created for new `EventTransmit` steps.
+
+**Mechanism:** The sweep runs every 5 minutes (was 5 seconds before `resume_step()`) as a safety net:
+
+1. Finds all workflows with steps at intermediate states (`EventTransmit`, `blocks.Begin`, `blocks.Continue`, `block.execution.*`)
+2. For `EventTransmit` steps with event facets but no pending/running task: creates a new task so the handler can run
+3. For block/intermediate steps: calls `resume_step()` to cascade completion
+
+The sweep never calls full `resume()` — it processes each stuck step individually, avoiding the O(N²) scan.
+
+**Files:** `runner/service.py:_maybe_sweep_stuck_steps()`, `_sweep_workflow_steps()`
 
 ### 17.6 Layer 5: Dashboard Reaper (v0.44.0)
 

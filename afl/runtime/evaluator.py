@@ -1160,7 +1160,13 @@ class Evaluator:
         if next_state:
             step.state = next_state
             step.transition.current_state = next_state
-        step.request_state_change(True)
+        # Do NOT set request_state_change(True) here. The step is now at
+        # StatementBlocksBegin and must execute the Begin handler (which
+        # creates andThen block children) before transitioning to Continue.
+        # Setting request_state_change(True) would cause the state changer
+        # loop to skip Begin and jump straight to Continue, leaving no
+        # children created.
+        step.transition.changed = True
 
         # Save directly to persistence
         self.persistence.save_step(step)
@@ -1777,13 +1783,16 @@ class Evaluator:
         program_ast: dict | None = None,
         runner_id: str = "",
     ) -> ExecutionResult:
-        """Resume execution scoped to a single continued step.
+        """Resume execution via parent notification cascade.
 
-        Instead of iterating every actionable step in the workflow,
-        this fetches only the continued step and walks up its container
-        chain, processing each ancestor.  This is O(depth) rather than
-        O(total_steps) and is the preferred resume path after
-        ``continue_step()``.
+        Event-driven: processes the continued step, then follows
+        notifications up to parent blocks.  When a step progresses,
+        ``_process_step`` marks its ``block_id`` and ``container_id``
+        dirty.  The next round processes only those notified parents,
+        which may in turn notify *their* parents, cascading to the root.
+
+        This is O(depth) — only steps that receive a child-completion
+        notification are loaded and processed.
 
         Args:
             workflow_id_val: The workflow ID
@@ -1819,61 +1828,36 @@ class Evaluator:
             max_iterations = 50
             total_iterations = 0
 
+            # Start with the continued step as the initial work item
+            work_queue: list[str] = [step_id]
+
             for iteration in range(1, max_iterations + 1):
-                # Re-read the chain from persistence each iteration so
-                # parent steps see committed child changes.
-                # Walk: step → block → block.container → ancestor block → ...
-                target_steps: list[StepDefinition] = []
-                seen_ids: set[str] = set()
-                current_id: str | None = step_id
-
-                while current_id and current_id not in seen_ids:
-                    step = self.persistence.get_step(current_id)
-                    if step is None:
-                        break
-                    seen_ids.add(current_id)
-                    target_steps.append(step)
-
-                    # Include the block step (which tracks child progress)
-                    if step.block_id and step.block_id not in seen_ids:
-                        block_step = self.persistence.get_step(step.block_id)
-                        if block_step:
-                            seen_ids.add(step.block_id)
-                            target_steps.append(block_step)
-
-                    current_id = step.container_id if step.container_id else None
-
-                if not target_steps:
-                    if iteration == 1:
-                        logger.warning("resume_step: step %s not found", step_id)
+                if not work_queue:
                     break
 
-                # Seed dirty set with all Continue-state blocks in the chain
-                assert context._dirty_blocks is not None
-                for ts in target_steps:
-                    if ts.state in {
-                        StepState.BLOCK_EXECUTION_CONTINUE,
-                        StepState.STATEMENT_BLOCKS_CONTINUE,
-                        StepState.MIXIN_BLOCKS_CONTINUE,
-                    }:
-                        context._dirty_blocks.add(ts.id)
-
                 context.changes = IterationChanges()
-
-                # Process the chain (leaf first, then ancestors)
+                # Reset dirty set — will be populated by _process_step
+                # when steps progress and notify their parents
+                context._dirty_blocks = set()
                 processed_ids: set[str] = set()
-                for step in target_steps:
-                    if step.id in processed_ids:
+
+                # Process all steps in the current notification batch
+                for current_id in work_queue:
+                    if current_id in processed_ids:
                         continue
-                    processed_ids.add(step.id)
+                    step = self.persistence.get_step(current_id)
+                    if step is None or step.is_terminal:
+                        continue
+                    processed_ids.add(current_id)
                     self._process_step(step, context)
 
-                # Process any newly created steps from the chain.
-                # _process_step may add more to created_steps, so loop
-                # until no unprocessed created steps remain.
+                # Process any newly created steps (e.g. block children
+                # from StatementBlocksBeginHandler). These may in turn
+                # notify their parents via _process_step → mark_block_dirty.
                 while True:
                     unprocessed = [
-                        s for s in context.changes.created_steps if s.id not in processed_ids
+                        s for s in context.changes.created_steps
+                        if s.id not in processed_ids
                     ]
                     if not unprocessed:
                         break
@@ -1886,6 +1870,15 @@ class Evaluator:
 
                 self._commit_iteration(context)
                 total_iterations += 1
+
+                # Build next round's work queue from notified parents.
+                # _process_step marked block_id/container_id dirty for
+                # every step that progressed — those are the parents that
+                # need to re-evaluate their children.
+                work_queue = [
+                    bid for bid in context._dirty_blocks
+                    if bid not in processed_ids
+                ]
 
             logger.info(
                 "resume_step done: workflow_id=%s iterations=%d",

@@ -359,6 +359,41 @@ State is fully persisted at each pause boundary. The evaluator MUST be restartab
 
 A workflow MAY require multiple pause/resume cycles if multiple event facets are encountered at different points in the execution graph.
 
+### 10.3 Event-Driven Step Resume (v0.44.0)
+
+> **Implemented** — see `spec/31_runtime_impl.md` §17.5.1 for the full implementation details.
+
+The original `resume()` approach (§10.2) scans **all** steps in a workflow each iteration, which is O(N²) for N steps. For large workflows (hundreds of steps), this becomes prohibitively slow. The runtime SHOULD use **notification-driven step resume** instead.
+
+**Mechanism — parent notification cascade:**
+
+1. When a handler completes, `continue_step()` advances the step past `EventTransmit` to `state.statement.blocks.Begin` and saves to persistence.
+2. `resume_step()` processes the continued step. When a step progresses, it notifies its parent block (`block_id`) and containing step (`container_id`) that a child has changed.
+3. The next round processes **only the notified parents**. Each parent checks whether its children are complete and, if so, progresses — which in turn notifies *its* parent.
+4. The cascade stops when no more parents are notified (i.e., the workflow is paused waiting for other steps, or the root has completed).
+
+This is O(depth): only steps that receive a child-completion notification are loaded and processed. Unlike the chain-walking approach, steps that don't need re-evaluation are never loaded.
+
+**Correctness requirements:**
+
+- `continue_step()` MUST advance the step state past `EventTransmit` **before** saving to persistence. The step MUST NOT have `request_transition` set — the `StatementBlocksBeginHandler` must execute first to create any andThen block children before the step transitions to `StatementBlocksContinue`.
+- Concurrent `resume_step()` calls for sibling steps in the same workflow MUST be serialized (e.g., via per-workflow locking). If a lock cannot be acquired, the call MAY be skipped — the active resume will observe all completed siblings when it checks the block.
+- Task completion (marking the task as `COMPLETED`) MUST NOT depend on `resume_step()` succeeding. If the resume fails, capacity MUST still be freed. A background sweep (§10.4) will retry.
+
+### 10.4 Stuck-Step Sweep (safety net, v0.44.0)
+
+> **Implemented** — see `spec/31_runtime_impl.md` §17.5.2 for the full implementation details.
+
+The event-driven `resume_step()` (§10.3) handles the common case. A periodic **stuck-step sweep** MUST run as a safety net for edge cases (crash between `continue_step()` and `resume_step()`, MongoDB failure during resume, orphaned `EventTransmit` steps with no task).
+
+The sweep:
+
+1. Finds workflows with steps at intermediate states (`EventTransmit`, `blocks.Begin`, `blocks.Continue`, `block.execution.*`)
+2. For `EventTransmit` steps with event facets but no pending/running task: creates a new task
+3. For block/intermediate steps: calls `resume_step()` to cascade completion
+
+The sweep MUST NOT call the full `resume()` — it processes each stuck step individually to avoid O(N²) scans.
+
 ---
 
 ## 11. Step Creation Responsibilities
@@ -466,8 +501,8 @@ event.Error
 **Processing flow:**
 1. An external agent completes processing an event and writes the result to persistence.
 2. The agent sends a `StepContinue` event targeting the step that is blocked at `EventTransmit`.
-3. The evaluator receives the `StepContinue` event (via polling or notification).
-4. The evaluator finds the matching step, verifies it is at `state.EventTransmit`, and allows it to transition past `EventTransmit` to `state.statement.blocks.Begin`.
+3. `continue_step()` advances the step past `EventTransmit` to `state.statement.blocks.Begin` and persists the new state.
+4. `resume_step()` walks the ancestor chain to cascade block completion (see §10.3). Only the step's ancestors are processed, not the entire workflow.
 
 **Idempotency:** Processing a `StepContinue` for a step that has already advanced past `EventTransmit` MUST be a no-op. Duplicate `StepContinue` events MUST NOT cause errors.
 

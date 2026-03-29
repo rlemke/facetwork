@@ -40,6 +40,7 @@ from ..helpers import (
     group_tasks_by_runner,
     group_tasks_by_state,
     lookup_facet_info,
+    qualify_step_names,
     search_all,
 )
 from ..tree import build_step_tree
@@ -151,6 +152,9 @@ def workflow_detail(
         )
 
     all_steps = list(store.get_steps_by_workflow(runner.workflow_id))
+
+    # Add qualified display names (e.g. "Algeria.imp" instead of "imp")
+    qualify_step_names(all_steps)
 
     # Categorize and count steps
     step_counts = {"running": 0, "error": 0, "complete": 0, "other": 0}
@@ -400,6 +404,8 @@ def step_rows_partial(
         )
 
     all_steps = list(store.get_steps_by_workflow(runner.workflow_id))
+    qualify_step_names(all_steps)
+
     step_counts = {"running": 0, "error": 0, "complete": 0, "other": 0}
     for s in all_steps:
         cat = categorize_step_state(s.state)

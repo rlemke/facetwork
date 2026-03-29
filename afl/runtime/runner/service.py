@@ -875,7 +875,7 @@ class RunnerService:
                 raise ValueError("Resume task missing step_id")
 
             # continue_step validates the step is at EVENT_TRANSMIT
-            # and sets request_transition=True. Pass empty result
+            # and advances it to STATEMENT_BLOCKS_BEGIN. Pass empty result
             # because the external agent already wrote return attributes.
             self._evaluator.continue_step(step_id, {})
 

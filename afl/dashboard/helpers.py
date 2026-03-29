@@ -101,6 +101,101 @@ def categorize_step_state(state: str) -> str:
     return "other"
 
 
+def qualify_step_names(steps: list) -> None:
+    """Add ``display_name`` to each step with ancestor context.
+
+    Walks up the step hierarchy to build a dotted path like
+    ``Alabama.imp.imported`` instead of just ``imported``.
+
+    For AndThen block steps (which have no ``statement_name``), builds
+    a name from ``foreach_value`` and ancestor context, e.g. ``Alabama``
+    for a foreach block or ``Alabama.imp.andThen`` for a subroutine block.
+
+    Mutates steps in place.
+    """
+    by_id: dict[str, Any] = {s.id: s for s in steps}
+
+    def _ancestor_segments(start_id: str | None) -> list[str]:
+        """Walk up from start_id collecting name segments."""
+        segments: list[str] = []
+        seen: set[str] = set()
+        current_id = start_id
+        while current_id and current_id not in seen:
+            seen.add(current_id)
+            ancestor = by_id.get(current_id)
+            if ancestor is None:
+                break
+
+            foreach_val = getattr(ancestor, "foreach_value", None)
+            name = getattr(ancestor, "statement_name", None)
+            if foreach_val:
+                segments.append(str(foreach_val))
+            elif name:
+                segments.append(name)
+
+            # Navigate up: block → container (owning step) → its block
+            container_id = getattr(ancestor, "container_id", None)
+            if container_id and container_id not in seen:
+                container = by_id.get(container_id)
+                if container:
+                    seen.add(container_id)
+                    c_foreach = getattr(container, "foreach_value", None)
+                    c_name = getattr(container, "statement_name", None)
+                    if c_foreach:
+                        segments.append(str(c_foreach))
+                    elif c_name:
+                        segments.append(c_name)
+                    current_id = getattr(container, "block_id", None)
+                    continue
+
+            current_id = getattr(ancestor, "block_id", None)
+
+        segments.reverse()
+        return segments
+
+    for step in steps:
+        is_block = getattr(step, "is_block", False)
+
+        if is_block:
+            # Give block steps a display-friendly facet name
+            if not getattr(step, "facet_name", None):
+                object_type = getattr(step, "object_type", "")
+                step.facet_name = object_type or "AndThen"
+
+            # Block steps: build name from foreach_value + container context
+            foreach_val = getattr(step, "foreach_value", None)
+            container_id = getattr(step, "container_id", None)
+            container = by_id.get(container_id) if container_id else None
+
+            # Get ancestor path from the container's perspective
+            segments = []
+            if container:
+                c_name = getattr(container, "statement_name", None)
+                c_block_id = getattr(container, "block_id", None)
+                ancestor_segs = _ancestor_segments(c_block_id)
+                if ancestor_segs:
+                    segments.extend(ancestor_segs)
+                if c_name:
+                    segments.append(c_name)
+
+            if foreach_val:
+                segments.append(str(foreach_val))
+            elif not segments:
+                # Top-level block with no context
+                step.display_name = ""
+                continue
+
+            step.display_name = ".".join(segments)
+
+        elif step.statement_name:
+            segments = _ancestor_segments(step.block_id)
+            segments.append(step.statement_name)
+            step.display_name = ".".join(segments)
+
+        else:
+            step.display_name = ""
+
+
 def group_runners_by_namespace(
     runners: list[RunnerDefinition],
 ) -> list[dict]:
