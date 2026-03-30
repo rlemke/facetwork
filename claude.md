@@ -86,6 +86,7 @@ scripts/postgis-kill-vacuum        # kill autovacuum blocking imports
 | Building handlers | [spec/60_agent_sdk.md](spec/60_agent_sdk.md) |
 | LLM integration | [spec/61_llm_agent_integration.md](spec/61_llm_agent_integration.md) |
 | AFL examples | [spec/70_examples.md](spec/70_examples.md) |
+| Execution traces | [spec/75_execution_traces.md](spec/75_execution_traces.md) |
 | Deployment & Docker | [spec/90_nonfunctional.md](spec/90_nonfunctional.md) |
 | Architecture overview | [architecture.md](architecture.md) |
 | Deployment guide | [deployment.md](deployment.md) |
