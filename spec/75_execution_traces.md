@@ -445,3 +445,350 @@ resume → s1 completes             resume → s2 completes
 ```
 
 The server that processes the **last** remaining event facet (s2 in this case) drives the workflow to completion — s3, yield, block-0, and root all complete within that server's resume call.
+
+---
+
+## Trace 2: Concurrent andThen Blocks with Partial Yields
+
+A workflow with two `andThen` blocks that execute concurrently. Each block has its own event facets, dependency graph, and yield. The yields merge into the workflow's return attributes independently.
+
+### AFL Source
+
+```afl
+namespace test.example {
+    event facet AddOne(input:Long) => (output: Long)
+    facet Value(value:Long)
+
+    workflow UseMultiAndThen(input:Long) => (output1:Long, output2:Long) andThen {
+        s1 = AddOne(input = $.input)
+        s2 = AddOne(input = 1)
+        s3 = Value(value = s1.output + s2.output)
+        yield UseMultiAndThen(output1 = s3.value)
+    } andThen {
+        s1 = AddOne(input = $.input)
+        s2 = AddOne(input = 2)
+        s3 = Value(value = s1.output + s2.output)
+        yield UseMultiAndThen(output2 = s3.value)
+    }
+}
+```
+
+### Key Design Point: Concurrent Blocks
+
+Multiple `andThen` blocks on the same facet or workflow execute **concurrently**, not sequentially. The runtime creates one block step per `andThen` clause (`block-0`, `block-1`) and waits for **all** to complete before advancing. Each block has its own statement namespace — both blocks can have `s1`, `s2`, `s3` without conflict because steps are scoped by `block_id`.
+
+### Dependency Graphs (per block)
+
+```
+Block-0:                         Block-1:
+  s1(input=$.input) ──┐           s1(input=$.input) ──┐
+                      ├→ s3 → yield                    ├→ s3 → yield
+  s2(input=1) ────────┘           s2(input=2) ────────┘
+```
+
+### Step Hierarchy
+
+```
+UseMultiAndThen (root)
+├── block-0 (AndThen)
+│   ├── s1 = AddOne(input=$.input)     ← event facet
+│   ├── s2 = AddOne(input=1)           ← event facet
+│   ├── s3 = Value(value=s1.output+s2.output)
+│   └── yield(output1=s3.value)
+└── block-1 (AndThen)
+    ├── s1 = AddOne(input=$.input)     ← event facet
+    ├── s2 = AddOne(input=2)           ← event facet
+    ├── s3 = Value(value=s1.output+s2.output)
+    └── yield(output2=s3.value)
+```
+
+With `input = 5`:
+- Block-0: `s1.output = 6`, `s2.output = 2`, `s3.value = 8` → `output1 = 8`
+- Block-1: `s1.output = 6`, `s2.output = 3`, `s3.value = 9` → `output2 = 9`
+
+---
+
+### Phase 1: Initial Execution (`evaluator.execute()`, input=5)
+
+#### Iteration 1 — Create root, blocks, and initial steps
+
+**Root step created and state machine runs:**
+
+```
+CREATED → FacetInitBegin (params: input=5) → ... → EventTransmit (workflow, passes through)
+  → StatementBlocksBegin
+```
+
+**`StatementBlocksBeginHandler`**: the body is a `list[AndThenBlock]` with 2 elements. Creates one block step per element:
+
+| Action | Step | Object Type | Statement ID |
+|--------|------|-------------|-------------|
+| Create | `block-0` | AndThen | `block-0` |
+| Create | `block-1` | AndThen | `block-1` |
+
+Both have `container_id = root.id`. Root advances to `StatementBlocksContinue`, returns `stay(push=True)`.
+
+**State machine runs on block-0:**
+
+```
+CREATED → BlockExecutionBegin
+```
+
+`BlockExecutionBeginHandler` builds dependency graph for block-0's statements. s1 and s2 have no dependencies → ready.
+
+| Action | Step | Facet | Block | Params |
+|--------|------|-------|-------|--------|
+| Create | `b0.s1` | AddOne | block-0 | `{input: 5}` (from `$.input`) |
+| Create | `b0.s2` | AddOne | block-0 | `{input: 1}` |
+
+Block-0 → `BlockExecutionContinue`, returns `stay(push=True)`.
+
+**State machine runs on block-1:** identical structure, different params.
+
+| Action | Step | Facet | Block | Params |
+|--------|------|-------|-------|--------|
+| Create | `b1.s1` | AddOne | block-1 | `{input: 5}` (from `$.input`) |
+| Create | `b1.s2` | AddOne | block-1 | `{input: 2}` |
+
+Block-1 → `BlockExecutionContinue`, returns `stay(push=True)`.
+
+**State machines run on all 4 event facet steps** (b0.s1, b0.s2, b1.s1, b1.s2):
+
+Each advances through initialization to `EventTransmit` where `AddOne` (event facet) creates a task and **BLOCKS**.
+
+| Task | Step | Params | State |
+|------|------|--------|-------|
+| Task 1 | b0.s1 | `{input: 5}` | PENDING |
+| Task 2 | b0.s2 | `{input: 1}` | PENDING |
+| Task 3 | b1.s1 | `{input: 5}` | PENDING |
+| Task 4 | b1.s2 | `{input: 2}` | PENDING |
+
+**Continue handlers** run on block-0, block-1, root — no children complete yet, all return `stay(push=True)`.
+
+#### Commit 1 (atomic)
+
+| Category | Items |
+|----------|-------|
+| **Created steps** | root, block-0, block-1, b0.s1, b0.s2, b1.s1, b1.s2 (7 steps) |
+| **Updated steps** | root (→ `blocks.Continue`), block-0 (→ `execution.Continue`), block-1 (→ `execution.Continue`) |
+| **Created tasks** | Task(b0.s1), Task(b0.s2), Task(b1.s1), Task(b1.s2) (4 tasks) |
+
+#### Iteration 2 — Fixed point
+
+All 4 event steps blocked at EventTransmit. No progress.
+
+**Evaluator returns `PAUSED`.** Four tasks visible to runners.
+
+---
+
+### Phase 2: Handler Processing (4 tasks, parallelizable)
+
+Four tasks are pending. Up to 4 servers can process them concurrently:
+
+| Task | Handler Input | Expected Output |
+|------|--------------|-----------------|
+| b0.s1 | `{input: 5}` | `{output: 6}` |
+| b0.s2 | `{input: 1}` | `{output: 2}` |
+| b1.s1 | `{input: 5}` | `{output: 6}` |
+| b1.s2 | `{input: 2}` | `{output: 3}` |
+
+The order in which handlers complete determines how many commits are needed. We trace the most interesting case: **interleaved completion across blocks**.
+
+---
+
+### Phase 3: b0.s1 Completes (Server A)
+
+Handler returns `{output: 6}`.
+
+#### `continue_step(b0.s1, {output: 6})` → `resume()`
+
+b0.s1: `EventTransmit → StatementBlocksBegin → ... → StatementComplete ✓` with `returns = {output: 6}`.
+
+**block-0 Continue handler**: children are b0.s1 (Complete ✓), b0.s2 (EventTransmit). s3 depends on both → **not ready**. Returns `stay(push=True)`.
+
+#### Commit 2
+
+| **Updated steps** | b0.s1 (→ `Complete`) |
+|---|---|
+
+Evaluator returns `PAUSED`. Three event steps still blocked.
+
+---
+
+### Phase 4: b1.s2 Completes (Server B)
+
+Handler returns `{output: 3}`.
+
+Note: this is from **block-1**, not block-0. The blocks progress independently.
+
+#### `continue_step(b1.s2, {output: 3})` → `resume()`
+
+b1.s2: `→ StatementComplete ✓` with `returns = {output: 3}`.
+
+**block-1 Continue handler**: children are b1.s1 (EventTransmit), b1.s2 (Complete ✓). s3 depends on both → **not ready**. Returns `stay(push=True)`.
+
+#### Commit 3
+
+| **Updated steps** | b1.s2 (→ `Complete`) |
+|---|---|
+
+---
+
+### Phase 5: b0.s2 Completes (Server C)
+
+Handler returns `{output: 2}`.
+
+#### `continue_step(b0.s2, {output: 2})` → `resume()`
+
+b0.s2: `→ StatementComplete ✓` with `returns = {output: 2}`.
+
+**block-0 Continue handler**: b0.s1 ✓, b0.s2 ✓ — **both complete!**
+
+- s3 depends on s1 and s2 → **ready**
+- Expression evaluator: `value = b0.s1.output + b0.s2.output = 6 + 2 = 8`
+
+Creates and processes s3:
+
+| Action | Step | Facet | Params |
+|--------|------|-------|--------|
+| Create | `b0.s3` | Value | `{value: 8}` |
+
+**b0.s3 state machine**: `Value` is a regular facet → passes through EventTransmit → `StatementComplete ✓` with `returns = {value: 8}`.
+
+**block-0 Continue handler** (dirty from b0.s3 completion): s1 ✓, s2 ✓, s3 ✓ → yield is ready.
+
+Creates and processes yield:
+
+| Action | Step | Type | Params |
+|--------|------|------|--------|
+| Create | `b0.yield` | YieldAssignment | `{output1: 8}` |
+
+**b0.yield** completes: `→ StatementComplete ✓`. Captures `output1 = 8`.
+
+**block-0 Continue handler**: all 4 children complete → block-0 advances:
+
+```
+BlockExecutionContinue → BlockExecutionEnd → StatementEnd → StatementComplete ✓
+```
+
+**Root `StatementBlocksContinueHandler`** (dirty from block-0 completion):
+- block-0: Complete ✓
+- block-1: `execution.Continue` (still waiting for b1.s1)
+- **Not all blocks done** → returns `stay(push=True)`
+
+#### Commit 4
+
+| Category | Items |
+|----------|-------|
+| **Created steps** | b0.s3, b0.yield |
+| **Updated steps** | b0.s2 (→ `Complete`), b0.s3 (→ `Complete`), b0.yield (→ `Complete`), block-0 (→ `Complete`) |
+
+Evaluator returns `PAUSED`. Block-0 is fully done. Block-1 still waiting for b1.s1.
+
+---
+
+### Phase 6: b1.s1 Completes (Server D) — Final Cascade
+
+Handler returns `{output: 6}`.
+
+#### `continue_step(b1.s1, {output: 6})` → `resume()`
+
+b1.s1: `→ StatementComplete ✓` with `returns = {output: 6}`.
+
+**block-1 Continue handler**: b1.s1 ✓, b1.s2 ✓ — **both complete!**
+
+- s3 depends on s1 and s2 → **ready**
+- Expression evaluator: `value = b1.s1.output + b1.s2.output = 6 + 3 = 9`
+
+Creates and processes b1.s3 → `StatementComplete ✓` with `returns = {value: 9}`.
+
+Creates and processes b1.yield → `StatementComplete ✓`. Captures `output2 = 9`.
+
+**block-1 completes**: all children done → `StatementComplete ✓`.
+
+**Root `StatementBlocksContinueHandler`** (dirty):
+- block-0: Complete ✓
+- block-1: Complete ✓
+- **All blocks done!** Root advances:
+
+```
+StatementBlocksContinue → StatementBlocksEnd
+  → StatementCaptureBegin
+```
+
+**`StatementCaptureBeginHandler`**: iterates over completed blocks and merges yields:
+- From block-0: `output1 = 8` → merged into root returns
+- From block-1: `output2 = 9` → merged into root returns
+
+```
+  → StatementCaptureEnd → StatementEnd → StatementComplete ✓
+```
+
+Root completes with `returns = {output1: 8, output2: 9}`.
+
+#### Commit 5 (final)
+
+| Category | Items |
+|----------|-------|
+| **Created steps** | b1.s3, b1.yield |
+| **Updated steps** | b1.s1 (→ `Complete`), b1.s3 (→ `Complete`), b1.yield (→ `Complete`), block-1 (→ `Complete`), root (→ `Complete`) |
+
+**Evaluator returns `ExecutionResult(status=COMPLETED, outputs={output1: 8, output2: 9})`.**
+
+---
+
+### Execution Summary
+
+| Step | Block | Facet | Task? | Result | Completes In |
+|------|-------|-------|-------|--------|-------------|
+| root | — | UseMultiAndThen | No | `{output1:8, output2:9}` | Commit 5 |
+| block-0 | root | — | No | — | Commit 4 |
+| block-1 | root | — | No | — | Commit 5 |
+| b0.s1 | block-0 | AddOne | **Yes** | `{output: 6}` | Commit 2 |
+| b0.s2 | block-0 | AddOne | **Yes** | `{output: 2}` | Commit 4 |
+| b0.s3 | block-0 | Value | No | `{value: 8}` | Commit 4 |
+| b0.yield | block-0 | UseMultiAndThen | No | `{output1: 8}` | Commit 4 |
+| b1.s1 | block-1 | AddOne | **Yes** | `{output: 6}` | Commit 5 |
+| b1.s2 | block-1 | AddOne | **Yes** | `{output: 3}` | Commit 3 |
+| b1.s3 | block-1 | Value | No | `{value: 9}` | Commit 5 |
+| b1.yield | block-1 | UseMultiAndThen | No | `{output2: 9}` | Commit 5 |
+
+**Totals:**
+- **Steps created:** 11 (root + 2 blocks + 4 event steps + 2 value steps + 2 yields)
+- **External handler invocations:** 4 (all parallelizable across up to 4 servers)
+- **Persistence commits:** 5
+- **Final output:** `{output1: 8, output2: 9}`
+
+### Key Observations
+
+1. **Block independence:** block-0 completed (Commit 4) while block-1 was still waiting for b1.s1. The blocks made progress independently — neither blocked the other.
+
+2. **Statement namespace scoping:** Both blocks have `s1`, `s2`, `s3` names. These do not conflict because steps are scoped by `block_id`. The runtime uses `(statement_id, block_id)` as the uniqueness key.
+
+3. **Partial yield merging:** Each block yields to a different output field (`output1` vs `output2`). The `StatementCaptureBeginHandler` merges yields from all completed blocks into the root's return attributes. If both blocks yielded to the same field, the merge order is deterministic (block-0 first, block-1 second) but last-write-wins.
+
+4. **Optimal parallelism:** With 4 servers, all 4 handler tasks can run simultaneously. The theoretical minimum commits is 3 (initial + one handler completion that unlocks a block + final handler completion that unlocks the other block and completes the workflow). The actual commit count depends on handler completion order.
+
+### Multi-Server Execution Pattern
+
+```
+Server A          Server B          Server C          Server D
+────────          ────────          ────────          ────────
+claims b0.s1      claims b1.s2      claims b0.s2      claims b1.s1
+  input=5           input=2           input=1           input=5
+  output=6          output=3          output=2          output=6
+
+resume:           resume:           resume:           resume:
+  b0.s1 ✓           b1.s2 ✓           b0.s2 ✓           b1.s1 ✓
+  block-0: 1/2      block-1: 1/2      block-0: 2/2!     block-1: 2/2!
+  waits              waits             → b0.s3 inline     → b1.s3 inline
+                                       → b0.yield          → b1.yield
+                                       → block-0 ✓         → block-1 ✓
+                                       root: 1/2 blocks    root: 2/2 blocks!
+                                       waits               → capture yields
+                                                           → root ✓
+                                                         COMPLETED
+                                                         {output1:8, output2:9}
+```
+
+The last server to complete a block's final event facet drives that block to completion. The last server to complete a block overall drives the entire workflow to completion.
