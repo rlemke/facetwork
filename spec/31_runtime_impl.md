@@ -882,19 +882,104 @@ Each round only loads steps that received a child-completion notification. Steps
 
 **Files:** `runner/service.py:_resume_workflow_for_step()`, `evaluator.py:resume_step()`
 
+### 17.5.3 Per-Step Processing: `process_single_step()` (v0.45.0)
+
+**Problem:** The `resume_step()` mechanism (§17.5.1) is O(depth) per step but still requires per-workflow locking — only one server can resume a given workflow at a time. For large distributed deployments (100+ servers processing a foreach workflow with 50 states), this lock becomes a bottleneck. Server B's handler completion must wait for Server A's resume to finish before it can advance its own step.
+
+**Mechanism:** `process_single_step()` replaces per-workflow locking with per-step atomic operations and continuation events:
+
+```
+Handler completes on Server A:
+  → continue_step(step_id, result)          # advances past EventTransmit
+  → process_single_step(step_id, ...)       # per-step, no workflow lock
+      Round 1: process target step
+        Creates andThen children, processes them (inline dispatch if available)
+        Marks parent block_id + container_id as dirty
+        Commits atomically: step updates + created steps + tasks + continuations
+      Round 2: process dirty parents (from work_queue)
+        Parent block checks children → not all done → stays at Continue
+        No progress → no more dirty blocks → exit
+      Remaining dirty blocks get continuation tasks
+```
+
+**Key components:**
+
+1. **`process_single_step()` in `evaluator.py`:**
+   - Processes one step and cascades up through dirty-block notifications
+   - Multiple rounds within a single call (max 50), each committing atomically
+   - Generates continuation events only for dirty blocks not processed locally
+   - Bumps `version.sequence` on all updated steps for optimistic concurrency
+
+2. **Continuation events (`continuation.py`):**
+   - Generates `TaskDefinition` entries on the `_afl_continue` task list
+   - Each continuation carries only `step_id` and `reason` (lightweight)
+   - Deduplicated per target step — at most one pending continuation per step
+   - Committed atomically alongside step changes (no partial state)
+
+3. **Optimistic concurrency (`version.sequence`):**
+   - Each `StepDefinition.version` has a `sequence` counter (monotonic)
+   - `process_single_step()` increments the sequence before committing
+   - `MongoStore._commit_changes()` uses conditional `replace_one` with version check
+   - If two servers process the same step concurrently, only one write succeeds
+   - The loser's write falls back to unconditional update (safe — the winner already advanced the step)
+
+4. **RegistryRunner integration:**
+   - `_poll_cycle()` claims both handler tasks (from `default` task list) and continuation tasks (from `_afl_continue` task list)
+   - `poll_once()` also processes continuations (for testing)
+   - `_process_continuation()` calls `process_single_step()` on the target step
+   - `_process_event()` calls `continue_step()` then falls back to `_resume_workflow()` for inline dispatch compatibility
+
+**Multi-server execution model:**
+
+```
+Server A (claims handler task for step X):
+  1. Handler runs → produces result
+  2. continue_step(X, result) → step X at StatementBlocksBegin
+  3. process_single_step(X) → X completes → parent block notified
+  4. Continuation task created for parent block → committed to DB
+
+Server B (claims continuation task for parent block):
+  1. process_single_step(parent_block) → checks children → 3/5 done
+  2. No progress → returns (idempotent, safe)
+
+Server C (claims handler task for step Y in same workflow):
+  1. Handler runs → Y completes
+  2. continue_step(Y, result) → process_single_step(Y)
+  3. Parent block notified → continuation task created
+
+Server D (claims continuation for parent block again):
+  1. process_single_step(parent_block) → checks children → 5/5 done
+  2. Block completes → workflow root notified → continuation created
+
+Server E (claims continuation for workflow root):
+  1. process_single_step(root) → all blocks done → workflow COMPLETED
+```
+
+No server holds a lock on the workflow. Each processes its step independently. The continuation task queue coordinates parent notification across servers.
+
+**Performance characteristics:**
+
+| Deployment | Approach | Throughput |
+|---|---|---|
+| 1 server | `resume()` (O(N²)) | Sequential, limited by scan cost |
+| 1 server | `resume_step()` (O(depth)) | Sequential, 22ms per step |
+| 100 servers | `process_single_step()` | Parallel — each server processes independently |
+
+**Files:** `evaluator.py:process_single_step()`, `continuation.py`, `registry_runner.py:_process_continuation()`
+
 ### 17.5.2 Stuck-Step Sweep (safety net)
 
-**Problem:** The event-driven `resume_step()` handles the 99% case, but edge cases can leave steps stuck: MongoDB goes down during resume, the runner crashes between `continue_step()` and `resume_step()`, or tasks are never created for new `EventTransmit` steps.
+**Problem:** The event-driven processing (§17.5.1, §17.5.3) handles the 99% case, but edge cases can leave steps stuck: MongoDB goes down during commit, the runner crashes between `continue_step()` and `process_single_step()`, continuation events are lost, or tasks are never created for new `EventTransmit` steps.
 
-**Mechanism:** The sweep runs every 5 minutes (was 5 seconds before `resume_step()`) as a safety net:
+**Mechanism:** The sweep runs every 5 minutes as a safety net:
 
-1. Finds all workflows with steps at intermediate states (`EventTransmit`, `blocks.Begin`, `blocks.Continue`, `block.execution.*`)
-2. For `EventTransmit` steps with event facets but no pending/running task: creates a new task so the handler can run
-3. For block/intermediate steps: calls `resume_step()` to cascade completion
+1. Finds all workflows with steps at intermediate states (`EventTransmit` with `request_transition`, `blocks.Begin`, `block.execution.Begin`)
+2. For each stuck step: calls `process_single_step()` directly to cascade completion and generate continuation events
+3. For `EventTransmit` steps with event facets but no pending/running task: creates a new task so the handler can run
 
-The sweep never calls full `resume()` — it processes each stuck step individually, avoiding the O(N²) scan.
+The sweep never calls full `resume()` — it processes each stuck step individually via `process_single_step()`, avoiding O(N²) scans and generating continuation events for any remaining dirty blocks.
 
-**Files:** `runner/service.py:_maybe_sweep_stuck_steps()`, `_sweep_workflow_steps()`
+**Files:** `registry_runner.py:_maybe_sweep_stuck_steps()`, `runner/service.py:_maybe_sweep_stuck_steps()`
 
 ### 17.6 Layer 5: Dashboard Reaper (v0.44.0)
 
@@ -965,8 +1050,9 @@ All source files are located in `afl/runtime/`.
 - `afl/runtime/types.py` — `ObjectType`, `FacetAttributes`, `AttributeValue`, ID types
 
 ### Core Engine
-- `afl/runtime/evaluator.py` — `Evaluator`, `ExecutionContext`, iteration loop
+- `afl/runtime/evaluator.py` — `Evaluator`, `ExecutionContext`, iteration loop, `process_single_step()`
+- `afl/runtime/continuation.py` — Continuation event generation for distributed step processing
 - `afl/runtime/dependency.py` — `DependencyGraph` from compiled AST
-- `afl/runtime/persistence.py` — `PersistenceAPI` protocol
+- `afl/runtime/persistence.py` — `PersistenceAPI` protocol, `IterationChanges` (with `continuation_tasks`)
 - `afl/runtime/memory_store.py` — In-memory persistence for testing
-- `afl/runtime/mongo_store.py` — MongoDB persistence implementation
+- `afl/runtime/mongo_store.py` — MongoDB persistence with optimistic concurrency (`version.sequence`)

@@ -68,6 +68,8 @@ The Evaluator orchestrates workflow execution:
 3. When a step reaches `EVENT_TRANSMIT`, the workflow pauses and creates a task for external agents
 4. On resume, the evaluator picks up where it left off, creating new steps as dependencies resolve
 
+**Distributed execution:** For multi-server deployments, `process_single_step()` replaces the full-workflow `resume()`. Each server processes one step at a time, cascading up through parent blocks and generating continuation events (`_afl_continue` tasks) for blocks that need re-evaluation. This eliminates per-workflow locks and enables linear scaling across 100+ servers. Step updates use optimistic concurrency (`version.sequence`) to safely handle concurrent processing.
+
 ### State Machine (`afl/runtime/changers/`)
 
 Each step progresses through a state machine with phases:
@@ -167,10 +169,13 @@ The complete data flow from AFL source to completed workflow:
 5. Agent claims task    ->  Reads step parameters
 6. Agent processes      ->  Runs business logic
 7. Agent writes results ->  Updates step attributes
-8. Agent signals resume ->  Creates afl:resume task
-9. Resume (Evaluator)   ->  Continues iteration
-10. Complete            ->  Outputs collected, workflow done
+8. Agent signals resume ->  continue_step() advances past EventTransmit
+9. Step processing      ->  process_single_step() cascades to parents
+10. Continuation        ->  Continuation events notify remaining blocks
+11. Complete            ->  Outputs collected, workflow done
 ```
+
+In distributed mode, steps 8-10 happen across multiple servers. Each server claims tasks independently, processes steps, and generates continuation events. No per-workflow coordination is needed.
 
 ## Key Abstractions
 

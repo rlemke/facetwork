@@ -380,17 +380,61 @@ This is O(depth): only steps that receive a child-completion notification are lo
 - Concurrent `resume_step()` calls for sibling steps in the same workflow MUST be serialized (e.g., via per-workflow locking). If a lock cannot be acquired, the call MAY be skipped — the active resume will observe all completed siblings when it checks the block.
 - Task completion (marking the task as `COMPLETED`) MUST NOT depend on `resume_step()` succeeding. If the resume fails, capacity MUST still be freed. A background sweep (§10.4) will retry.
 
+### 10.3.1 Per-Step Processing with Continuation Events (v0.45.0)
+
+> **Implemented** — see `spec/31_runtime_impl.md` §17.5.3 for the full implementation details.
+
+The notification-driven `resume_step()` (§10.3) eliminates O(N²) scans but still requires **per-workflow locking**: only one server can resume a given workflow at a time. For large distributed deployments (100+ servers processing the same workflow), this becomes a bottleneck.
+
+**`process_single_step()` replaces per-workflow locking with per-step atomic operations:**
+
+1. When a handler completes, `continue_step()` advances the step past `EventTransmit` (same as §10.3).
+2. `process_single_step(step_id)` processes the continued step and cascades up through parent blocks in the same call. Each round commits atomically and follows dirty-block notifications up the hierarchy.
+3. If any dirty blocks remain unprocessed (e.g., the step is on a different server), **continuation tasks** are generated on the `_afl_continue` task list. Any server can claim and process these.
+4. Step updates use **optimistic concurrency** via a `version.sequence` counter. If two servers process the same step concurrently, the version check prevents conflicting writes.
+
+**Continuation events** are the distributed equivalent of the Scala `ContextCache.addContinuationEvents()` pattern. They are lightweight tasks (`_afl_continue`) that carry only a `step_id` and `reason`. They are committed atomically alongside step changes and handler tasks in a single persistence operation.
+
+```
+Server A: handler completes for step X
+  → continue_step(X, result)
+  → process_single_step(X)
+      Round 1: process X → creates children → children dispatched inline → complete
+      Round 2: parent block re-evaluates → all children done → block completes
+      Round 3: workflow root re-evaluates → completes
+      Commit: step updates + continuation events (if any remain)
+
+Server B: claims continuation task for block Y
+  → process_single_step(Y)
+      Block checks children → not all done yet → no progress
+      (step stays at Continue, no harm done — idempotent)
+```
+
+**Benefits for distributed processing:**
+
+- **No per-workflow locks:** Each step is processed independently. Multiple servers can process different steps in the same workflow concurrently.
+- **Atomic commits:** Step changes, handler tasks, and continuation events are committed in a single persistence operation. No partial state visible to other servers.
+- **Idempotent processing:** Steps can be safely re-processed. Optimistic concurrency prevents conflicting writes. Duplicate continuation tasks are deduplicated.
+- **Linear scaling:** Adding more servers increases throughput proportionally. Each server claims tasks independently from the shared queue.
+
+**Correctness requirements:**
+
+- All changes (step updates, created steps, handler tasks, continuation tasks) MUST be committed atomically.
+- Step updates SHOULD use optimistic concurrency (version check) to detect concurrent modifications.
+- Continuation task deduplication MUST prevent unbounded task growth — at most one pending continuation per target step.
+- `process_single_step()` MUST follow the parent chain within the same call when possible, generating continuation events only for blocks that cannot be processed locally.
+
 ### 10.4 Stuck-Step Sweep (safety net, v0.44.0)
 
 > **Implemented** — see `spec/31_runtime_impl.md` §17.5.2 for the full implementation details.
 
-The event-driven `resume_step()` (§10.3) handles the common case. A periodic **stuck-step sweep** MUST run as a safety net for edge cases (crash between `continue_step()` and `resume_step()`, MongoDB failure during resume, orphaned `EventTransmit` steps with no task).
+The event-driven step processing (§10.3, §10.3.1) handles the common case. A periodic **stuck-step sweep** MUST run as a safety net for edge cases (crash between `continue_step()` and `process_single_step()`, MongoDB failure during commit, orphaned `EventTransmit` steps with no task, lost continuation events).
 
 The sweep:
 
-1. Finds workflows with steps at intermediate states (`EventTransmit`, `blocks.Begin`, `blocks.Continue`, `block.execution.*`)
-2. For `EventTransmit` steps with event facets but no pending/running task: creates a new task
-3. For block/intermediate steps: calls `resume_step()` to cascade completion
+1. Finds workflows with steps at intermediate states (`EventTransmit`, `blocks.Begin`, `block.execution.Begin`)
+2. For each stuck step: calls `process_single_step()` directly to cascade completion
+3. For `EventTransmit` steps with event facets but no pending/running task: creates a new task
 
 The sweep MUST NOT call the full `resume()` — it processes each stuck step individually to avoid O(N²) scans.
 
@@ -502,9 +546,11 @@ event.Error
 1. An external agent completes processing an event and writes the result to persistence.
 2. The agent sends a `StepContinue` event targeting the step that is blocked at `EventTransmit`.
 3. `continue_step()` advances the step past `EventTransmit` to `state.statement.blocks.Begin` and persists the new state.
-4. `resume_step()` walks the ancestor chain to cascade block completion (see §10.3). Only the step's ancestors are processed, not the entire workflow.
+4. `process_single_step()` processes the continued step, cascades up through parent blocks, and generates continuation events for any remaining dirty blocks (see §10.3.1). In single-server mode, `resume_step()` may be used instead (see §10.3).
 
-**Idempotency:** Processing a `StepContinue` for a step that has already advanced past `EventTransmit` MUST be a no-op. Duplicate `StepContinue` events MUST NOT cause errors.
+**Continuation events:** When `process_single_step()` cannot process all dirty parent blocks within the same call (e.g., the parent is on another server), it generates `_afl_continue` continuation tasks. These are lightweight tasks that carry only the target `step_id`. Any server can claim and process them.
+
+**Idempotency:** Processing a `StepContinue` for a step that has already advanced past `EventTransmit` MUST be a no-op. Duplicate `StepContinue` events MUST NOT cause errors. Continuation tasks for already-completed steps are harmless — `process_single_step()` detects terminal states and returns immediately.
 
 ---
 
