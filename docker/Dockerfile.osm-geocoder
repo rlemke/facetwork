@@ -2,10 +2,11 @@
 # Includes all OSM dependencies: pyosmium, shapely, pyproj, folium, Java, GraphHopper
 FROM python:3.12-slim
 
-# System packages for geospatial libs, osmium-tool, and GraphHopper download
+# System packages for geospatial libs, osmium-tool, osm2pgrouting, and GraphHopper download
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libexpat1 libgeos-dev libproj-dev \
     osmium-tool \
+    osm2pgrouting \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

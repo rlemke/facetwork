@@ -24,7 +24,18 @@ NAMESPACE = "osm.ops.PgRouting"
 OSM2PGROUTING_BIN = os.environ.get("OSM2PGROUTING_BIN", "osm2pgrouting")
 
 # osm2pgrouting mapconfig files (ship with the osm2pgrouting package)
-_MAPCONFIG_DIR = os.environ.get("OSM2PGROUTING_MAPCONFIG_DIR", "/usr/share/osm2pgrouting")
+# Detect platform-appropriate default: Homebrew on macOS, /usr/share on Linux
+def _default_mapconfig_dir() -> str:
+    """Return the default mapconfig directory for osm2pgrouting."""
+    import sys
+    if sys.platform == "darwin":
+        # Homebrew installs to $(brew --prefix)/share/osm2pgrouting
+        for prefix in ("/opt/homebrew/share/osm2pgrouting", "/usr/local/share/osm2pgrouting"):
+            if os.path.isdir(prefix):
+                return prefix
+    return "/usr/share/osm2pgrouting"
+
+_MAPCONFIG_DIR = os.environ.get("OSM2PGROUTING_MAPCONFIG_DIR") or _default_mapconfig_dir()
 
 PROFILE_CONFIGS = {
     "car": "mapconfig_for_cars.xml",

@@ -51,7 +51,9 @@ if ! psql -U "$DB_USER" -lqt 2>/dev/null | grep -qw "$DB_NAME"; then
     echo "Creating database $DB_NAME ..."
     createdb -U "$DB_USER" "$DB_NAME"
     psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-    echo "Database $DB_NAME created with PostGIS extension."
+    psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS pgrouting;" 2>/dev/null \
+        && echo "Database $DB_NAME created with PostGIS + pgRouting extensions." \
+        || echo "Database $DB_NAME created with PostGIS extension (pgRouting not available — install with: brew install pgrouting)."
 fi
 
 echo "PostgreSQL is running on port 5432 (data: $DATA_DIR)"

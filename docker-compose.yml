@@ -261,6 +261,7 @@ services:
       - POSTGRES_PASSWORD=afl
     volumes:
       - ${POSTGIS_DATA_DIR:-postgis_data}:/var/lib/postgresql/data
+      - ./docker/postgis-init:/docker-entrypoint-initdb.d
     healthcheck:
       test: pg_isready -U afl
       interval: 5s

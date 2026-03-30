@@ -402,7 +402,7 @@ def compute_timeline(steps: list, workflow_start: int = 0) -> list[TimelineEntry
         end = getattr(s, "last_modified", 0) or start
         if start <= 0:
             continue
-        label = getattr(s, "statement_name", None) or getattr(s, "facet_name", None) or s.id[:8]
+        label = getattr(s, "display_name", None) or getattr(s, "statement_name", None) or getattr(s, "facet_name", None) or s.id[:8]
         timed.append((s.id, label, s.state, start, max(end, start)))
 
     if not timed:
