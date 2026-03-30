@@ -740,6 +740,40 @@ class RegistryRunner:
         except Exception:
             logger.debug("Could not save step log for step %s", step_id, exc_info=True)
 
+    def _reset_errored_ancestors(self, step: Any) -> None:
+        """Reset errored ancestor blocks/containers to Continue state.
+
+        Walks up the block_id → container_id chain and resets any step
+        in an error state back to its appropriate Continue state so the
+        dashboard shows the ancestor chain as running during a retry.
+        """
+        from .types import ObjectType
+
+        seen: set[str] = set()
+        current_id = step.block_id or step.container_id
+        while current_id and current_id not in seen:
+            seen.add(current_id)
+            ancestor = self._persistence.get_step(current_id)
+            if ancestor is None:
+                break
+            if StepState.is_error(ancestor.state):
+                if ObjectType.is_block(ancestor.object_type):
+                    new_state = StepState.BLOCK_EXECUTION_CONTINUE
+                else:
+                    new_state = StepState.STATEMENT_BLOCKS_CONTINUE
+                ancestor.state = new_state
+                ancestor.transition.current_state = new_state
+                ancestor.transition.clear_error()
+                ancestor.transition.request_transition = False
+                ancestor.transition.changed = True
+                self._persistence.save_step(ancestor)
+                logger.debug(
+                    "Reset errored ancestor %s to %s",
+                    current_id,
+                    new_state,
+                )
+            current_id = ancestor.block_id or ancestor.container_id
+
     # =========================================================================
     # Event Processing
     # =========================================================================
@@ -760,6 +794,28 @@ class RegistryRunner:
                 message=f"Task claimed: {task.name}",
                 facet_name=task.name,
             )
+
+            # If the step is in error state (retry scenario), reset it to
+            # EventTransmit immediately so the dashboard shows it as
+            # running rather than errored while the handler executes.
+            # Also reset errored ancestor blocks so the workflow view
+            # doesn't show the parent chain as errored during the retry.
+            step = self._persistence.get_step(task.step_id)
+            if step and StepState.is_error(step.state):
+                step.state = StepState.EVENT_TRANSMIT
+                step.transition.current_state = StepState.EVENT_TRANSMIT
+                step.transition.clear_error()
+                step.transition.request_transition = False
+                step.transition.changed = True
+                self._persistence.save_step(step)
+                self._emit_step_log(
+                    step_id=task.step_id,
+                    workflow_id=task.workflow_id,
+                    message=f"Step reset from error for retry: {task.name}",
+                    facet_name=task.name,
+                )
+                # Walk up the ancestor chain and reset errored blocks
+                self._reset_errored_ancestors(step)
 
             if not self._dispatcher.can_dispatch(task.name):
                 error_msg = f"No handler registration for event task '{task.name}'"
