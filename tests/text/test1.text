@@ -1,0 +1,53 @@
+// This is a workflow example. We will ask Claude to given the step by step execution.
+// We can review its analysis and see if there are changes.
+
+// describe in detail each execution action action for the following workflow.
+// Particulary note the memory cache and commits. Also use of continues and if it is an
+// event, what the event handler must do (what message does it send)
+
+namespace test.example1 {
+    event facet AddOne(input:Long) => (output: Long)
+    facet Value(value:Long)
+
+    workflow UseAddOne(input:Long) => (output:Long) andThen {
+        s1 = AddOne(input = 1)
+        s2 = AddOne(input = 1)
+        s3 = Value(value = s1.output + s2.output)
+        yield UseAddOne(output = s3.value)
+        }
+}
+
+namespace test.example {
+    event facet AddOne(input:Long) => (output: Long)
+    facet Value(value:Long)
+
+    workflow UseMultiAndThen(input:Long) => (output1:Long,output2:Long) andThen {
+        s1 = AddOne(input = $.input)
+        s2 = AddOne(input = 1)
+        s3 = Value(value = s1.output + s2.output)
+        yield UseMultiAndThen(output1 = s3.value)
+        } andThen {
+            s1 = AddOne(input = $.input)
+            s2 = AddOne(input = 2)
+            s3 = Value(value = s1.output + s2.output)
+            yield UseMultiAndThen(output2 = s3.value)
+        }
+}
+
+// Emphasize how the block handles concurrent multiple "continues". Even the scenario where the states all say complete, so the block continues, but one of the steps just sent the continue and the block gets the continue after it has already decided to continue. Emphasize ignore continues when it has completed its block assesstion
+namespace test.example {
+    event facet AddOne(input:Long) => (output: Long)
+    facet Value(value:Long)
+
+    workflow ContinueIgnores(input:Long) => (output:[Long]) andThen {
+        s1 = AddOne(input = $.input)
+        s2 = AddOne(input = 2)
+        s3 = AddOne(input = 3)
+        s4 = AddOne(input = 4)
+        s5 = AddOne(input = 5)
+        s6 = AddOne(input = 6)
+        s7 = AddOne(input = 7)
+        s8 = Value(value = s1.output ++ s2.output ++ s3.output ++ s4.output ++ s5.output ++ s6.output ++ s7.output)
+        yield ContinueIgnores(output = s8.value)
+        }
+}
