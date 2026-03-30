@@ -49,10 +49,12 @@ class IterationChanges:
     created_steps: list[StepDefinition] = field(default_factory=list)
     updated_steps: list[StepDefinition] = field(default_factory=list)
     created_tasks: list["TaskDefinition"] = field(default_factory=list)
+    continuation_tasks: list["TaskDefinition"] = field(default_factory=list)
 
     # Track step IDs to avoid duplicates
     _created_ids: set[StepId] = field(default_factory=set)
     _updated_ids: dict[StepId, int] = field(default_factory=dict)
+    _continuation_step_ids: set[str] = field(default_factory=set)
 
     def add_created_step(self, step: StepDefinition) -> None:
         """Record a newly created step (idempotent)."""
@@ -74,6 +76,12 @@ class IterationChanges:
         """Record a newly created task."""
         self.created_tasks.append(task)
 
+    def add_continuation_task(self, task: "TaskDefinition") -> None:
+        """Record a continuation task (deduplicated by target step_id)."""
+        if task.step_id not in self._continuation_step_ids:
+            self._continuation_step_ids.add(task.step_id)
+            self.continuation_tasks.append(task)
+
     @property
     def has_changes(self) -> bool:
         """Check if there are any changes to commit."""
@@ -81,6 +89,7 @@ class IterationChanges:
             len(self.created_steps) > 0
             or len(self.updated_steps) > 0
             or len(self.created_tasks) > 0
+            or len(self.continuation_tasks) > 0
         )
 
     def clear(self) -> None:
@@ -88,8 +97,10 @@ class IterationChanges:
         self.created_steps.clear()
         self.updated_steps.clear()
         self.created_tasks.clear()
+        self.continuation_tasks.clear()
         self._created_ids.clear()
         self._updated_ids.clear()
+        self._continuation_step_ids.clear()
 
 
 @runtime_checkable
@@ -167,22 +178,32 @@ class PersistenceAPI(Protocol):
         ]
 
     def get_pending_resume_workflow_ids(self) -> list[str]:
-        """Get workflow IDs that have EventTransmit steps with pending transitions.
+        """Get workflow IDs that have steps needing resume processing.
 
-        These are steps where an external handler has completed (via
-        continue_step) but the subsequent resume failed to advance
-        the step.  The default implementation scans all steps; subclasses
-        should override with an efficient database query.
+        Finds steps at EventTransmit with pending transitions, or at
+        intermediate states (BlocksBegin/Continue) that need the
+        evaluator to advance them.  The default implementation scans
+        all steps; subclasses should override with an efficient query.
 
         Returns:
             Distinct workflow IDs needing resume
         """
         from .states import StepState
 
+        # Begin states indicate a step that was advanced by continue_step
+        # but not yet processed by the evaluator.
+        intermediate_states = {
+            StepState.STATEMENT_BLOCKS_BEGIN,
+            StepState.BLOCK_EXECUTION_BEGIN,
+        }
         seen: set[str] = set()
         for step in self.get_steps_by_state(StepState.EVENT_TRANSMIT):
             if step.transition.is_requesting_state_change and step.workflow_id not in seen:
                 seen.add(step.workflow_id)
+        for state in intermediate_states:
+            for step in self.get_steps_by_state(state):
+                if step.workflow_id not in seen:
+                    seen.add(step.workflow_id)
         return list(seen)
 
     @abstractmethod

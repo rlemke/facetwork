@@ -66,6 +66,7 @@ from .entities import (
 )
 from .evaluator import Evaluator, ExecutionResult, ExecutionStatus
 from .persistence import PersistenceAPI
+from .states import StepState
 from .types import AttributeValue, generate_id
 
 logger = logging.getLogger(__name__)
@@ -332,32 +333,48 @@ class RegistryRunner:
         """Run a single poll cycle (synchronous, for testing).
 
         Does not use the thread pool executor. Claims and processes
-        tasks sequentially.
+        tasks sequentially.  Also processes continuation tasks.
 
         Returns:
             Number of tasks dispatched.
         """
         self._maybe_refresh_registry()
 
-        if not self._registered_names:
-            return 0
-
         capacity = self._config.max_concurrent - self._active_count()
         if capacity <= 0:
             return 0
 
         dispatched = 0
-        task_names = list(self._registered_names)
+
+        # Claim handler tasks
+        if self._registered_names:
+            task_names = list(self._registered_names)
+            while capacity > 0:
+                task = self._persistence.claim_task(
+                    task_names=task_names,
+                    task_list=self._config.task_list,
+                    server_id=self._server_id,
+                )
+                if task is None:
+                    break
+                self._process_event(task)
+                capacity -= 1
+                dispatched += 1
+
+        # Claim continuation tasks (may have been generated during
+        # handler processing above).  Loop until no more continuations
+        # are available — each processed continuation may generate more.
+        from .continuation import CONTINUATION_TASK_LIST, CONTINUATION_TASK_NAME
 
         while capacity > 0:
             task = self._persistence.claim_task(
-                task_names=task_names,
-                task_list=self._config.task_list,
+                task_names=[CONTINUATION_TASK_NAME],
+                task_list=CONTINUATION_TASK_LIST,
                 server_id=self._server_id,
             )
             if task is None:
                 break
-            self._process_event(task)
+            self._process_continuation(task)
             capacity -= 1
             dispatched += 1
 
@@ -503,7 +520,7 @@ class RegistryRunner:
             self._stopping.wait(interval_s)
 
     def _poll_cycle(self) -> int:
-        """Single poll cycle: claim and dispatch tasks.
+        """Single poll cycle: claim and dispatch handler + continuation tasks.
 
         Returns:
             Number of tasks dispatched.
@@ -514,21 +531,35 @@ class RegistryRunner:
         if capacity <= 0:
             return 0
 
-        if not self._registered_names:
-            return 0
-
         dispatched = 0
-        task_names = list(self._registered_names)
+
+        # Claim handler tasks
+        if self._registered_names:
+            task_names = list(self._registered_names)
+            while capacity > 0:
+                task = self._persistence.claim_task(
+                    task_names=task_names,
+                    task_list=self._config.task_list,
+                    server_id=self._server_id,
+                )
+                if task is None:
+                    break
+                self._submit_event(task)
+                capacity -= 1
+                dispatched += 1
+
+        # Claim continuation tasks (internal step-processing events)
+        from .continuation import CONTINUATION_TASK_LIST, CONTINUATION_TASK_NAME
 
         while capacity > 0:
             task = self._persistence.claim_task(
-                task_names=task_names,
-                task_list=self._config.task_list,
+                task_names=[CONTINUATION_TASK_NAME],
+                task_list=CONTINUATION_TASK_LIST,
                 server_id=self._server_id,
             )
             if task is None:
                 break
-            self._submit_event(task)
+            self._submit_continuation(task)
             capacity -= 1
             dispatched += 1
 
@@ -554,17 +585,85 @@ class RegistryRunner:
         with self._active_lock:
             self._active_futures.append(future)
 
+    def _submit_continuation(self, task: Any) -> None:
+        """Submit a continuation task to the thread pool."""
+        if self._executor is None:
+            self._process_continuation(task)
+            return
+
+        future = self._executor.submit(self._process_continuation, task)
+        with self._active_lock:
+            self._active_futures.append(future)
+
+    def _process_continuation(self, task: Any) -> None:
+        """Process a continuation task by running process_single_step.
+
+        Continuation tasks notify a step that one of its children has
+        progressed.  The step is re-evaluated, which may complete a
+        foreach block, advance a dependency graph, or generate further
+        continuation events.
+        """
+        step_id = task.data.get("step_id") if task.data else task.step_id
+        workflow_id = task.workflow_id
+
+        try:
+            workflow_ast = self._ast_cache.get(workflow_id)
+            if workflow_ast is None:
+                workflow_ast = self._load_workflow_ast(workflow_id)
+                if workflow_ast:
+                    self._ast_cache[workflow_id] = workflow_ast
+
+            if workflow_ast is None:
+                logger.warning(
+                    "No AST for continuation task (workflow=%s step=%s), skipping",
+                    workflow_id,
+                    step_id,
+                )
+                task.state = TaskState.FAILED
+                task.error = {"message": "No workflow AST available"}
+                task.updated = _current_time_ms()
+                self._persistence.save_task(task)
+                return
+
+            program_ast = self._program_ast_cache.get(workflow_id)
+            result = self._evaluator.process_single_step(
+                step_id=step_id,
+                workflow_ast=workflow_ast,
+                program_ast=program_ast,
+                runner_id=task.runner_id,
+                dispatcher=self._dispatcher,
+            )
+
+            task.state = TaskState.COMPLETED
+            task.updated = _current_time_ms()
+            self._persistence.save_task(task)
+
+            if result.status in (ExecutionStatus.COMPLETED, ExecutionStatus.ERROR):
+                self._update_runner_terminal_state(workflow_id, result)
+
+        except Exception as exc:
+            logger.warning(
+                "Continuation task failed: step=%s workflow=%s error=%s",
+                step_id,
+                workflow_id,
+                exc,
+            )
+            task.state = TaskState.FAILED
+            task.error = {"message": str(exc)}
+            task.updated = _current_time_ms()
+            self._persistence.save_task(task)
+
     # =========================================================================
     # Stuck-Step Recovery Sweep
     # =========================================================================
 
     def _maybe_sweep_stuck_steps(self) -> None:
-        """Periodically resume workflows with steps stuck at EventTransmit.
+        """Periodically process stuck steps directly.
 
-        After continue_step() persists request_transition=True, the
-        subsequent _resume_workflow() may fail silently (AST not found,
-        evaluator exception, etc.).  This sweep retries the resume so
-        that steps don't stay stuck indefinitely.
+        Safety net for steps that should have been processed but weren't
+        (e.g. lost continuation events, server crashes).  Processes
+        stuck steps via process_single_step, which follows the parent
+        chain and generates continuation events as needed.
         """
         now = _current_time_ms()
         if now - self._last_sweep < self._sweep_interval_ms:
@@ -573,13 +672,39 @@ class RegistryRunner:
 
         try:
             workflow_ids = self._persistence.get_pending_resume_workflow_ids()
-            if workflow_ids:
-                logger.info(
-                    "Stuck-step sweep: %d workflow(s) need resume",
-                    len(workflow_ids),
-                )
+            if not workflow_ids:
+                return
+
+            logger.info(
+                "Stuck-step sweep: %d workflow(s) need resume",
+                len(workflow_ids),
+            )
+
             for wf_id in workflow_ids:
-                self._resume_workflow(wf_id)
+                steps = self._persistence.get_actionable_steps_by_workflow(wf_id)
+                for step in steps:
+                    if StepState.is_terminal(step.state):
+                        continue
+                    if (
+                        step.state == StepState.EVENT_TRANSMIT
+                        and not step.transition.is_requesting_state_change
+                    ):
+                        continue
+
+                    workflow_ast = self._ast_cache.get(wf_id)
+                    if workflow_ast is None:
+                        workflow_ast = self._load_workflow_ast(wf_id)
+                        if workflow_ast:
+                            self._ast_cache[wf_id] = workflow_ast
+                    if workflow_ast:
+                        program_ast = self._program_ast_cache.get(wf_id)
+                        self._evaluator.process_single_step(
+                            step_id=step.id,
+                            workflow_ast=workflow_ast,
+                            program_ast=program_ast,
+                            dispatcher=self._dispatcher,
+                        )
+
         except Exception:
             logger.debug("Stuck-step sweep failed", exc_info=True)
 
@@ -790,7 +915,9 @@ class RegistryRunner:
             # Continue the step with the result
             self._evaluator.continue_step(task.step_id, result)
 
-            # Resume the workflow
+            # Resume the workflow — process_single_step handles the
+            # continued step and cascades up to parent blocks.
+            # Falls back to full resume() for complex inline dispatch.
             self._resume_workflow(task.workflow_id, task.runner_id)
 
             # Mark task completed

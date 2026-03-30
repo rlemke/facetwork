@@ -91,6 +91,11 @@ class VersionInfo:
     workflow_version: str = "1.0"
     step_schema_version: str = "1.0"
     runtime_version: str = "0.1.0"
+    sequence: int = 0  # Monotonic version for optimistic concurrency
+
+    def increment(self) -> None:
+        """Bump the optimistic concurrency counter."""
+        self.sequence += 1
 
 
 @dataclass

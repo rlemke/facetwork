@@ -1930,6 +1930,185 @@ class Evaluator:
                 status=ExecutionStatus.ERROR,
             )
 
+    def process_single_step(
+        self,
+        step_id: str,
+        workflow_ast: dict,
+        program_ast: dict | None = None,
+        runner_id: str = "",
+        dispatcher: "HandlerDispatcher | None" = None,
+    ) -> ExecutionResult:
+        """Process a single step and generate continuation events.
+
+        Event-driven per-step processing suitable for multi-server
+        execution.  Processes the target step (and any children it
+        creates), then generates continuation tasks for parent blocks
+        so they can be picked up by any server.
+
+        All changes (step updates, new steps, handler tasks, and
+        continuation tasks) are committed atomically.
+
+        Args:
+            step_id: The step to process
+            workflow_ast: The workflow AST
+            program_ast: Optional full program AST
+            runner_id: Optional runner ID
+            dispatcher: Optional handler dispatcher for inline execution
+
+        Returns:
+            ExecutionResult
+        """
+        from .continuation import generate_continuation_events
+
+        step = self.persistence.get_step(step_id)
+        if step is None:
+            logger.warning("process_single_step: step %s not found", step_id)
+            return ExecutionResult(
+                success=False,
+                workflow_id="",
+                error=ValueError(f"Step {step_id} not found"),
+                status=ExecutionStatus.ERROR,
+            )
+
+        workflow_id_val = step.workflow_id
+        logger.info(
+            "process_single_step: step_id=%s workflow_id=%s state=%s",
+            step_id,
+            workflow_id_val,
+            step.state,
+        )
+
+        defaults = self._extract_defaults(workflow_ast, {})
+
+        context = ExecutionContext(
+            persistence=self.persistence,
+            telemetry=self.telemetry,
+            changes=IterationChanges(),
+            workflow_id=workflow_id_val,
+            workflow_ast=workflow_ast,
+            workflow_defaults=defaults,
+            program_ast=program_ast,
+            runner_id=runner_id,
+            dispatcher=dispatcher,
+            _dirty_blocks=set(),
+        )
+
+        try:
+            max_rounds = 50
+            total_rounds = 0
+
+            # Start with the target step
+            work_queue: list[str] = [step_id]
+
+            for _round in range(max_rounds):
+                if not work_queue:
+                    break
+
+                context.changes = IterationChanges()
+                context._dirty_blocks = set()
+                processed_ids: set[str] = set()
+
+                # Process all steps in the current batch
+                for current_id in work_queue:
+                    if current_id in processed_ids:
+                        continue
+                    s = self.persistence.get_step(current_id)
+                    if s is None or s.is_terminal:
+                        continue
+                    processed_ids.add(s.id)
+                    self._process_step(s, context)
+
+                # Process any newly created children (cascading creation)
+                while True:
+                    unprocessed = [
+                        s for s in context.changes.created_steps
+                        if s.id not in processed_ids
+                    ]
+                    if not unprocessed:
+                        break
+                    for ns in unprocessed:
+                        processed_ids.add(ns.id)
+                        self._process_step(ns, context)
+
+                if not context.changes.has_changes:
+                    break
+
+                # Bump version on updated steps for optimistic concurrency
+                for s in context.changes.updated_steps:
+                    s.version.increment()
+
+                self._commit_iteration(context)
+                total_rounds += 1
+
+                # Build next round's work queue from notified parents.
+                # This follows the parent chain up to the root within
+                # the same call — no separate continuation tasks needed
+                # for intra-process cascading.
+                work_queue = [
+                    bid for bid in context._dirty_blocks
+                    if bid not in processed_ids
+                ]
+
+            # Generate continuation events only for remaining dirty
+            # blocks that weren't processed (e.g., steps on other
+            # servers' workflows, or if we hit the round limit).
+            remaining_dirty = {
+                bid for bid in (context._dirty_blocks or set())
+                if bid not in processed_ids
+            }
+            if remaining_dirty:
+                context.changes = IterationChanges()
+                generate_continuation_events(
+                    context.changes,
+                    dirty_blocks=remaining_dirty,
+                )
+                if context.changes.has_changes:
+                    # Need workflow_id for the continuation tasks
+                    for t in context.changes.continuation_tasks:
+                        t.workflow_id = workflow_id_val
+                    self._commit_iteration(context)
+
+            # Check if workflow completed
+            root = self.persistence.get_workflow_root(workflow_id_val)
+            if root and root.is_complete:
+                outputs = {name: attr.value for name, attr in root.attributes.returns.items()}
+                return ExecutionResult(
+                    success=True,
+                    workflow_id=workflow_id_val,
+                    outputs=outputs,
+                    iterations=1,
+                    status=ExecutionStatus.COMPLETED,
+                )
+            elif root and root.is_error:
+                return ExecutionResult(
+                    success=False,
+                    workflow_id=workflow_id_val,
+                    error=root.transition.error or Exception("Workflow error"),
+                    iterations=1,
+                    status=ExecutionStatus.ERROR,
+                )
+
+            return ExecutionResult(
+                success=True,
+                workflow_id=workflow_id_val,
+                iterations=1,
+                status=ExecutionStatus.PAUSED,
+            )
+
+        except Exception as e:
+            logger.error(
+                "process_single_step failed: step_id=%s error=%s",
+                step_id,
+                e,
+                exc_info=True,
+            )
+            return ExecutionResult(
+                success=False,
+                workflow_id=workflow_id_val,
+                error=e,
+                status=ExecutionStatus.ERROR,
+            )
+
     def _commit_iteration(self, context: ExecutionContext) -> None:
         """Commit all changes from an iteration.
 
@@ -1938,11 +2117,12 @@ class Evaluator:
         """
         if context.changes.has_changes:
             logger.info(
-                "Iteration commit: workflow_id=%s created_steps=%d updated_steps=%d created_tasks=%d",
+                "Iteration commit: workflow_id=%s created=%d updated=%d tasks=%d continuations=%d",
                 context.workflow_id,
                 len(context.changes.created_steps),
                 len(context.changes.updated_steps),
                 len(context.changes.created_tasks),
+                len(context.changes.continuation_tasks),
             )
             self.persistence.commit(context.changes)
             context.changes.clear()

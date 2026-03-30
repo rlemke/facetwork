@@ -427,7 +427,23 @@ class MongoStore(PersistenceAPI):
 
         for step in changes.updated_steps:
             doc = self._step_to_doc(step)
-            self._db.steps.replace_one({"uuid": step.id}, doc, **kwargs)
+            # Optimistic concurrency: if the step has a non-zero sequence,
+            # only update if the DB version matches (previous sequence).
+            seq = step.version.sequence if step.version else 0
+            if seq > 0:
+                prev_seq = seq - 1
+                result = self._db.steps.replace_one(
+                    {"uuid": step.id, "version.sequence": prev_seq},
+                    doc,
+                    **kwargs,
+                )
+                if result.matched_count == 0:
+                    # Fallback: unconditional write (step may have been
+                    # created before version tracking was added, or
+                    # another server already advanced it).
+                    self._db.steps.replace_one({"uuid": step.id}, doc, **kwargs)
+            else:
+                self._db.steps.replace_one({"uuid": step.id}, doc, **kwargs)
 
         for task in changes.created_tasks:
             if task.step_id and task.step_id in skipped_step_ids:
@@ -439,6 +455,17 @@ class MongoStore(PersistenceAPI):
                 continue
             doc = self._task_to_doc(task)
             self._db.tasks.insert_one(doc, **kwargs)
+
+        # Continuation tasks — persisted atomically with step changes
+        for task in changes.continuation_tasks:
+            doc = self._task_to_doc(task)
+            try:
+                self._db.tasks.insert_one(doc, **kwargs)
+            except DuplicateKeyError:
+                logger.debug(
+                    "Skipping duplicate continuation task: step_id=%s",
+                    task.step_id,
+                )
 
     # =========================================================================
     # Runner Operations
@@ -1153,6 +1180,7 @@ class MongoStore(PersistenceAPI):
                 "workflow_version": step.version.workflow_version,
                 "step_schema_version": step.version.step_schema_version,
                 "runtime_version": step.version.runtime_version,
+                "sequence": step.version.sequence,
             }
             if step.version
             else {},
@@ -1223,6 +1251,7 @@ class MongoStore(PersistenceAPI):
                 workflow_version=version_doc.get("workflow_version", "1.0"),
                 step_schema_version=version_doc.get("step_schema_version", "1.0"),
                 runtime_version=version_doc.get("runtime_version", "0.1.0"),
+                sequence=version_doc.get("sequence", 0),
             )
         else:
             step.version = VersionInfo()

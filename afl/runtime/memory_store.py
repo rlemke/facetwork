@@ -222,6 +222,10 @@ class MemoryStore(PersistenceAPI):
         for task in changes.created_tasks:
             self.save_task(task)
 
+        # Save continuation tasks
+        for task in changes.continuation_tasks:
+            self.save_task(task)
+
     def get_workflow_root(self, workflow_id: str) -> StepDefinition | None:
         """Get the root step of a workflow."""
         step_ids = self._steps_by_workflow.get(workflow_id, [])

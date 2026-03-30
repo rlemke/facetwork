@@ -1450,10 +1450,10 @@ class TestStuckStepSweep:
         event_steps = [s for s in store._steps.values() if s.state == StepState.EVENT_TRANSMIT]
         evaluator.continue_step(event_steps[0].id, {"output": 42})
 
-        # Step is still at EventTransmit (with request_transition=True)
+        # Step has advanced past EventTransmit to StatementBlocksBegin
+        # (continue_step advances the state but does not run the handler)
         step = store.get_step(event_steps[0].id)
-        assert step.state == StepState.EVENT_TRANSMIT
-        assert step.transition.is_requesting_state_change
+        assert step.state == StepState.STATEMENT_BLOCKS_BEGIN
 
         # Create runner and trigger sweep
         runner = RegistryRunner(
