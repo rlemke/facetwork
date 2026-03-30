@@ -792,3 +792,316 @@ resume:           resume:           resume:           resume:
 ```
 
 The last server to complete a block's final event facet drives that block to completion. The last server to complete a block overall drives the entire workflow to completion.
+
+---
+
+## Trace 3: Concurrent Continuations and Idempotent Block Assessment
+
+Seven independent event facets completing concurrently across multiple servers. This trace emphasizes the **continuation storm** that occurs when many siblings complete near-simultaneously, and how the block's Continue handler safely handles duplicate and late-arriving continuations.
+
+### AFL Source
+
+```afl
+namespace test.example {
+    event facet AddOne(input:Long) => (output: Long)
+    facet Value(value:Long)
+
+    workflow ContinueIgnores(input:Long) => (output:[Long]) andThen {
+        s1 = AddOne(input = $.input)
+        s2 = AddOne(input = 2)
+        s3 = AddOne(input = 3)
+        s4 = AddOne(input = 4)
+        s5 = AddOne(input = 5)
+        s6 = AddOne(input = 6)
+        s7 = AddOne(input = 7)
+        s8 = Value(value = s1.output ++ s2.output ++ s3.output ++ s4.output
+                         ++ s5.output ++ s6.output ++ s7.output)
+        yield ContinueIgnores(output = s8.value)
+    }
+}
+```
+
+### Design Point: The Continuation Storm Problem
+
+When 7 event facets complete near-simultaneously across 7 servers, each server:
+1. Calls `continue_step()` for its step
+2. Calls `_resume_workflow()` or `process_single_step()` which processes the step and notifies the parent block
+
+This means the parent block (block-0) receives **7 continuation notifications** — one per completed child. Each notification triggers a `BlockExecutionContinueHandler` execution that loads all children, counts completions, and decides whether the block is done.
+
+The critical scenario: **Server G completes s7 (the last step) and advances the block to Complete. But Server F's continuation for s6 arrives moments later, targeting a block that has already completed.** The block's Continue handler must be idempotent — processing a continuation for an already-completed block must be a no-op.
+
+### Dependency Graph
+
+```
+s1 ──┐
+s2 ──┤
+s3 ──┤
+s4 ──┼──→ s8 ──→ yield
+s5 ──┤
+s6 ──┤
+s7 ──┘
+```
+
+All 7 AddOne steps are independent. s8 depends on all 7. The `++` operator concatenates values into a list.
+
+### Step Hierarchy
+
+```
+ContinueIgnores (root)
+└── block-0 (AndThen)
+    ├── s1 = AddOne(input=$.input)   ← event facet
+    ├── s2 = AddOne(input=2)         ← event facet
+    ├── s3 = AddOne(input=3)         ← event facet
+    ├── s4 = AddOne(input=4)         ← event facet
+    ├── s5 = AddOne(input=5)         ← event facet
+    ├── s6 = AddOne(input=6)         ← event facet
+    ├── s7 = AddOne(input=7)         ← event facet
+    ├── s8 = Value(value=...)        ← regular facet, depends on all 7
+    └── yield(output=s8.value)
+```
+
+With `input = 1`:
+- Expected: `s1.output=2, s2.output=3, s3.output=4, s4.output=5, s5.output=6, s6.output=7, s7.output=8`
+- `s8.value = [2, 3, 4, 5, 6, 7, 8]`
+- `output = [2, 3, 4, 5, 6, 7, 8]`
+
+---
+
+### Phase 1: Initial Execution (input=1)
+
+#### Iteration 1
+
+Root step created, state machine runs to `StatementBlocksBegin`. Creates block-0. Block-0's `BlockExecutionBeginHandler` builds the dependency graph:
+
+| Statement | Dependencies | Ready? |
+|-----------|-------------|--------|
+| s1–s7 | none | **yes** (all 7) |
+| s8 | s1, s2, s3, s4, s5, s6, s7 | no |
+| yield | s8 | no |
+
+Creates 7 steps and processes each through state machine to `EventTransmit` where each **BLOCKS** and creates a task:
+
+| Task | Step | Params |
+|------|------|--------|
+| Task 1 | s1 | `{input: 1}` |
+| Task 2 | s2 | `{input: 2}` |
+| Task 3 | s3 | `{input: 3}` |
+| Task 4 | s4 | `{input: 4}` |
+| Task 5 | s5 | `{input: 5}` |
+| Task 6 | s6 | `{input: 6}` |
+| Task 7 | s7 | `{input: 7}` |
+
+#### Commit 1 (atomic)
+
+| Category | Count |
+|----------|-------|
+| **Created steps** | 9 (root, block-0, s1–s7) |
+| **Updated steps** | 2 (root → `blocks.Continue`, block-0 → `execution.Continue`) |
+| **Created tasks** | 7 |
+
+**Evaluator returns `PAUSED`.** Seven tasks visible to runners.
+
+---
+
+### Phase 2: The Continuation Storm (7 servers, near-simultaneous)
+
+Seven servers each claim one task. In a real deployment, handlers complete at slightly different times due to network latency, CPU load, and task complexity.
+
+| Server | Claims | Handler Input | Handler Output | Completes At |
+|--------|--------|--------------|----------------|-------------|
+| A | s1 | `{input: 1}` | `{output: 2}` | T+10ms |
+| B | s2 | `{input: 2}` | `{output: 3}` | T+12ms |
+| C | s3 | `{input: 3}` | `{output: 4}` | T+11ms |
+| D | s4 | `{input: 4}` | `{output: 5}` | T+15ms |
+| E | s5 | `{input: 5}` | `{output: 6}` | T+13ms |
+| F | s6 | `{input: 6}` | `{output: 7}` | T+14ms |
+| G | s7 | `{input: 7}` | `{output: 8}` | T+16ms |
+
+Each server independently:
+1. `continue_step(step_id, result)` — advances step to `StatementBlocksBegin`
+2. `_resume_workflow()` → `resume()` — processes the step to Complete, then evaluates block-0
+
+---
+
+### Phase 3: Detailed Continuation Processing
+
+We trace what each server sees when it evaluates block-0's Continue handler after its step completes. The key insight is that **each server loads the current state of ALL children from persistence** — it sees the latest committed state, which includes completions from other servers that committed before it.
+
+#### T+10ms — Server A completes s1
+
+`continue_step(s1, {output: 2})` → `resume()`:
+- s1: `StatementBlocksBegin → ... → StatementComplete ✓`
+- **block-0 Continue handler loads children:**
+  - s1: Complete ✓ (just completed)
+  - s2–s7: EventTransmit (still blocked)
+  - **1/7 complete → not done → `stay(push=True)`**
+
+Commit: `s1 → Complete`
+
+#### T+11ms — Server C completes s3
+
+`continue_step(s3, {output: 4})` → `resume()`:
+- s3: `→ StatementComplete ✓`
+- **block-0 Continue handler loads children:**
+  - s1: Complete ✓ (from Server A's commit)
+  - s3: Complete ✓ (just completed)
+  - s2, s4–s7: EventTransmit
+  - **2/7 complete → not done → `stay(push=True)`**
+
+Commit: `s3 → Complete`
+
+#### T+12ms — Server B completes s2
+
+- s2: `→ StatementComplete ✓`
+- **block-0 Continue: 3/7 complete → not done**
+
+#### T+13ms — Server E completes s5
+
+- s5: `→ StatementComplete ✓`
+- **block-0 Continue: 4/7 complete → not done**
+
+#### T+14ms — Server F completes s6
+
+- s6: `→ StatementComplete ✓`
+- **block-0 Continue: 5/7 complete → not done**
+
+#### T+15ms — Server D completes s4
+
+- s4: `→ StatementComplete ✓`
+- **block-0 Continue: 6/7 complete → not done**
+
+#### T+16ms — Server G completes s7 (the last step)
+
+`continue_step(s7, {output: 8})` → `resume()`:
+- s7: `→ StatementComplete ✓`
+- **block-0 Continue handler loads children:**
+  - s1–s7: ALL Complete ✓
+  - **7/7 complete → all dependencies for s8 satisfied!**
+
+Creates s8:
+- Expression evaluator: `value = s1.output ++ s2.output ++ ... ++ s7.output = [2, 3, 4, 5, 6, 7, 8]`
+- s8 is a regular facet → completes inline: `StatementComplete ✓` with `returns = {value: [2, 3, 4, 5, 6, 7, 8]}`
+
+Creates yield:
+- `output = s8.value = [2, 3, 4, 5, 6, 7, 8]` → `StatementComplete ✓`
+
+block-0: all 9 children complete → `StatementComplete ✓`
+
+Root: block-0 complete → `StatementCaptureBegin` (merges yield) → `StatementComplete ✓`
+
+**Commit: s7, s8, yield, block-0, root → all Complete**
+
+**Workflow COMPLETED with `{output: [2, 3, 4, 5, 6, 7, 8]}`**
+
+---
+
+### Phase 4: Late Continuation — The Idempotency Guarantee
+
+Here is the critical scenario. Server F completed s6 at T+14ms and committed `s6 → Complete`. Its `resume()` call evaluated block-0 and found 5/7 complete → not done → returned `PAUSED`.
+
+But what if Server F's `resume()` was **slow** (e.g., MongoDB connection delay) and didn't commit until T+17ms — **after Server G already completed the workflow?**
+
+```
+Timeline:
+  T+14ms  Server F: handler returns {output: 7}
+  T+14ms  Server F: continue_step(s6, {output: 7}) — saves s6 to persistence
+  T+16ms  Server G: handler returns, continue_step(s7), resume()
+  T+16ms  Server G: block-0 sees 7/7 → creates s8, yield → block-0 ✓ → root ✓
+  T+17ms  Server F: resume() finally starts executing
+```
+
+**What happens when Server F's `resume()` runs at T+17ms?**
+
+The `resume()` call loads actionable steps. But:
+
+1. **s6 is already at `StatementComplete`** — terminal state, skipped by `_process_step()`
+2. **block-0 is already at `StatementComplete`** — terminal state, skipped
+3. **Root is already at `StatementComplete`** — terminal state, skipped
+4. **No actionable steps remain** — no progress, no event-blocked steps
+5. **`resume()` returns `COMPLETED`** — the workflow is already done
+
+**No harm done.** Server F's late resume is a no-op. It observes the final state and exits cleanly.
+
+#### The `process_single_step()` Path (distributed mode)
+
+In the per-step processing model, the situation is even simpler. When Server G's `process_single_step(s7)` completes the workflow, it commits everything atomically. If Server F subsequently calls `process_single_step(block-0)` via a continuation task:
+
+1. Loads block-0 from persistence → state is `StatementComplete` (terminal)
+2. `process_single_step()` detects `step.is_terminal` → returns immediately
+3. Continuation task marked `COMPLETED` — no work done, no harm
+
+#### The `continue_step()` Idempotency
+
+What if two servers call `continue_step()` for the same step? This cannot happen under normal operation — `claim_task()` is atomic, so only one server gets each task. But if it did (e.g., task reprocessing after crash recovery):
+
+1. First call: step at `EventTransmit` → advances to `StatementBlocksBegin`, saves
+2. Second call: step at `StatementBlocksBegin` (not `EventTransmit`) → raises `ValueError("Step X is at state.statement.blocks.Begin, expected state.EventTransmit")` → caller handles the error, no corruption
+
+If the step already reached a terminal state:
+1. `continue_step()` detects `step.is_terminal` → logs warning, returns (no-op)
+
+---
+
+### Idempotency Guarantees — Summary
+
+The runtime provides multiple layers of idempotency protection for concurrent continuations:
+
+| Scenario | Protection | Outcome |
+|----------|-----------|---------|
+| Block Continue handler runs after block already completed | `step.is_terminal` check in `_process_step()` | Handler never runs, no-op |
+| Continuation task targets a completed step | `step.is_terminal` check in `process_single_step()` | Returns immediately, task marked completed |
+| `resume()` runs after workflow already completed | No actionable steps remain | Returns `COMPLETED`, no-op |
+| `continue_step()` called twice for same step | State check: expected `EventTransmit` | Second call raises error or is no-op (terminal) |
+| Two servers process the same continuation task | `claim_task()` is atomic (`findOneAndUpdate`) | Only one server gets the task |
+| Optimistic concurrency conflict on step update | `version.sequence` check in `replace_one` | Loser's write falls back safely |
+| Block Continue handler creates s8 twice | `step_exists(statement_id, block_id)` check | Duplicate creation prevented |
+
+**The fundamental principle:** every handler, every Continue evaluation, every continuation task processing is designed to be safe to re-execute. The worst case is wasted work (loading children, counting completions, discovering it's already done) — never corruption or duplicate side effects.
+
+---
+
+### Execution Summary
+
+| Step | Facet | Task? | Result | Server |
+|------|-------|-------|--------|--------|
+| root | ContinueIgnores | No | `{output: [2,3,4,5,6,7,8]}` | G (final) |
+| block-0 | — | No | — | G (final) |
+| s1 | AddOne | **Yes** | `{output: 2}` | A |
+| s2 | AddOne | **Yes** | `{output: 3}` | B |
+| s3 | AddOne | **Yes** | `{output: 4}` | C |
+| s4 | AddOne | **Yes** | `{output: 5}` | D |
+| s5 | AddOne | **Yes** | `{output: 6}` | E |
+| s6 | AddOne | **Yes** | `{output: 7}` | F |
+| s7 | AddOne | **Yes** | `{output: 8}` | G |
+| s8 | Value | No | `{value: [2,3,4,5,6,7,8]}` | G (inline) |
+| yield | ContinueIgnores | No | `{output: [2,3,4,5,6,7,8]}` | G (inline) |
+
+**Totals:**
+- **Steps created:** 11
+- **External handler invocations:** 7 (fully parallelizable across 7 servers)
+- **Persistence commits:** 8 (initial + 7 handler completions; the last one cascades s8, yield, block-0, root)
+- **Continuation notifications to block-0:** 7 (one per handler completion)
+- **Continuations that actually advanced the block:** 1 (the 7th, which found all children complete)
+- **Wasted block evaluations:** 6 (each loaded children, counted completions, found incomplete, returned)
+- **Final output:** `{output: [2, 3, 4, 5, 6, 7, 8]}`
+
+### Multi-Server Timeline
+
+```
+T+0ms   Evaluator: execute() → 7 tasks created → PAUSED
+
+T+10ms  Server A: s1 handler done → continue → resume → block-0: 1/7 → PAUSED
+T+11ms  Server C: s3 handler done → continue → resume → block-0: 2/7 → PAUSED
+T+12ms  Server B: s2 handler done → continue → resume → block-0: 3/7 → PAUSED
+T+13ms  Server E: s5 handler done → continue → resume → block-0: 4/7 → PAUSED
+T+14ms  Server F: s6 handler done → continue → resume → block-0: 5/7 → PAUSED
+T+15ms  Server D: s4 handler done → continue → resume → block-0: 6/7 → PAUSED
+T+16ms  Server G: s7 handler done → continue → resume → block-0: 7/7!
+                  → s8 created (inline) → yield created (inline)
+                  → block-0 ✓ → root ✓ → COMPLETED {output: [2,3,4,5,6,7,8]}
+
+T+17ms  Server F: (late resume from slow MongoDB) → all steps terminal → no-op
+```
+
+**Key takeaway:** In a 7-server deployment, all handlers run in parallel. The total wall-clock time is determined by the slowest handler, not the sum. Each intermediate block evaluation (6 wasted) costs only a few milliseconds of database reads. The system prioritizes correctness (idempotent re-evaluation) over eliminating redundant work.
