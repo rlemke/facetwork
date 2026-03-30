@@ -246,11 +246,17 @@ def task_progress_partial(
     for t in tasks:
         if t.state == "completed":
             continue
-        # Extract region from task data
+        # Extract region from task data (may be a plain string or
+        # an AttributeValue dict with {name, value, type_hint})
         data = t.data if isinstance(t.data, dict) else {}
         region = data.get("region", "")
+        if isinstance(region, dict):
+            region = region.get("value", "")
         if not region and isinstance(data.get("cache"), dict):
-            region = data["cache"].get("region", "")
+            cache = data["cache"]
+            region = cache.get("region", "")
+            if isinstance(region, dict):
+                region = region.get("value", "")
 
         # Get last log for this step
         last_log_entry = store._db.step_logs.find_one(
