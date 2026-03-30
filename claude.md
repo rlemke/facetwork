@@ -81,6 +81,8 @@ scripts/postgis-kill-vacuum        # kill autovacuum blocking imports
 |-------|----------|
 | AFL syntax | [spec/10_language.md](spec/10_language.md) |
 | Runtime execution model | [spec/30_runtime.md](spec/30_runtime.md) |
+| Distributed step processing | [spec/30_runtime.md §10.3.1](spec/30_runtime.md) |
+| Runtime implementation details | [spec/31_runtime_impl.md](spec/31_runtime_impl.md) |
 | Building handlers | [spec/60_agent_sdk.md](spec/60_agent_sdk.md) |
 | LLM integration | [spec/61_llm_agent_integration.md](spec/61_llm_agent_integration.md) |
 | AFL examples | [spec/70_examples.md](spec/70_examples.md) |
