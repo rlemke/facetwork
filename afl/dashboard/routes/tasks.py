@@ -25,7 +25,6 @@ router = APIRouter(prefix="/tasks")
 
 def _count_tasks_by_state(store) -> dict[str, int]:
     """Count tasks per state for subnav tabs."""
-    all_tasks = store.get_all_tasks()
     counts: dict[str, int] = {
         "all": 0,
         "pending": 0,
@@ -35,11 +34,14 @@ def _count_tasks_by_state(store) -> dict[str, int]:
         "ignored": 0,
         "canceled": 0,
     }
-    for t in all_tasks:
-        counts["all"] += 1
-        s = t.state if isinstance(t.state, str) else t.state.value
-        if s in counts:
-            counts[s] += 1
+    for doc in store._db.tasks.aggregate([
+        {"$group": {"_id": "$state", "count": {"$sum": 1}}},
+    ]):
+        state = doc["_id"]
+        n = doc["count"]
+        counts["all"] += n
+        if state in counts:
+            counts[state] = n
     return counts
 
 
@@ -56,6 +58,21 @@ def _resolve_step_names(tasks, store) -> dict[str, str]:
     return step_names
 
 
+def _resolve_server_info(tasks, store) -> dict[str, dict]:
+    """Resolve server name and ping time for tasks."""
+    server_info: dict[str, dict] = {}
+    for task in tasks:
+        sid = task.server_id
+        if sid and sid not in server_info:
+            server = store.get_server(sid)
+            if server:
+                server_info[sid] = {
+                    "name": server.server_name,
+                    "ping_time": server.ping_time,
+                }
+    return server_info
+
+
 @router.get("")
 def task_list(request: Request, state: str | None = None, store=Depends(get_store)):
     """List all tasks, optionally filtered by state."""
@@ -65,6 +82,7 @@ def task_list(request: Request, state: str | None = None, store=Depends(get_stor
         tasks = store.get_all_tasks()
 
     step_names = _resolve_step_names(tasks, store)
+    server_info = _resolve_server_info(tasks, store)
     tab_counts = _count_tasks_by_state(store)
 
     return request.app.state.templates.TemplateResponse(
@@ -74,6 +92,7 @@ def task_list(request: Request, state: str | None = None, store=Depends(get_stor
             "tasks": tasks,
             "filter_state": state,
             "step_names": step_names,
+            "server_info": server_info,
             "tab_counts": tab_counts,
             "active_tab": "tasks",
         },
@@ -89,11 +108,12 @@ def task_list_partial(request: Request, state: str | None = None, store=Depends(
         tasks = store.get_all_tasks()
 
     step_names = _resolve_step_names(tasks, store)
+    server_info = _resolve_server_info(tasks, store)
 
     return request.app.state.templates.TemplateResponse(
         request,
         "tasks/_table_content.html",
-        {"tasks": tasks, "filter_state": state, "step_names": step_names},
+        {"tasks": tasks, "filter_state": state, "step_names": step_names, "server_info": server_info},
     )
 
 

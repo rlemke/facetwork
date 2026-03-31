@@ -223,7 +223,7 @@ def task_progress_partial(
     if not runner:
         return HTMLResponse("")
 
-    tasks = list(store.get_tasks_by_runner(runner_id))
+    tasks = list(store.get_tasks_by_workflow(runner.workflow_id))
     now_ms = int(time.time() * 1000)
 
     # Build server name lookup

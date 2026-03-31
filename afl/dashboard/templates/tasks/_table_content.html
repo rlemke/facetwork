@@ -8,6 +8,8 @@
             <th>State</th>
             <th>Task List</th>
             <th>Runner</th>
+            <th>Server</th>
+            <th>Last Ping</th>
             <th>Duration</th>
             <th>Created</th>
         </tr>
@@ -21,6 +23,9 @@
             <td>{% with state=task.state %}{% include "partials/_state_badge.html" %}{% endwith %}</td>
             <td>{{ task.task_list_name }}</td>
             <td><a href="/v2/workflows/{{ task.runner_id }}" class="mono">{{ task.runner_id|truncate_uuid }}</a></td>
+            {% set si = server_info.get(task.server_id or '') %}
+            <td>{{ si['name'] if si else '—' }}</td>
+            <td>{{ si['ping_time']|timestamp if si else '—' }}</td>
             <td>{{ (task.updated - task.created)|duration }}</td>
             <td>{{ task.created|timestamp }}</td>
         </tr>

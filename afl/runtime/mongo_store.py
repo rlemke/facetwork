@@ -612,6 +612,11 @@ class MongoStore(PersistenceAPI):
         docs = self._db.tasks.find({"runner_id": runner_id})
         return [self._doc_to_task(doc) for doc in docs]
 
+    def get_tasks_by_workflow(self, workflow_id: str) -> Sequence[TaskDefinition]:
+        """Get all tasks for a workflow."""
+        docs = self._db.tasks.find({"workflow_id": workflow_id})
+        return [self._doc_to_task(doc) for doc in docs]
+
     def get_tasks_by_server_id(self, server_id: str, limit: int = 200) -> Sequence[TaskDefinition]:
         """Get tasks claimed by a specific server, most recent first."""
         docs = self._db.tasks.find({"server_id": server_id}).sort("updated", -1).limit(limit)
