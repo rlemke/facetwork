@@ -198,6 +198,25 @@ Copy `.env.example` to `.env` to configure MongoDB, scaling, overlays, and data 
 
 MongoDB, HDFS, and PostGIS run on external servers (defined in `/etc/hosts`): `afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn`, `afl-postgres` — they are **not** managed by Docker Compose.
 
+### Multi-server database access
+
+By default, the database start scripts bind to `127.0.0.1` (localhost only). To allow other machines to connect (e.g. runners on a second server), the databases must bind to `0.0.0.0`:
+
+- **MongoDB** — `scripts/start_mongo` uses `--bind_ip 0.0.0.0`. If you see `Connection refused` from remote hosts, verify the script has `0.0.0.0` (not `127.0.0.1`).
+- **PostgreSQL** — edit `postgresql.conf` and set `listen_addresses = '*'`, then ensure `pg_hba.conf` allows connections from the remote subnet (e.g. `host all all 0.0.0.0/0 md5`).
+
+On each remote server, add `/etc/hosts` entries pointing `afl-mongodb` and `afl-postgres` to the database server's IP address. Then start runners normally — they connect via the hostnames.
+
+```bash
+# On the database server:
+scripts/start_mongo                    # binds 0.0.0.0
+scripts/start_postgres                 # check listen_addresses in postgresql.conf
+
+# On each worker server:
+# /etc/hosts: 192.168.x.x afl-mongodb afl-postgres
+scripts/start-runner --example osm-geocoder -- --log-format text
+```
+
 Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets.
 
 Set `AFL_POSTGIS_URL` (e.g. `postgresql://afl:afl@afl-postgres:5432/afl_gis`) for PostGIS imports. Without this, the importer falls back to a hardcoded default that may not match your setup.
