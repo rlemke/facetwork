@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Diagnose and repair a stuck AFL workflow.
+#
+# Performs four checks:
+#   1. Runner state — if completed/failed but has non-terminal work, reset to running
+#   2. Orphaned tasks — running tasks on dead/shutdown servers → pending
+#   3. Transient step errors — connection/timeout errors → retry (EventTransmit)
+#   4. Ancestor blocks — reset errored ancestors so execution resumes
+#
+# Usage:
+#   scripts/repair-workflow <runner_id>
+#   scripts/repair-workflow --dry <runner_id>
+#
+# Environment:
+#   AFL_MONGODB_URL    MongoDB connection string (default from .env)
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$(dirname "$0")/_env.sh"
+
+DRY_RUN=false
+RUNNER_ID=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry)  DRY_RUN=true; shift ;;
+        -h|--help)
+            awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
+            exit 0
+            ;;
+        -*)     echo "Unknown option: $1" >&2; exit 1 ;;
+        *)      RUNNER_ID="$1"; shift ;;
+    esac
+done
+
+if [[ -z "$RUNNER_ID" ]]; then
+    echo "Usage: scripts/repair-workflow [--dry] <runner_id>" >&2
+    exit 1
+fi
+
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -c "
+import sys
+import json
+
+runner_id = '$RUNNER_ID'
+dry_run = '$DRY_RUN' == 'true'
+
+from afl.config import load_config
+from afl.runtime.mongo_store import MongoStore
+
+config = load_config()
+store = MongoStore(config.mongodb.connection_string(), config.mongodb.database)
+
+try:
+    result = store.repair_workflow(runner_id, dry_run=dry_run)
+except ValueError as e:
+    print(f'Error: {e}', file=sys.stderr)
+    sys.exit(1)
+
+prefix = '(dry run) ' if dry_run else ''
+
+print(f'=== {prefix}Workflow Repair: {result[\"runner_id\"][:12]} ===')
+print(f'Workflow: {result[\"workflow_id\"]}')
+print()
+
+if result['runner_reset']:
+    print(f'  Runner: reset from {result[\"runner_previous_state\"]} -> running')
+else:
+    print(f'  Runner: OK ({result[\"runner_previous_state\"]})')
+
+orphaned = result['orphaned_tasks_reset']
+print(f'  Orphaned tasks reset: {len(orphaned)}')
+for t in orphaned:
+    print(f'    {t[\"name\"]}  step={t[\"step_id\"][:12]}  server={t[\"server_id\"][:12] if t[\"server_id\"] else \"(none)\"}')
+
+retried = result['transient_steps_retried']
+print(f'  Transient errors retried: {len(retried)}')
+for s in retried:
+    print(f'    {s[\"facet_name\"] or s[\"step_id\"][:12]}  error={s[\"error_snippet\"]}')
+
+ancestors = result['ancestors_reset']
+print(f'  Ancestor blocks reset: {len(ancestors)}')
+
+inconsistent = result.get('inconsistent_steps_reset', [])
+print(f'  Inconsistent steps reset: {len(inconsistent)}')
+for s in inconsistent:
+    print(f'    {s["facet_name"] or s["step_id"][:12]}  (step=Complete, task={s["task_state"]})')
+
+total = (1 if result['runner_reset'] else 0) + len(orphaned) + len(retried) + len(ancestors) + len(inconsistent)
+if total == 0:
+    print()
+    print('No issues found.')
+else:
+    print()
+    print(f'{prefix}Applied {total} repair(s).')
+
+store._client.close()
+"

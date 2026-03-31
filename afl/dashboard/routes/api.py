@@ -65,6 +65,18 @@ def api_runner_detail(runner_id: str, store=Depends(get_store)):
     return JSONResponse(_runner_dict(runner))
 
 
+@router.post("/runners/{runner_id}/repair")
+def api_repair_workflow(runner_id: str, store=Depends(get_store)):
+    """Diagnose and repair a stuck workflow."""
+    try:
+        result = store.repair_workflow(runner_id)
+        return JSONResponse({"success": True, **result})
+    except ValueError as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
 @router.get("/runners/{runner_id}/steps")
 def api_runner_steps(
     runner_id: str,

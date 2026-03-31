@@ -75,6 +75,12 @@
         <button type="submit" class="secondary outline">Cancel</button>
     </form>
     {% endif %}
+    <button class="outline"
+            hx-post="/api/runners/{{ runner.uuid }}/repair"
+            hx-confirm="Repair this workflow? This will reset orphaned tasks, retry transient errors, and fix runner state."
+            hx-target="#repair-result"
+            hx-swap="innerHTML">Repair Workflow</button>
+    <span id="repair-result"></span>
 </div>
 
 <h2>Steps</h2>

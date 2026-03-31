@@ -270,6 +270,26 @@ The dashboard step detail page provides four recovery actions for failed or comp
 ### PostGIS data management
 PostGIS data directory: `/Volumes/afl_data/local_servers/postgis/data`. Start with `scripts/start_postgres`, tune with `scripts/postgis-tune`. After large import batches, run `scripts/postgis-vacuum` to reclaim space and update statistics. During bulk imports, autovacuum may compete for I/O — kill it with `scripts/postgis-kill-vacuum`. Tables have `autovacuum_analyze_threshold = 1,000,000` to reduce frequency during imports.
 
+### Workflow repair
+
+When a workflow gets stuck (e.g. after server restarts, MongoDB downtime, or premature runner completion), use `repair-workflow` to diagnose and fix all issues at once:
+
+```bash
+scripts/repair-workflow <runner_id>         # apply repairs
+scripts/repair-workflow --dry <runner_id>   # preview without changes
+```
+
+Also available as a dashboard button ("Repair Workflow" on workflow detail page) and MCP tool (`afl_repair_workflow`).
+
+The repair performs five checks:
+1. **Runner state** — if completed/failed but has non-terminal work, resets to running
+2. **Orphaned tasks** — running tasks on dead/shutdown servers → pending
+3. **Transient step errors** — connection/timeout errors → retry (EventTransmit)
+4. **Ancestor blocks** — resets errored ancestors so execution resumes
+5. **Inconsistent steps** — steps marked Complete but with failed tasks → reset to EventTransmit
+
+**Preventative**: Runners now verify all tasks are terminal before marking a workflow as completed.
+
 ### Graceful runner shutdown
 Use `scripts/drain-runners` instead of `scripts/stop-runners` when you need running tasks reset to pending. Each drained task gets a step log entry for audit visibility.
 

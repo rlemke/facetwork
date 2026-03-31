@@ -246,6 +246,29 @@ def create_server(
                 },
             ),
             Tool(
+                name="afl_repair_workflow",
+                description=(
+                    "Diagnose and repair a stuck workflow. Resets runner state if "
+                    "prematurely completed, drains orphaned tasks on dead servers, "
+                    "retries steps with transient errors (connection/timeout), and "
+                    "resets errored ancestor blocks. Use dry_run=true to preview."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "runner_id": {
+                            "type": "string",
+                            "description": "ID of the runner whose workflow to repair",
+                        },
+                        "dry_run": {
+                            "type": "boolean",
+                            "description": "Preview repairs without applying (default: false)",
+                        },
+                    },
+                    "required": ["runner_id"],
+                },
+            ),
+            Tool(
                 name="afl_postgis_query",
                 description=(
                     "Run a read-only SQL query against the PostGIS/OSM database. "
@@ -292,6 +315,8 @@ def create_server(
             return _tool_manage_runner(arguments, _get_store)
         elif name == "afl_manage_handlers":
             return _tool_manage_handlers(arguments, _get_store)
+        elif name == "afl_repair_workflow":
+            return _tool_repair_workflow(arguments, _get_store)
         elif name == "afl_postgis_query":
             return _tool_postgis_query(arguments)
         else:
@@ -840,6 +865,38 @@ _FORBIDDEN_SQL = re.compile(
     r"DO\s+\$)\b",
     re.IGNORECASE,
 )
+
+
+def _tool_repair_workflow(
+    arguments: dict[str, Any],
+    get_store: Any,
+) -> list[TextContent]:
+    """Diagnose and repair a stuck workflow."""
+    runner_id = arguments.get("runner_id", "")
+    dry_run = arguments.get("dry_run", False)
+    try:
+        store = get_store()
+        result = store.repair_workflow(runner_id, dry_run=dry_run)
+        output = {
+            "success": True,
+            "dry_run": dry_run,
+            "runner_id": result["runner_id"],
+            "workflow_id": result["workflow_id"],
+            "runner_reset": result["runner_reset"],
+            "runner_previous_state": result["runner_previous_state"],
+            "orphaned_tasks_reset": len(result["orphaned_tasks_reset"]),
+            "transient_steps_retried": len(result["transient_steps_retried"]),
+            "ancestors_reset": len(result["ancestors_reset"]),
+            "inconsistent_steps_reset": len(result.get("inconsistent_steps_reset", [])),
+            "details": {
+                "orphaned_tasks": result["orphaned_tasks_reset"],
+                "retried_steps": result["transient_steps_retried"],
+                "inconsistent_steps": result.get("inconsistent_steps_reset", []),
+            },
+        }
+    except Exception as e:
+        output = {"success": False, "error": str(e)}
+    return [TextContent(type="text", text=json.dumps(output, default=str))]
 
 
 def _tool_postgis_query(arguments: dict[str, Any]) -> list[TextContent]:

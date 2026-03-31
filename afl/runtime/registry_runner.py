@@ -1101,6 +1101,14 @@ class RegistryRunner:
             else:
                 self._update_runner_terminal_state(workflow_id, result)
 
+    def _has_non_terminal_tasks(self, workflow_id: str) -> bool:
+        """Check if a workflow has any tasks not in a terminal state."""
+        terminal = {TaskState.COMPLETED, TaskState.FAILED, TaskState.IGNORED, TaskState.CANCELED}
+        if not hasattr(self._persistence, "get_tasks_by_workflow"):
+            return False
+        tasks = self._persistence.get_tasks_by_workflow(workflow_id)
+        return any(t.state not in terminal for t in tasks)
+
     def _update_runner_state(self, runner_id: str, result: ExecutionResult) -> None:
         """Update runner state based on execution result."""
 
@@ -1109,6 +1117,13 @@ class RegistryRunner:
             if runner and runner.state == RunnerState.RUNNING:
                 now = _current_time_ms()
                 if result.status == ExecutionStatus.COMPLETED:
+                    if self._has_non_terminal_tasks(runner.workflow_id):
+                        logger.warning(
+                            "Runner %s: evaluator says COMPLETED but non-terminal "
+                            "tasks remain; keeping runner in RUNNING state",
+                            runner_id,
+                        )
+                        return
                     runner.state = RunnerState.COMPLETED
                     runner.end_time = now
                     runner.duration = now - (runner.start_time or now)
@@ -1136,6 +1151,14 @@ class RegistryRunner:
                 if result.status == ExecutionStatus.COMPLETED
                 else RunnerState.FAILED
             )
+            if target_state == RunnerState.COMPLETED:
+                if self._has_non_terminal_tasks(workflow_id):
+                    logger.warning(
+                        "Workflow %s: evaluator says COMPLETED but non-terminal "
+                        "tasks remain; keeping runners in RUNNING state",
+                        workflow_id,
+                    )
+                    return
             for runner in self._persistence.get_runners_by_workflow(workflow_id):
                 if runner.state not in (RunnerState.COMPLETED, RunnerState.FAILED):
                     runner.state = target_state
