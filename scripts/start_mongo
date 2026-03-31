@@ -1,1 +1,1 @@
-mongod --dbpath /Volumes/afl_data/local_servers/mongodb/data --bind_ip 127.0.0.1 --logpath /Volumes/afl_data/local_servers/mongodb/log/mongod.log --logappend
+mongod --dbpath /Volumes/afl_data/local_servers/mongodb/data --bind_ip 0.0.0.0 --logpath /Volumes/afl_data/local_servers/mongodb/log/mongod.log --logappend
