@@ -19,6 +19,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 
 from ..dependencies import get_store
+from ..helpers import qualify_step_names
 
 router = APIRouter(prefix="/tasks")
 
@@ -46,15 +47,34 @@ def _count_tasks_by_state(store) -> dict[str, int]:
 
 
 def _resolve_step_names(tasks, store) -> dict[str, str]:
-    """Resolve step names for a list of tasks."""
+    """Resolve qualified step names (e.g. Alabama.imp) for a list of tasks."""
     step_names: dict[str, str] = {}
+
+    # Group tasks by workflow_id so we load each workflow's steps once
+    workflows_needed: dict[str, list[str]] = {}
     for task in tasks:
         if task.step_id and task.step_id not in step_names:
-            step = store.get_step(task.step_id)
-            if step:
-                step_names[task.step_id] = (
-                    step.statement_name or step.statement_id or step.facet_name or ""
-                )
+            wf_id = task.workflow_id or ""
+            workflows_needed.setdefault(wf_id, []).append(task.step_id)
+
+    for wf_id, step_ids in workflows_needed.items():
+        if wf_id:
+            all_steps = list(store.get_steps_by_workflow(wf_id))
+            qualify_step_names(all_steps)
+            needed = set(step_ids)
+            for s in all_steps:
+                if s.id in needed:
+                    step_names[s.id] = (
+                        getattr(s, "display_name", "") or s.statement_name or s.facet_name or ""
+                    )
+        else:
+            # No workflow_id — fall back to individual lookup
+            for sid in step_ids:
+                step = store.get_step(sid)
+                if step:
+                    step_names[sid] = (
+                        step.statement_name or step.statement_id or step.facet_name or ""
+                    )
     return step_names
 
 
