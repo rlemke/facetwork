@@ -12,6 +12,12 @@
                 class="btn-retry-inline outline"
                 onclick="event.stopPropagation()">Retry</button>
         {% endif %}
+        {% if node.step.is_block %}
+        <button hx-post="/steps/{{ node.step.id }}/reset-block"
+                hx-confirm="Reset this block? All descendant steps will be deleted and the block will restart from scratch."
+                class="btn-retry-inline outline contrast"
+                onclick="event.stopPropagation()">Reset Block</button>
+        {% endif %}
     </summary>
     {% if node.children %}
     <div class="tree-children">
