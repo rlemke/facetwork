@@ -118,7 +118,7 @@ namespace osm.SchoolAirQuality {
         )
 
         // 2. Extract schools from OSM (depends on resolved)
-        schools = ExtractAmenities(
+        schools = osm.Amenities.ExtractAmenities(
             cache = resolved.cache,
             category = "education"
         )

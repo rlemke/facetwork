@@ -80,6 +80,11 @@ _MODULE_MAP = {
     # voting
     "handlers.tiger_downloader": "handlers.voting.tiger_downloader",
     "handlers.tiger_handlers": "handlers.voting.tiger_handlers",
+    # sources
+    "handlers.source_handlers": "handlers.sources.source_handlers",
+    "handlers.pbf_source": "handlers.sources.pbf_source",
+    "handlers.postgis_source": "handlers.sources.postgis_source",
+    "handlers.geojson_source": "handlers.sources.geojson_source",
 }
 
 
@@ -149,6 +154,7 @@ from .routes.gtfs_handlers import register_gtfs_handlers
 from .routes.route_handlers import register_route_handlers
 from .routes.routing_handlers import register_routing_handlers
 from .shared.downloader import download as download_region  # noqa: F401
+from .sources.source_handlers import register_source_handlers
 from .visualization.visualization_handlers import register_visualization_handlers
 from .voting.tiger_handlers import register_tiger_handlers
 
@@ -181,6 +187,7 @@ __all__ = [
     "register_validation_handlers",
     "register_visualization_handlers",
     "register_zoom_handlers",
+    "register_source_handlers",
     "download_region",
 ]
 
@@ -213,6 +220,7 @@ def register_all_handlers(poller) -> None:
     register_zoom_handlers(poller)
     register_combined_handlers(poller)
     register_import_handlers(poller)
+    register_source_handlers(poller)
 
 
 def register_all_registry_handlers(runner) -> None:
@@ -269,6 +277,8 @@ def register_all_registry_handlers(runner) -> None:
 
     from .combined.combined_handlers import register_handlers as reg_combined
     from .db.import_handlers import register_handlers as reg_db_import
+    from .sources.source_handlers import register_handlers as reg_source
 
     reg_combined(runner)
     reg_db_import(runner)
+    reg_source(runner)
