@@ -150,7 +150,7 @@ The `afl:` prefix is reserved for internal runtime tasks. User workflows, handle
 
 Current internal tasks:
 - `afl:execute:<WorkflowName>` — bootstrap task that starts a workflow execution (created by dashboard/CLI)
-- `afl:resume` — resumes a paused workflow
+- `afl:resume:<FacetName>` — signals the RunnerService to resume a workflow after an external agent has completed a step (created by agent SDKs)
 
 ### Agent execution models
 - **RegistryRunner** (recommended): auto-loads handlers from DB
