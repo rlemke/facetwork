@@ -259,9 +259,7 @@ def task_progress_partial(
                 region = region.get("value", "")
 
         # Get last log for this step
-        last_log_entry = store._db.step_logs.find_one(
-            {"step_id": t.step_id}, sort=[("time", -1)]
-        )
+        last_log_entry = store._db.step_logs.find_one({"step_id": t.step_id}, sort=[("time", -1)])
         last_log = ""
         last_log_full = ""
         last_log_age = ""
@@ -333,14 +331,12 @@ def task_progress_partial(
         names = ", ".join(t["region"] or t["name"] for t in pending_tasks)
         # Check if already imported
         already_imported = [
-            t for t in pending_tasks
-            if t["last_log_level"] == "success"
-            or "imported" in t.get("last_log_full", "").lower()
+            t
+            for t in pending_tasks
+            if t["last_log_level"] == "success" or "imported" in t.get("last_log_full", "").lower()
         ]
         if already_imported:
-            imported_names = ", ".join(
-                t["region"] or t["name"] for t in already_imported
-            )
+            imported_names = ", ".join(t["region"] or t["name"] for t in already_imported)
             insights.append(
                 f"Pending — already imported ({imported_names}): "
                 f"will skip automatically when claimed."
@@ -451,11 +447,36 @@ def step_detail_expand(
     runner = store.get_runner(runner_id)
     step = store.get_step(step_id) if runner else None
     task = None
+    step_logs = []
+    names: dict[str, str] = {}
     if step:
         try:
             task = store.get_task_for_step(step_id)
         except Exception:
             pass
+        try:
+            step_logs = store.get_step_logs_by_step(step_id)
+        except Exception:
+            pass
+        # Resolve hierarchy names
+        if step.facet_name:
+            names["facet"] = step.facet_name
+        if step.container_id:
+            try:
+                container = store.get_step(step.container_id)
+                if container:
+                    names["container"] = (
+                        container.statement_name or container.facet_name or container.object_type
+                    )
+            except Exception:
+                pass
+        if step.block_id:
+            try:
+                block = store.get_step(step.block_id)
+                if block:
+                    names["block"] = block.statement_name or block.facet_name or block.object_type
+            except Exception:
+                pass
 
     return request.app.state.templates.TemplateResponse(
         request,
@@ -464,6 +485,8 @@ def step_detail_expand(
             "step": step,
             "task": task,
             "runner": runner,
+            "step_logs": step_logs,
+            "names": names,
         },
     )
 
@@ -664,10 +687,7 @@ def _build_handler_stats(
     handler_stats: dict[str, dict[str, int]] = {}
 
     for srv in store._db.servers.find():
-        is_alive = (
-            srv.get("state") == "running"
-            and (now_ms - srv.get("ping_time", 0)) < 60_000
-        )
+        is_alive = srv.get("state") == "running" and (now_ms - srv.get("ping_time", 0)) < 60_000
         if is_alive:
             for h_name in srv.get("handlers", []):
                 active_handlers.add(h_name)

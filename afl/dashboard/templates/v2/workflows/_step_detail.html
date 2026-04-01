@@ -5,56 +5,123 @@
         {% with state=step.state, label=step.state|state_label %}{% include "partials/_state_badge.html" %}{% endwith %}
     </h4>
 
+    <div class="grid" style="gap: 1rem;">
+    <article style="margin:0; padding: 0.75rem;">
+        <table style="font-size: 0.85em; margin-bottom: 0;">
+            <tbody>
+            <tr><th style="width:8em;">UUID</th><td class="mono" style="font-size:0.85em;">{{ step.id }}</td></tr>
+            <tr><th>Type</th><td>{{ step.object_type }}</td></tr>
+            {% if step.facet_name %}<tr><th>Facet</th><td>{{ step.facet_name }}</td></tr>{% endif %}
+            {% if names.container %}<tr><th>Container</th><td>{{ names.container }} <span class="mono" style="font-size:0.8em;">{{ step.container_id|truncate_uuid }}</span></td></tr>{% endif %}
+            {% if names.block %}<tr><th>Block</th><td>{{ names.block }} <span class="mono" style="font-size:0.8em;">{{ step.block_id|truncate_uuid }}</span></td></tr>{% endif %}
+            {% if step_logs %}
+            <tr><th>Started</th><td>{{ step_logs[0].time|timestamp }}</td></tr>
+            <tr><th>Last Activity</th><td>{{ step_logs[-1].time|timestamp }}</td></tr>
+            {% if step_logs|length > 1 %}
+            <tr><th>Duration</th><td>{{ (step_logs[-1].time - step_logs[0].time)|duration_long }}</td></tr>
+            {% endif %}
+            {% endif %}
+            </tbody>
+        </table>
+    </article>
+
+    {% if task %}
+    <article style="margin:0; padding: 0.75rem;">
+        <header style="padding: 0.5rem 0.75rem; margin: -0.75rem -0.75rem 0.5rem; font-weight: 600;">Task</header>
+        <table style="font-size: 0.85em; margin-bottom: 0;">
+            <tbody>
+            <tr><th style="width:8em;">Name</th><td>{{ task.name }}</td></tr>
+            <tr><th>State</th><td>{% with state=task.state %}{% include "partials/_state_badge.html" %}{% endwith %}</td></tr>
+            <tr><th>Created</th><td>{{ task.created|timestamp }}</td></tr>
+            {% if task.server_id %}<tr><th>Server</th><td class="mono" style="font-size:0.85em;">{{ task.server_id[:12] }}</td></tr>{% endif %}
+            </tbody>
+        </table>
+    </article>
+    </div>
+    {% else %}
+    </div>
+    {% endif %}
+
     {% if step.attributes and step.attributes.params %}
-    <h5>Parameters</h5>
-    <table style="font-size: 0.85em;">
-        <thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead>
-        <tbody>
-        {% for name, param in step.attributes.params.items() %}
-        <tr>
-            <td><code>{{ name }}</code></td>
-            <td class="mono">{{ param.type_hint or '—' }}</td>
-            <td><code>{{ param.value }}</code></td>
-        </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <details open style="margin-top: 0.75rem;">
+        <summary><strong>Parameters</strong></summary>
+        <table style="font-size: 0.85em;">
+            <thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead>
+            <tbody>
+            {% for name, param in step.attributes.params.items() %}
+            <tr>
+                <td><code>{{ name }}</code></td>
+                <td class="mono">{{ param.type_hint or '—' }}</td>
+                <td><code>{{ param.value }}</code></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </details>
     {% endif %}
 
     {% if step.attributes and step.attributes.returns %}
-    <h5>Returns</h5>
-    <table style="font-size: 0.85em;">
-        <thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead>
-        <tbody>
-        {% for name, ret in step.attributes.returns.items() %}
-        <tr>
-            <td><code>{{ name }}</code></td>
-            <td class="mono">{{ ret.type_hint or '—' }}</td>
-            <td><code>{{ ret.value }}</code></td>
-        </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <details open style="margin-top: 0.5rem;">
+        <summary><strong>Returns</strong></summary>
+        <table style="font-size: 0.85em;">
+            <thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead>
+            <tbody>
+            {% for name, ret in step.attributes.returns.items() %}
+            <tr>
+                <td><code>{{ name }}</code></td>
+                <td class="mono">{{ ret.type_hint or '—' }}</td>
+                <td><code>{{ ret.value }}</code></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </details>
     {% endif %}
 
-    {% if task %}
-    <h5>Task</h5>
-    <table style="font-size: 0.85em;">
-        <tbody>
-        <tr><td>Name</td><td>{{ task.name }}</td></tr>
-        <tr><td>State</td><td>{% with state=task.state %}{% include "partials/_state_badge.html" %}{% endwith %}</td></tr>
-        <tr><td>Created</td><td>{{ task.created|timestamp }}</td></tr>
-        </tbody>
-    </table>
+    {% if step_logs %}
+    <details style="margin-top: 0.5rem;">
+        <summary><strong>Step Logs</strong> ({{ step_logs|length }})</summary>
+        <table style="font-size: 0.85em;">
+            <thead>
+                <tr><th>Time</th><th>Source</th><th>Level</th><th>Message</th></tr>
+            </thead>
+            <tbody>
+            {% for log in step_logs %}
+            <tr>
+                <td style="white-space:nowrap;">{{ log.time|timestamp }}</td>
+                <td>{{ log.source }}</td>
+                <td><span class="badge badge-{{ log.level|step_log_color }}">{{ log.level }}</span></td>
+                <td>{{ log.message }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </details>
     {% endif %}
 
-    {% if step.state == 'state.statement.Error' and runner %}
-    <form method="post" action="/runners/{{ runner.uuid }}/resume" style="margin-top:0.5rem;">
-        <button type="submit" class="outline">Retry</button>
-    </form>
-    {% endif %}
-
-    <a href="/steps/{{ step.id }}" style="font-size: 0.85em;">Full step detail</a>
+    <div class="actions" style="margin-top: 0.75rem; display: flex; gap: 0.5rem; align-items: center;">
+        {% if "fail" in step.state|lower or "error" in step.state|lower %}
+        <button class="outline" style="margin:0;"
+                hx-post="/steps/{{ step.id }}/retry"
+                hx-confirm="Retry this step? This will reset it to EventTransmit."
+                hx-swap="none">Retry</button>
+        <button class="outline" style="margin:0;"
+                hx-post="/steps/{{ step.id }}/retry-block"
+                hx-confirm="Retry all errored steps under this block recursively?"
+                hx-swap="none">Retry All Errors</button>
+        <button class="outline contrast" style="margin:0;"
+                hx-post="/steps/{{ step.id }}/reset-block"
+                hx-confirm="Reset this block? All descendant steps will be deleted and the block will restart from scratch."
+                hx-swap="none">Reset Block</button>
+        {% endif %}
+        {% if step.state.endswith("Complete") or step.state.endswith("Error") %}
+        <button class="outline" style="margin:0;"
+                hx-post="/steps/{{ step.id }}/rerun"
+                hx-confirm="Re-run this step? It will be reset and all downstream dependent steps will be deleted and re-executed."
+                hx-swap="none">Re-run From Here</button>
+        {% endif %}
+        <a href="/steps/{{ step.id }}" style="font-size: 0.85em; margin-left: auto;">Full detail &rarr;</a>
+    </div>
 </td>
 {% else %}
 <td colspan="5"><em>Step not found.</em></td>
