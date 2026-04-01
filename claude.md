@@ -62,6 +62,34 @@ scripts/postgis-kill-vacuum        # kill autovacuum blocking imports
 | **Handler** | Python module that implements an event facet's logic |
 | **Runner** | Service that picks up tasks and dispatches them to handlers |
 | **Step** | A single unit of work within a workflow execution |
+| **Source Adapter** | Namespace that extracts features from a specific data source (PBF, PostGIS, GeoJSON) into GeoJSON for downstream analysis |
+
+### Source Adapter Pattern
+
+The OSM geocoder uses a **source adapter pattern** to decouple data extraction from analysis. Three source namespaces normalize different inputs into GeoJSON:
+
+| Source Namespace | Input | Handler |
+|-----------------|-------|---------|
+| `osm.Source.PBF` | `.osm.pbf` files via osmium | `handlers/sources/pbf_source.py` |
+| `osm.Source.PostGIS` | SQL queries against `osm_nodes`/`osm_ways` | `handlers/sources/postgis_source.py` |
+| `osm.Source.GeoJSON` | Existing GeoJSON files | `handlers/sources/geojson_source.py` |
+
+Each source provides 8 extraction facets (routes, amenities, roads, parks, buildings, boundaries, population, POIs). All produce the same category-specific output schemas (`RouteFeatures`, `AmenityFeatures`, etc.) so downstream analysis facets work identically regardless of source:
+
+```
+Source Layer                        Algorithm Layer (unchanged)
+─────────────                       ──────────────────────────
+osm.Source.PBF.ExtractRoutes    ─┐
+osm.Source.PostGIS.ExtractRoutes ─┼→ GeoJSON → RouteStatistics / FilterRoutesByType / RenderMap
+osm.Source.GeoJSON.LoadRoutes   ─┘
+```
+
+Composed workflows in `osm.workflows.sourced` demonstrate the pattern:
+- `BicycleRoutesPBF` / `BicycleRoutesPostGIS` / `BicycleRoutesGeoJSON` — same pipeline, different sources
+- `HealthcareMapPostGIS`, `LargeCitiesPostGIS` — PostGIS-backed analysis
+- `RoadsAndParksPostGIS` — multi-layer concurrent extraction
+
+**PostGIS source** connects to the `osm` database (default: `AFL_POSTGIS_URL`). The `PostGISSource` schema takes `postgis_url` and `region` parameters. Queries use `tags JSONB` for filtering (e.g. `tags->>'amenity' = 'hospital'`).
 
 ## Project Layout
 
