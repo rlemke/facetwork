@@ -221,12 +221,19 @@ public class MongoOps {
      * Inserts an afl:resume task for the Python RunnerService.
      */
     public void insertResumeTask(String stepId, String workflowId, String taskList) {
+        insertResumeTask(stepId, workflowId, taskList, "");
+    }
+
+    public void insertResumeTask(String stepId, String workflowId, String taskList, String facetName) {
         MongoCollection<Document> collection = db.getCollection(Protocol.COLLECTION_TASKS);
 
+        String resumeName = (facetName != null && !facetName.isEmpty())
+                ? Protocol.RESUME_TASK_NAME + ":" + facetName
+                : Protocol.RESUME_TASK_NAME;
         long now = nowMillis();
         Document task = new Document()
                 .append("uuid", UUID.randomUUID().toString())
-                .append("name", Protocol.RESUME_TASK_NAME)
+                .append("name", resumeName)
                 .append("runner_id", "")
                 .append("workflow_id", workflowId)
                 .append("flow_id", "")

@@ -163,13 +163,18 @@ func (m *MongoOps) MarkTaskFailed(ctx context.Context, task *TaskDocument, error
 }
 
 // InsertResumeTask creates an afl:resume task for the Python RunnerService.
-func (m *MongoOps) InsertResumeTask(ctx context.Context, stepID, workflowID, taskList string) error {
+// If facetName is non-empty, the task name includes it for visibility (e.g. "afl:resume:ns.Facet").
+func (m *MongoOps) InsertResumeTask(ctx context.Context, stepID, workflowID, taskList, facetName string) error {
 	collection := m.db.Collection(CollectionTasks)
 
+	resumeName := ResumeTaskName
+	if facetName != "" {
+		resumeName = ResumeTaskName + ":" + facetName
+	}
 	now := NowMillis()
 	task := TaskDocument{
 		UUID:         uuid.New().String(),
-		Name:         ResumeTaskName,
+		Name:         resumeName,
 		RunnerID:     "",
 		WorkflowID:   workflowID,
 		FlowID:       "",

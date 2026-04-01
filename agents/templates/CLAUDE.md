@@ -189,7 +189,7 @@ db.tasks.replaceOne(
 ```javascript
 db.tasks.insertOne({
   uuid: "<generate UUID>",
-  name: "afl:resume",
+  name: "afl:resume:" + task.name,  // includes facet name for visibility
   runner_id: "",
   workflow_id: task.workflow_id,
   flow_id: "",

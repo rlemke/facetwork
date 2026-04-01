@@ -194,7 +194,7 @@ class AgentPoller(val config: AgentPollerConfig):
           mongoOps.markTaskCompleted(task)
 
           // Insert afl:resume task
-          mongoOps.insertResumeTask(task.stepId, task.workflowId, config.taskList)
+          mongoOps.insertResumeTask(task.stepId, task.workflowId, config.taskList, task.name)
 
           // 4. Handler completed
           emitStepLog(task.stepId, task.workflowId, handlerName,

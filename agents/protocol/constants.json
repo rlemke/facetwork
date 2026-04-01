@@ -217,7 +217,7 @@
       "operation": "insertOne",
       "document": {
         "uuid": "<generate UUID>",
-        "name": "afl:resume",
+        "name": "afl:resume:<facet_name>",
         "runner_id": "",
         "workflow_id": "<workflow_id>",
         "flow_id": "",

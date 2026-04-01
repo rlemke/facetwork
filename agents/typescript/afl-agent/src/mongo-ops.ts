@@ -218,14 +218,16 @@ export class MongoOps {
   async insertResumeTask(
     stepId: string,
     workflowId: string,
-    taskList: string
+    taskList: string,
+    facetName: string = ""
   ): Promise<void> {
     const collection = this.db.collection<TaskDocument>(CollectionTasks);
 
     const now = nowMillis();
+    const resumeName = facetName ? `${ResumeTaskName}:${facetName}` : ResumeTaskName;
     const task: TaskDocument = {
       uuid: uuidv4(),
-      name: ResumeTaskName,
+      name: resumeName,
       runner_id: "",
       workflow_id: workflowId,
       flow_id: "",

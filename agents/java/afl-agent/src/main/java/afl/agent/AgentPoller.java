@@ -324,7 +324,7 @@ public class AgentPoller implements AutoCloseable {
             }
 
             // Insert resume task for Python RunnerService
-            ops.insertResumeTask(task.stepId(), task.workflowId(), task.taskListName());
+            ops.insertResumeTask(task.stepId(), task.workflowId(), task.taskListName(), task.name());
 
             // Mark task completed
             ops.markTaskCompleted(task);

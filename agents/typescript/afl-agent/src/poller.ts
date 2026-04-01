@@ -276,7 +276,8 @@ export class AgentPoller {
       await this.ops!.insertResumeTask(
         task.step_id,
         task.workflow_id,
-        task.task_list_name
+        task.task_list_name,
+        task.name
       );
 
       // Mark task completed

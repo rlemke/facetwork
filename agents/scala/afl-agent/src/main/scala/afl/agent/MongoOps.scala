@@ -161,12 +161,14 @@ class MongoOps(db: MongoDatabase, timeout: Duration = 10.seconds):
   def insertResumeTask(
       stepId: String,
       workflowId: String,
-      taskList: String
+      taskList: String,
+      facetName: String = ""
   ): Unit =
     val nowMs = System.currentTimeMillis()
+    val resumeName = if facetName.nonEmpty then s"${Protocol.ResumeTaskName}:$facetName" else Protocol.ResumeTaskName
     val resumeTask = TaskDocument(
       uuid = UUID.randomUUID().toString,
-      name = Protocol.ResumeTaskName,
+      name = resumeName,
       runnerId = "",
       workflowId = workflowId,
       flowId = "",

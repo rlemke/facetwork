@@ -335,7 +335,7 @@ func (p *AgentPoller) processTask(ctx context.Context, task *TaskDocument) {
 	}
 
 	// Insert resume task for Python RunnerService
-	if err := p.ops.InsertResumeTask(ctx, task.StepID, task.WorkflowID, task.TaskListName); err != nil {
+	if err := p.ops.InsertResumeTask(ctx, task.StepID, task.WorkflowID, task.TaskListName, task.Name); err != nil {
 		log.Printf("Failed to insert resume task: %v", err)
 		if err := p.ops.MarkTaskFailed(ctx, task, err.Error()); err != nil {
 			log.Printf("Failed to mark task as failed: %v", err)
