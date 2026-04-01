@@ -325,7 +325,7 @@ def main(args: list[str] | None = None) -> int:
 
     task = TaskDefinition(
         uuid=task_id,
-        name="afl:execute",
+        name=f"afl:execute:{wf_name}",
         runner_id=runner_id,
         workflow_id=wf_id,
         flow_id=flow_id,

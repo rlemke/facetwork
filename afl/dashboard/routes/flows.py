@@ -355,7 +355,7 @@ def flow_run_execute(
 
     task = TaskDefinition(
         uuid=task_id,
-        name="afl:execute",
+        name=f"afl:execute:{workflow_def.name}",
         runner_id=runner_id,
         workflow_id=execution_workflow_id,
         flow_id=flow_id,

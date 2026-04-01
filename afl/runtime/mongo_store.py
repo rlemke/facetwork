@@ -565,11 +565,18 @@ class MongoStore(PersistenceAPI):
         if server_id:
             update["server_id"] = server_id
 
+        # Build a query that matches exact names or names that start with
+        # one of the given prefixes (e.g. "afl:execute" matches "afl:execute:MyWorkflow")
+        name_conditions: list[dict] = [{"name": {"$in": task_names}}]
+        for tn in task_names:
+            name_conditions.append({"name": {"$regex": f"^{tn}:"}})
+        name_filter = {"$or": name_conditions} if len(name_conditions) > 1 else name_conditions[0]
+
         # First try to claim a pending task
         doc = self._db.tasks.find_one_and_update(
             {
                 "state": "pending",
-                "name": {"$in": task_names},
+                **name_filter,
                 "task_list_name": task_list,
             },
             {"$set": update},
@@ -582,7 +589,7 @@ class MongoStore(PersistenceAPI):
         doc = self._db.tasks.find_one_and_update(
             {
                 "state": "running",
-                "name": {"$in": task_names},
+                **name_filter,
                 "task_list_name": task_list,
                 "lease_expires": {"$lt": now, "$gt": 0},
             },

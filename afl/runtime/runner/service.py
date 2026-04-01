@@ -584,14 +584,17 @@ class RunnerService:
         if self._config.topics:
             return list(self._config.topics)
         # Return handler names that are not built-in task handlers
-        return [name for name in self._tool_registry._handlers.keys() if name != "afl:execute"]
+        return [name for name in self._tool_registry._handlers.keys() if not name.startswith("afl:")]
 
     def _get_builtin_task_names(self) -> list[str]:
-        """Get task names for built-in handlers (e.g. afl:execute).
+        """Get task name prefixes for built-in handlers (e.g. afl:execute).
 
         These are claimed via ``claim_task()`` separately from event tasks
         so that topic filtering does not interfere.  Only returns names
         that start with ``afl:`` (protocol tasks), not event handler names.
+
+        Task names may include a workflow suffix (e.g. ``afl:execute:MyWorkflow``),
+        so claim_task uses regex prefix matching.
         """
         return [
             name
@@ -756,8 +759,13 @@ class RunnerService:
             payload["_task_heartbeat"] = _task_heartbeat_callback
             payload["_task_uuid"] = task.uuid
 
-            # Dispatch to handler (try exact name, then short name)
+            # Dispatch to handler (try exact name, then prefix for builtin
+            # tasks like "afl:execute:WorkflowName", then short name)
             result = self._tool_registry.handle(task.name, payload)
+            if result is None and task.name.startswith("afl:"):
+                # Try base name without workflow suffix (e.g. "afl:execute")
+                base_name = ":".join(task.name.split(":")[:2])
+                result = self._tool_registry.handle(base_name, payload)
             if result is None and "." in task.name:
                 short_name = task.name.rsplit(".", 1)[-1]
                 result = self._tool_registry.handle(short_name, payload)
