@@ -955,21 +955,23 @@ class MongoStore(PersistenceAPI):
             "connection refused", "timed out", "timeout",
             "connectionerror", "serverselectiontimeouterror",
             "networktimeout", "autoreconnect", "errno 61",
+            "no such file or directory", "input/output error",
         ]
         errored_steps = [s for s in steps if s.state == StepState.STATEMENT_ERROR]
         for step in errored_steps:
-            error_text = (step.error or "").lower()
+            raw_error = getattr(step.transition, "error", None) if hasattr(step, "transition") else None
+            error_text = (str(raw_error) if raw_error else "").lower()
             if not any(pat in error_text for pat in transient_patterns):
                 continue
 
+            error_str = str(raw_error) if raw_error else ""
             result["transient_steps_retried"].append({
                 "step_id": step.id,
                 "facet_name": step.facet_name or "",
-                "error_snippet": (step.error or "")[:120],
+                "error_snippet": error_str[:120],
             })
             if not dry_run:
                 step.state = StepState.EVENT_TRANSMIT
-                step.error = None
                 if hasattr(step, "transition") and step.transition:
                     step.transition.current_state = StepState.EVENT_TRANSMIT
                     step.transition.clear_error()
