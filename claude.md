@@ -144,6 +144,14 @@ Composed workflows in `osm.workflows.sourced` demonstrate the pattern:
 - **Step**: assignment of a call expression within an `andThen` block
 - **Schema**: named typed structure (`schema Name { field: Type }`) — must be defined inside a namespace
 
+### Reserved task names
+
+The `afl:` prefix is reserved for internal runtime tasks. User workflows, handlers, and external processes must **not** create tasks with names starting with `afl:`. The runner treats these as built-in protocol tasks with special dispatch and claiming logic.
+
+Current internal tasks:
+- `afl:execute:<WorkflowName>` — bootstrap task that starts a workflow execution (created by dashboard/CLI)
+- `afl:resume` — resumes a paused workflow
+
 ### Agent execution models
 - **RegistryRunner** (recommended): auto-loads handlers from DB
 - **AgentPoller**: standalone agent services with `register()` callback
