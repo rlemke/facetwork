@@ -335,14 +335,17 @@ def flow_run_execute(
     except (json.JSONDecodeError, ValueError):
         pass
 
-    # Create only Runner + Task — reuse existing Flow + Workflow
+    # Create Runner + Task with a unique execution workflow_id.
+    # Each run gets its own workflow_id so steps don't collide between runs
+    # of the same workflow definition.
     now_ms = int(time.time() * 1000)
     runner_id = generate_id()
     task_id = generate_id()
+    execution_workflow_id = generate_id()
 
     runner = RunnerDefinition(
         uuid=runner_id,
-        workflow_id=workflow_id,
+        workflow_id=execution_workflow_id,
         workflow=workflow_def,
         state=RunnerState.CREATED,
         compiled_ast=program_dict,
@@ -354,7 +357,7 @@ def flow_run_execute(
         uuid=task_id,
         name="afl:execute",
         runner_id=runner_id,
-        workflow_id=workflow_id,
+        workflow_id=execution_workflow_id,
         flow_id=flow_id,
         step_id="",
         state=TaskState.PENDING,
@@ -363,7 +366,7 @@ def flow_run_execute(
         task_list_name="default",
         data={
             "flow_id": flow_id,
-            "workflow_id": workflow_id,
+            "workflow_id": execution_workflow_id,
             "workflow_name": workflow_def.name,
             "inputs": inputs,
             "runner_id": runner_id,
