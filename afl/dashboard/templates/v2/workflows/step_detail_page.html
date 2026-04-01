@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Step {{ step.id[:8] if step else "Not Found" }} — AgentFlow{% endblock %}
+
+{% block breadcrumb %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="/v2/workflows">Workflows</a>
+        <span class="breadcrumb-sep">/</span>
+        {% if runner %}
+        <a href="/v2/workflows/{{ runner.uuid }}">{{ runner.workflow.name|short_workflow_name }}</a>
+        <span class="breadcrumb-sep">/</span>
+        {% endif %}
+        <span class="breadcrumb-current">{{ step.statement_name or step.facet_name or "Step" }}</span>
+    </nav>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if step %}
+<hgroup>
+    <h1>{{ step.statement_name or step.facet_name }}
+        {% with state=step.state, label=step.state|state_label %}{% include "partials/_state_badge.html" %}{% endwith %}
+    </h1>
+    <p class="mono">{{ step.id }}</p>
+</hgroup>
+
+<div class="grid">
+    <article>
+        <header>Step Info</header>
+        <table>
+            <tbody>
+            <tr><th style="width:8em;">UUID</th><td class="mono" style="font-size:0.85em;">{{ step.id }}</td></tr>
+            <tr><th>Type</th><td>{{ step.object_type }}</td></tr>
+            {% if step.facet_name %}<tr><th>Facet</th><td>{{ step.facet_name }}</td></tr>{% endif %}
+            <tr><th>State</th><td>{% with state=step.state, label=step.state|state_label %}{% include "partials/_state_badge.html" %}{% endwith %}</td></tr>
+            {% if step.statement_name %}<tr><th>Statement</th><td><strong>{{ step.statement_name }}</strong> <span class="mono" style="font-size:0.8em;">{{ step.statement_id or "" }}</span></td></tr>{% endif %}
+            {% if names.container %}<tr><th>Container</th><td>{{ names.container }} <span class="mono" style="font-size:0.8em;">{{ step.container_id|truncate_uuid }}</span></td></tr>{% endif %}
+            {% if names.block %}<tr><th>Block</th><td>{{ names.block }} <span class="mono" style="font-size:0.8em;">{{ step.block_id|truncate_uuid }}</span></td></tr>{% endif %}
+            {% if runner %}<tr><th>Workflow</th><td><a href="/v2/workflows/{{ runner.uuid }}">{{ runner.workflow.name }}</a></td></tr>{% endif %}
+            {% if step_logs %}
+            <tr><th>Started</th><td>{{ step_logs[0].time|timestamp }}</td></tr>
+            <tr><th>Last Activity</th><td>{{ step_logs[-1].time|timestamp }}</td></tr>
+            {% if step_logs|length > 1 %}
+            <tr><th>Duration</th><td>{{ (step_logs[-1].time - step_logs[0].time)|duration_long }}</td></tr>
+            {% endif %}
+            {% endif %}
+            </tbody>
+        </table>
+    </article>
+
+    {% if task %}
+    <article>
+        <header>Task</header>
+        <table>
+            <tbody>
+            <tr><th style="width:8em;">Name</th><td>{{ task.name }}</td></tr>
+            <tr><th>State</th><td>{% with state=task.state %}{% include "partials/_state_badge.html" %}{% endwith %}</td></tr>
+            <tr><th>Created</th><td>{{ task.created|timestamp }}</td></tr>
+            {% if task.server_id %}<tr><th>Server</th><td class="mono" style="font-size:0.85em;">{{ task.server_id[:12] }}</td></tr>{% endif %}
+            </tbody>
+        </table>
+    </article>
+    {% endif %}
+</div>
+
+{% if step.attributes %}
+<div class="grid">
+    {% if step.attributes.params %}
+    <article>
+        <header>Parameters</header>
+        <table>
+            <thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead>
+            <tbody>
+            {% for name, param in step.attributes.params.items() %}
+            <tr>
+                <td><code>{{ name }}</code></td>
+                <td class="mono">{{ param.type_hint or '—' }}</td>
+                <td><code>{{ param.value }}</code></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </article>
+    {% endif %}
+
+    {% if step.attributes.returns %}
+    <article>
+        <header>Returns</header>
+        <table>
+            <thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead>
+            <tbody>
+            {% for name, ret in step.attributes.returns.items() %}
+            <tr>
+                <td><code>{{ name }}</code></td>
+                <td class="mono">{{ ret.type_hint or '—' }}</td>
+                <td><code>{{ ret.value }}</code></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </article>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="actions" style="margin: 1rem 0;">
+    {% if "fail" in step.state|lower or "error" in step.state|lower %}
+    <button class="outline"
+            hx-post="/steps/{{ step.id }}/retry"
+            hx-confirm="Retry this step? This will reset it to EventTransmit."
+            hx-swap="none">Retry</button>
+    <button class="outline"
+            hx-post="/steps/{{ step.id }}/retry-block"
+            hx-confirm="Retry all errored steps under this block recursively?"
+            hx-swap="none">Retry All Errors</button>
+    <button class="outline contrast"
+            hx-post="/steps/{{ step.id }}/reset-block"
+            hx-confirm="Reset this block? All descendant steps will be deleted and the block will restart from scratch."
+            hx-swap="none">Reset Block</button>
+    {% endif %}
+    {% if step.state.endswith("Complete") or step.state.endswith("Error") %}
+    <button class="outline"
+            hx-post="/steps/{{ step.id }}/rerun"
+            hx-confirm="Re-run this step? It will be reset and all downstream dependent steps will be deleted and re-executed."
+            hx-swap="none">Re-run From Here</button>
+    {% endif %}
+    <button class="outline"
+            data-log-stream="/api/steps/{{ step.id }}/logs/stream"
+            data-log-target="#step-log-stream-body">Live</button>
+</div>
+
+{% if step_logs %}
+<h2>Step Logs</h2>
+<figure>
+<table>
+    <thead>
+        <tr><th>Time</th><th>Source</th><th>Level</th><th>Message</th><th>Duration</th></tr>
+    </thead>
+    <tbody>
+    {% for log in step_logs %}
+    <tr>
+        <td style="white-space:nowrap;">{{ log.time|timestamp }}</td>
+        <td>{{ log.source }}</td>
+        <td><span class="badge badge-{{ log.level|step_log_color }}">{{ log.level }}</span></td>
+        <td>{{ log.message }}</td>
+        <td>{% if loop.last and step_logs|length > 1 %}{{ (log.time - step_logs[0].time)|duration_long }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% endif %}
+
+<div id="step-log-stream-panel">
+<h2>Live Logs</h2>
+<figure>
+<table>
+    <thead>
+        <tr><th>Time</th><th>Source</th><th>Level</th><th>Message</th></tr>
+    </thead>
+    <tbody id="step-log-stream-body">
+    </tbody>
+</table>
+</figure>
+</div>
+
+{% else %}
+<h1>Step Not Found</h1>
+{% with empty_message="The requested step could not be found." %}{% include "partials/_empty_state.html" %}{% endwith %}
+{% if runner %}<a href="/v2/workflows/{{ runner.uuid }}">Back to Workflow</a>{% else %}<a href="/v2/workflows">Back to Workflows</a>{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/log_stream.js"></script>
+{% endblock %}

@@ -478,17 +478,21 @@ def step_detail_expand(
             except Exception:
                 pass
 
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "v2/workflows/_step_detail.html",
-        {
-            "step": step,
-            "task": task,
-            "runner": runner,
-            "step_logs": step_logs,
-            "names": names,
-        },
-    )
+    ctx = {
+        "step": step,
+        "task": task,
+        "runner": runner,
+        "step_logs": step_logs,
+        "names": names,
+    }
+
+    # HTMX requests get the partial; direct browser visits get a full page
+    if request.headers.get("HX-Request"):
+        template = "v2/workflows/_step_detail.html"
+    else:
+        template = "v2/workflows/step_detail_page.html"
+
+    return request.app.state.templates.TemplateResponse(request, template, ctx)
 
 
 # ---------------------------------------------------------------------------
