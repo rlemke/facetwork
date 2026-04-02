@@ -232,6 +232,43 @@ class RunnerService:
         # Register built-in task handler
         self._tool_registry.register("afl:execute", self._handle_execute_workflow)
 
+    def _task_label(self, task_id: str) -> str:
+        """Build a human-readable label for a task including qualified step name.
+
+        Returns a string like ``"Kentucky.imp.imported (osm.ops.PostGisImport)"``
+        or falls back to ``"<task_id[:12]>"`` if resolution fails.
+        """
+        try:
+            task = self._persistence.get_task(task_id)
+            if not task:
+                return task_id[:12]
+            step = self._persistence.get_step(task.step_id) if task.step_id else None
+            if not step:
+                return task.name or task_id[:12]
+            # Build qualified name by walking ancestors
+            segments: list[str] = []
+            seen: set[str] = set()
+            current_id = step.block_id
+            while current_id and current_id not in seen:
+                seen.add(current_id)
+                ancestor = self._persistence.get_step(current_id)
+                if ancestor is None:
+                    break
+                name = getattr(ancestor, "foreach_value", None) or getattr(ancestor, "statement_name", None)
+                if name:
+                    segments.append(str(name))
+                current_id = getattr(ancestor, "container_id", None) or getattr(ancestor, "block_id", None)
+            segments.reverse()
+            if step.statement_name:
+                segments.append(step.statement_name)
+            qualified = ".".join(segments) if segments else ""
+            facet = step.facet_name or task.name or ""
+            if qualified and facet:
+                return f"{qualified} ({facet})"
+            return qualified or facet or task_id[:12]
+        except Exception:
+            return task_id[:12]
+
     @property
     def server_id(self) -> str:
         """Get the server's unique ID."""
@@ -469,10 +506,12 @@ class RunnerService:
                     if elapsed > self._execution_timeout_ms:
                         # Timed out — cancel (best-effort) and always drop.
                         future.cancel()
+                        label = self._task_label(task_id)
                         logger.warning(
-                            "Task %s timed out after %ds, releasing capacity",
+                            "Task %s timed out after %ds, releasing capacity — %s",
                             task_id,
                             elapsed // 1000,
+                            label,
                         )
                         self._release_timed_out_task(task_id)
                         continue  # always drop — do not keep zombie futures
@@ -508,10 +547,12 @@ class RunnerService:
                     )
                     time.sleep(0.5 * (attempt + 1))
                 else:
+                    label = task.name or task.uuid[:12]
                     logger.error(
-                        "save_task failed for %s after %d attempts, task may be stuck",
+                        "save_task failed for %s after %d attempts, task may be stuck — %s",
                         task.uuid,
                         retries,
+                        label,
                         exc_info=True,
                     )
 
@@ -794,9 +835,10 @@ class RunnerService:
                 self._safe_save_task(task)
                 self._update_handled_stats(task.name, handled=False)
                 logger.warning(
-                    "No handler for event task '%s' (step=%s)",
+                    "No handler for event task '%s' (step=%s) — %s",
                     task.name,
                     task.step_id,
+                    self._task_label(task.uuid),
                 )
                 return
 
@@ -811,11 +853,12 @@ class RunnerService:
             except Exception as resume_exc:
                 resume_error = resume_exc
                 logger.warning(
-                    "Post-handler resume failed for task %s (step=%s): %s — "
-                    "task will be marked completed (handler succeeded)",
+                    "Post-handler resume failed for %s (step=%s): %s — "
+                    "task will be marked completed (handler succeeded) — %s",
                     task.uuid,
                     task.step_id,
                     resume_exc,
+                    self._task_label(task.uuid),
                 )
 
             # Always mark task completed — the handler produced a result.
@@ -852,10 +895,11 @@ class RunnerService:
             task.updated = _current_time_ms()
             self._safe_save_task(task)
             logger.warning(
-                "Cannot load handler for '%s', releasing task %s back to pending: %s",
+                "Cannot load handler for '%s', releasing task %s back to pending: %s — %s",
                 task.name,
                 task.uuid,
                 exc,
+                self._task_label(task.uuid),
             )
 
         except Exception as exc:
@@ -869,9 +913,9 @@ class RunnerService:
             self._safe_save_task(task)
             self._update_handled_stats(task.name, handled=False)
             logger.exception(
-                "Error processing event task %s (name=%s)",
+                "Error processing event task %s — %s",
                 task.uuid,
-                task.name,
+                self._task_label(task.uuid),
             )
 
     # =========================================================================
