@@ -329,6 +329,20 @@ The repair performs five checks:
 ### Graceful runner shutdown
 Use `scripts/drain-runners` instead of `scripts/stop-runners` when you need running tasks reset to pending. Each drained task gets a step log entry for audit visibility.
 
+### How Claude should build and review
+
+**Proactive design review:** When building or modifying any component, apply distributed systems best practices (Kleppmann, Nygard, Temporal) proactively. Before implementing, flag design decisions that violate known patterns — don't wait for bugs to surface. Specifically:
+- For every state transition: "what if this crashes halfway?" Design the recovery path.
+- For every timeout: make it heartbeat-aware. Distinguish start-to-close from last-activity.
+- For every retry: add a max count and backoff. No infinite loops.
+- For every shared resource (thread pool, connection, queue): consider isolation/bulkheads.
+- For every log message at WARNING+: include a qualified human-readable name, not just IDs.
+- For every ID: distinguish definition IDs (shared/immutable) from execution IDs (unique per run).
+- For every network binding: default to `0.0.0.0`, not `127.0.0.1`.
+- For every error handler: never silently return empty defaults. Fail explicitly or re-raise.
+
+See `docs/lessons-learned.md` for the full catalogue of requirements and the future roadmap.
+
 ### How Claude should review changes
 
 **Language/compiler correctness:**
