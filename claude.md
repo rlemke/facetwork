@@ -341,6 +341,14 @@ Use `scripts/drain-runners` instead of `scripts/stop-runners` when you need runn
 - For every network binding: default to `0.0.0.0`, not `127.0.0.1`.
 - For every error handler: never silently return empty defaults. Fail explicitly or re-raise.
 
+**Domain research before implementation:** Before building any handler, workflow, or integration, research the domain's established best practices, data models, and known pitfalls. For example:
+- OSM/geospatial: osmium processing patterns, PostGIS indexing strategies, coordinate system conventions, bulk import best practices (COPY vs INSERT, WAL tuning, autovacuum management).
+- Genomics: GATK best practices, reference genome conventions, VCF format requirements.
+- Financial/risk: market data vendor conventions, time series storage patterns, numerical precision requirements.
+- ETL/data pipelines: idempotent loads, schema-on-read vs schema-on-write, backfill strategies.
+
+Apply this research to the design before writing code. Flag domain-specific constraints that affect architecture (e.g. "PostGIS bulk imports should disable autovacuum during load" or "OSM PBF files must be processed in a single pass — no random access").
+
 See `docs/lessons-learned.md` for the full catalogue of requirements and the future roadmap.
 
 ### How Claude should review changes
