@@ -453,17 +453,29 @@ class RunnerService:
             for future, task_id, claimed_at in self._active_futures:
                 if future.done():
                     continue  # completed — drop from list
-                elapsed = now - claimed_at
-                if self._execution_timeout_ms > 0 and elapsed > self._execution_timeout_ms:
-                    # Timed out — cancel (best-effort) and always drop.
-                    future.cancel()
-                    logger.warning(
-                        "Task %s timed out after %ds, releasing capacity",
-                        task_id,
-                        elapsed // 1000,
-                    )
-                    self._release_timed_out_task(task_id)
-                    continue  # always drop — do not keep zombie futures
+                if self._execution_timeout_ms > 0:
+                    # Check task heartbeat — if the handler is actively
+                    # heartbeating, use the heartbeat time instead of
+                    # claimed_at so long-running tasks aren't killed while
+                    # still making progress.
+                    last_activity = claimed_at
+                    try:
+                        task = self._persistence.get_task(task_id)
+                        if task and task.task_heartbeat > 0:
+                            last_activity = max(claimed_at, task.task_heartbeat)
+                    except Exception:
+                        pass
+                    elapsed = now - last_activity
+                    if elapsed > self._execution_timeout_ms:
+                        # Timed out — cancel (best-effort) and always drop.
+                        future.cancel()
+                        logger.warning(
+                            "Task %s timed out after %ds, releasing capacity",
+                            task_id,
+                            elapsed // 1000,
+                        )
+                        self._release_timed_out_task(task_id)
+                        continue  # always drop — do not keep zombie futures
                 kept.append((future, task_id, claimed_at))
             self._active_futures = kept
 
