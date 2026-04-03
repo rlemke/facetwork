@@ -323,6 +323,7 @@ class TaskState:
     FAILED = "failed"
     IGNORED = "ignored"
     CANCELED = "canceled"
+    DEAD_LETTER = "dead_letter"
 
 
 @dataclass
@@ -348,6 +349,9 @@ class TaskDefinition:
     server_id: str = ""  # Claiming server's ID (for orphan detection)
     timeout_ms: int = 0  # Handler timeout (0 = use registration default)
     task_heartbeat: int = 0  # Handler-level heartbeat timestamp (ms)
+    retry_count: int = 0  # Number of times this task has been retried
+    max_retries: int = 5  # Max retries before dead-lettering (0 = infinite)
+    next_retry_after: int = 0  # Epoch ms; task not claimable until this time
 
 
 # =============================================================================

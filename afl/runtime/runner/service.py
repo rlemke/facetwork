@@ -161,6 +161,7 @@ class _StatusHandler(BaseHTTPRequestHandler):
                 },
                 "active_work_items": svc._active_count(),
                 "execution_timeout_ms": svc._execution_timeout_ms,
+                "circuit_breakers": svc._circuit_breakers.get_all_states(),
                 "config": {
                     "server_group": svc._config.server_group,
                     "service_name": svc._config.service_name,
@@ -171,6 +172,9 @@ class _StatusHandler(BaseHTTPRequestHandler):
                 },
             }
             self._json_response(200, data)
+        elif self.path == "/circuits":
+            svc = self.server.runner_service  # type: ignore[attr-defined]
+            self._json_response(200, svc._circuit_breakers.get_all_states())
         else:
             self._json_response(404, {"error": "not found"})
 
@@ -228,6 +232,11 @@ class RunnerService:
         self._execution_timeout_ms: int = int(
             os.environ.get("AFL_TASK_EXECUTION_TIMEOUT_MS", "900000")
         )  # default 15 minutes
+
+        # Circuit breaker for cascading failure protection
+        from afl.runtime.circuit_breaker import CircuitBreakerRegistry
+
+        self._circuit_breakers = CircuitBreakerRegistry()
 
         # Register built-in task handler
         self._tool_registry.register("afl:execute", self._handle_execute_workflow)
@@ -423,8 +432,11 @@ class RunnerService:
         if capacity <= 0:
             return 0
 
-        # Claim event tasks from the task queue
-        event_names = self._get_event_names()
+        # Claim event tasks from the task queue (filtered by circuit breaker)
+        event_names = [
+            n for n in self._get_event_names()
+            if self._circuit_breakers.is_allowed(n)
+        ]
         if event_names:
             while capacity > 0:
                 task = self._persistence.claim_task(
@@ -868,8 +880,9 @@ class RunnerService:
             task.updated = _current_time_ms()
             self._safe_save_task(task)
 
-            # Update stats
+            # Update stats and circuit breaker
             self._update_handled_stats(task.name, handled=True)
+            self._circuit_breakers.record_success(task.name)
 
             if resume_error:
                 logger.info(
@@ -903,20 +916,46 @@ class RunnerService:
             )
 
         except Exception as exc:
-            try:
-                self._evaluator.fail_step(task.step_id, str(exc))
-            except Exception:
-                logger.debug("Could not fail step %s", task.step_id, exc_info=True)
-            task.state = TaskState.FAILED
+            now = _current_time_ms()
+            task.retry_count += 1
             task.error = {"message": str(exc)}
-            task.updated = _current_time_ms()
+            task.updated = now
+
+            if task.max_retries > 0 and task.retry_count >= task.max_retries:
+                # Dead-letter: max retries exceeded
+                task.state = TaskState.DEAD_LETTER
+                try:
+                    self._evaluator.fail_step(task.step_id, str(exc))
+                except Exception:
+                    logger.debug("Could not fail step %s", task.step_id, exc_info=True)
+                logger.warning(
+                    "Task %s dead-lettered after %d retries — %s: %s",
+                    task.uuid,
+                    task.retry_count,
+                    self._task_label(task.uuid),
+                    exc,
+                )
+            else:
+                # Retry with exponential backoff
+                from afl.runtime.mongo_store import _compute_next_retry_after
+
+                task.state = TaskState.PENDING
+                task.server_id = ""
+                task.next_retry_after = _compute_next_retry_after(task.retry_count, now)
+                delay_s = (task.next_retry_after - now) / 1000
+                logger.warning(
+                    "Task %s failed (retry %d/%d, next in %.0fs) — %s: %s",
+                    task.uuid,
+                    task.retry_count,
+                    task.max_retries,
+                    delay_s,
+                    self._task_label(task.uuid),
+                    exc,
+                )
+
             self._safe_save_task(task)
             self._update_handled_stats(task.name, handled=False)
-            logger.exception(
-                "Error processing event task %s — %s",
-                task.uuid,
-                self._task_label(task.uuid),
-            )
+            self._circuit_breakers.record_failure(task.name)
 
     # =========================================================================
     # Resume Task Processing

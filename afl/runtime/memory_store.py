@@ -344,10 +344,12 @@ class MemoryStore(PersistenceAPI):
         with self._claim_lock:
             names_set = set(task_names)
             for task in self._tasks.values():
+                now = _current_time_ms()
                 if (
                     task.state == "pending"
                     and task.name in names_set
                     and task.task_list_name == task_list
+                    and (task.next_retry_after == 0 or task.next_retry_after <= now)
                 ):
                     task.state = "running"
                     task.updated = _current_time_ms()

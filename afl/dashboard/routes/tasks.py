@@ -34,6 +34,7 @@ def _count_tasks_by_state(store) -> dict[str, int]:
         "failed": 0,
         "ignored": 0,
         "canceled": 0,
+        "dead_letter": 0,
     }
     for doc in store._db.tasks.aggregate([
         {"$group": {"_id": "$state", "count": {"$sum": 1}}},
@@ -135,6 +136,40 @@ def task_list_partial(request: Request, state: str | None = None, store=Depends(
         "tasks/_table_content.html",
         {"tasks": tasks, "filter_state": state, "step_names": step_names, "server_info": server_info},
     )
+
+
+@router.post("/{task_id}/reenqueue")
+def task_reenqueue(task_id: str, store=Depends(get_store)):
+    """Re-enqueue a dead-lettered task back to pending."""
+    from fastapi.responses import JSONResponse
+
+    task = store.get_task(task_id)
+    if not task:
+        return JSONResponse({"success": False, "error": "not found"}, status_code=404)
+    if task.state != "dead_letter":
+        return JSONResponse({"success": False, "error": f"task is {task.state}, not dead_letter"})
+    task.state = "pending"
+    task.retry_count = 0
+    task.next_retry_after = 0
+    task.error = None
+    task.server_id = ""
+    task.updated = int(__import__("time").time() * 1000)
+    store.save_task(task)
+    return JSONResponse({"success": True})
+
+
+@router.post("/{task_id}/discard")
+def task_discard(task_id: str, store=Depends(get_store)):
+    """Discard a dead-lettered task by marking it canceled."""
+    from fastapi.responses import JSONResponse
+
+    task = store.get_task(task_id)
+    if not task:
+        return JSONResponse({"success": False, "error": "not found"}, status_code=404)
+    task.state = "canceled"
+    task.updated = int(__import__("time").time() * 1000)
+    store.save_task(task)
+    return JSONResponse({"success": True})
 
 
 @router.get("/{task_id}")

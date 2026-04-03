@@ -84,6 +84,15 @@ def _current_time_ms() -> int:
     return int(time.time() * 1000)
 
 
+def _compute_next_retry_after(retry_count: int, now_ms: int) -> int:
+    """Compute the next eligible retry time with exponential backoff.
+
+    Backoff: 5s, 10s, 20s, 40s, 80s, 160s, 300s (capped at 5 minutes).
+    """
+    delay = min(5000 * (2 ** retry_count), 300_000)
+    return now_ms + delay
+
+
 class MongoStore(PersistenceAPI):
     """MongoDB implementation of the persistence API.
 
@@ -572,11 +581,19 @@ class MongoStore(PersistenceAPI):
             name_conditions.append({"name": {"$regex": f"^{tn}:"}})
         name_filter = {"$or": name_conditions} if len(name_conditions) > 1 else name_conditions[0]
 
+        # Backoff filter: skip tasks still in their retry cooldown window
+        retry_eligible = {"$or": [
+            {"next_retry_after": {"$exists": False}},
+            {"next_retry_after": 0},
+            {"next_retry_after": {"$lte": now}},
+        ]}
+
         # First try to claim a pending task
         doc = self._db.tasks.find_one_and_update(
             {
                 "state": "pending",
                 **name_filter,
+                **retry_eligible,
                 "task_list_name": task_list,
             },
             {"$set": update},
@@ -720,13 +737,14 @@ class MongoStore(PersistenceAPI):
                 }
             )
 
-        # Reset running tasks back to pending
+        # Reset running tasks: increment retry_count and set back to pending
+        orphan_filter = {
+            "state": "running",
+            "server_id": {"$in": dead_ids},
+            **stale_heartbeat_filter,
+        }
         self._db.tasks.update_many(
-            {
-                "state": "running",
-                "server_id": {"$in": dead_ids},
-                **stale_heartbeat_filter,
-            },
+            orphan_filter,
             {
                 "$set": {
                     "state": "pending",
@@ -734,7 +752,17 @@ class MongoStore(PersistenceAPI):
                     "task_heartbeat": 0,
                     "updated": now,
                 },
+                "$inc": {"retry_count": 1},
             },
+        )
+        # Dead-letter tasks that exceeded max_retries
+        self._db.tasks.update_many(
+            {
+                "state": "pending",
+                "max_retries": {"$gt": 0},
+                "$expr": {"$gte": ["$retry_count", "$max_retries"]},
+            },
+            {"$set": {"state": "dead_letter", "updated": now}},
         )
 
         # Clear server_id on pending tasks pinned to dead servers
@@ -853,7 +881,7 @@ class MongoStore(PersistenceAPI):
         if not stuck_uuids:
             return []
 
-        # Reset stuck tasks back to pending
+        # Reset stuck tasks: increment retry_count and set back to pending
         self._db.tasks.update_many(
             {"uuid": {"$in": stuck_uuids}, "state": "running"},
             {
@@ -863,7 +891,18 @@ class MongoStore(PersistenceAPI):
                     "task_heartbeat": 0,
                     "updated": now,
                 },
+                "$inc": {"retry_count": 1},
             },
+        )
+        # Dead-letter tasks that exceeded max_retries
+        self._db.tasks.update_many(
+            {
+                "uuid": {"$in": stuck_uuids},
+                "state": "pending",
+                "max_retries": {"$gt": 0},
+                "$expr": {"$gte": ["$retry_count", "$max_retries"]},
+            },
+            {"$set": {"state": "dead_letter", "updated": now}},
         )
         return reaped
 
@@ -1605,6 +1644,9 @@ class MongoStore(PersistenceAPI):
             "data": task.data,
             "server_id": task.server_id,
             "timeout_ms": task.timeout_ms,
+            "retry_count": task.retry_count,
+            "max_retries": task.max_retries,
+            "next_retry_after": task.next_retry_after,
         }
 
     def _doc_to_task(self, doc: dict) -> TaskDefinition:
@@ -1625,6 +1667,9 @@ class MongoStore(PersistenceAPI):
             data=doc.get("data"),
             server_id=doc.get("server_id", ""),
             timeout_ms=doc.get("timeout_ms", 0),
+            retry_count=doc.get("retry_count", 0),
+            max_retries=doc.get("max_retries", 5),
+            next_retry_after=doc.get("next_retry_after", 0),
         )
 
     def _log_to_doc(self, log: LogDefinition) -> dict:

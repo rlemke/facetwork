@@ -10,8 +10,10 @@
             <th>Runner</th>
             <th>Server</th>
             <th>Last Ping</th>
+            <th>Retries</th>
             <th>Duration</th>
             <th>Created</th>
+            {% if filter_state == 'dead_letter' %}<th>Actions</th>{% endif %}
         </tr>
     </thead>
     <tbody>
@@ -26,8 +28,15 @@
             {% set si = server_info.get(task.server_id or '') %}
             <td>{{ si['name'] if si else '—' }}</td>
             <td>{{ si['ping_time']|timestamp if si else '—' }}</td>
+            <td>{{ task.retry_count }}/{{ task.max_retries }}</td>
             <td>{{ (task.updated - task.created)|duration }}</td>
             <td>{{ task.created|timestamp }}</td>
+            {% if filter_state == 'dead_letter' %}
+            <td>
+                <button class="btn-retry-inline outline" hx-post="/tasks/{{ task.uuid }}/reenqueue" hx-swap="none" hx-confirm="Re-enqueue this task?" onclick="event.stopPropagation()">Re-enqueue</button>
+                <button class="btn-retry-inline outline contrast" hx-post="/tasks/{{ task.uuid }}/discard" hx-swap="none" hx-confirm="Discard this task?" onclick="event.stopPropagation()">Discard</button>
+            </td>
+            {% endif %}
         </tr>
         {% endfor %}
     </tbody>

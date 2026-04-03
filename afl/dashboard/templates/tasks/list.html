@@ -40,6 +40,10 @@
            class="subnav-pill{% if filter_state == 'canceled' %} active{% endif %}">
             Canceled <span class="subnav-count">{{ tab_counts.canceled }}</span>
         </a>
+        <a href="/tasks?state=dead_letter"
+           class="subnav-pill{% if filter_state == 'dead_letter' %} active{% endif %}{% if tab_counts.dead_letter > 0 %} badge-failed{% endif %}">
+            Dead Letter <span class="subnav-count">{{ tab_counts.dead_letter }}</span>
+        </a>
     </div>
 </div>
 {% endblock %}
