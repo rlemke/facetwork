@@ -27,7 +27,7 @@
             <td><a href="/v2/workflows/{{ task.runner_id }}" class="mono">{{ task.runner_id|truncate_uuid }}</a></td>
             {% set si = server_info.get(task.server_id or '') %}
             <td>{{ si['name'] if si else '—' }}</td>
-            <td>{{ si['ping_time']|timestamp if si else '—' }}</td>
+            <td>{{ si['ping_time']|time_ago if si else '—' }}</td>
             <td>{{ task.retry_count }}/{{ task.max_retries }}</td>
             <td>{{ (task.updated - task.created)|duration }}</td>
             <td>{{ task.created|timestamp }}</td>

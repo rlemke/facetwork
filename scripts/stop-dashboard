@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Stop the AFL dashboard process.
+#
+# Finds the dashboard process via pgrep, sends SIGTERM,
+# waits up to 5 seconds, then SIGKILL if still running.
+#
+# Usage:
+#   scripts/stop-dashboard
+#
+set -euo pipefail
+
+pids=$(pgrep -f "python.*-m afl\.dashboard" 2>/dev/null || true)
+
+if [[ -z "$pids" ]]; then
+    echo "No dashboard process found."
+    exit 0
+fi
+
+echo "Stopping dashboard (PID: $pids)..."
+kill $pids 2>/dev/null || true
+
+for i in {1..5}; do
+    if ! pgrep -f "python.*-m afl\.dashboard" > /dev/null 2>&1; then
+        echo "Dashboard stopped."
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "Dashboard still running, sending SIGKILL..."
+kill -9 $pids 2>/dev/null || true
+echo "Dashboard killed."

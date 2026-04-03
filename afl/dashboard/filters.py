@@ -52,6 +52,31 @@ def duration_fmt(ms: int | float | None) -> str:
     return f"{hours}h {mins}m"
 
 
+def time_ago_fmt(value: int | float | None) -> str:
+    """Format a millisecond-epoch timestamp as a relative time ago string.
+
+    Returns compact strings like '2m ago', '3h ago', '1d ago'.
+    """
+    if not value:
+        return "—"
+    now_ms = datetime.datetime.now(tz=datetime.UTC).timestamp() * 1000
+    diff_seconds = int(now_ms - value) // 1000
+    if diff_seconds < 0:
+        return "just now"
+    if diff_seconds < 60:
+        return f"{diff_seconds}s ago"
+    minutes = diff_seconds // 60
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        remaining_min = minutes % 60
+        return f"{hours}h {remaining_min}m ago" if remaining_min else f"{hours}h ago"
+    days = hours // 24
+    remaining_hours = hours % 24
+    return f"{days}d {remaining_hours}h ago" if remaining_hours else f"{days}d ago"
+
+
 def duration_long_fmt(ms: int | float | None) -> str:
     """Format a duration in milliseconds as ``D:HH:MM:SS``.
 
@@ -262,4 +287,5 @@ def register_filters(env: Environment) -> None:
     env.filters["file_timestamp"] = file_timestamp
     env.filters["block_label"] = block_label
     env.filters["duration_long"] = duration_long_fmt
+    env.filters["time_ago"] = time_ago_fmt
     env.filters["categorize_step_state"] = step_category_filter
