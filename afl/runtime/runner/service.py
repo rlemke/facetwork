@@ -263,9 +263,15 @@ class RunnerService:
                 ancestor = self._persistence.get_step(current_id)
                 if ancestor is None:
                     break
-                name = getattr(ancestor, "foreach_value", None) or getattr(ancestor, "statement_name", None)
-                if name:
-                    segments.append(str(name))
+                # Prefer foreach_value (e.g. "Kentucky") but also capture
+                # statement_name (e.g. "imp") when both are present on
+                # different ancestors in the chain.
+                fv = getattr(ancestor, "foreach_value", None)
+                sn = getattr(ancestor, "statement_name", None)
+                if fv:
+                    segments.append(str(fv))
+                elif sn:
+                    segments.append(str(sn))
                 current_id = getattr(ancestor, "container_id", None) or getattr(ancestor, "block_id", None)
             segments.reverse()
             if step.statement_name:
@@ -531,15 +537,35 @@ class RunnerService:
             self._active_futures = kept
 
     def _release_timed_out_task(self, task_id: str) -> None:
-        """Reset a timed-out task to pending so it can be reclaimed."""
+        """Reset a timed-out task to pending, or dead-letter if retries exhausted."""
         try:
             task = self._persistence.get_task(task_id)
-            if task and task.state == TaskState.RUNNING:
+            if not task or task.state != TaskState.RUNNING:
+                return
+            task.retry_count += 1
+            task.updated = _current_time_ms()
+            if task.max_retries > 0 and task.retry_count >= task.max_retries:
+                task.state = TaskState.DEAD_LETTER
+                task.error = (
+                    f"Timed out {task.retry_count} times "
+                    f"(limit {task.max_retries}), dead-lettered"
+                )
+                label = self._task_label(task_id)
+                try:
+                    self._evaluator.fail_step(task.step_id, task.error)
+                except Exception:
+                    logger.debug("Could not fail step %s", task.step_id, exc_info=True)
+                logger.warning(
+                    "Task %s dead-lettered after %d timeout retries — %s",
+                    task_id,
+                    task.retry_count,
+                    label,
+                )
+            else:
                 task.state = TaskState.PENDING
                 task.server_id = ""
                 task.error = None
-                task.updated = _current_time_ms()
-                self._safe_save_task(task)
+            self._safe_save_task(task)
         except Exception:
             logger.debug("Could not release timed-out task %s", task_id, exc_info=True)
 

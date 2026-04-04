@@ -854,9 +854,17 @@ class RegistryRunner:
 
             # Inject _task_heartbeat callback so long-running handlers can
             # signal progress and avoid being reaped by the orphan detector.
-            def _task_heartbeat_callback():
+            def _task_heartbeat_callback(
+                progress_pct: int | None = None,
+                progress_message: str | None = None,
+            ):
                 now = _current_time_ms()
-                self._persistence.update_task_heartbeat(task.uuid, now)
+                self._persistence.update_task_heartbeat(
+                    task.uuid,
+                    now,
+                    progress_pct=progress_pct,
+                    progress_message=progress_message,
+                )
 
             payload["_task_heartbeat"] = _task_heartbeat_callback
             payload["_task_uuid"] = task.uuid

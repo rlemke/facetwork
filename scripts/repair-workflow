@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Diagnose and repair a stuck AFL workflow.
 #
-# Performs four checks:
+# Performs six checks:
 #   1. Runner state — if completed/failed but has non-terminal work, reset to running
 #   2. Orphaned tasks — running tasks on dead/shutdown servers → pending
 #   3. Transient step errors — connection/timeout errors → retry (EventTransmit)
 #   4. Ancestor blocks — reset errored ancestors so execution resumes
+#   5. Dead-lettered tasks — re-enqueue with retry count reset, fix steps and ancestors
+#   6. Inconsistent steps — steps marked Complete but with failed tasks → reset
 #
 # Usage:
 #   scripts/repair-workflow <runner_id>
@@ -85,12 +87,17 @@ for s in retried:
 ancestors = result['ancestors_reset']
 print(f'  Ancestor blocks reset: {len(ancestors)}')
 
+dead_letter = result.get('dead_letter_tasks_reset', [])
+print(f'  Dead-lettered tasks re-enqueued: {len(dead_letter)}')
+for t in dead_letter:
+    print(f'    {t["name"]}  step={t["step_id"][:12]}  error={t["error"][:80]}')
+
 inconsistent = result.get('inconsistent_steps_reset', [])
 print(f'  Inconsistent steps reset: {len(inconsistent)}')
 for s in inconsistent:
     print(f'    {s["facet_name"] or s["step_id"][:12]}  (step=Complete, task={s["task_state"]})')
 
-total = (1 if result['runner_reset'] else 0) + len(orphaned) + len(retried) + len(ancestors) + len(inconsistent)
+total = (1 if result['runner_reset'] else 0) + len(orphaned) + len(retried) + len(ancestors) + len(dead_letter) + len(inconsistent)
 if total == 0:
     print()
     print('No issues found.')

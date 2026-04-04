@@ -27,6 +27,14 @@ def _postgis_import_handler(payload: dict) -> dict:
     force_raw = payload.get("force", False)
     force = force_raw if isinstance(force_raw, bool) else str(force_raw).lower() in ("true", "1", "yes")
     step_log = payload.get("_step_log")
+    task_heartbeat = payload.get("_task_heartbeat")
+
+    # Signal liveness immediately so heartbeat is established early
+    if task_heartbeat:
+        try:
+            task_heartbeat(progress_message=f"PostGisImport starting: {region or 'unknown'}")
+        except Exception:
+            log.warning("PostGisImport: initial heartbeat failed", exc_info=True)
 
     if step_log:
         step_log(f"PostGisImport: processing {region or 'unknown'} from {source_url or pbf_path}")
@@ -59,6 +67,7 @@ def _postgis_import_handler(payload: dict) -> dict:
             region=region,
             force=force,
             step_log=step_log,
+            task_heartbeat=task_heartbeat,
         )
         if step_log:
             if result.was_prior_import and not force:
@@ -101,6 +110,7 @@ def _postgis_import_batch_handler(payload: dict) -> dict:
     force_raw = payload.get("force", False)
     force = force_raw if isinstance(force_raw, bool) else str(force_raw).lower() in ("true", "1", "yes")
     step_log = payload.get("_step_log")
+    task_heartbeat = payload.get("_task_heartbeat")
 
     if step_log:
         step_log(f"PostGisImportBatch: importing {len(regions)} regions")
@@ -137,6 +147,7 @@ def _postgis_import_batch_handler(payload: dict) -> dict:
                 region=region_name,
                 force=force,
                 step_log=step_log,
+                task_heartbeat=task_heartbeat,
             )
             total_nodes += result.node_count
             total_ways += result.way_count
@@ -199,9 +210,12 @@ def register_postgis_handlers(poller) -> None:
 
 def register_handlers(runner) -> None:
     """Register all facets with a RegistryRunner."""
+    # PostGIS imports can take hours for large regions — use 0 (no per-handler
+    # timeout) and rely on heartbeat + the global stuck-task watchdog instead.
     for facet_name in _DISPATCH:
         runner.register_handler(
             facet_name=facet_name,
+            timeout_ms=0,
             module_uri=f"file://{os.path.abspath(__file__)}",
             entrypoint="handle",
         )

@@ -313,7 +313,7 @@ def ensure_schema(conn) -> None:
 class _BatchFlusher:
     """Shared batched-insert logic for nodes and ways."""
 
-    PROGRESS_INTERVAL = 120.0  # seconds between progress logs
+    PROGRESS_INTERVAL = 60.0  # seconds between progress logs and heartbeats
 
     def __init__(
         self,
@@ -324,6 +324,7 @@ class _BatchFlusher:
         region: str = "",
         batch_size: int = DEFAULT_BATCH_SIZE,
         step_log=None,
+        task_heartbeat=None,
     ):
         self.conn = conn
         self._insert_sql = insert_sql
@@ -334,6 +335,7 @@ class _BatchFlusher:
         self.batch: list[tuple] = []
         self.total_count: int = 0
         self._step_log = step_log
+        self._task_heartbeat = task_heartbeat
         self._t0 = time.monotonic()
         self._last_progress = self._t0
         self._batches_since_commit = 0
@@ -361,14 +363,24 @@ class _BatchFlusher:
         self._maybe_progress()
 
     def _maybe_progress(self) -> None:
-        if not self._step_log:
-            return
         now = time.monotonic()
         if now - self._last_progress < self.PROGRESS_INTERVAL:
             return
         self._last_progress = now
         elapsed = now - self._t0
         rate = self.total_count / elapsed if elapsed > 0 else 0
+
+        # Signal liveness to avoid task timeout during long imports
+        if self._task_heartbeat:
+            try:
+                self._task_heartbeat(
+                    progress_message=f"{self._label} ({self.region}): {self.total_count:,} @ {rate:,.0f}/s",
+                )
+            except Exception:
+                log.debug("%s: heartbeat callback failed", self._label)
+
+        if not self._step_log:
+            return
         msg = (
             f"{self._label} ({self.region}): {self.total_count:,} inserted "
             f"({elapsed:.0f}s, {rate:,.0f}/s)"
@@ -408,6 +420,7 @@ class CombinedCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
         use_upsert: bool = True,
         progress=None,
         step_log=None,
+        task_heartbeat=None,
     ):
         if HAS_OSMIUM:
             super().__init__()
@@ -422,6 +435,7 @@ class CombinedCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
             region,
             batch_size,
             step_log,
+            task_heartbeat,
         )
         self._ways = _BatchFlusher(
             conn,
@@ -431,6 +445,7 @@ class CombinedCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
             region,
             batch_size,
             step_log,
+            task_heartbeat,
         )
         self.region = region
 
@@ -629,6 +644,7 @@ def import_to_postgis(
     force: bool = False,
     batch_size: int = DEFAULT_BATCH_SIZE,
     step_log=None,
+    task_heartbeat=None,
 ) -> ImportResult:
     """Import OSM nodes and ways from a PBF file into PostGIS.
 
@@ -644,6 +660,7 @@ def import_to_postgis(
         force: Re-import even if region was previously imported
         batch_size: Number of rows per batch insert
         step_log: Optional callback for progress reporting
+        task_heartbeat: Optional callback to signal liveness and avoid timeout
 
     Returns:
         ImportResult with counts and metadata
@@ -723,6 +740,7 @@ def import_to_postgis(
             use_upsert=use_upsert,
             progress=progress,
             step_log=step_log,
+            task_heartbeat=task_heartbeat,
         )
 
         # locations=True enables pyosmium's built-in NodeLocationsForWays

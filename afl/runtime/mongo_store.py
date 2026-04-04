@@ -909,11 +909,13 @@ class MongoStore(PersistenceAPI):
     def repair_workflow(self, runner_id: str, dry_run: bool = False) -> dict:
         """Diagnose and repair a stuck workflow.
 
-        Performs four checks:
+        Performs six checks:
         1. Runner state — if completed/failed but has non-terminal work, reset to running
         2. Orphaned tasks — running tasks on dead/shutdown servers → pending
         3. Transient step errors — connection/timeout errors → retry (EventTransmit)
         4. Ancestor blocks — reset errored ancestors so execution resumes
+        5. Dead-lettered tasks — re-enqueue with retry count reset, fix steps and ancestors
+        6. Inconsistent steps — steps marked Complete but with failed tasks → reset
 
         Returns a dict describing all repairs made.
         """
@@ -1078,7 +1080,59 @@ class MongoStore(PersistenceAPI):
                     next_id = ancestor.block_id or ancestor.container_id
                     current_id = next_id
 
-        # -- 5. Detect steps marked Complete but with failed tasks --
+        # -- 5. Re-enqueue dead-lettered tasks --
+        result["dead_letter_tasks_reset"] = []
+        dead_letter_tasks = [t for t in tasks if t.state == TaskState.DEAD_LETTER]
+        for t in dead_letter_tasks:
+            result["dead_letter_tasks_reset"].append({
+                "task_id": t.uuid,
+                "name": t.name,
+                "step_id": t.step_id,
+                "error": (t.error or "")[:120] if isinstance(t.error, str) else str(t.error)[:120],
+            })
+            if not dry_run:
+                self._db.tasks.update_one(
+                    {"uuid": t.uuid},
+                    {"$set": {
+                        "state": "pending",
+                        "server_id": "",
+                        "error": None,
+                        "retry_count": 0,
+                        "task_heartbeat": 0,
+                        "updated": now,
+                    }},
+                )
+                # Reset the associated errored step
+                step = step_by_id.get(t.step_id) or self.get_step(t.step_id)
+                if step and step.state == StepState.STATEMENT_ERROR:
+                    step.state = StepState.EVENT_TRANSMIT
+                    if hasattr(step, "transition") and step.transition:
+                        step.transition.current_state = StepState.EVENT_TRANSMIT
+                        step.transition.clear_error()
+                        step.transition.request_transition = False
+                        step.transition.changed = True
+                    self.save_step(step)
+
+                    # Reset errored ancestors
+                    seen_dl: set[str] = set()
+                    current_id = step.block_id
+                    while current_id and current_id not in seen_dl:
+                        seen_dl.add(current_id)
+                        ancestor = step_by_id.get(current_id) or self.get_step(current_id)
+                        if ancestor is None:
+                            break
+                        if ancestor.state == StepState.STATEMENT_ERROR:
+                            ancestor.state = StepState.BLOCK_EXECUTION_CONTINUE
+                            if hasattr(ancestor, "transition") and ancestor.transition:
+                                ancestor.transition.current_state = StepState.BLOCK_EXECUTION_CONTINUE
+                                ancestor.transition.clear_error()
+                                ancestor.transition.request_transition = False
+                                ancestor.transition.changed = True
+                            self.save_step(ancestor)
+                            result["ancestors_reset"].append(ancestor.id)
+                        current_id = ancestor.block_id
+
+        # -- 6. Detect steps marked Complete but with failed tasks --
         # Build task lookup by step_id
         result["inconsistent_steps_reset"] = []
         task_by_step: dict[str, list] = {}
