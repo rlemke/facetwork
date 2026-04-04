@@ -869,6 +869,12 @@ class RegistryRunner:
             payload["_task_heartbeat"] = _task_heartbeat_callback
             payload["_task_uuid"] = task.uuid
 
+            # Retry context — lets handlers detect reclaims and skip
+            # previously-completed operations (e.g. partial DB imports).
+            retry_count = getattr(task, "retry_count", 0) or 0
+            payload["_retry_count"] = retry_count
+            payload["_is_retry"] = retry_count > 0
+
             # Look up handler timeout — task-level (from AFL Timeout mixin)
             # takes priority over registration-level default
             timeout_ms = getattr(task, "timeout_ms", 0) or 0

@@ -850,6 +850,12 @@ class RunnerService:
             payload["_task_heartbeat"] = _task_heartbeat_callback
             payload["_task_uuid"] = task.uuid
 
+            # Retry context — lets handlers detect reclaims and skip
+            # previously-completed operations.
+            retry_count = getattr(task, "retry_count", 0) or 0
+            payload["_retry_count"] = retry_count
+            payload["_is_retry"] = retry_count > 0
+
             # Dispatch to handler (try exact name, then prefix for builtin
             # tasks like "afl:execute:WorkflowName", then short name)
             result = self._tool_registry.handle(task.name, payload)

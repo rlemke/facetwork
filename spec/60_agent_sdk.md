@@ -1055,6 +1055,11 @@ All SDKs (Python, Scala, Go, TypeScript, Java) inject `_facet_name` and
 |-------------|-------|---------|
 | `_facet_name` | Qualified event facet name (e.g. `"ns.CountDocuments"`) | Allows handlers to identify which facet triggered them |
 | `_handler_metadata` | Metadata dict from `HandlerRegistration.metadata` | Passes registration-time config to handler code |
+| `_step_log` | Step logging callback | Handler-visible logging (see §9.15) |
+| `_task_heartbeat` | Liveness callback | Prevents timeout reaping (see §9.15) |
+| `_task_uuid` | Task UUID string | Unique task identifier |
+| `_retry_count` | Integer (0 on first run) | Number of prior attempts |
+| `_is_retry` | Boolean | `True` when reclaiming a previously-attempted task |
 
 **Non-Python SDK implementation:**
 
@@ -1070,7 +1075,179 @@ The `RegistryRunner` in each SDK stores handler metadata during
 `handler_registrations` document) and wires a metadata provider into the
 poller at construction time.
 
-### 9.15 Streaming/Partial Updates (All SDKs)
+### 9.15 Handler Responsibilities: Errors, Heartbeats, Timeouts, and Retries
+
+Handlers are responsible for cooperating with the runtime to ensure
+reliable execution. This section specifies the contract between a
+handler and the runner that dispatches it.
+
+#### Injected Payload Fields
+
+The runner injects these fields into every handler payload before
+dispatch. Handlers should treat all `_`-prefixed keys as runtime
+metadata — never return them in results.
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `_facet_name` | `str` | Qualified event facet name (e.g. `"osm.ops.PostGisImport"`) |
+| `_step_log` | `callable(message, level?, details?)` | Emit a step log visible in the dashboard |
+| `_task_heartbeat` | `callable(progress_pct?, progress_message?)` | Signal liveness to avoid timeout |
+| `_task_uuid` | `str` | Task UUID |
+| `_retry_count` | `int` | Number of prior attempts (0 on first execution) |
+| `_is_retry` | `bool` | `True` if this is a reclaimed/retried task |
+| `_handler_metadata` | `dict` | From `HandlerRegistration.metadata` (if present) |
+
+#### Error Handling
+
+Handlers communicate failure by raising an exception. The runtime
+catches it and either retries (incrementing `retry_count`) or
+dead-letters the task (when `retry_count >= max_retries`).
+
+**Rules:**
+
+1. **Raise on failure** — never return a partial result and hope
+   downstream steps can cope. An uncaught exception triggers the
+   retry/dead-letter cycle. A returned dict is treated as success.
+
+2. **Wrap external errors with context** — re-raise with a message
+   that includes the operation, region, or resource so the step log
+   is actionable:
+   ```python
+   except psycopg2.OperationalError as exc:
+       raise RuntimeError(f"PostGIS connection failed for {region}: {exc}") from exc
+   ```
+
+3. **Transient vs permanent** — the workflow repair tool
+   (`repair_workflow`) auto-retries steps whose error matches
+   transient patterns (connection refused, timeout, I/O error). For
+   permanent errors (bad input, missing data), include a clear
+   message so operators know not to blindly retry.
+
+4. **Never silently return empty defaults** — if a required resource
+   is missing, raise rather than returning `{"count": 0}`.
+
+#### Heartbeat / Liveness
+
+The runner monitors task liveness via two mechanisms:
+
+- **Execution timeout** (`AFL_TASK_EXECUTION_TIMEOUT_MS`, default
+  15 min): the runner kills tasks with no heartbeat activity beyond
+  this threshold.
+- **Stuck-task watchdog** (`AFL_STUCK_TIMEOUT_MS`, default 30 min):
+  a background sweep resets stuck tasks. If the handler registration
+  has `timeout_ms > 0`, that per-handler timeout is used instead.
+
+**Rules:**
+
+1. **Call `_task_heartbeat()` periodically** for any operation that
+   may exceed 60 seconds. The runtime uses the heartbeat timestamp
+   as "last known alive" — without it, the task appears stuck.
+
+2. **Call heartbeat early** — emit an initial heartbeat at handler
+   entry before any slow I/O begins. This establishes the liveness
+   baseline immediately:
+   ```python
+   def handle(payload: dict) -> dict:
+       heartbeat = payload.get("_task_heartbeat")
+       if heartbeat:
+           heartbeat(progress_message="Starting import")
+       # ... slow work follows ...
+   ```
+
+3. **Include progress info** — pass `progress_message` (and
+   optionally `progress_pct` 0–100) so operators can see what the
+   handler is doing from the dashboard:
+   ```python
+   heartbeat(progress_pct=45, progress_message=f"Imported {count:,} rows")
+   ```
+
+4. **Heartbeat interval** — every 30–60 seconds is ideal. More
+   frequent is harmless but wastes a database write. Less frequent
+   risks falling outside the timeout window.
+
+5. **Long-running handlers should register with `timeout_ms=0`** —
+   this disables the per-handler stuck-task watchdog and relies
+   entirely on heartbeat + the global execution timeout. The default
+   registration timeout of 30 seconds is only appropriate for fast
+   handlers.
+
+#### Timeouts
+
+| Timeout | Source | Default | Scope |
+|---------|--------|---------|-------|
+| `timeout_ms` on `HandlerRegistration` | Per-handler | 30s | Stuck-task watchdog kills tasks exceeding this |
+| `AFL_TASK_EXECUTION_TIMEOUT_MS` | Global env var | 900s (15min) | Runner kills tasks with no heartbeat beyond this |
+| `AFL_STUCK_TIMEOUT_MS` | Global env var | 1800s (30min) | Background sweep resets orphaned running tasks |
+| `AFL_REAPER_TIMEOUT_MS` | Global env var | 120s (2min) | Dead-server detection threshold |
+
+When a task times out, the runner increments `retry_count` and resets
+the task to pending. After `max_retries` (default 5) timeouts, the
+task is dead-lettered.
+
+#### Retries and Reclaim
+
+When a handler fails or times out, the task is reset to pending and
+eventually reclaimed by a runner. The handler receives retry context
+so it can avoid redoing completed work:
+
+```python
+def handle(payload: dict) -> dict:
+    is_retry = payload.get("_is_retry", False)
+    retry_count = payload.get("_retry_count", 0)
+
+    if is_retry:
+        # Check what was already completed in previous attempts
+        existing = check_prior_work(payload)
+        if existing:
+            return existing  # skip re-processing
+    # ... normal processing ...
+```
+
+**`_is_retry`** is `True` when `retry_count > 0` — meaning the task
+was previously attempted and either timed out, failed, or was
+reclaimed after a server shutdown.
+
+**`_retry_count`** is the number of prior attempts. Handlers can use
+this for:
+
+- **Idempotency checks** — query the target system for evidence of
+  prior work (e.g., check `osm_import_log` for a region already
+  imported, check for output files already written).
+
+- **Progressive backoff** — wait longer before retrying an external
+  service that was previously unavailable.
+
+- **Defensive cleanup** — delete partial state from a prior crashed
+  attempt before restarting (e.g., `DELETE FROM table WHERE region =
+  $region` before re-importing).
+
+**Best practices for retry-safe handlers:**
+
+1. **Design for idempotency** — use upserts, check-before-write, or
+   transactional cleanup so that re-running the same handler with
+   the same inputs produces the same result.
+
+2. **Check for prior completion** — on retry, query the target
+   system first. If the work was fully done, return the result
+   immediately. The PostGIS importer checks `osm_import_log`; a
+   file-writing handler can check if the output file exists.
+
+3. **Log retries explicitly** — use `_step_log` to indicate a retry
+   is happening so operators know:
+   ```python
+   if is_retry:
+       step_log(f"Retry #{retry_count}: checking for prior work")
+   ```
+
+4. **Clean up partial state** — if the handler writes to a database
+   without transactions, previous partial writes may be present. On
+   retry, either delete-and-reinsert or use upserts.
+
+5. **Do not assume ordering** — a different runner (on a different
+   server) may reclaim the task. Local temp files from the prior
+   attempt may not exist.
+
+### 9.16 Streaming/Partial Updates (All SDKs)
 
 All SDKs provide an `_update_step` callback injected into handler params,
 enabling handlers to publish partial results before returning the final

@@ -2328,7 +2328,7 @@ class TestProcessEventTask:
         assert "No handler" in updated.error["message"]
 
     def test_process_event_task_handler_error(self, store, evaluator, workflow_ast, program_ast):
-        """Event task handler exception marks task FAILED."""
+        """Event task handler exception triggers retry on first failure."""
 
         def failing(p):
             raise ValueError("handler boom")
@@ -2347,8 +2347,9 @@ class TestProcessEventTask:
         svc._process_event_task(task)
 
         updated = store._tasks[task.uuid]
-        assert updated.state == TaskState.FAILED
-        assert "handler boom" in updated.error["message"]
+        # First failure triggers retry (pending), not immediate failure
+        assert updated.state == TaskState.PENDING
+        assert updated.retry_count == 1
 
 
 # =========================================================================
