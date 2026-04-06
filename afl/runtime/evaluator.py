@@ -1831,7 +1831,7 @@ class Evaluator:
             # Start with the continued step as the initial work item
             work_queue: list[str] = [step_id]
 
-            for iteration in range(1, max_iterations + 1):
+            for _iteration in range(1, max_iterations + 1):
                 if not work_queue:
                     break
 
@@ -1856,8 +1856,7 @@ class Evaluator:
                 # notify their parents via _process_step → mark_block_dirty.
                 while True:
                     unprocessed = [
-                        s for s in context.changes.created_steps
-                        if s.id not in processed_ids
+                        s for s in context.changes.created_steps if s.id not in processed_ids
                     ]
                     if not unprocessed:
                         break
@@ -1875,10 +1874,15 @@ class Evaluator:
                 # _process_step marked block_id/container_id dirty for
                 # every step that progressed — those are the parents that
                 # need to re-evaluate their children.
-                work_queue = [
-                    bid for bid in context._dirty_blocks
-                    if bid not in processed_ids
-                ]
+                #
+                # Note: do NOT filter by processed_ids here.  A block may
+                # have been processed earlier in this iteration (before a
+                # child completed) and now needs re-evaluation because a
+                # sibling or descendant progressed.  Excluding it would
+                # prevent the block from creating newly-ready sibling
+                # steps (e.g. MergeSummaries after SummarizeChunk foreach
+                # completes).
+                work_queue = list(context._dirty_blocks)
 
             logger.info(
                 "resume_step done: workflow_id=%s iterations=%d",
@@ -2021,8 +2025,7 @@ class Evaluator:
                 # Process any newly created children (cascading creation)
                 while True:
                     unprocessed = [
-                        s for s in context.changes.created_steps
-                        if s.id not in processed_ids
+                        s for s in context.changes.created_steps if s.id not in processed_ids
                     ]
                     if not unprocessed:
                         break
@@ -2044,17 +2047,13 @@ class Evaluator:
                 # This follows the parent chain up to the root within
                 # the same call — no separate continuation tasks needed
                 # for intra-process cascading.
-                work_queue = [
-                    bid for bid in context._dirty_blocks
-                    if bid not in processed_ids
-                ]
+                work_queue = [bid for bid in context._dirty_blocks if bid not in processed_ids]
 
             # Generate continuation events only for remaining dirty
             # blocks that weren't processed (e.g., steps on other
             # servers' workflows, or if we hit the round limit).
             remaining_dirty = {
-                bid for bid in (context._dirty_blocks or set())
-                if bid not in processed_ids
+                bid for bid in (context._dirty_blocks or set()) if bid not in processed_ids
             }
             if remaining_dirty:
                 context.changes = IterationChanges()

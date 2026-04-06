@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+# Generate sample document files for the doc-processing pipeline.
+#
+# Creates sample documents at /tmp/doc-processing/:
+#   technical-spec.txt     — technical document about API design
+#   financial-report.txt   — financial quarterly report
+#   legal-contract.txt     — legal agreement document
+#   medical-notes.md       — medical clinical notes
+#   research-paper.txt     — academic research paper
+#
+# Usage:
+#   examples/doc-processing/scripts/generate-sample-data
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+EXAMPLE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+OUTPUT_DIR="/tmp/doc-processing"
+
+echo "Generating sample documents in ${OUTPUT_DIR}/ ..."
+
+env PYTHONPATH="$REPO_ROOT:$EXAMPLE_DIR" "$PYTHON" - "$OUTPUT_DIR" <<'PYEOF'
+import os
+import sys
+
+output_dir = sys.argv[1]
+os.makedirs(output_dir, exist_ok=True)
+
+documents = {
+    "technical-spec.txt": """API Design Specification v2.1
+
+1. Overview
+
+This document describes the system architecture and API design for the distributed
+workflow processing module. The algorithm optimization framework provides a modular
+approach to function composition and code deployment across multiple service nodes.
+
+2. Architecture
+
+The system uses a microservice architecture with the following core components:
+- API Gateway: routes requests to appropriate backend services
+- Workflow Engine: orchestrates multi-step processing pipelines
+- Task Queue: manages distributed task execution with retry logic
+- Storage Layer: provides persistent storage for workflow state
+
+3. API Endpoints
+
+POST /api/workflows - Create a new workflow execution
+GET  /api/workflows/:id - Retrieve workflow status and results
+PUT  /api/workflows/:id/cancel - Cancel a running workflow
+GET  /api/workflows/:id/steps - List all steps in a workflow
+
+4. Configuration
+
+The module supports runtime configuration through environment variables:
+- WORKER_CONCURRENCY: maximum parallel tasks per worker (default: 4)
+- TASK_TIMEOUT_MS: per-task execution timeout in milliseconds
+- RETRY_MAX_ATTEMPTS: maximum retry count for failed tasks
+- HEARTBEAT_INTERVAL_MS: worker heartbeat interval
+
+5. Performance Requirements
+
+The system must handle at least 1000 concurrent workflow executions with
+p99 latency under 500ms for API responses. The algorithm optimization
+layer should reduce overall processing time by at least 30% compared to
+sequential execution.
+
+6. Security
+
+All API endpoints require authentication via Bearer tokens. The system
+implements role-based access control (RBAC) with three levels: admin,
+operator, and viewer. Sensitive configuration values are encrypted at
+rest using AES-256-GCM.
+
+7. Deployment
+
+Deploy using containerized services with Kubernetes orchestration.
+Each component scales independently based on queue depth metrics.
+Rolling updates ensure zero-downtime deployments.
+""",
+
+    "financial-report.txt": """Quarterly Financial Report - Q3 2025
+
+Executive Summary
+
+Revenue for Q3 2025 reached $42.3M, exceeding budget forecasts by 12%.
+Profit margins improved to 28.5%, up from 24.1% in Q2. The investment
+portfolio returned 8.2% YTD, driven by strong performance in the
+technology sector.
+
+Revenue Breakdown
+
+Product revenue: $28.1M (up 15% YoY)
+Service revenue: $14.2M (up 8% YoY)
+Total revenue: $42.3M (up 12.5% YoY)
+
+Operating expenses remained controlled at $30.1M, resulting in operating
+profit of $12.2M. The fiscal discipline implemented in Q1 continues to
+yield results, with overhead costs reduced by 7% compared to the same
+quarter last year.
+
+Investment Portfolio
+
+The investment committee approved a rebalancing strategy shifting 10%
+of fixed-income holdings into growth equities. This adjustment is
+expected to improve long-term returns while maintaining acceptable
+risk levels. Current portfolio allocation:
+
+- Equities: 55% (target: 60%)
+- Fixed Income: 30% (target: 25%)
+- Real Estate: 10% (target: 10%)
+- Cash: 5% (target: 5%)
+
+Budget Outlook for Q4
+
+Based on current pipeline and seasonal patterns, we project Q4 revenue
+between $44M-$48M. The board has approved a $2M investment in R&D
+infrastructure to support the 2026 product roadmap.
+""",
+
+    "legal-contract.txt": """SERVICE AGREEMENT
+
+This Agreement ("Agreement") is entered into as of October 1, 2025
+("Effective Date") by and between:
+
+Party A: TechCorp Inc., a Delaware corporation ("Provider")
+Party B: DataFlow LLC, a California limited liability company ("Client")
+
+WHEREAS, Provider operates a distributed computing platform and Client
+wishes to engage Provider's services for workflow processing;
+
+NOW, THEREFORE, in consideration of the mutual covenants and agreements
+hereby set forth, the parties agree as follows:
+
+1. SCOPE OF SERVICES
+
+Provider shall deliver the following services pursuant to this Agreement:
+(a) Hosted workflow execution platform with 99.9% uptime SLA
+(b) Technical support during business hours (9 AM - 6 PM EST)
+(c) Quarterly performance reviews and optimization recommendations
+(d) Data processing in compliance with applicable privacy law
+
+2. TERM AND TERMINATION
+
+This Agreement shall commence on the Effective Date and continue for a
+period of twenty-four (24) months ("Initial Term"). Either party may
+terminate this Agreement upon sixty (60) days written notice.
+
+3. COMPENSATION
+
+Client shall pay Provider a monthly fee of $15,000 for the services
+described in Section 1. Payment is due within thirty (30) days of
+invoice date. Late payments shall accrue interest at 1.5% per month.
+
+4. LIMITATION OF LIABILITY
+
+IN NO EVENT SHALL EITHER PARTY BE LIABLE FOR ANY INDIRECT, INCIDENTAL,
+SPECIAL, OR CONSEQUENTIAL DAMAGES ARISING OUT OF THIS AGREEMENT.
+Provider's total liability shall not exceed the fees paid by Client
+in the twelve (12) months preceding the claim.
+
+5. GOVERNING LAW
+
+This Agreement shall be governed by and construed in accordance with
+the laws of the State of Delaware, without regard to its conflict of
+law provisions. Any dispute arising under this Agreement shall be
+resolved through binding arbitration in Wilmington, Delaware.
+
+IN WITNESS WHEREOF, the parties have executed this Agreement as of
+the Effective Date.
+""",
+
+    "medical-notes.md": """# Clinical Notes - Patient Assessment
+
+## Patient Information
+- **ID**: PT-2025-0847
+- **Date**: September 15, 2025
+- **Provider**: Dr. Sarah Chen, Internal Medicine
+
+## Chief Complaint
+Patient presents with persistent fatigue and intermittent headaches
+for the past three weeks. Reports difficulty concentrating at work.
+
+## History of Present Illness
+The patient is a 42-year-old presenting with a 3-week history of
+progressive fatigue. Symptom onset was gradual. The patient denies
+fever, weight loss, or night sweats. Associated symptoms include
+mild headaches occurring 3-4 times per week, typically in the
+afternoon. No visual changes or neurological symptoms reported.
+
+## Assessment and Diagnosis
+1. Fatigue, unspecified (R53.83)
+   - Differential includes iron deficiency anemia, thyroid dysfunction,
+     sleep disorder, and stress-related fatigue
+2. Tension-type headache (G44.209)
+   - Pattern consistent with cervicogenic or tension headaches
+
+## Treatment Plan
+1. Laboratory workup:
+   - Complete blood count (CBC) with differential
+   - Comprehensive metabolic panel (CMP)
+   - Thyroid function tests (TSH, Free T4)
+   - Iron studies (ferritin, TIBC, serum iron)
+   - Vitamin B12 and folate levels
+2. Treatment: Start trial of dose adjustment for current medication
+3. Lifestyle modifications recommended:
+   - Sleep hygiene education provided
+   - Stress management techniques discussed
+4. Follow-up appointment in 2 weeks to review lab results
+""",
+
+    "research-paper.txt": """Abstract
+
+This paper presents a novel methodology for evaluating distributed workflow
+systems under varying load conditions. Our research demonstrates that
+adaptive scheduling algorithms can improve throughput by 40-60% compared
+to static allocation strategies. The hypothesis that dynamic resource
+allocation outperforms fixed provisioning is supported by experimental
+findings across five benchmark datasets.
+
+1. Introduction
+
+The growing complexity of data processing pipelines has created a need
+for efficient workflow orchestration systems. Previous research has
+focused primarily on single-node optimization, leaving a gap in our
+understanding of distributed execution patterns. This paper addresses
+that gap through a systematic evaluation methodology.
+
+2. Related Work
+
+Smith et al. (2023) proposed a queue-based scheduling approach that
+achieved 25% throughput improvement. However, their methodology did
+not account for heterogeneous workloads. Johnson (2024) extended this
+work with priority-based scheduling but did not evaluate scalability
+beyond 100 concurrent workflows.
+
+3. Methodology
+
+We designed a controlled experiment with the following parameters:
+- Cluster sizes: 4, 8, 16, 32 nodes
+- Workload types: CPU-bound, I/O-bound, mixed
+- Scheduling strategies: round-robin, least-loaded, adaptive
+- Metrics: throughput, latency (p50, p95, p99), resource utilization
+
+Each configuration was run for 60 minutes with a warm-up period of
+5 minutes. Results were averaged over 3 independent runs.
+
+4. Findings
+
+The adaptive scheduling strategy consistently outperformed static
+approaches across all cluster sizes and workload types:
+- CPU-bound: 42% throughput improvement (p < 0.001)
+- I/O-bound: 58% throughput improvement (p < 0.001)
+- Mixed: 47% throughput improvement (p < 0.005)
+
+Resource utilization improved from 62% (round-robin) to 89% (adaptive),
+indicating more efficient use of available compute capacity.
+
+5. Conclusion
+
+Our research confirms the hypothesis that adaptive scheduling provides
+significant performance benefits in distributed workflow systems. Future
+work will explore machine learning-based prediction models for workload
+classification and preemptive resource allocation.
+""",
+}
+
+for filename, content in documents.items():
+    path = os.path.join(output_dir, filename)
+    with open(path, "w") as f:
+        f.write(content.strip() + "\n")
+    size_kb = os.path.getsize(path) / 1024
+    print(f"  {filename:30s} ({size_kb:.1f} KB)")
+
+print(f"\nGenerated {len(documents)} sample documents in {output_dir}/")
+print(f"\nTo process a document:")
+print(f"  Workflow: doc.workflows.ProcessDocument")
+print(f'  Parameters: {{"file_path": "{output_dir}/technical-spec.txt"}}')
+PYEOF

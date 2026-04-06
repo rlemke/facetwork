@@ -21,6 +21,34 @@ if [ -f "$_ENV_PROJECT_DIR/.env" ]; then
     done < "$_ENV_PROJECT_DIR/.env"
 fi
 
+# Auto-fallback: if AFL_MONGODB_URL is unreachable, try localhost.
+# Only runs the check if a Python interpreter is available.
+_PYTHON="${_ENV_PROJECT_DIR}/.venv/bin/python3"
+[[ -x "$_PYTHON" ]] || _PYTHON=python3
+if command -v "$_PYTHON" &>/dev/null 2>&1; then
+    _mongo_ok() {
+        "$_PYTHON" -c "
+from pymongo import MongoClient; import sys, os
+try:
+    MongoClient(os.environ.get('AFL_MONGODB_URL','mongodb://localhost:27017'), serverSelectionTimeoutMS=2000).server_info()
+except Exception:
+    sys.exit(1)
+" 2>/dev/null
+    }
+    if ! _mongo_ok; then
+        _AFL_ORIG_URL="${AFL_MONGODB_URL:-}"
+        export AFL_MONGODB_URL="mongodb://localhost:27017"
+        if _mongo_ok; then
+            echo "MongoDB at ${_AFL_ORIG_URL:-<unset>} unreachable, using localhost" >&2
+        else
+            # Restore original — let downstream scripts handle the error
+            if [ -n "$_AFL_ORIG_URL" ]; then
+                export AFL_MONGODB_URL="$_AFL_ORIG_URL"
+            fi
+        fi
+    fi
+fi
+
 # Compute compose file args and profile args from active overlay state.
 # Sets: AFL_COMPOSE_FILES, AFL_PROFILE_ARGS
 _compute_compose_args() {

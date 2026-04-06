@@ -1,0 +1,163 @@
+// Document Processing Pipeline
+// Demonstrates statement-level andThen (step chaining), andThen foreach
+// (parallel chunk summarization), catch (per-chunk error recovery), schemas,
+// prompt blocks, and RegistryRunner-first approach.
+
+/** Type definitions for document processing. */
+namespace doc.types {
+    /** Result of detecting the file type and basic metadata. */
+    schema FileInfo {
+        file_path: String,
+        file_type: String,
+        file_size: Int,
+        page_count: Int,
+        encoding: String
+    }
+
+    /** Extracted raw text content from a document. */
+    schema ExtractedText {
+        text: String,
+        char_count: Int,
+        word_count: Int,
+        method: String
+    }
+
+    /** Summary produced from a single chunk. */
+    schema ChunkSummary {
+        chunk_id: String,
+        summary: String,
+        key_phrases: [String],
+        word_count: Int
+    }
+
+    /** Classification result for a document. */
+    schema Classification {
+        category: String,
+        confidence: Double,
+        subcategory: String,
+        tags: [String]
+    }
+
+    /** Final merged report for a processed document. */
+    schema DocumentReport {
+        file_path: String,
+        file_type: String,
+        category: String,
+        summary: String,
+        key_phrases: [String],
+        chunk_count: Int,
+        word_count: Int,
+        report_path: String
+    }
+}
+
+/** File type detection and metadata extraction. */
+namespace doc.Detection {
+    use doc.types
+
+    /** Detect the file type and extract metadata (page count, encoding, size). */
+    event facet DetectFileType(file_path: String) => (info: FileInfo)
+}
+
+/** Text extraction — dispatches internally based on file type. */
+namespace doc.Extraction {
+    use doc.types
+
+    /** Extract text content from any supported file (PDF, TXT, Markdown, etc.). */
+    event facet ExtractText(file_path: String, file_type: String, encoding: String = "utf-8") => (extracted: ExtractedText)
+}
+
+/** Text chunking for parallel processing. */
+namespace doc.Chunking {
+    use doc.types
+
+    /** Split extracted text into overlapping chunks for summarization. */
+    event facet SplitIntoChunks(text: String, chunk_size: Int = 1000, overlap: Int = 100) => (chunks: Json, chunk_count: Int)
+}
+
+/** Chunk-level and document-level summarization. */
+namespace doc.Summarization {
+    use doc.types
+
+    /** Summarize a single text chunk and write result to the summary store.
+      * After the foreach completes, MergeSummaries reads all stored summaries. */
+    event facet SummarizeChunk(chunk_id: String, text: String, file_path: String) => (summary: ChunkSummary) prompt {
+        system "You are a document analyst specializing in extractive and abstractive summarization."
+        template "Summarize the following text chunk (ID: {chunk_id}). Produce a concise summary and extract 3-5 key phrases.\n\nText:\n{text}"
+        model "claude-sonnet-4-20250514"
+    }
+
+    /** Merge all chunk summaries from the summary store into a coherent document summary. */
+    event facet MergeSummaries(file_path: String, chunk_count: Int) => (merged_summary: String, key_phrases: [String], total_chunks: Int)
+}
+
+/** Document classification by topic and type. */
+namespace doc.Classification {
+    use doc.types
+
+    /** Classify the document into a category based on its content. */
+    event facet ClassifyDocument(text: String, file_path: String) => (classification: Classification) prompt {
+        system "You are a document classification expert. Categories: legal, technical, financial, medical, academic, correspondence, report, other."
+        template "Classify the following document (source: {file_path}).\n\nText (first 2000 chars):\n{text}\n\nReturn category, confidence (0-1), subcategory, and relevant tags."
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+/** Report generation. */
+namespace doc.Reporting {
+    use doc.types
+
+    /** Generate a final HTML report combining all analysis results. */
+    event facet GenerateReport(file_path: String, file_type: String, category: String, summary: String, key_phrases: [String], chunk_count: Int, word_count: Int) => (report: DocumentReport)
+}
+
+/** Workflows for single-document and batch processing. */
+namespace doc.workflows {
+    use doc.types
+
+    /** Process a single document: detect type, extract text, chunk, summarize in
+      * parallel, classify, merge summaries, and generate a final report.
+      * DetectFileType -> ExtractText -> (SplitIntoChunks + ClassifyDocument) ->
+      * foreach chunk SummarizeChunk -> MergeSummaries -> GenerateReport. */
+    workflow ProcessDocument(file_path: String, chunk_size: Int = 1000) => (status: String, detail: String) andThen {
+        detect = DetectFileType(file_path = $.file_path)
+        extract = ExtractText(file_path = $.file_path, file_type = detect.info.file_type, encoding = detect.info.encoding)
+        classify = ClassifyDocument(text = extract.extracted.text, file_path = $.file_path)
+        splitting = SplitIntoChunks(text = extract.extracted.text, chunk_size = $.chunk_size) andThen foreach chunk in splitting.chunks {
+            chunk_summary = SummarizeChunk(chunk_id = $.chunk.chunk_id, text = $.chunk.text, file_path = $.file_path) catch {
+                yield ProcessDocument(status = "partial_failure", detail = "Chunk summarization failed for " ++ $.chunk.chunk_id)
+            }
+        }
+        merged = MergeSummaries(file_path = $.file_path, chunk_count = splitting.chunk_count)
+        report = GenerateReport(file_path = $.file_path, file_type = detect.info.file_type, category = classify.classification.category, summary = merged.merged_summary, key_phrases = merged.key_phrases, chunk_count = splitting.chunk_count, word_count = extract.extracted.word_count)
+        yield ProcessDocument(status = "completed", detail = "Processed " ++ detect.info.file_type ++ " document: " ++ classify.classification.category)
+    }
+
+    /** Process a batch of documents from a file listing.
+      * Accepts file_paths as a JSON array, comma-separated string, or single path.
+      * A pre-script normalizes the input into a list before the foreach executes. */
+    workflow BatchProcess(file_paths: String, chunk_size: Int = 1000) => (status: String) script {
+        import json
+        raw = params.get("file_paths", "")
+        paths = []
+        if isinstance(raw, list):
+            paths = raw
+        elif isinstance(raw, str):
+            raw = raw.strip()
+            if raw.startswith("["):
+                try:
+                    paths = json.loads(raw)
+                except json.JSONDecodeError:
+                    paths = [raw]
+            elif "," in raw:
+                paths = [p.strip() for p in raw.split(",") if p.strip()]
+            elif raw:
+                paths = [raw]
+        result["normalized_paths"] = paths
+        result["file_count"] = len(paths)
+    } andThen foreach file in $.normalized_paths {
+        result = ProcessDocument(file_path = $.file, chunk_size = $.chunk_size) catch {
+            yield BatchProcess(status = "partial_failure")
+        }
+    }
+}

@@ -1,0 +1,165 @@
+// Website Analysis / Crawl Pipeline
+// Demonstrates statement-level andThen (step chaining), andThen foreach
+// (parallel page analysis), catch (per-page error recovery), schemas,
+// prompt blocks, and RegistryRunner-first approach.
+
+/** Type definitions for website analysis. */
+namespace site.types {
+    /** Fetched page content and HTTP metadata. */
+    schema PageContent {
+        url: String,
+        status_code: Int,
+        content_type: String,
+        html: String,
+        fetch_time_ms: Int
+    }
+
+    /** Crawl preparation result with normalized URLs and site identifier. */
+    schema CrawlPlan {
+        site_id: String,
+        urls: Json,
+        page_count: Int,
+        base_domain: String
+    }
+
+    /** Extracted page metadata (title, description, OpenGraph, etc.). */
+    schema PageMetadata {
+        url: String,
+        title: String,
+        description: String,
+        language: String,
+        canonical_url: String,
+        og_image: String,
+        headings: Json,
+        word_count: Int
+    }
+
+    /** Page type classification result. */
+    schema PageClassification {
+        url: String,
+        page_type: String,
+        confidence: Double,
+        signals: [String]
+    }
+
+    /** Summary of a single page. */
+    schema PageSummary {
+        url: String,
+        summary: String,
+        key_topics: [String],
+        word_count: Int
+    }
+
+    /** Broken link detection result for a page. */
+    schema LinkReport {
+        url: String,
+        total_links: Int,
+        internal_links: Int,
+        external_links: Int,
+        broken_links: Json,
+        broken_count: Int
+    }
+
+    /** Consolidated site analysis report. */
+    schema SiteReport {
+        site_id: String,
+        base_domain: String,
+        page_count: Int,
+        total_broken_links: Int,
+        page_types: Json,
+        summary: String,
+        report_path: String
+    }
+}
+
+/** Crawl preparation — URL normalization and validation. */
+namespace site.Crawl {
+    use site.types
+
+    /** Normalize and deduplicate URLs, generate a site identifier. */
+    event facet PrepareCrawl(urls: [String]) => (plan: CrawlPlan)
+
+    /** Fetch a single page's HTML content and HTTP status. */
+    event facet FetchPage(url: String, site_id: String) => (page: PageContent)
+}
+
+/** Metadata extraction from HTML pages. */
+namespace site.Metadata {
+    use site.types
+
+    /** Extract title, description, headings, OpenGraph tags, and word count. */
+    event facet ExtractMetadata(url: String, html: String, site_id: String) => (meta: PageMetadata)
+}
+
+/** Page type classification. */
+namespace site.Classification {
+    use site.types
+
+    /** Classify a page as blog, landing, product, docs, contact, error, or other. */
+    event facet ClassifyPageType(url: String, html: String, site_id: String) => (classification: PageClassification) prompt {
+        system "You are a web analyst specializing in page type classification. Categories: homepage, blog, landing, product, docs, about, contact, error, other."
+        template "Classify this web page (URL: {url}).\n\nHTML content (first 3000 chars):\n{html}\n\nReturn page_type, confidence (0-1), and classification signals."
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+/** Page content summarization. */
+namespace site.Summarization {
+    use site.types
+
+    /** Summarize the visible text content of a page. */
+    event facet SummarizePage(url: String, html: String, site_id: String) => (summary: PageSummary) prompt {
+        system "You are a content analyst. Produce a concise 2-3 sentence summary and identify 3-5 key topics."
+        template "Summarize this web page (URL: {url}).\n\nHTML content:\n{html}"
+        model "claude-sonnet-4-20250514"
+    }
+}
+
+/** Broken link detection. */
+namespace site.Links {
+    use site.types
+
+    /** Scan a page for links and identify broken ones (simulated check). */
+    event facet DetectBrokenLinks(url: String, html: String, site_id: String) => (link_report: LinkReport)
+}
+
+/** Site-level report generation. */
+namespace site.Reporting {
+    use site.types
+
+    /** Generate a consolidated HTML report from all page analysis results. */
+    event facet GenerateSiteReport(site_id: String, page_count: Int) => (report: SiteReport)
+}
+
+/** Workflows for single-page and multi-page site analysis. */
+namespace site.workflows {
+    use site.types
+
+    /** Analyze a full site: prepare crawl plan, fetch each page in parallel, run
+      * metadata extraction + classification + summarization + link detection per
+      * page, then produce a consolidated site report.
+      * PrepareCrawl -> foreach url -> (FetchPage, ExtractMetadata, ClassifyPageType,
+      * SummarizePage, DetectBrokenLinks) -> GenerateSiteReport. */
+    workflow AnalyzeSite(urls: String) => (status: String, report_path: String) andThen {
+        crawl = PrepareCrawl(urls = $.urls) andThen foreach url in crawl.plan.urls {
+            page = FetchPage(url = $.url, site_id = crawl.plan.site_id)
+            meta = ExtractMetadata(url = $.url, html = page.page.html, site_id = crawl.plan.site_id)
+            classify = ClassifyPageType(url = $.url, html = page.page.html, site_id = crawl.plan.site_id)
+            summary = SummarizePage(url = $.url, html = page.page.html, site_id = crawl.plan.site_id)
+            broken = DetectBrokenLinks(url = $.url, html = page.page.html, site_id = crawl.plan.site_id)
+        }
+        report = GenerateSiteReport(site_id = crawl.plan.site_id, page_count = crawl.plan.page_count)
+        yield AnalyzeSite(status = "completed", report_path = report.report.report_path)
+    }
+
+    /** Analyze a single page without a full site report. */
+    workflow AnalyzePage(url: String) => (status: String, detail: String) andThen {
+        crawl = PrepareCrawl(urls = [$.url])
+        page = FetchPage(url = $.url, site_id = crawl.plan.site_id)
+        meta = ExtractMetadata(url = $.url, html = page.page.html, site_id = crawl.plan.site_id)
+        classify = ClassifyPageType(url = $.url, html = page.page.html, site_id = crawl.plan.site_id)
+        summary = SummarizePage(url = $.url, html = page.page.html, site_id = crawl.plan.site_id)
+        broken = DetectBrokenLinks(url = $.url, html = page.page.html, site_id = crawl.plan.site_id)
+        yield AnalyzePage(status = "completed", detail = classify.classification.page_type ++ " page: " ++ meta.meta.title)
+    }
+}

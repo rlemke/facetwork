@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+# Generate sample HTML files for the site-analyzer pipeline.
+#
+# Creates sample pages simulating a small website at /tmp/site-analyzer/:
+#   homepage.html     — landing page with hero section
+#   blog-post.html    — blog article about distributed systems
+#   docs-api.html     — API documentation page
+#   about.html        — company about page
+#   pricing.html      — product pricing page
+#   404.html          — error page
+#
+# Usage:
+#   examples/site-analyzer/scripts/generate-sample-data
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+EXAMPLE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+OUTPUT_DIR="/tmp/site-analyzer"
+
+echo "Generating sample HTML pages in ${OUTPUT_DIR}/ ..."
+
+env PYTHONPATH="$REPO_ROOT:$EXAMPLE_DIR" "$PYTHON" - "$OUTPUT_DIR" <<'PYEOF'
+import os
+import sys
+
+output_dir = sys.argv[1]
+os.makedirs(output_dir, exist_ok=True)
+
+pages = {
+    "homepage.html": """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="description" content="CloudFlow - Modern workflow automation for teams">
+    <meta property="og:title" content="CloudFlow - Automate Everything">
+    <meta property="og:image" content="https://cloudflow.example.com/images/hero.png">
+    <title>CloudFlow - Modern Workflow Automation</title>
+</head>
+<body>
+    <header>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/blog">Blog</a>
+            <a href="/docs/api">Documentation</a>
+            <a href="/about">About</a>
+            <a href="/pricing">Pricing</a>
+            <a href="/contact">Contact</a>
+        </nav>
+    </header>
+    <main>
+        <h1>Welcome to CloudFlow</h1>
+        <div class="hero">
+            <p>CloudFlow is the modern workflow automation platform built for teams.
+            Orchestrate complex pipelines, monitor execution in real-time, and scale
+            effortlessly from development to production.</p>
+            <a href="/sign-up" class="cta">Get Started Free</a>
+            <a href="/pricing" class="cta">View Pricing</a>
+        </div>
+        <h2>Featured Capabilities</h2>
+        <section>
+            <h3>Visual Workflow Builder</h3>
+            <p>Design workflows with our drag-and-drop interface. No coding required
+            for common automation patterns.</p>
+            <h3>Real-Time Monitoring</h3>
+            <p>Watch your workflows execute step-by-step with live logs, metrics,
+            and alerting built in.</p>
+            <h3>Enterprise Security</h3>
+            <p>SOC 2 compliant with role-based access control, audit logging, and
+            end-to-end encryption.</p>
+        </section>
+    </main>
+    <footer>
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms of Service</a>
+        <a href="https://status.cloudflow.example.com">System Status</a>
+        <a href="https://broken-analytics.invalid/track">Analytics (broken)</a>
+    </footer>
+</body>
+</html>""",
+
+    "blog-post.html": """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="description" content="How to build resilient distributed workflows with CloudFlow">
+    <meta property="og:title" content="Building Resilient Workflows">
+    <title>Building Resilient Distributed Workflows | CloudFlow Blog</title>
+</head>
+<body>
+    <article>
+        <h1>Building Resilient Distributed Workflows</h1>
+        <p class="meta">By Sarah Chen | Published October 3, 2025 | 8 min read</p>
+
+        <h2>Introduction</h2>
+        <p>In modern cloud architectures, workflow resilience is not optional. When
+        your pipeline processes millions of events per day, even rare failures compound
+        into significant data loss. This post explores patterns for building workflows
+        that survive node failures, network partitions, and downstream outages.</p>
+
+        <h2>Pattern 1: Idempotent Steps</h2>
+        <p>Every step in your workflow should be safe to retry. This means designing
+        handlers that produce the same result regardless of how many times they execute.
+        Use deterministic IDs, upsert operations, and content-addressable storage.</p>
+
+        <h2>Pattern 2: Circuit Breakers</h2>
+        <p>When a downstream service fails, don't keep hammering it. Implement circuit
+        breakers that trip after N consecutive failures and automatically reset after
+        a cooldown period. CloudFlow supports this natively with the RetryPolicy mixin.</p>
+
+        <h2>Pattern 3: Dead Letter Queues</h2>
+        <p>Tasks that fail after all retries should land in a dead letter queue for
+        manual inspection rather than being silently dropped. CloudFlow's dashboard
+        provides a dedicated view for reviewing and resubmitting dead-lettered tasks.</p>
+
+        <h2>Conclusion</h2>
+        <p>Resilient workflows require intentional design at every layer. Start with
+        idempotent handlers, add circuit breakers for external dependencies, and use
+        dead letter queues as your safety net. CloudFlow makes these patterns easy
+        to implement with built-in runtime support.</p>
+    </article>
+    <nav>
+        <a href="/blog">All Posts</a>
+        <a href="/blog/workflow-patterns">Related: Workflow Patterns</a>
+        <a href="https://github.com/cloudflow/examples">GitHub Examples</a>
+        <a href="https://broken-cdn.invalid/images/diagram.png">Diagram (broken)</a>
+    </nav>
+</body>
+</html>""",
+
+    "docs-api.html": """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="description" content="CloudFlow REST API reference documentation">
+    <title>API Reference | CloudFlow Documentation</title>
+</head>
+<body>
+    <h1>CloudFlow API Reference</h1>
+    <p>Complete documentation for the CloudFlow REST API. All endpoints require
+    authentication via Bearer token.</p>
+
+    <h2>Authentication</h2>
+    <p>Include your API key in the Authorization header:</p>
+    <code>Authorization: Bearer YOUR_API_KEY</code>
+
+    <h2>Workflows</h2>
+    <h3>POST /api/workflows</h3>
+    <p>Create a new workflow execution. The request body must include the workflow
+    definition ID and input parameters.</p>
+
+    <h3>GET /api/workflows/:id</h3>
+    <p>Retrieve the status and results of a workflow execution. Returns step-level
+    details including timing, outputs, and error information.</p>
+
+    <h3>DELETE /api/workflows/:id</h3>
+    <p>Cancel a running workflow. All in-progress steps will be terminated and
+    resources released.</p>
+
+    <h2>Steps</h2>
+    <h3>GET /api/workflows/:id/steps</h3>
+    <p>List all steps in a workflow execution with their current state, parameters,
+    and return values.</p>
+
+    <h2>Rate Limits</h2>
+    <p>API requests are limited to 1000 per minute per API key. Exceeding this
+    limit returns HTTP 429.</p>
+
+    <nav>
+        <a href="/docs">Docs Home</a>
+        <a href="/docs/guide">Getting Started Guide</a>
+        <a href="/docs/sdk">SDK Reference</a>
+    </nav>
+</body>
+</html>""",
+
+    "about.html": """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="description" content="About CloudFlow - our team, mission, and story">
+    <title>About Us | CloudFlow</title>
+</head>
+<body>
+    <h1>About CloudFlow</h1>
+
+    <h2>Our Mission</h2>
+    <p>We believe workflow automation should be accessible to every team, not just
+    those with dedicated platform engineering resources. CloudFlow was founded in 2023
+    to democratize distributed computing.</p>
+
+    <h2>Our Team</h2>
+    <p>CloudFlow was founded by engineers from leading cloud infrastructure companies.
+    Our team of 45 people spans San Francisco, London, and Singapore.</p>
+
+    <h2>Our Story</h2>
+    <p>CloudFlow started as an internal tool at a fintech startup where our founders
+    were frustrated by the complexity of managing distributed data pipelines. They
+    built a workflow engine that was simple enough for data scientists to use directly,
+    yet powerful enough for production-grade reliability.</p>
+
+    <p>Today, CloudFlow processes over 10 million workflow executions per month for
+    hundreds of companies ranging from startups to Fortune 500 enterprises.</p>
+
+    <a href="/careers">Join Our Team</a>
+    <a href="/contact">Contact Us</a>
+    <a href="https://broken-press.invalid/cloudflow-launch">Press Release (broken)</a>
+</body>
+</html>""",
+
+    "pricing.html": """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="description" content="CloudFlow pricing - free tier, pro, and enterprise plans">
+    <title>Pricing | CloudFlow</title>
+</head>
+<body>
+    <h1>Simple, Transparent Pricing</h1>
+    <p>Start free, scale as you grow. No hidden fees.</p>
+
+    <div class="pricing-grid">
+        <div class="plan">
+            <h2>Free</h2>
+            <p class="price">$0/month</p>
+            <ul>
+                <li>1,000 workflow runs/month</li>
+                <li>5 concurrent workflows</li>
+                <li>Community support</li>
+                <li>7-day log retention</li>
+            </ul>
+            <a href="/sign-up" class="cta">Get Started</a>
+        </div>
+        <div class="plan featured">
+            <h2>Pro</h2>
+            <p class="price">$49/month</p>
+            <ul>
+                <li>50,000 workflow runs/month</li>
+                <li>50 concurrent workflows</li>
+                <li>Priority support</li>
+                <li>90-day log retention</li>
+                <li>Custom integrations</li>
+            </ul>
+            <a href="/sign-up?plan=pro" class="cta">Start Free Trial</a>
+        </div>
+        <div class="plan">
+            <h2>Enterprise</h2>
+            <p class="price">Custom</p>
+            <ul>
+                <li>Unlimited workflow runs</li>
+                <li>Unlimited concurrency</li>
+                <li>Dedicated support</li>
+                <li>Unlimited retention</li>
+                <li>SLA guarantee</li>
+                <li>On-premise deployment</li>
+            </ul>
+            <a href="/contact?plan=enterprise" class="cta">Contact Sales</a>
+        </div>
+    </div>
+
+    <a href="/">Back to Home</a>
+</body>
+</html>""",
+
+    "404.html": """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Page Not Found | CloudFlow</title>
+</head>
+<body>
+    <h1>404 - Page Not Found</h1>
+    <p>Oops! The page you're looking for doesn't exist or has been moved.</p>
+    <p>Here are some helpful links:</p>
+    <ul>
+        <li><a href="/">Homepage</a></li>
+        <li><a href="/docs">Documentation</a></li>
+        <li><a href="/blog">Blog</a></li>
+        <li><a href="/contact">Contact Support</a></li>
+    </ul>
+</body>
+</html>""",
+}
+
+for filename, content in pages.items():
+    path = os.path.join(output_dir, filename)
+    with open(path, "w") as f:
+        f.write(content.strip() + "\n")
+    size_kb = os.path.getsize(path) / 1024
+    print(f"  {filename:25s} ({size_kb:.1f} KB)")
+
+print(f"\nGenerated {len(pages)} sample HTML pages in {output_dir}/")
+print(f"\nTo analyze the site:")
+print(f"  Workflow: site.workflows.AnalyzeSite")
+print(f'  Parameters: {{"urls": ["https://cloudflow.example.com/", "https://cloudflow.example.com/blog/resilient-workflows", "https://cloudflow.example.com/docs/api", "https://cloudflow.example.com/about", "https://cloudflow.example.com/pricing"]}}')
+print(f"\nTo analyze a single page:")
+print(f"  Workflow: site.workflows.AnalyzePage")
+print(f'  Parameters: {{"url": "https://cloudflow.example.com/blog/resilient-workflows"}}')
+PYEOF

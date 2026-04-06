@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Reboot the AgentFlow dev environment: stop everything, clear MongoDB,
+# reseed examples, restart runners + dashboard.
+#
+# Usage:
+#   scripts/reboot                                          # reseed all examples
+#   scripts/reboot --example doc-processing                 # reseed specific examples
+#   scripts/reboot --example doc-processing --example site-analyzer
+#
+# Passes --example flags to both seed-examples and start-runner.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$(dirname "$0")/_env.sh"
+
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+# MongoDB fallback is handled by _env.sh (auto-detects localhost if afl-mongodb unreachable)
+
+# Collect --example flags and passthrough args
+EXAMPLE_ARGS=()
+RUNNER_PASSTHROUGH=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --example)
+            EXAMPLE_ARGS+=("--example" "$2")
+            shift 2
+            ;;
+        --)
+            shift
+            RUNNER_PASSTHROUGH=("$@")
+            break
+            ;;
+        *)
+            RUNNER_PASSTHROUGH+=("$1")
+            shift
+            ;;
+    esac
+done
+
+echo "=== AgentFlow Reboot ==="
+echo ""
+
+# 1. Stop runners and dashboard
+echo "[1/4] Stopping runners and dashboard..."
+"${REPO_ROOT}/scripts/stop-runners" 2>/dev/null || true
+echo ""
+
+# 2. Clear all MongoDB collections
+echo "[2/4] Clearing MongoDB..."
+env PYTHONPATH="$REPO_ROOT" "$PYTHON" -c "
+from pymongo import MongoClient
+import os
+url = os.environ.get('AFL_MONGODB_URL', 'mongodb://localhost:27017')
+db_name = os.environ.get('AFL_MONGODB_DATABASE', 'afl')
+c = MongoClient(url, serverSelectionTimeoutMS=3000)
+db = c[db_name]
+total = 0
+for name in sorted(db.list_collection_names()):
+    n = db[name].delete_many({}).deleted_count
+    total += n
+    if n > 0:
+        print(f'  {name}: {n} docs deleted')
+print(f'  Cleared {total} documents.')
+"
+echo ""
+
+# 3. Reseed examples
+echo "[3/4] Seeding examples..."
+if [[ ${#EXAMPLE_ARGS[@]} -gt 0 ]]; then
+    # Seed each example separately (seed-examples --include only takes one at a time)
+    i=0
+    while [[ $i -lt ${#EXAMPLE_ARGS[@]} ]]; do
+        if [[ "${EXAMPLE_ARGS[$i]}" == "--example" ]]; then
+            "${REPO_ROOT}/scripts/seed-examples" --include "${EXAMPLE_ARGS[$((i+1))]}"
+            i=$((i + 2))
+        else
+            i=$((i + 1))
+        fi
+    done
+else
+    "${REPO_ROOT}/scripts/seed-examples"
+fi
+echo ""
+
+# 4. Start runners and dashboard
+echo "[4/4] Starting runners and dashboard..."
+RUNNER_CMD=("${REPO_ROOT}/scripts/start-runner")
+if [[ ${#EXAMPLE_ARGS[@]} -gt 0 ]]; then
+    RUNNER_CMD+=("${EXAMPLE_ARGS[@]}")
+fi
+if [[ ${#RUNNER_PASSTHROUGH[@]} -gt 0 ]]; then
+    RUNNER_CMD+=("--" "${RUNNER_PASSTHROUGH[@]}")
+else
+    RUNNER_CMD+=("--" "--log-format" "text")
+fi
+"${RUNNER_CMD[@]}"
+
+echo ""
+echo "=== Reboot complete ==="
+echo "  Dashboard: http://localhost:8080"

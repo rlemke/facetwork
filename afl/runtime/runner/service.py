@@ -1490,16 +1490,11 @@ class RunnerService:
 
         A per-workflow lock prevents concurrent resume_step calls from
         different handler threads for the same workflow.  If the lock is
-        held, the call is skipped — the active resume will see all
-        completed children.
+        held, the call is skipped — the stuck-step sweep will pick up
+        any steps left at intermediate states on its next cycle.
         """
         lock = self._get_workflow_lock(workflow_id)
-        if not lock.acquire(blocking=False):
-            logger.debug(
-                "Skipping resume_step for workflow %s — another thread is resuming",
-                workflow_id,
-            )
-            return
+        lock.acquire()
 
         try:
             workflow_ast = self._ast_cache.get(workflow_id)
