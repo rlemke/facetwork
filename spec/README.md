@@ -1,60 +1,39 @@
 # AgentFlow Specification
 
-This directory contains the authoritative specifications for the AgentFlow platform and the AFL (Agent Flow Language). These documents define the contract — all implementations must conform to these specifications.
+The specification documents have been reorganized into `docs/`. See the new locations below.
 
-## Reading Order
+## New Locations
 
-Start here and follow this sequence to understand the system from the ground up:
+### Language & Compiler
+| Old Path | New Path |
+|----------|----------|
+| `10_language.md` | [docs/reference/language/grammar.md](../docs/reference/language/grammar.md) |
+| `11_semantics.md` | [docs/reference/language/semantics.md](../docs/reference/language/semantics.md) |
+| `12_validation.md` | [docs/reference/language/validation.md](../docs/reference/language/validation.md) |
+| `20_compiler.md` | [docs/reference/compiler.md](../docs/reference/compiler.md) |
 
-### 1. Language & Compiler
-| Document | What You'll Learn |
-|----------|-------------------|
-| [10_language.md](10_language.md) | AFL syntax — lexical rules, EBNF grammar, all constructs |
-| [11_semantics.md](11_semantics.md) | AST node types and what they mean |
-| [12_validation.md](12_validation.md) | Semantic rules the compiler enforces |
-| [20_compiler.md](20_compiler.md) | How AFL source becomes JSON workflow definitions |
+### Runtime & Execution
+| Old Path | New Path |
+|----------|----------|
+| `30_runtime.md` | [docs/reference/runtime.md](../docs/reference/runtime.md) — *still at spec/30_runtime.md during migration* |
+| `31_runtime_impl.md` | [docs/reference/runtime-impl.md](../docs/reference/runtime-impl.md) — *still at spec/31_runtime_impl.md during migration* |
+| `40_database.md` | [docs/reference/database.md](../docs/reference/database.md) |
+| `50_event_system.md` | [docs/reference/event-system.md](../docs/reference/event-system.md) |
+| `51_state_system.md` | [docs/reference/state-system.md](../docs/reference/state-system.md) |
 
-### 2. Runtime & Execution
-| Document | What You'll Learn |
-|----------|-------------------|
-| [30_runtime.md](30_runtime.md) | Execution model — iterations, determinism, idempotency |
-| [31_runtime_impl.md](31_runtime_impl.md) | Python implementation — state changers, handlers, source file map |
-| [51_state_system.md](51_state_system.md) | Step state machine — how steps transition through states |
-| [40_database.md](40_database.md) | MongoDB schema — collections, indexes, atomic commits |
+### Agents & Integration
+| Old Path | New Path |
+|----------|----------|
+| `60_agent_sdk.md` | [docs/reference/agent-sdk.md](../docs/reference/agent-sdk.md) — *still at spec/60_agent_sdk.md during migration* |
+| `61_llm_agent_integration.md` | [docs/guides/llm-integration.md](../docs/guides/llm-integration.md) |
 
-### 3. Agents & Events
-| Document | What You'll Learn |
-|----------|-------------------|
-| [50_event_system.md](50_event_system.md) | Event lifecycle — dispatch, task queue, step locking |
-| [60_agent_sdk.md](60_agent_sdk.md) | Building agents — protocol for external services |
-| [61_llm_agent_integration.md](61_llm_agent_integration.md) | LLM agent patterns — prompts, tool use |
-
-### 4. Reference
-| Document | What You'll Learn |
-|----------|-------------------|
-| [00_overview.md](00_overview.md) | Terminology and implementation constraints |
-| [70_examples.md](70_examples.md) | AFL code examples |
-| [80_acceptance_tests.md](80_acceptance_tests.md) | Test requirements |
-| [90_nonfunctional.md](90_nonfunctional.md) | Dependencies and non-functional requirements |
-
-## Quick Reference
-
-**If you want to...**
-
-| Goal | Start With |
-|------|------------|
-| Write AFL workflows | [10_language.md](10_language.md) |
-| Understand how execution works | [30_runtime.md](30_runtime.md) |
-| Build an agent in any language | [60_agent_sdk.md](60_agent_sdk.md) |
-| Understand the database schema | [40_database.md](40_database.md) |
-| See the state machine | [51_state_system.md](51_state_system.md) |
-
-## Terminology
-
-- **AgentFlow**: The platform for distributed workflow execution
-- **AFL**: Agent Flow Language — the DSL for defining workflows (`.afl` files)
-- **Facet**: A typed attribute structure with parameters and optional returns
-- **Event Facet**: A facet that triggers agent execution (external processing)
-- **Workflow**: A facet designated as an entry point for execution
-- **Step**: A runtime instance of a statement within a workflow
-- **Agent**: An external service that processes event facet tasks
+### Reference & Contributing
+| Old Path | New Path |
+|----------|----------|
+| `00_overview.md` | [docs/reference/overview.md](../docs/reference/overview.md) |
+| `70_examples.md` | [docs/reference/examples.md](../docs/reference/examples.md) |
+| `75_execution_traces.md` | [docs/reference/execution-traces.md](../docs/reference/execution-traces.md) |
+| `80_acceptance_tests.md` | [docs/contributing/testing.md](../docs/contributing/testing.md) |
+| `90_nonfunctional.md` | Split into [docs/reference/nonfunctional.md](../docs/reference/nonfunctional.md) and [docs/reference/cli.md](../docs/reference/cli.md) |
+| `95_self_assessment.md` | [docs/contributing/self-assessment.md](../docs/contributing/self-assessment.md) |
+| `99_changelog.md` | [docs/contributing/changelog.md](../docs/contributing/changelog.md) |

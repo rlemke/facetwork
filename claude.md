@@ -6,7 +6,7 @@ AgentFlow is a platform for defining and executing distributed workflows. You wr
 
 | Guide | Audience | What You'll Learn |
 |-------|----------|-------------------|
-| **[Beginner's Guide](docs/beginners-guide.md)** | New users | Local setup, running your first workflow from the UI, writing basic AFL |
+| **[Beginner's Guide](docs/getting-started/beginners-guide.md)** | New users | Local setup, running your first workflow from the UI, writing basic AFL |
 | **[README](README.md)** | Developers | Installation, Docker setup, parser/emitter API, CLI usage |
 | **[Full Technical Reference](#full-technical-reference)** | Contributors | Compiler internals, runtime architecture, all commands, code conventions |
 
@@ -98,7 +98,8 @@ Composed workflows in `osm.workflows.sourced` demonstrate the pattern:
 | `afl/` | Compiler + runtime engine |
 | `afl/dashboard/` | Web monitoring UI (FastAPI) |
 | `examples/` | 15+ example workflows with AFL, handlers, and tests |
-| `spec/` | Language and runtime specifications |
+| `docs/` | All documentation: getting-started, guides, reference, operations, architecture, contributing |
+| `spec/` | Redirect stubs (documentation moved to `docs/`) |
 | `scripts/` | Operations scripts (start, stop, deploy, vacuum, etc.) |
 | `agents/` | Multi-language agent libraries (Python, Scala, Go, TypeScript, Java) |
 | `grafana/` | Grafana provisioning: data sources, dashboards (OSM overview, spatial explorer) |
@@ -107,18 +108,19 @@ Composed workflows in `osm.workflows.sourced` demonstrate the pattern:
 
 | Topic | Document |
 |-------|----------|
-| AFL syntax | [spec/10_language.md](spec/10_language.md) |
-| Runtime execution model | [spec/30_runtime.md](spec/30_runtime.md) |
-| Distributed step processing | [spec/30_runtime.md §10.3.1](spec/30_runtime.md) |
-| Runtime implementation details | [spec/31_runtime_impl.md](spec/31_runtime_impl.md) |
-| Building handlers | [spec/60_agent_sdk.md](spec/60_agent_sdk.md) |
-| LLM integration | [spec/61_llm_agent_integration.md](spec/61_llm_agent_integration.md) |
-| AFL examples | [spec/70_examples.md](spec/70_examples.md) |
-| Execution traces | [spec/75_execution_traces.md](spec/75_execution_traces.md) |
-| Deployment & Docker | [spec/90_nonfunctional.md](spec/90_nonfunctional.md) |
-| Architecture overview | [architecture.md](architecture.md) |
-| Deployment guide | [deployment.md](deployment.md) |
-| Tutorial | [tutorial.md](tutorial.md) |
+| AFL syntax | [docs/reference/language/grammar.md](docs/reference/language/grammar.md) |
+| Runtime execution model | [docs/reference/runtime.md](docs/reference/runtime.md) |
+| Distributed step processing | [docs/reference/runtime.md §10.3.1](docs/reference/runtime.md) |
+| Runtime implementation details | [docs/reference/runtime-impl.md](docs/reference/runtime-impl.md) |
+| Building handlers | [docs/reference/agent-sdk.md](docs/reference/agent-sdk.md) |
+| LLM integration | [docs/guides/llm-integration.md](docs/guides/llm-integration.md) |
+| AFL examples | [docs/reference/examples.md](docs/reference/examples.md) |
+| Execution traces | [docs/reference/execution-traces.md](docs/reference/execution-traces.md) |
+| Build & run reference | [docs/reference/cli.md](docs/reference/cli.md) |
+| Non-functional requirements | [docs/reference/nonfunctional.md](docs/reference/nonfunctional.md) |
+| Architecture overview | [docs/architecture/overview.md](docs/architecture/overview.md) |
+| Deployment guide | [docs/operations/deployment.md](docs/operations/deployment.md) |
+| Tutorial | [docs/getting-started/tutorial.md](docs/getting-started/tutorial.md) |
 
 ---
 
@@ -230,7 +232,7 @@ scripts/start-grafana --status         # check if running
 ```
 
 ### Environment configuration
-Copy `.env.example` to `.env` to configure MongoDB, scaling, overlays, and data directories. All `scripts/` commands source `_env.sh` which loads `.env` without overriding already-set vars. See `spec/90_nonfunctional.md` for the full variable reference.
+Copy `.env.example` to `.env` to configure MongoDB, scaling, overlays, and data directories. All `scripts/` commands source `_env.sh` which loads `.env` without overriding already-set vars. See `docs/reference/cli.md` for the full variable reference.
 
 MongoDB, HDFS, and PostGIS run on external servers (defined in `/etc/hosts`): `afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn`, `afl-postgres` — they are **not** managed by Docker Compose.
 
@@ -349,7 +351,7 @@ Use `scripts/drain-runners` instead of `scripts/stop-runners` when you need runn
 
 Apply this research to the design before writing code. Flag domain-specific constraints that affect architecture (e.g. "PostGIS bulk imports should disable autovacuum during load" or "OSM PBF files must be processed in a single pass — no random access").
 
-See `docs/lessons-learned.md` for the full catalogue of requirements and the future roadmap.
+See `docs/architecture/lessons-learned.md` for the full catalogue of requirements and the future roadmap.
 
 ### How Claude should review changes
 

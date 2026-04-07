@@ -384,7 +384,7 @@ class TestTelemetry:
 
 
 class TestSpecExample2:
-    """Tests for spec/70_examples.md Example 2: Facet-level andThen body.
+    """Tests for docs/reference/examples.md Example 2: Facet-level andThen body.
 
     ```afl
     namespace example.2 {
@@ -561,7 +561,7 @@ class TestSpecExample2:
 
 
 class TestSpecExample3:
-    """Tests for spec/70_examples.md Example 3: Statement-level nested blocks.
+    """Tests for docs/reference/examples.md Example 3: Statement-level nested blocks.
 
     ```afl
     namespace example.3 {
@@ -797,7 +797,7 @@ class TestSpecExample3:
 
 
 class TestSpecExample4:
-    """Tests for spec/70_examples.md Example 4: Event facet blocking.
+    """Tests for docs/reference/examples.md Example 4: Event facet blocking.
 
     Same as Example 3 but subStep1 calls CountDocuments (EventFacetDecl),
     which blocks at EventTransmit until continue_step() is called.
@@ -2943,7 +2943,7 @@ class TestStepDeduplication:
 
 
 class TestIterationTraces:
-    """Iteration-by-iteration trace tests matching spec/70_examples.md.
+    """Iteration-by-iteration trace tests matching docs/reference/examples.md.
 
     These tests verify step-by-step state progression at each commit
     boundary, matching the traces documented in the specification.
@@ -3719,7 +3719,7 @@ class TestIterationTraces:
         assert result2.outputs["result"] == 15
 
     # ===================================================================
-    # Acceptance tests from spec/80_acceptance_tests.md
+    # Acceptance tests from docs/contributing/testing.md
     # ===================================================================
 
     def test_event_facet_blocks_at_transmit(self):

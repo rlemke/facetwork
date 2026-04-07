@@ -10,7 +10,7 @@ Think of it like a pipeline builder: you define steps, connect them, and let the
 
 ## Local Setup (5 minutes)
 
-This sets up a single-machine environment. For production/cluster deployment, see [deployment.md](../deployment.md).
+This sets up a single-machine environment. For production/cluster deployment, see [deployment.md](../operations/deployment.md).
 
 ### Prerequisites
 
@@ -184,19 +184,19 @@ This means:
 - **Updates without downtime** — handler code can be updated on servers one at a time. Running tasks finish on the old code; new tasks use the new code.
 - **Everything is visible** — the dashboard shows every server's health, active tasks, step logs, and timing in real time.
 
-For local development, Docker runs everything on your machine. For production, see the [Deployment Guide](../deployment.md).
+For local development, Docker runs everything on your machine. For production, see the [Deployment Guide](../operations/deployment.md).
 
 ## What's Next?
 
-- **[AFL Language Reference](../spec/10_language.md)** — full syntax guide with all constructs
-- **[Workflow Design Patterns](../spec/70_examples.md)** — real-world AFL examples
-- **[Building Handlers](../spec/60_agent_sdk.md)** — write Python handlers for your event facets
-- **[Runtime & Execution](../spec/30_runtime.md)** — how the engine evaluates workflows
-- **[Deployment Guide](../deployment.md)** — cluster setup with multiple runners
-- **[Full Reference (CLAUDE.md)](../claude.md)** — complete technical reference for contributors
+- **[AFL Language Reference](../reference/language/grammar.md)** — full syntax guide with all constructs
+- **[Workflow Design Patterns](../reference/examples.md)** — real-world AFL examples
+- **[Building Handlers](../reference/agent-sdk.md)** — write Python handlers for your event facets
+- **[Runtime & Execution](../reference/runtime.md)** — how the engine evaluates workflows
+- **[Deployment Guide](../operations/deployment.md)** — cluster setup with multiple runners
+- **[Full Reference (CLAUDE.md)](../../claude.md)** — complete technical reference for contributors
 
 ## Getting Help
 
 - Browse the `examples/` directory — each example has AFL files, handlers, and tests
-- Check `spec/` for detailed specifications
+- Check `docs/reference/` for detailed specifications
 - Use the MCP server (`python -m afl.mcp`) for AI-assisted workflow authoring

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Validate internal markdown cross-references.
+#
+# Finds all [text](path.md) and [text](path.md#anchor) links in .md files
+# and verifies the target file exists relative to the source file's directory.
+# Exits 0 if all links resolve, 1 if any are broken.
+#
+# Usage:
+#   scripts/check-doc-links              # check all .md files
+#   scripts/check-doc-links docs/        # check only docs/
+
+set -euo pipefail
+
+ROOT="${1:-.}"
+BROKEN=0
+CHECKED=0
+
+while IFS= read -r file; do
+  dir=$(dirname "$file")
+  # Extract markdown links with line numbers
+  while IFS=: read -r line match; do
+    [[ -z "$line" ]] && continue
+    # Extract the target path from [text](target)
+    target=$(echo "$match" | sed -E 's/.*\]\(([^)]+)\)/\1/')
+
+    # Skip URLs and anchor-only links
+    [[ "$target" =~ ^https?:// ]] && continue
+    [[ "$target" =~ ^mailto: ]] && continue
+    [[ "$target" =~ ^# ]] && continue
+
+    # Strip anchor from path
+    path="${target%%#*}"
+    [[ -z "$path" ]] && continue
+
+    CHECKED=$((CHECKED + 1))
+
+    # Resolve relative to source file's directory
+    resolved="$dir/$path"
+    if [[ ! -e "$resolved" ]]; then
+      echo "BROKEN: $file:$line -> $target"
+      BROKEN=$((BROKEN + 1))
+    fi
+  done < <(grep -oEn '\[[^]]*\]\([^)]+\)' "$file" 2>/dev/null || true)
+done < <(find "$ROOT" -name '*.md' -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/target/*' | sort)
+
+if [[ $BROKEN -gt 0 ]]; then
+  echo ""
+  echo "Found $BROKEN broken link(s)"
+  exit 1
+else
+  echo "All doc links OK ($CHECKED checked)"
+  exit 0
+fi

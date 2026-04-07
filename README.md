@@ -18,13 +18,13 @@ You don't need to be a developer to use AgentFlow — if you can fill in a form,
 
 | I want to... | Start here |
 |--------------|------------|
-| **Run workflows** from the web UI | [Beginner's Guide](docs/beginners-guide.md) |
+| **Run workflows** from the web UI | [Beginner's Guide](docs/getting-started/beginners-guide.md) |
 | **Set up a local server** quickly | [Quick Start](#quick-start) (below) |
-| **Write my own workflows** in AFL | [AFL Tutorial](tutorial.md) |
+| **Write my own workflows** in AFL | [AFL Tutorial](docs/getting-started/tutorial.md) |
 | **Build handlers** in Python | [Agent SDK](spec/60_agent_sdk.md) |
 | **Build agents** in other languages | [Agent Libraries](#agent-integration-libraries) |
-| **Deploy to a cluster** | [Deployment Guide](deployment.md) |
-| **Understand the architecture** | [Architecture](architecture.md) |
+| **Deploy to a cluster** | [Deployment Guide](docs/operations/deployment.md) |
+| **Understand the architecture** | [Architecture](docs/architecture/overview.md) |
 | **Contribute to AgentFlow** | [Full Technical Reference](claude.md) |
 
 ## Quick Start
@@ -109,7 +109,7 @@ namespace myapp {
 
 You write the workflow logic in AFL. A Python handler does the real work (API calls, data processing, etc.). AgentFlow connects them.
 
-To learn more: [AFL Tutorial](tutorial.md) | [Language Reference](spec/10_language.md) | [Examples](spec/70_examples.md)
+To learn more: [AFL Tutorial](docs/getting-started/tutorial.md) | [Language Reference](docs/reference/language/grammar.md) | [Examples](docs/reference/examples.md)
 
 ## Sharing Workflows Like Libraries
 
@@ -161,7 +161,7 @@ AgentFlow doesn't run workflows on a single machine and hope for the best. It ru
 | **Fault tolerance** | If a server goes down, its orphaned tasks are automatically detected and reassigned. Workflows resume from exactly where they left off. |
 | **Monitoring** | The dashboard shows every runner's health, active tasks, step logs, and execution duration in real time. |
 
-A local Docker setup is great for development, but production workflows run on a cluster. See the [Deployment Guide](deployment.md) for setting up multiple runners across machines.
+A local Docker setup is great for development, but production workflows run on a cluster. See the [Deployment Guide](docs/operations/deployment.md) for setting up multiple runners across machines.
 
 ---
 
@@ -381,17 +381,17 @@ See [examples/README.md](examples/README.md) for a complete overview of all 15+ 
 
 ## Specifications
 
-The `spec/` directory is the authoritative reference:
+The `docs/reference/` directory is the authoritative reference:
 
 | Document | What It Covers |
 |----------|----------------|
-| [spec/10_language.md](spec/10_language.md) | AFL syntax — EBNF grammar, all language constructs |
-| [spec/30_runtime.md](spec/30_runtime.md) | Execution semantics — iteration model, determinism |
-| [spec/40_database.md](spec/40_database.md) | MongoDB schema — collections, indexes, atomic commits |
-| [spec/50_event_system.md](spec/50_event_system.md) | Event/agent protocol — lifecycle, dispatch, task queue |
-| [spec/60_agent_sdk.md](spec/60_agent_sdk.md) | Building agents — processing event facets |
+| [language/grammar.md](docs/reference/language/grammar.md) | AFL syntax — EBNF grammar, all language constructs |
+| [runtime.md](docs/reference/runtime.md) | Execution semantics — iteration model, determinism |
+| [database.md](docs/reference/database.md) | MongoDB schema — collections, indexes, atomic commits |
+| [event-system.md](docs/reference/event-system.md) | Event/agent protocol — lifecycle, dispatch, task queue |
+| [agent-sdk.md](docs/reference/agent-sdk.md) | Building agents — processing event facets |
 
-**Supporting specs:** [overview](spec/00_overview.md), [AST semantics](spec/11_semantics.md), [validation](spec/12_validation.md), [compiler](spec/20_compiler.md), [state system](spec/51_state_system.md), [LLM integration](spec/61_llm_agent_integration.md), [examples](spec/70_examples.md), [tests](spec/80_acceptance_tests.md)
+**Supporting docs:** [overview](docs/reference/overview.md), [AST semantics](docs/reference/language/semantics.md), [validation](docs/reference/language/validation.md), [compiler](docs/reference/compiler.md), [state system](docs/reference/state-system.md), [LLM integration](docs/guides/llm-integration.md), [examples](docs/reference/examples.md), [tests](docs/contributing/testing.md)
 
 ## AFL Language Reference
 
