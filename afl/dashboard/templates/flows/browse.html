@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+{% block title %}Browse — {{ flow.name.name if flow else "Flow" }}{% endblock %}
+{% block content %}
+{% if not flow %}
+<h1>Flow not found</h1>
+{% else %}
+<h1>Browse — {{ flow.name.name }}</h1>
+<p>
+    <a href="/flows/{{ flow.uuid }}">Back to flow</a> |
+    <a href="/flows/{{ flow.uuid }}/source">View AFL Source</a> |
+    <a href="/flows/{{ flow.uuid }}/json">View JSON</a>
+</p>
+
+{% if parse_error %}
+<article>
+    <header>Parse Error</header>
+    <pre><code>{{ parse_error }}</code></pre>
+</article>
+{% elif groups %}
+
+<div class="page-search" style="margin-bottom:1rem">
+    <input type="search" id="browse-filter" placeholder="Filter declarations..."
+           oninput="filterBrowse(this.value)">
+</div>
+
+{# Category navigation #}
+<nav style="margin-bottom:1.5rem; display:flex; gap:0.5rem; flex-wrap:wrap">
+    {% for cat in category_order %}
+    {% if groups[cat] is defined and groups[cat]|length > 0 %}
+    <a href="#cat-{{ cat }}" role="button" class="outline" style="font-size:0.85rem">
+        {{ category_labels[cat] }} ({{ groups[cat]|length }})
+    </a>
+    {% endif %}
+    {% endfor %}
+</nav>
+
+{% for cat in category_order %}
+{% if groups[cat] is defined and groups[cat]|length > 0 %}
+{% if cat in ('workflows', 'event_facets', 'facets') %}
+{% set colspan = 6 %}
+{% elif cat == 'schemas' %}
+{% set colspan = 4 %}
+{% else %}
+{% set colspan = 3 %}
+{% endif %}
+<section id="cat-{{ cat }}" class="browse-category">
+    <h2>{{ category_labels[cat] }}</h2>
+    <figure>
+    <table class="browse-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Namespace</th>
+                {% if cat in ('workflows', 'event_facets', 'facets') %}
+                <th>Params</th>
+                <th>Returns</th>
+                <th>Steps</th>
+                {% endif %}
+                {% if cat == 'schemas' %}
+                <th>Fields</th>
+                {% endif %}
+                <th style="width:2em"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for decl in groups[cat] %}
+            <tr class="browse-row" id="decl-{{ decl.qualified_name|replace('.', '-') }}" data-name="{{ decl.qualified_name|lower }}">
+                <td>
+                    <strong>{{ decl.short_name }}</strong>
+                    {% if decl.doc %}
+                    <br><small class="secondary">{{ decl.doc }}</small>
+                    {% endif %}
+                </td>
+                <td class="mono browse-cell-compact">{{ decl.namespace or '—' }}</td>
+                {% if cat in ('workflows', 'event_facets', 'facets') %}
+                <td class="browse-cell-compact">{{ decl.params|length if decl.params else '—' }}</td>
+                <td class="browse-cell-compact">{{ decl.returns|length if decl.returns else '—' }}</td>
+                <td class="browse-cell-compact">{{ decl.steps|length if decl.steps else '—' }}</td>
+                {% endif %}
+                {% if cat == 'schemas' %}
+                <td class="browse-cell-compact">{{ decl.fields|length if decl.fields else '—' }}</td>
+                {% endif %}
+                <td class="browse-cell-compact">
+                    {% set has_detail = decl.params or decl.returns or decl.steps or decl.fields %}
+                    {% if has_detail %}
+                    <button class="browse-expand-btn" onclick="toggleDetail(this)" aria-label="Expand">&#9654;</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {# Hidden detail row spanning full width #}
+            {% set has_detail = decl.params or decl.returns or decl.steps or decl.fields %}
+            {% if has_detail %}
+            <tr class="browse-detail-row" style="display:none">
+                <td colspan="{{ colspan }}">
+                    {# Top row: params and returns side by side #}
+                    {% if decl.params or decl.returns %}
+                    <div class="browse-detail-grid">
+                        {% if decl.params %}
+                        <div class="browse-detail-section">
+                            <div class="browse-detail-label">Parameters</div>
+                            <table class="browse-detail-table">
+                                <thead><tr><th>Name</th><th>Type</th></tr></thead>
+                                <tbody>
+                                {% for p in decl.params %}
+                                <tr><td><code>{{ p.name }}</code></td><td>{{ p.type }}</td></tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% endif %}
+                        {% if decl.returns %}
+                        <div class="browse-detail-section">
+                            <div class="browse-detail-label">Returns</div>
+                            <table class="browse-detail-table">
+                                <thead><tr><th>Name</th><th>Type</th></tr></thead>
+                                <tbody>
+                                {% for r in decl.returns %}
+                                <tr><td><code>{{ r.name }}</code></td><td>{{ r.type }}</td></tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {# Full-width row: steps or fields beneath #}
+                    {% if decl.steps %}
+                    <div class="browse-detail-full">
+                        <div class="browse-detail-label">Steps</div>
+                        <table class="browse-detail-table">
+                            <thead><tr><th>Step</th><th>Calls</th><th>Arguments</th></tr></thead>
+                            <tbody>
+                            {% for step in decl.steps %}
+                            <tr>
+                                <td><code>{{ step.name }}</code></td>
+                                <td>
+                                    {% set target_id = "decl-" + step.target|replace('.', '-') %}
+                                    <a href="#{{ target_id }}" class="facet-link"
+                                       onclick="highlightDecl('{{ target_id }}');">{{ step.target }}</a>
+                                </td>
+                                <td>{% if step.args %}{{ step.args|join(', ') }}{% else %}—{% endif %}</td>
+                            </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                    {% if decl.fields %}
+                    <div class="browse-detail-full">
+                        <div class="browse-detail-label">Fields</div>
+                        <table class="browse-detail-table">
+                            <thead><tr><th>Name</th><th>Type</th></tr></thead>
+                            <tbody>
+                            {% for f in decl.fields %}
+                            <tr><td><code>{{ f.name }}</code></td><td>{{ f.type }}</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+    </figure>
+</section>
+{% endif %}
+{% endfor %}
+
+<script>
+function toggleDetail(btn) {
+    var mainRow = btn.closest('tr');
+    var detailRow = mainRow.nextElementSibling;
+    if (!detailRow || !detailRow.classList.contains('browse-detail-row')) return;
+
+    var isOpen = detailRow.style.display !== 'none';
+    if (isOpen) {
+        detailRow.style.display = 'none';
+        btn.classList.remove('open');
+        btn.innerHTML = '&#9654;';
+    } else {
+        detailRow.style.display = '';
+        btn.classList.add('open');
+        btn.innerHTML = '&#9660;';
+    }
+}
+
+function filterBrowse(query) {
+    var q = query.toLowerCase();
+    document.querySelectorAll('.browse-row').forEach(function(row) {
+        var show = row.dataset.name.includes(q);
+        row.style.display = show ? '' : 'none';
+        // Also hide the detail row when filtering
+        var detail = row.nextElementSibling;
+        if (detail && detail.classList.contains('browse-detail-row')) {
+            detail.style.display = 'none';
+            var btn = row.querySelector('.browse-expand-btn');
+            if (btn) { btn.classList.remove('open'); btn.innerHTML = '&#9654;'; }
+        }
+    });
+    document.querySelectorAll('.browse-category').forEach(function(sec) {
+        var visible = sec.querySelectorAll('.browse-row[style=""], .browse-row:not([style])');
+        var hidden = sec.querySelectorAll('.browse-row[style*="none"]');
+        sec.style.display = (visible.length === 0 && hidden.length > 0) ? 'none' : '';
+    });
+}
+
+function highlightDecl(targetId) {
+    // Close all open details
+    document.querySelectorAll('.browse-detail-row').forEach(function(el) {
+        el.style.display = 'none';
+    });
+    document.querySelectorAll('.browse-expand-btn.open').forEach(function(btn) {
+        btn.classList.remove('open');
+        btn.innerHTML = '&#9654;';
+    });
+    document.querySelectorAll('.browse-row.highlight').forEach(function(el) {
+        el.classList.remove('highlight');
+    });
+    var el = document.getElementById(targetId);
+    if (el) {
+        el.classList.add('highlight');
+        var section = el.closest('.browse-category');
+        if (section) section.style.display = '';
+        el.style.display = '';
+        setTimeout(function() { el.classList.remove('highlight'); }, 2000);
+    }
+}
+</script>
+
+<style>
+.browse-cell-compact {
+    font-size: 0.85em;
+    white-space: nowrap;
+    vertical-align: middle;
+    text-align: center;
+}
+.browse-cell-compact:first-child,
+.browse-cell-compact:nth-child(2) {
+    text-align: left;
+}
+.browse-table td, .browse-table th {
+    vertical-align: middle;
+}
+
+/* Expand button */
+.browse-expand-btn {
+    background: none;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 0.15em 0.4em;
+    font-size: 0.75em;
+    cursor: pointer;
+    color: #555;
+    line-height: 1;
+    margin: 0;
+    width: auto;
+}
+.browse-expand-btn:hover {
+    background: #e9ecef;
+    color: #222;
+}
+.browse-expand-btn.open {
+    background: #1095c1;
+    color: #fff;
+    border-color: #1095c1;
+}
+
+/* Detail row */
+.browse-detail-row > td {
+    padding: 0.75rem 1rem !important;
+    background: #f8f9fa;
+    border-top: none !important;
+}
+.browse-detail-grid {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+}
+.browse-detail-section {
+    flex: 1;
+    min-width: 200px;
+}
+.browse-detail-label {
+    font-weight: 700;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6c757d;
+    margin-bottom: 0.35rem;
+}
+.browse-detail-table {
+    width: 100%;
+    font-size: 0.85rem;
+    border-collapse: collapse;
+    margin: 0;
+}
+.browse-detail-table th {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #6c757d;
+    border-bottom: 1px solid #dee2e6;
+    padding: 0.25rem 0.5rem;
+    text-align: left;
+    font-weight: 600;
+}
+.browse-detail-table td {
+    padding: 0.25rem 0.5rem;
+    border-bottom: 1px solid #eee;
+    color: #333;
+}
+.browse-detail-table code {
+    font-size: 0.85em;
+    padding: 0.1em 0.3em;
+    background: #e9ecef;
+    color: #333;
+    border-radius: 3px;
+}
+
+.browse-detail-full {
+    margin-top: 0.75rem;
+    width: 100%;
+}
+
+.browse-row.highlight {
+    background: var(--pico-primary-focus) !important;
+    transition: background 0.3s ease;
+}
+.facet-link {
+    font-weight: 600;
+    text-decoration: underline;
+}
+</style>
+
+{% else %}
+<p>No compiled sources available to browse.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

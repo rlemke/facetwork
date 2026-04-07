@@ -28,10 +28,11 @@
     <table>
         <tr><th>UUID</th><td class="mono">{{ flow.uuid }}</td></tr>
         <tr><th>Path</th><td class="mono">{{ flow.name.path }}</td></tr>
-        <tr><th>Namespaces</th><td>{{ flow.namespaces|length }}</td></tr>
-        <tr><th>Facets</th><td>{{ flow.facets|length }}</td></tr>
-        <tr><th>Blocks</th><td>{{ flow.blocks|length }}</td></tr>
-        <tr><th>Statements</th><td>{{ flow.statements|length }}</td></tr>
+        <tr><th>Namespaces</th><td>{{ ast_counts.namespaces }}</td></tr>
+        <tr><th>Workflows</th><td>{{ ast_counts.workflows }}</td></tr>
+        <tr><th>Event Facets</th><td>{{ ast_counts.event_facets }}</td></tr>
+        <tr><th>Facets</th><td>{{ ast_counts.facets }}</td></tr>
+        <tr><th>Schemas</th><td>{{ ast_counts.schemas }}</td></tr>
     </table>
 </article>
 
@@ -39,6 +40,7 @@
 <p>
     <a href="/flows/{{ flow.uuid }}/source" role="button" class="outline">View AFL Source</a>
     <a href="/flows/{{ flow.uuid }}/json" role="button" class="outline">View JSON</a>
+    <a href="/flows/{{ flow.uuid }}/browse" role="button" class="outline">Browse Declarations</a>
 </p>
 {% endif %}
 

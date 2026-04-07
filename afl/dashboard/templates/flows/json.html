@@ -5,7 +5,7 @@
 <h1>Flow not found</h1>
 {% else %}
 <h1>Compiled JSON — {{ flow.name.name }}</h1>
-<p><a href="/flows/{{ flow.uuid }}">Back to flow</a> | <a href="/flows/{{ flow.uuid }}/source">View AFL Source</a></p>
+<p><a href="/flows/{{ flow.uuid }}">Back to flow</a> | <a href="/flows/{{ flow.uuid }}/source">View AFL Source</a> | <a href="/flows/{{ flow.uuid }}/browse">Browse Declarations</a></p>
 
 {% if parse_error %}
 <article>

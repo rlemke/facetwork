@@ -5,7 +5,7 @@
 <h1>Flow not found</h1>
 {% else %}
 <h1>AFL Source — {{ flow.name.name }}</h1>
-<p><a href="/flows/{{ flow.uuid }}">Back to flow</a> | <a href="/flows/{{ flow.uuid }}/json">View JSON</a></p>
+<p><a href="/flows/{{ flow.uuid }}">Back to flow</a> | <a href="/flows/{{ flow.uuid }}/json">View JSON</a> | <a href="/flows/{{ flow.uuid }}/browse">Browse Declarations</a></p>
 
 {% for src in sources %}
 <article>

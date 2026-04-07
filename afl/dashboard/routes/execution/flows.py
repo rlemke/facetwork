@@ -71,6 +71,11 @@ def flow_detail(flow_id: str, request: Request, store=Depends(get_store)):
         key=lambda x: str(x["name"]),
     )
 
+    # Compute declaration counts from compiled AST (entity lists may be empty)
+    ast_counts = {"namespaces": 0, "workflows": 0, "event_facets": 0, "facets": 0, "schemas": 0}
+    if flow and flow.compiled_ast:
+        _count_declarations(flow.compiled_ast.get("declarations", []), ast_counts)
+
     return request.app.state.templates.TemplateResponse(
         request,
         "flows/detail.html",
@@ -79,6 +84,7 @@ def flow_detail(flow_id: str, request: Request, store=Depends(get_store)):
             "workflows": workflows,
             "namespace_list": namespace_list,
             "runners": runners,
+            "ast_counts": ast_counts,
             "active_tab": "flows",
         },
     )
@@ -130,6 +136,183 @@ def flow_json(flow_id: str, request: Request, store=Depends(get_store)):
             "parse_error": parse_error,
         },
     )
+
+
+@router.get("/{flow_id}/browse")
+def flow_browse(flow_id: str, request: Request, store=Depends(get_store)):
+    """Browse compiled JSON grouped by declaration type with clickable cross-refs."""
+    import json
+
+    flow = store.get_flow(flow_id)
+    groups: dict[str, list] = {
+        "workflows": [],
+        "event_facets": [],
+        "facets": [],
+        "schemas": [],
+    }
+    parse_error = None
+
+    if flow:
+        try:
+            if flow.compiled_ast:
+                program_dict = flow.compiled_ast
+            elif flow.compiled_sources:
+                from afl.emitter import JSONEmitter
+                from afl.parser import AFLParser
+
+                parser = AFLParser()
+                source_text = flow.compiled_sources[0].content
+                ast = parser.parse(source_text)
+                emitter = JSONEmitter(include_locations=False)
+                program_json = emitter.emit(ast)
+                program_dict = json.loads(program_json)
+            else:
+                program_dict = None
+
+            if program_dict:
+                _collect_declarations(program_dict.get("declarations", []), "", groups)
+        except Exception as exc:
+            parse_error = str(exc)
+
+    category_order = ["workflows", "event_facets", "facets", "schemas"]
+    category_labels = {
+        "workflows": "Workflows",
+        "event_facets": "Event Facets",
+        "facets": "Facets",
+        "schemas": "Schemas",
+    }
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "flows/browse.html",
+        {
+            "flow": flow,
+            "groups": groups,
+            "category_order": category_order,
+            "category_labels": category_labels,
+            "parse_error": parse_error,
+        },
+    )
+
+
+def _count_declarations(declarations: list, counts: dict[str, int]) -> None:
+    """Recursively count declaration types from the compiled AST."""
+    for decl in declarations:
+        dtype = decl.get("type", "")
+        if dtype == "Namespace":
+            counts["namespaces"] += 1
+            _count_declarations(decl.get("declarations", []), counts)
+        elif dtype == "WorkflowDecl":
+            counts["workflows"] += 1
+        elif dtype == "EventFacetDecl":
+            counts["event_facets"] += 1
+        elif dtype == "FacetDecl":
+            counts["facets"] += 1
+        elif dtype == "SchemaDecl":
+            counts["schemas"] += 1
+
+
+def _collect_declarations(
+    declarations: list, namespace: str, groups: dict[str, list]
+) -> None:
+    """Recursively collect declarations from JSON AST into typed groups."""
+    for decl in declarations:
+        dtype = decl.get("type", "")
+        name = decl.get("name", "")
+        qualified = f"{namespace}.{name}" if namespace else name
+
+        if dtype == "Namespace":
+            _collect_declarations(decl.get("declarations", []), qualified, groups)
+            continue
+
+        entry: dict = {
+            "qualified_name": qualified,
+            "short_name": name,
+            "namespace": namespace or None,
+            "doc": None,
+            "params": [],
+            "returns": [],
+            "steps": [],
+            "fields": [],
+        }
+
+        # Extract doc comment
+        doc = decl.get("doc")
+        if doc and isinstance(doc, dict):
+            entry["doc"] = doc.get("description", "")
+
+        # Extract params
+        for p in decl.get("params", []):
+            ptype = p.get("type", "")
+            if isinstance(ptype, dict):
+                ptype = ptype.get("name", ptype.get("type", "?"))
+            entry["params"].append({"name": p.get("name", ""), "type": ptype})
+
+        # Extract returns
+        for r in decl.get("returns", []):
+            rtype = r.get("type", "")
+            if isinstance(rtype, dict):
+                rtype = rtype.get("name", rtype.get("type", "?"))
+            entry["returns"].append({"name": r.get("name", ""), "type": rtype})
+
+        if dtype == "WorkflowDecl":
+            _collect_steps(decl, entry, namespace)
+            groups["workflows"].append(entry)
+        elif dtype == "EventFacetDecl":
+            _collect_steps(decl, entry, namespace)
+            groups["event_facets"].append(entry)
+        elif dtype == "FacetDecl":
+            _collect_steps(decl, entry, namespace)
+            groups["facets"].append(entry)
+        elif dtype == "SchemaDecl":
+            for f in decl.get("fields", []):
+                ftype = f.get("type", "")
+                if isinstance(ftype, dict):
+                    inner = ftype
+                    if inner.get("type") == "ArrayType":
+                        elem = inner.get("elementType", {})
+                        elem_name = (
+                            elem.get("name", "?") if isinstance(elem, dict) else str(elem)
+                        )
+                        ftype = f"[{elem_name}]"
+                    else:
+                        ftype = inner.get("name", inner.get("type", "?"))
+                entry["fields"].append({"name": f.get("name", ""), "type": ftype})
+            groups["schemas"].append(entry)
+
+
+def _collect_steps(decl: dict, entry: dict, namespace: str) -> None:
+    """Extract step statements from a declaration body."""
+    body = decl.get("body")
+    if body is None:
+        return
+    bodies = body if isinstance(body, list) else [body]
+    for b in bodies:
+        for step in b.get("steps", []):
+            if step.get("type") != "StepStmt":
+                continue
+            call = step.get("call", {})
+            target = call.get("target", "")
+            args = [a.get("name", "") for a in call.get("args", [])]
+            # Also recurse into statement-level andThen body
+            entry["steps"].append({
+                "name": step.get("name", ""),
+                "target": target,
+                "args": args,
+            })
+            # Recurse into nested body (statement-level andThen)
+            if step.get("body"):
+                nested = step["body"] if isinstance(step["body"], list) else [step["body"]]
+                for nb in nested:
+                    for ns_step in nb.get("steps", []):
+                        if ns_step.get("type") != "StepStmt":
+                            continue
+                        nc = ns_step.get("call", {})
+                        entry["steps"].append({
+                            "name": ns_step.get("name", ""),
+                            "target": nc.get("target", ""),
+                            "args": [a.get("name", "") for a in nc.get("args", [])],
+                        })
 
 
 @router.get("/{flow_id}/ns/{namespace_name:path}")
