@@ -6,6 +6,9 @@ per-region partitioned imports with skip-if-imported logic.
 
 Performance optimizations:
 - Single PBF pass for both nodes and ways (pyosmium NodeLocationsForWays)
+- Staging tables: imports write to unlogged, index-free staging tables
+  then merge into main tables in a single bulk operation. This eliminates
+  index maintenance, WAL overhead, and cross-import lock contention.
 - Large batches (50k rows) with infrequent commits
 - synchronous_commit=off during import to reduce WAL pressure
 - DELETE+INSERT instead of UPSERT for force-reimport (avoids index lookups)
@@ -21,7 +24,7 @@ from datetime import UTC, datetime
 
 from afl.runtime.storage import localize
 
-from ..shared.scan_progress import ScanProgressTracker, get_file_size
+from ..shared.scan_progress import ScanProgressTracker, _fmt_elapsed, get_file_size
 
 log = logging.getLogger(__name__)
 
@@ -129,6 +132,123 @@ LIMIT 1
 
 DELETE_REGION_NODES_SQL = "DELETE FROM osm_nodes WHERE region = %s"
 DELETE_REGION_WAYS_SQL = "DELETE FROM osm_ways WHERE region = %s"
+
+# ---------------------------------------------------------------------------
+# Staging table helpers — import into unlogged, index-free tables then merge
+# ---------------------------------------------------------------------------
+
+
+def _staging_table_name(base: str, region: str) -> str:
+    """Generate a safe staging table name from region."""
+    # Sanitize region: keep alphanumeric and underscores only
+    safe = re.sub(r"[^a-zA-Z0-9]", "_", region or "global").lower().strip("_")[:40]
+    # Add PID to avoid collisions if two imports run for the same region
+    return f"_staging_{base}_{safe}_{os.getpid()}"
+
+
+def _create_staging_tables(conn, region: str, step_log=None) -> tuple[str, str]:
+    """Create unlogged staging tables for nodes and ways. Returns (nodes_table, ways_table)."""
+    nodes_tbl = _staging_table_name("nodes", region)
+    ways_tbl = _staging_table_name("ways", region)
+    with conn.cursor() as cur:
+        cur.execute(f"DROP TABLE IF EXISTS {nodes_tbl}")
+        cur.execute(f"DROP TABLE IF EXISTS {ways_tbl}")
+        cur.execute(f"""
+            CREATE UNLOGGED TABLE {nodes_tbl} (
+                osm_id BIGINT NOT NULL,
+                region TEXT NOT NULL DEFAULT '',
+                tags JSONB,
+                geom geometry(Point, 4326)
+            )
+        """)
+        cur.execute(f"""
+            CREATE UNLOGGED TABLE {ways_tbl} (
+                osm_id BIGINT NOT NULL,
+                region TEXT NOT NULL DEFAULT '',
+                tags JSONB,
+                geom geometry(LineString, 4326)
+            )
+        """)
+    conn.commit()
+    if step_log:
+        step_log(f"Created staging tables: {nodes_tbl}, {ways_tbl}")
+    return nodes_tbl, ways_tbl
+
+
+def _merge_staging_tables(
+    conn, nodes_tbl: str, ways_tbl: str, use_upsert: bool,
+    step_log=None, task_heartbeat=None,
+) -> tuple[int, int]:
+    """Merge staging tables into main tables and drop them.
+
+    Returns (node_count, way_count) merged.
+    """
+    if task_heartbeat:
+        try:
+            task_heartbeat(progress_message="Merging staging nodes into osm_nodes...")
+        except Exception:
+            pass
+
+    with conn.cursor() as cur:
+        # Count rows to merge
+        cur.execute(f"SELECT COUNT(*) FROM {nodes_tbl}")
+        node_count = cur.fetchone()[0]
+        cur.execute(f"SELECT COUNT(*) FROM {ways_tbl}")
+        way_count = cur.fetchone()[0]
+
+    if step_log:
+        step_log(f"Merging {node_count:,} nodes + {way_count:,} ways from staging tables...")
+
+    merge_t0 = time.monotonic()
+    with conn.cursor() as cur:
+        if use_upsert:
+            cur.execute(f"""
+                INSERT INTO osm_nodes (osm_id, region, tags, geom)
+                SELECT osm_id, region, tags, geom FROM {nodes_tbl}
+                ON CONFLICT (osm_id, region)
+                DO UPDATE SET tags = EXCLUDED.tags, geom = EXCLUDED.geom
+            """)
+        else:
+            cur.execute(f"""
+                INSERT INTO osm_nodes (osm_id, region, tags, geom)
+                SELECT osm_id, region, tags, geom FROM {nodes_tbl}
+            """)
+    conn.commit()
+
+    if task_heartbeat:
+        try:
+            task_heartbeat(progress_message="Merging staging ways into osm_ways...")
+        except Exception:
+            pass
+
+    with conn.cursor() as cur:
+        if use_upsert:
+            cur.execute(f"""
+                INSERT INTO osm_ways (osm_id, region, tags, geom)
+                SELECT osm_id, region, tags, geom FROM {ways_tbl}
+                ON CONFLICT (osm_id, region)
+                DO UPDATE SET tags = EXCLUDED.tags, geom = EXCLUDED.geom
+            """)
+        else:
+            cur.execute(f"""
+                INSERT INTO osm_ways (osm_id, region, tags, geom)
+                SELECT osm_id, region, tags, geom FROM {ways_tbl}
+            """)
+    conn.commit()
+
+    # Drop staging tables
+    with conn.cursor() as cur:
+        cur.execute(f"DROP TABLE IF EXISTS {nodes_tbl}")
+        cur.execute(f"DROP TABLE IF EXISTS {ways_tbl}")
+    conn.commit()
+
+    merge_elapsed = time.monotonic() - merge_t0
+    if step_log:
+        step_log(
+            f"Merge complete: {node_count:,} nodes + {way_count:,} ways "
+            f"in {_fmt_elapsed(merge_elapsed)}"
+        )
+    return node_count, way_count
 
 # ---------------------------------------------------------------------------
 # osm2pgsql-compatible views — zero-storage compatibility layer
@@ -402,7 +522,7 @@ class _BatchFlusher:
             return
         msg = (
             f"{self._label} ({self.region}): {self.total_count:,} inserted "
-            f"({elapsed:.0f}s, {rate:,.0f}/s)"
+            f"({_fmt_elapsed(elapsed)}, {rate:,.0f}/s)"
         )
         log.info(msg)
         try:
@@ -419,7 +539,7 @@ class _BatchFlusher:
             rate = self.total_count / elapsed if elapsed > 0 else 0
             self._step_log(
                 f"{self._label} ({self.region}): complete — {self.total_count:,} "
-                f"in {elapsed:.0f}s ({rate:,.0f}/s)"
+                f"in {_fmt_elapsed(elapsed)} ({rate:,.0f}/s)"
             )
         return self.total_count
 
@@ -440,12 +560,20 @@ class CombinedCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
         progress=None,
         step_log=None,
         task_heartbeat=None,
+        node_insert_sql: str | None = None,
+        way_insert_sql: str | None = None,
     ):
         if HAS_OSMIUM:
             super().__init__()
         self._progress = progress
-        node_sql = UPSERT_NODES_SQL if use_upsert else INSERT_NODES_SQL
-        way_sql = UPSERT_WAYS_SQL if use_upsert else INSERT_WAYS_SQL
+        if node_insert_sql:
+            node_sql = node_insert_sql
+        else:
+            node_sql = UPSERT_NODES_SQL if use_upsert else INSERT_NODES_SQL
+        if way_insert_sql:
+            way_sql = way_insert_sql
+        else:
+            way_sql = UPSERT_WAYS_SQL if use_upsert else INSERT_WAYS_SQL
         self._nodes = _BatchFlusher(
             conn,
             node_sql,
@@ -719,6 +847,7 @@ def import_to_postgis(
     postgis_url = postgis_url or get_postgis_url()
     conn = psycopg2.connect(postgis_url, gssencmode="disable")
 
+    staging_nodes = staging_ways = ""
     try:
         ensure_schema(conn)
 
@@ -760,7 +889,7 @@ def import_to_postgis(
         with conn.cursor() as cur:
             cur.execute("SET synchronous_commit = off")
 
-        # For force-reimport: delete old data and use plain INSERT (faster)
+        # For force-reimport: delete old data and use plain INSERT for merge
         use_upsert = True
         if force and region:
             log.info("Deleting prior data for region '%s'", region)
@@ -770,11 +899,19 @@ def import_to_postgis(
             conn.commit()
             use_upsert = False  # no conflicts possible after delete
         elif not region:
-            # Global import with no region — plain INSERT is fine for empty tables
-            pass
+            # Global import with no region — plain INSERT for merge
+            use_upsert = False
+
+        # Create unlogged staging tables — no indexes, no WAL, no contention
+        staging_nodes, staging_ways = _create_staging_tables(conn, region, step_log)
+        staging_insert_nodes = f"INSERT INTO {staging_nodes} (osm_id, region, tags, geom) VALUES %s"
+        staging_insert_ways = f"INSERT INTO {staging_ways} (osm_id, region, tags, geom) VALUES %s"
 
         # Single-pass import using pyosmium's NodeLocationsForWays
-        log.info("Importing from %s (region=%s, single-pass)", pbf_path, region or "<global>")
+        log.info(
+            "Importing from %s (region=%s, single-pass, staging)",
+            pbf_path, region or "<global>",
+        )
         file_size = get_file_size(str(pbf_path))
         progress = ScanProgressTracker(file_size, step_log, label="PostGIS Import")
 
@@ -782,23 +919,37 @@ def import_to_postgis(
             conn,
             region=region,
             batch_size=batch_size,
-            use_upsert=use_upsert,
+            use_upsert=False,  # staging tables have no PK — always plain INSERT
             progress=progress,
             step_log=step_log,
             task_heartbeat=task_heartbeat,
+            node_insert_sql=staging_insert_nodes,
+            way_insert_sql=staging_insert_ways,
         )
 
         # locations=True enables pyosmium's built-in NodeLocationsForWays
         # index so way.nodes[i].location is resolved automatically
         collector.apply_file(pbf_path, locations=True)
 
-        node_count, way_count = collector.finalize()
+        collector.finalize()
         progress.finish()
+        scan_nodes = collector.node_count
+        scan_ways = collector.way_count
         log.info(
-            "Imported %d nodes + %d ways (region=%s)",
-            node_count,
-            way_count,
-            region or "<global>",
+            "Scan complete: %d nodes + %d ways staged (region=%s)",
+            scan_nodes, scan_ways, region or "<global>",
+        )
+
+        # Merge staging tables into main tables (single bulk operation)
+        node_count, way_count = _merge_staging_tables(
+            conn, staging_nodes, staging_ways,
+            use_upsert=use_upsert,
+            step_log=step_log,
+            task_heartbeat=task_heartbeat,
+        )
+        log.info(
+            "Merged %d nodes + %d ways (region=%s)",
+            node_count, way_count, region or "<global>",
         )
 
         # Log the import
@@ -816,5 +967,15 @@ def import_to_postgis(
             imported_at=now,
             region=region,
         )
+    except Exception:
+        # Clean up staging tables on failure
+        try:
+            with conn.cursor() as cur:
+                cur.execute(f"DROP TABLE IF EXISTS {staging_nodes}")
+                cur.execute(f"DROP TABLE IF EXISTS {staging_ways}")
+            conn.commit()
+        except Exception:
+            pass
+        raise
     finally:
         conn.close()

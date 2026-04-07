@@ -11,6 +11,16 @@ import time
 from collections.abc import Callable
 
 
+def _fmt_elapsed(seconds: float) -> str:
+    """Format seconds as H:MM:SS or M:SS for compact log display."""
+    total = int(seconds)
+    h, remainder = divmod(total, 3600)
+    m, s = divmod(remainder, 60)
+    if h > 0:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
+
+
 def _memory_mb() -> float:
     """Return current process RSS in MB."""
     # ru_maxrss is in bytes on Linux, KB on macOS
@@ -115,7 +125,7 @@ class ScanProgressTracker:
             count = getattr(self, f"_{self._current_phase}s", 0)
             mem = _memory_mb()
             self._step_log(
-                f"{self._label}: finished {prev_label} ({count:,}) in {phase_elapsed:.1f}s, "
+                f"{self._label}: finished {prev_label} ({count:,}) in {_fmt_elapsed(phase_elapsed)}, "
                 f"starting {phase_labels.get(new_phase, new_phase)} "
                 f"(mem: {mem:,.0f}MB)"
             )
@@ -145,8 +155,8 @@ class ScanProgressTracker:
         mem = _memory_mb()
         self._step_log(
             f"{self._label}: processing {phase} — "
-            f"{count:,} so far in {phase_elapsed:.0f}s "
-            f"(total: {self._elements:,} elements in {elapsed:.0f}s, "
+            f"{count:,} so far in {_fmt_elapsed(phase_elapsed)} "
+            f"(total: {self._elements:,} elements in {_fmt_elapsed(elapsed)}, "
             f"mem: {mem:,.0f}MB)"
         )
 
@@ -183,7 +193,7 @@ class ScanProgressTracker:
 
         self._step_log(
             f"{self._label}: ~{pct}% of {size_mb:.1f}MB — "
-            f"{self._elements:,} elements ({counts}) in {elapsed:.1f}s"
+            f"{self._elements:,} elements ({counts}) in {_fmt_elapsed(elapsed)}"
         )
 
     def finish(self) -> None:
@@ -202,7 +212,7 @@ class ScanProgressTracker:
             prev_label = phase_labels.get(self._current_phase, self._current_phase)
             count = getattr(self, f"_{self._current_phase}s", 0)
             self._step_log(
-                f"{self._label}: finished {prev_label} ({count:,}) in {phase_elapsed:.1f}s"
+                f"{self._label}: finished {prev_label} ({count:,}) in {_fmt_elapsed(phase_elapsed)}"
             )
         elapsed = time.monotonic() - self._t0
         size_mb = self._file_size / (1024 * 1024)
@@ -211,7 +221,7 @@ class ScanProgressTracker:
         self._step_log(
             f"{self._label}: scan complete — {self._elements:,} elements "
             f"({self._nodes:,}N/{self._ways:,}W/{self._areas:,}A/{self._relations:,}R) "
-            f"from {size_mb:.1f}MB in {elapsed:.1f}s ({rate:,.0f} elem/s, "
+            f"from {size_mb:.1f}MB in {_fmt_elapsed(elapsed)} ({rate:,.0f} elem/s, "
             f"peak mem: {mem:,.0f}MB)",
             level="success",
         )

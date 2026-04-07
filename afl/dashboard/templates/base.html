@@ -6,7 +6,7 @@
     <title>{% block title %}AgentFlow Dashboard{% endblock %}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github.min.css">
-    <link rel="stylesheet" href="/static/style.css?v=25">
+    <link rel="stylesheet" href="/static/style.css?v=26">
     <style>
     /* Critical sidebar layout — inline to prevent cache/CDN race with Pico CSS */
     :root{--sidebar-width:220px}
@@ -21,6 +21,24 @@
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script type="module" src="/static/form_validation.js"></script>
+    <script>
+    /* Shared expand-row toggle for tables */
+    function toggleDetail(btn) {
+        var mainRow = btn.closest('tr');
+        var detailRow = mainRow.nextElementSibling;
+        if (!detailRow || !detailRow.classList.contains('browse-detail-row')) return;
+        var isOpen = detailRow.style.display !== 'none';
+        if (isOpen) {
+            detailRow.style.display = 'none';
+            btn.classList.remove('open');
+            btn.innerHTML = '&#9654;';
+        } else {
+            detailRow.style.display = '';
+            btn.classList.add('open');
+            btn.innerHTML = '&#9660;';
+        }
+    }
+    </script>
 </head>
 <body class="sidebar-layout">
     <aside class="sidebar" id="sidebar">

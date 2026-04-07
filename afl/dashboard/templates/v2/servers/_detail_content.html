@@ -82,6 +82,7 @@
                     <th>Created</th>
                     <th>Duration</th>
                     <th>Error</th>
+                    <th style="width:2em"></th>
                 </tr>
             </thead>
             <tbody>
@@ -97,8 +98,8 @@
                 <td>
                     {% with state=task.state %}{% include "partials/_state_badge.html" %}{% endwith %}
                 </td>
-                <td class="mono task-data">
-                    {% if task.data %}{{ task.data|tojson(indent=0)|truncate(60) }}{% endif %}
+                <td class="mono task-data-compact">
+                    {% if task.data %}{{ task.data|length }} fields{% endif %}
                 </td>
                 <td>{{ task.created|timestamp }}</td>
                 <td>
@@ -111,7 +112,32 @@
                     <pre class="task-error">{{ task.error|tojson(indent=2) }}</pre>
                     {% endif %}
                 </td>
+                <td>
+                    {% if task.data %}
+                    <button class="browse-expand-btn" onclick="toggleDetail(this)" aria-label="Expand">&#9654;</button>
+                    {% endif %}
+                </td>
             </tr>
+            {% if task.data %}
+            <tr class="browse-detail-row" style="display:none">
+                <td colspan="7">
+                    <div class="browse-detail-full">
+                        <div class="browse-detail-label">Input</div>
+                        <table class="browse-detail-table">
+                            <thead><tr><th>Attribute</th><th>Value</th></tr></thead>
+                            <tbody>
+                            {% for key, val in task.data.items() %}
+                            <tr>
+                                <td><code>{{ key }}</code></td>
+                                <td class="mono" style="word-break:break-all;">{% if val is mapping or val is iterable and val is not string %}{{ val|tojson(indent=2) }}{% else %}{{ val }}{% endif %}</td>
+                            </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </td>
+            </tr>
+            {% endif %}
             {% endfor %}
             </tbody>
         </table>

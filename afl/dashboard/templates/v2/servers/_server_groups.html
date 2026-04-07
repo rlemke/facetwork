@@ -27,22 +27,57 @@
                     <th>State</th>
                     <th>Input</th>
                     <th>Runner</th>
+                    <th style="width:2em"></th>
                 </tr>
             </thead>
             <tbody>
             {% for task in server.active_tasks %}
                 <tr>
-                    <td class="mono">{{ task.name }}</td>
+                    <td class="mono">
+                        {% if task.step_id and task.runner_id %}
+                        <a href="/v2/workflows/{{ task.runner_id }}/steps/{{ task.step_id }}/expand">{{ task.name }}</a>
+                        {% else %}
+                        {{ task.name }}
+                        {% endif %}
+                        {% if task.step_path %}
+                        <br><small class="secondary">{{ task.step_path }}</small>
+                        {% endif %}
+                    </td>
                     <td>
                         {% with state=task.state %}{% include "partials/_state_badge.html" %}{% endwith %}
                     </td>
-                    <td class="mono task-data">
-                        {% if task.data %}{{ task.data|tojson(indent=0)|truncate(80) }}{% endif %}
+                    <td class="mono task-data-compact">
+                        {% if task.data %}{{ task.data|length }} fields{% endif %}
                     </td>
                     <td>
                         <a href="/v2/workflows/{{ task.runner_id }}">{{ task.runner_id|truncate_uuid }}</a>
                     </td>
+                    <td>
+                        {% if task.data %}
+                        <button class="browse-expand-btn" onclick="toggleDetail(this)" aria-label="Expand">&#9654;</button>
+                        {% endif %}
+                    </td>
                 </tr>
+                {% if task.data %}
+                <tr class="browse-detail-row" style="display:none">
+                    <td colspan="5">
+                        <div class="browse-detail-full">
+                            <div class="browse-detail-label">Input</div>
+                            <table class="browse-detail-table">
+                                <thead><tr><th>Attribute</th><th>Value</th></tr></thead>
+                                <tbody>
+                                {% for key, val in task.data.items() %}
+                                <tr>
+                                    <td><code>{{ key }}</code></td>
+                                    <td class="mono" style="word-break:break-all;">{% if val is mapping or val is iterable and val is not string %}{{ val|tojson(indent=2) }}{% else %}{{ val }}{% endif %}</td>
+                                </tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </td>
+                </tr>
+                {% endif %}
             {% endfor %}
             </tbody>
         </table>

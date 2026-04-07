@@ -170,23 +170,6 @@
 {% endfor %}
 
 <script>
-function toggleDetail(btn) {
-    var mainRow = btn.closest('tr');
-    var detailRow = mainRow.nextElementSibling;
-    if (!detailRow || !detailRow.classList.contains('browse-detail-row')) return;
-
-    var isOpen = detailRow.style.display !== 'none';
-    if (isOpen) {
-        detailRow.style.display = 'none';
-        btn.classList.remove('open');
-        btn.innerHTML = '&#9654;';
-    } else {
-        detailRow.style.display = '';
-        btn.classList.add('open');
-        btn.innerHTML = '&#9660;';
-    }
-}
-
 function filterBrowse(query) {
     var q = query.toLowerCase();
     document.querySelectorAll('.browse-row').forEach(function(row) {
@@ -244,87 +227,6 @@ function highlightDecl(targetId) {
 .browse-table td, .browse-table th {
     vertical-align: middle;
 }
-
-/* Expand button */
-.browse-expand-btn {
-    background: none;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    padding: 0.15em 0.4em;
-    font-size: 0.75em;
-    cursor: pointer;
-    color: #555;
-    line-height: 1;
-    margin: 0;
-    width: auto;
-}
-.browse-expand-btn:hover {
-    background: #e9ecef;
-    color: #222;
-}
-.browse-expand-btn.open {
-    background: #1095c1;
-    color: #fff;
-    border-color: #1095c1;
-}
-
-/* Detail row */
-.browse-detail-row > td {
-    padding: 0.75rem 1rem !important;
-    background: #f8f9fa;
-    border-top: none !important;
-}
-.browse-detail-grid {
-    display: flex;
-    gap: 2rem;
-    flex-wrap: wrap;
-}
-.browse-detail-section {
-    flex: 1;
-    min-width: 200px;
-}
-.browse-detail-label {
-    font-weight: 700;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #6c757d;
-    margin-bottom: 0.35rem;
-}
-.browse-detail-table {
-    width: 100%;
-    font-size: 0.85rem;
-    border-collapse: collapse;
-    margin: 0;
-}
-.browse-detail-table th {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: #6c757d;
-    border-bottom: 1px solid #dee2e6;
-    padding: 0.25rem 0.5rem;
-    text-align: left;
-    font-weight: 600;
-}
-.browse-detail-table td {
-    padding: 0.25rem 0.5rem;
-    border-bottom: 1px solid #eee;
-    color: #333;
-}
-.browse-detail-table code {
-    font-size: 0.85em;
-    padding: 0.1em 0.3em;
-    background: #e9ecef;
-    color: #333;
-    border-radius: 3px;
-}
-
-.browse-detail-full {
-    margin-top: 0.75rem;
-    width: 100%;
-}
-
 .browse-row.highlight {
     background: var(--pico-primary-focus) !important;
     transition: background 0.3s ease;

@@ -478,12 +478,26 @@ def step_detail_expand(
             except Exception:
                 pass
 
+    # Compute timeout remaining for running tasks
+    timeout_remaining_ms: int | None = None
+    if task and task.state == "running":
+        import os
+        import time
+
+        exec_timeout_ms = int(os.environ.get("AFL_TASK_EXECUTION_TIMEOUT_MS", "900000"))
+        if exec_timeout_ms > 0:
+            now_ms = int(time.time() * 1000)
+            last_activity = task.task_heartbeat or task.updated or task.created
+            elapsed_ms = now_ms - last_activity
+            timeout_remaining_ms = max(0, exec_timeout_ms - elapsed_ms)
+
     ctx = {
         "step": step,
         "task": task,
         "runner": runner,
         "step_logs": step_logs,
         "names": names,
+        "timeout_remaining_ms": timeout_remaining_ms,
     }
 
     # HTMX requests get the partial; direct browser visits get a full page
@@ -534,15 +548,70 @@ def _enrich_servers_with_tasks(servers: list, store: Any) -> None:
     """Attach active tasks to each server, avoiding N+1 queries."""
     # Bulk-fetch running + pending tasks and distribute by server_id
     tasks_by_server: dict[str, list] = {}
+    all_tasks: list = []
     for state in ("running", "pending"):
         for t in store.get_tasks_by_state(state):
             sid = getattr(t, "server_id", "") or ""
             if sid:
                 tasks_by_server.setdefault(sid, []).append(t)
+            all_tasks.append(t)
+
+    # Bulk-resolve step paths for display
+    step_ids = [t.step_id for t in all_tasks if t.step_id]
+    if step_ids:
+        _resolve_task_step_paths(all_tasks, step_ids, store)
 
     for s in servers:
         s.active_tasks = tasks_by_server.get(s.uuid, [])
         s.active_task_count = len(s.active_tasks)
+
+
+def _resolve_task_step_paths(tasks: list, step_ids: list[str], store: Any) -> None:
+    """Build a display path for each task from its step hierarchy."""
+    # Batch-fetch all referenced steps
+    steps_cache: dict = {}
+    for sid in step_ids:
+        try:
+            step = store.get_step(sid)
+            if step:
+                steps_cache[sid] = step
+        except Exception:
+            pass
+
+    # Fetch container steps (two levels up)
+    for _level in range(2):
+        new_ids = {
+            s.container_id
+            for s in steps_cache.values()
+            if getattr(s, "container_id", None) and s.container_id not in steps_cache
+        }
+        for cid in new_ids:
+            try:
+                step = store.get_step(cid)
+                if step:
+                    steps_cache[cid] = step
+            except Exception:
+                pass
+
+    # Build path: grandparent > parent > step
+    for t in tasks:
+        if not t.step_id or t.step_id not in steps_cache:
+            t.step_path = None
+            continue
+        step = steps_cache[t.step_id]
+        # Walk up the container chain collecting names
+        chain: list[str] = []
+        current = step
+        for _depth in range(3):  # self + 2 ancestor levels
+            name = getattr(current, "statement_name", None) or getattr(current, "facet_name", None)
+            if name:
+                chain.append(name)
+            cid = getattr(current, "container_id", None)
+            if not cid or cid not in steps_cache:
+                break
+            current = steps_cache[cid]
+        chain.reverse()
+        t.step_path = " > ".join(chain) if chain else None
 
 
 @router.get("/servers")
