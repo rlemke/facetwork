@@ -19,7 +19,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
 
-from ..dependencies import get_store
+from ...dependencies import get_store
 
 router = APIRouter(prefix="/handlers")
 

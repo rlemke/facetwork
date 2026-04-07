@@ -104,40 +104,22 @@ def _stuck_message(task_info: dict[str, str]) -> str:
     return ", ".join(parts)
 
 
+from ..runner_config import BaseRunnerConfig
+
 _SENTINEL = -1
 
 
 @dataclass
-class RunnerConfig:
-    """Configuration for the runner service."""
+class RunnerConfig(BaseRunnerConfig):
+    """Configuration for the RunnerService.
 
-    server_group: str = "default"
+    Extends BaseRunnerConfig with HTTP status server and shutdown settings.
+    """
+
     service_name: str = "afl-runner"
-    server_name: str = ""
-    topics: list[str] = field(default_factory=list)
-    task_list: str = "default"
-    poll_interval_ms: int = _SENTINEL
-    heartbeat_interval_ms: int = _SENTINEL
-    max_concurrent: int = _SENTINEL
     shutdown_timeout_ms: int = 30000
     http_port: int = 8090
     http_max_port_attempts: int = 20
-
-    def __post_init__(self) -> None:
-        if not self.server_name:
-            self.server_name = socket.gethostname()
-        if self.poll_interval_ms == _SENTINEL:
-            from ...config import get_config
-
-            self.poll_interval_ms = get_config().runner.poll_interval_ms
-        if self.max_concurrent == _SENTINEL:
-            from ...config import get_config
-
-            self.max_concurrent = get_config().runner.max_concurrent
-        if self.heartbeat_interval_ms == _SENTINEL:
-            from ...config import get_config
-
-            self.heartbeat_interval_ms = get_config().runner.heartbeat_interval_ms
 
 
 class _StatusHandler(BaseHTTPRequestHandler):

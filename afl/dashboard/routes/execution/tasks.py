@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from ..dependencies import get_store
-from ..helpers import qualify_step_names
+from ...dependencies import get_store
+from ...helpers import qualify_step_names
 
 router = APIRouter(prefix="/tasks")
 

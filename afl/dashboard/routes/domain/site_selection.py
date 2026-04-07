@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
-from ..dependencies import get_store
+from ...dependencies import get_store
 
 router = APIRouter(prefix="/site-selection")
 

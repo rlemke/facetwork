@@ -28,7 +28,7 @@ pytestmark = pytest.mark.skipif(
 # Helper unit tests (no server needed)
 # ---------------------------------------------------------------------------
 
-from afl.dashboard.routes.site_selection import (
+from afl.dashboard.routes.domain.site_selection import (
     _FIELD_LABELS,
     _PREFERRED_FIELDS,
     _filter_numeric_fields,

@@ -21,7 +21,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 
-from ..dependencies import get_store
+from ...dependencies import get_store
 
 router = APIRouter(prefix="/steps")
 

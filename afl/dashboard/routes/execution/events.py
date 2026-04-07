@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from ..dependencies import get_store
+from ...dependencies import get_store
 
 router = APIRouter(prefix="/events")
 

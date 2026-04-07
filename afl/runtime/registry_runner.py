@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .dispatcher import RegistryDispatcher
+from .runner_config import BaseRunnerConfig
 from .entities import (
     HandlerRegistration,
     RunnerState,
@@ -77,38 +78,16 @@ def _current_time_ms() -> int:
     return int(time.time() * 1000)
 
 
-_SENTINEL = -1
-
 
 @dataclass
-class RegistryRunnerConfig:
-    """Configuration for the RegistryRunner."""
+class RegistryRunnerConfig(BaseRunnerConfig):
+    """Configuration for the RegistryRunner.
+
+    Extends BaseRunnerConfig with handler registry refresh settings.
+    """
 
     service_name: str = "afl-registry-runner"
-    server_group: str = "default"
-    server_name: str = ""
-    task_list: str = "default"
-    poll_interval_ms: int = _SENTINEL
-    max_concurrent: int = _SENTINEL
-    heartbeat_interval_ms: int = _SENTINEL
     registry_refresh_interval_ms: int = 30000
-    topics: list[str] = field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        if not self.server_name:
-            self.server_name = socket.gethostname()
-        if self.poll_interval_ms == _SENTINEL:
-            from ..config import get_config
-
-            self.poll_interval_ms = get_config().runner.poll_interval_ms
-        if self.max_concurrent == _SENTINEL:
-            from ..config import get_config
-
-            self.max_concurrent = get_config().runner.max_concurrent
-        if self.heartbeat_interval_ms == _SENTINEL:
-            from ..config import get_config
-
-            self.heartbeat_interval_ms = get_config().runner.heartbeat_interval_ms
 
 
 class RegistryRunner:

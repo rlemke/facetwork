@@ -268,6 +268,8 @@ Set `AFL_POSTGIS_URL` (e.g. `postgresql://afl:afl@afl-postgres:5432/afl_gis`) fo
 | `AFL_TASK_EXECUTION_TIMEOUT_MS` | `900000` (15min) | Per-task execution timeout; timed-out tasks reset to pending |
 | `AFL_LEASE_DURATION_MS` | `300000` (5min) | Task lease duration; renewed by handler heartbeat |
 
+Examples can override these defaults via `runner.env` files (e.g. `examples/osm-geocoder/runner.env` sets a 4-hour execution timeout for PostGIS imports). The `start-runner` script sources these automatically. Handlers that perform blocking I/O (where heartbeats cannot fire) should register with `timeout_ms=0` and rely on the global execution timeout instead.
+
 ### MCP server
 
 The MCP server (`python -m afl.mcp`) exposes AFL compiler tools, runtime management, and a PostGIS query tool. Configure it in `.mcp.json` for Claude Code integration.

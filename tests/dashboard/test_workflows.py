@@ -98,7 +98,7 @@ def _make_flow(uuid, name, compiled_ast):
 
 def _seed_workflows(store, flow_id, compiled_ast):
     """Seed WorkflowDefinition records matching the compiled_ast workflows."""
-    from afl.dashboard.routes.workflows import _collect_workflows_with_ns
+    from afl.dashboard.routes.execution.workflows import _collect_workflows_with_ns
     from afl.runtime.entities import WorkflowDefinition
 
     entries: list[dict] = []

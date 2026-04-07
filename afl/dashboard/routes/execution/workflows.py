@@ -24,7 +24,7 @@ from fastapi.responses import RedirectResponse
 
 from afl.runtime.expression import evaluate_default
 
-from ..dependencies import get_store
+from ...dependencies import get_store
 
 router = APIRouter(prefix="/workflows")
 

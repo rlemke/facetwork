@@ -24,25 +24,25 @@ if TYPE_CHECKING:
 
 def register_routes(app: FastAPI) -> None:
     """Include all route modules."""
-    from .api import router as api_router
-    from .census_maps import router as census_maps_router
-    from .climate_trends import router as climate_trends_router
-    from .dashboard_v2 import router as dashboard_v2_router
-    from .events import router as events_router
-    from .flows import router as flows_router
-    from .handlers import router as handlers_router
-    from .health import router as health_router
-    from .home import router as home_router
-    from .logs import router as logs_router
-    from .namespaces import router as namespaces_router
-    from .output import router as output_router
-    from .runners import router as runners_router
-    from .servers import router as servers_router
-    from .site_selection import router as site_selection_router
-    from .sources import router as sources_router
-    from .steps import router as steps_router
-    from .tasks import router as tasks_router
-    from .workflows import router as workflows_router
+    from .core.api import router as api_router
+    from .core.health import router as health_router
+    from .core.home import router as home_router
+    from .execution.events import router as events_router
+    from .execution.flows import router as flows_router
+    from .execution.runners import router as runners_router
+    from .execution.steps import router as steps_router
+    from .execution.tasks import router as tasks_router
+    from .execution.workflows import router as workflows_router
+    from .monitoring.handlers import router as handlers_router
+    from .monitoring.logs import router as logs_router
+    from .monitoring.namespaces import router as namespaces_router
+    from .monitoring.output import router as output_router
+    from .monitoring.servers import router as servers_router
+    from .monitoring.sources import router as sources_router
+    from .domain.census_maps import router as census_maps_router
+    from .domain.climate_trends import router as climate_trends_router
+    from .domain.site_selection import router as site_selection_router
+    from .v2.dashboard_v2 import router as dashboard_v2_router
 
     app.include_router(health_router)
     app.include_router(home_router)

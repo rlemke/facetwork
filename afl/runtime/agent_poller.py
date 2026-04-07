@@ -60,6 +60,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
+from .runner_config import BaseRunnerConfig
+
 from .entities import (
     RunnerState,
     ServerDefinition,
@@ -129,36 +131,14 @@ def _stuck_message(task_info: dict[str, str]) -> str:
     return ", ".join(parts)
 
 
-_SENTINEL = -1
-
-
 @dataclass
-class AgentPollerConfig:
-    """Configuration for the AgentPoller."""
+class AgentPollerConfig(BaseRunnerConfig):
+    """Configuration for the AgentPoller.
+
+    Uses all defaults from BaseRunnerConfig.
+    """
 
     service_name: str = "afl-agent"
-    server_group: str = "default"
-    server_name: str = ""
-    task_list: str = "default"
-    poll_interval_ms: int = _SENTINEL
-    max_concurrent: int = _SENTINEL
-    heartbeat_interval_ms: int = _SENTINEL
-
-    def __post_init__(self) -> None:
-        if not self.server_name:
-            self.server_name = socket.gethostname()
-        if self.poll_interval_ms == _SENTINEL:
-            from ..config import get_config
-
-            self.poll_interval_ms = get_config().runner.poll_interval_ms
-        if self.max_concurrent == _SENTINEL:
-            from ..config import get_config
-
-            self.max_concurrent = get_config().runner.max_concurrent
-        if self.heartbeat_interval_ms == _SENTINEL:
-            from ..config import get_config
-
-            self.heartbeat_interval_ms = get_config().runner.heartbeat_interval_ms
 
 
 class AgentPoller:
@@ -792,6 +772,11 @@ class AgentPoller:
 
             payload["_task_heartbeat"] = _task_heartbeat_callback
             payload["_task_uuid"] = task.uuid
+
+            # Retry context
+            retry_count = getattr(task, "retry_count", 0) or 0
+            payload["_retry_count"] = retry_count
+            payload["_is_retry"] = retry_count > 0
 
             # Look up timeout — task-level (from AFL Timeout mixin)
             timeout_ms = getattr(task, "timeout_ms", 0) or 0

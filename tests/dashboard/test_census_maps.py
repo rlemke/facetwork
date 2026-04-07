@@ -43,7 +43,7 @@ pytestmark = pytest.mark.skipif(
 # Helper unit tests (no server needed)
 # ---------------------------------------------------------------------------
 
-from afl.dashboard.routes.census_maps import (
+from afl.dashboard.routes.domain.census_maps import (
     _FIELD_LABELS,
     _PREFERRED_FIELDS,
     _aggregate_state_stats,
