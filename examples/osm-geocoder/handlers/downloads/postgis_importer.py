@@ -343,6 +343,11 @@ class _BatchFlusher:
     def _flush(self) -> None:
         if not self.batch:
             return
+        # Heartbeat before the UPSERT — a single batch insert can take
+        # minutes on large tables with index conflicts, and we need to
+        # signal liveness before that blocking call.
+        self._maybe_heartbeat()
+
         with self.conn.cursor() as cur:
             psycopg2.extras.execute_values(
                 cur,
@@ -361,6 +366,20 @@ class _BatchFlusher:
             self._batches_since_commit = 0
 
         self._maybe_progress()
+
+    def _maybe_heartbeat(self) -> None:
+        """Lightweight heartbeat — signals liveness without logging."""
+        if not self._task_heartbeat:
+            return
+        now = time.monotonic()
+        if now - self._last_progress < self.PROGRESS_INTERVAL:
+            return
+        try:
+            self._task_heartbeat(
+                progress_message=f"{self._label} ({self.region}): flushing batch ({self.total_count:,} so far)",
+            )
+        except Exception:
+            pass
 
     def _maybe_progress(self) -> None:
         now = time.monotonic()
@@ -448,8 +467,33 @@ class CombinedCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
             task_heartbeat,
         )
         self.region = region
+        self._task_heartbeat = task_heartbeat
+        self._element_count = 0
+        self._last_hb = time.monotonic()
+        self._hb_interval = 60.0  # heartbeat every 60s during scan
+
+    def _scan_heartbeat(self) -> None:
+        """Send periodic heartbeat during osmium scan to signal liveness."""
+        self._element_count += 1
+        now = time.monotonic()
+        if now - self._last_hb < self._hb_interval:
+            return
+        self._last_hb = now
+        if self._task_heartbeat:
+            try:
+                nodes = self._nodes.total_count + len(self._nodes.batch)
+                ways = self._ways.total_count + len(self._ways.batch)
+                self._task_heartbeat(
+                    progress_message=(
+                        f"Scanning {self.region}: {self._element_count:,} elements "
+                        f"({nodes:,}N/{ways:,}W queued)"
+                    ),
+                )
+            except Exception:
+                pass
 
     def node(self, n) -> None:
+        self._scan_heartbeat()
         if self._progress:
             self._progress.tick("node")
         tags = {t.k: t.v for t in n.tags}
@@ -463,6 +507,7 @@ class CombinedCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
             self._nodes._flush()
 
     def way(self, w) -> None:
+        self._scan_heartbeat()
         if self._progress:
             self._progress.tick("way")
         tags = {t.k: t.v for t in w.tags}

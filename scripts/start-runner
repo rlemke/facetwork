@@ -93,12 +93,26 @@ if [[ ${#EXAMPLES[@]} -eq 0 ]]; then
     done
 fi
 
+# Source example-specific runner.env files (e.g. examples/osm-geocoder/runner.env).
+# These can override global defaults like AFL_TASK_EXECUTION_TIMEOUT_MS for
+# examples with specific runtime requirements (long imports, etc.).
+for ex in "${EXAMPLES[@]}"; do
+    runner_env="$REPO_ROOT/examples/$ex/runner.env"
+    if [[ -f "$runner_env" ]]; then
+        # shellcheck source=/dev/null
+        set -a; source "$runner_env"; set +a
+    fi
+done
+
 echo "=== AgentFlow: Register Handlers & Start Runner ==="
 echo ""
 echo "  Examples:  ${EXAMPLES[*]}"
 echo "  Instances: $INSTANCES"
 echo "  Dashboard: $DASHBOARD"
 echo "  Mode:      $MODE"
+if [[ -n "${AFL_TASK_EXECUTION_TIMEOUT_MS:-}" ]]; then
+    echo "  Exec timeout: ${AFL_TASK_EXECUTION_TIMEOUT_MS}ms"
+fi
 echo ""
 
 # Register handlers via inline Python

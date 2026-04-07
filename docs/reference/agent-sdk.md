@@ -1184,6 +1184,48 @@ When a task times out, the runner increments `retry_count` and resets
 the task to pending. After `max_retries` (default 5) timeouts, the
 task is dead-lettered.
 
+**Controlling timeouts per handler:**
+
+Handlers that perform long-running operations (bulk imports, large
+file processing) should set `timeout_ms=0` at registration time to
+disable the per-handler stuck-task watchdog:
+
+```python
+runner.register_handler(
+    facet_name="osm.ops.PostGisImport",
+    module_uri="handlers.postgis",
+    entrypoint="handle",
+    timeout_ms=0,  # disable per-handler timeout; rely on heartbeat
+)
+```
+
+With `timeout_ms=0`, the handler depends on the global
+`AFL_TASK_EXECUTION_TIMEOUT_MS` and heartbeats. If the handler has
+phases where no heartbeat can fire (e.g., blocking database calls),
+increase the global timeout.
+
+**Per-example timeout configuration:**
+
+Each example can provide a `runner.env` file that overrides global
+defaults when that example is started via `scripts/start-runner`:
+
+```bash
+# examples/osm-geocoder/runner.env
+AFL_TASK_EXECUTION_TIMEOUT_MS=14400000   # 4 hours for PostGIS imports
+```
+
+The `start-runner` script sources `runner.env` from each selected
+example before starting the runner, so different examples can have
+different timeout profiles without affecting each other:
+
+```bash
+# Uses osm-geocoder/runner.env (4-hour timeout)
+scripts/start-runner --example osm-geocoder
+
+# Uses default timeout (15 min) — no runner.env
+scripts/start-runner --example hiv-drug-resistance
+```
+
 #### Retries and Reclaim
 
 When a handler fails or times out, the task is reset to pending and
