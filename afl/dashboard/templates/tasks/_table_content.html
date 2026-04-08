@@ -1,17 +1,13 @@
 <figure>
-<table>
+<table class="task-table-compact">
     <thead>
         <tr>
             <th>ID</th>
-            <th>Name</th>
-            <th>Step</th>
-            <th>State</th>
-            <th>Task List</th>
-            <th>Runner</th>
-            <th>Server</th>
-            <th>Last Ping</th>
+            <th>Name / Step</th>
+            <th>State / List</th>
+            <th>Runner / Server</th>
+            <th>Duration / Ping</th>
             <th>Retries</th>
-            <th>Duration</th>
             <th>Created</th>
             {% if filter_state == 'dead_letter' %}<th>Actions</th>{% endif %}
         </tr>
@@ -20,17 +16,28 @@
         {% for task in tasks %}
         <tr>
             <td class="mono"><a href="/tasks/{{ task.uuid }}">{{ task.uuid|truncate_uuid }}</a></td>
-            <td>{{ task.name }}</td>
-            <td>{{ step_names.get(task.step_id, '') or '—' }}</td>
-            <td>{% with state=task.state %}{% include "partials/_state_badge.html" %}{% endwith %}</td>
-            <td>{{ task.task_list_name }}</td>
-            <td><a href="/v2/workflows/{{ task.runner_id }}" class="mono">{{ task.runner_id|truncate_uuid }}</a></td>
-            {% set si = server_info.get(task.server_id or '') %}
-            <td>{{ si['name'] if si else '—' }}</td>
-            <td>{{ si['ping_time']|time_ago if si else '—' }}</td>
+            <td>
+                {{ task.name }}
+                {% set sn = step_names.get(task.step_id, '') or '—' %}
+                {% set sn_clean = sn.split('{')[0].rstrip('.') if '{' in sn else sn %}
+                <br><small class="secondary">{{ sn_clean[:50] }}{% if sn_clean|length > 50 %}…{% endif %}</small>
+            </td>
+            <td>
+                {% with state=task.state %}{% include "partials/_state_badge.html" %}{% endwith %}
+                <br><small class="secondary">{{ task.task_list_name }}</small>
+            </td>
+            <td>
+                <a href="/v2/workflows/{{ task.runner_id }}" class="mono">{{ task.runner_id|truncate_uuid }}</a>
+                {% set si = server_info.get(task.server_id or '') %}
+                <br><small class="secondary">{{ si['name'] if si else '—' }}</small>
+            </td>
+            <td>
+                {{ (task.updated - task.created)|duration }}
+                {% set si = server_info.get(task.server_id or '') %}
+                <br><small class="secondary">{{ si['ping_time']|time_ago if si else '—' }}</small>
+            </td>
             <td>{{ task.retry_count }}/{{ task.max_retries }}</td>
-            <td>{{ (task.updated - task.created)|duration }}</td>
-            <td>{{ task.created|timestamp }}</td>
+            <td>{{ task.created|timestamp_split }}</td>
             {% if filter_state == 'dead_letter' %}
             <td>
                 <button class="btn-retry-inline outline" hx-post="/tasks/{{ task.uuid }}/reenqueue" hx-swap="none" hx-confirm="Re-enqueue this task?" onclick="event.stopPropagation()">Re-enqueue</button>
@@ -42,3 +49,19 @@
     </tbody>
 </table>
 </figure>
+
+<style>
+.task-table-compact {
+    table-layout: auto;
+    width: auto;
+}
+.task-table-compact td, .task-table-compact th {
+    padding: 0.35rem 0.5rem;
+    vertical-align: top;
+    white-space: nowrap;
+}
+.task-table-compact small {
+    font-size: 0.8em;
+    line-height: 1.2;
+}
+</style>

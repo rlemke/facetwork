@@ -22,6 +22,25 @@ from jinja2 import Environment
 from markupsafe import Markup
 
 
+def timestamp_split_fmt(value: int | float | None) -> str:
+    """Format a timestamp as time on top, date on bottom.
+
+    Renders two ``<time>`` elements with ``data-ts-time`` and ``data-ts-date``
+    attributes so the localisation script can convert each independently.
+    """
+    if not value:
+        return "—"
+    dt = datetime.datetime.fromtimestamp(value / 1000, tz=datetime.UTC)
+    time_str = dt.strftime("%H:%M:%S")
+    date_str = dt.strftime("%Y-%m-%d")
+    ts = int(value)
+    return Markup(
+        f'<span class="ts-split" data-ts="{ts}">'
+        f'{time_str}<br><small class="secondary">{date_str}</small>'
+        f'</span>'
+    )
+
+
 def timestamp_fmt(value: int | float | None, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
     """Format a millisecond-epoch timestamp as a <time> element.
 
@@ -270,6 +289,7 @@ def file_timestamp(value: float) -> str:
 
 def register_filters(env: Environment) -> None:
     """Register all custom filters on a Jinja2 environment."""
+    env.filters["timestamp_split"] = timestamp_split_fmt
     env.filters["timestamp"] = timestamp_fmt
     env.filters["duration"] = duration_fmt
     env.filters["state_color"] = state_color
