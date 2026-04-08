@@ -15,8 +15,8 @@
         <tr><th>Duration</th><td>{{ (step_logs[-1].time - step_logs[0].time)|duration_long }}</td></tr>
         {% endif %}
         {% endif %}
-        {% if timeout_remaining_ms is defined and timeout_remaining_ms is not none %}
-        <tr><th>Timeout In</th><td>{{ timeout_remaining_ms|duration_long }}</td></tr>
+        {% if heartbeat_ts is defined and heartbeat_ts is not none %}
+        <tr><th>Last Heartbeat</th><td><span class="live-heartbeat" data-ts="{{ heartbeat_ts }}"></span></td></tr>
         {% endif %}
     </table>
 </article>

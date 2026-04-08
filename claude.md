@@ -114,6 +114,7 @@ Composed workflows in `osm.workflows.sourced` demonstrate the pattern:
 | Runtime implementation details | [docs/reference/runtime-impl.md](docs/reference/runtime-impl.md) |
 | Building handlers | [docs/reference/agent-sdk.md](docs/reference/agent-sdk.md) |
 | LLM integration | [docs/guides/llm-integration.md](docs/guides/llm-integration.md) |
+| Long-running handlers | [docs/guides/long-running-handlers.md](docs/guides/long-running-handlers.md) |
 | AFL examples | [docs/reference/examples.md](docs/reference/examples.md) |
 | Execution traces | [docs/reference/execution-traces.md](docs/reference/execution-traces.md) |
 | Build & run reference | [docs/reference/cli.md](docs/reference/cli.md) |

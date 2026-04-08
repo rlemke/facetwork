@@ -32,11 +32,11 @@ def step_detail(step_id: str, request: Request, store=Depends(get_store)):
     step = store.get_step(step_id)
     names = _resolve_step_names(step, store) if step else {}
     step_logs = store.get_step_logs_by_step(step_id) if step else []
-    timeout_remaining_ms = _compute_timeout_remaining(step, store) if step else None
+    heartbeat_ts = _get_heartbeat_ts(step, store) if step else None
     return request.app.state.templates.TemplateResponse(
         request,
         "steps/detail.html",
-        {"step": step, "names": names, "step_logs": step_logs, "timeout_remaining_ms": timeout_remaining_ms},
+        {"step": step, "names": names, "step_logs": step_logs, "heartbeat_ts": heartbeat_ts},
     )
 
 
@@ -161,27 +161,15 @@ def _find_statement_in_block(statement_id: str, block: dict) -> str | None:
     return None
 
 
-def _compute_timeout_remaining(step, store) -> int | None:
-    """Compute ms remaining before execution timeout, or None if not applicable."""
-    import os
-    import time
-
-    # Only relevant for steps that have an active task
+def _get_heartbeat_ts(step, store) -> int | None:
+    """Return the last heartbeat timestamp (ms) for a running step's task, or None."""
     try:
         task = store.get_task_for_step(step.id)
     except Exception:
         return None
     if not task or task.state != "running":
         return None
-
-    exec_timeout_ms = int(os.environ.get("AFL_TASK_EXECUTION_TIMEOUT_MS", "900000"))
-    if exec_timeout_ms <= 0:
-        return None
-
-    now_ms = int(time.time() * 1000)
-    last_activity = task.task_heartbeat or task.updated or task.created
-    elapsed_ms = now_ms - last_activity
-    return max(0, exec_timeout_ms - elapsed_ms)
+    return task.task_heartbeat or task.updated or task.created
 
 
 @router.get("/{step_id}/partial")
@@ -190,11 +178,11 @@ def step_detail_partial(step_id: str, request: Request, store=Depends(get_store)
     step = store.get_step(step_id)
     names = _resolve_step_names(step, store) if step else {}
     step_logs = store.get_step_logs_by_step(step_id) if step else []
-    timeout_remaining_ms = _compute_timeout_remaining(step, store) if step else None
+    heartbeat_ts = _get_heartbeat_ts(step, store) if step else None
     return request.app.state.templates.TemplateResponse(
         request,
         "steps/_detail_content.html",
-        {"step": step, "names": names, "step_logs": step_logs, "timeout_remaining_ms": timeout_remaining_ms},
+        {"step": step, "names": names, "step_logs": step_logs, "heartbeat_ts": heartbeat_ts},
     )
 
 

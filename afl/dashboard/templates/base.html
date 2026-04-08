@@ -22,6 +22,26 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script type="module" src="/static/form_validation.js"></script>
     <script>
+    /* Live heartbeat counter — updates every second */
+    function fmtDuration(ms) {
+        var s = Math.floor(ms / 1000);
+        var h = Math.floor(s / 3600); s %= 3600;
+        var m = Math.floor(s / 60); s %= 60;
+        if (h > 0) return h + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+        return m + ':' + String(s).padStart(2,'0');
+    }
+    function updateHeartbeats() {
+        var now = Date.now();
+        document.querySelectorAll('.live-heartbeat').forEach(function(el) {
+            var ts = parseInt(el.dataset.ts, 10);
+            if (!ts) return;
+            var age = now - ts;
+            el.textContent = fmtDuration(age) + ' ago';
+        });
+    }
+    setInterval(updateHeartbeats, 1000);
+    document.addEventListener('DOMContentLoaded', updateHeartbeats);
+
     /* Shared expand-row toggle for tables */
     function toggleDetail(btn) {
         var mainRow = btn.closest('tr');

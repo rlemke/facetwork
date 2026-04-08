@@ -175,22 +175,21 @@ def _create_staging_tables(conn, region: str, step_log=None) -> tuple[str, str]:
     return nodes_tbl, ways_tbl
 
 
+_MERGE_BATCH_SIZE = 200_000  # rows per merge batch — balances speed vs heartbeat freshness
+
+
 def _merge_staging_tables(
     conn, nodes_tbl: str, ways_tbl: str, use_upsert: bool,
     step_log=None, task_heartbeat=None,
 ) -> tuple[int, int]:
-    """Merge staging tables into main tables and drop them.
+    """Merge staging tables into main tables in batches and drop them.
+
+    Batched merge ensures heartbeats fire between batches so the stuck
+    task reaper doesn't kill long-running imports.
 
     Returns (node_count, way_count) merged.
     """
-    if task_heartbeat:
-        try:
-            task_heartbeat(progress_message="Merging staging nodes into osm_nodes...")
-        except Exception:
-            pass
-
     with conn.cursor() as cur:
-        # Count rows to merge
         cur.execute(f"SELECT COUNT(*) FROM {nodes_tbl}")
         node_count = cur.fetchone()[0]
         cur.execute(f"SELECT COUNT(*) FROM {ways_tbl}")
@@ -200,41 +199,17 @@ def _merge_staging_tables(
         step_log(f"Merging {node_count:,} nodes + {way_count:,} ways from staging tables...")
 
     merge_t0 = time.monotonic()
-    with conn.cursor() as cur:
-        if use_upsert:
-            cur.execute(f"""
-                INSERT INTO osm_nodes (osm_id, region, tags, geom)
-                SELECT osm_id, region, tags, geom FROM {nodes_tbl}
-                ON CONFLICT (osm_id, region)
-                DO UPDATE SET tags = EXCLUDED.tags, geom = EXCLUDED.geom
-            """)
-        else:
-            cur.execute(f"""
-                INSERT INTO osm_nodes (osm_id, region, tags, geom)
-                SELECT osm_id, region, tags, geom FROM {nodes_tbl}
-            """)
-    conn.commit()
 
-    if task_heartbeat:
-        try:
-            task_heartbeat(progress_message="Merging staging ways into osm_ways...")
-        except Exception:
-            pass
-
-    with conn.cursor() as cur:
-        if use_upsert:
-            cur.execute(f"""
-                INSERT INTO osm_ways (osm_id, region, tags, geom)
-                SELECT osm_id, region, tags, geom FROM {ways_tbl}
-                ON CONFLICT (osm_id, region)
-                DO UPDATE SET tags = EXCLUDED.tags, geom = EXCLUDED.geom
-            """)
-        else:
-            cur.execute(f"""
-                INSERT INTO osm_ways (osm_id, region, tags, geom)
-                SELECT osm_id, region, tags, geom FROM {ways_tbl}
-            """)
-    conn.commit()
+    node_merged = _batched_merge(
+        conn, nodes_tbl, "osm_nodes", use_upsert,
+        label="nodes", total=node_count,
+        step_log=step_log, task_heartbeat=task_heartbeat,
+    )
+    way_merged = _batched_merge(
+        conn, ways_tbl, "osm_ways", use_upsert,
+        label="ways", total=way_count,
+        step_log=step_log, task_heartbeat=task_heartbeat,
+    )
 
     # Drop staging tables
     with conn.cursor() as cur:
@@ -245,10 +220,82 @@ def _merge_staging_tables(
     merge_elapsed = time.monotonic() - merge_t0
     if step_log:
         step_log(
-            f"Merge complete: {node_count:,} nodes + {way_count:,} ways "
+            f"Merge complete: {node_merged:,} nodes + {way_merged:,} ways "
             f"in {_fmt_elapsed(merge_elapsed)}"
         )
-    return node_count, way_count
+    return node_merged, way_merged
+
+
+def _batched_merge(
+    conn, staging_tbl: str, target_tbl: str, use_upsert: bool,
+    label: str = "", total: int = 0,
+    step_log=None, task_heartbeat=None,
+    batch_size: int = _MERGE_BATCH_SIZE,
+) -> int:
+    """Merge staging table into target in batches with heartbeats.
+
+    Uses a serial ``_row_id`` column added to the staging table to
+    iterate in fixed-size windows, avoiding full-table locks and
+    allowing heartbeats between batches.
+    """
+    # Add a serial column for batching — fast on unlogged tables
+    with conn.cursor() as cur:
+        cur.execute(f"ALTER TABLE {staging_tbl} ADD COLUMN _row_id SERIAL")
+    conn.commit()
+
+    merged = 0
+    offset = 0
+    batch_t0 = time.monotonic()
+
+    while True:
+        if use_upsert:
+            sql = f"""
+                INSERT INTO {target_tbl} (osm_id, region, tags, geom)
+                SELECT osm_id, region, tags, geom
+                FROM {staging_tbl}
+                WHERE _row_id > %s AND _row_id <= %s
+                ON CONFLICT (osm_id, region)
+                DO UPDATE SET tags = EXCLUDED.tags, geom = EXCLUDED.geom
+            """
+        else:
+            sql = f"""
+                INSERT INTO {target_tbl} (osm_id, region, tags, geom)
+                SELECT osm_id, region, tags, geom
+                FROM {staging_tbl}
+                WHERE _row_id > %s AND _row_id <= %s
+            """
+
+        with conn.cursor() as cur:
+            cur.execute(sql, (offset, offset + batch_size))
+            rows = cur.rowcount
+        conn.commit()
+
+        if rows == 0:
+            break
+
+        merged += rows
+        offset += batch_size
+
+        # Heartbeat + progress after each batch
+        elapsed = time.monotonic() - batch_t0
+        rate = merged / elapsed if elapsed > 0 else 0
+        if task_heartbeat:
+            try:
+                task_heartbeat(
+                    progress_message=(
+                        f"Merging {label}: {merged:,}/{total:,} "
+                        f"({_fmt_elapsed(elapsed)}, {rate:,.0f}/s)"
+                    ),
+                )
+            except Exception:
+                pass
+        if step_log and merged % (batch_size * 5) == 0:
+            step_log(
+                f"Merge {label}: {merged:,}/{total:,} "
+                f"({_fmt_elapsed(elapsed)}, {rate:,.0f}/s)"
+            )
+
+    return merged
 
 # ---------------------------------------------------------------------------
 # osm2pgsql-compatible views — zero-storage compatibility layer

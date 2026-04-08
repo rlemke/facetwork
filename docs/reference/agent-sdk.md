@@ -468,6 +468,13 @@ Resumes a paused workflow from its current state. The evaluator
 re-enters the iteration loop and runs until the next fixed point or
 completion.
 
+### 6.4 Long-Running Handlers
+
+Handlers that perform bulk database imports, large file processing, or
+multi-hour computations require special attention to heartbeats and timeouts.
+See the **[Long-Running Handlers Guide](../guides/long-running-handlers.md)**
+for patterns including staging tables, batched merges, and timeout configuration.
+
 ---
 
 ## 7. Step-Log Emission

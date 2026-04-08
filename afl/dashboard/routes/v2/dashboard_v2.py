@@ -478,18 +478,10 @@ def step_detail_expand(
             except Exception:
                 pass
 
-    # Compute timeout remaining for running tasks
-    timeout_remaining_ms: int | None = None
+    # Heartbeat timestamp for running tasks (rendered as live counter in JS)
+    heartbeat_ts: int | None = None
     if task and task.state == "running":
-        import os
-        import time
-
-        exec_timeout_ms = int(os.environ.get("AFL_TASK_EXECUTION_TIMEOUT_MS", "900000"))
-        if exec_timeout_ms > 0:
-            now_ms = int(time.time() * 1000)
-            last_activity = task.task_heartbeat or task.updated or task.created
-            elapsed_ms = now_ms - last_activity
-            timeout_remaining_ms = max(0, exec_timeout_ms - elapsed_ms)
+        heartbeat_ts = task.task_heartbeat or task.updated or task.created
 
     ctx = {
         "step": step,
@@ -497,7 +489,7 @@ def step_detail_expand(
         "runner": runner,
         "step_logs": step_logs,
         "names": names,
-        "timeout_remaining_ms": timeout_remaining_ms,
+        "heartbeat_ts": heartbeat_ts,
     }
 
     # HTMX requests get the partial; direct browser visits get a full page
