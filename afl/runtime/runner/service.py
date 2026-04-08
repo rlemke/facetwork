@@ -913,21 +913,29 @@ class RunnerService:
                 )
 
         except (ImportError, ModuleNotFoundError) as exc:
-            # Handler module can't be loaded on this runner (e.g. file://
-            # path doesn't exist inside a Docker container).  Release the
-            # task back to pending so another runner can pick it up.
-            task.state = TaskState.PENDING
-            task.error = None
-            task.server_id = ""
+            # Handler module can't be loaded on this runner.  Increment
+            # retry_count so the task eventually dead-letters instead of
+            # looping forever when no runner has the right handler.
+            task.retry_count += 1
+            if task.max_retries > 0 and task.retry_count >= task.max_retries:
+                task.state = TaskState.DEAD_LETTER
+                task.error = {"message": f"Handler not loadable after {task.retry_count} attempts: {exc}"}
+                logger.warning(
+                    "Dead-lettering task %s (%s): handler not loadable after %d attempts — %s",
+                    task.uuid, task.name, task.retry_count, self._task_label(task.uuid),
+                )
+            else:
+                task.state = TaskState.PENDING
+                task.error = None
+                task.server_id = ""
+                logger.warning(
+                    "Cannot load handler for '%s', releasing task %s back to pending "
+                    "(attempt %d/%d): %s — %s",
+                    task.name, task.uuid, task.retry_count, task.max_retries,
+                    exc, self._task_label(task.uuid),
+                )
             task.updated = _current_time_ms()
             self._safe_save_task(task)
-            logger.warning(
-                "Cannot load handler for '%s', releasing task %s back to pending: %s — %s",
-                task.name,
-                task.uuid,
-                exc,
-                self._task_label(task.uuid),
-            )
 
         except Exception as exc:
             now = _current_time_ms()
@@ -1201,9 +1209,22 @@ class RunnerService:
             if not workflow_ids:
                 return
 
+            # Resolve workflow names for readable logging
+            wf_names: dict[str, str] = {}
+            for wf_id in workflow_ids:
+                try:
+                    runners = self._persistence.get_runners_by_workflow(wf_id)
+                    if runners:
+                        wf_names[wf_id] = runners[0].workflow.name
+                except Exception:
+                    pass
+
+            names = ", ".join(
+                wf_names.get(wid, wid[:12]) for wid in workflow_ids
+            )
             logger.info(
-                "Stuck-step sweep: %d workflow(s) need resume",
-                len(workflow_ids),
+                "Stuck-step sweep: %d workflow(s) need resume: %s",
+                len(workflow_ids), names,
             )
 
             for wf_id in workflow_ids:
@@ -1245,9 +1266,15 @@ class RunnerService:
         leaf_steps = [s for s in stuck_steps if s["state"] == StepState.EVENT_TRANSMIT]
         block_steps = [s for s in stuck_steps if s["state"] != StepState.EVENT_TRANSMIT]
 
+        # Log each stuck step with its name and state
+        step_details = []
+        for s in stuck_steps:
+            name = s.get("statement_name") or s.get("facet_name") or s.get("object_type", "?")
+            step_details.append(f"{name} ({s['state']})")
         logger.info(
-            "Sweep workflow %s: %d leaf + %d block steps stuck",
+            "Sweep workflow %s: %d leaf + %d block steps stuck: %s",
             workflow_id[:12], len(leaf_steps), len(block_steps),
+            ", ".join(step_details),
         )
 
         # For EventTransmit steps without tasks, create tasks so handlers run.

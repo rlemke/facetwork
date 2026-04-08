@@ -654,22 +654,45 @@ class RegistryRunner:
             if not workflow_ids:
                 return
 
+            # Resolve workflow names for readable logging
+            wf_names: dict[str, str] = {}
+            for wf_id in workflow_ids:
+                try:
+                    runners = self._persistence.get_runners_by_workflow(wf_id)
+                    if runners:
+                        wf_names[wf_id] = runners[0].workflow.name
+                except Exception:
+                    pass
+
+            names = ", ".join(
+                wf_names.get(wid, wid[:12]) for wid in workflow_ids
+            )
             logger.info(
-                "Stuck-step sweep: %d workflow(s) need resume",
-                len(workflow_ids),
+                "Stuck-step sweep: %d workflow(s) need resume: %s",
+                len(workflow_ids), names,
             )
 
             for wf_id in workflow_ids:
                 steps = self._persistence.get_actionable_steps_by_workflow(wf_id)
-                for step in steps:
-                    if StepState.is_terminal(step.state):
-                        continue
-                    if (
-                        step.state == StepState.EVENT_TRANSMIT
-                        and not step.transition.is_requesting_state_change
-                    ):
-                        continue
+                stuck = [
+                    s for s in steps
+                    if not StepState.is_terminal(s.state)
+                    and not (
+                        s.state == StepState.EVENT_TRANSMIT
+                        and not s.transition.is_requesting_state_change
+                    )
+                ]
+                if stuck:
+                    step_details = ", ".join(
+                        f"{s.statement_name or s.facet_name or s.object_type} ({s.state})"
+                        for s in stuck
+                    )
+                    logger.info(
+                        "Sweep workflow %s: %d stuck steps: %s",
+                        wf_names.get(wf_id, wf_id[:12]), len(stuck), step_details,
+                    )
 
+                for step in stuck:
                     workflow_ast = self._ast_cache.get(wf_id)
                     if workflow_ast is None:
                         workflow_ast = self._load_workflow_ast(wf_id)
@@ -916,20 +939,28 @@ class RegistryRunner:
                 else:
                     result = self._dispatcher.dispatch(task.name, payload)
             except (ImportError, ModuleNotFoundError) as exc:
-                # Handler module can't be loaded on this runner (e.g.
-                # file:// path from a different host).  Release the task
-                # back to pending so another runner can pick it up.
-                task.state = TaskState.PENDING
-                task.error = None
-                task.server_id = ""
+                # Handler module can't be loaded on this runner.  Increment
+                # retry_count so the task eventually dead-letters instead of
+                # looping forever when no runner has the right handler.
+                task.retry_count += 1
+                if task.max_retries > 0 and task.retry_count >= task.max_retries:
+                    task.state = TaskState.DEAD_LETTER
+                    task.error = {"message": f"Handler not loadable after {task.retry_count} attempts: {exc}"}
+                    logger.warning(
+                        "Dead-lettering task %s (%s): handler not loadable after %d attempts",
+                        task.uuid, task.name, task.retry_count,
+                    )
+                else:
+                    task.state = TaskState.PENDING
+                    task.error = None
+                    task.server_id = ""
+                    logger.warning(
+                        "Cannot load handler for '%s', releasing task %s "
+                        "(attempt %d/%d): %s",
+                        task.name, task.uuid, task.retry_count, task.max_retries, exc,
+                    )
                 task.updated = _current_time_ms()
                 self._persistence.save_task(task)
-                logger.warning(
-                    "Cannot load handler for '%s', releasing task %s: %s",
-                    task.name,
-                    task.uuid,
-                    exc,
-                )
                 return
             except (AttributeError, TypeError) as exc:
                 error_msg = f"Failed to load handler for '{task.name}': {exc}"
