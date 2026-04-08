@@ -994,6 +994,23 @@ def handler_delete(
     return RedirectResponse(url="/v2/handlers", status_code=303)
 
 
+def _read_handler_source(module_uri: str) -> str | None:
+    """Read handler source code from module_uri. Returns None if unreadable."""
+    import os
+
+    path = module_uri
+    if path.startswith("file://"):
+        path = path[7:]
+    if not path.endswith(".py"):
+        return None
+    try:
+        path = os.path.abspath(path)
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return None
+
+
 @router.get("/handlers/{facet_name:path}")
 def handler_detail(
     facet_name: str,
@@ -1005,6 +1022,12 @@ def handler_detail(
     active_tasks = store.get_tasks_by_facet_name(facet_name, states=["pending", "running"])
     recent_logs = store.get_step_logs_by_facet(facet_name, limit=20)
     facet_info = lookup_facet_info(facet_name, store)
+
+    # Try to read the handler source file
+    handler_source = None
+    if handler and handler.module_uri:
+        handler_source = _read_handler_source(handler.module_uri)
+
     return request.app.state.templates.TemplateResponse(
         request,
         "v2/handlers/detail.html",
@@ -1014,6 +1037,7 @@ def handler_detail(
             "active_tasks": active_tasks,
             "recent_logs": recent_logs,
             "facet_info": facet_info,
+            "handler_source": handler_source,
         },
     )
 

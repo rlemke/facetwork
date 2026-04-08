@@ -42,6 +42,15 @@
     {% include "v2/handlers/_detail_content.html" %}
 </div>
 
+<article>
+    <header>Handler Source</header>
+    {% if handler_source %}
+    <pre style="max-height:500px; overflow:auto; margin:0;"><code class="language-python">{{ handler_source }}</code></pre>
+    {% else %}
+    <p class="secondary">Source not available</p>
+    {% endif %}
+</article>
+
 {% else %}
 <h1>Handler Not Found</h1>
 <p>The requested handler could not be found.</p>
