@@ -729,10 +729,14 @@ def _count_handlers_by_prefix(handlers: list) -> dict[str, int]:
     return counts
 
 
-def _filter_handlers_by_prefix(handlers: list, tab: str) -> list:
+def _filter_handlers_by_prefix(
+    handlers: list, tab: str, busy_handlers: set[str] | None = None
+) -> list:
     """Filter handlers by namespace prefix tab."""
     if tab == "all":
         return handlers
+    if tab == "working":
+        return [h for h in handlers if busy_handlers and h.facet_name in busy_handlers]
     return [h for h in handlers if extract_handler_prefix(h.facet_name) == tab]
 
 
@@ -780,13 +784,16 @@ def handler_list(
 ):
     """Handler list with namespace-prefix tabs and namespace-group accordion."""
     all_handlers = store.list_handler_registrations()
-    tab_counts = _count_handlers_by_prefix(all_handlers)
-    # Build sorted list of unique prefixes (excluding 'all')
-    prefixes = sorted({extract_handler_prefix(h.facet_name) for h in all_handlers})
-    filtered = _filter_handlers_by_prefix(all_handlers, tab)
-    groups = group_handlers_by_namespace(filtered)
-
     active_handlers, busy_handlers, handler_stats = _build_handler_stats(store)
+
+    tab_counts = _count_handlers_by_prefix(all_handlers)
+    tab_counts["working"] = len(
+        [h for h in all_handlers if h.facet_name in busy_handlers]
+    )
+    # Build sorted list of unique prefixes (excluding 'all' and 'working')
+    prefixes = sorted({extract_handler_prefix(h.facet_name) for h in all_handlers})
+    filtered = _filter_handlers_by_prefix(all_handlers, tab, busy_handlers)
+    groups = group_handlers_by_namespace(filtered)
 
     return request.app.state.templates.TemplateResponse(
         request,
@@ -812,7 +819,8 @@ def handler_list_partial(
 ):
     """HTMX partial for auto-refresh of handler groups."""
     all_handlers = store.list_handler_registrations()
-    filtered = _filter_handlers_by_prefix(all_handlers, tab)
+    active_handlers, busy_handlers, handler_stats = _build_handler_stats(store)
+    filtered = _filter_handlers_by_prefix(all_handlers, tab, busy_handlers)
     groups = group_handlers_by_namespace(filtered)
 
     active_handlers, busy_handlers, handler_stats = _build_handler_stats(store)

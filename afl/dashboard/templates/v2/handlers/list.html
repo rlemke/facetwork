@@ -17,6 +17,10 @@
            class="subnav-pill{% if tab == 'all' %} active{% endif %}">
             All <span class="subnav-count">{{ tab_counts.all }}</span>
         </a>
+        <a href="/v2/handlers?tab=working"
+           class="subnav-pill{% if tab == 'working' %} active{% endif %}">
+            Working <span class="subnav-count">{{ tab_counts.working }}</span>
+        </a>
         {% for prefix in prefixes %}
         <a href="/v2/handlers?tab={{ prefix }}"
            class="subnav-pill{% if tab == prefix %} active{% endif %}">
