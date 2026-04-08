@@ -172,6 +172,44 @@ def task_discard(task_id: str, store=Depends(get_store)):
     return JSONResponse({"success": True})
 
 
+@router.post("/bulk/reenqueue-all")
+def task_reenqueue_all(store=Depends(get_store)):
+    """Re-enqueue all dead-lettered tasks back to pending."""
+    import time as _time
+
+    from fastapi.responses import JSONResponse
+
+    now = int(_time.time() * 1000)
+    db = store._db
+    result = db.tasks.update_many(
+        {"state": "dead_letter"},
+        {"$set": {
+            "state": "pending", "server_id": "", "task_heartbeat": 0,
+            "retry_count": 0, "next_retry_after": 0, "error": None, "updated": now,
+        }},
+    )
+    return JSONResponse({"success": True, "count": result.modified_count})
+
+
+@router.post("/bulk/retry-all-failed")
+def task_retry_all_failed(store=Depends(get_store)):
+    """Retry all failed tasks by resetting to pending."""
+    import time as _time
+
+    from fastapi.responses import JSONResponse
+
+    now = int(_time.time() * 1000)
+    db = store._db
+    result = db.tasks.update_many(
+        {"state": "failed"},
+        {"$set": {
+            "state": "pending", "server_id": "", "task_heartbeat": 0,
+            "retry_count": 0, "next_retry_after": 0, "error": None, "updated": now,
+        }},
+    )
+    return JSONResponse({"success": True, "count": result.modified_count})
+
+
 @router.get("/{task_id}")
 def task_detail(task_id: str, request: Request, store=Depends(get_store)):
     """Show task detail."""

@@ -51,13 +51,33 @@
 {% block content %}
 <h1>Task Queue</h1>
 
-<button class="btn-refresh"
-        hx-get="/tasks/partial{% if filter_state %}?state={{ filter_state }}{% endif %}"
-        hx-target="#task-table-content"
-        hx-swap="innerHTML">
-    <span class="refresh-icon">&#x21bb;</span> Refresh
-    <span class="loading-spinner htmx-indicator"></span>
-</button>
+<div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.5rem;">
+    <button class="btn-refresh"
+            hx-get="/tasks/partial{% if filter_state %}?state={{ filter_state }}{% endif %}"
+            hx-target="#task-table-content"
+            hx-swap="innerHTML">
+        <span class="refresh-icon">&#x21bb;</span> Refresh
+        <span class="loading-spinner htmx-indicator"></span>
+    </button>
+    {% if filter_state == 'dead_letter' and tab_counts.dead_letter > 0 %}
+    <button class="outline"
+            hx-post="/tasks/bulk/reenqueue-all"
+            hx-swap="none"
+            hx-confirm="Re-enqueue all {{ tab_counts.dead_letter }} dead-letter tasks?"
+            onclick="setTimeout(function(){ location.reload(); }, 500)">
+        Re-queue All ({{ tab_counts.dead_letter }})
+    </button>
+    {% endif %}
+    {% if filter_state == 'failed' and tab_counts.failed > 0 %}
+    <button class="outline"
+            hx-post="/tasks/bulk/retry-all-failed"
+            hx-swap="none"
+            hx-confirm="Retry all {{ tab_counts.failed }} failed tasks?"
+            onclick="setTimeout(function(){ location.reload(); }, 500)">
+        Retry All ({{ tab_counts.failed }})
+    </button>
+    {% endif %}
+</div>
 
 <div id="task-table-content"
      {% if filter_state == 'pending' or filter_state == 'running' %}hx-get="/tasks/partial{% if filter_state %}?state={{ filter_state }}{% endif %}" hx-trigger="every 300s" hx-swap="innerHTML"{% endif %}>

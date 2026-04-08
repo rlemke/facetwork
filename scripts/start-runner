@@ -113,6 +113,9 @@ echo "  Mode:      $MODE"
 if [[ -n "${AFL_TASK_EXECUTION_TIMEOUT_MS:-}" ]]; then
     echo "  Exec timeout: ${AFL_TASK_EXECUTION_TIMEOUT_MS}ms"
 fi
+if [[ -n "${AFL_STUCK_TIMEOUT_MS:-}" ]]; then
+    echo "  Stuck timeout: ${AFL_STUCK_TIMEOUT_MS}ms"
+fi
 echo ""
 
 # Register handlers via inline Python
@@ -178,6 +181,16 @@ print(f'Total: {total} handlers registered')
 print()
 "
 
+# Build PYTHONPATH that includes all example directories so the runner
+# can load handler modules from any registered example.
+RUNNER_PYTHONPATH="$REPO_ROOT"
+for ex in "${EXAMPLES[@]}"; do
+    ex_dir="$REPO_ROOT/examples/$ex"
+    if [[ -d "$ex_dir/handlers" ]]; then
+        RUNNER_PYTHONPATH="$RUNNER_PYTHONPATH:$ex_dir"
+    fi
+done
+
 # =========================================================================
 # Local mode
 # =========================================================================
@@ -204,11 +217,11 @@ if [[ "$MODE" == "local" ]]; then
     # Start runner(s)
     if [[ "$INSTANCES" -eq 1 && "$DASHBOARD" == "false" ]]; then
         echo "Starting runner with --registry..."
-        exec env PYTHONPATH="$REPO_ROOT" PYTHONUNBUFFERED=1 "$PYTHON" -m afl.runtime.runner --registry ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"}
+        exec env PYTHONPATH="$RUNNER_PYTHONPATH" PYTHONUNBUFFERED=1 "$PYTHON" -m afl.runtime.runner --registry ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"}
     else
         echo "Starting $INSTANCES runner instance(s) with --registry..."
         for i in $(seq 1 "$INSTANCES"); do
-            env PYTHONPATH="$REPO_ROOT" PYTHONUNBUFFERED=1 "$PYTHON" -m afl.runtime.runner --registry ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"} &
+            env PYTHONPATH="$RUNNER_PYTHONPATH" PYTHONUNBUFFERED=1 "$PYTHON" -m afl.runtime.runner --registry ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"} &
             PIDS+=($!)
             echo "  Runner $i started (PID $!)"
         done

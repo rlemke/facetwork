@@ -920,6 +920,10 @@ class RunnerService:
             if task.max_retries > 0 and task.retry_count >= task.max_retries:
                 task.state = TaskState.DEAD_LETTER
                 task.error = {"message": f"Handler not loadable after {task.retry_count} attempts: {exc}"}
+                log_msg = (
+                    f"Handler not loadable after {task.retry_count} attempts: {exc}"
+                )
+                log_level = StepLogLevel.ERROR
                 logger.warning(
                     "Dead-lettering task %s (%s): handler not loadable after %d attempts — %s",
                     task.uuid, task.name, task.retry_count, self._task_label(task.uuid),
@@ -928,6 +932,10 @@ class RunnerService:
                 task.state = TaskState.PENDING
                 task.error = None
                 task.server_id = ""
+                log_msg = (
+                    f"Cannot load handler (attempt {task.retry_count}/{task.max_retries}): {exc}"
+                )
+                log_level = StepLogLevel.WARNING
                 logger.warning(
                     "Cannot load handler for '%s', releasing task %s back to pending "
                     "(attempt %d/%d): %s — %s",
@@ -936,6 +944,23 @@ class RunnerService:
                 )
             task.updated = _current_time_ms()
             self._safe_save_task(task)
+            # Write step log so the error is visible in the dashboard
+            if task.step_id:
+                try:
+                    entry = StepLogEntry(
+                        uuid=generate_id(),
+                        step_id=task.step_id,
+                        workflow_id=task.workflow_id,
+                        runner_id=self._server_id,
+                        facet_name=task.name,
+                        source=StepLogSource.FRAMEWORK,
+                        level=log_level,
+                        message=log_msg,
+                        time=_current_time_ms(),
+                    )
+                    self._persistence.save_step_log(entry)
+                except Exception:
+                    pass
 
         except Exception as exc:
             now = _current_time_ms()

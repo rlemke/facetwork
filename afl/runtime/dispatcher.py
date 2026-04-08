@@ -232,8 +232,35 @@ class RegistryDispatcher:
         parts.reverse()
         dotted_name = ".".join(parts)
 
-        if current not in sys.path:
-            sys.path.insert(0, current)
+        # Ensure the correct example directory is at the front of sys.path.
+        if current in sys.path:
+            sys.path.remove(current)
+        sys.path.insert(0, current)
+
+        # Multiple examples share the same top-level "handlers" package.
+        # Check if we already have the exact module cached from the right
+        # file.  If not, evict the entire package tree so importlib
+        # re-discovers from the correct sys.path entry.
+        top_package = parts[0]
+        cached = sys.modules.get(dotted_name)
+        if cached is not None:
+            cached_file = os.path.abspath(getattr(cached, "__file__", "") or "")
+            if cached_file == os.path.abspath(file_path):
+                return cached  # exact match — skip re-import
+        # Evict if any cached module under top_package is from a different root
+        expected_root = os.path.abspath(os.path.join(current, top_package))
+        for key in list(sys.modules):
+            if key == top_package or key.startswith(top_package + "."):
+                mod = sys.modules[key]
+                mod_file = os.path.abspath(getattr(mod, "__file__", "") or "")
+                if mod_file and not mod_file.startswith(expected_root):
+                    # Found a module from a different example — evict all
+                    stale = [k for k in list(sys.modules)
+                             if k == top_package or k.startswith(top_package + ".")]
+                    for k in stale:
+                        del sys.modules[k]
+                    importlib.invalidate_caches()
+                    break
 
         logger.debug(
             "_import_from_file: importing %s from %s (package_root_parent=%s)",

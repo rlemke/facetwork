@@ -946,6 +946,8 @@ class RegistryRunner:
                 if task.max_retries > 0 and task.retry_count >= task.max_retries:
                     task.state = TaskState.DEAD_LETTER
                     task.error = {"message": f"Handler not loadable after {task.retry_count} attempts: {exc}"}
+                    log_msg = f"Handler not loadable after {task.retry_count} attempts: {exc}"
+                    log_level = StepLogLevel.ERROR
                     logger.warning(
                         "Dead-lettering task %s (%s): handler not loadable after %d attempts",
                         task.uuid, task.name, task.retry_count,
@@ -954,6 +956,8 @@ class RegistryRunner:
                     task.state = TaskState.PENDING
                     task.error = None
                     task.server_id = ""
+                    log_msg = f"Cannot load handler (attempt {task.retry_count}/{task.max_retries}): {exc}"
+                    log_level = StepLogLevel.WARNING
                     logger.warning(
                         "Cannot load handler for '%s', releasing task %s "
                         "(attempt %d/%d): %s",
@@ -961,6 +965,15 @@ class RegistryRunner:
                     )
                 task.updated = _current_time_ms()
                 self._persistence.save_task(task)
+                # Write step log so the error is visible in the dashboard
+                if task.step_id:
+                    self._emit_step_log(
+                        step_id=task.step_id,
+                        workflow_id=task.workflow_id,
+                        message=log_msg,
+                        level=log_level,
+                        facet_name=task.name,
+                    )
                 return
             except (AttributeError, TypeError) as exc:
                 error_msg = f"Failed to load handler for '{task.name}': {exc}"
