@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentflow"
-version = "0.30.1"
-description = "AFL (Agent Flow Language) compiler and runtime"
+name = "facetwork"
+version = "0.31.0"
+description = "FFL (Facetwork Flow Language) compiler and runtime"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
@@ -24,10 +24,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/rlemke/agentflow"
-Repository = "https://github.com/rlemke/agentflow"
-Documentation = "https://github.com/rlemke/agentflow"
-Changelog = "https://github.com/rlemke/agentflow/blob/main/spec/99_changelog.md"
+Homepage = "https://github.com/rlemke/facetwork"
+Repository = "https://github.com/rlemke/facetwork"
+Documentation = "https://github.com/rlemke/facetwork"
+Changelog = "https://github.com/rlemke/facetwork/blob/main/spec/99_changelog.md"
 
 [project.optional-dependencies]
 dev = [
