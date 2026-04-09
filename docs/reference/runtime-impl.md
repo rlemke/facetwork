@@ -1,6 +1,6 @@
-# AFL Runtime Implementation Guide
+# FFL Runtime Implementation Guide
 
-> This document describes the **Python reference implementation** of the AFL runtime.
+> This document describes the **Python reference implementation** of the FFL runtime.
 > For the formal specification, see [runtime.md](runtime.md).
 
 ---
@@ -9,10 +9,10 @@
 
 > Implements [compiler.md](compiler.md) and [runtime.md](runtime.md) §2.
 
-AFL source files are compiled by the AFL compiler (`afl/cli.py`):
+FFL source files are compiled by the FFL compiler (`afl/cli.py`):
 
 ```
-AFL Source → Lark Parser → AST → JSON Emitter → MongoDB / JSON file
+FFL Source → Lark Parser → AST → JSON Emitter → MongoDB / JSON file
 ```
 
 The compiled output contains:

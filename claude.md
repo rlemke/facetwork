@@ -97,7 +97,7 @@ Composed workflows in `osm.workflows.sourced` demonstrate the pattern:
 |-----------|-------------|
 | `facetwork/` | Compiler + runtime engine |
 | `facetwork/dashboard/` | Web monitoring UI (FastAPI) |
-| `examples/` | 15+ example workflows with AFL, handlers, and tests |
+| `examples/` | 15+ example workflows with FFL, handlers, and tests |
 | `docs/` | All documentation: getting-started, guides, reference, operations, architecture, contributing |
 | `spec/` | Redirect stubs (documentation moved to `docs/`) |
 | `scripts/` | Operations scripts (start, stop, deploy, vacuum, etc.) |
@@ -152,8 +152,8 @@ Composed workflows in `osm.workflows.sourced` demonstrate the pattern:
 The `afl:` prefix is reserved for internal runtime tasks. User workflows, handlers, and external processes must **not** create tasks with names starting with `afl:`. The runner treats these as built-in protocol tasks with special dispatch and claiming logic.
 
 Current internal tasks:
-- `afl:execute:<WorkflowName>` — bootstrap task that starts a workflow execution (created by dashboard/CLI)
-- `afl:resume:<FacetName>` — signals the RunnerService to resume a workflow after an external agent has completed a step (created by agent SDKs)
+- `fw:execute:<WorkflowName>` — bootstrap task that starts a workflow execution (created by dashboard/CLI)
+- `fw:resume:<FacetName>` — signals the RunnerService to resume a workflow after an external agent has completed a step (created by agent SDKs)
 
 ### Agent execution models
 - **RegistryRunner** (recommended): auto-loads handlers from DB

@@ -240,7 +240,7 @@ Declaration params
 ### File: `afl/preprocess.py`
 - `preprocess_script_braces()` converts brace-delimited `script { code }` to `script "escaped_code"` before LALR parsing
 - Tracks brace depth to handle nested Python dicts/sets
-- Respects Python string literals (single, double, triple-quoted) and AFL comments
+- Respects Python string literals (single, double, triple-quoted) and FFL comments
 - Strips common indentation (dedent) and preserves line numbers via blank-line padding
 - `PreprocessError` exception for unbalanced braces
 

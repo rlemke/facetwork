@@ -23,9 +23,9 @@ Resolves region URL    ──►     Extracts region path ("europe/albania")
 
 Both formats are cached independently in the local filesystem cache (`/tmp/osm-cache/`).
 
-## AFL facets
+## FFL facets
 
-Two event facets are defined in `osmoperations.afl` under the `osm.ops` namespace:
+Two event facets are defined in `osmoperations.ffl` under the `osm.ops` namespace:
 
 ```afl
 event facet DownloadShapefile(cache:OSMCache) => ()
@@ -34,9 +34,9 @@ event facet DownloadShapefileBatch(cache:OSMCache) => ()
 
 These mirror the existing `Download` and `DownloadBatch` facets. The `cache` parameter receives an `OSMCache` struct from a preceding cache-lookup step. The return type is `()` (no return value) — the handler performs the download as a side effect.
 
-## AFL workflow example
+## FFL workflow example
 
-`osmshapefiles.afl` defines a `EuropeShapefiles` workflow that downloads shapefiles for all European countries. It follows the same two-phase pattern as the PBF workflows:
+`osmshapefiles.ffl` defines a `EuropeShapefiles` workflow that downloads shapefiles for all European countries. It follows the same two-phase pattern as the PBF workflows:
 
 1. **Cache lookup** — call the region's cache facet to resolve the Geofabrik URL
 2. **Shapefile download** — pass the cache result to `DownloadShapefile`
@@ -60,7 +60,7 @@ namespace osm.Europe.shapefiles {
 }
 ```
 
-The workflow uses the same `osm.cache.Europe` cache facets as `osmeurope.afl`. Only the download step differs — `DownloadShapefile` instead of `Download`.
+The workflow uses the same `osm.cache.Europe` cache facets as `osmeurope.ffl`. Only the download step differs — `DownloadShapefile` instead of `Download`.
 
 ## Python handler
 
@@ -109,7 +109,7 @@ Geofabrik does not provide free shapefiles for all regions. Shapefiles are typic
 
 To add shapefile downloads for another region (e.g. Africa):
 
-1. Create a new namespace in `osmshapefiles.afl` (or a new file):
+1. Create a new namespace in `osmshapefiles.ffl` (or a new file):
    ```afl
    namespace osm.Africa.shapefiles {
      use osm.ops

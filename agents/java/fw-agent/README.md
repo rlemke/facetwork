@@ -1,9 +1,9 @@
-# AFL Agent Library for Java
+# FFL Agent Library for Java
 
 The Java agent library provides an `AgentPoller` that connects to the
 Facetwork runtime via MongoDB. It polls for pending event tasks, dispatches
 them to registered `Handler` implementations, writes return values back to the
-step, and inserts `afl:resume` tasks so the Python RunnerService can advance
+step, and inserts `fw:resume` tasks so the Python RunnerService can advance
 the workflow.
 
 ## Dependencies
@@ -14,7 +14,7 @@ the workflow.
 | `com.fasterxml.jackson.core:jackson-databind` | 2.15.2 |
 | `org.junit.jupiter:junit-jupiter` (test) | 5.10.0 |
 
-Maven coordinates: `afl:afl-agent:0.1.0`. Requires Java 17 or later.
+Maven coordinates: `facetwork:fw-agent:0.1.0`. Requires Java 17 or later.
 
 ## Quick Start
 
@@ -57,7 +57,7 @@ Runtime.getRuntime().addShutdownHook(new Thread(poller::stop));
 ## Configuration
 
 Configuration is resolved in the following order: explicit path, `AFL_CONFIG`
-env var, `afl.config.json` in the working directory, `~/.afl/afl.config.json`,
+env var, `afl.config.json` in the working directory, `~/.ffl/afl.config.json`,
 `/etc/ffl/afl.config.json`, environment variables, then built-in defaults.
 
 | Environment Variable | Description | Default |
@@ -90,4 +90,4 @@ mvn package
 - [Agent Protocol Constants](../../protocol/README.md) -- collection names,
   state constants, document schemas, and MongoDB operation patterns.
 - [Agent Template CLAUDE.md](../../templates/CLAUDE.md) -- full protocol
-  context for building AFL agents from scratch in any language.
+  context for building FFL agents from scratch in any language.

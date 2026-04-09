@@ -1,11 +1,11 @@
-# AFL v1 — Language Syntax Specification (10_language.md)
+# FFL v1 — Language Syntax Specification (10_language.md)
 
-This document specifies the **AFL v1 concrete syntax**. It defines:
+This document specifies the **FFL v1 concrete syntax**. It defines:
 - lexical rules (identifiers, literals, comments),
 - grammar (EBNF-style), and
 - canonical examples (valid and invalid).
 
-**Source of truth:** This document is the authoritative definition of AFL v1 syntax.
+**Source of truth:** This document is the authoritative definition of FFL v1 syntax.
 **Implementation constraint:** The reference parser SHALL be implemented in **Python 3.11+** using **Lark (LALR)** and a `.lark` grammar file.
 
 Semantic rules (e.g., dependency scheduling, single-writer, yield merge semantics) are defined in `spec/11_semantics.md` and are not part of this syntax file unless they affect parsing.
@@ -15,7 +15,7 @@ Semantic rules (e.g., dependency scheduling, single-writer, yield merge semantic
 ## 1. Lexical Rules
 
 ### 1.1 Whitespace
-- AFL is **whitespace-insensitive** except where whitespace separates tokens.
+- FFL is **whitespace-insensitive** except where whitespace separates tokens.
 - Newlines do not carry meaning; statements are delimited by line breaks **or** `;`.
 - Parsers SHALL accept both of the following as statement separators:
   - newline
@@ -237,7 +237,7 @@ event facet Summarize(text: String) => (summary: String) prompt {
 
 ### Script blocks (inline Python execution)
 
-Script blocks embed sandboxed Python code directly in AFL declarations. There are **two distinct uses**, each with different placement, timing, and semantics.
+Script blocks embed sandboxed Python code directly in FFL declarations. There are **two distinct uses**, each with different placement, timing, and semantics.
 
 ---
 
@@ -393,7 +393,7 @@ Scripts may use Python standard library imports. Execution errors are captured a
 
 ### Expression operators
 
-AFL supports arithmetic, concatenation, comparison, and boolean operators with the following precedence (lowest to highest):
+FFL supports arithmetic, concatenation, comparison, and boolean operators with the following precedence (lowest to highest):
 
 | Level | Operators | Description |
 |-------|-----------|-------------|

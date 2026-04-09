@@ -13,7 +13,7 @@ Use this as your starting point if you are:
 
 ## What You'll Learn
 
-1. How to decompose a pipeline across multiple AFL files and namespaces
+1. How to decompose a pipeline across multiple FFL files and namespaces
 2. How schemas defined in one namespace are reused across all others via `use` imports
 3. How 12+ extraction steps run concurrently in a single andThen block
 4. How array literals collect step results (`[income.result.output_path, ...]`)
@@ -29,17 +29,17 @@ You want to analyze US county demographics for one or more states. The pipeline 
 
 ### 2. Namespace Decomposition
 
-The pipeline is organized across 6 namespaces in separate AFL files:
+The pipeline is organized across 6 namespaces in separate FFL files:
 
-| Namespace | AFL File | Purpose |
+| Namespace | FFL File | Purpose |
 |-----------|----------|---------|
-| `census.types` | `census_operations.afl` | 4 shared schemas: CensusFile, ACSResult, TIGERResult, CensusSummary |
-| `census.Operations` | `census_operations.afl` | 3 download facets |
-| `census.ACS` | `census_acs.afl` | 12 ACS extraction facets |
-| `census.TIGER` | `census_tiger.afl` | 4 TIGER extraction facets |
-| `census.Summary` | `census_summary.afl` | JoinGeo + SummarizeState |
-| `census.Ingestion` | `census_ingestion.afl` | 15 database ingestion facets |
-| `census.workflows` | `census.afl` | 3 workflows |
+| `census.types` | `census_operations.ffl` | 4 shared schemas: CensusFile, ACSResult, TIGERResult, CensusSummary |
+| `census.Operations` | `census_operations.ffl` | 3 download facets |
+| `census.ACS` | `census_acs.ffl` | 12 ACS extraction facets |
+| `census.TIGER` | `census_tiger.ffl` | 4 TIGER extraction facets |
+| `census.Summary` | `census_summary.ffl` | JoinGeo + SummarizeState |
+| `census.Ingestion` | `census_ingestion.ffl` | 15 database ingestion facets |
+| `census.workflows` | `census.ffl` | 3 workflows |
 
 Every namespace imports `census.types` with `use census.types` so all schemas are available by short name.
 
@@ -83,7 +83,7 @@ workflow AnalyzeState(state_fips: String = "01", state_name: String = "Alabama")
 }
 ```
 
-The AFL runtime detects that all 12 extraction steps share the same dependency (`acs.file`) and schedules them concurrently. No explicit parallelism annotation is needed.
+The FFL runtime detects that all 12 extraction steps share the same dependency (`acs.file`) and schedules them concurrently. No explicit parallelism annotation is needed.
 
 ### 5. Array Literals from Step Results
 
@@ -127,7 +127,7 @@ pip install -e ".[dev]"
 pip install -r examples/census-us/requirements.txt  # requests, fiona, shapely, pyshp
 
 # Compile check
-afl examples/census-us/ffl/census.afl --check
+afl examples/census-us/ffl/census.ffl --check
 
 # Run tests (no network required)
 pytest examples/census-us/tests/ -v
@@ -191,7 +191,7 @@ All 36 handlers use deterministic stubs for testing:
 
 ### Add more ACS tables
 
-Define a new event facet in `census_acs.afl` and add the table ID to `ACS_TABLES`:
+Define a new event facet in `census_acs.ffl` and add the table ID to `ACS_TABLES`:
 
 ```python
 ACS_TABLES["Insurance"] = "B27001"  # Health Insurance Coverage

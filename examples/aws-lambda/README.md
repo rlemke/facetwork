@@ -1,6 +1,6 @@
 # AWS Lambda + Step Functions Agent
 
-An AWS serverless pipeline agent demonstrating AFL's **andThen chains**, **mixin composition**, and **foreach iteration** with real **boto3 calls** against a **LocalStack** Docker environment.
+An AWS serverless pipeline agent demonstrating FFL's **andThen chains**, **mixin composition**, and **foreach iteration** with real **boto3 calls** against a **LocalStack** Docker environment.
 
 ## What it does
 
@@ -103,18 +103,18 @@ docker compose --profile localstack up -d
 ### Compile check
 
 ```bash
-# Check all AFL sources (individual files need --library for cross-references)
-for f in examples/aws-lambda/ffl/*.afl; do
+# Check all FFL sources (individual files need --library for cross-references)
+for f in examples/aws-lambda/ffl/*.ffl; do
     python -m afl.cli "$f" --check 2>/dev/null && echo "OK: $f" || echo "NEEDS DEPS: $f"
 done
 
 # Compile the workflows with all dependencies
 python -m afl.cli \
-    --primary examples/aws-lambda/ffl/lambda_workflows.afl \
-    --library examples/aws-lambda/ffl/lambda_types.afl \
-    --library examples/aws-lambda/ffl/lambda_mixins.afl \
-    --library examples/aws-lambda/ffl/lambda_functions.afl \
-    --library examples/aws-lambda/ffl/lambda_stepfunctions.afl \
+    --primary examples/aws-lambda/ffl/lambda_workflows.ffl \
+    --library examples/aws-lambda/ffl/lambda_types.ffl \
+    --library examples/aws-lambda/ffl/lambda_mixins.ffl \
+    --library examples/aws-lambda/ffl/lambda_functions.ffl \
+    --library examples/aws-lambda/ffl/lambda_stepfunctions.ffl \
     --check
 ```
 
@@ -185,15 +185,15 @@ implicit defaultTracing = Tracing(mode = "Active")
 
 **Total**: 12 handler dispatch keys
 
-## AFL source files
+## FFL source files
 
 | File | Namespace(s) | Description |
 |------|-------------|-------------|
-| `lambda_types.afl` | `aws.lambda.types` | 7 schemas (FunctionConfig, InvokeResult, FunctionInfo, LayerInfo, StateMachineConfig, ExecutionResult, ExecutionInfo) |
-| `lambda_mixins.afl` | `aws.lambda.mixins` | 6 mixin facets + 3 implicit defaults |
-| `lambda_functions.afl` | `aws.lambda` | 7 Lambda event facets |
-| `lambda_stepfunctions.afl` | `aws.stepfunctions` | 5 Step Functions event facets |
-| `lambda_workflows.afl` | `aws.lambda.workflows` | 4 workflows demonstrating andThen, mixins, foreach |
+| `lambda_types.ffl` | `aws.lambda.types` | 7 schemas (FunctionConfig, InvokeResult, FunctionInfo, LayerInfo, StateMachineConfig, ExecutionResult, ExecutionInfo) |
+| `lambda_mixins.ffl` | `aws.lambda.mixins` | 6 mixin facets + 3 implicit defaults |
+| `lambda_functions.ffl` | `aws.lambda` | 7 Lambda event facets |
+| `lambda_stepfunctions.ffl` | `aws.stepfunctions` | 5 Step Functions event facets |
+| `lambda_workflows.ffl` | `aws.lambda.workflows` | 4 workflows demonstrating andThen, mixins, foreach |
 
 ## Type schemas
 

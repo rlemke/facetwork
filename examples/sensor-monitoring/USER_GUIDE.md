@@ -70,7 +70,7 @@ ingest = IngestReading(sensor_id = $.sensor_id, ..., last_reading = null)
 classify = ClassifyAlert(anomaly = detect.result, ..., override_config = null)
 ```
 
-`null` is a first-class literal in AFL. Handlers receive `None` in Python and branch accordingly:
+`null` is a first-class literal in FFL. Handlers receive `None` in Python and branch accordingly:
 
 ```python
 def ingest_reading(sensor_id, value, unit, last_reading=None):
@@ -137,7 +137,7 @@ All handlers use deterministic stubs (`sensor_utils.py`) that produce reproducib
 
 ```bash
 # Syntax check
-python3 -m afl.cli examples/sensor-monitoring/ffl/monitor.afl --check
+python3 -m afl.cli examples/sensor-monitoring/ffl/monitor.ffl --check
 
 # Run tests
 python3 -m pytest examples/sensor-monitoring/tests/ -v

@@ -1,6 +1,6 @@
 # Genomics Cohort Analysis Agent
 
-A bioinformatics pipeline agent that processes whole-genome sequencing data through quality control, alignment, variant calling, annotation, and cohort-level analysis. Demonstrates AFL's **foreach fan-out** and **linear fan-in** workflow patterns with a multi-layer caching and resource resolution system.
+A bioinformatics pipeline agent that processes whole-genome sequencing data through quality control, alignment, variant calling, annotation, and cohort-level analysis. Demonstrates FFL's **foreach fan-out** and **linear fan-in** workflow patterns with a multi-layer caching and resource resolution system.
 
 ## What it does
 
@@ -122,8 +122,8 @@ No additional dependencies are required — all handlers simulate bioinformatics
 ### Compile check
 
 ```bash
-# Check all AFL sources
-for f in examples/genomics/ffl/*.afl; do
+# Check all FFL sources
+for f in examples/genomics/ffl/*.ffl; do
     afl "$f" --check && echo "OK: $f"
 done
 ```
@@ -237,17 +237,17 @@ pytest tests/ -v
 
 **Total**: 45 handler dispatch keys
 
-## AFL source files
+## FFL source files
 
 | File | Namespace(s) | Description |
 |------|-------------|-------------|
-| `genomics.afl` | `genomics.types`, `genomics.Facets`, `genomics.pipeline` | Core schemas (8), event facets (9), and workflows (2) |
-| `genomics_cache.afl` | `genomics.cache.{reference,annotation,sra}` | Per-entity cache event facets (17) |
-| `genomics_cache_types.afl` | `genomics.cache.types` | Cache layer schemas (GenomicsCache, IndexCache, ResourceResolution, ResourceListResult) |
-| `genomics_cache_workflows.afl` | `genomics.cache.workflows` | Cache-aware workflows (PrepareReference, PrepareSample, CachedCohortAnalysis) |
-| `genomics_index_cache.afl` | `genomics.cache.index.{bwa,star,bowtie2}` | Aligner-specific index event facets (10) |
-| `genomics_operations.afl` | `genomics.cache.Operations` | Low-level cache operations (5) |
-| `genomics_resolve.afl` | `genomics.cache.Resolve` | Name-based resource resolution (4) |
+| `genomics.ffl` | `genomics.types`, `genomics.Facets`, `genomics.pipeline` | Core schemas (8), event facets (9), and workflows (2) |
+| `genomics_cache.ffl` | `genomics.cache.{reference,annotation,sra}` | Per-entity cache event facets (17) |
+| `genomics_cache_types.ffl` | `genomics.cache.types` | Cache layer schemas (GenomicsCache, IndexCache, ResourceResolution, ResourceListResult) |
+| `genomics_cache_workflows.ffl` | `genomics.cache.workflows` | Cache-aware workflows (PrepareReference, PrepareSample, CachedCohortAnalysis) |
+| `genomics_index_cache.ffl` | `genomics.cache.index.{bwa,star,bowtie2}` | Aligner-specific index event facets (10) |
+| `genomics_operations.ffl` | `genomics.cache.Operations` | Low-level cache operations (5) |
+| `genomics_resolve.ffl` | `genomics.cache.Resolve` | Name-based resource resolution (4) |
 
 ## Type schemas
 

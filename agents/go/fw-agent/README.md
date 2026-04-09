@@ -1,9 +1,9 @@
-# AFL Agent Library for Go
+# FFL Agent Library for Go
 
 The Go agent library provides an `AgentPoller` that connects to the Facetwork
 runtime via MongoDB. It polls for pending event tasks, dispatches them to
 registered handler functions, writes return values back to the step, and
-inserts `afl:resume` tasks so the Python RunnerService can advance the
+inserts `fw:resume` tasks so the Python RunnerService can advance the
 workflow.
 
 ## Dependencies
@@ -24,7 +24,7 @@ import (
 	"context"
 	"log"
 
-	aflagent "github.com/facetwork/afl-agent"
+	aflagent "github.com/facetwork/fw-agent"
 )
 
 func main() {
@@ -46,7 +46,7 @@ func main() {
 ## Configuration
 
 Configuration is resolved in the following order: explicit path, `AFL_CONFIG`
-env var, `afl.config.json` in the working directory, `~/.afl/afl.config.json`,
+env var, `afl.config.json` in the working directory, `~/.ffl/afl.config.json`,
 `/etc/ffl/afl.config.json`, environment variables, then built-in defaults.
 
 | Environment Variable | Description | Default |
@@ -78,4 +78,4 @@ go test ./...
 - [Agent Protocol Constants](../../protocol/README.md) -- collection names,
   state constants, document schemas, and MongoDB operation patterns.
 - [Agent Template CLAUDE.md](../../templates/CLAUDE.md) -- full protocol
-  context for building AFL agents from scratch in any language.
+  context for building FFL agents from scratch in any language.

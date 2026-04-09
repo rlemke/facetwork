@@ -20,7 +20,7 @@ You don't need to be a developer to use Facetwork — if you can fill in a form,
 |--------------|------------|
 | **Run workflows** from the web UI | [Beginner's Guide](docs/getting-started/beginners-guide.md) |
 | **Set up a local server** quickly | [Quick Start](#quick-start) (below) |
-| **Write my own workflows** in AFL | [AFL Tutorial](docs/getting-started/tutorial.md) |
+| **Write my own workflows** in FFL | [FFL Tutorial](docs/getting-started/tutorial.md) |
 | **Build handlers** in Python | [Agent SDK](spec/60_agent_sdk.md) |
 | **Build agents** in other languages | [Agent Libraries](#agent-integration-libraries) |
 | **Deploy to a cluster** | [Deployment Guide](docs/operations/deployment.md) |
@@ -84,9 +84,9 @@ The dashboard is where you run workflows, monitor progress, and troubleshoot iss
 
 **Key pages:** Workflows, Handlers (registered event facet code), Servers (runner health), Fleet (bird's-eye view), Steps (individual step detail with logs).
 
-## What is AFL?
+## What is FFL?
 
-AFL is a simple language for describing workflows. Here's a taste:
+FFL is a simple language for describing workflows. Here's a taste:
 
 ```afl
 namespace myapp {
@@ -107,13 +107,13 @@ namespace myapp {
 - **`$`** — the workflow's input parameters
 - **`step.field`** — output from a previous step
 
-You write the workflow logic in AFL. A Python handler does the real work (API calls, data processing, etc.). Facetwork connects them.
+You write the workflow logic in FFL. A Python handler does the real work (API calls, data processing, etc.). Facetwork connects them.
 
-To learn more: [AFL Tutorial](docs/getting-started/tutorial.md) | [Language Reference](docs/reference/language/grammar.md) | [Examples](docs/reference/examples.md)
+To learn more: [FFL Tutorial](docs/getting-started/tutorial.md) | [Language Reference](docs/reference/language/grammar.md) | [Examples](docs/reference/examples.md)
 
 ## Sharing Workflows Like Libraries
 
-AFL workflows are designed to be shared and composed — just like importing a library in a regular programming language. Teams publish their facets, schemas, and workflows as **namespaces** that other teams can `use` in their own workflows.
+FFL workflows are designed to be shared and composed — just like importing a library in a regular programming language. Teams publish their facets, schemas, and workflows as **namespaces** that other teams can `use` in their own workflows.
 
 ```afl
 namespace analytics.reports {
@@ -135,7 +135,7 @@ namespace analytics.reports {
 ```
 
 **How sharing works:**
-- Teams publish their AFL namespaces to MongoDB via `scripts/publish mylib.afl`
+- Teams publish their FFL namespaces to MongoDB via `scripts/publish mylib.ffl`
 - Other teams import published namespaces with `use team.namespace`
 - The compiler resolves and validates all cross-team references at compile time
 - Handlers are registered independently — teams deploy and update their own handlers without affecting other teams' workflows
@@ -249,10 +249,10 @@ json_str = emit_json(ast, include_locations=False, indent=None)
 ### Command-Line Interface
 
 ```bash
-afl input.afl                        # parse and emit JSON
-afl input.afl -o output.json         # output to file
-afl input.afl --check                # syntax check only
-afl input.afl --compact --no-locations # compact JSON
+afl input.ffl                        # parse and emit JSON
+afl input.ffl -o output.json         # output to file
+afl input.ffl --check                # syntax check only
+afl input.ffl --compact --no-locations # compact JSON
 echo 'facet Test()' | afl            # parse from stdin
 ```
 
@@ -263,7 +263,7 @@ from afl import parse, emit_dict
 from afl.runtime import Evaluator, MemoryStore, Telemetry, ExecutionStatus
 from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
 
-# Compile AFL
+# Compile FFL
 source = """
 namespace demo {
     event facet AddOne(input: Long) => (output: Long)
@@ -317,7 +317,7 @@ python -m afl.runtime.runner --topics TopicA --max-concurrent 10 # custom
 
 ### MCP Server
 
-The MCP server exposes AFL compiler and runtime as tools for LLM agents:
+The MCP server exposes FFL compiler and runtime as tools for LLM agents:
 
 ```bash
 python -m afl.mcp              # stdio transport
@@ -334,10 +334,10 @@ Facetwork agents can be built in any language. The `agents/` directory has libra
 | Language | Directory | Build |
 |----------|-----------|-------|
 | **Python** | Built into `afl.runtime` | `pip install -e .` |
-| **Scala** | `agents/scala/afl-agent/` | `sbt compile` |
-| **Go** | `agents/go/afl-agent/` | `go build ./...` |
-| **TypeScript** | `agents/typescript/afl-agent/` | `npm install && npm run build` |
-| **Java** | `agents/java/afl-agent/` | `mvn compile` |
+| **Scala** | `agents/scala/fw-agent/` | `sbt compile` |
+| **Go** | `agents/go/fw-agent/` | `go build ./...` |
+| **TypeScript** | `agents/typescript/fw-agent/` | `npm install && npm run build` |
+| **Java** | `agents/java/fw-agent/` | `mvn compile` |
 
 Any language with a MongoDB driver can implement an agent. See `agents/protocol/constants.json` for the complete protocol specification.
 
@@ -350,8 +350,8 @@ cp agents/protocol/constants.json /path/to/my-agent/constants.json
 ### Scripts
 
 ```bash
-scripts/compile input.afl -o output.json     # compile AFL
-scripts/publish input.afl                    # compile + publish to MongoDB
+scripts/compile input.ffl -o output.json     # compile FFL
+scripts/publish input.ffl                    # compile + publish to MongoDB
 scripts/run-workflow                         # interactive workflow execution
 scripts/start-runner --example osm-geocoder  # start runner
 scripts/stop-runners                         # stop all runners
@@ -370,7 +370,7 @@ See [examples/README.md](examples/README.md) for a complete overview of all 15+ 
 
 | Example | Highlights |
 |---------|-----------|
-| `examples/osm-geocoder/` | Full-scale: 42 AFL files, 16 handler categories, PostGIS, pgRouting |
+| `examples/osm-geocoder/` | Full-scale: 42 FFL files, 16 handler categories, PostGIS, pgRouting |
 | `examples/hiv-drug-resistance/` | Bioinformatics: QC branching, error recovery, batch processing |
 | `examples/noaa-weather/` | Real data: AWS S3, climate analysis, linear regression |
 | `examples/devops-deploy/` | Conditional branching, prompt/script blocks, mixins |
@@ -385,7 +385,7 @@ The `docs/reference/` directory is the authoritative reference:
 
 | Document | What It Covers |
 |----------|----------------|
-| [language/grammar.md](docs/reference/language/grammar.md) | AFL syntax — EBNF grammar, all language constructs |
+| [language/grammar.md](docs/reference/language/grammar.md) | FFL syntax — EBNF grammar, all language constructs |
 | [runtime.md](docs/reference/runtime.md) | Execution semantics — iteration model, determinism |
 | [database.md](docs/reference/database.md) | MongoDB schema — collections, indexes, atomic commits |
 | [event-system.md](docs/reference/event-system.md) | Event/agent protocol — lifecycle, dispatch, task queue |
@@ -393,7 +393,7 @@ The `docs/reference/` directory is the authoritative reference:
 
 **Supporting docs:** [overview](docs/reference/overview.md), [AST semantics](docs/reference/language/semantics.md), [validation](docs/reference/language/validation.md), [compiler](docs/reference/compiler.md), [state system](docs/reference/state-system.md), [LLM integration](docs/guides/llm-integration.md), [examples](docs/reference/examples.md), [tests](docs/contributing/testing.md)
 
-## AFL Language Reference
+## FFL Language Reference
 
 ### Types
 

@@ -10,10 +10,10 @@ pip install -e ".[dev,test,dashboard,mcp,mongodb]" # full stack
 
 ### CLI usage
 ```bash
-afl input.afl -o output.json       # compile to JSON
+afl input.ffl -o output.json       # compile to JSON
 echo 'facet Test()' | afl          # parse from stdin
-afl input.afl --check              # syntax check only
-afl input.afl --config config.json # custom config
+afl input.ffl --check              # syntax check only
+afl input.ffl --config config.json # custom config
 ```
 
 ### Services
@@ -28,9 +28,9 @@ python -m afl.mcp                                    # MCP server (stdio)
 
 ### Scala agent library
 ```bash
-cd agents/scala/afl-agent && sbt compile  # compile
-cd agents/scala/afl-agent && sbt test     # run tests
-cd agents/scala/afl-agent && sbt package  # package JAR
+cd agents/scala/fw-agent && sbt compile  # compile
+cd agents/scala/fw-agent && sbt test     # run tests
+cd agents/scala/fw-agent && sbt package  # package JAR
 ```
 
 ### Convenience scripts
@@ -41,9 +41,9 @@ scripts/_remote.sh                             # shared SSH/MongoDB helpers for 
 scripts/easy.sh                                # one-command pipeline (teardown → rebuild → setup → seed)
 scripts/setup                                  # bootstrap Docker stack
 scripts/setup --runners 3 --agents 2           # start with scaling
-scripts/compile input.afl -o output.json       # compile AFL
-scripts/publish input.afl                      # compile + publish to MongoDB
-scripts/publish input.afl --auto-resolve       # with dependency resolution
+scripts/compile input.ffl -o output.json       # compile FFL
+scripts/publish input.ffl                      # compile + publish to MongoDB
+scripts/publish input.ffl --auto-resolve       # with dependency resolution
 scripts/run-workflow                           # interactive workflow execution
 scripts/run-workflow --workflow Name            # run specific workflow
 scripts/server --workflow MyWorkflow           # execute workflow (server mode)
@@ -203,11 +203,11 @@ scripts/easy.sh        # runs the full pipeline using .env values
 
 ### Configuration
 
-AFL uses a JSON config file (`afl.config.json`) for service connections. Resolution order:
+FFL uses a JSON config file (`afl.config.json`) for service connections. Resolution order:
 
 1. Explicit `--config FILE` CLI argument
 2. `AFL_CONFIG` environment variable
-3. `afl.config.json` in the current directory, `~/.afl/`, or `/etc/ffl/`
+3. `afl.config.json` in the current directory, `~/.ffl/`, or `/etc/ffl/`
 4. Environment variables (`AFL_MONGODB_*`)
 5. Built-in defaults
 

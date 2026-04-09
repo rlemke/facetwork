@@ -8,7 +8,7 @@ Use this as your starting point if you are:
 - Building **geospatial scoring pipelines** that fuse multiple data sources
 - Combining **Census demographics** with **OpenStreetMap amenity data**
 - Designing **multi-stage ETL** with download, extract, score, and export phases
-- Learning how **implicit parallelism** works from AFL's dependency graph
+- Learning how **implicit parallelism** works from FFL's dependency graph
 
 ## What You'll Learn
 
@@ -40,7 +40,7 @@ Phase 3: Score                        Phase 4: Export
                   + restaurants
 ```
 
-In AFL:
+In FFL:
 
 ```afl
 workflow AnalyzeSite(state_fips: String = "01", state_name: String = "Alabama",
@@ -110,7 +110,7 @@ pip install -e ".[dev]"
 pip install -r examples/site-selection/requirements.txt  # shapely, pyosmium, requests
 
 # Compile check
-afl examples/site-selection/ffl/sitesel.afl --check
+afl examples/site-selection/ffl/sitesel.ffl --check
 
 # Run tests (no network required)
 pytest examples/site-selection/tests/ -v

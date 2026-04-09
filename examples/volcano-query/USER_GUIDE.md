@@ -14,7 +14,7 @@ Use this as your starting point if you are:
 1. How to import event facets from other namespaces with `use`
 2. How to compose a multi-step pipeline from existing facets
 3. How to build composed facets with `andThen` bodies
-4. How string concatenation (`++`) works in AFL
+4. How string concatenation (`++`) works in FFL
 
 ## Step-by-Step Walkthrough
 
@@ -68,10 +68,10 @@ The pipeline flows: **Load data -> Filter by tag -> Filter by elevation -> Forma
 
 ```bash
 source .venv/bin/activate
-python -m afl.cli examples/volcano-query/ffl/volcano.afl --check
+python -m afl.cli examples/volcano-query/ffl/volcano.ffl --check
 ```
 
-This will report validation warnings about unresolved facets (because the OSM facets aren't included as libraries), but the AFL syntax is valid.
+This will report validation warnings about unresolved facets (because the OSM facets aren't included as libraries), but the FFL syntax is valid.
 
 ## Key Concepts
 

@@ -1,14 +1,14 @@
 # Facetwork Architecture Overview
 
-Facetwork is a platform for distributed workflow execution. It combines a compiler for the **Facetwork Flow Language (AFL)**, a runtime engine that evaluates workflows iteratively, and multi-language agent libraries that process event-driven tasks. MongoDB serves as the persistence and coordination layer.
+Facetwork is a platform for distributed workflow execution. It combines a compiler for the **Facetwork Flow Language (FFL)**, a runtime engine that evaluates workflows iteratively, and multi-language agent libraries that process event-driven tasks. MongoDB serves as the persistence and coordination layer.
 
 ## System Architecture
 
 ```
-                         AFL Source (.afl files)
+                         FFL Source (.ffl files)
                                 |
                     +-----------v-----------+
-                    |      AFL Compiler      |
+                    |      FFL Compiler      |
                     |  Parser -> Transformer |
                     |  -> Validator -> Emitter|
                     +-----------+-----------+
@@ -41,11 +41,11 @@ Facetwork is a platform for distributed workflow execution. It combines a compil
 
 ## Compiler Pipeline
 
-The compiler transforms AFL source code into JSON workflow definitions through four stages.
+The compiler transforms FFL source code into JSON workflow definitions through four stages.
 
 | Stage | Module | Description |
 |-------|--------|-------------|
-| **Parser** | `afl/parser.py` | Lark LALR parser reads `.afl` source, produces a parse tree. Errors include line/column. |
+| **Parser** | `afl/parser.py` | Lark LALR parser reads `.ffl` source, produces a parse tree. Errors include line/column. |
 | **Transformer** | `afl/transformer.py` | Converts the Lark parse tree into typed AST dataclass nodes. |
 | **Validator** | `afl/validator.py` | Semantic checks: duplicate names, type mismatches, schema resolution, unresolved references. |
 | **Emitter** | `afl/emitter.py` | Serializes the AST to stable JSON output with optional source locations and provenance. |
@@ -136,8 +136,8 @@ The Model Context Protocol server exposes Facetwork to LLM agents. It provides:
 **Tools:**
 | Tool | Description |
 |------|-------------|
-| `afl_compile` | Compile AFL source to JSON |
-| `afl_validate` | Validate AFL source semantically |
+| `afl_compile` | Compile FFL source to JSON |
+| `afl_validate` | Validate FFL source semantically |
 | `afl_execute_workflow` | Execute a workflow from source |
 | `afl_continue_step` | Continue an event-blocked step with results |
 | `afl_resume_workflow` | Resume a paused workflow |
@@ -159,10 +159,10 @@ A FastAPI web application providing monitoring and management:
 
 ## Data Flow
 
-The complete data flow from AFL source to completed workflow:
+The complete data flow from FFL source to completed workflow:
 
 ```
-1. Write AFL source     ->  facet/workflow definitions
+1. Write FFL source     ->  facet/workflow definitions
 2. Compile (afl CLI)    ->  JSON workflow definition
 3. Execute (Evaluator)  ->  Creates steps, iterates state machine
 4. Pause (EVENT_TRANSMIT) -> Creates task in MongoDB
@@ -244,10 +244,10 @@ afl/
     __main__.py          # CLI entry point
 agents/
   python/               # Python agent library
-  scala/afl-agent/      # Scala 3 agent library
-  go/afl-agent/         # Go agent library
-  typescript/afl-agent/ # TypeScript/Node.js agent library
-  java/afl-agent/       # Java 17 agent library
+  scala/fw-agent/      # Scala 3 agent library
+  go/fw-agent/         # Go agent library
+  typescript/fw-agent/ # TypeScript/Node.js agent library
+  java/fw-agent/       # Java 17 agent library
   protocol/             # Cross-language protocol specification
   templates/            # Agent bootstrapping templates
 ```

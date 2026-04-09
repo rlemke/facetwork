@@ -104,7 +104,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-python -m afl.cli examples/tool-use-agent/ffl/toolbox.afl --check
+python -m afl.cli examples/tool-use-agent/ffl/toolbox.ffl --check
 
 # Run tests
 python -m pytest examples/tool-use-agent/tests/ -v
@@ -115,7 +115,7 @@ python -m pytest examples/tool-use-agent/tests/ -v
 ### Tool-as-Event-Facet Pattern
 
 The central design: each tool is an event facet. This provides:
-- **Typed interfaces** — inputs/outputs are declared in the AFL signature
+- **Typed interfaces** — inputs/outputs are declared in the FFL signature
 - **Prompt blocks** — LLMs can drive tools natively
 - **Composability** — tools chain via step references like any other facet
 - **Handler flexibility** — use stubs for testing, LLMs for production
@@ -153,7 +153,7 @@ Handlers can check mixin parameters to gate tool execution.
 
 ### Arithmetic in Expressions
 
-The AFL uses `/` for normalization and `%` for modulo in tool cycling:
+The FFL uses `/` for normalization and `%` for modulo in tool cycling:
 
 ```afl
 calc = Calculate(expression = "confidence % 100 / 10", precision = 2)

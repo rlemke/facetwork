@@ -110,13 +110,13 @@ r4 = EvaluationRound(..., prev_synthesis = r3.synthesis, prev_rankings = r3.rank
 
 ### Using Real LLM Integration
 
-Replace the deterministic stubs in `debate_utils.py` with actual API calls, or use `ClaudeAgentRunner` which dispatches to the Anthropic API via the prompt blocks defined in the AFL file.
+Replace the deterministic stubs in `debate_utils.py` with actual API calls, or use `ClaudeAgentRunner` which dispatches to the Anthropic API via the prompt blocks defined in the FFL file.
 
 ## Running
 
 ```bash
 # Compile and check syntax
-afl examples/site-selection-debate/ffl/sitesel_debate.afl --check
+afl examples/site-selection-debate/ffl/sitesel_debate.ffl --check
 
 # Run tests
 pytest examples/site-selection-debate/ -v

@@ -182,8 +182,8 @@ Add to your `claude_desktop_config.json`:
 
 | Tool | Description |
 |------|-------------|
-| `afl_compile` | Compile AFL source to JSON |
-| `afl_validate` | Validate AFL source |
+| `afl_compile` | Compile FFL source to JSON |
+| `afl_validate` | Validate FFL source |
 | `afl_execute_workflow` | Execute a workflow |
 | `afl_continue_step` | Continue a paused step |
 | `afl_resume_workflow` | Resume a paused workflow |
@@ -200,7 +200,7 @@ Add to your `claude_desktop_config.json`:
 | `afl://steps/{id}` | Get step details |
 | `afl://flows` | List all flows |
 | `afl://flows/{id}` | Get flow details |
-| `afl://flows/{id}/source` | Get flow AFL source |
+| `afl://flows/{id}/source` | Get flow FFL source |
 | `afl://servers` | List all servers |
 | `afl://tasks` | List all tasks |
 

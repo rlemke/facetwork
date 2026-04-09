@@ -35,17 +35,17 @@ This starts LocalStack with Lambda, Step Functions, S3, and IAM services on port
 curl http://localhost:4566/_localstack/health
 ```
 
-### 3. Understanding the AFL Structure
+### 3. Understanding the FFL Structure
 
-**Types** (`lambda_types.afl`): 7 schemas for Lambda and Step Functions responses.
+**Types** (`lambda_types.ffl`): 7 schemas for Lambda and Step Functions responses.
 
-**Mixins** (`lambda_mixins.afl`): 6 cross-cutting concerns (Retry, Timeout, DLQ, VpcConfig, Tracing, MemorySize) plus 3 implicit defaults.
+**Mixins** (`lambda_mixins.ffl`): 6 cross-cutting concerns (Retry, Timeout, DLQ, VpcConfig, Tracing, MemorySize) plus 3 implicit defaults.
 
 **Event Facets**: 12 operations split across two namespaces:
 - `aws.lambda` (7): CreateFunction, InvokeFunction, UpdateFunctionCode, DeleteFunction, ListFunctions, GetFunctionInfo, PublishLayer
 - `aws.stepfunctions` (5): CreateStateMachine, StartExecution, DescribeExecution, DeleteStateMachine, ListExecutions
 
-**Workflows** (`lambda_workflows.afl`): 4 workflows demonstrating different composition patterns.
+**Workflows** (`lambda_workflows.ffl`): 4 workflows demonstrating different composition patterns.
 
 ### 4. The Four Workflows
 
@@ -166,11 +166,11 @@ pip install -r examples/aws-lambda/requirements.txt
 
 # Compile check
 python -m afl.cli \
-    --primary examples/aws-lambda/ffl/lambda_workflows.afl \
-    --library examples/aws-lambda/ffl/lambda_types.afl \
-    --library examples/aws-lambda/ffl/lambda_mixins.afl \
-    --library examples/aws-lambda/ffl/lambda_functions.afl \
-    --library examples/aws-lambda/ffl/lambda_stepfunctions.afl \
+    --primary examples/aws-lambda/ffl/lambda_workflows.ffl \
+    --library examples/aws-lambda/ffl/lambda_types.ffl \
+    --library examples/aws-lambda/ffl/lambda_mixins.ffl \
+    --library examples/aws-lambda/ffl/lambda_functions.ffl \
+    --library examples/aws-lambda/ffl/lambda_stepfunctions.ffl \
     --check
 
 # Start the agent
@@ -301,7 +301,7 @@ Users call `ProvisionFunction` and `CallService` — they never need to know abo
 
 ### Add a new AWS service
 
-1. Create a new event facet file (e.g., `lambda_s3.afl`):
+1. Create a new event facet file (e.g., `lambda_s3.ffl`):
    ```afl
    namespace aws.s3 {
        use aws.lambda.types

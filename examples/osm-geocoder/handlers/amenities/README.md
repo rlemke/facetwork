@@ -9,7 +9,7 @@ Extract amenities (points of interest with services) from OSM data with automati
 - **Search capability**: Filter amenities by name pattern (regex)
 - **Statistics**: Count amenities by category with metadata coverage
 
-## AFL Facets
+## FFL Facets
 
 ```afl
 namespace osm.Amenities {

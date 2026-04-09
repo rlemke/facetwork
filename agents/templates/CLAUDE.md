@@ -1,12 +1,12 @@
-# CLAUDE.md — AFL Agent Project
+# CLAUDE.md — FFL Agent Project
 
 ## What this project is
 
-This is an **AFL Agent** — a service that processes event facets for the Facetwork platform. The Facetwork runtime (Python) manages workflow execution and state machines. This agent handles specific event types by polling MongoDB for tasks, performing work, and signaling the runtime to continue.
+This is an **FFL Agent** — a service that processes event facets for the Facetwork platform. The Facetwork runtime (Python) manages workflow execution and state machines. This agent handles specific event types by polling MongoDB for tasks, performing work, and signaling the runtime to continue.
 
-## How AFL agents work
+## How FFL agents work
 
-When an AFL workflow reaches an **event facet**, the runtime creates a **task** in MongoDB and pauses the step at `EventTransmit` state. This agent picks up that task and processes it.
+When an FFL workflow reaches an **event facet**, the runtime creates a **task** in MongoDB and pauses the step at `EventTransmit` state. This agent picks up that task and processes it.
 
 ### Agent lifecycle (6 steps)
 
@@ -15,9 +15,9 @@ When an AFL workflow reaches an **event facet**, the runtime creates a **task** 
 3. **Perform** the work (API calls, data processing, computation, etc.)
 4. **Write** return attributes back to the step document
 5. **Mark** the event task as `completed`
-6. **Insert** an `afl:resume` task so the Python RunnerService resumes the workflow
+6. **Insert** an `fw:resume` task so the Python RunnerService resumes the workflow
 
-The Python RunnerService polls for `afl:resume` tasks, validates the step's return attributes, transitions the step past `EventTransmit`, and advances the workflow.
+The Python RunnerService polls for `fw:resume` tasks, validates the step's return attributes, transitions the step past `EventTransmit`, and advances the workflow.
 
 ---
 
@@ -26,11 +26,11 @@ The Python RunnerService polls for `afl:resume` tasks, validates the step's retu
 | Term | Definition |
 |------|------------|
 | **Facetwork** | Platform for distributed workflow execution (compiler + runtime + agents) |
-| **FFL** | Facetwork Flow Language — the DSL for defining workflows (`.afl` files) |
+| **FFL** | Facetwork Flow Language — the DSL for defining workflows (`.ffl` files) |
 | **Event Facet** | A facet prefixed with `event` that triggers external agent execution |
 | **Task** | A claimable work item in the MongoDB `tasks` collection |
 | **Step** | A runtime instance of a facet, with params (inputs) and returns (outputs) |
-| **afl:resume** | Protocol task that signals the RunnerService to resume a workflow |
+| **fw:resume** | Protocol task that signals the RunnerService to resume a workflow |
 
 ### Task states
 
@@ -58,7 +58,7 @@ The Python RunnerService polls for `afl:resume` tasks, validates the step's retu
 ```json
 {
   "uuid": "string — unique task ID",
-  "name": "string — event facet name (e.g. 'ns.ProcessData') or 'afl:resume'",
+  "name": "string — event facet name (e.g. 'ns.ProcessData') or 'fw:resume'",
   "runner_id": "string — runner UUID that created the task",
   "workflow_id": "string — workflow UUID",
   "flow_id": "string — flow UUID",
@@ -184,7 +184,7 @@ db.tasks.replaceOne(
 )
 ```
 
-### 6. Insert afl:resume task
+### 6. Insert fw:resume task
 
 ```javascript
 db.tasks.insertOne({
@@ -211,11 +211,11 @@ db.tasks.insertOne({
 
 ## Configuration
 
-AFL agents connect to the same MongoDB instance as the Facetwork runtime. Configuration is resolved from:
+FFL agents connect to the same MongoDB instance as the Facetwork runtime. Configuration is resolved from:
 
 1. Explicit `--config FILE` argument
 2. `AFL_CONFIG` environment variable
-3. `afl.config.json` in current directory, `~/.afl/`, or `/etc/ffl/`
+3. `afl.config.json` in current directory, `~/.ffl/`, or `/etc/ffl/`
 4. Environment variables (see below)
 5. Built-in defaults
 
@@ -288,9 +288,9 @@ poller.register("ns.MyEvent", lambda data: {"output": process(data)})
 poller.start()
 ```
 
-### Scala (afl-agent library)
+### Scala (fw-agent library)
 
-Available as an sbt dependency from the Facetwork repo (`agents/scala/afl-agent/`):
+Available as an sbt dependency from the Facetwork repo (`agents/scala/fw-agent/`):
 
 ```scala
 import afl.agent.{AgentPoller, AgentPollerConfig}
@@ -326,6 +326,6 @@ Agents should register themselves in the `servers` collection so the dashboard a
 - Follow the 6-step protocol exactly — the field names and state strings must match
 - Always use atomic `findOneAndUpdate` for task claiming
 - Always filter by `state: "state.facet.execution.EventTransmit"` when writing step returns
-- Always insert an `afl:resume` task after completing an event task
+- Always insert an `fw:resume` task after completing an event task
 - Handle errors by marking the task as `failed` with an error message
 - Use `afl.config.json` or environment variables for MongoDB connection settings

@@ -12,7 +12,7 @@ This example demonstrates:
 - **Namespace-qualified handlers** registered programmatically from region registries
 - **Multi-format downloads** — PBF (default) and Geofabrik free shapefiles (`.shp.zip`) — see [shapefiles README](handlers/shapefiles/README.md)
 
-### AFL Workflow
+### FFL Workflow
 
 ```afl
 schema GeoCoordinate {
@@ -79,13 +79,13 @@ This starts a long-running agent that polls for `osm.Geocode` tasks and ~330 OSM
 ### Compile check
 
 ```bash
-# Check all AFL sources (recursively discovers files in handler subdirectories)
+# Check all FFL sources (recursively discovers files in handler subdirectories)
 find examples/osm-geocoder -name '*.ffl' -not -path '*/tests/*' -exec scripts/compile {} --check \;
 ```
 
 ## Project structure
 
-The `handlers/` package is organized into 16 functional category subpackages, each containing its own handler modules, AFL source files, tests, and README:
+The `handlers/` package is organized into 16 functional category subpackages, each containing its own handler modules, FFL source files, tests, and README:
 
 ```
 handlers/
@@ -116,12 +116,12 @@ handlers/{category}/
 ├── __init__.py              # package marker
 ├── *_handlers.py            # handler modules
 ├── *_extractor.py           # extractors (where applicable)
-├── afl/*.afl                # AFL source files for this category
+├── afl/*.ffl                # FFL source files for this category
 ├── tests/test_*.py          # category-specific tests
 └── README.md                # documentation (moved from root-level .md files)
 ```
 
-The core geocoding AFL file remains at `afl/geocoder.afl`.
+The core geocoding FFL file remains at `afl/geocoder.ffl`.
 
 ## Handler categories
 

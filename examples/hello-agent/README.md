@@ -4,7 +4,7 @@ A minimal end-to-end example demonstrating the Facetwork execution model.
 
 ## What It Does
 
-1. **Compiles** `workflow.afl` to JSON
+1. **Compiles** `workflow.ffl` to JSON
 2. **Executes** the `SayHello` workflow with input `name = "World"`
 3. **Pauses** when it reaches the `hello.Greet` event facet
 4. **Agent** processes the event and returns `message = "Hello, World!"`
@@ -15,7 +15,7 @@ A minimal end-to-end example demonstrating the Facetwork execution model.
 
 | File | Description |
 |------|-------------|
-| `workflow.afl` | AFL source defining the workflow and event facet |
+| `workflow.ffl` | FFL source defining the workflow and event facet |
 | `run.py` | Self-contained script demonstrating the full cycle |
 
 ## Run It
@@ -29,10 +29,10 @@ python3 examples/hello-agent/run.py
 
 ```
 ============================================================
-STEP 1: Compile AFL source
+STEP 1: Compile FFL source
 ============================================================
 
-Source file: examples/hello-agent/workflow.afl
+Source file: examples/hello-agent/workflow.ffl
 
 // Hello Agent Example
 ...

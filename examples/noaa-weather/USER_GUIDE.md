@@ -148,7 +148,7 @@ Cache warmup workflows pre-download GHCN-Daily CSVs without running analysis, us
 source .venv/bin/activate
 
 # Seed the NOAA weather workflows into MongoDB
-scripts/publish examples/noaa-weather/ffl/weather.afl
+scripts/publish examples/noaa-weather/ffl/weather.ffl
 
 # Register handlers and start runner + dashboard
 scripts/start-runner --example noaa-weather -- --log-format text
@@ -257,7 +257,7 @@ event facet ComputeExtremes(station_id: String, start_year: Int, end_year: Int)
 
 ### Use a different data source
 
-Replace the `FetchStationData` handler's download logic with your data source (ERA5, local CSV files, etc.) while keeping the same AFL workflow structure and return schema (`record_count`, `years_with_data`, `station_id`).
+Replace the `FetchStationData` handler's download logic with your data source (ERA5, local CSV files, etc.) while keeping the same FFL workflow structure and return schema (`record_count`, `years_with_data`, `station_id`).
 
 ### Adjust station selection criteria
 

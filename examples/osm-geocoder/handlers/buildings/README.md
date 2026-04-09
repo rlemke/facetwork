@@ -9,7 +9,7 @@ Extract building footprints from OSM data with automatic classification.
 - **Area calculation**: Computes footprint area in square meters
 - **Filtering options**: By type, minimum area, or presence of height data
 
-## AFL Facets
+## FFL Facets
 
 ```afl
 namespace osm.Buildings {

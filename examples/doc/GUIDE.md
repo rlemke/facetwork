@@ -1,6 +1,6 @@
 # Facetwork Examples Guide
 
-This guide helps you choose the right example as a starting point for your own AFL workflows and agents.
+This guide helps you choose the right example as a starting point for your own FFL workflows and agents.
 
 ## At a Glance
 
@@ -72,7 +72,7 @@ Start simple and build up to more complex patterns:
 
 ### "I want to understand how Facetwork works"
 
-Start with **[hello-agent](../hello-agent/)**. It's a single file that walks through the entire execution cycle: compile AFL, execute workflow, pause at event facet, agent processes task, resume to completion.
+Start with **[hello-agent](../hello-agent/)**. It's a single file that walks through the entire execution cycle: compile FFL, execute workflow, pause at event facet, agent processes task, resume to completion.
 
 ### "I want to compose existing facets into new workflows"
 
@@ -96,7 +96,7 @@ Use **[aws-lambda](../aws-lambda/)** as your template. The handlers make real bo
 
 ### "I want to build a large-scale agent with many event facets"
 
-Study **[osm-geocoder](../osm-geocoder/)**. With 580+ handlers across 15 modules and 44 AFL files, it demonstrates how to organize a production-scale agent with factory-built handlers, geographic registries, and namespace-per-domain architecture.
+Study **[osm-geocoder](../osm-geocoder/)**. With 580+ handlers across 15 modules and 44 FFL files, it demonstrates how to organize a production-scale agent with factory-built handlers, geographic registries, and namespace-per-domain architecture.
 
 ### "I want to simulate financial risk or run pure-Python analytics"
 
@@ -138,7 +138,7 @@ Use **[site-selection](../site-selection/)**. It combines OSM amenity extraction
 
 Start with **[continental-lz](../continental-lz/)**. It has its own `docker-compose.yml` with MongoDB, dashboard, runner, and agent services, demonstrating a complete deployment topology.
 
-## AFL Patterns by Example
+## FFL Patterns by Example
 
 ### Namespaces and Schemas
 
@@ -320,7 +320,7 @@ pip install -e ".[dev]"
 pip install -r examples/<name>/requirements.txt  # if exists
 
 # 2. Compile check
-python -m afl.cli examples/<name>/ffl/<file>.afl --check
+python -m afl.cli examples/<name>/ffl/<file>.ffl --check
 
 # 3. Run the agent
 PYTHONPATH=. python examples/<name>/agent.py

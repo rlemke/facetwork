@@ -96,7 +96,7 @@ open http://localhost:8080
 | **Shared data** | Docker volumes or bind mounts | Direct filesystem access |
 | **Log output** | `docker compose logs -f runner` | Inline in terminal (stdout/stderr) |
 | **Stop** | `docker compose down` | `scripts/stop-runners` |
-| **Dependencies** | Docker Desktop | Python 3 + `.venv` with AFL packages |
+| **Dependencies** | Docker Desktop | Python 3 + `.venv` with FFL packages |
 
 **Important**: Docker agents and local runners should not be mixed for the same handler registrations. Docker containers use container-internal `sys.path` and cannot load handler modules registered with host filesystem paths, and vice versa. Stop Docker agents/runners before starting local ones:
 
@@ -185,7 +185,7 @@ Each runner independently polls the shared task queue. When a workflow creates 1
 }
 ```
 
-The config file is searched in order: `$AFL_CONFIG`, `./afl.config.json`, `~/.afl/afl.config.json`, `/etc/ffl/afl.config.json`.
+The config file is searched in order: `$AFL_CONFIG`, `./afl.config.json`, `~/.ffl/afl.config.json`, `/etc/ffl/afl.config.json`.
 
 ## Service Reference
 
@@ -205,7 +205,7 @@ python -m afl.dashboard --host 0.0.0.0 --port 8080
 |--------|---------|-------------|
 | `--host` | `0.0.0.0` | Bind address |
 | `--port` | `8080` | Listen port |
-| `--config` | | Path to AFL config file |
+| `--config` | | Path to FFL config file |
 | `--reload` | | Enable auto-reload (development) |
 | `--log-level` | `INFO` | Log level |
 
@@ -249,7 +249,7 @@ python -m afl.mcp
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--transport` | `stdio` | MCP transport |
-| `--config` | | Path to AFL config file |
+| `--config` | | Path to FFL config file |
 | `--log-level` | `WARNING` | Log level |
 | `--log-file` | | Log to file (recommended for stdio) |
 
@@ -271,7 +271,7 @@ The main navigation uses a 2-tab layout (**Workflows** / **Servers**) with a **M
 | Servers | `/servers` | Registered agent servers with heartbeat status (legacy) |
 | Events | `/events` | Event lifecycle tracking |
 | Handlers | `/handlers` | Registered handler modules |
-| Sources | `/sources` | Published AFL source namespaces |
+| Sources | `/sources` | Published FFL source namespaces |
 | Locks | `/locks` | Distributed lock status |
 | Namespaces | `/namespaces` | Namespace definitions across flows |
 
@@ -593,7 +593,7 @@ mongorestore --uri="mongodb://afl-mongodb:27017" --db=afl /backup/ffl/
 | Collection | Content | Backup Priority |
 |------------|---------|-----------------|
 | `flows` | Compiled workflow definitions | High |
-| `sources` | Published AFL source code | High |
+| `sources` | Published FFL source code | High |
 | `handler_registrations` | Registered handlers | High |
 | `runners` | Execution history | Medium |
 | `steps` | Step state and data | Medium |

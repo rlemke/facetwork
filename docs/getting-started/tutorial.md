@@ -1,6 +1,6 @@
-# AFL Tutorial -- Facetwork Flow Language
+# FFL Tutorial -- Facetwork Flow Language
 
-This tutorial walks through AFL (Facetwork Flow Language) in eight progressive
+This tutorial walks through FFL (Facetwork Flow Language) in eight progressive
 parts.  Each part introduces a small set of constructs, shows complete
 examples, and explains how the pieces fit together.  By the end you will be
 able to write multi-step workflows with schemas, event facets, composition,
@@ -16,7 +16,7 @@ Prerequisites: Python 3.11+ with the `afl` package installed
 ### Your first facet
 
 A **facet** is a typed structure with named parameters.  It is the fundamental
-building block in AFL.
+building block in FFL.
 
 ```afl
 facet Hello(name: String)
@@ -64,14 +64,14 @@ Key points:
 
 ### Compiling and checking
 
-Save the file as `hello.afl` and compile it:
+Save the file as `hello.ffl` and compile it:
 
 ```bash
 # Compile to JSON workflow definition
-afl hello.afl -o hello.json
+afl hello.ffl -o hello.json
 
 # Syntax check only (no output file)
-afl hello.afl --check
+afl hello.ffl --check
 ```
 
 The `--check` flag parses and validates the file without emitting JSON.  Use it
@@ -224,7 +224,7 @@ without qualification, as long as there is no ambiguity.
 
 ### Real-world example: OSM Geocoder
 
-The `examples/osm-geocoder/ffl/geocoder.afl` file in this repository shows
+The `examples/osm-geocoder/ffl/geocoder.ffl` file in this repository shows
 schemas and event facets working together:
 
 ```afl
@@ -381,7 +381,7 @@ workflow completes when all tasks are done.
 
 ## Part 6 -- Expressions and Operators
 
-AFL supports expressions in step arguments, including arithmetic, string
+FFL supports expressions in step arguments, including arithmetic, string
 concatenation, collection literals, and indexing.
 
 ### Arithmetic operators
@@ -575,22 +575,22 @@ namespace analysis {
 
 ### Where to go from here
 
-The `examples/osm-geocoder/` directory contains a real-world AFL project with
-over 40 AFL files and hundreds of handler implementations.  Notable files:
+The `examples/osm-geocoder/` directory contains a real-world FFL project with
+over 40 FFL files and hundreds of handler implementations.  Notable files:
 
 | File | What it demonstrates |
 |------|---------------------|
-| `afl/geocoder.afl` | Schemas, event facets, `andThen foreach` |
-| `afl/osmtypes.afl` | Shared schema definitions across namespaces |
-| `afl/osmworkflows_composed.afl` | Multi-stage pipeline composition patterns |
-| `afl/osmcontinents.afl` | Parameterized regional workflows |
-| `afl/osmroutes.afl` | Route extraction with parallel steps |
+| `afl/geocoder.ffl` | Schemas, event facets, `andThen foreach` |
+| `afl/osmtypes.ffl` | Shared schema definitions across namespaces |
+| `afl/osmworkflows_composed.ffl` | Multi-stage pipeline composition patterns |
+| `afl/osmcontinents.ffl` | Parameterized regional workflows |
+| `afl/osmroutes.ffl` | Route extraction with parallel steps |
 
 To run a workflow, compile it and submit it to the runtime:
 
 ```bash
 # Compile
-afl examples/osm-geocoder/ffl/geocoder.afl -o geocoder.json
+afl examples/osm-geocoder/ffl/geocoder.ffl -o geocoder.json
 
 # Start the runtime runner (requires MongoDB)
 python -m afl.runtime.runner

@@ -8,11 +8,11 @@ Use this as your starting point if you are:
 - Building a **production-scale agent** with hundreds of event facets
 - Organizing handlers across **many modules and namespaces**
 - Working with **geographic data**, OSM APIs, or spatial operations
-- Understanding how to structure a **large AFL project** with 40+ source files
+- Understanding how to structure a **large FFL project** with 40+ source files
 
 ## What You'll Learn
 
-1. How to organize a large AFL project with namespace-per-domain architecture
+1. How to organize a large FFL project with namespace-per-domain architecture
 2. How to build handler modules for different categories of operations
 3. How factory-built handlers work with geographic registries
 4. How to use the `AgentPoller` for a standalone agent service
@@ -23,21 +23,21 @@ Use this as your starting point if you are:
 ## Overview
 
 This is the largest example in the repository:
-- **42 AFL files** organized into 16 functional categories
+- **42 FFL files** organized into 16 functional categories
 - **580+ handler dispatch keys** across ~80 handler modules
 - **36 category test files** plus integration tests
 - **16 README files** — one per handler category (moved from root-level `.md` docs)
 
 ## Project Structure
 
-The `handlers/` package is organized into functional subdirectories. Each category contains its own handler modules, AFL source files, tests, and documentation:
+The `handlers/` package is organized into functional subdirectories. Each category contains its own handler modules, FFL source files, tests, and documentation:
 
 ```
 handlers/
 ├── __init__.py              # backward-compatible facade + register_all_handlers()
 ├── shared/                  # _output.py, downloader.py, region_resolver.py
 ├── amenities/               # amenity_handlers, amenity_extractor, airquality_handlers
-│   ├── afl/                 #   osmamenities.afl, osmairquality.afl
+│   ├── afl/                 #   osmamenities.ffl, osmairquality.ffl
 │   ├── tests/               #   test_paris_amenities, test_school_airquality
 │   └── README.md            #   (was AMENITIES.md)
 ├── boundaries/              # boundary_handlers, boundary_extractor
@@ -58,7 +58,7 @@ handlers/
 └── voting/                  # tiger_handlers, tiger_downloader
 ```
 
-The core geocoding AFL file remains at `afl/geocoder.afl`.
+The core geocoding FFL file remains at `afl/geocoder.ffl`.
 
 ### Backward Compatibility
 
@@ -130,10 +130,10 @@ PYTHONPATH=. python examples/osm-geocoder/test_geocoder.py
 PYTHONPATH=. python examples/osm-geocoder/agent.py
 ```
 
-### 5. Compile Checking All AFL
+### 5. Compile Checking All FFL
 
 ```bash
-# Recursively finds AFL files in handler subdirectories
+# Recursively finds FFL files in handler subdirectories
 find examples/osm-geocoder -name '*.ffl' -not -path '*/tests/*' \
     -exec python -m afl.cli {} --check \; -exec echo "OK: {}" \;
 ```
@@ -293,7 +293,7 @@ namespace osm.africa {
 ### Add a new handler category
 
 1. Create `handlers/newcategory/` directory with `__init__.py`
-2. Add `handlers/newcategory/ffl/osm_newcategory.afl` with event facets
+2. Add `handlers/newcategory/ffl/osm_newcategory.ffl` with event facets
 3. Add `handlers/newcategory/newcategory_handlers.py` with dispatch adapter
 4. Add `handlers/newcategory/tests/test_newcategory.py`
 5. Add `handlers/newcategory/README.md` documenting the category

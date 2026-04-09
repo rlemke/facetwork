@@ -6,7 +6,7 @@
 
 Use this as your starting point if you are:
 - Adding **cross-cutting concerns** (retry, timeout, credentials, notifications) to workflow steps
-- Learning AFL's **mixin composition** pattern (`with`)
+- Learning FFL's **mixin composition** pattern (`with`)
 - Building workflows where **reusable behaviors** need to be attached flexibly per-step
 - Designing **implicit defaults** for namespace-wide configuration
 
@@ -103,21 +103,21 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-for f in examples/jenkins/ffl/*.afl; do
+for f in examples/jenkins/ffl/*.ffl; do
     python -m afl.cli "$f" --check && echo "OK: $f"
 done
 
 # Compile workflows with all dependencies
 python -m afl.cli \
-    --primary examples/jenkins/ffl/jenkins_pipelines.afl \
-    --library examples/jenkins/ffl/jenkins_types.afl \
-    --library examples/jenkins/ffl/jenkins_mixins.afl \
-    --library examples/jenkins/ffl/jenkins_scm.afl \
-    --library examples/jenkins/ffl/jenkins_build.afl \
-    --library examples/jenkins/ffl/jenkins_test.afl \
-    --library examples/jenkins/ffl/jenkins_artifacts.afl \
-    --library examples/jenkins/ffl/jenkins_deploy.afl \
-    --library examples/jenkins/ffl/jenkins_notify.afl \
+    --primary examples/jenkins/ffl/jenkins_pipelines.ffl \
+    --library examples/jenkins/ffl/jenkins_types.ffl \
+    --library examples/jenkins/ffl/jenkins_mixins.ffl \
+    --library examples/jenkins/ffl/jenkins_scm.ffl \
+    --library examples/jenkins/ffl/jenkins_build.ffl \
+    --library examples/jenkins/ffl/jenkins_test.ffl \
+    --library examples/jenkins/ffl/jenkins_artifacts.ffl \
+    --library examples/jenkins/ffl/jenkins_deploy.ffl \
+    --library examples/jenkins/ffl/jenkins_notify.ffl \
     --check
 
 # Run the agent
@@ -212,9 +212,9 @@ This is the **library facet** pattern — composed facets become reusable buildi
 | Signature-level | `event facet F(...) => (...) with M(...)` | Always-on behavior for a facet |
 | Implicit default | `implicit name = M(...)` | Namespace-wide default |
 
-### AFL Grammar Constraints
+### FFL Grammar Constraints
 
-These are critical when writing AFL with mixins:
+These are critical when writing FFL with mixins:
 
 1. **`) with` on same line**: `step = F(x = 1) with M()` — no newline between `)` and `with`
 2. **`) =>` on same line**: `event facet F(x: String) => (y: String)` — no newline between `)` and `=>`
@@ -277,7 +277,7 @@ namespace myapp.api {
 
 1. Create `handlers/my_handlers.py` with `NAMESPACE`, `_DISPATCH`, `handle()`, `register_handlers()`, and `register_my_handlers()`
 2. Wire it into `handlers/__init__.py`
-3. Add the corresponding AFL event facet file
+3. Add the corresponding FFL event facet file
 
 ## Next Steps
 

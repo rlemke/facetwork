@@ -2,9 +2,9 @@
 
 The POI layer extracts geographic features — cities, towns, villages, and other points of interest — from downloaded OSM data. POI facets receive an `OSMCache` input (typically from a download step) and return extracted feature data.
 
-## AFL facets
+## FFL facets
 
-POI facets are defined in `afl/osmpoi.afl` under the `osm.POIs` namespace:
+POI facets are defined in `afl/osmpoi.ffl` under the `osm.POIs` namespace:
 
 ```afl
 namespace osm.POIs {
@@ -124,7 +124,7 @@ The data flow is:
 
 To add a new POI extraction type:
 
-1. Add the event facet to `afl/osmpoi.afl`:
+1. Add the event facet to `afl/osmpoi.ffl`:
    ```afl
    event facet Universities(cache: OSMCache) => (universities: OSMCache)
    ```

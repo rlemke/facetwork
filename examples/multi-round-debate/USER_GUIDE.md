@@ -107,7 +107,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-python -m afl.cli examples/multi-round-debate/ffl/rounds.afl --check
+python -m afl.cli examples/multi-round-debate/ffl/rounds.ffl --check
 
 # Run tests
 python -m pytest examples/multi-round-debate/tests/ -v

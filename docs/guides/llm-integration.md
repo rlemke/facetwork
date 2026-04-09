@@ -93,10 +93,10 @@ event facet ResearchTopic(query: String) => (report: String)
 
 **Changes required:**
 
-- Tool registry concept at the AFL language level (not just runtime).
+- Tool registry concept at the FFL language level (not just runtime).
 - An agent executor loop: LLM call → tool use → LLM call → ... → final answer.
 - Integration with MCP tool calling (the MCP server already exists, so an agent
-  could use AFL's own tools recursively).
+  could use FFL's own tools recursively).
 
 ### 2.4 Context and Memory Across Steps
 
@@ -251,9 +251,9 @@ Without Facetwork, building a multi-step AI agent means writing custom
 orchestration logic, state persistence, concurrency control, and monitoring.
 With Facetwork, these concerns are handled by the platform.
 
-| Concern | Without AFL | With AFL |
+| Concern | Without FFL | With FFL |
 |---------|------------|----------|
-| Step sequencing | Custom code per workflow | Declare in `.afl`, compiler handles it |
+| Step sequencing | Custom code per workflow | Declare in `.ffl`, compiler handles it |
 | Data flow | Manual plumbing between steps | `step.field` references, type-checked |
 | Persistence | Build your own | MongoDB store with atomic commits |
 | Concurrency | Locks, queues, dedup | Task queue with atomic claiming |
@@ -261,7 +261,7 @@ With Facetwork, these concerns are handled by the platform.
 | Error handling | Per-agent custom logic | State machine with `fail_step()` |
 | Parallel execution | Threading/async code | `andThen foreach` in the DSL |
 
-The key value proposition is the **separation of workflow logic (AFL) from
+The key value proposition is the **separation of workflow logic (FFL) from
 agent logic (Python handlers)**. A new agent is a handler function registered
 against an event facet name. The platform handles everything else.
 
@@ -271,19 +271,19 @@ Facetwork's separation of concerns maps naturally to distinct authoring roles:
 
 | Role | Writes | Skills required |
 |------|--------|-----------------|
-| **Domain programmer** | AFL source (`.afl` files) — workflows, facets, schemas, composition | AFL syntax; no Python needed |
+| **Domain programmer** | FFL source (`.ffl` files) — workflows, facets, schemas, composition | FFL syntax; no Python needed |
 | **Service provider programmer** | Handler implementations (Python modules) for event facets | Python; domain-specific APIs |
-| **Claude** | Both AFL definitions and handler implementations | Given a natural-language description of the desired workflow or service behavior |
+| **Claude** | Both FFL definitions and handler implementations | Given a natural-language description of the desired workflow or service behavior |
 
 Domain programmers focus on *what* the workflow does — its steps, data flow,
 and composition. Service provider programmers focus on *how* each event facet
 is fulfilled — the actual computation, API call, or LLM inference. Claude can
-fill either or both roles, generating `.afl` files from requirements,
+fill either or both roles, generating `.ffl` files from requirements,
 scaffolding handler modules with correct signatures and registration, or
 building complete end-to-end examples including tests.
 
 Once prompt templates (§2.2) and an async LLM handler (§2.1) are added,
-defining an AI agent becomes: write the AFL workflow, write the prompt
+defining an AI agent becomes: write the FFL workflow, write the prompt
 templates, deploy. No orchestration code required.
 
 ---
@@ -294,7 +294,7 @@ templates, deploy. No orchestration code required.
 
 The MCP server uses JSON-RPC 2.0 over stdio. The following protocol messages are relevant:
 
-| Message | Direction | AFL Handler |
+| Message | Direction | FFL Handler |
 |---------|-----------|-------------|
 | `initialize` | Client → Server | SDK auto-handles; advertises `tools` + `resources` capabilities |
 | `notifications/initialized` | Client → Server | SDK auto-handles |

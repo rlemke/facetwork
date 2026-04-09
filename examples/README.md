@@ -1,6 +1,6 @@
 # Facetwork Examples
 
-Each subdirectory contains a complete working example with AFL source and a Python agent implementation.
+Each subdirectory contains a complete working example with FFL source and a Python agent implementation.
 
 | Example | Description |
 |---------|-------------|
@@ -69,8 +69,8 @@ source .venv/bin/activate
 # Install example-specific dependencies
 pip install -r examples/<name>/requirements.txt
 
-# Compile the AFL source (syntax check)
-python -m afl.cli examples/<name>/ffl/<file>.afl --check
+# Compile the FFL source (syntax check)
+python -m afl.cli examples/<name>/ffl/<file>.ffl --check
 
 # Run the agent (see each example's README for details)
 PYTHONPATH=. python examples/<name>/agent.py
@@ -82,7 +82,7 @@ PYTHONPATH=. python examples/<name>/agent.py
 2. Include at minimum:
    - `README.md` — what it does, prerequisites, how to run, expected output
    - `USER_GUIDE.md` — step-by-step walkthrough, key concepts, adaptation tips
-   - `afl/*.afl` — AFL workflow source files
+   - `afl/*.ffl` — FFL workflow source files
    - `agent.py` — Python agent using `AgentPoller`
    - `requirements.txt` — any extra pip dependencies
 3. Add an entry to this README's tables

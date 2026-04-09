@@ -16,7 +16,7 @@ Intended audience: teams building distributed task execution systems, workflow o
 - All runtime entities (steps, tasks, logs) must carry or resolve a **qualified display name** built from the hierarchy (e.g. `parent.child.step`).
 - Log messages at WARNING and above must include this name, not just IDs.
 - Dashboard views must show qualified names by default, not raw statement names.
-- Task names should include the workflow or facet name for identification (e.g. `afl:execute:MyWorkflow` instead of `afl:execute`).
+- Task names should include the workflow or facet name for identification (e.g. `fw:execute:MyWorkflow` instead of `fw:execute`).
 
 ---
 
@@ -190,12 +190,12 @@ Unit tests with MemoryStore missed all three because they test components in iso
 
 **Requirement**: Internal protocol tasks must use a reserved prefix that user code cannot collide with.
 
-**What happened**: The `afl:` prefix was used for internal tasks (`afl:execute`, `afl:resume`) but this wasn't documented or enforced until late. Task claiming logic had to be updated to handle both exact matches and prefix patterns when workflow names were appended.
+**What happened**: The `afl:` prefix was used for internal tasks (`fw:execute`, `fw:resume`) but this wasn't documented or enforced until late. Task claiming logic had to be updated to handle both exact matches and prefix patterns when workflow names were appended.
 
 **Upfront requirement**:
 - Reserve `afl:` prefix for internal protocol tasks. Document this in the spec.
 - Validate at task creation: user-created tasks must not start with `afl:`.
-- Protocol task format: `afl:<action>:<context>` (e.g. `afl:execute:MyWorkflow`, `afl:resume:ns.Facet`).
+- Protocol task format: `afl:<action>:<context>` (e.g. `fw:execute:MyWorkflow`, `fw:resume:ns.Facet`).
 - All agent SDKs must use constants from a shared protocol definition.
 
 ---
@@ -268,7 +268,7 @@ When a handler partially completes then fails (e.g. 10 of 50 tables imported int
 - Handlers write `compensation_data` incrementally (e.g. list of imported tables) to the task data.
 - A `CompensationRegistry` maps handler names to cleanup functions.
 - When a catch block executes, the framework invokes the registered compensation.
-- AFL support: `with Compensate(handler = "RollbackImport")` mixin syntax.
+- FFL support: `with Compensate(handler = "RollbackImport")` mixin syntax.
 
 **Where**: Evaluator catch path (already exists), new compensation registry, handler convention.
 

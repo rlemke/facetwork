@@ -1,14 +1,14 @@
 
-# AFL Agent SDK Specification
+# FFL Agent SDK Specification
 
-This document defines how external services (**AFL Agents**) interact with
+This document defines how external services (**FFL Agents**) interact with
 the Facetwork runtime to process event facet tasks. It covers the three
 agent execution models, the task lifecycle, and the public API contract.
 
 This specification is the authoritative reference for **service provider
 programmers** who write handler implementations for event facets. Domain
-programmers who write AFL do not need this document — they define workflows
-in `.afl` files and the platform handles execution. Claude can also generate
+programmers who write FFL do not need this document — they define workflows
+in `.ffl` files and the platform handles execution. Claude can also generate
 handler implementations from natural-language descriptions of the desired
 behavior.
 
@@ -19,7 +19,7 @@ are provided where relevant.
 
 ## 1. Introduction
 
-An **AFL Agent** is a service that:
+An **FFL Agent** is a service that:
 
 1. accepts event tasks from the Facetwork task queue,
 2. performs the required action (computation, API call, LLM inference, etc.),
@@ -84,7 +84,7 @@ The agent lifecycle follows a five-phase cycle:
                             │
                             ▼
 ┌───────────────────────────────────────────────────────────────┐
-│                       AFL Agent                               │
+│                       FFL Agent                               │
 │                                                               │
 │  1. POLL    — query task queue for matching tasks             │
 │       │                                                       │
@@ -229,7 +229,7 @@ This allows handlers to be registered with either qualified names
 ## 4. AgentPoller API
 
 The `AgentPoller` class (`afl/runtime/agent_poller.py`) is a standalone
-polling library for building AFL Agent services without the full
+polling library for building FFL Agent services without the full
 `RunnerService`.
 
 ### 4.1 AgentPollerConfig
@@ -237,7 +237,7 @@ polling library for building AFL Agent services without the full
 ```python
 @dataclass
 class AgentPollerConfig:
-    service_name: str = "afl-agent"
+    service_name: str = "fw-agent"
     server_group: str = "default"
     server_name: str = ""              # Auto-populated with socket.gethostname()
     task_list: str = "default"
@@ -248,7 +248,7 @@ class AgentPollerConfig:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `service_name` | `str` | `"afl-agent"` | Identifies the agent type in server registry |
+| `service_name` | `str` | `"fw-agent"` | Identifies the agent type in server registry |
 | `server_group` | `str` | `"default"` | Logical grouping of servers |
 | `server_name` | `str` | hostname | Human-readable server name |
 | `task_list` | `str` | `"default"` | Task list to poll |
@@ -672,7 +672,7 @@ class RunnerConfig:
 | Task queue polling | Yes | Yes |
 | Handler registration | `register()` | `ToolRegistry` |
 | HTTP status server | No | Yes (`/health`, `/status`) |
-| Non-event tasks (`afl:execute`) | No | Yes |
+| Non-event tasks (`fw:execute`) | No | Yes |
 | ThreadPoolExecutor concurrency | No | Yes |
 | Signal handling (SIGTERM/SIGINT) | No | Yes |
 | Graceful shutdown timeout | No | Yes (`shutdown_timeout_ms`) |
@@ -884,7 +884,7 @@ multiple times before returning the final result.
 
 ### 9.10 Complete Example: Event Facet with Auto-Loading
 
-**1. Define the event facet in AFL:**
+**1. Define the event facet in FFL:**
 
 ```afl
 namespace billing

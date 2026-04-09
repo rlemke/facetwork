@@ -11,16 +11,16 @@ Use this as your starting point if you are:
 
 ## What You'll Learn
 
-1. How AFL source compiles to a JSON workflow definition
+1. How FFL source compiles to a JSON workflow definition
 2. How the runtime pauses at event facets and creates tasks
 3. How an agent handler processes tasks and returns results
 4. How the workflow resumes and completes with final outputs
 
 ## Step-by-Step Walkthrough
 
-### 1. The AFL Source
+### 1. The FFL Source
 
-The entire workflow is in `workflow.afl`:
+The entire workflow is in `workflow.ffl`:
 
 ```afl
 namespace hello {
@@ -46,7 +46,7 @@ workflow SayHello(name: String) => (greeting: String) andThen {
 `run.py` is a self-contained script that demonstrates the full cycle:
 
 ```python
-# Step 1: Compile AFL to JSON
+# Step 1: Compile FFL to JSON
 program = parse(afl_source)
 compiled = emit_dict(program)
 

@@ -1,6 +1,6 @@
-# AFL Database Schema Documentation
+# FFL Database Schema Documentation
 
-This document describes the MongoDB collections used by the AFL event-driven workflow execution engine.
+This document describes the MongoDB collections used by the FFL event-driven workflow execution engine.
 
 ## Database: `afl`
 
@@ -12,7 +12,7 @@ The system uses 8 MongoDB collections to persist workflow definitions, execution
 
 | Collection | Purpose | Key Entity |
 |------------|---------|------------|
-| `flows` | Workflow definitions (AFL compiled) | `FlowDefinition` |
+| `flows` | Workflow definitions (FFL compiled) | `FlowDefinition` |
 | `workflows` | Named workflow entry points | `WorkflowDefinition` |
 | `runners` | Workflow execution instances | `RunnerDefinition` |
 | `steps` | Step execution records | `StepDefinition` |
@@ -24,7 +24,7 @@ The system uses 8 MongoDB collections to persist workflow definitions, execution
 
 ## Collection: `flows`
 
-Stores compiled AFL flow definitions including facets, workflows, blocks, and generated code.
+Stores compiled FFL flow definitions including facets, workflows, blocks, and generated code.
 
 **DAO:** `FlowDefinitionDAO`
 **Entity:** `FlowDefinition`
@@ -42,7 +42,7 @@ class FlowIdentity:
 
 @dataclass
 class FlowDefinition:
-    """Compiled AFL flow definition."""
+    """Compiled FFL flow definition."""
     uuid: str
     name: FlowIdentity
     namespaces: list[NamespaceDefinition] = field(default_factory=list)

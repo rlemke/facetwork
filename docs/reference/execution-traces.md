@@ -4,7 +4,7 @@ Detailed step-by-step traces of workflow execution showing the runtime's interna
 
 These traces are the authoritative reference for how the evaluator processes workflows. Each trace follows the same structure:
 
-1. **AFL source** and dependency graph
+1. **FFL source** and dependency graph
 2. **Phase-by-phase execution** showing state transitions, in-memory changes, and commits
 3. **Handler protocol** describing what external event handlers must do
 4. **Summary table** with step counts, task counts, and commit boundaries
@@ -33,7 +33,7 @@ These traces are the authoritative reference for how the evaluator processes wor
 
 Two independent event facet calls that execute concurrently, followed by a regular facet that depends on both results.
 
-### AFL Source
+### FFL Source
 
 ```afl
 namespace test.example1 {
@@ -452,7 +452,7 @@ The server that processes the **last** remaining event facet (s2 in this case) d
 
 A workflow with two `andThen` blocks that execute concurrently. Each block has its own event facets, dependency graph, and yield. The yields merge into the workflow's return attributes independently.
 
-### AFL Source
+### FFL Source
 
 ```afl
 namespace test.example {
@@ -799,7 +799,7 @@ The last server to complete a block's final event facet drives that block to com
 
 Seven independent event facets completing concurrently across multiple servers. This trace emphasizes the **continuation storm** that occurs when many siblings complete near-simultaneously, and how the block's Continue handler safely handles duplicate and late-arriving continuations.
 
-### AFL Source
+### FFL Source
 
 ```afl
 namespace test.example {

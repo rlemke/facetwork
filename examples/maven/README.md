@@ -1,6 +1,6 @@
 # Maven Artifact Runner
 
-A Maven artifact runner agent demonstrating AFL's **MavenArtifactRunner** execution model — resolving Maven artifacts and launching JVM subprocesses.
+A Maven artifact runner agent demonstrating FFL's **MavenArtifactRunner** execution model — resolving Maven artifacts and launching JVM subprocesses.
 
 ## What it does
 
@@ -29,9 +29,9 @@ pip install -e ".[dev]"
 ### Compile check
 
 ```bash
-# Check runner AFL sources
-afl --primary examples/maven/ffl/maven_runner.afl \
-    --library examples/maven/ffl/maven_types.afl \
+# Check runner FFL sources
+afl --primary examples/maven/ffl/maven_runner.ffl \
+    --library examples/maven/ffl/maven_types.ffl \
     --check
 ```
 
@@ -73,12 +73,12 @@ pytest tests/test_maven_compilation.py tests/test_handler_dispatch_maven.py test
 pytest tests/ -v
 ```
 
-## AFL source files
+## FFL source files
 
 | File | Namespace | Description |
 |------|-----------|-------------|
-| `maven_types.afl` | `maven.types` | 2 schemas (ExecutionResult, PluginExecutionResult) |
-| `maven_runner.afl` | `maven.runner` | 2 event facets for JVM execution (RunMavenArtifact, RunMavenPlugin) |
+| `maven_types.ffl` | `maven.types` | 2 schemas (ExecutionResult, PluginExecutionResult) |
+| `maven_runner.ffl` | `maven.runner` | 2 event facets for JVM execution (RunMavenArtifact, RunMavenPlugin) |
 
 ## Handler modules
 
@@ -88,7 +88,7 @@ pytest tests/ -v
 
 ## MavenArtifactRunner Execution Model
 
-The MavenArtifactRunner bridges AFL workflows with JVM programs:
+The MavenArtifactRunner bridges FFL workflows with JVM programs:
 
 1. **Handler registration** — Register event facets with `mvn:` URI schemes:
    ```python

@@ -1,10 +1,10 @@
-# AFL Agent Protocol Constants
+# FFL Agent Protocol Constants
 
-This directory contains shared protocol constants for building AFL agents in any language (Java, Scala, Go, Python, etc.).
+This directory contains shared protocol constants for building FFL agents in any language (Java, Scala, Go, Python, etc.).
 
 ## Purpose
 
-The Python AFL runtime manages workflow execution, state machines, and dependency-driven step creation. External agents handle **event facets** — they perform the actual work (API calls, data processing, etc.) and signal the runtime to continue.
+The Python FFL runtime manages workflow execution, state machines, and dependency-driven step creation. External agents handle **event facets** — they perform the actual work (API calls, data processing, etc.) and signal the runtime to continue.
 
 ## External Agent Workflow
 
@@ -15,9 +15,9 @@ An external agent processes an event step by:
 3. **Perform the work** (call APIs, process data, etc.)
 4. **Write return attributes** to the step document in the `steps` collection
 5. **Mark the event task as `completed`** in the `tasks` collection
-6. **Insert an `afl:resume` task** into the `tasks` collection
+6. **Insert an `fw:resume` task** into the `tasks` collection
 
-The Python `RunnerService` polls for `afl:resume` tasks, calls `evaluator.continue_step()` to validate and transition the step, then calls `evaluator.resume()` to advance the workflow.
+The Python `RunnerService` polls for `fw:resume` tasks, calls `evaluator.continue_step()` to validate and transition the step, then calls `evaluator.resume()` to advance the workflow.
 
 ## Key Insight
 
@@ -35,7 +35,7 @@ See `constants.json` for complete field schemas and example MongoDB operations:
 | Language | Location | Status |
 |----------|----------|--------|
 | Python | `afl/runtime/agent_poller.py` (built-in) | Full evaluator integration |
-| Scala | `agents/scala/afl-agent/` | Lightweight — delegates resume to Python RunnerService via `afl:resume` |
+| Scala | `agents/scala/fw-agent/` | Lightweight — delegates resume to Python RunnerService via `fw:resume` |
 
 Additional languages can implement the protocol using `constants.json` and any MongoDB driver.
 
@@ -48,7 +48,7 @@ cp agents/templates/CLAUDE.md /path/to/my-agent/CLAUDE.md
 cp agents/protocol/constants.json /path/to/my-agent/constants.json
 ```
 
-The `CLAUDE.md` gives Claude full context on the protocol, schemas, and operations needed to build an AFL agent from scratch in any language. See `agents/templates/README.md` for details.
+The `CLAUDE.md` gives Claude full context on the protocol, schemas, and operations needed to build an FFL agent from scratch in any language. See `agents/templates/README.md` for details.
 
 ## File Reference
 

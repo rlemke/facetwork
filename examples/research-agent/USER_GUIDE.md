@@ -119,7 +119,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-afl examples/research-agent/ffl/research.afl --check
+afl examples/research-agent/ffl/research.ffl --check
 
 # Run tests
 pytest examples/research-agent/tests/ -v

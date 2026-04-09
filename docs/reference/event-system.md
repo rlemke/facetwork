@@ -1,10 +1,10 @@
-# AFL Event Framework Documentation
+# FFL Event Framework Documentation
 
-This document describes the event-driven architecture of the AFL workflow execution engine, including the task-based dispatch model, step blocking, and multi-run execution.
+This document describes the event-driven architecture of the FFL workflow execution engine, including the task-based dispatch model, step blocking, and multi-run execution.
 
 ## Overview
 
-AFL uses an event-driven pattern where workflow state transitions are driven by tasks. The Python runtime uses a **synchronous iterative evaluator** rather than async polling threads. The system ensures:
+FFL uses an event-driven pattern where workflow state transitions are driven by tasks. The Python runtime uses a **synchronous iterative evaluator** rather than async polling threads. The system ensures:
 
 - **Ordered processing** - Tasks are processed in creation order
 - **At-most-once delivery per step** - Only one task per step can be in `running` state at a time

@@ -10,7 +10,7 @@ Extract road networks from OSM data with classification and attributes.
 - **Surface filtering**: Paved vs unpaved roads
 - **Length calculation**: Haversine-based road segment lengths
 
-## AFL Facets
+## FFL Facets
 
 ```afl
 namespace osm.Roads {

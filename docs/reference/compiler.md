@@ -1,17 +1,17 @@
 ## Compiler Architecture (20_compiler.md)
 
-The AFL compiler transforms AFL (Facetwork Flow Language) source code into a JSON workflow definition for execution by the Facetwork runtime.
+The FFL compiler transforms FFL (Facetwork Flow Language) source code into a JSON workflow definition for execution by the Facetwork runtime.
 
 ---
 
 ## Pipeline
 
 ```
-AFL Source → Lark Parser → Parse Tree → Transformer → AST → Emitter → JSON
+FFL Source → Lark Parser → Parse Tree → Transformer → AST → Emitter → JSON
 ```
 ### Stage 1: Input
 The input to the compiler takes two lists of source files:
-- **Primary sources**: The main AFL source files for this agent
+- **Primary sources**: The main FFL source files for this agent
 - **Library sources**: Dependencies referenced by the primary sources
 
 Each entry contains the source text plus provenance metadata indicating where
@@ -48,7 +48,7 @@ ast, registry = parser.parse_sources(compiler_input)
 The `SourceRegistry` maps source IDs to their origins for provenance lookup.
 
 ### Stage 2: Parsing
-- **Input**: AFL source code (string)
+- **Input**: FFL source code (string)
 - **Tool**: Lark with LALR parser
 - **Output**: Lark parse tree
 - **Errors**: `ParseError` with line/column
@@ -84,7 +84,7 @@ dict-based dispatch to map prompt directive names (`system`, `template`, `model`
 
 ## Parser Requirements
 
-The AFL compiler uses Lark with the following configuration:
+The FFL compiler uses Lark with the following configuration:
 
 ```python
 Lark(
@@ -208,22 +208,22 @@ afl [options] [input_file]
 ### Examples
 ```bash
 # Parse file to stdout (legacy single-file input)
-afl input.afl
+afl input.ffl
 
 # Parse to file
-afl input.afl -o output.json
+afl input.ffl -o output.json
 
 # Multi-source input
-afl --primary main.afl --primary util.afl --library lib.afl
+afl --primary main.ffl --primary util.ffl --library lib.ffl
 
 # Include provenance in output
-afl --primary main.afl --include-provenance
+afl --primary main.ffl --include-provenance
 
 # Compact output
-afl input.afl --compact --no-locations
+afl input.ffl --compact --no-locations
 
 # Syntax check
-afl input.afl --check
+afl input.ffl --check
 
 # From stdin
 echo 'facet Test()' | afl

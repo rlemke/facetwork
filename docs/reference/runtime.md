@@ -1,7 +1,7 @@
 
-# AFL Runtime Specification
+# FFL Runtime Specification
 
-This document defines the **formal execution semantics** of the AFL (Agent Workflow Language) runtime.
+This document defines the **formal execution semantics** of the FFL (Agent Workflow Language) runtime.
 It is the authoritative contract governing correctness, determinism, persistence, and agent interaction.
 
 This specification applies regardless of implementation language, database technology, or deployment topology.
@@ -10,7 +10,7 @@ This specification applies regardless of implementation language, database techn
 
 ## 1. Runtime Overview
 
-The AFL runtime is responsible for executing workflows compiled from AFL source.
+The FFL runtime is responsible for executing workflows compiled from FFL source.
 Execution is **dependency-driven**, **iterative**, **distributed**, and **restart-safe**.
 
 The runtime consists of:
@@ -628,7 +628,7 @@ Telemetry MUST NOT affect execution semantics.
 
 ## 19. Execution Contract Summary
 
-> The AFL runtime executes workflows as deterministic, dependency-driven, iterative evaluations using in-memory execution, abstracted persistence, explicit state machines, and strict agent boundaries.
+> The FFL runtime executes workflows as deterministic, dependency-driven, iterative evaluations using in-memory execution, abstracted persistence, explicit state machines, and strict agent boundaries.
 
 This contract is **non-negotiable**.
 

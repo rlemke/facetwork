@@ -95,7 +95,7 @@ Long-running distributed workflows face compounding failure modes that don't app
 
 6. **Workflow-level circuit breaker** — if >50% of a workflow's tasks fail with the same error class, pause the workflow and alert rather than continuing to cycle through failures. This would catch systemic issues (database down, misconfigured credentials) faster.
 
-7. **Step-level retry policy in AFL** — allow workflow authors to specify retry behavior declaratively: `event MyEvent() with Retry(max = 3, backoff = "exponential", on = ["ConnectionError", "TimeoutError"])`. Currently all retry logic is operational (reaper thresholds, manual dashboard retries) rather than part of the workflow definition.
+7. **Step-level retry policy in FFL** — allow workflow authors to specify retry behavior declaratively: `event MyEvent() with Retry(max = 3, backoff = "exponential", on = ["ConnectionError", "TimeoutError"])`. Currently all retry logic is operational (reaper thresholds, manual dashboard retries) rather than part of the workflow definition.
 
 ---
 
@@ -103,7 +103,7 @@ Long-running distributed workflows face compounding failure modes that don't app
 
 3,483 tests (3,566 collected, 84 skipped) with good discipline: every grammar construct has parser tests, emitter round-trips, validator error cases, and runtime behavior tests. Each example ships with a full test suite (8 classes per example is now standard: utils, per-category handlers, dispatch, compilation, agent integration). The structure is consistent.
 
-The v0.32.0+real integration tests add a new tier: full-pipeline tests that exercise compile→evaluate→dispatch→resume→completion through MemoryStore. 13 tests across 3 classes (TestCompilation, TestAnalyzeSample, TestBatchAnalysis) cover: AFL compilation, workflow extraction, single-sample full pipeline, output verification, step counts, QC fail branching, downloaded reference data, batch with 3/5 samples, mixed QC outcomes, single-sample foreach, and 5-sample batch with real patient IDs. These found 3 runtime bugs that unit tests missed. The A- → A upgrade reflects this: the test suite now covers not just units and components but the full execution pipeline end-to-end, including `andThen when` branching, `catch` error recovery, and `andThen foreach` iteration — validated through the actual evaluator + poller loop, not mocked handlers.
+The v0.32.0+real integration tests add a new tier: full-pipeline tests that exercise compile→evaluate→dispatch→resume→completion through MemoryStore. 13 tests across 3 classes (TestCompilation, TestAnalyzeSample, TestBatchAnalysis) cover: FFL compilation, workflow extraction, single-sample full pipeline, output verification, step counts, QC fail branching, downloaded reference data, batch with 3/5 samples, mixed QC outcomes, single-sample foreach, and 5-sample batch with real patient IDs. These found 3 runtime bugs that unit tests missed. The A- → A upgrade reflects this: the test suite now covers not just units and components but the full execution pipeline end-to-end, including `andThen when` branching, `catch` error recovery, and `andThen foreach` iteration — validated through the actual evaluator + poller loop, not mocked handlers.
 
 ---
 

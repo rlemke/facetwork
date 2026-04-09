@@ -3,20 +3,20 @@
 ### Terminology
 
 - **Facetwork**: The platform for distributed workflow execution (compiler + runtime + agents)
-- **FFL**: Facetwork Flow Language — the DSL for defining workflows (`.afl` files)
-- **AFL Agent**: A service that polls the task queue for event facet tasks, performs the required action (API call, data processing, etc.), writes the result back to the step, and signals the workflow to continue. Agents can be built using `AgentPoller` (callback-based), `RegistryRunner` (persistence-based auto-loading), or `RunnerService` (distributed orchestration). The **recommended approach** is `RegistryRunner`: register handler implementations in the database via `register_handler()` or the MCP `afl_manage_handlers` tool, then start the runner service — it dynamically loads and dispatches handlers without requiring custom agent code. Multiple agents can run concurrently, each handling different event facet types.
+- **FFL**: Facetwork Flow Language — the DSL for defining workflows (`.ffl` files)
+- **FFL Agent**: A service that polls the task queue for event facet tasks, performs the required action (API call, data processing, etc.), writes the result back to the step, and signals the workflow to continue. Agents can be built using `AgentPoller` (callback-based), `RegistryRunner` (persistence-based auto-loading), or `RunnerService` (distributed orchestration). The **recommended approach** is `RegistryRunner`: register handler implementations in the database via `register_handler()` or the MCP `afl_manage_handlers` tool, then start the runner service — it dynamically loads and dispatches handlers without requiring custom agent code. Multiple agents can run concurrently, each handling different event facet types.
 
 ### Authoring Roles
 
 Facetwork separates workflow design from handler implementation into distinct authoring roles:
 
-- **Domain programmers** author AFL source (`.afl` files). They define namespaces, facets, event facets, workflows, schemas, and composition logic (mixins, andThen blocks, foreach, when blocks). No Python or handler code is required — the compiled JSON workflow definition is sufficient for the runtime to execute.
+- **Domain programmers** author FFL source (`.ffl` files). They define namespaces, facets, event facets, workflows, schemas, and composition logic (mixins, andThen blocks, foreach, when blocks). No Python or handler code is required — the compiled JSON workflow definition is sufficient for the runtime to execute.
 - **Service provider programmers** author handler implementations (Python modules) for event facets. A handler receives typed parameters from the task queue, performs the required action (computation, API call, data processing, LLM inference), and returns typed results. Handlers are registered via `register_handler()` or the MCP `afl_manage_handlers` tool and executed by the RegistryRunner.
-- **Claude** (or other LLM agents) can author both AFL definitions and handler implementations when given a description of the desired workflow or service behavior. Claude can generate `.afl` files from natural-language requirements, scaffold handler modules with correct signatures and registration, or build complete end-to-end examples including tests.
+- **Claude** (or other LLM agents) can author both FFL definitions and handler implementations when given a description of the desired workflow or service behavior. Claude can generate `.ffl` files from natural-language requirements, scaffold handler modules with correct signatures and registration, or build complete end-to-end examples including tests.
 
 ### Language Requirements
 
-The AFL v1 reference implementation SHALL be written in **Python 3.11+**.
+The FFL v1 reference implementation SHALL be written in **Python 3.11+**.
 
 The language parser SHALL be implemented using **Lark**:
 - Lark grammar format (.lark)
@@ -63,7 +63,7 @@ See `spec/70_examples.md` Examples 2–4 for detailed execution traces demonstra
 - **MapLiteral**: Map literal expression `#{"key": value, ...}`
 - **IndexExpr**: Index/subscript expression `target[index]`
 - **Provenance**: Metadata tracking where source code originated (file, MongoDB, Maven)
-- **Source Loader**: Utility for loading AFL sources from different locations (file, MongoDB, Maven Central)
+- **Source Loader**: Utility for loading FFL sources from different locations (file, MongoDB, Maven Central)
 
 ### Runtime terms
 - **StepDefinition**: Runtime representation of a step with state and attributes
@@ -79,8 +79,8 @@ See `spec/70_examples.md` Examples 2–4 for detailed execution traces demonstra
 - **RunnerService**: Long-lived distributed process that polls for blocked steps and tasks
 - **RunnerConfig**: Configuration dataclass for runner service parameters
 - **ToolRegistry**: Registry of handler functions for event facet dispatch
-- **AFL Agent**: A service that accepts events/tasks, performs the required action, updates the step, and signals the step to continue
-- **AgentPoller**: Standalone polling library for building AFL Agent services without the full RunnerService
+- **FFL Agent**: A service that accepts events/tasks, performs the required action, updates the step, and signals the step to continue
+- **AgentPoller**: Standalone polling library for building FFL Agent services without the full RunnerService
 - **AgentPollerConfig**: Configuration dataclass for AgentPoller parameters
 - **RegistryRunner**: Universal runner that reads `HandlerRegistration` entries from persistence, dynamically loads Python modules, and dispatches event tasks — eliminates the need for custom agent services. Handlers are registered via `register_handler()` or the MCP `afl_manage_handlers` tool and are auto-loaded at runtime.
 - **RegistryRunnerConfig**: Configuration dataclass for RegistryRunner (service_name, topics, poll_interval_ms, registry_refresh_interval_ms, etc.)
@@ -89,13 +89,13 @@ See `spec/70_examples.md` Examples 2–4 for detailed execution traces demonstra
 - **Lazy yield creation**: Yield steps are created in the iteration when their dependencies become available, not eagerly in iteration 0; this means total step counts grow over iterations
 - **Block AST cache**: `ExecutionContext._block_ast_cache` stores body AST overrides for foreach sub-blocks and multi-block workflows, checked before hierarchy traversal in `get_block_ast()`
 - **Multi-block index**: When a workflow body is a list of `andThen` blocks, each block step gets `statement_id="block-N"` so `get_block_ast()` can select the correct body element
-- **MCP Server**: Model Context Protocol server exposing AFL tools and resources to LLM agents
+- **MCP Server**: Model Context Protocol server exposing FFL tools and resources to LLM agents
 
 ### Agent integration library terms
-- **Agent Integration Library**: Language-specific library for building AFL agents (Python, Scala, Go, TypeScript, Java)
+- **Agent Integration Library**: Language-specific library for building FFL agents (Python, Scala, Go, TypeScript, Java)
 - **Protocol Constants**: Shared constants (`agents/protocol/constants.json`) defining collection names, state values, document schemas, and MongoDB operations for cross-language interoperability
-- **afl:resume**: Protocol task inserted by external agents after writing step returns; signals the Python RunnerService to resume the workflow
-- **afl:execute**: Protocol task for executing a compiled workflow from a flow stored in MongoDB
+- **fw:resume**: Protocol task inserted by external agents after writing step returns; signals the Python RunnerService to resume the workflow
+- **fw:execute**: Protocol task for executing a compiled workflow from a flow stored in MongoDB
 - **Async Handler**: Handler function that returns a coroutine/Promise/Future; supported in Python (`register_async`), TypeScript, and Java
 - **Region Resolver**: Pure Python module (`region_resolver.py`) that maps human-friendly region names to Geofabrik download paths using an inverted index of `REGION_REGISTRY`, aliases, and geographic features
 
@@ -112,5 +112,5 @@ See `spec/70_examples.md` Examples 2–4 for detailed execution traces demonstra
 - **Tool**: MCP action endpoint (has side effects); invoked via `tools/call` with name + arguments
 - **Resource**: MCP read-only data endpoint; accessed via `resources/read` with a URI
 - **stdio transport**: Default MCP transport; server reads/writes JSON-RPC on stdin/stdout
-- **TextContent**: MCP response content type; all AFL tools return `TextContent` with JSON payloads
+- **TextContent**: MCP response content type; all FFL tools return `TextContent` with JSON payloads
 - **inputSchema**: JSON Schema attached to each Tool definition; SDK validates arguments before dispatch

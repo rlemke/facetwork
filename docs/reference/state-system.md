@@ -1,10 +1,10 @@
-# AFL State Handlers Documentation
+# FFL State Handlers Documentation
 
-This document describes the state handler architecture used by AFL to execute workflow steps through discrete state transitions.
+This document describes the state handler architecture used by FFL to execute workflow steps through discrete state transitions.
 
 ## Overview
 
-AFL uses a **state machine architecture** where workflow execution progresses through discrete states. Each step type (statement, block, yield) has a defined state sequence, and state handlers implement the logic for each state transition. The runtime is synchronous — state changers loop through transitions within a single evaluator iteration.
+FFL uses a **state machine architecture** where workflow execution progresses through discrete states. Each step type (statement, block, yield) has a defined state sequence, and state handlers implement the logic for each state transition. The runtime is synchronous — state changers loop through transitions within a single evaluator iteration.
 
 ## Architecture Diagram
 

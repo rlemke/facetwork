@@ -13,7 +13,7 @@ The system spans:
 - **A distributed runtime** with a 20+ state machine, dependency-driven evaluation, and MongoDB persistence
 - **A microservice architecture** with Docker-orchestrated runners, agents, HDFS storage, and a web dashboard
 - **Agent SDKs** in five languages (Python, Scala, Go, TypeScript, Java)
-- **A real-world example application** — an OpenStreetMap geocoder with 42 AFL files, ~80 handler modules, and interactive map visualizations
+- **A real-world example application** — an OpenStreetMap geocoder with 42 FFL files, ~80 handler modules, and interactive map visualizations
 
 The project grew from a single grammar file to **3,211 passing tests**, **100+ changelog versions**, and workflows that process all 50 US states in parallel — generating interactive maps of bicycle routes, national parks, city populations, transit networks, and administrative boundaries.
 
@@ -21,12 +21,12 @@ The project grew from a single grammar file to **3,211 passing tests**, **100+ c
 
 ## Part 1: The Language
 
-### AFL — Facetwork Flow Language
+### FFL — Facetwork Flow Language
 
-AFL is a typed, declarative DSL designed for expressing distributed computations. Here is the complete grammar — 141 lines that define the entire language:
+FFL is a typed, declarative DSL designed for expressing distributed computations. Here is the complete grammar — 141 lines that define the entire language:
 
 ```lark
-// AFL v1 Grammar (Lark LALR)
+// FFL v1 Grammar (Lark LALR)
 
 start: _NL* (namespace_block | top_level_decl)*
 
@@ -125,10 +125,10 @@ invoked = aws.lambda.InvokeFunction(function_name = $.name)
 
 ## Part 2: The Compiler
 
-The AFL compiler is a four-stage pipeline:
+The FFL compiler is a four-stage pipeline:
 
 ```
-AFL Source → Lark LALR Parser → AST (dataclasses) → Validator → JSON Emitter
+FFL Source → Lark LALR Parser → AST (dataclasses) → Validator → JSON Emitter
 ```
 
 **Parsing**: The Lark library generates an LALR parser from the grammar. Parse errors include line and column numbers. The grammar is carefully designed to avoid LALR conflicts — no newlines are allowed between signature tokens like `)`, `=>`, `with`, and `andThen`.
@@ -137,14 +137,14 @@ AFL Source → Lark LALR Parser → AST (dataclasses) → Validator → JSON Emi
 
 **Validation**: Semantic checks catch errors at compile time — duplicate names, unresolvable type references, invalid string+int operations, bool+arithmetic mismatches, and schema-must-be-in-namespace violations.
 
-**Emission**: The emitter produces a unified `declarations` list in JSON. A single AFL file like the OSM geocoder compiles to a JSON document that the runtime loads and executes.
+**Emission**: The emitter produces a unified `declarations` list in JSON. A single FFL file like the OSM geocoder compiles to a JSON document that the runtime loads and executes.
 
 ```bash
-afl input.afl -o output.json       # compile to JSON
-afl input.afl --check              # syntax check only
+afl input.ffl -o output.json       # compile to JSON
+afl input.ffl --check              # syntax check only
 ```
 
-The compiler supports multi-file compilation with `--library` flags, enabling large projects to be split across many AFL files while sharing type definitions and namespace references.
+The compiler supports multi-file compilation with `--library` flags, enabling large projects to be split across many FFL files while sharing type definitions and namespace references.
 
 ---
 
@@ -264,7 +264,7 @@ The largest example application is a complete OpenStreetMap analysis platform:
 
 | Metric | Count |
 |--------|-------|
-| AFL workflow files | 42 |
+| FFL workflow files | 42 |
 | Handler Python modules | ~80 |
 | Handler categories | 16 |
 | Event facets | ~500+ |
@@ -292,7 +292,7 @@ The largest example application is a complete OpenStreetMap analysis platform:
 
 ### Composition Patterns
 
-The composed workflows demonstrate real-world pipeline patterns in AFL:
+The composed workflows demonstrate real-world pipeline patterns in FFL:
 
 **Pattern 1 — Cache, Extract, Visualize** (3 stages):
 ```afl
@@ -473,7 +473,7 @@ Each map features:
 | **v0.5.0** | MCP server for LLM integration, AgentPoller library | — |
 | **v0.6.0** | Multi-language agent SDKs (Python, Scala, Go, TypeScript, Java) | — |
 | **v0.7.0** | Arithmetic operators, string concat, arrays, maps, indexing | — |
-| **v0.8.0** | Multiple andThen blocks, foreach execution, OSM geocoder (22 AFL files) | 960+ |
+| **v0.8.0** | Multiple andThen blocks, foreach execution, OSM geocoder (22 FFL files) | 960+ |
 | **v0.10.0** | Schema declarations, event facet blocking semantics | 1,400+ |
 | **v0.12.0** | Full OSM pipeline, RegistryRunner auto-loading | 1,555 |
 | **v0.12.30** | resume_step() O(depth) optimization for 500K+ steps | 2,183 |
@@ -501,7 +501,7 @@ Each map features:
 | Grammar size | 142 lines |
 | Total tests | 3,211 passed + 84 skipped (3,295 collected) |
 | Changelog entries | 100+ versions (v0.1.0 – v0.24.0) |
-| AFL files (OSM example) | 42 |
+| FFL files (OSM example) | 42 |
 | Handler modules (OSM) | ~80 |
 | Event facets (OSM) | ~500+ |
 | Seeded workflows (all examples) | 156 across 7 flows |
@@ -515,7 +515,7 @@ Each map features:
 
 ### What Worked
 
-**Declarative composition scales.** AFL's `andThen` blocks with automatic dependency detection make it natural to express parallel pipelines. The `AnalyzeRegion` workflow — 10 parallel analysis pipelines sharing a cache — reads almost like a table of contents.
+**Declarative composition scales.** FFL's `andThen` blocks with automatic dependency detection make it natural to express parallel pipelines. The `AnalyzeRegion` workflow — 10 parallel analysis pipelines sharing a cache — reads almost like a table of contents.
 
 **Event facets as boundaries.** The distinction between regular facets (evaluated internally) and event facets (dispatched to agents) creates a clean separation between workflow logic and execution infrastructure. Adding a new handler requires only a Python module and a database registration — no code changes to the runtime.
 
@@ -578,7 +578,7 @@ facetwork/
 │   └── mcp/                      # LLM integration server
 ├── agents/                       # SDKs (Python, Scala, Go, TS, Java)
 ├── examples/
-│   ├── osm-geocoder/             # 70 AFL files, 114 handlers
+│   ├── osm-geocoder/             # 70 FFL files, 114 handlers
 │   │   ├── afl/                  # Core workflow definitions
 │   │   ├── handlers/             # 16 category subdirectories
 │   │   └── tests/real/           # Scaling variants (2–45 states)

@@ -35,7 +35,7 @@ docker-compose.yml
   dashboard (8081)     — web monitoring UI
   runner               — workflow evaluator
   agent                — RegistryRunner with cache/GH/zoom/GTFS handlers
-  seed (profile: seed) — compiles AFL + seeds MongoDB
+  seed (profile: seed) — compiles FFL + seeds MongoDB
 ```
 
 The agent image includes Java (for GraphHopper), Python geospatial stack, and all OSM handler modules (symlinked from `examples/osm-geocoder/handlers/`).
@@ -57,7 +57,7 @@ This starts MongoDB, the dashboard, the runner, and the agent.
 docker compose --profile seed run --rm seed
 ```
 
-The seed service compiles all AFL files and loads the compiled workflow definitions into MongoDB.
+The seed service compiles all FFL files and loads the compiled workflow definitions into MongoDB.
 
 ### 3. Monitor via Dashboard
 
@@ -99,7 +99,7 @@ This example has its own `docker-compose.yml` (separate from the root one) with 
 ### Seed Pattern
 
 The seed service is a one-shot container that:
-1. Compiles all AFL source files
+1. Compiles all FFL source files
 2. Loads the compiled JSON into MongoDB
 3. Exits
 
@@ -123,23 +123,23 @@ No duplicate handler code — the agent image copies the symlink target.
 - **Memory**: 16 GB recommended (GraphHopper JVM needs 4-8 GB per graph build)
 - **Agent concurrency**: limited to 4 to manage memory pressure
 
-### AFL File Organization
+### FFL File Organization
 
 | File | Content |
 |------|---------|
-| `continental_types.afl` | Shared schemas |
-| `continental_lz_workflows.afl` | LZ road infrastructure workflows |
-| `continental_gtfs_workflows.afl` | GTFS transit analysis workflows |
-| `continental_full.afl` | Top-level combined pipeline |
+| `continental_types.ffl` | Shared schemas |
+| `continental_lz_workflows.ffl` | LZ road infrastructure workflows |
+| `continental_gtfs_workflows.ffl` | GTFS transit analysis workflows |
+| `continental_full.ffl` | Top-level combined pipeline |
 
-All workflows compose operations from the OSM geocoder AFL files (imported as library dependencies during seed compilation).
+All workflows compose operations from the OSM geocoder FFL files (imported as library dependencies during seed compilation).
 
 ## Adapting for Your Use Case
 
 ### Add a new region
 
-1. Add the region to the appropriate workflow in `continental_lz_workflows.afl`
-2. Ensure the region's cache facet exists in the OSM geocoder's `osmcache.afl`
+1. Add the region to the appropriate workflow in `continental_lz_workflows.ffl`
+2. Ensure the region's cache facet exists in the OSM geocoder's `osmcache.ffl`
 3. Re-seed the database
 
 ### Add a new transit agency

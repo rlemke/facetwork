@@ -18,9 +18,9 @@ Install with:
 pip install pyosmium shapely
 ```
 
-## AFL Schema and Event Facets
+## FFL Schema and Event Facets
 
-The boundary extraction is defined in `afl/osmboundaries.afl`:
+The boundary extraction is defined in `afl/osmboundaries.ffl`:
 
 ### BoundaryFeatures Schema
 
@@ -94,7 +94,7 @@ The extractor matches these OSM tag combinations:
 
 ## Usage
 
-### In AFL Workflows
+### In FFL Workflows
 
 ```afl
 workflow ExtractUSCounties(cache: OSMCache) => (boundaries: BoundaryFeatures) andThen {

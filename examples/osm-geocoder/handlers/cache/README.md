@@ -4,7 +4,7 @@ The cache layer resolves geographic region names to Geofabrik download URLs and 
 
 ## OSMCache schema
 
-All cache facets return an `OSMCache` struct, defined in `afl/osmtypes.afl`:
+All cache facets return an `OSMCache` struct, defined in `afl/osmtypes.ffl`:
 
 ```afl
 schema OSMCache {
@@ -24,9 +24,9 @@ schema OSMCache {
 | `size` | File size in bytes (0 if not yet downloaded) |
 | `wasInCache` | Whether the file was already present locally |
 
-## AFL facets
+## FFL facets
 
-Cache event facets are defined in `afl/osmcache.afl` across 11 geographic namespaces. Each facet takes no parameters and returns an `OSMCache`:
+Cache event facets are defined in `afl/osmcache.ffl` across 11 geographic namespaces. Each facet takes no parameters and returns an `OSMCache`:
 
 ```afl
 namespace osm.cache.Africa {
@@ -89,7 +89,7 @@ The handler downloads the `.osm.pbf` file (or returns it from the local cache) a
 
 ## How workflows use cache facets
 
-Regional workflows (e.g. `osmafrica.afl`, `osmeurope.afl`) follow a two-phase pattern:
+Regional workflows (e.g. `osmafrica.ffl`, `osmeurope.ffl`) follow a two-phase pattern:
 
 1. **Cache lookup** — call each country's cache facet to get the `OSMCache` with the Geofabrik URL
 2. **Operation** — pass the cache result to a processing facet like `Download` or `DownloadShapefile`
@@ -148,7 +148,7 @@ Some facets share the same underlying Geofabrik path. For example, `Malaysia` an
 
 To add a new region to the cache system:
 
-1. Add the event facet to the appropriate namespace in `afl/osmcache.afl`:
+1. Add the event facet to the appropriate namespace in `afl/osmcache.ffl`:
    ```afl
    event facet NewRegion() => (cache: OSMCache)
    ```

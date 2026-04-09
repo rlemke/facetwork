@@ -1,6 +1,6 @@
 # Jenkins CI/CD Pipeline Agent
 
-A Jenkins-style CI/CD pipeline agent demonstrating AFL's **mixin composition** — small reusable facets (Retry, Timeout, Credentials, Notification, AgentLabel, Stash) that attach cross-cutting behaviors to event facets at both signature and call time.
+A Jenkins-style CI/CD pipeline agent demonstrating FFL's **mixin composition** — small reusable facets (Retry, Timeout, Credentials, Notification, AgentLabel, Stash) that attach cross-cutting behaviors to event facets at both signature and call time.
 
 ## What it does
 
@@ -112,21 +112,21 @@ No additional dependencies are required — all handlers simulate Jenkins operat
 ### Compile check
 
 ```bash
-# Check all AFL sources
-for f in examples/jenkins/ffl/*.afl; do
+# Check all FFL sources
+for f in examples/jenkins/ffl/*.ffl; do
     afl "$f" --check && echo "OK: $f"
 done
 
 # Compile the pipelines with all dependencies
-afl --primary examples/jenkins/ffl/jenkins_pipelines.afl \
-    --library examples/jenkins/ffl/jenkins_types.afl \
-    --library examples/jenkins/ffl/jenkins_mixins.afl \
-    --library examples/jenkins/ffl/jenkins_scm.afl \
-    --library examples/jenkins/ffl/jenkins_build.afl \
-    --library examples/jenkins/ffl/jenkins_test.afl \
-    --library examples/jenkins/ffl/jenkins_artifacts.afl \
-    --library examples/jenkins/ffl/jenkins_deploy.afl \
-    --library examples/jenkins/ffl/jenkins_notify.afl \
+afl --primary examples/jenkins/ffl/jenkins_pipelines.ffl \
+    --library examples/jenkins/ffl/jenkins_types.ffl \
+    --library examples/jenkins/ffl/jenkins_mixins.ffl \
+    --library examples/jenkins/ffl/jenkins_scm.ffl \
+    --library examples/jenkins/ffl/jenkins_build.ffl \
+    --library examples/jenkins/ffl/jenkins_test.ffl \
+    --library examples/jenkins/ffl/jenkins_artifacts.ffl \
+    --library examples/jenkins/ffl/jenkins_deploy.ffl \
+    --library examples/jenkins/ffl/jenkins_notify.ffl \
     --check
 ```
 
@@ -196,16 +196,16 @@ implicit defaultAgent = AgentLabel(label = "linux")
 | `deploy_handlers.py` | `jenkins.deploy` | DeployToEnvironment, DeployToK8s, RollbackDeploy | Environment and Kubernetes deployment |
 | `notify_handlers.py` | `jenkins.notify` | SlackNotify, EmailNotify | Slack and email notifications |
 
-## AFL source files
+## FFL source files
 
 | File | Namespace | Description |
 |------|-----------|-------------|
-| `jenkins_types.afl` | `jenkins.types` | 7 schemas (ScmInfo, BuildResult, TestReport, QualityReport, Artifact, DeployResult, PipelineStatus) |
-| `jenkins_mixins.afl` | `jenkins.mixins` | 6 mixin facets + 3 implicit defaults |
-| `jenkins_scm.afl` | `jenkins.scm` | 2 SCM event facets (GitCheckout has signature-level mixin) |
-| `jenkins_build.afl` | `jenkins.build` | 4 build event facets |
-| `jenkins_test.afl` | `jenkins.test` | 3 test/quality event facets |
-| `jenkins_artifacts.afl` | `jenkins.artifact` | 3 artifact event facets |
-| `jenkins_deploy.afl` | `jenkins.deploy` | 3 deployment event facets |
-| `jenkins_notify.afl` | `jenkins.notify` | 2 notification event facets |
-| `jenkins_pipelines.afl` | `jenkins.pipeline` | 4 workflow pipelines demonstrating mixin composition |
+| `jenkins_types.ffl` | `jenkins.types` | 7 schemas (ScmInfo, BuildResult, TestReport, QualityReport, Artifact, DeployResult, PipelineStatus) |
+| `jenkins_mixins.ffl` | `jenkins.mixins` | 6 mixin facets + 3 implicit defaults |
+| `jenkins_scm.ffl` | `jenkins.scm` | 2 SCM event facets (GitCheckout has signature-level mixin) |
+| `jenkins_build.ffl` | `jenkins.build` | 4 build event facets |
+| `jenkins_test.ffl` | `jenkins.test` | 3 test/quality event facets |
+| `jenkins_artifacts.ffl` | `jenkins.artifact` | 3 artifact event facets |
+| `jenkins_deploy.ffl` | `jenkins.deploy` | 3 deployment event facets |
+| `jenkins_notify.ffl` | `jenkins.notify` | 2 notification event facets |
+| `jenkins_pipelines.ffl` | `jenkins.pipeline` | 4 workflow pipelines demonstrating mixin composition |

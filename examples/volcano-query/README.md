@@ -25,11 +25,11 @@ The `volcano` namespace imports and composes event facets from four OSM namespac
 |----------|----------|-------------|
 | `FindVolcanoes(state, min_elevation_ft)` | Load → FilterByOSMTag → FilterByMaxElevation → FormatGeoJSON + RenderMap | Full query pipeline |
 
-## AFL-only example
+## FFL-only example
 
 This example has **no handlers, no agent, no test runner**. It relies entirely on the existing OSM geocoder handlers. To run it, use the OSM geocoder infrastructure with the compiled volcano workflow.
 
-## AFL source
+## FFL source
 
 ```afl
 namespace volcano {
@@ -63,5 +63,5 @@ namespace volcano {
 ## Compile check
 
 ```bash
-afl examples/volcano-query/ffl/volcano.afl --check
+afl examples/volcano-query/ffl/volcano.ffl --check
 ```

@@ -119,7 +119,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-python -m afl.cli examples/data-quality-pipeline/ffl/quality.afl --check
+python -m afl.cli examples/data-quality-pipeline/ffl/quality.ffl --check
 
 # Run tests
 python -m pytest examples/data-quality-pipeline/tests/ -v
@@ -135,7 +135,7 @@ Schema instantiation (`cfg = QualityConfig(...)`) is a unique step type:
 - Fields resolve via dot notation: `cfg.missing_threshold`
 - This enables typed, reusable configuration within workflows
 
-### Array Types in AFL
+### Array Types in FFL
 
 Array types are declared with bracket syntax:
 
@@ -149,7 +149,7 @@ The compiler validates element types against available schemas.
 
 ### Expression Precedence
 
-AFL operator precedence (highest to lowest):
+FFL operator precedence (highest to lowest):
 1. `*`, `/`, `%` — multiplication, division, modulo
 2. `+`, `-` — addition, subtraction
 3. `++` — string concatenation

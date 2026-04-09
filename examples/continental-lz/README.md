@@ -51,7 +51,7 @@ docker-compose.yml
   dashboard (8081)     — web monitoring UI
   runner               — workflow evaluator
   agent                — RegistryRunner with cache/GH/zoom/GTFS handlers
-  seed (profile: seed) — compiles AFL + seeds MongoDB
+  seed (profile: seed) — compiles FFL + seeds MongoDB
 ```
 
 The agent image includes:
@@ -83,7 +83,7 @@ cd examples/continental-lz
 PYTHONPATH=../.. python scripts/run_region.py --region Belgium --output-dir /tmp/lz-belgium
 ```
 
-## AFL Compilation Verification
+## FFL Compilation Verification
 
 ```bash
 cd examples/continental-lz
@@ -122,15 +122,15 @@ for w in wfs: print(f'  {w}')
 ```
 examples/continental-lz/
   afl/
-    continental_types.afl           — shared schemas
-    continental_lz_workflows.afl    — LZ road infrastructure workflows
-    continental_gtfs_workflows.afl  — GTFS transit analysis workflows
-    continental_full.afl            — top-level combined pipeline
+    continental_types.ffl           — shared schemas
+    continental_lz_workflows.ffl    — LZ road infrastructure workflows
+    continental_gtfs_workflows.ffl  — GTFS transit analysis workflows
+    continental_full.ffl            — top-level combined pipeline
   docker/
     Dockerfile.agent                — agent image (Java + GraphHopper)
     Dockerfile.seed                 — seed image (compile + load)
   scripts/
-    seed.py                         — compile AFL + seed MongoDB
+    seed.py                         — compile FFL + seed MongoDB
     run_region.py                   — single region smoke test
   handlers -> ../osm-geocoder/handlers  (symlink)
   agent.py                          — RegistryRunner entry point

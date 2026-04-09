@@ -2,9 +2,9 @@
 
 The operations layer handles data processing tasks that act on cached OSM data. Operations receive an `OSMCache` struct from a cache facet and perform work such as downloading files, generating map tiles, building routing graphs, or importing data into PostGIS.
 
-## AFL facets
+## FFL facets
 
-All operations are defined in `afl/osmoperations.afl` under two namespaces.
+All operations are defined in `afl/osmoperations.ffl` under two namespaces.
 
 ### Data facets
 

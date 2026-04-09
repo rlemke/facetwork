@@ -30,7 +30,7 @@ AnalyzeRisk ─┘
                                                                        yield "rolled_back"
 ```
 
-## AFL structure
+## FFL structure
 
 | Namespace | Contents |
 |-----------|----------|
@@ -42,9 +42,9 @@ AnalyzeRisk ─┘
 | `deploy.Rollback` | 2 event facets: `RollbackDeployment`, `VerifyRollback` |
 | `deploy.workflows` | 2 workflows: `DeployService`, `BatchDeploy` |
 
-## AFL syntax quick-reference
+## FFL syntax quick-reference
 
-Every construct below appears in [`afl/deploy.afl`](afl/deploy.afl).
+Every construct below appears in [`afl/deploy.ffl`](afl/deploy.ffl).
 
 ### Comments
 
@@ -234,10 +234,10 @@ rename_map = #{"old_key": "new_key"}
 
 ```bash
 # Compile
-afl examples/devops-deploy/ffl/deploy.afl -o deploy.json
+afl examples/devops-deploy/ffl/deploy.ffl -o deploy.json
 
 # Syntax check only
-afl examples/devops-deploy/ffl/deploy.afl --check
+afl examples/devops-deploy/ffl/deploy.ffl --check
 
 # Tests
 pytest examples/devops-deploy/ -v

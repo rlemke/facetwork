@@ -1,6 +1,6 @@
 ## Semantic Validation (12_validation.md)
 
-The AFL compiler performs semantic validation after parsing to ensure program correctness.
+The FFL compiler performs semantic validation after parsing to ensure program correctness.
 
 ---
 
@@ -518,10 +518,10 @@ else:
 Validation runs by default during CLI compilation:
 ```bash
 # Validation enabled (default)
-afl input.afl
+afl input.ffl
 
 # Skip validation
-afl input.afl --no-validate
+afl input.ffl --no-validate
 ```
 
 ---

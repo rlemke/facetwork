@@ -16,9 +16,9 @@ This allows filtering boundaries by size regardless of shape complexity.
 
 Filter by OSM element type (node, way, relation) and/or tag key/value pairs. Optionally include dependencies (referenced nodes for ways) for complete geometry reconstruction.
 
-## AFL Facets
+## FFL Facets
 
-All filter facets are defined in `osmfilters.afl` under the `osm.Filters` namespace.
+All filter facets are defined in `osmfilters.ffl` under the `osm.Filters` namespace.
 
 ### FilterByRadius
 

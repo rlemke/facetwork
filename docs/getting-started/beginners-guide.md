@@ -4,7 +4,7 @@ Welcome to Facetwork! This guide gets you from zero to running your first workfl
 
 ## What is Facetwork?
 
-Facetwork is a platform for building and running multi-step workflows. You describe *what* should happen in a simple language (AFL), and Facetwork handles the execution, retries, and monitoring.
+Facetwork is a platform for building and running multi-step workflows. You describe *what* should happen in a simple language (FFL), and Facetwork handles the execution, retries, and monitoring.
 
 Think of it like a pipeline builder: you define steps, connect them, and let the system run them — locally on your laptop or distributed across a cluster.
 
@@ -111,9 +111,9 @@ Each step shows a log timeline with:
 - **Success/error** status on the final entry
 - **Duration column** on the last log row showing total elapsed time
 
-## Writing Your First AFL Workflow
+## Writing Your First FFL Workflow
 
-AFL (Facetwork Flow Language) is how you define workflows. Here's a minimal example:
+FFL (Facetwork Flow Language) is how you define workflows. Here's a minimal example:
 
 ```afl
 namespace myapp {
@@ -137,15 +137,15 @@ Key concepts:
 - **`step.field`** — references the output of a previous step
 - **yield** — returns the workflow's final output
 
-To compile and check your AFL:
+To compile and check your FFL:
 ```bash
-afl myworkflow.afl --check        # syntax check
-afl myworkflow.afl -o output.json # compile to JSON
+afl myworkflow.ffl --check        # syntax check
+afl myworkflow.ffl -o output.json # compile to JSON
 ```
 
 ## Using Other Teams' Workflows
 
-You don't have to build everything from scratch. AFL namespaces work like libraries — other teams publish their facets, and you `use` them in your workflow:
+You don't have to build everything from scratch. FFL namespaces work like libraries — other teams publish their facets, and you `use` them in your workflow:
 
 ```afl
 namespace my.analysis {
@@ -163,8 +163,8 @@ namespace my.analysis {
 
 To publish your own workflows for others to use:
 ```bash
-scripts/publish my_workflows.afl              # publish to MongoDB
-scripts/publish my_workflows.afl --version 2.0  # with a version tag
+scripts/publish my_workflows.ffl              # publish to MongoDB
+scripts/publish my_workflows.ffl --version 2.0  # with a version tag
 ```
 
 Other teams then import your namespace with `use` — the compiler validates all cross-team references at compile time. Each team deploys and updates their own handlers independently.
@@ -188,8 +188,8 @@ For local development, Docker runs everything on your machine. For production, s
 
 ## What's Next?
 
-- **[AFL Language Reference](../reference/language/grammar.md)** — full syntax guide with all constructs
-- **[Workflow Design Patterns](../reference/examples.md)** — real-world AFL examples
+- **[FFL Language Reference](../reference/language/grammar.md)** — full syntax guide with all constructs
+- **[Workflow Design Patterns](../reference/examples.md)** — real-world FFL examples
 - **[Building Handlers](../reference/agent-sdk.md)** — write Python handlers for your event facets
 - **[Runtime & Execution](../reference/runtime.md)** — how the engine evaluates workflows
 - **[Deployment Guide](../operations/deployment.md)** — cluster setup with multiple runners
@@ -197,6 +197,6 @@ For local development, Docker runs everything on your machine. For production, s
 
 ## Getting Help
 
-- Browse the `examples/` directory — each example has AFL files, handlers, and tests
+- Browse the `examples/` directory — each example has FFL files, handlers, and tests
 - Check `docs/reference/` for detailed specifications
 - Use the MCP server (`python -m afl.mcp`) for AI-assisted workflow authoring

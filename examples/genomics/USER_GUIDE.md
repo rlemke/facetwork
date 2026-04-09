@@ -14,7 +14,7 @@ Use this as your starting point if you are:
 
 1. How `andThen foreach` fans out work across a collection
 2. How linear `andThen` chains fan in results sequentially
-3. How to organize schemas, event facets, and workflows across multiple AFL files
+3. How to organize schemas, event facets, and workflows across multiple FFL files
 4. How factory-built handlers reduce boilerplate for large numbers of similar facets
 5. How name resolution (alias maps) provides user-friendly resource lookups
 6. How to **encapsulate multi-step pipelines** behind simple composed facets
@@ -62,17 +62,17 @@ workflow CohortAnalysis(dataset_id: String, reference_build: String = "GRCh38",
 
 This is a pure linear chain — each step depends on the previous step's output.
 
-### 4. AFL File Organization
+### 4. FFL File Organization
 
 | File | Purpose |
 |------|---------|
-| `genomics.afl` | Core schemas + event facets + workflows |
-| `genomics_cache.afl` | Per-entity cache facets (references, annotations, SRA) |
-| `genomics_cache_types.afl` | Cache layer schemas |
-| `genomics_cache_workflows.afl` | Cache-aware composite workflows |
-| `genomics_index_cache.afl` | Aligner index facets (BWA, STAR, Bowtie2) |
-| `genomics_operations.afl` | Low-level cache operations |
-| `genomics_resolve.afl` | Name-based resource resolution |
+| `genomics.ffl` | Core schemas + event facets + workflows |
+| `genomics_cache.ffl` | Per-entity cache facets (references, annotations, SRA) |
+| `genomics_cache_types.ffl` | Cache layer schemas |
+| `genomics_cache_workflows.ffl` | Cache-aware composite workflows |
+| `genomics_index_cache.ffl` | Aligner index facets (BWA, STAR, Bowtie2) |
+| `genomics_operations.ffl` | Low-level cache operations |
+| `genomics_resolve.ffl` | Name-based resource resolution |
 
 **Pattern**: Separate type schemas, event facets, and workflows into different files. Group related facets by domain concern.
 
@@ -83,7 +83,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-for f in examples/genomics/ffl/*.afl; do
+for f in examples/genomics/ffl/*.ffl; do
     python -m afl.cli "$f" --check && echo "OK: $f"
 done
 
@@ -261,8 +261,8 @@ workflow DataPipeline(items: Json) => (result: String, item_id: String) andThen 
 
 ### Add a cache layer for your domain
 
-1. Define cache schemas in a `_types.afl` file
-2. Create per-entity cache facets in a `_cache.afl` file
+1. Define cache schemas in a `_types.ffl` file
+2. Create per-entity cache facets in a `_cache.ffl` file
 3. Build factory handlers from a resource registry
 4. Add resolve facets with alias maps for user-friendly names
 

@@ -6,8 +6,8 @@
 
 Use this as your starting point if you are:
 - Exploring the **MavenArtifactRunner** execution model — running JVM programs as Maven artifacts
-- Building workflows that launch **JVM subprocesses** from AFL event facets
-- Integrating **Java/Scala/Kotlin handlers** packaged as Maven artifacts into AFL workflows
+- Building workflows that launch **JVM subprocesses** from FFL event facets
+- Integrating **Java/Scala/Kotlin handlers** packaged as Maven artifacts into FFL workflows
 
 ## What You'll Learn
 
@@ -97,8 +97,8 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-afl --primary examples/maven/ffl/maven_runner.afl \
-    --library examples/maven/ffl/maven_types.afl \
+afl --primary examples/maven/ffl/maven_runner.ffl \
+    --library examples/maven/ffl/maven_types.ffl \
     --check
 
 # Run the agent
@@ -109,7 +109,7 @@ PYTHONPATH=. python examples/maven/agent.py
 
 ### MavenArtifactRunner Execution Model
 
-The MavenArtifactRunner bridges AFL workflows with JVM programs:
+The MavenArtifactRunner bridges FFL workflows with JVM programs:
 
 1. **Handler registration** — Register event facets with `mvn:` URI schemes:
    ```python

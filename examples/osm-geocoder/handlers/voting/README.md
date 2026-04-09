@@ -16,9 +16,9 @@ https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file
 | State House (SLDL) | State lower chamber | Per state | After redistricting |
 | Voting Precincts (VTD) | Local voting districts | Per state | Decennial census |
 
-## AFL Facets
+## FFL Facets
 
-All facets are defined in `osmvoting.afl`.
+All facets are defined in `osmvoting.ffl`.
 
 ### Download Facets (census.tiger.Districts)
 
