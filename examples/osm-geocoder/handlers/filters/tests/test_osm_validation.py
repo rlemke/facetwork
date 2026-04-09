@@ -1,4 +1,4 @@
-"""Tests for the OSM cache validation AFL file.
+"""Tests for the OSM cache validation FFL file.
 
 Verifies that osmvalidation.afl parses, validates, and compiles correctly,
 and that the composed workflow in osmworkflows_composed.afl using the
@@ -7,22 +7,22 @@ validation facets also compiles.
 
 from pathlib import Path
 
-from afl.cli import main
-from afl.emitter import emit_dict
-from afl.parser import AFLParser
-from afl.source import CompilerInput, FileOrigin, SourceEntry
-from afl.validator import validate
+from facetwork.cli import main
+from facetwork.emitter import emit_dict
+from facetwork.parser import FFLParser
+from facetwork.source import CompilerInput, FileOrigin, SourceEntry
+from facetwork.validator import validate
 
 _OSM_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-# Collect all AFL files from root afl/ and handlers/*/afl/ (skip tests/)
+# Collect all FFL files from root afl/ and handlers/*/ffl/ (skip tests/)
 _AFL_BY_NAME: dict[str, Path] = {}
-for _p in sorted(_OSM_ROOT.rglob("*.afl")):
+for _p in sorted(_OSM_ROOT.rglob("*.ffl")):
     if "/tests/" not in str(_p):
         _AFL_BY_NAME[_p.name] = _p
 
 
 def _compile(*filenames: str) -> dict:
-    """Compile one or more AFL files from the OSM example directory."""
+    """Compile one or more FFL files from the OSM example directory."""
     entries = []
     for i, name in enumerate(filenames):
         path = _AFL_BY_NAME[name]
@@ -39,7 +39,7 @@ def _compile(*filenames: str) -> dict:
         library_sources=entries[1:],
     )
 
-    parser = AFLParser()
+    parser = FFLParser()
     program_ast, _registry = parser.parse_sources(compiler_input)
 
     result = validate(program_ast)
@@ -55,12 +55,12 @@ class TestOsmValidationCompilation:
 
     def test_parse_osmvalidation(self):
         """osmvalidation.afl parses and validates with its dependency."""
-        program = _compile("osmvalidation.afl", "osmtypes.afl")
+        program = _compile("osmvalidation.ffl", "osmtypes.ffl")
         assert program["type"] == "Program"
 
     def test_validation_namespace_exists(self):
         """The Validation namespace is emitted."""
-        program = _compile("osmvalidation.afl", "osmtypes.afl")
+        program = _compile("osmvalidation.ffl", "osmtypes.ffl")
 
         ns_names = []
 
@@ -78,7 +78,7 @@ class TestOsmValidationCompilation:
 
     def test_validation_schemas(self):
         """Both schemas (ValidationStats, ValidationResult) are emitted."""
-        program = _compile("osmvalidation.afl", "osmtypes.afl")
+        program = _compile("osmvalidation.ffl", "osmtypes.ffl")
 
         schema_names = []
 
@@ -96,7 +96,7 @@ class TestOsmValidationCompilation:
 
     def test_validation_event_facets(self):
         """All five event facets are emitted."""
-        program = _compile("osmvalidation.afl", "osmtypes.afl")
+        program = _compile("osmvalidation.ffl", "osmtypes.ffl")
 
         facet_names = []
 
@@ -117,7 +117,7 @@ class TestOsmValidationCompilation:
 
     def test_validate_cache_params(self):
         """ValidateCache has the expected parameters with defaults."""
-        program = _compile("osmvalidation.afl", "osmtypes.afl")
+        program = _compile("osmvalidation.ffl", "osmtypes.ffl")
 
         def _find_facet(node, name):
             for decl in node.get("declarations", []):
@@ -139,7 +139,7 @@ class TestOsmValidationCompilation:
 
     def test_validate_bounds_defaults(self):
         """ValidateBounds has lat/lon defaults."""
-        program = _compile("osmvalidation.afl", "osmtypes.afl")
+        program = _compile("osmvalidation.ffl", "osmtypes.ffl")
 
         def _find_facet(node, name):
             for decl in node.get("declarations", []):
@@ -165,9 +165,9 @@ class TestOsmValidationCompilation:
         result = main(
             [
                 "--primary",
-                str(_AFL_BY_NAME["osmvalidation.afl"]),
+                str(_AFL_BY_NAME["osmvalidation.ffl"]),
                 "--library",
-                str(_AFL_BY_NAME["osmtypes.afl"]),
+                str(_AFL_BY_NAME["osmtypes.ffl"]),
                 "--check",
             ]
         )
@@ -179,12 +179,12 @@ class TestComposedValidationWorkflow:
 
     def test_compile_validate_and_summarize(self):
         """The ValidateAndSummarize workflow compiles with all dependencies."""
-        # Collect all AFL files needed (the composed workflows reference many namespaces)
+        # Collect all FFL files needed (the composed workflows reference many namespaces)
         filenames = sorted(_AFL_BY_NAME.keys())
 
         # Put osmworkflows_composed.afl first as primary
-        filenames.remove("osmworkflows_composed.afl")
-        filenames.insert(0, "osmworkflows_composed.afl")
+        filenames.remove("osmworkflows_composed.ffl")
+        filenames.insert(0, "osmworkflows_composed.ffl")
 
         program = _compile(*filenames)
 

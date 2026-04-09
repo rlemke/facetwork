@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir requests pyshp folium osm2geojson
 
 # Copy application code
-COPY afl/ ./afl/
+COPY facetwork/ ./afl/
 
 ENV PYTHONUNBUFFERED=1
 CMD ["python", "-m", "afl.runtime.runner", "--poll-interval", "1000"]

@@ -43,7 +43,7 @@ pytestmark = pytest.mark.skipif(
 # Helper unit tests (no server needed)
 # ---------------------------------------------------------------------------
 
-from afl.dashboard.routes.domain.census_maps import (
+from facetwork.dashboard.routes.domain.census_maps import (
     _FIELD_LABELS,
     _PREFERRED_FIELDS,
     _aggregate_state_stats,
@@ -179,9 +179,9 @@ class TestFieldLabels:
 @pytest.fixture
 def client():
     """Create a test client with mongomock-backed store."""
-    from afl.dashboard import dependencies as deps
-    from afl.dashboard.app import create_app
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.dashboard import dependencies as deps
+    from facetwork.dashboard.app import create_app
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     store = MongoStore(database_name="afl_test_census_maps", client=mock_client)

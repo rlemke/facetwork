@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% from "partials/_doc_comment.html" import render_doc %}
+{% block title %}Run {{ workflow_name }} — Facetwork Dashboard{% endblock %}
+{% block content %}
+<h1>Run Workflow</h1>
+
+<article>
+    <table>
+        <tr><th>Flow</th><td>{{ flow.name.name }}</td></tr>
+        <tr><th>Workflow</th><td>{{ workflow_name }}</td></tr>
+        <tr><th>Flow ID</th><td class="mono">{{ flow.uuid }}</td></tr>
+        <tr><th>Workflow ID</th><td class="mono">{{ workflow_def.uuid }}</td></tr>
+    </table>
+</article>
+
+{% if workflow_doc %}
+{{ render_doc(workflow_doc) }}
+{% endif %}
+
+{% if parse_error %}
+<article aria-label="Errors" class="state-badge-failed">
+    <header>Compile Error</header>
+    <p>{{ parse_error }}</p>
+</article>
+{% endif %}
+
+<form id="run-form" method="POST" action="/flows/{{ flow.uuid }}/run/{{ workflow_def.uuid }}" data-validate>
+    <input type="hidden" name="inputs_json" id="inputs_json" value="{}">
+
+    {% if params %}
+    <h2>Parameters</h2>
+    <table>
+        <thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Description</th><th>Value</th></tr></thead>
+        <tbody>
+        {% for p in params %}
+            <tr>
+                <td>{{ p.name }}</td>
+                <td>{{ p.type if p.type else "Any" }}</td>
+                <td>{% if p.default is not none %}{{ p.default }}{% else %}<em>none</em>{% endif %}</td>
+                <td>{{ p.description if p.description else "—" }}</td>
+                <td>
+                    <input type="text"
+                           class="param-input"
+                           data-param="{{ p.name }}"
+                           value="{% if p.default is not none %}{{ p.default_json }}{% endif %}"
+                           {% if p.default is none %}required{% endif %}>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No parameters.</p>
+    {% endif %}
+
+    <button type="submit">Run Workflow</button>
+</form>
+<script>
+document.getElementById("run-form").addEventListener("submit", function() {
+    var inputs = {};
+    document.querySelectorAll('.param-input').forEach(function(el) {
+        var val = el.value;
+        try { val = JSON.parse(val); } catch(e) {}
+        inputs[el.dataset.param] = val;
+    });
+    document.getElementById("inputs_json").value = JSON.stringify(inputs);
+});
+</script>
+
+<p><a href="/flows/{{ flow.uuid }}">Back to flow</a></p>
+{% endblock %}

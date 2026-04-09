@@ -16,7 +16,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.dashboard
-    container_name: afl-dashboard
+    container_name: facetwork-dashboard
     ports:
       - "8080:8080"
     environment:
@@ -85,7 +85,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.seed
-    container_name: afl-seed
+    container_name: facetwork-seed
     environment:
       - AFL_MONGODB_URL=mongodb://afl-mongodb:27017
       - AFL_MONGODB_DATABASE=afl
@@ -178,7 +178,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.mcp
-    container_name: afl-mcp
+    container_name: facetwork-mcp
     environment:
       - AFL_MONGODB_URL=mongodb://afl-mongodb:27017
       - AFL_MONGODB_DATABASE=afl

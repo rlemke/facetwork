@@ -10,7 +10,7 @@ import logging
 import os
 from datetime import UTC, datetime
 
-from afl.config import get_output_base
+from facetwork.config import get_output_base
 
 from .postgis_importer import HAS_PSYCOPG2, get_postgis_url
 

@@ -9,7 +9,7 @@ import logging
 import os
 from typing import Any
 
-from afl.config import get_output_base
+from facetwork.config import get_output_base
 
 log = logging.getLogger(__name__)
 

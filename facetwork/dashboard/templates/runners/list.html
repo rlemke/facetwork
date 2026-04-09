@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Runners — Facetwork{% endblock %}
+{% block content %}
+<h1>Runners</h1>
+
+<nav>
+    <a href="/runners">All</a> |
+    <a href="/runners?state=running">Running</a> |
+    <a href="/runners?state=completed">Completed</a> |
+    <a href="/runners?state=failed">Failed</a> |
+    <a href="/runners?state=paused">Paused</a> |
+    <a href="/runners?state=cancelled">Cancelled</a>
+</nav>
+
+{% if filter_state %}
+<p>Filtered by state: {% with state=filter_state %}{% include "partials/_state_badge.html" %}{% endwith %}</p>
+{% endif %}
+
+<button class="btn-refresh"
+        hx-get="/api/runners?partial=true{% if filter_state %}&state={{ filter_state }}{% endif %}"
+        hx-target="#runner-list-body"
+        hx-swap="innerHTML">
+    <span class="refresh-icon">&#x21bb;</span> Refresh
+</button>
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Workflow</th>
+            <th>State</th>
+            <th>Started</th>
+            <th>Duration</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody id="runner-list-body">
+        {% for runner in runners %}
+        {% include "partials/runner_row.html" %}
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% endblock %}

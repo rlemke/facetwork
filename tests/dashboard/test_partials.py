@@ -33,7 +33,7 @@ _TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "afl" / "dashbo
 @pytest.fixture
 def env():
     """Create a Jinja2 environment with dashboard filters."""
-    from afl.dashboard.filters import register_filters
+    from facetwork.dashboard.filters import register_filters
 
     jinja_env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)))
     register_filters(jinja_env)

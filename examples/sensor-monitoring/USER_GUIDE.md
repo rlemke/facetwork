@@ -137,7 +137,7 @@ All handlers use deterministic stubs (`sensor_utils.py`) that produce reproducib
 
 ```bash
 # Syntax check
-python3 -m afl.cli examples/sensor-monitoring/afl/monitor.afl --check
+python3 -m afl.cli examples/sensor-monitoring/ffl/monitor.afl --check
 
 # Run tests
 python3 -m pytest examples/sensor-monitoring/tests/ -v

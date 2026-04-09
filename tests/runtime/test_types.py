@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL runtime types."""
+"""Tests for FFL runtime types."""
 
-from afl.runtime import (
+from facetwork.runtime import (
     AttributeValue,
     FacetAttributes,
     ObjectType,

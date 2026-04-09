@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from afl.runtime.storage import localize
+from facetwork.runtime.storage import localize
 
 from ..shared._output import ensure_dir, open_output, resolve_output_dir
 from ..shared.scan_progress import ScanProgressTracker, get_file_size
@@ -516,7 +516,7 @@ def verify_pbf(
     if output_dir is None:
         import os
 
-        from afl.config import get_output_base
+        from facetwork.config import get_output_base
 
         output_dir = os.path.join(get_output_base(), "osm", "osmose")
 
@@ -580,7 +580,7 @@ def verify_geojson(
     if output_dir is None:
         import os
 
-        from afl.config import get_output_base
+        from facetwork.config import get_output_base
 
         output_dir = os.path.join(get_output_base(), "osm", "osmose")
 

@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -e ".[mongodb]" || \
 RUN pip install --no-cache-dir boto3>=1.34.0
 
 # Copy application code
-COPY afl/ ./afl/
+COPY facetwork/ ./afl/
 COPY examples/aws-lambda/ ./examples/aws-lambda/
 
 WORKDIR /app/examples/aws-lambda

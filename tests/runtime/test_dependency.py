@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL dependency resolution."""
+"""Tests for FFL dependency resolution."""
 
-from afl.runtime import DependencyGraph
+from facetwork.runtime import DependencyGraph
 
 
 class TestDependencyGraph:

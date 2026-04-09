@@ -48,9 +48,9 @@ workflow SimpleWF(x: Long) => (result: Long) andThen {
 @pytest.fixture
 def client():
     """Create a test client with mongomock-backed store."""
-    from afl.dashboard import dependencies as deps
-    from afl.dashboard.app import create_app
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.dashboard import dependencies as deps
+    from facetwork.dashboard.app import create_app
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     store = MongoStore(database_name="afl_test_flow_ns", client=mock_client)
@@ -73,20 +73,20 @@ def _seed_namespaced_flow(store):
     - osm.RegionMap.BicycleMap, osm.RegionMap.HikingMap  (namespace osm.RegionMap, 2 wf)
     - SimpleWF  (top-level, 1 wf)
     """
-    from afl.runtime.entities import (
+    from facetwork.runtime.entities import (
         FlowDefinition,
         FlowIdentity,
         SourceText,
         WorkflowDefinition,
     )
-    from afl.runtime.types import generate_id
+    from facetwork.runtime.types import generate_id
 
     flow_id = generate_id()
 
     flow = FlowDefinition(
         uuid=flow_id,
         name=FlowIdentity(name="osm-geocoder", path="test", uuid=flow_id),
-        compiled_sources=[SourceText(name="source.afl", content=VALID_AFL_SOURCE)],
+        compiled_sources=[SourceText(name="source.ffl", content=VALID_AFL_SOURCE)],
     )
     store.save_flow(flow)
 

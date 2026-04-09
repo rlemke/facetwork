@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from afl.dashboard.tree import build_step_tree
-from afl.runtime.step import StepDefinition
-from afl.runtime.types import step_id
+from facetwork.dashboard.tree import build_step_tree
+from facetwork.runtime.step import StepDefinition
+from facetwork.runtime.types import step_id
 
 try:
     from fastapi.testclient import TestClient
@@ -166,9 +166,9 @@ needs_fastapi = pytest.mark.skipif(
 class TestTreeIntegration:
     @pytest.fixture
     def client(self):
-        from afl.dashboard import dependencies as deps
-        from afl.dashboard.app import create_app
-        from afl.runtime.mongo_store import MongoStore
+        from facetwork.dashboard import dependencies as deps
+        from facetwork.dashboard.app import create_app
+        from facetwork.runtime.mongo_store import MongoStore
 
         mock_client = mongomock.MongoClient()
         store = MongoStore(database_name="afl_test_tree", client=mock_client)
@@ -183,7 +183,7 @@ class TestTreeIntegration:
         store.close()
 
     def _seed(self, store):
-        from afl.runtime.entities import RunnerDefinition, WorkflowDefinition
+        from facetwork.runtime.entities import RunnerDefinition, WorkflowDefinition
 
         wf = WorkflowDefinition(
             uuid="wf-1",

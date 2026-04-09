@@ -124,7 +124,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-afl examples/ml-hyperparam-sweep/afl/sweep.afl --check
+afl examples/ml-hyperparam-sweep/ffl/sweep.afl --check
 
 # Run tests
 pytest examples/ml-hyperparam-sweep/tests/ -v

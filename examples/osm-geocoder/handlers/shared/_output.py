@@ -11,8 +11,8 @@ import os
 from pathlib import Path
 from typing import IO
 
-from afl.config import get_output_base
-from afl.runtime.storage import get_storage_backend
+from facetwork.config import get_output_base
+from facetwork.runtime.storage import get_storage_backend
 
 _OUTPUT_BASE = os.environ.get("AFL_OSM_OUTPUT_BASE", "")
 

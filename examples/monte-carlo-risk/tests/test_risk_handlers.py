@@ -375,17 +375,17 @@ class TestDispatch:
 
 
 class TestCompilation:
-    """Tests for AFL compilation of the risk example."""
+    """Tests for FFL compilation of the risk example."""
 
     @pytest.fixture()
     def parsed_ast(self):
         """Parse the risk.afl file and return the AST."""
-        from afl.parser import AFLParser
+        from facetwork.parser import FFLParser
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "risk.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "risk.ffl")
         with open(afl_path) as f:
             source = f.read()
-        return AFLParser().parse(source)
+        return FFLParser().parse(source)
 
     def test_afl_parses(self, parsed_ast):
         """AFL source parses without errors."""

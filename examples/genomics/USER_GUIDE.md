@@ -83,7 +83,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-for f in examples/genomics/afl/*.afl; do
+for f in examples/genomics/ffl/*.afl; do
     python -m afl.cli "$f" --check && echo "OK: $f"
 done
 

@@ -12,17 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL expression evaluation."""
+"""Tests for FFL expression evaluation."""
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     EvaluationContext,
     ExpressionEvaluator,
     evaluate_args,
     evaluate_default,
 )
-from afl.runtime.errors import EvaluationError, ReferenceError
+from facetwork.runtime.errors import EvaluationError, ReferenceError
 
 
 class TestExpressionEvaluator:

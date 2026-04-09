@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -e ".[dashboard,mongodb]" || \
     pip install --no-cache-dir python-multipart
 
 # Copy application code
-COPY afl/ ./afl/
+COPY facetwork/ ./afl/
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8080

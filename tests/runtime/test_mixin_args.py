@@ -14,10 +14,10 @@ Covers:
 
 from __future__ import annotations
 
-from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
-from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
-from afl.runtime.block import StatementDefinition
-from afl.runtime.dependency import DependencyGraph
+from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+from facetwork.runtime.agent_poller import AgentPoller, AgentPollerConfig
+from facetwork.runtime.block import StatementDefinition
+from facetwork.runtime.dependency import DependencyGraph
 
 # ---------------------------------------------------------------------------
 # Helpers

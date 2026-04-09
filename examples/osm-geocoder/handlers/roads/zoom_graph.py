@@ -11,7 +11,7 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass
 
-from afl.runtime.storage import localize
+from facetwork.runtime.storage import localize
 
 from ..shared._output import ensure_dir, open_output
 from ..shared.scan_progress import ScanProgressTracker, get_file_size

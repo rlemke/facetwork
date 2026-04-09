@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}PostGIS Summary — Facetwork{% endblock %}
+
+{% block breadcrumb %}
+<div class="container">
+    <nav class="breadcrumb">PostGIS Database</nav>
+</div>
+{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>PostGIS Database Summary</h1>
+    <p>Overview of imported OSM data in PostGIS</p>
+</hgroup>
+
+{% if data %}
+<div class="summary-grid">
+    <article class="summary-card">
+        <h2>{{ data.total_regions }}</h2>
+        <p>Regions</p>
+    </article>
+    <article class="summary-card">
+        <h2>{{ "{:,}".format(data.total_nodes) }}</h2>
+        <p>Nodes</p>
+    </article>
+    <article class="summary-card">
+        <h2>{{ "{:,}".format(data.total_ways) }}</h2>
+        <p>Ways</p>
+    </article>
+    <article class="summary-card">
+        <h2>{{ "{:,}".format(data.total_elements) }}</h2>
+        <p>Total Elements</p>
+    </article>
+    <article class="summary-card">
+        <h2>{{ data.db_size }}</h2>
+        <p>Database Size</p>
+    </article>
+</div>
+{% endif %}
+
+<button class="btn-refresh"
+        hx-get="/v2/postgis/partial"
+        hx-target="#postgis-content"
+        hx-swap="innerHTML">
+    <span class="refresh-icon">&#x21bb;</span> Refresh
+</button>
+
+<div id="postgis-content"
+     hx-get="/v2/postgis/partial" hx-trigger="every 300s" hx-swap="innerHTML">
+    {% include "v2/postgis/_summary_content.html" %}
+</div>
+{% endblock %}

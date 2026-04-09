@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
-from afl.runtime.entities import TaskState
+from facetwork.runtime.agent_poller import AgentPoller, AgentPollerConfig
+from facetwork.runtime.entities import TaskState
 
 
 @dataclass
@@ -99,8 +99,8 @@ class TestLoadWorkflowAST:
     def test_success_returns_workflow_ast(self, poller):
         import json
 
-        from afl.emitter import JSONEmitter
-        from afl.parser import AFLParser
+        from facetwork.emitter import JSONEmitter
+        from facetwork.parser import FFLParser
 
         wf = MagicMock()
         wf.flow_id = "f-1"
@@ -109,7 +109,7 @@ class TestLoadWorkflowAST:
 
         # Build a real compiled AST
         source = "workflow TestWF(x: String) => (output: String)"
-        parser = AFLParser()
+        parser = FFLParser()
         ast = parser.parse(source)
         emitter = JSONEmitter(include_locations=False)
         program_dict = json.loads(emitter.emit(ast))

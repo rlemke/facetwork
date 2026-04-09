@@ -15,7 +15,7 @@ import os
 import re
 from urllib.parse import urlparse
 
-from afl.config import get_output_base
+from facetwork.config import get_output_base
 
 _LOCAL_OUTPUT = get_output_base()
 _SITE_REPORTS_DIR = os.path.join(_LOCAL_OUTPUT, "site-reports")

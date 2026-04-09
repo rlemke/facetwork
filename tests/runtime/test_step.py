@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL runtime step definition."""
+"""Tests for FFL runtime step definition."""
 
-from afl.runtime import (
+from facetwork.runtime import (
     ObjectType,
     StepDefinition,
     StepState,

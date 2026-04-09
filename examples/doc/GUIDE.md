@@ -1,4 +1,4 @@
-# AgentFlow Examples Guide
+# Facetwork Examples Guide
 
 This guide helps you choose the right example as a starting point for your own AFL workflows and agents.
 
@@ -70,7 +70,7 @@ Start simple and build up to more complex patterns:
 
 ## Choosing an Example
 
-### "I want to understand how AgentFlow works"
+### "I want to understand how Facetwork works"
 
 Start with **[hello-agent](../hello-agent/)**. It's a single file that walks through the entire execution cycle: compile AFL, execute workflow, pause at event facet, agent processes task, resume to completion.
 
@@ -320,7 +320,7 @@ pip install -e ".[dev]"
 pip install -r examples/<name>/requirements.txt  # if exists
 
 # 2. Compile check
-python -m afl.cli examples/<name>/afl/<file>.afl --check
+python -m afl.cli examples/<name>/ffl/<file>.afl --check
 
 # 3. Run the agent
 PYTHONPATH=. python examples/<name>/agent.py

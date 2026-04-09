@@ -1,20 +1,20 @@
-"""Tests for the Maven runner example AFL files.
+"""Tests for the Maven runner example FFL files.
 
-Verifies that the runner AFL files parse, validate, and compile correctly.
+Verifies that the runner FFL files parse, validate, and compile correctly.
 """
 
 from pathlib import Path
 
-from afl.emitter import emit_dict
-from afl.parser import AFLParser
-from afl.source import CompilerInput, FileOrigin, SourceEntry
-from afl.validator import validate
+from facetwork.emitter import emit_dict
+from facetwork.parser import FFLParser
+from facetwork.source import CompilerInput, FileOrigin, SourceEntry
+from facetwork.validator import validate
 
 _AFL_DIR = Path(__file__).resolve().parent.parent.parent.parent / "afl"
 
 
 def _compile(*filenames: str) -> dict:
-    """Compile one or more AFL files from the Maven example directory."""
+    """Compile one or more FFL files from the Maven example directory."""
     entries = []
     for i, name in enumerate(filenames):
         path = _AFL_DIR / name
@@ -31,7 +31,7 @@ def _compile(*filenames: str) -> dict:
         library_sources=entries[1:],
     )
 
-    parser = AFLParser()
+    parser = FFLParser()
     program_ast, _registry = parser.parse_sources(compiler_input)
 
     result = validate(program_ast)
@@ -87,12 +87,12 @@ class TestMavenTypes:
 
     def test_parse_types(self):
         """maven_types.afl parses and validates."""
-        program = _compile("maven_types.afl")
+        program = _compile("maven_types.ffl")
         assert program["type"] == "Program"
 
     def test_all_schemas_present(self):
         """All 2 schemas are emitted."""
-        program = _compile("maven_types.afl")
+        program = _compile("maven_types.ffl")
         schema_names = _collect_names(program, "schemas")
         expected = ["ExecutionResult", "PluginExecutionResult"]
         for name in expected:
@@ -108,13 +108,13 @@ class TestMavenEventFacets:
 
     def test_runner_facets(self):
         """maven_runner.afl compiles with types dependency."""
-        program = _compile("maven_runner.afl", "maven_types.afl")
+        program = _compile("maven_runner.ffl", "maven_types.ffl")
         facet_names = _collect_names(program, "eventFacets")
         assert "RunMavenArtifact" in facet_names
 
     def test_runner_facet_params(self):
         """RunMavenArtifact has expected parameters."""
-        program = _compile("maven_runner.afl", "maven_types.afl")
+        program = _compile("maven_runner.ffl", "maven_types.ffl")
         ef = _find_decl_by_name(program, "EventFacetDecl", "RunMavenArtifact")
         assert ef is not None
         param_names = [p["name"] for p in ef["params"]]
@@ -125,7 +125,7 @@ class TestMavenEventFacets:
 
     def test_run_maven_plugin_facet(self):
         """RunMavenPlugin event facet is present with expected params."""
-        program = _compile("maven_runner.afl", "maven_types.afl")
+        program = _compile("maven_runner.ffl", "maven_types.ffl")
         ef = _find_decl_by_name(program, "EventFacetDecl", "RunMavenPlugin")
         assert ef is not None
         param_names = [p["name"] for p in ef["params"]]

@@ -318,17 +318,17 @@ class TestDispatch:
 
 
 # ---------------------------------------------------------------------------
-# TestCompilation — AFL parsing and AST checks
+# TestCompilation — FFL parsing and AST checks
 # ---------------------------------------------------------------------------
 class TestCompilation:
     @pytest.fixture()
     def parsed_ast(self):
-        from afl.parser import AFLParser
+        from facetwork.parser import FFLParser
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "etl.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "etl.ffl")
         with open(afl_path) as f:
             source = f.read()
-        return AFLParser().parse(source)
+        return FFLParser().parse(source)
 
     def test_afl_parses(self, parsed_ast):
         assert parsed_ast is not None
@@ -361,7 +361,7 @@ class TestCompilation:
 
     def test_array_type_present(self, parsed_ast):
         """Verify [String] array type annotation appears in the AST."""
-        from afl.ast import ArrayType
+        from facetwork.ast import ArrayType
 
         found_array = False
         for ns in parsed_ast.namespaces:
@@ -377,7 +377,7 @@ class TestCompilation:
 
     def test_map_literal_present(self, parsed_ast):
         """Verify #{} map literal appears in the AST."""
-        from afl.ast import AndThenBlock, MapLiteral
+        from facetwork.ast import AndThenBlock, MapLiteral
 
         def _check_args(call):
             for arg in getattr(call, "args", []):
@@ -423,7 +423,7 @@ class TestAgentIntegration:
         from handlers.load.load_handlers import _DISPATCH as d3
         from handlers.transform.transform_handlers import _DISPATCH as d2
 
-        from afl.runtime.agent import ToolRegistry
+        from facetwork.runtime.agent import ToolRegistry
 
         registry = ToolRegistry()
         for dispatch in [d1, d2, d3]:

@@ -19,7 +19,7 @@ LocalStack endpoint (default: http://localhost:4566):
     LOCALSTACK_URL=http://localhost:4566
 """
 
-from afl.runtime.agent_runner import AgentConfig, run_agent
+from facetwork.runtime.agent_runner import AgentConfig, run_agent
 
 config = AgentConfig(service_name="aws-lambda-agent", server_group="aws-lambda")
 

@@ -1,10 +1,10 @@
-# AgentFlow Deployment & Operations Guide
+# Facetwork Deployment & Operations Guide
 
-This guide covers deploying, configuring, monitoring, and operating AgentFlow in development and production environments.
+This guide covers deploying, configuring, monitoring, and operating Facetwork in development and production environments.
 
 ## Deployment Models
 
-AgentFlow supports two equivalent deployment models — **Docker** and **Local (non-Docker)**. Both use the same microservice architecture and coordinate through a shared MongoDB instance. You can mix them freely: run MongoDB externally, some runners in Docker, others as local processes.
+Facetwork supports two equivalent deployment models — **Docker** and **Local (non-Docker)**. Both use the same microservice architecture and coordinate through a shared MongoDB instance. You can mix them freely: run MongoDB externally, some runners in Docker, others as local processes.
 
 ### Microservice Architecture
 
@@ -185,7 +185,7 @@ Each runner independently polls the shared task queue. When a workflow creates 1
 }
 ```
 
-The config file is searched in order: `$AFL_CONFIG`, `./afl.config.json`, `~/.afl/afl.config.json`, `/etc/afl/afl.config.json`.
+The config file is searched in order: `$AFL_CONFIG`, `./afl.config.json`, `~/.afl/afl.config.json`, `/etc/ffl/afl.config.json`.
 
 ## Service Reference
 
@@ -319,7 +319,7 @@ curl http://localhost:8080/api/flows
 
 ## HDFS Integration
 
-AgentFlow supports HDFS as a storage backend for OSM handler caches. When enabled, OSM agents read and write cache data (PBF files, GraphHopper graphs, GTFS feeds) to HDFS instead of local disk.
+Facetwork supports HDFS as a storage backend for OSM handler caches. When enabled, OSM agents read and write cache data (PBF files, GraphHopper graphs, GTFS feeds) to HDFS instead of local disk.
 
 ### Starting HDFS
 
@@ -399,7 +399,7 @@ When the variables are unset, Docker uses named volumes (the original behavior).
 
 ## Jenkins CI/CD
 
-AgentFlow includes an optional Jenkins service for CI/CD pipelines. Jenkins runs with Docker socket access, allowing it to build and test AgentFlow Docker images.
+Facetwork includes an optional Jenkins service for CI/CD pipelines. Jenkins runs with Docker socket access, allowing it to build and test Facetwork Docker images.
 
 ### Starting Jenkins
 
@@ -447,7 +447,7 @@ scripts/setup --jenkins --jenkins-home-dir /mnt/ssd/jenkins
 
 ## PostGIS Integration
 
-AgentFlow supports PostGIS as a spatial database for OSM geocoder agents. The OSM geocoder defines a `PostGisImport` event facet for importing geospatial data into PostGIS.
+Facetwork supports PostGIS as a spatial database for OSM geocoder agents. The OSM geocoder defines a `PostGisImport` event facet for importing geospatial data into PostGIS.
 
 ### Starting PostGIS
 
@@ -585,7 +585,7 @@ Enable authentication in production:
 mongodump --uri="mongodb://afl-mongodb:27017" --db=afl --out=/backup/
 
 # Restore
-mongorestore --uri="mongodb://afl-mongodb:27017" --db=afl /backup/afl/
+mongorestore --uri="mongodb://afl-mongodb:27017" --db=afl /backup/ffl/
 ```
 
 ### Key Collections
@@ -660,19 +660,19 @@ docker compose exec mongodb mongosh afl --eval "db.tasks.deleteMany({state: {\\$
 
 ## Deployment Operations
 
-AgentFlow runners can be managed locally (single machine) or remotely (multi-host production). All scripts support both modes — local is the default and remote is activated with `--all` or `--host`.
+Facetwork runners can be managed locally (single machine) or remotely (multi-host production). All scripts support both modes — local is the default and remote is activated with `--all` or `--host`.
 
 ### Prerequisites for remote management
 
 1. **SSH access**: current user must be able to `ssh <hostname>` to every runner host without a password prompt (SSH agent or key-based auth)
-2. **Same repo layout**: the AgentFlow repo must be checked out on every remote host at the same path (or set `AFL_REMOTE_PATH`)
+2. **Same repo layout**: the Facetwork repo must be checked out on every remote host at the same path (or set `AFL_REMOTE_PATH`)
 3. **MongoDB reachable**: every runner host must be able to reach the MongoDB instance specified by `AFL_MONGODB_URL`
 4. **Host inventory**: configure `AFL_RUNNER_HOSTS` in `.env` or pass `--host` flags
 
 ```bash
 # .env
 AFL_RUNNER_HOSTS=prod-runner-01 prod-runner-02 prod-runner-03
-AFL_REMOTE_PATH=/opt/agentflow    # optional, defaults to local repo root
+AFL_REMOTE_PATH=/opt/facetwork    # optional, defaults to local repo root
 AFL_SSH_OPTS=-i ~/.ssh/deploy_key  # optional extra SSH flags
 ```
 

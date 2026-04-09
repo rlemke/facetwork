@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -e ".[mongodb]" || \
 RUN pip install --no-cache-dir requests folium
 
 # Copy application code
-COPY afl/ ./afl/
+COPY facetwork/ ./afl/
 COPY examples/noaa-weather/ ./examples/noaa-weather/
 
 ENV PYTHONPATH=/app

@@ -116,7 +116,7 @@ Replace the deterministic stubs in `debate_utils.py` with actual API calls, or u
 
 ```bash
 # Compile and check syntax
-afl examples/site-selection-debate/afl/sitesel_debate.afl --check
+afl examples/site-selection-debate/ffl/sitesel_debate.afl --check
 
 # Run tests
 pytest examples/site-selection-debate/ -v

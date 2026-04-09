@@ -22,13 +22,13 @@ import os
 
 import requests
 
-from afl.runtime.agent_runner import AgentConfig, run_agent
+from facetwork.runtime.agent_runner import AgentConfig, run_agent
 
 config = AgentConfig(service_name="osm-geocoder", server_group="osm")
 
 # Nominatim API (free, no API key required — please respect usage policy)
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-USER_AGENT = "AgentFlow-OSM-Example/1.0"
+USER_AGENT = "Facetwork-OSM-Example/1.0"
 
 
 def geocode_handler(payload: dict) -> dict:

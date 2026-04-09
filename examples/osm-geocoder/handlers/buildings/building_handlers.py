@@ -31,7 +31,7 @@ def _make_building_stats_handler(facet_name: str):
         if input_path:
             try:
                 backend = __import__(
-                    "afl.runtime.storage", fromlist=["get_storage_backend"]
+                    "facetwork.runtime.storage", fromlist=["get_storage_backend"]
                 ).get_storage_backend(input_path)
                 input_cache["size"] = backend.getsize(input_path)
             except Exception:
@@ -81,7 +81,7 @@ def _make_filter_buildings_handler(facet_name: str):
         input_cache = {"path": input_path, "size": 0}
         if input_path:
             try:
-                from afl.runtime.storage import get_storage_backend as _get_backend
+                from facetwork.runtime.storage import get_storage_backend as _get_backend
 
                 input_cache["size"] = _get_backend(input_path).getsize(input_path)
             except Exception:
@@ -102,7 +102,7 @@ def _make_filter_buildings_handler(facet_name: str):
             import json
             import posixpath
 
-            from afl.runtime.storage import get_storage_backend
+            from facetwork.runtime.storage import get_storage_backend
 
             from ..shared._output import uri_stem
 

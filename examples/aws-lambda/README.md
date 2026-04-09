@@ -104,17 +104,17 @@ docker compose --profile localstack up -d
 
 ```bash
 # Check all AFL sources (individual files need --library for cross-references)
-for f in examples/aws-lambda/afl/*.afl; do
+for f in examples/aws-lambda/ffl/*.afl; do
     python -m afl.cli "$f" --check 2>/dev/null && echo "OK: $f" || echo "NEEDS DEPS: $f"
 done
 
 # Compile the workflows with all dependencies
 python -m afl.cli \
-    --primary examples/aws-lambda/afl/lambda_workflows.afl \
-    --library examples/aws-lambda/afl/lambda_types.afl \
-    --library examples/aws-lambda/afl/lambda_mixins.afl \
-    --library examples/aws-lambda/afl/lambda_functions.afl \
-    --library examples/aws-lambda/afl/lambda_stepfunctions.afl \
+    --primary examples/aws-lambda/ffl/lambda_workflows.afl \
+    --library examples/aws-lambda/ffl/lambda_types.afl \
+    --library examples/aws-lambda/ffl/lambda_mixins.afl \
+    --library examples/aws-lambda/ffl/lambda_functions.afl \
+    --library examples/aws-lambda/ffl/lambda_stepfunctions.afl \
     --check
 ```
 

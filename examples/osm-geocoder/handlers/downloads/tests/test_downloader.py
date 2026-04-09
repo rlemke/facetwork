@@ -197,7 +197,7 @@ class TestDownloadCacheMiss:
         download("africa/algeria")
 
         headers = mock_get.call_args.kwargs["headers"]
-        assert headers["User-Agent"] == "AgentFlow-OSM-Example/1.0"
+        assert headers["User-Agent"] == "Facetwork-OSM-Example/1.0"
 
 
 class TestDownloadHttpError:
@@ -350,7 +350,7 @@ class TestDownloadMirror:
         with open(mirror_file, "wb") as f:
             f.write(_FAKE_PBF)
 
-        from afl.runtime.storage import get_storage_backend
+        from facetwork.runtime.storage import get_storage_backend
 
         test_storage = get_storage_backend(test_cache_dir)
 
@@ -370,7 +370,7 @@ class TestDownloadMirror:
 
     def test_mirror_skips_copy_when_cache_exists(self, tmp_path):
         """When cache already has the file, mirror copy is skipped."""
-        from afl.runtime.storage import get_storage_backend
+        from facetwork.runtime.storage import get_storage_backend
 
         mirror_dir = str(tmp_path / "mirror")
         test_cache_dir = str(tmp_path / "cache")

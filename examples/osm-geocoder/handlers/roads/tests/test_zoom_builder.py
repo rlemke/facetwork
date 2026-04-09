@@ -837,5 +837,5 @@ class TestHandlerRegistration:
         assert f"{NAMESPACE}.ComputeSBS" in call_args
 
     def test_namespace_value(self):
-        """Namespace matches AFL namespace."""
+        """Namespace matches FFL namespace."""
         assert NAMESPACE == "osm.Roads.ZoomBuilder"

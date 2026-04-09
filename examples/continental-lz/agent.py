@@ -19,7 +19,7 @@ Usage:
 For Docker mode, environment is configured via docker-compose.yml.
 """
 
-from afl.runtime.agent_runner import AgentConfig, run_agent
+from facetwork.runtime.agent_runner import AgentConfig, run_agent
 
 config = AgentConfig(
     service_name="continental-lz",

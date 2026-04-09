@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from afl.config import get_output_base
+from facetwork.config import get_output_base
 
 logger = logging.getLogger(__name__)
 

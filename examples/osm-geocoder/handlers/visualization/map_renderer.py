@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from afl.config import get_temp_dir
-from afl.runtime.storage import localize
+from facetwork.config import get_temp_dir
+from facetwork.runtime.storage import localize
 
 from ..shared._output import resolve_local_output_dir, uri_stem
 

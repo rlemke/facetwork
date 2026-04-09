@@ -19,50 +19,50 @@ import importlib
 
 class TestMcpEntryPoint:
     def test_module_importable(self):
-        mod = importlib.import_module("afl.mcp.__main__")
+        mod = importlib.import_module("facetwork.mcp.__main__")
         assert mod is not None
 
     def test_main_exists(self):
-        from afl.mcp.__main__ import main
+        from facetwork.mcp.__main__ import main
 
         assert callable(main)
 
 
 class TestDashboardEntryPoint:
     def test_module_importable(self):
-        mod = importlib.import_module("afl.dashboard.__main__")
+        mod = importlib.import_module("facetwork.dashboard.__main__")
         assert mod is not None
 
     def test_main_exists(self):
-        from afl.dashboard.__main__ import main
+        from facetwork.dashboard.__main__ import main
 
         assert callable(main)
 
 
 class TestRunnerEntryPoint:
     def test_module_importable(self):
-        mod = importlib.import_module("afl.runtime.runner.__main__")
+        mod = importlib.import_module("facetwork.runtime.runner.__main__")
         assert mod is not None
 
     def test_main_exists(self):
-        from afl.runtime.runner.__main__ import main
+        from facetwork.runtime.runner.__main__ import main
 
         assert callable(main)
 
 
 class TestCliCoverage:
     def test_check_flag(self, tmp_path):
-        from afl.cli import main
+        from facetwork.cli import main
 
-        src = tmp_path / "test.afl"
+        src = tmp_path / "test.ffl"
         src.write_text("facet Hello()")
         result = main(["--check", str(src)])
         assert result == 0
 
     def test_output_flag(self, tmp_path):
-        from afl.cli import main
+        from facetwork.cli import main
 
-        src = tmp_path / "test.afl"
+        src = tmp_path / "test.ffl"
         src.write_text("facet Hello()")
         out = tmp_path / "out.json"
         result = main([str(src), "-o", str(out)])
@@ -70,7 +70,7 @@ class TestCliCoverage:
         assert out.exists()
 
     def test_invalid_file(self):
-        from afl.cli import main
+        from facetwork.cli import main
 
-        result = main(["nonexistent_file.afl"])
+        result = main(["nonexistent_file.ffl"])
         assert result == 1

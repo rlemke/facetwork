@@ -14,16 +14,16 @@ except ImportError:
 
 pytestmark = pytest.mark.skipif(not MCP_AVAILABLE, reason="mcp not installed")
 
-from afl.mcp.server import (
+from facetwork.mcp.server import (
     _handle_resource,
     _tool_continue_step,
     _tool_resume_workflow,
     _tool_retry_step,
 )
-from afl.runtime import MemoryStore
-from afl.runtime.states import StepState
-from afl.runtime.step import StepDefinition
-from afl.runtime.types import ObjectType
+from facetwork.runtime import MemoryStore
+from facetwork.runtime.states import StepState
+from facetwork.runtime.step import StepDefinition
+from facetwork.runtime.types import ObjectType
 
 try:
     import mongomock
@@ -37,7 +37,7 @@ except ImportError:
 def store():
     if not MONGOMOCK_AVAILABLE:
         pytest.skip("mongomock not installed")
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     s = MongoStore(database_name="afl_test_mcp_ext", client=mock_client)
@@ -124,7 +124,7 @@ class TestContinueStep:
 
 class TestRetryStep:
     def test_retry_step_success(self):
-        from afl.runtime.entities import TaskDefinition
+        from facetwork.runtime.entities import TaskDefinition
 
         mem = MemoryStore()
         step = StepDefinition.create(

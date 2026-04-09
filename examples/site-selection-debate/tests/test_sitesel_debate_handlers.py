@@ -1,4 +1,4 @@
-"""Tests for site-selection-debate handlers and AFL compilation."""
+"""Tests for site-selection-debate handlers and FFL compilation."""
 
 from __future__ import annotations
 
@@ -325,12 +325,12 @@ class TestDispatch:
 class TestCompilation:
     @pytest.fixture()
     def parsed_ast(self):
-        from afl.parser import AFLParser
+        from facetwork.parser import FFLParser
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "sitesel_debate.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "sitesel_debate.ffl")
         with open(afl_path) as f:
             source = f.read()
-        return AFLParser().parse(source)
+        return FFLParser().parse(source)
 
     def test_afl_parses(self, parsed_ast):
         assert parsed_ast is not None
@@ -354,7 +354,7 @@ class TestCompilation:
         assert len(workflows) == 2
 
     def test_prompt_block_count(self, parsed_ast):
-        from afl.ast import PromptBlock
+        from facetwork.ast import PromptBlock
 
         count = 0
         for ns in parsed_ast.namespaces:
@@ -375,7 +375,7 @@ class TestCompilation:
 
     def test_null_literals_present(self, parsed_ast):
         """Verify null literal appears in at least 2 event facet defaults."""
-        from afl.ast import Literal
+        from facetwork.ast import Literal
 
         null_count = 0
         for ns in parsed_ast.namespaces:
@@ -403,7 +403,7 @@ class TestAgentIntegration:
         from handlers.spatial.spatial_handlers import _DISPATCH as d1
         from handlers.synthesis.synthesis_handlers import _DISPATCH as d4
 
-        from afl.runtime.agent import ToolRegistry
+        from facetwork.runtime.agent import ToolRegistry
 
         registry = ToolRegistry()
         for dispatch in [d1, d2, d3, d4]:
@@ -431,8 +431,8 @@ class TestAgentIntegration:
     def test_claude_agent_runner_with_score_candidate(self):
         from handlers.spatial.spatial_handlers import handle_score_candidate
 
-        from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
-        from afl.runtime.agent import ClaudeAgentRunner, ToolRegistry
+        from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+        from facetwork.runtime.agent import ClaudeAgentRunner, ToolRegistry
 
         store = MemoryStore()
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))

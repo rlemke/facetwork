@@ -38,9 +38,9 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture
 def client():
     """Create a test client with mongomock-backed store."""
-    from afl.dashboard import dependencies as deps
-    from afl.dashboard.app import create_app
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.dashboard import dependencies as deps
+    from facetwork.dashboard.app import create_app
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     store = MongoStore(database_name="afl_test_workflows", client=mock_client)
@@ -82,12 +82,12 @@ namespace test {
 }
 """
 
-INVALID_AFL_SOURCE = "this is not valid AFL %%% syntax"
+INVALID_AFL_SOURCE = "this is not valid FFL %%% syntax"
 
 
 def _make_flow(uuid, name, compiled_ast):
     """Helper to create a FlowDefinition with compiled_ast."""
-    from afl.runtime.entities import FlowDefinition, FlowIdentity
+    from facetwork.runtime.entities import FlowDefinition, FlowIdentity
 
     return FlowDefinition(
         uuid=uuid,
@@ -98,8 +98,8 @@ def _make_flow(uuid, name, compiled_ast):
 
 def _seed_workflows(store, flow_id, compiled_ast):
     """Seed WorkflowDefinition records matching the compiled_ast workflows."""
-    from afl.dashboard.routes.execution.workflows import _collect_workflows_with_ns
-    from afl.runtime.entities import WorkflowDefinition
+    from facetwork.dashboard.routes.execution.workflows import _collect_workflows_with_ns
+    from facetwork.runtime.entities import WorkflowDefinition
 
     entries: list[dict] = []
     _collect_workflows_with_ns(compiled_ast, "", entries)
@@ -238,14 +238,14 @@ class TestWorkflowNew:
         assert "SimpleWF" in resp.text
 
     def test_new_page_afl_snippet_in_data_source(self, client):
-        """Each workflow link has a data-source attribute with AFL snippet."""
+        """Each workflow link has a data-source attribute with FFL snippet."""
         tc, store = client
         flow = _make_flow("flow-4", "TestFlow", NAMESPACED_AST)
         store.save_flow(flow)
 
         resp = tc.get("/workflows/new")
         assert resp.status_code == 200
-        # The AFL snippet should contain a namespace wrapper and workflow keyword
+        # The FFL snippet should contain a namespace wrapper and workflow keyword
         assert "data-source=" in resp.text
         assert "namespace geo.Routes" in resp.text
         # Jinja2 |e escapes " as &#34; or &quot;
@@ -378,7 +378,7 @@ class TestWorkflowRun:
         assert len(flows) == 1
         assert flows[0].name.name == "test.SimpleWF"
         assert len(flows[0].compiled_sources) == 1
-        assert flows[0].compiled_sources[0].name == "source.afl"
+        assert flows[0].compiled_sources[0].name == "source.ffl"
 
     def test_run_creates_workflow(self, client):
         tc, store = client
@@ -425,7 +425,7 @@ class TestWorkflowRun:
         )
         tasks = store.get_pending_tasks("default")
         assert len(tasks) == 1
-        assert tasks[0].name == "afl:execute"
+        assert tasks[0].name == "fw:execute"
         assert tasks[0].data["workflow_name"] == "test.SimpleWF"
 
     def test_run_runner_has_snapshotted_asts(self, client):

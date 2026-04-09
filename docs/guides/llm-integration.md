@@ -1,6 +1,6 @@
 # 61 — LLM Agent Integration
 
-This document analyzes what changes are required to make AgentFlow a platform
+This document analyzes what changes are required to make Facetwork a platform
 for building AI agents backed by large language models, what kinds of prompts
 and tasks the resulting system could handle, and how the platform accelerates
 agent development compared to building from scratch.
@@ -9,7 +9,7 @@ agent development compared to building from scratch.
 
 ## 1. Current Foundation
 
-AgentFlow already provides the core primitives for AI agent orchestration:
+Facetwork already provides the core primitives for AI agent orchestration:
 
 | Primitive | Purpose |
 |-----------|---------|
@@ -190,7 +190,7 @@ The `research-agent` example showcases 8 prompt-block event facets chained toget
 
 ## 3. Prompt and Task Categories
 
-Given the workflow DSL, AgentFlow is best suited for **structured multi-step AI
+Given the workflow DSL, Facetwork is best suited for **structured multi-step AI
 tasks** rather than single-shot chat.
 
 ### 3.1 Document Processing Pipelines
@@ -245,11 +245,11 @@ workflow PeerReview(paper: String) => (verdict: String)
 
 ---
 
-## 4. How AgentFlow Accelerates Agent Development
+## 4. How Facetwork Accelerates Agent Development
 
-Without AgentFlow, building a multi-step AI agent means writing custom
+Without Facetwork, building a multi-step AI agent means writing custom
 orchestration logic, state persistence, concurrency control, and monitoring.
-With AgentFlow, these concerns are handled by the platform.
+With Facetwork, these concerns are handled by the platform.
 
 | Concern | Without AFL | With AFL |
 |---------|------------|----------|
@@ -267,7 +267,7 @@ against an event facet name. The platform handles everything else.
 
 ### 4.1 Authoring Roles
 
-AgentFlow's separation of concerns maps naturally to distinct authoring roles:
+Facetwork's separation of concerns maps naturally to distinct authoring roles:
 
 | Role | Writes | Skills required |
 |------|--------|-----------------|

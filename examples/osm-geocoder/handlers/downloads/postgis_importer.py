@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from afl.runtime.storage import localize
+from facetwork.runtime.storage import localize
 
 from ..shared.scan_progress import ScanProgressTracker, _fmt_elapsed, get_file_size
 

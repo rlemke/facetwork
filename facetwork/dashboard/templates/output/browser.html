@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Output Browser — Facetwork Dashboard{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Output Browser</h1>
+    <p>{{ base_dir }}</p>
+</hgroup>
+
+{# Breadcrumbs #}
+<nav class="output-breadcrumbs">
+    {% for crumb in breadcrumbs %}
+        {% if not loop.last %}
+            <a href="/output?path={{ crumb.path | urlencode }}">{{ crumb.name }}</a>
+            <span class="output-breadcrumb-sep">/</span>
+        {% else %}
+            <span class="output-breadcrumb-current">{{ crumb.name }}</span>
+        {% endif %}
+    {% endfor %}
+</nav>
+
+{% if entries %}
+<table class="output-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Size</th>
+            <th>Modified</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for entry in entries %}
+        <tr>
+            <td>
+                {% if entry.is_dir %}
+                    <span class="output-icon">&#128193;</span>
+                    <a href="/output?path={{ entry.path | urlencode }}">{{ entry.name }}/</a>
+                {% else %}
+                    <span class="output-icon">&#128196;</span>
+                    {% set ext = entry.name.rsplit('.', 1)[-1] | lower if '.' in entry.name else '' %}
+                    {% if ext in ['html', 'htm', 'png', 'jpg', 'jpeg', 'svg', 'txt', 'csv', 'json', 'geojson'] %}
+                        <a href="/output/view?path={{ entry.path | urlencode }}" target="_blank">{{ entry.name }}</a>
+                    {% else %}
+                        <span>{{ entry.name }}</span>
+                    {% endif %}
+                {% endif %}
+            </td>
+            <td class="output-meta">{{ entry.size | filesizeformat }}</td>
+            <td class="output-meta">{{ entry.mtime | file_timestamp }}</td>
+            <td class="output-actions">
+                {% if not entry.is_dir %}
+                    {% set ext = entry.name.rsplit('.', 1)[-1] | lower if '.' in entry.name else '' %}
+                    {% if ext in ['html', 'htm', 'png', 'jpg', 'jpeg', 'svg', 'txt', 'csv', 'json', 'geojson'] %}
+                        <a href="/output/view?path={{ entry.path | urlencode }}" target="_blank" class="btn-view">View</a>
+                    {% endif %}
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No files in this directory.</p>
+{% endif %}
+{% endblock %}

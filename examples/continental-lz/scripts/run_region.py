@@ -21,11 +21,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 # Ensure handlers are importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from afl.emitter import emit_dict
-from afl.parser import parse
-from afl.runtime import Evaluator, MemoryStore, Telemetry
-from afl.runtime.registry_runner import RegistryRunner, RegistryRunnerConfig
-from afl.validator import validate
+from facetwork.emitter import emit_dict
+from facetwork.parser import parse
+from facetwork.runtime import Evaluator, MemoryStore, Telemetry
+from facetwork.runtime.registry_runner import RegistryRunner, RegistryRunnerConfig
+from facetwork.validator import validate
 
 # Mapping of region names to (cache namespace, GH namespace) pairs
 REGION_MAP = {
@@ -49,7 +49,7 @@ REGION_MAP = {
 
 
 def build_single_region_afl(region: str, output_dir: str) -> str:
-    """Generate AFL source for a single-region LZ pipeline."""
+    """Generate FFL source for a single-region LZ pipeline."""
     cache_ns, gh_ns = REGION_MAP[region]
     return f"""
 // Auto-generated single-region LZ workflow
@@ -98,22 +98,22 @@ def main() -> None:
     print(f"Building LZ pipeline for: {args.region}")
     print(f"Output directory: {args.output_dir}")
 
-    # Read base AFL sources
+    # Read base FFL sources
     osm_afl_dir = Path(__file__).resolve().parent.parent.parent / "osm-geocoder" / "afl"
     base_files = [
-        osm_afl_dir / "osmtypes.afl",
-        osm_afl_dir / "osmoperations.afl",
-        osm_afl_dir / "osmcache.afl",
-        osm_afl_dir / "osmgraphhopper.afl",
-        osm_afl_dir / "osmgraphhoppercache.afl",
-        osm_afl_dir / "osmzoombuilder.afl",
-        osm_afl_dir / "osmfilters_population.afl",
+        osm_afl_dir / "osmtypes.ffl",
+        osm_afl_dir / "osmoperations.ffl",
+        osm_afl_dir / "osmcache.ffl",
+        osm_afl_dir / "osmgraphhopper.ffl",
+        osm_afl_dir / "osmgraphhoppercache.ffl",
+        osm_afl_dir / "osmzoombuilder.ffl",
+        osm_afl_dir / "osmfilters_population.ffl",
     ]
 
     sources = ""
     for f in base_files:
         if not f.exists():
-            print(f"ERROR: Missing AFL source: {f}")
+            print(f"ERROR: Missing FFL source: {f}")
             sys.exit(1)
         sources += f.read_text() + "\n"
 
@@ -121,7 +121,7 @@ def main() -> None:
     sources += build_single_region_afl(args.region, args.output_dir)
 
     # Parse and validate
-    print("Compiling AFL sources...")
+    print("Compiling FFL sources...")
     ast = parse(sources)
     result = validate(ast)
     if not result.is_valid:

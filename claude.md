@@ -1,12 +1,12 @@
-# CLAUDE.md — AgentFlow
+# CLAUDE.md — Facetwork
 
-AgentFlow is a platform for defining and executing distributed workflows. You write workflows in **AFL** (Agent Flow Language), and the runtime handles execution, dependency resolution, retries, and monitoring.
+Facetwork is a platform for defining and executing distributed workflows. You write workflows in **FFL** (Facetwork Flow Language), and the runtime handles execution, dependency resolution, retries, and monitoring.
 
 ## Getting Started
 
 | Guide | Audience | What You'll Learn |
 |-------|----------|-------------------|
-| **[Beginner's Guide](docs/getting-started/beginners-guide.md)** | New users | Local setup, running your first workflow from the UI, writing basic AFL |
+| **[Beginner's Guide](docs/getting-started/beginners-guide.md)** | New users | Local setup, running your first workflow from the UI, writing basic FFL |
 | **[README](README.md)** | Developers | Installation, Docker setup, parser/emitter API, CLI usage |
 | **[Full Technical Reference](#full-technical-reference)** | Contributors | Compiler internals, runtime architecture, all commands, code conventions |
 
@@ -22,7 +22,7 @@ docker compose run seed
 pip install -e ".[dev,test,dashboard,mcp,mongodb]"
 cp .env.example .env              # edit MongoDB connection
 scripts/seed-examples             # seed example workflows
-python -m afl.dashboard --log-format text
+python -m facetwork.dashboard --log-format text
 # Open http://localhost:8080
 ```
 
@@ -57,7 +57,7 @@ scripts/postgis-kill-vacuum        # kill autovacuum blocking imports
 
 | Term | Meaning |
 |------|---------|
-| **Workflow** | Entry point for execution — defined in AFL with `andThen` steps |
+| **Workflow** | Entry point for execution — defined in FFL with `andThen` steps |
 | **Event Facet** | A step that requires a handler (external code) to execute |
 | **Handler** | Python module that implements an event facet's logic |
 | **Runner** | Service that picks up tasks and dispatches them to handlers |
@@ -95,8 +95,8 @@ Composed workflows in `osm.workflows.sourced` demonstrate the pattern:
 
 | Directory | What's There |
 |-----------|-------------|
-| `afl/` | Compiler + runtime engine |
-| `afl/dashboard/` | Web monitoring UI (FastAPI) |
+| `facetwork/` | Compiler + runtime engine |
+| `facetwork/dashboard/` | Web monitoring UI (FastAPI) |
 | `examples/` | 15+ example workflows with AFL, handlers, and tests |
 | `docs/` | All documentation: getting-started, guides, reference, operations, architecture, contributing |
 | `spec/` | Redirect stubs (documentation moved to `docs/`) |
@@ -108,14 +108,14 @@ Composed workflows in `osm.workflows.sourced` demonstrate the pattern:
 
 | Topic | Document |
 |-------|----------|
-| AFL syntax | [docs/reference/language/grammar.md](docs/reference/language/grammar.md) |
+| FFL syntax | [docs/reference/language/grammar.md](docs/reference/language/grammar.md) |
 | Runtime execution model | [docs/reference/runtime.md](docs/reference/runtime.md) |
 | Distributed step processing | [docs/reference/runtime.md §10.3.1](docs/reference/runtime.md) |
 | Runtime implementation details | [docs/reference/runtime-impl.md](docs/reference/runtime-impl.md) |
 | Building handlers | [docs/reference/agent-sdk.md](docs/reference/agent-sdk.md) |
 | LLM integration | [docs/guides/llm-integration.md](docs/guides/llm-integration.md) |
 | Long-running handlers | [docs/guides/long-running-handlers.md](docs/guides/long-running-handlers.md) |
-| AFL examples | [docs/reference/examples.md](docs/reference/examples.md) |
+| FFL examples | [docs/reference/examples.md](docs/reference/examples.md) |
 | Execution traces | [docs/reference/execution-traces.md](docs/reference/execution-traces.md) |
 | Build & run reference | [docs/reference/cli.md](docs/reference/cli.md) |
 | Non-functional requirements | [docs/reference/nonfunctional.md](docs/reference/nonfunctional.md) |
@@ -130,15 +130,15 @@ Composed workflows in `osm.workflows.sourced` demonstrate the pattern:
 *Everything below is detailed reference for contributors and operators.*
 
 ### Terminology
-- **AgentFlow**: The platform (compiler + runtime + agents)
-- **AFL**: Agent Flow Language — the `.afl` DSL for defining workflows
+- **Facetwork**: The platform (compiler + runtime + agents)
+- **FFL**: Facetwork Flow Language — the `.ffl` DSL for defining workflows
 - **RegistryRunner** (recommended): Universal runner that auto-loads handlers from DB. Register handlers via `register_handler()` or the MCP `afl_manage_handlers` tool.
 
 ### Authoring roles
 
-- **Domain programmers** write AFL to define workflows, facets, schemas, and composition logic — no Python needed.
+- **Domain programmers** write FFL to define workflows, facets, schemas, and composition logic — no Python needed.
 - **Service provider programmers** write handler implementations (Python modules) for event facets.
-- **Claude** can author both AFL definitions and handler implementations from requirements descriptions.
+- **Claude** can author both FFL definitions and handler implementations from requirements descriptions.
 
 ### Core constructs
 - **Facet**: typed attribute structure with parameters and optional return clause
@@ -187,13 +187,13 @@ pytest tests/ examples/ -v -x
 pytest tests/ examples/ --cov=afl --cov-report=term-missing
 
 # CLI
-afl input.afl -o output.json
-afl input.afl --check
+afl input.ffl -o output.json
+afl input.ffl --check
 
 # Services
-python -m afl.dashboard --log-format text   # web UI (port 8080)
-python -m afl.runtime.runner                # runner service
-python -m afl.mcp                           # MCP server (stdio)
+python -m facetwork.dashboard --log-format text   # web UI (port 8080)
+python -m facetwork.runtime.runner                # runner service
+python -m facetwork.mcp                           # MCP server (stdio)
 
 # Runner management
 scripts/start-runner --example hiv-drug-resistance -- --log-format text
@@ -273,7 +273,7 @@ Examples can override these defaults via `runner.env` files (e.g. `examples/osm-
 
 ### MCP server
 
-The MCP server (`python -m afl.mcp`) exposes AFL compiler tools, runtime management, and a PostGIS query tool. Configure it in `.mcp.json` for Claude Code integration.
+The MCP server (`python -m facetwork.mcp`) exposes FFL compiler tools, runtime management, and a PostGIS query tool. Configure it in `.mcp.json` for Claude Code integration.
 
 **PostGIS query tool** (`afl_postgis_query`): runs read-only SQL against the OSM database. Write operations are blocked at two levels (SQL keyword filter + `default_transaction_read_only=on`). Schema:
 - `osm_nodes` (osm_id, region, tags JSONB, geom Point)

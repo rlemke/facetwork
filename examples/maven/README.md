@@ -30,8 +30,8 @@ pip install -e ".[dev]"
 
 ```bash
 # Check runner AFL sources
-afl --primary examples/maven/afl/maven_runner.afl \
-    --library examples/maven/afl/maven_types.afl \
+afl --primary examples/maven/ffl/maven_runner.afl \
+    --library examples/maven/ffl/maven_types.afl \
     --check
 ```
 

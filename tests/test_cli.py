@@ -1,17 +1,17 @@
-"""Tests for AFL command-line interface."""
+"""Tests for FFL command-line interface."""
 
 import json
 from io import StringIO
 from unittest.mock import patch
 
-from afl.cli import main
+from facetwork.cli import main
 
 
 class TestBasicParsing:
     """Test basic file parsing via CLI."""
 
     def test_parse_file(self, tmp_path):
-        afl_file = tmp_path / "test.afl"
+        afl_file = tmp_path / "test.ffl"
         afl_file.write_text("facet Test()")
         output = tmp_path / "out.json"
 
@@ -23,7 +23,7 @@ class TestBasicParsing:
         assert len([d for d in data.get("declarations", []) if d.get("type") == "FacetDecl"]) == 1
 
     def test_parse_file_to_stdout(self, tmp_path, capsys):
-        afl_file = tmp_path / "test.afl"
+        afl_file = tmp_path / "test.ffl"
         afl_file.write_text("facet Hello()")
 
         result = main([str(afl_file)])
@@ -34,7 +34,7 @@ class TestBasicParsing:
         assert data["type"] == "Program"
 
     def test_check_mode(self, tmp_path, capsys):
-        afl_file = tmp_path / "test.afl"
+        afl_file = tmp_path / "test.ffl"
         afl_file.write_text("facet Valid()")
 
         result = main([str(afl_file), "--check"])
@@ -44,7 +44,7 @@ class TestBasicParsing:
         assert "OK" in captured.err
 
     def test_compact_output(self, tmp_path, capsys):
-        afl_file = tmp_path / "test.afl"
+        afl_file = tmp_path / "test.ffl"
         afl_file.write_text("facet Test()")
 
         result = main([str(afl_file), "--compact"])
@@ -54,7 +54,7 @@ class TestBasicParsing:
         assert "\n" not in captured.out.strip()
 
     def test_no_locations(self, tmp_path, capsys):
-        afl_file = tmp_path / "test.afl"
+        afl_file = tmp_path / "test.ffl"
         afl_file.write_text("facet Test()")
 
         result = main([str(afl_file), "--no-locations"])
@@ -65,7 +65,7 @@ class TestBasicParsing:
         assert "location" not in facets[0] if facets else True
 
     def test_no_validate(self, tmp_path, capsys):
-        afl_file = tmp_path / "test.afl"
+        afl_file = tmp_path / "test.ffl"
         afl_file.write_text("facet Dup()\nfacet Dup()")
 
         result = main([str(afl_file), "--no-validate"])
@@ -78,8 +78,8 @@ class TestMultiSource:
     """Test multi-source input options."""
 
     def test_primary_files(self, tmp_path, capsys):
-        f1 = tmp_path / "a.afl"
-        f2 = tmp_path / "b.afl"
+        f1 = tmp_path / "a.ffl"
+        f2 = tmp_path / "b.ffl"
         f1.write_text("facet A()")
         f2.write_text("facet B()")
 
@@ -88,8 +88,8 @@ class TestMultiSource:
         assert result == 0
 
     def test_library_files(self, tmp_path, capsys):
-        primary = tmp_path / "main.afl"
-        lib = tmp_path / "lib.afl"
+        primary = tmp_path / "main.ffl"
+        lib = tmp_path / "lib.ffl"
         primary.write_text("facet Main()")
         lib.write_text("facet Lib()")
 
@@ -98,7 +98,7 @@ class TestMultiSource:
         assert result == 0
 
     def test_conflict_positional_and_multi(self, tmp_path, capsys):
-        f = tmp_path / "test.afl"
+        f = tmp_path / "test.ffl"
         f.write_text("facet Test()")
 
         result = main([str(f), "--primary", str(f)])
@@ -112,31 +112,31 @@ class TestErrorHandling:
     """Test error handling in CLI."""
 
     def test_file_not_found(self, capsys):
-        result = main(["/nonexistent/file.afl"])
+        result = main(["/nonexistent/file.ffl"])
 
         assert result == 1
         captured = capsys.readouterr()
         assert "File not found" in captured.err
 
     def test_primary_file_not_found(self, capsys):
-        result = main(["--primary", "/nonexistent.afl"])
+        result = main(["--primary", "/nonexistent.ffl"])
 
         assert result == 1
         captured = capsys.readouterr()
         assert "File not found" in captured.err
 
     def test_library_file_not_found(self, tmp_path, capsys):
-        primary = tmp_path / "main.afl"
+        primary = tmp_path / "main.ffl"
         primary.write_text("facet Main()")
 
-        result = main(["--primary", str(primary), "--library", "/no.afl"])
+        result = main(["--primary", str(primary), "--library", "/no.ffl"])
 
         assert result == 1
         captured = capsys.readouterr()
         assert "File not found" in captured.err
 
     def test_parse_error(self, tmp_path, capsys):
-        afl_file = tmp_path / "bad.afl"
+        afl_file = tmp_path / "bad.ffl"
         afl_file.write_text("@@@ invalid syntax")
 
         result = main([str(afl_file)])
@@ -146,7 +146,7 @@ class TestErrorHandling:
         assert "Error" in captured.err
 
     def test_validation_error(self, tmp_path, capsys):
-        afl_file = tmp_path / "dup.afl"
+        afl_file = tmp_path / "dup.ffl"
         afl_file.write_text("facet Dup()\nfacet Dup()")
 
         result = main([str(afl_file)])
@@ -156,7 +156,7 @@ class TestErrorHandling:
         assert "Duplicate" in captured.err
 
     def test_output_io_error(self, tmp_path, capsys):
-        afl_file = tmp_path / "test.afl"
+        afl_file = tmp_path / "test.ffl"
         afl_file.write_text("facet Test()")
 
         result = main([str(afl_file), "-o", "/nonexistent/dir/out.json"])
@@ -223,16 +223,16 @@ class TestLogging:
     """Test logging configuration."""
 
     def test_log_level_option(self, tmp_path, capsys):
-        afl_file = tmp_path / "test.afl"
+        afl_file = tmp_path / "test.ffl"
         afl_file.write_text("facet Test()")
 
         result = main([str(afl_file), "--log-level", "DEBUG"])
         assert result == 0
 
     def test_log_file_option(self, tmp_path, capsys):
-        afl_file = tmp_path / "test.afl"
+        afl_file = tmp_path / "test.ffl"
         afl_file.write_text("facet Test()")
-        log_file = tmp_path / "afl.log"
+        log_file = tmp_path / "facetwork.log"
 
         result = main([str(afl_file), "--log-level", "DEBUG", "--log-file", str(log_file)])
         assert result == 0
@@ -242,7 +242,7 @@ class TestIncludeProvenance:
     """Test provenance inclusion."""
 
     def test_include_provenance(self, tmp_path, capsys):
-        afl_file = tmp_path / "test.afl"
+        afl_file = tmp_path / "test.ffl"
         afl_file.write_text("facet Test()")
 
         result = main([str(afl_file), "--include-provenance"])
@@ -260,8 +260,8 @@ class TestCheckModeCount:
     """Test check mode reports source count."""
 
     def test_check_reports_count(self, tmp_path, capsys):
-        f1 = tmp_path / "a.afl"
-        f2 = tmp_path / "b.afl"
+        f1 = tmp_path / "a.ffl"
+        f2 = tmp_path / "b.ffl"
         f1.write_text("facet A()")
         f2.write_text("facet B()")
 

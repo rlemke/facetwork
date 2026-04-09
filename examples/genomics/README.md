@@ -123,7 +123,7 @@ No additional dependencies are required — all handlers simulate bioinformatics
 
 ```bash
 # Check all AFL sources
-for f in examples/genomics/afl/*.afl; do
+for f in examples/genomics/ffl/*.afl; do
     afl "$f" --check && echo "OK: $f"
 done
 ```

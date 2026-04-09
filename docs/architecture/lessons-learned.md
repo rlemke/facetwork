@@ -1,6 +1,6 @@
 # Lessons Learned: Building a Distributed Workflow Engine
 
-Requirements and design decisions that would have saved significant debugging and rework if known upfront. Extracted from the AgentFlow development history (v0.9 through v0.45).
+Requirements and design decisions that would have saved significant debugging and rework if known upfront. Extracted from the Facetwork development history (v0.9 through v0.45).
 
 Intended audience: teams building distributed task execution systems, workflow orchestrators, or multi-agent platforms.
 
@@ -204,7 +204,7 @@ Unit tests with MemoryStore missed all three because they test components in iso
 
 ## Future Requirements: From Distributed Systems Literature
 
-The following requirements are drawn from *Designing Data-Intensive Applications* (Kleppmann), *Release It!* (Nygard), Temporal's durable execution model, and the Recovery Oriented Computing research (Patterson et al.). These represent gaps not yet addressed in AgentFlow.
+The following requirements are drawn from *Designing Data-Intensive Applications* (Kleppmann), *Release It!* (Nygard), Temporal's durable execution model, and the Recovery Oriented Computing research (Patterson et al.). These represent gaps not yet addressed in Facetwork.
 
 ### 13. Dead Letter Queue and Poison Pill Detection
 

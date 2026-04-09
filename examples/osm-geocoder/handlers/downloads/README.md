@@ -117,7 +117,7 @@ All handlers are registered under the qualified name `osm.ops.<FacetName>`.
 
 ## Downloader module
 
-The `handlers/downloader.py` module is a standalone HTTP client with filesystem caching. It has no AgentFlow dependencies and can be used independently.
+The `handlers/downloader.py` module is a standalone HTTP client with filesystem caching. It has no Facetwork dependencies and can be used independently.
 
 ### API
 
@@ -149,7 +149,7 @@ result = download("europe/albania", fmt="shp")
 - PBF and shapefile formats are cached independently (different file extensions)
 - A file is considered cached if it exists on disk — no TTL or staleness check
 - Downloads use streaming (`iter_content`) with an 8 KB chunk size
-- The `User-Agent` header is set to `AgentFlow-OSM-Example/1.0`
+- The `User-Agent` header is set to `Facetwork-OSM-Example/1.0`
 - HTTP errors propagate as `requests.HTTPError` exceptions
 - Timeout is 300 seconds per download
 

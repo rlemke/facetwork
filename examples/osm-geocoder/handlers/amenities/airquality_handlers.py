@@ -14,7 +14,7 @@ import math
 import os
 from typing import Any
 
-from afl.config import get_output_base
+from facetwork.config import get_output_base
 
 from ..shared.output_cache import cached_result, save_result_meta
 

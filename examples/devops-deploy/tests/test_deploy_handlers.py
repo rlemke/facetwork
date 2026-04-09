@@ -309,17 +309,17 @@ class TestDispatch:
 
 
 # ---------------------------------------------------------------------------
-# TestCompilation — AFL parsing and AST checks
+# TestCompilation — FFL parsing and AST checks
 # ---------------------------------------------------------------------------
 class TestCompilation:
     @pytest.fixture()
     def parsed_ast(self):
-        from afl.parser import AFLParser
+        from facetwork.parser import FFLParser
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "deploy.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "deploy.ffl")
         with open(afl_path) as f:
             source = f.read()
-        return AFLParser().parse(source)
+        return FFLParser().parse(source)
 
     def test_afl_parses(self, parsed_ast):
         assert parsed_ast is not None
@@ -347,7 +347,7 @@ class TestCompilation:
 
     def test_when_block_present(self, parsed_ast):
         """Verify andThen when block appears in DeployService workflow."""
-        from afl.ast import WhenBlock
+        from facetwork.ast import WhenBlock
 
         wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "deploy.workflows"]
         deploy_wf = [w for w in wf_ns[0].workflows if w.sig.name == "DeployService"][0]
@@ -360,7 +360,7 @@ class TestCompilation:
 
     def test_foreach_present(self, parsed_ast):
         """Verify andThen foreach appears in BatchDeploy workflow."""
-        from afl.ast import ForeachClause
+        from facetwork.ast import ForeachClause
 
         wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "deploy.workflows"]
         batch_wf = [w for w in wf_ns[0].workflows if w.sig.name == "BatchDeploy"][0]
@@ -371,7 +371,7 @@ class TestCompilation:
 
     def test_array_type_present(self, parsed_ast):
         """Verify [String] array type annotation appears in the AST."""
-        from afl.ast import ArrayType
+        from facetwork.ast import ArrayType
 
         found_array = False
         for ns in parsed_ast.namespaces:
@@ -387,7 +387,7 @@ class TestCompilation:
 
     def test_prompt_block_present(self, parsed_ast):
         """Verify prompt blocks appear on event facets."""
-        from afl.ast import PromptBlock
+        from facetwork.ast import PromptBlock
 
         prompt_count = 0
         for ns in parsed_ast.namespaces:
@@ -409,7 +409,7 @@ class TestAgentIntegration:
         from handlers.monitor.monitor_handlers import _DISPATCH as d3
         from handlers.rollback.rollback_handlers import _DISPATCH as d4
 
-        from afl.runtime.agent import ToolRegistry
+        from facetwork.runtime.agent import ToolRegistry
 
         registry = ToolRegistry()
         for dispatch in [d1, d2, d3, d4]:

@@ -93,12 +93,12 @@ from afl.validator import validate
 from afl.emitter import emit_dict
 import sys; sys.path.insert(0, '../..')
 sources = ''
-for f in ['../osm-geocoder/afl/osmtypes.afl', '../osm-geocoder/afl/osmoperations.afl',
-          '../osm-geocoder/afl/osmcache.afl', '../osm-geocoder/afl/osmgraphhopper.afl',
-          '../osm-geocoder/afl/osmgraphhoppercache.afl', '../osm-geocoder/afl/osmgtfs.afl',
-          '../osm-geocoder/afl/osmzoombuilder.afl', '../osm-geocoder/afl/osmfilters_population.afl',
-          'afl/continental_types.afl', 'afl/continental_lz_workflows.afl',
-          'afl/continental_gtfs_workflows.afl', 'afl/continental_full.afl']:
+for f in ['../osm-geocoder/ffl/osmtypes.ffl', '../osm-geocoder/ffl/osmoperations.ffl',
+          '../osm-geocoder/ffl/osmcache.ffl', '../osm-geocoder/ffl/osmgraphhopper.ffl',
+          '../osm-geocoder/ffl/osmgraphhoppercache.ffl', '../osm-geocoder/ffl/osmgtfs.ffl',
+          '../osm-geocoder/ffl/osmzoombuilder.ffl', '../osm-geocoder/ffl/osmfilters_population.ffl',
+          'afl/continental_types.ffl', 'afl/continental_lz_workflows.ffl',
+          'afl/continental_gtfs_workflows.ffl', 'afl/continental_full.ffl']:
     with open(f) as fh: sources += fh.read() + '\n'
 ast = parse(sources)
 r = validate(ast)

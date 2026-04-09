@@ -119,7 +119,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-python -m afl.cli examples/data-quality-pipeline/afl/quality.afl --check
+python -m afl.cli examples/data-quality-pipeline/ffl/quality.afl --check
 
 # Run tests
 python -m pytest examples/data-quality-pipeline/tests/ -v

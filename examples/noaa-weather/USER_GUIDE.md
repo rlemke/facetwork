@@ -148,7 +148,7 @@ Cache warmup workflows pre-download GHCN-Daily CSVs without running analysis, us
 source .venv/bin/activate
 
 # Seed the NOAA weather workflows into MongoDB
-scripts/publish examples/noaa-weather/afl/weather.afl
+scripts/publish examples/noaa-weather/ffl/weather.afl
 
 # Register handlers and start runner + dashboard
 scripts/start-runner --example noaa-weather -- --log-format text

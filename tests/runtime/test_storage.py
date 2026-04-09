@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from afl.runtime.storage import (
+from facetwork.runtime.storage import (
     HDFSStorageBackend,
     LocalStorageBackend,
     _hdfs_retry,
@@ -154,7 +154,7 @@ class TestHDFSStorageBackend:
         return backend
 
     def test_missing_requests_raises(self):
-        with patch("afl.runtime.storage.HAS_REQUESTS", False):
+        with patch("facetwork.runtime.storage.HAS_REQUESTS", False):
             with pytest.raises(RuntimeError, match="requests is required"):
                 HDFSStorageBackend()
 
@@ -168,19 +168,19 @@ class TestHDFSStorageBackend:
         assert backend._strip_uri("hdfs://namenode:8020/data/file.txt") == "/data/file.txt"
         assert backend._strip_uri("/local/path") == "/local/path"
 
-    @patch("afl.runtime.storage._requests")
+    @patch("facetwork.runtime.storage._requests")
     def test_exists(self, mock_req):
         backend = self._make_backend()
         mock_req.get.return_value = MagicMock(status_code=200)
         assert backend.exists("hdfs://host:8020/data/file.txt") is True
 
-    @patch("afl.runtime.storage._requests")
+    @patch("facetwork.runtime.storage._requests")
     def test_exists_not_found(self, mock_req):
         backend = self._make_backend()
         mock_req.get.return_value = MagicMock(status_code=404)
         assert backend.exists("hdfs://host:8020/missing.txt") is False
 
-    @patch("afl.runtime.storage._requests")
+    @patch("facetwork.runtime.storage._requests")
     def test_open_read(self, mock_req):
         backend = self._make_backend()
         mock_resp = MagicMock()
@@ -190,7 +190,7 @@ class TestHDFSStorageBackend:
         result = backend.open("hdfs://host:8020/data/file.txt", "r")
         assert result.read() == "hello"
 
-    @patch("afl.runtime.storage._requests")
+    @patch("facetwork.runtime.storage._requests")
     def test_open_read_binary(self, mock_req):
         backend = self._make_backend()
         mock_resp = MagicMock()
@@ -203,11 +203,11 @@ class TestHDFSStorageBackend:
     def test_open_write(self):
         backend = self._make_backend()
         stream = backend.open("hdfs://host:8020/data/file.txt", "w")
-        from afl.runtime.storage import _WebHDFSWriteStream
+        from facetwork.runtime.storage import _WebHDFSWriteStream
 
         assert isinstance(stream, _WebHDFSWriteStream)
 
-    @patch("afl.runtime.storage._requests")
+    @patch("facetwork.runtime.storage._requests")
     def test_makedirs(self, mock_req):
         backend = self._make_backend()
         mock_req.put.return_value = MagicMock(status_code=200, raise_for_status=MagicMock())
@@ -216,7 +216,7 @@ class TestHDFSStorageBackend:
         call_args = mock_req.put.call_args
         assert "MKDIRS" in str(call_args)
 
-    @patch("afl.runtime.storage._requests")
+    @patch("facetwork.runtime.storage._requests")
     def test_getsize(self, mock_req):
         backend = self._make_backend()
         mock_resp = MagicMock()
@@ -225,7 +225,7 @@ class TestHDFSStorageBackend:
         mock_req.get.return_value = mock_resp
         assert backend.getsize("/data/file.txt") == 42
 
-    @patch("afl.runtime.storage._requests")
+    @patch("facetwork.runtime.storage._requests")
     def test_rmtree(self, mock_req):
         backend = self._make_backend()
         mock_req.delete.return_value = MagicMock(status_code=200, raise_for_status=MagicMock())
@@ -246,7 +246,7 @@ class TestHDFSStorageBackend:
         backend = self._make_backend()
         assert backend.basename("/data/sub/file.txt") == "file.txt"
 
-    @patch("afl.runtime.storage._requests")
+    @patch("facetwork.runtime.storage._requests")
     def test_getmtime(self, mock_req):
         backend = self._make_backend()
         mock_resp = MagicMock()
@@ -255,7 +255,7 @@ class TestHDFSStorageBackend:
         mock_req.get.return_value = mock_resp
         assert backend.getmtime("/data/file.txt") == 1700000000.0
 
-    @patch("afl.runtime.storage._requests")
+    @patch("facetwork.runtime.storage._requests")
     def test_isfile(self, mock_req):
         backend = self._make_backend()
         mock_resp = MagicMock()
@@ -265,7 +265,7 @@ class TestHDFSStorageBackend:
         mock_req.get.return_value = mock_resp
         assert backend.isfile("/data/file.txt") is True
 
-    @patch("afl.runtime.storage._requests")
+    @patch("facetwork.runtime.storage._requests")
     def test_isdir(self, mock_req):
         backend = self._make_backend()
         mock_resp = MagicMock()
@@ -275,7 +275,7 @@ class TestHDFSStorageBackend:
         mock_req.get.return_value = mock_resp
         assert backend.isdir("/data/dir") is True
 
-    @patch("afl.runtime.storage._requests")
+    @patch("facetwork.runtime.storage._requests")
     def test_listdir(self, mock_req):
         backend = self._make_backend()
         mock_resp = MagicMock()
@@ -374,7 +374,7 @@ class TestHDFSRetry:
             _hdfs_retry(fn, max_retries=3, base_delay=0)
         assert len(calls) == 1
 
-    @patch("afl.runtime.storage._requests")
+    @patch("facetwork.runtime.storage._requests")
     def test_write_stream_retries(self, mock_req):
         """_WebHDFSWriteStream.close() retries on transient datanode 404."""
         import requests
@@ -445,7 +445,7 @@ class TestGetStorageBackend:
         b2 = get_storage_backend("/tmp/other")
         assert b1 is b2
 
-    @patch("afl.runtime.storage.HDFSStorageBackend")
+    @patch("facetwork.runtime.storage.HDFSStorageBackend")
     def test_hdfs_uri(self, mock_hdfs_cls):
         mock_instance = MagicMock()
         mock_hdfs_cls.return_value = mock_instance
@@ -453,7 +453,7 @@ class TestGetStorageBackend:
         mock_hdfs_cls.assert_called_once_with(host="namenode", port=8020)
         assert backend is mock_instance
 
-    @patch("afl.runtime.storage.HDFSStorageBackend")
+    @patch("facetwork.runtime.storage.HDFSStorageBackend")
     def test_hdfs_caching(self, mock_hdfs_cls):
         mock_instance = MagicMock()
         mock_hdfs_cls.return_value = mock_instance

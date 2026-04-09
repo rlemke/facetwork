@@ -27,9 +27,9 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture
 def client():
     """Create a test client with mongomock-backed store."""
-    from afl.dashboard import dependencies as deps
-    from afl.dashboard.app import create_app
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.dashboard import dependencies as deps
+    from facetwork.dashboard.app import create_app
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     store = MongoStore(database_name="afl_test_climate", client=mock_client)

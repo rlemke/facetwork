@@ -14,8 +14,8 @@ Uses mock handlers (no network calls). Run from the repo root:
     PYTHONPATH=. python examples/osm-geocoder/tests/mocked/py/test_germany_cityroutes.py
 """
 
-from afl import emit_dict, parse
-from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+from facetwork import emit_dict, parse
+from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
 
 # ---------------------------------------------------------------------------
 # Program AST - declares the event facets the runtime needs to recognise.
@@ -122,7 +122,7 @@ PROGRAM_AST = {
 
 
 # ---------------------------------------------------------------------------
-# Workflow AFL - a 5-step pipeline:
+# Workflow FFL - a 5-step pipeline:
 #   resolve -> extract cities -> filter by range -> build routes -> map.
 # ---------------------------------------------------------------------------
 
@@ -174,7 +174,7 @@ namespace osm.RegionMap {
 
 
 def compile_workflow() -> dict:
-    """Compile the workflow AFL to a runtime AST dict."""
+    """Compile the workflow FFL to a runtime AST dict."""
     tree = parse(WORKFLOW_AFL)
     program = emit_dict(tree)
     for ns in program.get("namespaces", []):
@@ -343,7 +343,7 @@ def find_event_blocked_step(store: MemoryStore, workflow_id: str) -> tuple[str, 
 
 def main() -> None:
     """Run the city route map workflow end-to-end with mock handlers."""
-    print("Compiling CityRouteMapByRegion from AFL source...")
+    print("Compiling CityRouteMapByRegion from FFL source...")
     workflow_ast = compile_workflow()
     print("  OK\n")
 

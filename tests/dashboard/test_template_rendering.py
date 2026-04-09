@@ -38,9 +38,9 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture
 def client():
     """Create a test client with mongomock-backed store."""
-    from afl.dashboard import dependencies as deps
-    from afl.dashboard.app import create_app
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.dashboard import dependencies as deps
+    from facetwork.dashboard.app import create_app
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     store = MongoStore(database_name="afl_test_templates", client=mock_client)
@@ -56,7 +56,7 @@ def client():
 
 
 def _make_workflow(uuid="wf-1", name="TestWF"):
-    from afl.runtime.entities import WorkflowDefinition
+    from facetwork.runtime.entities import WorkflowDefinition
 
     return WorkflowDefinition(
         uuid=uuid,
@@ -70,7 +70,7 @@ def _make_workflow(uuid="wf-1", name="TestWF"):
 
 
 def _make_runner(uuid="r-1", workflow=None, state="running"):
-    from afl.runtime.entities import RunnerDefinition
+    from facetwork.runtime.entities import RunnerDefinition
 
     if workflow is None:
         workflow = _make_workflow()

@@ -16,7 +16,7 @@
 
 import pytest
 
-from afl.preprocess import PreprocessError, preprocess_script_braces
+from facetwork.preprocess import PreprocessError, preprocess_script_braces
 
 
 class TestPreprocessScriptBraces:
@@ -115,14 +115,14 @@ class TestPreprocessScriptBraces:
         assert 'script "' in result
 
     def test_afl_block_comment_not_preprocessed(self):
-        """script inside AFL block comments is not converted."""
+        """script inside FFL block comments is not converted."""
         source = "/* script { x = 1 } */\nfacet F()"
         result = preprocess_script_braces(source)
         # The block comment is preserved as-is
         assert "/* script { x = 1 } */" in result
 
     def test_afl_string_literal_not_preprocessed(self):
-        """script inside AFL string literals is not converted."""
+        """script inside FFL string literals is not converted."""
         source = 'facet F(x: String = "script { code }")'
         result = preprocess_script_braces(source)
         assert result == source

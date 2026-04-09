@@ -35,7 +35,7 @@ except ImportError:
 # Helper unit tests (no server needed)
 # ---------------------------------------------------------------------------
 
-from afl.dashboard.helpers import (
+from facetwork.dashboard.helpers import (
     categorize_step_state,
     extract_namespace,
     group_runners_by_namespace,
@@ -160,7 +160,7 @@ pytestmark_routes = pytest.mark.skipif(
 
 
 def _make_workflow(uuid="wf-1", name="osm.TestWF"):
-    from afl.runtime.entities import WorkflowDefinition
+    from facetwork.runtime.entities import WorkflowDefinition
 
     return WorkflowDefinition(
         uuid=uuid,
@@ -174,7 +174,7 @@ def _make_workflow(uuid="wf-1", name="osm.TestWF"):
 
 
 def _make_runner(uuid="r-1", workflow=None, state="running"):
-    from afl.runtime.entities import RunnerDefinition
+    from facetwork.runtime.entities import RunnerDefinition
 
     if workflow is None:
         workflow = _make_workflow()
@@ -189,9 +189,9 @@ def _make_runner(uuid="r-1", workflow=None, state="running"):
 @pytest.fixture
 def client():
     """Create a test client with mongomock-backed store."""
-    from afl.dashboard import dependencies as deps
-    from afl.dashboard.app import create_app
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.dashboard import dependencies as deps
+    from facetwork.dashboard.app import create_app
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     store = MongoStore(database_name="afl_test_v2", client=mock_client)
@@ -346,7 +346,7 @@ class TestV2WorkflowOtherTab:
 @pytestmark_routes
 class TestV2HandlerDetail:
     def _make_handler(self, facet_name="osm.Cache"):
-        from afl.runtime.entities import HandlerRegistration
+        from facetwork.runtime.entities import HandlerRegistration
 
         return HandlerRegistration(
             facet_name=facet_name,
@@ -373,7 +373,7 @@ class TestV2HandlerDetail:
         assert "No recent logs" in resp.text
 
     def test_handler_detail_with_active_task(self, client):
-        from afl.runtime.entities import TaskDefinition
+        from facetwork.runtime.entities import TaskDefinition
 
         tc, store = client
         store.save_handler_registration(self._make_handler())
@@ -395,7 +395,7 @@ class TestV2HandlerDetail:
         assert "No active tasks" not in resp.text
 
     def test_handler_detail_with_recent_log(self, client):
-        from afl.runtime.entities import StepLogEntry
+        from facetwork.runtime.entities import StepLogEntry
 
         tc, store = client
         store.save_handler_registration(self._make_handler())
@@ -496,7 +496,7 @@ class TestGlobalSearch:
         assert "/v2/workflows/r-1" in resp.text
 
     def test_search_finds_handler(self, client):
-        from afl.runtime.entities import HandlerRegistration
+        from facetwork.runtime.entities import HandlerRegistration
 
         tc, store = client
         store.save_handler_registration(
@@ -544,7 +544,7 @@ class TestCommandPalette:
 # ---------------------------------------------------------------------------
 
 
-from afl.dashboard.helpers import compute_step_progress
+from facetwork.dashboard.helpers import compute_step_progress
 
 
 class TestComputeStepProgress:
@@ -663,7 +663,7 @@ class TestStepTreeControls:
         assert "step-tree-search" in resp.text
 
     def test_detail_has_summary_bar_with_steps(self, client):
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.step import StepDefinition
 
         tc, store = client
         runner = _make_runner("r-1", state="running")
@@ -741,7 +741,7 @@ class TestAutoRefreshPartials:
         assert "/summary/partial" not in resp.text
 
     def test_step_detail_partial_returns_200(self, client):
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.step import StepDefinition
 
         tc, store = client
         runner = _make_runner("r-1", state="running")
@@ -769,12 +769,12 @@ class TestAutoRefreshPartials:
 # ---------------------------------------------------------------------------
 
 
-from afl.runtime.memory_store import MemoryStore
+from facetwork.runtime.memory_store import MemoryStore
 
 
 class TestGetStepLogsSince:
     def test_memory_store_step_logs_since(self):
-        from afl.runtime.entities import StepLogEntry
+        from facetwork.runtime.entities import StepLogEntry
 
         store = MemoryStore()
         store.save_step_log(
@@ -798,7 +798,7 @@ class TestGetStepLogsSince:
         assert len(logs) == 0
 
     def test_memory_store_workflow_logs_since(self):
-        from afl.runtime.entities import StepLogEntry
+        from facetwork.runtime.entities import StepLogEntry
 
         store = MemoryStore()
         store.save_step_log(
@@ -821,7 +821,7 @@ class TestSSEEndpoints:
         assert resp.status_code == 404
 
     def test_step_detail_has_live_button(self, client):
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.step import StepDefinition
 
         tc, store = client
         runner = _make_runner("r-1", state="running")
@@ -853,7 +853,7 @@ class TestSSEEndpoints:
 # ---------------------------------------------------------------------------
 
 
-from afl.dashboard.helpers import TimelineEntry, compute_timeline
+from facetwork.dashboard.helpers import TimelineEntry, compute_timeline
 
 
 class TestComputeTimeline:
@@ -933,7 +933,7 @@ class TestTimelineRoute:
 # DAG visualization tests
 # ---------------------------------------------------------------------------
 
-from afl.dashboard.graph import compute_dag_layout
+from facetwork.dashboard.graph import compute_dag_layout
 
 
 class TestComputeDagLayout:

@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
-from afl.runtime.storage import get_storage_backend, localize
+from facetwork.runtime.storage import get_storage_backend, localize
 
 from ..shared._output import ensure_dir, open_output, resolve_output_dir, uri_stem
 from ..shared.scan_progress import ScanProgressTracker, get_file_size
@@ -423,14 +423,14 @@ def filter_geojson_by_osm_type(
     import shutil
     import tempfile
 
-    from afl.runtime.storage import localize
+    from facetwork.runtime.storage import localize
 
     from ..shared.geojson_writer import GeoJSONStreamWriter, iter_geojson_features
 
     local_path = localize(input_path)
 
     original_count = 0
-    from afl.config import get_temp_dir
+    from facetwork.config import get_temp_dir
 
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=".geojson", dir=get_temp_dir())
     os.close(tmp_fd)

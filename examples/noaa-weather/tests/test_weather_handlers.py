@@ -158,13 +158,13 @@ class TestWeatherUtils:
 
 
 # ---------------------------------------------------------------------------
-# Compilation test — AFL compiles to JSON
+# Compilation test — FFL compiles to JSON
 # ---------------------------------------------------------------------------
 class TestCompilation:
     def test_weather_afl_compiles(self):
-        from afl import parse, validate
+        from facetwork import parse, validate
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.ffl")
         with open(afl_path) as f:
             source = f.read()
         program = parse(source)
@@ -181,9 +181,9 @@ class TestCompilation:
         assert "declarations" in data
 
     def test_namespaces_present(self):
-        from afl import parse
+        from facetwork import parse
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.ffl")
         with open(afl_path) as f:
             program = parse(f.read())
         ns_names = [ns.name for ns in program.namespaces]
@@ -196,9 +196,9 @@ class TestCompilation:
         assert "weather.Cache" in ns_names
 
     def test_event_facets_defined(self):
-        from afl import parse
+        from facetwork import parse
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.ffl")
         with open(afl_path) as f:
             program = parse(f.read())
 
@@ -214,9 +214,9 @@ class TestCompilation:
         assert "ReverseGeocode" in event_names
 
     def test_workflows_defined(self):
-        from afl import parse
+        from facetwork import parse
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.ffl")
         with open(afl_path) as f:
             program = parse(f.read())
 
@@ -235,9 +235,9 @@ class TestCompilation:
         assert "AnalyzeEurope" in workflow_names
 
     def test_schemas_defined(self):
-        from afl import parse
+        from facetwork import parse
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.ffl")
         with open(afl_path) as f:
             program = parse(f.read())
 

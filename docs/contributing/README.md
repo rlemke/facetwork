@@ -1,13 +1,13 @@
-# Contributing to AgentFlow
+# Contributing to Facetwork
 
-Thank you for your interest in contributing to AgentFlow!
+Thank you for your interest in contributing to Facetwork!
 
 ## Development Setup
 
 ```bash
 # Clone the repository
-git clone https://github.com/rlemke/agentflow.git
-cd agentflow
+git clone https://github.com/rlemke/facetwork.git
+cd facetwork
 
 # Create a virtual environment
 python -m venv .venv

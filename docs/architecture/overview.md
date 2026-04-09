@@ -1,6 +1,6 @@
-# AgentFlow Architecture Overview
+# Facetwork Architecture Overview
 
-AgentFlow is a platform for distributed workflow execution. It combines a compiler for the **Agent Flow Language (AFL)**, a runtime engine that evaluates workflows iteratively, and multi-language agent libraries that process event-driven tasks. MongoDB serves as the persistence and coordination layer.
+Facetwork is a platform for distributed workflow execution. It combines a compiler for the **Facetwork Flow Language (AFL)**, a runtime engine that evaluates workflows iteratively, and multi-language agent libraries that process event-driven tasks. MongoDB serves as the persistence and coordination layer.
 
 ## System Architecture
 
@@ -91,7 +91,7 @@ The `PersistenceAPI` abstract class defines the storage interface. Two implement
 
 ## Agent Execution Models
 
-AgentFlow supports four models for processing event facet tasks. All models work identically whether running as Docker containers or local processes — the only difference is how they are started.
+Facetwork supports four models for processing event facet tasks. All models work identically whether running as Docker containers or local processes — the only difference is how they are started.
 
 ### RunnerService + RegistryRunner (Recommended)
 
@@ -131,7 +131,7 @@ LLM-driven in-process execution via the Claude API. Processes event facets synch
 
 `afl/mcp/server.py`
 
-The Model Context Protocol server exposes AgentFlow to LLM agents. It provides:
+The Model Context Protocol server exposes Facetwork to LLM agents. It provides:
 
 **Tools:**
 | Tool | Description |
@@ -194,7 +194,7 @@ In distributed mode, steps 8-10 happen across multiple servers. Each server clai
 
 ## Configuration
 
-AgentFlow is configured via `afl.config.json` or environment variables:
+Facetwork is configured via `afl.config.json` or environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|

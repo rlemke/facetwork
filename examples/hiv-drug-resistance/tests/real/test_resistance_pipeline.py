@@ -1,6 +1,6 @@
 """Integration tests for the HIV drug resistance pipeline.
 
-Exercises the full runtime pipeline: compile AFL → evaluate → dispatch
+Exercises the full runtime pipeline: compile FFL → evaluate → dispatch
 handlers → resume → completion. Uses MemoryStore (no MongoDB required).
 """
 
@@ -10,7 +10,7 @@ import os
 
 from hiv_helpers import compile_resistance_afl, extract_workflow, run_to_completion
 
-from afl.runtime import ExecutionStatus
+from facetwork.runtime import ExecutionStatus
 
 # ============================================================================
 # Compilation tests — always run (no network, no MongoDB)

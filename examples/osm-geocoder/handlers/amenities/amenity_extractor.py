@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
-from afl.runtime.storage import get_storage_backend
+from facetwork.runtime.storage import get_storage_backend
 
 from ..shared._output import open_output, uri_stem
 

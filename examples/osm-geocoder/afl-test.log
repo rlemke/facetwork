@@ -1,0 +1,2 @@
+2026-03-17T12:15:42 INFO [handlers.downloads.postgis_handlers] PostGisImport processing region=test-region cache=http://example.com/test.pbf
+2026-03-17T12:15:42 WARNING [handlers.downloads.postgis_handlers] PostGisImport: skipping import (osmium=True, psycopg2=False, path=False)

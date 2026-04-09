@@ -113,20 +113,20 @@ No additional dependencies are required — all handlers simulate Jenkins operat
 
 ```bash
 # Check all AFL sources
-for f in examples/jenkins/afl/*.afl; do
+for f in examples/jenkins/ffl/*.afl; do
     afl "$f" --check && echo "OK: $f"
 done
 
 # Compile the pipelines with all dependencies
-afl --primary examples/jenkins/afl/jenkins_pipelines.afl \
-    --library examples/jenkins/afl/jenkins_types.afl \
-    --library examples/jenkins/afl/jenkins_mixins.afl \
-    --library examples/jenkins/afl/jenkins_scm.afl \
-    --library examples/jenkins/afl/jenkins_build.afl \
-    --library examples/jenkins/afl/jenkins_test.afl \
-    --library examples/jenkins/afl/jenkins_artifacts.afl \
-    --library examples/jenkins/afl/jenkins_deploy.afl \
-    --library examples/jenkins/afl/jenkins_notify.afl \
+afl --primary examples/jenkins/ffl/jenkins_pipelines.afl \
+    --library examples/jenkins/ffl/jenkins_types.afl \
+    --library examples/jenkins/ffl/jenkins_mixins.afl \
+    --library examples/jenkins/ffl/jenkins_scm.afl \
+    --library examples/jenkins/ffl/jenkins_build.afl \
+    --library examples/jenkins/ffl/jenkins_test.afl \
+    --library examples/jenkins/ffl/jenkins_artifacts.afl \
+    --library examples/jenkins/ffl/jenkins_deploy.afl \
+    --library examples/jenkins/ffl/jenkins_notify.afl \
     --check
 ```
 

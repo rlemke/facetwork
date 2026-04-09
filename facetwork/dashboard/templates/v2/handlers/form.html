@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}
+{% if handler %}Edit {{ handler.facet_name }}{% else %}New Handler{% endif %} — Facetwork
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="/v2/handlers">Handlers</a>
+        &rsaquo;
+        {% if handler %}
+        <a href="/v2/handlers/{{ handler.facet_name }}">{{ handler.facet_name|short_workflow_name }}</a>
+        &rsaquo; Edit
+        {% else %}
+        New
+        {% endif %}
+    </nav>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{% if handler %}Edit Handler{% else %}New Handler Registration{% endif %}</h1>
+
+{% if error %}
+<article class="error-box" style="border-left: 4px solid var(--pico-color-red-500); padding: 1rem; margin-bottom: 1rem;">
+    <strong>Error:</strong> {{ error }}
+</article>
+{% endif %}
+
+<form method="post"
+      action="{% if handler %}/v2/handlers/{{ handler.facet_name }}/edit{% else %}/v2/handlers/new{% endif %}">
+    <label for="facet_name">
+        Facet Name
+        <input type="text" id="facet_name" name="facet_name"
+               value="{{ handler.facet_name if handler else '' }}"
+               placeholder="namespace.FacetName"
+               {% if handler %}disabled{% endif %}
+               required>
+        {% if handler %}
+        <small>Facet name cannot be changed after creation.</small>
+        {% endif %}
+    </label>
+
+    <label for="module_uri">
+        Module URI
+        <input type="text" id="module_uri" name="module_uri"
+               value="{{ handler.module_uri if handler else '' }}"
+               placeholder="file:///path/to/handler.py or my.handlers.module">
+    </label>
+
+    <label for="entrypoint">
+        Entrypoint
+        <input type="text" id="entrypoint" name="entrypoint"
+               value="{{ handler.entrypoint if handler else 'handle' }}"
+               placeholder="handle">
+    </label>
+
+    <label for="timeout_ms">
+        Timeout (ms)
+        <input type="number" id="timeout_ms" name="timeout_ms"
+               value="{{ handler.timeout_ms if handler else 30000 }}"
+               min="1000" step="1000"
+               placeholder="30000">
+        <small>Maximum execution time in milliseconds. Default: 30000 (30s).</small>
+    </label>
+
+    <label for="description">
+        Description
+        <textarea id="description" name="description" rows="3"
+                  placeholder="Optional description of the handler">{{ handler.metadata.description if handler and handler.metadata and handler.metadata.description else '' }}</textarea>
+    </label>
+
+    <div>
+        <button type="submit">{% if handler %}Update{% else %}Create{% endif %}</button>
+        <a href="{% if handler %}/v2/handlers/{{ handler.facet_name }}{% else %}/v2/handlers{% endif %}"
+           role="button" class="outline secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

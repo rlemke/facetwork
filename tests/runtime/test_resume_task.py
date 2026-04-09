@@ -27,21 +27,21 @@ import os
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     Evaluator,
     ExecutionStatus,
     MemoryStore,
     StepState,
     Telemetry,
 )
-from afl.runtime.agent import ToolRegistry
-from afl.runtime.entities import (
+from facetwork.runtime.agent import ToolRegistry
+from facetwork.runtime.entities import (
     TaskDefinition,
     TaskState,
 )
-from afl.runtime.runner import RunnerConfig, RunnerService
-from afl.runtime.runner.service import RESUME_TASK_NAME, _current_time_ms
-from afl.runtime.types import generate_id
+from facetwork.runtime.runner import RunnerConfig, RunnerService
+from facetwork.runtime.runner.service import RESUME_TASK_NAME, _current_time_ms
+from facetwork.runtime.types import generate_id
 
 # =========================================================================
 # Fixtures
@@ -257,7 +257,7 @@ class TestResumeTaskEndToEnd:
         svc = RunnerService(store, evaluator, config, registry)
 
         # Create a step that is NOT at EVENT_TRANSMIT (use a dummy step)
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.step import StepDefinition
 
         step = StepDefinition(
             id=generate_id(),
@@ -377,7 +377,7 @@ class TestResumeTaskPolling:
         assert saved_task.state == TaskState.COMPLETED
 
     def test_resume_task_excluded_from_builtin_names(self, store, evaluator, config, registry):
-        """afl:resume should not be in _get_builtin_task_names."""
+        """fw:resume should not be in _get_builtin_task_names."""
         svc = RunnerService(store, evaluator, config, registry)
         builtin_names = svc._get_builtin_task_names()
         assert RESUME_TASK_NAME not in builtin_names
@@ -410,8 +410,8 @@ class TestProtocolConstants:
         assert "step_states" in data
         assert "server_states" in data
         assert "protocol_tasks" in data
-        assert data["protocol_tasks"]["resume"]["name"] == "afl:resume"
-        assert data["protocol_tasks"]["execute"]["name"] == "afl:execute"
+        assert data["protocol_tasks"]["resume"]["name"] == "fw:resume"
+        assert data["protocol_tasks"]["execute"]["name"] == "fw:execute"
         assert "mongodb_operations" in data
         assert "claim_task" in data["mongodb_operations"]
         assert "create_resume_task" in data["mongodb_operations"]

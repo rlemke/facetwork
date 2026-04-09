@@ -14,7 +14,7 @@
 
 """Tests for Jinja2 template filters."""
 
-from afl.dashboard.filters import (
+from facetwork.dashboard.filters import (
     doc_description,
     doc_params,
     doc_returns,

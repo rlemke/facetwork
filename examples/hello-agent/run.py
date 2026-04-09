@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hello Agent Example - End-to-End Workflow Execution
 
-This script demonstrates the complete AgentFlow execution cycle:
+This script demonstrates the complete Facetwork execution cycle:
 
     +-------------+     +-------------+     +-------------+
     |   Compile   |---->|   Execute   |---->|    Agent    |
@@ -17,7 +17,7 @@ Run it:
     python examples/hello-agent/run.py
 
 What you'll see:
-    1. AFL source compiled to JSON
+    1. FFL source compiled to JSON
     2. Workflow executes until it hits the event facet (Greet)
     3. Agent polls for tasks, processes the Greet event
     4. Workflow resumes and completes
@@ -26,22 +26,22 @@ What you'll see:
 
 from pathlib import Path
 
-from afl import emit_dict, parse
-from afl.ast_utils import find_all_workflows
-from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
-from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
+from facetwork import emit_dict, parse
+from facetwork.ast_utils import find_all_workflows
+from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+from facetwork.runtime.agent_poller import AgentPoller, AgentPollerConfig
 
 
 def main():
     # -------------------------------------------------------------------------
-    # Step 1: Compile AFL source
+    # Step 1: Compile FFL source
     # -------------------------------------------------------------------------
 
-    afl_path = Path(__file__).parent / "workflow.afl"
+    afl_path = Path(__file__).parent / "workflow.ffl"
     source = afl_path.read_text()
 
     print("=" * 60)
-    print("STEP 1: Compile AFL source")
+    print("STEP 1: Compile FFL source")
     print("=" * 60)
     print(f"\nSource file: {afl_path}\n")
     print(source)

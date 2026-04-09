@@ -20,13 +20,13 @@ including error handling, catch-clause routing, and terminal state detection.
 
 from unittest.mock import MagicMock, patch
 
-from afl.runtime.changers.base import StateChangeResult
-from afl.runtime.changers.block_changer import BlockStateChanger
-from afl.runtime.changers.step_changer import StepStateChanger
-from afl.runtime.changers.yield_changer import YieldStateChanger
-from afl.runtime.states import StepState
-from afl.runtime.step import StepDefinition
-from afl.runtime.types import ObjectType
+from facetwork.runtime.changers.base import StateChangeResult
+from facetwork.runtime.changers.block_changer import BlockStateChanger
+from facetwork.runtime.changers.step_changer import StepStateChanger
+from facetwork.runtime.changers.yield_changer import YieldStateChanger
+from facetwork.runtime.states import StepState
+from facetwork.runtime.step import StepDefinition
+from facetwork.runtime.types import ObjectType
 
 
 def _make_step(
@@ -92,7 +92,7 @@ class TestBlockStateChanger:
         context = _make_context()
         changer = BlockStateChanger(step, context)
 
-        with patch("afl.runtime.handlers.get_handler", return_value=None):
+        with patch("facetwork.runtime.handlers.get_handler", return_value=None):
             result = changer.execute_state(StepState.BLOCK_EXECUTION_BEGIN)
 
         assert isinstance(result, StateChangeResult)
@@ -107,7 +107,7 @@ class TestBlockStateChanger:
         mock_handler = MagicMock()
         mock_handler.process.return_value = StateChangeResult(step=step)
 
-        with patch("afl.runtime.handlers.get_handler", return_value=mock_handler):
+        with patch("facetwork.runtime.handlers.get_handler", return_value=mock_handler):
             result = changer.execute_state(StepState.BLOCK_EXECUTION_BEGIN)
 
         mock_handler.process.assert_called_once()
@@ -122,7 +122,7 @@ class TestBlockStateChanger:
         mock_handler = MagicMock()
         mock_handler.process.side_effect = RuntimeError("handler crash")
 
-        with patch("afl.runtime.handlers.get_handler", return_value=mock_handler):
+        with patch("facetwork.runtime.handlers.get_handler", return_value=mock_handler):
             result = changer.execute_state(StepState.BLOCK_EXECUTION_BEGIN)
 
         assert result.success is False
@@ -185,7 +185,7 @@ class TestStepStateChanger:
         context = _make_context()
         changer = StepStateChanger(step, context)
 
-        with patch("afl.runtime.handlers.get_handler", return_value=None):
+        with patch("facetwork.runtime.handlers.get_handler", return_value=None):
             changer.execute_state(StepState.FACET_INIT_BEGIN)
 
         assert step.transition.request_transition is True
@@ -199,7 +199,7 @@ class TestStepStateChanger:
         mock_handler = MagicMock()
         mock_handler.process.side_effect = ValueError("boom")
 
-        with patch("afl.runtime.handlers.get_handler", return_value=mock_handler):
+        with patch("facetwork.runtime.handlers.get_handler", return_value=mock_handler):
             result = changer.execute_state(StepState.FACET_INIT_BEGIN)
 
         assert result.success is False
@@ -232,7 +232,7 @@ class TestStepStateChanger:
                 handler.process.return_value = StateChangeResult(step=s)
                 return handler
 
-        with patch("afl.runtime.handlers.get_handler", side_effect=mock_get_handler):
+        with patch("facetwork.runtime.handlers.get_handler", side_effect=mock_get_handler):
             changer = StepStateChanger(step, context)
             changer.process()
 
@@ -255,7 +255,7 @@ class TestStepStateChanger:
                 handler.process.return_value = StateChangeResult(step=s)
             return handler
 
-        with patch("afl.runtime.handlers.get_handler", side_effect=mock_get_handler):
+        with patch("facetwork.runtime.handlers.get_handler", side_effect=mock_get_handler):
             result = StepStateChanger(step, context).process()
 
         assert result.success is False
@@ -269,7 +269,7 @@ class TestStepStateChanger:
         def mock_get_handler(state, s, ctx):
             raise RuntimeError("unexpected crash")
 
-        with patch("afl.runtime.handlers.get_handler", side_effect=mock_get_handler):
+        with patch("facetwork.runtime.handlers.get_handler", side_effect=mock_get_handler):
             result = StepStateChanger(step, context).process()
 
         assert result.success is False
@@ -314,7 +314,7 @@ class TestYieldStateChanger:
         context = _make_context()
         changer = YieldStateChanger(step, context)
 
-        with patch("afl.runtime.handlers.get_handler", return_value=None):
+        with patch("facetwork.runtime.handlers.get_handler", return_value=None):
             changer.execute_state(StepState.FACET_INIT_BEGIN)
 
         assert step.transition.request_transition is True
@@ -328,7 +328,7 @@ class TestYieldStateChanger:
         mock_handler = MagicMock()
         mock_handler.process.side_effect = ValueError("boom")
 
-        with patch("afl.runtime.handlers.get_handler", return_value=mock_handler):
+        with patch("facetwork.runtime.handlers.get_handler", return_value=mock_handler):
             result = changer.execute_state(StepState.FACET_INIT_BEGIN)
 
         assert result.success is False
@@ -364,7 +364,7 @@ class TestStateChangerProcessLoop:
             handler.process.return_value = StateChangeResult(step=s)
             return handler
 
-        with patch("afl.runtime.handlers.get_handler", side_effect=mock_get_handler):
+        with patch("facetwork.runtime.handlers.get_handler", side_effect=mock_get_handler):
             result = BlockStateChanger(step, context).process()
 
         assert result.success is True
@@ -381,7 +381,7 @@ class TestStateChangerProcessLoop:
             handler.process.return_value = StateChangeResult(step=s)
             return handler
 
-        with patch("afl.runtime.handlers.get_handler", side_effect=mock_get_handler):
+        with patch("facetwork.runtime.handlers.get_handler", side_effect=mock_get_handler):
             result = BlockStateChanger(step, context).process()
 
         assert result.continue_processing is False

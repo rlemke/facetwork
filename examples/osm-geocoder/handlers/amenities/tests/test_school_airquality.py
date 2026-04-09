@@ -16,8 +16,8 @@ Uses mock handlers (no network calls). Run from the repo root:
 
 import math
 
-from afl import emit_dict, parse
-from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+from facetwork import emit_dict, parse
+from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
 
 # ---------------------------------------------------------------------------
 # Program AST - declares the event facets the runtime needs to recognise.
@@ -128,7 +128,7 @@ PROGRAM_AST = {
 
 
 # ---------------------------------------------------------------------------
-# Workflow AFL - 6-step pipeline: resolve, schools, air quality, correlate,
+# Workflow FFL - 6-step pipeline: resolve, schools, air quality, correlate,
 # stats, map. Steps 2 and 3 depend only on step 1 (parallel-eligible).
 # ---------------------------------------------------------------------------
 
@@ -196,7 +196,7 @@ namespace osm.SchoolAirQuality {
 
 
 def compile_workflow() -> dict:
-    """Compile the workflow AFL to a runtime AST dict."""
+    """Compile the workflow FFL to a runtime AST dict."""
     tree = parse(WORKFLOW_AFL)
     program = emit_dict(tree)
     for ns in program.get("namespaces", []):
@@ -382,7 +382,7 @@ def find_event_blocked_step(store: MemoryStore, workflow_id: str) -> tuple[str, 
 
 def main() -> None:
     """Run the London school air quality workflow end-to-end with mock handlers."""
-    print("Compiling SchoolAirQualityMap from AFL source...")
+    print("Compiling SchoolAirQualityMap from FFL source...")
     workflow_ast = compile_workflow()
     print("  OK\n")
 

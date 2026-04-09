@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "partials/_doc_comment.html" import render_doc %}
+{% block title %}{{ flow.name.name if flow else "Not Found" }} — {{ namespace_name }} — Facetwork{% endblock %}
+{% block content %}
+{% if not flow %}
+<h1>Flow not found</h1>
+<p><a href="/flows">Back to flows</a></p>
+{% else %}
+<h1>{{ flow.name.name }} — {{ namespace_name }}</h1>
+
+{% if flow.compiled_sources %}
+<p>
+    <a href="/flows/{{ flow.uuid }}/source" role="button" class="outline">View AFL Source</a>
+    <a href="/flows/{{ flow.uuid }}/json" role="button" class="outline">View JSON</a>
+</p>
+{% endif %}
+
+<h2>Workflows ({{ ns_workflows|length }})</h2>
+<figure>
+<table>
+    <thead>
+        <tr><th>Name</th><th>Version</th>{% if flow.compiled_sources %}<th></th>{% endif %}</tr>
+    </thead>
+    <tbody>
+        {% for item in ns_workflows %}
+        <tr>
+            <td><strong>{{ item.short_name }}</strong>{% if item.wf.documentation %}{{ render_doc(item.wf.documentation) }}{% endif %}</td>
+            <td>{{ item.wf.version }}</td>
+            {% if flow.compiled_sources %}<td><a href="/flows/{{ flow.uuid }}/run/{{ item.wf.uuid }}" role="button" class="outline">Run</a></td>{% endif %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+
+{% if ns_facets %}
+<h2>Facets ({{ ns_facets|length }})</h2>
+<figure>
+<table>
+    <thead>
+        <tr><th>Name</th><th>Parameters</th><th>Returns</th></tr>
+    </thead>
+    <tbody>
+        {% for item in ns_facets %}
+        <tr>
+            <td><strong>{{ item.short_name }}</strong>{% if item.facet.documentation %}{{ render_doc(item.facet.documentation) }}{% endif %}</td>
+            <td>{% if item.facet.parameters %}{% for p in item.facet.parameters %}{{ p.name }}: {{ p.type_hint }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</td>
+            <td>{{ item.facet.return_type if item.facet.return_type else "—" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% endif %}
+
+<p><a href="/flows/{{ flow.uuid }}">Back to flow</a></p>
+{% endif %}
+{% endblock %}

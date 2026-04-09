@@ -37,7 +37,7 @@ except ImportError:
 # Helper unit tests (no server needed)
 # ---------------------------------------------------------------------------
 
-from afl.dashboard.helpers import (
+from facetwork.dashboard.helpers import (
     SERVER_DOWN_TIMEOUT_MS,
     effective_server_state,
     group_servers_by_group,
@@ -153,7 +153,7 @@ def _make_server_entity(
     state="running",
     ping_time=None,
 ):
-    from afl.runtime.entities import ServerDefinition
+    from facetwork.runtime.entities import ServerDefinition
 
     if ping_time is None:
         # Default to a recent ping so running servers aren't classified as down
@@ -174,9 +174,9 @@ def _make_server_entity(
 @pytest.fixture
 def client():
     """Create a test client with mongomock-backed store."""
-    from afl.dashboard import dependencies as deps
-    from afl.dashboard.app import create_app
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.dashboard import dependencies as deps
+    from facetwork.dashboard.app import create_app
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     store = MongoStore(database_name="afl_test_srv_v2", client=mock_client)
@@ -455,7 +455,7 @@ class TestGroupTasksByRunner:
 
 
 def _make_task_entity(uuid, name="SomeEvent", state="running", runner_id="r1", server_id="srv-1"):
-    from afl.runtime.entities import TaskDefinition
+    from facetwork.runtime.entities import TaskDefinition
 
     return TaskDefinition(
         uuid=uuid,

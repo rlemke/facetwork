@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the AFL distributed runner service.
+"""Tests for the FFL distributed runner service.
 
 Tests cover:
 - RunnerConfig defaults and custom values
@@ -36,23 +36,23 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     Evaluator,
     ExecutionStatus,
     MemoryStore,
     StepState,
     Telemetry,
 )
-from afl.runtime.agent import ToolRegistry
-from afl.runtime.entities import (
+from facetwork.runtime.agent import ToolRegistry
+from facetwork.runtime.entities import (
     ServerDefinition,
     ServerState,
     TaskDefinition,
     TaskState,
 )
-from afl.runtime.runner import RunnerConfig, RunnerService
-from afl.runtime.runner.service import _current_time_ms
-from afl.runtime.types import generate_id
+from facetwork.runtime.runner import RunnerConfig, RunnerService
+from facetwork.runtime.runner.service import _current_time_ms
+from facetwork.runtime.types import generate_id
 
 # =========================================================================
 # Fixtures
@@ -286,7 +286,7 @@ class TestRunnerServiceLifecycle:
         svc._register_server()
         server = store.get_server(svc.server_id)
         assert {"FacetA", "FacetB"}.issubset(set(server.handlers))
-        assert "afl:execute" in server.handlers
+        assert "fw:execute" in server.handlers
 
     def test_register_records_topics(self, store, evaluator, registry):
         config = RunnerConfig(topics=["TopicX", "TopicY"])
@@ -354,7 +354,7 @@ class TestRunnerServicePolling:
 
         # afl:execute is a built-in handler registered by RunnerService
         names = svc._get_builtin_task_names()
-        assert "afl:execute" in names
+        assert "fw:execute" in names
 
     def test_builtin_task_names_excludes_event_handlers(self, store, evaluator):
         """Event handler names are excluded from built-in task names."""
@@ -1143,7 +1143,7 @@ class TestResumeWorkflowEdgeCases:
         mock_store.get_workflow.return_value = mock_wf
 
         mock_source = MagicMock()
-        mock_source.content = "this is not valid AFL %%% syntax"
+        mock_source.content = "this is not valid FFL %%% syntax"
         mock_flow = MagicMock()
         mock_flow.compiled_ast = None
         mock_flow.compiled_sources = [mock_source]
@@ -1159,8 +1159,8 @@ class TestResumeWorkflowEdgeCases:
         """_load_workflow_ast succeeds with compiled_ast on flow."""
         import json
 
-        from afl.emitter import JSONEmitter
-        from afl.parser import AFLParser
+        from facetwork.emitter import JSONEmitter
+        from facetwork.parser import FFLParser
 
         # Build a real compiled AST
         source = """
@@ -1169,7 +1169,7 @@ workflow TestLoad(x: Long) => (result: Long) andThen {
     yield TestLoad(result = step1.input)
 }
 """
-        parser = AFLParser()
+        parser = FFLParser()
         ast = parser.parse(source)
         emitter = JSONEmitter(include_locations=False)
         program_dict = json.loads(emitter.emit(ast))
@@ -1223,8 +1223,8 @@ workflow TestLoad(x: Long) => (result: Long) andThen {
         """_load_workflow_ast returns None when no workflow matches name."""
         import json
 
-        from afl.emitter import JSONEmitter
-        from afl.parser import AFLParser
+        from facetwork.emitter import JSONEmitter
+        from facetwork.parser import FFLParser
 
         source = """
 workflow OtherName(x: Long) => (result: Long) andThen {
@@ -1232,7 +1232,7 @@ workflow OtherName(x: Long) => (result: Long) andThen {
     yield OtherName(result = step1.input)
 }
 """
-        parser = AFLParser()
+        parser = FFLParser()
         ast = parser.parse(source)
         emitter = JSONEmitter(include_locations=False)
         program_dict = json.loads(emitter.emit(ast))
@@ -1258,8 +1258,8 @@ workflow OtherName(x: Long) => (result: Long) andThen {
         """_resume_workflow caches AST loaded from persistence."""
         import json
 
-        from afl.emitter import JSONEmitter
-        from afl.parser import AFLParser
+        from facetwork.emitter import JSONEmitter
+        from facetwork.parser import FFLParser
 
         source = """
 workflow CacheTest(x: Long) => (result: Long) andThen {
@@ -1267,7 +1267,7 @@ workflow CacheTest(x: Long) => (result: Long) andThen {
     yield CacheTest(result = step1.input)
 }
 """
-        parser = AFLParser()
+        parser = FFLParser()
         ast = parser.parse(source)
         emitter = JSONEmitter(include_locations=False)
         program_dict = json.loads(emitter.emit(ast))
@@ -1489,18 +1489,18 @@ class TestExecuteWorkflowHandler:
     """Tests for the built-in afl:execute task handler."""
 
     def test_handler_registered_on_init(self, store, evaluator, config):
-        """afl:execute handler is registered automatically."""
+        """fw:execute handler is registered automatically."""
         registry = ToolRegistry()
         RunnerService(store, evaluator, config, registry)
-        assert registry.has_handler("afl:execute")
+        assert registry.has_handler("fw:execute")
 
     def test_execute_workflow_success(self, evaluator, config):
-        """afl:execute handler executes a workflow and updates runner state."""
+        """fw:execute handler executes a workflow and updates runner state."""
         import json
 
-        from afl.emitter import JSONEmitter
-        from afl.parser import AFLParser
-        from afl.runtime.entities import (
+        from facetwork.emitter import JSONEmitter
+        from facetwork.parser import FFLParser
+        from facetwork.runtime.entities import (
             RunnerState,
         )
 
@@ -1515,7 +1515,7 @@ workflow SimpleWF(x: Long) => (result: Long) andThen {
     yield SimpleWF(result = s1.input)
 }
 """
-        parser = AFLParser()
+        parser = FFLParser()
         ast = parser.parse(afl_source)
         emitter_obj = JSONEmitter(include_locations=False)
         program_dict = json.loads(emitter_obj.emit(ast))
@@ -1560,7 +1560,7 @@ workflow SimpleWF(x: Long) => (result: Long) andThen {
         assert mock_runner.workflow_id == result["workflow_id"]
 
     def test_execute_workflow_flow_not_found(self, evaluator, config):
-        """afl:execute handler raises when flow is not found."""
+        """fw:execute handler raises when flow is not found."""
         mock_store = MagicMock()
         mock_store.get_flow.return_value = None
         mock_store.get_runner.return_value = None
@@ -1578,7 +1578,7 @@ workflow SimpleWF(x: Long) => (result: Long) andThen {
             )
 
     def test_execute_workflow_no_sources(self, evaluator, config):
-        """afl:execute handler raises when flow has no compiled AST or sources."""
+        """fw:execute handler raises when flow has no compiled AST or sources."""
         mock_store = MagicMock()
         mock_flow = MagicMock()
         mock_flow.compiled_ast = None
@@ -1599,11 +1599,11 @@ workflow SimpleWF(x: Long) => (result: Long) andThen {
             )
 
     def test_execute_workflow_name_not_found(self, evaluator, config):
-        """afl:execute handler raises when workflow name not in flow."""
+        """fw:execute handler raises when workflow name not in flow."""
         import json
 
-        from afl.emitter import JSONEmitter
-        from afl.parser import AFLParser
+        from facetwork.emitter import JSONEmitter
+        from facetwork.parser import FFLParser
 
         mock_store = MagicMock()
         afl_source = """
@@ -1614,7 +1614,7 @@ workflow OtherWF(x: Long) => (result: Long) andThen {
     yield OtherWF(result = s1.input)
 }
 """
-        parser = AFLParser()
+        parser = FFLParser()
         ast = parser.parse(afl_source)
         emitter_obj = JSONEmitter(include_locations=False)
         program_dict = json.loads(emitter_obj.emit(ast))
@@ -1638,8 +1638,8 @@ workflow OtherWF(x: Long) => (result: Long) andThen {
             )
 
     def test_execute_workflow_sets_runner_failed_on_error(self, evaluator, config):
-        """afl:execute handler sets runner to FAILED on exception."""
-        from afl.runtime.entities import RunnerState
+        """fw:execute handler sets runner to FAILED on exception."""
+        from facetwork.runtime.entities import RunnerState
 
         mock_store = MagicMock()
         mock_store.get_flow.return_value = None  # Will cause RuntimeError
@@ -1665,7 +1665,7 @@ workflow OtherWF(x: Long) => (result: Long) andThen {
         assert mock_runner.state == RunnerState.FAILED
 
     def test_execute_workflow_no_get_flow(self, store, evaluator, config):
-        """afl:execute handler raises when flow is not found in store."""
+        """fw:execute handler raises when flow is not found in store."""
         # MemoryStore's default get_flow returns None (flow not in store)
         registry = ToolRegistry()
         svc = RunnerService(store, evaluator, config, registry)
@@ -1680,12 +1680,12 @@ workflow OtherWF(x: Long) => (result: Long) andThen {
             )
 
     def test_execute_workflow_as_task(self, evaluator, config):
-        """afl:execute task is processed end-to-end via run_once."""
+        """fw:execute task is processed end-to-end via run_once."""
         import json
 
-        from afl.emitter import JSONEmitter
-        from afl.parser import AFLParser
-        from afl.runtime.entities import RunnerState
+        from facetwork.emitter import JSONEmitter
+        from facetwork.parser import FFLParser
+        from facetwork.runtime.entities import RunnerState
 
         mock_store = MagicMock()
 
@@ -1697,7 +1697,7 @@ workflow TaskWF(x: Long) => (result: Long) andThen {
     yield TaskWF(result = s1.input)
 }
 """
-        parser = AFLParser()
+        parser = FFLParser()
         ast = parser.parse(afl_source)
         emitter_obj = JSONEmitter(include_locations=False)
         program_dict = json.loads(emitter_obj.emit(ast))
@@ -1717,7 +1717,7 @@ workflow TaskWF(x: Long) => (result: Long) andThen {
         # Set up task
         task = TaskDefinition(
             uuid=generate_id(),
-            name="afl:execute",
+            name="fw:execute",
             runner_id="r-1",
             workflow_id="",
             flow_id="f-1",
@@ -1759,7 +1759,7 @@ class TestRunnerASTSnapshot:
 
     def test_runner_definition_defaults_none(self):
         """New RunnerDefinition fields default to None."""
-        from afl.runtime.entities import RunnerDefinition, WorkflowDefinition
+        from facetwork.runtime.entities import RunnerDefinition, WorkflowDefinition
 
         wf = WorkflowDefinition(
             uuid="wf-1",
@@ -1775,12 +1775,12 @@ class TestRunnerASTSnapshot:
         assert runner.workflow_ast is None
 
     def test_execute_snapshots_ast_into_runner(self, evaluator, config):
-        """afl:execute handler snapshots compiled_ast and workflow_ast into runner."""
+        """fw:execute handler snapshots compiled_ast and workflow_ast into runner."""
         import json
 
-        from afl.emitter import JSONEmitter
-        from afl.parser import AFLParser
-        from afl.runtime.entities import RunnerState
+        from facetwork.emitter import JSONEmitter
+        from facetwork.parser import FFLParser
+        from facetwork.runtime.entities import RunnerState
 
         mock_store = MagicMock()
 
@@ -1792,7 +1792,7 @@ workflow SnapshotWF(x: Long) => (result: Long) andThen {
     yield SnapshotWF(result = s1.input)
 }
 """
-        parser = AFLParser()
+        parser = FFLParser()
         ast = parser.parse(afl_source)
         emitter_obj = JSONEmitter(include_locations=False)
         program_dict = json.loads(emitter_obj.emit(ast))
@@ -1830,7 +1830,7 @@ workflow SnapshotWF(x: Long) => (result: Long) andThen {
 
     def test_resume_prefers_runner_ast_over_flow(self, config):
         """_load_workflow_ast prefers runner-snapshotted AST over flow lookup."""
-        from afl.runtime.entities import RunnerDefinition, RunnerState, WorkflowDefinition
+        from facetwork.runtime.entities import RunnerDefinition, RunnerState, WorkflowDefinition
 
         store = MemoryStore()
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
@@ -1866,7 +1866,7 @@ workflow SnapshotWF(x: Long) => (result: Long) andThen {
 
     def test_resume_falls_back_without_runner_ast(self, config):
         """_load_workflow_ast falls back to flow when runner has no ASTs."""
-        from afl.runtime.entities import RunnerDefinition, RunnerState, WorkflowDefinition
+        from facetwork.runtime.entities import RunnerDefinition, RunnerState, WorkflowDefinition
 
         store = MemoryStore()
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
@@ -2423,8 +2423,8 @@ class TestQualifiedFacetNames:
 
     def test_resolve_qualified_name_top_level(self, evaluator, program_ast):
         """Top-level facets resolve to short name."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         ctx = ExecutionContext(
             persistence=evaluator.persistence,
@@ -2438,8 +2438,8 @@ class TestQualifiedFacetNames:
 
     def test_resolve_qualified_name_namespaced(self, evaluator):
         """Namespaced facets resolve to 'ns.FacetName'."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         ns_ast = {
             "type": "Program",
@@ -2468,8 +2468,8 @@ class TestQualifiedFacetNames:
 
     def test_resolve_qualified_name_unknown(self, evaluator):
         """Unknown facet names are returned as-is."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         ctx = ExecutionContext(
             persistence=evaluator.persistence,
@@ -2482,8 +2482,8 @@ class TestQualifiedFacetNames:
 
     def test_get_facet_definition_qualified(self, evaluator):
         """get_facet_definition accepts qualified names."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         ns_ast = {
             "type": "Program",
@@ -2520,7 +2520,7 @@ class TestQualifiedFacetNames:
 
     def test_dependency_graph_qualified_names(self):
         """DependencyGraph resolves facet names to qualified form."""
-        from afl.runtime.dependency import DependencyGraph
+        from facetwork.runtime.dependency import DependencyGraph
 
         program_ast = {
             "type": "Program",

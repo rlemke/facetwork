@@ -7,8 +7,8 @@ Demonstrates the boundary extraction workflow with a mock handler
     PYTHONPATH=. python examples/osm-geocoder/tests/mocked/py/test_boundaries.py
 """
 
-from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
-from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
+from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+from facetwork.runtime.agent_poller import AgentPoller, AgentPollerConfig
 
 # Runtime AST for BoundaryFeatures schema and event facets
 PROGRAM_AST = {

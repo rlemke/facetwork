@@ -29,7 +29,7 @@ pytestmark = pytest.mark.skipif(not MCP_AVAILABLE, reason="mcp not installed")
 
 
 # Import tool/resource helpers directly for synchronous testing
-from afl.mcp.server import (
+from facetwork.mcp.server import (
     _find_workflow,
     _handle_resource,
     _tool_compile,
@@ -39,7 +39,7 @@ from afl.mcp.server import (
     _tool_validate,
     create_server,
 )
-from afl.runtime.entities import (
+from facetwork.runtime.entities import (
     FlowDefinition,
     FlowIdentity,
     HandlerRegistration,
@@ -51,8 +51,8 @@ from afl.runtime.entities import (
     TaskDefinition,
     WorkflowDefinition,
 )
-from afl.runtime.step import StepDefinition
-from afl.runtime.types import ObjectType
+from facetwork.runtime.step import StepDefinition
+from facetwork.runtime.types import ObjectType
 
 try:
     import mongomock
@@ -99,7 +99,7 @@ def store():
     """Create a mongomock-backed store for testing."""
     if not MONGOMOCK_AVAILABLE:
         pytest.skip("mongomock not installed")
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     s = MongoStore(database_name="afl_test_mcp", client=mock_client)
@@ -504,7 +504,7 @@ class TestResources:
         flow = FlowDefinition(
             uuid="f-1",
             name=FlowIdentity(name="MyFlow", path="/flows/my", uuid="f-1"),
-            compiled_sources=[SourceText(name="main.afl", content="facet Test()")],
+            compiled_sources=[SourceText(name="main.ffl", content="facet Test()")],
         )
         store.save_flow(flow)
         data = json.loads(_handle_resource("afl://flows/f-1/source", lambda: store))

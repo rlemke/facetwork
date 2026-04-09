@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL runtime evaluator.
+"""Tests for FFL runtime evaluator.
 
 Includes integration tests for spec examples 21.1, 21.2, 21.3,
 and 70_examples.md examples 2, 3, and 4.
@@ -20,7 +20,7 @@ and 70_examples.md examples 2, 3, and 4.
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     Evaluator,
     ExecutionStatus,
     MemoryStore,
@@ -315,7 +315,7 @@ class TestIdempotency:
 
     def test_duplicate_step_creation_prevented(self, store):
         """Test that duplicate steps are not created."""
-        from afl.runtime import StepDefinition, block_id, workflow_id
+        from facetwork.runtime import StepDefinition, block_id, workflow_id
 
         wf_id = workflow_id()
         b_id = block_id()
@@ -1127,8 +1127,8 @@ class TestExecutionContext:
 
     @pytest.fixture
     def context(self, store):
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         return ExecutionContext(
             persistence=store,
@@ -1139,10 +1139,10 @@ class TestExecutionContext:
 
     def test_get_statement_definition_with_graph(self, context):
         """get_statement_definition returns stmt when graph is cached (lines 73-75)."""
-        from afl.runtime.block import StatementDefinition
-        from afl.runtime.dependency import DependencyGraph
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.block import StatementDefinition
+        from facetwork.runtime.dependency import DependencyGraph
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         block_id = "block-1"
         stmt = StatementDefinition(
@@ -1168,8 +1168,8 @@ class TestExecutionContext:
 
     def test_get_statement_definition_no_graph(self, context):
         """get_statement_definition returns None when no graph cached (line 76)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-ctx-1",
@@ -1182,8 +1182,8 @@ class TestExecutionContext:
 
     def test_get_block_ast_no_container_with_workflow(self, context):
         """get_block_ast returns workflow body when block has no container (lines 95-96)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         context.workflow_ast = {
             "name": "Test",
@@ -1200,8 +1200,8 @@ class TestExecutionContext:
 
     def test_get_block_ast_no_container_no_workflow(self, context):
         """get_block_ast returns None when no container and no workflow_ast (line 97)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         context.workflow_ast = None
         block_step = StepDefinition.create(
@@ -1213,8 +1213,8 @@ class TestExecutionContext:
 
     def test_get_block_ast_container_not_found(self, context):
         """get_block_ast returns None when container not found (line 102)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         block_step = StepDefinition.create(
             workflow_id="wf-ctx-1",
@@ -1226,8 +1226,8 @@ class TestExecutionContext:
 
     def test_get_block_ast_container_is_root_no_workflow_ast(self, context, store):
         """get_block_ast returns None when container is root but no workflow_ast (line 109)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         context.workflow_ast = None
 
@@ -1248,8 +1248,8 @@ class TestExecutionContext:
 
     def test_get_block_ast_falls_through_to_none(self, context, store):
         """get_block_ast returns None when no body found (line 122)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         # Create a container that is NOT root (has its own container_id)
         # but has no inline body and no facet body
@@ -1271,8 +1271,8 @@ class TestExecutionContext:
 
     def test_find_step_in_created_steps(self, context):
         """_find_step finds step in pending created_steps (line 136)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-ctx-1",
@@ -1286,8 +1286,8 @@ class TestExecutionContext:
 
     def test_find_statement_body_no_statement_id(self, context):
         """_find_statement_body returns None when no statement_id (line 157)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-ctx-1",
@@ -1298,8 +1298,8 @@ class TestExecutionContext:
 
     def test_find_statement_body_no_containing_block(self, context):
         """_find_statement_body returns None when no containing block AST (line 162)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-ctx-1",
@@ -1312,8 +1312,8 @@ class TestExecutionContext:
 
     def test_find_statement_body_no_matching_statement(self, context, store):
         """_find_statement_body returns None when stmt not in AST (line 169)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         # Set up a workflow AST with body
         context.workflow_ast = {
@@ -1353,8 +1353,8 @@ class TestExecutionContext:
 
     def test_find_containing_block_ast_no_block_id(self, context):
         """_find_containing_block_ast returns None when no block_id (line 183)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-ctx-1",
@@ -1365,8 +1365,8 @@ class TestExecutionContext:
 
     def test_find_containing_block_ast_block_not_found(self, context):
         """_find_containing_block_ast returns None when block step not found (line 188)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-ctx-1",
@@ -1378,8 +1378,8 @@ class TestExecutionContext:
 
     def test_get_completed_step_by_name_cache_hit(self, context):
         """get_completed_step_by_name returns from cache (line 218)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-ctx-1",
@@ -1400,10 +1400,10 @@ class TestExecutionContext:
 
     def test_get_completed_step_by_name_with_pending_created(self, context, store):
         """get_completed_step_by_name checks created_steps (lines 229-230)."""
-        from afl.runtime.block import StatementDefinition
-        from afl.runtime.dependency import DependencyGraph
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.block import StatementDefinition
+        from facetwork.runtime.dependency import DependencyGraph
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         block_id = "block-pending"
 
@@ -1434,10 +1434,10 @@ class TestExecutionContext:
 
     def test_get_completed_step_by_name_with_pending_updated(self, context, store):
         """get_completed_step_by_name merges updated_steps (lines 232-234)."""
-        from afl.runtime.block import StatementDefinition
-        from afl.runtime.dependency import DependencyGraph
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.block import StatementDefinition
+        from facetwork.runtime.dependency import DependencyGraph
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         block_id = "block-updated"
 
@@ -1474,8 +1474,8 @@ class TestExecutionContext:
 
     def test_get_completed_step_by_name_returns_none(self, context, store):
         """get_completed_step_by_name returns None when no match (line 245)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         # Save a step that is not complete
         step = StepDefinition.create(
@@ -1661,7 +1661,7 @@ class TestEvaluatorEdgeCases:
 
     def test_max_iterations_exceeded(self, store):
         """execute stops at max_iterations (line 363->394 timeout path)."""
-        from afl.runtime.evaluator import ExecutionResult
+        from facetwork.runtime.evaluator import ExecutionResult
 
         evaluator = Evaluator(
             persistence=store,
@@ -1686,8 +1686,8 @@ class TestEvaluatorEdgeCases:
 
     def test_build_result_root_error(self, store):
         """_build_result returns error when root step is in error (lines 584-586)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
 
@@ -1709,9 +1709,9 @@ class TestEvaluatorEdgeCases:
 
     def test_build_result_root_error_no_transition_error(self, store):
         """_build_result uses default error when transition.error is None (line 584)."""
-        from afl.runtime.states import StepState
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.states import StepState
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
 
@@ -1733,8 +1733,8 @@ class TestEvaluatorEdgeCases:
 
     def test_build_result_not_complete_not_error(self, store):
         """_build_result returns 'did not complete' when root is neither (line 594-599)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
 
@@ -1758,8 +1758,8 @@ class TestEvaluatorEdgeCases:
 
     def test_continue_step_wrong_state(self, store, evaluator):
         """continue_step raises ValueError when step not at EVENT_TRANSMIT (line 630)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-1",
@@ -1778,8 +1778,8 @@ class TestEvaluatorEdgeCases:
 
     def test_retry_step_wrong_state(self, store, evaluator):
         """retry_step raises ValueError when step not at STATEMENT_ERROR."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-1",
@@ -1793,8 +1793,8 @@ class TestEvaluatorEdgeCases:
 
     def test_continue_step_recovers_from_error(self, store, evaluator):
         """continue_step with result recovers a step from STATEMENT_ERROR."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-1",
@@ -1815,8 +1815,8 @@ class TestEvaluatorEdgeCases:
 
     def test_continue_step_skips_completed_terminal(self, store, evaluator):
         """continue_step without result skips a COMPLETE step (no-op)."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-1",
@@ -1834,9 +1834,9 @@ class TestEvaluatorEdgeCases:
 
     def test_retry_step_resets_to_event_transmit(self, store, evaluator):
         """retry_step resets step from STATEMENT_ERROR to EVENT_TRANSMIT."""
-        from afl.runtime.entities import TaskDefinition
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.entities import TaskDefinition
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-1",
@@ -1889,9 +1889,9 @@ class TestEvaluatorEdgeCases:
 
     def test_resume_re_pauses_at_event_blocked(self, store):
         """resume returns PAUSED when steps still at EVENT_TRANSMIT (line 697)."""
-        from afl.runtime.states import StepState
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.states import StepState
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
 
@@ -1920,10 +1920,10 @@ class TestEvaluatorEdgeCases:
         """_process_step detects attribute change without state change (lines 554-555)."""
         from unittest.mock import MagicMock, patch
 
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
 
@@ -1951,7 +1951,7 @@ class TestEvaluatorEdgeCases:
         mock_changer = MagicMock()
         mock_changer.process.return_value = mock_result
 
-        with patch("afl.runtime.evaluator.get_state_changer", return_value=mock_changer):
+        with patch("facetwork.runtime.evaluator.get_state_changer", return_value=mock_changer):
             progress = evaluator._process_step(step, context)
 
         assert progress is True
@@ -1971,10 +1971,10 @@ class TestEvaluatorIteration:
 
     def test_run_iteration_skips_duplicate_step_ids(self, store):
         """_run_iteration skips already-processed step IDs (line 483)."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
 
@@ -2001,10 +2001,10 @@ class TestEvaluatorIteration:
     def test_run_iteration_processes_created_steps(self, store):
         """_run_iteration processes newly created steps (lines 502-508)."""
 
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
 
@@ -2987,8 +2987,8 @@ class TestIterationTraces:
 
         Spec: 8 steps, 8 iterations (0-7), output result=3.
         """
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         store = MemoryStore()
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
@@ -3120,7 +3120,7 @@ class TestIterationTraces:
         wf_id = "wf-trace-2"
 
         # Manually set up the execution context
-        from afl.runtime.types import WorkflowId
+        from facetwork.runtime.types import WorkflowId
 
         wf_id = WorkflowId(wf_id)
         defaults = evaluator._extract_defaults(workflow_ast, inputs)
@@ -3205,9 +3205,9 @@ class TestIterationTraces:
 
         Spec: 11 steps, 11 iterations (0-10), output result=13.
         """
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
-        from afl.runtime.types import WorkflowId
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.types import WorkflowId
 
         store = MemoryStore()
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
@@ -4089,7 +4089,7 @@ class TestIterationTraces:
         When a step has an inline andThen body, the block created for it should
         use that inline body, not the facet-level body.
 
-        AFL structure:
+        FFL structure:
             facet Value(input: Long)
             facet Inner(input: Long) => (output: Long)
               andThen { v = Value(input = $.input); yield Inner(output = v.input) }
@@ -4262,7 +4262,7 @@ class TestIterationTraces:
     def test_facet_level_block_creation(self):
         """Verify calling a facet with an andThen body creates a block from the facet definition.
 
-        AFL structure:
+        FFL structure:
             facet Value(input: Long)
             facet Adder(a: Long, b: Long) => (sum: Long)
               andThen { s1 = Value(input = $.a); s2 = Value(input = $.b);
@@ -4965,8 +4965,8 @@ class TestDirtyBlockTracking:
 
     def test_execution_context_dirty_blocks_none_means_all_dirty(self):
         """When _dirty_blocks is None, is_block_dirty returns True for any ID."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         ctx = ExecutionContext(
             persistence=MemoryStore(),
@@ -4981,8 +4981,8 @@ class TestDirtyBlockTracking:
 
     def test_execution_context_empty_dirty_set_means_nothing_dirty(self):
         """When _dirty_blocks is empty set, is_block_dirty returns False."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         ctx = ExecutionContext(
             persistence=MemoryStore(),
@@ -4997,8 +4997,8 @@ class TestDirtyBlockTracking:
 
     def test_mark_block_dirty_adds_to_set(self):
         """mark_block_dirty adds block ID to the dirty set."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         ctx = ExecutionContext(
             persistence=MemoryStore(),
@@ -5014,8 +5014,8 @@ class TestDirtyBlockTracking:
 
     def test_mark_block_dirty_noop_when_none(self):
         """mark_block_dirty is a no-op when _dirty_blocks is None."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         ctx = ExecutionContext(
             persistence=MemoryStore(),
@@ -5031,8 +5031,8 @@ class TestDirtyBlockTracking:
 
     def test_mark_block_dirty_ignores_none_id(self):
         """mark_block_dirty ignores None block_id."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         ctx = ExecutionContext(
             persistence=MemoryStore(),
@@ -5047,8 +5047,8 @@ class TestDirtyBlockTracking:
 
     def test_mark_block_processed_removes_from_set(self):
         """mark_block_processed removes block from dirty set."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         ctx = ExecutionContext(
             persistence=MemoryStore(),
@@ -5066,9 +5066,9 @@ class TestDirtyBlockTracking:
         """Continue-state blocks are skipped in _run_iteration when not dirty."""
         from unittest.mock import patch
 
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
 
         wf_id = "wf-skip-clean"
 
@@ -5103,9 +5103,9 @@ class TestDirtyBlockTracking:
         """Continue-state blocks ARE processed when in the dirty set."""
         from unittest.mock import MagicMock, patch
 
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
 
         wf_id = "wf-dirty-block"
 
@@ -5153,9 +5153,9 @@ class TestDirtyBlockTracking:
         """Continue block is removed from dirty set when processed with no progress."""
         from unittest.mock import patch
 
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
 
         wf_id = "wf-clean-after"
 
@@ -5189,9 +5189,9 @@ class TestDirtyBlockTracking:
         """_process_step marks block_id and container_id as dirty on progress."""
         from unittest.mock import MagicMock, patch
 
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
 
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
 
@@ -5232,7 +5232,7 @@ class TestDirtyBlockTracking:
         mock_changer = MagicMock()
         mock_changer.process.return_value = mock_result
 
-        with patch("afl.runtime.evaluator.get_state_changer", return_value=mock_changer):
+        with patch("facetwork.runtime.evaluator.get_state_changer", return_value=mock_changer):
             progress = evaluator._process_step(step, context)
 
         assert progress is True
@@ -5260,7 +5260,7 @@ class TestDirtyBlockTracking:
 
     def test_resume_step_seeds_dirty_from_chain(self, store, evaluator):
         """resume_step() seeds dirty set from Continue blocks in the chain."""
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.step import StepDefinition
 
         wf_id = "wf-seed-dirty"
 
@@ -5334,8 +5334,8 @@ class TestErrorPropagation:
 
     def test_step_analysis_counts_errored_steps(self, store):
         """StepAnalysis categorizes error steps and includes them in done check."""
-        from afl.runtime.block import StatementDefinition, StepAnalysis
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.block import StatementDefinition, StepAnalysis
+        from facetwork.runtime.step import StepDefinition
 
         block = StepDefinition.create(
             workflow_id="wf-err",
@@ -5381,8 +5381,8 @@ class TestErrorPropagation:
 
     def test_step_analysis_not_done_with_pending_and_error(self, store):
         """StepAnalysis is not done when some steps are still pending."""
-        from afl.runtime.block import StatementDefinition, StepAnalysis
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.block import StatementDefinition, StepAnalysis
+        from facetwork.runtime.step import StepDefinition
 
         block = StepDefinition.create(
             workflow_id="wf-err2",
@@ -5428,8 +5428,8 @@ class TestErrorPropagation:
 
     def test_step_analysis_errored_deps_satisfy_downstream(self, store):
         """Errored steps satisfy dependency requirements for downstream steps."""
-        from afl.runtime.block import StatementDefinition, StepAnalysis
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.block import StatementDefinition, StepAnalysis
+        from facetwork.runtime.step import StepDefinition
 
         block = StepDefinition.create(
             workflow_id="wf-dep",
@@ -5471,8 +5471,8 @@ class TestErrorPropagation:
 
     def test_block_analysis_counts_errored_blocks(self, store):
         """BlockAnalysis treats errored blocks as terminal."""
-        from afl.runtime.block import BlockAnalysis
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.block import BlockAnalysis
+        from facetwork.runtime.step import StepDefinition
 
         container = StepDefinition.create(
             workflow_id="wf-ba",
@@ -5507,12 +5507,12 @@ class TestErrorPropagation:
 
     def test_block_execution_continue_propagates_error(self, store):
         """BlockExecutionContinue marks block as error when all children are terminal with errors."""
-        from afl.runtime.block import StatementDefinition
-        from afl.runtime.dependency import DependencyGraph
-        from afl.runtime.evaluator import ExecutionContext, IterationChanges
-        from afl.runtime.handlers.block_execution import BlockExecutionContinueHandler
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.telemetry import Telemetry
+        from facetwork.runtime.block import StatementDefinition
+        from facetwork.runtime.dependency import DependencyGraph
+        from facetwork.runtime.evaluator import ExecutionContext, IterationChanges
+        from facetwork.runtime.handlers.block_execution import BlockExecutionContinueHandler
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.telemetry import Telemetry
 
         wf_id = "wf-prop"
         block = StepDefinition.create(
@@ -5563,8 +5563,8 @@ class TestErrorPropagation:
 
     def test_completion_progress_includes_errors(self, store):
         """completion_progress counts both completed and errored steps."""
-        from afl.runtime.block import StatementDefinition, StepAnalysis
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.block import StatementDefinition, StepAnalysis
+        from facetwork.runtime.step import StepDefinition
 
         block = StepDefinition.create(
             workflow_id="wf-prog", object_type=ObjectType.AND_THEN, facet_name=""
@@ -6027,7 +6027,7 @@ class TestCatchBlockExecution:
 
     def test_catch_error_data_accessible(self, store, evaluator):
         """Error info (s.error, s.error_type) is stored as pseudo-returns."""
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.step import StepDefinition
 
         step = StepDefinition.create(
             workflow_id="wf-catch",
@@ -6047,10 +6047,10 @@ class TestCatchBlockExecution:
 
     def test_catch_failure_propagates(self, store, evaluator):
         """When catch itself errors, step transitions to STATEMENT_ERROR."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.handlers.catch_execution import CatchContinueHandler
-        from afl.runtime.persistence import IterationChanges
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.handlers.catch_execution import CatchContinueHandler
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
 
         parent = StepDefinition.create(
             workflow_id="wf-catch-fail",
@@ -6085,10 +6085,10 @@ class TestCatchBlockExecution:
 
     def test_simple_catch_creates_sub_block(self, store, evaluator):
         """CatchBeginHandler creates a catch sub-block with correct type."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.handlers.catch_execution import CatchBeginHandler
-        from afl.runtime.persistence import IterationChanges
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.handlers.catch_execution import CatchBeginHandler
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
 
         wf_id = "wf-catch-sub"
 
@@ -6145,10 +6145,10 @@ class TestCatchBlockExecution:
 
     def test_catch_continue_completes_on_success(self, store, evaluator):
         """CatchContinueHandler transitions when sub-blocks complete."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.handlers.catch_execution import CatchContinueHandler
-        from afl.runtime.persistence import IterationChanges
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.handlers.catch_execution import CatchContinueHandler
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
 
         parent = StepDefinition.create(
             workflow_id="wf-catch-ok",
@@ -6185,9 +6185,9 @@ class TestCatchBlockExecution:
 
     def test_workflow_level_catch_ast_found(self, store, evaluator):
         """_find_statement_catch finds workflow-level catch."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
 
         workflow_ast = self._workflow_level_catch_ast()
         context = ExecutionContext(
@@ -6212,8 +6212,8 @@ class TestCatchBlockExecution:
 
     def test_statement_level_catch_ast_found(self, store, evaluator):
         """_find_statement_catch finds statement-level catch."""
-        from afl.runtime.evaluator import ExecutionContext
-        from afl.runtime.persistence import IterationChanges
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.persistence import IterationChanges
 
         workflow_ast = self._simple_catch_workflow_ast()
         context = ExecutionContext(
@@ -6224,7 +6224,7 @@ class TestCatchBlockExecution:
             workflow_ast=workflow_ast,
         )
 
-        from afl.runtime.step import StepDefinition
+        from facetwork.runtime.step import StepDefinition
 
         root = StepDefinition.create(
             workflow_id="wf-stmt",

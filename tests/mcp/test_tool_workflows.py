@@ -27,7 +27,7 @@ except ImportError:
 
 pytestmark = pytest.mark.skipif(not MCP_AVAILABLE, reason="mcp not installed")
 
-from afl.mcp.server import (
+from facetwork.mcp.server import (
     _tool_compile,
     _tool_execute_workflow,
     _tool_resume_workflow,
@@ -50,7 +50,7 @@ except ImportError:
 def store():
     if not MONGOMOCK_AVAILABLE:
         pytest.skip("mongomock not installed")
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     s = MongoStore(database_name="afl_test_mcp_workflows", client=mock_client)

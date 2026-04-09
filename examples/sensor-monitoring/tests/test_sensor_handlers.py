@@ -1,4 +1,4 @@
-"""Tests for sensor-monitoring handlers and AFL compilation."""
+"""Tests for sensor-monitoring handlers and FFL compilation."""
 
 from __future__ import annotations
 
@@ -336,12 +336,12 @@ class TestDispatch:
 class TestCompilation:
     @pytest.fixture()
     def parsed_ast(self):
-        from afl.parser import AFLParser
+        from facetwork.parser import FFLParser
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "monitor.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "monitor.ffl")
         with open(afl_path) as f:
             source = f.read()
-        return AFLParser().parse(source)
+        return FFLParser().parse(source)
 
     def test_afl_parses(self, parsed_ast):
         assert parsed_ast is not None
@@ -376,7 +376,7 @@ class TestCompilation:
 
     def test_null_literal_in_call(self, parsed_ast):
         """Verify null literal appears in IngestReading and ClassifyAlert defaults."""
-        from afl.ast import Literal
+        from facetwork.ast import Literal
 
         null_count = 0
         for ns in parsed_ast.namespaces:
@@ -388,7 +388,7 @@ class TestCompilation:
 
     def test_mixin_alias_present(self, parsed_ast):
         """Verify mixin alias ('as retry', 'as alertcfg') in workflow steps."""
-        from afl.ast import AndThenBlock, MixinCall
+        from facetwork.ast import AndThenBlock, MixinCall
 
         aliases = []
         for ns in parsed_ast.namespaces:
@@ -406,7 +406,7 @@ class TestCompilation:
 
     def test_unary_negation_in_schema_inst(self, parsed_ast):
         """Verify unary negation appears in ThresholdConfig instantiation."""
-        from afl.ast import AndThenBlock, UnaryExpr
+        from facetwork.ast import AndThenBlock, UnaryExpr
 
         unary_count = 0
         for ns in parsed_ast.namespaces:
@@ -433,7 +433,7 @@ class TestAgentIntegration:
         from handlers.ingestion.ingestion_handlers import _DISPATCH as d1
         from handlers.reporting.reporting_handlers import _DISPATCH as d3
 
-        from afl.runtime.agent import ToolRegistry
+        from facetwork.runtime.agent import ToolRegistry
 
         registry = ToolRegistry()
         for dispatch in [d1, d2, d3]:
@@ -465,8 +465,8 @@ class TestAgentIntegration:
     def test_claude_agent_runner_with_sensor_handler(self):
         from handlers.ingestion.ingestion_handlers import handle_ingest_reading
 
-        from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
-        from afl.runtime.agent import ClaudeAgentRunner, ToolRegistry
+        from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+        from facetwork.runtime.agent import ClaudeAgentRunner, ToolRegistry
 
         store = MemoryStore()
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
@@ -553,8 +553,8 @@ class TestAgentIntegration:
 
     def test_agent_poller_with_mixin_args(self):
         """Verify mixin args are passed to handler via AgentPoller."""
-        from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
-        from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
+        from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+        from facetwork.runtime.agent_poller import AgentPoller, AgentPollerConfig
 
         store = MemoryStore()
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))

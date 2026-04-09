@@ -39,8 +39,8 @@ def _osm_handlers_on_path():
     _ensure_osm_handlers()
 
 
-from afl.runtime import Evaluator, Telemetry
-from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
+from facetwork.runtime import Evaluator, Telemetry
+from facetwork.runtime.agent_poller import AgentPoller, AgentPollerConfig
 
 
 def _use_real_mongodb(request) -> bool:
@@ -63,10 +63,10 @@ def pytest_collection_modifyitems(config, items):
 def mongo_store(request):
     """Create a MongoStore backed by a real MongoDB server.
 
-    Uses AFL config for connection settings. Database is dropped after each test.
+    Uses FFL config for connection settings. Database is dropped after each test.
     """
-    from afl.config import load_config
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.config import load_config
+    from facetwork.runtime.mongo_store import MongoStore
 
     config = load_config()
     store = MongoStore(

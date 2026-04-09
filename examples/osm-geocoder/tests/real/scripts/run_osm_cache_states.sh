@@ -79,16 +79,16 @@ echo ""
 # 4. Compile the AFL workflow
 # ---------------------------------------------------------------------------
 echo "=== Compiling osm_cache_states.afl ==="
-AFL_FILE="$REAL_DIR/afl/osm_cache_states.afl"
+AFL_FILE="$REAL_DIR/ffl/osm_cache_states.ffl"
 OUTPUT_FILE="$REAL_DIR/osm_cache_states.json"
 
 cd "$PROJECT_DIR"
 source .venv/bin/activate 2>/dev/null || true
 
 afl --primary "$AFL_FILE" \
-    --library "$EXAMPLE_DIR/afl/osmtypes.afl" \
-    --library "$EXAMPLE_DIR/afl/osmoperations.afl" \
-    --library "$EXAMPLE_DIR/afl/osmcache.afl" \
+    --library "$EXAMPLE_DIR/ffl/osmtypes.ffl" \
+    --library "$EXAMPLE_DIR/ffl/osmoperations.ffl" \
+    --library "$EXAMPLE_DIR/ffl/osmcache.ffl" \
     -o "$OUTPUT_FILE"
 
 echo "  Compiled to: $OUTPUT_FILE"
@@ -101,9 +101,9 @@ echo "=== Submitting DownloadBatchStates workflow ==="
 export AFL_MONGODB_URL="mongodb://afl-mongodb:27017"
 python -m afl.runtime.submit \
     --primary "$AFL_FILE" \
-    --library "$EXAMPLE_DIR/afl/osmtypes.afl" \
-    --library "$EXAMPLE_DIR/afl/osmoperations.afl" \
-    --library "$EXAMPLE_DIR/afl/osmcache.afl" \
+    --library "$EXAMPLE_DIR/ffl/osmtypes.ffl" \
+    --library "$EXAMPLE_DIR/ffl/osmoperations.ffl" \
+    --library "$EXAMPLE_DIR/ffl/osmcache.ffl" \
     --workflow "osm.UnitedStates.cache.DownloadBatchStates"
 echo ""
 

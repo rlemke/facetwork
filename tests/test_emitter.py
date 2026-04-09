@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL JSON emitter."""
+"""Tests for FFL JSON emitter."""
 
 import json
 
 import pytest
 
-from afl import parse
-from afl.emitter import JSONEmitter, emit_dict, emit_json
+from facetwork import parse
+from facetwork.emitter import JSONEmitter, emit_dict, emit_json
 
 
 def _decls_by_type(data, type_name):
@@ -725,7 +725,7 @@ class TestConcatExpr:
     """Test ConcatExpr emission via direct AST construction."""
 
     def test_concat_expr(self):
-        from afl.ast import ConcatExpr, Literal
+        from facetwork.ast import ConcatExpr, Literal
 
         emitter = JSONEmitter(include_locations=False)
         node = ConcatExpr(
@@ -745,19 +745,19 @@ class TestProvenance:
     """Test source provenance emission."""
 
     def test_file_provenance(self, tmp_path):
-        from afl.parser import AFLParser
-        from afl.source import CompilerInput
+        from facetwork.parser import FFLParser
+        from facetwork.source import CompilerInput
 
-        afl_file = tmp_path / "test.afl"
+        afl_file = tmp_path / "test.ffl"
         afl_file.write_text("facet Test()")
 
-        from afl.loader import SourceLoader
+        from facetwork.loader import SourceLoader
 
         entry = SourceLoader.load_file(str(afl_file), is_library=False)
         ci = CompilerInput()
         ci.primary_sources.append(entry)
 
-        parser = AFLParser()
+        parser = FFLParser()
         ast, registry = parser.parse_sources(ci)
 
         emitter = JSONEmitter(
@@ -771,7 +771,7 @@ class TestProvenance:
         assert loc["provenance"]["type"] == "file"
 
     def test_mongodb_provenance(self):
-        from afl.source import MongoDBOrigin
+        from facetwork.source import MongoDBOrigin
 
         emitter = JSONEmitter()
         origin = MongoDBOrigin(collection_id="col-1", display_name="MySource")
@@ -783,7 +783,7 @@ class TestProvenance:
         }
 
     def test_maven_provenance_without_classifier(self):
-        from afl.source import MavenOrigin
+        from facetwork.source import MavenOrigin
 
         emitter = JSONEmitter()
         origin = MavenOrigin(group_id="com.example", artifact_id="lib", version="1.0")
@@ -797,7 +797,7 @@ class TestProvenance:
         assert "classifier" not in result
 
     def test_maven_provenance_with_classifier(self):
-        from afl.source import MavenOrigin
+        from facetwork.source import MavenOrigin
 
         emitter = JSONEmitter()
         origin = MavenOrigin(

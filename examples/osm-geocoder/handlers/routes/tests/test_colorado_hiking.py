@@ -13,8 +13,8 @@ Uses mock handlers (no network calls). Run from the repo root:
     PYTHONPATH=. python examples/osm-geocoder/tests/mocked/py/test_colorado_hiking.py
 """
 
-from afl import emit_dict, parse
-from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+from facetwork import emit_dict, parse
+from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
 
 # ---------------------------------------------------------------------------
 # Program AST -declares the event facets the runtime needs to recognise.
@@ -119,7 +119,7 @@ PROGRAM_AST = {
 
 
 # ---------------------------------------------------------------------------
-# Workflow AST -compiled from AFL source for the real step/yield structure.
+# Workflow AST -compiled from FFL source for the real step/yield structure.
 # ---------------------------------------------------------------------------
 
 WORKFLOW_AFL = """\
@@ -156,7 +156,7 @@ namespace osm.RegionMap {
 
 
 def compile_workflow() -> dict:
-    """Compile the workflow AFL to a runtime AST dict."""
+    """Compile the workflow FFL to a runtime AST dict."""
     tree = parse(WORKFLOW_AFL)
     program = emit_dict(tree)
     for ns in program.get("namespaces", []):
@@ -275,7 +275,7 @@ def find_event_blocked_step(store: MemoryStore, workflow_id: str) -> tuple[str, 
 
 def main() -> None:
     """Run the Colorado hiking trail workflow end-to-end with mock handlers."""
-    print("Compiling HikingElevationMapByRegion from AFL source...")
+    print("Compiling HikingElevationMapByRegion from FFL source...")
     workflow_ast = compile_workflow()
     print("  OK\n")
 

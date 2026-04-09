@@ -234,10 +234,10 @@ rename_map = #{"old_key": "new_key"}
 
 ```bash
 # Compile
-afl examples/devops-deploy/afl/deploy.afl -o deploy.json
+afl examples/devops-deploy/ffl/deploy.afl -o deploy.json
 
 # Syntax check only
-afl examples/devops-deploy/afl/deploy.afl --check
+afl examples/devops-deploy/ffl/deploy.afl --check
 
 # Tests
 pytest examples/devops-deploy/ -v

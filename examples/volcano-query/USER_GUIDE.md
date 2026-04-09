@@ -68,7 +68,7 @@ The pipeline flows: **Load data -> Filter by tag -> Filter by elevation -> Forma
 
 ```bash
 source .venv/bin/activate
-python -m afl.cli examples/volcano-query/afl/volcano.afl --check
+python -m afl.cli examples/volcano-query/ffl/volcano.afl --check
 ```
 
 This will report validation warnings about unresolved facets (because the OSM facets aren't included as libraries), but the AFL syntax is valid.

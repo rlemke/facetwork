@@ -19,7 +19,7 @@ To run against a real MongoDB server, use the --mongodb flag:
 
     PYTHONPATH=. pytest tests/runtime/test_mongo_store.py --mongodb
 
-The real server connection uses the AFL config resolution order
+The real server connection uses the FFL config resolution order
 (afl.config.json, env vars, or built-in defaults).
 """
 
@@ -32,7 +32,7 @@ try:
 except ImportError:
     MONGOMOCK_AVAILABLE = False
 
-from afl.runtime.entities import (
+from facetwork.runtime.entities import (
     FlowDefinition,
     FlowIdentity,
     HandledCount,
@@ -46,9 +46,9 @@ from afl.runtime.entities import (
     TaskState,
     WorkflowDefinition,
 )
-from afl.runtime.persistence import IterationChanges
-from afl.runtime.step import StepDefinition
-from afl.runtime.types import StepId, block_id, step_id, workflow_id
+from facetwork.runtime.persistence import IterationChanges
+from facetwork.runtime.step import StepDefinition
+from facetwork.runtime.types import StepId, block_id, step_id, workflow_id
 
 
 def _use_real_mongodb(request) -> bool:
@@ -73,12 +73,12 @@ def mongo_store(request):
     """Create a MongoStore backed by mongomock or a real MongoDB server.
 
     Uses mongomock by default. Pass --mongodb to pytest to connect
-    to the real server configured via AFL config.
+    to the real server configured via FFL config.
     """
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.runtime.mongo_store import MongoStore
 
     if _use_real_mongodb(request):
-        from afl.config import load_config
+        from facetwork.config import load_config
 
         config = load_config()
         store = MongoStore(

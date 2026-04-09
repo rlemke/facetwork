@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}
+{% if runner %}{{ runner.workflow.name }} — Facetwork{% else %}Workflow Not Found{% endif %}
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="/v2/workflows">Workflows</a>
+        <span class="breadcrumb-sep">/</span>
+        {% if runner %}
+        <span class="breadcrumb-current">{{ runner.workflow.name|short_workflow_name }}</span>
+        {% else %}
+        <span class="breadcrumb-current">Not Found</span>
+        {% endif %}
+    </nav>
+</div>
+{% endblock %}
+
+{% block subnav %}
+{% if runner %}
+<div class="container">
+    <div class="subnav">
+        <a href="/v2/workflows/{{ runner.uuid }}?step_tab=running"
+           class="subnav-pill{% if step_tab == 'running' %} active{% endif %}">
+            Running <span class="subnav-count">{{ step_counts.running }}</span>
+        </a>
+        <a href="/v2/workflows/{{ runner.uuid }}?step_tab=error"
+           class="subnav-pill{% if step_tab == 'error' %} active{% endif %}">
+            Error <span class="subnav-count">{{ step_counts.error }}</span>
+        </a>
+        <a href="/v2/workflows/{{ runner.uuid }}?step_tab=complete"
+           class="subnav-pill{% if step_tab == 'complete' %} active{% endif %}">
+            Complete <span class="subnav-count">{{ step_counts.complete }}</span>
+        </a>
+        <a href="/v2/workflows/{{ runner.uuid }}?step_tab=other"
+           class="subnav-pill{% if step_tab == 'other' %} active{% endif %}">
+            Other <span class="subnav-count">{{ step_counts.other }}</span>
+        </a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if runner %}
+<hgroup>
+    <h1>{{ runner.workflow.name|short_workflow_name }}</h1>
+    <p>
+        <span class="mono">{{ runner.workflow.name }}</span>
+        &mdash;
+        {% with state=runner.state %}{% include "partials/_state_badge.html" %}{% endwith %}
+    </p>
+</hgroup>
+
+<div id="workflow-summary"
+     {% if runner.state == 'running' or runner.state == 'paused' %}hx-get="/v2/workflows/{{ runner.uuid }}/summary/partial" hx-trigger="every 300s" hx-swap="innerHTML"{% endif %}>
+    {% include "v2/workflows/_summary.html" %}
+</div>
+
+<div class="actions" style="margin-bottom: 1rem;">
+    {% if runner.state == 'running' %}
+    <form method="post" action="/runners/{{ runner.uuid }}/pause" style="display:inline;">
+        <button type="submit" class="secondary outline">Pause</button>
+    </form>
+    <form method="post" action="/runners/{{ runner.uuid }}/cancel" style="display:inline;">
+        <button type="submit" class="secondary outline">Cancel</button>
+    </form>
+    {% elif runner.state == 'paused' %}
+    <form method="post" action="/runners/{{ runner.uuid }}/resume" style="display:inline;">
+        <button type="submit" class="outline">Resume</button>
+    </form>
+    <form method="post" action="/runners/{{ runner.uuid }}/cancel" style="display:inline;">
+        <button type="submit" class="secondary outline">Cancel</button>
+    </form>
+    {% endif %}
+    <button class="outline"
+            hx-post="/api/runners/{{ runner.uuid }}/repair"
+            hx-confirm="Repair this workflow? This will reset orphaned tasks, retry transient errors, and fix runner state."
+            hx-target="#repair-result"
+            hx-swap="innerHTML">Repair Workflow</button>
+    <span id="repair-result"></span>
+</div>
+
+<h2>Steps</h2>
+<div class="view-toggle">
+    <button class="view-toggle-btn" data-view="tasks" onclick="switchView('tasks', this)">Tasks</button>
+    <button class="view-toggle-btn" data-view="flat" onclick="switchView('flat', this)">Flat</button>
+    <button class="view-toggle-btn active" data-view="tree" onclick="switchView('tree', this)">Tree</button>
+    <button class="view-toggle-btn" data-view="graph" onclick="switchView('graph', this)">Graph</button>
+    <button class="view-toggle-btn" data-view="timeline" onclick="switchView('timeline', this)">Timeline</button>
+</div>
+
+<div id="v2-step-tasks" style="display:none">
+<div id="task-progress-content"
+     hx-get="/v2/workflows/{{ runner.uuid }}/tasks/partial"
+     hx-trigger="revealed, every 30s"
+     hx-swap="innerHTML">
+    <p class="muted">Loading task progress...</p>
+</div>
+</div>
+
+<div id="v2-step-flat" style="display:none">
+<button class="btn-refresh"
+        hx-get="/v2/workflows/{{ runner.uuid }}/steps/partial?step_tab={{ step_tab }}"
+        hx-target="#step-rows"
+        hx-swap="innerHTML">
+    <span class="refresh-icon">&#x21bb;</span> Refresh
+    <span class="loading-spinner htmx-indicator"></span>
+</button>
+<div id="step-rows">
+    {% include "v2/workflows/_step_rows.html" %}
+</div>
+</div>
+
+<div id="v2-step-tree">
+<div class="step-tree-controls">
+    <button id="step-tree-expand-all">Expand All</button>
+    <button id="step-tree-collapse-all">Collapse All</button>
+    <input type="search" id="step-tree-search" placeholder="Search steps...">
+    <button class="btn-refresh"
+            hx-get="/v2/workflows/{{ runner.uuid }}/steps/partial?view=tree"
+            hx-target="#v2-step-tree-content"
+            hx-swap="innerHTML">
+        <span class="refresh-icon">&#x21bb;</span> Refresh
+        <span class="loading-spinner htmx-indicator"></span>
+    </button>
+</div>
+<div class="step-tree-container" id="v2-step-tree-content"
+     {% if runner.state == 'running' %}hx-get="/v2/workflows/{{ runner.uuid }}/steps/partial?view=tree" hx-trigger="every 300s" hx-swap="innerHTML"{% endif %}>
+    {% with tree=tree %}{% include "partials/step_tree.html" %}{% endwith %}
+</div>
+</div>
+
+<div id="v2-step-graph" style="display:none">
+{% if dag %}
+    {% include "v2/workflows/_dag.html" %}
+{% else %}
+    <p class="empty-state">DAG view requires steps.</p>
+{% endif %}
+</div>
+
+<div id="v2-step-timeline" style="display:none">
+{% if timeline %}
+    {% include "v2/workflows/_timeline.html" %}
+{% else %}
+    <p class="empty-state">Timeline view requires steps with timestamps.</p>
+{% endif %}
+</div>
+
+<h2>Logs</h2>
+<button class="outline"
+        data-log-stream="/api/runners/{{ runner.uuid }}/logs/stream"
+        data-log-target="#wf-log-stream-body">Live</button>
+<figure>
+<table>
+    <thead>
+        <tr><th>Time</th><th>Source</th><th>Level</th><th>Message</th></tr>
+    </thead>
+    <tbody id="wf-log-stream-body">
+    </tbody>
+</table>
+</figure>
+
+{% else %}
+<h1>Workflow Not Found</h1>
+{% with empty_message="The requested runner could not be found." %}{% include "partials/_empty_state.html" %}{% endwith %}
+<a href="/v2/workflows">Back to Workflows</a>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { initViewToggle } from "/static/view_toggle.js";
+initViewToggle();
+</script>
+{% endblock %}

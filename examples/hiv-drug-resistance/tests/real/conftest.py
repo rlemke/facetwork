@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     AgentPoller,
     AgentPollerConfig,
     Evaluator,

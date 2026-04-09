@@ -22,7 +22,7 @@ import time
 from collections.abc import Iterator
 from typing import IO
 
-from afl.config import get_output_base, get_temp_dir
+from facetwork.config import get_output_base, get_temp_dir
 
 from ._output import ensure_dir, open_output
 

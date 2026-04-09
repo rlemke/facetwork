@@ -1,13 +1,13 @@
-"""Tests for AFL runner service CLI entry point."""
+"""Tests for FFL runner service CLI entry point."""
 
 import signal
 from unittest.mock import MagicMock, patch
 
-from afl.config import RunnerConfig
+from facetwork.config import RunnerConfig
 
 
 def _make_mock_config():
-    """Create a mock AFL config with real runner defaults."""
+    """Create a mock FFL config with real runner defaults."""
     mock_cfg = MagicMock()
     runner = RunnerConfig()
     mock_cfg.runner = runner
@@ -19,7 +19,7 @@ class TestRunnerMain:
 
     def _run_main(self, argv, mock_service_cls, mock_config, mock_mongo):
         """Helper to run main with mocked dependencies."""
-        from afl.runtime.runner.__main__ import main
+        from facetwork.runtime.runner.__main__ import main
 
         mock_config.return_value = _make_mock_config()
         mock_store = MagicMock()
@@ -31,17 +31,17 @@ class TestRunnerMain:
         return mock_service_cls
 
     @patch("signal.signal")
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_default_args(self, mock_config, mock_mongo, mock_signal):
-        from afl.runtime.runner.__main__ import main
+        from facetwork.runtime.runner.__main__ import main
 
         mock_config.return_value = _make_mock_config()
         mock_mongo.from_config.return_value = MagicMock()
 
         with (
             patch("sys.argv", ["afl-runner"]),
-            patch("afl.runtime.runner.__main__.RunnerService") as mock_svc,
+            patch("facetwork.runtime.runner.__main__.RunnerService") as mock_svc,
         ):
             main()
 
@@ -57,10 +57,10 @@ class TestRunnerMain:
         mock_svc.return_value.start.assert_called_once()
 
     @patch("signal.signal")
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_custom_args(self, mock_config, mock_mongo, mock_signal):
-        from afl.runtime.runner.__main__ import main
+        from facetwork.runtime.runner.__main__ import main
 
         mock_config.return_value = _make_mock_config()
         mock_mongo.from_config.return_value = MagicMock()
@@ -87,7 +87,7 @@ class TestRunnerMain:
                     "/custom/config.json",
                 ],
             ),
-            patch("afl.runtime.runner.__main__.RunnerService") as mock_svc,
+            patch("facetwork.runtime.runner.__main__.RunnerService") as mock_svc,
         ):
             main()
 
@@ -101,17 +101,17 @@ class TestRunnerMain:
         assert config.http_port == 9090
 
     @patch("signal.signal")
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_keyboard_interrupt_calls_stop(self, mock_config, mock_mongo, mock_signal):
-        from afl.runtime.runner.__main__ import main
+        from facetwork.runtime.runner.__main__ import main
 
         mock_config.return_value = _make_mock_config()
         mock_mongo.from_config.return_value = MagicMock()
 
         with (
             patch("sys.argv", ["afl-runner"]),
-            patch("afl.runtime.runner.__main__.RunnerService") as mock_svc,
+            patch("facetwork.runtime.runner.__main__.RunnerService") as mock_svc,
         ):
             mock_svc.return_value.start.side_effect = KeyboardInterrupt()
             main()
@@ -119,15 +119,15 @@ class TestRunnerMain:
         mock_svc.return_value.stop.assert_called_once()
 
     @patch("signal.signal")
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_signal_handlers_registered(self, mock_config, mock_mongo, mock_signal):
-        from afl.runtime.runner.__main__ import main
+        from facetwork.runtime.runner.__main__ import main
 
         mock_config.return_value = _make_mock_config()
         mock_mongo.from_config.return_value = MagicMock()
 
-        with patch("sys.argv", ["afl-runner"]), patch("afl.runtime.runner.__main__.RunnerService"):
+        with patch("sys.argv", ["afl-runner"]), patch("facetwork.runtime.runner.__main__.RunnerService"):
             main()
 
         signal_calls = [c[0][0] for c in mock_signal.call_args_list]
@@ -135,10 +135,10 @@ class TestRunnerMain:
         assert signal.SIGINT in signal_calls
 
     @patch("signal.signal")
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_log_file_option(self, mock_config, mock_mongo, mock_signal, tmp_path):
-        from afl.runtime.runner.__main__ import main
+        from facetwork.runtime.runner.__main__ import main
 
         mock_config.return_value = _make_mock_config()
         mock_mongo.from_config.return_value = MagicMock()
@@ -155,6 +155,6 @@ class TestRunnerMain:
                     str(log_file),
                 ],
             ),
-            patch("afl.runtime.runner.__main__.RunnerService"),
+            patch("facetwork.runtime.runner.__main__.RunnerService"),
         ):
             main()

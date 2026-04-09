@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Integration test: standalone AddOne AFL Agent using AgentPoller.
+"""Integration test: standalone AddOne FFL Agent using AgentPoller.
 
-Demonstrates building a minimal AFL Agent service that handles the event facet:
+Demonstrates building a minimal FFL Agent service that handles the event facet:
 
     namespace handlers {
         event AddOne(input: Long) => (output: Long)
@@ -33,19 +33,19 @@ After execution with x=1, the workflow result should be 2.
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     Evaluator,
     ExecutionStatus,
     MemoryStore,
     StepState,
     Telemetry,
 )
-from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
+from facetwork.runtime.agent_poller import AgentPoller, AgentPollerConfig
 
 # =========================================================================
-# AFL AST definitions
+# FFL AST definitions
 #
-# The AST below corresponds to the following AFL source:
+# The AST below corresponds to the following FFL source:
 #
 #     namespace handlers {
 #         event AddOne(input: Long) => (output: Long)

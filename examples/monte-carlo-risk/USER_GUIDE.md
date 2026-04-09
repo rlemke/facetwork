@@ -99,7 +99,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-afl examples/monte-carlo-risk/afl/risk.afl --check
+afl examples/monte-carlo-risk/ffl/risk.afl --check
 
 # Run tests
 pytest examples/monte-carlo-risk/tests/ -v

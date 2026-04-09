@@ -18,7 +18,7 @@ try:
 except ImportError:
     HAS_SHAPELY = False
 
-from afl.config import get_output_base
+from facetwork.config import get_output_base
 
 logger = logging.getLogger(__name__)
 

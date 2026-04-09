@@ -20,11 +20,11 @@ from pathlib import Path
 
 import pytest
 
-from afl import parse
-from afl.emitter import JSONEmitter
-from afl.loader import SourceLoader
-from afl.parser import AFLParser
-from afl.source import (
+from facetwork import parse
+from facetwork.emitter import JSONEmitter
+from facetwork.loader import SourceLoader
+from facetwork.parser import FFLParser
+from facetwork.source import (
     CompilerInput,
     FileOrigin,
     MavenOrigin,
@@ -38,9 +38,9 @@ class TestSourceOrigins:
     """Test source origin data structures."""
 
     def test_file_origin(self):
-        origin = FileOrigin(path="/path/to/file.afl")
-        assert origin.path == "/path/to/file.afl"
-        assert origin.to_source_id() == "file:///path/to/file.afl"
+        origin = FileOrigin(path="/path/to/file.ffl")
+        assert origin.path == "/path/to/file.ffl"
+        assert origin.to_source_id() == "file:///path/to/file.ffl"
 
     def test_mongodb_origin(self):
         origin = MongoDBOrigin(collection_id="abc123", display_name="My Document")
@@ -68,21 +68,21 @@ class TestSourceEntry:
     """Test source entry data structure."""
 
     def test_source_entry_basic(self):
-        origin = FileOrigin(path="/test.afl")
+        origin = FileOrigin(path="/test.ffl")
         entry = SourceEntry(text="facet Test()", origin=origin)
         assert entry.text == "facet Test()"
         assert entry.origin == origin
         assert entry.is_library is False
 
     def test_source_entry_library(self):
-        origin = FileOrigin(path="/lib.afl")
+        origin = FileOrigin(path="/lib.ffl")
         entry = SourceEntry(text="facet Lib()", origin=origin, is_library=True)
         assert entry.is_library is True
 
     def test_source_entry_source_id(self):
-        origin = FileOrigin(path="/test.afl")
+        origin = FileOrigin(path="/test.ffl")
         entry = SourceEntry(text="facet Test()", origin=origin)
-        assert entry.source_id == "file:///test.afl"
+        assert entry.source_id == "file:///test.ffl"
 
 
 class TestCompilerInput:
@@ -95,21 +95,21 @@ class TestCompilerInput:
         assert ci.all_sources == []
 
     def test_primary_sources(self):
-        entry = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.afl"))
+        entry = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.ffl"))
         ci = CompilerInput(primary_sources=[entry])
         assert len(ci.primary_sources) == 1
         assert len(ci.all_sources) == 1
 
     def test_library_sources(self):
-        entry = SourceEntry(text="facet Lib()", origin=FileOrigin(path="/lib.afl"), is_library=True)
+        entry = SourceEntry(text="facet Lib()", origin=FileOrigin(path="/lib.ffl"), is_library=True)
         ci = CompilerInput(library_sources=[entry])
         assert len(ci.library_sources) == 1
         assert len(ci.all_sources) == 1
 
     def test_all_sources_order(self):
         """Primary sources come before library sources."""
-        primary = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.afl"))
-        lib = SourceEntry(text="facet Lib()", origin=FileOrigin(path="/lib.afl"), is_library=True)
+        primary = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.ffl"))
+        lib = SourceEntry(text="facet Lib()", origin=FileOrigin(path="/lib.ffl"), is_library=True)
         ci = CompilerInput(primary_sources=[primary], library_sources=[lib])
         assert ci.all_sources[0] == primary
         assert ci.all_sources[1] == lib
@@ -124,26 +124,26 @@ class TestSourceRegistry:
 
     def test_register_and_get(self):
         registry = SourceRegistry()
-        origin = FileOrigin(path="/test.afl")
+        origin = FileOrigin(path="/test.ffl")
         source_id = origin.to_source_id()
         registry.register(source_id, origin)
         assert registry.get(source_id) == origin
 
     def test_from_compiler_input(self):
-        entry1 = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.afl"))
-        entry2 = SourceEntry(text="facet B()", origin=FileOrigin(path="/b.afl"))
+        entry1 = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.ffl"))
+        entry2 = SourceEntry(text="facet B()", origin=FileOrigin(path="/b.ffl"))
         ci = CompilerInput(primary_sources=[entry1, entry2])
 
         registry = SourceRegistry.from_compiler_input(ci)
-        assert registry.get("file:///a.afl") is not None
-        assert registry.get("file:///b.afl") is not None
+        assert registry.get("file:///a.ffl") is not None
+        assert registry.get("file:///b.ffl") is not None
 
 
 class TestSourceLoader:
     """Test source loader functionality."""
 
     def test_load_file(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".afl", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ffl", delete=False) as f:
             f.write("facet Test()")
             f.flush()
             path = f.name
@@ -157,7 +157,7 @@ class TestSourceLoader:
             Path(path).unlink()
 
     def test_load_file_as_library(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".afl", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ffl", delete=False) as f:
             f.write("facet LibFacet()")
             f.flush()
             path = f.name
@@ -170,7 +170,7 @@ class TestSourceLoader:
 
     def test_load_file_not_found(self):
         with pytest.raises(FileNotFoundError):
-            SourceLoader.load_file("/nonexistent/file.afl")
+            SourceLoader.load_file("/nonexistent/file.ffl")
 
     def test_load_mongodb_requires_pymongo(self, monkeypatch):
         """MongoDB loader requires pymongo to be installed."""
@@ -201,22 +201,22 @@ class TestMultiSourceParsing:
     """Test multi-source parsing with provenance."""
 
     def test_parse_sources_single(self):
-        entry = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.afl"))
+        entry = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.ffl"))
         ci = CompilerInput(primary_sources=[entry])
 
-        parser = AFLParser()
+        parser = FFLParser()
         program, registry = parser.parse_sources(ci)
 
         assert len(program.facets) == 1
         assert program.facets[0].sig.name == "A"
-        assert registry.get("file:///a.afl") is not None
+        assert registry.get("file:///a.ffl") is not None
 
     def test_parse_sources_multiple(self):
-        entry1 = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.afl"))
-        entry2 = SourceEntry(text="facet B()", origin=FileOrigin(path="/b.afl"))
+        entry1 = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.ffl"))
+        entry2 = SourceEntry(text="facet B()", origin=FileOrigin(path="/b.ffl"))
         ci = CompilerInput(primary_sources=[entry1, entry2])
 
-        parser = AFLParser()
+        parser = FFLParser()
         program, registry = parser.parse_sources(ci)
 
         assert len(program.facets) == 2
@@ -225,36 +225,36 @@ class TestMultiSourceParsing:
         assert "B" in names
 
     def test_parse_sources_with_library(self):
-        primary = SourceEntry(text="facet Main()", origin=FileOrigin(path="/main.afl"))
+        primary = SourceEntry(text="facet Main()", origin=FileOrigin(path="/main.ffl"))
         lib = SourceEntry(
-            text="facet Helper()", origin=FileOrigin(path="/lib.afl"), is_library=True
+            text="facet Helper()", origin=FileOrigin(path="/lib.ffl"), is_library=True
         )
         ci = CompilerInput(primary_sources=[primary], library_sources=[lib])
 
-        parser = AFLParser()
+        parser = FFLParser()
         program, registry = parser.parse_sources(ci)
 
         assert len(program.facets) == 2
 
     def test_source_id_in_locations(self):
-        entry = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.afl"))
+        entry = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.ffl"))
         ci = CompilerInput(primary_sources=[entry])
 
-        parser = AFLParser()
+        parser = FFLParser()
         program, _ = parser.parse_sources(ci)
 
         assert program.facets[0].location is not None
-        assert program.facets[0].location.source_id == "file:///a.afl"
+        assert program.facets[0].location.source_id == "file:///a.ffl"
 
 
 class TestProvenanceEmission:
     """Test provenance in JSON output."""
 
     def test_emit_without_provenance(self):
-        entry = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.afl"))
+        entry = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.ffl"))
         ci = CompilerInput(primary_sources=[entry])
 
-        parser = AFLParser()
+        parser = FFLParser()
         program, registry = parser.parse_sources(ci)
 
         emitter = JSONEmitter(include_provenance=False)
@@ -267,10 +267,10 @@ class TestProvenanceEmission:
         assert "provenance" not in loc
 
     def test_emit_with_provenance(self):
-        entry = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.afl"))
+        entry = SourceEntry(text="facet A()", origin=FileOrigin(path="/a.ffl"))
         ci = CompilerInput(primary_sources=[entry])
 
-        parser = AFLParser()
+        parser = FFLParser()
         program, registry = parser.parse_sources(ci)
 
         emitter = JSONEmitter(include_provenance=True, source_registry=registry)
@@ -278,9 +278,9 @@ class TestProvenanceEmission:
 
         facet = [d for d in output.get("declarations", []) if d.get("type") == "FacetDecl"][0]
         loc = facet["location"]
-        assert loc["sourceId"] == "file:///a.afl"
+        assert loc["sourceId"] == "file:///a.ffl"
         assert loc["provenance"]["type"] == "file"
-        assert loc["provenance"]["path"] == "/a.afl"
+        assert loc["provenance"]["path"] == "/a.ffl"
 
     def test_emit_mongodb_provenance(self):
         """Test provenance format for MongoDB origin."""

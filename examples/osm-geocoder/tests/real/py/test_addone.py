@@ -1,7 +1,7 @@
-"""Integration test: compile AddOne from AFL source, run through MongoDB + AgentPoller.
+"""Integration test: compile AddOne from FFL source, run through MongoDB + AgentPoller.
 
 This is the simplest integration test. It proves the full pipeline:
-  AFL file → compile → MongoStore → Evaluator → AgentPoller → handler → completion
+  FFL file → compile → MongoStore → Evaluator → AgentPoller → handler → completion
 
 No external dependencies beyond MongoDB.
 
@@ -16,7 +16,7 @@ from helpers import (
     run_to_completion,
 )
 
-from afl.runtime import ExecutionStatus
+from facetwork.runtime import ExecutionStatus
 
 
 def addone_handler(payload: dict) -> dict:
@@ -25,11 +25,11 @@ def addone_handler(payload: dict) -> dict:
 
 
 class TestAddOneIntegration:
-    """End-to-end: AFL source → MongoDB → AgentPoller → handler → result."""
+    """End-to-end: FFL source → MongoDB → AgentPoller → handler → result."""
 
     def test_compile_addone_afl(self):
         """The addone.afl file compiles without errors."""
-        program = compile_afl_files(INTEGRATION_AFL_DIR / "addone.afl")
+        program = compile_afl_files(INTEGRATION_AFL_DIR / "addone.ffl")
         assert program["type"] == "Program"
 
         workflow = extract_workflow(program, "TestAddOne")
@@ -38,7 +38,7 @@ class TestAddOneIntegration:
 
     def test_addone_compiled_from_afl(self, mongo_store, evaluator, poller):
         """Compile from file, execute, assert result=2 for input=1."""
-        program = compile_afl_files(INTEGRATION_AFL_DIR / "addone.afl")
+        program = compile_afl_files(INTEGRATION_AFL_DIR / "addone.ffl")
         workflow = extract_workflow(program, "TestAddOne")
 
         poller.register("handlers.AddOne", addone_handler)
@@ -51,7 +51,7 @@ class TestAddOneIntegration:
 
     def test_addone_different_input(self, mongo_store, evaluator, poller):
         """AddOne(input=41) => output=42 via full pipeline."""
-        program = compile_afl_files(INTEGRATION_AFL_DIR / "addone.afl")
+        program = compile_afl_files(INTEGRATION_AFL_DIR / "addone.ffl")
         workflow = extract_workflow(program, "TestAddOne")
 
         poller.register("handlers.AddOne", addone_handler)
@@ -63,7 +63,7 @@ class TestAddOneIntegration:
 
     def test_addone_mongodb_round_trip(self, mongo_store, evaluator, poller):
         """Verify steps are persisted in MongoDB after execution."""
-        program = compile_afl_files(INTEGRATION_AFL_DIR / "addone.afl")
+        program = compile_afl_files(INTEGRATION_AFL_DIR / "addone.ffl")
         workflow = extract_workflow(program, "TestAddOne")
 
         poller.register("handlers.AddOne", addone_handler)

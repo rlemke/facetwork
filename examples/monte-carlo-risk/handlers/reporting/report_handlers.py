@@ -10,7 +10,7 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
-from afl.config import get_output_base
+from facetwork.config import get_output_base
 
 _LOCAL_OUTPUT = get_output_base()
 _RISK_REPORTS_DIR = os.path.join(_LOCAL_OUTPUT, "risk-reports")

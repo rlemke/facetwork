@@ -17,6 +17,6 @@ RUN pip install --no-cache-dir -e ".[mcp,mongodb]" || \
     pip install --no-cache-dir lark pymongo mcp
 
 # Copy application code
-COPY afl/ ./afl/
+COPY facetwork/ ./afl/
 
 CMD ["python", "-m", "afl.mcp"]

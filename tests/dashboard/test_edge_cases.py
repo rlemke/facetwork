@@ -38,9 +38,9 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture
 def client():
     """Create a test client with mongomock-backed store."""
-    from afl.dashboard import dependencies as deps
-    from afl.dashboard.app import create_app
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.dashboard import dependencies as deps
+    from facetwork.dashboard.app import create_app
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     store = MongoStore(database_name="afl_test_edge", client=mock_client)
@@ -56,7 +56,7 @@ def client():
 
 
 def _make_workflow(uuid="wf-1", name="TestWF"):
-    from afl.runtime.entities import WorkflowDefinition
+    from facetwork.runtime.entities import WorkflowDefinition
 
     return WorkflowDefinition(
         uuid=uuid,
@@ -70,7 +70,7 @@ def _make_workflow(uuid="wf-1", name="TestWF"):
 
 
 def _make_runner(uuid="r-1", workflow=None, state="running"):
-    from afl.runtime.entities import RunnerDefinition
+    from facetwork.runtime.entities import RunnerDefinition
 
     if workflow is None:
         workflow = _make_workflow()
@@ -83,7 +83,7 @@ def _make_runner(uuid="r-1", workflow=None, state="running"):
 
 
 def _make_task(uuid="task-1", name="SendEmail", state="pending", error=None, data=None):
-    from afl.runtime.entities import TaskDefinition
+    from facetwork.runtime.entities import TaskDefinition
 
     return TaskDefinition(
         uuid=uuid,
@@ -101,9 +101,9 @@ def _make_task(uuid="task-1", name="SendEmail", state="pending", error=None, dat
 
 
 def _make_event_task(
-    uuid="evt-1", step_id="step-1", workflow_id="wf-1", state="pending", name="afl:execute"
+    uuid="evt-1", step_id="step-1", workflow_id="wf-1", state="pending", name="fw:execute"
 ):
-    from afl.runtime.entities import TaskDefinition
+    from facetwork.runtime.entities import TaskDefinition
 
     return TaskDefinition(
         uuid=uuid,
@@ -127,7 +127,7 @@ def _make_published_source(
     version="latest",
     origin="dashboard",
 ):
-    from afl.runtime.entities import PublishedSource
+    from facetwork.runtime.entities import PublishedSource
 
     return PublishedSource(
         uuid=uuid,
@@ -211,8 +211,8 @@ class TestRunnerEdgeCases:
 class TestStepEdgeCases:
     def test_step_with_params_display(self, client):
         tc, store = client
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import step_id, workflow_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import step_id, workflow_id
 
         sid = step_id()
         wid = workflow_id()
@@ -231,8 +231,8 @@ class TestStepEdgeCases:
 
     def test_step_in_event_transmit_state(self, client):
         tc, store = client
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import step_id, workflow_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import step_id, workflow_id
 
         sid = step_id()
         wid = workflow_id()
@@ -255,9 +255,9 @@ class TestStepEdgeCases:
 
     def test_step_with_populated_returns(self, client):
         tc, store = client
-        from afl.runtime.entities import Parameter
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import FacetAttributes, step_id, workflow_id
+        from facetwork.runtime.entities import Parameter
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import FacetAttributes, step_id, workflow_id
 
         sid = step_id()
         wid = workflow_id()
@@ -284,7 +284,7 @@ class TestStepEdgeCases:
 class TestFlowEdgeCases:
     def test_flow_with_multiple_workflows(self, client):
         tc, store = client
-        from afl.runtime.entities import (
+        from facetwork.runtime.entities import (
             FlowDefinition,
             FlowIdentity,
             WorkflowDefinition,
@@ -322,7 +322,7 @@ class TestFlowEdgeCases:
 
     def test_flow_with_no_sources(self, client):
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity
 
         flow = FlowDefinition(
             uuid="flow-2",
@@ -335,12 +335,12 @@ class TestFlowEdgeCases:
 
     def test_flow_source_view_with_content(self, client):
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity, SourceText
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity, SourceText
 
         flow = FlowDefinition(
             uuid="flow-3",
             name=FlowIdentity(name="SourceFlow", path="/src", uuid="flow-3"),
-            compiled_sources=[SourceText(name="main.afl", content="facet Hello(x: Long)")],
+            compiled_sources=[SourceText(name="main.ffl", content="facet Hello(x: Long)")],
         )
         store.save_flow(flow)
 
@@ -350,14 +350,14 @@ class TestFlowEdgeCases:
 
     def test_flow_json_with_multiple_sources(self, client):
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity, SourceText
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity, SourceText
 
         flow = FlowDefinition(
             uuid="flow-4",
             name=FlowIdentity(name="DoubleSource", path="/dbl", uuid="flow-4"),
             compiled_sources=[
-                SourceText(name="first.afl", content="facet A(x: String)"),
-                SourceText(name="second.afl", content="facet B(y: Long)"),
+                SourceText(name="first.ffl", content="facet A(x: String)"),
+                SourceText(name="second.ffl", content="facet B(y: Long)"),
             ],
         )
         store.save_flow(flow)
@@ -433,7 +433,7 @@ class TestTaskEdgeCases:
 class TestServerEdgeCases:
     def test_server_with_multiple_groups(self, client):
         tc, store = client
-        from afl.runtime.entities import ServerDefinition, ServerState
+        from facetwork.runtime.entities import ServerDefinition, ServerState
 
         store.save_server(
             ServerDefinition(
@@ -460,7 +460,7 @@ class TestServerEdgeCases:
 
     def test_server_with_handlers_list(self, client):
         tc, store = client
-        from afl.runtime.entities import ServerDefinition, ServerState
+        from facetwork.runtime.entities import ServerDefinition, ServerState
 
         server = ServerDefinition(
             uuid="s-3",
@@ -477,7 +477,7 @@ class TestServerEdgeCases:
 
     def test_server_in_shutdown_state(self, client):
         tc, store = client
-        from afl.runtime.entities import ServerDefinition, ServerState
+        from facetwork.runtime.entities import ServerDefinition, ServerState
 
         server = ServerDefinition(
             uuid="s-4",
@@ -493,7 +493,7 @@ class TestServerEdgeCases:
 
     def test_server_without_optional_fields(self, client):
         tc, store = client
-        from afl.runtime.entities import ServerDefinition, ServerState
+        from facetwork.runtime.entities import ServerDefinition, ServerState
 
         server = ServerDefinition(
             uuid="s-5",
@@ -516,8 +516,8 @@ class TestServerEdgeCases:
 class TestEventEdgeCases:
     def test_event_execute_vs_resume_types(self, client):
         tc, store = client
-        store.save_task(_make_event_task("evt-1", name="afl:execute"))
-        store.save_task(_make_event_task("evt-2", step_id="step-2", name="afl:resume"))
+        store.save_task(_make_event_task("evt-1", name="fw:execute"))
+        store.save_task(_make_event_task("evt-2", step_id="step-2", name="fw:resume"))
         resp = tc.get("/events")
         assert resp.status_code == 200
         assert "evt-1" in resp.text
@@ -525,12 +525,12 @@ class TestEventEdgeCases:
 
     def test_event_with_large_data(self, client):
         tc, store = client
-        from afl.runtime.entities import TaskDefinition
+        from facetwork.runtime.entities import TaskDefinition
 
         large_data = {"data": "x" * 5000}
         task = TaskDefinition(
             uuid="evt-big",
-            name="afl:execute",
+            name="fw:execute",
             runner_id="",
             workflow_id="wf-1",
             flow_id="",
@@ -601,7 +601,7 @@ class TestFilteringEdgeCases:
 
     def test_case_insensitive_search_query(self, client):
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity
 
         store.save_flow(
             FlowDefinition(
@@ -616,7 +616,7 @@ class TestFilteringEdgeCases:
 
     def test_empty_search_query_returns_all(self, client):
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity
 
         store.save_flow(
             FlowDefinition(

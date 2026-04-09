@@ -1,12 +1,12 @@
-# AgentFlow: The Journey of Building a Distributed Workflow Platform - no human coding -- only Claude -- even the docs
+# Facetwork: The Journey of Building a Distributed Workflow Platform - no human coding -- only Claude -- even the docs
 
 *From a grammar file to 500,000-step distributed workflows across 50 US states*
 
 ---
 
-## What is AgentFlow?
+## What is Facetwork?
 
-AgentFlow is a platform for defining, compiling, and executing distributed workflows. At its core is **AFL** (Agent Flow Language) — a domain-specific language for describing multi-step computations that are compiled to JSON and executed by distributed agents across a microservice architecture.
+Facetwork is a platform for defining, compiling, and executing distributed workflows. At its core is **FFL** (Facetwork Flow Language) — a domain-specific language for describing multi-step computations that are compiled to JSON and executed by distributed agents across a microservice architecture.
 
 The system spans:
 - **A custom programming language** with an LALR grammar, parser, AST, validator, and JSON emitter
@@ -21,7 +21,7 @@ The project grew from a single grammar file to **3,211 passing tests**, **100+ c
 
 ## Part 1: The Language
 
-### AFL — Agent Flow Language
+### AFL — Facetwork Flow Language
 
 AFL is a typed, declarative DSL designed for expressing distributed computations. Here is the complete grammar — 141 lines that define the entire language:
 
@@ -563,7 +563,7 @@ open /Volumes/afl_data/output/maps/alaska-latest.osm_bicycle_routes.html
 ### Project Structure
 
 ```
-agentflow/
+facetwork/
 ├── afl/                          # Compiler package
 │   ├── grammar/afl.lark          # 141-line LALR grammar
 │   ├── parser.py                 # Lark parser
@@ -595,4 +595,4 @@ agentflow/
 
 ---
 
-*AgentFlow — v0.24.0 — February 2026*
+*Facetwork — v0.24.0 — February 2026*

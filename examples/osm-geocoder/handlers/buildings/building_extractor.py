@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-from afl.runtime.storage import get_storage_backend
+from facetwork.runtime.storage import get_storage_backend
 
 _storage = get_storage_backend()
 

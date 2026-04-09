@@ -1,23 +1,23 @@
-"""Tests for the AWS Lambda + Step Functions example AFL files.
+"""Tests for the AWS Lambda + Step Functions example FFL files.
 
-Verifies that all 5 AFL files parse, validate, and compile correctly,
+Verifies that all 5 FFL files parse, validate, and compile correctly,
 and that the 4 workflows using mixin composition compile with
 all dependencies.
 """
 
 from pathlib import Path
 
-from afl.cli import main
-from afl.emitter import emit_dict
-from afl.parser import AFLParser
-from afl.source import CompilerInput, FileOrigin, SourceEntry
-from afl.validator import validate
+from facetwork.cli import main
+from facetwork.emitter import emit_dict
+from facetwork.parser import FFLParser
+from facetwork.source import CompilerInput, FileOrigin, SourceEntry
+from facetwork.validator import validate
 
 _AFL_DIR = Path(__file__).resolve().parent.parent.parent.parent / "afl"
 
 
 def _compile(*filenames: str) -> dict:
-    """Compile one or more AFL files from the AWS Lambda example directory."""
+    """Compile one or more FFL files from the AWS Lambda example directory."""
     entries = []
     for i, name in enumerate(filenames):
         path = _AFL_DIR / name
@@ -34,7 +34,7 @@ def _compile(*filenames: str) -> dict:
         library_sources=entries[1:],
     )
 
-    parser = AFLParser()
+    parser = FFLParser()
     program_ast, _registry = parser.parse_sources(compiler_input)
 
     result = validate(program_ast)
@@ -78,12 +78,12 @@ class TestAwsLambdaTypes:
 
     def test_parse_types(self):
         """lambda_types.afl parses and validates."""
-        program = _compile("lambda_types.afl")
+        program = _compile("lambda_types.ffl")
         assert program["type"] == "Program"
 
     def test_all_schemas_present(self):
         """All 7 schemas are emitted."""
-        program = _compile("lambda_types.afl")
+        program = _compile("lambda_types.ffl")
         schema_names = _collect_names(program, "schemas")
         expected = [
             "FunctionConfig",
@@ -107,12 +107,12 @@ class TestAwsLambdaMixins:
 
     def test_parse_mixins(self):
         """lambda_mixins.afl parses and validates."""
-        program = _compile("lambda_mixins.afl")
+        program = _compile("lambda_mixins.ffl")
         assert program["type"] == "Program"
 
     def test_mixin_facets_present(self):
         """All 6 mixin facets are emitted."""
-        program = _compile("lambda_mixins.afl")
+        program = _compile("lambda_mixins.ffl")
         facet_names = _collect_names(program, "facets")
         expected = ["Retry", "Timeout", "DLQ", "VpcConfig", "Tracing", "MemorySize"]
         for name in expected:
@@ -120,7 +120,7 @@ class TestAwsLambdaMixins:
 
     def test_implicits_present(self):
         """All 3 implicit declarations are emitted."""
-        program = _compile("lambda_mixins.afl")
+        program = _compile("lambda_mixins.ffl")
         implicit_names = _collect_names(program, "implicits")
         expected = ["defaultRetry", "defaultTimeout", "defaultTracing"]
         for name in expected:
@@ -135,7 +135,7 @@ class TestAwsLambdaEventFacets:
 
     def test_lambda_facets(self):
         """lambda_functions.afl compiles with types dependency."""
-        program = _compile("lambda_functions.afl", "lambda_types.afl")
+        program = _compile("lambda_functions.ffl", "lambda_types.ffl")
         facet_names = _collect_names(program, "eventFacets")
         expected = [
             "CreateFunction",
@@ -152,7 +152,7 @@ class TestAwsLambdaEventFacets:
 
     def test_stepfunctions_facets(self):
         """lambda_stepfunctions.afl compiles with types dependency."""
-        program = _compile("lambda_stepfunctions.afl", "lambda_types.afl")
+        program = _compile("lambda_stepfunctions.ffl", "lambda_types.ffl")
         facet_names = _collect_names(program, "eventFacets")
         expected = [
             "CreateStateMachine",
@@ -173,14 +173,14 @@ class TestAwsLambdaWorkflows:
     """Compilation tests for lambda_workflows.afl with mixin composition."""
 
     _DEPS = [
-        "lambda_types.afl",
-        "lambda_mixins.afl",
-        "lambda_functions.afl",
-        "lambda_stepfunctions.afl",
+        "lambda_types.ffl",
+        "lambda_mixins.ffl",
+        "lambda_functions.ffl",
+        "lambda_stepfunctions.ffl",
     ]
 
     def _compile_workflows(self) -> dict:
-        return _compile("lambda_workflows.afl", *self._DEPS)
+        return _compile("lambda_workflows.ffl", *self._DEPS)
 
     def test_workflows_compile(self):
         """lambda_workflows.afl compiles with all dependencies."""
@@ -235,7 +235,7 @@ class TestAwsLambdaWorkflows:
         """The CLI --check flag succeeds for lambda_workflows.afl."""
         args = [
             "--primary",
-            str(_AFL_DIR / "lambda_workflows.afl"),
+            str(_AFL_DIR / "lambda_workflows.ffl"),
         ]
         for dep in self._DEPS:
             args.extend(["--library", str(_AFL_DIR / dep)])
@@ -246,6 +246,6 @@ class TestAwsLambdaWorkflows:
     @staticmethod
     def _find_workflow(program: dict, name: str) -> dict | None:
         """Find a workflow by name in the emitted program."""
-        from afl.ast_utils import find_workflow
+        from facetwork.ast_utils import find_workflow
 
         return find_workflow(program, name)

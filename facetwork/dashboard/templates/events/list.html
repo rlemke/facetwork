@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Events — Facetwork{% endblock %}
+
+{% block breadcrumb %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="/events">Events</a>
+    </nav>
+</div>
+{% endblock %}
+
+{% block subnav %}
+<div class="container">
+    <div class="subnav">
+        <a href="/events"
+           class="subnav-pill{% if not filter_state %} active{% endif %}">
+            All <span class="subnav-count">{{ tab_counts.all }}</span>
+        </a>
+        <a href="/events?state=pending"
+           class="subnav-pill{% if filter_state == 'pending' %} active{% endif %}">
+            Pending <span class="subnav-count">{{ tab_counts.pending }}</span>
+        </a>
+        <a href="/events?state=running"
+           class="subnav-pill{% if filter_state == 'running' %} active{% endif %}">
+            Running <span class="subnav-count">{{ tab_counts.running }}</span>
+        </a>
+        <a href="/events?state=completed"
+           class="subnav-pill{% if filter_state == 'completed' %} active{% endif %}">
+            Completed <span class="subnav-count">{{ tab_counts.completed }}</span>
+        </a>
+        <a href="/events?state=failed"
+           class="subnav-pill{% if filter_state == 'failed' %} active{% endif %}">
+            Failed <span class="subnav-count">{{ tab_counts.failed }}</span>
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Events</h1>
+
+<button class="btn-refresh"
+        hx-get="/events/partial{% if filter_state %}?state={{ filter_state }}{% endif %}"
+        hx-target="#event-table-content"
+        hx-swap="innerHTML">
+    <span class="refresh-icon">&#x21bb;</span> Refresh
+    <span class="loading-spinner htmx-indicator"></span>
+</button>
+
+<div id="event-table-content"
+     {% if filter_state == 'pending' or filter_state == 'running' %}hx-get="/events/partial{% if filter_state %}?state={{ filter_state }}{% endif %}" hx-trigger="every 300s" hx-swap="innerHTML"{% endif %}>
+    {% include "events/_table_content.html" %}
+</div>
+{% endblock %}

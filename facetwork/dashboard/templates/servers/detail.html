@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Server {{ server.server_name if server else "Not Found" }} — Facetwork{% endblock %}
+{% block content %}
+{% if not server %}
+<h1>Server not found</h1>
+<p><a href="/servers">Back to servers</a></p>
+{% else %}
+<h1>Server <span class="mono">{{ server.server_name }}</span></h1>
+
+<div class="grid">
+    <div>
+        <article>
+            <header>Details</header>
+            <table>
+                <tr><th>UUID</th><td class="mono">{{ server.uuid }}</td></tr>
+                <tr><th>Group</th><td>{{ server.server_group }}</td></tr>
+                <tr><th>Service</th><td>{{ server.service_name }}</td></tr>
+                <tr><th>Name</th><td>{{ server.server_name }}</td></tr>
+                <tr><th>IPs</th><td class="mono">{{ server.server_ips|join(", ") }}</td></tr>
+                <tr><th>State</th><td>{% with state=server.state %}{% include "partials/_state_badge.html" %}{% endwith %}</td></tr>
+                <tr><th>Start Time</th><td>{{ server.start_time|timestamp }}</td></tr>
+                <tr><th>Last Ping</th><td>{{ server.ping_time|timestamp }}</td></tr>
+                <tr><th>Manager</th><td>{{ server.manager }}</td></tr>
+            </table>
+        </article>
+    </div>
+    <div>
+        {% if server.topics %}
+        <article>
+            <header>Topics</header>
+            <ul>
+                {% for topic in server.topics %}
+                <li class="mono">{{ topic }}</li>
+                {% endfor %}
+            </ul>
+        </article>
+        {% endif %}
+
+        {% if server.handlers %}
+        <article>
+            <header>Handlers</header>
+            <ul>
+                {% for handler in server.handlers %}
+                <li class="mono">{{ handler }}</li>
+                {% endfor %}
+            </ul>
+        </article>
+        {% endif %}
+    </div>
+</div>
+
+{% if server.handled %}
+<article>
+    <header>Handled Statistics</header>
+    <table>
+        <thead>
+            <tr>
+                <th>Handler</th>
+                <th>Handled</th>
+                <th>Not Handled</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for h in server.handled %}
+            <tr>
+                <td class="mono">{{ h.handler }}</td>
+                <td>{{ h.handled }}</td>
+                <td>{{ h.not_handled }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</article>
+{% endif %}
+
+{% if server.error %}
+<article aria-label="Error" class="state-badge-failed">
+    <header>Error</header>
+    <pre><code class="language-json">{{ server.error | tojson(indent=2) }}</code></pre>
+</article>
+{% endif %}
+{% endif %}
+{% endblock %}

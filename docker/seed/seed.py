@@ -4,7 +4,7 @@ Seed script - Populates MongoDB with example workflows.
 
 This script:
 1. Seeds inline example workflows (addone, chain, parallel)
-2. Discovers and seeds AFL files from examples/ directories
+2. Discovers and seeds FFL files from examples/ directories
 3. Creates proper FlowDefinition + WorkflowDefinition entities
    so the Dashboard "Run" button works
 4. Seeds handler registrations, a sample runner execution trace,
@@ -32,7 +32,7 @@ logger = logging.getLogger("seed")
 
 SEED_PATH = "docker:seed"
 
-# Inline example AFL sources
+# Inline example FFL sources
 INLINE_SOURCES = {
     "addone-example": """
 /** Core handler namespace with arithmetic and greeting facets. */
@@ -136,14 +136,14 @@ def _extract_flow_structure(program_dict: dict):
 
     Returns (namespaces, facets, blocks, statements) lists.
     """
-    from afl.runtime.entities import (
+    from facetwork.runtime.entities import (
         BlockDefinition,
         FacetDefinition,
         NamespaceDefinition,
         Parameter,
         StatementDefinition,
     )
-    from afl.runtime.types import generate_id
+    from facetwork.runtime.types import generate_id
 
     namespaces = []
     facets = []
@@ -230,19 +230,19 @@ def _extract_flow_structure(program_dict: dict):
 
 
 def seed_inline_source(name: str, source: str, store) -> tuple[str, int]:
-    """Seed a single inline AFL source. Returns (flow_id, workflow_count)."""
-    from afl.emitter import JSONEmitter
-    from afl.parser import AFLParser
-    from afl.runtime.entities import (
+    """Seed a single inline FFL source. Returns (flow_id, workflow_count)."""
+    from facetwork.emitter import JSONEmitter
+    from facetwork.parser import FFLParser
+    from facetwork.runtime.entities import (
         FlowDefinition,
         FlowIdentity,
         SourceText,
         WorkflowDefinition,
     )
-    from afl.runtime.types import generate_id
+    from facetwork.runtime.types import generate_id
 
-    parser = AFLParser()
-    ast = parser.parse(source, filename=f"{name}.afl")
+    parser = FFLParser()
+    ast = parser.parse(source, filename=f"{name}.ffl")
 
     emitter = JSONEmitter(include_locations=False)
     program_json = emitter.emit(ast)
@@ -260,7 +260,7 @@ def seed_inline_source(name: str, source: str, store) -> tuple[str, int]:
     flow = FlowDefinition(
         uuid=flow_id,
         name=FlowIdentity(name=name, path=SEED_PATH, uuid=flow_id),
-        compiled_sources=[SourceText(name=f"{name}.afl", content=source)],
+        compiled_sources=[SourceText(name=f"{name}.ffl", content=source)],
         compiled_ast=program_dict,
         namespaces=ns_defs,
         facets=facet_defs,
@@ -288,19 +288,19 @@ def seed_inline_source(name: str, source: str, store) -> tuple[str, int]:
 
 
 def seed_example_directory(name: str, afl_files: list[str], store) -> int:
-    """Seed an example directory's AFL files. Returns workflow count."""
-    from afl.ast import Program
-    from afl.emitter import JSONEmitter
-    from afl.parser import AFLParser
-    from afl.runtime.entities import (
+    """Seed an example directory's FFL files. Returns workflow count."""
+    from facetwork.ast import Program
+    from facetwork.emitter import JSONEmitter
+    from facetwork.parser import FFLParser
+    from facetwork.runtime.entities import (
         FlowDefinition,
         FlowIdentity,
         SourceText,
         WorkflowDefinition,
     )
-    from afl.runtime.types import generate_id
+    from facetwork.runtime.types import generate_id
 
-    parser = AFLParser()
+    parser = FFLParser()
     programs = []
     source_parts = []
 
@@ -329,7 +329,7 @@ def seed_example_directory(name: str, afl_files: list[str], store) -> int:
     flow = FlowDefinition(
         uuid=flow_id,
         name=FlowIdentity(name=name, path=SEED_PATH, uuid=flow_id),
-        compiled_sources=[SourceText(name="source.afl", content=combined_source)],
+        compiled_sources=[SourceText(name="source.ffl", content=combined_source)],
         compiled_ast=program_dict,
         namespaces=ns_defs,
         facets=facet_defs,
@@ -358,7 +358,7 @@ def seed_example_directory(name: str, afl_files: list[str], store) -> int:
 
 def seed_handler_registrations(store) -> int:
     """Seed handler registrations for inline event facets. Returns count."""
-    from afl.runtime.entities import HandlerRegistration
+    from facetwork.runtime.entities import HandlerRegistration
 
     now_ms = int(time.time() * 1000)
     handlers = [
@@ -397,17 +397,17 @@ def seed_sample_runner(flow_id: str, store) -> tuple[str, list[str]]:
 
     Returns (runner_id, [workflow_id_used]).
     """
-    from afl.runtime.entities import (
+    from facetwork.runtime.entities import (
         LogDefinition,
         Parameter,
         RunnerDefinition,
         TaskDefinition,
         WorkflowDefinition,
     )
-    from afl.runtime.persistence import EventDefinition
-    from afl.runtime.states import EventState, StepState
-    from afl.runtime.step import StepDefinition
-    from afl.runtime.types import (
+    from facetwork.runtime.persistence import EventDefinition
+    from facetwork.runtime.states import EventState, StepState
+    from facetwork.runtime.step import StepDefinition
+    from facetwork.runtime.types import (
         AttributeValue,
         FacetAttributes,
         ObjectType,
@@ -554,8 +554,8 @@ def seed_sample_runner(flow_id: str, store) -> tuple[str, list[str]]:
 
 def seed_server(store) -> None:
     """Seed a server registration for the addone-agent."""
-    from afl.runtime.entities import HandledCount, ServerDefinition
-    from afl.runtime.types import generate_id
+    from facetwork.runtime.entities import HandledCount, ServerDefinition
+    from facetwork.runtime.types import generate_id
 
     now_ms = int(time.time() * 1000)
     server = ServerDefinition(
@@ -575,8 +575,8 @@ def seed_server(store) -> None:
 
 def seed_published_source(store) -> None:
     """Seed a published source for the inline examples namespace."""
-    from afl.runtime.entities import PublishedSource
-    from afl.runtime.types import generate_id
+    from facetwork.runtime.entities import PublishedSource
+    from facetwork.runtime.types import generate_id
 
     now_ms = int(time.time() * 1000)
     combined_source = "\n".join(INLINE_SOURCES.values())
@@ -644,10 +644,10 @@ def clean_seeds(store) -> tuple[int, int]:
 
 def seed_database():
     """Seed the database with example workflows."""
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.runtime.mongo_store import MongoStore
 
     mongodb_url = os.environ.get("AFL_MONGODB_URL", "mongodb://localhost:27017")
-    database = os.environ.get("AFL_MONGODB_DATABASE", "afl")
+    database = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
 
     logger.info("Connecting to %s/%s", mongodb_url, database)
     store = MongoStore(connection_string=mongodb_url, database_name=database)
@@ -683,11 +683,11 @@ def seed_database():
     if os.path.isdir(examples_dir):
         logger.info("Seeding example directories...")
         for entry in sorted(os.listdir(examples_dir)):
-            afl_dir = os.path.join(examples_dir, entry, "afl")
+            afl_dir = os.path.join(examples_dir, entry, "ffl")
             if not os.path.isdir(afl_dir):
                 continue
 
-            afl_files = sorted(glob.glob(os.path.join(afl_dir, "*.afl")))
+            afl_files = sorted(glob.glob(os.path.join(afl_dir, "*.ffl")))
             if not afl_files:
                 continue
 

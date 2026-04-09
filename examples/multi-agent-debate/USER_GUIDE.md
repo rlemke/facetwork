@@ -104,7 +104,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-python -m afl.cli examples/multi-agent-debate/afl/debate.afl --check
+python -m afl.cli examples/multi-agent-debate/ffl/debate.afl --check
 
 # Run tests
 python -m pytest examples/multi-agent-debate/tests/ -v

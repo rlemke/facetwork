@@ -18,9 +18,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from afl.config import _reset_config_cache
-from afl.runtime.agent_runner import AgentConfig, make_store, run_agent
-from afl.runtime.memory_store import MemoryStore
+from facetwork.config import _reset_config_cache
+from facetwork.runtime.agent_runner import AgentConfig, make_store, run_agent
+from facetwork.runtime.memory_store import MemoryStore
 
 
 @pytest.fixture(autouse=True)
@@ -51,7 +51,7 @@ class TestMakeStore:
         monkeypatch.setenv("AFL_MONGODB_URL", "mongodb://testhost:27017")
         monkeypatch.delenv("AFL_MONGODB_DATABASE", raising=False)
 
-        with patch("afl.runtime.mongo_store.MongoStore") as MockMongoStore:
+        with patch("facetwork.runtime.mongo_store.MongoStore") as MockMongoStore:
             MockMongoStore.return_value = MagicMock()
             _store = make_store()
             MockMongoStore.assert_called_once_with(
@@ -64,7 +64,7 @@ class TestMakeStore:
         monkeypatch.setenv("AFL_MONGODB_URL", "mongodb://localhost:27017")
         monkeypatch.setenv("AFL_MONGODB_DATABASE", "env_db")
 
-        with patch("afl.runtime.mongo_store.MongoStore") as MockMongoStore:
+        with patch("facetwork.runtime.mongo_store.MongoStore") as MockMongoStore:
             MockMongoStore.return_value = MagicMock()
             make_store(database="arg_db")
             MockMongoStore.assert_called_once_with(
@@ -77,7 +77,7 @@ class TestMakeStore:
         monkeypatch.setenv("AFL_MONGODB_URL", "mongodb://localhost:27017")
         monkeypatch.setenv("AFL_MONGODB_DATABASE", "env_db")
 
-        with patch("afl.runtime.mongo_store.MongoStore") as MockMongoStore:
+        with patch("facetwork.runtime.mongo_store.MongoStore") as MockMongoStore:
             MockMongoStore.return_value = MagicMock()
             make_store()
             MockMongoStore.assert_called_once_with(
@@ -124,7 +124,7 @@ class TestRunAgent:
         config = AgentConfig(service_name="test-agent", server_group="test")
         register_mock = MagicMock()
 
-        with patch("afl.runtime.registry_runner.RegistryRunner") as MockRunner:
+        with patch("facetwork.runtime.registry_runner.RegistryRunner") as MockRunner:
             runner_instance = MockRunner.return_value
             runner_instance.start = MagicMock()
             runner_instance.stop = MagicMock()
@@ -146,7 +146,7 @@ class TestRunAgent:
         config = AgentConfig(service_name="test-agent", server_group="test")
         register_mock = MagicMock()
 
-        with patch("afl.runtime.agent_poller.AgentPoller") as MockPoller:
+        with patch("facetwork.runtime.agent_poller.AgentPoller") as MockPoller:
             poller_instance = MockPoller.return_value
             poller_instance.start = MagicMock()
             poller_instance.stop = MagicMock()
@@ -168,8 +168,8 @@ class TestRunAgent:
         config = AgentConfig(service_name="test-agent", server_group="test")
 
         with (
-            patch("afl.runtime.registry_runner.RegistryRunner") as MockRunner,
-            patch("afl.runtime.registry_runner.RegistryRunnerConfig") as MockConfig,
+            patch("facetwork.runtime.registry_runner.RegistryRunner") as MockRunner,
+            patch("facetwork.runtime.registry_runner.RegistryRunnerConfig") as MockConfig,
         ):
             runner_instance = MockRunner.return_value
             runner_instance.start = MagicMock()
@@ -193,8 +193,8 @@ class TestRunAgent:
         )
 
         with (
-            patch("afl.runtime.registry_runner.RegistryRunner") as MockRunner,
-            patch("afl.runtime.registry_runner.RegistryRunnerConfig") as MockConfig,
+            patch("facetwork.runtime.registry_runner.RegistryRunner") as MockRunner,
+            patch("facetwork.runtime.registry_runner.RegistryRunnerConfig") as MockConfig,
         ):
             runner_instance = MockRunner.return_value
             runner_instance.start = MagicMock()

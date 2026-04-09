@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Steps — Facetwork{% endblock %}
+{% block content %}
+<h1>Steps{% if runner %} for Runner <span class="mono">{{ runner.uuid|truncate_uuid }}</span>{% endif %}</h1>
+
+<div class="view-toggle">
+    <button class="view-toggle-btn active" onclick="document.getElementById('step-flat').style.display='';document.getElementById('step-tree').style.display='none';this.classList.add('active');this.nextElementSibling.classList.remove('active');">Flat</button>
+    <button class="view-toggle-btn" onclick="document.getElementById('step-tree').style.display='';document.getElementById('step-flat').style.display='none';this.classList.add('active');this.previousElementSibling.classList.remove('active');">Tree</button>
+</div>
+
+<div id="step-flat">
+<figure>
+<table>
+    <thead>
+        <tr><th>Name</th><th>Facet</th><th>State</th><th>Duration</th><th>Logs</th><th>Data</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+        {% for step in steps %}
+        {% include "partials/step_row.html" %}
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+</div>
+
+<div id="step-tree" style="display:none">
+<div class="step-tree-container">
+    {% with tree=tree %}{% include "partials/step_tree.html" %}{% endwith %}
+</div>
+</div>
+
+{% if runner %}
+<p><a href="/v2/workflows/{{ runner.uuid }}">Back to runner</a></p>
+{% endif %}
+{% endblock %}

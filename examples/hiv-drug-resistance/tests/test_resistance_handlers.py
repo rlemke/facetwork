@@ -358,17 +358,17 @@ class TestDispatch:
 
 
 # ---------------------------------------------------------------------------
-# TestCompilation — AFL parsing and AST checks
+# TestCompilation — FFL parsing and AST checks
 # ---------------------------------------------------------------------------
 class TestCompilation:
     @pytest.fixture()
     def parsed_ast(self):
-        from afl.parser import AFLParser
+        from facetwork.parser import FFLParser
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "resistance.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "resistance.ffl")
         with open(afl_path) as f:
             source = f.read()
-        return AFLParser().parse(source)
+        return FFLParser().parse(source)
 
     def test_afl_parses(self, parsed_ast):
         assert parsed_ast is not None
@@ -396,7 +396,7 @@ class TestCompilation:
 
     def test_prompt_block_present(self, parsed_ast):
         """Verify prompt blocks appear on event facets."""
-        from afl.ast import PromptBlock
+        from facetwork.ast import PromptBlock
 
         prompt_count = 0
         for ns in parsed_ast.namespaces:
@@ -408,7 +408,7 @@ class TestCompilation:
 
     def test_script_block_present(self, parsed_ast):
         """Verify script block appears on ClassifyMutations."""
-        from afl.ast import ScriptBlock
+        from facetwork.ast import ScriptBlock
 
         script_count = 0
         for ns in parsed_ast.namespaces:
@@ -421,7 +421,7 @@ class TestCompilation:
 
     def test_when_block_present(self, parsed_ast):
         """Verify andThen when block appears in AnalyzeSample workflow."""
-        from afl.ast import WhenBlock
+        from facetwork.ast import WhenBlock
 
         wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "hiv.workflows"]
         analyze_wf = [w for w in wf_ns[0].workflows if w.sig.name == "AnalyzeSample"][0]
@@ -452,7 +452,7 @@ class TestAgentIntegration:
         from handlers.reporting.reporting_handlers import _DISPATCH as d3
         from handlers.sequencing.sequencing_handlers import _DISPATCH as d4
 
-        from afl.runtime.agent import ToolRegistry
+        from facetwork.runtime.agent import ToolRegistry
 
         registry = ToolRegistry()
         for dispatch in [d1, d2, d3, d4]:

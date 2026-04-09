@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Handlers — Facetwork{% endblock %}
+{% block content %}
+<h1>Handlers</h1>
+
+<form method="get" action="/handlers">
+    <input type="search" name="q" placeholder="Search by facet name..." value="{{ search_query or '' }}">
+</form>
+
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>Facet Name</th>
+            <th>Module URI</th>
+            <th>Entrypoint</th>
+            <th>Version</th>
+            <th>Timeout</th>
+            <th>Registered</th>
+            <th>Updated</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for h in handlers %}
+        <tr>
+            <td><a href="/handlers/{{ h.facet_name }}">{{ h.facet_name }}</a></td>
+            <td class="mono">{{ h.module_uri }}</td>
+            <td class="mono">{{ h.entrypoint }}</td>
+            <td>{{ h.version }}</td>
+            <td>{{ h.timeout_ms }}ms</td>
+            <td>{{ h.created|timestamp }}</td>
+            <td>{{ h.updated|timestamp }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% endblock %}

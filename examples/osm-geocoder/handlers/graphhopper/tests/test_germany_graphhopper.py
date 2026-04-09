@@ -12,8 +12,8 @@ Uses mock handlers (no network calls). Run from the repo root:
     PYTHONPATH=. python examples/osm-geocoder/tests/mocked/py/test_germany_graphhopper.py
 """
 
-from afl import emit_dict, parse
-from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+from facetwork import emit_dict, parse
+from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
 
 # ---------------------------------------------------------------------------
 # Program AST - declares the event facets the runtime needs to recognise.
@@ -151,7 +151,7 @@ namespace osm.RegionMap {
 
 
 def compile_workflow() -> dict:
-    """Compile the workflow AFL to a runtime AST dict."""
+    """Compile the workflow FFL to a runtime AST dict."""
     tree = parse(WORKFLOW_AFL)
     program = emit_dict(tree)
     for ns in program.get("namespaces", []):
@@ -261,7 +261,7 @@ def main() -> None:
     """Run the Germany routing graph workflow end-to-end with mock handlers."""
     global CURRENT_PROFILE
 
-    print("Compiling RoutingGraphByRegion from AFL source...")
+    print("Compiling RoutingGraphByRegion from FFL source...")
     workflow_ast = compile_workflow()
     print("  OK\n")
 

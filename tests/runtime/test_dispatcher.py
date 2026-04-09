@@ -16,12 +16,12 @@
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     HandlerRegistration,
     MemoryStore,
     ToolRegistry,
 )
-from afl.runtime.dispatcher import (
+from facetwork.runtime.dispatcher import (
     CompositeDispatcher,
     InMemoryDispatcher,
     RegistryDispatcher,

@@ -110,7 +110,7 @@ pip install -e ".[dev]"
 pip install -r examples/site-selection/requirements.txt  # shapely, pyosmium, requests
 
 # Compile check
-afl examples/site-selection/afl/sitesel.afl --check
+afl examples/site-selection/ffl/sitesel.afl --check
 
 # Run tests (no network required)
 pytest examples/site-selection/tests/ -v

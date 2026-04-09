@@ -90,7 +90,7 @@ def normalize_config(
     labels = {
         "app": service,
         "env": environment,
-        "managed-by": "agentflow",
+        "managed-by": "facetwork",
     }
     return {
         "namespace": ns,

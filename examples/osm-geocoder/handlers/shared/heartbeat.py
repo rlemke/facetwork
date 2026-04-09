@@ -47,7 +47,7 @@ while True:
 
 
 def _local_cache_dir() -> str:
-    from afl.config import get_output_base
+    from facetwork.config import get_output_base
 
     return os.path.join(get_output_base(), "cache", "osm-local")
 
@@ -58,7 +58,7 @@ _SIZE_THRESHOLD = 100 * 1024 * 1024
 
 def _resolve_mongo_config() -> tuple[str, str]:
     """Resolve MongoDB URI and database name from environment."""
-    db_name = os.environ.get("AFL_MONGODB_DATABASE", "afl")
+    db_name = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
     uri = os.environ.get("AFL_MONGODB_URL", "")
     if not uri:
         # Legacy fallback

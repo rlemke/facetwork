@@ -38,9 +38,9 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture
 def client():
     """Create a test client with mongomock-backed store."""
-    from afl.dashboard import dependencies as deps
-    from afl.dashboard.app import create_app
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.dashboard import dependencies as deps
+    from facetwork.dashboard.app import create_app
+    from facetwork.runtime.mongo_store import MongoStore
 
     # Create a mongomock-backed store
     mock_client = mongomock.MongoClient()
@@ -59,7 +59,7 @@ def client():
 
 
 def _make_workflow(uuid="wf-1", name="TestWF"):
-    from afl.runtime.entities import WorkflowDefinition
+    from facetwork.runtime.entities import WorkflowDefinition
 
     return WorkflowDefinition(
         uuid=uuid,
@@ -73,7 +73,7 @@ def _make_workflow(uuid="wf-1", name="TestWF"):
 
 
 def _make_runner(uuid="r-1", workflow=None, state="running"):
-    from afl.runtime.entities import RunnerDefinition
+    from facetwork.runtime.entities import RunnerDefinition
 
     if workflow is None:
         workflow = _make_workflow()
@@ -102,7 +102,7 @@ class TestHomeRoute:
     def test_home_with_data(self, client):
         """Covers runner_counts and task_counts loop bodies."""
         tc, store = client
-        from afl.runtime.entities import TaskDefinition, TaskState
+        from facetwork.runtime.entities import TaskDefinition, TaskState
 
         store.save_runner(_make_runner("r-1", state="running"))
         store.save_runner(_make_runner("r-2", state="completed"))
@@ -131,7 +131,7 @@ class TestRunnerRoutes:
 
     def test_runner_list_with_data_redirects(self, client):
         tc, store = client
-        from afl.runtime.entities import (
+        from facetwork.runtime.entities import (
             RunnerDefinition,
             RunnerState,
             WorkflowDefinition,
@@ -172,7 +172,7 @@ class TestRunnerRoutes:
 
     def test_runner_detail_with_data_redirects(self, client):
         tc, store = client
-        from afl.runtime.entities import (
+        from facetwork.runtime.entities import (
             RunnerDefinition,
             RunnerState,
             WorkflowDefinition,
@@ -201,7 +201,7 @@ class TestRunnerRoutes:
 
     def test_cancel_runner(self, client):
         tc, store = client
-        from afl.runtime.entities import (
+        from facetwork.runtime.entities import (
             RunnerDefinition,
             RunnerState,
             WorkflowDefinition,
@@ -232,7 +232,7 @@ class TestRunnerRoutes:
 
     def test_pause_runner(self, client):
         tc, store = client
-        from afl.runtime.entities import (
+        from facetwork.runtime.entities import (
             RunnerDefinition,
             RunnerState,
             WorkflowDefinition,
@@ -263,7 +263,7 @@ class TestRunnerRoutes:
 
     def test_resume_runner(self, client):
         tc, store = client
-        from afl.runtime.entities import (
+        from facetwork.runtime.entities import (
             RunnerDefinition,
             RunnerState,
             WorkflowDefinition,
@@ -295,9 +295,9 @@ class TestRunnerRoutes:
     def test_runner_steps_page(self, client):
         """Covers runners.py runner_steps route."""
         tc, store = client
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import step_id
-        from afl.runtime.types import workflow_id as wf_id_fn
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import step_id
+        from facetwork.runtime.types import workflow_id as wf_id_fn
 
         wf = _make_workflow()
         runner = _make_runner("r-1", workflow=wf)
@@ -320,7 +320,7 @@ class TestRunnerRoutes:
     def test_runner_logs_page(self, client):
         """Covers runners.py runner_logs route."""
         tc, store = client
-        from afl.runtime.entities import LogDefinition
+        from facetwork.runtime.entities import LogDefinition
 
         store.save_runner(_make_runner("r-1"))
         log = LogDefinition(
@@ -346,8 +346,8 @@ class TestStepRoutes:
 
     def test_step_detail_with_data(self, client):
         tc, store = client
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import step_id, workflow_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import step_id, workflow_id
 
         sid = step_id()
         wid = workflow_id()
@@ -365,8 +365,8 @@ class TestStepRoutes:
 
     def test_retry_step(self, client):
         tc, store = client
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import step_id, workflow_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import step_id, workflow_id
 
         sid = step_id()
         wid = workflow_id()
@@ -386,9 +386,9 @@ class TestStepRoutes:
 
     def test_retry_step_resets_task(self, client):
         tc, store = client
-        from afl.runtime.entities import TaskDefinition
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import step_id, workflow_id
+        from facetwork.runtime.entities import TaskDefinition
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import step_id, workflow_id
 
         sid = step_id()
         wid = workflow_id()
@@ -428,7 +428,7 @@ class TestLogRoutes:
     def test_log_list(self, client):
         """Covers logs.py log_list route."""
         tc, store = client
-        from afl.runtime.entities import LogDefinition
+        from facetwork.runtime.entities import LogDefinition
 
         store.save_runner(_make_runner("r-1"))
         log = LogDefinition(
@@ -454,7 +454,7 @@ class TestFlowRoutes:
 
     def test_flow_list_with_data(self, client):
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity
 
         flow = FlowDefinition(
             uuid="flow-1",
@@ -468,7 +468,7 @@ class TestFlowRoutes:
 
     def test_flow_detail(self, client):
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity
 
         flow = FlowDefinition(
             uuid="flow-1",
@@ -489,12 +489,12 @@ class TestFlowRoutes:
     def test_flow_source_with_data(self, client):
         """Covers flows.py flow_source route."""
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity, SourceText
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity, SourceText
 
         flow = FlowDefinition(
             uuid="flow-1",
             name=FlowIdentity(name="TestFlow", path="/test", uuid="flow-1"),
-            compiled_sources=[SourceText(name="main.afl", content="facet Foo()", language="afl")],
+            compiled_sources=[SourceText(name="main.ffl", content="facet Foo()", language="afl")],
         )
         store.save_flow(flow)
 
@@ -511,13 +511,13 @@ class TestFlowRoutes:
     def test_flow_json_with_valid_afl(self, client):
         """Covers flows.py flow_json route — successful parse."""
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity, SourceText
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity, SourceText
 
         flow = FlowDefinition(
             uuid="flow-1",
             name=FlowIdentity(name="TestFlow", path="/test", uuid="flow-1"),
             compiled_sources=[
-                SourceText(name="main.afl", content="facet Bar(x: String)", language="afl")
+                SourceText(name="main.ffl", content="facet Bar(x: String)", language="afl")
             ],
         )
         store.save_flow(flow)
@@ -530,13 +530,13 @@ class TestFlowRoutes:
     def test_flow_json_with_parse_error(self, client):
         """Covers flows.py flow_json route — parse error path."""
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity, SourceText
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity, SourceText
 
         flow = FlowDefinition(
             uuid="flow-1",
             name=FlowIdentity(name="BadFlow", path="/test", uuid="flow-1"),
             compiled_sources=[
-                SourceText(name="bad.afl", content="this is not valid afl {{{{", language="afl")
+                SourceText(name="bad.ffl", content="this is not valid afl {{{{", language="afl")
             ],
         )
         store.save_flow(flow)
@@ -554,7 +554,7 @@ class TestFlowRoutes:
     def test_flow_json_no_sources(self, client):
         """Covers flow_json when flow exists but has no compiled_sources."""
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity
 
         flow = FlowDefinition(
             uuid="flow-1",
@@ -576,7 +576,7 @@ class TestServerRoutes:
 
     def test_server_list_with_data(self, client):
         tc, store = client
-        from afl.runtime.entities import ServerDefinition, ServerState
+        from facetwork.runtime.entities import ServerDefinition, ServerState
 
         server = ServerDefinition(
             uuid="s-1",
@@ -593,7 +593,7 @@ class TestServerRoutes:
 
     def test_server_list_links_to_detail(self, client):
         tc, store = client
-        from afl.runtime.entities import ServerDefinition, ServerState
+        from facetwork.runtime.entities import ServerDefinition, ServerState
 
         server = ServerDefinition(
             uuid="s-1",
@@ -610,7 +610,7 @@ class TestServerRoutes:
 
     def test_server_detail(self, client):
         tc, store = client
-        from afl.runtime.entities import HandledCount, ServerDefinition, ServerState
+        from facetwork.runtime.entities import HandledCount, ServerDefinition, ServerState
 
         server = ServerDefinition(
             uuid="s-1",
@@ -637,7 +637,7 @@ class TestServerRoutes:
 
     def test_server_detail_handled_stats(self, client):
         tc, store = client
-        from afl.runtime.entities import HandledCount, ServerDefinition, ServerState
+        from facetwork.runtime.entities import HandledCount, ServerDefinition, ServerState
 
         server = ServerDefinition(
             uuid="s-1",
@@ -655,7 +655,7 @@ class TestServerRoutes:
 
     def test_server_detail_with_error(self, client):
         tc, store = client
-        from afl.runtime.entities import ServerDefinition, ServerState
+        from facetwork.runtime.entities import ServerDefinition, ServerState
 
         server = ServerDefinition(
             uuid="s-1",
@@ -673,7 +673,7 @@ class TestServerRoutes:
 
     def test_api_server_detail(self, client):
         tc, store = client
-        from afl.runtime.entities import ServerDefinition, ServerState
+        from facetwork.runtime.entities import ServerDefinition, ServerState
 
         server = ServerDefinition(
             uuid="s-1",
@@ -703,7 +703,7 @@ class TestTaskRoutes:
 
     def test_task_list_with_data(self, client):
         tc, store = client
-        from afl.runtime.entities import TaskDefinition, TaskState
+        from facetwork.runtime.entities import TaskDefinition, TaskState
 
         task = TaskDefinition(
             uuid="task-1",
@@ -731,7 +731,7 @@ class TestApiRoutes:
 
     def test_api_runners_with_data(self, client):
         tc, store = client
-        from afl.runtime.entities import (
+        from facetwork.runtime.entities import (
             RunnerDefinition,
             RunnerState,
             WorkflowDefinition,
@@ -762,7 +762,7 @@ class TestApiRoutes:
 
     def test_api_runner_detail(self, client):
         tc, store = client
-        from afl.runtime.entities import (
+        from facetwork.runtime.entities import (
             RunnerDefinition,
             RunnerState,
             WorkflowDefinition,
@@ -814,8 +814,8 @@ class TestApiRoutes:
     def test_api_step_detail_with_data(self, client):
         """Covers api.py api_step_detail success path and _step_dict."""
         tc, store = client
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import step_id, workflow_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import step_id, workflow_id
 
         sid = step_id()
         wid = workflow_id()
@@ -836,7 +836,7 @@ class TestApiRoutes:
     def test_api_runners_filter_by_state(self, client):
         """Covers api.py api_runners with state parameter."""
         tc, store = client
-        from afl.runtime.entities import RunnerState
+        from facetwork.runtime.entities import RunnerState
 
         store.save_runner(_make_runner("r-1", state=RunnerState.RUNNING))
         store.save_runner(_make_runner("r-2", state=RunnerState.COMPLETED))
@@ -860,8 +860,8 @@ class TestApiRoutes:
     def test_api_runner_steps_json(self, client):
         """Covers api.py api_runner_steps JSON path."""
         tc, store = client
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import step_id as make_step_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import step_id as make_step_id
 
         wf = _make_workflow()
         runner = _make_runner("r-1", workflow=wf)
@@ -891,8 +891,8 @@ class TestApiRoutes:
     def test_api_runner_steps_partial(self, client):
         """Covers api.py api_runner_steps with partial=true."""
         tc, store = client
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import step_id as make_step_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import step_id as make_step_id
 
         wf = _make_workflow()
         runner = _make_runner("r-1", workflow=wf)
@@ -913,7 +913,7 @@ class TestApiRoutes:
 
 
 def _make_handler(facet_name="ns.TestFacet", module_uri="my.handlers", entrypoint="handle"):
-    from afl.runtime.entities import HandlerRegistration
+    from facetwork.runtime.entities import HandlerRegistration
 
     return HandlerRegistration(
         facet_name=facet_name,
@@ -988,9 +988,9 @@ class TestHandlerRoutes:
 
 
 def _make_event_task(
-    uuid="evt-1", step_id="step-1", workflow_id="wf-1", state="pending", name="afl:execute"
+    uuid="evt-1", step_id="step-1", workflow_id="wf-1", state="pending", name="fw:execute"
 ):
-    from afl.runtime.entities import TaskDefinition
+    from facetwork.runtime.entities import TaskDefinition
 
     return TaskDefinition(
         uuid=uuid,
@@ -1027,7 +1027,7 @@ class TestEventRoutes:
         resp = tc.get("/events/evt-1")
         assert resp.status_code == 200
         assert "evt-1" in resp.text
-        assert "afl:execute" in resp.text
+        assert "fw:execute" in resp.text
 
     def test_event_detail_not_found(self, client):
         tc, store = client
@@ -1056,7 +1056,7 @@ class TestEventRoutes:
         data = resp.json()
         assert len(data) == 1
         assert data[0]["id"] == "evt-1"
-        assert data[0]["event_type"] == "afl:execute"
+        assert data[0]["event_type"] == "fw:execute"
 
 
 def _make_published_source(
@@ -1066,7 +1066,7 @@ def _make_published_source(
     version="latest",
     origin="dashboard",
 ):
-    from afl.runtime.entities import PublishedSource
+    from facetwork.runtime.entities import PublishedSource
 
     return PublishedSource(
         uuid=uuid,
@@ -1146,7 +1146,7 @@ class TestSourceRoutes:
 
 
 def _make_flow_with_ns(flow_id="flow-1", ns_name="test.ns", ns_uuid="ns-1"):
-    from afl.runtime.entities import (
+    from facetwork.runtime.entities import (
         FacetDefinition,
         FlowDefinition,
         FlowIdentity,
@@ -1237,7 +1237,7 @@ class TestWorkflowValidation:
 
 
 def _make_task(uuid="task-1", name="SendEmail", state="pending", error=None, data=None):
-    from afl.runtime.entities import TaskDefinition
+    from facetwork.runtime.entities import TaskDefinition
 
     return TaskDefinition(
         uuid=uuid,
@@ -1307,8 +1307,8 @@ class TestTaskDetailAndFiltering:
 
     def test_task_list_shows_step_name(self, client):
         tc, store = client
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import StepId, WorkflowId
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import StepId, WorkflowId
 
         step = StepDefinition(
             id=StepId("step-1"),
@@ -1326,8 +1326,8 @@ class TestTaskDetailAndFiltering:
 
     def test_task_detail_shows_step_name_and_duration(self, client):
         tc, store = client
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import StepId, WorkflowId
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import StepId, WorkflowId
 
         step = StepDefinition(
             id=StepId("step-1"),
@@ -1347,8 +1347,8 @@ class TestTaskDetailAndFiltering:
 
     def test_step_list_shows_duration(self, client):
         tc, store = client
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import step_id as make_step_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import step_id as make_step_id
 
         wf = _make_workflow()
         runner = _make_runner("r-1", workflow=wf)
@@ -1413,7 +1413,7 @@ class TestListFiltering:
 
     def test_server_list_filter_by_state(self, client):
         tc, store = client
-        from afl.runtime.entities import ServerDefinition, ServerState
+        from facetwork.runtime.entities import ServerDefinition, ServerState
 
         server = ServerDefinition(
             uuid="s-1",
@@ -1430,7 +1430,7 @@ class TestListFiltering:
 
     def test_flow_list_search(self, client):
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity
 
         store.save_flow(
             FlowDefinition(
@@ -1552,7 +1552,7 @@ class TestApiExpansion:
 
     def test_api_servers_filter(self, client):
         tc, store = client
-        from afl.runtime.entities import ServerDefinition, ServerState
+        from facetwork.runtime.entities import ServerDefinition, ServerState
 
         store.save_server(
             ServerDefinition(
@@ -1581,7 +1581,7 @@ class TestApiExpansion:
 
     def test_api_flows_search(self, client):
         tc, store = client
-        from afl.runtime.entities import FlowDefinition, FlowIdentity
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity
 
         store.save_flow(
             FlowDefinition(
@@ -1610,7 +1610,7 @@ class TestApiExpansion:
 
 def _make_flow_with_docs(flow_id="flow-doc"):
     """Create a flow with doc comments on namespace, facets, and workflows."""
-    from afl.runtime.entities import (
+    from facetwork.runtime.entities import (
         FacetDefinition,
         FlowDefinition,
         FlowIdentity,
@@ -1660,7 +1660,7 @@ def _make_flow_with_docs(flow_id="flow-doc"):
         ],
         compiled_sources=[
             SourceText(
-                name="main.afl",
+                name="main.ffl",
                 content="""
 namespace handlers {
     /**
@@ -1761,8 +1761,8 @@ class TestSeedWorkflowDocumentation:
         """_collect_workflows returns workflow dicts that include 'doc' field."""
         import json as json_mod
 
-        from afl.emitter import JSONEmitter
-        from afl.parser import AFLParser
+        from facetwork.emitter import JSONEmitter
+        from facetwork.parser import FFLParser
 
         source = """
 namespace test_ns {
@@ -1775,7 +1775,7 @@ namespace test_ns {
     }
 }
 """
-        parser = AFLParser()
+        parser = FFLParser()
         ast = parser.parse(source)
         emitter = JSONEmitter(include_locations=False)
         program_dict = json_mod.loads(emitter.emit(ast))
@@ -1783,7 +1783,7 @@ namespace test_ns {
         # Import _collect_workflows from seed
         import sys
 
-        sys.path.insert(0, "/Users/ralph_lemke/agentflow")
+        sys.path.insert(0, "/Users/ralph_lemke/facetwork")
         from docker.seed.seed import _collect_workflows
 
         workflows = _collect_workflows(program_dict)
@@ -1797,7 +1797,7 @@ namespace test_ns {
 
     def test_workflow_definition_accepts_dict_doc(self):
         """WorkflowDefinition.documentation accepts dict values."""
-        from afl.runtime.entities import WorkflowDefinition
+        from facetwork.runtime.entities import WorkflowDefinition
 
         doc = {"description": "Test doc", "params": [], "returns": []}
         wf = WorkflowDefinition(
@@ -1820,8 +1820,8 @@ class TestStepLogs:
     def test_api_step_logs_returns_entries(self, client):
         """GET /api/steps/{step_id}/logs returns step log entries."""
         tc, store = client
-        from afl.runtime.entities import StepLogEntry
-        from afl.runtime.types import generate_id
+        from facetwork.runtime.entities import StepLogEntry
+        from facetwork.runtime.types import generate_id
 
         store.save_step_log(
             StepLogEntry(
@@ -1867,9 +1867,9 @@ class TestStepLogs:
     def test_step_detail_shows_logs_section(self, client):
         """Step detail page shows 'Step Logs' section when logs exist."""
         tc, store = client
-        from afl.runtime.entities import StepLogEntry
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import generate_id, step_id, workflow_id
+        from facetwork.runtime.entities import StepLogEntry
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import generate_id, step_id, workflow_id
 
         sid = step_id()
         wid = workflow_id()

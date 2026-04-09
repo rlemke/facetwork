@@ -20,16 +20,16 @@ which implement error recovery for steps with catch clauses.
 
 from unittest.mock import MagicMock
 
-from afl.runtime.changers.base import StateChangeResult
-from afl.runtime.handlers.catch_execution import (
+from facetwork.runtime.changers.base import StateChangeResult
+from facetwork.runtime.handlers.catch_execution import (
     CatchBeginHandler,
     CatchContinueHandler,
     CatchEndHandler,
 )
-from afl.runtime.persistence import IterationChanges
-from afl.runtime.states import StepState
-from afl.runtime.step import StepDefinition
-from afl.runtime.types import ObjectType
+from facetwork.runtime.persistence import IterationChanges
+from facetwork.runtime.states import StepState
+from facetwork.runtime.step import StepDefinition
+from facetwork.runtime.types import ObjectType
 
 
 def _make_step(

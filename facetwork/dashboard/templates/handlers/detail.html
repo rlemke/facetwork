@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Handler {{ handler.facet_name if handler else "Not Found" }} — Facetwork{% endblock %}
+{% block content %}
+{% if not handler %}
+<h1>Handler not found</h1>
+<p><a href="/handlers">Back to handlers</a></p>
+{% else %}
+<h1>Handler <span class="mono">{{ handler.facet_name }}</span></h1>
+
+<div class="grid">
+    <div>
+        <article>
+            <header>Details</header>
+            <table>
+                <tr><th>Facet Name</th><td>{{ handler.facet_name }}</td></tr>
+                <tr><th>Module URI</th><td class="mono">{{ handler.module_uri }}</td></tr>
+                <tr><th>Entrypoint</th><td class="mono">{{ handler.entrypoint }}</td></tr>
+                <tr><th>Version</th><td>{{ handler.version }}</td></tr>
+                <tr><th>Checksum</th><td class="mono">{{ handler.checksum }}</td></tr>
+                <tr><th>Timeout</th><td>{{ handler.timeout_ms }}ms</td></tr>
+                <tr><th>Registered</th><td>{{ handler.created|timestamp }}</td></tr>
+                <tr><th>Updated</th><td>{{ handler.updated|timestamp }}</td></tr>
+            </table>
+        </article>
+    </div>
+    <div>
+        <article>
+            <header>Actions</header>
+            <div class="actions">
+                <button hx-post="/handlers/{{ handler.facet_name }}/delete"
+                        hx-confirm="Delete this handler registration?"
+                        class="outline secondary">Delete</button>
+            </div>
+        </article>
+
+        {% if handler.requirements %}
+        <article>
+            <header>Requirements</header>
+            <ul>
+                {% for req in handler.requirements %}
+                <li class="mono">{{ req }}</li>
+                {% endfor %}
+            </ul>
+        </article>
+        {% endif %}
+
+        {% if handler.metadata %}
+        <article>
+            <header>Metadata</header>
+            <table>
+                {% for key, value in handler.metadata.items() %}
+                <tr><td>{{ key }}</td><td>{{ value }}</td></tr>
+                {% endfor %}
+            </table>
+        </article>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,6 +1,6 @@
 # Hello Agent Example
 
-A minimal end-to-end example demonstrating the AgentFlow execution model.
+A minimal end-to-end example demonstrating the Facetwork execution model.
 
 ## What It Does
 

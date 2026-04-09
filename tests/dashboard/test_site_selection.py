@@ -28,7 +28,7 @@ pytestmark = pytest.mark.skipif(
 # Helper unit tests (no server needed)
 # ---------------------------------------------------------------------------
 
-from afl.dashboard.routes.domain.site_selection import (
+from facetwork.dashboard.routes.domain.site_selection import (
     _FIELD_LABELS,
     _PREFERRED_FIELDS,
     _filter_numeric_fields,
@@ -90,9 +90,9 @@ _TRIANGLE = {
 @pytest.fixture
 def client():
     """Create a test client with mongomock-backed store."""
-    from afl.dashboard import dependencies as deps
-    from afl.dashboard.app import create_app
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.dashboard import dependencies as deps
+    from facetwork.dashboard.app import create_app
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     store = MongoStore(database_name="afl_test_site_sel", client=mock_client)

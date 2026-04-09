@@ -82,19 +82,19 @@ echo ""
 # 4. Compile the AFL workflow
 # ---------------------------------------------------------------------------
 echo "=== Compiling osm_analyze_states_25.afl ==="
-AFL_FILE="$REAL_DIR/afl/osm_analyze_states_25.afl"
+AFL_FILE="$REAL_DIR/ffl/osm_analyze_states_25.ffl"
 OUTPUT_FILE="$REAL_DIR/osm_analyze_states_25.json"
 
 cd "$PROJECT_DIR"
 source .venv/bin/activate 2>/dev/null || true
 
-# Build library args from all OSM AFL files (handlers/*/afl/ + top-level afl/)
+# Build library args from all OSM AFL files (handlers/*/ffl/ + top-level afl/)
 # Also include the base analyze file that defines AnalyzeRegion
 LIB_ARGS=()
 while IFS= read -r f; do
     LIB_ARGS+=(--library "$f")
-done < <(find "$EXAMPLE_DIR" -name '*.afl' -not -path '*/tests/*' | sort)
-LIB_ARGS+=(--library "$REAL_DIR/afl/osm_analyze_states.afl")
+done < <(find "$EXAMPLE_DIR" -name '*.ffl' -not -path '*/tests/*' | sort)
+LIB_ARGS+=(--library "$REAL_DIR/ffl/osm_analyze_states.ffl")
 
 PYTHON="${PROJECT_DIR}/.venv/bin/python3"
 [[ -x "$PYTHON" ]] || PYTHON=python3

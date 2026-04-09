@@ -1,4 +1,4 @@
-"""Tests for the OSM zoom builder AFL file.
+"""Tests for the OSM zoom builder FFL file.
 
 Verifies that osmzoombuilder.afl parses, validates, and compiles correctly,
 and that the composed RoadZoomBuilder workflow in osmworkflows_composed.afl
@@ -7,22 +7,22 @@ also compiles with all dependencies.
 
 from pathlib import Path
 
-from afl.cli import main
-from afl.emitter import emit_dict
-from afl.parser import AFLParser
-from afl.source import CompilerInput, FileOrigin, SourceEntry
-from afl.validator import validate
+from facetwork.cli import main
+from facetwork.emitter import emit_dict
+from facetwork.parser import FFLParser
+from facetwork.source import CompilerInput, FileOrigin, SourceEntry
+from facetwork.validator import validate
 
 _OSM_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-# Collect all AFL files from root afl/ and handlers/*/afl/ (skip tests/)
+# Collect all FFL files from root afl/ and handlers/*/ffl/ (skip tests/)
 _AFL_BY_NAME: dict[str, Path] = {}
-for _p in sorted(_OSM_ROOT.rglob("*.afl")):
+for _p in sorted(_OSM_ROOT.rglob("*.ffl")):
     if "/tests/" not in str(_p):
         _AFL_BY_NAME[_p.name] = _p
 
 
 def _compile(*filenames: str) -> dict:
-    """Compile one or more AFL files from the OSM example directory."""
+    """Compile one or more FFL files from the OSM example directory."""
     entries = []
     for i, name in enumerate(filenames):
         path = _AFL_BY_NAME[name]
@@ -39,7 +39,7 @@ def _compile(*filenames: str) -> dict:
         library_sources=entries[1:],
     )
 
-    parser = AFLParser()
+    parser = FFLParser()
     program_ast, _registry = parser.parse_sources(compiler_input)
 
     result = validate(program_ast)
@@ -55,12 +55,12 @@ class TestZoomBuilderCompilation:
 
     def test_parse_osmzoombuilder(self):
         """osmzoombuilder.afl parses and validates with its dependency."""
-        program = _compile("osmzoombuilder.afl", "osmtypes.afl")
+        program = _compile("osmzoombuilder.ffl", "osmtypes.ffl")
         assert program["type"] == "Program"
 
     def test_zoombuilder_namespace_exists(self):
         """The ZoomBuilder namespace is emitted."""
-        program = _compile("osmzoombuilder.afl", "osmtypes.afl")
+        program = _compile("osmzoombuilder.ffl", "osmtypes.ffl")
 
         ns_names = []
 
@@ -78,7 +78,7 @@ class TestZoomBuilderCompilation:
 
     def test_zoombuilder_schemas(self):
         """All six schemas are emitted."""
-        program = _compile("osmzoombuilder.afl", "osmtypes.afl")
+        program = _compile("osmzoombuilder.ffl", "osmtypes.ffl")
 
         schema_names = []
 
@@ -100,7 +100,7 @@ class TestZoomBuilderCompilation:
 
     def test_zoombuilder_event_facets(self):
         """All nine event facets are emitted."""
-        program = _compile("osmzoombuilder.afl", "osmtypes.afl")
+        program = _compile("osmzoombuilder.ffl", "osmtypes.ffl")
 
         facet_names = []
 
@@ -125,7 +125,7 @@ class TestZoomBuilderCompilation:
 
     def test_build_zoom_layers_params(self):
         """BuildZoomLayers has the expected parameters."""
-        program = _compile("osmzoombuilder.afl", "osmtypes.afl")
+        program = _compile("osmzoombuilder.ffl", "osmtypes.ffl")
 
         def _find_facet(node, name):
             for decl in node.get("declarations", []):
@@ -149,7 +149,7 @@ class TestZoomBuilderCompilation:
 
     def test_build_zoom_layers_defaults(self):
         """BuildZoomLayers has correct default values."""
-        program = _compile("osmzoombuilder.afl", "osmtypes.afl")
+        program = _compile("osmzoombuilder.ffl", "osmtypes.ffl")
 
         def _find_facet(node, name):
             for decl in node.get("declarations", []):
@@ -174,9 +174,9 @@ class TestZoomBuilderCompilation:
         result = main(
             [
                 "--primary",
-                str(_AFL_BY_NAME["osmzoombuilder.afl"]),
+                str(_AFL_BY_NAME["osmzoombuilder.ffl"]),
                 "--library",
-                str(_AFL_BY_NAME["osmtypes.afl"]),
+                str(_AFL_BY_NAME["osmtypes.ffl"]),
                 "--check",
             ]
         )
@@ -187,12 +187,12 @@ class TestComposedZoomWorkflow:
     """Tests for the RoadZoomBuilder composed workflow."""
 
     def test_compile_all_afl_files(self):
-        """All AFL files compile together without errors."""
+        """All FFL files compile together without errors."""
         filenames = sorted(_AFL_BY_NAME.keys())
 
         # Put osmworkflows_composed.afl first as primary
-        filenames.remove("osmworkflows_composed.afl")
-        filenames.insert(0, "osmworkflows_composed.afl")
+        filenames.remove("osmworkflows_composed.ffl")
+        filenames.insert(0, "osmworkflows_composed.ffl")
 
         program = _compile(*filenames)
         assert program["type"] == "Program"
@@ -201,8 +201,8 @@ class TestComposedZoomWorkflow:
         """The RoadZoomBuilder workflow compiles with 3 steps."""
         filenames = sorted(_AFL_BY_NAME.keys())
 
-        filenames.remove("osmworkflows_composed.afl")
-        filenames.insert(0, "osmworkflows_composed.afl")
+        filenames.remove("osmworkflows_composed.ffl")
+        filenames.insert(0, "osmworkflows_composed.ffl")
 
         program = _compile(*filenames)
 

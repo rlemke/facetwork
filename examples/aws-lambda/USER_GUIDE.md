@@ -166,11 +166,11 @@ pip install -r examples/aws-lambda/requirements.txt
 
 # Compile check
 python -m afl.cli \
-    --primary examples/aws-lambda/afl/lambda_workflows.afl \
-    --library examples/aws-lambda/afl/lambda_types.afl \
-    --library examples/aws-lambda/afl/lambda_mixins.afl \
-    --library examples/aws-lambda/afl/lambda_functions.afl \
-    --library examples/aws-lambda/afl/lambda_stepfunctions.afl \
+    --primary examples/aws-lambda/ffl/lambda_workflows.afl \
+    --library examples/aws-lambda/ffl/lambda_types.afl \
+    --library examples/aws-lambda/ffl/lambda_mixins.afl \
+    --library examples/aws-lambda/ffl/lambda_functions.afl \
+    --library examples/aws-lambda/ffl/lambda_stepfunctions.afl \
     --check
 
 # Start the agent

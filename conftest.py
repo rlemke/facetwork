@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Root pytest configuration for AFL tests."""
+"""Root pytest configuration for FFL tests."""
 
 
 def _patch_mongomock_objectid():
@@ -68,7 +68,7 @@ def pytest_addoption(parser):
         "--mongodb",
         action="store_true",
         default=False,
-        help="Run MongoDB tests against a real server (uses AFL config for connection)",
+        help="Run MongoDB tests against a real server (uses FFL config for connection)",
     )
     parser.addoption(
         "--hdfs",

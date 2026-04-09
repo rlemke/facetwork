@@ -2,13 +2,13 @@
 
 ### Terminology
 
-- **AgentFlow**: The platform for distributed workflow execution (compiler + runtime + agents)
-- **AFL**: Agent Flow Language — the DSL for defining workflows (`.afl` files)
+- **Facetwork**: The platform for distributed workflow execution (compiler + runtime + agents)
+- **FFL**: Facetwork Flow Language — the DSL for defining workflows (`.afl` files)
 - **AFL Agent**: A service that polls the task queue for event facet tasks, performs the required action (API call, data processing, etc.), writes the result back to the step, and signals the workflow to continue. Agents can be built using `AgentPoller` (callback-based), `RegistryRunner` (persistence-based auto-loading), or `RunnerService` (distributed orchestration). The **recommended approach** is `RegistryRunner`: register handler implementations in the database via `register_handler()` or the MCP `afl_manage_handlers` tool, then start the runner service — it dynamically loads and dispatches handlers without requiring custom agent code. Multiple agents can run concurrently, each handling different event facet types.
 
 ### Authoring Roles
 
-AgentFlow separates workflow design from handler implementation into distinct authoring roles:
+Facetwork separates workflow design from handler implementation into distinct authoring roles:
 
 - **Domain programmers** author AFL source (`.afl` files). They define namespaces, facets, event facets, workflows, schemas, and composition logic (mixins, andThen blocks, foreach, when blocks). No Python or handler code is required — the compiled JSON workflow definition is sufficient for the runtime to execute.
 - **Service provider programmers** author handler implementations (Python modules) for event facets. A handler receives typed parameters from the task queue, performs the required action (computation, API call, data processing, LLM inference), and returns typed results. Handlers are registered via `register_handler()` or the MCP `afl_manage_handlers` tool and executed by the RegistryRunner.
@@ -46,8 +46,8 @@ See `spec/70_examples.md` Examples 2–4 for detailed execution traces demonstra
 ## Glossary
 
 ### Compiler terms
-- **AgentFlow**: The platform for distributed workflow execution
-- **AFL**: Agent Flow Language — the DSL for defining workflows
+- **Facetwork**: The platform for distributed workflow execution
+- **FFL**: Facetwork Flow Language — the DSL for defining workflows
 - **Facet**: Base declaration type with parameters
 - **Event Facet**: Facet that triggers external execution
 - **Workflow**: Entry point facet with execution body

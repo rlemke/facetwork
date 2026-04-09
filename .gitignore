@@ -20,7 +20,7 @@ venv/
 .vscode/
 
 # Logs
-afl-test.log
+facetwork-test.log
 
 # Claude Code
 .claude/settings.local.json
@@ -31,11 +31,12 @@ examples/osm-geocoder/tests/real/*.json
 
 # AgentFlow runtime config
 .env
-.afl-active-config
-afl.config.*.json
+.ffl-active-config
+facetwork.config.*.json
 
 # macOS aliases
 oms-mirror
 
 # OS
 .DS_Store
+afl-test.log

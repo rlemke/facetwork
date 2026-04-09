@@ -104,7 +104,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-python -m afl.cli examples/tool-use-agent/afl/toolbox.afl --check
+python -m afl.cli examples/tool-use-agent/ffl/toolbox.afl --check
 
 # Run tests
 python -m pytest examples/tool-use-agent/tests/ -v

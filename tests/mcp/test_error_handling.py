@@ -27,7 +27,7 @@ except ImportError:
 
 pytestmark = pytest.mark.skipif(not MCP_AVAILABLE, reason="mcp not installed")
 
-from afl.mcp.server import (
+from facetwork.mcp.server import (
     _handle_resource,
     _tool_compile,
     _tool_continue_step,
@@ -37,7 +37,7 @@ from afl.mcp.server import (
     _tool_resume_workflow,
     _tool_validate,
 )
-from afl.runtime.entities import (
+from facetwork.runtime.entities import (
     FlowDefinition,
     FlowIdentity,
     HandlerRegistration,
@@ -90,7 +90,7 @@ def _make_runner(uuid="r-1", workflow=None, state="running"):
 def store():
     if not MONGOMOCK_AVAILABLE:
         pytest.skip("mongomock not installed")
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     s = MongoStore(database_name="afl_test_mcp_errors", client=mock_client)
@@ -111,7 +111,7 @@ class TestToolDispatchErrors:
         # _tool_compile uses arguments.get("source", ""), so missing source = empty string
         result = _tool_compile({})
         data = json.loads(result[0].text)
-        # Empty string is valid AFL (empty program)
+        # Empty string is valid FFL (empty program)
         assert data["success"] is True
 
     def test_validate_without_source_uses_default_empty(self):
@@ -200,7 +200,7 @@ class TestToolInputValidation:
         assert "success" in data
 
     def test_compile_unicode_source(self):
-        # Unicode identifiers should work in AFL strings
+        # Unicode identifiers should work in FFL strings
         source = 'facet Gruss(msg: String = "Gruesse")'
         result = _tool_compile({"source": source})
         data = json.loads(result[0].text)

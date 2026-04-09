@@ -134,7 +134,7 @@ PYTHONPATH=. python examples/osm-geocoder/agent.py
 
 ```bash
 # Recursively finds AFL files in handler subdirectories
-find examples/osm-geocoder -name '*.afl' -not -path '*/tests/*' \
+find examples/osm-geocoder -name '*.ffl' -not -path '*/tests/*' \
     -exec python -m afl.cli {} --check \; -exec echo "OK: {}" \;
 ```
 
@@ -293,7 +293,7 @@ namespace osm.africa {
 ### Add a new handler category
 
 1. Create `handlers/newcategory/` directory with `__init__.py`
-2. Add `handlers/newcategory/afl/osm_newcategory.afl` with event facets
+2. Add `handlers/newcategory/ffl/osm_newcategory.afl` with event facets
 3. Add `handlers/newcategory/newcategory_handlers.py` with dispatch adapter
 4. Add `handlers/newcategory/tests/test_newcategory.py`
 5. Add `handlers/newcategory/README.md` documenting the category

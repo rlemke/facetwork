@@ -16,7 +16,7 @@
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     IterationChanges,
     MemoryStore,
     ObjectType,
@@ -345,7 +345,7 @@ class TestTasksByFacetName:
         return MemoryStore()
 
     def _make_task(self, name, state="pending", uuid=None):
-        from afl.runtime.entities import TaskDefinition
+        from facetwork.runtime.entities import TaskDefinition
 
         return TaskDefinition(
             uuid=uuid or generate_id(),

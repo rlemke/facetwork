@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from afl.runtime.storage import get_storage_backend, localize
+from facetwork.runtime.storage import get_storage_backend, localize
 
 from ..shared._output import ensure_dir, open_output, resolve_output_dir
 from ..shared.scan_progress import ScanProgressTracker, get_file_size
@@ -50,7 +50,7 @@ HAS_OSMIUM_TOOL = shutil.which("osmium") is not None
 log = logging.getLogger(__name__)
 
 # Default output directory for extracted boundaries
-from afl.config import get_output_base
+from facetwork.config import get_output_base
 
 _LOCAL_OUTPUT = get_output_base()
 DEFAULT_OUTPUT_DIR = Path(os.path.join(_LOCAL_OUTPUT, "osm", "boundaries"))

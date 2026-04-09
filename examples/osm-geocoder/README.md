@@ -80,7 +80,7 @@ This starts a long-running agent that polls for `osm.Geocode` tasks and ~330 OSM
 
 ```bash
 # Check all AFL sources (recursively discovers files in handler subdirectories)
-find examples/osm-geocoder -name '*.afl' -not -path '*/tests/*' -exec scripts/compile {} --check \;
+find examples/osm-geocoder -name '*.ffl' -not -path '*/tests/*' -exec scripts/compile {} --check \;
 ```
 
 ## Project structure

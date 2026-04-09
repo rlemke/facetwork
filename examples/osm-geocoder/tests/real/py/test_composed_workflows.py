@@ -1,7 +1,7 @@
 """Runtime integration tests for all 15 composed workflows in osmworkflows_composed.afl.
 
-Compiles all 43 AFL files, then executes each workflow end-to-end through:
-  AFL source → compile → MongoStore → Evaluator → AgentPoller → real handlers → completion
+Compiles all 43 FFL files, then executes each workflow end-to-end through:
+  FFL source → compile → MongoStore → Evaluator → AgentPoller → real handlers → completion
 
 Uses Liechtenstein as the default region (tiny ~2MB download, fast processing).
 
@@ -30,7 +30,7 @@ from helpers import (
     run_to_completion,
 )
 
-from afl.runtime import ExecutionStatus
+from facetwork.runtime import ExecutionStatus
 
 # Add the osm-geocoder example to the path so we can import handlers
 _EXAMPLE_ROOT = Path(__file__).parent.parent.parent.parent
@@ -83,9 +83,9 @@ ALL_WORKFLOW_NAMES = [
 
 
 def _compile_composed():
-    """Compile all AFL files with osmworkflows_composed.afl as primary."""
-    primary = EXAMPLE_AFL_FILES["osmworkflows_composed.afl"]
-    libs = [p for n, p in sorted(EXAMPLE_AFL_FILES.items()) if n != "osmworkflows_composed.afl"]
+    """Compile all FFL files with osmworkflows_composed.afl as primary."""
+    primary = EXAMPLE_AFL_FILES["osmworkflows_composed.ffl"]
+    libs = [p for n, p in sorted(EXAMPLE_AFL_FILES.items()) if n != "osmworkflows_composed.ffl"]
     return compile_afl_files(primary, *libs)
 
 
@@ -102,10 +102,10 @@ def _register_handlers(poller):
 
 
 class TestComposedWorkflowsCompilation:
-    """Verify all 15 composed workflows compile from AFL source."""
+    """Verify all 15 composed workflows compile from FFL source."""
 
     def test_compile_all_composed_workflows(self):
-        """All 43 AFL files compile together and all 15 workflows are present."""
+        """All 43 FFL files compile together and all 15 workflows are present."""
         program = _compile_composed()
         assert program["type"] == "Program"
 
@@ -124,7 +124,7 @@ class TestComposedWorkflowsCompilation:
 class TestComposedWorkflowsIntegration:
     """Full runtime execution of composed workflows through MongoDB + AgentPoller.
 
-    Each test compiles all AFL files, extracts one workflow, registers all
+    Each test compiles all FFL files, extracts one workflow, registers all
     handlers, and runs end-to-end with Liechtenstein as the region.
     """
 

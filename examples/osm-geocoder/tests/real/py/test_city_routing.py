@@ -1,6 +1,6 @@
 """Integration test: full 9-step CityRouteMap pipeline.
 
-Compiles osmcityrouting.afl and all its dependencies from real AFL source files,
+Compiles osmcityrouting.afl and all its dependencies from real FFL source files,
 then runs the full 9-step pipeline with real handlers:
 
   1. ResolveRegion — real handler (pure Python region resolver)
@@ -35,7 +35,7 @@ from helpers import (
     run_to_completion,
 )
 
-from afl.runtime import ExecutionStatus
+from facetwork.runtime import ExecutionStatus
 
 # Add the osm-geocoder example to the path so we can import handlers
 _EXAMPLE_ROOT = Path(__file__).parent.parent.parent.parent
@@ -59,14 +59,14 @@ except ImportError:
     HAS_REQUESTS = False
 
 
-# AFL files needed by osmcityrouting.afl
+# FFL files needed by osmcityrouting.afl
 _LIBRARY_FILES = [
-    "osmtypes.afl",
-    "osmregion.afl",
-    "osmoperations.afl",
-    "osmgraphhopper.afl",
-    "osmfilters_population.afl",
-    "osmvisualization.afl",
+    "osmtypes.ffl",
+    "osmregion.ffl",
+    "osmoperations.ffl",
+    "osmgraphhopper.ffl",
+    "osmfilters_population.ffl",
+    "osmvisualization.ffl",
 ]
 
 
@@ -74,7 +74,7 @@ def _compile_city_routing():
     """Compile the CityRouteMap workflow with all dependencies."""
     libs = [EXAMPLE_AFL_FILES[f] for f in _LIBRARY_FILES]
     return compile_afl_files(
-        EXAMPLE_AFL_FILES["osmcityrouting.afl"],
+        EXAMPLE_AFL_FILES["osmcityrouting.ffl"],
         *libs,
     )
 

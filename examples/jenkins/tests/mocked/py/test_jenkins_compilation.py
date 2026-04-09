@@ -1,23 +1,23 @@
-"""Tests for the Jenkins CI/CD example AFL files.
+"""Tests for the Jenkins CI/CD example FFL files.
 
-Verifies that all 9 AFL files parse, validate, and compile correctly,
+Verifies that all 9 FFL files parse, validate, and compile correctly,
 and that the 4 workflow pipelines using mixin composition compile with
 all dependencies.
 """
 
 from pathlib import Path
 
-from afl.cli import main
-from afl.emitter import emit_dict
-from afl.parser import AFLParser
-from afl.source import CompilerInput, FileOrigin, SourceEntry
-from afl.validator import validate
+from facetwork.cli import main
+from facetwork.emitter import emit_dict
+from facetwork.parser import FFLParser
+from facetwork.source import CompilerInput, FileOrigin, SourceEntry
+from facetwork.validator import validate
 
 _AFL_DIR = Path(__file__).resolve().parent.parent.parent.parent / "afl"
 
 
 def _compile(*filenames: str) -> dict:
-    """Compile one or more AFL files from the Jenkins example directory."""
+    """Compile one or more FFL files from the Jenkins example directory."""
     entries = []
     for i, name in enumerate(filenames):
         path = _AFL_DIR / name
@@ -34,7 +34,7 @@ def _compile(*filenames: str) -> dict:
         library_sources=entries[1:],
     )
 
-    parser = AFLParser()
+    parser = FFLParser()
     program_ast, _registry = parser.parse_sources(compiler_input)
 
     result = validate(program_ast)
@@ -78,12 +78,12 @@ class TestJenkinsTypes:
 
     def test_parse_types(self):
         """jenkins_types.afl parses and validates."""
-        program = _compile("jenkins_types.afl")
+        program = _compile("jenkins_types.ffl")
         assert program["type"] == "Program"
 
     def test_all_schemas_present(self):
         """All 7 schemas are emitted."""
-        program = _compile("jenkins_types.afl")
+        program = _compile("jenkins_types.ffl")
         schema_names = _collect_names(program, "schemas")
         expected = [
             "ScmInfo",
@@ -107,12 +107,12 @@ class TestJenkinsMixins:
 
     def test_parse_mixins(self):
         """jenkins_mixins.afl parses and validates."""
-        program = _compile("jenkins_mixins.afl")
+        program = _compile("jenkins_mixins.ffl")
         assert program["type"] == "Program"
 
     def test_mixin_facets_present(self):
         """All 6 mixin facets are emitted."""
-        program = _compile("jenkins_mixins.afl")
+        program = _compile("jenkins_mixins.ffl")
         facet_names = _collect_names(program, "facets")
         expected = ["Retry", "Timeout", "Credentials", "Notification", "AgentLabel", "Stash"]
         for name in expected:
@@ -120,7 +120,7 @@ class TestJenkinsMixins:
 
     def test_implicits_present(self):
         """All 3 implicit declarations are emitted."""
-        program = _compile("jenkins_mixins.afl")
+        program = _compile("jenkins_mixins.ffl")
         implicit_names = _collect_names(program, "implicits")
         expected = ["defaultRetry", "defaultTimeout", "defaultAgent"]
         for name in expected:
@@ -135,7 +135,7 @@ class TestJenkinsEventFacets:
 
     def test_scm_facets(self):
         """jenkins_scm.afl compiles with types and mixins dependencies."""
-        program = _compile("jenkins_scm.afl", "jenkins_types.afl", "jenkins_mixins.afl")
+        program = _compile("jenkins_scm.ffl", "jenkins_types.ffl", "jenkins_mixins.ffl")
         facet_names = _collect_names(program, "eventFacets")
         assert "GitCheckout" in facet_names
         assert "GitMerge" in facet_names
@@ -143,7 +143,7 @@ class TestJenkinsEventFacets:
 
     def test_build_facets(self):
         """jenkins_build.afl compiles with types dependency."""
-        program = _compile("jenkins_build.afl", "jenkins_types.afl")
+        program = _compile("jenkins_build.ffl", "jenkins_types.ffl")
         facet_names = _collect_names(program, "eventFacets")
         expected = ["MavenBuild", "GradleBuild", "NpmBuild", "DockerBuild"]
         for name in expected:
@@ -151,7 +151,7 @@ class TestJenkinsEventFacets:
 
     def test_test_facets(self):
         """jenkins_test.afl compiles with types dependency."""
-        program = _compile("jenkins_test.afl", "jenkins_types.afl")
+        program = _compile("jenkins_test.ffl", "jenkins_types.ffl")
         facet_names = _collect_names(program, "eventFacets")
         expected = ["RunTests", "CodeQuality", "SecurityScan"]
         for name in expected:
@@ -159,7 +159,7 @@ class TestJenkinsEventFacets:
 
     def test_artifact_facets(self):
         """jenkins_artifacts.afl compiles with types dependency."""
-        program = _compile("jenkins_artifacts.afl", "jenkins_types.afl")
+        program = _compile("jenkins_artifacts.ffl", "jenkins_types.ffl")
         facet_names = _collect_names(program, "eventFacets")
         expected = ["ArchiveArtifacts", "PublishToRegistry", "DockerPush"]
         for name in expected:
@@ -167,7 +167,7 @@ class TestJenkinsEventFacets:
 
     def test_deploy_facets(self):
         """jenkins_deploy.afl compiles with types dependency."""
-        program = _compile("jenkins_deploy.afl", "jenkins_types.afl")
+        program = _compile("jenkins_deploy.ffl", "jenkins_types.ffl")
         facet_names = _collect_names(program, "eventFacets")
         expected = ["DeployToEnvironment", "DeployToK8s", "RollbackDeploy"]
         for name in expected:
@@ -175,7 +175,7 @@ class TestJenkinsEventFacets:
 
     def test_notify_facets(self):
         """jenkins_notify.afl compiles with types dependency."""
-        program = _compile("jenkins_notify.afl", "jenkins_types.afl")
+        program = _compile("jenkins_notify.ffl", "jenkins_types.ffl")
         facet_names = _collect_names(program, "eventFacets")
         expected = ["SlackNotify", "EmailNotify"]
         for name in expected:
@@ -189,18 +189,18 @@ class TestJenkinsPipelines:
     """Compilation tests for jenkins_pipelines.afl with mixin composition."""
 
     _DEPS = [
-        "jenkins_types.afl",
-        "jenkins_mixins.afl",
-        "jenkins_scm.afl",
-        "jenkins_build.afl",
-        "jenkins_test.afl",
-        "jenkins_artifacts.afl",
-        "jenkins_deploy.afl",
-        "jenkins_notify.afl",
+        "jenkins_types.ffl",
+        "jenkins_mixins.ffl",
+        "jenkins_scm.ffl",
+        "jenkins_build.ffl",
+        "jenkins_test.ffl",
+        "jenkins_artifacts.ffl",
+        "jenkins_deploy.ffl",
+        "jenkins_notify.ffl",
     ]
 
     def _compile_pipelines(self) -> dict:
-        return _compile("jenkins_pipelines.afl", *self._DEPS)
+        return _compile("jenkins_pipelines.ffl", *self._DEPS)
 
     def test_pipelines_compile(self):
         """jenkins_pipelines.afl compiles with all dependencies."""
@@ -255,7 +255,7 @@ class TestJenkinsPipelines:
         """The CLI --check flag succeeds for jenkins_pipelines.afl."""
         args = [
             "--primary",
-            str(_AFL_DIR / "jenkins_pipelines.afl"),
+            str(_AFL_DIR / "jenkins_pipelines.ffl"),
         ]
         for dep in self._DEPS:
             args.extend(["--library", str(_AFL_DIR / dep)])
@@ -266,6 +266,6 @@ class TestJenkinsPipelines:
     @staticmethod
     def _find_workflow(program: dict, name: str) -> dict | None:
         """Find a workflow by name in the emitted program."""
-        from afl.ast_utils import find_workflow
+        from facetwork.ast_utils import find_workflow
 
         return find_workflow(program, name)

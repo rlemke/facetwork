@@ -1,6 +1,6 @@
-# AFL Tutorial -- Agent Flow Language
+# AFL Tutorial -- Facetwork Flow Language
 
-This tutorial walks through AFL (Agent Flow Language) in eight progressive
+This tutorial walks through AFL (Facetwork Flow Language) in eight progressive
 parts.  Each part introduces a small set of constructs, shows complete
 examples, and explains how the pieces fit together.  By the end you will be
 able to write multi-step workflows with schemas, event facets, composition,
@@ -224,7 +224,7 @@ without qualification, as long as there is no ambiguity.
 
 ### Real-world example: OSM Geocoder
 
-The `examples/osm-geocoder/afl/geocoder.afl` file in this repository shows
+The `examples/osm-geocoder/ffl/geocoder.afl` file in this repository shows
 schemas and event facets working together:
 
 ```afl
@@ -590,7 +590,7 @@ To run a workflow, compile it and submit it to the runtime:
 
 ```bash
 # Compile
-afl examples/osm-geocoder/afl/geocoder.afl -o geocoder.json
+afl examples/osm-geocoder/ffl/geocoder.afl -o geocoder.json
 
 # Start the runtime runner (requires MongoDB)
 python -m afl.runtime.runner

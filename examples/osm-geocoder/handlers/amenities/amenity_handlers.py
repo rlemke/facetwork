@@ -125,7 +125,7 @@ def _make_filter_by_category_handler(facet_name: str):
             import json
             import posixpath
 
-            from afl.runtime.storage import get_storage_backend
+            from facetwork.runtime.storage import get_storage_backend
 
             from ..shared._output import uri_stem
 

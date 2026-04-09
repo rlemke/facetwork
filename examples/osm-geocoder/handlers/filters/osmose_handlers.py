@@ -65,7 +65,7 @@ def handle_verify_all(payload: dict) -> dict:
     if step_log:
         step_log(f"VerifyAll: running full verification on {pbf_path}")
 
-    from afl.config import get_output_base
+    from facetwork.config import get_output_base
 
     output_dir = payload.get("output_dir", os.path.join(get_output_base(), "osm", "osmose"))
 

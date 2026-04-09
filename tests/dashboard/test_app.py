@@ -28,16 +28,16 @@ pytestmark = pytest.mark.skipif(not FASTAPI_AVAILABLE, reason="fastapi not insta
 
 def test_create_app():
     """Test that create_app returns a valid FastAPI app."""
-    from afl.dashboard.app import create_app
+    from facetwork.dashboard.app import create_app
 
     app = create_app()
     assert app is not None
-    assert app.title == "AgentFlow Dashboard"
+    assert app.title == "Facetwork Dashboard"
 
 
 def test_app_has_routes():
     """Test that all expected routes are registered."""
-    from afl.dashboard.app import create_app
+    from facetwork.dashboard.app import create_app
 
     app = create_app()
     routes = [r.path for r in app.routes]
@@ -53,7 +53,7 @@ def test_app_has_routes():
 
 def test_static_files_mounted():
     """Test that static files are mounted."""
-    from afl.dashboard.app import create_app
+    from facetwork.dashboard.app import create_app
 
     app = create_app()
     route_paths = [r.path for r in app.routes]

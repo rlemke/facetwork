@@ -2,7 +2,7 @@
 # AFL Agent SDK Specification
 
 This document defines how external services (**AFL Agents**) interact with
-the AgentFlow runtime to process event facet tasks. It covers the three
+the Facetwork runtime to process event facet tasks. It covers the three
 agent execution models, the task lifecycle, and the public API contract.
 
 This specification is the authoritative reference for **service provider
@@ -21,12 +21,12 @@ are provided where relevant.
 
 An **AFL Agent** is a service that:
 
-1. accepts event tasks from the AgentFlow task queue,
+1. accepts event tasks from the Facetwork task queue,
 2. performs the required action (computation, API call, LLM inference, etc.),
 3. updates the originating step with a result or error, and
 4. signals the runtime to continue evaluation.
 
-AgentFlow provides four execution models for building agents:
+Facetwork provides four execution models for building agents:
 
 | Model | Use case | Transport |
 |-------|----------|-----------|
@@ -69,7 +69,7 @@ The agent lifecycle follows a five-phase cycle:
 
 ```
                     ┌──────────────────────────────────────────┐
-                    │            AgentFlow Runtime              │
+                    │            Facetwork Runtime              │
                     │                                          │
                     │  Evaluator executes workflow              │
                     │       │                                   │
@@ -108,7 +108,7 @@ The agent lifecycle follows a five-phase cycle:
                             │
                             ▼
 ┌───────────────────────────────────────────────────────────────┐
-│                       AgentFlow Runtime                       │
+│                       Facetwork Runtime                       │
 │                                                               │
 │  4. CONTINUE — step unblocked, attributes merged              │
 │       │                                                       │

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the AFL MavenArtifactRunner.
+"""Tests for the FFL MavenArtifactRunner.
 
 Tests cover:
 - MavenRunnerConfig defaults and customization
@@ -33,7 +33,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     Evaluator,
     ExecutionStatus,
     HandlerRegistration,
@@ -41,7 +41,7 @@ from afl.runtime import (
     StepState,
     Telemetry,
 )
-from afl.runtime.entities import (
+from facetwork.runtime.entities import (
     ServerState,
     TaskState,
 )
@@ -56,7 +56,7 @@ from maven_runner import (
     MavenRunnerConfig,
 )
 
-from afl.runtime.registry_runner import _current_time_ms
+from facetwork.runtime.registry_runner import _current_time_ms
 
 # =========================================================================
 # Fixtures
@@ -226,7 +226,7 @@ class TestMavenRunnerConfig:
     def test_default_cache_dir(self):
         """Default cache_dir is ~/.afl/maven-cache."""
         cfg = MavenRunnerConfig()
-        expected = str(Path.home() / ".afl" / "maven-cache")
+        expected = str(Path.home() / ".ffl" / "maven-cache")
         assert cfg.cache_dir == expected
 
     def test_custom_repository_url(self):
@@ -441,7 +441,7 @@ class TestProcessEvent:
         )
 
         # Write returns to the step (simulating what the JVM program does)
-        from afl.runtime.types import FacetAttributes
+        from facetwork.runtime.types import FacetAttributes
 
         step_obj = store.get_step(step.id)
         if step_obj.attributes is None:

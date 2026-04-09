@@ -1,10 +1,10 @@
-# AgentFlow Examples
+# Facetwork Examples
 
 Each subdirectory contains a complete working example with AFL source and a Python agent implementation.
 
 | Example | Description |
 |---------|-------------|
-| [hello-agent](hello-agent/) | Minimal end-to-end example demonstrating the AgentFlow execution model |
+| [hello-agent](hello-agent/) | Minimal end-to-end example demonstrating the Facetwork execution model |
 | [volcano-query](volcano-query/) | Cross-namespace composition using existing OSM event facets |
 | [osm-geocoder](osm-geocoder/) | Geocoding agent that resolves addresses to coordinates using the OpenStreetMap Nominatim API |
 | [genomics](genomics/) | Bioinformatics cohort analysis with foreach fan-out and linear fan-in workflows |
@@ -70,7 +70,7 @@ source .venv/bin/activate
 pip install -r examples/<name>/requirements.txt
 
 # Compile the AFL source (syntax check)
-python -m afl.cli examples/<name>/afl/<file>.afl --check
+python -m afl.cli examples/<name>/ffl/<file>.afl --check
 
 # Run the agent (see each example's README for details)
 PYTHONPATH=. python examples/<name>/agent.py

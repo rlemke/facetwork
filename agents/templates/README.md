@@ -1,6 +1,6 @@
 # AFL Agent Templates
 
-This directory contains standalone files that can be copied into a separate repository to bootstrap a new AFL agent project. They give Claude (or any developer) all the context needed to build an agent that integrates with the AgentFlow platform.
+This directory contains standalone files that can be copied into a separate repository to bootstrap a new AFL agent project. They give Claude (or any developer) all the context needed to build an agent that integrates with the Facetwork platform.
 
 ## Files
 
@@ -12,7 +12,7 @@ This directory contains standalone files that can be copied into a separate repo
 ## Usage
 
 ```bash
-# From the agentflow repo
+# From the facetwork repo
 cp agents/templates/CLAUDE.md /path/to/my-agent/CLAUDE.md
 cp agents/protocol/constants.json /path/to/my-agent/constants.json
 ```
@@ -34,7 +34,7 @@ The `CLAUDE.md` file documents the complete protocol so Claude can help you impl
 
 If your agent is in Python or Scala, you can use the pre-built libraries instead of implementing the protocol from scratch:
 
-- **Python**: `afl.runtime.agent_poller.AgentPoller` (built into the AgentFlow runtime)
+- **Python**: `afl.runtime.agent_poller.AgentPoller` (built into the Facetwork runtime)
 - **Scala**: `agents/scala/afl-agent/` (standalone sbt library)
 
 The `CLAUDE.md` includes usage examples for both.

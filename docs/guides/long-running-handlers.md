@@ -6,7 +6,7 @@ being killed by the runtime's timeout and stuck-task detection systems.
 
 ## The Problem
 
-The AgentFlow runtime has two watchdog systems that detect and reclaim stuck tasks:
+The Facetwork runtime has two watchdog systems that detect and reclaim stuck tasks:
 
 | Watchdog | Env Variable | Default | What It Checks |
 |----------|-------------|---------|----------------|

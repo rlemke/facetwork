@@ -9,26 +9,26 @@ from pathlib import Path
 
 import pytest
 
-from afl.emitter import emit_dict
-from afl.parser import AFLParser
-from afl.source import CompilerInput, FileOrigin, SourceEntry
-from afl.validator import validate
+from facetwork.emitter import emit_dict
+from facetwork.parser import FFLParser
+from facetwork.source import CompilerInput, FileOrigin, SourceEntry
+from facetwork.validator import validate
 
 _OSM_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-# Collect all AFL files from root afl/ and handlers/*/afl/ (skip tests/)
+# Collect all FFL files from root afl/ and handlers/*/ffl/ (skip tests/)
 _AFL_BY_NAME: dict[str, Path] = {}
-for _p in sorted(_OSM_ROOT.rglob("*.afl")):
+for _p in sorted(_OSM_ROOT.rglob("*.ffl")):
     if "/tests/" not in str(_p):
         _AFL_BY_NAME[_p.name] = _p
 
 
 def _compile_all() -> dict:
-    """Compile all AFL files with osmworkflows_composed.afl as primary."""
+    """Compile all FFL files with osmworkflows_composed.afl as primary."""
     filenames = sorted(_AFL_BY_NAME.keys())
 
     # Put osmworkflows_composed.afl first as primary
-    filenames.remove("osmworkflows_composed.afl")
-    filenames.insert(0, "osmworkflows_composed.afl")
+    filenames.remove("osmworkflows_composed.ffl")
+    filenames.insert(0, "osmworkflows_composed.ffl")
 
     entries = []
     for i, name in enumerate(filenames):
@@ -46,7 +46,7 @@ def _compile_all() -> dict:
         library_sources=entries[1:],
     )
 
-    parser = AFLParser()
+    parser = FFLParser()
     program_ast, _registry = parser.parse_sources(compiler_input)
 
     result = validate(program_ast)
@@ -113,7 +113,7 @@ def _step_names(wf: dict) -> list[str]:
 
 @pytest.fixture(scope="module")
 def program():
-    """Compiled program from all 43 AFL files."""
+    """Compiled program from all 43 FFL files."""
     return _compile_all()
 
 
@@ -184,7 +184,7 @@ class TestComposedWorkflows:
     # ------------------------------------------------------------------
 
     def test_all_workflows_compile(self, program):
-        """All AFL files compile together without errors."""
+        """All FFL files compile together without errors."""
         assert program["type"] == "Program"
 
     def test_all_15_workflows_present(self, program):

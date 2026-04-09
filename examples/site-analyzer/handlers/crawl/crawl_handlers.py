@@ -33,7 +33,7 @@ def handle_prepare_crawl(params: dict[str, Any]) -> dict[str, Any]:
         urls = []
 
     plan = prepare_crawl(urls)
-    # Serialize urls list to JSON for AFL Json type
+    # Serialize urls list to JSON for FFL Json type
     plan_out = {**plan, "urls": json.dumps(plan["urls"])}
 
     step_log = params.get("_step_log")

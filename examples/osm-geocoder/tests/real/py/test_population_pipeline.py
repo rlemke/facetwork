@@ -24,7 +24,7 @@ from helpers import (
     run_to_completion,
 )
 
-from afl.runtime import ExecutionStatus
+from facetwork.runtime import ExecutionStatus
 
 # Add the osm-geocoder example to the path so we can import handlers
 _EXAMPLE_ROOT = Path(__file__).parent.parent.parent.parent
@@ -52,10 +52,10 @@ except ImportError:
 def _compile_population_pipeline():
     """Compile the population pipeline workflow with dependencies."""
     return compile_afl_files(
-        INTEGRATION_AFL_DIR / "population_pipeline.afl",
-        EXAMPLE_AFL_FILES["osmtypes.afl"],
-        EXAMPLE_AFL_FILES["osmregion.afl"],
-        EXAMPLE_AFL_FILES["osmfilters_population.afl"],
+        INTEGRATION_AFL_DIR / "population_pipeline.ffl",
+        EXAMPLE_AFL_FILES["osmtypes.ffl"],
+        EXAMPLE_AFL_FILES["osmregion.ffl"],
+        EXAMPLE_AFL_FILES["osmfilters_population.ffl"],
     )
 
 
@@ -72,7 +72,7 @@ class TestPopulationPipelineCompilation:
     """Compilation tests that don't need external deps."""
 
     def test_compile_population_pipeline(self):
-        """The population pipeline AFL compiles without errors."""
+        """The population pipeline FFL compiles without errors."""
         program = _compile_population_pipeline()
         workflow = extract_workflow(program, "PopulationPipeline")
         assert workflow["name"] == "PopulationPipeline"

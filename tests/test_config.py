@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL configuration."""
+"""Tests for FFL configuration."""
 
 import json
 
-from afl.config import (
-    AFLConfig,
+from facetwork.config import (
+    FFLConfig,
     MongoDBConfig,
     RunnerConfig,
     StorageConfig,
@@ -107,17 +107,17 @@ class TestMongoDBConfig:
         assert cfg.database == "afl"
 
 
-class TestAFLConfig:
-    """Tests for AFLConfig."""
+class TestFFLConfig:
+    """Tests for FFLConfig."""
 
     def test_defaults(self):
-        cfg = AFLConfig()
+        cfg = FFLConfig()
         assert isinstance(cfg.mongodb, MongoDBConfig)
         assert isinstance(cfg.runner, RunnerConfig)
         assert isinstance(cfg.storage, StorageConfig)
 
     def test_to_dict(self):
-        cfg = AFLConfig()
+        cfg = FFLConfig()
         d = cfg.to_dict()
         assert "mongodb" in d
         assert "runner" in d
@@ -126,11 +126,11 @@ class TestAFLConfig:
 
     def test_from_dict(self):
         data = {"mongodb": {"url": "mongodb://custom:1234"}}
-        cfg = AFLConfig.from_dict(data)
+        cfg = FFLConfig.from_dict(data)
         assert cfg.mongodb.url == "mongodb://custom:1234"
 
     def test_from_dict_empty(self):
-        cfg = AFLConfig.from_dict({})
+        cfg = FFLConfig.from_dict({})
         assert cfg.mongodb.url == MongoDBConfig.url
 
     def test_from_dict_with_runner_and_storage(self):
@@ -138,7 +138,7 @@ class TestAFLConfig:
             "runner": {"pollIntervalMs": 500, "maxConcurrent": 4},
             "storage": {"localOutputDir": "/data/output"},
         }
-        cfg = AFLConfig.from_dict(data)
+        cfg = FFLConfig.from_dict(data)
         assert cfg.runner.poll_interval_ms == 500
         assert cfg.runner.max_concurrent == 4
         assert cfg.storage.local_output_dir == "/data/output"
@@ -211,7 +211,7 @@ class TestLoadConfig:
         monkeypatch.delenv("AFL_POLL_INTERVAL_MS", raising=False)
         monkeypatch.delenv("AFL_MAX_CONCURRENT", raising=False)
         monkeypatch.delenv("AFL_LOCAL_OUTPUT_DIR", raising=False)
-        base = tmp_path / "afl.config.json"
+        base = tmp_path / "facetwork.config.json"
         base.write_text(
             json.dumps(
                 {
@@ -220,7 +220,7 @@ class TestLoadConfig:
                 }
             )
         )
-        overlay = tmp_path / "afl.config.staging.json"
+        overlay = tmp_path / "facetwork.config.staging.json"
         overlay.write_text(
             json.dumps(
                 {
@@ -238,7 +238,7 @@ class TestLoadConfig:
 
     def test_afl_env_missing_overlay(self, tmp_path, monkeypatch):
         monkeypatch.delenv("AFL_POLL_INTERVAL_MS", raising=False)
-        base = tmp_path / "afl.config.json"
+        base = tmp_path / "facetwork.config.json"
         base.write_text(json.dumps({"runner": {"pollIntervalMs": 1000}}))
         monkeypatch.setenv("AFL_ENV", "nonexistent")
         cfg = load_config(str(base))
@@ -246,9 +246,9 @@ class TestLoadConfig:
         assert cfg.runner.poll_interval_ms == 1000
 
     def test_env_overrides_overlay(self, tmp_path, monkeypatch):
-        base = tmp_path / "afl.config.json"
+        base = tmp_path / "facetwork.config.json"
         base.write_text(json.dumps({"runner": {"maxConcurrent": 2}}))
-        overlay = tmp_path / "afl.config.prod.json"
+        overlay = tmp_path / "facetwork.config.prod.json"
         overlay.write_text(json.dumps({"runner": {"maxConcurrent": 8}}))
         monkeypatch.setenv("AFL_ENV", "prod")
         monkeypatch.setenv("AFL_MAX_CONCURRENT", "32")
@@ -445,7 +445,7 @@ class TestGetConfig:
         monkeypatch.delenv("AFL_CONFIG", raising=False)
         _reset_config_cache()
         cfg = get_config()
-        assert isinstance(cfg, AFLConfig)
+        assert isinstance(cfg, FFLConfig)
 
     def test_cached(self, monkeypatch):
         monkeypatch.delenv("AFL_CONFIG", raising=False)
@@ -484,7 +484,7 @@ class TestSentinelPattern:
         monkeypatch.delenv("AFL_HEARTBEAT_INTERVAL_MS", raising=False)
         monkeypatch.delenv("AFL_CONFIG", raising=False)
         _reset_config_cache()
-        from afl.runtime.registry_runner import RegistryRunnerConfig
+        from facetwork.runtime.registry_runner import RegistryRunnerConfig
 
         cfg = RegistryRunnerConfig()
         assert cfg.poll_interval_ms == 1000
@@ -495,7 +495,7 @@ class TestSentinelPattern:
         """Explicit values bypass sentinel resolution."""
         monkeypatch.delenv("AFL_CONFIG", raising=False)
         _reset_config_cache()
-        from afl.runtime.registry_runner import RegistryRunnerConfig
+        from facetwork.runtime.registry_runner import RegistryRunnerConfig
 
         cfg = RegistryRunnerConfig(poll_interval_ms=500, max_concurrent=8)
         assert cfg.poll_interval_ms == 500
@@ -507,7 +507,7 @@ class TestSentinelPattern:
         monkeypatch.delenv("AFL_HEARTBEAT_INTERVAL_MS", raising=False)
         monkeypatch.delenv("AFL_CONFIG", raising=False)
         _reset_config_cache()
-        from afl.runtime.agent_poller import AgentPollerConfig
+        from facetwork.runtime.agent_poller import AgentPollerConfig
 
         cfg = AgentPollerConfig()
         assert cfg.poll_interval_ms == 1000

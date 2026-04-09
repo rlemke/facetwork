@@ -97,8 +97,8 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Compile check
-afl --primary examples/maven/afl/maven_runner.afl \
-    --library examples/maven/afl/maven_types.afl \
+afl --primary examples/maven/ffl/maven_runner.afl \
+    --library examples/maven/ffl/maven_types.afl \
     --check
 
 # Run the agent

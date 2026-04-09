@@ -1,10 +1,10 @@
-"""Tests for AFL CLI submit module (afl.runtime.submit)."""
+"""Tests for FFL CLI submit module (afl.runtime.submit)."""
 
 from unittest.mock import patch
 
 import pytest
 
-from afl.runtime.submit import main
+from facetwork.runtime.submit import main
 
 try:
     import mongomock
@@ -32,7 +32,7 @@ class TestArgumentParsing:
     def test_missing_workflow_flag(self, capsys):
         """--workflow is required."""
         with pytest.raises(SystemExit) as exc_info:
-            main(["some.afl"])
+            main(["some.ffl"])
         assert exc_info.value.code != 0
 
     def test_no_source_files(self, capsys):
@@ -44,7 +44,7 @@ class TestArgumentParsing:
 
     def test_conflicting_input_modes(self, tmp_path, capsys):
         """Cannot mix positional input with --primary."""
-        f = tmp_path / "a.afl"
+        f = tmp_path / "a.ffl"
         f.write_text("facet A()")
         result = main([str(f), "--primary", str(f), "--workflow", "A"])
         assert result == 1
@@ -52,21 +52,21 @@ class TestArgumentParsing:
         assert "Cannot use positional input" in captured.err
 
     def test_file_not_found(self, capsys):
-        result = main(["nonexistent.afl", "--workflow", "Test"])
+        result = main(["nonexistent.ffl", "--workflow", "Test"])
         assert result == 1
         captured = capsys.readouterr()
         assert "File not found" in captured.err
 
     def test_primary_file_not_found(self, capsys):
-        result = main(["--primary", "nonexistent.afl", "--workflow", "Test"])
+        result = main(["--primary", "nonexistent.ffl", "--workflow", "Test"])
         assert result == 1
         captured = capsys.readouterr()
         assert "File not found" in captured.err
 
     def test_library_file_not_found(self, tmp_path, capsys):
-        f = tmp_path / "main.afl"
+        f = tmp_path / "main.ffl"
         f.write_text("facet A()")
-        result = main(["--primary", str(f), "--library", "missing.afl", "--workflow", "A"])
+        result = main(["--primary", str(f), "--library", "missing.ffl", "--workflow", "A"])
         assert result == 1
         captured = capsys.readouterr()
         assert "File not found" in captured.err
@@ -81,15 +81,15 @@ class TestCompileErrors:
     """Test parse/validate error reporting."""
 
     def test_parse_error(self, tmp_path, capsys):
-        f = tmp_path / "bad.afl"
-        f.write_text("this is not valid AFL syntax @@@@")
+        f = tmp_path / "bad.ffl"
+        f.write_text("this is not valid FFL syntax @@@@")
         result = main([str(f), "--workflow", "Test"])
         assert result == 1
         captured = capsys.readouterr()
         assert "Parse error" in captured.err
 
     def test_validation_error(self, tmp_path, capsys):
-        f = tmp_path / "dup.afl"
+        f = tmp_path / "dup.ffl"
         f.write_text("facet Dup()\nfacet Dup()")
         result = main([str(f), "--workflow", "Dup"])
         assert result == 1
@@ -97,7 +97,7 @@ class TestCompileErrors:
         assert "Validation error" in captured.err
 
     def test_workflow_not_found(self, tmp_path, capsys):
-        f = tmp_path / "ok.afl"
+        f = tmp_path / "ok.ffl"
         f.write_text("facet Hello()")
         result = main([str(f), "--workflow", "NonExistent"])
         assert result == 1
@@ -105,7 +105,7 @@ class TestCompileErrors:
         assert "not found" in captured.err
 
     def test_invalid_inputs_json(self, tmp_path, capsys):
-        f = tmp_path / "wf.afl"
+        f = tmp_path / "wf.ffl"
         f.write_text("namespace ns {\n  workflow Run()\n}")
         result = main([str(f), "--workflow", "ns.Run", "--inputs", "not-json"])
         assert result == 1
@@ -123,19 +123,19 @@ class TestWorkflowLookup:
 
     @pytest.fixture
     def simple_wf(self, tmp_path):
-        f = tmp_path / "simple.afl"
+        f = tmp_path / "simple.ffl"
         f.write_text("namespace test {\n  workflow Run()\n}")
         return f
 
     @pytest.fixture
     def namespaced_wf(self, tmp_path):
-        f = tmp_path / "ns.afl"
+        f = tmp_path / "ns.ffl"
         f.write_text("namespace app {\n  workflow Execute()\n}")
         return f
 
     @pytest.fixture
     def nested_wf(self, tmp_path):
-        f = tmp_path / "nested.afl"
+        f = tmp_path / "nested.ffl"
         f.write_text("namespace a {\n  namespace b {\n    workflow Deep()\n  }\n}")
         return f
 
@@ -158,9 +158,9 @@ class TestWorkflowLookup:
 
     def test_flat_dotted_namespace_found(self, tmp_path, capsys):
         """Multi-file compile produces flat dotted namespace names."""
-        lib = tmp_path / "lib.afl"
+        lib = tmp_path / "lib.ffl"
         lib.write_text("namespace osm.geocode {\n  schema Region { name: String }\n}")
-        main_f = tmp_path / "main.afl"
+        main_f = tmp_path / "main.ffl"
         main_f.write_text(
             "namespace osm.sample {\n  use osm.geocode\n  workflow Download(region: osm.Region)\n}"
         )
@@ -195,7 +195,7 @@ class TestMongoSubmit:
 
     @pytest.fixture
     def mock_store(self):
-        from afl.runtime.mongo_store import MongoStore
+        from facetwork.runtime.mongo_store import MongoStore
 
         client = mongomock.MongoClient()
         store = MongoStore(database_name="afl_test_submit", client=client)
@@ -205,7 +205,7 @@ class TestMongoSubmit:
 
     def _run_with_mock_store(self, mock_store, args):
         """Run main() with _connect_store patched to return mock_store."""
-        with patch("afl.runtime.submit._connect_store", return_value=mock_store):
+        with patch("facetwork.runtime.submit._connect_store", return_value=mock_store):
             return main(args)
 
     @staticmethod
@@ -220,7 +220,7 @@ class TestMongoSubmit:
         return ids
 
     def test_submit_simple_workflow(self, tmp_path, mock_store, capsys):
-        f = tmp_path / "wf.afl"
+        f = tmp_path / "wf.ffl"
         f.write_text("namespace test {\n  workflow Run()\n}")
         result = self._run_with_mock_store(mock_store, [str(f), "--workflow", "test.Run"])
         assert result == 0
@@ -236,12 +236,12 @@ class TestMongoSubmit:
         assert runner.state == "created"
 
         task = mock_store.get_tasks_by_runner(ids["runner_id"])[0]
-        assert task.name == "afl:execute"
+        assert task.name == "fw:execute"
         assert task.state == "pending"
         assert task.data["workflow_name"] == "test.Run"
 
     def test_submit_namespaced_workflow(self, tmp_path, mock_store, capsys):
-        f = tmp_path / "ns.afl"
+        f = tmp_path / "ns.ffl"
         f.write_text("namespace app {\n  workflow Deploy()\n}")
         result = self._run_with_mock_store(mock_store, [str(f), "--workflow", "app.Deploy"])
         assert result == 0
@@ -250,9 +250,9 @@ class TestMongoSubmit:
         assert task.data["workflow_name"] == "app.Deploy"
 
     def test_submit_with_primary_and_library(self, tmp_path, mock_store, capsys):
-        lib = tmp_path / "types.afl"
+        lib = tmp_path / "types.ffl"
         lib.write_text("namespace types {\n  schema Config { url: String }\n}")
-        main_f = tmp_path / "main.afl"
+        main_f = tmp_path / "main.ffl"
         main_f.write_text("namespace app {\n  use types\n  workflow Start(cfg: types.Config)\n}")
         result = self._run_with_mock_store(
             mock_store,
@@ -269,7 +269,7 @@ class TestMongoSubmit:
         assert "namespace app" in source_content
 
     def test_submit_with_default_params(self, tmp_path, mock_store, capsys):
-        f = tmp_path / "wf.afl"
+        f = tmp_path / "wf.ffl"
         f.write_text('namespace n {\n  workflow Go(count: Int = 5, name: String = "test")\n}')
         result = self._run_with_mock_store(mock_store, [str(f), "--workflow", "n.Go"])
         assert result == 0
@@ -280,7 +280,7 @@ class TestMongoSubmit:
         assert inputs["name"] == "test"
 
     def test_submit_with_input_overrides(self, tmp_path, mock_store, capsys):
-        f = tmp_path / "wf.afl"
+        f = tmp_path / "wf.ffl"
         f.write_text("namespace n {\n  workflow Go(count: Int = 5)\n}")
         result = self._run_with_mock_store(
             mock_store,
@@ -292,7 +292,7 @@ class TestMongoSubmit:
         assert task.data["inputs"]["count"] == 99
 
     def test_submit_custom_task_list(self, tmp_path, mock_store, capsys):
-        f = tmp_path / "wf.afl"
+        f = tmp_path / "wf.ffl"
         f.write_text("namespace test {\n  workflow Run()\n}")
         result = self._run_with_mock_store(
             mock_store, [str(f), "--workflow", "test.Run", "--task-list", "priority"]
@@ -304,7 +304,7 @@ class TestMongoSubmit:
 
     def test_submit_creates_linked_entities(self, tmp_path, mock_store, capsys):
         """Verify flow, workflow, runner, and task are correctly linked."""
-        f = tmp_path / "wf.afl"
+        f = tmp_path / "wf.ffl"
         f.write_text("namespace test {\n  workflow Run()\n}")
         result = self._run_with_mock_store(mock_store, [str(f), "--workflow", "test.Run"])
         assert result == 0
@@ -328,7 +328,7 @@ class TestMongoSubmit:
 
     def test_submit_stores_compiled_ast(self, tmp_path, mock_store, capsys):
         """Verify submit stores compiled_ast on FlowDefinition."""
-        f = tmp_path / "wf.afl"
+        f = tmp_path / "wf.ffl"
         f.write_text("namespace n {\n  workflow Go(count: Int = 5)\n}")
         result = self._run_with_mock_store(mock_store, [str(f), "--workflow", "n.Go"])
         assert result == 0
@@ -341,7 +341,7 @@ class TestMongoSubmit:
 
     def test_submit_compiled_ast_has_stable_ids(self, tmp_path, mock_store, capsys):
         """Verify that compiled_ast statement IDs are stable (not regenerated)."""
-        f = tmp_path / "wf.afl"
+        f = tmp_path / "wf.ffl"
         f.write_text("namespace n {\n  workflow Go(count: Int = 5)\n}")
         result = self._run_with_mock_store(mock_store, [str(f), "--workflow", "n.Go"])
         assert result == 0
@@ -363,10 +363,10 @@ class TestMongoConnectionError:
     """Test graceful handling of MongoDB connection failures."""
 
     def test_connection_error(self, tmp_path, capsys):
-        f = tmp_path / "wf.afl"
+        f = tmp_path / "wf.ffl"
         f.write_text("namespace test {\n  workflow Run()\n}")
         with patch(
-            "afl.runtime.submit._connect_store",
+            "facetwork.runtime.submit._connect_store",
             side_effect=ConnectionError("refused"),
         ):
             result = main([str(f), "--workflow", "test.Run"])

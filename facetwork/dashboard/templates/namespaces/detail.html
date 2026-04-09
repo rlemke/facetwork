@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "partials/_doc_comment.html" import render_doc %}
+{% block title %}Namespace {{ namespace.name if namespace else "Not Found" }} — Facetwork{% endblock %}
+{% block content %}
+{% if not namespace %}
+<h1>Namespace not found</h1>
+<p><a href="/namespaces">Back to namespaces</a></p>
+{% else %}
+<h1>Namespace <span class="mono">{{ namespace.name }}</span></h1>
+
+<p>{{ namespace.flow_count }} flow(s), {{ namespace.workflow_count }} workflow(s), {{ namespace.facet_count }} facet(s)</p>
+
+{% if namespace.workflows %}
+<h2>Workflows ({{ namespace.workflow_count }})</h2>
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Version</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for wf in namespace.workflows %}
+        <tr>
+            <td><strong>{{ wf.short_name }}</strong>{% if wf.documentation %}{{ render_doc(wf.documentation) }}{% endif %}</td>
+            <td>{{ wf.version }}</td>
+            <td><a href="/flows/{{ wf.flow_id }}/run/{{ wf.uuid }}" role="button" class="outline">Run</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% endif %}
+
+{% if namespace.facets %}
+<h2>Facets ({{ namespace.facet_count }})</h2>
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Parameters</th>
+            <th>Returns</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for f in namespace.facets %}
+        <tr>
+            <td><strong>{{ f.short_name }}</strong>{% if f.documentation %}{{ render_doc(f.documentation) }}{% endif %}</td>
+            <td>{% if f.parameters %}{% for p in f.parameters %}{{ p.name }}: {{ p.type_hint }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</td>
+            <td>{{ f.return_type or "—" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% endif %}
+
+<p><a href="/namespaces">Back to namespaces</a></p>
+{% endif %}
+{% endblock %}

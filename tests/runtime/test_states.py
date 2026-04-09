@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL runtime state machine."""
+"""Tests for FFL runtime state machine."""
 
-from afl.runtime import (
+from facetwork.runtime import (
     BLOCK_TRANSITIONS,
     SCHEMA_TRANSITIONS,
     STEP_TRANSITIONS,

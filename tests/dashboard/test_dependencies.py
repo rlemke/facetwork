@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 try:
-    from afl.dashboard.dependencies import _get_store, get_store
+    from facetwork.dashboard.dependencies import _get_store, get_store
 
     DASHBOARD_AVAILABLE = True
 except ImportError:
@@ -25,8 +25,8 @@ def clear_cache():
 class TestGetStoreInternal:
     """Test _get_store singleton factory."""
 
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_creates_store_from_config(self, mock_load, mock_mongo):
         mock_config = MagicMock()
         mock_load.return_value = mock_config
@@ -39,8 +39,8 @@ class TestGetStoreInternal:
         mock_mongo.from_config.assert_called_once_with(mock_config.mongodb)
         assert result is mock_store
 
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_caches_singleton(self, mock_load, mock_mongo):
         mock_config = MagicMock()
         mock_load.return_value = mock_config
@@ -52,8 +52,8 @@ class TestGetStoreInternal:
         assert r1 is r2
         mock_load.assert_called_once()
 
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_passes_config_path(self, mock_load, mock_mongo):
         mock_config = MagicMock()
         mock_load.return_value = mock_config
@@ -66,8 +66,8 @@ class TestGetStoreInternal:
 class TestGetStoreDependency:
     """Test FastAPI get_store dependency."""
 
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_extracts_config_from_request(self, mock_load, mock_mongo):
         mock_config = MagicMock()
         mock_load.return_value = mock_config
@@ -80,8 +80,8 @@ class TestGetStoreDependency:
         mock_load.assert_called_once_with("/some/config.json")
         assert result is not None
 
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_handles_missing_config_path(self, mock_load, mock_mongo):
         mock_config = MagicMock()
         mock_load.return_value = mock_config

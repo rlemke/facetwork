@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Census Maps — Facetwork Dashboard{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Census Maps</h1>
+    <p>GeoJSON datasets available for map visualization</p>
+</hgroup>
+
+{% if datasets %}
+<p>
+    <a href="/census/maps/_all" role="button">View All Counties on One Map</a>
+    <a href="/census/maps/states" role="button" class="outline">State-Level Summary</a>
+    <a href="/census/compare" role="button" class="outline">Compare States</a>
+</p>
+<table>
+    <thead>
+        <tr>
+            <th>Dataset Key</th>
+            <th>Region</th>
+            <th>Facet Name</th>
+            <th>Records</th>
+            <th>Imported At</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for ds in datasets %}
+        <tr>
+            <td><a href="/census/maps/{{ ds.dataset_key }}">{{ ds.dataset_key }}</a></td>
+            <td>{{ ds.region }}</td>
+            <td>{{ ds.facet_name }}</td>
+            <td>{{ ds.record_count }}</td>
+            <td>
+                {% if ds.imported_at %}
+                <time data-ts="{{ ds.imported_at }}">{{ ds.imported_at }}</time>
+                {% else %}
+                —
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No GeoJSON datasets found. Run a census workflow with DB ingestion to populate data.</p>
+{% endif %}
+{% endblock %}

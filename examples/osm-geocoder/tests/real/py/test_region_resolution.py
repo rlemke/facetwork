@@ -1,6 +1,6 @@
-"""Integration test: multi-file AFL compilation with real region resolver.
+"""Integration test: multi-file FFL compilation with real region resolver.
 
-Compiles from real AFL source files (osmregion.afl + osmtypes.afl) and
+Compiles from real FFL source files (osmregion.afl + osmtypes.afl) and
 uses the real region_resolver.py (pure Python, no network). The download
 step is replaced with a mock cache to avoid HTTP calls.
 
@@ -21,7 +21,7 @@ from helpers import (
     run_to_completion,
 )
 
-from afl.runtime import ExecutionStatus
+from facetwork.runtime import ExecutionStatus
 
 # Add the osm-geocoder example to the path so we can import handlers
 _EXAMPLE_ROOT = Path(__file__).parent.parent.parent.parent
@@ -86,9 +86,9 @@ def _resolve_region_handler(params: dict) -> dict:
 def _compile_region_test():
     """Compile the region test workflow with its dependencies."""
     return compile_afl_files(
-        INTEGRATION_AFL_DIR / "resolve_region_test.afl",
-        EXAMPLE_AFL_FILES["osmtypes.afl"],
-        EXAMPLE_AFL_FILES["osmregion.afl"],
+        INTEGRATION_AFL_DIR / "resolve_region_test.ffl",
+        EXAMPLE_AFL_FILES["osmtypes.ffl"],
+        EXAMPLE_AFL_FILES["osmregion.ffl"],
     )
 
 

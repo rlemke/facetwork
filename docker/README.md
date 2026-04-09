@@ -1,6 +1,6 @@
-# AgentFlow Docker Stack
+# Facetwork Docker Stack
 
-This directory contains Docker configurations for running the AgentFlow development stack.
+This directory contains Docker configurations for running the Facetwork development stack.
 
 ## Quick Start
 
@@ -154,7 +154,7 @@ AFL_MONGODB_DATABASE=afl
 
 ## MCP Server Usage
 
-The MCP (Model Context Protocol) server allows LLM agents to interact with AgentFlow.
+The MCP (Model Context Protocol) server allows LLM agents to interact with Facetwork.
 
 ### Starting the MCP Server
 
@@ -170,9 +170,9 @@ Add to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "agentflow": {
+    "facetwork": {
       "command": "docker",
-      "args": ["compose", "-f", "/path/to/agentflow/docker-compose.yml", "--profile", "mcp", "run", "--rm", "mcp"]
+      "args": ["compose", "-f", "/path/to/facetwork/docker-compose.yml", "--profile", "mcp", "run", "--rm", "mcp"]
     }
   }
 }

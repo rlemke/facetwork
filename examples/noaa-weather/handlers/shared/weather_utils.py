@@ -20,7 +20,7 @@ import threading
 import time
 from typing import Any
 
-from afl.config import get_output_base
+from facetwork.config import get_output_base
 
 logger = logging.getLogger("noaa.download")
 
@@ -58,7 +58,7 @@ def get_weather_db(db: Any = None) -> Any:
     Otherwise connect via ``AFL_MONGODB_URL`` / ``AFL_EXAMPLES_DATABASE``.
 
     Example data is stored in a separate database (default ``afl_examples``)
-    so that ``db.dropDatabase()`` on the AFL runtime database does not
+    so that ``db.dropDatabase()`` on the FFL runtime database does not
     destroy cached weather reports and climate trends.
     """
     if db is not None:
@@ -440,7 +440,7 @@ def reverse_geocode_nominatim(lat: float, lon: float) -> dict[str, Any]:
             import time
 
             url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
-            resp = requests.get(url, headers={"User-Agent": "AgentFlow/0.34"}, timeout=10)
+            resp = requests.get(url, headers={"User-Agent": "Facetwork/0.34"}, timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
                 addr = data.get("address", {})

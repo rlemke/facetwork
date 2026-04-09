@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Seed script — compiles all AFL sources and populates MongoDB.
+"""Seed script — compiles all FFL sources and populates MongoDB.
 
 This script:
-1. Reads all AFL sources in dependency order (OSM types first, then
+1. Reads all FFL sources in dependency order (OSM types first, then
    operations, cache, GH, GTFS, zoom, continental workflows)
 2. Concatenates into a single source, parses, and validates
 3. Stores compiled flow in MongoDB `flows` collection
@@ -28,9 +28,9 @@ sys.path.insert(0, os.environ.get("PYTHONPATH", "/app"))
 
 from pymongo import MongoClient
 
-from afl.emitter import emit_dict
-from afl.parser import parse
-from afl.validator import validate
+from facetwork.emitter import emit_dict
+from facetwork.parser import parse
+from facetwork.validator import validate
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,13 +38,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("continental-lz-seed")
 
-# AFL source files in dependency order
+# FFL source files in dependency order
 # When running in Docker, paths are relative to /app
 # When running locally, paths are relative to the script location
 
 
 def _find_afl_root() -> Path:
-    """Determine the AFL source root based on environment."""
+    """Determine the FFL source root based on environment."""
     # Docker: files are copied to /app/osm-afl/ and /app/continental-afl/
     if Path("/app/osm-afl").exists():
         return Path("/app")
@@ -53,7 +53,7 @@ def _find_afl_root() -> Path:
 
 
 def _get_source_files(root: Path) -> list[tuple[str, Path]]:
-    """Return AFL source files in dependency order."""
+    """Return FFL source files in dependency order."""
     # Determine paths based on environment
     if (root / "osm-afl").exists():
         # Docker layout
@@ -65,23 +65,23 @@ def _get_source_files(root: Path) -> list[tuple[str, Path]]:
         cont_dir = root / "afl"
 
     return [
-        ("osm.types", osm_dir / "osmtypes.afl"),
-        ("osm.ops", osm_dir / "osmoperations.afl"),
-        ("osm.cache.*", osm_dir / "osmcache.afl"),
-        ("osm.ops.GraphHopper", osm_dir / "osmgraphhopper.afl"),
-        ("osm.cache.GraphHopper.*", osm_dir / "osmgraphhoppercache.afl"),
-        ("osm.Transit.GTFS", osm_dir / "osmgtfs.afl"),
-        ("osm.Roads.ZoomBuilder", osm_dir / "osmzoombuilder.afl"),
-        ("osm.Population", osm_dir / "osmfilters_population.afl"),
-        ("continental.types", cont_dir / "continental_types.afl"),
-        ("continental.lz", cont_dir / "continental_lz_workflows.afl"),
-        ("continental.transit", cont_dir / "continental_gtfs_workflows.afl"),
-        ("continental", cont_dir / "continental_full.afl"),
+        ("osm.types", osm_dir / "osmtypes.ffl"),
+        ("osm.ops", osm_dir / "osmoperations.ffl"),
+        ("osm.cache.*", osm_dir / "osmcache.ffl"),
+        ("osm.ops.GraphHopper", osm_dir / "osmgraphhopper.ffl"),
+        ("osm.cache.GraphHopper.*", osm_dir / "osmgraphhoppercache.ffl"),
+        ("osm.Transit.GTFS", osm_dir / "osmgtfs.ffl"),
+        ("osm.Roads.ZoomBuilder", osm_dir / "osmzoombuilder.ffl"),
+        ("osm.Population", osm_dir / "osmfilters_population.ffl"),
+        ("continental.types", cont_dir / "continental_types.ffl"),
+        ("continental.lz", cont_dir / "continental_lz_workflows.ffl"),
+        ("continental.transit", cont_dir / "continental_gtfs_workflows.ffl"),
+        ("continental", cont_dir / "continental_full.ffl"),
     ]
 
 
 def seed_database() -> None:
-    """Compile AFL sources and seed the database."""
+    """Compile FFL sources and seed the database."""
     mongodb_url = os.environ.get("AFL_MONGODB_URL", "mongodb://localhost:27019")
     database = os.environ.get("AFL_MONGODB_DATABASE", "afl_continental_lz")
 
@@ -92,7 +92,7 @@ def seed_database() -> None:
     flows_col = db["flows"]
     tasks_col = db["tasks"]
 
-    # Step 1: Read all AFL sources
+    # Step 1: Read all FFL sources
     root = _find_afl_root()
     source_files = _get_source_files(root)
 
@@ -116,9 +116,9 @@ def seed_database() -> None:
         logger.info(f"  Loaded: {resolved.name} ({ns_name})")
 
     # Step 2: Parse and validate
-    logger.info("Parsing concatenated AFL sources...")
+    logger.info("Parsing concatenated FFL sources...")
     try:
-        ast = parse(sources, filename="continental-lz-combined.afl")
+        ast = parse(sources, filename="continental-lz-combined.ffl")
     except Exception as e:
         logger.error(f"Parse error: {e}")
         sys.exit(1)
@@ -175,7 +175,7 @@ def seed_database() -> None:
 
         task_doc = {
             "uuid": task_id,
-            "name": "afl:execute",
+            "name": "fw:execute",
             "flow_id": flow_id,
             "workflow_id": "",
             "workflow_name": wf_name,
@@ -186,7 +186,7 @@ def seed_database() -> None:
             "updated": datetime.now(UTC).isoformat(),
             "data": {"inputs": inputs},
             "data_type": "execute",
-            "task_list_name": "afl:execute",
+            "task_list_name": "fw:execute",
             "seeded": True,
         }
 

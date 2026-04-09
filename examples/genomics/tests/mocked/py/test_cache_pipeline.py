@@ -12,8 +12,8 @@ No external dependencies. Run from the repo root:
     PYTHONPATH=. python examples/genomics/tests/mocked/py/test_cache_pipeline.py
 """
 
-from afl import emit_dict, parse
-from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+from facetwork import emit_dict, parse
+from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
 from examples.genomics.handlers.operations_handlers import download, index
 from examples.genomics.handlers.resolve_handlers import (
     resolve_annotation,
@@ -215,7 +215,7 @@ MOCK_HANDLERS = {
 
 
 # ---------------------------------------------------------------------------
-# Workflow AFL sources
+# Workflow FFL sources
 # ---------------------------------------------------------------------------
 
 PREPARE_REFERENCE_AFL = """\
@@ -279,7 +279,7 @@ namespace genomics.cache.workflows {
 
 
 def compile_workflow(afl_source: str, workflow_name: str) -> dict:
-    """Compile an AFL workflow to a runtime AST dict."""
+    """Compile an FFL workflow to a runtime AST dict."""
     tree = parse(afl_source)
     program = emit_dict(tree)
     for ns in program.get("namespaces", []):
@@ -331,7 +331,7 @@ def run_reference_cache() -> None:
     print("PHASE 1: Reference Cache + Index")
     print("=" * 70)
 
-    print("\nCompiling PrepareReference from AFL source...")
+    print("\nCompiling PrepareReference from FFL source...")
     workflow_ast = compile_workflow(PREPARE_REFERENCE_AFL, "PrepareReference")
     print("  OK\n")
 
@@ -495,7 +495,7 @@ def run_cached_cohort_analysis() -> None:
     print("PHASE 3: CachedCohortAnalysis (end-to-end)")
     print("=" * 70)
 
-    print("\nCompiling CachedCohortAnalysis from AFL source...")
+    print("\nCompiling CachedCohortAnalysis from FFL source...")
     workflow_ast = compile_workflow(CACHED_COHORT_AFL, "CachedCohortAnalysis")
     print("  OK\n")
 

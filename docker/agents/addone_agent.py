@@ -17,9 +17,9 @@ import sys
 # Add parent to path for afl imports
 sys.path.insert(0, "/app")
 
-from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
-from afl.runtime.evaluator import Evaluator
-from afl.runtime.mongo_store import MongoStore
+from facetwork.runtime.agent_poller import AgentPoller, AgentPollerConfig
+from facetwork.runtime.evaluator import Evaluator
+from facetwork.runtime.mongo_store import MongoStore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,7 +90,7 @@ def handle_greet(params: dict) -> dict:
 def main():
     # Configuration from environment
     mongodb_url = os.environ.get("AFL_MONGODB_URL", "mongodb://localhost:27017")
-    database = os.environ.get("AFL_MONGODB_DATABASE", "afl")
+    database = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
     agent_name = os.environ.get("AFL_AGENT_NAME", "addone-agent")
 
     logger.info(f"Starting {agent_name}")

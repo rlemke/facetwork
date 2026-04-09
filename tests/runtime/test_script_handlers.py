@@ -20,11 +20,11 @@ pre_script handling, and andThen script block execution.
 
 from unittest.mock import MagicMock
 
-from afl.runtime.changers.base import StateChangeResult
-from afl.runtime.handlers.block_execution import BlockExecutionBeginHandler
-from afl.runtime.handlers.scripts import FacetScriptsBeginHandler
-from afl.runtime.step import StepDefinition
-from afl.runtime.types import ObjectType
+from facetwork.runtime.changers.base import StateChangeResult
+from facetwork.runtime.handlers.block_execution import BlockExecutionBeginHandler
+from facetwork.runtime.handlers.scripts import FacetScriptsBeginHandler
+from facetwork.runtime.step import StepDefinition
+from facetwork.runtime.types import ObjectType
 
 
 def _make_step(facet_name: str = "TestFacet", params: dict | None = None) -> StepDefinition:

@@ -1,4 +1,4 @@
-"""Tests for ml-hyperparam-sweep handlers and AFL compilation."""
+"""Tests for ml-hyperparam-sweep handlers and FFL compilation."""
 
 from __future__ import annotations
 
@@ -336,12 +336,12 @@ class TestDispatch:
 class TestCompilation:
     @pytest.fixture()
     def parsed_ast(self):
-        from afl.parser import AFLParser
+        from facetwork.parser import FFLParser
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "sweep.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "sweep.ffl")
         with open(afl_path) as f:
             source = f.read()
-        return AFLParser().parse(source)
+        return FFLParser().parse(source)
 
     def test_afl_parses(self, parsed_ast):
         assert parsed_ast is not None
@@ -375,7 +375,7 @@ class TestCompilation:
         assert len(implicits) == 3
 
     def test_prompt_block_present(self, parsed_ast):
-        from afl.ast import PromptBlock
+        from facetwork.ast import PromptBlock
 
         reporting_ns = [ns for ns in parsed_ast.namespaces if ns.name == "ml.Reporting"][0]
         ef = reporting_ns.event_facets[0]

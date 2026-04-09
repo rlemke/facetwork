@@ -1,4 +1,4 @@
-"""Tests for AFL source publisher."""
+"""Tests for FFL source publisher."""
 
 import pytest
 
@@ -9,7 +9,7 @@ try:
 except ImportError:
     MONGOMOCK_AVAILABLE = False
 
-from afl.publisher import PublishError, SourcePublisher
+from facetwork.publisher import PublishError, SourcePublisher
 
 pytestmark = pytest.mark.skipif(
     not MONGOMOCK_AVAILABLE,
@@ -20,7 +20,7 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture
 def store():
     """Create a MongoStore backed by mongomock."""
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.runtime.mongo_store import MongoStore
 
     client = mongomock.MongoClient()
     s = MongoStore(database_name="afl_test_publisher", client=client)
@@ -153,9 +153,9 @@ class TestRoundTrip:
 
     def test_publish_then_resolve(self, store):
         """Published source can be resolved by DependencyResolver."""
-        from afl.parser import AFLParser
-        from afl.resolver import DependencyResolver, MongoDBNamespaceResolver
-        from afl.source import CompilerInput, FileOrigin, SourceEntry
+        from facetwork.parser import FFLParser
+        from facetwork.resolver import DependencyResolver, MongoDBNamespaceResolver
+        from facetwork.source import CompilerInput, FileOrigin, SourceEntry
 
         # Publish a library namespace
         publisher = SourcePublisher(store)
@@ -167,7 +167,7 @@ class TestRoundTrip:
         mongo_resolver._config = None
 
         # Parse a source that depends on the published namespace
-        parser = AFLParser()
+        parser = FFLParser()
         entry = SourceEntry(
             text="namespace app { use lib.types\n facet App() }",
             origin=FileOrigin(path="<test>"),

@@ -1,10 +1,10 @@
-# AgentFlow Beginner's Guide
+# Facetwork Beginner's Guide
 
-Welcome to AgentFlow! This guide gets you from zero to running your first workflow in about 10 minutes.
+Welcome to Facetwork! This guide gets you from zero to running your first workflow in about 10 minutes.
 
-## What is AgentFlow?
+## What is Facetwork?
 
-AgentFlow is a platform for building and running multi-step workflows. You describe *what* should happen in a simple language (AFL), and AgentFlow handles the execution, retries, and monitoring.
+Facetwork is a platform for building and running multi-step workflows. You describe *what* should happen in a simple language (AFL), and Facetwork handles the execution, retries, and monitoring.
 
 Think of it like a pipeline builder: you define steps, connect them, and let the system run them — locally on your laptop or distributed across a cluster.
 
@@ -21,8 +21,8 @@ This sets up a single-machine environment. For production/cluster deployment, se
 ### Option A: Docker (easiest)
 
 ```bash
-git clone https://github.com/rlemke/agentflow.git
-cd agentflow
+git clone https://github.com/rlemke/facetwork.git
+cd facetwork
 
 # Start everything: MongoDB + Dashboard + Runner
 docker compose up
@@ -36,8 +36,8 @@ Open http://localhost:8080 — you're done!
 ### Option B: Local Python
 
 ```bash
-git clone https://github.com/rlemke/agentflow.git
-cd agentflow
+git clone https://github.com/rlemke/facetwork.git
+cd facetwork
 
 # Create virtual environment
 python3 -m venv .venv
@@ -113,7 +113,7 @@ Each step shows a log timeline with:
 
 ## Writing Your First AFL Workflow
 
-AFL (Agent Flow Language) is how you define workflows. Here's a minimal example:
+AFL (Facetwork Flow Language) is how you define workflows. Here's a minimal example:
 
 ```afl
 namespace myapp {
@@ -169,9 +169,9 @@ scripts/publish my_workflows.afl --version 2.0  # with a version tag
 
 Other teams then import your namespace with `use` — the compiler validates all cross-team references at compile time. Each team deploys and updates their own handlers independently.
 
-## How AgentFlow Runs Your Workflows
+## How Facetwork Runs Your Workflows
 
-When you click **Run** in the dashboard, your workflow doesn't execute on a single machine. AgentFlow distributes the work across a **cluster of runner servers**:
+When you click **Run** in the dashboard, your workflow doesn't execute on a single machine. Facetwork distributes the work across a **cluster of runner servers**:
 
 1. The runtime breaks your workflow into **steps**
 2. Each step that needs work creates a **task** in the database

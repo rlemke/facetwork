@@ -75,7 +75,7 @@ def _make_poi_handler(facet_name: str, return_param: str, place_type: str, min_p
 
             # Filter for the specific place type if not "all"
             if place_type != "all":
-                from afl.runtime.storage import get_storage_backend
+                from facetwork.runtime.storage import get_storage_backend
 
                 _st = get_storage_backend(output_path)
                 with _st.open(output_path, "r") as f:
@@ -89,7 +89,7 @@ def _make_poi_handler(facet_name: str, return_param: str, place_type: str, min_p
                 feature_count = len(filtered)
             else:
                 # For "all", just count all features
-                from afl.runtime.storage import get_storage_backend
+                from facetwork.runtime.storage import get_storage_backend
 
                 _st = get_storage_backend(output_path)
                 with _st.open(output_path, "r") as f:

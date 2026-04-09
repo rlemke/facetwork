@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from afl.runtime.storage import localize
+from facetwork.runtime.storage import localize
 
 from ..shared._output import resolve_output_dir
 from ..shared.scan_progress import ScanProgressTracker, get_file_size

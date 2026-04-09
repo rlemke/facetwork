@@ -16,7 +16,7 @@
 
 import copy
 
-from afl.ast_utils import find_all_workflows, find_workflow, normalize_program_ast
+from facetwork.ast_utils import find_all_workflows, find_workflow, normalize_program_ast
 
 # ---------------------------------------------------------------------------
 # Fixtures — sample program dicts
@@ -261,10 +261,10 @@ class TestFindAllWorkflows:
 
 
 class TestCompileNormalizeFindRoundTrip:
-    """End-to-end: parse AFL → emit → normalize → find."""
+    """End-to-end: parse FFL → emit → normalize → find."""
 
     def test_simple_workflow(self):
-        from afl import emit_dict, parse
+        from facetwork import emit_dict, parse
 
         ast = parse('workflow Hello() => (msg: String) andThen { yield Hello(msg = "hi") }')
         compiled = emit_dict(ast)
@@ -278,7 +278,7 @@ class TestCompileNormalizeFindRoundTrip:
         assert wf["name"] == "Hello"
 
     def test_namespaced_workflow(self):
-        from afl import emit_dict, parse
+        from facetwork import emit_dict, parse
 
         source = """
 namespace myns {
@@ -293,7 +293,7 @@ namespace myns {
         assert find_workflow(normalized, "myns.Inner") is not None
 
     def test_find_all_from_compiled(self):
-        from afl import emit_dict, parse
+        from facetwork import emit_dict, parse
 
         source = """
 workflow A() => (x: Int) andThen { yield A(x = 1) }
@@ -338,8 +338,8 @@ class TestNormalizeNamespaceEventFacets:
         assert "FacetDecl" in types
 
     def test_compile_event_facet_normalize_roundtrip(self):
-        """Compile AFL with event facets, normalize, confirm eventFacets absent."""
-        from afl import emit_dict, parse
+        """Compile FFL with event facets, normalize, confirm eventFacets absent."""
+        from facetwork import emit_dict, parse
 
         source = """
 namespace myns {

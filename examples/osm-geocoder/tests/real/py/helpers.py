@@ -1,7 +1,7 @@
 """Shared helpers for integration tests.
 
 Provides compilation, workflow extraction, and execution helpers
-that use real AFL source files and the full compiler pipeline.
+that use real FFL source files and the full compiler pipeline.
 """
 
 from __future__ import annotations
@@ -12,21 +12,21 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from pymongo.database import Database
 
-from afl.emitter import emit_dict
-from afl.parser import AFLParser
-from afl.runtime.agent_poller import AgentPoller
-from afl.runtime.evaluator import Evaluator, ExecutionResult, ExecutionStatus
-from afl.source import CompilerInput, FileOrigin, SourceEntry
-from afl.validator import validate
+from facetwork.emitter import emit_dict
+from facetwork.parser import FFLParser
+from facetwork.runtime.agent_poller import AgentPoller
+from facetwork.runtime.evaluator import Evaluator, ExecutionResult, ExecutionStatus
+from facetwork.source import CompilerInput, FileOrigin, SourceEntry
+from facetwork.validator import validate
 
 # Paths
 _EXAMPLE_ROOT = Path(__file__).parent.parent.parent.parent
 EXAMPLE_AFL_DIR = _EXAMPLE_ROOT / "afl"  # root afl/ (geocoder.afl)
 INTEGRATION_AFL_DIR = Path(__file__).parent.parent / "afl"
 
-# All AFL files indexed by filename (root afl/ + handlers/*/afl/)
+# All FFL files indexed by filename (root afl/ + handlers/*/ffl/)
 EXAMPLE_AFL_FILES: dict[str, Path] = {}
-for _p in sorted(_EXAMPLE_ROOT.rglob("*.afl")):
+for _p in sorted(_EXAMPLE_ROOT.rglob("*.ffl")):
     if "/tests/" not in str(_p):
         EXAMPLE_AFL_FILES[_p.name] = _p
 
@@ -35,11 +35,11 @@ def compile_afl_files(
     primary: str | Path,
     *libraries: str | Path,
 ) -> dict[str, Any]:
-    """Compile AFL source files into a program dict.
+    """Compile FFL source files into a program dict.
 
     Args:
-        primary: Path to the primary AFL source file
-        *libraries: Paths to library AFL source files
+        primary: Path to the primary FFL source file
+        *libraries: Paths to library FFL source files
 
     Returns:
         The full program dict (JSON-serializable AST)
@@ -70,7 +70,7 @@ def compile_afl_files(
         library_sources=lib_entries,
     )
 
-    parser = AFLParser()
+    parser = FFLParser()
     program_ast, _registry = parser.parse_sources(compiler_input)
 
     result = validate(program_ast)
@@ -195,8 +195,8 @@ def store_flow(
     """
     import uuid as _uuid
 
-    from afl.runtime.entities import FlowDefinition, FlowIdentity, SourceText
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.runtime.entities import FlowDefinition, FlowIdentity, SourceText
+    from facetwork.runtime.mongo_store import MongoStore
 
     flow_id = str(_uuid.uuid4())
     flow = FlowDefinition(
@@ -241,7 +241,7 @@ def submit_workflow(
 
     task_doc = {
         "uuid": task_id,
-        "name": "afl:execute",
+        "name": "fw:execute",
         "runner_id": "",
         "workflow_id": "",
         "flow_id": flow_id,

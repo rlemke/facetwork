@@ -2,7 +2,7 @@
 
 ## What this project is
 
-This is an **AFL Agent** — a service that processes event facets for the AgentFlow platform. The AgentFlow runtime (Python) manages workflow execution and state machines. This agent handles specific event types by polling MongoDB for tasks, performing work, and signaling the runtime to continue.
+This is an **AFL Agent** — a service that processes event facets for the Facetwork platform. The Facetwork runtime (Python) manages workflow execution and state machines. This agent handles specific event types by polling MongoDB for tasks, performing work, and signaling the runtime to continue.
 
 ## How AFL agents work
 
@@ -25,8 +25,8 @@ The Python RunnerService polls for `afl:resume` tasks, validates the step's retu
 
 | Term | Definition |
 |------|------------|
-| **AgentFlow** | Platform for distributed workflow execution (compiler + runtime + agents) |
-| **AFL** | Agent Flow Language — the DSL for defining workflows (`.afl` files) |
+| **Facetwork** | Platform for distributed workflow execution (compiler + runtime + agents) |
+| **FFL** | Facetwork Flow Language — the DSL for defining workflows (`.afl` files) |
 | **Event Facet** | A facet prefixed with `event` that triggers external agent execution |
 | **Task** | A claimable work item in the MongoDB `tasks` collection |
 | **Step** | A runtime instance of a facet, with params (inputs) and returns (outputs) |
@@ -189,7 +189,7 @@ db.tasks.replaceOne(
 ```javascript
 db.tasks.insertOne({
   uuid: "<generate UUID>",
-  name: "afl:resume:" + task.name,  // includes facet name for visibility
+  name: "fw:resume:" + task.name,  // includes facet name for visibility
   runner_id: "",
   workflow_id: task.workflow_id,
   flow_id: "",
@@ -211,11 +211,11 @@ db.tasks.insertOne({
 
 ## Configuration
 
-AFL agents connect to the same MongoDB instance as the AgentFlow runtime. Configuration is resolved from:
+AFL agents connect to the same MongoDB instance as the Facetwork runtime. Configuration is resolved from:
 
 1. Explicit `--config FILE` argument
 2. `AFL_CONFIG` environment variable
-3. `afl.config.json` in current directory, `~/.afl/`, or `/etc/afl/`
+3. `afl.config.json` in current directory, `~/.afl/`, or `/etc/ffl/`
 4. Environment variables (see below)
 5. Built-in defaults
 
@@ -267,7 +267,7 @@ If your agent is written in Python or Scala, you can use the existing libraries 
 
 ### Python (AgentPoller)
 
-Available in the AgentFlow runtime package (`afl.runtime.agent_poller`):
+Available in the Facetwork runtime package (`afl.runtime.agent_poller`):
 
 ```python
 from afl.runtime import Evaluator, AgentPoller, AgentPollerConfig
@@ -290,7 +290,7 @@ poller.start()
 
 ### Scala (afl-agent library)
 
-Available as an sbt dependency from the AgentFlow repo (`agents/scala/afl-agent/`):
+Available as an sbt dependency from the Facetwork repo (`agents/scala/afl-agent/`):
 
 ```scala
 import afl.agent.{AgentPoller, AgentPollerConfig}

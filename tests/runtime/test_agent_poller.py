@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the AFL AgentPoller library.
+"""Tests for the FFL AgentPoller library.
 
 Tests cover:
 - Evaluator.fail_step() method
@@ -26,15 +26,15 @@ import time
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     Evaluator,
     ExecutionStatus,
     MemoryStore,
     StepState,
     Telemetry,
 )
-from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
-from afl.runtime.entities import (
+from facetwork.runtime.agent_poller import AgentPoller, AgentPollerConfig
+from facetwork.runtime.entities import (
     RunnerDefinition,
     RunnerState,
     ServerState,
@@ -42,7 +42,7 @@ from afl.runtime.entities import (
     TaskState,
     WorkflowDefinition,
 )
-from afl.runtime.types import generate_id
+from facetwork.runtime.types import generate_id
 
 # =========================================================================
 # Fixtures
@@ -351,9 +351,9 @@ class TestAgentPollerPollOnce:
     def test_poll_short_name_fallback(self, store, evaluator):
         """A handler registered with a short name matches a qualified task name
         via the _process_event fallback logic."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
-        from afl.runtime.types import workflow_id as make_wf_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
+        from facetwork.runtime.types import workflow_id as make_wf_id
 
         # Create a step at EVENT_TRANSMIT with a qualified facet name
         wf_id = make_wf_id()

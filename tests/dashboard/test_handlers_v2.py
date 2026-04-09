@@ -35,7 +35,7 @@ except ImportError:
 # Helper unit tests (no server needed)
 # ---------------------------------------------------------------------------
 
-from afl.dashboard.helpers import extract_handler_prefix, group_handlers_by_namespace
+from facetwork.dashboard.helpers import extract_handler_prefix, group_handlers_by_namespace
 
 
 class TestExtractHandlerPrefix:
@@ -54,7 +54,7 @@ class TestExtractHandlerPrefix:
 
 class TestGroupHandlersByNamespace:
     def _make_handler(self, facet_name, module_uri="mod", entrypoint="handle"):
-        from afl.runtime.entities import HandlerRegistration
+        from facetwork.runtime.entities import HandlerRegistration
 
         return HandlerRegistration(
             facet_name=facet_name,
@@ -130,7 +130,7 @@ def _make_handler_entity(
     entrypoint="handle",
     version="1.0.0",
 ):
-    from afl.runtime.entities import HandlerRegistration
+    from facetwork.runtime.entities import HandlerRegistration
 
     return HandlerRegistration(
         facet_name=facet_name,
@@ -146,9 +146,9 @@ def _make_handler_entity(
 @pytest.fixture
 def client():
     """Create a test client with mongomock-backed store."""
-    from afl.dashboard import dependencies as deps
-    from afl.dashboard.app import create_app
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.dashboard import dependencies as deps
+    from facetwork.dashboard.app import create_app
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     store = MongoStore(database_name="afl_test_hnd_v2", client=mock_client)

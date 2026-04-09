@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL runtime entity dataclasses."""
+"""Tests for FFL runtime entity dataclasses."""
 
 from dataclasses import asdict
 
-from afl.runtime.entities import (
+from facetwork.runtime.entities import (
     BlockDefinition,
     Classifier,
     FacetDefinition,
@@ -81,8 +81,8 @@ class TestSupportingTypes:
 
     def test_source_text(self):
         """Test SourceText dataclass."""
-        source = SourceText(name="main.afl", content="facet Test()")
-        assert source.name == "main.afl"
+        source = SourceText(name="main.ffl", content="facet Test()")
+        assert source.name == "main.ffl"
         assert source.content == "facet Test()"
         assert source.language == "afl"
 

@@ -113,7 +113,7 @@ SMB (Samba/CIFS) volumes mounted on macOS (e.g. `/Volumes/afl_data/`) exhibit a 
 - **Pre-existing files in subdirectories fail**: `os.path.isfile()`, `os.stat()`, and `open()` return errors for files that existed on the SMB share before the container started. `os.listdir()` (readdir) succeeds — the filenames are visible, but `stat()` on individual files fails.
 - **Root-level files work**: Only files in subdirectories are affected.
 
-**Impact on AgentFlow**: The Geofabrik mirror (`AFL_GEOFABRIK_MIRROR`) contains pre-existing `.osm.pbf` files in nested directories (e.g. `north-america/us/alabama-latest.osm.pbf`). When mounted from an SMB share, containers cannot read these files even though `listdir()` shows them.
+**Impact on Facetwork**: The Geofabrik mirror (`AFL_GEOFABRIK_MIRROR`) contains pre-existing `.osm.pbf` files in nested directories (e.g. `north-america/us/alabama-latest.osm.pbf`). When mounted from an SMB share, containers cannot read these files even though `listdir()` shows them.
 
 **Workarounds**:
 1. **Use a local APFS drive for the mirror** (recommended): Set `AFL_GEOFABRIK_MIRROR` to a local or directly-attached drive (e.g. `/Volumes/afl_data_local/osm`). SMB is fine for write targets (`AFL_CACHE_DIR`, `AFL_OSM_OUTPUT_BASE`, `AFL_LOCAL_OUTPUT_DIR`) since containers create those files.
@@ -207,7 +207,7 @@ AFL uses a JSON config file (`afl.config.json`) for service connections. Resolut
 
 1. Explicit `--config FILE` CLI argument
 2. `AFL_CONFIG` environment variable
-3. `afl.config.json` in the current directory, `~/.afl/`, or `/etc/afl/`
+3. `afl.config.json` in the current directory, `~/.afl/`, or `/etc/ffl/`
 4. Environment variables (`AFL_MONGODB_*`)
 5. Built-in defaults
 

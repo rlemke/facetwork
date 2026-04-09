@@ -8,7 +8,7 @@ import logging
 import os
 from typing import Any
 
-from afl.config import get_output_base
+from facetwork.config import get_output_base
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ NAMESPACE = "sitesel.Output"
 def _try_output_store_ingest(scored_path: str, state_fips: str, facet_name: str) -> int:
     """Attempt to ingest into MongoDB OutputStore. Returns record count or 0."""
     try:
-        from afl.runtime.persistence.output_store import OutputStore
+        from facetwork.runtime.persistence.output_store import OutputStore
 
         db = None
         try:

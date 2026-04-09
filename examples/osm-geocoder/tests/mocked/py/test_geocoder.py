@@ -7,8 +7,8 @@ Demonstrates the full workflow execution cycle with a mock geocode handler
     PYTHONPATH=. python examples/osm-geocoder/tests/mocked/py/test_geocoder.py
 """
 
-from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
-from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
+from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+from facetwork.runtime.agent_poller import AgentPoller, AgentPollerConfig
 
 # Runtime AST for:
 #

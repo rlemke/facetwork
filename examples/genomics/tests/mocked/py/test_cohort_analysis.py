@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Example: Genomics cohort analysis pipeline.
 
-Demonstrates two AFL workflow patterns:
+Demonstrates two FFL workflow patterns:
   Phase 1 — SamplePipeline (andThen foreach fan-out):
     For each of 4 samples: QcReads -> AlignReads -> CallVariants
   Phase 2 — CohortAnalysis (linear andThen fan-in):
@@ -14,8 +14,8 @@ No external dependencies. Run from the repo root:
     PYTHONPATH=. python examples/genomics/tests/mocked/py/test_cohort_analysis.py
 """
 
-from afl import emit_dict, parse
-from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+from facetwork import emit_dict, parse
+from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
 
 # ---------------------------------------------------------------------------
 # Program AST — declares event facets the runtime needs to recognise.
@@ -122,7 +122,7 @@ PROGRAM_AST = {
 
 
 # ---------------------------------------------------------------------------
-# Workflow AFL sources
+# Workflow FFL sources
 # ---------------------------------------------------------------------------
 
 SAMPLE_PIPELINE_AFL = """\
@@ -201,7 +201,7 @@ namespace genomics.pipeline {
 
 
 def compile_workflow(afl_source: str, workflow_name: str) -> dict:
-    """Compile an AFL workflow to a runtime AST dict."""
+    """Compile an FFL workflow to a runtime AST dict."""
     tree = parse(afl_source)
     program = emit_dict(tree)
     for ns in program.get("namespaces", []):
@@ -415,7 +415,7 @@ def run_sample_pipeline() -> dict:
     print("PHASE 1: SamplePipeline (foreach fan-out)")
     print("=" * 70)
 
-    print("\nCompiling SamplePipeline from AFL source...")
+    print("\nCompiling SamplePipeline from FFL source...")
     workflow_ast = compile_workflow(SAMPLE_PIPELINE_AFL, "SamplePipeline")
     print("  OK\n")
 
@@ -498,7 +498,7 @@ def run_cohort_analysis(gvcf_dir: str) -> None:
     print("PHASE 2: CohortAnalysis (linear fan-in)")
     print("=" * 70)
 
-    print("\nCompiling CohortAnalysis from AFL source...")
+    print("\nCompiling CohortAnalysis from FFL source...")
     workflow_ast = compile_workflow(COHORT_ANALYSIS_AFL, "CohortAnalysis")
     print("  OK\n")
 

@@ -1,26 +1,26 @@
-"""Tests for AFL dependency resolver."""
+"""Tests for FFL dependency resolver."""
 
 from unittest.mock import MagicMock
 
 import pytest
 
-from afl.parser import AFLParser
-from afl.resolver import DependencyResolver, MongoDBNamespaceResolver, NamespaceIndex
-from afl.source import CompilerInput, FileOrigin, SourceEntry
+from facetwork.parser import FFLParser
+from facetwork.resolver import DependencyResolver, MongoDBNamespaceResolver, NamespaceIndex
+from facetwork.source import CompilerInput, FileOrigin, SourceEntry
 
 
 @pytest.fixture
 def parser():
-    return AFLParser()
+    return FFLParser()
 
 
 class TestNamespaceIndex:
     """Tests for filesystem namespace scanning."""
 
     def test_scan_directory(self, tmp_path):
-        """Scan a directory and find namespaces in AFL files."""
-        (tmp_path / "types.afl").write_text("namespace osm.types { facet Addr() }")
-        (tmp_path / "geo.afl").write_text("namespace osm.geocode { facet Geo() }")
+        """Scan a directory and find namespaces in FFL files."""
+        (tmp_path / "types.ffl").write_text("namespace osm.types { facet Addr() }")
+        (tmp_path / "geo.ffl").write_text("namespace osm.geocode { facet Geo() }")
 
         index = NamespaceIndex([tmp_path])
         assert index.find_namespace("osm.types") is not None
@@ -29,7 +29,7 @@ class TestNamespaceIndex:
 
     def test_multiple_namespaces_per_file(self, tmp_path):
         """A single file may define multiple namespaces."""
-        (tmp_path / "multi.afl").write_text(
+        (tmp_path / "multi.ffl").write_text(
             "namespace ns.a { facet A() }\nnamespace ns.b { facet B() }\n"
         )
 
@@ -54,12 +54,12 @@ class TestNamespaceIndex:
 
     def test_duplicate_namespace_warning(self, tmp_path, caplog):
         """Warn when same namespace name appears in different files."""
-        (tmp_path / "a.afl").write_text("namespace dup.ns { facet A() }")
-        (tmp_path / "b.afl").write_text("namespace dup.ns { facet B() }")
+        (tmp_path / "a.ffl").write_text("namespace dup.ns { facet A() }")
+        (tmp_path / "b.ffl").write_text("namespace dup.ns { facet B() }")
 
         import logging
 
-        with caplog.at_level(logging.WARNING, logger="afl.resolver"):
+        with caplog.at_level(logging.WARNING, logger="facetwork.resolver"):
             index = NamespaceIndex([tmp_path])
             index.find_namespace("dup.ns")
 
@@ -67,8 +67,8 @@ class TestNamespaceIndex:
 
     def test_unparseable_file_skipped(self, tmp_path):
         """Files with syntax errors are silently skipped."""
-        (tmp_path / "good.afl").write_text("namespace ok.ns { facet Ok() }")
-        (tmp_path / "bad.afl").write_text("@@@ invalid syntax")
+        (tmp_path / "good.ffl").write_text("namespace ok.ns { facet Ok() }")
+        (tmp_path / "bad.ffl").write_text("@@@ invalid syntax")
 
         index = NamespaceIndex([tmp_path])
         assert index.find_namespace("ok.ns") is not None
@@ -77,15 +77,15 @@ class TestNamespaceIndex:
         """Recursively scan subdirectories."""
         sub = tmp_path / "sub" / "deep"
         sub.mkdir(parents=True)
-        (sub / "nested.afl").write_text("namespace nested.ns { facet N() }")
+        (sub / "nested.ffl").write_text("namespace nested.ns { facet N() }")
 
         index = NamespaceIndex([tmp_path])
         assert index.find_namespace("nested.ns") is not None
 
     def test_all_namespaces(self, tmp_path):
         """all_namespaces returns the full index."""
-        (tmp_path / "a.afl").write_text("namespace x.a { facet A() }")
-        (tmp_path / "b.afl").write_text("namespace x.b { facet B() }")
+        (tmp_path / "a.ffl").write_text("namespace x.a { facet A() }")
+        (tmp_path / "b.ffl").write_text("namespace x.b { facet B() }")
 
         index = NamespaceIndex([tmp_path])
         ns_map = index.all_namespaces()
@@ -97,8 +97,8 @@ class TestNamespaceIndex:
         d2 = tmp_path / "dir2"
         d1.mkdir()
         d2.mkdir()
-        (d1 / "a.afl").write_text("namespace first.ns { facet A() }")
-        (d2 / "b.afl").write_text("namespace second.ns { facet B() }")
+        (d1 / "a.ffl").write_text("namespace first.ns { facet A() }")
+        (d2 / "b.ffl").write_text("namespace second.ns { facet B() }")
 
         index = NamespaceIndex([d1, d2])
         assert index.find_namespace("first.ns") is not None
@@ -110,7 +110,7 @@ class TestDependencyResolver:
 
     def _make_input(self, source_text: str) -> tuple:
         """Helper: parse source and return (program, registry, compiler_input)."""
-        parser = AFLParser()
+        parser = FFLParser()
         entry = SourceEntry(
             text=source_text,
             origin=FileOrigin(path="<test>"),
@@ -131,7 +131,7 @@ class TestDependencyResolver:
 
     def test_single_missing_dep_from_filesystem(self, tmp_path):
         """Resolve a single missing namespace from the filesystem."""
-        (tmp_path / "types.afl").write_text("namespace osm.types { facet Addr() }")
+        (tmp_path / "types.ffl").write_text("namespace osm.types { facet Addr() }")
 
         program, registry, ci = self._make_input(
             "namespace osm.main { use osm.types\n facet Main() }\n"
@@ -146,8 +146,8 @@ class TestDependencyResolver:
 
     def test_transitive_deps(self, tmp_path):
         """Resolve transitive dependencies: A → B → C."""
-        (tmp_path / "b.afl").write_text("namespace ns.b { use ns.c\n facet B() }")
-        (tmp_path / "c.afl").write_text("namespace ns.c { facet C() }")
+        (tmp_path / "b.ffl").write_text("namespace ns.b { use ns.c\n facet B() }")
+        (tmp_path / "c.ffl").write_text("namespace ns.c { facet C() }")
 
         program, registry, ci = self._make_input("namespace ns.a { use ns.b\n facet A() }\n")
         fs_index = NamespaceIndex([tmp_path])
@@ -159,7 +159,7 @@ class TestDependencyResolver:
 
     def test_circular_deps_terminate(self, tmp_path):
         """Circular dependencies (A → B → A) terminate naturally."""
-        (tmp_path / "b.afl").write_text("namespace circle.b { use circle.a\n facet B() }")
+        (tmp_path / "b.ffl").write_text("namespace circle.b { use circle.a\n facet B() }")
 
         program, registry, ci = self._make_input(
             "namespace circle.a { use circle.b\n facet A() }\n"
@@ -173,7 +173,7 @@ class TestDependencyResolver:
 
     def test_already_loaded_source_not_reloaded(self, tmp_path):
         """A source file is loaded only once even if multiple namespaces reference it."""
-        (tmp_path / "shared.afl").write_text(
+        (tmp_path / "shared.ffl").write_text(
             "namespace shared.types { facet T() }\nnamespace shared.utils { facet U() }\n"
         )
 
@@ -225,7 +225,7 @@ class TestDependencyResolver:
 
     def test_mixed_filesystem_and_mongodb(self, tmp_path):
         """Filesystem takes precedence; MongoDB fills the gaps."""
-        (tmp_path / "local.afl").write_text("namespace local.types { facet LocalT() }")
+        (tmp_path / "local.ffl").write_text("namespace local.types { facet LocalT() }")
 
         program, registry, ci = self._make_input(
             "namespace app { use local.types\n use remote.types\n facet App() }\n"
@@ -247,7 +247,7 @@ class TestDependencyResolver:
 
     def test_registry_tracks_resolved_sources(self, tmp_path):
         """Registry should include entries for auto-resolved sources."""
-        (tmp_path / "dep.afl").write_text("namespace dep.ns { facet D() }")
+        (tmp_path / "dep.ffl").write_text("namespace dep.ns { facet D() }")
 
         program, registry, ci = self._make_input("namespace app { use dep.ns\n facet App() }\n")
         fs_index = NamespaceIndex([tmp_path])
@@ -259,17 +259,17 @@ class TestDependencyResolver:
 
     def test_sibling_directory_auto_detected(self, tmp_path):
         """Primary file's directory is scanned automatically via parse_and_resolve."""
-        (tmp_path / "main.afl").write_text("namespace app { use lib.types\n facet App() }")
-        (tmp_path / "types.afl").write_text("namespace lib.types { facet T() }")
+        (tmp_path / "main.ffl").write_text("namespace app { use lib.types\n facet App() }")
+        (tmp_path / "types.ffl").write_text("namespace lib.types { facet T() }")
 
-        from afl.config import AFLConfig, ResolverConfig
+        from facetwork.config import FFLConfig, ResolverConfig
 
-        config = AFLConfig(resolver=ResolverConfig(auto_resolve=True))
-        parser = AFLParser()
+        config = FFLConfig(resolver=ResolverConfig(auto_resolve=True))
+        parser = FFLParser()
 
         entry = SourceEntry(
-            text=(tmp_path / "main.afl").read_text(),
-            origin=FileOrigin(path=str(tmp_path / "main.afl")),
+            text=(tmp_path / "main.ffl").read_text(),
+            origin=FileOrigin(path=str(tmp_path / "main.ffl")),
             is_library=False,
         )
         ci = CompilerInput(primary_sources=[entry])
@@ -280,7 +280,7 @@ class TestDependencyResolver:
 
     def test_qualified_call_resolution(self, tmp_path):
         """Resolve namespaces referenced by qualified call names (no use statement)."""
-        (tmp_path / "ops.afl").write_text(
+        (tmp_path / "ops.ffl").write_text(
             "namespace osm.ops {\n    event facet Cache(region: String) => (cache: String)\n}\n"
         )
 
@@ -300,13 +300,13 @@ class TestDependencyResolver:
 
     def test_qualified_call_transitive(self, tmp_path):
         """Qualified call triggers loading, which may bring in use-based transitive deps."""
-        (tmp_path / "ops.afl").write_text(
+        (tmp_path / "ops.ffl").write_text(
             "namespace osm.ops {\n"
             "    use osm.types\n"
             "    event facet DoStuff() => (result: String)\n"
             "}\n"
         )
-        (tmp_path / "types.afl").write_text(
+        (tmp_path / "types.ffl").write_text(
             "namespace osm.types {\n    schema Coord { lat: Float, lon: Float }\n}\n"
         )
 
@@ -326,24 +326,24 @@ class TestDependencyResolver:
 
 
 class TestParseAndResolve:
-    """Tests for AFLParser.parse_and_resolve integration."""
+    """Tests for FFLParser.parse_and_resolve integration."""
 
     def test_auto_resolve_disabled_by_default(self, tmp_path):
         """Without auto_resolve=True, parse_and_resolve just calls parse_sources."""
-        (tmp_path / "main.afl").write_text("namespace app { use missing.ns\n facet App() }")
+        (tmp_path / "main.ffl").write_text("namespace app { use missing.ns\n facet App() }")
 
-        parser = AFLParser()
+        parser = FFLParser()
         entry = SourceEntry(
-            text=(tmp_path / "main.afl").read_text(),
-            origin=FileOrigin(path=str(tmp_path / "main.afl")),
+            text=(tmp_path / "main.ffl").read_text(),
+            origin=FileOrigin(path=str(tmp_path / "main.ffl")),
             is_library=False,
         )
         ci = CompilerInput(primary_sources=[entry])
 
         # Default config has auto_resolve=False
-        from afl.config import AFLConfig
+        from facetwork.config import FFLConfig
 
-        config = AFLConfig()
+        config = FFLConfig()
         program, _ = parser.parse_and_resolve(ci, config)
 
         # Only the original namespace is present (missing.ns not resolved)
@@ -357,22 +357,22 @@ class TestParseAndResolve:
         main_dir.mkdir()
         lib_dir.mkdir()
 
-        (main_dir / "main.afl").write_text("namespace app { use ext.lib\n facet App() }")
-        (lib_dir / "lib.afl").write_text("namespace ext.lib { facet Lib() }")
+        (main_dir / "main.ffl").write_text("namespace app { use ext.lib\n facet App() }")
+        (lib_dir / "lib.ffl").write_text("namespace ext.lib { facet Lib() }")
 
-        from afl.config import AFLConfig, ResolverConfig
+        from facetwork.config import FFLConfig, ResolverConfig
 
-        config = AFLConfig(
+        config = FFLConfig(
             resolver=ResolverConfig(
                 auto_resolve=True,
                 source_paths=[str(lib_dir)],
             )
         )
 
-        parser = AFLParser()
+        parser = FFLParser()
         entry = SourceEntry(
-            text=(main_dir / "main.afl").read_text(),
-            origin=FileOrigin(path=str(main_dir / "main.afl")),
+            text=(main_dir / "main.ffl").read_text(),
+            origin=FileOrigin(path=str(main_dir / "main.ffl")),
             is_library=False,
         )
         ci = CompilerInput(primary_sources=[entry])

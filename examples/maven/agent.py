@@ -12,8 +12,8 @@ For Docker/MongoDB mode, set environment variables:
 import os
 import signal
 
-from afl.runtime import Evaluator, Telemetry
-from afl.runtime.agent_runner import make_store
+from facetwork.runtime import Evaluator, Telemetry
+from facetwork.runtime.agent_runner import make_store
 
 
 def main() -> None:

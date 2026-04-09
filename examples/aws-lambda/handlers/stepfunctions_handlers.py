@@ -80,7 +80,7 @@ def _default_definition() -> str:
             "States": {
                 "PassState": {
                     "Type": "Pass",
-                    "Result": {"message": "Hello from AFL Step Functions"},
+                    "Result": {"message": "Hello from FFL Step Functions"},
                     "End": True,
                 },
             },

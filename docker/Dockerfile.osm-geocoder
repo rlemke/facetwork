@@ -42,7 +42,7 @@ ARG INSTALL_POSTGIS=false
 RUN if [ "$INSTALL_POSTGIS" = "true" ]; then pip install --no-cache-dir psycopg2-binary; fi
 
 # Copy application code
-COPY afl/ ./afl/
+COPY facetwork/ ./afl/
 COPY examples/osm-geocoder/ ./examples/osm-geocoder/
 
 ENV PYTHONPATH=/app

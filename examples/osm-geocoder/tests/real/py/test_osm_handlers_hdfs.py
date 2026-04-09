@@ -14,7 +14,7 @@ Run with:
 
 import pytest
 
-from afl.runtime.storage import (
+from facetwork.runtime.storage import (
     HDFSStorageBackend,
     LocalStorageBackend,
     get_storage_backend,

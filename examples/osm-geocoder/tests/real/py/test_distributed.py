@@ -47,7 +47,7 @@ def docker_db():
 
 
 # ---------------------------------------------------------------------------
-# AFL source for simple AddOne tests (inline, self-contained)
+# FFL source for simple AddOne tests (inline, self-contained)
 # ---------------------------------------------------------------------------
 
 ADDONE_SOURCE = """\
@@ -78,14 +78,14 @@ namespace chain {
 }
 """
 
-# AFL library files needed by osmcityrouting.afl
+# FFL library files needed by osmcityrouting.afl
 _CITY_ROUTING_LIBRARIES = [
-    "osmtypes.afl",
-    "osmregion.afl",
-    "osmoperations.afl",
-    "osmgraphhopper.afl",
-    "osmfilters_population.afl",
-    "osmvisualization.afl",
+    "osmtypes.ffl",
+    "osmregion.ffl",
+    "osmoperations.ffl",
+    "osmgraphhopper.ffl",
+    "osmfilters_population.ffl",
+    "osmvisualization.ffl",
 ]
 
 
@@ -143,7 +143,7 @@ class TestDistributed:
         flow_id = store_flow(
             docker_db,
             "test-addone-distributed",
-            [("addone.afl", ADDONE_SOURCE)],
+            [("addone.ffl", ADDONE_SOURCE)],
         )
 
         task_id = submit_workflow(
@@ -161,7 +161,7 @@ class TestDistributed:
         flow_id = store_flow(
             docker_db,
             "test-chain-distributed",
-            [("chain.afl", CHAIN_SOURCE)],
+            [("chain.ffl", CHAIN_SOURCE)],
         )
 
         start_value = 10
@@ -193,9 +193,9 @@ class TestDistributed:
                 "Start with: scripts/setup --osm-agents 1"
             )
 
-        # Read all AFL source files and concatenate into one string
+        # Read all FFL source files and concatenate into one string
         # (RunnerService parses compiled_sources[0].content as a single file)
-        primary_path = EXAMPLE_AFL_FILES["osmcityrouting.afl"]
+        primary_path = EXAMPLE_AFL_FILES["osmcityrouting.ffl"]
         lib_paths = [EXAMPLE_AFL_FILES[f] for f in _CITY_ROUTING_LIBRARIES]
 
         all_sources = []
@@ -206,7 +206,7 @@ class TestDistributed:
         flow_id = store_flow(
             docker_db,
             "test-cityrouting-distributed",
-            [("osmcityrouting-combined.afl", combined_source)],
+            [("osmcityrouting-combined.ffl", combined_source)],
         )
 
         task_id = submit_workflow(

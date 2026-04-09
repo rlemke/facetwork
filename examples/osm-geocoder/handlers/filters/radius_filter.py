@@ -17,7 +17,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from afl.runtime.storage import get_storage_backend
+from facetwork.runtime.storage import get_storage_backend
 
 from ..shared._output import uri_stem
 
@@ -324,7 +324,7 @@ def filter_geojson(
     import shutil
     import tempfile
 
-    from afl.runtime.storage import localize
+    from facetwork.runtime.storage import localize
 
     from ..shared._output import ensure_dir
     from ..shared.geojson_writer import GeoJSONStreamWriter, iter_geojson_features
@@ -332,7 +332,7 @@ def filter_geojson(
     local_path = localize(input_path)
 
     original_count = 0
-    from afl.config import get_temp_dir
+    from facetwork.config import get_temp_dir
 
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=".geojson", dir=get_temp_dir())
     os.close(tmp_fd)

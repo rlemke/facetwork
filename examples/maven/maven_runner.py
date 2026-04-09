@@ -29,7 +29,7 @@ is overridden: handler registration validation, registry filtering to
 
 Example usage::
 
-    from afl.runtime import MemoryStore, Evaluator, Telemetry
+    from facetwork.runtime import MemoryStore, Evaluator, Telemetry
     from examples.maven.maven_runner import MavenArtifactRunner, MavenRunnerConfig
 
     store = MemoryStore()
@@ -59,13 +59,13 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from afl.runtime.entities import (
+from facetwork.runtime.entities import (
     HandlerRegistration,
     TaskState,
 )
-from afl.runtime.evaluator import Evaluator
-from afl.runtime.persistence import PersistenceAPI
-from afl.runtime.registry_runner import (
+from facetwork.runtime.evaluator import Evaluator
+from facetwork.runtime.persistence import PersistenceAPI
+from facetwork.runtime.registry_runner import (
     RegistryRunner,
     RegistryRunnerConfig,
     _current_time_ms,
@@ -92,7 +92,7 @@ class MavenRunnerConfig(RegistryRunnerConfig):
     def __post_init__(self) -> None:
         super().__post_init__()
         if not self.cache_dir:
-            self.cache_dir = str(Path.home() / ".afl" / "maven-cache")
+            self.cache_dir = str(Path.home() / ".ffl" / "maven-cache")
 
 
 class MavenArtifactRunner(RegistryRunner):

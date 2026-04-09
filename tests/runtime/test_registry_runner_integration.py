@@ -26,7 +26,7 @@ import threading
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     Evaluator,
     ExecutionStatus,
     HandlerRegistration,
@@ -34,14 +34,14 @@ from afl.runtime import (
     StepState,
     Telemetry,
 )
-from afl.runtime.entities import (
+from facetwork.runtime.entities import (
     RunnerDefinition,
     RunnerState,
     TaskState,
     WorkflowDefinition,
 )
-from afl.runtime.registry_runner import RegistryRunner, RegistryRunnerConfig
-from afl.runtime.types import ObjectType, generate_id
+from facetwork.runtime.registry_runner import RegistryRunner, RegistryRunnerConfig
+from facetwork.runtime.types import ObjectType, generate_id
 
 # =========================================================================
 # Fixtures
@@ -737,8 +737,8 @@ class TestRegistryRunnerAsync:
 
     def test_update_step_partial_results(self, store, evaluator):
         """update_step() adds return attributes to a step via RegistryRunner."""
-        from afl.runtime.step import FacetAttributes, StepDefinition
-        from afl.runtime.types import workflow_id as make_wf_id
+        from facetwork.runtime.step import FacetAttributes, StepDefinition
+        from facetwork.runtime.types import workflow_id as make_wf_id
 
         wf_id = make_wf_id()
         step = StepDefinition.create(
@@ -760,8 +760,8 @@ class TestRegistryRunnerAsync:
 
     def test_update_step_type_hints(self, store, evaluator):
         """update_step() infers correct type hints for various Python types."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import workflow_id as make_wf_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import workflow_id as make_wf_id
 
         wf_id = make_wf_id()
         step = StepDefinition.create(

@@ -1,6 +1,6 @@
 ## Compiler Architecture (20_compiler.md)
 
-The AFL compiler transforms AFL (Agent Flow Language) source code into a JSON workflow definition for execution by the AgentFlow runtime.
+The AFL compiler transforms AFL (Facetwork Flow Language) source code into a JSON workflow definition for execution by the Facetwork runtime.
 
 ---
 
@@ -31,8 +31,8 @@ The `CompilerInput` structure holds source entries:
 from afl import CompilerInput, SourceEntry, FileOrigin, SourceLoader
 
 # Load from files
-entry1 = SourceLoader.load_file("main.afl")
-entry2 = SourceLoader.load_file("lib.afl", is_library=True)
+entry1 = SourceLoader.load_file("main.ffl")
+entry2 = SourceLoader.load_file("lib.ffl", is_library=True)
 
 # Build compiler input
 compiler_input = CompilerInput(
@@ -130,10 +130,10 @@ When `include_provenance=True`, locations include `sourceId` and `provenance`:
   "location": {
     "line": 1,
     "column": 1,
-    "sourceId": "file:///path/to/file.afl",
+    "sourceId": "file:///path/to/file.ffl",
     "provenance": {
       "type": "file",
-      "path": "/path/to/file.afl"
+      "path": "/path/to/file.ffl"
     }
   }
 }
@@ -246,8 +246,8 @@ ast = parse("facet User(name: String)")
 json_str = emit_json(ast)
 
 # Multi-source parsing with provenance
-entry1 = SourceLoader.load_file("main.afl")
-entry2 = SourceLoader.load_file("lib.afl", is_library=True)
+entry1 = SourceLoader.load_file("main.ffl")
+entry2 = SourceLoader.load_file("lib.ffl", is_library=True)
 
 compiler_input = CompilerInput(
     primary_sources=[entry1],

@@ -14,7 +14,7 @@
 
 """Unit tests for MCP serializers."""
 
-from afl.mcp.serializers import (
+from facetwork.mcp.serializers import (
     serialize_execution_result,
     serialize_flow,
     serialize_flow_source,
@@ -25,7 +25,7 @@ from afl.mcp.serializers import (
     serialize_step,
     serialize_task,
 )
-from afl.runtime.entities import (
+from facetwork.runtime.entities import (
     FlowDefinition,
     FlowIdentity,
     HandledCount,
@@ -38,9 +38,9 @@ from afl.runtime.entities import (
     TaskDefinition,
     WorkflowDefinition,
 )
-from afl.runtime.evaluator import ExecutionResult, ExecutionStatus
-from afl.runtime.step import StepDefinition
-from afl.runtime.types import ObjectType
+from facetwork.runtime.evaluator import ExecutionResult, ExecutionStatus
+from facetwork.runtime.step import StepDefinition
+from facetwork.runtime.types import ObjectType
 
 
 def _make_workflow(uuid="wf-1", name="TestWF"):
@@ -128,7 +128,7 @@ class TestSerializeFlow:
             uuid="f-1",
             name=FlowIdentity(name="MyFlow", path="/flows/my", uuid="f-1"),
             workflows=[_make_workflow()],
-            compiled_sources=[SourceText(name="main.afl", content="facet Test()")],
+            compiled_sources=[SourceText(name="main.ffl", content="facet Test()")],
         )
         d = serialize_flow(flow)
         assert d["uuid"] == "f-1"
@@ -143,7 +143,7 @@ class TestSerializeFlow:
             uuid="f-1",
             name=FlowIdentity(name="MyFlow", path="/flows/my", uuid="f-1"),
             compiled_sources=[
-                SourceText(name="main.afl", content="facet Test()"),
+                SourceText(name="main.ffl", content="facet Test()"),
             ],
         )
         d = serialize_flow_source(flow)
@@ -400,16 +400,16 @@ class TestSerializeEdgeCases:
             uuid="f-multi",
             name=FlowIdentity(name="Multi", path="/flows/multi", uuid="f-multi"),
             compiled_sources=[
-                SourceText(name="main.afl", content="facet A()"),
-                SourceText(name="helpers.afl", content="facet B()"),
-                SourceText(name="types.afl", content="namespace types {}"),
+                SourceText(name="main.ffl", content="facet A()"),
+                SourceText(name="helpers.ffl", content="facet B()"),
+                SourceText(name="types.ffl", content="namespace types {}"),
             ],
         )
         d = serialize_flow_source(flow)
         assert len(d["sources"]) == 3
-        assert d["sources"][0]["name"] == "main.afl"
-        assert d["sources"][1]["name"] == "helpers.afl"
-        assert d["sources"][2]["name"] == "types.afl"
+        assert d["sources"][0]["name"] == "main.ffl"
+        assert d["sources"][1]["name"] == "helpers.ffl"
+        assert d["sources"][2]["name"] == "types.ffl"
         # All default to "afl" language
         for src in d["sources"]:
             assert src["language"] == "afl"

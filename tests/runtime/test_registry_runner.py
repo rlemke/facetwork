@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the AFL RegistryRunner.
+"""Tests for the FFL RegistryRunner.
 
 Tests cover:
 - HandlerRegistration CRUD via persistence
@@ -28,7 +28,7 @@ import time
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     Evaluator,
     ExecutionStatus,
     HandlerRegistration,
@@ -36,13 +36,13 @@ from afl.runtime import (
     StepState,
     Telemetry,
 )
-from afl.runtime.entities import (
+from facetwork.runtime.entities import (
     ServerState,
     TaskDefinition,
     TaskState,
 )
-from afl.runtime.registry_runner import RegistryRunner, RegistryRunnerConfig, _current_time_ms
-from afl.runtime.types import generate_id
+from facetwork.runtime.registry_runner import RegistryRunner, RegistryRunnerConfig, _current_time_ms
+from facetwork.runtime.types import generate_id
 
 # =========================================================================
 # Fixtures
@@ -664,9 +664,9 @@ class TestRegistryRunnerPollOnce:
 
     def test_handler_metadata_injected(self, store, evaluator, tmp_path):
         """_handler_metadata is injected when registration has metadata."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
-        from afl.runtime.types import workflow_id as make_wf_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
+        from facetwork.runtime.types import workflow_id as make_wf_id
 
         wf_id = make_wf_id()
         step = StepDefinition.create(
@@ -730,9 +730,9 @@ class TestRegistryRunnerPollOnce:
 
     def test_no_handler_metadata_when_empty(self, store, evaluator, tmp_path):
         """_handler_metadata is NOT injected when registration has no metadata."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
-        from afl.runtime.types import workflow_id as make_wf_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
+        from facetwork.runtime.types import workflow_id as make_wf_id
 
         wf_id = make_wf_id()
         step = StepDefinition.create(
@@ -795,9 +795,9 @@ class TestRegistryRunnerPollOnce:
 
     def test_poll_short_name_fallback(self, store, evaluator, handler_file):
         """Registration under short name is found when task has qualified name."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
-        from afl.runtime.types import workflow_id as make_wf_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
+        from facetwork.runtime.types import workflow_id as make_wf_id
 
         # Create a step at EVENT_TRANSMIT with a qualified facet name
         wf_id = make_wf_id()
@@ -1058,9 +1058,9 @@ class TestRegistryRunnerTopics:
 
     def test_topics_filter_poll_once(self, store, evaluator, handler_file):
         """poll_once only claims tasks matching the topic filter."""
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
-        from afl.runtime.types import workflow_id as make_wf_id
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
+        from facetwork.runtime.types import workflow_id as make_wf_id
 
         wf_id = make_wf_id()
 

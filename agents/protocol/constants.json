@@ -53,7 +53,7 @@
 
   "protocol_tasks": {
     "resume": {
-      "name": "afl:resume",
+      "name": "fw:resume",
       "description": "Signals the Python RunnerService to resume a workflow after an external agent has written return attributes to a step and completed the event task.",
       "data_schema": {
         "step_id": {
@@ -69,7 +69,7 @@
       }
     },
     "execute": {
-      "name": "afl:execute",
+      "name": "fw:execute",
       "description": "Executes a compiled workflow from a flow stored in MongoDB.",
       "data_schema": {
         "flow_id": {
@@ -150,7 +150,7 @@
       "AFL_CONFIG environment variable",
       "afl.config.json in current directory",
       "~/.afl/afl.config.json",
-      "/etc/afl/afl.config.json"
+      "/etc/ffl/afl.config.json"
     ],
     "environment_variables": {
       "AFL_MONGODB_URL": "mongodb://localhost:27017",
@@ -217,7 +217,7 @@
       "operation": "insertOne",
       "document": {
         "uuid": "<generate UUID>",
-        "name": "afl:resume:<facet_name>",
+        "name": "fw:resume:<facet_name>",
         "runner_id": "",
         "workflow_id": "<workflow_id>",
         "flow_id": "",

@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL parser."""
+"""Tests for FFL parser."""
 
 import pytest
 
-from afl import (
-    AFLParser,
+from facetwork import (
+    FFLParser,
     ArrayType,
     BinaryExpr,
     Literal,
@@ -31,13 +31,13 @@ from afl import (
     WhenCase,
     parse,
 )
-from afl.ast import CatchClause
+from facetwork.ast import CatchClause
 
 
 @pytest.fixture
 def parser():
     """Create a parser instance."""
-    return AFLParser()
+    return FFLParser()
 
 
 class TestBasicParsing:
@@ -104,7 +104,7 @@ class TestScriptBlocks:
 
     def test_script_block_simple(self, parser):
         """Parse facet with simple script block as pre_script."""
-        from afl.ast import ScriptBlock
+        from facetwork.ast import ScriptBlock
 
         ast = parser.parse('facet Test() script "result = params"')
         assert len(ast.facets) == 1
@@ -117,7 +117,7 @@ class TestScriptBlocks:
 
     def test_script_block_explicit_python(self, parser):
         """Parse script block with explicit python directive."""
-        from afl.ast import ScriptBlock
+        from facetwork.ast import ScriptBlock
 
         source = '''facet Test()
 script
@@ -130,7 +130,7 @@ script
 
     def test_script_block_with_params_and_returns(self, parser):
         """Parse script block with parameters and returns."""
-        from afl.ast import ScriptBlock
+        from facetwork.ast import ScriptBlock
 
         source = r'facet Transform(input: String) => (output: String) script "result[\"output\"] = params[\"input\"].upper()"'
         ast = parser.parse(source)
@@ -140,7 +140,7 @@ script
 
     def test_script_block_event_facet(self, parser):
         """Parse event facet with script block."""
-        from afl.ast import ScriptBlock
+        from facetwork.ast import ScriptBlock
 
         ast = parser.parse('event facet Process() script "print(42)"')
         ef = ast.event_facets[0]
@@ -149,7 +149,7 @@ script
 
     def test_script_block_in_namespace(self, parser):
         """Parse script block inside namespace."""
-        from afl.ast import ScriptBlock
+        from facetwork.ast import ScriptBlock
 
         source = """namespace utils {
     facet Helper() script "pass"
@@ -161,7 +161,7 @@ script
 
     def test_pre_script_brace_syntax(self, parser):
         """Parse facet with brace-delimited script block."""
-        from afl.ast import ScriptBlock
+        from facetwork.ast import ScriptBlock
 
         source = "facet F() script {\n    x = 1\n    y = 2\n}"
         ast = parser.parse(source)
@@ -172,7 +172,7 @@ script
 
     def test_pre_script_with_andthen(self, parser):
         """Parse pre_script followed by andThen blocks."""
-        from afl.ast import AndThenBlock, ScriptBlock
+        from facetwork.ast import AndThenBlock, ScriptBlock
 
         source = 'facet F() script "pre" andThen { s = G() }'
         ast = parser.parse(source)
@@ -184,7 +184,7 @@ script
 
     def test_andthen_script(self, parser):
         """Parse andThen script variant."""
-        from afl.ast import AndThenBlock
+        from facetwork.ast import AndThenBlock
 
         source = 'facet F() andThen script "y = 2"'
         ast = parser.parse(source)
@@ -208,7 +208,7 @@ script
 
     def test_pre_script_with_andthen_script(self, parser):
         """Parse pre_script + regular andThen + andThen script."""
-        from afl.ast import ScriptBlock
+        from facetwork.ast import ScriptBlock
 
         source = 'facet F() script "pre" andThen { s = G() } andThen script "post"'
         ast = parser.parse(source)
@@ -223,7 +223,7 @@ script
 
     def test_workflow_with_pre_script(self, parser):
         """Parse workflow with pre_script."""
-        from afl.ast import ScriptBlock
+        from facetwork.ast import ScriptBlock
 
         source = 'workflow W() script "setup" andThen { s = F() }'
         ast = parser.parse(source)
@@ -237,7 +237,7 @@ class TestPromptBlocks:
 
     def test_prompt_block_simple(self, parser):
         """Parse event facet with simple prompt block."""
-        from afl.ast import PromptBlock
+        from facetwork.ast import PromptBlock
 
         ast = parser.parse('event facet Test() prompt { template "hello" }')
         assert len(ast.event_facets) == 1
@@ -250,7 +250,7 @@ class TestPromptBlocks:
 
     def test_prompt_block_all_directives(self, parser):
         """Parse prompt block with all directives."""
-        from afl.ast import PromptBlock
+        from facetwork.ast import PromptBlock
 
         source = """event facet Summarize(doc: String) => (summary: String)
 prompt {
@@ -267,7 +267,7 @@ prompt {
 
     def test_prompt_block_same_line(self, parser):
         """Parse prompt block on same line as signature."""
-        from afl.ast import PromptBlock
+        from facetwork.ast import PromptBlock
 
         ast = parser.parse('event facet Test() prompt { system "sys" template "tmpl" }')
         ef = ast.event_facets[0]
@@ -277,7 +277,7 @@ prompt {
 
     def test_prompt_block_multiline_template(self, parser):
         """Parse prompt block with escaped newlines in template."""
-        from afl.ast import PromptBlock
+        from facetwork.ast import PromptBlock
 
         source = r'event facet Test() prompt { template "Line1\nLine2\nLine3" }'
         ast = parser.parse(source)
@@ -287,7 +287,7 @@ prompt {
 
     def test_prompt_block_in_namespace(self, parser):
         """Parse prompt block inside namespace."""
-        from afl.ast import PromptBlock
+        from facetwork.ast import PromptBlock
 
         source = """namespace llm {
     event facet Query(q: String) => (answer: String)
@@ -714,7 +714,7 @@ class TestConcatExpression:
         ast = parser.parse(source)
         yield_stmt = ast.workflows[0].body.block.yield_stmts[0]
         arg = yield_stmt.call.args[0]
-        from afl.ast import ConcatExpr
+        from facetwork.ast import ConcatExpr
 
         assert isinstance(arg.value, ConcatExpr)
         assert len(arg.value.operands) == 2
@@ -733,7 +733,7 @@ class TestConcatExpression:
         ast = parser.parse(source)
         yield_stmt = ast.workflows[0].body.block.yield_stmts[0]
         arg = yield_stmt.call.args[0]
-        from afl.ast import ConcatExpr
+        from facetwork.ast import ConcatExpr
 
         assert isinstance(arg.value, ConcatExpr)
         assert len(arg.value.operands) == 3
@@ -755,7 +755,7 @@ class TestConcatExpression:
         ast = parser.parse(source)
         yield_stmt = ast.workflows[0].body.block.yield_stmts[0]
         arg = yield_stmt.call.args[0]
-        from afl.ast import ConcatExpr
+        from facetwork.ast import ConcatExpr
 
         assert isinstance(arg.value, ConcatExpr)
         assert len(arg.value.operands) == 3
@@ -1145,7 +1145,7 @@ class TestArithmeticExpressions:
         """)
         yield_stmt = ast.workflows[0].body.block.yield_stmts[0]
         arg = yield_stmt.call.args[0]
-        from afl.ast import ConcatExpr
+        from facetwork.ast import ConcatExpr
 
         assert isinstance(arg.value, ConcatExpr)
         assert len(arg.value.operands) == 2
@@ -1195,7 +1195,7 @@ class TestStepBody:
         step = ast.workflows[0].body.block.steps[0]
         assert step.name == "s"
         assert step.body is not None
-        from afl.ast import AndThenBlock
+        from facetwork.ast import AndThenBlock
 
         assert isinstance(step.body, AndThenBlock)
         assert len(step.body.block.steps) == 1
@@ -1253,7 +1253,7 @@ class TestMultipleAndThenBlocks:
         body = ast.workflows[0].body
         assert isinstance(body, list)
         assert len(body) == 2
-        from afl.ast import AndThenBlock
+        from facetwork.ast import AndThenBlock
 
         assert all(isinstance(b, AndThenBlock) for b in body)
         assert body[0].block.steps[0].name == "s1"
@@ -1287,7 +1287,7 @@ class TestMultipleAndThenBlocks:
             yield Test(output = s.output)
         }
         """)
-        from afl.ast import AndThenBlock
+        from facetwork.ast import AndThenBlock
 
         assert isinstance(ast.workflows[0].body, AndThenBlock)
 
@@ -1324,7 +1324,7 @@ class TestCollectionLiterals:
             s = V(items = [])
         }
         """)
-        from afl.ast import ArrayLiteral
+        from facetwork.ast import ArrayLiteral
 
         step = ast.workflows[0].body.block.steps[0]
         arg = step.call.args[0]
@@ -1339,7 +1339,7 @@ class TestCollectionLiterals:
             s = V(items = [1, 2, 3])
         }
         """)
-        from afl.ast import ArrayLiteral
+        from facetwork.ast import ArrayLiteral
 
         step = ast.workflows[0].body.block.steps[0]
         arr = step.call.args[0].value
@@ -1355,7 +1355,7 @@ class TestCollectionLiterals:
             s = V(items = [[1, 2], [3, 4]])
         }
         """)
-        from afl.ast import ArrayLiteral
+        from facetwork.ast import ArrayLiteral
 
         arr = ast.workflows[0].body.block.steps[0].call.args[0].value
         assert isinstance(arr, ArrayLiteral)
@@ -1370,7 +1370,7 @@ class TestCollectionLiterals:
             s = V(items = [$.a, $.b])
         }
         """)
-        from afl.ast import ArrayLiteral
+        from facetwork.ast import ArrayLiteral
 
         arr = ast.workflows[0].body.block.steps[0].call.args[0].value
         assert isinstance(arr, ArrayLiteral)
@@ -1385,7 +1385,7 @@ class TestCollectionLiterals:
             s = V(config = #{"host": "localhost", "port": 8080})
         }
         """)
-        from afl.ast import MapLiteral
+        from facetwork.ast import MapLiteral
 
         m = ast.workflows[0].body.block.steps[0].call.args[0].value
         assert isinstance(m, MapLiteral)
@@ -1401,7 +1401,7 @@ class TestCollectionLiterals:
             s = V(config = #{})
         }
         """)
-        from afl.ast import MapLiteral
+        from facetwork.ast import MapLiteral
 
         m = ast.workflows[0].body.block.steps[0].call.args[0].value
         assert isinstance(m, MapLiteral)
@@ -1415,7 +1415,7 @@ class TestCollectionLiterals:
             s = V(config = #{"host": $.host, "port": $.port})
         }
         """)
-        from afl.ast import MapLiteral
+        from facetwork.ast import MapLiteral
 
         m = ast.workflows[0].body.block.steps[0].call.args[0].value
         assert isinstance(m, MapLiteral)
@@ -1430,7 +1430,7 @@ class TestCollectionLiterals:
             s = V(items = $.input[0])
         }
         """)
-        from afl.ast import IndexExpr
+        from facetwork.ast import IndexExpr
 
         expr = ast.workflows[0].body.block.steps[0].call.args[0].value
         assert isinstance(expr, IndexExpr)
@@ -1446,7 +1446,7 @@ class TestCollectionLiterals:
             s = V(item = [1, 2, 3][1])
         }
         """)
-        from afl.ast import ArrayLiteral, IndexExpr
+        from facetwork.ast import ArrayLiteral, IndexExpr
 
         expr = ast.workflows[0].body.block.steps[0].call.args[0].value
         assert isinstance(expr, IndexExpr)
@@ -1588,7 +1588,7 @@ class TestDocComments:
 
     @pytest.fixture
     def parser(self):
-        return AFLParser()
+        return FFLParser()
 
     def test_doc_comment_on_facet(self, parser):
         """Doc comment attached to a facet declaration."""

@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -e ".[mongodb]" || \
     pip install --no-cache-dir lark pymongo
 
 # Copy application code
-COPY afl/ ./afl/
+COPY facetwork/ ./afl/
 COPY docker/seed/ ./seed/
 COPY examples/ ./examples/
 

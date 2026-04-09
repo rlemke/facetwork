@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL source loaders (MongoDB and Maven)."""
+"""Tests for FFL source loaders (MongoDB and Maven)."""
 
 import io
 import zipfile
@@ -20,15 +20,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from afl.loader import SourceLoader
-from afl.source import MavenOrigin, MongoDBOrigin
+from facetwork.loader import SourceLoader
+from facetwork.source import MavenOrigin, MongoDBOrigin
 
 
 class TestMongoDBLoader:
     """Tests for MongoDB source loader."""
 
     def test_load_mongodb_success(self, monkeypatch):
-        """Successfully load AFL sources from MongoDB."""
+        """Successfully load FFL sources from MongoDB."""
         # Mock pymongo
         mock_db = MagicMock()
         mock_client = MagicMock()
@@ -46,13 +46,13 @@ class TestMongoDBLoader:
         mock_db.flows.find_one.return_value = mock_flow
 
         mock_mongo_client = MagicMock(return_value=mock_client)
-        monkeypatch.setattr("afl.loader.MongoClient", mock_mongo_client, raising=False)
+        monkeypatch.setattr("facetwork.loader.MongoClient", mock_mongo_client, raising=False)
 
         # Mock import
         with patch.dict("sys.modules", {"pymongo": MagicMock(MongoClient=mock_mongo_client)}):
-            from afl.config import AFLConfig
+            from facetwork.config import FFLConfig
 
-            config = AFLConfig()
+            config = FFLConfig()
             entry = SourceLoader.load_mongodb("test-uuid-123", "Test Flow", config=config)
 
         assert "facet A()" in entry.text
@@ -69,17 +69,17 @@ class TestMongoDBLoader:
         mock_db.flows.find_one.return_value = None
 
         mock_mongo_client = MagicMock(return_value=mock_client)
-        monkeypatch.setattr("afl.loader.MongoClient", mock_mongo_client, raising=False)
+        monkeypatch.setattr("facetwork.loader.MongoClient", mock_mongo_client, raising=False)
 
         with patch.dict("sys.modules", {"pymongo": MagicMock(MongoClient=mock_mongo_client)}):
-            from afl.config import AFLConfig
+            from facetwork.config import FFLConfig
 
-            config = AFLConfig()
+            config = FFLConfig()
             with pytest.raises(ValueError, match="Flow not found"):
                 SourceLoader.load_mongodb("nonexistent", "Missing", config=config)
 
     def test_load_mongodb_no_afl_sources(self, monkeypatch):
-        """Raise ValueError when flow has no AFL sources."""
+        """Raise ValueError when flow has no FFL sources."""
         mock_db = MagicMock()
         mock_client = MagicMock()
         mock_client.__getitem__ = MagicMock(return_value=mock_db)
@@ -93,13 +93,13 @@ class TestMongoDBLoader:
         mock_db.flows.find_one.return_value = mock_flow
 
         mock_mongo_client = MagicMock(return_value=mock_client)
-        monkeypatch.setattr("afl.loader.MongoClient", mock_mongo_client, raising=False)
+        monkeypatch.setattr("facetwork.loader.MongoClient", mock_mongo_client, raising=False)
 
         with patch.dict("sys.modules", {"pymongo": MagicMock(MongoClient=mock_mongo_client)}):
-            from afl.config import AFLConfig
+            from facetwork.config import FFLConfig
 
-            config = AFLConfig()
-            with pytest.raises(ValueError, match="no AFL sources"):
+            config = FFLConfig()
+            with pytest.raises(ValueError, match="no FFL sources"):
                 SourceLoader.load_mongodb("test-uuid", "Test", config=config)
 
     def test_load_mongodb_as_library(self, monkeypatch):
@@ -112,12 +112,12 @@ class TestMongoDBLoader:
         mock_db.flows.find_one.return_value = mock_flow
 
         mock_mongo_client = MagicMock(return_value=mock_client)
-        monkeypatch.setattr("afl.loader.MongoClient", mock_mongo_client, raising=False)
+        monkeypatch.setattr("facetwork.loader.MongoClient", mock_mongo_client, raising=False)
 
         with patch.dict("sys.modules", {"pymongo": MagicMock(MongoClient=mock_mongo_client)}):
-            from afl.config import AFLConfig
+            from facetwork.config import FFLConfig
 
-            config = AFLConfig()
+            config = FFLConfig()
             entry = SourceLoader.load_mongodb("test", "Test", is_library=True, config=config)
 
         assert entry.is_library is True
@@ -135,11 +135,11 @@ class TestMavenLoader:
         return buf.getvalue()
 
     def test_load_maven_success(self, monkeypatch):
-        """Successfully load AFL sources from Maven."""
+        """Successfully load FFL sources from Maven."""
         jar_content = self._create_mock_jar(
             {
-                "facet-a.afl": "facet A()",
-                "facet-b.afl": "facet B()",
+                "facet-a.ffl": "facet A()",
+                "facet-b.ffl": "facet B()",
                 "README.md": "Not AFL",
             }
         )
@@ -197,7 +197,7 @@ class TestMavenLoader:
 
     def test_load_maven_custom_classifier(self, monkeypatch):
         """Load with custom classifier."""
-        jar_content = self._create_mock_jar({"test.afl": "facet Test()"})
+        jar_content = self._create_mock_jar({"test.ffl": "facet Test()"})
 
         captured_url = []
 
@@ -218,7 +218,7 @@ class TestMavenLoader:
 
     def test_load_maven_custom_repository(self, monkeypatch):
         """Load from custom Maven repository."""
-        jar_content = self._create_mock_jar({"test.afl": "facet Test()"})
+        jar_content = self._create_mock_jar({"test.ffl": "facet Test()"})
 
         captured_url = []
 
@@ -243,7 +243,7 @@ class TestMavenLoader:
 
     def test_load_maven_as_library(self, monkeypatch):
         """Load Maven artifact as library."""
-        jar_content = self._create_mock_jar({"lib.afl": "facet Lib()"})
+        jar_content = self._create_mock_jar({"lib.ffl": "facet Lib()"})
 
         def mock_urlopen(url, **kwargs):
             response = MagicMock()
@@ -260,7 +260,7 @@ class TestMavenLoader:
 
     def test_load_maven_url_construction(self, monkeypatch):
         """Verify correct Maven URL construction."""
-        jar_content = self._create_mock_jar({"test.afl": "facet Test()"})
+        jar_content = self._create_mock_jar({"test.ffl": "facet Test()"})
 
         captured_url = []
 
@@ -284,9 +284,9 @@ class TestMavenLoader:
         """AFL files should be loaded in sorted order for determinism."""
         jar_content = self._create_mock_jar(
             {
-                "z_last.afl": "facet Z()",
-                "a_first.afl": "facet A()",
-                "m_middle.afl": "facet M()",
+                "z_last.ffl": "facet Z()",
+                "a_first.ffl": "facet A()",
+                "m_middle.ffl": "facet M()",
             }
         )
 

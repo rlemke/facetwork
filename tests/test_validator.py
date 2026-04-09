@@ -12,22 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL semantic validator."""
+"""Tests for FFL semantic validator."""
 
 import pytest
 
-from afl import parse
-from afl.validator import AFLValidator, ValidationError, ValidationResult, validate
+from facetwork import parse
+from facetwork.validator import FFLValidator, ValidationError, ValidationResult, validate
 
 
 @pytest.fixture
 def validator():
     """Create a validator instance."""
-    return AFLValidator()
+    return FFLValidator()
 
 
 def _ns(source: str) -> str:
-    """Wrap AFL source in a namespace if it contains a top-level workflow."""
+    """Wrap FFL source in a namespace if it contains a top-level workflow."""
     import textwrap
 
     stripped = textwrap.dedent(source).strip()
@@ -1006,7 +1006,7 @@ class TestErrorLocation:
 
     def test_error_line_only(self):
         """Error with line but no column."""
-        from afl.validator import ValidationError
+        from facetwork.validator import ValidationError
 
         error = ValidationError("test error", line=5)
         assert "at line 5" in str(error)
@@ -1014,8 +1014,8 @@ class TestErrorLocation:
 
     def test_add_error_with_location(self, validator):
         """add_error with SourceLocation should capture line/column."""
-        from afl.ast import SourceLocation
-        from afl.validator import ValidationResult
+        from facetwork.ast import SourceLocation
+        from facetwork.validator import ValidationResult
 
         result = ValidationResult()
         loc = SourceLocation(line=10, column=3)
@@ -1025,7 +1025,7 @@ class TestErrorLocation:
 
     def test_add_error_without_location(self, validator):
         """add_error without location should have None line/column."""
-        from afl.validator import ValidationResult
+        from facetwork.validator import ValidationResult
 
         result = ValidationResult()
         result.add_error("test")

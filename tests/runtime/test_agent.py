@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL Claude agent runner.
+"""Tests for FFL Claude agent runner.
 
 Tests ToolRegistry, ToolDefinition extraction, and ClaudeAgentRunner
 with both custom handlers and mock Anthropic client.
@@ -20,13 +20,13 @@ with both custom handlers and mock Anthropic client.
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     Evaluator,
     ExecutionStatus,
     MemoryStore,
     Telemetry,
 )
-from afl.runtime.agent import (
+from facetwork.runtime.agent import (
     ClaudeAgentRunner,
     LLMHandler,
     LLMHandlerConfig,
@@ -834,8 +834,8 @@ class TestPromptTemplateEvaluation:
         )
 
         # Create a mock step with params
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-1",
@@ -870,8 +870,8 @@ class TestPromptTemplateEvaluation:
             },
         )
 
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-1",
@@ -901,8 +901,8 @@ class TestPromptTemplateEvaluation:
             return_names=[],
         )
 
-        from afl.runtime.step import StepDefinition
-        from afl.runtime.types import ObjectType
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
 
         step = StepDefinition.create(
             workflow_id="wf-1",
@@ -1384,8 +1384,8 @@ class TestLLMHandler:
 # TokenUsage unit tests
 # =========================================================================
 
-from afl.runtime.agent import TokenUsage
-from afl.runtime.errors import TokenBudgetExceededError
+from facetwork.runtime.agent import TokenUsage
+from facetwork.runtime.errors import TokenBudgetExceededError
 
 
 class TestTokenUsage:

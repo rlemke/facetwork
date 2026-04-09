@@ -1,4 +1,4 @@
-"""Tests for multi-agent-debate handlers and AFL compilation."""
+"""Tests for multi-agent-debate handlers and FFL compilation."""
 
 from __future__ import annotations
 
@@ -394,12 +394,12 @@ class TestDispatch:
 class TestCompilation:
     @pytest.fixture()
     def parsed_ast(self):
-        from afl.parser import AFLParser
+        from facetwork.parser import FFLParser
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "debate.afl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "debate.ffl")
         with open(afl_path) as f:
             source = f.read()
-        return AFLParser().parse(source)
+        return FFLParser().parse(source)
 
     def test_afl_parses(self, parsed_ast):
         assert parsed_ast is not None
@@ -423,7 +423,7 @@ class TestCompilation:
         assert len(workflows) == 2
 
     def test_prompt_block_count(self, parsed_ast):
-        from afl.ast import PromptBlock
+        from facetwork.ast import PromptBlock
 
         count = 0
         for ns in parsed_ast.namespaces:
@@ -459,7 +459,7 @@ class TestAgentIntegration:
         from handlers.framing.framing_handlers import _DISPATCH as d1
         from handlers.synthesis.synthesis_handlers import _DISPATCH as d4
 
-        from afl.runtime.agent import ToolRegistry
+        from facetwork.runtime.agent import ToolRegistry
 
         registry = ToolRegistry()
         for dispatch in [d1, d2, d3, d4]:
@@ -483,8 +483,8 @@ class TestAgentIntegration:
     def test_claude_agent_runner_with_custom_handlers(self):
         from handlers.framing.framing_handlers import handle_frame_debate
 
-        from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
-        from afl.runtime.agent import ClaudeAgentRunner, ToolRegistry
+        from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
+        from facetwork.runtime.agent import ClaudeAgentRunner, ToolRegistry
 
         store = MemoryStore()
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))

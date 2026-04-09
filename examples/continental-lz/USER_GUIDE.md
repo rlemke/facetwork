@@ -12,7 +12,7 @@ Use this as your starting point if you are:
 
 ## What You'll Learn
 
-1. How to run AgentFlow with a full Docker stack (MongoDB, dashboard, runner, agent)
+1. How to run Facetwork with a full Docker stack (MongoDB, dashboard, runner, agent)
 2. How to compose workflows that span multiple continental regions
 3. How to structure a Docker deployment with custom agent images
 4. How to use the seed pattern to load compiled workflows into MongoDB
@@ -94,7 +94,7 @@ From the dashboard, start the `continental.FullContinentalPipeline` workflow, or
 
 ### Self-Contained Docker Deployment
 
-This example has its own `docker-compose.yml` (separate from the root one) with an isolated MongoDB database (`afl_continental_lz`). It demonstrates the deployment pattern for a production AgentFlow installation.
+This example has its own `docker-compose.yml` (separate from the root one) with an isolated MongoDB database (`afl_continental_lz`). It demonstrates the deployment pattern for a production Facetwork installation.
 
 ### Seed Pattern
 

@@ -63,5 +63,5 @@ namespace volcano {
 ## Compile check
 
 ```bash
-afl examples/volcano-query/afl/volcano.afl --check
+afl examples/volcano-query/ffl/volcano.afl --check
 ```

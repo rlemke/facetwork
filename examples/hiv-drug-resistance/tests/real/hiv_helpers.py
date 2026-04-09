@@ -1,7 +1,7 @@
 """Shared helpers for HIV drug resistance integration tests.
 
 Provides compilation, workflow extraction, and execution helpers
-that use the full AFL compiler pipeline with MemoryStore.
+that use the full FFL compiler pipeline with MemoryStore.
 """
 
 from __future__ import annotations
@@ -10,12 +10,12 @@ import os
 from pathlib import Path
 from typing import Any
 
-from afl.emitter import emit_dict
-from afl.parser import AFLParser
-from afl.runtime import ExecutionResult, ExecutionStatus
-from afl.runtime.agent_poller import AgentPoller
-from afl.runtime.evaluator import Evaluator
-from afl.validator import validate
+from facetwork.emitter import emit_dict
+from facetwork.parser import FFLParser
+from facetwork.runtime import ExecutionResult, ExecutionStatus
+from facetwork.runtime.agent_poller import AgentPoller
+from facetwork.runtime.evaluator import Evaluator
+from facetwork.validator import validate
 
 # examples/hiv-drug-resistance/tests/real/ → examples/hiv-drug-resistance/
 _EXAMPLE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -35,10 +35,10 @@ def compile_resistance_afl() -> dict[str, Any]:
     Raises:
         afl.parser.ParseError: On syntax errors.
     """
-    source_path = Path(_AFL_DIR) / "resistance.afl"
+    source_path = Path(_AFL_DIR) / "resistance.ffl"
     source = source_path.read_text()
 
-    parser = AFLParser()
+    parser = FFLParser()
     program_ast = parser.parse(source)
 
     # Validate but treat errors as warnings — cross-scope refs (when blocks,

@@ -220,7 +220,7 @@ This was a complete rewrite of the NOAA weather example from ISD-Lite to GHCN-Da
 Adds multi-year composition workflows, Claude API narrative generation with
 fallback, and runtime integration tests to the NOAA weather example.
 
-**New workflows (`examples/noaa-weather/afl/weather.afl`):**
+**New workflows (`examples/noaa-weather/ffl/weather.afl`):**
 - `AnalyzeStationHistory` — foreach over input array of years for a single
   station; each iteration calls `AnalyzeStation` with per-year catch block
 - `AnalyzeRegion` — foreach over years calling `BatchWeatherAnalysis` per year;
@@ -310,7 +310,7 @@ files.
 - `generate_batch_summary()` — upserts to MongoDB, returns `report_id`
 - Removed `_WEATHER_REPORTS_DIR` and all `os.makedirs`/file writes
 
-**AFL definition (`examples/noaa-weather/afl/weather.afl`):**
+**AFL definition (`examples/noaa-weather/ffl/weather.afl`):**
 - `StationReport` schema: `report_path` → `report_id`
 - `GenerateBatchSummary` return: `report_path` → `report_id`
 - `RenderHTMLReport` return: `html_path` → `report_id`
@@ -331,7 +331,7 @@ All handler tests use `autouse` mock fixture for `get_weather_db`.
 Adds visualization outputs to the NOAA weather pipeline: an HTML table report
 of daily statistics and an interactive folium map with the station pinpointed.
 
-**AFL definition (`examples/noaa-weather/afl/weather.afl`):**
+**AFL definition (`examples/noaa-weather/ffl/weather.afl`):**
 - New `weather.Visualize` namespace with 2 event facets: `RenderHTMLReport`,
   `RenderStationMap` (11 namespaces, 12 event facets total)
 - `AnalyzeStation` workflow updated: calls both visualization facets after
@@ -382,13 +382,13 @@ resolution after referenced step completes.
 
 ## Completed (v0.34.0) - NOAA Weather Station Example
 
-14th AgentFlow example. A real-data weather analysis pipeline that downloads
+14th Facetwork example. A real-data weather analysis pipeline that downloads
 ISD-Lite hourly observations from NOAA (no auth required), applies QC with
 branching, computes daily statistics, reverse-geocodes station coordinates via
 OSM Nominatim, and generates LLM-driven weather narratives. First example to
 combine real HTTP downloads with OSM integration.
 
-**AFL definition (`examples/noaa-weather/afl/weather.afl`):**
+**AFL definition (`examples/noaa-weather/ffl/weather.afl`):**
 - 8 namespaces, 6 schemas, 10 event facets, 3 workflows (~170 lines)
 - `AnalyzeStation`: download → parse → QC + geocode → `andThen when` (sparse vs
   full analysis) → narrative → report; `catch` on download step
@@ -547,7 +547,7 @@ Files: `afl/runtime/entities.py`, `afl/runtime/runner/service.py`,
 
 ## Completed (v0.32.0) - HIV Drug Resistance Genotyping Example
 
-13th AgentFlow example: an HIV drug resistance genotyping pipeline modeled after
+13th Facetwork example: an HIV drug resistance genotyping pipeline modeled after
 real-world tools (HIVGenoPipe, QuasiFlow). Showcases AFL's workflow orchestration
 for bioinformatics — QC, alignment, variant calling, resistance scoring, and
 LLM-driven clinical interpretation.
@@ -1130,10 +1130,10 @@ For each SDK (Scala, Go, TypeScript, Java) — identical pattern:
 
 Files changed:
 - `agents/protocol/constants.json`
-- `agents/scala/afl-agent/src/main/scala/afl/agent/{Protocol,MongoOps,AgentPoller}.scala`
+- `agents/scala/afl-agent/src/main/scala/ffl/agent/{Protocol,MongoOps,AgentPoller}.scala`
 - `agents/go/afl-agent/{protocol,mongo_ops,poller}.go`
 - `agents/typescript/afl-agent/src/{protocol,mongo-ops,poller}.ts`
-- `agents/java/afl-agent/src/main/java/afl/agent/{Protocol,MongoOps,AgentPoller}.java`
+- `agents/java/afl-agent/src/main/java/ffl/agent/{Protocol,MongoOps,AgentPoller}.java`
 
 ### PyPI packaging (3 files)
 
@@ -1406,7 +1406,7 @@ any v0.14.0+ example.
 
 ## Completed (v0.19.0) - Multi-Round Debate + Tool-Use Agent Examples
 
-Two new examples extending the AgentFlow example suite. The multi-agent-debate
+Two new examples extending the Facetwork example suite. The multi-agent-debate
 (v0.18.0) demonstrated multi-agent personas and scoring. These two examples
 showcase composed facets as the primary pattern and the tool-as-event-facet pattern.
 
@@ -2248,7 +2248,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 ## Completed (v0.12.80) - Splunk-compatible JSON logging and centralized config
 
 ### New shared module: `afl/logging.py`
-- **`SplunkJsonFormatter`**: subclass of `logging.Formatter` emitting one compact JSON object per line with Splunk CIM fields: `timestamp` (ISO 8601 UTC with ms and `Z` suffix), `level`, `logger`, `message`, `source` ("agentflow"), and optional `exc_info` (traceback string)
+- **`SplunkJsonFormatter`**: subclass of `logging.Formatter` emitting one compact JSON object per line with Splunk CIM fields: `timestamp` (ISO 8601 UTC with ms and `Z` suffix), `level`, `logger`, `message`, `source` ("facetwork"), and optional `exc_info` (traceback string)
 - **`configure_logging()`**: centralized setup replacing duplicated `logging.basicConfig` patterns; `log_format="json"` installs `SplunkJsonFormatter`, `log_format="text"` uses legacy plain-text format; uses `force=True` to ensure handler installation
 
 ### CLI entry point updates (5 files)
@@ -2484,10 +2484,10 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **Root cause**: Cache steps return HDFS URIs (`hdfs://namenode:8020/osm-cache/...`), but all extractors converted these to `Path` objects — `Path.exists()` always returned `False` for HDFS URIs, and pyosmium cannot read HDFS URIs directly
 
 ## Completed (v0.12.58) - Fix route visualization workflows to use Cache(region) parameter
-- **Replaced 8 hardcoded `osm.cache.Europe.Liechtenstein()` calls** with `Cache(region = $.region_name)` in `examples/osm-geocoder/afl/example_routes_visualization.afl` — all 8 workflows (`BicycleRoutesMap`, `HikingTrailsMap`, `TrainRoutesMap`, `BusRoutesMap`, `PublicTransportMap`, `BicycleRoutesWithStats`, `HikingTrailsWithStats`, `NationalCycleNetwork`) now use their `region_name` parameter instead of ignoring it
+- **Replaced 8 hardcoded `osm.cache.Europe.Liechtenstein()` calls** with `Cache(region = $.region_name)` in `examples/osm-geocoder/ffl/example_routes_visualization.afl` — all 8 workflows (`BicycleRoutesMap`, `HikingTrailsMap`, `TrainRoutesMap`, `BusRoutesMap`, `PublicTransportMap`, `BicycleRoutesWithStats`, `HikingTrailsWithStats`, `NationalCycleNetwork`) now use their `region_name` parameter instead of ignoring it
 
 ## Completed (v0.12.57) - Fix genomics.afl parse error
-- **Reordered comments in `examples/genomics/afl/genomics.afl`**: moved `//` line comments before `/** */` doc comments on both `SamplePipeline` and `CohortAnalysis` workflows — doc comments must be immediately followed by a declaration keyword, not separated by other comments
+- **Reordered comments in `examples/genomics/ffl/genomics.afl`**: moved `//` line comments before `/** */` doc comments on both `SamplePipeline` and `CohortAnalysis` workflows — doc comments must be immediately followed by a declaration keyword, not separated by other comments
 
 ## Completed (v0.12.56) - Fix easy.sh --clean flag causing setup to exit early
 - **Removed `--clean` from `SETUP_ARGS`** in `scripts/easy.sh`: `scripts/setup --clean` exits after cleaning without starting containers, so `--clean --build` together skipped the build and start phases entirely
@@ -3091,7 +3091,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **`Dockerfile.agent`**: python:3.12-slim + libgeos + libproj + Java JRE + GraphHopper 8.0 JAR; copies AFL compiler, OSM geocoder handlers, and agent entry point
 - **`Dockerfile.seed`**: lightweight python:3.12-slim + lark + pymongo; compiles all 12 AFL source files and seeds MongoDB
 - **`agent.py`**: RegistryRunner entry point with `max_concurrent=4`, `service_name="continental-lz"`; dual-mode MongoDB/MemoryStore based on `AFL_MONGODB_URL`
-- **`scripts/seed.py`**: reads 12 AFL sources in dependency order, parses + validates + emits, stores compiled flow and sample execution tasks in MongoDB; supports both Docker (`/app/osm-afl/`) and local (`../osm-geocoder/afl/`) layouts
+- **`scripts/seed.py`**: reads 12 AFL sources in dependency order, parses + validates + emits, stores compiled flow and sample execution tasks in MongoDB; supports both Docker (`/app/osm-afl/`) and local (`../osm-geocoder/ffl/`) layouts
 - **`scripts/run_region.py`**: standalone single-region smoke test using MemoryStore; generates inline AFL for any of 14 regions; `--region Belgium --output-dir /tmp/lz-belgium`
 - **Data scale**: 14 regions totaling ~28 GB PBF downloads, ~44 GB GraphHopper graphs, estimated 12-30 hours for full continental run
 - **GTFS transit agencies** (11): Amtrak, MBTA, CTA, MTA (US); TransLink, TTC, OC Transpo (Canada); Deutsche Bahn, SNCF, Renfe, Trenitalia (Europe)
@@ -3383,9 +3383,9 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 
 ## Completed (v0.12.19) - Reorganize Example Tests into Standardized Structure
 
-- **New directory layout**: every example now has `tests/{mocked,real}/{afl,scripts,py}` — mocked tests (unit/compile-time with mocks/stubs) in `mocked/py/`, integration tests requiring live services in `real/py/`, and AFL test fixtures in `real/afl/`
+- **New directory layout**: every example now has `tests/{mocked,real}/{afl,scripts,py}` — mocked tests (unit/compile-time with mocks/stubs) in `mocked/py/`, integration tests requiring live services in `real/py/`, and AFL test fixtures in `real/ffl/`
 - **53 test files moved** across 5 examples: aws-lambda (2), genomics (3), jenkins (2), maven (3), osm-geocoder (43 — 38 mocked + 5 real/py + 3 real/afl); 4 examples with empty structure only (continental-lz, doc, hello-agent, volcano-query)
-- **osm-geocoder/integration/ removed**: 6 test files + conftest/helpers → `tests/real/py/`, 3 AFL fixtures → `tests/real/afl/`, relative imports (`from .helpers`) converted to absolute
+- **osm-geocoder/integration/ removed**: 6 test files + conftest/helpers → `tests/real/py/`, 3 AFL fixtures → `tests/real/ffl/`, relative imports (`from .helpers`) converted to absolute
 - **Per-example conftest.py** in each `tests/mocked/py/`: adds example root to `sys.path`, purges stale `handlers` package from `sys.modules` to prevent cross-example import conflicts, autouse fixture re-establishes correct path before each test
 - **Import path fixes**: all `Path(__file__).resolve().parent` chains updated for new directory depth (4 `.parent` calls from `tests/mocked/py/` to example root); docstring run-paths updated in all 27 osm-geocoder test files
 - **pyproject.toml**: `testpaths` expanded from `["tests"]` to `["tests", "examples"]`
@@ -3402,7 +3402,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - 1684 passed, 36 skipped (without `--hdfs`/`--mongodb`/`--postgis`)
 
 ## Completed (v0.12.17) - 30-State OSM Download Workflow
-- **`osmstates30.afl`** (`examples/osm-geocoder/afl/osmstates30.afl`): new AFL workflow in `osm.UnitedStates.sample` namespace; `Download30States` workflow downloads OSM data for 30 randomly chosen US states (Alaska, Arizona, California, Colorado, Connecticut, Florida, Georgia, Idaho, Illinois, Indiana, Iowa, Kansas, Kentucky, Louisiana, Maine, Maryland, Michigan, Minnesota, Missouri, Montana, Nevada, NewYork, NorthCarolina, Ohio, Oregon, Pennsylvania, Tennessee, Texas, Virginia, Washington); follows the `UnitedStatesIndividually` pattern — calls each state's cache facet, downloads via `Download(cache = ...)`, yields concatenated `downloadCache` results using `++`
+- **`osmstates30.afl`** (`examples/osm-geocoder/ffl/osmstates30.afl`): new AFL workflow in `osm.UnitedStates.sample` namespace; `Download30States` workflow downloads OSM data for 30 randomly chosen US states (Alaska, Arizona, California, Colorado, Connecticut, Florida, Georgia, Idaho, Illinois, Indiana, Iowa, Kansas, Kentucky, Louisiana, Maine, Maryland, Michigan, Minnesota, Missouri, Montana, Nevada, NewYork, NorthCarolina, Ohio, Oregon, Pennsylvania, Tennessee, Texas, Virginia, Washington); follows the `UnitedStatesIndividually` pattern — calls each state's cache facet, downloads via `Download(cache = ...)`, yields concatenated `downloadCache` results using `++`
 - **`run_30states.sh`** (`examples/osm-geocoder/run_30states.sh`): convenience startup script that creates `~/data/hdfs/{namenode,datanode}` and `~/data/mongodb` directories, bootstraps the Docker stack via `scripts/setup` with `--hdfs`, `--hdfs-namenode-dir`, `--hdfs-datanode-dir`, `--mongodb-data-dir`, and `--osm-agents 1`, waits for MongoDB readiness, compiles the AFL file with all library dependencies, submits the workflow, and prints dashboard access instructions
 - 1697 passed, 35 skipped (without `--hdfs`/`--mongodb`/`--postgis`)
 

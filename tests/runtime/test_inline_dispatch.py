@@ -20,7 +20,7 @@ execute() call — no PAUSED status, no task created, no polling.
 
 import pytest
 
-from afl.runtime import (
+from facetwork.runtime import (
     Evaluator,
     ExecutionStatus,
     HandlerRegistration,
@@ -28,8 +28,8 @@ from afl.runtime import (
     StepState,
     Telemetry,
 )
-from afl.runtime.dispatcher import InMemoryDispatcher
-from afl.runtime.registry_runner import RegistryRunner, RegistryRunnerConfig
+from facetwork.runtime.dispatcher import InMemoryDispatcher
+from facetwork.runtime.registry_runner import RegistryRunner, RegistryRunnerConfig
 
 # =========================================================================
 # Fixtures

@@ -12,16 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Cross-component integration tests: AFL source → compile → execute → resume."""
+"""Cross-component integration tests: FFL source → compile → execute → resume."""
 
 import json
 
 import pytest
 
-from afl import emit_dict, parse
-from afl.runtime import Evaluator, ExecutionStatus, MemoryStore, StepState, Telemetry
-from afl.runtime.entities import HandlerRegistration
-from afl.runtime.registry_runner import RegistryRunner, RegistryRunnerConfig
+from facetwork import emit_dict, parse
+from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, StepState, Telemetry
+from facetwork.runtime.entities import HandlerRegistration
+from facetwork.runtime.registry_runner import RegistryRunner, RegistryRunnerConfig
 
 try:
     from mcp.types import TextContent  # noqa: F401
@@ -32,7 +32,7 @@ except ImportError:
 
 
 # =========================================================================
-# Inline AFL source constants
+# Inline FFL source constants
 # =========================================================================
 
 AFL_HELLO = """\
@@ -88,7 +88,7 @@ def evaluator(store):
 
 
 def _compile(source: str):
-    """Parse and compile AFL source, returning (workflow_ast, program_ast)."""
+    """Parse and compile FFL source, returning (workflow_ast, program_ast)."""
     ast = parse(source)
     compiled = emit_dict(ast)
     return compiled
@@ -96,7 +96,7 @@ def _compile(source: str):
 
 def _find_workflow(compiled: dict, name: str):
     """Find a workflow declaration by name in compiled output."""
-    from afl.ast_utils import find_workflow
+    from facetwork.ast_utils import find_workflow
 
     return find_workflow(compiled, name)
 
@@ -119,7 +119,7 @@ def _register_handler(store, tmp_path, facet_name, code):
 
 
 class TestFullLifecycleSimple:
-    """Parse AFL → compile → execute → pause → continue → resume → verify."""
+    """Parse FFL → compile → execute → pause → continue → resume → verify."""
 
     def test_hello_workflow_compiles_and_executes(self, store, evaluator):
         compiled = _compile(AFL_HELLO)
@@ -193,7 +193,7 @@ class TestFullLifecycleMultiStep:
 
 
 class TestFullLifecycleRegistryRunner:
-    """From AFL source through RegistryRunner dispatch."""
+    """From FFL source through RegistryRunner dispatch."""
 
     def test_registry_runner_processes_hello(self, store, evaluator, tmp_path):
         compiled = _compile(AFL_HELLO)
@@ -238,7 +238,7 @@ class TestCompileAndExecuteEdgeCases:
             _compile("this is not valid afl {{{{")
 
     def test_validation_catches_duplicate(self):
-        from afl.validator import validate
+        from facetwork.validator import validate
 
         source = "facet Dup()\nfacet Dup()"
         ast = parse(source)
@@ -512,7 +512,7 @@ class TestMcpToolIntegration:
     """Chain MCP tool functions: compile → execute → continue → resume."""
 
     def test_compile_valid_source(self):
-        from afl.mcp.server import _tool_compile
+        from facetwork.mcp.server import _tool_compile
 
         result = _tool_compile({"source": AFL_HELLO})
         data = json.loads(result[0].text)
@@ -520,7 +520,7 @@ class TestMcpToolIntegration:
         assert "json" in data
 
     def test_compile_then_execute_top_level(self):
-        from afl.mcp.server import _tool_compile, _tool_execute_workflow
+        from facetwork.mcp.server import _tool_compile, _tool_execute_workflow
 
         # Compile
         compile_result = _tool_compile({"source": AFL_TOP_LEVEL_WORKFLOW})
@@ -540,7 +540,7 @@ class TestMcpToolIntegration:
         assert "workflow_id" in exec_data
 
     def test_execute_simple_workflow_completes(self):
-        from afl.mcp.server import _tool_execute_workflow
+        from facetwork.mcp.server import _tool_execute_workflow
 
         source = "workflow Direct(x: Long) => (y: Long)"
         result = _tool_execute_workflow(
@@ -555,7 +555,7 @@ class TestMcpToolIntegration:
         assert data["status"] == "COMPLETED"
 
     def test_execute_nonexistent_workflow(self):
-        from afl.mcp.server import _tool_execute_workflow
+        from facetwork.mcp.server import _tool_execute_workflow
 
         result = _tool_execute_workflow(
             {

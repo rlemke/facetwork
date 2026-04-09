@@ -2,7 +2,7 @@
 
 Downloads .osm.pbf files from Geofabrik and caches them locally.
 Also provides a generic download_url() for fetching any URL to any path
-(local or HDFS).  No AgentFlow dependencies — can be used independently.
+(local or HDFS).  No Facetwork dependencies — can be used independently.
 
 Concurrent access is safe: per-path locks prevent duplicate downloads when
 multiple threads request the same file, and atomic temp-file renames ensure
@@ -18,8 +18,8 @@ from datetime import UTC, datetime
 
 import requests
 
-from afl.config import get_output_base
-from afl.runtime.storage import get_storage_backend
+from facetwork.config import get_output_base
+from facetwork.runtime.storage import get_storage_backend
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ CACHE_DIR = os.environ.get("AFL_CACHE_DIR", os.path.join(get_output_base(), "cac
 _storage = get_storage_backend(CACHE_DIR)
 GEOFABRIK_BASE = "https://download.geofabrik.de"
 GEOFABRIK_MIRROR = os.environ.get("AFL_GEOFABRIK_MIRROR", "/Volumes/afl_data/osm")
-USER_AGENT = "AgentFlow-OSM-Example/1.0"
+USER_AGENT = "Facetwork-OSM-Example/1.0"
 
 FORMAT_EXTENSIONS = {
     "pbf": "osm.pbf",

@@ -1,0 +1,176 @@
+# Copyright 2025 Ralph Lemke
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""AFL (Facetwork Flow Language) compiler package."""
+
+from .ast import (
+    AndThenBlock,
+    ArrayLiteral,
+    ArrayType,
+    ASTNode,
+    BinaryExpr,
+    Block,
+    CallExpr,
+    ConcatExpr,
+    EventFacetDecl,
+    FacetDecl,
+    FacetSig,
+    ForeachClause,
+    ImplicitDecl,
+    IndexExpr,
+    Literal,
+    MapEntry,
+    MapLiteral,
+    MixinCall,
+    MixinSig,
+    NamedArg,
+    Namespace,
+    Parameter,
+    Program,
+    Reference,
+    ReturnClause,
+    SchemaDecl,
+    SchemaField,
+    SourceLocation,
+    StepStmt,
+    TypeRef,
+    UnaryExpr,
+    UsesDecl,
+    WhenBlock,
+    WhenCase,
+    WorkflowDecl,
+    YieldStmt,
+)
+from .ast_utils import find_all_workflows, find_workflow, normalize_program_ast
+from .config import FFLConfig, MongoDBConfig, ResolverConfig, load_config
+from .emitter import JSONEmitter, emit_dict, emit_json
+from .loader import SourceLoader
+from .parser import FFLParser, ParseError, parse
+from .publisher import PublishError, SourcePublisher
+from .resolver import DependencyResolver, MongoDBNamespaceResolver, NamespaceIndex
+from .source import (
+    CompilerInput,
+    FileOrigin,
+    MavenOrigin,
+    MongoDBOrigin,
+    SourceEntry,
+    SourceOrigin,
+    SourceRegistry,
+)
+from .validator import FFLValidator, ValidationError, ValidationResult, validate
+
+__version__ = "0.44.0"
+
+
+def _git_version() -> str:
+    """Get the git commit hash and dirty status for precise version tracking."""
+    import subprocess
+
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short=8", "HEAD"],
+            cwd=__path__[0] if __path__ else None,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        dirty = subprocess.call(
+            ["git", "diff", "--quiet", "HEAD"],
+            cwd=__path__[0] if __path__ else None,
+            stderr=subprocess.DEVNULL,
+        )
+        return f"{commit}{'*' if dirty else ''}"
+    except Exception:
+        return "unknown"
+
+
+__git_commit__ = _git_version()
+__full_version__ = f"{__version__}+{__git_commit__}"
+
+__all__ = [
+    # AST utilities
+    "normalize_program_ast",
+    "find_workflow",
+    "find_all_workflows",
+    # Parser
+    "FFLParser",
+    "ParseError",
+    "parse",
+    # Emitter
+    "JSONEmitter",
+    "emit_json",
+    "emit_dict",
+    # Validator
+    "FFLValidator",
+    "ValidationResult",
+    "ValidationError",
+    "validate",
+    # Source input
+    "SourceEntry",
+    "CompilerInput",
+    "SourceRegistry",
+    "SourceOrigin",
+    "FileOrigin",
+    "MongoDBOrigin",
+    "MavenOrigin",
+    "SourceLoader",
+    # Configuration
+    "FFLConfig",
+    "MongoDBConfig",
+    "ResolverConfig",
+    "load_config",
+    # Resolver
+    "DependencyResolver",
+    "NamespaceIndex",
+    "MongoDBNamespaceResolver",
+    # Publisher
+    "SourcePublisher",
+    "PublishError",
+    # AST nodes
+    "Program",
+    "Namespace",
+    "UsesDecl",
+    "FacetDecl",
+    "EventFacetDecl",
+    "WorkflowDecl",
+    "ImplicitDecl",
+    "FacetSig",
+    "ReturnClause",
+    "Parameter",
+    "TypeRef",
+    "MixinSig",
+    "MixinCall",
+    "CallExpr",
+    "NamedArg",
+    "StepStmt",
+    "YieldStmt",
+    "Block",
+    "AndThenBlock",
+    "ForeachClause",
+    "Literal",
+    "Reference",
+    "ConcatExpr",
+    "BinaryExpr",
+    "UnaryExpr",
+    "ArrayLiteral",
+    "MapEntry",
+    "MapLiteral",
+    "WhenBlock",
+    "WhenCase",
+    "IndexExpr",
+    "SourceLocation",
+    "ASTNode",
+    "ArrayType",
+    "SchemaDecl",
+    "SchemaField",
+]

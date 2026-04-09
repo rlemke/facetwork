@@ -1,4 +1,4 @@
-# AgentFlow
+# Facetwork
 
 > This project was built entirely with [Claude](https://claude.ai) — the only human input is the specification documents in `spec/`. And actually claude wrote those, I just gave suggestions. Having been retired for a while, when I heard about Claude, I needed to see how much of my previous career had just been eliminated (or at least made possible in a very small fraction of the time). This is a substantial, fully functional platform written exclusively through AI-assisted development, although it should only be used as an example of what beginners can do with AI coding assistance. This is still a work in progress and goes many ways as I say "I want to try this or that". 
 > It has been over a month now. Claude and I have come close to breaking up now and then :-) But I am amazed how far it has come without serious detailed help from me.
@@ -10,9 +10,9 @@
 > The other good news, if something goes wrong it does a great job of find out what went wrong. Although this can lead to a rabbit hole where it really does not understand the issue and puts in fixes that actually makes the situation worse for other scenarios.
 > 
 
-**AgentFlow** is a platform for defining and executing distributed workflows. You describe what should happen in a simple language called **AFL** (Agent Flow Language), and AgentFlow handles the execution, retries, monitoring, and scaling.
+**Facetwork** is a platform for defining and executing distributed workflows. You describe what should happen in a simple language called **FFL** (Facetwork Flow Language), and Facetwork handles the execution, retries, monitoring, and scaling.
 
-You don't need to be a developer to use AgentFlow — if you can fill in a form, you can run workflows from the dashboard.
+You don't need to be a developer to use Facetwork — if you can fill in a form, you can run workflows from the dashboard.
 
 ## Choose Your Path
 
@@ -25,15 +25,15 @@ You don't need to be a developer to use AgentFlow — if you can fill in a form,
 | **Build agents** in other languages | [Agent Libraries](#agent-integration-libraries) |
 | **Deploy to a cluster** | [Deployment Guide](docs/operations/deployment.md) |
 | **Understand the architecture** | [Architecture](docs/architecture/overview.md) |
-| **Contribute to AgentFlow** | [Full Technical Reference](claude.md) |
+| **Contribute to Facetwork** | [Full Technical Reference](claude.md) |
 
 ## Quick Start
 
 ### Docker (recommended for first-timers)
 
 ```bash
-git clone https://github.com/rlemke/agentflow.git
-cd agentflow
+git clone https://github.com/rlemke/facetwork.git
+cd facetwork
 
 # Start everything: MongoDB + Dashboard + Runner + Sample Agent
 docker compose up
@@ -107,7 +107,7 @@ namespace myapp {
 - **`$`** — the workflow's input parameters
 - **`step.field`** — output from a previous step
 
-You write the workflow logic in AFL. A Python handler does the real work (API calls, data processing, etc.). AgentFlow connects them.
+You write the workflow logic in AFL. A Python handler does the real work (API calls, data processing, etc.). Facetwork connects them.
 
 To learn more: [AFL Tutorial](docs/getting-started/tutorial.md) | [Language Reference](docs/reference/language/grammar.md) | [Examples](docs/reference/examples.md)
 
@@ -144,7 +144,7 @@ This means a domain expert can build a workflow by composing facets from across 
 
 ## Built for Long-Running, Distributed Work
 
-AgentFlow doesn't run workflows on a single machine and hope for the best. It runs on a **cluster of runner servers** backed by MongoDB, designed for workloads that take minutes, hours, or days.
+Facetwork doesn't run workflows on a single machine and hope for the best. It runs on a **cluster of runner servers** backed by MongoDB, designed for workloads that take minutes, hours, or days.
 
 **How it works:**
 - When a workflow reaches a step that needs work (an *event facet*), the runtime creates a **task** in MongoDB
@@ -153,7 +153,7 @@ AgentFlow doesn't run workflows on a single machine and hope for the best. It ru
 
 **Why this matters:**
 
-| Capability | How AgentFlow handles it |
+| Capability | How Facetwork handles it |
 |-----------|--------------------------|
 | **Long-running jobs** | A step can take hours (e.g., importing geographic data, training a model). If a runner crashes or times out, the task is automatically reset to pending and another runner picks it up. |
 | **Scalability** | Add more runner servers to handle more tasks in parallel. Each runner independently polls MongoDB for work — no central coordinator needed. |
@@ -167,7 +167,7 @@ A local Docker setup is great for development, but production workflows run on a
 
 ## Developer Guide
 
-Everything below is for developers who want to build handlers, extend AgentFlow, or understand the internals.
+Everything below is for developers who want to build handlers, extend Facetwork, or understand the internals.
 
 ### Installation
 
@@ -329,7 +329,7 @@ python -m afl.mcp              # stdio transport
 
 ### Agent Integration Libraries
 
-AgentFlow agents can be built in any language. The `agents/` directory has libraries for:
+Facetwork agents can be built in any language. The `agents/` directory has libraries for:
 
 | Language | Directory | Build |
 |----------|-----------|-------|

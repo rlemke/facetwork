@@ -22,7 +22,7 @@ import re
 
 import pytest
 
-from afl.logging import SplunkJsonFormatter, configure_logging
+from facetwork.logging import SplunkJsonFormatter, configure_logging
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -88,9 +88,9 @@ class TestSplunkJsonFormatter:
 
     def test_logger_field(self):
         fmt = SplunkJsonFormatter()
-        record = _make_record(name="afl.runtime.evaluator")
+        record = _make_record(name="facetwork.runtime.evaluator")
         obj = json.loads(fmt.format(record))
-        assert obj["logger"] == "afl.runtime.evaluator"
+        assert obj["logger"] == "facetwork.runtime.evaluator"
 
     def test_message_field(self):
         fmt = SplunkJsonFormatter()
@@ -98,11 +98,11 @@ class TestSplunkJsonFormatter:
         obj = json.loads(fmt.format(record))
         assert obj["message"] == "workflow started"
 
-    def test_source_field_is_agentflow(self):
+    def test_source_field_is_facetwork(self):
         fmt = SplunkJsonFormatter()
         record = _make_record()
         obj = json.loads(fmt.format(record))
-        assert obj["source"] == "agentflow"
+        assert obj["source"] == "facetwork"
 
     def test_exc_info_included_when_present(self):
         fmt = SplunkJsonFormatter()

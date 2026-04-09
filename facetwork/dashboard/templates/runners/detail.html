@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Runner {{ runner.uuid[:8] if runner else "Not Found" }} — Facetwork{% endblock %}
+{% block content %}
+{% if not runner %}
+<h1>Runner not found</h1>
+<p><a href="/runners">Back to runners</a></p>
+{% else %}
+<h1>Runner <span class="mono">{{ runner.uuid|truncate_uuid }}</span></h1>
+
+<div class="grid">
+    <div>
+        <article>
+            <header>Details</header>
+            <table>
+                <tr><th>UUID</th><td class="mono">{{ runner.uuid }}</td></tr>
+                <tr><th>Workflow</th><td>{{ runner.workflow.name }}</td></tr>
+                <tr><th>State</th><td>{% with state=runner.state %}{% include "partials/_state_badge.html" %}{% endwith %}</td></tr>
+                <tr><th>Started</th><td>{{ runner.start_time|timestamp }}</td></tr>
+                <tr><th>Ended</th><td>{{ runner.end_time|timestamp }}</td></tr>
+                <tr><th>Duration</th><td>{{ runner.duration|duration }}</td></tr>
+            </table>
+        </article>
+    </div>
+    <div>
+        <article>
+            <header>Actions</header>
+            <div class="actions">
+                {% if runner.state == "running" %}
+                <button hx-post="/runners/{{ runner.uuid }}/pause"
+                        hx-confirm="Pause this runner?"
+                        class="outline">Pause</button>
+                <button hx-post="/runners/{{ runner.uuid }}/cancel"
+                        hx-confirm="Cancel this runner?"
+                        class="outline secondary">Cancel</button>
+                {% elif runner.state == "paused" %}
+                <button hx-post="/runners/{{ runner.uuid }}/resume"
+                        hx-confirm="Resume this runner?"
+                        class="outline">Resume</button>
+                <button hx-post="/runners/{{ runner.uuid }}/cancel"
+                        hx-confirm="Cancel this runner?"
+                        class="outline secondary">Cancel</button>
+                {% else %}
+                <small>No actions available for state: {{ runner.state }}</small>
+                {% endif %}
+            </div>
+        </article>
+
+        {% if runner.parameters %}
+        <article>
+            <header>Parameters</header>
+            <table>
+                <thead><tr><th>Name</th><th>Value</th></tr></thead>
+                <tbody>
+                {% for p in runner.parameters %}
+                <tr><td>{{ p.name }}</td><td>{{ p.value }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </article>
+        {% endif %}
+    </div>
+</div>
+
+<h2>Steps</h2>
+<div class="view-toggle">
+    <button class="view-toggle-btn" onclick="document.getElementById('step-flat').style.display='';document.getElementById('step-tree').style.display='none';this.classList.add('active');this.nextElementSibling.classList.remove('active');">Flat</button>
+    <button class="view-toggle-btn active" onclick="document.getElementById('step-tree').style.display='';document.getElementById('step-flat').style.display='none';this.classList.add('active');this.previousElementSibling.classList.remove('active');">Tree</button>
+</div>
+<div class="view-toggle state-filter" id="state-tabs">
+    <button class="view-toggle-btn active" data-filter="all">All <span class="tab-count" id="count-all"></span></button>
+    <button class="view-toggle-btn" data-filter="running">Running <span class="tab-count" id="count-running"></span></button>
+    <button class="view-toggle-btn" data-filter="complete">Complete <span class="tab-count" id="count-complete"></span></button>
+    <button class="view-toggle-btn" data-filter="error">Error <span class="tab-count" id="count-error"></span></button>
+    <button class="view-toggle-btn" data-filter="other">Other <span class="tab-count" id="count-other"></span></button>
+</div>
+
+<div id="step-flat" style="display:none">
+<button class="btn-refresh"
+        hx-get="/api/runners/{{ runner.uuid }}/steps?partial=true"
+        hx-target="#step-flat-body"
+        hx-swap="innerHTML">
+    <span class="refresh-icon">&#x21bb;</span> Refresh
+</button>
+<figure>
+<table>
+    <thead>
+        <tr><th>Name</th><th>Facet</th><th>State</th><th>Logs</th><th>Data</th></tr>
+    </thead>
+    <tbody id="step-flat-body">
+        {% for step in steps %}
+        {% include "partials/step_row.html" %}
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+</div>
+
+<div id="step-tree">
+<button class="btn-refresh"
+        hx-get="/api/runners/{{ runner.uuid }}/steps?partial=true&view=tree"
+        hx-target="#step-tree-content"
+        hx-swap="innerHTML">
+    <span class="refresh-icon">&#x21bb;</span> Refresh
+</button>
+<div class="step-tree-container" id="step-tree-content">
+    {% with tree=tree %}{% include "partials/step_tree.html" %}{% endwith %}
+</div>
+</div>
+
+{% if logs %}
+<h2>Logs</h2>
+<figure>
+<table>
+    <thead>
+        <tr><th>Order</th><th>Time</th><th>Message</th><th>Type</th></tr>
+    </thead>
+    <tbody>
+        {% for log in logs %}
+        <tr>
+            <td>{{ log.order }}</td>
+            <td>{{ log.time|timestamp }}</td>
+            <td>{{ log.message }}</td>
+            <td>{{ log.note_type }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% endif %}
+
+<script type="module">
+import { initStateFilter } from "/static/state_filter.js";
+initStateFilter();
+</script>
+
+{% endif %}
+{% endblock %}

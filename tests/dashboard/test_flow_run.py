@@ -59,9 +59,9 @@ workflow DefaultsWF(x: Long = 42, name: String = "hello") => (result: Long) andT
 @pytest.fixture
 def client():
     """Create a test client with mongomock-backed store."""
-    from afl.dashboard import dependencies as deps
-    from afl.dashboard.app import create_app
-    from afl.runtime.mongo_store import MongoStore
+    from facetwork.dashboard import dependencies as deps
+    from facetwork.dashboard.app import create_app
+    from facetwork.runtime.mongo_store import MongoStore
 
     mock_client = mongomock.MongoClient()
     store = MongoStore(database_name="afl_test_flow_run", client=mock_client)
@@ -78,13 +78,13 @@ def client():
 
 def _seed_flow(store, source=VALID_AFL_SOURCE, workflow_name="SimpleWF"):
     """Seed a flow + workflow into the store. Returns (flow, workflow_def)."""
-    from afl.runtime.entities import (
+    from facetwork.runtime.entities import (
         FlowDefinition,
         FlowIdentity,
         SourceText,
         WorkflowDefinition,
     )
-    from afl.runtime.types import generate_id
+    from facetwork.runtime.types import generate_id
 
     flow_id = generate_id()
     wf_id = generate_id()
@@ -92,7 +92,7 @@ def _seed_flow(store, source=VALID_AFL_SOURCE, workflow_name="SimpleWF"):
     flow = FlowDefinition(
         uuid=flow_id,
         name=FlowIdentity(name=workflow_name, path="test", uuid=flow_id),
-        compiled_sources=[SourceText(name="source.afl", content=source)],
+        compiled_sources=[SourceText(name="source.ffl", content=source)],
     )
     store.save_flow(flow)
 
@@ -129,12 +129,12 @@ class TestFlowDetailRunButton:
 
     def test_run_link_hidden_without_compiled_sources(self, client):
         """When compiled_sources is empty, no Run button should appear."""
-        from afl.runtime.entities import (
+        from facetwork.runtime.entities import (
             FlowDefinition,
             FlowIdentity,
             WorkflowDefinition,
         )
-        from afl.runtime.types import generate_id
+        from facetwork.runtime.types import generate_id
 
         tc, store = client
         flow_id = generate_id()
@@ -260,7 +260,7 @@ class TestFlowRunExecute:
         )
         tasks = store.get_pending_tasks("default")
         assert len(tasks) == 1
-        assert tasks[0].name == "afl:execute"
+        assert tasks[0].name == "fw:execute"
         assert tasks[0].data["flow_id"] == flow.uuid
         assert tasks[0].data["workflow_id"] == wf.uuid
         assert tasks[0].data["workflow_name"] == "SimpleWF"

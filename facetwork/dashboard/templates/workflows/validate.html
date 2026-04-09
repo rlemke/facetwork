@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Validation Result — Facetwork Dashboard{% endblock %}
+{% block content %}
+<h1>Validation Result</h1>
+
+{% if errors %}
+<article aria-label="Errors" class="state-badge-failed">
+    <header>Invalid</header>
+    <ul>
+    {% for err in errors %}
+        <li>
+            {{ err.message }}
+            {% if err.line %} (line {{ err.line }}{% if err.column %}, col {{ err.column }}{% endif %}){% endif %}
+        </li>
+    {% endfor %}
+    </ul>
+</article>
+{% else %}
+<article>
+    <header>Valid</header>
+    <p>The AFL source is valid.</p>
+</article>
+{% endif %}
+
+{% if namespaces %}
+<article>
+    <header>Namespaces</header>
+    <ul>
+    {% for ns in namespaces %}
+        <li>{{ ns }}</li>
+    {% endfor %}
+    </ul>
+</article>
+{% endif %}
+
+{% if facets %}
+<article>
+    <header>Facets</header>
+    <ul>
+    {% for f in facets %}
+        <li>{{ f }}</li>
+    {% endfor %}
+    </ul>
+</article>
+{% endif %}
+
+{% if workflows %}
+<article>
+    <header>Workflows</header>
+    <ul>
+    {% for wf in workflows %}
+        <li>{{ wf }}</li>
+    {% endfor %}
+    </ul>
+</article>
+{% endif %}
+
+<p><a href="/workflows/new">Back to editor</a></p>
+{% endblock %}

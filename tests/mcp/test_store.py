@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 try:
-    from afl.mcp.store import get_store
+    from facetwork.mcp.store import get_store
 
     MCP_AVAILABLE = True
 except ImportError:
@@ -25,8 +25,8 @@ def clear_cache():
 class TestGetStore:
     """Test get_store singleton factory."""
 
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_creates_store_from_config(self, mock_load, mock_mongo):
         mock_config = MagicMock()
         mock_load.return_value = mock_config
@@ -39,8 +39,8 @@ class TestGetStore:
         mock_mongo.from_config.assert_called_once_with(mock_config.mongodb)
         assert result is mock_store
 
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_caches_store_singleton(self, mock_load, mock_mongo):
         mock_config = MagicMock()
         mock_load.return_value = mock_config
@@ -54,8 +54,8 @@ class TestGetStore:
         # load_config should only be called once due to caching
         mock_load.assert_called_once()
 
-    @patch("afl.runtime.mongo_store.MongoStore")
-    @patch("afl.config.load_config")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
     def test_passes_config_path(self, mock_load, mock_mongo):
         mock_config = MagicMock()
         mock_load.return_value = mock_config

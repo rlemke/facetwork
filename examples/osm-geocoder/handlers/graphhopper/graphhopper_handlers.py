@@ -27,7 +27,7 @@ import tempfile
 from datetime import datetime
 from typing import Any
 
-from afl.runtime.storage import get_storage_backend
+from facetwork.runtime.storage import get_storage_backend
 
 # GraphHopper version used for builds
 GRAPHHOPPER_VERSION = "8.0"

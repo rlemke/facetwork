@@ -19,7 +19,7 @@ For RegistryRunner mode:
     AFL_USE_REGISTRY=1
 """
 
-from afl.runtime.agent_runner import AgentConfig, run_agent
+from facetwork.runtime.agent_runner import AgentConfig, run_agent
 
 config = AgentConfig(service_name="genomics-agent", server_group="genomics")
 

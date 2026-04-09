@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for AFL script executor."""
+"""Tests for FFL script executor."""
 
 import pytest
 
-from afl.runtime.script_executor import (
+from facetwork.runtime.script_executor import (
     ScriptError,
     ScriptExecutor,
     ScriptResult,
@@ -150,7 +150,7 @@ result["c"] = params["x"] + params["y"]
 
     def test_anthropic_import_allowed(self, executor):
         """anthropic is in the allowed import list (not blocked by sandbox)."""
-        from afl.runtime.script_executor import _SAFE_IMPORT_MODULES
+        from facetwork.runtime.script_executor import _SAFE_IMPORT_MODULES
 
         assert "anthropic" in _SAFE_IMPORT_MODULES
 

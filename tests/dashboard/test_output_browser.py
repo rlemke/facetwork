@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from afl.config import _reset_config_cache
-from afl.dashboard.app import create_app
-from afl.dashboard.filters import file_timestamp, filesizeformat
-from afl.dashboard.routes.monitoring.output import (
+from facetwork.config import _reset_config_cache
+from facetwork.dashboard.app import create_app
+from facetwork.dashboard.filters import file_timestamp, filesizeformat
+from facetwork.dashboard.routes.monitoring.output import (
     _build_breadcrumbs,
     _build_tree,
     _safe_path,

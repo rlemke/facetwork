@@ -5,7 +5,7 @@
 ## When to Use This Example
 
 Use this as your starting point if you are:
-- **New to AgentFlow** and want to understand the execution model
+- **New to Facetwork** and want to understand the execution model
 - Building your **first event facet and workflow**
 - Learning how the **compile-execute-pause-resume cycle** works
 
@@ -88,7 +88,7 @@ You'll see each step printed with clear labels showing the workflow progressing 
 Execute  →  Hit event facet  →  PAUSED  →  Agent processes task  →  Resume  →  COMPLETED
 ```
 
-This is the fundamental AgentFlow pattern. Every example builds on this cycle.
+This is the fundamental Facetwork pattern. Every example builds on this cycle.
 
 ### Persistence
 

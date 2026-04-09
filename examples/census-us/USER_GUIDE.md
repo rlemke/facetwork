@@ -127,7 +127,7 @@ pip install -e ".[dev]"
 pip install -r examples/census-us/requirements.txt  # requests, fiona, shapely, pyshp
 
 # Compile check
-afl examples/census-us/afl/census.afl --check
+afl examples/census-us/ffl/census.afl --check
 
 # Run tests (no network required)
 pytest examples/census-us/tests/ -v

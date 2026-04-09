@@ -10,7 +10,7 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
-from afl.config import get_output_base
+from facetwork.config import get_output_base
 
 from ..shared.output_cache import cached_result, save_result_meta, with_output_cache
 from .zoom_builder import (
