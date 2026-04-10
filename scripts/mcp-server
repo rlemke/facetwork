@@ -13,4 +13,4 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="${REPO_ROOT}/.venv/bin/python3"
 [[ -x "$PYTHON" ]] || PYTHON=python3
 
-exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m afl.mcp "$@"
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.mcp "$@"

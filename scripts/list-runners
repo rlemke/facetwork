@@ -48,7 +48,7 @@ import sys
 import time
 from collections import defaultdict
 
-from afl.runtime.mongo_store import MongoStore
+from facetwork.runtime.mongo_store import MongoStore
 
 mongo_url = os.environ.get('AFL_MONGODB_URL', 'mongodb://afl-mongodb:27017')
 store = MongoStore(mongo_url)
@@ -147,7 +147,7 @@ total_runners = len(servers)
 total_handlers = sum(len(s.handlers) for s in servers)
 host_count = len(by_host)
 
-print(f'AgentFlow Servers: {host_count} host(s), {total_runners} runner(s), {total_handlers} handler registration(s)')
+print(f'Facetwork Servers: {host_count} host(s), {total_runners} runner(s), {total_handlers} handler registration(s)')
 if state_filter:
     print(f'  (filtered: state={state_filter})')
 print()

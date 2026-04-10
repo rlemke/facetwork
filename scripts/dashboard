@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the AgentFlow web dashboard.
+# Start the Facetwork web dashboard.
 #
 # Usage:
 #   scripts/dashboard                              # start on port 8080
@@ -15,4 +15,4 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="${REPO_ROOT}/.venv/bin/python3"
 [[ -x "$PYTHON" ]] || PYTHON=python3
 
-exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m afl.dashboard "$@"
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.dashboard "$@"

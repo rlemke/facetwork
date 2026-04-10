@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compile all example AFL files and push FlowDefinition + WorkflowDefinition
+# Compile all example FFL files and push FlowDefinition + WorkflowDefinition
 # entities to MongoDB so they appear in the Dashboard Flow UI.
 #
 # Only creates Flow + Workflow entities (not Runner + Task).  Runners and tasks
@@ -75,23 +75,23 @@ def discover_examples(
     include: str | None,
     exclude: str | None,
 ) -> list[tuple[str, list[str]]]:
-    """Discover example directories that contain AFL files.
+    """Discover example directories that contain FFL files.
 
-    Returns list of (example_name, [afl_file_paths]) sorted by name.
+    Returns list of (example_name, [ffl_file_paths]) sorted by name.
     """
     results: list[tuple[str, list[str]]] = []
 
     for entry in sorted(os.listdir(EXAMPLES_DIR)):
-        afl_dir = os.path.join(EXAMPLES_DIR, entry, "afl")
-        if not os.path.isdir(afl_dir):
+        ffl_dir = os.path.join(EXAMPLES_DIR, entry, "ffl")
+        if not os.path.isdir(ffl_dir):
             continue
 
-        # Collect AFL files from root afl/ and any subdirectory afl/ folders
-        # (e.g. handlers/amenities/afl/, handlers/cache/afl/).
-        files = sorted(glob.glob(os.path.join(afl_dir, "*.afl")))
+        # Collect FFL files from root ffl/ and any subdirectory ffl/ folders
+        # (e.g. handlers/amenities/ffl/, handlers/cache/ffl/).
+        files = sorted(glob.glob(os.path.join(ffl_dir, "*.ffl")))
         example_root = os.path.join(EXAMPLES_DIR, entry)
         real_example_root = os.path.realpath(example_root)
-        files += sorted(glob.glob(os.path.join(example_root, "**", "afl", "*.afl"), recursive=True))
+        files += sorted(glob.glob(os.path.join(example_root, "**", "ffl", "*.ffl"), recursive=True))
         # Deduplicate by real path and exclude:
         # - files that resolve outside the examples tree (e.g. via symlinks
         #   to system paths); cross-example symlinks are allowed
@@ -125,19 +125,19 @@ def compile_example(
     name: str,
     afl_files: list[str],
 ) -> tuple[dict, str, list[str]]:
-    """Compile AFL files for one example.
+    """Compile FFL files for one example.
 
     Returns (program_dict, combined_source_text, warnings).
 
     Raises on parse errors.  Validation errors are returned as warnings
     (some examples depend on types from other examples).
     """
-    from afl.ast import Program
-    from afl.emitter import JSONEmitter
-    from afl.parser import AFLParser
-    from afl.validator import validate
+    from facetwork.ast import Program
+    from facetwork.emitter import JSONEmitter
+    from facetwork.parser import FFLParser
+    from facetwork.validator import validate
 
-    parser = AFLParser()
+    parser = FFLParser()
     programs: list[Program] = []
     source_parts: list[str] = []
 
@@ -172,13 +172,13 @@ def seed_example(
 
     Returns (file_count, workflow_count, warnings).
     """
-    from afl.runtime.entities import (
+    from facetwork.runtime.entities import (
         FlowDefinition,
         FlowIdentity,
         SourceText,
         WorkflowDefinition,
     )
-    from afl.runtime.types import generate_id
+    from facetwork.runtime.types import generate_id
 
     program_dict, combined_source, warnings = compile_example(name, afl_files)
     workflows = _collect_workflows(program_dict)
@@ -195,7 +195,7 @@ def seed_example(
     flow = FlowDefinition(
         uuid=flow_id,
         name=FlowIdentity(name=name, path=SEED_PATH, uuid=flow_id),
-        compiled_sources=[SourceText(name="source.afl", content=combined_source)],
+        compiled_sources=[SourceText(name="source.ffl", content=combined_source)],
         compiled_ast=program_dict,
     )
     store.save_flow(flow)
@@ -249,7 +249,7 @@ def _register_example_handlers(
 
     Returns total number of handlers registered.
     """
-    from afl.runtime import Evaluator, RegistryRunner, Telemetry
+    from facetwork.runtime import Evaluator, RegistryRunner, Telemetry
 
     telemetry = Telemetry()
     evaluator = Evaluator(store, telemetry)
@@ -325,14 +325,14 @@ def main() -> None:
     # Discover examples
     examples = discover_examples(args.include, args.exclude)
     if not examples:
-        print("No example directories found with AFL files.")
+        print("No example directories found with FFL files.")
         sys.exit(1)
 
     # Connect to MongoDB (unless dry-run)
     store = None
     if not args.dry_run:
-        from afl.config import load_config
-        from afl.runtime.mongo_store import MongoStore
+        from facetwork.config import load_config
+        from facetwork.runtime.mongo_store import MongoStore
 
         config = load_config(args.config)
         try:

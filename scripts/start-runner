@@ -104,7 +104,7 @@ for ex in "${EXAMPLES[@]}"; do
     fi
 done
 
-echo "=== AgentFlow: Register Handlers & Start Runner ==="
+echo "=== Facetwork: Register Handlers & Start Runner ==="
 echo ""
 echo "  Examples:  ${EXAMPLES[*]}"
 echo "  Instances: $INSTANCES"
@@ -125,8 +125,8 @@ import sys, os
 repo = os.environ.get('REPO_ROOT', '$REPO_ROOT')
 examples = '${EXAMPLES[*]}'.split()
 
-from afl.runtime.mongo_store import MongoStore
-from afl.runtime import RegistryRunner, RegistryRunnerConfig, Evaluator, Telemetry
+from facetwork.runtime.mongo_store import MongoStore
+from facetwork.runtime import RegistryRunner, RegistryRunnerConfig, Evaluator, Telemetry
 
 mongo_url = os.environ.get('AFL_MONGODB_URL', 'mongodb://afl-mongodb:27017')
 store = MongoStore(mongo_url)
@@ -201,7 +201,7 @@ if [[ "$MODE" == "local" ]]; then
     # Start dashboard
     if [[ "$DASHBOARD" == "true" ]]; then
         echo "Starting dashboard on port 8080..."
-        env PYTHONPATH="$REPO_ROOT" PYTHONUNBUFFERED=1 "$PYTHON" -m afl.dashboard &
+        env PYTHONPATH="$REPO_ROOT" PYTHONUNBUFFERED=1 "$PYTHON" -m facetwork.dashboard &
         PIDS+=($!)
         echo "  Dashboard started (PID $!)"
         # Wait for dashboard to bind port before starting runners
@@ -217,11 +217,11 @@ if [[ "$MODE" == "local" ]]; then
     # Start runner(s)
     if [[ "$INSTANCES" -eq 1 && "$DASHBOARD" == "false" ]]; then
         echo "Starting runner with --registry..."
-        exec env PYTHONPATH="$RUNNER_PYTHONPATH" PYTHONUNBUFFERED=1 "$PYTHON" -m afl.runtime.runner --registry ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"}
+        exec env PYTHONPATH="$RUNNER_PYTHONPATH" PYTHONUNBUFFERED=1 "$PYTHON" -m facetwork.runtime.runner --registry ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"}
     else
         echo "Starting $INSTANCES runner instance(s) with --registry..."
         for i in $(seq 1 "$INSTANCES"); do
-            env PYTHONPATH="$RUNNER_PYTHONPATH" PYTHONUNBUFFERED=1 "$PYTHON" -m afl.runtime.runner --registry ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"} &
+            env PYTHONPATH="$RUNNER_PYTHONPATH" PYTHONUNBUFFERED=1 "$PYTHON" -m facetwork.runtime.runner --registry ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"} &
             PIDS+=($!)
             echo "  Runner $i started (PID $!)"
         done

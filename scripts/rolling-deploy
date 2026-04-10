@@ -70,7 +70,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "=== AgentFlow: Rolling Deploy ==="
+echo "=== Facetwork: Rolling Deploy ==="
 echo ""
 echo "  Drain timeout:  ${DRAIN_TIMEOUT}s"
 echo "  Start timeout:  ${START_TIMEOUT}s"
@@ -99,8 +99,8 @@ import sys, os
 repo = os.environ.get('REPO_ROOT', '$REPO_ROOT')
 examples = '${EXAMPLES[*]}'.split()
 
-from afl.runtime.mongo_store import MongoStore
-from afl.runtime import RegistryRunner, RegistryRunnerConfig, Evaluator, Telemetry
+from facetwork.runtime.mongo_store import MongoStore
+from facetwork.runtime import RegistryRunner, RegistryRunnerConfig, Evaluator, Telemetry
 
 mongo_url = os.environ.get('AFL_MONGODB_URL', 'mongodb://afl-mongodb:27017')
 store = MongoStore(mongo_url)

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Compile AFL source files to JSON workflow definitions.
+# Compile FFL source files to JSON workflow definitions.
 #
 # Usage:
-#   scripts/compile input.afl                    # print JSON to stdout
-#   scripts/compile input.afl -o output.json     # write to file
-#   scripts/compile input.afl --check            # syntax check only
-#   scripts/compile input.afl --compact          # compact JSON output
+#   scripts/compile input.ffl                    # print JSON to stdout
+#   scripts/compile input.ffl -o output.json     # write to file
+#   scripts/compile input.ffl --check            # syntax check only
+#   scripts/compile input.ffl --compact          # compact JSON output
 #   scripts/compile --help                       # show all options
 
 set -euo pipefail
@@ -15,4 +15,4 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="${REPO_ROOT}/.venv/bin/python3"
 [[ -x "$PYTHON" ]] || PYTHON=python3
 
-exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m afl.cli "$@"
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.cli "$@"

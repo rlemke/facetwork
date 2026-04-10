@@ -12,7 +12,7 @@
 #
 set -euo pipefail
 
-DATABASE="afl"
+DATABASE="facetwork"
 SKIP_CONFIRM=false
 DROP_MODE=false
 
@@ -64,7 +64,7 @@ COLLECTIONS=(
     handler_registrations
 )
 
-echo "=== AgentFlow: Empty All Collections ==="
+echo "=== Facetwork: Empty All Collections ==="
 echo ""
 echo "  Database:    $DATABASE"
 echo "  Server:      $MONGO_URL"

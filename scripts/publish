@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Compile an AFL file and publish it to MongoDB.
+# Compile an FFL file and publish it to MongoDB.
 #
 # Creates a FlowDefinition (for execution) and WorkflowDefinition entries,
-# then publishes namespaces to afl_sources for dependency resolution.
+# then publishes namespaces to ffl_sources for dependency resolution.
 #
 # Usage:
-#   scripts/publish input.afl                                # compile + publish
-#   scripts/publish input.afl --version 1.0.0                # with version tag
-#   scripts/publish input.afl --auto-resolve --source-path ./libs
-#   scripts/publish --primary a.afl --library b.afl          # multi-source
-#   scripts/publish input.afl --config /path/to/config.json  # custom config
+#   scripts/publish input.ffl                                # compile + publish
+#   scripts/publish input.ffl --version 1.0.0                # with version tag
+#   scripts/publish input.ffl --auto-resolve --source-path ./libs
+#   scripts/publish --primary a.ffl --library b.ffl          # multi-source
+#   scripts/publish input.ffl --config /path/to/config.json  # custom config
 #
 # Options:
-#   --config FILE        Path to AFL config file
+#   --config FILE        Path to FFL config file
 #   --version TAG        Version tag (default: "latest")
 #   --auto-resolve       Automatically resolve missing namespace dependencies
 #   --source-path PATH   Additional directory to scan for sources (repeatable)
@@ -71,21 +71,21 @@ import time
 
 from pathlib import Path
 
-from afl.config import load_config
-from afl.emitter import JSONEmitter
-from afl.loader import SourceLoader
-from afl.parser import AFLParser
-from afl.publisher import SourcePublisher
-from afl.runtime.entities import (
+from facetwork.config import load_config
+from facetwork.emitter import JSONEmitter
+from facetwork.loader import SourceLoader
+from facetwork.parser import FFLParser
+from facetwork.publisher import SourcePublisher
+from facetwork.runtime.entities import (
     FlowDefinition,
     FlowIdentity,
     SourceText,
     WorkflowDefinition,
 )
-from afl.runtime.mongo_store import MongoStore
-from afl.runtime.types import generate_id
-from afl.source import CompilerInput, FileOrigin, SourceEntry
-from afl.validator import AFLValidator
+from facetwork.runtime.mongo_store import MongoStore
+from facetwork.runtime.types import generate_id
+from facetwork.source import CompilerInput, FileOrigin, SourceEntry
+from facetwork.validator import FFLValidator
 
 config_path = '${CONFIG_ARG}' or None
 config = load_config(config_path)
@@ -129,7 +129,7 @@ for fp in library_files:
         sys.exit(1)
 
 # Parse
-parser = AFLParser()
+parser = FFLParser()
 
 if auto_resolve:
     if source_paths:
@@ -140,7 +140,7 @@ else:
     ast, source_registry = parser.parse_sources(compiler_input)
 
 # Validate
-validator = AFLValidator()
+validator = FFLValidator()
 result = validator.validate(ast)
 if result.errors:
     for err in result.errors:
@@ -155,7 +155,7 @@ program_dict = json.loads(program_json)
 # Gather all AFL source texts for compiled_sources
 all_sources = []
 for entry in compiler_input.all_sources:
-    from afl.source import FileOrigin as FO
+    from facetwork.source import FileOrigin as FO
     name = entry.origin.path if isinstance(entry.origin, FO) else entry.source_id
     all_sources.append(SourceText(name=os.path.basename(name), content=entry.text))
 

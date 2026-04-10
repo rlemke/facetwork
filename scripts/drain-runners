@@ -53,7 +53,7 @@ import time
 
 dry_run = '$DRY_RUN' == 'true'
 
-from afl.config import load_config
+from facetwork.config import load_config
 
 try:
     from pymongo import MongoClient

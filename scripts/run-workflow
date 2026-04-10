@@ -55,11 +55,11 @@ exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -c "
 import json
 import sys
 
-from afl.config import load_config
-from afl.emitter import JSONEmitter
-from afl.parser import AFLParser
-from afl.runtime import Evaluator, Telemetry
-from afl.runtime.mongo_store import MongoStore
+from facetwork.config import load_config
+from facetwork.emitter import JSONEmitter
+from facetwork.parser import FFLParser
+from facetwork.runtime import Evaluator, Telemetry
+from facetwork.runtime.mongo_store import MongoStore
 
 config_path = '${CONFIG_ARG}' or None
 list_only = '${LIST_ONLY}' == 'true'
@@ -151,13 +151,13 @@ if not flow.compiled_sources:
     print('Error: no compiled sources in flow', file=sys.stderr)
     sys.exit(1)
 
-parser = AFLParser()
+parser = FFLParser()
 ast = parser.parse(flow.compiled_sources[0].content)
 emitter = JSONEmitter(include_locations=False)
 program_dict = json.loads(emitter.emit(ast))
 
 # Find matching workflow AST
-from afl.ast_utils import find_workflow
+from facetwork.ast_utils import find_workflow
 wf_ast = find_workflow(program_dict, wf.name)
 
 if not wf_ast:

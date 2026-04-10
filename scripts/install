@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap a local Python development environment for AgentFlow.
+# Bootstrap a local Python development environment for Facetwork.
 #
 # Creates a virtual environment, installs dependencies, and verifies the setup.
 #
@@ -25,7 +25,7 @@ usage() {
     cat <<'EOF'
 Usage: scripts/install [OPTIONS]
 
-Bootstrap a local Python development environment for AgentFlow.
+Bootstrap a local Python development environment for Facetwork.
 
 Options:
   --minimal    Install only core + test dependencies
@@ -55,7 +55,7 @@ done
 # ---------------------------------------------------------------------------
 # Phase 1: Check Python version
 # ---------------------------------------------------------------------------
-echo "=== AgentFlow Local Setup ==="
+echo "=== Facetwork Local Setup ==="
 echo ""
 
 # Find Python
@@ -128,7 +128,7 @@ echo ""
 echo "Verifying installation..."
 
 # Check CLI is available
-if "$VENV_PYTHON" -m afl.cli --help &>/dev/null; then
+if "$VENV_PYTHON" -m facetwork.cli --help &>/dev/null; then
     echo "  afl CLI:    OK"
 else
     echo "  afl CLI:    FAILED" >&2
@@ -182,8 +182,8 @@ echo ""
 echo "Run tests:"
 echo "  pytest tests/ examples/ -v"
 echo ""
-echo "Compile AFL files:"
-echo "  afl input.afl -o output.json"
+echo "Compile FFL files:"
+echo "  ffl input.ffl -o output.json"
 echo ""
 echo "Start the dashboard:"
 echo "  afl-dashboard"

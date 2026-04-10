@@ -197,16 +197,16 @@ fi
 # Clean phase (--clean): drop MongoDB and remove HDFS cache directories
 # ---------------------------------------------------------------------------
 if [ "$CLEAN" = true ]; then
-    echo "=== Cleaning AgentFlow data ==="
+    echo "=== Cleaning Facetwork data ==="
     echo ""
 
     # Drop MongoDB database (external server at afl-mongodb)
     if command -v mongosh &>/dev/null; then
-        echo "Dropping MongoDB 'afl' database..."
-        mongosh --host "${AFL_MONGODB_HOST:-afl-mongodb}" --port "${AFL_MONGODB_PORT:-27017}" --quiet --eval 'db.getSiblingDB("afl").dropDatabase()' 2>/dev/null \
+        echo "Dropping MongoDB 'facetwork' database..."
+        mongosh --host "${AFL_MONGODB_HOST:-afl-mongodb}" --port "${AFL_MONGODB_PORT:-27017}" --quiet --eval 'db.getSiblingDB("facetwork").dropDatabase()' 2>/dev/null \
             && echo "  MongoDB: done" \
             || echo "  MongoDB: not reachable at ${AFL_MONGODB_HOST:-afl-mongodb}:${AFL_MONGODB_PORT:-27017}, skipping"
-    elif docker exec afl-mongodb mongosh --quiet --eval 'db.getSiblingDB("afl").dropDatabase()' 2>/dev/null; then
+    elif docker exec afl-mongodb mongosh --quiet --eval 'db.getSiblingDB("facetwork").dropDatabase()' 2>/dev/null; then
         echo "  MongoDB: done (via docker exec)"
     else
         echo "  MongoDB: mongosh not available and afl-mongodb container not found, skipping"

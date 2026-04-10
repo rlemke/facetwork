@@ -57,7 +57,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "=== AgentFlow Local Pipeline ==="
+echo "=== Facetwork Local Pipeline ==="
 echo ""
 echo "  Instances:  $INSTANCES"
 echo "  Seed:       $SEED"

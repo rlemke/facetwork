@@ -51,8 +51,8 @@ import json
 runner_id = '$RUNNER_ID'
 dry_run = '$DRY_RUN' == 'true'
 
-from afl.config import load_config
-from afl.runtime.mongo_store import MongoStore
+from facetwork.config import load_config
+from facetwork.runtime.mongo_store import MongoStore
 
 config = load_config()
 store = MongoStore(config.mongodb.connection_string(), config.mongodb.database)

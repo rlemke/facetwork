@@ -54,7 +54,7 @@ env PYTHONPATH="$REPO_ROOT" "$PYTHON" -c "
 from pymongo import MongoClient
 import os
 url = os.environ.get('AFL_MONGODB_URL', 'mongodb://localhost:27017')
-db_name = os.environ.get('AFL_MONGODB_DATABASE', 'afl')
+db_name = os.environ.get('AFL_MONGODB_DATABASE', 'facetwork')
 c = MongoClient(url, serverSelectionTimeoutMS=3000)
 db = c[db_name]
 total = 0

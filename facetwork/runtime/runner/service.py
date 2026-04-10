@@ -657,22 +657,22 @@ class RunnerService:
         if self._config.topics:
             return list(self._config.topics)
         # Return handler names that are not built-in task handlers
-        return [name for name in self._tool_registry._handlers.keys() if not name.startswith("afl:")]
+        return [name for name in self._tool_registry._handlers.keys() if not name.startswith("fw:")]
 
     def _get_builtin_task_names(self) -> list[str]:
-        """Get task name prefixes for built-in handlers (e.g. afl:execute).
+        """Get task name prefixes for built-in handlers (e.g. fw:execute).
 
         These are claimed via ``claim_task()`` separately from event tasks
         so that topic filtering does not interfere.  Only returns names
-        that start with ``afl:`` (protocol tasks), not event handler names.
+        that start with ``fw:`` (protocol tasks), not event handler names.
 
-        Task names may include a workflow suffix (e.g. ``afl:execute:MyWorkflow``),
+        Task names may include a workflow suffix (e.g. ``fw:execute:MyWorkflow``),
         so claim_task uses regex prefix matching.
         """
         return [
             name
             for name in self._tool_registry._handlers.keys()
-            if name.startswith("afl:") and name != RESUME_TASK_NAME
+            if name.startswith("fw:") and name != RESUME_TASK_NAME
         ]
 
     # =========================================================================
@@ -841,7 +841,7 @@ class RunnerService:
             # Dispatch to handler (try exact name, then prefix for builtin
             # tasks like "fw:execute:WorkflowName", then short name)
             result = self._tool_registry.handle(task.name, payload)
-            if result is None and task.name.startswith("afl:"):
+            if result is None and task.name.startswith("fw:"):
                 # Try base name without workflow suffix (e.g. "fw:execute")
                 base_name = ":".join(task.name.split(":")[:2])
                 result = self._tool_registry.handle(base_name, payload)

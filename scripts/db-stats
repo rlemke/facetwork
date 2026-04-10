@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Display AgentFlow database statistics.
+# Display Facetwork database statistics.
 #
 # Shows document counts and state breakdowns for all collections:
 # runners, steps, events, flows, workflows, tasks, logs, servers, locks.
@@ -41,7 +41,7 @@ import sys
 config_path = '${CONFIG_ARG}' or None
 json_output = '${JSON_OUTPUT}' == 'true'
 
-from afl.config import load_config
+from facetwork.config import load_config
 
 config = load_config(config_path)
 
@@ -99,7 +99,7 @@ client.close()
 if json_output:
     print(json.dumps(stats, indent=2))
 else:
-    print(f'AgentFlow Database: {config.mongodb.database}')
+    print(f'Facetwork Database: {config.mongodb.database}')
     print(f'Server: {config.mongodb.url}')
     print('=' * 60)
     print()

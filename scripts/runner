@@ -34,4 +34,4 @@ source "$(dirname "$0")/_env.sh"
 PYTHON="${REPO_ROOT}/.venv/bin/python3"
 [[ -x "$PYTHON" ]] || PYTHON=python3
 
-exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m afl.runtime.runner "$@"
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.runtime.runner "$@"
