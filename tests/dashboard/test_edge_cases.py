@@ -439,7 +439,7 @@ class TestServerEdgeCases:
             ServerDefinition(
                 uuid="s-1",
                 server_group="workers",
-                service_name="afl",
+                service_name="facetwork",
                 server_name="worker-01",
                 state=ServerState.RUNNING,
             )
@@ -448,7 +448,7 @@ class TestServerEdgeCases:
             ServerDefinition(
                 uuid="s-2",
                 server_group="managers",
-                service_name="afl",
+                service_name="facetwork",
                 server_name="manager-01",
                 state=ServerState.RUNNING,
             )
@@ -465,7 +465,7 @@ class TestServerEdgeCases:
         server = ServerDefinition(
             uuid="s-3",
             server_group="workers",
-            service_name="afl",
+            service_name="facetwork",
             server_name="worker-02",
             state=ServerState.RUNNING,
             handlers=["osm.CacheLookup", "osm.ReverseGeocode"],
@@ -482,7 +482,7 @@ class TestServerEdgeCases:
         server = ServerDefinition(
             uuid="s-4",
             server_group="workers",
-            service_name="afl",
+            service_name="facetwork",
             server_name="worker-03",
             state=ServerState.SHUTDOWN,
         )
@@ -498,7 +498,7 @@ class TestServerEdgeCases:
         server = ServerDefinition(
             uuid="s-5",
             server_group="default",
-            service_name="afl",
+            service_name="facetwork",
             server_name="minimal-server",
             state=ServerState.STARTUP,
         )

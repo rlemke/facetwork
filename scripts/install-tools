@@ -99,16 +99,34 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 VENV_DIR="$PROJECT_DIR/.venv"
 
+# Prefer python3.12 (pyosmium and other deps lack wheels for 3.14+)
+PYTHON_BIN=""
+for candidate in python3.12 python3.13 python3.11 python3; do
+    if command -v "$candidate" &>/dev/null; then
+        PYTHON_BIN="$(command -v "$candidate")"
+        break
+    fi
+done
+# Also check Homebrew paths directly
+if [[ -z "$PYTHON_BIN" || "$("$PYTHON_BIN" -c 'import sys; print(sys.version_info[:2])')" == "(3, 14)" ]]; then
+    for bp in /usr/local/opt/python@3.12/bin/python3.12 /opt/homebrew/opt/python@3.12/bin/python3.12; do
+        if [[ -x "$bp" ]]; then
+            PYTHON_BIN="$bp"
+            break
+        fi
+    done
+fi
+
 if [[ ! -d "$VENV_DIR" ]]; then
-    info "Creating Python virtual environment at .venv"
-    python3 -m venv "$VENV_DIR"
+    info "Creating Python virtual environment at .venv (using $PYTHON_BIN)"
+    "$PYTHON_BIN" -m venv "$VENV_DIR"
 else
     ok "Virtual environment already exists at .venv"
 fi
 
 info "Installing Facetwork Python package into .venv"
 "$VENV_DIR/bin/python" -m pip install --upgrade pip
-"$VENV_DIR/bin/python" -m pip install -e "$PROJECT_DIR[dev,test,dashboard,mcp,mongodb]"
+"$VENV_DIR/bin/python" -m pip install -e "$PROJECT_DIR[dev,test,dashboard,mcp,mongodb]" osmium psycopg2-binary
 
 # --- Verify -----------------------------------------------------------------
 

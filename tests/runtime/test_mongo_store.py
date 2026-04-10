@@ -895,14 +895,14 @@ class TestServerOperations:
         server1 = ServerDefinition(
             uuid="s-1",
             server_group="workers",
-            service_name="afl",
+            service_name="facetwork",
             server_name="w-1",
             state=ServerState.RUNNING,
         )
         server2 = ServerDefinition(
             uuid="s-2",
             server_group="workers",
-            service_name="afl",
+            service_name="facetwork",
             server_name="w-2",
             state=ServerState.SHUTDOWN,
         )

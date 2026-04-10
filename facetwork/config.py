@@ -36,7 +36,7 @@ class MongoDBConfig:
         username: Authentication username
         password: Authentication password
         auth_source: Authentication database name
-        database: Target database name (e.g. "afl", "afl_test", "afl_dev_alice")
+        database: Target database name (e.g. "facetwork", "facetwork_test")
     """
 
     url: str = "mongodb://afl-mongodb:27017"

@@ -48,7 +48,7 @@ def _examples_db(store):
     """Return the examples database from the mongomock client."""
     import os
 
-    db_name = os.environ.get("AFL_EXAMPLES_DATABASE", "afl_examples")
+    db_name = os.environ.get("AFL_EXAMPLES_DATABASE", "facetwork_examples")
     return store._db.client[db_name]
 
 

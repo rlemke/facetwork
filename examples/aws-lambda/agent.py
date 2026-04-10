@@ -10,7 +10,7 @@ Usage:
 
 For Docker/MongoDB mode, set environment variables:
     AFL_MONGODB_URL=mongodb://localhost:27017
-    AFL_MONGODB_DATABASE=afl
+    AFL_MONGODB_DATABASE=facetwork
 
 For RegistryRunner mode:
     AFL_USE_REGISTRY=1

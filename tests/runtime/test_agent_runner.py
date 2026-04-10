@@ -56,7 +56,7 @@ class TestMakeStore:
             _store = make_store()
             MockMongoStore.assert_called_once_with(
                 connection_string="mongodb://testhost:27017",
-                database_name="afl",
+                database_name="facetwork",
             )
 
     def test_make_store_mongodb_custom_database(self, monkeypatch):

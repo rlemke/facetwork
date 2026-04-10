@@ -64,7 +64,7 @@ class BaseMixin:
     def __init__(
         self,
         connection_string: str = "",
-        database_name: str = "afl",
+        database_name: str = "facetwork",
         create_indexes: bool = True,
         client: Any = None,
     ):
@@ -72,7 +72,7 @@ class BaseMixin:
 
         Args:
             connection_string: MongoDB connection string
-            database_name: Database name (default: "afl")
+            database_name: Database name (default: "facetwork")
             create_indexes: Whether to create indexes on initialization
             client: Optional pre-built MongoClient (e.g. mongomock.MongoClient for testing)
         """

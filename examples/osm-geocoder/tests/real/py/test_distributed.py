@@ -29,7 +29,7 @@ from helpers import (
 
 # MongoDB server (external, defined in /etc/hosts)
 DOCKER_MONGODB_URL = "mongodb://afl-mongodb:27017"
-DOCKER_DATABASE = "afl"
+DOCKER_DATABASE = "facetwork"
 
 
 @pytest.fixture

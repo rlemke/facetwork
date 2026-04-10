@@ -44,7 +44,7 @@ class MongoStore(
     transactions, and serialization.
 
     Usage:
-        store = MongoStore("mongodb://afl-mongodb:27017", "afl")
+        store = MongoStore("mongodb://afl-mongodb:27017", "facetwork")
         store.get_step(step_id)
 
         # Or create from an FFLConfig / MongoDBConfig:

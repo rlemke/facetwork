@@ -40,7 +40,7 @@ def make_store(database: str = "") -> PersistenceAPI:
 
     Args:
         database: MongoDB database name.  When empty, reads
-            ``AFL_MONGODB_DATABASE`` (default ``"afl"``).
+            ``AFL_MONGODB_DATABASE`` (default ``"facetwork"``).
     """
     mongodb_url = os.environ.get("AFL_MONGODB_URL")
     db_name = database or os.environ.get("AFL_MONGODB_DATABASE", "facetwork")

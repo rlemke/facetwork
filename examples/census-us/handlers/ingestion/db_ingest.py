@@ -24,7 +24,7 @@ def get_mongo_db() -> Database:
     example data is isolated from the FFL runtime database.
     """
     url = os.environ.get("AFL_MONGODB_URL", "mongodb://afl-mongodb:27017")
-    db_name = os.environ.get("AFL_EXAMPLES_DATABASE", "afl_examples")
+    db_name = os.environ.get("AFL_EXAMPLES_DATABASE", "facetwork_examples")
     return MongoClient(url)[db_name]
 
 

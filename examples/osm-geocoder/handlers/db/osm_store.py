@@ -6,8 +6,8 @@ with a compound unique key ``(dataset_key, feature_key)`` to allow
 idempotent re-imports.
 
 Collection: ``osm_features`` in the ``AFL_EXAMPLES_DATABASE`` database
-(default ``afl_examples``), keeping OSM data isolated from the AFL
-runtime database.
+(default ``facetwork_examples``), keeping OSM data isolated from the
+Facetwork runtime database.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ BATCH_SIZE = 1000
 def get_mongo_db() -> Database:
     """Connect to MongoDB for OSM feature storage."""
     url = os.environ.get("AFL_MONGODB_URL", "mongodb://afl-mongodb:27017")
-    db_name = os.environ.get("AFL_EXAMPLES_DATABASE", "afl_examples")
+    db_name = os.environ.get("AFL_EXAMPLES_DATABASE", "facetwork_examples")
     return MongoClient(url)[db_name]
 
 

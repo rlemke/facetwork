@@ -741,7 +741,7 @@ def get_weather_db(db: Any = None) -> Any:
         raise RuntimeError(
             "AFL_MONGODB_URL is not set — cannot connect to MongoDB for weather reports"
         )
-    db_name = os.environ.get("AFL_EXAMPLES_DATABASE", "afl_examples")
+    db_name = os.environ.get("AFL_EXAMPLES_DATABASE", "facetwork_examples")
     return MongoClient(url)[db_name]
 
 

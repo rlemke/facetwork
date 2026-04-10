@@ -25,7 +25,7 @@ fi
 # Only runs the check if a Python interpreter is available.
 _PYTHON="${_ENV_PROJECT_DIR}/.venv/bin/python3"
 [[ -x "$_PYTHON" ]] || _PYTHON=python3
-if command -v "$_PYTHON" &>/dev/null 2>&1; then
+if command -v "$_PYTHON" &>/dev/null 2>&1 && "$_PYTHON" -c "import pymongo" 2>/dev/null; then
     _mongo_ok() {
         "$_PYTHON" -c "
 from pymongo import MongoClient; import sys, os

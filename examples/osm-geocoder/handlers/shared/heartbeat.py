@@ -119,7 +119,7 @@ def json_load_with_heartbeat(
 
         # Start heartbeat subprocess that stays alive during copy AND parse
         mongo_uri = ""
-        db_name = "afl"
+        db_name = "facetwork"
         hb_proc = None
         if task_uuid:
             try:

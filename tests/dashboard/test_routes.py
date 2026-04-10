@@ -581,7 +581,7 @@ class TestServerRoutes:
         server = ServerDefinition(
             uuid="s-1",
             server_group="workers",
-            service_name="afl",
+            service_name="facetwork",
             server_name="worker-01",
             state=ServerState.RUNNING,
         )
@@ -598,7 +598,7 @@ class TestServerRoutes:
         server = ServerDefinition(
             uuid="s-1",
             server_group="workers",
-            service_name="afl",
+            service_name="facetwork",
             server_name="worker-01",
             state=ServerState.RUNNING,
         )
@@ -615,7 +615,7 @@ class TestServerRoutes:
         server = ServerDefinition(
             uuid="s-1",
             server_group="workers",
-            service_name="afl",
+            service_name="facetwork",
             server_name="worker-01",
             state=ServerState.RUNNING,
             topics=["osm.*"],
@@ -642,7 +642,7 @@ class TestServerRoutes:
         server = ServerDefinition(
             uuid="s-1",
             server_group="workers",
-            service_name="afl",
+            service_name="facetwork",
             server_name="worker-01",
             state=ServerState.RUNNING,
             handled=[HandledCount(handler="osm.CacheLookup", handled=10, not_handled=2)],
@@ -660,7 +660,7 @@ class TestServerRoutes:
         server = ServerDefinition(
             uuid="s-1",
             server_group="workers",
-            service_name="afl",
+            service_name="facetwork",
             server_name="worker-01",
             state=ServerState.ERROR,
             error={"message": "Connection timeout"},
@@ -678,7 +678,7 @@ class TestServerRoutes:
         server = ServerDefinition(
             uuid="s-1",
             server_group="workers",
-            service_name="afl",
+            service_name="facetwork",
             server_name="worker-01",
             state=ServerState.RUNNING,
         )
@@ -1418,7 +1418,7 @@ class TestListFiltering:
         server = ServerDefinition(
             uuid="s-1",
             server_group="workers",
-            service_name="afl",
+            service_name="facetwork",
             server_name="worker-01",
             state=ServerState.RUNNING,
         )
@@ -1558,7 +1558,7 @@ class TestApiExpansion:
             ServerDefinition(
                 uuid="s-1",
                 server_group="workers",
-                service_name="afl",
+                service_name="facetwork",
                 server_name="worker-01",
                 state=ServerState.RUNNING,
             )
@@ -1567,7 +1567,7 @@ class TestApiExpansion:
             ServerDefinition(
                 uuid="s-2",
                 server_group="workers",
-                service_name="afl",
+                service_name="facetwork",
                 server_name="worker-02",
                 state=ServerState.ERROR,
             )

@@ -37,7 +37,7 @@ class TestMongoDBConfig:
         assert cfg.username == ""
         assert cfg.password == ""
         assert cfg.auth_source == "admin"
-        assert cfg.database == "afl"
+        assert cfg.database == "facetwork"
 
     def test_connection_string(self):
         cfg = MongoDBConfig()
@@ -51,7 +51,7 @@ class TestMongoDBConfig:
             "username": "",
             "password": "",
             "auth_source": "admin",
-            "database": "afl",
+            "database": "facetwork",
         }
 
     def test_from_dict(self):
@@ -81,7 +81,7 @@ class TestMongoDBConfig:
 
     def test_from_dict_database_defaults(self):
         cfg = MongoDBConfig.from_dict({"username": "x"})
-        assert cfg.database == "afl"
+        assert cfg.database == "facetwork"
 
     def test_from_env(self, monkeypatch):
         monkeypatch.setenv("AFL_MONGODB_URL", "mongodb://envhost:9999")
@@ -104,7 +104,7 @@ class TestMongoDBConfig:
         monkeypatch.delenv("AFL_MONGODB_DATABASE", raising=False)
         cfg = MongoDBConfig.from_env()
         assert cfg.url == MongoDBConfig.url
-        assert cfg.database == "afl"
+        assert cfg.database == "facetwork"
 
 
 class TestFFLConfig:
