@@ -32,7 +32,11 @@
                 <br><small class="secondary">{{ si['name'] if si else '—' }}</small>
             </td>
             <td>
-                {{ (task.updated - task.created)|duration }}
+                {% if task.state == 'running' %}
+                    {{ (now_ms() - task.created)|duration }}
+                {% else %}
+                    {{ (task.updated - task.created)|duration }}
+                {% endif %}
                 {% set si = server_info.get(task.server_id or '') %}
                 <br><small class="secondary">{{ si['ping_time']|time_ago if si else '—' }}</small>
             </td>

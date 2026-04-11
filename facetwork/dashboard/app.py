@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -107,6 +108,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
     # Templates
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     register_filters(templates.env)
+    templates.env.globals["now_ms"] = lambda: int(time.time() * 1000)
     app.state.templates = templates
 
     # Register routes

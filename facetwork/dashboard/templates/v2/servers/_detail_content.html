@@ -104,7 +104,11 @@
                 <td>{{ task.created|timestamp }}</td>
                 <td>
                     {% if task.updated and task.created %}
-                    {{ (task.updated - task.created)|duration }}
+                        {% if task.state == 'running' %}
+                        {{ (now_ms() - task.created)|duration }}
+                        {% else %}
+                        {{ (task.updated - task.created)|duration }}
+                        {% endif %}
                     {% endif %}
                 </td>
                 <td>
