@@ -61,13 +61,13 @@ def _current_time_ms() -> int:
     return int(time.time() * 1000)
 
 
-def _reaper_message(task_info: dict[str, str]) -> str:
+def _reaper_message(task_info: dict[str, str], reclaimer_name: str = "") -> str:
     """Build a descriptive reaper step log message with timing diagnostics."""
     now = _current_time_ms()
     server_id = task_info.get("server_id", "")
     name = task_info.get("name", "unknown")
 
-    parts = [f"Task restarted: {name} — previous server ({server_id[:8]}...) stopped responding"]
+    parts = [f"Task reclaimed: {name} — previous server ({server_id[:8]}) stopped responding"]
 
     last_ping = int(task_info.get("last_ping_ms", "0"))
     if last_ping > 0:
@@ -79,11 +79,14 @@ def _reaper_message(task_info: dict[str, str]) -> str:
         running_s = (now - task_started) / 1000
         parts.append(f"task was running for {running_s:.0f}s")
 
+    if reclaimer_name:
+        parts.append(f"reclaimed by {reclaimer_name}")
+
     parts.append("resetting to pending")
     return ", ".join(parts)
 
 
-def _stuck_message(task_info: dict[str, str]) -> str:
+def _stuck_message(task_info: dict[str, str], reclaimer_name: str = "") -> str:
     """Build a descriptive stuck-task watchdog log message."""
     now = _current_time_ms()
     name = task_info.get("name", "unknown")
@@ -91,14 +94,17 @@ def _stuck_message(task_info: dict[str, str]) -> str:
     timeout_ms = int(task_info.get("timeout_ms", "0"))
 
     if reason == "timeout":
-        parts = [f"Task restarted: {name} — explicit timeout ({timeout_ms / 1000:.0f}s) exceeded"]
+        parts = [f"Task reclaimed: {name} — explicit timeout ({timeout_ms / 1000:.0f}s) exceeded"]
     else:
-        parts = [f"Task restarted: {name} — no progress for {timeout_ms / 3_600_000:.1f}h"]
+        parts = [f"Task reclaimed: {name} — no progress for {timeout_ms / 3_600_000:.1f}h"]
 
     task_started = int(task_info.get("task_started_ms", "0"))
     if task_started > 0:
         running_s = (now - task_started) / 1000
         parts.append(f"task was running for {running_s:.0f}s")
+
+    if reclaimer_name:
+        parts.append(f"reclaimed by {reclaimer_name}")
 
     parts.append("resetting to pending")
     return ", ".join(parts)
@@ -543,11 +549,40 @@ class RunnerService:
                     task.retry_count,
                     label,
                 )
+                log_msg = (
+                    f"Task dead-lettered: {task.name} — timed out {task.retry_count} times "
+                    f"(limit {task.max_retries}), "
+                    f"server={self._config.server_name} (id={self._server_id[:8]})"
+                )
+                log_level = StepLogLevel.ERROR
             else:
                 task.state = TaskState.PENDING
                 task.server_id = ""
                 task.error = None
+                elapsed_s = (task.updated - (task.task_heartbeat or task.updated)) / 1000
+                log_msg = (
+                    f"Task timed out: {task.name} — execution timeout "
+                    f"({self._execution_timeout_ms / 1000:.0f}s) exceeded, "
+                    f"resetting to pending (retry {task.retry_count}/{task.max_retries}), "
+                    f"server={self._config.server_name} (id={self._server_id[:8]})"
+                )
+                log_level = StepLogLevel.WARNING
             self._safe_save_task(task)
+            try:
+                entry = StepLogEntry(
+                    uuid=generate_id(),
+                    step_id=task.step_id,
+                    workflow_id=task.workflow_id,
+                    runner_id=self._server_id,
+                    facet_name=task.name,
+                    source=StepLogSource.FRAMEWORK,
+                    level=log_level,
+                    message=log_msg,
+                    time=_current_time_ms(),
+                )
+                self._persistence.save_step_log(entry)
+            except Exception:
+                logger.debug("Could not save timeout step log for step %s", task.step_id, exc_info=True)
         except Exception:
             logger.debug("Could not release timed-out task %s", task_id, exc_info=True)
 
@@ -793,6 +828,26 @@ class RunnerService:
         """
         try:
             payload = dict(task.data or {})
+
+            # Log task claimed with server identity
+            try:
+                entry = StepLogEntry(
+                    uuid=generate_id(),
+                    step_id=task.step_id,
+                    workflow_id=task.workflow_id,
+                    runner_id=self._server_id,
+                    facet_name=task.name,
+                    source=StepLogSource.FRAMEWORK,
+                    level=StepLogLevel.INFO,
+                    message=(
+                        f"Task claimed: {task.name} "
+                        f"(server={self._config.server_name}, id={self._server_id[:8]})"
+                    ),
+                    time=_current_time_ms(),
+                )
+                self._persistence.save_step_log(entry)
+            except Exception:
+                logger.debug("Could not save claim step log for step %s", task.step_id, exc_info=True)
 
             # Inject _step_log callback for handler-level progress logging
             def _step_log_callback(message, level=StepLogLevel.INFO, details=None):
@@ -1385,7 +1440,7 @@ class RunnerService:
                         facet_name=task_info["name"],
                         source=StepLogSource.FRAMEWORK,
                         level=StepLogLevel.WARNING,
-                        message=_reaper_message(task_info),
+                        message=_reaper_message(task_info, reclaimer_name=self._config.server_name),
                         time=_current_time_ms(),
                     )
                     try:
@@ -1417,7 +1472,7 @@ class RunnerService:
                         facet_name=task_info["name"],
                         source=StepLogSource.FRAMEWORK,
                         level=StepLogLevel.WARNING,
-                        message=_stuck_message(task_info),
+                        message=_stuck_message(task_info, reclaimer_name=self._config.server_name),
                         time=_current_time_ms(),
                     )
                     try:

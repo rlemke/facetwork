@@ -88,13 +88,13 @@ def _current_time_ms() -> int:
     return int(time.time() * 1000)
 
 
-def _reaper_message(task_info: dict[str, str]) -> str:
+def _reaper_message(task_info: dict[str, str], reclaimer_name: str = "") -> str:
     """Build a descriptive reaper step log message with timing diagnostics."""
     now = _current_time_ms()
     server_id = task_info.get("server_id", "")
     name = task_info.get("name", "unknown")
 
-    parts = [f"Task restarted: {name} — previous server ({server_id[:8]}...) stopped responding"]
+    parts = [f"Task reclaimed: {name} — previous server ({server_id[:8]}) stopped responding"]
 
     last_ping = int(task_info.get("last_ping_ms", "0"))
     if last_ping > 0:
@@ -106,11 +106,14 @@ def _reaper_message(task_info: dict[str, str]) -> str:
         running_s = (now - task_started) / 1000
         parts.append(f"task was running for {running_s:.0f}s")
 
+    if reclaimer_name:
+        parts.append(f"reclaimed by {reclaimer_name}")
+
     parts.append("resetting to pending")
     return ", ".join(parts)
 
 
-def _stuck_message(task_info: dict[str, str]) -> str:
+def _stuck_message(task_info: dict[str, str], reclaimer_name: str = "") -> str:
     """Build a descriptive stuck-task watchdog log message."""
     now = _current_time_ms()
     name = task_info.get("name", "unknown")
@@ -118,14 +121,17 @@ def _stuck_message(task_info: dict[str, str]) -> str:
     timeout_ms = int(task_info.get("timeout_ms", "0"))
 
     if reason == "timeout":
-        parts = [f"Task restarted: {name} — explicit timeout ({timeout_ms / 1000:.0f}s) exceeded"]
+        parts = [f"Task reclaimed: {name} — explicit timeout ({timeout_ms / 1000:.0f}s) exceeded"]
     else:
-        parts = [f"Task restarted: {name} — no progress for {timeout_ms / 3_600_000:.1f}h"]
+        parts = [f"Task reclaimed: {name} — no progress for {timeout_ms / 3_600_000:.1f}h"]
 
     task_started = int(task_info.get("task_started_ms", "0"))
     if task_started > 0:
         running_s = (now - task_started) / 1000
         parts.append(f"task was running for {running_s:.0f}s")
+
+    if reclaimer_name:
+        parts.append(f"reclaimed by {reclaimer_name}")
 
     parts.append("resetting to pending")
     return ", ".join(parts)
@@ -564,7 +570,7 @@ class AgentPoller:
                     self._emit_step_log(
                         step_id=task_info["step_id"],
                         workflow_id=task_info["workflow_id"],
-                        message=_reaper_message(task_info),
+                        message=_reaper_message(task_info, reclaimer_name=self._config.server_name),
                         level=StepLogLevel.WARNING,
                         facet_name=task_info["name"],
                     )
@@ -584,7 +590,7 @@ class AgentPoller:
                     self._emit_step_log(
                         step_id=task_info["step_id"],
                         workflow_id=task_info["workflow_id"],
-                        message=_stuck_message(task_info),
+                        message=_stuck_message(task_info, reclaimer_name=self._config.server_name),
                         level=StepLogLevel.WARNING,
                         facet_name=task_info["name"],
                     )
@@ -711,7 +717,10 @@ class AgentPoller:
             self._emit_step_log(
                 step_id=task.step_id,
                 workflow_id=task.workflow_id,
-                message=f"Task claimed: {task.name}",
+                message=(
+                    f"Task claimed: {task.name} "
+                    f"(server={self._config.server_name}, id={self._server_id[:8]})"
+                ),
                 facet_name=task.name,
             )
 

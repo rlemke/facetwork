@@ -793,7 +793,10 @@ class RegistryRunner:
             self._emit_step_log(
                 step_id=task.step_id,
                 workflow_id=task.workflow_id,
-                message=f"Task claimed: {task.name}",
+                message=(
+                    f"Task claimed: {task.name} "
+                    f"(server={self._config.server_name}, id={self._server_id[:8]})"
+                ),
                 facet_name=task.name,
             )
 

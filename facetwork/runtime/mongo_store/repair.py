@@ -17,8 +17,41 @@
 from .base import _current_time_ms
 
 
+def _generate_id() -> str:
+    import uuid as _uuid
+
+    return str(_uuid.uuid4())
+
+
 class RepairMixin:
     """Workflow repair operations."""
+
+    def _repair_log(
+        self,
+        step_id: str,
+        workflow_id: str,
+        message: str,
+        level: str = "warning",
+        facet_name: str = "",
+    ) -> None:
+        """Emit a step log entry for a repair action."""
+        from ..entities.logging import StepLogEntry, StepLogSource
+
+        entry = StepLogEntry(
+            uuid=_generate_id(),
+            step_id=step_id,
+            workflow_id=workflow_id,
+            runner_id="",
+            facet_name=facet_name,
+            source=StepLogSource.FRAMEWORK,
+            level=level,
+            message=message,
+            time=_current_time_ms(),
+        )
+        try:
+            self.save_step_log(entry)
+        except Exception:
+            pass  # best-effort — don't let log failures break repair
 
     def repair_workflow(self, runner_id: str, dry_run: bool = False) -> dict:
         """Diagnose and repair a stuck workflow.
@@ -111,6 +144,13 @@ class RepairMixin:
                             "updated": now,
                         }},
                     )
+                    reason = "no server claimed it" if not t.server_id else f"server {t.server_id[:8]} is dead/shutdown"
+                    self._repair_log(
+                        step_id=t.step_id,
+                        workflow_id=workflow_id,
+                        message=f"Repair: task reclaimed — {t.name}, {reason}, resetting to pending",
+                        facet_name=t.name,
+                    )
 
         # -- 3. Retry transient step errors --
         transient_patterns = [
@@ -140,6 +180,16 @@ class RepairMixin:
                     step.transition.request_transition = False
                     step.transition.changed = True
                 self.save_step(step)
+
+                self._repair_log(
+                    step_id=step.id,
+                    workflow_id=workflow_id,
+                    message=(
+                        f"Repair: transient error retried — {step.facet_name or 'unknown'}, "
+                        f"error: {error_str[:100]}"
+                    ),
+                    facet_name=step.facet_name or "",
+                )
 
                 # Reset associated failed task
                 task_doc = self._db.tasks.find_one(
@@ -205,6 +255,7 @@ class RepairMixin:
                 "error": (t.error or "")[:120] if isinstance(t.error, str) else str(t.error)[:120],
             })
             if not dry_run:
+                error_snippet = (t.error or "")[:100] if isinstance(t.error, str) else str(t.error)[:100]
                 self._db.tasks.update_one(
                     {"uuid": t.uuid},
                     {"$set": {
@@ -215,6 +266,15 @@ class RepairMixin:
                         "task_heartbeat": 0,
                         "updated": now,
                     }},
+                )
+                self._repair_log(
+                    step_id=t.step_id,
+                    workflow_id=workflow_id,
+                    message=(
+                        f"Repair: dead-letter task re-enqueued — {t.name}, "
+                        f"previous error: {error_snippet}"
+                    ),
+                    facet_name=t.name,
                 )
                 # Reset the associated errored step
                 step = step_by_id.get(t.step_id) or self.get_step(t.step_id)
@@ -275,6 +335,15 @@ class RepairMixin:
                         step.transition.request_transition = False
                         step.transition.changed = True
                     self.save_step(step)
+                    self._repair_log(
+                        step_id=step.id,
+                        workflow_id=workflow_id,
+                        message=(
+                            f"Repair: inconsistent step reset — {step.facet_name or 'unknown'} "
+                            f"was marked complete but has failed tasks, resetting to EventTransmit"
+                        ),
+                        facet_name=step.facet_name or "",
+                    )
                     # Reset the failed task to pending
                     for t in step_tasks:
                         if t.state == TaskState.FAILED:
