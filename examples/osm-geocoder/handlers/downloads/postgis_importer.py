@@ -14,10 +14,12 @@ Performance optimizations:
 - DELETE+INSERT instead of UPSERT for force-reimport (avoids index lookups)
 """
 
+import io
 import json
 import logging
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -46,6 +48,7 @@ except ImportError:
     psycopg2 = None
 
 DEFAULT_POSTGIS_URL = "postgresql://afl_osm:afl_osm_2024@afl-postgres:5432/osm"
+DEFAULT_IMPORT_POSTGIS_URL = ""  # set via AFL_IMPORT_POSTGIS_URL for local-first import
 DEFAULT_BATCH_SIZE = 50000
 
 # DDL statements
@@ -415,6 +418,18 @@ class ImportResult:
 def get_postgis_url() -> str:
     """Get PostGIS connection URL from environment or default."""
     return os.environ.get("AFL_POSTGIS_URL", DEFAULT_POSTGIS_URL)
+
+
+def get_import_postgis_url() -> str:
+    """Get local import PostGIS URL from environment.
+
+    When set, the importer writes to this local instance first (fast,
+    disposable, tuned for bulk writes) then transfers the finished data
+    to the main server in a single bulk operation.
+
+    Returns empty string when local-first import is not configured.
+    """
+    return os.environ.get("AFL_IMPORT_POSTGIS_URL", DEFAULT_IMPORT_POSTGIS_URL)
 
 
 def sanitize_url(url: str) -> str:
@@ -856,9 +871,199 @@ class WayCollector(osmium.SimpleHandler if HAS_OSMIUM else object):
         return self.total_count
 
 
+# ---------------------------------------------------------------------------
+# Local-first import: transfer from local PG to main PG
+# ---------------------------------------------------------------------------
+
+_TRANSFER_COPY_FORMAT = "FORMAT binary"
+
+
+def _transfer_table(
+    local_conn,
+    remote_conn,
+    source_table: str,
+    target_table: str,
+    region: str,
+    use_upsert: bool,
+    label: str = "",
+    step_log=None,
+    task_heartbeat=None,
+) -> int:
+    """Transfer rows from a table on the local PG to the main PG.
+
+    Uses COPY TO STDOUT on the local side piped into a staging table on the
+    remote side, then merges with the existing _batched_merge logic.
+
+    Returns the number of rows transferred.
+    """
+    staging_tbl = _staging_table_name(label, region)
+
+    # Create staging table on remote
+    with remote_conn.cursor() as cur:
+        cur.execute(f"DROP TABLE IF EXISTS {staging_tbl}")
+        if "nodes" in label:
+            cur.execute(f"""
+                CREATE UNLOGGED TABLE {staging_tbl} (
+                    osm_id BIGINT NOT NULL,
+                    region TEXT NOT NULL DEFAULT '',
+                    tags JSONB,
+                    geom geometry(Point, 4326)
+                )
+            """)
+        else:
+            cur.execute(f"""
+                CREATE UNLOGGED TABLE {staging_tbl} (
+                    osm_id BIGINT NOT NULL,
+                    region TEXT NOT NULL DEFAULT '',
+                    tags JSONB,
+                    geom geometry(LineString, 4326)
+                )
+            """)
+    remote_conn.commit()
+
+    # Pipe COPY TO → COPY FROM between the two connections
+    if step_log:
+        step_log(f"Transferring {label} from local PG to main PG ...")
+
+    transfer_t0 = time.monotonic()
+
+    with local_conn.cursor() as local_cur:
+        copy_out_sql = (
+            f"COPY (SELECT osm_id, region, tags, geom FROM {source_table} "
+            f"WHERE region = %s) TO STDOUT WITH ({_TRANSFER_COPY_FORMAT})"
+            if region else
+            f"COPY {source_table} (osm_id, region, tags, geom) "
+            f"TO STDOUT WITH ({_TRANSFER_COPY_FORMAT})"
+        )
+        copy_in_sql = (
+            f"COPY {staging_tbl} (osm_id, region, tags, geom) "
+            f"FROM STDIN WITH ({_TRANSFER_COPY_FORMAT})"
+        )
+
+        # Use psycopg2's copy_expert for streaming between connections.
+        # copy_expert with a file-like object bridges the two COPY streams.
+        with remote_conn.cursor() as remote_cur:
+            # Create a pipe: local COPY TO writes → remote COPY FROM reads
+            read_fd, write_fd = os.pipe()
+            read_file = io.FileIO(read_fd, "rb")
+            write_file = io.FileIO(write_fd, "wb")
+
+            errors: list[Exception] = []
+
+            def _copy_from_thread():
+                try:
+                    remote_cur.copy_expert(copy_in_sql, read_file)
+                    remote_conn.commit()
+                except Exception as e:
+                    errors.append(e)
+                finally:
+                    read_file.close()
+
+            reader_thread = threading.Thread(target=_copy_from_thread, daemon=True)
+            reader_thread.start()
+
+            try:
+                if region:
+                    # For parameterized queries, use a subquery via copy_expert
+                    safe_region = region.replace("'", "''")
+                    copy_out_sql = (
+                        f"COPY (SELECT osm_id, region, tags, geom FROM {source_table} "
+                        f"WHERE region = '{safe_region}') TO STDOUT WITH ({_TRANSFER_COPY_FORMAT})"
+                    )
+                else:
+                    copy_out_sql = (
+                        f"COPY {source_table} (osm_id, region, tags, geom) "
+                        f"TO STDOUT WITH ({_TRANSFER_COPY_FORMAT})"
+                    )
+                local_cur.copy_expert(copy_out_sql, write_file)
+            finally:
+                write_file.close()
+
+            reader_thread.join(timeout=3600)  # 1 hour max for transfer
+            if errors:
+                raise errors[0]
+
+    # Count rows in staging
+    with remote_conn.cursor() as cur:
+        cur.execute(f"SELECT COUNT(*) FROM {staging_tbl}")
+        row_count = cur.fetchone()[0]
+
+    transfer_elapsed = time.monotonic() - transfer_t0
+    if step_log:
+        rate = row_count / transfer_elapsed if transfer_elapsed > 0 else 0
+        step_log(
+            f"Transferred {row_count:,} {label} in {_fmt_elapsed(transfer_elapsed)} "
+            f"({rate:,.0f}/s)"
+        )
+
+    if task_heartbeat:
+        try:
+            task_heartbeat(progress_message=f"Merging {row_count:,} {label} into main server ...")
+        except Exception:
+            pass
+
+    # Merge staging into main table using existing batched merge
+    merged = 0
+    if row_count > 0:
+        merged = _batched_merge(
+            remote_conn, staging_tbl, target_table, use_upsert,
+            label=label, total=row_count,
+            step_log=step_log, task_heartbeat=task_heartbeat,
+        )
+
+    # Drop staging table
+    with remote_conn.cursor() as cur:
+        cur.execute(f"DROP TABLE IF EXISTS {staging_tbl}")
+    remote_conn.commit()
+
+    return merged
+
+
+def _transfer_to_remote(
+    local_conn,
+    remote_conn,
+    region: str,
+    use_upsert: bool,
+    step_log=None,
+    task_heartbeat=None,
+) -> tuple[int, int]:
+    """Transfer imported data from local PG to the main PG server.
+
+    Pipes COPY binary streams between the two connections — no intermediate
+    files on disk. Each table is transferred into a staging table on the
+    remote, then merged using the existing batched merge logic.
+
+    Returns (node_count, way_count) transferred.
+    """
+    transfer_t0 = time.monotonic()
+    if step_log:
+        step_log("Starting transfer from local import PG to main PG ...")
+
+    node_count = _transfer_table(
+        local_conn, remote_conn,
+        "osm_nodes", "osm_nodes", region, use_upsert,
+        label="nodes", step_log=step_log, task_heartbeat=task_heartbeat,
+    )
+    way_count = _transfer_table(
+        local_conn, remote_conn,
+        "osm_ways", "osm_ways", region, use_upsert,
+        label="ways", step_log=step_log, task_heartbeat=task_heartbeat,
+    )
+
+    elapsed = time.monotonic() - transfer_t0
+    if step_log:
+        step_log(
+            f"Transfer complete: {node_count:,} nodes + {way_count:,} ways "
+            f"in {_fmt_elapsed(elapsed)}"
+        )
+
+    return node_count, way_count
+
+
 def import_to_postgis(
     pbf_path: str,
     postgis_url: str | None = None,
+    import_postgis_url: str | None = None,
     source_url: str = "",
     region: str = "",
     force: bool = False,
@@ -872,9 +1077,17 @@ def import_to_postgis(
     index to process nodes and ways simultaneously. Disables
     synchronous_commit during import for higher throughput.
 
+    **Local-first import:** When *import_postgis_url* is set (or the
+    ``AFL_IMPORT_POSTGIS_URL`` env var), the PBF is parsed and staged on
+    a local disposable PostgreSQL instance first, then bulk-transferred
+    to the main server via ``COPY`` binary streams. This isolates the
+    main server from hours of sustained I/O during PBF parsing.
+
     Args:
         pbf_path: Path to the OSM PBF file
-        postgis_url: PostgreSQL connection URL (reads AFL_POSTGIS_URL if None)
+        postgis_url: Main PostgreSQL connection URL (reads AFL_POSTGIS_URL if None)
+        import_postgis_url: Local import PostgreSQL URL (reads AFL_IMPORT_POSTGIS_URL
+            if None). When set, enables local-first import.
         source_url: Original download URL for import log
         region: Region identifier (e.g. "france", "california")
         force: Re-import even if region was previously imported
@@ -892,15 +1105,24 @@ def import_to_postgis(
 
     pbf_path = localize(pbf_path)
     postgis_url = postgis_url or get_postgis_url()
-    conn = psycopg2.connect(postgis_url, gssencmode="disable")
 
+    # Determine if local-first import is enabled
+    if import_postgis_url is None:
+        import_postgis_url = get_import_postgis_url()
+    local_first = bool(import_postgis_url)
+
+    # Main server connection — always needed for prior-import check and audit log
+    main_conn = psycopg2.connect(postgis_url, gssencmode="disable")
+
+    # Import connection — local PG when local-first, otherwise same as main
+    import_conn = None
     staging_nodes = staging_ways = ""
     try:
-        ensure_schema(conn)
+        ensure_schema(main_conn)
 
-        # Check for prior import of this region
+        # Check for prior import of this region (always on main server)
         if region:
-            with conn.cursor() as cur:
+            with main_conn.cursor() as cur:
                 cur.execute(CHECK_PRIOR_IMPORT_SQL, (region,))
                 row = cur.fetchone()
                 if row is not None:
@@ -932,38 +1154,55 @@ def import_to_postgis(
                         row[2],
                     )
 
-        # Performance: disable synchronous_commit for this session
-        with conn.cursor() as cur:
-            cur.execute("SET synchronous_commit = off")
-
-        # For force-reimport: delete old data and use plain INSERT for merge
+        # For force-reimport: delete old data on main and use plain INSERT for merge
         use_upsert = True
         if force and region:
             log.info("Deleting prior data for region '%s'", region)
-            with conn.cursor() as cur:
+            with main_conn.cursor() as cur:
                 cur.execute(DELETE_REGION_NODES_SQL, (region,))
                 cur.execute(DELETE_REGION_WAYS_SQL, (region,))
-            conn.commit()
+            main_conn.commit()
             use_upsert = False  # no conflicts possible after delete
         elif not region:
             # Global import with no region — plain INSERT for merge
             use_upsert = False
 
-        # Create unlogged staging tables — no indexes, no WAL, no contention
-        staging_nodes, staging_ways = _create_staging_tables(conn, region, step_log)
+        # Set up the import connection
+        if local_first:
+            log.info(
+                "Local-first import enabled: PBF scan → %s, transfer → %s",
+                sanitize_url(import_postgis_url), sanitize_url(postgis_url),
+            )
+            if step_log:
+                step_log(
+                    f"Local-first import: parsing to local PG ({sanitize_url(import_postgis_url)}), "
+                    f"then transferring to main PG"
+                )
+            import_conn = psycopg2.connect(import_postgis_url, gssencmode="disable")
+            ensure_schema(import_conn)
+        else:
+            import_conn = main_conn
+
+        # Performance: disable synchronous_commit on import connection
+        with import_conn.cursor() as cur:
+            cur.execute("SET synchronous_commit = off")
+
+        # Create unlogged staging tables on the import connection
+        staging_nodes, staging_ways = _create_staging_tables(import_conn, region, step_log)
         staging_insert_nodes = f"INSERT INTO {staging_nodes} (osm_id, region, tags, geom) VALUES %s"
         staging_insert_ways = f"INSERT INTO {staging_ways} (osm_id, region, tags, geom) VALUES %s"
 
         # Single-pass import using pyosmium's NodeLocationsForWays
+        target_label = "local PG" if local_first else "staging"
         log.info(
-            "Importing from %s (region=%s, single-pass, staging)",
-            pbf_path, region or "<global>",
+            "Importing from %s (region=%s, single-pass, %s)",
+            pbf_path, region or "<global>", target_label,
         )
         file_size = get_file_size(str(pbf_path))
         progress = ScanProgressTracker(file_size, step_log, label="PostGIS Import")
 
         collector = CombinedCollector(
-            conn,
+            import_conn,
             region=region,
             batch_size=batch_size,
             use_upsert=False,  # staging tables have no PK — always plain INSERT
@@ -987,24 +1226,40 @@ def import_to_postgis(
             scan_nodes, scan_ways, region or "<global>",
         )
 
-        # Merge staging tables into main tables (single bulk operation)
+        # Merge staging into main tables on the import connection
         node_count, way_count = _merge_staging_tables(
-            conn, staging_nodes, staging_ways,
-            use_upsert=use_upsert,
+            import_conn, staging_nodes, staging_ways,
+            use_upsert=use_upsert if not local_first else False,
             step_log=step_log,
             task_heartbeat=task_heartbeat,
         )
+        staging_nodes = staging_ways = ""  # already dropped by _merge_staging_tables
         log.info(
-            "Merged %d nodes + %d ways (region=%s)",
-            node_count, way_count, region or "<global>",
+            "Merged %d nodes + %d ways into %s (region=%s)",
+            node_count, way_count,
+            "local PG" if local_first else "main tables",
+            region or "<global>",
         )
 
-        # Log the import
+        # Local-first: transfer from local PG to main PG
+        if local_first:
+            node_count, way_count = _transfer_to_remote(
+                import_conn, main_conn, region,
+                use_upsert=use_upsert,
+                step_log=step_log,
+                task_heartbeat=task_heartbeat,
+            )
+            log.info(
+                "Transferred %d nodes + %d ways to main PG (region=%s)",
+                node_count, way_count, region or "<global>",
+            )
+
+        # Log the import (always on main server)
         now = datetime.now(UTC).isoformat()
-        with conn.cursor() as cur:
+        with main_conn.cursor() as cur:
             cur.execute("SET synchronous_commit = on")
             cur.execute(INSERT_LOG_SQL, (source_url, pbf_path, region, node_count, way_count))
-        conn.commit()
+        main_conn.commit()
 
         return ImportResult(
             node_count=node_count,
@@ -1017,12 +1272,15 @@ def import_to_postgis(
     except Exception:
         # Clean up staging tables on failure
         try:
-            with conn.cursor() as cur:
-                cur.execute(f"DROP TABLE IF EXISTS {staging_nodes}")
-                cur.execute(f"DROP TABLE IF EXISTS {staging_ways}")
-            conn.commit()
+            if import_conn and staging_nodes:
+                with import_conn.cursor() as cur:
+                    cur.execute(f"DROP TABLE IF EXISTS {staging_nodes}")
+                    cur.execute(f"DROP TABLE IF EXISTS {staging_ways}")
+                import_conn.commit()
         except Exception:
             pass
         raise
     finally:
-        conn.close()
+        if local_first and import_conn and import_conn is not main_conn:
+            import_conn.close()
+        main_conn.close()

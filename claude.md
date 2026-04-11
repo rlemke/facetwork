@@ -51,6 +51,10 @@ scripts/db-stats                   # database document counts
 scripts/postgis-vacuum             # reclaim space + update statistics
 scripts/postgis-vacuum-status      # check vacuum progress and table sizes
 scripts/postgis-kill-vacuum        # kill autovacuum blocking imports
+
+# Local-first import (reduces I/O on main PG during large imports)
+scripts/start-import-pg            # start disposable Docker PG on port 5433
+scripts/start-import-pg --stop     # stop and remove
 ```
 
 ## Key Concepts
@@ -226,6 +230,12 @@ scripts/postgis-vacuum-status          # active vacuums, last times, table sizes
 scripts/postgis-kill-vacuum            # kill autovacuum blocking imports
 scripts/postgis-kill-vacuum --dry      # preview
 
+# Local-first PostGIS import (Docker-based disposable instance)
+scripts/start-import-pg                # start import PG on port 5433
+scripts/start-import-pg --stop         # stop and remove container
+scripts/start-import-pg --status       # check if running
+scripts/start-import-pg --url          # print connection URL
+
 # Grafana (operational monitoring — independent of dashboard)
 scripts/start-grafana                  # start Grafana on port 3000
 scripts/start-grafana --stop           # stop Grafana
@@ -310,6 +320,30 @@ The dashboard step detail page provides four recovery actions for failed or comp
 
 ### PostGIS data management
 PostGIS data directory: `/Volumes/afl_data/local_servers/postgis/data`. Start with `scripts/start_postgres`, tune with `scripts/postgis-tune`. After large import batches, run `scripts/postgis-vacuum` to reclaim space and update statistics. During bulk imports, autovacuum may compete for I/O — kill it with `scripts/postgis-kill-vacuum`. Tables have `autovacuum_analyze_threshold = 1,000,000` to reduce frequency during imports.
+
+### Local-first PostGIS import
+
+For large imports, a disposable Docker-based PostgreSQL instance can absorb the hours of PBF parsing I/O, then bulk-transfer the finished data to the main server. This isolates the main server from sustained write pressure during imports.
+
+```bash
+# Start the local import instance (Docker, port 5433)
+scripts/start-import-pg
+scripts/start-import-pg --status       # check if running
+scripts/start-import-pg --stop         # stop and remove
+
+# Enable local-first import (add to .env or runner.env)
+AFL_IMPORT_POSTGIS_URL=postgresql://afl_osm:afl_osm_2024@localhost:5433/osm
+```
+
+When `AFL_IMPORT_POSTGIS_URL` is set, `import_to_postgis()` follows this flow:
+1. Check prior-import log on the **main** server (skip if already imported)
+2. Parse PBF and stage data on the **local** instance (fast — disposable, no WAL)
+3. Merge staging into local main tables (no index contention with readers)
+4. Transfer via `COPY` binary stream from local to main server staging tables
+5. Batched merge into main server tables (upsert or plain insert)
+6. Write audit log on the **main** server
+
+The local instance is tuned with `fsync=off`, `synchronous_commit=off`, and `autovacuum=off` — it's disposable, so crash recovery is simply re-importing from PBF. Works on the same host as the main PostgreSQL (different port) or on a separate machine.
 
 ### Workflow repair
 

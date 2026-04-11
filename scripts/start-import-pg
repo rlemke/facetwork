@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# Start a disposable Docker-based PostgreSQL/PostGIS instance for OSM import staging.
+#
+# This instance is tuned for write-heavy bulk imports with all durability
+# guarantees disabled (fsync=off, synchronous_commit=off, etc.). Data is
+# ephemeral — if the container crashes, just re-import from PBF.
+#
+# The import handler writes to this local instance first, then transfers
+# the finished data to the main PostgreSQL server in a single bulk operation.
+# This isolates the main server from hours of sustained I/O during PBF parsing.
+#
+# Usage:
+#   scripts/start-import-pg              # start the container
+#   scripts/start-import-pg --stop       # stop and remove
+#   scripts/start-import-pg --status     # check if running
+#   scripts/start-import-pg --url        # print connection URL
+#
+# Environment:
+#   AFL_IMPORT_PG_PORT    Port to bind (default: 5433)
+#   AFL_IMPORT_PG_IMAGE   Docker image (default: postgis/postgis:16-3.4)
+#   AFL_IMPORT_PG_SHM     Shared memory size (default: 2g)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=_env.sh
+[ -f "$SCRIPT_DIR/_env.sh" ] && source "$SCRIPT_DIR/_env.sh"
+
+CONTAINER_NAME="osm-import-pg"
+PG_PORT="${AFL_IMPORT_PG_PORT:-5433}"
+PG_IMAGE="${AFL_IMPORT_PG_IMAGE:-postgis/postgis:16-3.4}"
+PG_SHM="${AFL_IMPORT_PG_SHM:-2g}"
+PG_USER="afl_osm"
+PG_PASSWORD="afl_osm_2024"
+PG_DB="osm"
+
+_is_running() {
+    docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q true
+}
+
+_container_exists() {
+    docker inspect "$CONTAINER_NAME" &>/dev/null
+}
+
+cmd_stop() {
+    if _container_exists; then
+        echo "Stopping $CONTAINER_NAME ..."
+        docker rm -f "$CONTAINER_NAME" >/dev/null
+        echo "Stopped."
+    else
+        echo "$CONTAINER_NAME is not running."
+    fi
+}
+
+cmd_status() {
+    if _is_running; then
+        echo "$CONTAINER_NAME is running on port $PG_PORT"
+        docker exec "$CONTAINER_NAME" psql -U "$PG_USER" -d "$PG_DB" -c \
+            "SELECT pg_size_pretty(pg_database_size('$PG_DB')) AS db_size;" 2>/dev/null || true
+    else
+        echo "$CONTAINER_NAME is not running."
+    fi
+}
+
+cmd_url() {
+    echo "postgresql://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${PG_DB}"
+}
+
+cmd_start() {
+    if _is_running; then
+        echo "$CONTAINER_NAME is already running on port $PG_PORT."
+        exit 0
+    fi
+
+    # Remove stopped container if it exists
+    if _container_exists; then
+        docker rm "$CONTAINER_NAME" >/dev/null
+    fi
+
+    echo "Starting $CONTAINER_NAME (port $PG_PORT, image $PG_IMAGE) ..."
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        -p "${PG_PORT}:5432" \
+        -e POSTGRES_USER="$PG_USER" \
+        -e POSTGRES_PASSWORD="$PG_PASSWORD" \
+        -e POSTGRES_DB="$PG_DB" \
+        --shm-size="$PG_SHM" \
+        "$PG_IMAGE" >/dev/null
+
+    # Wait for readiness
+    echo -n "Waiting for PostgreSQL ..."
+    for i in $(seq 1 30); do
+        if docker exec "$CONTAINER_NAME" pg_isready -U "$PG_USER" -q 2>/dev/null; then
+            echo " ready."
+            break
+        fi
+        echo -n "."
+        sleep 1
+    done
+
+    if ! docker exec "$CONTAINER_NAME" pg_isready -U "$PG_USER" -q 2>/dev/null; then
+        echo " FAILED"
+        echo "ERROR: PostgreSQL did not start. Logs:"
+        docker logs --tail 20 "$CONTAINER_NAME"
+        exit 1
+    fi
+
+    # Enable PostGIS extension
+    docker exec "$CONTAINER_NAME" psql -U "$PG_USER" -d "$PG_DB" -c \
+        "CREATE EXTENSION IF NOT EXISTS postgis;" >/dev/null
+
+    # Tune for disposable write-heavy workload
+    docker exec "$CONTAINER_NAME" psql -U "$PG_USER" -d "$PG_DB" -c "
+        ALTER SYSTEM SET shared_buffers = '2GB';
+        ALTER SYSTEM SET work_mem = '256MB';
+        ALTER SYSTEM SET maintenance_work_mem = '1GB';
+        ALTER SYSTEM SET wal_level = 'minimal';
+        ALTER SYSTEM SET max_wal_senders = 0;
+        ALTER SYSTEM SET fsync = off;
+        ALTER SYSTEM SET synchronous_commit = off;
+        ALTER SYSTEM SET full_page_writes = off;
+        ALTER SYSTEM SET autovacuum = off;
+        ALTER SYSTEM SET checkpoint_timeout = '30min';
+        ALTER SYSTEM SET max_wal_size = '8GB';
+    " >/dev/null
+
+    # Restart to apply settings (fast — container is fresh)
+    docker restart "$CONTAINER_NAME" >/dev/null
+    echo -n "Restarting with tuned settings ..."
+    for i in $(seq 1 15); do
+        if docker exec "$CONTAINER_NAME" pg_isready -U "$PG_USER" -q 2>/dev/null; then
+            echo " ready."
+            break
+        fi
+        echo -n "."
+        sleep 1
+    done
+
+    echo ""
+    echo "Import PostgreSQL is running:"
+    echo "  Container: $CONTAINER_NAME"
+    echo "  Port:      $PG_PORT"
+    echo "  URL:       $(cmd_url)"
+    echo ""
+    echo "Set AFL_IMPORT_POSTGIS_URL=$(cmd_url) to use local-first import."
+}
+
+# Parse command
+case "${1:-}" in
+    --stop)   cmd_stop ;;
+    --status) cmd_status ;;
+    --url)    cmd_url ;;
+    *)        cmd_start ;;
+esac
