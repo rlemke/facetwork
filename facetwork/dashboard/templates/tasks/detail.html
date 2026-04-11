@@ -18,7 +18,7 @@
                 <tr><th>Task List</th><td>{{ task.task_list_name }}</td></tr>
                 <tr><th>Step Name</th><td>{{ step_name or "—" }}</td></tr>
                 <tr><th>Data Type</th><td>{{ task.data_type or "—" }}</td></tr>
-                <tr><th>Duration</th><td>{% if task.state == 'running' %}{{ (now_ms() - task.created)|duration }}{% else %}{{ (task.updated - task.created)|duration }}{% endif %}</td></tr>
+                <tr><th>Duration</th><td>{% if task.state == 'running' %}{{ (now_ms() - task.updated)|duration }}{% else %}{{ (task.updated - task.created)|duration }}{% endif %}</td></tr>
                 <tr><th>Created</th><td>{{ task.created|timestamp }}</td></tr>
                 <tr><th>Updated</th><td>{{ task.updated|timestamp }}</td></tr>
             </table>

@@ -33,7 +33,7 @@
             </td>
             <td>
                 {% if task.state == 'running' %}
-                    {{ (now_ms() - task.created)|duration }}
+                    {{ (now_ms() - task.updated)|duration }}
                 {% else %}
                     {{ (task.updated - task.created)|duration }}
                 {% endif %}
