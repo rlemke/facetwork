@@ -605,16 +605,37 @@ class AgentPoller:
             for future, task_id, claimed_at in self._active_futures:
                 if future.done():
                     continue
-                elapsed = now - claimed_at
-                if self._execution_timeout_ms > 0 and elapsed > self._execution_timeout_ms:
-                    future.cancel()
-                    logger.warning(
-                        "Task %s timed out after %ds, resetting to pending",
-                        task_id,
-                        elapsed // 1000,
-                    )
-                    self._release_timed_out_task(task_id)
-                    continue
+                if self._execution_timeout_ms > 0:
+                    # Check task heartbeat — if the handler is actively
+                    # heartbeating, use the heartbeat time instead of
+                    # claimed_at so long-running tasks aren't killed while
+                    # still making progress.
+                    last_activity = claimed_at
+                    try:
+                        task = self._persistence.get_task(task_id)
+                        if task and task.task_heartbeat > 0:
+                            last_activity = max(claimed_at, task.task_heartbeat)
+                    except Exception:
+                        # Cannot read heartbeat — skip timeout check this
+                        # cycle rather than killing a possibly-alive task.
+                        logger.debug(
+                            "Could not read heartbeat for task %s, "
+                            "skipping timeout check this cycle",
+                            task_id,
+                            exc_info=True,
+                        )
+                        kept.append((future, task_id, claimed_at))
+                        continue
+                    elapsed = now - last_activity
+                    if elapsed > self._execution_timeout_ms:
+                        future.cancel()
+                        logger.warning(
+                            "Task %s timed out after %ds, resetting to pending",
+                            task_id,
+                            elapsed // 1000,
+                        )
+                        self._release_timed_out_task(task_id)
+                        continue
                 kept.append((future, task_id, claimed_at))
             self._active_futures = kept
 

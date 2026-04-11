@@ -507,7 +507,17 @@ class RunnerService:
                         if task and task.task_heartbeat > 0:
                             last_activity = max(claimed_at, task.task_heartbeat)
                     except Exception:
-                        pass
+                        # Cannot read heartbeat — skip timeout check this
+                        # cycle rather than killing a possibly-alive task
+                        # based on stale claimed_at.
+                        logger.debug(
+                            "Could not read heartbeat for task %s, "
+                            "skipping timeout check this cycle",
+                            task_id,
+                            exc_info=True,
+                        )
+                        kept.append((future, task_id, claimed_at))
+                        continue
                     elapsed = now - last_activity
                     if elapsed > self._execution_timeout_ms:
                         # Timed out — cancel (best-effort) and always drop.
