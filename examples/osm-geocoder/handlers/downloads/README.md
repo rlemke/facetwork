@@ -115,6 +115,57 @@ OPERATIONS_FACETS = {
 
 All handlers are registered under the qualified name `osm.ops.<FacetName>`.
 
+## PostGIS import: local-first staging
+
+`PostGisImport` can stage a region into a disposable local PostgreSQL/PostGIS instance before merging into the main server. This isolates the main server from hours of sustained I/O during PBF parsing — the local instance absorbs all write pressure, then a single bulk `COPY` transfers finished data to the main tables.
+
+### When to use
+
+Turn this on for large regional or continent-sized imports. For small regions it's not worth the extra moving part — point `AFL_POSTGIS_URL` at the main server and skip the rest.
+
+### How it's wired
+
+Two environment variables control the flow:
+
+| Variable | Role |
+|----------|------|
+| `AFL_POSTGIS_URL` | Main PostGIS server — final destination for imported data (e.g. `postgresql://afl:afl@afl-postgres:5432/afl_gis`) |
+| `AFL_IMPORT_POSTGIS_URL` | Optional local staging instance. When set, enables the local-first flow (e.g. `postgresql://afl_osm:afl_osm_2024@localhost:5433/osm`) |
+
+Export both in your shell (e.g. `~/.zshrc`) or place them in `.env` / `examples/osm-geocoder/runner.env`. Shell exports take precedence — `scripts/_env.sh` sources `.env` without overriding already-set variables.
+
+### Starting the local instance
+
+The local staging DB runs in Docker via `scripts/start-import-pg`:
+
+```bash
+scripts/start-import-pg          # start on port 5433
+scripts/start-import-pg --status # check if running
+scripts/start-import-pg --url    # print connection URL
+scripts/start-import-pg --stop   # stop and remove container
+```
+
+The container is configured for disposable write-heavy work — tuning flags (`fsync=off`, `synchronous_commit=off`, `full_page_writes=off`, `autovacuum=off`, `wal_level=minimal`, `shared_buffers=1GB`, `maintenance_work_mem=1GB`) are passed as `postgres -c` args on first boot, so no restart cycle or `ALTER SYSTEM` is required.
+
+**Storage location:** the container uses an anonymous Docker volume under Docker Desktop's VM disk image (`~/Library/Containers/com.docker.docker/...`) — i.e. the host's internal SSD, **not** the external `/Volumes/afl_data` volume that hosts the main PostGIS. The state is ephemeral by design; `--stop` removes it along with the container.
+
+### Import flow
+
+When `AFL_IMPORT_POSTGIS_URL` is set, `import_to_postgis()` (in `postgis_importer.py`) runs six steps:
+
+1. **Skip check** — read `osm_import_log` on the **main** server; if this region is already imported, return early.
+2. **Stage locally** — parse the PBF and write nodes/ways into staging tables on the **local** instance. Durability is off, so this is I/O-fast.
+3. **Local merge** — move staging into the local `osm_nodes` / `osm_ways` tables, free from index contention with main-server readers.
+4. **Bulk transfer** — `COPY (binary)` the local tables into staging tables on the **main** server. One sustained stream instead of sustained row-level writes.
+5. **Main merge** — upsert or plain-insert the staging tables into the main `osm_nodes` / `osm_ways` tables.
+6. **Audit log** — write an entry to `osm_import_log` on the **main** server recording region, counts, and timestamp.
+
+If `AFL_IMPORT_POSTGIS_URL` is **unset**, steps 2–5 collapse into a single direct import against the main server.
+
+### Recovery
+
+The local instance is disposable — if it crashes mid-import or the Docker volume is lost, just `scripts/start-import-pg --stop`, re-start, and re-run the import. The main-server audit log is written only in step 6, so a crash during steps 2–5 leaves the main server untouched.
+
 ## Downloader module
 
 The `handlers/downloader.py` module is a standalone HTTP client with filesystem caching. It has no Facetwork dependencies and can be used independently.
