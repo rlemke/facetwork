@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Check connectivity to the three databases Facetwork depends on:
+#   - MongoDB      (AFL_MONGODB_URL)
+#   - Main PostGIS (AFL_POSTGIS_URL)          — required for OSM imports
+#   - Import PG    (AFL_IMPORT_POSTGIS_URL)   — optional, local-first staging
+#
+# Prints a status line per target and exits non-zero if any required
+# target is unreachable. The import PG is treated as optional: if its URL
+# is unset, it's reported as "skipped" and does not affect the exit code.
+#
+# Usage:
+#   scripts/check-databases
+#   scripts/check-databases --quiet    # suppress OK lines, show only failures
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=_env.sh
+[ -f "$SCRIPT_DIR/_env.sh" ] && source "$SCRIPT_DIR/_env.sh"
+
+QUIET=false
+[[ "${1:-}" == "--quiet" ]] && QUIET=true
+
+FAIL=0
+
+_python() {
+    local p="${SCRIPT_DIR}/../.venv/bin/python3"
+    [[ -x "$p" ]] || p=python3
+    echo "$p"
+}
+
+_report() {
+    local status="$1" label="$2" detail="$3"
+    if [[ "$status" == "OK" ]]; then
+        $QUIET || printf "  \033[32m✓\033[0m %-20s %s\n" "$label" "$detail"
+    elif [[ "$status" == "SKIP" ]]; then
+        $QUIET || printf "  \033[33m-\033[0m %-20s %s\n" "$label" "$detail"
+    else
+        printf "  \033[31m✗\033[0m %-20s %s\n" "$label" "$detail"
+        FAIL=1
+    fi
+}
+
+check_mongodb() {
+    local url="${AFL_MONGODB_URL:-mongodb://localhost:27017}"
+    local py; py="$(_python)"
+    local out
+    if out=$("$py" -c "
+from pymongo import MongoClient
+c = MongoClient('$url', serverSelectionTimeoutMS=3000)
+info = c.server_info()
+print(info.get('version', '?'))
+" 2>&1); then
+        _report OK MongoDB "$url (server ${out})"
+    else
+        _report FAIL MongoDB "$url — $(echo "$out" | tail -1)"
+    fi
+}
+
+check_postgres() {
+    local label="$1" url="${2:-}" required="$3"
+    if [[ -z "$url" ]]; then
+        if [[ "$required" == "true" ]]; then
+            _report FAIL "$label" "env var not set"
+        else
+            _report SKIP "$label" "not configured (optional)"
+        fi
+        return
+    fi
+
+    local out
+    if ! command -v psql &>/dev/null; then
+        _report FAIL "$label" "psql not installed — cannot verify $url"
+        return
+    fi
+
+    if out=$(psql "$url" -tAc "SELECT version()" 2>&1); then
+        local short; short=$(echo "$out" | head -1 | cut -c1-60)
+        _report OK "$label" "$url (${short}...)"
+    else
+        _report FAIL "$label" "$url — $(echo "$out" | tail -1)"
+    fi
+}
+
+echo "=== Facetwork Database Health ==="
+check_mongodb
+check_postgres "Main PostGIS"  "${AFL_POSTGIS_URL:-}"         true
+check_postgres "Import PG"     "${AFL_IMPORT_POSTGIS_URL:-}"  false
+
+if [[ "$FAIL" -eq 0 ]]; then
+    $QUIET || echo "All required databases are reachable."
+    exit 0
+else
+    echo "One or more required databases are unreachable." >&2
+    exit 1
+fi
