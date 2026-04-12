@@ -17,6 +17,15 @@
             {% if server.active_task_count|default(0) > 0 %}
             <span class="badge badge-running">{{ server.active_task_count }} active</span>
             {% endif %}
+            {% if server.state in ("running", "startup", "quarantine") %}
+            <label class="server-meta" title="Quarantine this server (stop claiming tasks)" onclick="event.stopPropagation()">
+                <input type="checkbox"
+                       {% if server.state == "quarantine" %}checked{% endif %}
+                       hx-post="/servers/{{ server.uuid }}/quarantine"
+                       hx-swap="outerHTML">
+                Quarantine
+            </label>
+            {% endif %}
         </summary>
 
         {% if server.active_tasks|default([])|length > 0 %}
