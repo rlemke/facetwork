@@ -10,6 +10,7 @@ class ServerState:
     RUNNING = "running"
     SHUTDOWN = "shutdown"
     ERROR = "error"
+    QUARANTINE = "quarantine"
 
 
 @dataclass

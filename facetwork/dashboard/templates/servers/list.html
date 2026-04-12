@@ -8,7 +8,8 @@
     <a href="/servers?state=startup">Startup</a> |
     <a href="/servers?state=running">Running</a> |
     <a href="/servers?state=shutdown">Shutdown</a> |
-    <a href="/servers?state=error">Error</a>
+    <a href="/servers?state=error">Error</a> |
+    <a href="/servers?state=quarantine">Quarantine</a>
 </nav>
 
 {% if filter_state %}
@@ -26,6 +27,7 @@
             <th>IPs</th>
             <th>Last Ping</th>
             <th>Handlers</th>
+            <th title="Quarantine: server keeps running but stops claiming new tasks">Q</th>
         </tr>
     </thead>
     <tbody>
@@ -38,6 +40,15 @@
             <td class="mono">{{ server.server_ips|join(", ") }}</td>
             <td>{{ server.ping_time|timestamp }}</td>
             <td>{{ server.handlers|join(", ") }}</td>
+            <td>
+                {% if server.state in ("running", "startup", "quarantine") %}
+                <input type="checkbox"
+                       {% if server.state == "quarantine" %}checked{% endif %}
+                       hx-post="/servers/{{ server.uuid }}/quarantine"
+                       hx-swap="outerHTML"
+                       title="Quarantine this server (stop claiming tasks)">
+                {% endif %}
+            </td>
         </tr>
         {% endfor %}
     </tbody>

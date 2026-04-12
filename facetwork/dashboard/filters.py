@@ -125,6 +125,7 @@ _STATE_COLORS: dict[str, str] = {
     "shutdown": "secondary",
     "error": "danger",
     "down": "danger",
+    "quarantine": "warning",
     # Task states
     "pending": "warning",
     "ignored": "secondary",

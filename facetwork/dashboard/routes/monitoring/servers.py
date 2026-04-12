@@ -16,8 +16,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+import time
 
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
+
+from ....runtime.entities.server import ServerState
 from ...dependencies import get_store
 
 router = APIRouter(prefix="/servers")
@@ -45,4 +49,41 @@ def server_detail(server_id: str, request: Request, store=Depends(get_store)):
         request,
         "servers/detail.html",
         {"server": server},
+    )
+
+
+@router.post("/{server_id}/quarantine", response_class=HTMLResponse)
+def toggle_quarantine(server_id: str, store=Depends(get_store)):
+    """Toggle a server between RUNNING and QUARANTINE.
+
+    Quarantined servers keep heartbeating but skip task claims on each
+    poll cycle — un-toggle to resume without restarting the runner.
+    Returns the updated checkbox fragment for HTMX swap.
+    """
+    server = store.get_server(server_id)
+    if server is None:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    if server.state == ServerState.QUARANTINE:
+        server.state = ServerState.RUNNING
+        quarantined = False
+    elif server.state in (ServerState.RUNNING, ServerState.STARTUP):
+        server.state = ServerState.QUARANTINE
+        quarantined = True
+    else:
+        # Don't touch SHUTDOWN / ERROR servers — the flag is meaningless for them.
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot quarantine server in state '{server.state}'",
+        )
+
+    server.ping_time = int(time.time() * 1000)
+    store.save_server(server)
+
+    checked = "checked" if quarantined else ""
+    return HTMLResponse(
+        f'<input type="checkbox" {checked} '
+        f'hx-post="/servers/{server_id}/quarantine" '
+        f'hx-swap="outerHTML" '
+        f'title="Quarantine this server (stop claiming tasks)">'
     )

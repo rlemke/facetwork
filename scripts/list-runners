@@ -11,7 +11,7 @@
 #   scripts/list-runners --help         # show this help
 #
 # Options:
-#   --state STATE   Filter by server state (running, shutdown, startup, error)
+#   --state STATE   Filter by server state (running, shutdown, startup, error, quarantine)
 #   --json          Output as JSON instead of tree view
 #   -h, --help      Show this help message
 #
@@ -163,7 +163,7 @@ for host in sorted(by_host):
         branch = '└── ' if is_last_runner else '├── '
         cont   = '    ' if is_last_runner else '│   '
 
-        state_icon = {'running': '+', 'shutdown': '-', 'startup': '~', 'error': '!'}.get(s.state, '?')
+        state_icon = {'running': '+', 'shutdown': '-', 'startup': '~', 'error': '!', 'quarantine': 'Q'}.get(s.state, '?')
         port_str = f'port={s.http_port}' if s.http_port > 0 else 'port=—'
 
         print(f'  {branch}[{state_icon}] {s.uuid[:12]}  {s.state:<10} {port_str}  up={format_uptime(s.start_time)}  ping={format_ago(s.ping_time)}')

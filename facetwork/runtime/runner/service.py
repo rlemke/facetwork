@@ -396,19 +396,46 @@ class RunnerService:
         """Main loop: poll for work until stopped."""
         interval_s = self._config.poll_interval_ms / 1000.0
         reconcile_counter = 0
+        was_quarantined = False
         while not self._stopping.is_set():
             try:
-                self._poll_cycle()
-                self._maybe_sweep_stuck_steps()
-                self._maybe_reap_orphaned_tasks()
-                # Reconcile every 10 poll cycles to catch drift
-                reconcile_counter += 1
-                if reconcile_counter >= 10:
-                    self._reconcile_with_db()
-                    reconcile_counter = 0
+                if self._is_quarantined():
+                    if not was_quarantined:
+                        logger.warning(
+                            "Server %s is quarantined — skipping task claims until released",
+                            self._server_id,
+                        )
+                        was_quarantined = True
+                else:
+                    if was_quarantined:
+                        logger.info(
+                            "Server %s released from quarantine — resuming task claims",
+                            self._server_id,
+                        )
+                        was_quarantined = False
+                    self._poll_cycle()
+                    self._maybe_sweep_stuck_steps()
+                    self._maybe_reap_orphaned_tasks()
+                    reconcile_counter += 1
+                    if reconcile_counter >= 10:
+                        self._reconcile_with_db()
+                        reconcile_counter = 0
             except Exception:
                 logger.exception("Poll cycle error")
             self._stopping.wait(interval_s)
+
+    def _is_quarantined(self) -> bool:
+        """Return True if the server has been marked quarantined in the DB.
+
+        Re-read each poll so a human-triggered toggle takes effect on the
+        next cycle without restarting the runner.
+        """
+        try:
+            server = self._persistence.get_server(self._server_id)
+        except Exception:
+            logger.exception("Failed to read server state for quarantine check")
+            return False
+        return bool(server) and server.state == ServerState.QUARANTINE
 
     def _poll_cycle(self) -> int:
         """Single poll cycle: find and dispatch work.
