@@ -78,6 +78,9 @@ cmd_start() {
     fi
 
     echo "Starting $CONTAINER_NAME (port $PG_PORT, image $PG_IMAGE) ..."
+    # Tuning is passed as postgres -c args so it applies on first boot
+    # without needing ALTER SYSTEM (which can't run in a transaction) or
+    # a restart cycle.
     docker run -d \
         --name "$CONTAINER_NAME" \
         -p "${PG_PORT}:5432" \
@@ -85,7 +88,19 @@ cmd_start() {
         -e POSTGRES_PASSWORD="$PG_PASSWORD" \
         -e POSTGRES_DB="$PG_DB" \
         --shm-size="$PG_SHM" \
-        "$PG_IMAGE" >/dev/null
+        "$PG_IMAGE" \
+        postgres \
+        -c shared_buffers=1GB \
+        -c work_mem=256MB \
+        -c maintenance_work_mem=1GB \
+        -c wal_level=minimal \
+        -c max_wal_senders=0 \
+        -c fsync=off \
+        -c synchronous_commit=off \
+        -c full_page_writes=off \
+        -c autovacuum=off \
+        -c checkpoint_timeout=30min \
+        -c max_wal_size=8GB >/dev/null
 
     # Wait for readiness
     echo -n "Waiting for PostgreSQL ..."
@@ -105,36 +120,8 @@ cmd_start() {
         exit 1
     fi
 
-    # Enable PostGIS extension
-    docker exec "$CONTAINER_NAME" psql -U "$PG_USER" -d "$PG_DB" -c \
-        "CREATE EXTENSION IF NOT EXISTS postgis;" >/dev/null
-
-    # Tune for disposable write-heavy workload
-    docker exec "$CONTAINER_NAME" psql -U "$PG_USER" -d "$PG_DB" -c "
-        ALTER SYSTEM SET shared_buffers = '2GB';
-        ALTER SYSTEM SET work_mem = '256MB';
-        ALTER SYSTEM SET maintenance_work_mem = '1GB';
-        ALTER SYSTEM SET wal_level = 'minimal';
-        ALTER SYSTEM SET max_wal_senders = 0;
-        ALTER SYSTEM SET fsync = off;
-        ALTER SYSTEM SET synchronous_commit = off;
-        ALTER SYSTEM SET full_page_writes = off;
-        ALTER SYSTEM SET autovacuum = off;
-        ALTER SYSTEM SET checkpoint_timeout = '30min';
-        ALTER SYSTEM SET max_wal_size = '8GB';
-    " >/dev/null
-
-    # Restart to apply settings (fast — container is fresh)
-    docker restart "$CONTAINER_NAME" >/dev/null
-    echo -n "Restarting with tuned settings ..."
-    for i in $(seq 1 15); do
-        if docker exec "$CONTAINER_NAME" pg_isready -U "$PG_USER" -q 2>/dev/null; then
-            echo " ready."
-            break
-        fi
-        echo -n "."
-        sleep 1
-    done
+    # PostGIS extension is already loaded into the osm DB by the image's
+    # init scripts (/docker-entrypoint-initdb.d/10_postgis.sh). Nothing to do.
 
     echo ""
     echo "Import PostgreSQL is running:"
