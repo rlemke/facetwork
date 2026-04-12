@@ -6,8 +6,20 @@ in osmoperations.afl under the osm.ops namespace.
 
 import logging
 import os
+import traceback
 
 from .postgis_importer import HAS_OSMIUM, HAS_PSYCOPG2
+
+
+def _format_exc_for_step_log(exc: BaseException) -> str:
+    """Render an exception as a compact multi-line string for the step log.
+
+    Includes the fully-qualified exception type, the message, and a short
+    traceback. `str(exc)` alone can be empty or ambiguous for some driver
+    errors — this guarantees the step log always has actionable detail.
+    """
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).rstrip()
+    return f"{type(exc).__module__}.{type(exc).__qualname__}: {exc}\n{tb}"
 
 log = logging.getLogger(__name__)
 
@@ -94,7 +106,8 @@ def _postgis_import_handler(payload: dict) -> dict:
         log.exception("PostGisImport failed for region=%s path=%s", region, pbf_path)
         if step_log:
             step_log(
-                f"PostGisImport: FAILED for region '{region}': {exc}",
+                f"PostGisImport: FAILED for region '{region}' (pbf={pbf_path}):\n"
+                f"{_format_exc_for_step_log(exc)}",
                 level="error",
             )
         raise
@@ -164,7 +177,11 @@ def _postgis_import_batch_handler(payload: dict) -> dict:
         except Exception as exc:
             log.exception("PostGisImportBatch: failed for region '%s'", region_name)
             if step_log:
-                step_log(f"PostGisImportBatch: FAILED for region '{region_name}': {exc}", level="error")
+                step_log(
+                    f"PostGisImportBatch: FAILED for region '{region_name}':\n"
+                    f"{_format_exc_for_step_log(exc)}",
+                    level="error",
+                )
             raise
 
     if step_log:
