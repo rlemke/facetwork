@@ -44,7 +44,7 @@ AnalyzeRisk ─┘
 
 ## FFL syntax quick-reference
 
-Every construct below appears in [`afl/deploy.ffl`](afl/deploy.ffl).
+Every construct below appears in [`ffl/deploy.ffl`](ffl/deploy.ffl).
 
 ### Comments
 
