@@ -427,6 +427,32 @@ The `yield` at the workflow's tail declares the return value. The runtime comput
 
 A single `andThen` block, then, is best understood as an **unordered set of assignments with a data-flow partial order** rather than a sequence of statements. The runtime schedules the set respecting that partial order; the reader reasons about the set respecting that partial order; the compiler verifies the partial order is well-formed.
 
+#### 4.4.1 Yield semantics: immutable during execution, aggregated on block completion
+
+FFL's block-mediated coordination (§5.7) has a corresponding data-model discipline worth making explicit. **During the execution of a block's steps, the block's input and output attributes are immutable.** Every step in the block sees the same snapshot of container attributes (`$.region`, `$.census_csv`, and so on) and the same bindings to its siblings; nothing a step does while running can change what another step in the same block observes. There is no mid-execution mutation for an author to reason about, and therefore no data race for the implementation to defend against.
+
+**Yields do not mutate; they accumulate.** A `yield` statement does not write into the container's output fields the moment it is executed. Instead, yields are **collected** as the block's steps complete, and when the block as a whole is complete, the accumulated yields are **applied to the container's declared return fields as a single atomic assignment**. The model is closer to a transactional commit at the block boundary than to imperative assignment: no partially-yielded state is ever visible to another block, another step, or the workflow evaluator.
+
+This discipline is what makes sibling `andThen` blocks safe to run in parallel without any coordination between them. Two blocks that yield into different return fields of the same workflow cannot race, because neither yield is visible until its own block has finished; and the block evaluator of §5.7 processes the aggregated yields serially as each block completes.
+
+**Collection and map return fields aggregate across multiple yields.** If a workflow declares a return field whose type is `[T]` or `Map[K, V]`, and the field receives more than one yield — across sibling blocks, across iterations of `andThen foreach`, or across branches of an `andThen when` that each contribute to it — the yields are merged rather than overwriting each other. For `[T]`, the contributions are appended; for `Map[K, V]`, the contributions are unioned, with later keys taking precedence over earlier ones. This is the semantic that makes `andThen foreach` useful as an aggregate reducer: each iteration's yield adds to the collection, and the final field is the merged result of all iterations.
+
+A worked example:
+
+```ffl
+workflow AllRegionStats(regions: [String])
+    => (stats: [RegionStats])
+    andThen foreach region in $.regions {
+  s = ImportRegion(region = $.region, force = false)
+  r = RegionStatistics(source = s.output)
+  yield AllRegionStats(stats = [r.result])
+}
+```
+
+Each iteration yields a single-element list into `stats`. The workflow's final `stats` is the concatenation of every iteration's yield. Scalar return fields do not aggregate in this way — a workflow that yields a scalar twice is a compile-time error, because there is no ambiguity-free merge of two scalars of unrelated provenance. Aggregation is opt-in through the return field's declared type.
+
+The practical effect of these rules is that `yield`, viewed from inside the language, behaves like the commit phase of a transaction scoped to a block, and viewed from outside the language, behaves like a reducer that absorbs contributions from every path that reaches it. Both views are correct; neither requires the author to reason about interleaved concurrent writes.
+
 ### 4.5 Mixins, implicits, and inheritance-by-composition
 
 Mixins let one facet be defined as the combination of several others:
