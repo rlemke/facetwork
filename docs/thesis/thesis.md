@@ -464,7 +464,65 @@ event facet EnrichedImport(cache: OSMCache) => (result: OSMCache)
   with PublishAudit(source = $.cache)
 ```
 
-The mixin composition is sequential in declaration order but the runtime is free to parallelise where the data dependency allows. Mixins are not inheritance in the object-oriented sense — FFL has no classes — but they serve a similar purpose: factoring shared sub-workflows out of many specific ones.
+Mixins are not inheritance in the object-oriented sense — FFL has no classes — but they serve a similar purpose: factoring shared sub-computations out of many specific ones.
+
+#### 4.5.1 Execution phases: mixins, primary facet, step-level blocks
+
+The full execution model for a call with mixins, a primary-facet body, and a step-level `andThen` is a layered, phase-by-phase evaluation. It is easiest to see in a worked example with deliberately small names.
+
+```ffl
+event facet LoadA(key: String) => (a: Int)
+event facet LoadB(key: String) => (b: Int)
+event facet LoadC(key: String) => (c: Int)
+event facet Sum(a: Int, b: Int) => (total: Int)
+event facet Label(a: Int, b: Int, tag: String) => (text: String)
+event facet Format(a: Int, b: Int, c: Int, doubled: Int, tagged: String)
+    => (result: String)
+
+// A composite facet:
+//   - two mixins (LoadA, LoadB), each contributing one output field
+//   - two primary andThen blocks, each contributing another output field
+facet Gather(key: String)
+    => (a: Int, b: Int, doubled: Int, tagged: String)
+    with LoadA(key = $.key)
+    with LoadB(key = $.key)
+    andThen {
+      s = Sum(a = $.a, b = $.b)
+      yield Gather(doubled = s.total * 2)
+    } andThen {
+      m = Label(a = $.a, b = $.b, tag = $.key)
+      yield Gather(tagged = m.text)
+    }
+
+// A workflow that uses Gather as a step and post-processes with a
+// step-level andThen attached to the call site.
+workflow Report(key: String) => (message: String) andThen {
+  g = Gather(key = $.key) andThen {
+    c = LoadC(key = $.key)
+    f = Format(a = g.a, b = g.b, c = c.c, doubled = g.doubled, tagged = g.tagged)
+    yield Report(message = f.result)
+  }
+}
+```
+
+When `g = Gather(...)` is evaluated, the runtime proceeds in three distinct phases:
+
+**Phase 1 — Mixin phase.** The two mixins declared by `with LoadA(...)` and `with LoadB(...)` execute **concurrently**. Each mixin sees only `Gather`'s *input* attributes (`$.key`) and contributes to a different output field of `Gather` (`a` from `LoadA`, `b` from `LoadB`). The mixin phase completes only when every `with` clause has yielded. At the boundary between Phase 1 and Phase 2, the output fields yielded by mixins — here, `a` and `b` — are atomically applied to `Gather`'s container attributes.
+
+**Phase 2 — Primary facet phase.** The primary facet's `andThen` blocks are now eligible to run. Crucially, at this point `$.a` and `$.b` *are* readable from inside Phase 2, because the mixin phase has committed them to the container. The two primary `andThen` blocks execute concurrently with each other (they are sibling blocks per §4.3), each reading `$.a` and `$.b` and contributing a different output field (`doubled` and `tagged`). Neither primary block can read the other's yields — scalar outputs yielded in sibling blocks do not become visible to each other mid-phase — but both can freely read mixin outputs. When both primary blocks complete, their yields are atomically applied to the container, so that by the end of Phase 2, `Gather`'s four output fields (`a`, `b`, `doubled`, `tagged`) are all populated.
+
+**Phase 3 — Step-level block (at the caller's site).** The `andThen { ... }` appended to the call `g = Gather(key = $.key)` is the *step-level* block. It executes after Phases 1 and 2 have fully completed, which means it sees the fully-assembled step output through the step binding `g`: `g.a`, `g.b`, `g.doubled`, `g.tagged`. In this example it also performs a fresh `LoadC` call and then calls `Format` using all of the step's outputs plus the newly-loaded `c`. The step-level block belongs lexically to the *caller* (`Report`), not to `Gather`, so it can read the caller's own container attributes (`$.key`) and any earlier bindings in the caller's block.
+
+Three visibility rules follow, which taken together capture the whole model:
+
+1. **Phase 1 sees only inputs.** Mixins cannot see the primary facet's yields or other mixins' yields. They are pure functions of the container's inputs.
+2. **Phase 2 sees inputs plus Phase-1 yields.** Primary `andThen` blocks can read every attribute yielded by any mixin, because Phase 1 has already committed. They cannot read sibling primary-block yields — those are still accumulating — and they cannot read attributes that will only be produced by the step-level block.
+3. **Phase 3 sees the completed step.** The step-level block at the caller's site reads the step's attributes as `stepName.fieldName`, and only runs after every field has been assigned by Phase 1 or Phase 2.
+
+The model composes cleanly with everything said earlier. The atomicity described in §4.4.1 — "yields are collected and applied atomically at block completion" — now has a richer story: it applies at every phase boundary, not just at the end of a single block. Phase 1's aggregated yields are committed atomically to the container; Phase 2's aggregated yields are committed atomically; Phase 3 sees the committed total. No phase ever observes a half-populated step, and no concurrent writers within a phase can race because the phase's yields are accumulated and applied only at its boundary.
+
+This is the whole of the composition model, stated as plainly as the author can manage. A reader who has absorbed it can then read arbitrarily complex FFL with confidence: mixins are the "before" contributions, primary `andThen` blocks are the "during" contributions, step-level `andThen` is the "after" block at the caller's site, and every transition between phases is an atomic commit of the phase's accumulated yields.
+
 
 Implicit facets are parameters resolved by name rather than by position:
 
