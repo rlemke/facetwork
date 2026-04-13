@@ -253,49 +253,67 @@ namespace osm.ops {
     wasInCache: Bool
   }
 
-  event facet PostGisImport(cache: OSMCache, region: String, force: Bool) returns OSMCache
+  event facet PostGisImport(cache: OSMCache, region: String, force: Bool)
+    => (output: OSMCache)
 
-  workflow ImportRegion(region: String, force: Bool) {
-    c = DownloadPBF(region = region)
-    s = PostGisImport(cache = c, region = region, force = force)
-    yield s
+  workflow ImportRegion(region: String, force: Bool) => (output: OSMCache) andThen {
+    c = DownloadPBF(region = $.region)
+    s = PostGisImport(cache = c, region = $.region, force = $.force)
+    yield ImportRegion(output = s.output)
   }
 
 }
 ```
 
-This is the simple case. The power of FFL comes in composition.
+A workflow's signature is `=> (name: Type, ...)` declaring its typed return fields, followed by an `andThen { ... }` block that is the workflow's body. Inside that body, parameters of the enclosing workflow are reached through the **container-attribute syntax** `$.name`; locally-defined assignments (`c`, `s`) are reached by bare name. The `$` distinguishes *reaching out of the current block into its container* from *reaching across statements within the current block*, and the distinction is enforced by the compiler. This is the simple case. The power of FFL comes in composition.
 
 ### 4.3 Composition: `andThen`, `foreach`, and `when`
 
-`andThen` is the sequencing operator: `a andThen b` means *compute a, then compute b using a's output*. `andThen` blocks may contain multiple assignments, which execute in parallel with respect to each other but all complete before the block exits:
+`andThen { ... }` introduces a **block** — a lexical scope containing a set of assignments. Two rules govern blocks:
+
+1. **Statements within a block share a scope.** Any assignment in the block may reference any other assignment in the *same* block by name, and the runtime orders execution according to the resulting data-dependency partial order.
+2. **Statements cannot reach across block boundaries.** An assignment in one block cannot name an assignment in a sibling block or an outer block. To reference values from the enclosing workflow or facet — its parameters, its declared return fields — the block uses the container-attribute syntax `$.name`.
+
+Sibling blocks — two `andThen { ... }` blocks attached to the same container, or two `andThen foreach` expansions in the same scope — execute concurrently with each other. Consequently, a workflow that wants analysis to happen *after* extraction cannot place the two in separate sibling blocks; it must either place them in the *same* block (letting data flow order the work) or chain the blocks so that the later block sees the earlier block's outputs through the container scope.
+
+The single-block form is usually what you want:
 
 ```ffl
-workflow ImportAndAnalyse(region: String) {
-  c = DownloadPBF(region = region)
-  s = PostGisImport(cache = c, region = region)
-  andThen {
-    routes = ExtractRoutes(source = s)
-    amenities = ExtractAmenities(source = s)
-    buildings = ExtractBuildings(source = s)
-  }
-  andThen {
-    routeStats = RouteStatistics(routes = routes)
-    amenityStats = AmenityStatistics(amenities = amenities)
-  }
+workflow ImportAndAnalyse(region: String) => (stats: RouteStats) andThen {
+  c        = DownloadPBF(region = $.region)
+  s        = PostGisImport(cache = c, region = $.region)
+  routes   = ExtractRoutes(source = s)
+  amenities = ExtractAmenities(source = s)
+  buildings = ExtractBuildings(source = s)
+  routeStats  = RouteStatistics(routes = routes)
+  amenityStats = AmenityStatistics(amenities = amenities)
   yield routeStats
 }
 ```
 
-The three `Extract*` facets execute concurrently; the two `*Statistics` facets execute concurrently once all extractions complete.
+All seven assignments are in one block and share one scope. Their execution order is the data-dependency partial order: `c` runs first, `s` runs after `c`, the three `Extract*` facets run concurrently once `s` completes, `routeStats` runs after `routes`, `amenityStats` runs concurrently once `amenities` completes. The source order of the statements has no bearing on the execution plan; reordering the seven lines would produce an identical schedule.
 
-`andThen foreach` iterates over a collection, creating one parallel branch per element:
+If the same workflow *were* written with two sibling `andThen` blocks, it would be broken, because the second block cannot see `routes` or `amenities`:
 
 ```ffl
-workflow ImportAllCountries(regions: List[String]) {
-  andThen foreach region in regions {
-    r = ImportRegion(region = region, force = false)
-  }
+// INCORRECT — do not do this
+workflow BadImportAndAnalyse(region: String) => (stats: RouteStats) andThen {
+  c = DownloadPBF(region = $.region)
+  s = PostGisImport(cache = c, region = $.region)
+} andThen {
+  // ERROR: `s`, `routes`, `amenities` are not in scope here;
+  // only $.region (a container attribute) is visible.
+  ...
+}
+```
+
+The two `andThen` blocks run concurrently; the second block has no access to names defined in the first. The only way for the second block to observe an upstream result is if that result has been promoted to a container attribute — a pattern that a few workflows use but most avoid in favour of the single-block form.
+
+`andThen foreach` iterates over a collection, creating one parallel branch per element, with the iteration variable exposed through the container:
+
+```ffl
+workflow ImportAllCountries(regions: [String]) andThen foreach region in $.regions {
+  r = ImportRegion(region = $.region, force = false)
 }
 ```
 
@@ -320,11 +338,11 @@ A defining property of FFL, and one that distinguishes it sharply from imperativ
 Consider:
 
 ```ffl
-workflow CompareStates() {
+workflow CompareStates() => (result: ComparisonReport) andThen {
   ca = Download(input = "ca.pdf")
   wa = Download(input = "wa.pdf")
   comparison = Compare(input1 = ca.output, input2 = wa.output)
-  yield comparison
+  yield CompareStates(result = comparison)
 }
 ```
 
@@ -354,11 +372,12 @@ The mixin composition is sequential in declaration order but the runtime is free
 Implicit facets are parameters resolved by name rather than by position:
 
 ```ffl
-workflow ImportWithImplicitLogger(region: String) {
-  implicit logger = AuditLogger(region = region)
-  c = DownloadPBF(region = region)
-  s = PostGisImport(cache = c, region = region)
+workflow ImportWithImplicitLogger(region: String) => (result: OSMCache) andThen {
+  implicit logger = AuditLogger(region = $.region)
+  c = DownloadPBF(region = $.region)
+  s = PostGisImport(cache = c, region = $.region)
   // The logger is implicitly passed to any facet that declares it
+  yield ImportWithImplicitLogger(result = s.output)
 }
 ```
 
@@ -369,17 +388,16 @@ Implicit facets dramatically reduce the parameter-threading overhead of workflow
 FFL makes error handling part of the flow language rather than relegating it to handler internals:
 
 ```ffl
-s = DownloadPBF(region = region)
-  catch when {
-    case err.type == "NetworkError" => {
-      DownloadPBF(region = region, mirror = "backup")
-    }
-    case err.type == "DiskFullError" => {
-      CleanCache()
-      DownloadPBF(region = region)
-    }
-    case _ => { FailWorkflow(reason = err.message) }
+s = DownloadPBF(region = $.region) catch when {
+  case err.type == "NetworkError" => {
+    retried = DownloadPBF(region = $.region, mirror = "backup")
   }
+  case err.type == "DiskFullError" => {
+    cleared = CleanCache()
+    retried = DownloadPBF(region = $.region)
+  }
+  case _ => { FailWorkflow(reason = err.message) }
+}
 ```
 
 `catch when` cases are statically matched against a typed error schema; the compiler verifies that every case is reachable and that the final catch-all is present if the cases are not exhaustive. This lifts error handling from a handler-internal `try/except` — invisible to the orchestrator — into a topology-visible construct that the dashboard renders and that the compiler can type-check.
@@ -1134,7 +1152,20 @@ The Facetwork design has open problems and the honest account of them is part of
 
 **Schema migration across handler versions.** When a handler's return schema changes, in-flight workflows may have steps whose persisted state is in the old schema. Facetwork's current practice is to avoid breaking schema changes by adding fields but not removing or renaming them. A more principled solution would be typed schema migrations as first-class FFL constructs; this is future work.
 
-**Cross-workflow dependencies.** Facetwork workflows are currently independent: one workflow's execution does not block or depend on another's. Real deployments often have workflows that trigger other workflows, that wait on each other's completion, or that share external resources. Cross-workflow primitives exist (a workflow can call another workflow's entry point) but the coordination semantics are under-specified. Formalising them is work to do.
+**Cross-workflow dependencies.** A primitive for cross-workflow composition already exists, and it is more elegant than the term "limitation" suggests: **any workflow can be invoked from another workflow exactly as if it were an event facet**. A workflow is, after all, just a facet designated as an entry point; its typed parameters are the workflow's inputs, its `yield` is the workflow's output, and its `andThen` body is its computation. From the caller's perspective there is no syntactic distinction between calling a sub-workflow and calling a leaf event facet:
+
+```ffl
+workflow RegionalReport(region: String) => (report: Report) andThen {
+  imported = ImportRegion(region = $.region, force = false)   // another workflow
+  enriched = EnrichWithPopulation(source = imported)          // leaf event facet
+  stats    = RegionalStatistics(data = enriched)              // another workflow
+  yield RegionalReport(report = stats.report)
+}
+```
+
+The data-dependency semantics of §4.4 extend uniformly: a sub-workflow reached through a parallel branch runs concurrently with its siblings, and downstream facets that reference its result block until it completes. The block-mediated advancement of §5.7 applies at every level of the call tree — each sub-workflow has its own evaluator and its own continue-message discipline — so composed workflows inherit the same lock-free coordination as monolithic ones. This makes workflows first-class reusable units: a team can publish a workflow alongside its event facets, and downstream teams can consume it by name, substituting implementations at the handler level without touching the consumer's FFL.
+
+What remains genuinely under-specified is the *cross-instance* case: when two independently-triggered top-level workflow instances need to share state, await each other's completion based on runtime-discovered identities, or serialise access to an external resource. Composition via facet-like invocation handles the static case well; the dynamic, instance-to-instance case — analogous to `signal`, `query`, and `waitForExternalEvent` primitives in Temporal — is future work.
 
 **Global observability across the fleet.** The dashboard renders per-workflow and per-server state; it does not yet render fleet-wide metrics (total throughput, queue depth, aggregate lag, SLO adherence). Grafana integration covers database-level metrics well but workflow-level metrics less well. A proper fleet dashboard is future work.
 
