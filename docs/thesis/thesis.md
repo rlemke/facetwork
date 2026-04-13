@@ -333,6 +333,53 @@ workflow BadImportAndAnalyse(region: String) => (stats: RouteStats) andThen {
 
 The two `andThen` blocks run concurrently; the second block has no access to names defined in the first. The only way for the second block to observe an upstream result is if that result has been promoted to a container attribute — a pattern that a few workflows use but most avoid in favour of the single-block form.
 
+#### 4.3.1 When to use several sibling `andThen` blocks
+
+If statements cannot cross block boundaries, and if a single block is already a data-flow-ordered concurrent computation, one might ask what the *point* of multiple sibling `andThen` blocks is. The answer is **independence and readability**.
+
+Consider a workflow whose inputs split naturally into several unrelated processing tracks — for example, one that ingests a PBF file on one track and a CSV file on another, each producing a different piece of the final result. One could cram all of the statements into a single block and rely on the data-flow partial order to separate the tracks. For a handful of statements this is fine. For more, it becomes a wall of assignments whose independence is only discoverable by tracing variable names across lines. A reader who wants to understand the CSV branch has no syntactic signal of where it begins and ends; it is intermixed textually with the PBF branch even though the two never interact.
+
+Multiple sibling `andThen` blocks let the author *show* that independence. Each block is its own scope, each runs concurrently with its siblings, and — this is the key — **each block ends in its own `yield`, populating a different field of the workflow's declared return**:
+
+```ffl
+workflow SummariseRegion(region: String, census_csv: String)
+    => (geo: GeoSummary, demo: DemoSummary)
+    andThen {
+  c     = DownloadPBF(region = $.region)
+  s     = PostGisImport(cache = c, region = $.region)
+  geo   = GeoSummariser(source = s.output)
+  yield SummariseRegion(geo = geo.result)
+} andThen {
+  rows  = LoadCensus(path = $.census_csv)
+  stats = DemographicStats(rows = rows.result)
+  yield SummariseRegion(demo = stats.result)
+}
+```
+
+The two blocks share only the workflow's container attributes (`$.region`, `$.census_csv`) and the workflow's declared return fields (`geo`, `demo`). They run at the same time — `DownloadPBF` and `LoadCensus` are both emitted as soon as the workflow starts — and each block independently contributes one field of the final return by yielding into it. When both blocks have yielded, the workflow is complete and its return is `{ geo: ..., demo: ... }` populated from both tracks.
+
+The contrast with a single-block equivalent is instructive:
+
+```ffl
+// Works, but harder to read as the workflow grows:
+workflow SummariseRegion(region: String, census_csv: String)
+    => (geo: GeoSummary, demo: DemoSummary)
+    andThen {
+  c     = DownloadPBF(region = $.region)
+  s     = PostGisImport(cache = c, region = $.region)
+  geo   = GeoSummariser(source = s.output)
+  rows  = LoadCensus(path = $.census_csv)
+  stats = DemographicStats(rows = rows.result)
+  yield SummariseRegion(geo = geo.result, demo = stats.result)
+}
+```
+
+Both forms produce the same execution plan. The multi-block form makes the structural independence of the two processing tracks visible at the top level of the workflow, and it localises each track's internal names (`c`, `s`, `geo` vs. `rows`, `stats`) to the scope where they matter. The single-block form mixes them.
+
+A rule of thumb: **use separate `andThen` blocks when separate output fields are produced by wholly independent work**. Use a single block when there is real data flow tying the statements together. Blocks, then, are a notation not only for scope but for intent — the author tells the reader, by reaching for a second `andThen`, that this is a distinct track of work whose only interaction with its siblings is through the workflow's return.
+
+One caveat: each `yield` assigns only the fields it names. A workflow that declares `=> (geo: GeoSummary, demo: DemoSummary)` and has two sibling blocks, one yielding `geo` and the other yielding `demo`, is complete only when both blocks have yielded. A yield that omits a declared field does not clear it; a field that is never yielded remains unset and the workflow does not complete. The compiler verifies that, across all reachable `yield` statements, every declared return field has at least one assignment.
+
 `andThen foreach` iterates over a collection, creating one parallel branch per element, with the iteration variable exposed through the container:
 
 ```ffl
