@@ -313,7 +313,32 @@ result = s andThen when {
 
 The `andThen when` expression evaluates exactly one branch. Together, `andThen`, `andThen foreach`, and `andThen when` provide enough control flow for all the workflows we have encountered without needing general-purpose loops. The absence of unbounded loops is not an accident; it is a deliberate restriction that makes topology statically tractable. Bounded iteration (foreach) is sufficient because the collections it iterates over are themselves either the result of upstream facets (and thus have known size at the iteration point) or parameters to the workflow.
 
-### 4.4 Mixins, implicits, and inheritance-by-composition
+### 4.4 Data-dependency semantics: concurrency by default
+
+A defining property of FFL, and one that distinguishes it sharply from imperative workflow-as-code, is that **the textual order of statements in an `andThen` block does not determine execution order**. Execution order is determined solely by data dependencies inferred from the expressions.
+
+Consider:
+
+```ffl
+workflow CompareStates() {
+  ca = Download(input = "ca.pdf")
+  wa = Download(input = "wa.pdf")
+  comparison = Compare(input1 = ca.output, input2 = wa.output)
+  yield comparison
+}
+```
+
+The two `Download` facets have no data dependency on each other. FFL's semantics are that they execute *concurrently*: the workflow evaluator emits two tasks immediately, either of which may be claimed and executed by a different runner on a different host. The `Compare` facet references the outputs of both downloads; it is blocked until both have produced their typed results. When both have completed, the `Compare` task is emitted, claimed by whichever runner is next to poll, and executed.
+
+The important negative claim is that the source order `ca; wa; comparison` does not *cause* `ca` to run before `wa`. Swapping the first two lines would not change the execution plan. A reader wishing to understand the runtime shape of a workflow should trace its data flow, not its statement order — and, in an FFL program, the data flow is written directly in the expressions.
+
+This semantic is the same discipline that pure functional languages adopt with respect to let-binding order, and it is adopted here for the same reason: it frees the runtime to schedule work as aggressively as the data constraints permit, without the author having to reason about which statements they should write in which order. Imperative workflow-as-code systems approximate this through framework-specific constructs — a Temporal workflow that wants two activities to run in parallel must say so with something like `futures = [activity_a.execute_async(), activity_b.execute_async()]; workflow.wait_for_all(futures)`, and Airflow's TaskFlow API must be nudged with explicit `.expand()` or DAG-level parallelism settings. FFL needs no such ceremony because concurrency is the default and *sequencing* is what requires an explicit data dependency.
+
+The `yield` at the workflow's tail declares the return value. The runtime computes the transitive closure of that value's dependencies and schedules them with maximal parallelism; anything not reachable from a yielded value is, semantically, unused and will typically be flagged as a compile-time warning. For authors who want explicit sequencing between steps that do not share a natural data dependency — for example, two operations with ordering requirements via external side effects — FFL offers successive `andThen` blocks rather than relying on source order. This makes the dependency visible: if a step must precede another, the source says so by placing them in successive `andThen` blocks rather than in the same block.
+
+A single `andThen` block, then, is best understood as an **unordered set of assignments with a data-flow partial order** rather than a sequence of statements. The runtime schedules the set respecting that partial order; the reader reasons about the set respecting that partial order; the compiler verifies the partial order is well-formed.
+
+### 4.5 Mixins, implicits, and inheritance-by-composition
 
 Mixins let one facet be defined as the combination of several others:
 
@@ -339,7 +364,7 @@ workflow ImportWithImplicitLogger(region: String) {
 
 Implicit facets dramatically reduce the parameter-threading overhead of workflows with shared concerns (logging, metrics, authentication). They are resolved statically at compile time: the compiler matches implicit declarations to facet parameters by name and type, erroring if more than one candidate or none match. This gives implicit resolution the static checking that runtime service-locator patterns lack.
 
-### 4.5 Error handling: `catch` and `catch when`
+### 4.6 Error handling: `catch` and `catch when`
 
 FFL makes error handling part of the flow language rather than relegating it to handler internals:
 
@@ -359,7 +384,7 @@ s = DownloadPBF(region = region)
 
 `catch when` cases are statically matched against a typed error schema; the compiler verifies that every case is reachable and that the final catch-all is present if the cases are not exhaustive. This lifts error handling from a handler-internal `try/except` — invisible to the orchestrator — into a topology-visible construct that the dashboard renders and that the compiler can type-check.
 
-### 4.6 Prompt blocks: first-class LLM integration
+### 4.7 Prompt blocks: first-class LLM integration
 
 A prompt block is a facet whose implementation is an LLM invocation:
 
@@ -375,7 +400,7 @@ event facet TriageIncident(logs: List[String]) returns TriageReport {
 
 Prompt blocks are event facets whose handler is the Facetwork runtime itself rather than user code. The runtime handles the API call, retries, token accounting, and response parsing against the declared return schema. This is a concrete example of FFL's decoupling of *what* from *how*: the prompt facet declares a typed input and typed output, and the implementation is supplied by the runtime via a generic LLM-call handler.
 
-### 4.7 Script blocks: controlled escape hatch
+### 4.8 Script blocks: controlled escape hatch
 
 Occasionally a pure-FFL description is not enough, and the workflow author genuinely needs to compute something:
 
@@ -389,13 +414,13 @@ s = ComputeDerivedSize {
 
 Script blocks are executed in a sandboxed Python subprocess with a controlled input/output boundary. They are the escape hatch of last resort and the compiler warns on their use. Most FFL programs contain none; the ones that contain many are a code smell indicating that too much logic is escaping the language.
 
-### 4.8 Type system
+### 4.9 Type system
 
 FFL has a Hindley-Milner-flavoured type system specialised to workflow concepts. The primitive types are `String`, `Int`, `Float`, `Bool`, `Null`. Compound types include `List[T]`, `Map[K, V]`, and record types declared via `schema`. There is no parametric polymorphism on user-defined facets — every facet has a concrete type signature — but schemas can be recursive, and the type checker handles structural subtyping on record literals, so that a value of type `{ name: String, size: Int, extra: String }` can be passed where `{ name: String, size: Int }` is expected.
 
 The type checker runs before emission. Its job is to verify that every facet call's parameters match its declared signature, that implicit resolution is unambiguous, that `yield` values are compatible with the workflow's declared return, and that `catch when` cases exhaust the error type. Compilation errors include line and column numbers, so that error messages can be rendered in the dashboard as clickable anchors in the FFL source.
 
-### 4.9 Why a DSL, not a library?
+### 4.10 Why a DSL, not a library?
 
 The natural question is why Facetwork needs a new language at all. Why not simply expose the facet/workflow abstractions as a Python library with decorators? This is the Temporal/Prefect/Dagster approach. I give three reasons why the DSL choice is not merely aesthetic but functional.
 
@@ -526,7 +551,41 @@ Facetwork has no coordinator. The operational cost is zero: there is no service 
 
 This decision is not free. The main cost is that Facetwork relies on MongoDB's atomicity guarantees, specifically `find_one_and_update` and partial unique indices. A Facetwork port to a database without these primitives would be an undertaking. PostgreSQL with `SELECT ... FOR UPDATE SKIP LOCKED` would work; so would CockroachDB; so would FoundationDB. Systems without document-atomic compare-and-swap would require a different approach entirely — likely a coordinator after all.
 
-### 5.7 Task resumption and the resume protocol
+### 5.7 Block-mediated step advancement
+
+The claim protocol in §5.3 governs how individual tasks move from `pending` to `running`. A second coordination question arises above it: when a task completes, what decides which *next* tasks are created? The concurrency-by-default semantics of §4.4 sharpen the question. In a workflow that has just finished two parallel `Download` facets, some component must decide that both prerequisites of `Compare` are now satisfied and that `Compare` should be enqueued. Which component, and how?
+
+A natural-seeming answer is: the runner that just finished the task. On completing step `ca`, the runner evaluates the containing `andThen` block, observes that `wa` is also complete, determines that `Compare` is now ready, and creates its task. This approach has an obvious flaw. If `ca` and `wa` complete simultaneously on different runners, both runners evaluate the same block at the same time; both observe that the block is now fully satisfied; both attempt to create the `Compare` task. The resulting race must be prevented, either by a lock across runners (reintroducing a coordinator) or by another atomic primitive (duplicating the claim-protocol machinery at a higher level, with all the implementation and correctness cost that entails).
+
+Facetwork takes a different approach, and it is the key insight of this chapter. **Completed steps do not themselves evaluate the block. They emit a `continue` message to the containing block.** The block — more precisely, the block's evaluator in the workflow graph — processes continue messages **one at a time**. Because a block has at most one evaluator active on its behalf at any instant, the concurrency at the point where "what's next" is decided is *zero*. There is nothing to race.
+
+#### 5.7.1 Mechanism
+
+The workflow evaluator is itself identified with a task (`fw:resume:<FacetName>` in the runtime, reserved under the `fw:` namespace; user code cannot forge these). Continue messages are enqueued as claimable tasks targeted at that evaluator. The ordinary claim protocol of §5.3 applies: exactly one runner claims each continue task. The claiming runner becomes the evaluator for one pass: it reads the current state of the block from the database, decides what (if anything) is newly ready, enqueues those tasks as pending, and marks itself complete.
+
+The subtle case is when multiple steps complete in quick succession. Each emits its own continue message; several continue tasks may sit pending for the same block. When the first is claimed and processed, it may observe that *all* prerequisite steps are already complete and correctly enqueue the full next wave. A second runner then claims the next continue message, reads the now-updated block state, observes that nothing new is ready (because the previous evaluator already handled it), and terminates as a no-op. This is safe — no work is done twice — and it is cheap: a no-op evaluator is a single database read against the block state. In practice, step completions cluster within tens of milliseconds, and one productive evaluator pass coalesces many completions into a single dispatch wave, with any redundant continue messages handled as trivial no-ops thereafter.
+
+#### 5.7.2 The pattern, generalised
+
+What this describes is precisely the **actor model** [Hew73, Agh86] applied to workflow evaluation. The block is an actor. Continue messages are mailbox messages. The actor processes its mailbox serially. Redundant messages become idempotent no-ops. The actor's mailbox discipline — exactly one message in flight at a time — is enforced not by an in-memory lock but by the claim protocol itself: only one runner ever holds the claim to the block's evaluator task. The lock-freedom of Facetwork's coordination extends cleanly from the individual task to the block, and by induction to the entire workflow graph.
+
+The advantage over the each-runner-decides-what's-next alternative is that the race condition simply cannot occur: only one runner ever evaluates a given block at a time. The advantage over an explicit lock-based alternative is that the serialisation is implicit in the claim protocol — no extra mutex, no coordinator process, no leader election per block. The same atomic `find_one_and_update` that guarantees exactly-one execution of a leaf task also, by being applied to the evaluator task, guarantees exactly-one evaluation of the block at a time.
+
+The pattern has an additional observability benefit. The continue message is a first-class task visible in the dashboard; an operator can see exactly when a block was last evaluated, what state it was in, and whether there are continue messages still pending. A lock-based alternative would hide this information inside the held-by metadata of the lock. Facetwork makes the evaluation pipeline itself observable, consistent with the thesis's broader commitment to state-centric visibility.
+
+#### 5.7.3 Safety and liveness
+
+**Safety.** The invariant we maintain is: at any instant, at most one evaluator is actively computing "which tasks should be created next" for a given block. This follows from the claim protocol's per-task exactly-one-claim guarantee applied to the block's `fw:resume:<FacetName>` task. Redundant continue messages are safe because each evaluator's operation is read-modify-enqueue against the canonical block state in the database, and because newly-enqueued tasks are uniquely keyed on `step_id` — an evaluator that attempts to enqueue a step whose task already exists is a no-op at the store level, by construction.
+
+**Liveness.** A continue message that is enqueued is eventually claimed under the liveness guarantees of the claim protocol (§5.5). Each evaluator makes progress: it either enqueues new tasks or terminates as a no-op. Continue messages therefore do not accumulate indefinitely. In the worst case, a block with *k* prerequisite steps completing simultaneously produces *k* continue messages, of which one is productive and *k-1* are no-ops. The cost is linear in the fan-in of the block, which is bounded by the workflow author's design — and amortised over productive work that had to happen anyway.
+
+**Bounded staleness.** There is one timing subtlety worth naming. An evaluator reads the block state at the moment it claims its continue task. If a prerequisite step completes *after* the read but before the evaluator finishes enqueueing, that completion will itself have emitted a continue message that is already queued behind the current evaluator. The current evaluator will not see the late completion, but its successor will, and will correctly handle it. The system never misses a completion; it only occasionally splits the handling of a wave of completions across two evaluator passes. This is the actor model's standard staleness property, and it is both sound and operationally benign.
+
+#### 5.7.4 A note on choice of mechanism
+
+There are many possible implementations of "serialise work per block." Facetwork's choice — a per-block evaluator task claimed through the same protocol as any other task — has the virtue of reusing machinery that has to exist anyway. No new lock service, no new queue, no new primitive. The workflow graph itself is the coordination structure; the claim protocol is the synchronisation primitive; the database is the arbiter. Adding block-mediated advancement cost zero new infrastructure, and in the author's experience that economy is among the most satisfying design outcomes of the project.
+
+### 5.8 Task resumption and the resume protocol
 
 A sub-case of the claim protocol handles external agents that execute a facet *outside* the runner fleet. A Scala agent on a JVM host may be the canonical implementation of `osm.ops.SpatialIndex`. Facetwork's runner claims the task, serialises the parameters, and invokes an external process; when the external process completes, it writes the result back to the store and emits a resume task (`fw:resume:<FacetName>`) that the runner picks up. This elegantly turns the external process into a participant in the same claim protocol without requiring it to embed the Python runtime.
 
@@ -1147,6 +1206,8 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 
 ## References
 
+[Agh86] Agha, G. *Actors: A Model of Concurrent Computation in Distributed Systems*. MIT Press, 1986.
+
 [Arg] Argo Workflows. https://argoproj.github.io/workflows/
 
 [Arm03] Armstrong, J. *Making reliable distributed systems in the presence of software errors*. PhD thesis, Royal Institute of Technology, Stockholm, 2003.
@@ -1170,6 +1231,8 @@ Facetwork is one expression of these principles. I hope this thesis has made the
 [GKR+19] Goldstein, J., Abdelhamid, A., Barnett, M., Burckhardt, S., Chandramouli, B., Gehrke, J., Hunter, R. A.M.B.R.O.S.I.A: Providing performant virtual resiliency for distributed applications. *VLDB*, 2020.
 
 [GSR+15] Gog, I., Schwarzkopf, M., Grosvenor, M., Pietzuch, P., Hand, S. Musketeer: all for one, one for all in data processing systems. *EuroSys*, 2015.
+
+[Hew73] Hewitt, C., Bishop, P., Steiger, R. A universal modular ACTOR formalism for artificial intelligence. *IJCAI*, 1973.
 
 [HKJR10] Hunt, P., Konar, M., Junqueira, F.P., Reed, B. ZooKeeper: Wait-free coordination for internet-scale systems. *USENIX ATC*, 2010.
 
