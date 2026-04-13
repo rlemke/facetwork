@@ -432,10 +432,10 @@ A single `andThen` block, then, is best understood as an **unordered set of assi
 Mixins let one facet be defined as the combination of several others:
 
 ```ffl
-event facet EnrichedImport(cache: OSMCache) returns OSMCache
-  with PostGisImport(cache = cache, region = cache.region)
-  with IndexSpatial(source = cache)
-  with PublishAudit(source = cache)
+event facet EnrichedImport(cache: OSMCache) => (result: OSMCache)
+  with PostGisImport(cache = $.cache, region = $.cache.region)
+  with IndexSpatial(source = $.cache)
+  with PublishAudit(source = $.cache)
 ```
 
 The mixin composition is sequential in declaration order but the runtime is free to parallelise where the data dependency allows. Mixins are not inheritance in the object-oriented sense — FFL has no classes — but they serve a similar purpose: factoring shared sub-workflows out of many specific ones.
@@ -478,10 +478,10 @@ s = DownloadPBF(region = $.region) catch when {
 A prompt block is a facet whose implementation is an LLM invocation:
 
 ```ffl
-event facet TriageIncident(logs: List[String]) returns TriageReport {
+event facet TriageIncident(logs: [String]) => (report: TriageReport) {
   prompt {
     system "You are an experienced site reliability engineer."
-    template "Given these log lines, identify the probable root cause: {{logs}}"
+    template "Given these log lines, identify the probable root cause: {{$.logs}}"
     model "claude-opus-4-6"
   }
 }
