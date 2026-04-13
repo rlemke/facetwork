@@ -820,7 +820,130 @@ def handle(payload: dict) -> dict:
 
 The context provides four capabilities in a single typed object: liveness signalling, structured logging, stage budget declaration, and retry introspection. Earlier versions of Facetwork exposed these as flat keys on the payload dict; the context object was introduced to improve discoverability and to provide a stable interface that could evolve without breaking every handler.
 
-### 6.4 Agent models
+### 6.4 Handlers in the supported languages
+
+Because the handler contract is described at the protocol level — a named facet, a parameter dict, a returned dict of named output fields — it is portable across language runtimes. Facetwork ships client libraries for **Python**, **Go**, **Java**, **Scala**, and **TypeScript**, all of which implement the same poll / claim / execute / yield / heartbeat cycle against the same MongoDB-backed task collection. An author writes a handler in whichever language fits the problem; the FFL workflow that references the handler by name is identical regardless of the language it eventually binds to.
+
+The canonical "hello-world" handler in each supported language is small enough to fit on one page. All five versions implement the same facet: `ns.MyFacet`, taking one `input: String` parameter and returning `{ result: <input> + " processed" }`.
+
+**Python** (RegistryRunner, in-process):
+
+```python
+from facetwork.runtime import RegistryRunner
+
+runner = RegistryRunner.from_environment()
+
+@runner.handler("ns.MyFacet")
+def my_facet(payload: dict) -> dict:
+    return {"result": payload["input"] + " processed"}
+
+runner.run()
+```
+
+**Go**:
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+
+    aflagent "github.com/facetwork/fw-agent"
+)
+
+func main() {
+    cfg := aflagent.FromEnvironment()
+    poller := aflagent.NewAgentPoller(cfg)
+
+    poller.Register("ns.MyFacet", func(params map[string]interface{}) (map[string]interface{}, error) {
+        input := params["input"].(string)
+        return map[string]interface{}{"result": input + " processed"}, nil
+    })
+
+    if err := poller.Start(context.Background()); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+**Java**:
+
+```java
+import afl.agent.AgentPoller;
+import afl.agent.AgentPollerConfig;
+import java.util.Map;
+
+public class MyAgent {
+    public static void main(String[] args) throws Exception {
+        AgentPoller poller = new AgentPoller(AgentPollerConfig.fromEnvironment());
+
+        poller.register("ns.MyFacet", params -> {
+            String input = (String) params.get("input");
+            return Map.of("result", input + " processed");
+        });
+
+        poller.start();
+    }
+}
+```
+
+**Scala**:
+
+```scala
+import afl.agent.{AgentPoller, AgentPollerConfig}
+
+@main def run(): Unit =
+  val poller = AgentPoller(AgentPollerConfig.fromEnvironment())
+
+  poller.register("ns.MyFacet") { params =>
+    val input = params("input").toString
+    Map("result" -> (input + " processed"))
+  }
+
+  poller.start()
+```
+
+**TypeScript**:
+
+```typescript
+import { AgentPoller, resolveConfig, Handler } from "@afl/agent";
+
+const poller = new AgentPoller(resolveConfig());
+
+const myHandler: Handler = async (params) => ({
+  result: (params.input as string) + " processed",
+});
+
+poller.register("ns.MyFacet", myHandler);
+await poller.start();
+```
+
+Four features are worth noticing across these examples.
+
+**First, the handler body is always about the problem, not the transport.** In every language, the handler is a function from a parameter map to a result map. The framework deals with the MongoDB claim protocol, the lease renewal, the heartbeat, the retry machinery, and the workflow-evaluator resume message — none of that leaks into the author's code. An engineer writing their first Facetwork handler has no protocol knowledge to acquire beyond "take a dict, return a dict".
+
+**Second, the registration is by qualified facet name.** None of the examples mentions a workflow. The handler does not know which workflows call it, which parameters the caller might have filled from which upstream step, or which sibling `andThen` block it will sit in. That separation is what §4.10 argued for at the language level; here it is what the handler contract delivers at the runtime level. A handler can be written, registered, and exercised in isolation; FFL authors compose it later without touching its code.
+
+**Third, the shape is identical across languages.** Go, Java, Scala, and TypeScript use the **AgentPoller** model — a standalone process connected to the same MongoDB instance as the Python runners, claiming tasks whose registered facet name matches those it has registered. Python has the additional **RegistryRunner** model, which shares the process with other Python handlers and avoids an extra hop, but the handler function itself looks the same. The choice between AgentPoller and RegistryRunner is a deployment decision, invisible to handler and workflow authors.
+
+**Fourth, the configuration is uniform.** All five clients resolve their MongoDB connection through the same chain — an explicit config path, the `AFL_CONFIG` environment variable, an `afl.config.json` file in standard locations, direct `AFL_MONGODB_URL` / `AFL_MONGODB_DATABASE` environment variables, and finally built-in defaults. A team running handlers in multiple languages configures them all the same way, which matters more in production than any single one of the language-level details.
+
+A handler in a more sophisticated handler — one that uses the typed context — reaches for the language's equivalent of `ctx.step_log`, `ctx.heartbeat`, and `ctx.stage(...)`. The Python API is the canonical form, with matching idioms in the other four clients. A long-running Scala handler that wants to declare a PBF-scan stage budget writes:
+
+```scala
+poller.register("osm.ops.PostGisImport") { (params, ctx) =>
+  val fileSize = params("file_size_bytes").asInstanceOf[Long]
+  ctx.stage("pbf_scan", timeoutMs = math.max(30 * 60_000L, fileSize * 20L / 1_000_000)) { s =>
+    val result = scanPbf(params, onProgress = s.heartbeat)
+    Map("result" -> result)
+  }
+}
+```
+
+with exactly the same behaviour the Python `with ctx.stage(...)` context manager delivers. The portability of the handler contract, down to the richer parts of the context, is one of the quieter but most consequential design properties of Facetwork: a team can change its mind about what language a given facet is implemented in, without the workflow that uses it ever being rewritten.
+
+### 6.5 Agent models
 
 Facetwork supports four handler execution models, each with a distinct operational shape:
 
@@ -834,7 +957,7 @@ Facetwork supports four handler execution models, each with a distinct operation
 
 The decomposition into four models is an operational decision; from the FFL author's perspective, it is invisible. A facet is a facet. The choice of agent model is made at handler registration time.
 
-### 6.5 Graceful drain and quarantine
+### 6.6 Graceful drain and quarantine
 
 Two operational primitives distinguish Facetwork's fleet management from that of most workflow systems.
 
@@ -844,7 +967,7 @@ Two operational primitives distinguish Facetwork's fleet management from that of
 
 The combination of drain and quarantine gives operators three lifecycle levers — running, quarantine, shutdown — rather than the binary alive/dead of most systems. The distinction matters because the recovery cost of a reclaimed task is not zero: a task that has run for thirty minutes and is interrupted must restart from scratch in the next claim (unless handlers encode their own checkpointing, which few do). Quarantine lets operators wait for natural task completion rather than forcing interruption.
 
-### 6.6 Rolling deployment
+### 6.7 Rolling deployment
 
 A rolling deployment in Facetwork follows this recipe:
 
@@ -860,7 +983,7 @@ Alternatively, for handlers whose implementation has not changed but whose regis
 
 This recipe is implemented in `scripts/rolling-deploy`. The interesting property is that the fleet's total throughput decreases during the deploy but never reaches zero: at any instant, some subset of runners is available to claim work. A fleet of ten runners doing a rolling deploy with one-at-a-time replacement maintains nine tenths of its throughput throughout; compare this with a Jenkins controller restart, which is a hard zero.
 
-### 6.7 Fleet inspection
+### 6.8 Fleet inspection
 
 A distinguishing feature of Facetwork's operational model is that the fleet is genuinely observable. `scripts/list-runners` produces a live view of every registered runner, its state, its ping time, its currently-claimed tasks, and its loaded handlers. The dashboard's `/v2/servers` page renders the same information graphically, with quarantine toggles on each row. The combination of a live, inspectable fleet and per-server lifecycle primitives turns fleet operations from a black art into a visible, scriptable practice.
 
