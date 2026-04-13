@@ -279,19 +279,43 @@ Sibling blocks — two `andThen { ... }` blocks attached to the same container, 
 The single-block form is usually what you want:
 
 ```ffl
-workflow ImportAndAnalyse(region: String) => (stats: RouteStats) andThen {
-  c        = DownloadPBF(region = $.region)
-  s        = PostGisImport(cache = c, region = $.region)
-  routes   = ExtractRoutes(source = s)
-  amenities = ExtractAmenities(source = s)
-  buildings = ExtractBuildings(source = s)
-  routeStats  = RouteStatistics(routes = routes)
-  amenityStats = AmenityStatistics(amenities = amenities)
-  yield routeStats
+schema RouteStats    { count: Int, total_length_km: Float }
+schema AmenityStats  { count: Int, by_type: Map[String, Int] }
+schema BuildingStats { count: Int, total_area_m2: Float }
+
+event facet ExtractRoutes(source: OSMCache)       => (result: RouteFeatures)
+event facet ExtractAmenities(source: OSMCache)    => (result: AmenityFeatures)
+event facet ExtractBuildings(source: OSMCache)    => (result: BuildingFeatures)
+event facet RouteStatistics(routes: RouteFeatures)        => (result: RouteStats)
+event facet AmenityStatistics(amenities: AmenityFeatures) => (result: AmenityStats)
+event facet BuildingStatistics(buildings: BuildingFeatures) => (result: BuildingStats)
+
+workflow ImportAndAnalyse(region: String)
+    => (routes: RouteStats, amenities: AmenityStats, buildings: BuildingStats)
+    andThen {
+  c             = DownloadPBF(region = $.region)
+  s             = PostGisImport(cache = c, region = $.region)
+  routes        = ExtractRoutes(source = s.output)
+  amenities     = ExtractAmenities(source = s.output)
+  buildings     = ExtractBuildings(source = s.output)
+  routeStats    = RouteStatistics(routes = routes.result)
+  amenityStats  = AmenityStatistics(amenities = amenities.result)
+  buildingStats = BuildingStatistics(buildings = buildings.result)
+  yield ImportAndAnalyse(
+    routes    = routeStats.result,
+    amenities = amenityStats.result,
+    buildings = buildingStats.result,
+  )
 }
 ```
 
-All seven assignments are in one block and share one scope. Their execution order is the data-dependency partial order: `c` runs first, `s` runs after `c`, the three `Extract*` facets run concurrently once `s` completes, `routeStats` runs after `routes`, `amenityStats` runs concurrently once `amenities` completes. The source order of the statements has no bearing on the execution plan; reordering the seven lines would produce an identical schedule.
+Two features of this example deserve explicit commentary, because they are easy for new FFL authors to get wrong.
+
+**First, a step is not a value.** `routes`, `amenities`, `buildings` — these names bind to *steps*, not to their outputs. A step is a node in the execution graph; it has a lifecycle (pending, running, completed, errored) and, on completion, exposes its declared return fields as named attributes. You therefore cannot `yield routes`; you can only yield the *attributes* of a step. Every event facet declares its return as `=> (name: Type, ...)`, and downstream code reads a completed step's values via `stepName.fieldName`. In this example, the extraction facets declare `=> (result: ...Features)`, the statistics facets declare `=> (result: ...Stats)`, and the `PostGisImport` facet (from §4.2) declared `=> (output: OSMCache)` — so we see the importer's output as `s.output` and each statistic as `routeStats.result`, `amenityStats.result`, `buildingStats.result`.
+
+**Second, the workflow is its own facet.** A workflow's return clause declares the fields a caller of the workflow sees, and the `yield` statement is a constructor-like call on the workflow's own name assigning values to those fields. Here the workflow declares three return fields (`routes`, `amenities`, `buildings`), each with its own schema, and the `yield ImportAndAnalyse(...)` populates them from the completed statistics steps. A consumer calling `ImportAndAnalyse` from another workflow would then see a value with `.routes`, `.amenities`, `.buildings` — all three statistic schemas available in parallel — and could reach into any of them.
+
+With those two rules in hand, the execution plan follows from data flow: `c` runs first; `s` runs after `c`; the three `Extract*` facets run concurrently once `s` completes; each `*Statistics` step runs after its corresponding extraction; and the workflow yields once all three statistics steps have produced their `result` attributes. The source order of the eight assignments has no bearing on the schedule; reordering them would produce an identical plan.
 
 If the same workflow *were* written with two sibling `andThen` blocks, it would be broken, because the second block cannot see `routes` or `amenities`:
 
@@ -342,7 +366,7 @@ workflow CompareStates() => (result: ComparisonReport) andThen {
   ca = Download(input = "ca.pdf")
   wa = Download(input = "wa.pdf")
   comparison = Compare(input1 = ca.output, input2 = wa.output)
-  yield CompareStates(result = comparison)
+  yield CompareStates(result = comparison.report)
 }
 ```
 
