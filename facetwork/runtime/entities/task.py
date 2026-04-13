@@ -41,3 +41,5 @@ class TaskDefinition:
     retry_count: int = 0  # Number of times this task has been retried
     max_retries: int = 5  # Max retries before dead-lettering (0 = infinite)
     next_retry_after: int = 0  # Epoch ms; task not claimable until this time
+    stage_budget_expires: int = 0  # Epoch ms; extends watchdog deadline for the current stage
+    stage_name: str = ""  # Human-readable name of the stage that owns the current budget

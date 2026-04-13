@@ -344,10 +344,14 @@ class TaskMixin:
                 "updated": 1,
                 "task_heartbeat": 1,
                 "timeout_ms": 1,
+                "stage_budget_expires": 1,
             },
         )
         for doc in candidates:
             last_activity = max(doc.get("task_heartbeat", 0), doc.get("updated", 0))
+            stage_budget = doc.get("stage_budget_expires", 0) or 0
+            if stage_budget > now:
+                continue  # inside an active stage budget — don't reap
             if now - last_activity > doc["timeout_ms"]:
                 stuck_uuids.append(doc["uuid"])
                 reaped.append(
@@ -375,6 +379,13 @@ class TaskMixin:
                             {"task_heartbeat": {"$exists": False}},
                             {"task_heartbeat": 0},
                             {"task_heartbeat": {"$lt": cutoff}},
+                        ]
+                    },
+                    {
+                        "$or": [
+                            {"stage_budget_expires": {"$exists": False}},
+                            {"stage_budget_expires": 0},
+                            {"stage_budget_expires": {"$lt": now}},
                         ]
                     },
                 ],
@@ -455,6 +466,8 @@ class TaskMixin:
             "retry_count": task.retry_count,
             "max_retries": task.max_retries,
             "next_retry_after": task.next_retry_after,
+            "stage_budget_expires": task.stage_budget_expires,
+            "stage_name": task.stage_name,
         }
 
     def _doc_to_task(self, doc: dict) -> TaskDefinition:
@@ -478,4 +491,6 @@ class TaskMixin:
             retry_count=doc.get("retry_count", 0),
             max_retries=doc.get("max_retries", 5),
             next_retry_after=doc.get("next_retry_after", 0),
+            stage_budget_expires=doc.get("stage_budget_expires", 0),
+            stage_name=doc.get("stage_name", ""),
         )

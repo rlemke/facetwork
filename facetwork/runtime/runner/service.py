@@ -546,15 +546,27 @@ class RunnerService:
                         kept.append((future, task_id, claimed_at))
                         continue
                     elapsed = now - last_activity
-                    if elapsed > self._execution_timeout_ms:
+                    # Stage budget acts as an override: if a handler has
+                    # declared an active stage (via ctx.stage()), don't
+                    # reap until *both* the global timeout and the stage
+                    # deadline have passed.
+                    stage_budget = 0
+                    stage_name = ""
+                    if task is not None:
+                        stage_budget = getattr(task, "stage_budget_expires", 0) or 0
+                        stage_name = getattr(task, "stage_name", "") or ""
+                    stage_active = stage_budget > 0 and now < stage_budget
+                    if elapsed > self._execution_timeout_ms and not stage_active:
                         # Timed out — cancel (best-effort) and always drop.
                         future.cancel()
                         label = self._task_label(task_id)
+                        stage_note = f" (stage={stage_name})" if stage_name else ""
                         logger.warning(
-                            "Task %s timed out after %ds, releasing capacity — %s",
+                            "Task %s timed out after %ds, releasing capacity — %s%s",
                             task_id,
                             elapsed // 1000,
                             label,
+                            stage_note,
                         )
                         self._release_timed_out_task(task_id)
                         continue  # always drop — do not keep zombie futures
@@ -922,6 +934,24 @@ class RunnerService:
                 )
 
             payload["_task_heartbeat"] = _task_heartbeat_callback
+
+            # Inject _set_stage_budget so handlers can declare a per-stage
+            # timeout budget (extends the watchdog deadline + lease without
+            # affecting the global execution timeout safety net).
+            def _set_stage_budget_callback(
+                timeout_ms: int,
+                stage_name: str = "",
+            ) -> None:
+                if timeout_ms <= 0:
+                    return
+                budget_expires = _current_time_ms() + int(timeout_ms)
+                self._persistence.update_task_stage_budget(
+                    task.uuid,
+                    budget_expires,
+                    stage_name=stage_name,
+                )
+
+            payload["_set_stage_budget"] = _set_stage_budget_callback
             payload["_task_uuid"] = task.uuid
 
             # Retry context — lets handlers detect reclaims and skip

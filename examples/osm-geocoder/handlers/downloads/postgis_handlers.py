@@ -8,6 +8,8 @@ import logging
 import os
 import traceback
 
+from facetwork.runtime.handler_context import HandlerContext
+
 from .postgis_importer import HAS_OSMIUM, HAS_PSYCOPG2
 
 
@@ -40,6 +42,7 @@ def _postgis_import_handler(payload: dict) -> dict:
     force = force_raw if isinstance(force_raw, bool) else str(force_raw).lower() in ("true", "1", "yes")
     step_log = payload.get("_step_log")
     task_heartbeat = payload.get("_task_heartbeat")
+    ctx = HandlerContext.from_payload(payload)
 
     # Signal liveness immediately so heartbeat is established early
     if task_heartbeat:
@@ -80,6 +83,7 @@ def _postgis_import_handler(payload: dict) -> dict:
             force=force,
             step_log=step_log,
             task_heartbeat=task_heartbeat,
+            ctx=ctx,
         )
         if step_log:
             if result.was_prior_import and not force:
@@ -124,6 +128,7 @@ def _postgis_import_batch_handler(payload: dict) -> dict:
     force = force_raw if isinstance(force_raw, bool) else str(force_raw).lower() in ("true", "1", "yes")
     step_log = payload.get("_step_log")
     task_heartbeat = payload.get("_task_heartbeat")
+    ctx = HandlerContext.from_payload(payload)
 
     if step_log:
         step_log(f"PostGisImportBatch: importing {len(regions)} regions")
@@ -161,6 +166,7 @@ def _postgis_import_batch_handler(payload: dict) -> dict:
                 force=force,
                 step_log=step_log,
                 task_heartbeat=task_heartbeat,
+                ctx=ctx,
             )
             total_nodes += result.node_count
             total_ways += result.way_count

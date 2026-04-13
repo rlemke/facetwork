@@ -26,9 +26,39 @@ from datetime import UTC, datetime
 
 from facetwork.runtime.storage import localize
 
+from contextlib import contextmanager
+
 from ..shared.scan_progress import ScanProgressTracker, _fmt_elapsed, get_file_size
 
 log = logging.getLogger(__name__)
+
+
+# Stage budget heuristics — all overridable via env vars.
+# PBF parsing is CPU-bound and dominates: ~20s per MB of PBF is conservative
+# for large files on modest hardware. Merge/transfer are I/O-bound and scale
+# with row counts.
+SCAN_MS_PER_MB = int(os.environ.get("AFL_OSM_SCAN_MS_PER_MB", "20000"))
+SCAN_FLOOR_MS = int(os.environ.get("AFL_OSM_SCAN_FLOOR_MS", str(30 * 60_000)))
+MERGE_MS_PER_MB = int(os.environ.get("AFL_OSM_MERGE_MS_PER_MB", "4000"))
+MERGE_FLOOR_MS = int(os.environ.get("AFL_OSM_MERGE_FLOOR_MS", str(15 * 60_000)))
+TRANSFER_MS_PER_MB = int(os.environ.get("AFL_OSM_TRANSFER_MS_PER_MB", "2000"))
+TRANSFER_FLOOR_MS = int(os.environ.get("AFL_OSM_TRANSFER_FLOOR_MS", str(30 * 60_000)))
+
+
+def _scaled_budget(file_size_bytes: int, ms_per_mb: int, floor_ms: int) -> int:
+    """Return a stage budget in ms: max(floor, size_mb * ms_per_mb)."""
+    size_mb = max(1, file_size_bytes // (1024 * 1024))
+    return max(floor_ms, size_mb * ms_per_mb)
+
+
+@contextmanager
+def _stage(ctx, name: str, timeout_ms: int):
+    """Open a ctx.stage(...) if ctx is present, otherwise no-op."""
+    if ctx is None or not hasattr(ctx, "stage"):
+        yield None
+        return
+    with ctx.stage(name, timeout_ms=timeout_ms) as handle:
+        yield handle
 
 try:
     import osmium
@@ -1070,6 +1100,7 @@ def import_to_postgis(
     batch_size: int = DEFAULT_BATCH_SIZE,
     step_log=None,
     task_heartbeat=None,
+    ctx=None,
 ) -> ImportResult:
     """Import OSM nodes and ways from a PBF file into PostGIS.
 
@@ -1213,12 +1244,14 @@ def import_to_postgis(
             way_insert_sql=staging_insert_ways,
         )
 
-        # locations=True enables pyosmium's built-in NodeLocationsForWays
-        # index so way.nodes[i].location is resolved automatically
-        collector.apply_file(pbf_path, locations=True)
-
-        collector.finalize()
-        progress.finish()
+        # PBF scan is the longest phase — budget scales with file size.
+        scan_budget_ms = _scaled_budget(file_size, SCAN_MS_PER_MB, SCAN_FLOOR_MS)
+        with _stage(ctx, "pbf_scan", scan_budget_ms):
+            # locations=True enables pyosmium's built-in NodeLocationsForWays
+            # index so way.nodes[i].location is resolved automatically
+            collector.apply_file(pbf_path, locations=True)
+            collector.finalize()
+            progress.finish()
         scan_nodes = collector.node_count
         scan_ways = collector.way_count
         log.info(
@@ -1227,12 +1260,14 @@ def import_to_postgis(
         )
 
         # Merge staging into main tables on the import connection
-        node_count, way_count = _merge_staging_tables(
-            import_conn, staging_nodes, staging_ways,
-            use_upsert=use_upsert if not local_first else False,
-            step_log=step_log,
-            task_heartbeat=task_heartbeat,
-        )
+        merge_budget_ms = _scaled_budget(file_size, MERGE_MS_PER_MB, MERGE_FLOOR_MS)
+        with _stage(ctx, "staging_merge", merge_budget_ms):
+            node_count, way_count = _merge_staging_tables(
+                import_conn, staging_nodes, staging_ways,
+                use_upsert=use_upsert if not local_first else False,
+                step_log=step_log,
+                task_heartbeat=task_heartbeat,
+            )
         staging_nodes = staging_ways = ""  # already dropped by _merge_staging_tables
         log.info(
             "Merged %d nodes + %d ways into %s (region=%s)",
@@ -1243,12 +1278,16 @@ def import_to_postgis(
 
         # Local-first: transfer from local PG to main PG
         if local_first:
-            node_count, way_count = _transfer_to_remote(
-                import_conn, main_conn, region,
-                use_upsert=use_upsert,
-                step_log=step_log,
-                task_heartbeat=task_heartbeat,
+            transfer_budget_ms = _scaled_budget(
+                file_size, TRANSFER_MS_PER_MB, TRANSFER_FLOOR_MS
             )
+            with _stage(ctx, "transfer_to_main", transfer_budget_ms):
+                node_count, way_count = _transfer_to_remote(
+                    import_conn, main_conn, region,
+                    use_upsert=use_upsert,
+                    step_log=step_log,
+                    task_heartbeat=task_heartbeat,
+                )
             log.info(
                 "Transferred %d nodes + %d ways to main PG (region=%s)",
                 node_count, way_count, region or "<global>",
