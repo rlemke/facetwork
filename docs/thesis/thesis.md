@@ -1488,7 +1488,7 @@ I have not claimed that FFL is the best possible DSL. It is one reasonable point
 
 ### 15.3 Where the design goes next
 
-Three directions seem most promising for further development.
+Four directions seem most promising for further development.
 
 **First, typed idempotence.** Adding `@idempotent` annotations to handler registrations, with compile-time and runtime checks, would eliminate one of the real costs of state-recovery semantics. The groundwork exists; the typing discipline is well-understood; the implementation is straightforward.
 
@@ -1496,7 +1496,19 @@ Three directions seem most promising for further development.
 
 **Third, federated fleets.** The current design assumes one fleet per MongoDB instance. Supporting federation — where multiple fleets share workload boundaries but coordinate through fleet-boundary primitives — would extend Facetwork's applicability to multi-site deployments without compromising the lock-free local claim protocol.
 
-These are evolutions within the thesis's design position, not departures from it. Each preserves the DSL, the lock-free coordination, the state-recovery model, and the live updatability. Each extends the applicability of the whole.
+**Fourth, AI authorship and sealed skills.** The thesis frames FFL authorship as a collaboration between domain programmers and service-provider programmers. In practice, during the development of Facetwork, an AI agent produced most of both layers under human direction. The implications are substantial and deserve explicit treatment.
+
+The argument is not the popular one that workflow systems are "deterministic and therefore safe for non-deterministic AI." Facetwork is not deterministic in any of the strong senses the term usually carries (deterministic replay, end-to-end reproducibility); it is deterministic only in its *topology* and *orchestration*. What workflows actually offer agentic systems is **procedural consistency with leaf-level variability**: the same DAG, the same typed interfaces, the same recovery semantics, regardless of which LLM backs each facet. Handlers remain non-deterministic at their leaves; the scaffold around them is reproducible.
+
+If AI agents become the primary authors, the operational shape shifts. The human's role becomes directing intent, reviewing generated artifacts, and curating a library of approved ones. A generated workflow becomes a **sealed skill** — FFL source plus pinned handler registrations plus a contract plus provenance metadata (model, prompt, reviewer, tests) plus a content-addressable identifier plus a signature. Sealed skills are immutable, discoverable, and composable; they form a registry that AI agents query before regenerating. The operational cycle is **AI generates, human reviews, skill seals, fleet executes**.
+
+The design changes that follow are additive rather than relaxing. Effect annotations (`@pure`, `@idempotent`, `@llm`, `@external-side-effect`) on every facet. Refinement types and sum types to tighten return contracts. Pre- and post-conditions verifiable at compile time. Schema inference from examples to stop AI hallucination of shapes. Two-phase generation (typed stubs first, implementations second). Structured docstring annotations (`@purpose`, `@failure-modes`) cross-checked against the code. A content-addressable skill registry with a discovery protocol. Regeneration rendered as semantic diffs for human review. Auto-generated property-based tests as a precondition of sealing. Confidence markers on generated output. Counterfactual replay (re-running a workflow with different LLMs behind a chosen step). Removal of the `script python` escape hatch and of any remaining un-checkable surface.
+
+Two tempting directions must be resisted. The first is making FFL unreadable to humans on the grounds that AI reads and writes it — the machine-readable form is authoritative, and giving up human inspectability forfeits audit, debugging, and ontological portability for a benefit (AI-optimised syntax) whose absence costs essentially nothing. The second is relaxing FFL's restrictions on the grounds that AI can handle more complex grammars — the smallness of FFL serves the *compiler and tooling*, not the author, and the research literature on synthesis-friendly languages consistently argues for *more* constraint, not less, when the author is a program synthesiser. Both temptations mistake what FFL's simplicity is for.
+
+The extended treatment — with concrete feature proposals, detailed arguments against the tempting wrong turns, and a full discussion of the implications for the handler model — appears in the companion document [`ai-authorship.md`](ai-authorship.md) alongside this thesis. That document is the authoritative record of the AI-authorship design direction; this subsection is its summary.
+
+Each of the four directions is an evolution within the thesis's design position, not a departure from it. Each preserves the DSL, the lock-free coordination, the state-recovery model, and the live updatability. Each extends the applicability of the whole.
 
 ### 15.4 Closing
 
