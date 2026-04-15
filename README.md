@@ -10,6 +10,22 @@
 > The other good news, if something goes wrong it does a great job of find out what went wrong. Although this can lead to a rabbit hole where it really does not understand the issue and puts in fixes that actually makes the situation worse for other scenarios.
 > 
 
+## Start Here: Read the Thesis Documents
+
+If you are new to Facetwork, **start with the thesis documents in [`docs/thesis/`](docs/thesis/)** rather than the reference specs. The specs are written for developers who need to implement against the system; the thesis documents explain what Facetwork is, why it was built this way, and where it might go — and are far more informative for a general reader.
+
+| Document | What it covers |
+|----------|----------------|
+| [`thesis.md`](docs/thesis/thesis.md) / [`thesis.pdf`](docs/thesis/thesis.pdf) | The core thesis: a language-directed, lock-free model for live-updatable distributed workflow execution |
+| [`defense.md`](docs/thesis/defense.md) / [`defense.pdf`](docs/thesis/defense.pdf) | Thesis defense Q&A — the design decisions examined under challenge |
+| [`ai-authorship.md`](docs/thesis/ai-authorship.md) / [`ai-authorship.pdf`](docs/thesis/ai-authorship.pdf) | How Facetwork's design changes when AI agents, not humans, are the primary authors |
+| [`future-thoughts-ai-native.md`](docs/thesis/future-thoughts-ai-native.md) / [`.pdf`](docs/thesis/future-thoughts-ai-native.pdf) | A forward-looking exploration of an AI-native workflow system |
+| [`future-thoughts-positioning-dissent.md`](docs/thesis/future-thoughts-positioning-dissent.md) / [`.pdf`](docs/thesis/future-thoughts-positioning-dissent.pdf) | Dissenting companion on Facetwork's positioning in the AI-agent era |
+
+Once you've read enough to understand the shape of the system, continue with the Quick Start and the developer-facing guides below.
+
+---
+
 **Facetwork** is a platform for defining and executing distributed workflows. You describe what should happen in a simple language called **FFL** (Facetwork Flow Language), and Facetwork handles the execution, retries, monitoring, and scaling.
 
 You don't need to be a developer to use Facetwork — if you can fill in a form, you can run workflows from the dashboard.
