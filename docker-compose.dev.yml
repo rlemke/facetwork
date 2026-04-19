@@ -1,0 +1,57 @@
+# Ephemeral dev stack: MongoDB + PostGIS in Docker with /Volumes/afl_data mounted.
+#
+# Data directories live INSIDE each container's writable layer — no named volumes,
+# no bind mounts for data. `docker compose -f docker-compose.dev.yml down` removes
+# the containers and all DB state with them. Use `stop` instead of `down` if you
+# want to keep data across a restart.
+#
+# /Volumes/afl_data is mounted read-write at the same path so handlers/scripts
+# that expect absolute paths (PBF mirror, output dir, cache) keep working.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml down     # wipes all DB data
+#   docker compose -f docker-compose.dev.yml stop     # keeps data until next `down`
+#
+# Connection URLs (from the host):
+#   MongoDB:  mongodb://localhost:27017
+#   PostGIS:  postgresql://afl:afl@localhost:5432/afl_gis
+#
+# Note: PostGIS port 5432 collides with scripts/start_postgres. Stop the native
+# Postgres first, or override with AFL_DEV_POSTGIS_PORT.
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: afl-dev-mongodb
+    ports:
+      - "${AFL_DEV_MONGO_PORT:-27017}:27017"
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - /Volumes/afl_data:/Volumes/afl_data
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: afl-dev-postgis
+    ports:
+      - "${AFL_DEV_POSTGIS_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_DB=afl_gis
+      - POSTGRES_USER=afl
+      - POSTGRES_PASSWORD=afl
+    volumes:
+      - /Volumes/afl_data:/Volumes/afl_data
+      - ./docker/postgis-init:/docker-entrypoint-initdb.d:ro
+    shm_size: 2g
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "afl"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
