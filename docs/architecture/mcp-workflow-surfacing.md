@@ -360,6 +360,141 @@ This is what I'd evolve to once B is working. **Do not start here** — prematur
 | Governance burden | low | low | medium (pin list) |
 | Recommended starting point | only if catalog is small | yes | after B is proven |
 
+### 5.5 Per-namespace MCP servers
+
+§5.1–§5.4 treat the MCP catalog as a single server exposing many workflows. A complementary design question: for deployments with many domains, should we run **one MCP server per namespace** (`osm.geocode` → one server, `osm.Source.PBF` → another, `hiv.resistance` → a third)?
+
+#### 5.5.1 Motivation
+
+Facetwork namespaces already segregate workflows by domain, team, and data source. That same boundary maps cleanly onto an MCP-server boundary:
+
+- **Auth scope.** A principal authorised for `osm.*` need not see `hiv.*` tools at all.
+- **Independent lifecycles.** Each namespace can version, restart, and redeploy its server without disturbing the rest. A malformed workflow in one namespace can't take down the whole registry.
+- **Fast registry scans.** Each server only inspects the workflows inside its own namespace.
+- **Operator intuition.** The `.mcp.json` config reads like a directory of domains — easier to reason about who exposes what.
+
+#### 5.5.2 Per-namespace does NOT by itself reduce context cost
+
+Splitting into N servers does not shrink the tool list. If each server registers one tool per workflow, twenty namespaces with ten workflows each still surface 200 tool schemas. The context-reduction lever is the **catalog pattern (§5.2)** layered inside each server:
+
+| Approach | Tool schemas loaded into Claude's context |
+|---|---|
+| One server, tool-per-workflow | ~200 (bloated) |
+| One server, catalog pattern (Pattern B) | **5** — five generic tools, any catalog size |
+| Per-namespace servers, tool-per-workflow | 200 (same bloat, now fragmented) |
+| Per-namespace servers, catalog pattern | 5 × N (5 per server × N namespaces) |
+| Per-namespace servers + Claude Code deferred tools | **≈ N** — tool names only; schemas fetched via `ToolSearch` on demand |
+
+The combination that minimises context cost is **per-namespace servers + catalog pattern inside each + deferred tool registration**. Under this combination the model sees one line per namespace up-front (`mcp__osm_geocode__list_workflows — lists geocoding workflows`) and pulls schemas only when it decides to act.
+
+Claude Code already uses deferred tools for many MCP tools — the `mcp__agentflow__fw_*` family loaded in this very session is exactly this pattern: names visible in a system reminder, schemas fetched via `ToolSearch` when needed. Per-namespace servers benefit most because the naming convention makes `ToolSearch` queries unambiguous (`select:mcp__osm_geocode__list_workflows`).
+
+#### 5.5.3 Telling Claude which server to use
+
+Four mechanisms, typically combined:
+
+1. **Naming convention.** Server names mirror namespace paths: `mcp__osm_geocode__*`, `mcp__osm_source_pbf__*`, `mcp__hiv_resistance__*`. Claude's attention latches onto prefix similarity between user prompt ("geocode an address") and tool name (`mcp__osm_geocode__*`). Costs nothing and works surprisingly well.
+
+2. **CLAUDE.md routing table.** Put a short directory in the project or user CLAUDE.md:
+    ```markdown
+    ## MCP routing
+    - OSM address geocoding          → `mcp__osm_geocode`
+    - OSM PBF / PostGIS extraction   → `mcp__osm_source_*`
+    - HIV drug resistance            → `mcp__hiv_resistance`
+    ```
+    Read on every session; no tool call needed to discover the routing.
+
+3. **A meta-router tool.** If you prefer not to grow CLAUDE.md, run a tiny single-tool server `mcp__facetwork_router` exposing `fw_find_namespace(domain: String) → [namespace...]` that returns the server(s) handling a keyword. Two round-trips instead of zero, but the model learns the namespace set dynamically.
+
+4. **Deferred tool registration.** Claude Code surfaces only tool names + one-line descriptions in context until `ToolSearch` is called. Combined with the naming convention, this gives a directory-style view of the whole Facetwork deployment for ~N lines of context.
+
+#### 5.5.4 When to prefer per-namespace over a single-server catalog
+
+| Criterion | Single server (Pattern B) | Per-namespace servers |
+|---|---|---|
+| Namespaces ≤ 3 | yes | overkill |
+| Namespaces 4–20, single team | yes | optional |
+| Namespaces 20+, multiple teams, distinct auth | feasible but blurry | **recommended** |
+| Independent deploy lifecycles | hard | **native** |
+| Per-domain quotas / rate limits | custom plumbing | **per-server plumbing** |
+| Config discoverability for operators | one big list | directory of servers |
+
+The decision isn't token cost — that's solved in either topology by the catalog pattern. The decision is **operational scope**: if namespaces already mean "different team, different access, different deployment", match the MCP topology to that. If not, single-server catalog is simpler.
+
+#### 5.5.5 Worked example — surfacing `osm.geocode`
+
+The `osm.geocode` namespace (`examples/osm-geocoder/ffl/geocoder.ffl`) has one schema (`GeoCoordinate`), one event facet (`Geocode`), and two workflows (`GeocodeAddress`, `GeocodeAll`). What does surfacing it as a dedicated per-namespace MCP server look like end-to-end?
+
+**Client-side `.mcp.json`:**
+```json
+{
+  "mcpServers": {
+    "osm_geocode": {
+      "command": "python",
+      "args": ["-m", "facetwork.mcp", "--namespace", "osm.geocode"],
+      "env": { "AFL_MONGODB_URL": "mongodb://localhost:27017" }
+    }
+  }
+}
+```
+
+**What `tools/list` advertises** — five generic catalog tools scoped to this namespace:
+```
+mcp__osm_geocode__list_workflows     (query?, mixin?, tag?)
+mcp__osm_geocode__describe_workflow  (name)
+mcp__osm_geocode__run_workflow       (name, params)
+mcp__osm_geocode__get_run_status     (run_id)
+mcp__osm_geocode__cancel_run         (run_id)
+```
+
+With deferred tool registration, only the names plus one-line descriptions reach Claude's context at session start. Schemas for all five are fetched lazily; schemas for the workflows themselves are *never* fetched until `run_workflow` is actually called.
+
+**Trace — user says *"Find the coordinates for 1600 Pennsylvania Avenue"*:**
+
+```
+T1  mcp__osm_geocode__list_workflows(query = "geocode address")
+    ← [
+        {name:"GeocodeAddress",
+         summary:"Geocodes a single address and returns its coordinates",
+         signature:"(address: String) → (location: GeoCoordinate)"},
+        {name:"GeocodeAll",
+         summary:"Geocodes multiple addresses in parallel using foreach iteration",
+         signature:"(addresses: Json) → (locations: Json)"}
+      ]
+
+T2  mcp__osm_geocode__describe_workflow(name = "GeocodeAddress")
+    ← { inputSchema: {address: {type:"string",
+                                  description:"Street address in natural form"}},
+        returnSchema: { location: GeoCoordinate{lat, lon, display_name} },
+        annotations: {async:false, typical_runtime_ms:300,
+                       event_facets:["Geocode"]} }
+
+T3  mcp__osm_geocode__run_workflow(
+        name   = "GeocodeAddress",
+        params = {address: "1600 Pennsylvania Avenue NW, Washington DC"})
+    ← {run_id: "a3f1b7", status: "running"}
+
+T4  mcp__osm_geocode__get_run_status(run_id = "a3f1b7")
+    ← {status: "completed",
+       result: {location: {lat: "38.8977", lon: "-77.0365",
+                            display_name: "The White House, Washington, DC, USA"}}}
+
+T5  (text to user)
+    "The White House is at 38.8977°N, 77.0365°W."
+```
+
+**Token-cost contrast for this two-workflow namespace:**
+
+| Strategy | In-context at session start |
+|---|---|
+| Register each workflow as its own MCP tool | 2 full tool schemas (`run_GeocodeAddress`, `run_GeocodeAll`) — ~800 tokens even if unused |
+| Per-namespace server, catalog pattern, schemas eager | 5 tool schemas — ~600 tokens |
+| Per-namespace server, catalog pattern, **deferred** | 5 tool *names* + one-line descriptions — ~150 tokens; schemas fetched on demand |
+
+For two workflows the saving is modest. For a deployment with hundreds of workflows across a dozen namespaces, it is the difference between a usable context budget and a drowned one — and it is purely a matter of wiring, not modelling.
+
+**Scaling the same pattern to `osm.Source.*`:** the three source adapters (`osm.Source.PBF`, `osm.Source.PostGIS`, `osm.Source.GeoJSON`) each become their own server. Eight extraction facets × three sources = 24 workflows — but Claude only ever loads three sets of five generic-tool names (~450 tokens), and pulls the specific workflow schema lazily when a user asks for e.g. "bicycle routes from PostGIS." The `mixin` filter on `list_workflows` (`mixin:"PostGISSource"`) does the precision work the old tool-per-workflow model tried to do with unique names.
+
 ---
 
 ## 6. A worked example: prompt and tool-call trace
