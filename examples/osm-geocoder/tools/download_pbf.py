@@ -6,17 +6,26 @@ Each file is verified against Geofabrik's published ``.md5`` before being
 promoted into the cache; a local SHA-256 is also computed and stored so
 later corruption can be detected independently of upstream.
 
+Backends (``--backend`` / ``AFL_OSM_STORAGE``):
+
+- ``local`` (default): standard POSIX filesystem cache, atomic temp+rename.
+- ``hdfs``: writes into HDFS via WebHDFS. HDFS has no advisory locking, so
+  the manifest assumes single-writer semantics — run the tool from one
+  coordinator process when using the HDFS backend.
+
 Usage::
 
     python download_pbf.py europe/germany/berlin
     python download_pbf.py --force europe/germany/berlin
     python download_pbf.py europe/germany/berlin europe/germany/brandenburg
-    python download_pbf.py --regions-file regions.txt
+    python download_pbf.py --all-under europe/germany
+    python download_pbf.py --backend hdfs europe/germany/berlin
 
 Regions are Geofabrik paths relative to ``https://download.geofabrik.de/``,
 *without* the ``-latest.osm.pbf`` suffix.
 
-Cache root: ``$AFL_OSM_CACHE_ROOT`` (default ``/Volumes/afl_data/osm``).
+Cache root: ``$AFL_OSM_CACHE_ROOT`` (defaults to ``/Volumes/afl_data/osm``
+for local, ``/user/afl/osm`` for hdfs).
 """
 
 from __future__ import annotations
@@ -24,7 +33,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sys
 import time
 import urllib.error
@@ -33,7 +41,6 @@ from datetime import timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
-# Make the sibling _lib package importable when run as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _lib.manifest import (  # noqa: E402
@@ -42,6 +49,7 @@ from _lib.manifest import (  # noqa: E402
     read_manifest,
     utcnow_iso,
 )
+from _lib.storage import Storage, default_backend, get_storage  # noqa: E402
 
 CACHE_TYPE = "pbf"
 GEOFABRIK_BASE = "https://download.geofabrik.de"
@@ -72,7 +80,6 @@ def fetch_md5(url: str) -> str:
     md5_url = url + ".md5"
     with urllib.request.urlopen(_request(md5_url), timeout=30) as resp:
         body = resp.read().decode("utf-8").strip()
-    # Geofabrik format: "<md5>  <filename>"
     parts = body.split()
     if not parts or len(parts[0]) != 32:
         raise ValueError(f"Unexpected .md5 body from {md5_url}: {body!r}")
@@ -117,13 +124,13 @@ def _report_progress(
         print(msg, file=sys.stderr, flush=True)
     elif is_tty:
         print(msg, end="\r", file=sys.stderr, flush=True)
-    # else: skip intermediate updates when stderr is piped/redirected
 
 
-def download_with_progress(url: str, dest_tmp: Path, label: str) -> tuple[int, str, str]:
-    """Stream ``url`` to ``dest_tmp``, computing SHA-256 and MD5 on the fly.
+def download_to_writer(url: str, writer, label: str) -> tuple[int, str, str]:
+    """Stream ``url`` into ``writer`` (an open binary file handle).
 
-    Returns ``(size_bytes, sha256_hex, md5_hex)``.
+    Computes SHA-256 and MD5 on the fly. Returns
+    ``(size_bytes, sha256_hex, md5_hex)``.
     """
     sha = hashlib.sha256()
     md5 = hashlib.md5()
@@ -132,76 +139,82 @@ def download_with_progress(url: str, dest_tmp: Path, label: str) -> tuple[int, s
     last_report = start
     with urllib.request.urlopen(_request(url), timeout=60) as resp:
         total = int(resp.headers.get("Content-Length") or 0)
-        with dest_tmp.open("wb") as out:
-            while True:
-                chunk = resp.read(CHUNK_SIZE)
-                if not chunk:
-                    break
-                out.write(chunk)
-                sha.update(chunk)
-                md5.update(chunk)
-                size += len(chunk)
-                now = time.monotonic()
-                if now - last_report >= 2.0:
-                    _report_progress(label, size, total, now - start, final=False)
-                    last_report = now
+        while True:
+            chunk = resp.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            writer.write(chunk)
+            sha.update(chunk)
+            md5.update(chunk)
+            size += len(chunk)
+            now = time.monotonic()
+            if now - last_report >= 2.0:
+                _report_progress(label, size, total, now - start, final=False)
+                last_report = now
     _report_progress(label, size, total or size, time.monotonic() - start, final=True)
     return size, sha.hexdigest(), md5.hexdigest().lower()
 
 
 def already_cached(
-    manifest: dict, rel_path: str, expected_md5: str, cache_file: Path
+    manifest: dict, rel_path: str, expected_md5: str, cache_file: str, storage: Storage
 ) -> bool:
     entry = manifest.get("entries", {}).get(rel_path)
     if not entry:
         return False
     if entry.get("source_checksum", {}).get("value") != expected_md5:
         return False
-    if not cache_file.exists():
+    if not storage.exists(cache_file):
         return False
-    return cache_file.stat().st_size == entry.get("size_bytes")
+    return storage.size(cache_file) == entry.get("size_bytes")
 
 
-def download_region(region: str, *, force: bool, dry_run: bool) -> str:
+def download_region(
+    region: str, *, storage: Storage, force: bool, dry_run: bool
+) -> str:
     """Download a single region. Returns ``downloaded``, ``skipped``, or ``dry-run``."""
     rel_path, url = region_to_paths(region)
-    cdir = cache_dir(CACHE_TYPE)
-    cache_file = cdir / rel_path
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cdir = cache_dir(CACHE_TYPE, storage)
+    cache_file = Storage.join(cdir, rel_path)
+    storage.mkdir_p(Storage.dirname(cache_file))
 
     print(f"[{region}] resolving Geofabrik metadata", file=sys.stderr)
     expected_md5 = fetch_md5(url)
     source_ts = head_last_modified(url)
 
     if not force:
-        manifest = read_manifest(CACHE_TYPE)
-        if already_cached(manifest, rel_path, expected_md5, cache_file):
-            print(f"[{region}] up-to-date (md5 {expected_md5[:8]}…), skipping",
-                  file=sys.stderr)
+        manifest = read_manifest(CACHE_TYPE, storage)
+        if already_cached(manifest, rel_path, expected_md5, cache_file, storage):
+            print(
+                f"[{region}] up-to-date (md5 {expected_md5[:8]}…), skipping",
+                file=sys.stderr,
+            )
             return "skipped"
 
     if dry_run:
         print(f"[{region}] would download {url} -> {cache_file}", file=sys.stderr)
         return "dry-run"
 
-    tmp_path = cache_file.with_name(cache_file.name + ".tmp")
-    if tmp_path.exists():
-        tmp_path.unlink()
+    tmp_file = cache_file + ".tmp"
+    storage.unlink(tmp_file)
 
     print(f"[{region}] downloading {url}", file=sys.stderr)
     try:
-        size, sha256_hex, md5_hex = download_with_progress(url, tmp_path, region)
+        writer = storage.open_write_binary(tmp_file)
+        try:
+            size, sha256_hex, md5_hex = download_to_writer(url, writer, region)
+        finally:
+            writer.close()
     except BaseException:
-        tmp_path.unlink(missing_ok=True)
+        storage.unlink(tmp_file)
         raise
 
     if md5_hex != expected_md5:
-        tmp_path.unlink(missing_ok=True)
+        storage.unlink(tmp_file)
         raise RuntimeError(
             f"MD5 mismatch for {region}: upstream={expected_md5} computed={md5_hex}"
         )
 
-    os.replace(tmp_path, cache_file)
+    storage.rename(tmp_file, cache_file)
 
     entry = {
         "relative_path": rel_path,
@@ -217,7 +230,7 @@ def download_region(region: str, *, force: bool, dry_run: bool) -> str:
         "source_timestamp": source_ts,
         "extra": {"region": region},
     }
-    with manifest_transaction(CACHE_TYPE) as manifest:
+    with manifest_transaction(CACHE_TYPE, storage) as manifest:
         manifest.setdefault("entries", {})[rel_path] = entry
 
     print(
@@ -238,13 +251,7 @@ def _read_regions_file(path: Path) -> list[str]:
 
 
 def fetch_region_index() -> list[str]:
-    """Fetch Geofabrik's ``index-v1.json`` and return all PBF region paths.
-
-    A region path is the portion of the PBF URL between the Geofabrik base
-    and the trailing ``-latest.osm.pbf`` — e.g. ``europe/germany/berlin``.
-    Features without a PBF URL (a few Geofabrik "special" categories) are
-    skipped. The list is sorted and deduplicated.
-    """
+    """Fetch Geofabrik's ``index-v1.json`` and return all PBF region paths."""
     print(f"fetching Geofabrik index from {GEOFABRIK_INDEX_URL}", file=sys.stderr)
     with urllib.request.urlopen(_request(GEOFABRIK_INDEX_URL), timeout=60) as resp:
         data = json.load(resp)
@@ -272,15 +279,7 @@ def fetch_region_index() -> list[str]:
 def filter_regions(
     all_regions: list[str], *, under: str | None, leaves_only: bool
 ) -> list[str]:
-    """Filter ``all_regions`` by prefix and optionally drop parent regions.
-
-    - ``under``: if set, keep only regions equal to or nested under this path
-      (e.g. ``europe/germany`` matches both ``europe/germany`` and
-      ``europe/germany/berlin``). ``None`` or empty means "no prefix filter".
-    - ``leaves_only``: if True, drop any region that has a descendant in the
-      selected set. Parent PBFs (e.g. ``europe/germany``) usually fully
-      contain their children, so downloading both is wasteful.
-    """
+    """Filter ``all_regions`` by prefix and optionally drop parent regions."""
     under = (under or "").strip().strip("/")
     if under:
         pref = under + "/"
@@ -355,7 +354,22 @@ def main() -> int:
         default=DEFAULT_DELAY_SECONDS,
         help=f"Seconds to sleep between downloads (default: {DEFAULT_DELAY_SECONDS}).",
     )
+    parser.add_argument(
+        "--backend",
+        choices=("local", "hdfs"),
+        default=default_backend(),
+        help="Storage backend for the cache "
+        "(default: $AFL_OSM_STORAGE or 'local'). HDFS assumes single-writer "
+        "semantics (no advisory locking).",
+    )
     args = parser.parse_args()
+
+    try:
+        storage = get_storage(args.backend)
+    except (RuntimeError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"storage backend: {storage.name}", file=sys.stderr)
 
     regions: list[str] = list(args.regions)
     if args.regions_file:
@@ -375,7 +389,6 @@ def main() -> int:
         )
         regions.extend(resolved)
 
-    # Deduplicate while preserving first-seen order.
     seen: set[str] = set()
     deduped: list[str] = []
     for r in regions:
@@ -403,7 +416,9 @@ def main() -> int:
         if i > 0 and not args.dry_run:
             time.sleep(args.delay)
         try:
-            outcome = download_region(region, force=args.force, dry_run=args.dry_run)
+            outcome = download_region(
+                region, storage=storage, force=args.force, dry_run=args.dry_run
+            )
             results[outcome] += 1
         except Exception as exc:  # noqa: BLE001
             results["failed"] += 1

@@ -58,7 +58,8 @@ def pbf_rel_path(region: str) -> str:
 
 
 def pbf_abs_path(region: str) -> Path:
-    return cache_dir(SOURCE_CACHE_TYPE) / pbf_rel_path(region)
+    # osmium reads/writes local files, so this tool is local-backend only.
+    return Path(cache_dir(SOURCE_CACHE_TYPE)) / pbf_rel_path(region)
 
 
 def geojson_rel_path(region: str, fmt: str) -> str:
@@ -66,7 +67,7 @@ def geojson_rel_path(region: str, fmt: str) -> str:
 
 
 def geojson_abs_path(region: str, fmt: str) -> Path:
-    return cache_dir(OUTPUT_CACHE_TYPE) / geojson_rel_path(region, fmt)
+    return Path(cache_dir(OUTPUT_CACHE_TYPE)) / geojson_rel_path(region, fmt)
 
 
 def _osmium_version(osmium_bin: str) -> str:

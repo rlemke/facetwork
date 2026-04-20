@@ -71,7 +71,18 @@ When Claude (or a human) adds a tool here, follow these rules:
 
 ## Cache layout and manifests
 
-OSM-derived data is cached under `/Volumes/afl_data/osm/`, partitioned by type. Each cache type gets its own subdirectory and its own manifest file **inside** that subdirectory — the manifest travels with its data, so moving or deleting a cache subtree keeps the index consistent.
+OSM-derived data is cached under a storage root, partitioned by type. Each cache type gets its own subdirectory and its own manifest file **inside** that subdirectory — the manifest travels with its data, so moving or deleting a cache subtree keeps the index consistent.
+
+### Backends
+
+Tools access the cache through a storage abstraction that supports two backends:
+
+- `local` (default) — standard POSIX filesystem. Default root: `/Volumes/afl_data/osm`. Full atomic writes and `fcntl` advisory locking.
+- `hdfs` — HDFS via WebHDFS (soft-imports `facetwork.runtime.storage`). Default root: `/user/afl/osm`. No advisory locking — **single-writer semantics assumed** (use from one coordinator process). Rename is atomic at the namenode; overwrite is not.
+
+Select the backend per invocation with `--backend {local,hdfs}` or globally via `AFL_OSM_STORAGE`. Override the cache root with `AFL_OSM_CACHE_ROOT` (applies to the selected backend).
+
+### Layout
 
 ```
 /Volumes/afl_data/osm/
@@ -87,7 +98,7 @@ OSM-derived data is cached under `/Volumes/afl_data/osm/`, partitioned by type. 
 └── ...
 ```
 
-Override the root with `AFL_OSM_CACHE_ROOT` (default `/Volumes/afl_data/osm`). Tools must never hard-code the root — read it from `_lib/manifest.py` or the env var.
+Tools must never hard-code the root — use `_lib.storage.get_storage()` and `_lib.manifest.cache_dir(cache_type, storage)`, both of which consult the env vars above.
 
 ### Manifest conventions
 
@@ -123,15 +134,17 @@ Override the root with `AFL_OSM_CACHE_ROOT` (default `/Volumes/afl_data/osm`). T
 
 <!-- Append one line per tool: `- **name** — short description.` -->
 
-- **download-pbf** — download OSM PBF files from Geofabrik into `pbf/`, verified against upstream MD5. Sequential (Geofabrik rate-limits per IP), skips files already present with a matching checksum. Accepts region keys positionally, via `--regions-file`, or resolved from Geofabrik's `index-v1.json` with `--all` / `--all-under PREFIX` (leaves-only by default; add `--include-parents` for continent/country-level PBFs). Use `--list` to preview the resolved set. See `download-pbf.sh --help`.
-- **convert-pbf-geojson** — convert cached PBFs to GeoJSON via `osmium export` into `geojson/`. The geojson manifest records the source PBF's SHA-256, so reruns skip regions whose PBF hasn't changed; pass `--force` to reconvert. Parallelizes with `--jobs N` (each worker spawns an `osmium` subprocess). Region selection mirrors download-pbf: positional, `--regions-file`, `--all` / `--all-under PREFIX` (reading the **local pbf manifest**, not the Geofabrik index). Default output format is `geojsonseq`; pass `--format geojson` for a single FeatureCollection. Requires `osmium-tool` on PATH.
+- **download-pbf** — download OSM PBF files from Geofabrik into `pbf/`, verified against upstream MD5. Sequential (Geofabrik rate-limits per IP), skips files already present with a matching checksum. Accepts region keys positionally, via `--regions-file`, or resolved from Geofabrik's `index-v1.json` with `--all` / `--all-under PREFIX` (leaves-only by default; add `--include-parents` for continent/country-level PBFs). Use `--list` to preview the resolved set. Supports `--backend {local,hdfs}` for either local filesystem or HDFS (WebHDFS) storage. See `download-pbf.sh --help`.
+- **convert-pbf-geojson** — convert cached PBFs to GeoJSON via `osmium export` into `geojson/`. The geojson manifest records the source PBF's SHA-256, so reruns skip regions whose PBF hasn't changed; pass `--force` to reconvert. Parallelizes with `--jobs N` (each worker spawns an `osmium` subprocess). Region selection mirrors download-pbf: positional, `--regions-file`, `--all` / `--all-under PREFIX` (reading the **local pbf manifest**, not the Geofabrik index). Default output format is `geojsonseq`; pass `--format geojson` for a single FeatureCollection. Local backend only — `osmium` requires local files. Requires `osmium-tool` on PATH.
 
 ## Running a tool
 
 ```bash
 cd examples/osm-geocoder
 ./tools/<name>.sh --help
-./tools/<name>.sh --region berlin --format json
+./tools/download-pbf.sh europe/liechtenstein               # local backend (default)
+AFL_OSM_STORAGE=hdfs ./tools/download-pbf.sh europe/liechtenstein
+./tools/download-pbf.sh --backend hdfs europe/liechtenstein  # same via flag
 ```
 
 Direct Python invocation also works if the environment is already set up:
