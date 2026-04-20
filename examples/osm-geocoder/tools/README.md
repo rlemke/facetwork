@@ -1,0 +1,141 @@
+# OSM Geocoder — Tools
+
+Standalone command-line utilities for OSM-related operations that are **not** part of a workflow. Each tool is a self-contained Python program paired with a shell wrapper that supplies its arguments.
+
+Tools are intended for operator/developer use: one-off imports, diagnostics, data inspection, cache inspection, export helpers, etc. A handler may shell out to a tool if convenient, but the tool's primary audience is a human at the terminal.
+
+## Directory layout
+
+```
+tools/
+├── README.md                 ← this file
+├── _lib/                     ← shared helpers (manifest I/O, checksums, etc.)
+│   └── __init__.py
+├── <tool_name>.py            ← Python entry point (CLI, argparse-based)
+├── <tool_name>.sh            ← shell wrapper that invokes <tool_name>.py
+└── ...
+```
+
+One `.py` + one `.sh` per tool. Shared code lives in `tools/_lib/` — anything reused by two or more tools (manifest read/modify/write, checksum helpers, Geofabrik URL resolution) belongs there. Tools may also import from `examples/osm-geocoder/handlers/` when reusing workflow-side logic is appropriate, but prefer `_lib/` for tool-only concerns.
+
+## Conventions for adding a new tool
+
+When Claude (or a human) adds a tool here, follow these rules:
+
+### Python program (`<name>.py`)
+
+- Runnable directly: `python tools/<name>.py --help` must work.
+- Use `argparse` for argument parsing. Every tool exposes `--help`.
+- Has a `main()` function and an `if __name__ == "__main__": main()` guard.
+- Exit codes: `0` on success, non-zero on failure. Print errors to `stderr`.
+- Log to `stderr`; reserve `stdout` for structured output (JSON, CSV, geometry, etc.) when applicable, so output can be piped.
+- Read configuration from environment variables where possible (`AFL_POSTGIS_URL`, `AFL_IMPORT_POSTGIS_URL`, etc.) — match the names used by the rest of the project. CLI flags override env vars.
+- Do **not** depend on the Facetwork runtime, MongoDB, or the dashboard. Tools should be usable without a running workflow stack. PostGIS, HDFS, and external APIs are fair game.
+- If the tool needs code from a handler, import it from `handlers/...` rather than copying it.
+- Type hints on every function. Docstring on `main()` describing purpose, inputs, and outputs.
+
+### Shell wrapper (`<name>.sh`)
+
+- Executable: `chmod +x <name>.sh`.
+- Starts with `#!/usr/bin/env bash` and `set -euo pipefail`.
+- Sources the repo's env loader so `.env` values are available:
+  ```bash
+  REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+  # shellcheck disable=SC1091
+  source "${REPO_ROOT}/scripts/_env.sh"
+  ```
+- Activates the project virtualenv if one exists at `${REPO_ROOT}/.venv`.
+- Invokes the Python tool with `"$@"` so any extra flags pass through:
+  ```bash
+  exec python "$(dirname "${BASH_SOURCE[0]}")/<name>.py" "$@"
+  ```
+- The wrapper's job is *environment setup and defaults*, not argument parsing — parsing belongs in the Python program. The wrapper may set a handful of defaults (e.g. a default `--region` or `--pbf-path`) before `"$@"`, but complex option logic stays in Python.
+
+### Naming
+
+- Use kebab-case for shell wrappers (`dump-amenities.sh`), snake_case for Python files (`dump_amenities.py`). Keep the base name aligned so the pair is obvious.
+- Name by *what it does*, not by *how*: `count-nodes-by-region.sh`, not `run-sql.sh`.
+
+### Documentation
+
+- Top of each `<name>.py`: a module docstring with one-line summary, a usage example, and a note on any external dependencies (PostGIS, osmium, network).
+- If a tool grows non-trivial (multiple subcommands, complex output), add a `tools/<name>.md` next to it. For simple tools, `--help` output is sufficient.
+- When adding a new tool, append a one-line entry to the **Available tools** section below.
+
+### What does *not* belong here
+
+- Workflow steps, event facets, or handler logic → `handlers/`.
+- Operational scripts that manage the Facetwork stack itself (runners, Docker, databases) → repo-root `scripts/`.
+- Test fixtures or pytest helpers → `tests/` or `conftest.py`.
+- Anything that must run inside a Facetwork task — if it needs the runtime, it's a handler, not a tool.
+
+## Cache layout and manifests
+
+OSM-derived data is cached under `/Volumes/afl_data/osm/`, partitioned by type. Each cache type gets its own subdirectory and its own manifest file **inside** that subdirectory — the manifest travels with its data, so moving or deleting a cache subtree keeps the index consistent.
+
+```
+/Volumes/afl_data/osm/
+├── pbf/
+│   ├── manifest.json
+│   └── europe/germany/berlin-latest.osm.pbf        ← mirrors Geofabrik's path
+├── geojson/
+│   ├── manifest.json
+│   └── ...
+├── shapefiles/
+│   ├── manifest.json
+│   └── ...
+└── ...
+```
+
+Override the root with `AFL_OSM_CACHE_ROOT` (default `/Volumes/afl_data/osm`). Tools must never hard-code the root — read it from `_lib/manifest.py` or the env var.
+
+### Manifest conventions
+
+- **Name**: always `manifest.json` inside the cache-type subdir. Do not use `<type>_directory.json` — "directory" is ambiguous with "filesystem directory."
+- **Path mirroring**: for remote sources with a natural hierarchy (Geofabrik: `europe/germany/berlin-latest.osm.pbf`), mirror that path under the cache subdir. Keeps diffs against upstream trivial and avoids filename-collision logic.
+- **Entry shape** (baseline — extend per cache type as needed):
+  ```json
+  {
+    "version": 1,
+    "entries": {
+      "europe/germany/berlin-latest.osm.pbf": {
+        "relative_path": "europe/germany/berlin-latest.osm.pbf",
+        "source_url": "https://download.geofabrik.de/europe/germany/berlin-latest.osm.pbf",
+        "size_bytes": 123456789,
+        "sha256": "…",
+        "source_checksum": {"algo": "md5", "value": "…", "url": "…md5"},
+        "downloaded_at": "2026-04-20T14:03:22Z",
+        "source_timestamp": "2026-04-18T21:22:02Z",
+        "extra": { /* cache-type specific: osmosis_replication_seq, region_code, etc. */ }
+      }
+    }
+  }
+  ```
+  `downloaded_at` answers *"when did we fetch it?"*; `source_timestamp` (from the PBF header / upstream metadata) answers *"how fresh is the data?"* — keep them separate.
+- **Checksums**: for Geofabrik, download the published `.md5` and record it under `source_checksum` for upstream-integrity verification. Also compute a local `sha256` after download for tamper/corruption detection. Verify `source_checksum` before writing the manifest entry; abort on mismatch.
+- **Atomic writes**: write to `manifest.json.tmp` in the same directory, then `os.replace` to `manifest.json`. Never write the file in place.
+- **Concurrent access**: hold an advisory lock (`fcntl.flock` on `manifest.json.lock`) for the entire read-modify-write cycle. Multiple simultaneous downloads are allowed — they must serialize around the manifest update, not the download itself.
+- **Forward compatibility**: always include `"version": 1`. Readers must tolerate unknown fields in entries. Bump the version only for breaking layout changes.
+
+`tools/_lib/manifest.py` is the single implementation of all of the above — new tools must use it rather than re-implementing JSON I/O.
+
+## Available tools
+
+<!-- Append one line per tool: `- **name** — short description.` -->
+
+- **download-pbf** — download OSM PBF files from Geofabrik into `pbf/`, verified against upstream MD5. Sequential (Geofabrik rate-limits per IP), skips files already present with a matching checksum. Accepts region keys positionally, via `--regions-file`, or resolved from Geofabrik's `index-v1.json` with `--all` / `--all-under PREFIX` (leaves-only by default; add `--include-parents` for continent/country-level PBFs). Use `--list` to preview the resolved set. See `download-pbf.sh --help`.
+- **convert-pbf-geojson** — convert cached PBFs to GeoJSON via `osmium export` into `geojson/`. The geojson manifest records the source PBF's SHA-256, so reruns skip regions whose PBF hasn't changed; pass `--force` to reconvert. Parallelizes with `--jobs N` (each worker spawns an `osmium` subprocess). Region selection mirrors download-pbf: positional, `--regions-file`, `--all` / `--all-under PREFIX` (reading the **local pbf manifest**, not the Geofabrik index). Default output format is `geojsonseq`; pass `--format geojson` for a single FeatureCollection. Requires `osmium-tool` on PATH.
+
+## Running a tool
+
+```bash
+cd examples/osm-geocoder
+./tools/<name>.sh --help
+./tools/<name>.sh --region berlin --format json
+```
+
+Direct Python invocation also works if the environment is already set up:
+
+```bash
+python tools/<name>.py --region berlin
+```
