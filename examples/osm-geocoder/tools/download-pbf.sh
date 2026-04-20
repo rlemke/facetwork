@@ -18,4 +18,4 @@ if [ -f "${REPO_ROOT}/.venv/bin/activate" ]; then
     source "${REPO_ROOT}/.venv/bin/activate"
 fi
 
-exec python "${SCRIPT_DIR}/download_pbf.py" "$@"
+exec python3 "${SCRIPT_DIR}/download_pbf.py" "$@"
