@@ -33,7 +33,6 @@ HDFS limitations (documented; acceptable for the current use case):
 from __future__ import annotations
 
 import abc
-import errno
 import fcntl
 import os
 import subprocess
@@ -188,32 +187,48 @@ class LocalStorage(Storage):
         """Move a local staged file to ``dst_path``.
 
         Tries ``os.rename`` first — free when source and destination are on
-        the same filesystem. On cross-filesystem (``EXDEV``) moves (e.g.
-        ``/tmp`` → ``/Volumes/external``) falls back to ``cp`` followed by
-        an atomic rename, so the destination appears atomically.
+        the same filesystem. On cross-filesystem moves (e.g. ``/tmp`` →
+        ``/Volumes/external``) or any other ``OSError`` from ``rename``
+        (``EXDEV``, ``EILSEQ``, ``ENOTSUP``, …) falls back to ``cp -X``
+        followed by an atomic rename, so the destination appears atomically.
+
+        ``cp -X`` skips extended attributes and resource forks, which on
+        macOS is what causes ``EILSEQ`` ("illegal byte sequence") when
+        copying onto non-APFS volumes (exFAT, some network mounts) that
+        don't fully support xattrs.
         """
         parent = os.path.dirname(dst_path) or "."
         self.mkdir_p(parent)
         try:
             os.rename(local_path, dst_path)
             return
-        except OSError as exc:
-            if exc.errno != errno.EXDEV:
-                raise
+        except OSError:
+            # Any rename failure falls through to the cp-based copy path.
+            # If the real cause is permission / ENOSPC / etc., cp will
+            # surface it via stderr, which we include in the error.
+            pass
         tmp_dst = dst_path + ".copy.tmp"
         self.unlink(tmp_dst)
         try:
-            # ``subprocess cp`` is the known-good primitive for copies onto
-            # external / VirtioFS / network-attached volumes in this repo —
-            # Python's ``open()`` has been observed to hang indefinitely on
-            # some of those mounts for large files. See
+            # ``cp -X`` skips extended attributes and resource forks —
+            # critical on macOS when copying onto volumes that don't
+            # support them (EILSEQ otherwise). ``cp`` is the known-good
+            # primitive for copies onto VirtioFS / network-attached
+            # volumes in this repo — see
             # ``handlers/shared/downloader.py::_copy_to_cache``.
-            subprocess.run(
-                ["cp", local_path, tmp_dst],
-                check=True,
+            proc = subprocess.run(
+                ["cp", "-X", local_path, tmp_dst],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
+                text=True,
             )
+            if proc.returncode != 0:
+                self.unlink(tmp_dst)
+                stderr = (proc.stderr or "").strip() or "(no stderr)"
+                raise OSError(
+                    f"cp -X {local_path} {tmp_dst} failed "
+                    f"(exit {proc.returncode}): {stderr}"
+                )
             os.rename(tmp_dst, dst_path)
         except BaseException:
             self.unlink(tmp_dst)
