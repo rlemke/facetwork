@@ -162,16 +162,25 @@ def _stream_download(
     label: str,
     on_progress: ProgressCallback | None,
 ) -> tuple[int, str, str]:
-    """Stream ``url`` into ``writer``; compute SHA-256 and MD5 on the fly."""
+    """Stream ``url`` into ``writer``; compute SHA-256 and MD5 on the fly.
+
+    Uses ``read1`` rather than ``read`` so progress updates appear as
+    bytes arrive. ``HTTPResponse.read(n)`` blocks until a full ``n`` bytes
+    are received, which makes slow connections look frozen between
+    updates; ``read1(n)`` returns whatever is currently buffered (up to
+    ``n``), giving sub-chunk progress resolution on slow links.
+    """
     sha = hashlib.sha256()
     md5 = hashlib.md5()
     size = 0
     start = time.monotonic()
     last_report = start
-    with urllib.request.urlopen(_request(url), timeout=60) as resp:
+    # 300s socket timeout — large PBFs can have long inter-packet gaps on
+    # congested links. 60s was too aggressive for multi-GB downloads.
+    with urllib.request.urlopen(_request(url), timeout=300) as resp:
         total = int(resp.headers.get("Content-Length") or 0)
         while True:
-            chunk = resp.read(CHUNK_SIZE)
+            chunk = resp.read1(CHUNK_SIZE)
             if not chunk:
                 break
             writer.write(chunk)
