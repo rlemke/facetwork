@@ -48,6 +48,7 @@ from _lib.pbf_download import (  # noqa: E402
     DownloadResult,
     cached_path,
     download_region,
+    staging_path,
 )
 from _lib.storage import default_backend, get_storage  # noqa: E402
 
@@ -141,6 +142,7 @@ def _run_one(region: str, *, storage, force: bool, dry_run: bool) -> str:
     print(f"[{region}] resolving Geofabrik metadata", file=sys.stderr)
     output_path = cached_path(region, storage=storage)
     print(f"[{region}] output:  {output_path}", file=sys.stderr)
+    print(f"[{region}] staging: {staging_path(region)}", file=sys.stderr)
     if dry_run:
         # For dry-run, we still consult the manifest to show what would happen,
         # but we don't hit the network for MD5 here — just report the intent.

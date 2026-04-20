@@ -33,8 +33,10 @@ HDFS limitations (documented; acceptable for the current use case):
 from __future__ import annotations
 
 import abc
+import errno
 import fcntl
 import os
+import subprocess
 import tempfile
 from contextlib import contextmanager
 from typing import IO, Iterator
@@ -80,6 +82,16 @@ class Storage(abc.ABC):
     @contextmanager
     def lock(self, path: str, *, exclusive: bool) -> Iterator[None]:
         """Advisory lock on ``path``. May be a no-op on some backends."""
+
+    @abc.abstractmethod
+    def finalize_from_local(self, local_path: str, dst_path: str) -> None:
+        """Move a locally-staged file to its final location on this backend.
+
+        The caller promises ``local_path`` lives on the local filesystem
+        (typically ``/tmp`` or ``$TMPDIR``) and is a complete, verified
+        file. Implementations must make ``dst_path`` visible atomically
+        (no partial-file window) and delete ``local_path`` on success.
+        """
 
     @property
     @abc.abstractmethod
@@ -172,6 +184,42 @@ class LocalStorage(Storage):
             finally:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
+    def finalize_from_local(self, local_path: str, dst_path: str) -> None:
+        """Move a local staged file to ``dst_path``.
+
+        Tries ``os.rename`` first — free when source and destination are on
+        the same filesystem. On cross-filesystem (``EXDEV``) moves (e.g.
+        ``/tmp`` → ``/Volumes/external``) falls back to ``cp`` followed by
+        an atomic rename, so the destination appears atomically.
+        """
+        parent = os.path.dirname(dst_path) or "."
+        self.mkdir_p(parent)
+        try:
+            os.rename(local_path, dst_path)
+            return
+        except OSError as exc:
+            if exc.errno != errno.EXDEV:
+                raise
+        tmp_dst = dst_path + ".copy.tmp"
+        self.unlink(tmp_dst)
+        try:
+            # ``subprocess cp`` is the known-good primitive for copies onto
+            # external / VirtioFS / network-attached volumes in this repo —
+            # Python's ``open()`` has been observed to hang indefinitely on
+            # some of those mounts for large files. See
+            # ``handlers/shared/downloader.py::_copy_to_cache``.
+            subprocess.run(
+                ["cp", local_path, tmp_dst],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            os.rename(tmp_dst, dst_path)
+        except BaseException:
+            self.unlink(tmp_dst)
+            raise
+        self.unlink(local_path)
+
 
 class HdfsStorage(Storage):
     name = "hdfs"
@@ -256,6 +304,30 @@ class HdfsStorage(Storage):
     def lock(self, path: str, *, exclusive: bool) -> Iterator[None]:
         # No-op: HDFS does not support advisory locking. See module docstring.
         yield
+
+    def finalize_from_local(self, local_path: str, dst_path: str) -> None:
+        """Upload a locally-staged file into HDFS at ``dst_path``.
+
+        The underlying WebHDFS ``CREATE`` buffers the entire payload in
+        memory before transmitting (see module docstring). For multi-GB
+        files this is expensive — a future optimization could chunk via
+        ``APPEND`` after an initial ``CREATE``.
+        """
+        parent = self.dirname(dst_path)
+        if parent:
+            self.mkdir_p(parent)
+        try:
+            with open(local_path, "rb") as src, self._backend.open(dst_path, "wb") as dst:
+                while True:
+                    chunk = src.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    dst.write(chunk)
+        except BaseException:
+            # Leave the local staged file in place on failure so a retry
+            # can reuse it without a second download.
+            raise
+        os.unlink(local_path)
 
 
 def default_backend() -> str:

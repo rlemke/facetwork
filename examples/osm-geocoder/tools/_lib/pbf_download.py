@@ -30,7 +30,9 @@ for HDFS caches. See ``_lib/storage.py``.
 from __future__ import annotations
 
 import hashlib
+import os
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -39,6 +41,11 @@ from dataclasses import dataclass, field
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable
+
+try:
+    import requests
+except ImportError:  # pragma: no cover - optional, only needed for bulk streaming
+    requests = None
 
 from _lib.manifest import (
     cache_dir,
@@ -92,6 +99,30 @@ def _region_lock(region: str) -> threading.Lock:
             lock = threading.Lock()
             _region_locks[region] = lock
         return lock
+
+
+def _local_staging_dir() -> str:
+    """Return the local-disk staging directory for in-flight PBF downloads.
+
+    Honors ``$AFL_OSM_LOCAL_TMP_DIR`` if set; otherwise uses the system
+    temp dir (``$TMPDIR`` / ``/tmp``). Staging keeps the socket-read rate
+    decoupled from the destination write rate — writing directly to a
+    network-attached volume can stall the TCP receive window on a slow
+    mount, masquerading as a hung download.
+    """
+    base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+    staging = os.path.join(base, "facetwork-pbf-staging")
+    os.makedirs(staging, exist_ok=True)
+    return staging
+
+
+def staging_path(region: str) -> str:
+    """Path on local disk where a region is staged before finalization.
+
+    Public so callers (e.g. the CLI progress display) can report it.
+    """
+    safe = region.replace("/", "_")
+    return os.path.join(_local_staging_dir(), f"{safe}-latest.osm.pbf.tmp")
 
 
 def region_to_paths(region: str) -> tuple[str, str]:
@@ -156,31 +187,80 @@ def _already_cached(
     return storage.size(cache_file) == entry.get("size_bytes")
 
 
+STREAM_CHUNK_SIZE = 64 * 1024   # 64 KiB, matches handlers/shared/downloader.py
+READ_TIMEOUT_SECONDS = 120      # per-read stall timeout
+CONNECT_TIMEOUT_SECONDS = 30
+
+
 def _stream_download(
     url: str,
     writer,
     label: str,
     on_progress: ProgressCallback | None,
 ) -> tuple[int, str, str]:
-    """Stream ``url`` into ``writer``; compute SHA-256 and MD5 on the fly.
+    """Stream ``url`` into ``writer`` using ``requests``; compute SHA-256 and MD5.
 
-    Uses ``read1`` rather than ``read`` so progress updates appear as
-    bytes arrive. ``HTTPResponse.read(n)`` blocks until a full ``n`` bytes
-    are received, which makes slow connections look frozen between
-    updates; ``read1(n)`` returns whatever is currently buffered (up to
-    ``n``), giving sub-chunk progress resolution on slow links.
+    Uses the ``requests`` library with (connect, read) timeouts. The read
+    timeout is enforced per underlying socket read, so a stalled server
+    surfaces as a clear ``ReadTimeout`` error rather than a silent hang.
+    ``iter_content`` yields chunks as the socket delivers them, so progress
+    updates are responsive on slow links.
+
+    Falls back to ``urllib.request`` if the ``requests`` library is not
+    installed, though that path does not detect stalls as reliably.
     """
+    if requests is None:
+        return _stream_download_urllib(url, writer, label, on_progress)
+
     sha = hashlib.sha256()
     md5 = hashlib.md5()
     size = 0
     start = time.monotonic()
     last_report = start
-    # 300s socket timeout — large PBFs can have long inter-packet gaps on
-    # congested links. 60s was too aggressive for multi-GB downloads.
-    with urllib.request.urlopen(_request(url), timeout=300) as resp:
+    last_bytes_at = start
+
+    with requests.get(
+        url,
+        stream=True,
+        headers={"User-Agent": USER_AGENT},
+        timeout=(CONNECT_TIMEOUT_SECONDS, READ_TIMEOUT_SECONDS),
+    ) as resp:
+        resp.raise_for_status()
+        total = int(resp.headers.get("Content-Length") or 0)
+        for chunk in resp.iter_content(chunk_size=STREAM_CHUNK_SIZE):
+            if not chunk:
+                continue
+            writer.write(chunk)
+            sha.update(chunk)
+            md5.update(chunk)
+            size += len(chunk)
+            now = time.monotonic()
+            last_bytes_at = now
+            if on_progress and now - last_report >= 2.0:
+                on_progress(label, size, total, False)
+                last_report = now
+    if on_progress:
+        on_progress(label, size, total or size, True)
+    _ = last_bytes_at  # reserved for future stall heuristics
+    return size, sha.hexdigest(), md5.hexdigest().lower()
+
+
+def _stream_download_urllib(
+    url: str,
+    writer,
+    label: str,
+    on_progress: ProgressCallback | None,
+) -> tuple[int, str, str]:
+    """Fallback streaming path using ``urllib.request`` (no ``requests``)."""
+    sha = hashlib.sha256()
+    md5 = hashlib.md5()
+    size = 0
+    start = time.monotonic()
+    last_report = start
+    with urllib.request.urlopen(_request(url), timeout=READ_TIMEOUT_SECONDS) as resp:
         total = int(resp.headers.get("Content-Length") or 0)
         while True:
-            chunk = resp.read1(CHUNK_SIZE)
+            chunk = resp.read1(STREAM_CHUNK_SIZE)
             if not chunk:
                 break
             writer.write(chunk)
@@ -295,28 +375,32 @@ def download_region(
                     manifest_entry=entry,
                 )
 
-        tmp_file = cache_file + ".tmp"
-        storage.unlink(tmp_file)
+        # Stage the download onto local disk first. Writing directly to
+        # the destination (which may be a slow network- or USB-attached
+        # volume) can stall the TCP receive window and look like a hung
+        # download. Local staging decouples socket-read from the possibly
+        # slow finalize copy.
+        staged = staging_path(region)
+        if os.path.exists(staged):
+            os.unlink(staged)
 
         try:
-            writer = storage.open_write_binary(tmp_file)
-            try:
+            with open(staged, "wb") as writer:
                 size, sha256_hex, md5_hex = _stream_download(
                     url, writer, region, on_progress
                 )
-            finally:
-                writer.close()
         except BaseException:
-            storage.unlink(tmp_file)
+            if os.path.exists(staged):
+                os.unlink(staged)
             raise
 
         if md5_hex != expected_md5:
-            storage.unlink(tmp_file)
+            os.unlink(staged)
             raise DownloadError(
                 f"MD5 mismatch for {region}: upstream={expected_md5} computed={md5_hex}"
             )
 
-        storage.rename(tmp_file, cache_file)
+        storage.finalize_from_local(staged, cache_file)
 
         downloaded_at = utcnow_iso()
         entry = {
