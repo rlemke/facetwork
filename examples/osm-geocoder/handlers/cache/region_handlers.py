@@ -7,12 +7,17 @@ delegating to the region_resolver module.
 import os
 from typing import Any
 
-from ..shared.downloader import download
+from ..shared.pbf_cache import download_region, to_osm_cache
 from ..shared.region_resolver import (
     list_geographic_features,
     list_regions,
     resolve,
 )
+
+
+def _download_as_osm_cache(geofabrik_path: str) -> dict:
+    """Download a PBF via the shared cache library and return an OSMCache dict."""
+    return to_osm_cache(download_region(geofabrik_path))
 
 
 def handle_resolve_region(params: dict[str, Any]) -> dict[str, Any]:
@@ -52,7 +57,7 @@ def handle_resolve_region(params: dict[str, Any]) -> dict[str, Any]:
         }
 
     best = result.matches[0]
-    cache = download(best.geofabrik_path)
+    cache = _download_as_osm_cache(best.geofabrik_path)
     source = cache.get("source", "unknown")
     if step_log:
         step_log(
@@ -91,7 +96,7 @@ def handle_resolve_regions(params: dict[str, Any]) -> dict[str, Any]:
     caches = []
     regions = []
     for match in result.matches:
-        cache = download(match.geofabrik_path)
+        cache = _download_as_osm_cache(match.geofabrik_path)
         source = cache.get("source", "unknown")
         if step_log:
             step_log(

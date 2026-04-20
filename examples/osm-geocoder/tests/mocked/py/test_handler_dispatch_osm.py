@@ -224,7 +224,26 @@ class TestOsmOperationsHandlers:
             "wasInCache": True,
             "source": "cache",
         }
-        with patch("handlers.shared.downloader.download", return_value=mock_cache):
+        with patch(
+            "handlers.shared.pbf_cache.download_region",
+            side_effect=lambda region, **_: type(
+                "R",
+                (),
+                {
+                    "region": region,
+                    "path": mock_cache["path"],
+                    "relative_path": f"{region}-latest.osm.pbf",
+                    "source_url": mock_cache["url"],
+                    "size_bytes": mock_cache["size"],
+                    "sha256": "",
+                    "md5": "",
+                    "source_timestamp": None,
+                    "downloaded_at": mock_cache["date"],
+                    "was_cached": mock_cache["wasInCache"],
+                    "manifest_entry": {},
+                },
+            )(),
+        ):
             result = mod.handle({"_facet_name": facet, "region": "TestRegion"})
         assert isinstance(result, dict)
 

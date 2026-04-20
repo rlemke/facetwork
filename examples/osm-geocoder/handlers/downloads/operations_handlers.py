@@ -206,9 +206,13 @@ def _cache_handler(payload: dict) -> dict:
       via the region registry for backward compat. Also supports US state
       abbreviations (``"CA"`` -> ``"California"``).
 
+    Delegates to the shared PBF cache library (``shared.pbf_cache``), so
+    the FFL handler and the ``download-pbf`` CLI tool read and write the
+    same on-disk cache and the same manifest.
+
     Returns cache:OSMCache.
     """
-    from ..shared.downloader import download
+    from ..shared.pbf_cache import download_region, to_osm_cache
 
     region = payload.get("region", "")
     step_log = payload.get("_step_log")
@@ -239,11 +243,12 @@ def _cache_handler(payload: dict) -> dict:
             region_path = region.lower()
 
     log.info("Cache: resolving region '%s' -> '%s'", region, region_path)
-    cache = download(region_path)
-    source = cache.get("source", "unknown")
+    result = download_region(region_path)
+    cache = to_osm_cache(result)
     if step_log:
         step_log(
-            f"Cache: region '{region}' -> '{region_path}' (source={source}, size={cache.get('size', 0)})",
+            f"Cache: region '{region}' -> '{region_path}' "
+            f"(source={cache['source']}, size={cache['size']})",
             level="success",
         )
     return {"cache": cache}

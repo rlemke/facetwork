@@ -142,7 +142,7 @@ def _postgis_import_batch_handler(payload: dict) -> dict:
         )
         return {"stats": {"url": "", "path": "", "date": "", "size": 0, "wasInCache": False}}
 
-    from ..shared.downloader import download
+    from ..shared.pbf_cache import download_region, to_osm_cache
     from .postgis_importer import import_to_postgis
 
     total_nodes = 0
@@ -152,7 +152,7 @@ def _postgis_import_batch_handler(payload: dict) -> dict:
 
     for region_name in regions:
         try:
-            cache = download(region_name)
+            cache = to_osm_cache(download_region(region_name))
             pbf_path = cache.get("path", "")
             source_url = cache.get("url", "")
             if not pbf_path:

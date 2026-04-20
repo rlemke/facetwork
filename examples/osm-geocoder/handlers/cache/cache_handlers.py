@@ -1,29 +1,15 @@
 """OSM region registry data for Geofabrik downloads.
 
-Provides REGION_REGISTRY mapping namespace → { FacetName: geofabrik_path }
-and a _make_handler() factory used by operations_handlers.py.
+Provides ``REGION_REGISTRY`` — a mapping from handler namespace to
+``{ FacetName: geofabrik_path }`` — used by ``operations_handlers.py`` to
+resolve PascalCase region inputs (backward compat) and by
+``shared.region_resolver`` for fuzzy region name resolution.
 
-Note: The actual event facet for cache operations is osm.ops.CacheRegion,
-handled by operations_handlers.py. The individual region facets (e.g.,
-osm.cache.Africa.Malawi) are regular facets with andThen bodies that
-expand inline — they never produce event tasks.
+The actual event facet for cache operations is ``osm.ops.CacheRegion``,
+handled by ``operations_handlers.py``. The individual region facets
+(e.g. ``osm.cache.Africa.Malawi``) are regular facets with ``andThen``
+bodies that expand inline — they never produce event tasks.
 """
-
-from ..shared.downloader import download
-
-
-def _make_handler(region_path: str):
-    """Create a handler function that downloads and caches a region."""
-
-    def handler(payload: dict) -> dict:
-        step_log = payload.get("_step_log")
-        cache = download(region_path)
-        source = cache.get("source", "unknown")
-        if step_log:
-            step_log(f"Cache: {region_path} (source={source})")
-        return {"cache": cache}
-
-    return handler
 
 
 # Namespace → { FacetName: geofabrik_path }

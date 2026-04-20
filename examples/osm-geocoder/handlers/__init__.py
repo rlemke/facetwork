@@ -157,7 +157,7 @@ from .routes.elevation_handlers import register_elevation_handlers
 from .routes.gtfs_handlers import register_gtfs_handlers
 from .routes.route_handlers import register_route_handlers
 from .routes.routing_handlers import register_routing_handlers
-from .shared.downloader import download as download_region  # noqa: F401
+from .shared.pbf_cache import download_region  # noqa: F401
 from .routing.routing_adapter_handlers import register_routing_adapter_handlers
 from .sources.source_handlers import register_source_handlers
 from .visualization.visualization_handlers import register_visualization_handlers
