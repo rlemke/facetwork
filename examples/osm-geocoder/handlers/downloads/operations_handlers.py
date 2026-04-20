@@ -37,6 +37,20 @@ for _ns, _facets in REGION_REGISTRY.items():
         if _name not in _REGION_LOOKUP:
             _REGION_LOOKUP[_name] = _path
 
+# Top-level Geofabrik roots — treated as direct paths, not facet-name lookups.
+# Matches the 9 parentless entries in Geofabrik's index-v1.json.
+_GEOFABRIK_ROOTS: frozenset[str] = frozenset({
+    "africa",
+    "antarctica",
+    "asia",
+    "australia-oceania",
+    "central-america",
+    "europe",
+    "north-america",
+    "russia",
+    "south-america",
+})
+
 # US state abbreviation -> full name mapping for Cache handler convenience
 _US_STATE_ABBREVS: dict[str, str] = {
     "AL": "Alabama",
@@ -182,36 +196,47 @@ def _download_handler(payload: dict) -> dict:
 
 
 def _cache_handler(payload: dict) -> dict:
-    """Handle the Cache event facet: resolve a region name and download the PBF.
+    """Handle the Cache event facet: resolve a region and download the PBF.
 
-    Takes region:String, looks up the Geofabrik path from the region registry,
-    downloads (with local caching), and returns cache:OSMCache.
+    Accepts two input formats for ``region``:
+    - Geofabrik paths (e.g. ``"europe/germany/berlin"``, ``"africa"``) — used
+      directly without lookup. Detected by presence of ``"/"`` or match against
+      a known top-level Geofabrik root.
+    - PascalCase facet names (e.g. ``"Algeria"``, ``"Germany"``) — looked up
+      via the region registry for backward compat. Also supports US state
+      abbreviations (``"CA"`` -> ``"California"``).
+
+    Returns cache:OSMCache.
     """
     from ..shared.downloader import download
 
     region = payload.get("region", "")
     step_log = payload.get("_step_log")
 
-    # Try exact match first
-    region_path = _REGION_LOOKUP.get(region)
+    # Geofabrik paths have slashes; top-level continent roots are bare.
+    if "/" in region or region in _GEOFABRIK_ROOTS:
+        region_path = region
+    else:
+        # Try exact match first
+        region_path = _REGION_LOOKUP.get(region)
 
-    # Try US state abbreviation (e.g. "CA" -> "California")
-    if not region_path:
-        full_name = _US_STATE_ABBREVS.get(region.upper())
-        if full_name:
-            region_path = _REGION_LOOKUP.get(full_name)
+        # Try US state abbreviation (e.g. "CA" -> "California")
+        if not region_path:
+            full_name = _US_STATE_ABBREVS.get(region.upper())
+            if full_name:
+                region_path = _REGION_LOOKUP.get(full_name)
 
-    # Fall back to case-insensitive search
-    if not region_path:
-        region_lower = region.lower()
-        for name, path in _REGION_LOOKUP.items():
-            if name.lower() == region_lower:
-                region_path = path
-                break
+        # Fall back to case-insensitive search
+        if not region_path:
+            region_lower = region.lower()
+            for name, path in _REGION_LOOKUP.items():
+                if name.lower() == region_lower:
+                    region_path = path
+                    break
 
-    if not region_path:
-        log.warning("Cache: unknown region '%s', using as raw path", region)
-        region_path = region.lower()
+        if not region_path:
+            log.warning("Cache: unknown region '%s', using as raw path", region)
+            region_path = region.lower()
 
     log.info("Cache: resolving region '%s' -> '%s'", region, region_path)
     cache = download(region_path)
