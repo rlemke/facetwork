@@ -9,10 +9,11 @@
 #
 # Required tools:
 #   osmium-tool   — PBF parsing, tags-filter, export  (download-pbf, extract,
-#                   convert-pbf-geojson)
+#                   convert-pbf-geojson, clip-pbf)
 #   gdal          — ogr2ogr for shapefile conversion   (convert-pbf-shapefile)
 #   openjdk@17    — java runtime for GraphHopper       (build-graphhopper-graph)
 #   valhalla      — routing tile builder               (build-valhalla-tiles)
+#   tippecanoe    — vector-tile (PMTiles) builder      (build-vector-tiles)
 #
 # Plus: GraphHopper's runnable JAR is downloaded directly from GitHub
 # releases to ~/.graphhopper/graphhopper-web.jar. (Not available via brew.)
@@ -57,6 +58,7 @@ FORMULAE=(
     gdal
     openjdk@17
     valhalla
+    tippecanoe
 )
 
 install_formula() {
@@ -130,6 +132,7 @@ verify ogr2ogr "GDAL (ogr2ogr)"
 verify java "Java runtime"
 verify valhalla_build_config "Valhalla build_config"
 verify valhalla_build_tiles "Valhalla build_tiles"
+verify tippecanoe "tippecanoe"
 
 if [ -f "$GRAPHHOPPER_JAR" ]; then
     ok "GraphHopper JAR: $GRAPHHOPPER_JAR"
@@ -146,6 +149,7 @@ if [ "$failed_count" -eq 0 ]; then
     echo "  $GREEN✓$RESET GDAL / ogr2ogr          — convert-pbf-shapefile"
     echo "  $GREEN✓$RESET Java + GraphHopper JAR  — build-graphhopper-graph"
     echo "  $GREEN✓$RESET Valhalla                — build-valhalla-tiles"
+    echo "  $GREEN✓$RESET tippecanoe              — build-vector-tiles"
     echo
     echo "Useful environment variables:"
     echo "  AFL_OSM_CACHE_ROOT       cache root (default /Volumes/afl_data/osm)"
