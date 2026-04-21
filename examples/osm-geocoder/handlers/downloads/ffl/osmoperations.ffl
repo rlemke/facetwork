@@ -66,6 +66,17 @@ namespace osm.ops {
     /** Extracts forest and wood-covered land (natural=wood, landuse=forest) from a cached PBF into the forests/ cache. */
     event facet ExtractForests(cache:OSMCache) => (forests:OSMCache)
 
+    /** Extracts the full routable road network (highway=*) with all routing-relevant attributes (oneway, maxspeed, access, surface, lanes, bridge, tunnel). Input to any routing engine. */
+    event facet ExtractRoadsRoutable(cache:OSMCache) => (roadsRoutable:OSMCache)
+    /** Extracts OSM turn-restriction relations (type=restriction). Only meaningful paired with ExtractRoadsRoutable output — routing engines consume both. */
+    event facet ExtractTurnRestrictions(cache:OSMCache) => (turnRestrictions:OSMCache)
+    /** Extracts the active rail network (rail/light_rail/subway/tram/narrow_gauge/funicular/monorail). Abandoned/disused rail is excluded. For multimodal routing. */
+    event facet ExtractRailwaysRoutable(cache:OSMCache) => (railwaysRoutable:OSMCache)
+    /** Extracts cycling route relations (route=bicycle|mtb) — on-road bike routes and MTB trails. */
+    event facet ExtractCycleRoutes(cache:OSMCache) => (cycleRoutes:OSMCache)
+    /** Extracts hiking and walking route relations (route=hiking|foot). */
+    event facet ExtractHikingRoutes(cache:OSMCache) => (hikingRoutes:OSMCache)
+
 }
 
 

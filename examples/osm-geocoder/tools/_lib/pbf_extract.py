@@ -129,6 +129,61 @@ CATEGORIES: dict[str, CategoryDef] = {
         filter_expression="nwr/natural=wood nwr/landuse=forest",
         filter_version=1,
     ),
+    "roads_routable": CategoryDef(
+        name="roads_routable",
+        facet_name="ExtractRoadsRoutable",
+        return_param="roadsRoutable",
+        description=(
+            "Full road network for routing — every highway=* way plus "
+            "tagged junction/crossing nodes. Preserves all routing "
+            "attributes (oneway, maxspeed, access, surface, etc.)."
+        ),
+        filter_expression="nwr/highway",
+        filter_version=1,
+    ),
+    "turn_restrictions": CategoryDef(
+        name="turn_restrictions",
+        facet_name="ExtractTurnRestrictions",
+        return_param="turnRestrictions",
+        description=(
+            "OSM turn-restriction relations (type=restriction). Only "
+            "meaningful paired with the road network — routing engines "
+            "consume both."
+        ),
+        filter_expression="r/type=restriction",
+        filter_version=1,
+    ),
+    "railways_routable": CategoryDef(
+        name="railways_routable",
+        facet_name="ExtractRailwaysRoutable",
+        return_param="railwaysRoutable",
+        description=(
+            "Active rail network for multimodal routing: heavy rail, "
+            "light rail, subway, tram, narrow gauge, funicular, monorail. "
+            "Abandoned/disused rail is excluded."
+        ),
+        filter_expression=(
+            "nwr/railway=rail,light_rail,subway,tram,"
+            "narrow_gauge,funicular,monorail"
+        ),
+        filter_version=1,
+    ),
+    "cycle_routes": CategoryDef(
+        name="cycle_routes",
+        facet_name="ExtractCycleRoutes",
+        return_param="cycleRoutes",
+        description="Cycling route relations — on-road bike routes and MTB trails.",
+        filter_expression="r/route=bicycle,mtb",
+        filter_version=1,
+    ),
+    "hiking_routes": CategoryDef(
+        name="hiking_routes",
+        facet_name="ExtractHikingRoutes",
+        return_param="hikingRoutes",
+        description="Hiking/walking route relations — long-distance trails and foot paths.",
+        filter_expression="r/route=hiking,foot",
+        filter_version=1,
+    ),
 }
 
 
