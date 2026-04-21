@@ -114,6 +114,7 @@ Organized by role in the pipeline.
 - **convert-pbf-shapefile** — `ogr2ogr` PBF → multi-layer ESRI Shapefile **bundle directory** (one `.shp`/`.shx`/`.dbf`/`.prj`/`.cpg` set per layer). Layers: `points`, `lines`, `multilinestrings`, `multipolygons` (the `other_relations` GeometryCollection is always skipped — shapefile can't hold it). `--layers` restricts the output; superset-semantics cache hits (a cache built with all four layers satisfies a later request for a subset).
 - **extract** — `osmium tags-filter | osmium export` — one pre-filtered GeoJSONSeq per category. Categories live in `_lib/pbf_extract.py::CATEGORIES` (one dict entry defines a category: name, FFL facet name, tag expression, filter_version). Current set: `water`, `protected_areas`, `parks`, `forests`, `roads_routable`, `turn_restrictions`, `railways_routable`, `cycle_routes`, `hiking_routes`. `--extract-all-categories` runs every category per region; `--update-all` pre-filters to just the stale work. Adding a new category = one dict entry + one FFL `event facet` line.
 - **build-vector-tiles** — `tippecanoe` GeoJSONSeq → PMTiles. `--source` picks the input cache (`geojson` for whole-region, or any extract category); `--all-sources` fans out across every valid source. Tiling options (min/max zoom, layer name) are part of the cache key, so changing them triggers a rebuild only for affected entries.
+- **render-html-maps** — MapLibre GL JS + PMTiles viewer per region. Consumes the `vector_tiles/` cache and emits `html/<region>-latest/index.html` + `style.json`. Sub-classifies layers at render time via MapLibre filter expressions — **highways split into motorway / trunk / primary / secondary / tertiary / residential**, **water split into lakes, rivers (line + polygon), canals, streams**, **protected areas split into national park / state park / other protected / nature reserve**, and **16 POI categories with per-category colored circles with click popups showing OSM tags**. Also refreshes the master `html/index.html` table on every run. Cache validity: source PMTiles SHAs + `STYLE_VERSION`. Serve with `python -m http.server --directory $AFL_OSM_CACHE_ROOT 8000` and open `http://localhost:8000/html/`.
 
 ### Routing engines
 
@@ -125,7 +126,7 @@ All three follow the same interface. Each keys its cache on `source PBF SHA-256 
 
 ### Meta
 
-- **update-all** — runs every tool's `--update-all` in dependency order: download-pbf → clip-pbf → convert-pbf-geojson → convert-pbf-shapefile → extract (all categories) → build-graphhopper-graph → build-valhalla-tiles → build-osrm-graph → build-vector-tiles → download-gtfs. Safe to re-run as often as desired — each step is a no-op when nothing is stale. `UPDATE_ALL_SKIP="gtfs osrm"` skips named steps (useful when some binaries aren't installed); `UPDATE_ALL_STOP_ON_FAIL=1` aborts on first failure.
+- **update-all** — runs every tool's `--update-all` in dependency order: download-pbf → clip-pbf → convert-pbf-geojson → convert-pbf-shapefile → extract (all categories) → build-graphhopper-graph → build-valhalla-tiles → build-osrm-graph → build-vector-tiles → render-html-maps → download-gtfs. Safe to re-run as often as desired — each step is a no-op when nothing is stale. `UPDATE_ALL_SKIP="gtfs osrm"` skips named steps (useful when some binaries aren't installed); `UPDATE_ALL_STOP_ON_FAIL=1` aborts on first failure.
 
 ## Cache layout and manifests
 
@@ -159,9 +160,15 @@ $AFL_OSM_CACHE_ROOT/     (default: /Volumes/afl_data/osm — override via env)
 ├── gtfs/
 │   ├── manifest.json
 │   └── <agency>-latest.zip
-└── elevation/
+├── elevation/
+│   ├── manifest.json
+│   └── <name>-latest.tif
+└── html/
     ├── manifest.json
-    └── <name>-latest.tif
+    ├── index.html                   ← master index (links all regions)
+    └── <region>-latest/
+        ├── index.html               ← MapLibre map page
+        └── style.json               ← generated per-region style
 ```
 
 ### Backends
@@ -270,13 +277,18 @@ Every tool records:
 ./tools/build-graphhopper-graph.sh --profile bike clips/watershed-example
 ```
 
-**Web-map tile pipeline for Liechtenstein:**
+**Web-map tile + viewer pipeline for Liechtenstein:**
 
 ```bash
 ./tools/download-pbf.sh europe/liechtenstein
 ./tools/extract.sh --extract-all-categories europe/liechtenstein
 ./tools/build-vector-tiles.sh --all-sources europe/liechtenstein
-# vector_tiles/europe/liechtenstein-latest/{geojson,water,parks,...}.pmtiles
+./tools/render-html-maps.sh europe/liechtenstein
+
+# Serve everything and open the result in a browser:
+python -m http.server --directory "$AFL_OSM_CACHE_ROOT" 8000 &
+open http://localhost:8000/html/           # the master index
+# → click into europe/liechtenstein-latest/
 ```
 
 **Multi-profile routing across a bigger region:**

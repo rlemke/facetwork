@@ -17,7 +17,9 @@
 #   7. build-valhalla-tiles --update-all
 #   8. build-osrm-graph --update-all --all-profiles
 #   9. build-vector-tiles --update-all --all-sources
-#  10. download-gtfs --update-all   — HEAD each recorded agency URL.
+#  10. render-html-maps --update-all — regenerate per-region HTML pages +
+#                                      master html/index.html.
+#  11. download-gtfs --update-all   — HEAD each recorded agency URL.
 #
 # Each tool is a no-op when nothing is stale, so it's safe to run this
 # as often as you like — CPU time maps to actual work.
@@ -87,6 +89,7 @@ run_step "graphhopper"            "${SCRIPT_DIR}/build-graphhopper-graph.sh"  --
 run_step "valhalla"               "${SCRIPT_DIR}/build-valhalla-tiles.sh"     --update-all
 run_step "osrm"                   "${SCRIPT_DIR}/build-osrm-graph.sh"         --update-all --all-profiles
 run_step "vector-tiles"           "${SCRIPT_DIR}/build-vector-tiles.sh"       --update-all --all-sources
+run_step "html-maps"              "${SCRIPT_DIR}/render-html-maps.sh"         --update-all
 run_step "gtfs"                   "${SCRIPT_DIR}/download-gtfs.sh"            --update-all
 
 echo
