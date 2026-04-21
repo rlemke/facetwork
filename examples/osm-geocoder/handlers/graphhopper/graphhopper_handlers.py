@@ -14,333 +14,156 @@
 
 """GraphHopper routing graph handlers.
 
-This module provides handlers for building and managing GraphHopper routing
-graphs from OSM cache data. It supports multiple routing profiles and caches
-built graphs to avoid unnecessary rebuilds.
+Thin adapters over ``tools/_lib/graphhopper_build.py``. The real logic
+(subprocess invocation, config YAML, manifest-based cache, per-
+(region, profile) locking, finalize-from-local staging) lives in the
+library so the CLI tool (``build-graphhopper-graph``) and these
+handlers share one code path and one cache layout at
+``$AFL_OSM_CACHE_ROOT/graphhopper/<region>-latest/<profile>/``.
 """
 
 from __future__ import annotations
 
 import os
-import subprocess
-import tempfile
-from datetime import datetime
+import re
 from typing import Any
 
-from facetwork.runtime.storage import get_storage_backend
+from ..shared.pbf_convert import graphhopper
 
-# GraphHopper version used for builds
-GRAPHHOPPER_VERSION = "8.0"
 
-# Supported routing profiles
-PROFILES = ["car", "bike", "foot", "motorcycle", "truck", "hike", "mtb", "racingbike"]
-
-# Default GraphHopper JAR location (can be overridden via environment)
-GRAPHHOPPER_JAR = os.environ.get(
-    "GRAPHHOPPER_JAR", os.path.expanduser("~/.graphhopper/graphhopper-web.jar")
+# Reuse the handler-side Geofabrik-URL → region-path parser. Duplicated
+# deliberately to avoid an import cycle with operations_handlers.
+_GEOFABRIK_REGION_RE = re.compile(
+    r"https?://download\.geofabrik\.de/(.+)-latest\.[^/]+$"
 )
 
-# Base directory for storing routing graphs
-GRAPH_BASE_DIR = os.environ.get(
-    "GRAPHHOPPER_GRAPH_DIR", os.path.expanduser("~/.graphhopper/graphs")
-)
-_storage = get_storage_backend(GRAPH_BASE_DIR)
 
+def _extract_region_path(url: str) -> str:
+    """Strip a Geofabrik download URL to its region path.
 
-def _get_graph_dir(osm_path: str, profile: str) -> str:
-    """Generate the graph directory path for an OSM file and profile."""
-    # Use the OSM filename (without extension) plus profile
-    osm_basename = os.path.splitext(_storage.basename(osm_path))[0]
-    return _storage.join(GRAPH_BASE_DIR, f"{osm_basename}-{profile}")
-
-
-def _get_dir_size(path: str) -> int:
-    """Get the total size of a directory in bytes."""
-    total = 0
-    if _storage.exists(path):
-        for dirpath, _dirnames, filenames in _storage.walk(path):
-            for f in filenames:
-                fp = _storage.join(dirpath, f)
-                if _storage.isfile(fp):
-                    total += _storage.getsize(fp)
-    return total
-
-
-def _get_modification_date(path: str) -> str:
-    """Get the modification date of a file or directory."""
-    if _storage.exists(path):
-        mtime = _storage.getmtime(path)
-        return datetime.fromtimestamp(mtime).isoformat()
-    return datetime.now().isoformat()
-
-
-def _graph_exists(graph_dir: str) -> bool:
-    """Check if a valid GraphHopper graph exists."""
-    if not _storage.isdir(graph_dir):
-        return False
-    existing_files = _storage.listdir(graph_dir)
-    # Check if at least some graph files exist
-    return any(f.startswith("nodes") or f.startswith("edges") for f in existing_files)
-
-
-def _get_graph_stats(graph_dir: str) -> dict[str, Any]:
-    """Get statistics from a GraphHopper graph directory."""
-    stats = {
-        "valid": False,
-        "nodes": 0,
-        "edges": 0,
-    }
-
-    if not _graph_exists(graph_dir):
-        return stats
-
-    # Try to read properties file for stats
-    properties_file = _storage.join(graph_dir, "properties")
-    if _storage.exists(properties_file):
-        try:
-            with _storage.open(properties_file, "r") as f:
-                for line in f:
-                    if "=" in line:
-                        key, value = line.strip().split("=", 1)
-                        if key == "graph.nodes.count":
-                            stats["nodes"] = int(value)
-                        elif key == "graph.edges.count":
-                            stats["edges"] = int(value)
-            stats["valid"] = stats["nodes"] > 0
-        except Exception:
-            pass
-    else:
-        # If properties file doesn't exist but graph dir does, assume valid
-        stats["valid"] = True
-
-    return stats
-
-
-_MOTORIZED_PROFILES = {"car", "motorcycle", "truck"}
-_NON_MOTORIZED_PROFILES = {"bike", "mtb", "racingbike"}
-
-
-def _build_config_yaml(osm_path: str, graph_dir: str, profile: str) -> str:
-    """Build a GraphHopper 8.0 config YAML string."""
-    # Choose ignored highways based on profile type
-    if profile in _MOTORIZED_PROFILES:
-        ignored = "footway,cycleway,path,pedestrian,steps"
-    elif profile in _NON_MOTORIZED_PROFILES:
-        ignored = "motorway,trunk"
-    else:
-        ignored = ""
-
-    lines = [
-        "graphhopper:",
-        f"  datareader.file: {osm_path}",
-        f"  graph.location: {graph_dir}",
-        f"  import.osm.ignored_highways: {ignored}",
-        "  profiles:",
-        f"    - name: {profile}",
-        f"      vehicle: {profile}",
-        "      custom_model_files: []",
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def _run_graphhopper_import(osm_path: str, graph_dir: str, profile: str) -> bool:
-    """Run GraphHopper import to build a routing graph.
-
-    GraphHopper 8.0 requires a YAML config file passed as a positional
-    argument to the ``import`` subcommand.
-
-    Returns True if successful, False otherwise.
+    E.g. ``https://download.geofabrik.de/africa/algeria-latest.osm.pbf``
+    returns ``africa/algeria``. Falls back to the raw URL if the pattern
+    doesn't match — the library will surface a clear "no pbf manifest
+    entry" error for that case.
     """
-    # Ensure graph directory exists
-    _storage.makedirs(graph_dir, exist_ok=True)
-
-    # Write a temporary config file for this build
-    config_yaml = _build_config_yaml(osm_path, graph_dir, profile)
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yml", prefix="gh-config-", delete=False
-        ) as tmp:
-            tmp.write(config_yaml)
-            config_path = tmp.name
-
-        cmd = [
-            "java",
-            "-Xmx4g",
-            "-jar",
-            GRAPHHOPPER_JAR,
-            "import",
-            config_path,
-        ]
-
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=3600,  # 1 hour timeout for large regions
-        )
-        return result.returncode == 0
-    except subprocess.TimeoutExpired:
-        return False
-    except FileNotFoundError:
-        # java or GraphHopper JAR not found
-        return False
-    finally:
-        try:
-            os.unlink(config_path)
-        except (OSError, UnboundLocalError):
-            pass
+    m = _GEOFABRIK_REGION_RE.match(url)
+    if m:
+        return m.group(1)
+    return url
 
 
-def _make_graph_result(
-    osm_path: str,
-    graph_dir: str,
-    profile: str,
-    was_in_cache: bool,
-) -> dict[str, Any]:
-    """Create a GraphHopperCache result dictionary."""
-    stats = _get_graph_stats(graph_dir)
-    return {
-        "osmSource": osm_path,
-        "graphDir": graph_dir,
-        "profile": profile,
-        "date": _get_modification_date(graph_dir),
-        "size": _get_dir_size(graph_dir),
-        "wasInCache": was_in_cache,
-        "version": GRAPHHOPPER_VERSION,
-        "nodeCount": stats["nodes"],
-        "edgeCount": stats["edges"],
-    }
+def _region_and_profile(payload: dict) -> tuple[str, str]:
+    cache = payload.get("cache", {}) or {}
+    region = _extract_region_path(cache.get("url", ""))
+    profile = payload.get("profile") or "car"
+    return region, profile
 
 
 def build_graph_handler(payload: dict) -> dict:
-    """Build a GraphHopper routing graph from an OSM cache.
-
-    If the graph already exists and recreate=False, returns the cached graph.
-    """
-    cache = payload.get("cache", {})
-    profile = payload.get("profile", "car")
-    recreate = payload.get("recreate", False)
+    """BuildGraph: build or fetch a cached GraphHopper routing graph."""
+    region, profile = _region_and_profile(payload)
+    recreate = bool(payload.get("recreate", False))
     step_log = payload.get("_step_log")
-
-    osm_path = cache.get("path", "")
     if step_log:
-        step_log(f"BuildGraph: building {profile} routing graph from {osm_path}")
-    if not osm_path:
-        raise ValueError("No OSM path provided in cache")
-
-    graph_dir = _get_graph_dir(osm_path, profile)
-
-    # Check if graph already exists
-    if _graph_exists(graph_dir) and not recreate:
-        graph_result = _make_graph_result(osm_path, graph_dir, profile, True)
-        if step_log:
-            step_log(
-                f"BuildGraph: graph cached ({graph_result['nodeCount']} nodes, {graph_result['edgeCount']} edges)",
-                level="success",
-            )
-        return {"graph": graph_result}
-
-    # Remove existing graph if recreating
-    if recreate and _storage.exists(graph_dir):
-        _storage.rmtree(graph_dir)
-
-    # Build the graph
-    success = _run_graphhopper_import(osm_path, graph_dir, profile)
-    if not success:
-        raise RuntimeError(f"Failed to build GraphHopper graph for {osm_path}")
-
-    graph_result = _make_graph_result(osm_path, graph_dir, profile, False)
+        step_log(f"BuildGraph: {profile} graph for {region}")
+    try:
+        result = graphhopper.build_graph(region, profile, force=recreate)
+    except graphhopper.BuildError as exc:
+        raise RuntimeError(str(exc)) from exc
+    cache_dict = graphhopper.to_graphhopper_cache(result)
     if step_log:
+        status = "cache" if result.was_cached else "built"
         step_log(
-            f"BuildGraph: built graph ({graph_result['nodeCount']} nodes, {graph_result['edgeCount']} edges)",
+            f"BuildGraph: {profile} graph for {region} {status} "
+            f"({cache_dict['nodeCount']} nodes, {cache_dict['edgeCount']} edges)",
             level="success",
         )
-    return {"graph": graph_result}
+    return {"graph": cache_dict}
 
 
 def build_multi_profile_handler(payload: dict) -> dict:
-    """Build GraphHopper routing graphs for multiple profiles."""
-    cache = payload.get("cache", {})
-    profiles = payload.get("profiles", ["car"])
-    recreate = payload.get("recreate", False)
+    """BuildMultiProfile: build graphs for every profile in ``profiles``."""
+    cache = payload.get("cache", {}) or {}
+    profiles = payload.get("profiles") or ["car"]
+    recreate = bool(payload.get("recreate", False))
     step_log = payload.get("_step_log")
-
     if step_log:
-        step_log(f"BuildMultiProfile: building graphs for profiles {profiles}")
+        step_log(f"BuildMultiProfile: profiles={profiles}")
 
-    graphs = []
+    graphs: list[dict[str, Any]] = []
     for profile in profiles:
-        result = build_graph_handler(
+        one = build_graph_handler(
             {
                 "cache": cache,
                 "profile": profile,
                 "recreate": recreate,
+                "_step_log": step_log,
             }
         )
-        graphs.append(result["graph"])
-
+        graphs.append(one["graph"])
     if step_log:
-        step_log(f"BuildMultiProfile: built {len(graphs)} profile graphs", level="success")
+        step_log(
+            f"BuildMultiProfile: built {len(graphs)} profile graph(s)",
+            level="success",
+        )
     return {"graphs": graphs}
 
 
 def import_graph_handler(payload: dict) -> dict:
-    """Import/load an existing graph, building if not found."""
-    # Same as build_graph_handler - builds if not found
+    """ImportGraph: same behavior as BuildGraph (build if not found)."""
     return build_graph_handler(payload)
 
 
 def validate_graph_handler(payload: dict) -> dict:
-    """Validate a GraphHopper routing graph and return statistics."""
-    graph = payload.get("graph", {})
+    """ValidateGraph: read node/edge counts from the built graph dir."""
+    graph = payload.get("graph", {}) or {}
     graph_dir = graph.get("graphDir", "")
     step_log = payload.get("_step_log")
-
     if step_log:
-        step_log(f"ValidateGraph: validating graph at {graph_dir}")
-
+        step_log(f"ValidateGraph: {graph_dir}")
     if not graph_dir:
         return {"valid": False, "nodeCount": 0, "edgeCount": 0}
+    from pathlib import Path as _Path
 
-    stats = _get_graph_stats(graph_dir)
+    stats = graphhopper.read_graph_stats(_Path(graph_dir))
     if step_log:
         step_log(
-            f"ValidateGraph: valid={stats['valid']} ({stats['nodes']} nodes, {stats['edges']} edges)",
+            f"ValidateGraph: valid={stats.valid} "
+            f"({stats.node_count} nodes, {stats.edge_count} edges)",
             level="success",
         )
     return {
-        "valid": stats["valid"],
-        "nodeCount": stats["nodes"],
-        "edgeCount": stats["edges"],
+        "valid": stats.valid,
+        "nodeCount": stats.node_count,
+        "edgeCount": stats.edge_count,
     }
 
 
 def clean_graph_handler(payload: dict) -> dict:
-    """Clean up a routing graph directory."""
-    graph = payload.get("graph", {})
+    """CleanGraph: delete a built graph directory."""
+    graph = payload.get("graph", {}) or {}
     graph_dir = graph.get("graphDir", "")
     step_log = payload.get("_step_log")
-
     if step_log:
-        step_log(f"CleanGraph: cleaning graph at {graph_dir}")
-
-    if graph_dir and _storage.exists(graph_dir):
-        _storage.rmtree(graph_dir)
+        step_log(f"CleanGraph: {graph_dir}")
+    if not graph_dir:
         if step_log:
-            step_log(f"CleanGraph: deleted graph at {graph_dir}", level="success")
-        return {"deleted": True}
-
+            step_log("CleanGraph: no graphDir supplied", level="success")
+        return {"deleted": False}
+    deleted = graphhopper.clean_graph(graph_dir)
     if step_log:
-        step_log(f"CleanGraph: no graph found at {graph_dir}", level="success")
-    return {"deleted": False}
+        step_log(
+            f"CleanGraph: {'deleted' if deleted else 'no graph found'} at {graph_dir}",
+            level="success",
+        )
+    return {"deleted": deleted}
 
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Registration
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
-# Operations handlers
-GRAPHHOPPER_OPERATIONS_HANDLERS = {
+GRAPHHOPPER_OPERATIONS_HANDLERS: dict[str, callable] = {
     "osm.ops.GraphHopper.BuildGraph": build_graph_handler,
     "osm.ops.GraphHopper.BuildMultiProfile": build_multi_profile_handler,
     "osm.ops.GraphHopper.BuildGraphBatch": build_graph_handler,
