@@ -48,6 +48,8 @@ from _lib.pbf_download import (  # noqa: E402
     DownloadResult,
     cached_path,
     download_region,
+    filter_leaves,
+    regions_from_pbf_manifest,
     staging_path,
 )
 from _lib.storage import default_backend, get_storage  # noqa: E402
@@ -122,19 +124,7 @@ def filter_regions(
         selected = [r for r in all_regions if r == under or r.startswith(pref)]
     else:
         selected = list(all_regions)
-
-    if not leaves_only:
-        return selected
-
-    selected_set = set(selected)
-    non_leaves: set[str] = set()
-    for r in selected:
-        parts = r.split("/")
-        for i in range(1, len(parts)):
-            ancestor = "/".join(parts[:i])
-            if ancestor in selected_set:
-                non_leaves.add(ancestor)
-    return [r for r in selected if r not in non_leaves]
+    return filter_leaves(selected) if leaves_only else selected
 
 
 def _run_one(region: str, *, storage, force: bool, dry_run: bool) -> str:
@@ -193,6 +183,14 @@ def main() -> int:
         "--all-under",
         metavar="PREFIX",
         help="Download every region nested under PREFIX, e.g. europe/germany.",
+    )
+    parser.add_argument(
+        "--update-all",
+        action="store_true",
+        help="Refresh every region currently in the local pbf manifest, "
+        "re-downloading any whose upstream MD5 no longer matches. Scope is "
+        "the local cache — does not pull new regions from Geofabrik (use "
+        "--all for that). Combines cleanly with --all / --all-under.",
     )
     parser.add_argument(
         "--include-parents",
@@ -257,6 +255,14 @@ def main() -> int:
         )
         regions.extend(resolved)
 
+    if args.update_all:
+        from_manifest = regions_from_pbf_manifest(storage=storage)
+        print(
+            f"pbf manifest: {len(from_manifest)} cached region(s) to refresh",
+            file=sys.stderr,
+        )
+        regions.extend(from_manifest)
+
     seen: set[str] = set()
     deduped: list[str] = []
     for r in regions:
@@ -266,9 +272,13 @@ def main() -> int:
     regions = deduped
 
     if not regions:
+        # --update-all with an empty pbf manifest: nothing to refresh, success.
+        if args.update_all and not (args.all or args.all_under or args.regions):
+            print("update-all: pbf manifest is empty, nothing to refresh", file=sys.stderr)
+            return 0
         parser.error(
             "no regions provided (pass as args, or use --regions-file, "
-            "--all, or --all-under)"
+            "--all, --all-under, or --update-all)"
         )
 
     if args.list:

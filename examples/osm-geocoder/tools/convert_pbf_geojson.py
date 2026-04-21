@@ -40,6 +40,10 @@ from _lib.manifest import (  # noqa: E402
     read_manifest,
     utcnow_iso,
 )
+from _lib.pbf_download import (  # noqa: E402
+    filter_leaves,
+    regions_from_pbf_manifest as _regions_from_pbf_manifest_lib,
+)
 
 SOURCE_CACHE_TYPE = "pbf"
 OUTPUT_CACHE_TYPE = "geojson"
@@ -109,21 +113,25 @@ def _read_regions_file(path: Path) -> list[str]:
 
 
 def regions_from_pbf_manifest(under: str | None = None) -> list[str]:
-    """Return all regions currently present in the pbf manifest, optionally filtered by prefix."""
-    manifest = read_manifest(SOURCE_CACHE_TYPE)
-    suffix = "-latest.osm.pbf"
-    regions: list[str] = []
-    for rel in manifest.get("entries", {}):
-        if not rel.endswith(suffix):
-            continue
-        region = rel[: -len(suffix)]
-        regions.append(region)
-    if under:
-        under = under.strip().strip("/")
-        pref = under + "/"
-        regions = [r for r in regions if r == under or r.startswith(pref)]
-    regions.sort()
-    return regions
+    """Return all regions currently present in the pbf manifest.
+
+    Thin alias over the shared library helper for backward compat within
+    this module. Callers pass ``under`` as a positional prefix.
+    """
+    return _regions_from_pbf_manifest_lib(under)
+
+
+def _up_to_date(region: str, fmt: str) -> bool:
+    """True if the GeoJSON for ``region`` exists and still matches the source PBF.
+
+    Cheap local-only check: reads the two manifests and stats the output
+    file. Does not touch the network.
+    """
+    pbf_manifest = read_manifest(SOURCE_CACHE_TYPE)
+    pbf_entry = pbf_manifest.get("entries", {}).get(pbf_rel_path(region))
+    if not pbf_entry:
+        return False
+    return is_up_to_date(region, fmt, pbf_entry, geojson_abs_path(region, fmt))
 
 
 def is_up_to_date(
@@ -264,6 +272,22 @@ def main() -> int:
         help="Convert every cached PBF whose region path starts with PREFIX.",
     )
     parser.add_argument(
+        "--include-parents",
+        action="store_true",
+        help="When using --all / --all-under, include parent regions "
+        "alongside their descendants. Default is leaves-only (a parent PBF "
+        "like europe/germany subsumes its state children — converting both "
+        "produces redundant, much larger GeoJSON).",
+    )
+    parser.add_argument(
+        "--update-all",
+        action="store_true",
+        help="Convert every region in the pbf manifest whose GeoJSON is "
+        "missing or out of date relative to its source PBF. Skips regions "
+        "whose existing GeoJSON still matches the PBF's SHA-256. Scope is "
+        "the local pbf manifest.",
+    )
+    parser.add_argument(
         "--list",
         action="store_true",
         help="Print the resolved region list to stdout and exit; no conversions.",
@@ -318,11 +342,30 @@ def main() -> int:
 
     if args.all or args.all_under is not None:
         from_manifest = regions_from_pbf_manifest(under=args.all_under)
+        before = len(from_manifest)
+        if not args.include_parents:
+            from_manifest = filter_leaves(from_manifest)
         print(
-            f"pbf manifest: {len(from_manifest)} region(s) selected after filtering",
+            f"pbf manifest: {before} region(s) matched, "
+            f"{len(from_manifest)} selected after "
+            f"{'leaves-only' if not args.include_parents else 'include-parents'} filter",
             file=sys.stderr,
         )
         regions.extend(from_manifest)
+
+    if args.update_all:
+        from_manifest = regions_from_pbf_manifest()
+        if not args.include_parents:
+            from_manifest = filter_leaves(from_manifest)
+        # Pre-filter to regions whose geojson is missing or stale.
+        needs_work = [r for r in from_manifest if not _up_to_date(r, args.format)]
+        print(
+            f"update-all: {len(from_manifest)} cached pbf(s), "
+            f"{len(needs_work)} need conversion "
+            f"({len(from_manifest) - len(needs_work)} already current)",
+            file=sys.stderr,
+        )
+        regions.extend(needs_work)
 
     seen: set[str] = set()
     deduped: list[str] = []
@@ -333,9 +376,13 @@ def main() -> int:
     regions = deduped
 
     if not regions:
+        # --update-all with nothing stale is a success: the cache is current.
+        if args.update_all and not (args.all or args.all_under or args.regions):
+            print("update-all: nothing to do, all GeoJSONs are current", file=sys.stderr)
+            return 0
         parser.error(
             "no regions provided (pass as args, or use --regions-file, "
-            "--all, or --all-under)"
+            "--all, --all-under, or --update-all)"
         )
 
     if args.list:

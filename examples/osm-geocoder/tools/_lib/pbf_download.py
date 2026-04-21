@@ -437,6 +437,49 @@ def download_region(
         )
 
 
+def regions_from_pbf_manifest(
+    under: str | None = None, *, storage: Storage | None = None
+) -> list[str]:
+    """Return all regions currently present in the pbf manifest.
+
+    Optionally filtered by path prefix (e.g. ``europe/germany`` selects
+    Germany and all its sub-regions). Sorted alphabetically.
+    """
+    storage = storage or LocalStorage()
+    manifest = read_manifest(CACHE_TYPE, storage)
+    suffix = "-latest.osm.pbf"
+    regions: list[str] = []
+    for rel in manifest.get("entries", {}):
+        if not rel.endswith(suffix):
+            continue
+        regions.append(rel[: -len(suffix)])
+    if under:
+        u = under.strip().strip("/")
+        pref = u + "/"
+        regions = [r for r in regions if r == u or r.startswith(pref)]
+    regions.sort()
+    return regions
+
+
+def filter_leaves(regions: list[str]) -> list[str]:
+    """Drop regions that have a descendant in the set.
+
+    For a selection like ``{europe/germany, europe/germany/berlin}``,
+    ``europe/germany`` is a non-leaf because a descendant (``berlin``)
+    is present. Parent PBFs usually fully contain their children, so
+    including both is wasteful.
+    """
+    selected_set = set(regions)
+    non_leaves: set[str] = set()
+    for r in regions:
+        parts = r.split("/")
+        for i in range(1, len(parts)):
+            ancestor = "/".join(parts[:i])
+            if ancestor in selected_set:
+                non_leaves.add(ancestor)
+    return [r for r in regions if r not in non_leaves]
+
+
 def to_osm_cache(result: DownloadResult) -> dict[str, Any]:
     """Convert a ``DownloadResult`` into the ``OSMCache`` dict shape that
     the FFL handlers return downstream.
