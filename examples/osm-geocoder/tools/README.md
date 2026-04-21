@@ -1,165 +1,297 @@
 # OSM Geocoder — Tools
 
-Standalone command-line utilities for OSM-related operations that are **not** part of a workflow. Each tool is a self-contained Python program paired with a shell wrapper that supplies its arguments.
+Standalone command-line utilities for OSM-related data operations. Each tool is a self-contained Python program paired with a shell wrapper. Tools are intended for operator/developer use at the terminal, and FFL handlers call into the same shared libraries the CLIs call — one code path, one cache, one manifest per data type.
 
-Tools are intended for operator/developer use: one-off imports, diagnostics, data inspection, cache inspection, export helpers, etc. A handler may shell out to a tool if convenient, but the tool's primary audience is a human at the terminal.
+The data flow looks like this:
+
+```
+                         ┌────────────────────────┐
+                         │  download-pbf          │  ← Geofabrik (HTTP + md5)
+                         │  clip-pbf              │  ← custom bbox / polygon
+                         └───────────┬────────────┘
+                                     │  pbf/
+                  ┌──────────────────┼──────────────────┐
+                  ▼                  ▼                  ▼
+       ┌──────────────────┐ ┌──────────────┐ ┌──────────────────────┐
+       │ convert-pbf-     │ │ extract      │ │ build-graphhopper-   │
+       │   geojson        │ │ (per         │ │   graph /            │
+       │ convert-pbf-     │ │  category:   │ │ build-valhalla-tiles │
+       │   shapefile      │ │  water,      │ │ build-osrm-graph     │
+       │                  │ │  parks, …)   │ │                      │
+       └────────┬─────────┘ └──────┬───────┘ └──────────┬───────────┘
+                │                  │                    │
+                ▼                  ▼                    ▼
+       geojson/    shapefiles/   <category>/     graphhopper/  valhalla/  osrm/
+                │        ┌───────┘                      (routing graphs)
+                ▼        ▼
+       ┌────────────────────────┐       ┌──────────────────┐
+       │  build-vector-tiles    │       │  download-gtfs   │  ← transit feeds (HTTP)
+       │  (tippecanoe → PMTiles)│       └──────────────────┘
+       └───────────┬────────────┘              │
+                   ▼                           ▼
+              vector_tiles/                  gtfs/
+
+      ┌─────────────────────────┐  ┌─────────────────────────────┐
+      │  download-elevation     │  │  update-all (meta)           │
+      │  (Copernicus DEM COG)   │  │  runs every --update-all in  │
+      └───────────┬─────────────┘  │  dependency order            │
+                  ▼                └─────────────────────────────┘
+             elevation/
+```
+
+Every arrow is manifest-mediated: each tool records the source's SHA-256 (plus engine/version for routing) in its own manifest, so re-running a tool is a no-op when nothing has changed, and a single `./tools/update-all.sh` propagates an upstream refresh through the whole chain.
 
 ## Directory layout
 
 ```
 tools/
-├── README.md                 ← this file
-├── _lib/                     ← shared helpers (manifest I/O, checksums, etc.)
-│   └── __init__.py
-├── <tool_name>.py            ← Python entry point (CLI, argparse-based)
-├── <tool_name>.sh            ← shell wrapper that invokes <tool_name>.py
-└── ...
+├── README.md                        ← this file
+├── install-tools.sh                 ← one-shot binary installer (brew + GraphHopper jar)
+├── update-all.sh                    ← chains every --update-all in dependency order
+│
+├── _lib/                            ← shared library (tools and FFL handlers both import these)
+│   ├── manifest.py                  ← per-cache-type JSON manifest I/O (atomic, flock'd)
+│   ├── storage.py                   ← Storage abstraction (LocalStorage, HdfsStorage)
+│   ├── pbf_download.py              ← Geofabrik PBF download + path-mirroring cache
+│   ├── pbf_clip.py                  ← custom-geometry clipping into pbf/clips/
+│   ├── pbf_geojson.py               ← osmium export to GeoJSONSeq
+│   ├── pbf_shapefile.py             ← ogr2ogr export to multi-layer shapefile
+│   ├── pbf_extract.py               ← category-based osmium tags-filter extracts
+│   ├── graphhopper_build.py         ← GraphHopper MLD graph builder
+│   ├── valhalla_build.py            ← Valhalla tile-pyramid builder
+│   ├── osrm_build.py                ← OSRM extract → partition → customize pipeline
+│   ├── vector_tiles_build.py        ← tippecanoe → PMTiles
+│   ├── gtfs_download.py             ← GTFS feed downloader (Last-Modified / ETag)
+│   └── elevation_download.py        ← Copernicus DEM via /vsicurl/ + gdalwarp
+│
+├── download-pbf.sh        / download_pbf.py
+├── clip-pbf.sh            / clip_pbf.py
+├── convert-pbf-geojson.sh / convert_pbf_geojson.py
+├── convert-pbf-shapefile.sh / convert_pbf_shapefile.py
+├── extract.sh             / extract.py
+├── build-graphhopper-graph.sh / build_graphhopper_graph.py
+├── build-valhalla-tiles.sh / build_valhalla_tiles.py
+├── build-osrm-graph.sh    / build_osrm_graph.py
+├── build-vector-tiles.sh  / build_vector_tiles.py
+├── download-gtfs.sh       / download_gtfs.py
+└── download-elevation.sh  / download_elevation.py
 ```
 
-One `.py` + one `.sh` per tool. Shared code lives in `tools/_lib/` — anything reused by two or more tools (manifest read/modify/write, checksum helpers, Geofabrik URL resolution) belongs there. Tools may also import from `examples/osm-geocoder/handlers/` when reusing workflow-side logic is appropriate, but prefer `_lib/` for tool-only concerns.
+One `.py` + one `.sh` per tool. Shared code lives in `tools/_lib/` — anything reused by two or more tools (or by FFL handlers) goes there. Handler-side code imports from `_lib/` via thin re-export shims in `handlers/shared/` (e.g. `pbf_cache.py`, `pbf_convert.py`).
+
+## Quick start on a fresh machine
+
+```bash
+# 1. Install every binary the tools shell out to (brew + GraphHopper jar).
+./tools/install-tools.sh
+
+# 2. Download a small region to verify the chain works.
+./tools/download-pbf.sh europe/liechtenstein
+
+# 3. Run everything downstream (extracts, tiles, routing, etc.).
+#    Each sub-tool skips work that's already current.
+./tools/update-all.sh UPDATE_ALL_SKIP="gtfs"   # skip gtfs if you don't use transit
+```
+
+## Available tools
+
+Organized by role in the pipeline.
+
+### Setup
+
+- **install-tools** — one-shot installer for every binary the rest of the tools shell out to: `osmium-tool`, `gdal` (ogr2ogr), `openjdk@17`, `valhalla`, `tippecanoe`, `osrm-backend` — all via Homebrew — plus the GraphHopper runnable JAR downloaded from GitHub releases to `~/.graphhopper/graphhopper-web.jar`. Idempotent; re-running only installs what's missing. Verifies each tool at the end and prints an env-var cheat sheet.
+
+### Source acquisition
+
+- **download-pbf** — fetch Geofabrik PBFs into `pbf/<region>-latest.osm.pbf`. Verified against Geofabrik's published `.md5`; local `sha256` recorded for tamper detection. Sequential (Geofabrik rate-limits per IP). Region selection: positional args, `--regions-file`, or `--all` / `--all-under PREFIX` resolved from Geofabrik's `index-v1.json` (leaves-only by default; `--include-parents` for continent/country-level PBFs). `--list-missing` previews uncached regions; `--update-all` refreshes only those whose upstream MD5 changed. Supports `--backend {local,hdfs}`.
+- **clip-pbf** — custom-geometry PBF via `osmium extract`. Output lands at `pbf/clips/<name>-latest.osm.pbf` so **every downstream tool treats it as a normal region called `clips/<name>`** — no special casing. Cache validity: source region SHA + clip spec (bbox values or polygon content hash). `--update-all` re-clips entries whose source has changed.
+- **download-gtfs** — per-agency GTFS feed downloader. Cache validity via HTTP `Last-Modified` / `ETag` — a HEAD request decides whether to skip. Manifest records parsed `feed_info.txt` fields (publisher, version, validity window). Zip integrity verified before the cache is committed.
+- **download-elevation** — Copernicus DEM GLO-30 rasters for a bbox via `gdalwarp` + `/vsicurl/` against AWS Open Data (no auth). Computes the 1°×1° tile grid intersecting the bbox, streams only the bytes needed, outputs a compressed tiled GeoTIFF at `elevation/<name>-latest.tif`.
+
+### Derived formats
+
+- **convert-pbf-geojson** — `osmium export` PBF → GeoJSON. Defaults to `geojsonseq` (one feature per line, streamable); `--format geojson` for a FeatureCollection. Cache keyed by source PBF SHA + format. `--jobs N` parallelizes; `--update-all` sweeps the pbf manifest for regions whose GeoJSON is missing or stale.
+- **convert-pbf-shapefile** — `ogr2ogr` PBF → multi-layer ESRI Shapefile **bundle directory** (one `.shp`/`.shx`/`.dbf`/`.prj`/`.cpg` set per layer). Layers: `points`, `lines`, `multilinestrings`, `multipolygons` (the `other_relations` GeometryCollection is always skipped — shapefile can't hold it). `--layers` restricts the output; superset-semantics cache hits (a cache built with all four layers satisfies a later request for a subset).
+- **extract** — `osmium tags-filter | osmium export` — one pre-filtered GeoJSONSeq per category. Categories live in `_lib/pbf_extract.py::CATEGORIES` (one dict entry defines a category: name, FFL facet name, tag expression, filter_version). Current set: `water`, `protected_areas`, `parks`, `forests`, `roads_routable`, `turn_restrictions`, `railways_routable`, `cycle_routes`, `hiking_routes`. `--extract-all-categories` runs every category per region; `--update-all` pre-filters to just the stale work. Adding a new category = one dict entry + one FFL `event facet` line.
+- **build-vector-tiles** — `tippecanoe` GeoJSONSeq → PMTiles. `--source` picks the input cache (`geojson` for whole-region, or any extract category); `--all-sources` fans out across every valid source. Tiling options (min/max zoom, layer name) are part of the cache key, so changing them triggers a rebuild only for affected entries.
+
+### Routing engines
+
+All three follow the same interface. Each keys its cache on `source PBF SHA-256 + engine version + profile (where applicable)`, so an engine upgrade invalidates cached graphs automatically without per-region intervention.
+
+- **build-graphhopper-graph** — GraphHopper MLD graphs at `graphhopper/<region>-latest/<profile>/`. Profiles: `car`, `bike`, `foot`, `motorcycle`, `truck`, `hike`, `mtb`, `racingbike`. Profile is **build-time** (different graph per profile). Java + GraphHopper 8.x JAR (installed by `install-tools.sh` or via `--jar`).
+- **build-valhalla-tiles** — Valhalla tilesets at `valhalla/<region>-latest/`. No profile axis — a tileset serves every profile at query time (`auto`, `bicycle`, `pedestrian`, `truck`, `motor_scooter`, `motorcycle`, `bus`, `taxi`). Cross-region queries are native within one tileset (build a parent region for coverage across children). `valhalla_build_*` binaries (installed by `install-tools.sh`).
+- **build-osrm-graph** — OSRM MLD graphs at `osrm/<region>-latest/<profile>/`. Profiles: `car`, `bicycle`, `foot`. Profile is **build-time** (like GraphHopper). Uses OSRM's shipped `.lua` profiles from `share/osrm/profiles/` (override with `--profile-file`). `osrm-extract` → `osrm-partition` → `osrm-customize`.
+
+### Meta
+
+- **update-all** — runs every tool's `--update-all` in dependency order: download-pbf → clip-pbf → convert-pbf-geojson → convert-pbf-shapefile → extract (all categories) → build-graphhopper-graph → build-valhalla-tiles → build-osrm-graph → build-vector-tiles → download-gtfs. Safe to re-run as often as desired — each step is a no-op when nothing is stale. `UPDATE_ALL_SKIP="gtfs osrm"` skips named steps (useful when some binaries aren't installed); `UPDATE_ALL_STOP_ON_FAIL=1` aborts on first failure.
+
+## Cache layout and manifests
+
+```
+$AFL_OSM_CACHE_ROOT/     (default: /Volumes/afl_data/osm — override via env)
+├── pbf/
+│   ├── manifest.json
+│   ├── europe/germany/berlin-latest.osm.pbf         ← Geofabrik paths mirrored
+│   └── clips/<name>-latest.osm.pbf                  ← from clip-pbf
+├── geojson/
+│   ├── manifest.json
+│   └── <region>-latest.geojsonseq
+├── shapefiles/
+│   ├── manifest.json
+│   └── <region>-latest/   (dir: points.shp, lines.shp, ...)
+├── <category>/             ← one cache per extract category
+│   ├── manifest.json       (water/, parks/, forests/, roads_routable/, ...)
+│   └── <region>-latest.geojsonseq
+├── graphhopper/
+│   ├── manifest.json
+│   └── <region>-latest/<profile>/
+├── valhalla/
+│   ├── manifest.json
+│   └── <region>-latest/    (tile pyramid 0/, 1/, 2/)
+├── osrm/
+│   ├── manifest.json
+│   └── <region>-latest/<profile>/
+├── vector_tiles/
+│   ├── manifest.json
+│   └── <region>-latest/<source>.pmtiles
+├── gtfs/
+│   ├── manifest.json
+│   └── <agency>-latest.zip
+└── elevation/
+    ├── manifest.json
+    └── <name>-latest.tif
+```
+
+### Backends
+
+- `local` (default) — standard POSIX filesystem, atomic temp+rename writes, `fcntl` advisory locking for safe read-modify-write on the manifest.
+- `hdfs` — HDFS via WebHDFS (soft-imports `facetwork.runtime.storage`). Default root `/user/afl/osm`. **No advisory locking** — single-writer semantics assumed. Rename is atomic at the namenode; directory-finalize tools (shapefile, graphhopper, valhalla, osrm) don't support HDFS yet.
+
+Select the backend per invocation with `--backend {local,hdfs}` or globally via `AFL_OSM_STORAGE`. Override the cache root with `AFL_OSM_CACHE_ROOT`.
+
+### Manifest entry shape
+
+Baseline — each cache type extends as needed:
+
+```json
+{
+  "version": 1,
+  "entries": {
+    "<relative/path/in/cache-type>": {
+      "relative_path": "...",
+      "size_bytes": 123456789,
+      "sha256": "...",
+      "generated_at": "2026-04-20T14:03:22Z",
+      "source": {
+        "cache_type": "pbf",
+        "relative_path": "europe/germany/berlin-latest.osm.pbf",
+        "sha256": "...",
+        "source_timestamp": "2026-04-18T21:22:02Z"
+      },
+      "tool": { "command": "...", "version": "..." },
+      "extra": { /* cache-type-specific fields */ }
+    }
+  }
+}
+```
+
+Every tool records:
+- **Its own** SHA-256 and size (for integrity checks of the cached file).
+- **Its source's** SHA-256 (for cache-validity checks — "does this cached output still reflect the current input?").
+- **Tool and engine versions** where applicable (so a version bump invalidates cached outputs without per-region `--force`).
 
 ## Conventions for adding a new tool
-
-When Claude (or a human) adds a tool here, follow these rules:
 
 ### Python program (`<name>.py`)
 
 - Runnable directly: `python tools/<name>.py --help` must work.
-- Use `argparse` for argument parsing. Every tool exposes `--help`.
-- Has a `main()` function and an `if __name__ == "__main__": main()` guard.
-- Exit codes: `0` on success, non-zero on failure. Print errors to `stderr`.
-- Log to `stderr`; reserve `stdout` for structured output (JSON, CSV, geometry, etc.) when applicable, so output can be piped.
-- Read configuration from environment variables where possible (`AFL_POSTGIS_URL`, `AFL_IMPORT_POSTGIS_URL`, etc.) — match the names used by the rest of the project. CLI flags override env vars.
-- Do **not** depend on the Facetwork runtime, MongoDB, or the dashboard. Tools should be usable without a running workflow stack. PostGIS, HDFS, and external APIs are fair game.
-- If the tool needs code from a handler, import it from `handlers/...` rather than copying it.
-- Type hints on every function. Docstring on `main()` describing purpose, inputs, and outputs.
+- `argparse`. Every tool exposes `--help`.
+- `main()` function and `if __name__ == "__main__": main()` guard.
+- Exit codes: `0` on success, non-zero on failure. Errors to `stderr`.
+- Log to `stderr`; reserve `stdout` for structured output (JSON, CSV, region lists).
+- Config from env vars where possible (`AFL_OSM_CACHE_ROOT`, `AFL_POSTGIS_URL`, etc.). CLI flags override env vars.
+- Do **not** depend on the Facetwork runtime, MongoDB, or the dashboard. Tools should run without a workflow stack. PostGIS, HDFS, external APIs are fine.
+- Type hints on every function. Module docstring with usage + external deps.
+- If your tool caches outputs, put the core logic in `_lib/<name>.py` so the FFL handlers can call it too. The CLI becomes a thin wrapper.
 
 ### Shell wrapper (`<name>.sh`)
 
-- Executable: `chmod +x <name>.sh`.
-- Starts with `#!/usr/bin/env bash` and `set -euo pipefail`.
-- Sources the repo's env loader so `.env` values are available:
-  ```bash
-  REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-  # shellcheck disable=SC1091
-  source "${REPO_ROOT}/scripts/_env.sh"
-  ```
-- Activates the project virtualenv if one exists at `${REPO_ROOT}/.venv`.
-- Invokes the Python tool with `"$@"` so any extra flags pass through:
-  ```bash
-  exec python "$(dirname "${BASH_SOURCE[0]}")/<name>.py" "$@"
-  ```
-- The wrapper's job is *environment setup and defaults*, not argument parsing — parsing belongs in the Python program. The wrapper may set a handful of defaults (e.g. a default `--region` or `--pbf-path`) before `"$@"`, but complex option logic stays in Python.
+- Executable; `#!/usr/bin/env bash` + `set -euo pipefail`.
+- Sources `scripts/_env.sh`, activates `.venv` if present, then `exec python3` the Python tool with `"$@"`.
+- `python3` explicitly (not `python`) for cross-machine Python 2/3 safety.
+- No argument parsing in the wrapper — that belongs in the Python program.
 
-### Naming
+### Cache conventions for new data types
 
-- Use kebab-case for shell wrappers (`dump-amenities.sh`), snake_case for Python files (`dump_amenities.py`). Keep the base name aligned so the pair is obvious.
-- Name by *what it does*, not by *how*: `count-nodes-by-region.sh`, not `run-sql.sh`.
+- Pick a short, plural-noun-ish cache type name (`shapefiles`, `parks`, `vector_tiles`, `elevation`).
+- Use `manifest.json` inside the cache subdir (not `<type>_directory.json`).
+- Mirror upstream path hierarchy where there is one (Geofabrik: `europe/germany/berlin-...`).
+- Stage downloads / builds in `$AFL_OSM_LOCAL_TMP_DIR/facetwork-<type>-staging/` and finalize via `storage.finalize_from_local` / `finalize_dir_from_local`. Don't write partial files to the destination.
+- Record source-lineage SHA + tool version in every entry so cache validity is self-describing.
+- Expose a `--list`, `--list-missing`, `--update-all`, `--force`, `--dry-run` surface. If your tool has an axis (profile, category, source), match the existing tools' flag shape.
 
-### Documentation
-
-- Top of each `<name>.py`: a module docstring with one-line summary, a usage example, and a note on any external dependencies (PostGIS, osmium, network).
-- If a tool grows non-trivial (multiple subcommands, complex output), add a `tools/<name>.md` next to it. For simple tools, `--help` output is sufficient.
-- When adding a new tool, append a one-line entry to the **Available tools** section below.
-
-### What does *not* belong here
+### What does **not** belong here
 
 - Workflow steps, event facets, or handler logic → `handlers/`.
-- Operational scripts that manage the Facetwork stack itself (runners, Docker, databases) → repo-root `scripts/`.
-- Test fixtures or pytest helpers → `tests/` or `conftest.py`.
-- Anything that must run inside a Facetwork task — if it needs the runtime, it's a handler, not a tool.
+- Scripts that manage the Facetwork stack itself (runners, Docker, databases) → repo-root `scripts/`.
+- Test fixtures or pytest helpers → `tests/`.
+- Anything that must run inside a Facetwork task — if it needs the runtime, it's a handler, not a tool. (But the handler can call your tool's library module.)
 
-## Cache layout and manifests
+## Typical workflows
 
-OSM-derived data is cached under a storage root, partitioned by type. Each cache type gets its own subdirectory and its own manifest file **inside** that subdirectory — the manifest travels with its data, so moving or deleting a cache subtree keeps the index consistent.
-
-### Backends
-
-Tools access the cache through a storage abstraction that supports two backends:
-
-- `local` (default) — standard POSIX filesystem. Default root: `/Volumes/afl_data/osm`. Full atomic writes and `fcntl` advisory locking.
-- `hdfs` — HDFS via WebHDFS (soft-imports `facetwork.runtime.storage`). Default root: `/user/afl/osm`. No advisory locking — **single-writer semantics assumed** (use from one coordinator process). Rename is atomic at the namenode; overwrite is not.
-
-Select the backend per invocation with `--backend {local,hdfs}` or globally via `AFL_OSM_STORAGE`. Override the cache root with `AFL_OSM_CACHE_ROOT` (applies to the selected backend).
-
-### Layout
-
-```
-/Volumes/afl_data/osm/
-├── pbf/
-│   ├── manifest.json
-│   └── europe/germany/berlin-latest.osm.pbf        ← mirrors Geofabrik's path
-├── geojson/
-│   ├── manifest.json
-│   └── ...
-├── shapefiles/
-│   ├── manifest.json
-│   └── ...
-└── ...
-```
-
-Tools must never hard-code the root — use `_lib.storage.get_storage()` and `_lib.manifest.cache_dir(cache_type, storage)`, both of which consult the env vars above.
-
-### Manifest conventions
-
-- **Name**: always `manifest.json` inside the cache-type subdir. Do not use `<type>_directory.json` — "directory" is ambiguous with "filesystem directory."
-- **Path mirroring**: for remote sources with a natural hierarchy (Geofabrik: `europe/germany/berlin-latest.osm.pbf`), mirror that path under the cache subdir. Keeps diffs against upstream trivial and avoids filename-collision logic.
-- **Entry shape** (baseline — extend per cache type as needed):
-  ```json
-  {
-    "version": 1,
-    "entries": {
-      "europe/germany/berlin-latest.osm.pbf": {
-        "relative_path": "europe/germany/berlin-latest.osm.pbf",
-        "source_url": "https://download.geofabrik.de/europe/germany/berlin-latest.osm.pbf",
-        "size_bytes": 123456789,
-        "sha256": "…",
-        "source_checksum": {"algo": "md5", "value": "…", "url": "…md5"},
-        "downloaded_at": "2026-04-20T14:03:22Z",
-        "source_timestamp": "2026-04-18T21:22:02Z",
-        "extra": { /* cache-type specific: osmosis_replication_seq, region_code, etc. */ }
-      }
-    }
-  }
-  ```
-  `downloaded_at` answers *"when did we fetch it?"*; `source_timestamp` (from the PBF header / upstream metadata) answers *"how fresh is the data?"* — keep them separate.
-- **Checksums**: for Geofabrik, download the published `.md5` and record it under `source_checksum` for upstream-integrity verification. Also compute a local `sha256` after download for tamper/corruption detection. Verify `source_checksum` before writing the manifest entry; abort on mismatch.
-- **Atomic writes**: write to `manifest.json.tmp` in the same directory, then `os.replace` to `manifest.json`. Never write the file in place.
-- **Concurrent access**: hold an advisory lock (`fcntl.flock` on `manifest.json.lock`) for the entire read-modify-write cycle. Multiple simultaneous downloads are allowed — they must serialize around the manifest update, not the download itself.
-- **Forward compatibility**: always include `"version": 1`. Readers must tolerate unknown fields in entries. Bump the version only for breaking layout changes.
-
-`tools/_lib/manifest.py` is the single implementation of all of the above — new tools must use it rather than re-implementing JSON I/O.
-
-## Available tools
-
-<!-- Append one line per tool: `- **name** — short description.` -->
-
-- **download-pbf** — download OSM PBF files from Geofabrik into `pbf/`, verified against upstream MD5. Sequential (Geofabrik rate-limits per IP), skips files already present with a matching checksum. Accepts region keys positionally, via `--regions-file`, or resolved from Geofabrik's `index-v1.json` with `--all` / `--all-under PREFIX` (leaves-only by default; add `--include-parents` for continent/country-level PBFs). Use `--list` to preview the resolved set. Supports `--backend {local,hdfs}` for either local filesystem or HDFS (WebHDFS) storage. See `download-pbf.sh --help`.
-- **convert-pbf-geojson** — convert cached PBFs to GeoJSON via `osmium export` into `geojson/`. The geojson manifest records the source PBF's SHA-256, so reruns skip regions whose PBF hasn't changed; pass `--force` to reconvert. Parallelizes with `--jobs N` (each worker spawns an `osmium` subprocess). Region selection mirrors download-pbf: positional, `--regions-file`, `--all` / `--all-under PREFIX` (reading the **local pbf manifest**, not the Geofabrik index). Default output format is `geojsonseq`; pass `--format geojson` for a single FeatureCollection. Local backend only — `osmium` requires local files. Requires `osmium-tool` on PATH.
-- **convert-pbf-shapefile** — convert cached PBFs to multi-layer ESRI Shapefile bundles via `ogr2ogr` into `shapefiles/`. Output for each region is a **directory** of bundles (one per geometry category: points, lines, multilinestrings, multipolygons). The `other_relations` GeometryCollection layer is skipped — shapefile can't represent it. Manifest records the source PBF's SHA-256 plus per-layer size and SHA-256, so reruns skip regions whose PBF hasn't changed. Same flag surface as `convert-pbf-geojson` (`--all` / `--all-under` / `--include-parents` / `--update-all` / `--jobs` / `--force` / `--dry-run` / `--list`). Local backend only — shapefile bundles are directory trees, and HDFS directory finalization isn't implemented. Requires GDAL's `ogr2ogr` on PATH.
-- **build-graphhopper-graph** — build GraphHopper routing graphs from cached PBFs into `graphhopper/<region>-latest/<profile>/`. One directory per (region, profile); a region can have several profile graphs simultaneously. Manifest records source-PBF SHA-256 + GraphHopper version, so a jar upgrade invalidates all graphs automatically without per-region `--force`. `--profile NAME` / `--profiles LIST` / `--all-profiles` control the profile axis; standard region selection (`--all` / `--all-under` / `--update-all` / `--list-missing`) applies across (profile, region) pairs. Default `--jobs 1` because GraphHopper imports are CPU+RAM heavy (multi-GB heap per build). Local backend only. Requires Java 17+ and a GraphHopper 8.x `-web.jar` (path via `--jar` or `$GRAPHHOPPER_JAR`).
-- **build-valhalla-tiles** — build Valhalla routing tilesets from cached PBFs into `valhalla/<region>-latest/`. Unlike GraphHopper, there is **no profile axis** — Valhalla profiles (auto, bicycle, pedestrian, truck, motor_scooter, motorcycle, bus, taxi) are query-time costing models, so one tileset serves every profile. Cross-region routing works natively within a tileset (Valhalla's hierarchical tiles transparently cross internal boundaries); for coverage across separately-built tilesets, build a parent region. Manifest records source-PBF SHA-256 + Valhalla version, so a toolchain upgrade invalidates all tilesets automatically. Standard region-selection flags (`--all` / `--all-under` / `--update-all` / `--list-missing`) apply. Default `--jobs 1` — Valhalla builds are CPU+RAM heavy. Local backend only. Requires `valhalla_build_config` and `valhalla_build_tiles` binaries (install via `install-tools.sh` or `brew install valhalla`).
-- **install-tools** — one-shot installer for every binary the rest of the tools shell out to: `osmium-tool`, `gdal` (for `ogr2ogr`), `openjdk@17` (for the GraphHopper JAR), `valhalla`, `tippecanoe`, `osrm-backend` — all via Homebrew — plus the GraphHopper runnable JAR downloaded from GitHub releases to `~/.graphhopper/graphhopper-web.jar`. Idempotent (re-running only installs what's missing). Verifies each tool at the end and prints a short env-var cheat sheet. Run before using any of the other tools on a fresh machine.
-- **clip-pbf** — clip a cached PBF to a bbox or polygon via `osmium extract`. Output lands in the regular `pbf/clips/` subdirectory so every downstream tool treats it as a normal region called `clips/<name>`. Manifest records source-region SHA + clip spec; changing either triggers a re-clip.
-- **build-vector-tiles** — `tippecanoe` GeoJSONSeq → PMTiles. Consumes from any geojson-producing cache: the whole-region `geojson/` extract or any `extract` category (water, parks, forests, roads_routable, ...). Output at `vector_tiles/<region>-latest/<source>.pmtiles` with its own manifest. Cache validity: source GeoJSONSeq SHA + tippecanoe version + tile options (min/max zoom, layer name). `--all-sources` fans out across every valid source per region.
-- **download-gtfs** — per-agency GTFS feed downloader with Last-Modified / ETag cache validation. `--list-missing` HEADs each recorded URL and reports which feeds have been updated upstream. No new brew deps (stdlib + requests).
-- **download-elevation** — Copernicus DEM GLO-30 raster for a bbox via `gdalwarp` (`/vsicurl/` streaming from AWS Open Data — no auth). Output at `elevation/<name>-latest.tif`. Cache validity: bbox + source + version match. No new brew deps (reuses GDAL).
-- **build-osrm-graph** — OSRM MLD routing graphs (extract → partition → customize). Output at `osrm/<region>-latest/<profile>/`. Same profile-axis shape as `build-graphhopper-graph` (`--profile` / `--profiles` / `--all-profiles`); shipped profiles (car/bicycle/foot) resolved automatically, override with `--profile-file`. Cache validity: source PBF SHA + OSRM version + profile.
-- **update-all** — meta-script that runs every tool's `--update-all` in dependency order: download-pbf → clip-pbf → convert-pbf-geojson → convert-pbf-shapefile → extract (all categories) → build-graphhopper-graph → build-valhalla-tiles → build-osrm-graph → build-vector-tiles → download-gtfs. Safe to run as often as you like — each tool no-ops when nothing is stale. `UPDATE_ALL_SKIP="gtfs osrm ..."` skips named steps; `UPDATE_ALL_STOP_ON_FAIL=1` aborts on first failure.
-- **extract** — extract category-specific feature layers (water, protected_areas, parks, forests, ...) from cached PBFs into one pre-filtered GeoJSONSeq per category. Each category gets its own cache subdirectory (e.g. `water/`, `parks/`) with its own manifest; downstream consumers read the small already-filtered file instead of re-parsing the PBF. Uses `osmium tags-filter | osmium export`. Positional first arg is the category; `--extract-all-categories` runs every category per resolved region. Categories are defined in `_lib/pbf_extract.py::CATEGORIES` — adding a new one is a single dict entry (tag filter, description, filter_version for cache invalidation). Same region-selection surface as the other tools (`--all` / `--all-under` / `--include-parents` / `--update-all` / `--jobs` / `--force` / `--dry-run` / `--list` / `--list-categories`). Requires `osmium-tool` on PATH.
-
-## Running a tool
+**Bootstrap a new machine for the Liechtenstein example:**
 
 ```bash
-cd examples/osm-geocoder
-./tools/<name>.sh --help
-./tools/download-pbf.sh europe/liechtenstein               # local backend (default)
-AFL_OSM_STORAGE=hdfs ./tools/download-pbf.sh europe/liechtenstein
-./tools/download-pbf.sh --backend hdfs europe/liechtenstein  # same via flag
+./tools/install-tools.sh
+./tools/download-pbf.sh europe/liechtenstein
+./tools/update-all.sh UPDATE_ALL_SKIP="gtfs"
 ```
 
-Direct Python invocation also works if the environment is already set up:
+**Rebuild everything after Geofabrik updates the German data:**
 
 ```bash
-python tools/<name>.py --region berlin
+./tools/update-all.sh
+# download-pbf detects the upstream MD5 change on German regions, re-downloads;
+# every downstream tool sees the SHA flip and refreshes only those regions.
+```
+
+**Custom-polygon region:**
+
+```bash
+# Define a polygon covering a watershed
+./tools/clip-pbf.sh --source europe/germany \
+    --polygon my-watershed.geojson \
+    --name watershed-example
+
+# Downstream tools now see it as region "clips/watershed-example"
+./tools/extract.sh water clips/watershed-example
+./tools/build-graphhopper-graph.sh --profile bike clips/watershed-example
+```
+
+**Web-map tile pipeline for Liechtenstein:**
+
+```bash
+./tools/download-pbf.sh europe/liechtenstein
+./tools/extract.sh --extract-all-categories europe/liechtenstein
+./tools/build-vector-tiles.sh --all-sources europe/liechtenstein
+# vector_tiles/europe/liechtenstein-latest/{geojson,water,parks,...}.pmtiles
+```
+
+**Multi-profile routing across a bigger region:**
+
+```bash
+./tools/download-pbf.sh europe/germany           # country-level PBF
+./tools/build-graphhopper-graph.sh --all-profiles europe/germany
+./tools/build-valhalla-tiles.sh europe/germany   # no profile axis
+./tools/build-osrm-graph.sh --all-profiles europe/germany
+```
+
+**Inspect what's cached / what needs work:**
+
+```bash
+./tools/download-pbf.sh --list-missing --all-under europe/germany   # what's left to download
+./tools/extract.sh --update-all --extract-all-categories --dry-run  # what would rebuild
+./tools/build-valhalla-tiles.sh --list-missing --all                 # which tilesets need building
 ```

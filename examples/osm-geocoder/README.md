@@ -83,14 +83,34 @@ This starts a long-running agent that polls for `osm.Geocode` tasks and ~330 OSM
 find examples/osm-geocoder -name '*.ffl' -not -path '*/tests/*' -exec scripts/compile {} --check \;
 ```
 
+## CLI tools
+
+Alongside the FFL workflows, this example ships a set of **standalone command-line tools** for OSM data operations — PBF download, format conversions, category extracts, routing-graph builds, vector-tile generation, and more. The tools share their implementation with the FFL handlers through `tools/_lib/` libraries, so a given operation (say, "download Liechtenstein's PBF") has one code path, one on-disk cache layout, and one manifest whether it's triggered from a workflow or a terminal.
+
+Highlights:
+
+- **Source acquisition:** `download-pbf` (Geofabrik), `clip-pbf` (custom bbox/polygon), `download-gtfs` (transit feeds), `download-elevation` (Copernicus DEM).
+- **Derived formats:** `convert-pbf-geojson`, `convert-pbf-shapefile`, `extract` (per-category: water, parks, forests, roads_routable, ...), `build-vector-tiles` (PMTiles via tippecanoe).
+- **Routing engines:** `build-graphhopper-graph`, `build-valhalla-tiles`, `build-osrm-graph` — each with its own manifest, cache-keyed on source-PBF SHA + engine version.
+- **Meta:** `update-all` chains every tool's `--update-all` in dependency order; `install-tools` installs every binary via Homebrew plus the GraphHopper JAR.
+
+See [`tools/README.md`](tools/README.md) for the data-flow diagram, per-tool details, cache layout, manifest conventions, and typical workflows. Quick start:
+
+```bash
+./tools/install-tools.sh                 # once per machine
+./tools/download-pbf.sh europe/liechtenstein
+./tools/update-all.sh                    # builds every derived cache
+```
+
 ## Project structure
 
-The `handlers/` package is organized into 16 functional category subpackages, each containing its own handler modules, FFL source files, tests, and README:
+The `handlers/` package is organized into functional category subpackages, each containing its own handler modules, FFL source files, tests, and README:
 
 ```
 handlers/
 ├── __init__.py              # backward-compatible facade + register_all_handlers()
-├── shared/                  # shared utilities (_output.py, downloader.py, region_resolver.py)
+├── shared/                  # shared utilities (_output.py, downloader.py, region_resolver.py,
+│                            #   pbf_cache.py / pbf_convert.py re-exports of tools/_lib/)
 ├── amenities/               # amenity extraction (restaurants, shops, healthcare)
 ├── boundaries/              # administrative and natural boundaries
 ├── buildings/               # building footprint extraction
@@ -98,13 +118,14 @@ handlers/
 ├── composed_workflows/      # example composed workflows
 ├── downloads/               # download and data processing operations
 ├── filters/                 # radius, OSM type, and validation filtering
-├── graphhopper/             # GraphHopper routing graphs (~200 facets)
+├── graphhopper/             # GraphHopper routing graphs
 ├── parks/                   # national parks, protected areas
 ├── poi/                     # points of interest
 ├── population/              # population-based filtering
 ├── roads/                   # road network extraction + zoom builder
 ├── routes/                  # bicycle, hiking, train, bus, city routing, GTFS, elevation
 ├── shapefiles/              # shapefile downloads
+├── valhalla/                # Valhalla routing tilesets
 ├── visualization/           # GeoJSON map rendering with Leaflet
 └── voting/                  # US Census TIGER voting districts
 ```
@@ -149,5 +170,6 @@ The core geocoding FFL file remains at `afl/geocoder.ffl`.
 | File | Description |
 |------|-------------|
 | `agent.py` | Live agent using AgentPoller + Nominatim API + all OSM handlers |
+| `tools/` | Standalone CLI tools (download-pbf, convert-*, extract, build-*, install-tools, update-all) — see [tools/README.md](tools/README.md) |
 | `requirements.txt` | Python dependencies (`requests`, `pyosmium`, `shapely`, `pyproj`, `folium`) |
 | `conftest.py` | pytest isolation for cross-example test collection |
