@@ -110,6 +110,11 @@ namespace osm.ops {
     /** Extracts emergency services — fire stations, police, and the emergency=* namespace (hydrants, defibrillators, assembly points). */
     event facet ExtractEmergency(cache:OSMCache) => (emergency:OSMCache)
 
+    /** Renders a static MapLibre + PMTiles HTML page for the region at `html/<region>-latest/`, with sub-classified layers (highways by class, parks by level, water by kind) and click popups showing OSM tags. Refreshes the master `html/index.html` listing every rendered region. Source layers come from the `vector_tiles/` cache — ensure that's populated first. */
+    event facet RenderHtmlMap(cache:OSMCache) => (htmlMap:HTMLMapCache)
+    /** Bulk-mode equivalent of RenderHtmlMap for FFL batch loops. Same behavior; separate facet name so workflows can distinguish single-region renders from fan-outs. */
+    event facet RenderHtmlMapBatch(cache:OSMCache) => (htmlMap:HTMLMapCache)
+
 }
 
 

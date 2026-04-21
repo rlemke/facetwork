@@ -22,6 +22,18 @@ namespace osm.types {
       edgeCount: Long
    }
 
+   /** Rendered HTML map page for a region — MapLibre GL JS + PMTiles. Points at a static directory under `html/<region>-latest/` with an index.html + style.json. `sources` lists the vector_tiles layers (water, parks, roads_routable, …) currently styled on the page. */
+   schema HTMLMapCache {
+      region: String,
+      htmlDir: String,
+      indexUrl: String,
+      sources: [String],
+      size: Long,
+      date: String,
+      wasInCache: Boolean,
+      styleVersion: Long
+   }
+
    /** Valhalla routing tileset built from OSM data. Profiles (auto, bicycle, pedestrian, truck, ...) are query-time costing models, not part of the build, so there is no per-profile field here — one tileset serves every profile. */
    schema ValhallaCache {
       osmSource: String,

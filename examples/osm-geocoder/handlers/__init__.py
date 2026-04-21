@@ -161,6 +161,7 @@ from .routes.routing_handlers import register_routing_handlers
 from .shared.pbf_cache import download_region  # noqa: F401
 from .routing.routing_adapter_handlers import register_routing_adapter_handlers
 from .sources.source_handlers import register_source_handlers
+from .visualization.html_map_handlers import register_html_map_handlers
 from .visualization.visualization_handlers import register_visualization_handlers
 from .voting.tiger_handlers import register_tiger_handlers
 
@@ -192,6 +193,7 @@ __all__ = [
     "register_tiger_handlers",
     "register_validation_handlers",
     "register_visualization_handlers",
+    "register_html_map_handlers",
     "register_zoom_handlers",
     "register_routing_adapter_handlers",
     "register_source_handlers",
@@ -226,6 +228,7 @@ def register_all_handlers(poller) -> None:
     register_valhalla_handlers(poller)
     register_validation_handlers(poller)
     register_visualization_handlers(poller)
+    register_html_map_handlers(poller)
     register_zoom_handlers(poller)
     register_combined_handlers(poller)
     register_import_handlers(poller)
@@ -259,6 +262,7 @@ def register_all_registry_handlers(runner) -> None:
     from .routes.route_handlers import register_handlers as reg_route
     from .routes.routing_handlers import register_handlers as reg_routing
     from .visualization.visualization_handlers import register_handlers as reg_visualization
+    from .visualization.html_map_handlers import register_handlers as reg_html_map
     from .voting.tiger_handlers import register_handlers as reg_tiger
 
     reg_airquality(runner)
@@ -285,6 +289,7 @@ def register_all_registry_handlers(runner) -> None:
     reg_valhalla(runner)
     reg_validation(runner)
     reg_visualization(runner)
+    reg_html_map(runner)
     reg_zoom(runner)
 
     from .combined.combined_handlers import register_handlers as reg_combined
