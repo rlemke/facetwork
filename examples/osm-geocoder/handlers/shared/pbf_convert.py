@@ -25,5 +25,6 @@ if str(_TOOLS_ROOT) not in sys.path:
 # Re-export both conversion libraries. Callers use aliased names to avoid
 # name collisions between the two ``convert_region`` / ``ConvertResult`` /
 # ``to_osm_cache`` / ``ConversionError`` symbols.
+from _lib import pbf_extract as extract  # noqa: E402,F401
 from _lib import pbf_geojson as geojson  # noqa: E402,F401
 from _lib import pbf_shapefile as shapefile  # noqa: E402,F401

@@ -334,6 +334,62 @@ _CONVERT_FACETS: dict[str, callable] = {
 }
 
 
+def _make_extract_handler(category_name: str) -> callable:
+    """Build an Extract* event facet handler bound to one category.
+
+    Every extract facet (ExtractWater, ExtractForests, ...) shares the
+    same body: resolve the region from ``cache.url``, call the shared
+    ``pbf_extract.extract_region`` library with this category, and
+    return the category-specific output parameter. The FFL-visible name
+    and the dict key under which the OSMCache is returned are driven by
+    the ``CATEGORIES`` registry in ``_lib/pbf_extract.py``.
+    """
+    from ..shared.pbf_convert import extract as _extract_mod
+
+    category = _extract_mod.CATEGORIES[category_name]
+
+    def handler(payload: dict) -> dict:
+        from ..shared.pbf_convert import extract as extract_lib
+
+        cache = payload.get("cache", {}) or {}
+        step_log = payload.get("_step_log")
+        region_path = _extract_region_path(cache.get("url", ""))
+        log.info(
+            "Extract[%s]: region=%s", category.facet_name, region_path
+        )
+        if step_log:
+            step_log(f"{category.facet_name}: {region_path}")
+        try:
+            result = extract_lib.extract_region(region_path, category.name)
+        except extract_lib.ExtractionError as exc:
+            raise RuntimeError(str(exc)) from exc
+        out_cache = extract_lib.to_osm_cache(result)
+        if step_log:
+            status = "cache" if result.was_cached else "extracted"
+            step_log(
+                f"{category.facet_name}: {region_path} {status}, "
+                f"features={result.feature_count}, size={out_cache['size']}",
+                level="success",
+            )
+        return {category.return_param: out_cache}
+
+    handler.__name__ = f"_extract_{category.name}_handler"
+    return handler
+
+
+def _build_extract_facets() -> dict[str, callable]:
+    """Generate one handler per CATEGORIES entry, keyed by FFL facet name."""
+    from ..shared.pbf_convert import extract as extract_mod
+
+    return {
+        cat.facet_name: _make_extract_handler(cat.name)
+        for cat in extract_mod.CATEGORIES.values()
+    }
+
+
+_EXTRACT_FACETS: dict[str, callable] = _build_extract_facets()
+
+
 def register_operations_handlers(poller) -> None:
     """Register all operations event facet handlers with the poller."""
     # Register the Cache handler (takes region:String, not cache:OSMCache)
@@ -342,6 +398,9 @@ def register_operations_handlers(poller) -> None:
     poller.register(f"{NAMESPACE}.DownloadPBF", _download_handler)
 
     for facet_name, handler in _CONVERT_FACETS.items():
+        poller.register(f"{NAMESPACE}.{facet_name}", handler)
+
+    for facet_name, handler in _EXTRACT_FACETS.items():
         poller.register(f"{NAMESPACE}.{facet_name}", handler)
 
     shapefile_facets = {"DownloadShapefile", "DownloadShapefileBatch"}
@@ -361,6 +420,8 @@ def _build_dispatch() -> None:
     _DISPATCH[f"{NAMESPACE}.CacheRegion"] = _cache_handler
     _DISPATCH[f"{NAMESPACE}.DownloadPBF"] = _download_handler
     for facet_name, handler in _CONVERT_FACETS.items():
+        _DISPATCH[f"{NAMESPACE}.{facet_name}"] = handler
+    for facet_name, handler in _EXTRACT_FACETS.items():
         _DISPATCH[f"{NAMESPACE}.{facet_name}"] = handler
     shapefile_facets = {"DownloadShapefile", "DownloadShapefileBatch"}
     for facet_name, return_param in OPERATIONS_FACETS.items():

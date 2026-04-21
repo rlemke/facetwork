@@ -57,6 +57,15 @@ namespace osm.ops {
     /** Converts each sub-region of a cached dataset to shapefile bundles. */
     event facet ConvertPbfToShapefileBatch(cache:OSMCache, layers:String = "points,lines,multilinestrings,multipolygons") => (shapefile:OSMCache)
 
+    /** Extracts water features (lakes, ponds, reservoirs, rivers, streams, canals) from a cached PBF into a pre-filtered GeoJSONSeq in the water/ cache. */
+    event facet ExtractWater(cache:OSMCache) => (water:OSMCache)
+    /** Extracts protected areas (national parks, state parks, wilderness, nature reserves) from a cached PBF into the protected_areas/ cache. */
+    event facet ExtractProtectedAreas(cache:OSMCache) => (protectedAreas:OSMCache)
+    /** Extracts city-level parks (leisure=park/playground/pitch/stadium/etc.) from a cached PBF into the parks/ cache. */
+    event facet ExtractParks(cache:OSMCache) => (parks:OSMCache)
+    /** Extracts forest and wood-covered land (natural=wood, landuse=forest) from a cached PBF into the forests/ cache. */
+    event facet ExtractForests(cache:OSMCache) => (forests:OSMCache)
+
 }
 
 
