@@ -138,9 +138,15 @@ def graph_abs_path(region: str, profile: str) -> Path:
 
 
 def _staging_dir(region: str, profile: str) -> Path:
-    base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
-    safe = region.replace("/", "_")
-    return Path(base) / "facetwork-graphhopper-staging" / safe / profile
+    """Stage adjacent to the final destination. Override with
+    ``AFL_OSM_CONVERT_STAGING=tmp`` for the legacy local-tmp behavior.
+    """
+    if (os.environ.get("AFL_OSM_CONVERT_STAGING") or "").lower() == "tmp":
+        base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+        safe = region.replace("/", "_")
+        return Path(base) / "facetwork-graphhopper-staging" / safe / profile
+    out = graph_abs_path(region, profile)
+    return out.with_name(out.name + ".tmp")
 
 
 def _dir_size(path: Path) -> int:

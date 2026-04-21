@@ -101,9 +101,16 @@ def shapefile_abs_path(region: str) -> Path:
 
 
 def _staging_dir(region: str) -> Path:
-    base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
-    safe = region.replace("/", "_")
-    return Path(base) / "facetwork-shapefile-staging" / safe
+    """Stage adjacent to the final destination so os.rename is same-FS and
+    staging uses destination-volume space. Override with
+    ``AFL_OSM_CONVERT_STAGING=tmp`` to fall back to local tmp.
+    """
+    if (os.environ.get("AFL_OSM_CONVERT_STAGING") or "").lower() == "tmp":
+        base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+        safe = region.replace("/", "_")
+        return Path(base) / "facetwork-shapefile-staging" / safe
+    out = shapefile_abs_path(region)
+    return out.with_name(out.name + ".tmp")
 
 
 def _ogr2ogr_version(ogr2ogr_bin: str) -> str:

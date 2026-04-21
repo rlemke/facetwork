@@ -260,9 +260,18 @@ def extract_abs_path(region: str, category: str) -> Path:
 
 
 def _staging_dir(region: str, category: str) -> Path:
-    base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
-    safe = region.replace("/", "_")
-    return Path(base) / "facetwork-extract-staging" / category / safe
+    """Stage adjacent to the final destination. Two intermediate files
+    land here during extraction (filtered.osm.pbf + the exported
+    geojsonseq); both get cleaned up after the geojsonseq is finalized
+    into the destination directory. Override with
+    ``AFL_OSM_CONVERT_STAGING=tmp`` to fall back to local tmp.
+    """
+    if (os.environ.get("AFL_OSM_CONVERT_STAGING") or "").lower() == "tmp":
+        base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+        safe = region.replace("/", "_")
+        return Path(base) / "facetwork-extract-staging" / category / safe
+    out = extract_abs_path(region, category)
+    return out.with_name(out.name + ".staging")
 
 
 def _osmium_version(osmium_bin: str) -> str:

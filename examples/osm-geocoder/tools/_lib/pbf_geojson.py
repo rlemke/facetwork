@@ -124,9 +124,21 @@ def _sha256_file(path: Path) -> tuple[int, str]:
 
 
 def _staging_path(region: str, fmt: str) -> Path:
-    base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
-    safe = region.replace("/", "_")
-    return Path(base) / "facetwork-geojson-staging" / f"{safe}-latest.{FORMAT_EXT[fmt]}.tmp"
+    """Stage adjacent to the final destination so os.rename is same-FS and
+    staging uses destination-volume space rather than local tmp.
+
+    Override with ``AFL_OSM_CONVERT_STAGING=tmp`` to force the legacy
+    local-tmp behavior. Conversions don't benefit from network-style
+    local staging — osmium reads from disk and writes to disk, so
+    destination-adjacent is both safer (no /tmp pressure for multi-GB
+    outputs) and faster (no cross-FS finalize copy).
+    """
+    if (os.environ.get("AFL_OSM_CONVERT_STAGING") or "").lower() == "tmp":
+        base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+        safe = region.replace("/", "_")
+        return Path(base) / "facetwork-geojson-staging" / f"{safe}-latest.{FORMAT_EXT[fmt]}.tmp"
+    out = geojson_abs_path(region, fmt)
+    return out.with_name(out.name + ".tmp")
 
 
 def is_up_to_date(region: str, fmt: str, pbf_entry: dict, out_abs: Path) -> bool:

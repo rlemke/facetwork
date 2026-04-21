@@ -125,9 +125,15 @@ def tileset_abs_path(region: str) -> Path:
 
 
 def _staging_dir(region: str) -> Path:
-    base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
-    safe = region.replace("/", "_")
-    return Path(base) / "facetwork-valhalla-staging" / safe
+    """Stage adjacent to the final destination. Override with
+    ``AFL_OSM_CONVERT_STAGING=tmp`` for the legacy local-tmp behavior.
+    """
+    if (os.environ.get("AFL_OSM_CONVERT_STAGING") or "").lower() == "tmp":
+        base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+        safe = region.replace("/", "_")
+        return Path(base) / "facetwork-valhalla-staging" / safe
+    out = tileset_abs_path(region)
+    return out.with_name(out.name + ".staging")
 
 
 def _dir_size(path: Path) -> int:
