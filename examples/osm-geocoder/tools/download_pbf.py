@@ -49,6 +49,7 @@ from _lib.pbf_download import (  # noqa: E402
     cached_path,
     download_region,
     filter_leaves,
+    is_region_cached,
     regions_from_pbf_manifest,
     staging_path,
 )
@@ -205,6 +206,14 @@ def main() -> int:
         help="Print the resolved region list to stdout and exit; no downloads.",
     )
     parser.add_argument(
+        "--list-missing",
+        action="store_true",
+        help="Print the resolved regions that are NOT yet in the local pbf "
+        "cache (not in the manifest, or file is missing) and exit. Useful "
+        "with --all / --all-under to see what's left to download from "
+        "Geofabrik. No network calls.",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Re-download even if the manifest reports an up-to-date cached copy.",
@@ -285,6 +294,17 @@ def main() -> int:
         for r in regions:
             print(r)
         print(f"{len(regions)} region(s)", file=sys.stderr)
+        return 0
+
+    if args.list_missing:
+        missing = [r for r in regions if not is_region_cached(r, storage=storage)]
+        for r in missing:
+            print(r)
+        print(
+            f"{len(missing)} not yet cached of {len(regions)} resolved "
+            f"({len(regions) - len(missing)} already present)",
+            file=sys.stderr,
+        )
         return 0
 
     results = {"downloaded": 0, "skipped": 0, "dry-run": 0, "failed": 0}
