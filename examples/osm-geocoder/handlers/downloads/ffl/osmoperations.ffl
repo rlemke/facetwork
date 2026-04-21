@@ -42,10 +42,20 @@ namespace osm.ops {
     event facet StatusBatch(cache:OSMCache) => (stats:OSMCache)
     /** Generates geocoding caches for all sub-regions. */
     event facet GeoOSMCacheBatch(cache:OSMCache) => (graph:OSMCache)
-    /** Downloads shapefiles derived from a cached OSM region. */
+    /** Downloads Geofabrik's pre-packaged free shapefile for a region (fixed layer set, sub-country coverage only). */
     event facet DownloadShapefile(cache:OSMCache) => ()
-    /** Downloads shapefiles for all sub-regions in a cached dataset. */
+    /** Downloads Geofabrik's pre-packaged free shapefile for each of a cached dataset's sub-regions. */
     event facet DownloadShapefileBatch(cache:OSMCache) => ()
+
+    /** Converts a cached PBF to GeoJSON via osmium export. `format` is "geojsonseq" (default, one feature per line) or "geojson" (FeatureCollection). Output covers every region we have cached and is current as of whatever PBF is on disk. */
+    event facet ConvertPbfToGeoJson(cache:OSMCache, format:String = "geojsonseq") => (geojson:OSMCache)
+    /** Converts each sub-region of a cached dataset to GeoJSON. Pair with DownloadBatch to catch up after pulling new PBFs. */
+    event facet ConvertPbfToGeoJsonBatch(cache:OSMCache, format:String = "geojsonseq") => (geojson:OSMCache)
+
+    /** Converts a cached PBF to a multi-layer ESRI Shapefile bundle via ogr2ogr. `layers` is a comma-separated subset of {points, lines, multilinestrings, multipolygons}; default is all four. Output is a directory of shapefile bundles, not a single file. */
+    event facet ConvertPbfToShapefile(cache:OSMCache, layers:String = "points,lines,multilinestrings,multipolygons") => (shapefile:OSMCache)
+    /** Converts each sub-region of a cached dataset to shapefile bundles. */
+    event facet ConvertPbfToShapefileBatch(cache:OSMCache, layers:String = "points,lines,multilinestrings,multipolygons") => (shapefile:OSMCache)
 
 }
 

@@ -1,20 +1,22 @@
 """Convert cached OSM PBF files to GeoJSON using ``osmium export``.
 
+Thin CLI wrapper around ``_lib.pbf_geojson.convert_region``. Both this
+tool and the FFL ``osm.ops.ConvertPbfToGeoJson`` handler call that
+library, so they share one cache layout and one manifest.
+
 Reads from the ``pbf`` cache and writes to the ``geojson`` cache. The
-geojson manifest records the source PBF's SHA-256 (and related metadata),
-so re-running the tool skips regions whose source PBF has not changed
-since the last conversion. Pass ``--force`` to reconvert unconditionally.
+geojson manifest records the source PBF's SHA-256 so reruns skip
+regions whose source PBF has not changed; pass ``--force`` to reconvert.
 
 Conversions can run in parallel (``--jobs N``); each worker spawns an
-``osmium`` subprocess. The manifest update is serialized — both across
-processes (advisory file lock) and across threads within this process
-(in-process lock) — so concurrent writers never corrupt the index.
+``osmium`` subprocess.
 
 Usage::
 
     python convert_pbf_geojson.py europe/germany/berlin
     python convert_pbf_geojson.py --all --jobs 4
     python convert_pbf_geojson.py --all-under europe/germany --format geojson
+    python convert_pbf_geojson.py --update-all
 
 Requires the ``osmium`` command-line tool (``osmium-tool``) on ``PATH``.
 """
@@ -23,83 +25,30 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import hashlib
-import os
 import shutil
-import subprocess
 import sys
-import threading
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _lib.manifest import (  # noqa: E402
-    cache_dir,
-    manifest_transaction,
-    read_manifest,
-    utcnow_iso,
-)
 from _lib.pbf_download import (  # noqa: E402
     filter_leaves,
-    regions_from_pbf_manifest as _regions_from_pbf_manifest_lib,
+    regions_from_pbf_manifest,
 )
+from _lib.pbf_geojson import (  # noqa: E402
+    DEFAULT_FORMAT,
+    FORMAT_EXT,
+    ConversionError,
+    ConvertResult,
+    convert_region,
+    geojson_abs_path,
+    is_up_to_date,
+    pbf_abs_path,
+)
+from _lib.manifest import read_manifest  # noqa: E402
 
-SOURCE_CACHE_TYPE = "pbf"
-OUTPUT_CACHE_TYPE = "geojson"
 DEFAULT_JOBS = 2
-DEFAULT_FORMAT = "geojsonseq"
-FORMAT_EXT = {"geojson": "geojson", "geojsonseq": "geojsonseq"}
-CHUNK_SIZE = 1024 * 1024
-
-# In-process lock for manifest updates. flock alone doesn't reliably
-# serialize concurrent threads inside the same process on all platforms.
-_MANIFEST_LOCK = threading.Lock()
-
-
-def pbf_rel_path(region: str) -> str:
-    return f"{region}-latest.osm.pbf"
-
-
-def pbf_abs_path(region: str) -> Path:
-    # osmium reads/writes local files, so this tool is local-backend only.
-    return Path(cache_dir(SOURCE_CACHE_TYPE)) / pbf_rel_path(region)
-
-
-def geojson_rel_path(region: str, fmt: str) -> str:
-    return f"{region}-latest.{FORMAT_EXT[fmt]}"
-
-
-def geojson_abs_path(region: str, fmt: str) -> Path:
-    return Path(cache_dir(OUTPUT_CACHE_TYPE)) / geojson_rel_path(region, fmt)
-
-
-def _osmium_version(osmium_bin: str) -> str:
-    try:
-        result = subprocess.run(
-            [osmium_bin, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        first_line = (result.stdout or "").splitlines()
-        return first_line[0].strip() if first_line else "unknown"
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-
-
-def _sha256_file(path: Path) -> tuple[int, str]:
-    sha = hashlib.sha256()
-    size = 0
-    with path.open("rb") as f:
-        while True:
-            chunk = f.read(CHUNK_SIZE)
-            if not chunk:
-                break
-            sha.update(chunk)
-            size += len(chunk)
-    return size, sha.hexdigest()
+SOURCE_CACHE_TYPE = "pbf"
 
 
 def _read_regions_file(path: Path) -> list[str]:
@@ -112,135 +61,34 @@ def _read_regions_file(path: Path) -> list[str]:
     return regions
 
 
-def regions_from_pbf_manifest(under: str | None = None) -> list[str]:
-    """Return all regions currently present in the pbf manifest.
-
-    Thin alias over the shared library helper for backward compat within
-    this module. Callers pass ``under`` as a positional prefix.
-    """
-    return _regions_from_pbf_manifest_lib(under)
-
-
-def _up_to_date(region: str, fmt: str) -> bool:
-    """True if the GeoJSON for ``region`` exists and still matches the source PBF.
-
-    Cheap local-only check: reads the two manifests and stats the output
-    file. Does not touch the network.
-    """
+def _up_to_date_cheap(region: str, fmt: str) -> bool:
     pbf_manifest = read_manifest(SOURCE_CACHE_TYPE)
-    pbf_entry = pbf_manifest.get("entries", {}).get(pbf_rel_path(region))
+    pbf_rel = f"{region}-latest.osm.pbf"
+    pbf_entry = pbf_manifest.get("entries", {}).get(pbf_rel)
     if not pbf_entry:
         return False
     return is_up_to_date(region, fmt, pbf_entry, geojson_abs_path(region, fmt))
 
 
-def is_up_to_date(
-    region: str, fmt: str, pbf_entry: dict, out_abs: Path
-) -> bool:
-    """Check whether an existing GeoJSON is still valid for the current PBF."""
-    geo_manifest = read_manifest(OUTPUT_CACHE_TYPE)
-    out_rel = geojson_rel_path(region, fmt)
-    existing = geo_manifest.get("entries", {}).get(out_rel)
-    if not existing:
-        return False
-    if existing.get("format") != fmt:
-        return False
-    if existing.get("source", {}).get("sha256") != pbf_entry.get("sha256"):
-        return False
-    if not out_abs.exists():
-        return False
-    return out_abs.stat().st_size == existing.get("size_bytes")
-
-
-def convert_region(
-    region: str,
-    *,
-    fmt: str,
-    force: bool,
-    dry_run: bool,
-    osmium_bin: str,
-) -> str:
-    """Convert one region. Returns ``converted``, ``skipped``, or ``dry-run``."""
-    pbf_manifest = read_manifest(SOURCE_CACHE_TYPE)
-    pbf_rel = pbf_rel_path(region)
-    pbf_entry = pbf_manifest.get("entries", {}).get(pbf_rel)
-    if not pbf_entry:
-        raise RuntimeError(
-            f"no pbf manifest entry for {region!r}; run download-pbf first"
+def _run_one(region: str, *, fmt: str, force: bool, dry_run: bool, osmium_bin: str) -> str:
+    if dry_run:
+        src = pbf_abs_path(region)
+        dst = geojson_abs_path(region, fmt)
+        print(f"[{region}] would convert {src} -> {dst}", file=sys.stderr)
+        return "dry-run"
+    try:
+        result: ConvertResult = convert_region(
+            region, fmt=fmt, force=force, osmium_bin=osmium_bin
         )
-
-    src_pbf = pbf_abs_path(region)
-    if not src_pbf.exists():
-        raise RuntimeError(f"pbf file missing on disk: {src_pbf}")
-
-    out_abs = geojson_abs_path(region, fmt)
-    out_rel = geojson_rel_path(region, fmt)
-
-    if not force and is_up_to_date(region, fmt, pbf_entry, out_abs):
+    except ConversionError as exc:
+        print(f"[{region}] FAILED: {exc}", file=sys.stderr)
+        raise
+    if result.was_cached:
         print(f"[{region}] up-to-date, skipping", file=sys.stderr)
         return "skipped"
-
-    if dry_run:
-        print(f"[{region}] would convert {src_pbf} -> {out_abs}", file=sys.stderr)
-        return "dry-run"
-
-    out_abs.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out_abs.with_name(out_abs.name + ".tmp")
-    tmp.unlink(missing_ok=True)
-
-    print(f"[{region}] converting -> {out_abs.name}", file=sys.stderr)
-    cmd = [
-        osmium_bin,
-        "export",
-        "-f",
-        fmt,
-        "-o",
-        str(tmp),
-        "--overwrite",
-        str(src_pbf),
-    ]
-    start = time.monotonic()
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as exc:
-        tmp.unlink(missing_ok=True)
-        stderr = (exc.stderr or "").strip()
-        raise RuntimeError(f"osmium export failed: {stderr or exc}") from exc
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
-    elapsed = time.monotonic() - start
-
-    size, sha256_hex = _sha256_file(tmp)
-    os.replace(tmp, out_abs)
-
-    entry = {
-        "relative_path": out_rel,
-        "format": fmt,
-        "size_bytes": size,
-        "sha256": sha256_hex,
-        "generated_at": utcnow_iso(),
-        "duration_seconds": round(elapsed, 2),
-        "source": {
-            "cache_type": SOURCE_CACHE_TYPE,
-            "relative_path": pbf_rel,
-            "sha256": pbf_entry.get("sha256"),
-            "size_bytes": pbf_entry.get("size_bytes"),
-            "source_checksum": pbf_entry.get("source_checksum"),
-            "source_timestamp": pbf_entry.get("source_timestamp"),
-            "downloaded_at": pbf_entry.get("downloaded_at"),
-        },
-        "tool": {
-            "command": "osmium export",
-            "osmium_version": _osmium_version(osmium_bin),
-        },
-        "extra": {"region": region},
-    }
-    with _MANIFEST_LOCK, manifest_transaction(OUTPUT_CACHE_TYPE) as manifest:
-        manifest.setdefault("entries", {})[out_rel] = entry
-
     print(
-        f"[{region}] done ({size / (1024 * 1024):.1f} MiB in {elapsed:.1f}s)",
+        f"[{region}] done ({result.size_bytes / (1024 * 1024):.1f} MiB in "
+        f"{result.duration_seconds:.1f}s)",
         file=sys.stderr,
     )
     return "converted"
@@ -275,17 +123,13 @@ def main() -> int:
         "--include-parents",
         action="store_true",
         help="When using --all / --all-under, include parent regions "
-        "alongside their descendants. Default is leaves-only (a parent PBF "
-        "like europe/germany subsumes its state children — converting both "
-        "produces redundant, much larger GeoJSON).",
+        "alongside their descendants. Default is leaves-only.",
     )
     parser.add_argument(
         "--update-all",
         action="store_true",
         help="Convert every region in the pbf manifest whose GeoJSON is "
-        "missing or out of date relative to its source PBF. Skips regions "
-        "whose existing GeoJSON still matches the PBF's SHA-256. Scope is "
-        "the local pbf manifest.",
+        "missing or out of date relative to its source PBF.",
     )
     parser.add_argument(
         "--list",
@@ -307,14 +151,13 @@ def main() -> int:
         choices=sorted(FORMAT_EXT.keys()),
         default=DEFAULT_FORMAT,
         help=f"Output format (default: {DEFAULT_FORMAT}). "
-        "'geojson' is a FeatureCollection; 'geojsonseq' is one feature per line (streamable).",
+        "'geojson' is a FeatureCollection; 'geojsonseq' is one feature per line.",
     )
     parser.add_argument(
         "--jobs",
         type=int,
         default=DEFAULT_JOBS,
-        help=f"Number of concurrent conversions (default: {DEFAULT_JOBS}). "
-        "Each job spawns an osmium subprocess.",
+        help=f"Number of concurrent conversions (default: {DEFAULT_JOBS}).",
     )
     parser.add_argument(
         "--osmium",
@@ -357,8 +200,7 @@ def main() -> int:
         from_manifest = regions_from_pbf_manifest()
         if not args.include_parents:
             from_manifest = filter_leaves(from_manifest)
-        # Pre-filter to regions whose geojson is missing or stale.
-        needs_work = [r for r in from_manifest if not _up_to_date(r, args.format)]
+        needs_work = [r for r in from_manifest if not _up_to_date_cheap(r, args.format)]
         print(
             f"update-all: {len(from_manifest)} cached pbf(s), "
             f"{len(needs_work)} need conversion "
@@ -376,7 +218,6 @@ def main() -> int:
     regions = deduped
 
     if not regions:
-        # --update-all with nothing stale is a success: the cache is current.
         if args.update_all and not (args.all or args.all_under or args.regions):
             print("update-all: nothing to do, all GeoJSONs are current", file=sys.stderr)
             return 0
@@ -396,7 +237,7 @@ def main() -> int:
 
     def _run(region: str) -> tuple[str, str | None]:
         try:
-            outcome = convert_region(
+            outcome = _run_one(
                 region,
                 fmt=args.format,
                 force=args.force,
@@ -412,7 +253,6 @@ def main() -> int:
             outcome, err = _run(region)
             if err:
                 failures.append((region, err))
-                print(f"[{region}] FAILED: {err}", file=sys.stderr)
             results[outcome] += 1
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
@@ -422,7 +262,6 @@ def main() -> int:
                 outcome, err = fut.result()
                 if err:
                     failures.append((region, err))
-                    print(f"[{region}] FAILED: {err}", file=sys.stderr)
                 results[outcome] += 1
 
     print(

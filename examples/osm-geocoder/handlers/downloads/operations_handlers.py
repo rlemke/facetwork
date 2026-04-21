@@ -254,12 +254,95 @@ def _cache_handler(payload: dict) -> dict:
     return {"cache": cache}
 
 
+def _convert_geojson_handler(payload: dict) -> dict:
+    """ConvertPbfToGeoJson: convert a cached PBF to GeoJSON via the shared library.
+
+    Takes ``cache:OSMCache`` (the source PBF, whose ``url`` is a Geofabrik
+    path) and ``format`` ("geojsonseq" / "geojson"), and returns
+    ``geojson:OSMCache`` with ``path`` pointing at the converted file.
+    """
+    from ..shared.pbf_convert import geojson
+
+    cache = payload.get("cache", {}) or {}
+    fmt = (payload.get("format") or "geojsonseq").strip()
+    step_log = payload.get("_step_log")
+
+    region_path = _extract_region_path(cache.get("url", ""))
+    log.info("ConvertPbfToGeoJson: region=%s format=%s", region_path, fmt)
+    if step_log:
+        step_log(f"ConvertPbfToGeoJson: {region_path} ({fmt})")
+
+    try:
+        result = geojson.convert_region(region_path, fmt=fmt)
+    except geojson.ConversionError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    out_cache = geojson.to_osm_cache(result)
+    if step_log:
+        status = "cache" if result.was_cached else "converted"
+        step_log(
+            f"ConvertPbfToGeoJson: {region_path} {status}, size={out_cache['size']}",
+            level="success",
+        )
+    return {"geojson": out_cache}
+
+
+def _convert_shapefile_handler(payload: dict) -> dict:
+    """ConvertPbfToShapefile: convert a cached PBF to a shapefile bundle.
+
+    Takes ``cache:OSMCache`` and ``layers:String`` (comma-separated
+    subset of the four representable OSM driver layers), returns
+    ``shapefile:OSMCache`` with ``path`` pointing at the bundle
+    directory.
+    """
+    from ..shared.pbf_convert import shapefile
+
+    cache = payload.get("cache", {}) or {}
+    layers_str = payload.get("layers") or ",".join(shapefile.OSM_LAYER_NAMES)
+    step_log = payload.get("_step_log")
+
+    region_path = _extract_region_path(cache.get("url", ""))
+    log.info("ConvertPbfToShapefile: region=%s layers=%s", region_path, layers_str)
+    if step_log:
+        step_log(f"ConvertPbfToShapefile: {region_path} (layers={layers_str})")
+
+    try:
+        result = shapefile.convert_region(region_path, layers=layers_str)
+    except shapefile.ConversionError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    out_cache = shapefile.to_osm_cache(result)
+    if step_log:
+        status = "cache" if result.was_cached else "converted"
+        step_log(
+            f"ConvertPbfToShapefile: {region_path} {status}, "
+            f"layers={[l['name'] for l in result.layers]}, "
+            f"size={out_cache['size']}",
+            level="success",
+        )
+    return {"shapefile": out_cache}
+
+
+# Convert facets map to their return-param name, same shape as OPERATIONS_FACETS.
+# Batch variants share the handler with the single-region form (identical
+# behavior; the FFL fan-out is handled by the workflow, not by the handler).
+_CONVERT_FACETS: dict[str, callable] = {
+    "ConvertPbfToGeoJson": _convert_geojson_handler,
+    "ConvertPbfToGeoJsonBatch": _convert_geojson_handler,
+    "ConvertPbfToShapefile": _convert_shapefile_handler,
+    "ConvertPbfToShapefileBatch": _convert_shapefile_handler,
+}
+
+
 def register_operations_handlers(poller) -> None:
     """Register all operations event facet handlers with the poller."""
     # Register the Cache handler (takes region:String, not cache:OSMCache)
     poller.register(f"{NAMESPACE}.CacheRegion", _cache_handler)
     # Register the Download handler (takes url:String, path:String, force:Boolean)
     poller.register(f"{NAMESPACE}.DownloadPBF", _download_handler)
+
+    for facet_name, handler in _CONVERT_FACETS.items():
+        poller.register(f"{NAMESPACE}.{facet_name}", handler)
 
     shapefile_facets = {"DownloadShapefile", "DownloadShapefileBatch"}
     for facet_name, return_param in OPERATIONS_FACETS.items():
@@ -277,6 +360,8 @@ _DISPATCH: dict[str, callable] = {}
 def _build_dispatch() -> None:
     _DISPATCH[f"{NAMESPACE}.CacheRegion"] = _cache_handler
     _DISPATCH[f"{NAMESPACE}.DownloadPBF"] = _download_handler
+    for facet_name, handler in _CONVERT_FACETS.items():
+        _DISPATCH[f"{NAMESPACE}.{facet_name}"] = handler
     shapefile_facets = {"DownloadShapefile", "DownloadShapefileBatch"}
     for facet_name, return_param in OPERATIONS_FACETS.items():
         qualified_name = f"{NAMESPACE}.{facet_name}"
