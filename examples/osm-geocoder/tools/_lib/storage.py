@@ -35,6 +35,7 @@ from __future__ import annotations
 import abc
 import fcntl
 import os
+import shutil
 import subprocess
 import tempfile
 from contextlib import contextmanager
@@ -90,6 +91,17 @@ class Storage(abc.ABC):
         (typically ``/tmp`` or ``$TMPDIR``) and is a complete, verified
         file. Implementations must make ``dst_path`` visible atomically
         (no partial-file window) and delete ``local_path`` on success.
+        """
+
+    @abc.abstractmethod
+    def finalize_dir_from_local(self, local_dir: str, dst_dir: str) -> None:
+        """Move a locally-staged directory tree to ``dst_dir``.
+
+        Symmetric to ``finalize_from_local`` but operates on a whole
+        directory (shapefile bundles, tile pyramids, etc.). Any existing
+        directory at ``dst_dir`` is removed first. The move should be
+        atomic at the parent level — readers either see the old tree or
+        the new one, not a half-copied state.
         """
 
     @property
@@ -235,6 +247,47 @@ class LocalStorage(Storage):
             raise
         self.unlink(local_path)
 
+    def finalize_dir_from_local(self, local_dir: str, dst_dir: str) -> None:
+        """Move a local staged directory tree to ``dst_dir``.
+
+        Same two-phase approach as ``finalize_from_local``: try
+        ``os.rename`` first (free on same-FS); on any ``OSError`` fall
+        back to ``cp -R -X`` into a sibling ``.copy.tmp`` directory
+        followed by an atomic rename. ``-X`` skips xattrs/resource forks
+        for cross-FS compatibility.
+        """
+        parent = os.path.dirname(dst_dir) or "."
+        self.mkdir_p(parent)
+        if os.path.isdir(dst_dir):
+            shutil.rmtree(dst_dir)
+        try:
+            os.rename(local_dir, dst_dir)
+            return
+        except OSError:
+            pass
+        tmp_dst = dst_dir + ".copy.tmp"
+        if os.path.isdir(tmp_dst):
+            shutil.rmtree(tmp_dst)
+        try:
+            proc = subprocess.run(
+                ["cp", "-R", "-X", local_dir, tmp_dst],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            if proc.returncode != 0:
+                stderr = (proc.stderr or "").strip() or "(no stderr)"
+                raise OSError(
+                    f"cp -R -X {local_dir} {tmp_dst} failed "
+                    f"(exit {proc.returncode}): {stderr}"
+                )
+            os.rename(tmp_dst, dst_dir)
+        except BaseException:
+            if os.path.isdir(tmp_dst):
+                shutil.rmtree(tmp_dst, ignore_errors=True)
+            raise
+        shutil.rmtree(local_dir, ignore_errors=True)
+
 
 class HdfsStorage(Storage):
     name = "hdfs"
@@ -319,6 +372,13 @@ class HdfsStorage(Storage):
     def lock(self, path: str, *, exclusive: bool) -> Iterator[None]:
         # No-op: HDFS does not support advisory locking. See module docstring.
         yield
+
+    def finalize_dir_from_local(self, local_dir: str, dst_dir: str) -> None:
+        raise NotImplementedError(
+            "HDFS directory finalization is not implemented. Shapefile "
+            "bundles are currently local-only. A future version could walk "
+            "the tree and upload each file individually via WebHDFS CREATE."
+        )
 
     def finalize_from_local(self, local_path: str, dst_path: str) -> None:
         """Upload a locally-staged file into HDFS at ``dst_path``.
