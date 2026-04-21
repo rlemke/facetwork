@@ -29,3 +29,4 @@ from _lib import graphhopper_build as graphhopper  # noqa: E402,F401
 from _lib import pbf_extract as extract  # noqa: E402,F401
 from _lib import pbf_geojson as geojson  # noqa: E402,F401
 from _lib import pbf_shapefile as shapefile  # noqa: E402,F401
+from _lib import valhalla_build as valhalla  # noqa: E402,F401

@@ -148,6 +148,7 @@ from .filters.filter_handlers import register_filter_handlers
 from .filters.osmose_handlers import register_osmose_handlers
 from .filters.validation_handlers import register_validation_handlers
 from .graphhopper.graphhopper_handlers import register_graphhopper_handlers
+from .valhalla.valhalla_handlers import register_valhalla_handlers
 from .parks.park_handlers import register_park_handlers
 from .poi.poi_handlers import register_poi_handlers
 from .population.population_handlers import register_population_handlers
@@ -194,6 +195,7 @@ __all__ = [
     "register_zoom_handlers",
     "register_routing_adapter_handlers",
     "register_source_handlers",
+    "register_valhalla_handlers",
     "download_region",
 ]
 
@@ -221,6 +223,7 @@ def register_all_handlers(poller) -> None:
     register_route_handlers(poller)
     register_routing_handlers(poller)
     register_tiger_handlers(poller)
+    register_valhalla_handlers(poller)
     register_validation_handlers(poller)
     register_visualization_handlers(poller)
     register_zoom_handlers(poller)
@@ -245,6 +248,7 @@ def register_all_registry_handlers(runner) -> None:
     from .filters.osmose_handlers import register_handlers as reg_osmose
     from .filters.validation_handlers import register_handlers as reg_validation
     from .graphhopper.graphhopper_handlers import register_handlers as reg_graphhopper
+    from .valhalla.valhalla_handlers import register_handlers as reg_valhalla
     from .parks.park_handlers import register_handlers as reg_park
     from .poi.poi_handlers import register_handlers as reg_poi
     from .population.population_handlers import register_handlers as reg_population
@@ -278,6 +282,7 @@ def register_all_registry_handlers(runner) -> None:
     reg_route(runner)
     reg_routing(runner)
     reg_tiger(runner)
+    reg_valhalla(runner)
     reg_validation(runner)
     reg_visualization(runner)
     reg_zoom(runner)
