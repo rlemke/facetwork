@@ -184,6 +184,217 @@ CATEGORIES: dict[str, CategoryDef] = {
         filter_expression="r/route=hiking,foot",
         filter_version=1,
     ),
+    # --- POI / amenity categories ------------------------------------------
+    # These split the broad OSM amenity/shop/tourism/leisure space into
+    # purpose-oriented buckets so renderers and analyses can treat each
+    # as its own layer. Sub-typing (e.g. cuisine, shop type) happens at
+    # render time via tag filters — not a separate extract per sub-type.
+    "food": CategoryDef(
+        name="food",
+        facet_name="ExtractFood",
+        return_param="food",
+        description=(
+            "Restaurants, cafes, bars, pubs, fast food, biergartens, "
+            "food courts, ice-cream parlours."
+        ),
+        filter_expression=(
+            "nwr/amenity=restaurant,cafe,bar,pub,fast_food,biergarten,"
+            "food_court,ice_cream"
+        ),
+        filter_version=1,
+    ),
+    "healthcare": CategoryDef(
+        name="healthcare",
+        facet_name="ExtractHealthcare",
+        return_param="healthcare",
+        description=(
+            "Hospitals, clinics, pharmacies, doctors, dentists, veterinaries. "
+            "Plus the Healthcare 2.0 'healthcare=*' namespace."
+        ),
+        filter_expression=(
+            "nwr/amenity=hospital,clinic,pharmacy,doctors,dentist,veterinary "
+            "nwr/healthcare"
+        ),
+        filter_version=1,
+    ),
+    "education": CategoryDef(
+        name="education",
+        facet_name="ExtractEducation",
+        return_param="education",
+        description=(
+            "Schools, universities, colleges, kindergartens, libraries, "
+            "childcare, driving/music/language schools."
+        ),
+        filter_expression=(
+            "nwr/amenity=school,university,college,kindergarten,library,"
+            "childcare,music_school,driving_school,language_school"
+        ),
+        filter_version=1,
+    ),
+    "government": CategoryDef(
+        name="government",
+        facet_name="ExtractGovernment",
+        return_param="government",
+        description=(
+            "Town halls, courthouses, police, fire stations, post offices, "
+            "embassies. Also 'office=government' buildings."
+        ),
+        filter_expression=(
+            "nwr/amenity=townhall,courthouse,police,fire_station,"
+            "post_office,embassy,public_building "
+            "nwr/office=government"
+        ),
+        filter_version=1,
+    ),
+    "public_transport": CategoryDef(
+        name="public_transport",
+        facet_name="ExtractPublicTransport",
+        return_param="publicTransport",
+        description=(
+            "Bus stops, tram stops, train/subway stations, ferry terminals, "
+            "platform/stop_position nodes — the 'public_transport=*' schema "
+            "plus transport-specific amenity/highway/railway keys."
+        ),
+        filter_expression=(
+            "nwr/public_transport "
+            "nwr/amenity=bus_station,ferry_terminal "
+            "nwr/highway=bus_stop "
+            "nwr/railway=station,halt,tram_stop,subway_entrance"
+        ),
+        filter_version=1,
+    ),
+    "culture": CategoryDef(
+        name="culture",
+        facet_name="ExtractCulture",
+        return_param="culture",
+        description=(
+            "Museums, galleries, artworks, attractions, viewpoints, arts "
+            "centres, theatres, planetariums, and all 'historic=*' features "
+            "(monuments, memorials, ruins, archaeological sites)."
+        ),
+        filter_expression=(
+            "nwr/tourism=museum,gallery,artwork,attraction,viewpoint "
+            "nwr/amenity=arts_centre,theatre,community_centre,planetarium "
+            "nwr/historic"
+        ),
+        filter_version=1,
+    ),
+    "religion": CategoryDef(
+        name="religion",
+        facet_name="ExtractReligion",
+        return_param="religion",
+        description=(
+            "Places of worship — churches, mosques, temples, synagogues, "
+            "etc. Denomination / religion encoded in tags."
+        ),
+        filter_expression="nwr/amenity=place_of_worship",
+        filter_version=1,
+    ),
+    "sports": CategoryDef(
+        name="sports",
+        facet_name="ExtractSports",
+        return_param="sports",
+        description=(
+            "Sports centres, stadiums, pitches, fitness centres, swimming "
+            "pools, ice rinks, tracks, golf courses, sports halls."
+        ),
+        filter_expression=(
+            "nwr/leisure=sports_centre,stadium,pitch,fitness_centre,"
+            "swimming_pool,ice_rink,track,golf_course,sports_hall"
+        ),
+        filter_version=1,
+    ),
+    "shopping": CategoryDef(
+        name="shopping",
+        facet_name="ExtractShopping",
+        return_param="shopping",
+        description=(
+            "All retail — 'shop=*' for any value (supermarket, bakery, "
+            "clothes, hardware, etc.). Sub-type via shop tag at render time."
+        ),
+        filter_expression="nwr/shop",
+        filter_version=1,
+    ),
+    "accommodation": CategoryDef(
+        name="accommodation",
+        facet_name="ExtractAccommodation",
+        return_param="accommodation",
+        description=(
+            "Hotels, motels, hostels, guest houses, chalets, apartments, "
+            "camp sites, caravan sites, alpine/wilderness huts."
+        ),
+        filter_expression=(
+            "nwr/tourism=hotel,motel,hostel,guest_house,chalet,apartment,"
+            "camp_site,caravan_site,alpine_hut,wilderness_hut"
+        ),
+        filter_version=1,
+    ),
+    "finance": CategoryDef(
+        name="finance",
+        facet_name="ExtractFinance",
+        return_param="finance",
+        description="Banks, ATMs, currency exchange bureaus.",
+        filter_expression="nwr/amenity=bank,atm,bureau_de_change",
+        filter_version=1,
+    ),
+    "fuel_charging": CategoryDef(
+        name="fuel_charging",
+        facet_name="ExtractFuelCharging",
+        return_param="fuelCharging",
+        description="Gas stations and EV charging stations.",
+        filter_expression="nwr/amenity=fuel,charging_station",
+        filter_version=1,
+    ),
+    "parking": CategoryDef(
+        name="parking",
+        facet_name="ExtractParking",
+        return_param="parking",
+        description="Car, bicycle, and motorcycle parking areas.",
+        filter_expression=(
+            "nwr/amenity=parking,bicycle_parking,motorcycle_parking"
+        ),
+        filter_version=1,
+    ),
+    "entertainment": CategoryDef(
+        name="entertainment",
+        facet_name="ExtractEntertainment",
+        return_param="entertainment",
+        description=(
+            "Cinemas, theatres, nightclubs, casinos, event venues, escape "
+            "rooms, amusement arcades, bowling alleys."
+        ),
+        filter_expression=(
+            "nwr/amenity=cinema,theatre,nightclub,casino,events_venue "
+            "nwr/leisure=escape_game,amusement_arcade,bowling_alley"
+        ),
+        filter_version=1,
+    ),
+    "toilets": CategoryDef(
+        name="toilets",
+        facet_name="ExtractToilets",
+        return_param="toilets",
+        description=(
+            "Public toilets, showers, drinking-water fountains — "
+            "the 'where do I find facilities' layer."
+        ),
+        filter_expression="nwr/amenity=toilets,shower,drinking_water",
+        filter_version=1,
+    ),
+    "emergency": CategoryDef(
+        name="emergency",
+        facet_name="ExtractEmergency",
+        return_param="emergency",
+        description=(
+            "Fire stations, police stations, and everything tagged with "
+            "the 'emergency=*' namespace (fire hydrants, defibrillators, "
+            "emergency phones, assembly points)."
+        ),
+        filter_expression=(
+            "nwr/emergency "
+            "nwr/amenity=fire_station,police"
+        ),
+        filter_version=1,
+    ),
 }
 
 

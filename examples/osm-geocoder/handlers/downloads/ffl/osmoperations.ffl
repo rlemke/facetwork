@@ -77,6 +77,39 @@ namespace osm.ops {
     /** Extracts hiking and walking route relations (route=hiking|foot). */
     event facet ExtractHikingRoutes(cache:OSMCache) => (hikingRoutes:OSMCache)
 
+    /** Extracts food POIs — restaurants, cafes, bars, pubs, fast food, biergartens, food courts, ice-cream parlours. */
+    event facet ExtractFood(cache:OSMCache) => (food:OSMCache)
+    /** Extracts healthcare POIs — hospitals, clinics, pharmacies, doctors, dentists, veterinaries, plus the Healthcare 2.0 namespace. */
+    event facet ExtractHealthcare(cache:OSMCache) => (healthcare:OSMCache)
+    /** Extracts education POIs — schools, universities, colleges, kindergartens, libraries, childcare. */
+    event facet ExtractEducation(cache:OSMCache) => (education:OSMCache)
+    /** Extracts government/civic POIs — town halls, courthouses, police, fire stations, post offices, embassies. */
+    event facet ExtractGovernment(cache:OSMCache) => (government:OSMCache)
+    /** Extracts public-transport stops/stations — bus stops, tram stops, train/subway stations, ferry terminals. */
+    event facet ExtractPublicTransport(cache:OSMCache) => (publicTransport:OSMCache)
+    /** Extracts culture POIs — museums, galleries, attractions, viewpoints, theatres, and all historic=* features. */
+    event facet ExtractCulture(cache:OSMCache) => (culture:OSMCache)
+    /** Extracts places of worship (amenity=place_of_worship) across all denominations. */
+    event facet ExtractReligion(cache:OSMCache) => (religion:OSMCache)
+    /** Extracts sports facilities — sports centres, stadiums, pitches, fitness centres, pools, ice rinks, tracks, golf courses. */
+    event facet ExtractSports(cache:OSMCache) => (sports:OSMCache)
+    /** Extracts all retail (shop=*) — supermarkets, bakeries, clothes, hardware, etc. Sub-type via shop tag at render time. */
+    event facet ExtractShopping(cache:OSMCache) => (shopping:OSMCache)
+    /** Extracts accommodation — hotels, motels, hostels, guest houses, chalets, apartments, camp/caravan sites, alpine huts. */
+    event facet ExtractAccommodation(cache:OSMCache) => (accommodation:OSMCache)
+    /** Extracts finance POIs — banks, ATMs, currency exchange bureaus. */
+    event facet ExtractFinance(cache:OSMCache) => (finance:OSMCache)
+    /** Extracts fuel and charging stations — gas stations and EV chargers. */
+    event facet ExtractFuelCharging(cache:OSMCache) => (fuelCharging:OSMCache)
+    /** Extracts parking facilities — car, bicycle, motorcycle parking areas. */
+    event facet ExtractParking(cache:OSMCache) => (parking:OSMCache)
+    /** Extracts entertainment venues — cinemas, theatres, nightclubs, casinos, escape rooms, amusement arcades, bowling alleys. */
+    event facet ExtractEntertainment(cache:OSMCache) => (entertainment:OSMCache)
+    /** Extracts public facilities — toilets, showers, drinking-water fountains. */
+    event facet ExtractToilets(cache:OSMCache) => (toilets:OSMCache)
+    /** Extracts emergency services — fire stations, police, and the emergency=* namespace (hydrants, defibrillators, assembly points). */
+    event facet ExtractEmergency(cache:OSMCache) => (emergency:OSMCache)
+
 }
 
 
