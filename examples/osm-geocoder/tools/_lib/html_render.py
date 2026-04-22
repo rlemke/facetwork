@@ -352,10 +352,13 @@ def _layer_styles_for(source: str) -> list[dict[str, Any]]:
                 "source": source,
                 "source-layer": source,
                 "type": "line",
-                "filter": ["has", "railway"],
-                "paint": {"line-color": "#666", "line-width": 1.2,
-                          "line-dasharray": [2, 2]},
-                "minzoom": 8,
+                "filter": ["all",
+                    ["has", "railway"],
+                    ["==", ["geometry-type"], "LineString"],
+                ],
+                "paint": {"line-color": "#555", "line-width": 2.0,
+                          "line-dasharray": [4, 2]},
+                "minzoom": 5,
             },
         ]
 
@@ -503,6 +506,34 @@ def _build_style(
         }
     )
 
+    # Base map raster sources — one visible at a time, toggled by the UI.
+    # All start hidden except "Plain" (the background layer above).
+    _BASEMAPS: list[tuple[str, str, list[str], int]] = [
+        # (id, label, tile_urls, max_zoom)
+        ("basemap-osm", "OpenStreetMap",
+         ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], 19),
+        ("basemap-satellite", "Satellite",
+         ["https://server.arcgisonline.com/ArcGIS/rest/services/"
+          "World_Imagery/MapServer/tile/{z}/{y}/{x}"], 18),
+        ("basemap-topo", "Topographic",
+         ["https://server.arcgisonline.com/ArcGIS/rest/services/"
+          "World_Topo_Map/MapServer/tile/{z}/{y}/{x}"], 18),
+    ]
+    for bm_id, _label, tile_urls, max_zoom in _BASEMAPS:
+        sources[bm_id] = {
+            "type": "raster",
+            "tiles": tile_urls,
+            "tileSize": 256,
+            "maxzoom": max_zoom,
+            "attribution": "",
+        }
+        layers.append({
+            "id": bm_id,
+            "type": "raster",
+            "source": bm_id,
+            "layout": {"visibility": "none"},
+        })
+
     for source_name, rel_url in sources_with_paths:
         sources[source_name] = {
             "type": "vector",
@@ -590,8 +621,8 @@ def _html_template(
             }}
             #layers-toggle:hover {{ background: #f0f0f0; border-radius: 4px; }}
             #layers-toggle .arrow {{ font-size: 10px; margin-left: 8px; }}
+            #basemap-section.collapsed, #layers-list.collapsed {{ display: none; }}
             #layers-list {{ padding: 4px 0; border-top: 1px solid #e0e0e0; }}
-            #layers-list.collapsed {{ display: none; }}
             .layer-group {{
               display: flex; align-items: center; padding: 3px 10px;
               cursor: pointer; user-select: none;
@@ -610,12 +641,34 @@ def _html_template(
             }}
             .layers-actions span {{ cursor: pointer; color: #1976d2; }}
             .layers-actions span:hover {{ text-decoration: underline; }}
+            #basemap-section {{
+              padding: 4px 10px 6px; border-bottom: 1px solid #e0e0e0;
+            }}
+            #basemap-section label {{
+              font-weight: 600; font-size: 11px; color: #555;
+              text-transform: uppercase; letter-spacing: 0.5px;
+              display: block; margin-bottom: 3px;
+            }}
+            #basemap-select {{
+              width: 100%; font-size: 12px; padding: 2px 4px;
+              border: 1px solid #ccc; border-radius: 3px;
+              background: #fff; cursor: pointer;
+            }}
           </style>
         </head>
         <body>
           <div id="banner">{html_escape(region)}</div>
           <div id="layers-panel">
             <div id="layers-toggle">Layers <span class="arrow">&#9660;</span></div>
+            <div id="basemap-section">
+              <label>Base map</label>
+              <select id="basemap-select">
+                <option value="plain" selected>Plain</option>
+                <option value="basemap-osm">OpenStreetMap</option>
+                <option value="basemap-satellite">Satellite</option>
+                <option value="basemap-topo">Topographic</option>
+              </select>
+            </div>
             <div id="layers-list"></div>
           </div>
           <div id="map"></div>
@@ -637,13 +690,31 @@ def _html_template(
 
             // --- Layer toggle panel ---
             const listEl = document.getElementById("layers-list");
+            const basemapEl = document.getElementById("basemap-section");
             const toggleEl = document.getElementById("layers-toggle");
             let panelOpen = true;
             toggleEl.addEventListener("click", () => {{
               panelOpen = !panelOpen;
               listEl.classList.toggle("collapsed", !panelOpen);
+              basemapEl.classList.toggle("collapsed", !panelOpen);
               toggleEl.querySelector(".arrow").innerHTML = panelOpen ? "&#9660;" : "&#9654;";
             }});
+            // --- Base map switcher ---
+            const basemapIds = ["basemap-osm", "basemap-satellite", "basemap-topo"];
+            const basemapSelect = document.getElementById("basemap-select");
+            basemapSelect.addEventListener("change", () => {{
+              const val = basemapSelect.value;
+              basemapIds.forEach(id => {{
+                if (map.getLayer(id)) {{
+                  map.setLayoutProperty(id, "visibility", id === val ? "visible" : "none");
+                }}
+              }});
+              // Toggle the background layer for "plain"
+              if (map.getLayer("background")) {{
+                map.setPaintProperty("background", "background-opacity", val === "plain" ? 1 : 0);
+              }}
+            }});
+
             const groupState = layerGroups.map(() => true);
             function buildPanel() {{
               listEl.innerHTML = "";
