@@ -621,7 +621,7 @@ def _html_template(
             }}
             #layers-toggle:hover {{ background: #f0f0f0; border-radius: 4px; }}
             #layers-toggle .arrow {{ font-size: 10px; margin-left: 8px; }}
-            #basemap-section.collapsed, #layers-list.collapsed {{ display: none; }}
+            #basemap-section.collapsed, #zoom-override.collapsed, #layers-list.collapsed {{ display: none; }}
             #layers-list {{ padding: 4px 0; border-top: 1px solid #e0e0e0; }}
             .layer-group {{
               display: flex; align-items: center; padding: 3px 10px;
@@ -654,6 +654,14 @@ def _html_template(
               border: 1px solid #ccc; border-radius: 3px;
               background: #fff; cursor: pointer;
             }}
+            #zoom-override {{
+              display: flex; align-items: center; padding: 5px 10px;
+              border-bottom: 1px solid #e0e0e0; cursor: pointer;
+              user-select: none; font-size: 12px;
+            }}
+            #zoom-override:hover {{ background: #f5f5f5; }}
+            #zoom-override input {{ margin: 0 8px 0 0; cursor: pointer; }}
+            #zoom-override.active {{ background: #e3f2fd; }}
           </style>
         </head>
         <body>
@@ -669,6 +677,7 @@ def _html_template(
                 <option value="basemap-topo">Topographic</option>
               </select>
             </div>
+            <label id="zoom-override"><input type="checkbox"> Show all at any zoom</label>
             <div id="layers-list"></div>
           </div>
           <div id="map"></div>
@@ -691,12 +700,14 @@ def _html_template(
             // --- Layer toggle panel ---
             const listEl = document.getElementById("layers-list");
             const basemapEl = document.getElementById("basemap-section");
+            const zoomOverrideEl = document.getElementById("zoom-override");
             const toggleEl = document.getElementById("layers-toggle");
             let panelOpen = true;
             toggleEl.addEventListener("click", () => {{
               panelOpen = !panelOpen;
               listEl.classList.toggle("collapsed", !panelOpen);
               basemapEl.classList.toggle("collapsed", !panelOpen);
+              zoomOverrideEl.classList.toggle("collapsed", !panelOpen);
               toggleEl.querySelector(".arrow").innerHTML = panelOpen ? "&#9660;" : "&#9654;";
             }});
             // --- Base map switcher ---
@@ -755,6 +766,31 @@ def _html_template(
               }});
               buildPanel();
             }}
+
+            // --- "Show all at any zoom" override ---
+            const zoomEl = document.getElementById("zoom-override");
+            const zoomCb = zoomEl.querySelector("input");
+            const savedMinZoom = {{}};
+            zoomCb.addEventListener("change", () => {{
+              const force = zoomCb.checked;
+              zoomEl.classList.toggle("active", force);
+              const style = map.getStyle();
+              style.layers.forEach(layer => {{
+                if (layer.id === "background" || layer.type === "raster") return;
+                const lid = layer.id;
+                if (force) {{
+                  const cur = map.getLayer(lid) && layer.minzoom;
+                  if (cur !== undefined && cur > 0) {{
+                    savedMinZoom[lid] = cur;
+                    map.setLayerZoomRange(lid, 0, layer.maxzoom || 24);
+                  }}
+                }} else {{
+                  if (savedMinZoom[lid] !== undefined) {{
+                    map.setLayerZoomRange(lid, savedMinZoom[lid], layer.maxzoom || 24);
+                  }}
+                }}
+              }});
+            }});
 
             // Click popups — show feature tags for any interactive layer.
             const popupLayers = {popup_ids_json};
