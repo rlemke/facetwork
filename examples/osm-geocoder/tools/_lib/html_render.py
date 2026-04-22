@@ -37,6 +37,7 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 import textwrap
 import threading
 import time
@@ -425,6 +426,60 @@ def _layer_styles_for(source: str) -> list[dict[str, Any]]:
     return []
 
 
+# ---------------------------------------------------------------------------
+# Layer groups — maps a human-readable group name to the layer IDs that
+# belong to it, plus a swatch color for the legend.  Order here controls
+# the order in the toggle panel.
+# ---------------------------------------------------------------------------
+
+# Ordered list of (group_label, color, [layer_ids]).
+# Built dynamically from the style layers so it stays in sync.
+
+_GROUP_DEFINITIONS: list[tuple[str, str, list[str]]] = [
+    ("Water",               "#4a7ba6", ["water-polygons", "water-rivers-line", "water-streams", "water-canals"]),
+    ("Forests",             "#689f38", ["forests"]),
+    ("Protected Areas",     "#2e7d32", ["protected-national-park", "protected-state-park", "protected-other", "nature-reserve"]),
+    ("Parks",               "#81c784", ["parks-city", "parks-garden", "parks-playground"]),
+    ("Motorways",           "#e892a2", ["roads-motorway"]),
+    ("Trunk Roads",         "#fcb165", ["roads-trunk"]),
+    ("Primary Roads",       "#ffdd99", ["roads-primary"]),
+    ("Secondary Roads",     "#fffaeb", ["roads-secondary"]),
+    ("Tertiary Roads",      "#ffffff", ["roads-tertiary"]),
+    ("Residential Roads",   "#ffffff", ["roads-residential"]),
+    ("Railways",            "#666666", ["railways"]),
+    ("Cycle Routes",        "#1e88e5", ["cycle-routes"]),
+    ("Hiking Routes",       "#d32f2f", ["hiking-routes"]),
+    ("Food",                "#ef5350", ["poi-food"]),
+    ("Healthcare",          "#e91e63", ["poi-healthcare"]),
+    ("Education",           "#7e57c2", ["poi-education"]),
+    ("Shopping",            "#fb8c00", ["poi-shopping"]),
+    ("Public Transport",    "#1976d2", ["poi-public_transport"]),
+    ("Accommodation",       "#3949ab", ["poi-accommodation"]),
+    ("Culture",             "#ab47bc", ["poi-culture"]),
+    ("Entertainment",       "#d81b60", ["poi-entertainment"]),
+    ("Sports",              "#00897b", ["poi-sports"]),
+    ("Religion",            "#795548", ["poi-religion"]),
+    ("Government",          "#546e7a", ["poi-government"]),
+    ("Finance",             "#558b2f", ["poi-finance"]),
+    ("Fuel & Charging",     "#ef6c00", ["poi-fuel_charging"]),
+    ("Parking",             "#90a4ae", ["poi-parking"]),
+    ("Toilets",             "#00838f", ["poi-toilets"]),
+    ("Emergency",           "#b71c1c", ["poi-emergency"]),
+]
+
+
+def _layer_groups_for_style(style_layers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return the subset of group definitions whose layers actually exist in
+    the style, as JSON-serialisable dicts for the template."""
+    present = {layer["id"] for layer in style_layers}
+    groups: list[dict[str, Any]] = []
+    for label, color, layer_ids in _GROUP_DEFINITIONS:
+        existing = [lid for lid in layer_ids if lid in present]
+        if existing:
+            groups.append({"label": label, "color": color, "layers": existing})
+    return groups
+
+
 def _build_style(
     region: str,
     sources_with_paths: list[tuple[str, str]],
@@ -481,9 +536,14 @@ def _build_style(
     }
 
 
-def _html_template(region: str, popup_layer_ids: list[str]) -> str:
+def _html_template(
+    region: str,
+    popup_layer_ids: list[str],
+    layer_groups: list[dict[str, Any]],
+) -> str:
     """Return the per-region index.html as a single string."""
     popup_ids_json = json.dumps(popup_layer_ids)
+    groups_json = json.dumps(layer_groups)
     title = html_escape(f"Facetwork · {region}")
     return textwrap.dedent(f"""\
         <!doctype html>
@@ -515,16 +575,57 @@ def _html_template(region: str, popup_layer_ids: list[str]) -> str:
               border-radius: 4px; font-size: 13px; z-index: 1;
               box-shadow: 0 1px 3px rgba(0,0,0,0.2);
             }}
+            #layers-panel {{
+              position: absolute; top: 10px; right: 50px;
+              background: rgba(255,255,255,0.95); border-radius: 4px;
+              font-size: 12px; z-index: 1;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+              max-height: calc(100vh - 40px); overflow-y: auto;
+              min-width: 180px;
+            }}
+            #layers-toggle {{
+              padding: 6px 10px; cursor: pointer; font-weight: 600;
+              font-size: 13px; user-select: none; display: flex;
+              align-items: center; justify-content: space-between;
+            }}
+            #layers-toggle:hover {{ background: #f0f0f0; border-radius: 4px; }}
+            #layers-toggle .arrow {{ font-size: 10px; margin-left: 8px; }}
+            #layers-list {{ padding: 4px 0; border-top: 1px solid #e0e0e0; }}
+            #layers-list.collapsed {{ display: none; }}
+            .layer-group {{
+              display: flex; align-items: center; padding: 3px 10px;
+              cursor: pointer; user-select: none;
+            }}
+            .layer-group:hover {{ background: #f5f5f5; }}
+            .layer-group .swatch {{
+              width: 12px; height: 12px; border-radius: 2px;
+              margin-right: 8px; flex-shrink: 0;
+              border: 1px solid rgba(0,0,0,0.15);
+            }}
+            .layer-group.off .swatch {{ opacity: 0.25; }}
+            .layer-group.off .lbl {{ color: #aaa; text-decoration: line-through; }}
+            .layers-actions {{
+              display: flex; gap: 8px; padding: 4px 10px 6px;
+              border-top: 1px solid #e0e0e0; font-size: 11px;
+            }}
+            .layers-actions span {{ cursor: pointer; color: #1976d2; }}
+            .layers-actions span:hover {{ text-decoration: underline; }}
           </style>
         </head>
         <body>
           <div id="banner">{html_escape(region)}</div>
+          <div id="layers-panel">
+            <div id="layers-toggle">Layers <span class="arrow">&#9660;</span></div>
+            <div id="layers-list"></div>
+          </div>
           <div id="map"></div>
           <script src="{MAPLIBRE_JS}"></script>
           <script src="{PMTILES_JS}"></script>
           <script>
             const protocol = new pmtiles.Protocol();
             maplibregl.addProtocol("pmtiles", protocol.tile);
+
+            const layerGroups = {groups_json};
 
             const map = new maplibregl.Map({{
               container: "map",
@@ -534,9 +635,60 @@ def _html_template(region: str, popup_layer_ids: list[str]) -> str:
             map.addControl(new maplibregl.NavigationControl(), "top-right");
             map.addControl(new maplibregl.ScaleControl(), "bottom-left");
 
+            // --- Layer toggle panel ---
+            const listEl = document.getElementById("layers-list");
+            const toggleEl = document.getElementById("layers-toggle");
+            let panelOpen = true;
+            toggleEl.addEventListener("click", () => {{
+              panelOpen = !panelOpen;
+              listEl.classList.toggle("collapsed", !panelOpen);
+              toggleEl.querySelector(".arrow").innerHTML = panelOpen ? "&#9660;" : "&#9654;";
+            }});
+            const groupState = layerGroups.map(() => true);
+            function buildPanel() {{
+              listEl.innerHTML = "";
+              layerGroups.forEach((g, i) => {{
+                const row = document.createElement("div");
+                row.className = "layer-group" + (groupState[i] ? "" : " off");
+                row.innerHTML = '<div class="swatch" style="background:' + g.color + '"></div>'
+                              + '<span class="lbl">' + g.label + '</span>';
+                row.addEventListener("click", () => {{
+                  groupState[i] = !groupState[i];
+                  row.classList.toggle("off", !groupState[i]);
+                  const vis = groupState[i] ? "visible" : "none";
+                  g.layers.forEach(lid => {{
+                    if (map.getLayer(lid)) map.setLayoutProperty(lid, "visibility", vis);
+                  }});
+                }});
+                listEl.appendChild(row);
+              }});
+              const actions = document.createElement("div");
+              actions.className = "layers-actions";
+              const allBtn = document.createElement("span");
+              allBtn.textContent = "All";
+              allBtn.addEventListener("click", () => setAll(true));
+              const noneBtn = document.createElement("span");
+              noneBtn.textContent = "None";
+              noneBtn.addEventListener("click", () => setAll(false));
+              actions.appendChild(allBtn);
+              actions.appendChild(noneBtn);
+              listEl.appendChild(actions);
+            }}
+            function setAll(on) {{
+              const vis = on ? "visible" : "none";
+              layerGroups.forEach((g, i) => {{
+                groupState[i] = on;
+                g.layers.forEach(lid => {{
+                  if (map.getLayer(lid)) map.setLayoutProperty(lid, "visibility", vis);
+                }});
+              }});
+              buildPanel();
+            }}
+
             // Click popups — show feature tags for any interactive layer.
             const popupLayers = {popup_ids_json};
             map.on("load", () => {{
+              buildPanel();
               popupLayers.forEach(layerId => {{
                 if (!map.getLayer(layerId)) return;
                 map.on("click", layerId, (e) => {{
@@ -616,6 +768,40 @@ def is_up_to_date(
     return True
 
 
+def _bbox_from_sources(
+    sources: list[tuple[str, str, str]],
+) -> tuple[float, float, float, float] | None:
+    """Compute the union bounding box from PMTiles v3 headers.
+
+    Each source is ``(name, abs_path, sha)``.  Returns ``(west, south, east,
+    north)`` or *None* if no bounds could be read.
+
+    PMTiles v3 header stores bounds as int32 values at fixed offsets
+    (min_lon_e7 @ 102, min_lat_e7 @ 106, max_lon_e7 @ 110, max_lat_e7 @ 114),
+    each representing degrees × 10⁷.
+    """
+    west, south, east, north = 180.0, 90.0, -180.0, -90.0
+    found = False
+    for _name, abs_path, _sha in sources:
+        try:
+            with open(abs_path, "rb") as f:
+                header = f.read(127)
+            if len(header) < 118 or header[0:7] != b"PMTiles":
+                continue
+            w = struct.unpack_from("<i", header, 102)[0] / 1e7
+            s = struct.unpack_from("<i", header, 106)[0] / 1e7
+            e = struct.unpack_from("<i", header, 110)[0] / 1e7
+            n = struct.unpack_from("<i", header, 114)[0] / 1e7
+        except Exception:
+            continue
+        west = min(west, w)
+        south = min(south, s)
+        east = max(east, e)
+        north = max(north, n)
+        found = True
+    return (west, south, east, north) if found else None
+
+
 def render_region(
     region: str,
     *,
@@ -630,6 +816,9 @@ def render_region(
                 f"no vector_tiles entries for region {region!r}. "
                 "Run build-vector-tiles first."
             )
+
+        if bbox is None:
+            bbox = _bbox_from_sources(sources)
 
         html_dir = html_abs_path(region)
         rel = html_rel_path(region)
@@ -678,7 +867,8 @@ def render_region(
 
         popup_layer_ids = [layer["id"] for layer in style["layers"]
                            if layer.get("id") != "background"]
-        html = _html_template(region, popup_layer_ids)
+        layer_groups = _layer_groups_for_style(style["layers"])
+        html = _html_template(region, popup_layer_ids, layer_groups)
         (staging / "index.html").write_text(html, encoding="utf-8")
         elapsed = time.monotonic() - start
 

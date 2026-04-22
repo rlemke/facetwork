@@ -285,10 +285,18 @@ def build_tiles(
         if staging.exists():
             staging.unlink()
 
+        # tippecanoe (mapbox fork) outputs MBTiles; we convert to PMTiles
+        # afterwards via the ``pmtiles`` CLI.
+        # staging may be "foo.pmtiles" or "foo.pmtiles.tmp" — place the
+        # mbtiles sibling next to it with a clean ".mbtiles" extension.
+        mbtiles_staging = staging.with_name(source + ".mbtiles")
+        if mbtiles_staging.exists():
+            mbtiles_staging.unlink()
+
         cmd = [
             tippecanoe_bin,
             "-o",
-            str(staging),
+            str(mbtiles_staging),
             "-Z",
             str(min_zoom),
             "-z",
@@ -311,20 +319,41 @@ def build_tiles(
                 check=True,
             )
         except subprocess.CalledProcessError as exc:
-            if staging.exists():
-                staging.unlink()
+            mbtiles_staging.unlink(missing_ok=True)
             stderr = (exc.stderr or "").strip()
             raise BuildError(f"tippecanoe failed: {stderr or exc}") from exc
         except subprocess.TimeoutExpired as exc:
-            if staging.exists():
-                staging.unlink()
+            mbtiles_staging.unlink(missing_ok=True)
             raise BuildError(
                 f"tippecanoe timed out after {timeout_seconds}s"
             ) from exc
         except BaseException:
-            if staging.exists():
-                staging.unlink()
+            mbtiles_staging.unlink(missing_ok=True)
             raise
+
+        # Convert MBTiles → PMTiles.
+        pmtiles_bin = os.environ.get("PMTILES_BIN", "pmtiles")
+        try:
+            subprocess.run(
+                [pmtiles_bin, "convert", str(mbtiles_staging), str(staging)],
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=True,
+            )
+        except FileNotFoundError:
+            mbtiles_staging.unlink(missing_ok=True)
+            raise BuildError(
+                f"'{pmtiles_bin}' not found. Install with: brew install pmtiles"
+            )
+        except subprocess.CalledProcessError as exc:
+            mbtiles_staging.unlink(missing_ok=True)
+            staging.unlink(missing_ok=True)
+            stderr = (exc.stderr or "").strip()
+            raise BuildError(f"pmtiles convert failed: {stderr or exc}") from exc
+        finally:
+            mbtiles_staging.unlink(missing_ok=True)
+
         elapsed = time.monotonic() - start
 
         size, sha256_hex = _sha256_file(staging)

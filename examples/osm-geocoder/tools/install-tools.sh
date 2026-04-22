@@ -13,7 +13,8 @@
 #   gdal          — ogr2ogr for shapefile conversion   (convert-pbf-shapefile)
 #   openjdk@17    — java runtime for GraphHopper       (build-graphhopper-graph)
 #   valhalla      — routing tile builder               (build-valhalla-tiles)
-#   tippecanoe    — vector-tile (PMTiles) builder      (build-vector-tiles)
+#   tippecanoe    — vector-tile (MBTiles) builder       (build-vector-tiles)
+#   pmtiles       — MBTiles → PMTiles converter        (build-vector-tiles)
 #   osrm-backend  — OSRM MLD routing-graph builder     (build-osrm-graph)
 #
 # Plus: GraphHopper's runnable JAR is downloaded directly from GitHub
@@ -60,6 +61,7 @@ FORMULAE=(
     openjdk@17
     valhalla
     tippecanoe
+    pmtiles
     osrm-backend
 )
 
@@ -135,6 +137,7 @@ verify java "Java runtime"
 verify valhalla_build_config "Valhalla build_config"
 verify valhalla_build_tiles "Valhalla build_tiles"
 verify tippecanoe "tippecanoe"
+verify pmtiles "pmtiles (MBTiles → PMTiles converter)"
 verify osrm-extract "OSRM extract"
 verify osrm-partition "OSRM partition"
 verify osrm-customize "OSRM customize"
@@ -155,6 +158,7 @@ if [ "$failed_count" -eq 0 ]; then
     echo "  $GREEN✓$RESET Java + GraphHopper JAR  — build-graphhopper-graph"
     echo "  $GREEN✓$RESET Valhalla                — build-valhalla-tiles"
     echo "  $GREEN✓$RESET tippecanoe              — build-vector-tiles"
+    echo "  $GREEN✓$RESET pmtiles                 — MBTiles → PMTiles conversion"
     echo "  $GREEN✓$RESET osrm-backend            — build-osrm-graph"
     echo
     echo "Useful environment variables:"
