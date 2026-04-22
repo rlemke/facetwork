@@ -63,7 +63,8 @@ find . -name '*.agent-spec.yaml' -o -path '*/agent-spec/*.yaml'
 | [runtime](runtime.agent-spec.yaml) | system-contract | Single-process execution — workflow/block/step/task/event model, the 24-state step state machine, iterative fixed-point evaluation, yield merging, block creation, catch blocks, schema instantiation, persistence contract. |
 | [runtime-distributed](runtime-distributed.agent-spec.yaml) | system-contract | Multi-runner coordination — atomic task claim, lease renewal via heartbeats, reaper for dead runners, stuck-task watchdog, per-step atomic processing with continuation events, runner lifecycle, workflow repair. |
 | [agent-sdk](agent-sdk.agent-spec.yaml) | system-contract | Handler authoring — four execution models (RegistryRunner / AgentPoller / RunnerService / ClaudeAgentRunner), payload and response contract, registration paths, reserved task prefixes, multi-language libraries. |
-| [manifest-schema](manifest-schema.agent-spec.yaml) | system-contract | JSON manifest format every cache type uses — file shape, entry baseline fields, read-modify-write protocol, forward-compat rules, per-cache-type extensions. |
+| [manifest-schema](manifest-schema.agent-spec.yaml) | system-contract | Legacy JSON manifest format (OSM v1). Superseded by `cache-layout` for new namespaces; retained for back-compat documentation. |
+| [cache-layout](cache-layout.agent-spec.yaml) | system-contract | Greenfield cache layout — `cache/<namespace>/<cache_type>/<mirrored-path>` with per-entry `.meta.json` sidecars, staging root, lazy indexes, per-entry locks. Designed for multi-server concurrent writes with no shared lock. |
 | [storage](storage.agent-spec.yaml) | library | Two-backend abstraction (local POSIX filesystem / HDFS WebHDFS), method signatures, backend selection, finalize-from-local semantics, xattr handling. |
 
 ### Per-component (co-located with source)
@@ -84,7 +85,7 @@ An agent tasked with rebuilding Facetwork from scratch should ingest specs in th
 4. [`runtime`](runtime.agent-spec.yaml) — how the JSON AST executes (single-process model).
 5. [`runtime-distributed`](runtime-distributed.agent-spec.yaml) — how the model scales across runners.
 6. [`agent-sdk`](agent-sdk.agent-spec.yaml) — how external code plugs into the runtime.
-7. [`manifest-schema`](manifest-schema.agent-spec.yaml) and [`storage`](storage.agent-spec.yaml) — the cache substrate used by the tool set and handlers.
+7. [`cache-layout`](cache-layout.agent-spec.yaml) and [`storage`](storage.agent-spec.yaml) — the cache substrate for new tools and handlers. ([`manifest-schema`](manifest-schema.agent-spec.yaml) documents the legacy OSM-only manifest approach.)
 8. Per-component specs as needed for specific tools.
 
 The authoritative human-prose references (`docs/reference/*.md`) are linked from each spec's `human_docs:` field and contain fuller grammars, transition tables, and narrative rationale that the YAML deliberately does not try to duplicate.
