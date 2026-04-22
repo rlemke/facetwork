@@ -1,0 +1,153 @@
+# Canonical specification — the Storage abstraction.
+
+identity:
+  name: storage
+  kind: library
+  canonical_id: "sha256:8acd0f457e33f64b444ce691f0b9c4498d4867afaf0f6ea50180652c9fbec0c6"
+  version: 1
+
+purpose: |
+  Two backends sit behind one interface: local POSIX filesystem and
+  HDFS via WebHDFS. Tool libraries (pbf_download, pbf_geojson, etc.)
+  use the Storage abstraction for every filesystem operation so
+  backend choice is a single env var (AFL_OSM_STORAGE) and the tool
+  code does not branch on backend internally.
+
+# ---------------------------------------------------------------------------
+# Interface — the operations every backend must implement.
+# ---------------------------------------------------------------------------
+interface:
+  methods:
+    exists:
+      signature: "exists(path: str) -> bool"
+      semantics: "Return True iff a file or directory exists at path."
+    size:
+      signature: "size(path: str) -> int"
+      semantics: "Return the size of a file in bytes. Behavior on a directory is backend-specific; callers should not use this on directories."
+    mkdir_p:
+      signature: "mkdir_p(path: str) -> None"
+      semantics: "Create the directory and all missing parents. No-op if already exists."
+    unlink:
+      signature: "unlink(path: str) -> None"
+      semantics: "Delete a file. No-op if missing (missing_ok semantics)."
+    rename:
+      signature: "rename(src: str, dst: str) -> None"
+      semantics: "Rename src to dst, replacing any pre-existing destination. Atomic where the backend supports it."
+    read_text:
+      signature: "read_text(path: str) -> str"
+      semantics: "Read an entire text file as UTF-8. Raises on missing or undecodable."
+    write_text_atomic:
+      signature: "write_text_atomic(path: str, text: str) -> None"
+      semantics: "Write text atomically (write-tmp + rename where supported). Overwrite-in-place is acceptable on HDFS under single-writer semantics."
+    open_write_binary:
+      signature: "open_write_binary(path: str) -> IO[bytes]"
+      semantics: "Return a file-like for streaming binary writes. Caller is responsible for close()."
+    lock:
+      signature: "lock(path: str, exclusive: bool) -> ContextManager[None]"
+      semantics: "Advisory lock on path. On local backend, uses fcntl.flock on a sibling .lock file. On HDFS backend, a no-op — single-writer semantics assumed."
+    finalize_from_local:
+      signature: "finalize_from_local(local_path: str, dst_path: str) -> None"
+      semantics: "Move a locally-staged file to dst_path. Local backend: os.rename if same-FS; cp -X + rename fallback for cross-FS (EILSEQ-safe). HDFS: upload to WebHDFS, then unlink local."
+    finalize_dir_from_local:
+      signature: "finalize_dir_from_local(local_dir: str, dst_dir: str) -> None"
+      semantics: "Move a staged directory tree to dst_dir. Local: os.rename if same-FS; cp -R -X fallback. HDFS: raises NotImplementedError in v1 (directory uploads to HDFS require walking the tree)."
+
+  properties_fields:
+    supports_locking:
+      type: "bool"
+      semantics: "True on local backend, False on HDFS. Callers may check to decide whether their design needs external coordination."
+    name:
+      type: "string"
+      values:
+        - "local"
+        - "hdfs"
+
+# ---------------------------------------------------------------------------
+# Backend selection.
+# ---------------------------------------------------------------------------
+backend_selection:
+  env_var: "AFL_OSM_STORAGE"
+  valid_values:
+    - "local"
+    - "hdfs"
+  default: "local"
+  per_call_override: "CLI --backend flag (on every tool that accepts it) takes precedence over the env var."
+
+  factory_function:
+    name: "get_storage"
+    signature: "get_storage(backend: str | None = None) -> Storage"
+    behavior: "Returns LocalStorage() or HdfsStorage() depending on backend (or default_backend())."
+
+  cache_root:
+    env_var: "AFL_OSM_CACHE_ROOT"
+    defaults:
+      local: "/Volumes/afl_data/osm"
+      hdfs: "/user/afl/osm"
+    override: "Setting AFL_OSM_CACHE_ROOT overrides both defaults."
+
+# ---------------------------------------------------------------------------
+# LocalStorage behavior — the reference backend.
+# ---------------------------------------------------------------------------
+local_storage:
+  supports_locking: true
+  atomic_writes: "write_text_atomic uses tempfile.mkstemp + fsync + os.replace."
+  locks: "fcntl.flock on .lock sibling files; LOCK_EX for write, LOCK_SH for read."
+  rename_same_fs: "os.rename — atomic, free."
+  rename_cross_fs: "os.rename raises EXDEV; finalize_* methods catch and fall back to subprocess cp -X plus rename."
+  xattr_handling: "cp -X flag (skip extended attributes and resource forks) is used for cross-FS copies because macOS destination volumes (exFAT / FAT32 / some network mounts) reject the default xattr-preserving cp with EILSEQ. Always -X."
+
+# ---------------------------------------------------------------------------
+# HdfsStorage behavior.
+# ---------------------------------------------------------------------------
+hdfs_storage:
+  supports_locking: false
+  single_writer_assumption: "HDFS does not offer fcntl-style advisory locking. The tool set assumes a single coordinator process writes to HDFS caches. Multiple concurrent writers can corrupt manifests."
+  write_buffer: "The reference Python impl buffers the entire file payload in memory before uploading via WebHDFS CREATE. This is fine for PBFs up to a few GB; not scalable to planet-size files."
+  rename: "WebHDFS RENAME op; atomic at the namenode."
+  directory_upload: "Not implemented in v1. finalize_dir_from_local raises NotImplementedError on HDFS."
+
+# ---------------------------------------------------------------------------
+# Properties.
+# ---------------------------------------------------------------------------
+properties:
+  - name: "rename_atomic_same_fs"
+    statement: "For same-filesystem src and dst on the local backend, rename is observably atomic — readers at dst see either the pre-rename file (if any) or the post-rename file, never intermediate."
+    checkable_via: "property_test"
+
+  - name: "finalize_from_local_cleans_up"
+    statement: "After a successful finalize_from_local, the local_path no longer exists. After a failed finalize_from_local, no partial file is left at dst_path (partial tmp copies are removed)."
+    checkable_via: "property_test"
+
+  - name: "write_text_atomic_never_truncates_observed"
+    statement: "write_text_atomic never produces a moment where a reader sees an empty or partial file at path. Readers see either the pre-write contents or the complete post-write contents."
+    checkable_via: "property_test"
+
+  - name: "lock_exclusivity"
+    statement: "On the local backend, two concurrent lock(path, exclusive=True) contexts do not overlap in time. The second blocks until the first releases."
+    checkable_via: "property_test"
+
+dependencies:
+  libraries:
+    - "os, fcntl, tempfile, subprocess (stdlib)"
+    - "facetwork.runtime.storage (soft-imported, HDFS backend only)"
+  specs:
+    - "agent-spec/manifest-schema.agent-spec.yaml"
+
+implementation_notes: |
+  The reference Python impl is in
+  examples/osm-geocoder/tools/_lib/storage.py. LocalStorage uses
+  fcntl.flock and subprocess cp; HdfsStorage soft-imports
+  facetwork.runtime.storage.HDFSStorageBackend and reaches into
+  its private helpers for the WebHDFS RENAME call (mild private-
+  API coupling — acknowledged in the spec).
+
+  A Go/Rust reimplementation should preserve the method names
+  above and the semantics of finalize_from_local (atomic-where-
+  possible, no-partial-file-on-failure). Platform-specific finalize
+  fallbacks (xattr skip on macOS, different cp flags on Linux) are
+  implementation details, not contract.
+
+human_docs:
+  - "examples/osm-geocoder/tools/README.md backends section"
+  - "examples/osm-geocoder/tools/_lib/storage.py"
+  - "facetwork/runtime/storage.py"

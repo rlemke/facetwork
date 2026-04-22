@@ -1,0 +1,381 @@
+# Canonical specification — FFL (Facetwork Flow Language).
+# Lexical rules, grammar, AST, scoping, and static semantics.
+
+identity:
+  name: ffl-language
+  kind: language-spec
+  canonical_id: "sha256:c17f618e4374758b30b5597f42db47ba213620d4b272d6269462104332c4efbf"
+  version: 1
+
+purpose: |
+  FFL is the surface language for Facetwork workflows. A conforming
+  parser plus validator plus emitter produces a canonical JSON AST
+  that any conforming runtime can execute. This spec captures the
+  structural claims an agent needs to build a parser, validator, and
+  emitter that matches the reference implementation.
+
+  Exhaustive grammar productions are in docs/reference/language/
+  grammar.md (authoritative for syntax). This YAML focuses on the
+  shapes a regenerating agent needs.
+
+# ---------------------------------------------------------------------------
+# Top-level structure.
+# ---------------------------------------------------------------------------
+program_structure:
+  file_extension: ".ffl"
+  encoding: "UTF-8"
+  statement_separators:
+    - "newline"
+    - "semicolon"
+  program_root:
+    description: "A Program is an ordered sequence of top-level declarations. Every declaration is one of namespace, use, schema, facet, event facet, workflow, implicit. Schemas must be inside a namespace."
+    ast_node: "Program"
+    fields:
+      namespaces: "list of NamespaceDecl"
+      schemas: "list of SchemaDecl (top-level, hoisted but must not reference names inside namespaces without qualification or use)"
+      facets: "list of FacetDecl"
+      event_facets: "list of EventFacetDecl"
+      workflows: "list of WorkflowDecl"
+      implicits: "list of ImplicitDecl"
+
+# ---------------------------------------------------------------------------
+# Lexical rules.
+# ---------------------------------------------------------------------------
+lexical:
+  whitespace: "insensitive except as token separator"
+  comments:
+    line: "double-slash to end of line"
+    block: "slash-star to star-slash, non-nested"
+    doc: "Javadoc-style slash-star-star to star-slash, preserved in AST as doc field. May attach to namespace, facet, event facet, workflow, schema. Leading star prefixes stripped per line; tags like at-param and at-return preserved verbatim."
+  identifiers:
+    regex: "[A-Za-z_][A-Za-z0-9_]*"
+    case_sensitive: true
+  qualified_names:
+    description: "one or more identifiers separated by dots"
+    examples:
+      - "team.a.osm.conversions"
+      - "fms.services.event.osm.POIs"
+  literals:
+    string: "double-quoted with C-style escapes"
+    integer: "decimal only in v1: 0, 123, 9001"
+    float: "decimal with dot, optional exponent — maps to Double type in AST"
+    boolean: "true or false"
+    null: "null keyword"
+  reserved_keywords:
+    - "namespace"
+    - "use"
+    - "facet"
+    - "event"
+    - "workflow"
+    - "schema"
+    - "implicit"
+    - "andThen"
+    - "yield"
+    - "with"
+    - "when"
+    - "case"
+    - "catch"
+    - "foreach"
+    - "in"
+    - "prompt"
+    - "script"
+    - "system"
+    - "template"
+    - "model"
+    - "python"
+    - "true"
+    - "false"
+    - "null"
+
+# ---------------------------------------------------------------------------
+# Declaration types — the AST shape for each surface-language form.
+# ---------------------------------------------------------------------------
+declarations:
+  NamespaceDecl:
+    syntax: "namespace QNAME open-brace DECLS close-brace"
+    ast_fields: "name (qname), doc (optional), namespaces, schemas, facets, event_facets, workflows, implicits, uses"
+    rules:
+      - "Namespaces may nest. Qualified names inside resolve against the combined prefix."
+      - "A use statement inside a namespace imports all public names from that namespace into the current scope."
+
+  SchemaDecl:
+    syntax: "schema IDENT open-brace FIELDS close-brace"
+    ast_fields: "name, doc (optional), fields (list of name+type pairs)"
+    rules:
+      - "Must be inside a namespace."
+      - "Field types may be String, Integer, Double, Boolean, Long, a qualified schema reference, or an ArrayType with bracket syntax."
+      - "Nullable fields are expressed via type in v1; no separate suffix marker."
+
+  FacetDecl:
+    syntax: "facet IDENT(PARAMS) optional-return optional-mixins optional-andThen optional-catch"
+    ast_fields: "sig (FacetSig), body (optional Block), mixins, catch, doc, pre_script"
+    rules:
+      - "A facet without the event keyword is a regular facet — inlined at call time, no task produced."
+      - "Return clause, if present, must use parentheses."
+      - "Parameters and return fields are order-significant for positional calling; named calling is preferred."
+
+  EventFacetDecl:
+    syntax: "event facet IDENT(PARAMS) return-clause optional-mixins"
+    ast_fields: "sig (FacetSig), body (optional Block), mixins, catch, doc"
+    rules:
+      - "Every call to an event facet produces a task in the runtime queue."
+      - "Body is optional. If omitted, the return fields are populated by an external handler via StepContinue."
+      - "If present (e.g. a prompt block), the body defines how the task is executed; the handler is implicit."
+
+  WorkflowDecl:
+    syntax: "workflow IDENT(PARAMS) optional-return andThen BODY"
+    ast_fields: "sig, body (Block), doc (optional)"
+    rules:
+      - "A workflow is a facet with an execution entry point. The runtime creates a top-level block for it."
+      - "Workflows may be nested inside namespaces."
+      - "The final yield statement produces the workflow outputs."
+
+  ImplicitDecl:
+    syntax: "implicit IDENT = CALL"
+    ast_fields: "name, call (CallExpr)"
+    rules:
+      - "Produces a value available by name in the enclosing scope. Used for constants and config."
+
+# ---------------------------------------------------------------------------
+# Expressions.
+# ---------------------------------------------------------------------------
+expressions:
+  call:
+    syntax: "QNAME(field = expr, ...)"
+    ast_node: "CallExpr"
+    fields: "target (qname), args (list of name+value pairs)"
+
+  member_access:
+    syntax: "expr.field"
+    ast_node: "MemberAccessExpr"
+    notes: "Used to reach into a schema-typed value or prior step result, e.g. step.result.lat."
+
+  literal_nodes:
+    - "StringLit"
+    - "IntLit"
+    - "FloatLit"
+    - "BoolLit"
+    - "NullLit"
+
+  identifier:
+    ast_node: "IdentExpr"
+    resolution: |
+      In a step body, an identifier resolves in order:
+        1. Prior step name in the same block (most common).
+        2. Parameter of the enclosing facet/workflow.
+        3. Namespace-scoped binding (implicit, imported via use).
+        4. Qualified name elsewhere (must be written as qname if not in scope).
+
+  arithmetic:
+    operators:
+      - "+"
+      - "-"
+      - "*"
+      - "/"
+      - "%"
+    type_rules: |
+      Integer op Integer returns Integer (except / which promotes to Double).
+      Integer op Double returns Double. Double op Double returns Double.
+
+  concatenation:
+    operator: "++"
+    type_rules: "String ++ String -> String. Array ++ Array -> Array."
+
+  comparison:
+    operators:
+      - "=="
+      - "!="
+      - "<"
+      - ">"
+      - "<="
+      - ">="
+    result_type: "Boolean"
+
+  boolean_operators:
+    - "&&"
+    - "||"
+    - "!"
+  boolean_short_circuit: true
+
+  conditional:
+    syntax: "andThen when open-brace case PRED => open-brace ... close-brace case _ => open-brace ... close-brace close-brace"
+    ast_node: "WhenBlock"
+    rules:
+      - "First matching case wins. The underscore case is the default."
+      - "Guard predicates are Boolean expressions over in-scope names."
+
+  collections:
+    array_literal: "[expr, expr, ...]"
+    map_literal: "#{key: expr, key: expr}"
+    array_index: "arr[INT_EXPR]"
+
+# ---------------------------------------------------------------------------
+# Composition features.
+# ---------------------------------------------------------------------------
+composition:
+  mixins:
+    syntax: "facet F() with MixinA() with MixinB() { ... }"
+    semantics: "Applies every mixin body/parameters/return fields to the target facet. Mixins run before the primary body. Multiple mixins compose additively; conflicts on field names are compile errors."
+
+  and_then_block:
+    syntax: "andThen { STEPS [yield FACET(ARGS)] }"
+    ast_node: "Block"
+    fields: "steps (list of Step), yield_ (optional YieldStmt), catch (optional CatchBlock)"
+    semantics: "Steps execute as soon as dependencies are satisfied, concurrently when independent. Block completes when every step has terminated and (if present) the yield has merged."
+
+  foreach:
+    syntax: "andThen foreach item in COLLECTION_EXPR { STEPS }"
+    semantics: "Iterates over a collection. Each iteration creates a sub-block with item bound. Sub-blocks execute in parallel unless a step in one iteration depends on a prior iteration output."
+
+  statement_level_and_then:
+    syntax: "s = Facet(x = 1) andThen { STEPS }"
+    semantics: "A step can itself have an andThen body. The step completes when its own call returns AND the trailing block terminates. See docs/reference/runtime.md section 8.2."
+
+  catch_blocks:
+    syntax: "catch { ... } or catch when { case PRED => { ... } }"
+    semantics: "Trapped if any step in the enclosing block errors. Runs in place of the original block completion; its yield becomes the block output."
+
+  prompt_block:
+    example_shape: "event facet F(x) => (y) { prompt { system TEXT; template TEXT; model NAME } }"
+    semantics: "Declares an LLM-driven event facet. The runtime creates a task that a prompt-capable runner (ClaudeAgentRunner) picks up; no separate handler needed. Template uses double-brace parameter substitution."
+
+  script_block:
+    syntax: "script python CODE_STRING"
+    semantics: "Inline sandboxed Python. Runs in a restricted environment; stdout captured into result. Prefer external handlers for anything non-trivial."
+
+# ---------------------------------------------------------------------------
+# Scoping and name resolution.
+# ---------------------------------------------------------------------------
+scoping:
+  rules:
+    - "Each namespace is an independent scope. Nested namespaces inherit outer bindings."
+    - "A use statement brings every public name from that namespace into the current scope."
+    - "Facet parameters are in scope in the facet body."
+    - "Step names defined in a block are in scope for subsequent steps in the same block."
+    - "Steps in different andThen blocks do NOT share scope except via yield."
+    - "Qualified references (dots) always resolve from the program root."
+
+  name_uniqueness:
+    - "Two declarations with the same name in the same namespace scope are a compile error."
+    - "Step names within a block must be unique."
+    - "Parameter names within a facet must be unique."
+
+  forward_references:
+    allowed: true
+    scope: "Facets and schemas may reference names declared later in the same namespace. Steps may reference step names declared later in the same block (the runtime resolves dependencies before scheduling)."
+
+# ---------------------------------------------------------------------------
+# Type system.
+# ---------------------------------------------------------------------------
+types:
+  primitives:
+    - "String"
+    - "Integer"
+    - "Long"
+    - "Double"
+    - "Boolean"
+  nullable: "Any primitive or schema type is nullable via the null literal."
+  array: "ArrayType with bracket syntax — ordered, homogeneous."
+  map: "Map with String keys and typed values (v1 value side only)."
+  schema: "Named struct; field types recursively composed."
+  coercions:
+    - "Integer promotes to Long implicitly."
+    - "Integer promotes to Double implicitly in arithmetic."
+    - "String to any other type is NOT allowed; explicit conversion via a handler."
+
+# ---------------------------------------------------------------------------
+# Static validation.
+# ---------------------------------------------------------------------------
+validation_rules:
+  - "Every call target must resolve to a facet, event facet, workflow, or schema in scope."
+  - "Every call must supply all required (non-default) parameters."
+  - "Return clause fields must be populated by the body (directly or via yield)."
+  - "Schema field types must resolve."
+  - "Mixins must reference existing facets, and their return fields must not collide with the target return fields."
+  - "yield must be the last statement of a block when present."
+  - "yield facet name must match the enclosing workflow or facet."
+  - "Circular dependencies between steps within one block are compile errors."
+  - "Event facets must have a return clause."
+  - "Prompt blocks must have exactly one system, template, and model directive."
+  - "Keyword identifiers are rejected."
+
+# ---------------------------------------------------------------------------
+# AST JSON encoding.
+# ---------------------------------------------------------------------------
+ast_json_encoding:
+  shape: |
+    Top-level JSON:
+      { "version": 1, "declarations": [...] }
+    where each declaration is a typed AST node with a kind discriminator.
+
+  field_conventions:
+    node_type: "Every AST node carries a kind discriminator field (e.g. FacetDecl)."
+    location: "Every node carries a location field with source_id, line, column, end_line, end_column."
+    node_id: "Every node carries a UUID node_id for debugging and step-log references."
+    doc: "Optional doc field on decls that accept doc comments."
+
+  determinism:
+    - "Two runs of the emitter on byte-identical source produce byte-identical JSON (modulo node_id UUIDs)."
+    - "Field ordering in JSON output is stable (reference impl uses insertion order)."
+    - "The SHA-256 of the JSON with node_ids stripped is the content hash per facetwork.agent-spec.yaml:invariants.content_address_stability."
+
+# ---------------------------------------------------------------------------
+# Properties.
+# ---------------------------------------------------------------------------
+properties:
+  - name: "parser_locates_errors"
+    statement: |
+      Every parser error carries a location with source_id, line,
+      column pointing at or before the first offending token.
+    checkable_via: "example_suite"
+
+  - name: "round_trip"
+    statement: |
+      For every valid program P, emit(parse(P)) is canonical JSON
+      that parse(canonical JSON) loads back into an equivalent
+      in-memory Program.
+    checkable_via: "property_test"
+
+  - name: "validator_catches_all_static_errors"
+    statement: |
+      For every program in the invalid-examples suite, the
+      validator returns a non-empty error list with at least one
+      error pointing at the root cause.
+    checkable_via: "example_suite"
+
+  - name: "ast_node_completeness"
+    statement: |
+      Every AST node type listed here corresponds to a parseable
+      and emittable construct. No surface syntax produces a node
+      not documented in this spec or in grammar.md.
+    checkable_via: "manual_inspection"
+
+dependencies:
+  libraries:
+    - "Lark (LALR) for the reference parser — other generators acceptable if LALR equivalence is preserved"
+    - "dataclasses (Python) or equivalent for AST node types"
+  tools: []
+  binaries: []
+
+implementation_notes: |
+  The reference parser uses Lark with a .lark grammar file and a
+  Python Transformer that converts the Lark tree into dataclass AST
+  nodes. Validator and emitter are Python modules consuming those
+  dataclasses. See facetwork/parser.py, facetwork/transformer.py,
+  facetwork/validator.py, facetwork/emitter.py.
+
+  A Go/Rust/TypeScript impl need not use Lark — any LALR parser
+  generator whose productions match grammar.md is acceptable. The
+  AST node shapes (kind, location, node_id, doc) must match so JSON
+  output is interchange-compatible.
+
+human_docs:
+  - "docs/reference/language/grammar.md"
+  - "docs/reference/language/semantics.md"
+  - "docs/reference/language/validation.md"
+  - "docs/reference/examples.md"
+  - "facetwork/parser.py"
+  - "facetwork/transformer.py"
+  - "facetwork/validator.py"
+  - "facetwork/emitter.py"
+  - "facetwork/ast.py"

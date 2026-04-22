@@ -1,0 +1,201 @@
+# Canonical specification — Facetwork as a whole.
+# Umbrella spec describing the components and where each is specified in detail.
+
+identity:
+  name: facetwork
+  kind: system-contract
+  canonical_id: "sha256:032fd125bfe8eae88f805eee5d59527fffea643fd515d2f5cbe2d3e48808b109"
+  version: 1
+  supersedes: []
+
+purpose: |
+  Facetwork is a platform for defining and executing distributed
+  workflows. Workflows are authored in FFL (Facetwork Flow Language),
+  compiled to a canonical JSON AST, and executed by a restart-safe,
+  dependency-driven, iterative runtime that coordinates work across
+  multiple runner processes via a persistence backend (MongoDB
+  canonical; SQL-addressable alternatives allowed).
+
+  The system separates three authoring concerns. Domain programmers
+  author .ffl files (workflow + event-facet + schema declarations);
+  no handler code required. Service provider programmers author
+  Python handler modules for event facets; handlers are registered
+  in a database registry and auto-loaded by runners. LLM agents can
+  author both FFL and handlers from natural-language descriptions of
+  required behavior.
+
+  A compiled workflow runs by fixed-point iteration. The evaluator
+  advances every step whose dependencies are satisfied, writes
+  event-facet payloads to a task queue for external handlers, and
+  pauses when no step can progress without external input. Handlers
+  pick up tasks, execute, write results back, and signal the
+  workflow to continue. Workflows survive process restarts, runner
+  crashes, and database downtime — all state lives in persistence,
+  all operations are idempotent.
+
+# ---------------------------------------------------------------------------
+# Component map — every named piece of the product, plus its spec.
+# ---------------------------------------------------------------------------
+components:
+  ffl_language:
+    description: "FFL source language — lexical rules, grammar, AST node shapes, scoping, schema system, composition features, expression evaluation."
+    spec: "agent-spec/ffl-language.agent-spec.yaml"
+    authoritative_docs:
+      - "docs/reference/language/grammar.md"
+      - "docs/reference/language/semantics.md"
+      - "docs/reference/language/validation.md"
+
+  ffl_compiler:
+    description: "Lexer, parser (Lark LALR), AST construction (transformer), validator, emitter (canonical JSON)."
+    spec: "agent-spec/ffl-compiler.agent-spec.yaml"
+    authoritative_docs:
+      - "docs/reference/compiler.md"
+      - "docs/reference/language/grammar.md"
+
+  runtime:
+    description: "Single-process execution model — iterative fixed-point, step state machine, block creation, yield merging, event-facet dispatch, catch-block recovery, schema instantiation."
+    spec: "agent-spec/runtime.agent-spec.yaml"
+    authoritative_docs:
+      - "docs/reference/runtime.md"
+      - "docs/reference/runtime-impl.md"
+      - "docs/reference/state-system.md"
+      - "docs/reference/event-system.md"
+      - "docs/reference/execution-traces.md"
+
+  runtime_distributed:
+    description: "Multi-runner coordination — atomic task claim, lease renewal via heartbeats, reaper for dead runners, stuck-task watchdog, per-step atomic processing, graceful drain."
+    spec: "agent-spec/runtime-distributed.agent-spec.yaml"
+    authoritative_docs:
+      - "docs/reference/runtime.md"
+      - "docs/reference/database.md"
+      - "docs/reference/runtime-impl.md"
+
+  agent_sdk:
+    description: "Handler authoring contract — how external code registers a function, receives payload, reports progress, writes results."
+    spec: "agent-spec/agent-sdk.agent-spec.yaml"
+    authoritative_docs:
+      - "docs/reference/agent-sdk.md"
+      - "agents/"
+
+  mcp_server:
+    description: "Model Context Protocol server exposing FFL compiler, runner management, workflow execution, and PostGIS query tools for LLM agents."
+    spec: "agent-spec/mcp-server.agent-spec.yaml"
+    authoritative_docs:
+      - "docs/architecture/mcp-workflow-surfacing.md"
+      - "facetwork/mcp/"
+
+  dashboard:
+    description: "FastAPI web UI for workflow monitoring, step detail, log viewer, recovery actions, handler registry management."
+    spec: "agent-spec/dashboard.agent-spec.yaml"
+    authoritative_docs:
+      - "facetwork/dashboard/"
+      - "docs/reference/cli.md"
+
+  tools_cli:
+    description: "Standalone CLI utilities for data operations outside the runtime. Share their library layer with FFL handlers so both surfaces drive the same caches."
+    spec: "examples/osm-geocoder/tools/_lib/*.agent-spec.yaml"
+    authoritative_docs:
+      - "examples/osm-geocoder/tools/README.md"
+
+# ---------------------------------------------------------------------------
+# System-wide invariants — properties that hold across components.
+# ---------------------------------------------------------------------------
+invariants:
+  - name: "compile_once_execute_anywhere"
+    statement: |
+      The JSON AST emitted by the compiler is self-sufficient for
+      execution. No runtime requires access to the original .ffl
+      source. Two conforming runtime implementations produce
+      equivalent execution traces given the same JSON AST.
+    checkable_via: "example_suite"
+
+  - name: "restart_safe"
+    statement: |
+      At any moment, terminating every runner process and restarting
+      them results in the same final workflow outputs as an
+      uninterrupted execution, given the same persistence contents.
+      Partial state in runner memory is recoverable from persistence.
+    checkable_via: "property_test"
+
+  - name: "at_most_one_runner_per_task"
+    statement: |
+      A task in the RUNNING state has exactly one claim by exactly
+      one runner. Two runners must not concurrently execute the
+      same task handler body.
+    checkable_via: "property_test"
+
+  - name: "event_facet_handler_parity"
+    statement: |
+      Every event facet declared in a loaded FFL program either has
+      a registered handler or causes the task to surface a missing-
+      handler error — no event-facet task remains in QUEUED forever
+      without operator notification.
+    checkable_via: "example_suite"
+
+  - name: "dependency_driven_determinism"
+    statement: |
+      Step A waits for step B outputs iff A expression tree
+      references B by name. Given fixed handler outputs, the step-
+      completion order respects dependency edges deterministically.
+    checkable_via: "example_suite"
+
+  - name: "content_address_stability"
+    statement: |
+      Compiling the same FFL source twice with the same compiler
+      version produces byte-identical JSON (modulo node_id UUIDs).
+      The SHA-256 of the emitted JSON with node_ids stripped is a
+      stable content identifier usable for caching and cross-runner
+      verification.
+    checkable_via: "property_test"
+
+# ---------------------------------------------------------------------------
+# Non-goals — help an agent avoid re-inventing things deliberately left out.
+# ---------------------------------------------------------------------------
+non_goals:
+  - "Workflow versioning and migration built into the language. Migration is an operator concern; content-addressed workflows mean a new definition is a new workflow."
+  - "Distributed transactions spanning multiple tasks. Each step outputs are idempotently re-writable; there is no two-phase commit."
+  - "Per-step authorization/ACL model. Authorization is the handler responsibility; the runtime is not an authz boundary."
+  - "Automatic retry with unbounded exponential backoff. Retries are bounded; beyond the limit the step enters ERRORED and waits for operator intervention."
+
+# ---------------------------------------------------------------------------
+# Dependencies.
+# ---------------------------------------------------------------------------
+dependencies:
+  libraries:
+    - "Python 3.11+ (reference impl)"
+    - "Lark LALR parser (reference impl — other LALR generators acceptable)"
+    - "A document database with atomic findAndModify semantics (MongoDB canonical; PostgreSQL with SELECT FOR UPDATE SKIP LOCKED is a proven alternative)"
+  services:
+    - "MongoDB (canonical persistence)"
+    - "PostgreSQL/PostGIS (optional; for spatial-data handlers)"
+    - "HDFS (optional; for large-file storage via WebHDFS)"
+  binaries: []
+  environment:
+    - "AFL_MONGO_URI"
+    - "AFL_DATABASE"
+    - "AFL_POSTGIS_URL"
+    - "AFL_CACHE_DIR"
+    - "AFL_REAPER_TIMEOUT_MS"
+    - "AFL_STUCK_TIMEOUT_MS"
+    - "AFL_TASK_EXECUTION_TIMEOUT_MS"
+    - "AFL_LEASE_DURATION_MS"
+
+implementation_notes: |
+  Reference implementation is Python 3.11+. Language parsing uses
+  Lark in LALR mode. Persistence uses MongoDB via pymongo. Agent
+  libraries exist in Python, Scala, Go, Java, TypeScript under
+  agents/ — all implement the same registration and payload contract
+  but in the host language idioms.
+
+  The component specs (ffl-language, ffl-compiler, runtime, runtime-
+  distributed, agent-sdk) describe the CONTRACT. Any regenerated
+  implementation that satisfies those specs is a valid Facetwork
+  implementation regardless of language choice.
+
+human_docs:
+  - "README.md"
+  - "CLAUDE.md"
+  - "docs/reference/overview.md"
+  - "docs/architecture/overview.md"
+  - "docs/architecture/project-journey.md"
+  - "docs/architecture/lessons-learned.md"

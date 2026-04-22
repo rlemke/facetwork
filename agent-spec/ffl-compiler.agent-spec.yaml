@@ -1,0 +1,128 @@
+# Canonical specification — FFL compiler pipeline.
+
+identity:
+  name: ffl-compiler
+  kind: library
+  canonical_id: "sha256:b520a1442460925730751204425d1c989a8d1fcf9cf694ee4b1102cdc8af9258"
+  version: 1
+
+purpose: |
+  The FFL compiler turns .ffl source files into a canonical JSON AST
+  that the runtime executes. Pipeline stages: source text -> lexer
+  tokens -> parse tree -> AST dataclasses -> validated AST -> emitted
+  JSON. Any implementation that accepts the same valid source and
+  emits byte-identical JSON (modulo node_ids) satisfies this contract
+  regardless of language choice.
+
+pipeline:
+  stages:
+    - name: "1_preprocess"
+      purpose: "Optional: strip/normalize BOMs, comments. v1 passes source through unchanged."
+      reference_impl: "facetwork/preprocess.py"
+    - name: "2_parse"
+      purpose: "Lex and parse into a concrete parse tree. Reference impl uses Lark LALR."
+      reference_impl: "facetwork/parser.py"
+      inputs: "source_text, source_id"
+      outputs: "parse_tree"
+    - name: "3_transform"
+      purpose: "Convert the parse tree into typed AST dataclasses."
+      reference_impl: "facetwork/transformer.py"
+      outputs: "Program (AST)"
+    - name: "4_resolve"
+      purpose: "Resolve qualified references, use imports, forward references. Attaches resolved references to the AST."
+      reference_impl: "facetwork/resolver.py"
+    - name: "5_validate"
+      purpose: "Run static checks — name uniqueness, yield rules, dependency cycles, schema field type resolution, mixin compatibility."
+      reference_impl: "facetwork/validator.py"
+      outputs: "list of ValidationError"
+    - name: "6_emit"
+      purpose: "Write the AST as canonical JSON."
+      reference_impl: "facetwork/emitter.py"
+      outputs: "json_bytes"
+
+cli:
+  command: "afl"
+  implementation: "facetwork/cli.py"
+  subcommands:
+    compile:
+      usage: "afl INPUT.ffl -o OUTPUT.json"
+      behavior: "Run stages 1 through 6 and write output. Exit 0 on success, non-zero on parse or validation error."
+    check:
+      usage: "afl INPUT.ffl --check"
+      behavior: "Run stages 1 through 5 (no emit). Exit 0 if valid, non-zero with error listing otherwise."
+    loader:
+      usage: "afl INPUT.ffl -o -"
+      behavior: "Emit to stdout for pipeline use."
+
+errors:
+  parse_errors:
+    requirements:
+      - "Location must include source_id, line, column (1-indexed)."
+      - "Message must name the expected token class or production."
+      - "Errors should list at most one suggested fix when unambiguous."
+  validation_errors:
+    requirements:
+      - "Each error carries a location of the offending AST node."
+      - "Multiple unrelated errors may be reported in one run."
+      - "A hard error (unresolvable reference) must prevent emit."
+
+output:
+  format: "JSON (UTF-8, no BOM)"
+  top_level_keys:
+    - "version"
+    - "declarations"
+  version_field: 1
+  determinism:
+    - "Byte-identical output for byte-identical input when compiler version is fixed."
+    - "Field order within each object is stable and specified per node type."
+    - "node_id UUIDs may differ across runs; they are stripped for content-hash computation."
+
+properties:
+  - name: "parse_validate_emit_roundtrip"
+    statement: |
+      For every valid source S, parse+emit produces JSON J such
+      that a fresh load(J) yields an AST equivalent to parse(S)
+      (modulo node_id re-generation). Emit is deterministic given
+      fixed node_ids.
+    checkable_via: "property_test"
+
+  - name: "every_error_has_location"
+    statement: |
+      No error returned from any pipeline stage has an empty or
+      null location field. The root program node has a synthetic
+      location.
+    checkable_via: "property_test"
+
+  - name: "validate_is_pure"
+    statement: |
+      Validation does not mutate the AST. Repeat validation yields
+      the same error list.
+    checkable_via: "property_test"
+
+dependencies:
+  libraries:
+    - "Lark LALR parser for the reference impl"
+    - "dataclasses (Python) or equivalent"
+  specs:
+    - "agent-spec/ffl-language.agent-spec.yaml"
+
+implementation_notes: |
+  Stage ordering is load-bearing. Resolve must happen before
+  validate, because validation depends on resolved references.
+  Emit must happen after validate; an invalid AST should never
+  produce JSON. The reference impl returns a non-zero exit code
+  and prints errors to stderr on validation failure.
+
+  The reference emitter uses json.dumps with sort_keys=False and a
+  custom encoder that walks dataclasses in declaration order. Other
+  impls must produce equivalent field ordering to round-trip
+  correctly.
+
+human_docs:
+  - "docs/reference/compiler.md"
+  - "docs/reference/language/grammar.md"
+  - "docs/reference/cli.md"
+  - "facetwork/cli.py"
+  - "facetwork/parser.py"
+  - "facetwork/validator.py"
+  - "facetwork/emitter.py"

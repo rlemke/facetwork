@@ -1,0 +1,204 @@
+# Canonical specification — Facetwork Agent SDK (handler authoring).
+
+identity:
+  name: agent-sdk
+  kind: system-contract
+  canonical_id: "sha256:f610c85249cc256b461394d1e63463493d9e4d5283a43fa7c5ad592f3a5ff93e"
+  version: 1
+
+purpose: |
+  The Agent SDK contract defines how external code — in any host
+  language — registers a handler for an FFL event facet, receives
+  the runtime-provided payload, reports progress, and writes a
+  result back. The reference implementation is Python (agent_poller,
+  registry_runner, runner_service, claude_agent_runner); equivalent
+  libraries exist in Go, Scala, Java, and TypeScript under agents/.
+
+  Four execution models share one payload/response contract. The
+  recommended production model is RegistryRunner — handlers are
+  registered in the persistence registry, a runner service picks up
+  tasks and dynamically loads the handler module by module_uri, and
+  dispatches into the registered entrypoint.
+
+# ---------------------------------------------------------------------------
+# Execution models.
+# ---------------------------------------------------------------------------
+execution_models:
+  RegistryRunner:
+    description: "Production default. Handlers are registered in the database via register_handler API or the MCP afl_manage_handlers tool. The RegistryRunner polls the task queue, loads the module named by module_uri on first encounter, caches it, and dispatches to the entrypoint function."
+    reference_impl: "facetwork/runtime/registry_runner.py"
+    registration_via_python_api: |
+      from facetwork.runtime.registry_runner import register_handler
+      register_handler(
+          facet_name="osm.ops.CacheRegion",
+          module_uri="file:///path/to/operations_handlers.py",
+          entrypoint="handle",
+      )
+    registration_via_mcp: "MCP tool afl_manage_handlers with action=register"
+    dispatch:
+      - "Runner loads module via importlib, reading module_uri."
+      - "Module must expose the entrypoint as a module-level callable taking payload and returning result."
+      - "Dispatch table keyed on _facet_name in the payload."
+
+  AgentPoller:
+    description: "Callback-based agent service. Application code calls register(facet_name, handler_fn) at startup, then starts the poller which claims tasks and invokes registered callbacks synchronously."
+    reference_impl: "facetwork/runtime/agent_poller.py"
+    use_case: "Single-purpose agents, simple deployments."
+
+  RunnerService:
+    description: "Distributed orchestration with thread pool, heartbeat, per-server lifecycle. Most flexible; used when handler code lives IN the runner process."
+    reference_impl: "facetwork/runtime/runner/"
+    use_case: "Production deployments with in-process handler code."
+
+  ClaudeAgentRunner:
+    description: "In-process synchronous runner that wraps Claude API calls. Prompts inside event facet bodies (prompt blocks) route here automatically."
+    reference_impl: "facetwork/runtime/agent_runner.py"
+    use_case: "LLM-driven event facets declared with prompt blocks."
+
+# ---------------------------------------------------------------------------
+# Payload contract.
+# ---------------------------------------------------------------------------
+payload:
+  shape: "A dict (JSON-ish) with two kinds of keys. (1) Event-facet parameters — one entry per declared parameter of the event facet. Values are the resolved argument expressions, typed per the schema. (2) Runtime-provided metadata keys prefixed with underscore."
+  metadata_keys:
+    _facet_name:
+      type: "string"
+      description: "Qualified event facet name. Used by dispatch-style handlers."
+      required: true
+    _task_id:
+      type: "string"
+      description: "Opaque task identifier; useful in logs."
+      required: true
+    _step_id:
+      type: "string"
+      description: "The step that created this task."
+      required: true
+    _workflow_execution_id:
+      type: "string"
+      description: "The enclosing workflow execution."
+      required: true
+    _step_log:
+      type: "callable"
+      signature: "(message: str, level: str = 'info') -> None"
+      description: "Append a timestamped log entry to the step step-log visible in the dashboard. Callers must tolerate the callback being a no-op (it may be absent in tests)."
+      required: false
+    _task_heartbeat:
+      type: "callable"
+      signature: "() -> None"
+      description: "Renew the task lease explicitly. Long-running blocking handlers that do not naturally call the library heartbeat should invoke this periodically."
+      required: false
+
+# ---------------------------------------------------------------------------
+# Response contract.
+# ---------------------------------------------------------------------------
+response:
+  success:
+    shape: "dict keyed by the event facet return field names, values typed per the schema."
+    behavior: "Runtime writes these fields to the step result. Dependent steps become eligible."
+  failure:
+    shape: "Handler raises an exception, or returns a specially-tagged error result (impl-defined; reference uses exceptions)."
+    behavior: "Runtime records the error on the step; step enters state.statement.Error; catch block (if any) activates."
+  timeout:
+    behavior: "Handler that does not return within AFL_TASK_EXECUTION_TIMEOUT_MS is reset to QUEUED; a late return is rejected via optimistic concurrency."
+
+# ---------------------------------------------------------------------------
+# Handler registration.
+# ---------------------------------------------------------------------------
+registration:
+  paths:
+    - name: "python_imports"
+      description: "Application code imports handler modules and calls register(facet_name, fn)."
+    - name: "registry_runner_db"
+      description: "Handler metadata written to persistence; RegistryRunner loads on demand."
+    - name: "prompt_block_auto"
+      description: "Event facet bodies with a prompt block require NO registration; ClaudeAgentRunner picks them up."
+    - name: "mcp_tool"
+      description: "afl_manage_handlers MCP tool lets an LLM agent register handlers without code."
+
+  requirements:
+    - "A facet_name may have at most one registered handler per runner process."
+    - "Multiple runner processes may each have a handler for the same facet_name — tasks are distributed across them by the claim protocol."
+    - "Registering a handler must not retroactively re-execute tasks that have already completed."
+
+# ---------------------------------------------------------------------------
+# Reserved task prefixes — protocol-level tasks.
+# ---------------------------------------------------------------------------
+reserved_task_names:
+  description: "Tasks with names starting with fw: are reserved for runtime protocol. User handlers must not create them."
+  prefixes:
+    - name: "fw:execute:WORKFLOW"
+      purpose: "Bootstrap — created by dashboard or CLI to start a workflow execution."
+      claimed_by: "RunnerService"
+    - name: "fw:resume:FACET"
+      purpose: "Signal sent by an agent SDK when a step result is posted externally; tells the runner to re-enter the evaluator."
+      claimed_by: "RunnerService"
+    - name: "_afl_continue"
+      purpose: "Continuation event for per-step atomic processing (see runtime-distributed.agent-spec.yaml)."
+      claimed_by: "RunnerService"
+
+# ---------------------------------------------------------------------------
+# Multi-language agent libraries.
+# ---------------------------------------------------------------------------
+multi_language:
+  description: "Libraries in agents/ implement the SAME contract in different host languages. Each exposes a task-poller entrypoint, a register-handler API, a step-log helper, and a heartbeat helper. The wire format (payload JSON, response JSON) is identical across languages."
+  implementations:
+    - "agents/python/ (reference)"
+    - "agents/scala/"
+    - "agents/go/"
+    - "agents/java/"
+    - "agents/typescript/"
+  wire_format: "JSON over the task-queue persistence backend."
+
+# ---------------------------------------------------------------------------
+# Properties.
+# ---------------------------------------------------------------------------
+properties:
+  - name: "payload_contains_facet_name"
+    statement: "Every payload delivered to a handler contains a non-empty _facet_name that exactly equals the qualified name of the event facet the handler is registered for."
+    checkable_via: "property_test"
+
+  - name: "return_merges_to_step_result"
+    statement: "For every handler that returns a dict D successfully, the step result equals D after the StepContinue event is applied. Missing return fields (that are declared on the event facet) become null."
+    checkable_via: "example_suite"
+
+  - name: "heartbeat_extends_lease"
+    statement: "Calling _task_heartbeat() extends the task lease_expires_at by at least AFL_LEASE_DURATION_MS from the call time."
+    checkable_via: "property_test"
+
+  - name: "step_log_is_append_only"
+    statement: "Each _step_log call appends one entry to the step log; entries are never reordered or deleted by subsequent calls."
+    checkable_via: "property_test"
+
+  - name: "handler_exception_produces_step_error"
+    statement: "For every handler invocation that raises, the owning step transitions to state.statement.Error with the exception message and type recorded. The step result remains empty/null."
+    checkable_via: "example_suite"
+
+dependencies:
+  libraries:
+    - "importlib for dynamic module loading (reference impl)"
+    - "Any runtime-supported host language plus its JSON library"
+  specs:
+    - "agent-spec/runtime.agent-spec.yaml"
+    - "agent-spec/runtime-distributed.agent-spec.yaml"
+  environment: []
+
+implementation_notes: |
+  The reference Python impl uses threading.local for per-thread task
+  context (so _step_log and _task_heartbeat work from nested calls).
+  Non-Python implementations can pass context explicitly through the
+  payload dict or use host-language equivalents.
+
+  Handlers should be idempotent when possible. The runtime at-least-
+  once semantics means a handler may be invoked more than once for
+  the same logical task (e.g. reaper reset after partial execution).
+  Handlers that are not natively idempotent should check persistence
+  state at entry and skip if already done.
+
+human_docs:
+  - "docs/reference/agent-sdk.md"
+  - "docs/reference/event-system.md"
+  - "docs/guides/long-running-handlers.md"
+  - "docs/guides/llm-integration.md"
+  - "agents/"
+  - "facetwork/runtime/registry_runner.py"
+  - "facetwork/runtime/agent_poller.py"

@@ -51,6 +51,44 @@ Crawl all specs with:
 find . -name '*.agent-spec.yaml' -o -path '*/agent-spec/*.yaml'
 ```
 
+## Index of current specs
+
+### System-level (this directory)
+
+| Spec | Kind | Describes |
+|---|---|---|
+| [facetwork](facetwork.agent-spec.yaml) | system-contract | Umbrella: product overview, component map, system-wide invariants, non-goals. Start here. |
+| [ffl-language](ffl-language.agent-spec.yaml) | language-spec | FFL surface language — lexical rules, grammar, AST node shapes, scoping, types, composition (mixins / andThen / foreach / catch / prompt / script), validation rules, JSON emission. |
+| [ffl-compiler](ffl-compiler.agent-spec.yaml) | library | The 6-stage compiler pipeline (preprocess / parse / transform / resolve / validate / emit), the `afl` CLI, error contract, determinism requirements. |
+| [runtime](runtime.agent-spec.yaml) | system-contract | Single-process execution — workflow/block/step/task/event model, the 24-state step state machine, iterative fixed-point evaluation, yield merging, block creation, catch blocks, schema instantiation, persistence contract. |
+| [runtime-distributed](runtime-distributed.agent-spec.yaml) | system-contract | Multi-runner coordination — atomic task claim, lease renewal via heartbeats, reaper for dead runners, stuck-task watchdog, per-step atomic processing with continuation events, runner lifecycle, workflow repair. |
+| [agent-sdk](agent-sdk.agent-spec.yaml) | system-contract | Handler authoring — four execution models (RegistryRunner / AgentPoller / RunnerService / ClaudeAgentRunner), payload and response contract, registration paths, reserved task prefixes, multi-language libraries. |
+| [manifest-schema](manifest-schema.agent-spec.yaml) | system-contract | JSON manifest format every cache type uses — file shape, entry baseline fields, read-modify-write protocol, forward-compat rules, per-cache-type extensions. |
+| [storage](storage.agent-spec.yaml) | library | Two-backend abstraction (local POSIX filesystem / HDFS WebHDFS), method signatures, backend selection, finalize-from-local semantics, xattr handling. |
+
+### Per-component (co-located with source)
+
+| Spec | Location | Describes |
+|---|---|---|
+| [pbf_download](../examples/osm-geocoder/tools/_lib/pbf_download.agent-spec.yaml) | `examples/osm-geocoder/tools/_lib/` | Geofabrik PBF downloader — MD5 verification, manifest-based caching, thread-safe per region. Pilot spec demonstrating the format on a concrete tool. |
+
+More per-component specs will appear alongside other tools (`pbf_extract`, `graphhopper_build`, `valhalla_build`, `osrm_build`, `vector_tiles_build`, `html_render`, etc.) as each is formally specified.
+
+### Reading order for a rebuild
+
+An agent tasked with rebuilding Facetwork from scratch should ingest specs in this order:
+
+1. [`facetwork`](facetwork.agent-spec.yaml) — understand the system scope and invariants.
+2. [`ffl-language`](ffl-language.agent-spec.yaml) — the language that drives everything.
+3. [`ffl-compiler`](ffl-compiler.agent-spec.yaml) — how source becomes the executable JSON AST.
+4. [`runtime`](runtime.agent-spec.yaml) — how the JSON AST executes (single-process model).
+5. [`runtime-distributed`](runtime-distributed.agent-spec.yaml) — how the model scales across runners.
+6. [`agent-sdk`](agent-sdk.agent-spec.yaml) — how external code plugs into the runtime.
+7. [`manifest-schema`](manifest-schema.agent-spec.yaml) and [`storage`](storage.agent-spec.yaml) — the cache substrate used by the tool set and handlers.
+8. Per-component specs as needed for specific tools.
+
+The authoritative human-prose references (`docs/reference/*.md`) are linked from each spec's `human_docs:` field and contain fuller grammars, transition tables, and narrative rationale that the YAML deliberately does not try to duplicate.
+
 ## File format
 
 YAML. Flat-ish structure. Fields below; `?` marks optional.

@@ -1,0 +1,237 @@
+# Canonical specification — Facetwork distributed coordination.
+# Multi-runner claim, leases, heartbeats, reaper, stuck-task watchdog,
+# per-step atomic processing, continuation events, graceful drain.
+
+identity:
+  name: runtime-distributed
+  kind: system-contract
+  canonical_id: "sha256:460c3b277f909c9abe4d6add20d16d44203a8924875f72879532a1174defd6b9"
+  version: 1
+
+purpose: |
+  Scale Facetwork execution across many runner processes on many
+  hosts against one shared persistence backend. Design goals:
+  at-most-one-runner-per-task while a task is being executed;
+  at-least-once execution despite crashes, network partitions, and
+  DB restarts; restart-safety (a runner may be killed at any point);
+  linear scaling (adding runners increases throughput); no per-
+  workflow locks (multiple runners concurrently process different
+  steps of the same workflow).
+
+# ---------------------------------------------------------------------------
+# Task claiming.
+# ---------------------------------------------------------------------------
+task_claim:
+  protocol:
+    - "A runner polls persistence for tasks in state QUEUED or state RUNNING with expired lease."
+    - "Claim is atomic — findAndModify on MongoDB or SELECT FOR UPDATE SKIP LOCKED on PostgreSQL — sets state CLAIMED and records runner_id + lease_expires_at."
+    - "Only the runner whose claim succeeded proceeds; others get empty results and re-poll."
+  poll_cadence: "Configurable. Default approximately 1 second with jitter. Runners should stagger polls to reduce thundering herd."
+
+  lease_duration:
+    default_ms: 300000
+    env_var: "AFL_LEASE_DURATION_MS"
+    renewal: "Runner renews while handler runs via heartbeat. A lease that reaches expiry without renewal is eligible for takeover by another runner."
+
+  state_transitions:
+    - "QUEUED to CLAIMED on claim success"
+    - "CLAIMED to RUNNING when runner begins handler execution"
+    - "RUNNING to COMPLETE on handler success"
+    - "RUNNING to ERRORED on handler exception"
+    - "RUNNING to QUEUED on lease expiry (reaper reset)"
+    - "CLAIMED to QUEUED if runner aborts claim before handler start"
+
+# ---------------------------------------------------------------------------
+# Heartbeat.
+# ---------------------------------------------------------------------------
+heartbeat:
+  purpose: "Renew the task lease while a long-running handler works, so the reaper does not steal the task."
+  interval_ms: "Default approximately 30 seconds. Renewal must happen at least twice per lease period."
+  behavior:
+    - "Each renewal extends lease_expires_at to now plus lease_duration."
+    - "Runner also updates a per-server heartbeat record (separate collection), used by the reaper for dead-server detection."
+  blocking_handlers:
+    description: "Handlers doing blocking I/O (subprocess, long network call) may not issue heartbeats. For those, register with timeout_ms=0 (disable heartbeat-based timeout) and rely on the global AFL_TASK_EXECUTION_TIMEOUT_MS instead."
+    authoritative_detail: "stuck_task_watchdog section below"
+
+# ---------------------------------------------------------------------------
+# Reaper.
+# ---------------------------------------------------------------------------
+reaper:
+  purpose: "Detect runners whose heartbeat has stopped and reset their tasks to QUEUED so other runners can claim them."
+  scan_interval_ms: "Default approximately 60 seconds."
+  timeout:
+    env_var: "AFL_REAPER_TIMEOUT_MS"
+    default_ms: 120000
+    semantics: "A server whose heartbeat has not updated within this window is considered dead."
+  actions_on_dead_server:
+    - "Every task in state CLAIMED or RUNNING owned by the dead server is reset to QUEUED."
+    - "A reaper event is logged with the dead server_id, reset task count, and timestamps."
+  authoritative_detail: "docs/reference/runtime.md reaper section"
+
+# ---------------------------------------------------------------------------
+# Stuck-task watchdog.
+# ---------------------------------------------------------------------------
+stuck_task_watchdog:
+  purpose: "Detect handlers running but not making progress. Distinct from reaper — the server is alive but the task has exceeded its wall-clock budget."
+  execution_timeout:
+    env_var: "AFL_TASK_EXECUTION_TIMEOUT_MS"
+    default_ms: 900000
+    semantics: "A task in state RUNNING whose started_at is older than this window is reset to QUEUED."
+  stuck_timeout:
+    env_var: "AFL_STUCK_TIMEOUT_MS"
+    default_ms: 1800000
+    semantics: "A step stuck at an intermediate runtime state (EventTransmit with no task, blocks.Begin without progress) is re-processed by process_single_step."
+  authoritative_detail: "docs/reference/runtime.md section 10.4"
+
+# ---------------------------------------------------------------------------
+# Per-step atomic processing — avoids per-workflow locking.
+# ---------------------------------------------------------------------------
+per_step_atomic:
+  purpose: "Scale beyond a handful of servers on one workflow by removing per-workflow locks."
+  mechanism:
+    - "When a handler completes, continue_step advances only that step past EventTransmit."
+    - "process_single_step cascades completion up the parent chain in ONE transaction."
+    - "If a parent block cannot be progressed on this runner (e.g. another runner holds it), a continuation task is queued on the _afl_continue task list. Any runner may claim it."
+    - "Step updates use optimistic concurrency via a version sequence counter. Two runners racing on the same step detect the race and one re-reads."
+
+  continuation_task:
+    task_name_prefix: "_afl_continue"
+    payload_fields:
+      - "step_id"
+      - "reason"
+    deduplication: "At most one pending _afl_continue task per target step_id. Persistence enforces this via a uniqueness constraint or find-or-insert atomic op."
+
+  correctness_requirements:
+    - "Step updates, child-step creation, handler-task creation, and continuation-task creation must commit atomically. Partial state must not be visible to other runners."
+    - "Duplicate continuation tasks must be deduplicated (uniqueness constraint on step_id in pending state)."
+    - "process_single_step should follow the parent chain inline when possible; only emit continuation events for blocks that cannot be processed locally."
+
+# ---------------------------------------------------------------------------
+# Runner lifecycle.
+# ---------------------------------------------------------------------------
+runner_lifecycle:
+  start:
+    - "Runner connects to persistence; registers itself in the servers collection with a unique runner_id and heartbeat."
+    - "Runner loads its handler registry (either from code imports or via dynamic registration)."
+    - "Runner begins polling for tasks."
+
+  graceful_drain:
+    - "On SIGTERM or scripts/drain-runners: stop claiming new tasks."
+    - "Wait for in-flight tasks to complete (or time out per execution timeout)."
+    - "Reset any remaining CLAIMED tasks back to QUEUED."
+    - "Write a step log entry for each drained task for audit visibility."
+    - "Exit cleanly."
+
+  hard_kill:
+    - "Reaper eventually detects and resets tasks after AFL_REAPER_TIMEOUT_MS."
+
+# ---------------------------------------------------------------------------
+# Workflow repair.
+# ---------------------------------------------------------------------------
+workflow_repair:
+  purpose: "Diagnose and fix workflow state after server restarts, MongoDB downtime, or premature runner completion."
+  entry_points:
+    - "CLI: scripts/repair-workflow RUNNER_ID"
+    - "Dashboard: Repair Workflow button on workflow detail page"
+    - "MCP tool: afl_repair_workflow"
+  checks:
+    - "Runner state — if completed/failed but has non-terminal work, reset to running."
+    - "Orphaned tasks — running tasks on dead/shutdown servers reset to pending."
+    - "Transient step errors (connection/timeout) reset to EventTransmit for retry."
+    - "Ancestor blocks — reset errored ancestors so execution resumes."
+    - "Inconsistent steps — marked Complete but with failed tasks reset to EventTransmit."
+  authoritative_detail: "CLAUDE.md workflow-repair section, docs/reference/runtime-impl.md"
+
+# ---------------------------------------------------------------------------
+# Properties.
+# ---------------------------------------------------------------------------
+properties:
+  - name: "at_most_one_runner_per_running_task"
+    statement: "At any moment, no two runners have state RUNNING with a non-expired lease on the same task_id."
+    checkable_via: "property_test"
+
+  - name: "at_least_once_execution"
+    statement: "Every task in state QUEUED whose workflow is still RUNNING will eventually reach state COMPLETE or ERRORED, assuming at least one runner is healthy and a handler is registered."
+    checkable_via: "example_suite"
+
+  - name: "reaper_is_bounded"
+    statement: "A task claimed by a dead runner is reset to QUEUED within AFL_REAPER_TIMEOUT_MS of the runner last heartbeat."
+    checkable_via: "property_test"
+
+  - name: "atomic_commit_on_step_progress"
+    statement: "A single call to process_single_step either commits ALL of its changes (step updates, child steps, handler tasks, continuation events) or commits NONE."
+    checkable_via: "property_test"
+
+  - name: "continuation_dedup"
+    statement: "At most one _afl_continue task in a non-terminal state per target step_id."
+    checkable_via: "property_test"
+
+  - name: "optimistic_concurrency_resolves"
+    statement: "When two runners advance the same step concurrently, exactly one commit succeeds and the other version check fails; the failing runner re-reads and either retries or recognizes the step has already progressed."
+    checkable_via: "property_test"
+
+# ---------------------------------------------------------------------------
+# Failure modes.
+# ---------------------------------------------------------------------------
+failure_modes:
+  - kind: "runner_dead"
+    trigger: "Server stops heartbeating (crash, network partition, kill)"
+    behavior: "Reaper detects after AFL_REAPER_TIMEOUT_MS; resets tasks owned by the dead server."
+    user_visible: "Dashboard shows server as dead; tasks re-queue automatically; step logs record the reset."
+
+  - kind: "task_exceeds_execution_timeout"
+    trigger: "Handler runs longer than AFL_TASK_EXECUTION_TIMEOUT_MS"
+    behavior: "Stuck-task watchdog resets the task to QUEUED. The handler continues (best-effort) but its result will not be accepted."
+    user_visible: "Task reappears as QUEUED; another runner picks it up; the first runner late result is rejected by optimistic concurrency."
+
+  - kind: "step_stuck_at_intermediate_state"
+    trigger: "Step at EventTransmit with no task, or blocks.Begin without progress, for AFL_STUCK_TIMEOUT_MS"
+    behavior: "Stuck-step sweep calls process_single_step directly; if the step is at EventTransmit with no task, a fresh task is created."
+    user_visible: "Log entry at WARNING; step progresses on next sweep."
+
+  - kind: "persistence_unavailable"
+    trigger: "MongoDB (or equivalent) unreachable"
+    behavior: "Runners poll operations fail; they back off and retry. No tasks progress."
+    user_visible: "Runner logs show connection errors; workflows freeze until persistence recovers. No state is corrupted."
+
+  - kind: "missing_handler"
+    trigger: "Task for an event facet with no registered handler"
+    behavior: "Task stays QUEUED; an operator-visible warning surfaces on every poll cycle."
+    user_visible: "Dashboard surfaces the missing handler; MCP afl_manage_handlers can register one; the task resumes on next poll."
+
+dependencies:
+  libraries:
+    - "Persistence backend with atomic findAndModify semantics (MongoDB canonical)"
+  services:
+    - "MongoDB or equivalent"
+  environment:
+    - "AFL_MONGO_URI"
+    - "AFL_DATABASE"
+    - "AFL_REAPER_TIMEOUT_MS"
+    - "AFL_STUCK_TIMEOUT_MS"
+    - "AFL_TASK_EXECUTION_TIMEOUT_MS"
+    - "AFL_LEASE_DURATION_MS"
+
+implementation_notes: |
+  Reference impl: facetwork/runtime/runner/ (RunnerService),
+  facetwork/runtime/registry_runner.py (RegistryRunner auto-loading
+  handlers from DB), facetwork/runtime/mongo_store/.
+
+  The RunnerService maintains a per-server thread pool. Each worker
+  thread runs one handler to completion. Heartbeat and main poll
+  loops are separate threads. Optimistic concurrency is implemented
+  by MongoDB version-predicated findAndModify.
+
+  PostgreSQL is a proven alternative — use SELECT FOR UPDATE SKIP
+  LOCKED as the atomic claim primitive. The persistence DAO
+  (dao.py) is the abstraction boundary; swapping MongoDB for
+  PostgreSQL requires only a new DAO implementation.
+
+human_docs:
+  - "docs/reference/runtime.md sections 10.3.1 through 10.4"
+  - "docs/reference/runtime-impl.md section 17.5"
+  - "docs/reference/database.md"
+  - "docs/reference/runtime.md section 13"
+  - "CLAUDE.md runner-resilience-tuning section"
+  - "facetwork/runtime/runner/"

@@ -1,0 +1,234 @@
+# Canonical specification — the cache manifest format.
+# Referenced by pbf_download, pbf_extract, graphhopper_build, etc.
+
+identity:
+  name: manifest-schema
+  kind: system-contract
+  canonical_id: "sha256:ce441ed590b55f0ab7f0e8444374306f305a2c5c1b056959f5c5940232917e99"
+  version: 1
+
+purpose: |
+  Every cache type under AFL_OSM_CACHE_ROOT owns a manifest.json
+  that records one entry per cached artifact. Manifests serve three
+  purposes: cache validity (comparing hashes against live source
+  data), lineage (tracing a derived artifact back to its sources),
+  and tool composition (downstream tools read upstream manifests to
+  decide what is available and current without parsing files).
+
+# ---------------------------------------------------------------------------
+# Top-level file shape.
+# ---------------------------------------------------------------------------
+file_shape:
+  path: "AFL_OSM_CACHE_ROOT/CACHE_TYPE/manifest.json"
+  format: "JSON (UTF-8)"
+  top_level:
+    version: "int — schema version; 1 for all current manifests"
+    entries: "object — keyed by relative_path within the cache-type subdir"
+  lockfile:
+    path: "AFL_OSM_CACHE_ROOT/CACHE_TYPE/manifest.json.lock"
+    purpose: "fcntl advisory lock target for read-modify-write serialization on the local backend. HDFS: no-op, single-writer assumed."
+
+# ---------------------------------------------------------------------------
+# Entry shape.
+# ---------------------------------------------------------------------------
+entry_baseline:
+  required_fields:
+    relative_path:
+      type: "string"
+      description: "Path of this artifact relative to the cache-type subdir. Equal to the key under entries."
+    size_bytes:
+      type: "int"
+      description: "Size of the cached artifact in bytes (single file) or total bytes in a directory."
+    sha256:
+      type: "hex_string"
+      description: "SHA-256 of the cached file. For directories, the primary payload file (see per-cache-type specs)."
+    generated_at:
+      type: "ISO-8601 UTC"
+      description: "When this entry was created or last regenerated. Naming varies across cache types — downloaded_at for downloads, generated_at elsewhere."
+  optional_fields:
+    source:
+      type: "struct"
+      description: "Lineage — which upstream artifact this was derived from. For non-root artifacts, this is how an agent traces back through the pipeline."
+      shape_fields:
+        - "cache_type — e.g. pbf"
+        - "relative_path — key in the upstream manifest"
+        - "sha256 — upstream sha256 at time of derivation"
+        - "size_bytes"
+        - "source_checksum — upstream own checksum metadata (algo, value, url)"
+        - "source_timestamp — ISO-8601 UTC or null"
+        - "downloaded_at — ISO-8601 UTC"
+    tool:
+      type: "struct"
+      description: "Which tool/binary + version produced this entry. Used for cache invalidation on toolchain upgrade."
+      shape_fields:
+        - "command"
+        - "version"
+        - "tool-specific fields"
+    extra:
+      type: "struct"
+      description: "Cache-type-specific fields that do not fit the baseline. Free-form."
+
+# ---------------------------------------------------------------------------
+# Write protocol.
+# ---------------------------------------------------------------------------
+write_protocol:
+  read_modify_write_sequence:
+    - "Acquire fcntl advisory lock on manifest.json.lock (local backend)."
+    - "Read and parse manifest.json; on missing file, start from version 1 with empty entries."
+    - "Mutate in memory."
+    - "Write to manifest.json.tmp in the same directory."
+    - "os.fsync the tmp file."
+    - "os.rename tmp to manifest.json (atomic)."
+    - "Release the lock."
+  read_modify_write_rationale: "Two processes racing on the same manifest must produce a serialization where each sees the other committed write. Torn reads are prevented by the fcntl lock; partial writes are prevented by the write-rename pattern."
+
+  read_only_sequence:
+    - "Acquire shared fcntl lock (LOCK_SH) on manifest.json.lock."
+    - "Read and parse."
+    - "Release."
+  read_only_concurrency: "Many concurrent readers allowed; exclusive writers block readers."
+
+  hdfs_backend: "No advisory locking. Single-writer semantics assumed; the tool set writes to HDFS from one coordinator process only."
+
+# ---------------------------------------------------------------------------
+# Forward compatibility.
+# ---------------------------------------------------------------------------
+forward_compatibility:
+  rules:
+    - "Always include version at the top level; absence implies 1 but tools should emit it explicitly."
+    - "Readers must tolerate unknown fields inside entries (forward-compat extension mechanism)."
+    - "Bumping version is reserved for breaking layout changes; current version is 1."
+    - "Per-entry schema extensions use the extra sub-object; top-level additions require a version bump."
+
+# ---------------------------------------------------------------------------
+# Per-cache-type extensions.
+# ---------------------------------------------------------------------------
+cache_type_variants:
+  pbf:
+    spec: "examples/osm-geocoder/tools/_lib/pbf_download.agent-spec.yaml"
+    extra_fields:
+      - "source_url"
+      - "source_checksum"
+      - "downloaded_at"
+      - "source_timestamp"
+      - "clip (for clips/ subdir)"
+
+  geojson:
+    spec: "examples/osm-geocoder/tools/_lib/pbf_geojson.agent-spec.yaml (not yet written)"
+    extra_fields:
+      - "format"
+      - "duration_seconds"
+
+  shapefiles:
+    spec: "examples/osm-geocoder/tools/_lib/pbf_shapefile.agent-spec.yaml (not yet written)"
+    extra_fields:
+      - "requested_layers"
+      - "total_size_bytes"
+      - "shp_size_bytes"
+      - "layers"
+
+  extract_categories:
+    description: "water, parks, forests, protected_areas, roads_routable, turn_restrictions, railways_routable, cycle_routes, hiking_routes, and all 16 POI categories."
+    spec: "examples/osm-geocoder/tools/_lib/pbf_extract.agent-spec.yaml (not yet written)"
+    extra_fields:
+      - "category"
+      - "filter"
+      - "feature_count"
+
+  graphhopper:
+    spec: "examples/osm-geocoder/tools/_lib/graphhopper_build.agent-spec.yaml (not yet written)"
+    extra_fields:
+      - "region"
+      - "profile"
+      - "graphhopper_version"
+      - "node_count"
+      - "edge_count"
+
+  valhalla:
+    spec: "examples/osm-geocoder/tools/_lib/valhalla_build.agent-spec.yaml (not yet written)"
+    extra_fields:
+      - "region"
+      - "valhalla_version"
+      - "tile_count"
+      - "tile_levels"
+
+  osrm:
+    spec: "examples/osm-geocoder/tools/_lib/osrm_build.agent-spec.yaml (not yet written)"
+    extra_fields:
+      - "region"
+      - "profile"
+      - "osrm_version"
+      - "algorithm"
+
+  vector_tiles:
+    spec: "examples/osm-geocoder/tools/_lib/vector_tiles_build.agent-spec.yaml (not yet written)"
+    extra_fields:
+      - "source_kind"
+      - "options"
+
+  gtfs:
+    spec: "examples/osm-geocoder/tools/_lib/gtfs_download.agent-spec.yaml (not yet written)"
+    extra_fields:
+      - "agency"
+      - "source_url"
+      - "http"
+      - "feed_info"
+
+  elevation:
+    spec: "examples/osm-geocoder/tools/_lib/elevation_download.agent-spec.yaml (not yet written)"
+    extra_fields:
+      - "source"
+      - "bbox"
+      - "tile_urls"
+      - "tile_count"
+      - "elevation_version"
+
+  html:
+    spec: "examples/osm-geocoder/tools/_lib/html_render.agent-spec.yaml (not yet written)"
+    extra_fields:
+      - "region"
+      - "style_version"
+      - "sources"
+
+# ---------------------------------------------------------------------------
+# Properties.
+# ---------------------------------------------------------------------------
+properties:
+  - name: "atomic_writes"
+    statement: "manifest.json is never observable in a partially-written state. At any instant, any reader sees either the pre-write contents or the post-write contents — never a mix."
+    checkable_via: "property_test"
+
+  - name: "concurrent_writers_serialized"
+    statement: "Two concurrent writers on the local backend produce a serialization equivalent to SOME sequential order of their writes. No writes are lost; no partial merges occur."
+    checkable_via: "property_test"
+
+  - name: "forward_compatible_reads"
+    statement: "A manifest written by a future schema version whose version field is still 1 but has extra fields in entries is readable by current readers without error — unknown fields are preserved on round-trip."
+    checkable_via: "example_suite"
+
+  - name: "dangling_entries_rejected"
+    statement: "If manifest.entries.KEY.size_bytes does not match the on-disk file size at relative_path KEY, is_up_to_date returns False for that entry."
+    checkable_via: "property_test"
+
+dependencies:
+  libraries:
+    - "json (stdlib)"
+    - "fcntl (POSIX)"
+  specs:
+    - "agent-spec/storage.agent-spec.yaml"
+
+implementation_notes: |
+  The reference implementation is in
+  examples/osm-geocoder/tools/_lib/manifest.py. It exposes
+  manifest_transaction(cache_type) as the primary write API (context
+  manager that holds the exclusive lock for the duration) and
+  read_manifest(cache_type) for snapshot reads.
+
+  Other implementations may use alternative lockfile approaches
+  (flock vs. lock-via-rename vs. database lock) as long as the
+  read_modify_write and read_only protocols above still satisfy
+  the atomicity / serialization properties.
+
+human_docs:
+  - "examples/osm-geocoder/tools/README.md cache-layout-and-manifests section"
+  - "examples/osm-geocoder/tools/_lib/manifest.py"

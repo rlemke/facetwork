@@ -1,0 +1,292 @@
+# Canonical specification — Facetwork runtime execution model.
+# Task/step/block model, state machine, iterative evaluation, yield
+# merging, block construction, event-facet dispatch, continuation.
+# Distributed coordination is in runtime-distributed.agent-spec.yaml.
+
+identity:
+  name: runtime
+  kind: system-contract
+  canonical_id: "sha256:97a3fbb7a8fd6bc9dd2f4650c8445e499327501b41722539f1f038b9112d6cb7"
+  version: 1
+
+purpose: |
+  The Facetwork runtime executes a compiled FFL workflow by
+  iteratively advancing steps whose dependencies are satisfied,
+  producing event-facet tasks for handlers, merging handler results
+  back into steps on continuation events, and terminating when
+  every reachable step has completed or errored. The model is
+  dependency-driven, restart-safe, and idempotent — any runner
+  process may crash at any time without corrupting state.
+
+# ---------------------------------------------------------------------------
+# Conceptual model.
+# ---------------------------------------------------------------------------
+model:
+  workflow_execution:
+    description: "One entry per workflow invocation. Has an id, a reference to the compiled AST, inputs, current state, and a collection of steps/blocks/tasks."
+    persistence_location: "workflow_executions"
+    states:
+      - "RUNNING"
+      - "PAUSED"
+      - "COMPLETED"
+      - "FAILED"
+    key_fields: "id, workflow_name, ast_content_hash, state, inputs, outputs, started_at, completed_at, failure"
+
+  block:
+    description: "A block is an execution of an andThen body — workflow root, facet body, or statement-level andThen. Owns steps, an optional yield, and an optional catch block. Completes when every step has reached a terminal state and the yield has merged."
+    ast_sources:
+      - "workflow.body"
+      - "facet.body"
+      - "statement.and_then"
+    states:
+      - "Created"
+      - "Running"
+      - "Completed"
+      - "Errored"
+      - "Suspended"
+
+  step:
+    description: "A step is an assignment of a facet call in a block (e.g. x = Facet(a=1)). Carries a state machine, resolved call args, the facet definition, and its result on completion."
+    key_fields: "id, block_id, name, kind (facet or event_facet or workflow), call, attrs, state, result, error"
+
+  task:
+    description: "An externally-dispatched unit of work — one per event-facet invocation. Carries a name (qualified event facet name), a payload, state, and links back to the owning step. Runners claim, execute, and report via this entity."
+    persistence_location: "tasks"
+    states:
+      - "QUEUED"
+      - "CLAIMED"
+      - "RUNNING"
+      - "COMPLETE"
+      - "ERRORED"
+    reserved_name_prefixes:
+      - "fw:execute:WORKFLOW — bootstrap task that starts a workflow"
+      - "fw:resume:FACET — signals Evaluator to resume after handler completion"
+
+  event:
+    description: "Runtime signals for step progression — StepContinue (handler finished, merge result), StepError (handler failed), etc."
+    persistence_location: "events"
+    types:
+      - "StepContinue"
+      - "StepError"
+      - "StepReset"
+      - "BlockReset"
+      - "StuckStepSweep"
+
+# ---------------------------------------------------------------------------
+# Step state machine — hierarchical dotted state names.
+# Authoritative detail: docs/reference/runtime.md section 6 and state-system.md.
+# ---------------------------------------------------------------------------
+state_machine:
+  naming_convention: "hierarchical dotted names of the form state.SCOPE.PHASE.EDGE"
+  states:
+    - "state.statement.Created"
+    - "state.facet.initialization.Begin"
+    - "state.facet.initialization.End"
+    - "state.facet.scripts.Begin"
+    - "state.facet.scripts.End"
+    - "state.statement.scripts.Begin"
+    - "state.statement.scripts.End"
+    - "state.mixin.blocks.Begin"
+    - "state.mixin.blocks.Continue"
+    - "state.mixin.blocks.End"
+    - "state.mixin.capture.Begin"
+    - "state.mixin.capture.End"
+    - "state.statement.capture.Begin"
+    - "state.statement.capture.End"
+    - "state.statement.blocks.Begin"
+    - "state.statement.blocks.Continue"
+    - "state.statement.blocks.End"
+    - "state.block.execution.Begin"
+    - "state.block.execution.Continue"
+    - "state.block.execution.End"
+    - "state.EventTransmit"
+    - "state.statement.End"
+    - "state.statement.Complete"
+    - "state.statement.Error"
+
+  transition_rules:
+    - "Only ONE agent process may transition a given step at a time. Persistence enforces exclusivity."
+    - "Once in state.statement.Complete, the step is immutable — no further transitions, no overwrite of result."
+    - "Any unrecoverable failure transitions the step to state.statement.Error."
+    - "EventTransmit BLOCKS only for event facets; for regular facets it passes through without creating a task."
+    - "StepContinue events trigger transition from EventTransmit (or blocked block state) back into progress."
+
+  authoritative_detail: "docs/reference/runtime.md section 6, docs/reference/state-system.md, docs/reference/runtime-impl.md sections 3-4"
+
+# ---------------------------------------------------------------------------
+# Iterative execution — the fixed-point model.
+# ---------------------------------------------------------------------------
+iteration:
+  description: "The evaluator main loop makes one pass over every step whose dependencies are satisfied, advances each as far as it can go without external input, writes changes to persistence, and repeats until no further progress is possible. At that point the workflow is at a fixed point — complete, errored, or waiting for external events (EventTransmit)."
+  rules:
+    - "Each iteration advances every eligible step by the maximum transitions that do not require external input."
+    - "A step that reaches EventTransmit causes its block to pause at that step until a StepContinue event arrives."
+    - "An iteration making zero progress AND having no queued tasks waiting is a terminal fixed point."
+  parallelism:
+    - "Steps within one block run concurrently when their dependency graphs permit; the runtime schedules based on dataflow."
+    - "Workflows running in different runner processes progress independently; coordination is persistence-mediated."
+  completion_conditions:
+    - "Every step is in a terminal state (Complete or Error) AND the root block has merged its yield."
+    - "OR a top-level error propagates up and no catch block recovers — workflow state becomes FAILED."
+  authoritative_detail: "docs/reference/runtime.md sections 9-10"
+
+# ---------------------------------------------------------------------------
+# Continuation on StepContinue — how handler results merge back in.
+# ---------------------------------------------------------------------------
+continuation:
+  trigger: "A task transitions to COMPLETE with a result payload or ERRORED with an error payload."
+  effect: "A StepContinue (or StepError) event is recorded. The Evaluator picks it up on the next iteration and applies it."
+  semantics:
+    - "StepContinue with result: write into step.result and transition step past EventTransmit. Dependent steps become eligible."
+    - "StepError with error: transition step to state.statement.Error. Enclosing block catch (if any) activates."
+  per_step_processing:
+    description: "In v0.45.0+, the Evaluator processes ONE step per iteration when handling StepContinue, then emits a RunnerTick event to re-queue itself. This ensures steady forward progress across many workflows rather than starving some while finishing others."
+    authoritative_detail: "docs/reference/runtime.md section 10.3.1"
+
+# ---------------------------------------------------------------------------
+# Yield merging.
+# ---------------------------------------------------------------------------
+yield_statement:
+  syntax: "yield FACET(field = expr, ...)"
+  semantics:
+    - "The yield statement is evaluated after every step in the block has terminated."
+    - "Its arguments become the block output fields."
+    - "For a workflow root block, the yield is the workflow outputs."
+    - "For a facet body block, the yield becomes the facet return value."
+  lazy_creation:
+    description: "The yield step is created only when its expressions become evaluable — i.e. when every step it references has completed."
+    authoritative_detail: "docs/reference/runtime.md section 11.1"
+
+# ---------------------------------------------------------------------------
+# Block execution semantics.
+# ---------------------------------------------------------------------------
+block_execution:
+  creation_sources:
+    - "workflow root body"
+    - "facet body"
+    - "statement-level andThen body"
+    - "foreach iteration body (one block per iteration)"
+    - "catch block body"
+
+  block_ast_resolution:
+    description: "Given a step about to enter its own block, the runtime resolves the relevant AST node (workflow.body, facet.body, statement.and_then) and caches it for reuse across steps in the same workflow."
+    authoritative_detail: "docs/reference/runtime.md sections 8.3 and 11.5"
+
+  catch_block:
+    semantics:
+      - "Activates when any step in the primary block enters Error."
+      - "If a when-case matches, that case body runs in place of the block completion."
+      - "Default underscore-case is the fallback."
+      - "A catch block may itself yield, producing the block output."
+    authoritative_detail: "docs/reference/runtime.md section 8.4"
+
+  schema_instantiation:
+    description: "NewSchema(field = expr, ...) constructs a schema-typed value from the provided fields. Types are checked at runtime; unknown fields error, missing required fields error."
+    authoritative_detail: "docs/reference/runtime.md section 8.5"
+
+# ---------------------------------------------------------------------------
+# Persistence abstraction.
+# ---------------------------------------------------------------------------
+persistence:
+  description: "The runtime accesses persistence through a DAO abstraction. Any backend providing atomic findAndModify, indexed lookups by step_id / task_name / state, and append-only event logs is acceptable. MongoDB is canonical; PostgreSQL with SELECT FOR UPDATE SKIP LOCKED is a proven alternative."
+  required_operations:
+    - "Create a workflow execution"
+    - "Read step by id"
+    - "Read all steps in a block"
+    - "Write a step transition (atomic)"
+    - "Append an event"
+    - "Claim an unclaimed task atomically"
+    - "Renew a task lease"
+    - "Read tasks by state for sweeping"
+  reference_impl:
+    - "facetwork/runtime/dao.py"
+    - "facetwork/runtime/mongo_store/"
+    - "facetwork/runtime/memory_store.py"
+
+# ---------------------------------------------------------------------------
+# Failure and retry.
+# ---------------------------------------------------------------------------
+failure_policy:
+  step_errors:
+    - "An errored step enters state.statement.Error terminally."
+    - "The enclosing block catch (if present) may recover."
+    - "Without a catch, the error propagates to the block parent."
+  task_execution_failures:
+    - "A handler raising an exception produces a StepError event."
+    - "A handler missing (no registered handler for the event facet) produces an operator-visible error."
+    - "A task exceeding AFL_TASK_EXECUTION_TIMEOUT_MS is reset to QUEUED by the stuck-task watchdog."
+  retry_behavior:
+    - "Retries are bounded; beyond the limit the step errors."
+    - "Retries are an operator action (dashboard Retry button, MCP fw_retry_step) or a block-level Reset."
+    - "Automatic retry on transient errors is available via the Repair workflow."
+
+# ---------------------------------------------------------------------------
+# Observability.
+# ---------------------------------------------------------------------------
+observability:
+  required:
+    - "Structured logs at INFO for step transitions, task claims, handler dispatch."
+    - "WARNING logs include qualified step and facet names, not just IDs."
+    - "Prometheus or equivalent metrics for task throughput, claim latency, stuck count."
+    - "Every task and step carries a qualified name in log messages."
+  authoritative_detail: "docs/reference/runtime.md section 18"
+
+# ---------------------------------------------------------------------------
+# Properties — invariants any conforming runtime must satisfy.
+# ---------------------------------------------------------------------------
+properties:
+  - name: "dependency_honored"
+    statement: "Step A reaches state.block.execution.Begin only after every step B in the same block that A references by name has reached state.statement.Complete."
+    checkable_via: "property_test"
+
+  - name: "single_writer_per_step"
+    statement: "No two runner processes concurrently advance the same step state. Any attempt is serialized by persistence."
+    checkable_via: "property_test"
+
+  - name: "complete_immutable"
+    statement: "Once a step reaches state.statement.Complete, its result field is append-only — never overwritten, never deleted without an explicit StepReset event."
+    checkable_via: "property_test"
+
+  - name: "restart_idempotent"
+    statement: "For every partial workflow state, restarting every runner with empty memory but unchanged persistence converges to the same final workflow output as an uninterrupted execution."
+    checkable_via: "example_suite"
+
+  - name: "event_facets_produce_tasks"
+    statement: "For every event-facet invocation in a reachable block, exactly one task with the event facet qualified name is created (unless the step is subsequently reset)."
+    checkable_via: "property_test"
+
+  - name: "fixed_point_termination"
+    statement: "If no step can advance and no task is pending, the workflow is either COMPLETED or FAILED. The runtime must not enter an infinite loop on a fixed-point state."
+    checkable_via: "property_test"
+
+dependencies:
+  libraries:
+    - "Python 3.11+ (reference impl)"
+    - "pymongo or an equivalent persistence DAO"
+  specs:
+    - "agent-spec/ffl-language.agent-spec.yaml"
+    - "agent-spec/ffl-compiler.agent-spec.yaml"
+    - "agent-spec/runtime-distributed.agent-spec.yaml"
+    - "agent-spec/agent-sdk.agent-spec.yaml"
+
+implementation_notes: |
+  Reference implementation is in facetwork/runtime/. Key modules:
+    evaluator.py — the main iteration loop.
+    step.py, block.py — state and behavior for the core entities.
+    states.py — the state constants and transition maps.
+    changers/ — per-phase StateChanger classes (one per state group).
+    dependency.py — static dependency graph construction.
+    dispatcher.py — step-to-handler dispatch for regular facets.
+
+  An alternate runtime implementation need not preserve the
+  StateChanger class structure — it is an organizing principle of
+  the Python impl. What matters is the state machine behavior and
+  the persistence contract.
+
+human_docs:
+  - "docs/reference/runtime.md"
+  - "docs/reference/runtime-impl.md"
+  - "docs/reference/state-system.md"
+  - "docs/reference/event-system.md"
+  - "docs/reference/execution-traces.md"
+  - "facetwork/runtime/evaluator.py"
