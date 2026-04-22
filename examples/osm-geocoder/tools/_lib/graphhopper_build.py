@@ -1,29 +1,16 @@
 """GraphHopper routing-graph build library.
 
-Single source of truth for building GraphHopper routing graphs from
-cached OSM PBFs. Used by both the ``build-graphhopper-graph`` CLI tool
-and the FFL ``osm.ops.GraphHopper.BuildGraph*`` handlers — they share
-one cache layout (``<cache_root>/graphhopper/<region>-latest/<profile>/``)
-and one manifest.
-
-A built graph is a **directory** of GraphHopper binary files (nodes,
-edges, properties, geometry, ...). Each (region, profile) combination
-is its own directory; a region can have multiple profile graphs
-simultaneously.
+Directory artifacts (nodes / edges / properties / geometry / ...) live
+at ``cache/osm/graphhopper/<region>-latest/<profile>/`` with a sibling
+sidecar at ``<region>-latest/<profile>.meta.json``.
 
 Cache validity requires:
+- The source PBF's SHA-256 still matches what the sidecar recorded, AND
+- The recorded ``graphhopper_version`` matches the current constant.
 
-- The source PBF's SHA-256 still matches what the manifest recorded, AND
-- The recorded ``graphhopper_version`` matches the current version
-  constant (graphs built with GraphHopper 8.0 are not loadable by 9.0).
-
-Local-backend only — GraphHopper writes directly to a filesystem path
-via its Java ``import`` subcommand, and the built graph is a directory
-tree that the HDFS backend doesn't currently support.
-
-Requires Java 17+ and a GraphHopper 8.x ``-web.jar``. The jar path is
-discovered from (in order): ``--jar`` CLI flag → ``$GRAPHHOPPER_JAR``
-env var → ``~/.graphhopper/graphhopper-web.jar``.
+Local-backend only — the graph is a directory tree HDFS does not
+currently support. Requires Java 17+ and a GraphHopper 8.x ``-web.jar``.
+Jar resolution: ``--jar`` → ``$GRAPHHOPPER_JAR`` → ``~/.graphhopper/graphhopper-web.jar``.
 """
 
 from __future__ import annotations
@@ -38,22 +25,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from _lib.manifest import (
-    cache_dir,
-    manifest_transaction,
-    read_manifest,
-    utcnow_iso,
-)
+from _lib import sidecar
 from _lib.storage import LocalStorage
 
+NAMESPACE = "osm"
 SOURCE_CACHE_TYPE = "pbf"
 OUTPUT_CACHE_TYPE = "graphhopper"
 
-# GraphHopper version we build against. Bump when upgrading — cache
-# entries tagged with an older version become stale automatically.
 GRAPHHOPPER_VERSION = "8.0"
 
-# Supported routing profiles (mirrors what GraphHopper 8 ships with).
 PROFILES: tuple[str, ...] = (
     "car",
     "bike",
@@ -69,14 +49,10 @@ _MOTORIZED_PROFILES = {"car", "motorcycle", "truck"}
 _NON_MOTORIZED_PROFILES = {"bike", "mtb", "racingbike"}
 
 DEFAULT_JVM_MEMORY = os.environ.get("GRAPHHOPPER_XMX", "4g")
-DEFAULT_TIMEOUT_SECONDS = 3600  # 1h — large countries need it
+DEFAULT_TIMEOUT_SECONDS = 3600
 
-# In-process locks: one per (region, profile) pair to serialize
-# concurrent same-graph builds, and one module-level manifest write lock
-# to serialize concurrent manifest updates within a single process.
 _build_locks: dict[tuple[str, str], threading.Lock] = {}
 _build_locks_guard = threading.Lock()
-_manifest_write_lock = threading.Lock()
 
 
 def _build_lock(region: str, profile: str) -> threading.Lock:
@@ -91,12 +67,10 @@ def _build_lock(region: str, profile: str) -> threading.Lock:
 
 @dataclass
 class BuildResult:
-    """Outcome of a ``build_graph`` call."""
-
     region: str
     profile: str
-    graph_dir: str              # absolute path to the built graph directory
-    relative_path: str          # relative to graphhopper/ cache dir
+    graph_dir: str
+    relative_path: str
     total_size_bytes: int
     node_count: int
     edge_count: int
@@ -106,15 +80,14 @@ class BuildResult:
     was_cached: bool
     source_url: str
     source_pbf_path: str
-    manifest_entry: dict[str, Any] = field(default_factory=dict)
+    sidecar: dict[str, Any] = field(default_factory=dict)
 
 
 class BuildError(RuntimeError):
-    """Raised when graph build fails (JAR missing, import failure, unknown profile, etc.)."""
+    """Raised when graph build fails."""
 
 
 def default_jar_path() -> str:
-    """Resolve the GraphHopper jar path from env or the standard default."""
     return os.environ.get(
         "GRAPHHOPPER_JAR", os.path.expanduser("~/.graphhopper/graphhopper-web.jar")
     )
@@ -124,28 +97,27 @@ def pbf_rel_path(region: str) -> str:
     return f"{region}-latest.osm.pbf"
 
 
-def pbf_abs_path(region: str) -> Path:
-    return Path(cache_dir(SOURCE_CACHE_TYPE)) / pbf_rel_path(region)
+def pbf_abs_path(region: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, SOURCE_CACHE_TYPE, pbf_rel_path(region), s))
 
 
 def graph_rel_path(region: str, profile: str) -> str:
-    """Manifest key — <region>-latest/<profile>."""
+    """Sidecar key — ``<region>-latest/<profile>``."""
     return f"{region}-latest/{profile}"
 
 
-def graph_abs_path(region: str, profile: str) -> Path:
-    return Path(cache_dir(OUTPUT_CACHE_TYPE)) / graph_rel_path(region, profile)
+def graph_abs_path(region: str, profile: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, OUTPUT_CACHE_TYPE, graph_rel_path(region, profile), s))
 
 
-def _staging_dir(region: str, profile: str) -> Path:
-    """Stage adjacent to the final destination. Override with
-    ``AFL_OSM_CONVERT_STAGING=tmp`` for the legacy local-tmp behavior.
-    """
-    if (os.environ.get("AFL_OSM_CONVERT_STAGING") or "").lower() == "tmp":
-        base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+def _staging_dir(region: str, profile: str, storage: Any = None) -> Path:
+    if (os.environ.get("AFL_CONVERT_STAGING") or "").lower() == "tmp":
+        base = tempfile.gettempdir()
         safe = region.replace("/", "_")
         return Path(base) / "facetwork-graphhopper-staging" / safe / profile
-    out = graph_abs_path(region, profile)
+    out = graph_abs_path(region, profile, storage)
     return out.with_name(out.name + ".tmp")
 
 
@@ -178,7 +150,6 @@ def read_graph_stats(graph_dir: Path) -> GraphStats:
         return GraphStats(valid=False, node_count=0, edge_count=0)
     properties = graph_dir / "properties"
     if not properties.exists():
-        # Graph files exist but properties missing — still loadable, just no stats.
         return GraphStats(valid=True, node_count=0, edge_count=0)
     node_count = 0
     edge_count = 0
@@ -197,19 +168,24 @@ def read_graph_stats(graph_dir: Path) -> GraphStats:
 
 
 def is_up_to_date(
-    region: str, profile: str, pbf_entry: dict, graph_dir: Path
+    region: str,
+    profile: str,
+    pbf_side: dict,
+    graph_dir: Path,
+    storage: Any = None,
 ) -> bool:
-    """True if the cached graph still matches the source PBF SHA and GraphHopper version."""
+    """True if cached graph matches source PBF SHA and GraphHopper version."""
     if profile not in PROFILES:
         return False
-    cache_manifest = read_manifest(OUTPUT_CACHE_TYPE)
+    s = storage or LocalStorage()
     rel = graph_rel_path(region, profile)
-    existing = cache_manifest.get("entries", {}).get(rel)
+    existing = sidecar.read_sidecar(NAMESPACE, OUTPUT_CACHE_TYPE, rel, s)
     if not existing:
         return False
-    if existing.get("source", {}).get("sha256") != pbf_entry.get("sha256"):
+    if existing.get("source", {}).get("sha256") != pbf_side.get("sha256"):
         return False
-    if existing.get("graphhopper_version") != GRAPHHOPPER_VERSION:
+    extra = existing.get("extra") or {}
+    if extra.get("graphhopper_version") != GRAPHHOPPER_VERSION:
         return False
     if not _graph_exists(graph_dir):
         return False
@@ -217,7 +193,6 @@ def is_up_to_date(
 
 
 def _build_config_yaml(osm_path: Path, graph_dir: Path, profile: str) -> str:
-    """Generate the GraphHopper 8.0 config YAML for an import run."""
     if profile in _MOTORIZED_PROFILES:
         ignored = "footway,cycleway,path,pedestrian,steps"
     elif profile in _NON_MOTORIZED_PROFILES:
@@ -246,7 +221,6 @@ def _run_import(
     jvm_memory: str,
     timeout_seconds: int,
 ) -> None:
-    """Run GraphHopper's import subcommand, raising BuildError on failure."""
     if not Path(jar_path).is_file():
         raise BuildError(
             f"GraphHopper jar not found: {jar_path!r}. "
@@ -289,7 +263,6 @@ def _run_import(
                 "java not found on PATH. Install a JDK 17+ runtime."
             ) from exc
         if result.returncode != 0:
-            # Tail the stderr so the caller sees the actual failure reason.
             stderr_tail = (result.stderr or "").splitlines()[-20:]
             raise BuildError(
                 "GraphHopper import failed (exit "
@@ -311,44 +284,41 @@ def build_graph(
     jar_path: str | None = None,
     jvm_memory: str = DEFAULT_JVM_MEMORY,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    storage: Any = None,
 ) -> BuildResult:
-    """Build or fetch a cached GraphHopper routing graph.
-
-    Thread-safe per (region, profile). Concurrent calls for the same
-    (region, profile) serialize; different pairs run independently.
-    """
+    """Build or fetch a cached GraphHopper routing graph."""
     if profile not in PROFILES:
         raise BuildError(
             f"unknown profile: {profile!r}. Valid: {', '.join(PROFILES)}"
         )
+    s = storage or LocalStorage()
 
-    pbf_manifest = read_manifest(SOURCE_CACHE_TYPE)
     pbf_rel = pbf_rel_path(region)
-    pbf_entry = pbf_manifest.get("entries", {}).get(pbf_rel)
-    if not pbf_entry:
+    pbf_side = sidecar.read_sidecar(NAMESPACE, SOURCE_CACHE_TYPE, pbf_rel, s)
+    if not pbf_side:
         raise BuildError(
-            f"no pbf manifest entry for {region!r}; run download-pbf first"
+            f"no pbf sidecar for {region!r}; run download-pbf first"
         )
-    src_pbf = pbf_abs_path(region)
+    src_pbf = pbf_abs_path(region, s)
     if not src_pbf.exists():
         raise BuildError(f"pbf file missing on disk: {src_pbf}")
-    source_url = pbf_entry.get("source_url", "")
+    source_url = pbf_side.get("source", {}).get("url", "")
 
     jar = jar_path or default_jar_path()
 
     with _build_lock(region, profile):
-        graph_dir = graph_abs_path(region, profile)
+        graph_dir = graph_abs_path(region, profile, s)
         rel = graph_rel_path(region, profile)
 
-        if not force and is_up_to_date(region, profile, pbf_entry, graph_dir):
+        if not force and is_up_to_date(region, profile, pbf_side, graph_dir, s):
             stats = read_graph_stats(graph_dir)
-            existing = read_manifest(OUTPUT_CACHE_TYPE).get("entries", {}).get(rel, {})
+            existing = sidecar.read_sidecar(NAMESPACE, OUTPUT_CACHE_TYPE, rel, s) or {}
             return BuildResult(
                 region=region,
                 profile=profile,
                 graph_dir=str(graph_dir),
                 relative_path=rel + "/",
-                total_size_bytes=existing.get("total_size_bytes", _dir_size(graph_dir)),
+                total_size_bytes=existing.get("size_bytes", _dir_size(graph_dir)),
                 node_count=stats.node_count,
                 edge_count=stats.edge_count,
                 graphhopper_version=GRAPHHOPPER_VERSION,
@@ -357,13 +327,10 @@ def build_graph(
                 was_cached=True,
                 source_url=source_url,
                 source_pbf_path=str(src_pbf),
-                manifest_entry=existing,
+                sidecar=existing,
             )
 
-        # Stage the build into a local temp dir, then finalize to the
-        # final location. Keeps partial builds out of the destination
-        # tree if the subprocess crashes.
-        staging = _staging_dir(region, profile)
+        staging = _staging_dir(region, profile, s)
         if staging.exists():
             shutil.rmtree(staging)
         staging.mkdir(parents=True, exist_ok=True)
@@ -390,39 +357,46 @@ def build_graph(
                 f"GraphHopper produced no valid graph for {region}/{profile}"
             )
 
-        storage = LocalStorage()
-        storage.finalize_dir_from_local(str(staging), str(graph_dir))
+        s.finalize_dir_from_local(str(staging), str(graph_dir))
         total_size = _dir_size(graph_dir)
 
-        generated_at = utcnow_iso()
-        entry = {
-            "relative_path": rel + "/",
-            "region": region,
-            "profile": profile,
-            "graphhopper_version": GRAPHHOPPER_VERSION,
-            "total_size_bytes": total_size,
-            "node_count": stats.node_count,
-            "edge_count": stats.edge_count,
-            "generated_at": generated_at,
-            "duration_seconds": round(elapsed, 2),
-            "source": {
+        generated_at = sidecar.utcnow_iso()
+        # Primary payload sha256: use the sha of the nodes file (stable across builds).
+        primary_sha = _sha256_file(graph_dir / "nodes") if (graph_dir / "nodes").exists() else ""
+
+        side = sidecar.write_sidecar(
+            NAMESPACE,
+            OUTPUT_CACHE_TYPE,
+            rel,
+            kind="directory",
+            size_bytes=total_size,
+            sha256=primary_sha,
+            source={
+                "namespace": NAMESPACE,
                 "cache_type": SOURCE_CACHE_TYPE,
                 "relative_path": pbf_rel,
-                "sha256": pbf_entry.get("sha256"),
-                "size_bytes": pbf_entry.get("size_bytes"),
-                "source_checksum": pbf_entry.get("source_checksum"),
-                "source_timestamp": pbf_entry.get("source_timestamp"),
-                "downloaded_at": pbf_entry.get("downloaded_at"),
+                "sha256": pbf_side.get("sha256"),
+                "size_bytes": pbf_side.get("size_bytes"),
+                "source_checksum": pbf_side.get("source", {}).get("source_checksum"),
+                "source_timestamp": pbf_side.get("source", {}).get("source_timestamp"),
+                "downloaded_at": pbf_side.get("source", {}).get("downloaded_at"),
             },
-            "tool": {
+            tool={
                 "command": "java -jar graphhopper-web.jar import",
                 "jar_path": jar,
                 "jvm_memory": jvm_memory,
             },
-            "extra": {},
-        }
-        with _manifest_write_lock, manifest_transaction(OUTPUT_CACHE_TYPE) as manifest:
-            manifest.setdefault("entries", {})[rel] = entry
+            extra={
+                "region": region,
+                "profile": profile,
+                "graphhopper_version": GRAPHHOPPER_VERSION,
+                "node_count": stats.node_count,
+                "edge_count": stats.edge_count,
+                "duration_seconds": round(elapsed, 2),
+            },
+            generated_at=generated_at,
+            storage=s,
+        )
 
         return BuildResult(
             region=region,
@@ -438,8 +412,17 @@ def build_graph(
             was_cached=False,
             source_url=source_url,
             source_pbf_path=str(src_pbf),
-            manifest_entry=entry,
+            sidecar=side,
         )
+
+
+def _sha256_file(path: Path) -> str:
+    import hashlib
+    sha = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            sha.update(chunk)
+    return sha.hexdigest()
 
 
 def clean_graph(graph_dir: str) -> bool:

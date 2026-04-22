@@ -4,30 +4,26 @@ Produces one pre-filtered GeoJSON cache per *category* (water, parks,
 forests, etc.) so downstream consumers read a small, already-filtered
 file instead of re-parsing the full PBF every time.
 
-Each category has its own cache subdirectory under ``$AFL_OSM_CACHE_ROOT``,
-its own ``manifest.json``, and the same Geofabrik path mirroring the
-``pbf/`` and ``geojson/`` caches use. See the ``CATEGORIES`` registry
-below for what's defined; new categories are a single dict entry.
+Each category is its own cache_type under the ``osm`` namespace. Cache
+paths mirror the Geofabrik hierarchy of the source PBF::
 
-Extraction runs in two osmium passes, piped through a local staging dir:
+    cache/osm/water/north-america/us/california-latest.geojsonseq
+    cache/osm/water/north-america/us/california-latest.geojsonseq.meta.json
+
+Two osmium passes with a local staging dir:
 
 1. ``osmium tags-filter`` — produces a filtered ``.osm.pbf`` with only
-   entities matching the category's tag expression, plus the nodes/ways
-   those entities reference so geometries remain assemblable.
+   entities matching the category's tag expression, plus referenced
+   nodes/ways for geometry assembly.
 2. ``osmium export -f geojsonseq`` — converts the filtered PBF to
-   streaming GeoJSON. Multipolygon relations assemble into proper
+   streaming GeoJSON. Multipolygon relations assemble into
    ``MultiPolygon`` geometries.
-
-After MD5/SHA of the output, the staged file is moved to its final
-location via the storage abstraction (``storage.finalize_from_local``).
 
 Cache validity requires:
 
-- The source PBF's SHA-256 still matches what the category's manifest
-  entry recorded, AND
+- The source PBF's SHA-256 still matches what the sidecar recorded, AND
 - The category definition's ``filter_version`` still matches. Bumping
-  ``filter_version`` on a registry change is how we invalidate all
-  cache entries for that category without forcing every extract.
+  ``filter_version`` invalidates all cache entries for that category.
 """
 
 from __future__ import annotations
@@ -43,14 +39,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from _lib.manifest import (
-    cache_dir,
-    manifest_transaction,
-    read_manifest,
-    utcnow_iso,
-)
+from _lib import sidecar
 from _lib.storage import LocalStorage
 
+NAMESPACE = "osm"
 SOURCE_CACHE_TYPE = "pbf"
 DEFAULT_FORMAT = "geojsonseq"
 CHUNK_SIZE = 1024 * 1024
@@ -60,18 +52,12 @@ CHUNK_SIZE = 1024 * 1024
 class CategoryDef:
     """Definition of an extractable feature category.
 
-    - ``name``: cache subdirectory name, CLI identifier, manifest key.
-    - ``facet_name``: FFL event facet name exposed in ``osm.ops`` (e.g.
-      ``ExtractWater``).
+    - ``name``: cache_type identifier, CLI identifier, FFL reference.
+    - ``facet_name``: FFL event facet name (e.g. ``ExtractWater``).
     - ``return_param``: FFL return parameter name (e.g. ``water``).
-    - ``description``: one-line summary surfaced in ``--help`` / FFL docs.
-    - ``filter_expression``: osmium ``tags-filter`` argument list, as a
-      single string (space-separated specs). Each spec is
-      ``<type>/<tag>`` where ``<type>`` is ``n``, ``w``, ``r``, or a
-      combination (``nwr``), and ``<tag>`` is either ``KEY`` (any value)
-      or ``KEY=VAL1,VAL2``.
-    - ``filter_version``: bump when the expression changes to invalidate
-      existing cache entries without forcing unchanged categories.
+    - ``description``: one-line summary.
+    - ``filter_expression``: osmium ``tags-filter`` argument list.
+    - ``filter_version``: bump to invalidate existing entries.
     """
 
     name: str
@@ -99,9 +85,7 @@ CATEGORIES: dict[str, CategoryDef] = {
         name="protected_areas",
         facet_name="ExtractProtectedAreas",
         return_param="protectedAreas",
-        description=(
-            "National parks, state parks, wilderness areas, nature reserves."
-        ),
+        description="National parks, state parks, wilderness areas, nature reserves.",
         filter_expression=(
             "r/boundary=national_park,protected_area "
             "nwr/leisure=nature_reserve"
@@ -113,8 +97,7 @@ CATEGORIES: dict[str, CategoryDef] = {
         facet_name="ExtractParks",
         return_param="parks",
         description=(
-            "City-level parks, playgrounds, sports pitches, stadiums, "
-            "gardens — recreation rather than protected wildlands."
+            "City-level parks, playgrounds, sports pitches, stadiums, gardens."
         ),
         filter_expression=(
             "nwr/leisure=park,playground,pitch,sports_centre,stadium,garden"
@@ -135,8 +118,7 @@ CATEGORIES: dict[str, CategoryDef] = {
         return_param="roadsRoutable",
         description=(
             "Full road network for routing — every highway=* way plus "
-            "tagged junction/crossing nodes. Preserves all routing "
-            "attributes (oneway, maxspeed, access, surface, etc.)."
+            "tagged junction/crossing nodes."
         ),
         filter_expression="nwr/highway",
         filter_version=1,
@@ -145,11 +127,7 @@ CATEGORIES: dict[str, CategoryDef] = {
         name="turn_restrictions",
         facet_name="ExtractTurnRestrictions",
         return_param="turnRestrictions",
-        description=(
-            "OSM turn-restriction relations (type=restriction). Only "
-            "meaningful paired with the road network — routing engines "
-            "consume both."
-        ),
+        description="OSM turn-restriction relations (type=restriction).",
         filter_expression="r/type=restriction",
         filter_version=1,
     ),
@@ -158,9 +136,8 @@ CATEGORIES: dict[str, CategoryDef] = {
         facet_name="ExtractRailwaysRoutable",
         return_param="railwaysRoutable",
         description=(
-            "Active rail network for multimodal routing: heavy rail, "
-            "light rail, subway, tram, narrow gauge, funicular, monorail. "
-            "Abandoned/disused rail is excluded."
+            "Active rail network: heavy rail, light rail, subway, tram, "
+            "narrow gauge, funicular, monorail."
         ),
         filter_expression=(
             "nwr/railway=rail,light_rail,subway,tram,"
@@ -184,19 +161,11 @@ CATEGORIES: dict[str, CategoryDef] = {
         filter_expression="r/route=hiking,foot",
         filter_version=1,
     ),
-    # --- POI / amenity categories ------------------------------------------
-    # These split the broad OSM amenity/shop/tourism/leisure space into
-    # purpose-oriented buckets so renderers and analyses can treat each
-    # as its own layer. Sub-typing (e.g. cuisine, shop type) happens at
-    # render time via tag filters — not a separate extract per sub-type.
     "food": CategoryDef(
         name="food",
         facet_name="ExtractFood",
         return_param="food",
-        description=(
-            "Restaurants, cafes, bars, pubs, fast food, biergartens, "
-            "food courts, ice-cream parlours."
-        ),
+        description="Restaurants, cafes, bars, pubs, fast food, biergartens, food courts, ice-cream parlours.",
         filter_expression=(
             "nwr/amenity=restaurant,cafe,bar,pub,fast_food,biergarten,"
             "food_court,ice_cream"
@@ -252,8 +221,7 @@ CATEGORIES: dict[str, CategoryDef] = {
         return_param="publicTransport",
         description=(
             "Bus stops, tram stops, train/subway stations, ferry terminals, "
-            "platform/stop_position nodes — the 'public_transport=*' schema "
-            "plus transport-specific amenity/highway/railway keys."
+            "platform/stop_position nodes."
         ),
         filter_expression=(
             "nwr/public_transport "
@@ -269,8 +237,7 @@ CATEGORIES: dict[str, CategoryDef] = {
         return_param="culture",
         description=(
             "Museums, galleries, artworks, attractions, viewpoints, arts "
-            "centres, theatres, planetariums, and all 'historic=*' features "
-            "(monuments, memorials, ruins, archaeological sites)."
+            "centres, theatres, planetariums, and all 'historic=*' features."
         ),
         filter_expression=(
             "nwr/tourism=museum,gallery,artwork,attraction,viewpoint "
@@ -284,8 +251,7 @@ CATEGORIES: dict[str, CategoryDef] = {
         facet_name="ExtractReligion",
         return_param="religion",
         description=(
-            "Places of worship — churches, mosques, temples, synagogues, "
-            "etc. Denomination / religion encoded in tags."
+            "Places of worship — churches, mosques, temples, synagogues, etc."
         ),
         filter_expression="nwr/amenity=place_of_worship",
         filter_version=1,
@@ -308,10 +274,7 @@ CATEGORIES: dict[str, CategoryDef] = {
         name="shopping",
         facet_name="ExtractShopping",
         return_param="shopping",
-        description=(
-            "All retail — 'shop=*' for any value (supermarket, bakery, "
-            "clothes, hardware, etc.). Sub-type via shop tag at render time."
-        ),
+        description="All retail — 'shop=*' for any value.",
         filter_expression="nwr/shop",
         filter_version=1,
     ),
@@ -373,10 +336,7 @@ CATEGORIES: dict[str, CategoryDef] = {
         name="toilets",
         facet_name="ExtractToilets",
         return_param="toilets",
-        description=(
-            "Public toilets, showers, drinking-water fountains — "
-            "the 'where do I find facilities' layer."
-        ),
+        description="Public toilets, showers, drinking-water fountains.",
         filter_expression="nwr/amenity=toilets,shower,drinking_water",
         filter_version=1,
     ),
@@ -386,8 +346,7 @@ CATEGORIES: dict[str, CategoryDef] = {
         return_param="emergency",
         description=(
             "Fire stations, police stations, and everything tagged with "
-            "the 'emergency=*' namespace (fire hydrants, defibrillators, "
-            "emergency phones, assembly points)."
+            "the 'emergency=*' namespace."
         ),
         filter_expression=(
             "nwr/emergency "
@@ -398,17 +357,8 @@ CATEGORIES: dict[str, CategoryDef] = {
 }
 
 
-# Per-(region, category) locks so concurrent extract calls for the same
-# region+category serialize. Different (region, category) pairs run in
-# parallel unhindered.
 _extract_locks: dict[tuple[str, str], threading.Lock] = {}
 _extract_locks_guard = threading.Lock()
-
-# Per-category manifest write locks, so concurrent extracts that target
-# the same manifest serialize across threads. (fcntl.flock handles
-# cross-process; this handles in-process.)
-_manifest_locks: dict[str, threading.Lock] = {}
-_manifest_locks_guard = threading.Lock()
 
 
 def _extract_lock(region: str, category: str) -> threading.Lock:
@@ -421,23 +371,12 @@ def _extract_lock(region: str, category: str) -> threading.Lock:
         return lock
 
 
-def _manifest_lock(category: str) -> threading.Lock:
-    with _manifest_locks_guard:
-        lock = _manifest_locks.get(category)
-        if lock is None:
-            lock = threading.Lock()
-            _manifest_locks[category] = lock
-        return lock
-
-
 @dataclass
 class ExtractResult:
-    """Outcome of an ``extract_region`` call."""
-
     region: str
     category: str
-    path: str                   # absolute path to the extracted GeoJSON
-    relative_path: str          # relative to the category cache dir
+    path: str
+    relative_path: str
     size_bytes: int
     sha256: str
     feature_count: int
@@ -447,41 +386,37 @@ class ExtractResult:
     was_cached: bool
     source_url: str
     source_pbf_path: str
-    manifest_entry: dict[str, Any] = field(default_factory=dict)
+    sidecar: dict[str, Any] = field(default_factory=dict)
 
 
 class ExtractionError(RuntimeError):
-    """Raised when extraction fails (osmium failure, missing PBF, unknown category, etc.)."""
+    """Raised when extraction fails."""
 
 
 def pbf_rel_path(region: str) -> str:
     return f"{region}-latest.osm.pbf"
 
 
-def pbf_abs_path(region: str) -> Path:
-    return Path(cache_dir(SOURCE_CACHE_TYPE)) / pbf_rel_path(region)
+def pbf_abs_path(region: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, SOURCE_CACHE_TYPE, pbf_rel_path(region), s))
 
 
 def extract_rel_path(region: str) -> str:
     return f"{region}-latest.{DEFAULT_FORMAT}"
 
 
-def extract_abs_path(region: str, category: str) -> Path:
-    return Path(cache_dir(category)) / extract_rel_path(region)
+def extract_abs_path(region: str, category: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, category, extract_rel_path(region), s))
 
 
-def _staging_dir(region: str, category: str) -> Path:
-    """Stage adjacent to the final destination. Two intermediate files
-    land here during extraction (filtered.osm.pbf + the exported
-    geojsonseq); both get cleaned up after the geojsonseq is finalized
-    into the destination directory. Override with
-    ``AFL_OSM_CONVERT_STAGING=tmp`` to fall back to local tmp.
-    """
-    if (os.environ.get("AFL_OSM_CONVERT_STAGING") or "").lower() == "tmp":
-        base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+def _staging_dir(region: str, category: str, storage: Any = None) -> Path:
+    if (os.environ.get("AFL_CONVERT_STAGING") or "").lower() == "tmp":
+        base = tempfile.gettempdir()
         safe = region.replace("/", "_")
         return Path(base) / "facetwork-extract-staging" / category / safe
-    out = extract_abs_path(region, category)
+    out = extract_abs_path(region, category, storage)
     return out.with_name(out.name + ".staging")
 
 
@@ -514,11 +449,9 @@ def _sha256_file(path: Path) -> tuple[int, str]:
 
 
 def _count_features_geojsonseq(path: Path) -> int:
-    """Count features in a GeoJSONSeq file — one per non-empty line."""
     count = 0
     with path.open("rb") as f:
         for line in f:
-            # GeoJSONSeq may use the record-separator (0x1E) prefix.
             if line.strip(b"\x1e \t\r\n"):
                 count += 1
     return count
@@ -527,20 +460,22 @@ def _count_features_geojsonseq(path: Path) -> int:
 def is_up_to_date(
     region: str,
     category: str,
-    pbf_entry: dict,
+    pbf_side: dict,
     out_abs: Path,
+    storage: Any = None,
 ) -> bool:
-    """True if the cached extract still reflects both the source PBF SHA
-    and the category's current filter_version."""
+    """True if the cached extract reflects both source PBF SHA and filter_version."""
+    s = storage or LocalStorage()
     cat = CATEGORIES[category]
-    cache_manifest = read_manifest(category)
     out_rel = extract_rel_path(region)
-    existing = cache_manifest.get("entries", {}).get(out_rel)
+    existing = sidecar.read_sidecar(NAMESPACE, category, out_rel, s)
     if not existing:
         return False
-    if existing.get("source", {}).get("sha256") != pbf_entry.get("sha256"):
+    if existing.get("source", {}).get("sha256") != pbf_side.get("sha256"):
         return False
-    if existing.get("filter", {}).get("version") != cat.filter_version:
+    extra = existing.get("extra") or {}
+    filt = extra.get("filter") or {}
+    if filt.get("version") != cat.filter_version:
         return False
     if not out_abs.exists():
         return False
@@ -553,6 +488,7 @@ def extract_region(
     *,
     force: bool = False,
     osmium_bin: str = "osmium",
+    storage: Any = None,
 ) -> ExtractResult:
     """Extract one category's features from a region's cached PBF."""
     if category not in CATEGORIES:
@@ -561,25 +497,26 @@ def extract_region(
             f"Valid: {', '.join(sorted(CATEGORIES))}"
         )
     cat = CATEGORIES[category]
+    s = storage or LocalStorage()
 
-    pbf_manifest = read_manifest(SOURCE_CACHE_TYPE)
     pbf_rel = pbf_rel_path(region)
-    pbf_entry = pbf_manifest.get("entries", {}).get(pbf_rel)
-    if not pbf_entry:
+    pbf_side = sidecar.read_sidecar(NAMESPACE, SOURCE_CACHE_TYPE, pbf_rel, s)
+    if not pbf_side:
         raise ExtractionError(
-            f"no pbf manifest entry for {region!r}; run download-pbf first"
+            f"no pbf sidecar for {region!r}; run download-pbf first"
         )
-    src_pbf = pbf_abs_path(region)
+    src_pbf = pbf_abs_path(region, s)
     if not src_pbf.exists():
         raise ExtractionError(f"pbf file missing on disk: {src_pbf}")
-    source_url = pbf_entry.get("source_url", "")
+    source_url = pbf_side.get("source", {}).get("url", "")
 
     with _extract_lock(region, category):
-        out_abs = extract_abs_path(region, category)
+        out_abs = extract_abs_path(region, category, s)
         out_rel = extract_rel_path(region)
 
-        if not force and is_up_to_date(region, category, pbf_entry, out_abs):
-            existing = read_manifest(category).get("entries", {}).get(out_rel, {})
+        if not force and is_up_to_date(region, category, pbf_side, out_abs, s):
+            existing = sidecar.read_sidecar(NAMESPACE, category, out_rel, s) or {}
+            extra = existing.get("extra") or {}
             return ExtractResult(
                 region=region,
                 category=category,
@@ -587,18 +524,18 @@ def extract_region(
                 relative_path=out_rel,
                 size_bytes=existing.get("size_bytes", out_abs.stat().st_size),
                 sha256=existing.get("sha256", ""),
-                feature_count=existing.get("feature_count", 0),
+                feature_count=extra.get("feature_count", 0),
                 filter_version=cat.filter_version,
                 generated_at=existing.get("generated_at", ""),
                 duration_seconds=0.0,
                 was_cached=True,
                 source_url=source_url,
                 source_pbf_path=str(src_pbf),
-                manifest_entry=existing,
+                sidecar=existing,
             )
 
         out_abs.parent.mkdir(parents=True, exist_ok=True)
-        staging = _staging_dir(region, category)
+        staging = _staging_dir(region, category, s)
         if staging.exists():
             shutil.rmtree(staging)
         staging.mkdir(parents=True, exist_ok=True)
@@ -608,7 +545,6 @@ def extract_region(
 
         start = time.monotonic()
         try:
-            # Step 1: tag filter into a compact PBF.
             filter_cmd = [
                 osmium_bin,
                 "tags-filter",
@@ -620,7 +556,6 @@ def extract_region(
             ]
             subprocess.run(filter_cmd, check=True, capture_output=True, text=True)
 
-            # Step 2: export filtered PBF to GeoJSONSeq.
             export_cmd = [
                 osmium_bin,
                 "export",
@@ -644,45 +579,46 @@ def extract_region(
         size, sha256_hex = _sha256_file(extract_out)
         feature_count = _count_features_geojsonseq(extract_out)
 
-        # Finalize only the GeoJSONSeq; clean up the intermediate filtered PBF.
-        storage = LocalStorage()
-        storage.finalize_from_local(str(extract_out), str(out_abs))
-        # The finalize removes the staging file, but the filtered.osm.pbf and
-        # the staging dir itself remain. Clean them up.
+        s.finalize_from_local(str(extract_out), str(out_abs))
         shutil.rmtree(staging, ignore_errors=True)
 
-        generated_at = utcnow_iso()
-        entry = {
-            "relative_path": out_rel,
-            "category": category,
-            "format": DEFAULT_FORMAT,
-            "size_bytes": size,
-            "sha256": sha256_hex,
-            "feature_count": feature_count,
-            "generated_at": generated_at,
-            "duration_seconds": round(elapsed, 2),
-            "filter": {
-                "kind": "osmium-tags-filter",
-                "expression": cat.filter_expression,
-                "version": cat.filter_version,
-            },
-            "source": {
+        generated_at = sidecar.utcnow_iso()
+        side = sidecar.write_sidecar(
+            NAMESPACE,
+            category,
+            out_rel,
+            kind="file",
+            size_bytes=size,
+            sha256=sha256_hex,
+            source={
+                "namespace": NAMESPACE,
                 "cache_type": SOURCE_CACHE_TYPE,
                 "relative_path": pbf_rel,
-                "sha256": pbf_entry.get("sha256"),
-                "size_bytes": pbf_entry.get("size_bytes"),
-                "source_checksum": pbf_entry.get("source_checksum"),
-                "source_timestamp": pbf_entry.get("source_timestamp"),
-                "downloaded_at": pbf_entry.get("downloaded_at"),
+                "sha256": pbf_side.get("sha256"),
+                "size_bytes": pbf_side.get("size_bytes"),
+                "source_checksum": pbf_side.get("source", {}).get("source_checksum"),
+                "source_timestamp": pbf_side.get("source", {}).get("source_timestamp"),
+                "downloaded_at": pbf_side.get("source", {}).get("downloaded_at"),
             },
-            "tool": {
+            tool={
                 "command": "osmium tags-filter | osmium export",
                 "osmium_version": _osmium_version(osmium_bin),
             },
-            "extra": {"region": region},
-        }
-        with _manifest_lock(category), manifest_transaction(category) as manifest:
-            manifest.setdefault("entries", {})[out_rel] = entry
+            extra={
+                "region": region,
+                "category": category,
+                "format": DEFAULT_FORMAT,
+                "feature_count": feature_count,
+                "filter": {
+                    "kind": "osmium-tags-filter",
+                    "expression": cat.filter_expression,
+                    "version": cat.filter_version,
+                },
+                "duration_seconds": round(elapsed, 2),
+            },
+            generated_at=generated_at,
+            storage=s,
+        )
 
         return ExtractResult(
             region=region,
@@ -698,7 +634,7 @@ def extract_region(
             was_cached=False,
             source_url=source_url,
             source_pbf_path=str(src_pbf),
-            manifest_entry=entry,
+            sidecar=side,
         )
 
 

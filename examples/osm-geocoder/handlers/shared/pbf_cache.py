@@ -8,9 +8,10 @@ is shared verbatim by:
   handlers (this package).
 
 Both entry points call ``download_region`` here, so they end up reading
-and writing the same on-disk PBF cache (``$AFL_OSM_CACHE_ROOT/pbf/...``)
-and the same ``manifest.json`` — the tool and the FFL are two surfaces
-onto one cache.
+and writing the same on-disk PBF cache
+(``$AFL_DATA_ROOT/cache/osm/pbf/...``) and the same per-entry
+``.meta.json`` sidecars — the tool and the FFL are two surfaces onto one
+cache.
 
 This module performs a one-time ``sys.path`` adjustment so handlers can
 import the library with a natural ``from ..shared.pbf_cache import ...``
@@ -33,6 +34,7 @@ from _lib.pbf_download import (  # noqa: E402,F401
     download_region,
     is_region_cached,
     manifest_entry_for,
+    sidecar_entry_for,
     to_osm_cache,
 )
 from _lib.storage import LocalStorage, Storage, get_storage  # noqa: E402,F401

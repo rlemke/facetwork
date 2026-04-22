@@ -25,11 +25,12 @@
 # as often as you like — CPU time maps to actual work.
 #
 # Environment overrides:
-#   AFL_OSM_CACHE_ROOT     cache root (default /Volumes/afl_data/osm)
-#   AFL_OSM_STORAGE        backend (default local)
-#   AFL_OSM_LOCAL_TMP_DIR  staging dir (default \$TMPDIR)
-#   UPDATE_ALL_SKIP        space-separated list of step names to skip
-#                          (e.g. UPDATE_ALL_SKIP="gtfs osrm valhalla")
+#   AFL_DATA_ROOT        data root (default /Volumes/afl_data for local)
+#   AFL_CACHE_ROOT       cache root (default $AFL_DATA_ROOT/cache)
+#   AFL_STAGING_ROOT     staging root (default $AFL_DATA_ROOT/staging)
+#   AFL_STORAGE          backend (default local)
+#   UPDATE_ALL_SKIP      space-separated list of step names to skip
+#                        (e.g. UPDATE_ALL_SKIP="gtfs osrm valhalla")
 #   UPDATE_ALL_STOP_ON_FAIL=1   stop at first failure (default: continue)
 
 set -uo pipefail

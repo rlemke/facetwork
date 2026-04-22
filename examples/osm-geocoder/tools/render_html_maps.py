@@ -51,13 +51,14 @@ from _lib.html_render import (  # noqa: E402
     write_master_index,
     _discover_sources,
 )
-from _lib.manifest import read_manifest  # noqa: E402
+from _lib import sidecar  # noqa: E402
 from _lib.pbf_download import (  # noqa: E402
     filter_leaves,
-    regions_from_pbf_manifest,
+    regions_from_pbf_cache,
 )
 
 DEFAULT_JOBS = 4
+NAMESPACE = "osm"
 VECTOR_CACHE_TYPE = "vector_tiles"
 
 
@@ -73,10 +74,9 @@ def _read_regions_file(path: Path) -> list[str]:
 
 def _regions_with_tiles(prefix: str | None = None) -> list[str]:
     """Return regions that have at least one PMTiles entry in vector_tiles."""
-    vt = read_manifest(VECTOR_CACHE_TYPE).get("entries", {})
     regions: set[str] = set()
-    for rel in vt:
-        # rel looks like "<region>-latest/<source>.pmtiles"
+    for entry in sidecar.list_entries(NAMESPACE, VECTOR_CACHE_TYPE):
+        rel = entry.get("relative_path", "")
         if "-latest/" not in rel:
             continue
         base = rel.split("-latest/")[0]

@@ -9,11 +9,11 @@ tool processes regions sequentially with a configurable delay between
 files. Each file is verified against Geofabrik's published ``.md5``
 before being promoted into the cache.
 
-Backends (``--backend`` / ``AFL_OSM_STORAGE``):
+Backends (``--backend`` / ``AFL_STORAGE``):
 
 - ``local`` (default): standard POSIX filesystem cache, atomic temp+rename.
 - ``hdfs``: writes into HDFS via WebHDFS. HDFS has no advisory locking, so
-  the manifest assumes single-writer semantics — run the tool from one
+  sidecars assume single-writer semantics — run the tool from one
   coordinator process when using the HDFS backend.
 
 Usage::
@@ -27,8 +27,8 @@ Usage::
 Regions are Geofabrik paths relative to ``https://download.geofabrik.de/``,
 *without* the ``-latest.osm.pbf`` suffix.
 
-Cache root: ``$AFL_OSM_CACHE_ROOT`` (defaults to ``/Volumes/afl_data/osm``
-for local, ``/user/afl/osm`` for hdfs).
+Data root: ``$AFL_DATA_ROOT`` (defaults to ``/Volumes/afl_data`` for
+local, ``/user/afl`` for hdfs). PBFs cache under ``<data_root>/cache/osm/pbf/``.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ from _lib.pbf_download import (  # noqa: E402
     download_region,
     filter_leaves,
     is_region_cached,
-    regions_from_pbf_manifest,
+    regions_from_pbf_cache,
     staging_path,
 )
 from _lib.storage import default_backend, get_storage  # noqa: E402
@@ -234,7 +234,7 @@ def main() -> int:
         choices=("local", "hdfs"),
         default=default_backend(),
         help="Storage backend for the cache "
-        "(default: $AFL_OSM_STORAGE or 'local'). HDFS assumes single-writer "
+        "(default: $AFL_STORAGE or 'local'). HDFS assumes single-writer "
         "semantics (no advisory locking).",
     )
     args = parser.parse_args()
@@ -265,7 +265,7 @@ def main() -> int:
         regions.extend(resolved)
 
     if args.update_all:
-        from_manifest = regions_from_pbf_manifest(storage=storage)
+        from_manifest = regions_from_pbf_cache(storage=storage)
         print(
             f"pbf manifest: {len(from_manifest)} cached region(s) to refresh",
             file=sys.stderr,

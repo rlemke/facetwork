@@ -1,24 +1,22 @@
 """Clip a cached Geofabrik PBF to a bbox or polygon via ``osmium extract``.
 
-Produces a new, smaller PBF that lands in the **same** ``pbf/`` cache
-the download tool writes to — just under a ``clips/`` subdirectory.
-That means every downstream tool (``convert-pbf-geojson``,
-``convert-pbf-shapefile``, ``extract``, ``build-graphhopper-graph``,
-``build-valhalla-tiles``, etc.) treats a clip as a regular region
-called ``clips/<name>`` with zero code changes.
+Clips live in their own sibling cache_type ``pbf-clips`` (not nested
+under ``pbf/``) so every cache_type root stays pure — see
+``agent-spec/cache-layout.agent-spec.yaml``. The clip's region key is
+``<name>`` (flat, not hierarchical), but the relative_path on disk is
+``<name>-latest.osm.pbf`` so the artifact reads like any other PBF.
 
-Cache validity for a clip requires:
+Downstream tools (pbf_geojson, pbf_extract, graphhopper_build, …) read
+clipped PBFs via ``clipped_path(name)`` or by constructing the sidecar
+path directly. They do not inherit a clip-as-region convention from
+``pbf/``; clips are a distinct namespace-local cache_type.
 
-- Source PBF's SHA-256 still matches what the clip's entry recorded, AND
+Cache validity requires:
+
+- Source PBF's SHA-256 still matches what the clip's sidecar recorded, AND
 - The clip spec (bbox or polygon content) still matches.
 
-Bumping either triggers a re-clip. The output manifest entry is
-written into ``pbf/manifest.json`` alongside the Geofabrik-sourced
-entries and follows the same shape (``relative_path``, ``sha256``,
-``size_bytes``, ``downloaded_at``), plus a ``clip`` sub-object with the
-source-region pointer, clip spec, and filter-version. Downstream
-tools that only consume the standard fields work unchanged; tools
-that want to know "is this a clip?" check for the ``clip`` key.
+Bumping either triggers a re-clip.
 """
 
 from __future__ import annotations
@@ -34,22 +32,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from _lib.manifest import (
-    cache_dir,
-    manifest_transaction,
-    read_manifest,
-    utcnow_iso,
-)
+from _lib import sidecar
 from _lib.storage import LocalStorage
 
-CACHE_TYPE = "pbf"
+NAMESPACE = "osm"
+CACHE_TYPE = "pbf-clips"
+SOURCE_CACHE_TYPE = "pbf"
 CLIP_VERSION = 1
 CHUNK_SIZE = 1024 * 1024
 DEFAULT_TIMEOUT_SECONDS = 1800
 
 _clip_locks: dict[str, threading.Lock] = {}
 _clip_locks_guard = threading.Lock()
-_manifest_write_lock = threading.Lock()
 
 
 def _clip_lock(name: str) -> threading.Lock:
@@ -66,9 +60,9 @@ class ClipSpec:
     """How a clip is defined."""
 
     kind: str                   # "bbox" or "polygon"
-    bbox: tuple[float, float, float, float] | None = None  # (west, south, east, north)
+    bbox: tuple[float, float, float, float] | None = None
     polygon_path: str | None = None
-    polygon_sha256: str | None = None   # content hash of the polygon file
+    polygon_sha256: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"kind": self.kind}
@@ -89,7 +83,7 @@ class ClipSpec:
         )
 
     def matches(self, other: dict[str, Any]) -> bool:
-        """True if ``other`` (a manifest ``clip`` sub-dict) describes the same clip."""
+        """True if ``other`` (a clip sub-dict) describes the same clip."""
         if other.get("kind") != self.kind:
             return False
         if self.kind == "bbox":
@@ -104,10 +98,9 @@ class ClipSpec:
 class ClipResult:
     """Outcome of a ``clip_pbf`` call."""
 
-    name: str                   # user-supplied clip name
-    region: str                 # clips/<name> — usable as a region key downstream
-    path: str                   # absolute path to the clipped PBF
-    relative_path: str          # relative to pbf/ cache dir
+    name: str
+    path: str
+    relative_path: str
     source_region: str
     source_pbf_sha256: str
     clip: ClipSpec
@@ -116,7 +109,7 @@ class ClipResult:
     generated_at: str
     duration_seconds: float
     was_cached: bool
-    manifest_entry: dict[str, Any] = field(default_factory=dict)
+    sidecar: dict[str, Any] = field(default_factory=dict)
 
 
 class ClipError(RuntimeError):
@@ -124,32 +117,38 @@ class ClipError(RuntimeError):
 
 
 def clip_rel_path(name: str) -> str:
-    """Relative path within ``pbf/`` for a clip named ``name``."""
-    return f"clips/{name}-latest.osm.pbf"
+    """Relative path within ``pbf-clips/`` for a clip named ``name``."""
+    return f"{name}-latest.osm.pbf"
 
 
-def clip_abs_path(name: str) -> Path:
-    return Path(cache_dir(CACHE_TYPE)) / clip_rel_path(name)
+def clipped_path(name: str, storage: Any = None) -> str:
+    """Absolute cache path for a clip."""
+    s = storage or LocalStorage()
+    return sidecar.cache_path(NAMESPACE, CACHE_TYPE, clip_rel_path(name), s)
+
+
+def clip_abs_path(name: str, storage: Any = None) -> Path:
+    """Absolute cache path for a clip as a ``Path`` (back-compat alias)."""
+    return Path(clipped_path(name, storage))
 
 
 def clip_region_key(name: str) -> str:
-    """Region key downstream tools use (e.g. ``regions_from_pbf_manifest``)."""
-    return f"clips/{name}"
+    """Back-compat alias for tools that expect a region-key string."""
+    return name
 
 
-def _source_pbf_path(region: str) -> Path:
-    return Path(cache_dir(CACHE_TYPE)) / f"{region}-latest.osm.pbf"
+def _source_pbf_path(region: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, SOURCE_CACHE_TYPE, f"{region}-latest.osm.pbf", s))
 
 
-def _staging_dir(name: str) -> Path:
-    """Stage adjacent to the final destination. Override with
-    ``AFL_OSM_CONVERT_STAGING=tmp`` for the legacy local-tmp behavior.
-    """
-    if (os.environ.get("AFL_OSM_CONVERT_STAGING") or "").lower() == "tmp":
-        base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+def _staging_path(name: str, storage: Any = None) -> Path:
+    """Stage adjacent to the final destination unless forced to tmp."""
+    if (os.environ.get("AFL_CONVERT_STAGING") or "").lower() == "tmp":
+        base = tempfile.gettempdir()
         safe = name.replace("/", "_")
-        return Path(base) / "facetwork-pbf-clip-staging" / safe
-    out = clip_abs_path(name)
+        return Path(base) / "facetwork-pbf-clip-staging" / safe / f"{name}-latest.osm.pbf"
+    out = Path(clipped_path(name, storage))
     return out.with_name(out.name + ".staging")
 
 
@@ -224,24 +223,26 @@ def is_up_to_date(
     source_region: str,
     source_pbf_sha256: str,
     spec: ClipSpec,
+    storage: Any = None,
 ) -> bool:
     """True if the cached clip still matches source SHA and clip spec."""
-    cache_manifest = read_manifest(CACHE_TYPE)
+    s = storage or LocalStorage()
     rel = clip_rel_path(name)
-    existing = cache_manifest.get("entries", {}).get(rel)
+    existing = sidecar.read_sidecar(NAMESPACE, CACHE_TYPE, rel, s)
     if not existing:
         return False
-    clip_info = existing.get("clip") or {}
+    extra = existing.get("extra") or {}
+    clip_info = extra.get("clip") or {}
     if clip_info.get("source_region") != source_region:
         return False
     if clip_info.get("source_sha256") != source_pbf_sha256:
         return False
     if not spec.matches(clip_info):
         return False
-    out_abs = clip_abs_path(name)
-    if not out_abs.exists():
+    out = Path(clipped_path(name, s))
+    if not out.exists():
         return False
-    return out_abs.stat().st_size == existing.get("size_bytes")
+    return out.stat().st_size == existing.get("size_bytes")
 
 
 def clip_pbf(
@@ -253,42 +254,39 @@ def clip_pbf(
     force: bool = False,
     osmium_bin: str = "osmium",
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    storage: Any = None,
 ) -> ClipResult:
     """Clip a cached source PBF to a bbox or polygon.
 
-    The output is written into the regular ``pbf/`` cache at
-    ``pbf/clips/<name>-latest.osm.pbf`` so every downstream tool can
-    treat it as a normal region called ``clips/<name>``.
+    Output lands under ``cache/osm/pbf-clips/<name>-latest.osm.pbf``.
     """
     if not name or "/" in name:
         raise ClipError(
             f"clip name must not be empty or contain '/'. got: {name!r}"
         )
-
+    s = storage or LocalStorage()
     spec = build_spec(bbox=bbox, polygon_path=polygon_path)
 
-    pbf_manifest = read_manifest(CACHE_TYPE)
     source_rel = f"{source_region}-latest.osm.pbf"
-    source_entry = pbf_manifest.get("entries", {}).get(source_rel)
-    if not source_entry:
+    source_side = sidecar.read_sidecar(NAMESPACE, SOURCE_CACHE_TYPE, source_rel, s)
+    if not source_side:
         raise ClipError(
-            f"no pbf manifest entry for source region {source_region!r}. "
+            f"no pbf sidecar for source region {source_region!r}. "
             "Run download-pbf first."
         )
-    source_pbf = _source_pbf_path(source_region)
+    source_pbf = _source_pbf_path(source_region, s)
     if not source_pbf.exists():
         raise ClipError(f"source pbf missing on disk: {source_pbf}")
-    source_sha = source_entry.get("sha256", "")
+    source_sha = source_side.get("sha256", "")
 
     with _clip_lock(name):
-        out_abs = clip_abs_path(name)
+        out_abs = Path(clipped_path(name, s))
         out_rel = clip_rel_path(name)
 
-        if not force and is_up_to_date(name, source_region, source_sha, spec):
-            existing = read_manifest(CACHE_TYPE).get("entries", {}).get(out_rel, {})
+        if not force and is_up_to_date(name, source_region, source_sha, spec, s):
+            existing = sidecar.read_sidecar(NAMESPACE, CACHE_TYPE, out_rel, s) or {}
             return ClipResult(
                 name=name,
-                region=clip_region_key(name),
                 path=str(out_abs),
                 relative_path=out_rel,
                 source_region=source_region,
@@ -296,17 +294,20 @@ def clip_pbf(
                 clip=spec,
                 size_bytes=existing.get("size_bytes", out_abs.stat().st_size),
                 sha256=existing.get("sha256", ""),
-                generated_at=existing.get("downloaded_at", ""),
+                generated_at=existing.get("generated_at", ""),
                 duration_seconds=0.0,
                 was_cached=True,
-                manifest_entry=existing,
+                sidecar=existing,
             )
 
-        staging = _staging_dir(name)
-        if staging.exists():
-            shutil.rmtree(staging)
-        staging.mkdir(parents=True, exist_ok=True)
-        staged_pbf = staging / f"{name}-latest.osm.pbf"
+        staged_pbf = _staging_path(name, s)
+        if staged_pbf.parent.exists() and staged_pbf.parent != out_abs.parent:
+            # Only clean a dedicated staging subdir; never wipe the shared
+            # cache dir.
+            shutil.rmtree(staged_pbf.parent, ignore_errors=True)
+        staged_pbf.parent.mkdir(parents=True, exist_ok=True)
+        if staged_pbf.exists():
+            staged_pbf.unlink()
 
         cmd = [osmium_bin, "extract", "--overwrite", "-o", str(staged_pbf)]
         if spec.kind == "bbox":
@@ -327,55 +328,60 @@ def clip_pbf(
                 check=True,
             )
         except subprocess.CalledProcessError as exc:
-            shutil.rmtree(staging, ignore_errors=True)
+            if staged_pbf.exists():
+                staged_pbf.unlink()
             stderr = (exc.stderr or "").strip()
             raise ClipError(f"osmium extract failed: {stderr or exc}") from exc
         except subprocess.TimeoutExpired as exc:
-            shutil.rmtree(staging, ignore_errors=True)
+            if staged_pbf.exists():
+                staged_pbf.unlink()
             raise ClipError(
                 f"osmium extract timed out after {timeout_seconds}s"
             ) from exc
         except BaseException:
-            shutil.rmtree(staging, ignore_errors=True)
+            if staged_pbf.exists():
+                staged_pbf.unlink()
             raise
         elapsed = time.monotonic() - start
 
         size, sha256_hex = _sha256_file(staged_pbf)
 
-        storage = LocalStorage()
-        storage.finalize_from_local(str(staged_pbf), str(out_abs))
-        shutil.rmtree(staging, ignore_errors=True)
+        s.finalize_from_local(str(staged_pbf), str(out_abs))
 
-        generated_at = utcnow_iso()
-        entry = {
-            "relative_path": out_rel,
-            "source_url": "",
-            "size_bytes": size,
-            "sha256": sha256_hex,
-            "source_checksum": None,
-            "downloaded_at": generated_at,
-            "source_timestamp": None,
-            "clip": {
-                **spec.to_dict(),
-                "source_region": source_region,
-                "source_sha256": source_sha,
-                "version": CLIP_VERSION,
+        generated_at = sidecar.utcnow_iso()
+        side = sidecar.write_sidecar(
+            NAMESPACE,
+            CACHE_TYPE,
+            out_rel,
+            kind="file",
+            size_bytes=size,
+            sha256=sha256_hex,
+            source={
+                "namespace": NAMESPACE,
+                "cache_type": SOURCE_CACHE_TYPE,
+                "relative_path": source_rel,
+                "sha256": source_sha,
+                "size_bytes": source_side.get("size_bytes"),
             },
-            "tool": {
+            tool={
                 "command": "osmium extract",
                 "osmium_version": _osmium_version(osmium_bin),
             },
-            "extra": {
-                "region": clip_region_key(name),
+            extra={
+                "clip": {
+                    **spec.to_dict(),
+                    "source_region": source_region,
+                    "source_sha256": source_sha,
+                    "version": CLIP_VERSION,
+                },
                 "duration_seconds": round(elapsed, 2),
             },
-        }
-        with _manifest_write_lock, manifest_transaction(CACHE_TYPE) as manifest:
-            manifest.setdefault("entries", {})[out_rel] = entry
+            generated_at=generated_at,
+            storage=s,
+        )
 
         return ClipResult(
             name=name,
-            region=clip_region_key(name),
             path=str(out_abs),
             relative_path=out_rel,
             source_region=source_region,
@@ -386,19 +392,11 @@ def clip_pbf(
             generated_at=generated_at,
             duration_seconds=elapsed,
             was_cached=False,
-            manifest_entry=entry,
+            sidecar=side,
         )
 
 
-def list_clips() -> list[dict[str, Any]]:
-    """Return every clip currently recorded in the pbf manifest."""
-    manifest = read_manifest(CACHE_TYPE)
-    out: list[dict[str, Any]] = []
-    for rel, entry in manifest.get("entries", {}).items():
-        if not rel.startswith("clips/"):
-            continue
-        if not isinstance(entry, dict) or "clip" not in entry:
-            continue
-        out.append(entry)
-    out.sort(key=lambda e: e.get("relative_path", ""))
-    return out
+def list_clips(storage: Any = None) -> list[dict[str, Any]]:
+    """Return every clip currently cached as a sidecar dict."""
+    s = storage or LocalStorage()
+    return sidecar.list_entries(NAMESPACE, CACHE_TYPE, s)

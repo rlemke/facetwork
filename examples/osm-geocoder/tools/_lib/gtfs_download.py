@@ -1,17 +1,17 @@
 """GTFS transit-feed download library.
 
-Downloads per-agency GTFS .zip files into ``gtfs/<agency>-latest.zip``
-with its own manifest. Used by both the ``download-gtfs`` CLI tool and
-(eventually) FFL transit-routing handlers.
+Downloads per-agency GTFS .zip files into
+``cache/gtfs/feeds/<agency>-latest.zip`` with sibling ``.meta.json``
+sidecars.
+
+Namespace: ``gtfs``. Cache_type: ``feeds``.
 
 Cache validity:
-
 - HEAD the remote URL; compare ``Last-Modified`` / ``ETag`` against the
-  manifest record. If either is unchanged, skip the full download.
-- If HEAD isn't available or returns no validator header, fall back to
-  downloading and comparing SHA-256.
+  sidecar record.
+- If HEAD isn't available, fall back to downloading and comparing SHA-256.
 
-The manifest also records parsed ``feed_info.txt`` fields (publisher,
+Sidecar's extras also record parsed ``feed_info.txt`` fields (publisher,
 feed_version, feed_start_date, feed_end_date) so callers can filter
 feeds by validity period without unzipping.
 """
@@ -21,8 +21,6 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
-import os
-import shutil
 import tempfile
 import threading
 import time
@@ -39,15 +37,11 @@ try:
 except ImportError:  # pragma: no cover
     requests = None
 
-from _lib.manifest import (
-    cache_dir,
-    manifest_transaction,
-    read_manifest,
-    utcnow_iso,
-)
+from _lib import sidecar
 from _lib.storage import LocalStorage
 
-CACHE_TYPE = "gtfs"
+NAMESPACE = "gtfs"
+CACHE_TYPE = "feeds"
 CHUNK_SIZE = 1024 * 1024
 USER_AGENT = "facetwork-osm-geocoder/1.0 (GTFS downloader)"
 CONNECT_TIMEOUT = 30
@@ -55,7 +49,6 @@ READ_TIMEOUT = 300
 
 _agency_locks: dict[str, threading.Lock] = {}
 _agency_locks_guard = threading.Lock()
-_manifest_write_lock = threading.Lock()
 
 
 def _agency_lock(agency: str) -> threading.Lock:
@@ -81,7 +74,7 @@ class DownloadResult:
     downloaded_at: str
     duration_seconds: float
     was_cached: bool
-    manifest_entry: dict[str, Any] = field(default_factory=dict)
+    sidecar: dict[str, Any] = field(default_factory=dict)
 
 
 class DownloadError(RuntimeError):
@@ -92,12 +85,13 @@ def feed_rel_path(agency: str) -> str:
     return f"{agency}-latest.zip"
 
 
-def feed_abs_path(agency: str) -> Path:
-    return Path(cache_dir(CACHE_TYPE)) / feed_rel_path(agency)
+def feed_abs_path(agency: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, CACHE_TYPE, feed_rel_path(agency), s))
 
 
 def _staging_path(agency: str) -> Path:
-    base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+    base = tempfile.gettempdir()
     safe = agency.replace("/", "_")
     return Path(base) / "facetwork-gtfs-staging" / f"{safe}-latest.zip"
 
@@ -116,7 +110,6 @@ def _sha256_file(path: Path) -> tuple[int, str]:
 
 
 def _http_head(url: str) -> tuple[str | None, str | None]:
-    """Best-effort HEAD; returns (Last-Modified, ETag) or (None, None)."""
     if requests is not None:
         try:
             r = requests.head(
@@ -130,7 +123,6 @@ def _http_head(url: str) -> tuple[str | None, str | None]:
         except requests.RequestException:
             pass
         return None, None
-    # urllib fallback
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     req.get_method = lambda: "HEAD"
     try:
@@ -141,7 +133,6 @@ def _http_head(url: str) -> tuple[str | None, str | None]:
 
 
 def _http_download(url: str, dest: Path) -> tuple[str | None, str | None]:
-    """Stream ``url`` into ``dest``; return (Last-Modified, ETag)."""
     if requests is not None:
         with requests.get(
             url,
@@ -157,7 +148,6 @@ def _http_download(url: str, dest: Path) -> tuple[str | None, str | None]:
                     if chunk:
                         out.write(chunk)
             return lm, etag
-    # urllib fallback
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=READ_TIMEOUT) as resp:
         lm = resp.headers.get("Last-Modified")
@@ -172,11 +162,6 @@ def _http_download(url: str, dest: Path) -> tuple[str | None, str | None]:
 
 
 def _parse_feed_info(zip_path: Path) -> dict[str, Any]:
-    """Extract a handful of useful fields from feed_info.txt / agency.txt.
-
-    Both files are optional in GTFS; return empty strings for missing
-    fields rather than raising.
-    """
     info: dict[str, Any] = {
         "publisher_name": "",
         "publisher_url": "",
@@ -205,51 +190,44 @@ def _parse_feed_info(zip_path: Path) -> dict[str, Any]:
                         (row.get("agency_name") or "").strip() for row in reader
                     ]
     except (zipfile.BadZipFile, KeyError, UnicodeDecodeError):
-        # Return best-effort info; a corrupt zip is surfaced separately.
         pass
     return info
 
 
-def is_up_to_date_cheap(agency: str, url: str) -> bool:
-    """Check local-only + one HEAD request for freshness.
-
-    True when manifest records match current source Last-Modified / ETag
-    and the local file exists at the recorded size. False triggers a
-    full download.
-    """
-    cache_manifest = read_manifest(CACHE_TYPE)
+def is_up_to_date_cheap(agency: str, url: str, storage: Any = None) -> bool:
+    """Local sidecar + one HEAD request for freshness."""
+    s = storage or LocalStorage()
     rel = feed_rel_path(agency)
-    existing = cache_manifest.get("entries", {}).get(rel)
+    existing = sidecar.read_sidecar(NAMESPACE, CACHE_TYPE, rel, s)
     if not existing:
         return False
-    if existing.get("source_url") != url:
+    source = existing.get("source") or {}
+    if source.get("url") != url:
         return False
-    path = feed_abs_path(agency)
+    path = feed_abs_path(agency, s)
     if not path.exists():
         return False
     if path.stat().st_size != existing.get("size_bytes"):
         return False
-    # HEAD the URL and compare.
     lm, etag = _http_head(url)
-    rec_http = existing.get("http", {})
+    extra = existing.get("extra") or {}
+    rec_http = extra.get("http", {})
     if etag is not None and rec_http.get("etag") == etag:
         return True
     if lm is not None and rec_http.get("last_modified") == lm:
         return True
     if lm is None and etag is None:
-        # Server didn't give us a validator — conservatively assume stale.
         return False
     return False
 
 
-def is_cached_locally(agency: str) -> bool:
-    """Local-only check (no network) — manifest entry + file present."""
-    cache_manifest = read_manifest(CACHE_TYPE)
+def is_cached_locally(agency: str, storage: Any = None) -> bool:
+    s = storage or LocalStorage()
     rel = feed_rel_path(agency)
-    existing = cache_manifest.get("entries", {}).get(rel)
+    existing = sidecar.read_sidecar(NAMESPACE, CACHE_TYPE, rel, s)
     if not existing:
         return False
-    path = feed_abs_path(agency)
+    path = feed_abs_path(agency, s)
     if not path.exists():
         return False
     return path.stat().st_size == existing.get("size_bytes")
@@ -272,19 +250,23 @@ def download(
     url: str,
     *,
     force: bool = False,
+    storage: Any = None,
 ) -> DownloadResult:
     """Download a GTFS feed for ``agency`` from ``url``."""
     if not agency or "/" in agency:
         raise DownloadError(f"agency must be non-empty and contain no '/': {agency!r}")
     if not url:
         raise DownloadError("url is required")
+    s = storage or LocalStorage()
 
     with _agency_lock(agency):
-        out_abs = feed_abs_path(agency)
+        out_abs = feed_abs_path(agency, s)
         rel = feed_rel_path(agency)
 
-        if not force and is_up_to_date_cheap(agency, url):
-            existing = read_manifest(CACHE_TYPE).get("entries", {}).get(rel, {})
+        if not force and is_up_to_date_cheap(agency, url, s):
+            existing = sidecar.read_sidecar(NAMESPACE, CACHE_TYPE, rel, s) or {}
+            extra = existing.get("extra") or {}
+            http = extra.get("http", {})
             return DownloadResult(
                 agency=agency,
                 path=str(out_abs),
@@ -292,13 +274,13 @@ def download(
                 source_url=url,
                 size_bytes=existing.get("size_bytes", out_abs.stat().st_size),
                 sha256=existing.get("sha256", ""),
-                last_modified=existing.get("http", {}).get("last_modified"),
-                etag=existing.get("http", {}).get("etag"),
-                feed_info=existing.get("feed_info", {}),
-                downloaded_at=existing.get("downloaded_at", ""),
+                last_modified=http.get("last_modified"),
+                etag=http.get("etag"),
+                feed_info=extra.get("feed_info", {}),
+                downloaded_at=existing.get("generated_at", ""),
                 duration_seconds=0.0,
                 was_cached=True,
-                manifest_entry=existing,
+                sidecar=existing,
             )
 
         staging = _staging_path(agency)
@@ -319,7 +301,6 @@ def download(
         if size == 0:
             staging.unlink()
             raise DownloadError(f"downloaded feed is empty: {url}")
-        # Validate basic zip structure before committing.
         try:
             zipfile.ZipFile(staging, "r").testzip()
         except zipfile.BadZipFile as exc:
@@ -328,31 +309,33 @@ def download(
 
         feed_info = _parse_feed_info(staging)
 
-        storage = LocalStorage()
-        storage.finalize_from_local(str(staging), str(out_abs))
+        s.finalize_from_local(str(staging), str(out_abs))
 
-        downloaded_at = utcnow_iso()
-        entry = {
-            "relative_path": rel,
-            "agency": agency,
-            "source_url": url,
-            "size_bytes": size,
-            "sha256": sha256_hex,
-            "http": {
-                "last_modified": last_modified,
-                "etag": etag,
-                "last_modified_iso": _to_iso_utc(last_modified),
-            },
-            "feed_info": feed_info,
-            "downloaded_at": downloaded_at,
-            "duration_seconds": round(elapsed, 2),
-            "tool": {
+        downloaded_at = sidecar.utcnow_iso()
+        side = sidecar.write_sidecar(
+            NAMESPACE,
+            CACHE_TYPE,
+            rel,
+            kind="file",
+            size_bytes=size,
+            sha256=sha256_hex,
+            source={"url": url},
+            tool={
                 "command": "urllib" if requests is None else "requests",
             },
-            "extra": {},
-        }
-        with _manifest_write_lock, manifest_transaction(CACHE_TYPE) as manifest:
-            manifest.setdefault("entries", {})[rel] = entry
+            extra={
+                "agency": agency,
+                "http": {
+                    "last_modified": last_modified,
+                    "etag": etag,
+                    "last_modified_iso": _to_iso_utc(last_modified),
+                },
+                "feed_info": feed_info,
+                "duration_seconds": round(elapsed, 2),
+            },
+            generated_at=downloaded_at,
+            storage=s,
+        )
 
         return DownloadResult(
             agency=agency,
@@ -367,12 +350,12 @@ def download(
             downloaded_at=downloaded_at,
             duration_seconds=elapsed,
             was_cached=False,
-            manifest_entry=entry,
+            sidecar=side,
         )
 
 
-def list_feeds() -> list[dict[str, Any]]:
-    manifest = read_manifest(CACHE_TYPE)
-    out = list(manifest.get("entries", {}).values())
-    out.sort(key=lambda e: e.get("agency", ""))
+def list_feeds(storage: Any = None) -> list[dict[str, Any]]:
+    s = storage or LocalStorage()
+    out = sidecar.list_entries(NAMESPACE, CACHE_TYPE, s)
+    out.sort(key=lambda e: (e.get("extra") or {}).get("agency", ""))
     return out

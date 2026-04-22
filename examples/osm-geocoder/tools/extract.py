@@ -30,12 +30,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from _lib import sidecar  # noqa: E402
 from _lib.pbf_download import (  # noqa: E402
     filter_leaves,
-    regions_from_pbf_manifest,
+    regions_from_pbf_cache,
 )
 from _lib.pbf_extract import (  # noqa: E402
     CATEGORIES,
+    NAMESPACE,
+    SOURCE_CACHE_TYPE,
     ExtractionError,
     ExtractResult,
     extract_abs_path,
@@ -43,10 +46,8 @@ from _lib.pbf_extract import (  # noqa: E402
     is_up_to_date,
     pbf_abs_path,
 )
-from _lib.manifest import read_manifest  # noqa: E402
 
 DEFAULT_JOBS = 2
-SOURCE_CACHE_TYPE = "pbf"
 
 
 def _help_epilog() -> str:
@@ -74,12 +75,11 @@ def _read_regions_file(path: Path) -> list[str]:
 
 
 def _up_to_date_cheap(region: str, category: str) -> bool:
-    pbf_manifest = read_manifest(SOURCE_CACHE_TYPE)
     pbf_rel = f"{region}-latest.osm.pbf"
-    pbf_entry = pbf_manifest.get("entries", {}).get(pbf_rel)
-    if not pbf_entry:
+    pbf_side = sidecar.read_sidecar(NAMESPACE, SOURCE_CACHE_TYPE, pbf_rel)
+    if not pbf_side:
         return False
-    return is_up_to_date(region, category, pbf_entry, extract_abs_path(region, category))
+    return is_up_to_date(region, category, pbf_side, extract_abs_path(region, category))
 
 
 def _run_one(
@@ -242,7 +242,7 @@ def main() -> int:
         regions.extend(_read_regions_file(args.regions_file))
 
     if args.all or args.all_under is not None:
-        from_manifest = regions_from_pbf_manifest(under=args.all_under)
+        from_manifest = regions_from_pbf_cache(under=args.all_under)
         before = len(from_manifest)
         if not args.include_parents:
             from_manifest = filter_leaves(from_manifest)
@@ -265,7 +265,7 @@ def main() -> int:
     # Build (category, region) work list.
     if args.update_all:
         # Only use pbf manifest as the region universe, regardless of args.regions.
-        universe = regions_from_pbf_manifest()
+        universe = regions_from_pbf_cache()
         if not args.include_parents:
             universe = filter_leaves(universe)
         pairs: list[tuple[str, str]] = []

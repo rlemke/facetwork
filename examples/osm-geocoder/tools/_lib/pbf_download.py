@@ -1,38 +1,29 @@
 """Shared Geofabrik PBF download library.
 
-This module is the single source of truth for downloading Geofabrik PBF
-files into the OSM cache. Both the ``download-pbf`` CLI tool and the
-Facetwork FFL handlers (``osm.ops.CacheRegion``) call ``download_region``
-here, so they share:
+Single source of truth for downloading Geofabrik PBF files into the OSM
+cache. Both the ``download-pbf`` CLI tool and the Facetwork FFL handlers
+(``osm.ops.CacheRegion``) call ``download_region`` here, so they share
+the same on-disk layout, the same sidecar metadata, and the same upstream
+MD5 verification.
 
-- the same on-disk layout (``<cache_root>/pbf/<region>-latest.osm.pbf``
-  mirroring Geofabrik's hierarchy),
-- the same manifest (``<cache_root>/pbf/manifest.json``) with SHA-256,
-  MD5, source timestamp, and download timestamp per entry,
-- the same upstream MD5 verification on every fresh download.
+Layout (per ``agent-spec/cache-layout.agent-spec.yaml``)::
 
-Thread-safety:
+    cache/osm/pbf/<region>-latest.osm.pbf
+    cache/osm/pbf/<region>-latest.osm.pbf.meta.json
 
-- A per-region ``threading.Lock`` ensures that if the handler runtime
-  invokes ``CacheRegion`` concurrently for the same region, only one
-  download actually happens — the second caller waits and then picks up
-  the cached result.
-- A module-level ``threading.Lock`` serializes manifest read-modify-write
-  across threads within one process. The underlying ``fcntl`` advisory
-  lock in ``manifest.manifest_transaction`` handles cross-process
-  serialization on the local backend.
+where ``<region>`` mirrors Geofabrik's path (``north-america/us/california``,
+``europe/germany/berlin``, etc.).
 
-HDFS notes: the storage abstraction supports an HDFS backend, but HDFS
-does not support advisory locking — single-writer semantics are assumed
-for HDFS caches. See ``_lib/storage.py``.
+Thread-safety: a per-region ``threading.Lock`` ensures that if the handler
+runtime invokes ``CacheRegion`` concurrently for the same region, only one
+download actually happens. No global manifest lock is needed — sidecars
+are per-entry.
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
-import sys
-import tempfile
 import threading
 import time
 import urllib.error
@@ -47,18 +38,13 @@ try:
 except ImportError:  # pragma: no cover - optional, only needed for bulk streaming
     requests = None
 
-from _lib.manifest import (
-    cache_dir,
-    manifest_transaction,
-    read_manifest,
-    utcnow_iso,
-)
-from _lib.storage import LocalStorage, Storage
+from _lib import sidecar
+from _lib.storage import LocalStorage, Storage, local_staging_subdir
 
+NAMESPACE = "osm"
 CACHE_TYPE = "pbf"
 GEOFABRIK_BASE = "https://download.geofabrik.de"
 USER_AGENT = "facetwork-osm-geocoder/1.0 (OSM PBF downloader)"
-CHUNK_SIZE = 1024 * 1024  # 1 MiB
 
 ProgressCallback = Callable[[str, int, int, bool], None]
 """Progress callback: (label, bytes_so_far, total_bytes, is_final)."""
@@ -77,19 +63,16 @@ class DownloadResult:
     md5: str
     source_timestamp: str | None
     downloaded_at: str
-    was_cached: bool            # True if the download was skipped (manifest was up-to-date)
-    manifest_entry: dict[str, Any] = field(default_factory=dict)
+    was_cached: bool            # True if the download was skipped (sidecar was up-to-date)
+    sidecar: dict[str, Any] = field(default_factory=dict)
 
 
 class DownloadError(RuntimeError):
     """Raised when a download fails (network, MD5 mismatch, etc.)."""
 
 
-# In-process concurrency primitives. These are module-level because the
-# manifest and per-region state are process-wide.
 _region_locks: dict[str, threading.Lock] = {}
 _region_locks_guard = threading.Lock()
-_manifest_write_lock = threading.Lock()
 
 
 def _region_lock(region: str) -> threading.Lock:
@@ -101,28 +84,14 @@ def _region_lock(region: str) -> threading.Lock:
         return lock
 
 
-def _local_staging_dir() -> str:
-    """Return the local-disk staging directory for in-flight PBF downloads.
-
-    Honors ``$AFL_OSM_LOCAL_TMP_DIR`` if set; otherwise uses the system
-    temp dir (``$TMPDIR`` / ``/tmp``). Staging keeps the socket-read rate
-    decoupled from the destination write rate — writing directly to a
-    network-attached volume can stall the TCP receive window on a slow
-    mount, masquerading as a hung download.
-    """
-    base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
-    staging = os.path.join(base, "facetwork-pbf-staging")
-    os.makedirs(staging, exist_ok=True)
-    return staging
-
-
 def staging_path(region: str) -> str:
     """Path on local disk where a region is staged before finalization.
 
     Public so callers (e.g. the CLI progress display) can report it.
     """
     safe = region.replace("/", "_")
-    return os.path.join(_local_staging_dir(), f"{safe}-latest.osm.pbf.tmp")
+    dir_ = local_staging_subdir("facetwork-pbf-staging")
+    return os.path.join(dir_, f"{safe}-latest.osm.pbf.tmp")
 
 
 def region_to_paths(region: str) -> tuple[str, str]:
@@ -133,6 +102,14 @@ def region_to_paths(region: str) -> tuple[str, str]:
     rel = f"{region}-latest.osm.pbf"
     url = f"{GEOFABRIK_BASE}/{rel}"
     return rel, url
+
+
+def relative_path_to_region(rel: str) -> str | None:
+    """Inverse of ``region_to_paths``: extract the Geofabrik region key."""
+    suffix = "-latest.osm.pbf"
+    if not rel.endswith(suffix):
+        return None
+    return rel[: -len(suffix)]
 
 
 def _request(url: str, method: str = "GET") -> urllib.request.Request:
@@ -171,24 +148,27 @@ def head_last_modified(url: str) -> str | None:
 
 
 def _already_cached(
-    manifest: dict[str, Any],
     rel_path: str,
     expected_md5: str,
-    cache_file: str,
     storage: Storage,
-) -> bool:
-    entry = manifest.get("entries", {}).get(rel_path)
-    if not entry:
-        return False
-    if entry.get("source_checksum", {}).get("value") != expected_md5:
-        return False
-    if not storage.exists(cache_file):
-        return False
-    return storage.size(cache_file) == entry.get("size_bytes")
+) -> dict[str, Any] | None:
+    """Return the sidecar dict iff it matches ``expected_md5`` and artifact is intact."""
+    side = sidecar.read_sidecar(NAMESPACE, CACHE_TYPE, rel_path, storage)
+    if not side:
+        return None
+    got_md5 = side.get("source", {}).get("source_checksum", {}).get("value")
+    if got_md5 != expected_md5:
+        return None
+    art = sidecar.cache_path(NAMESPACE, CACHE_TYPE, rel_path, storage)
+    if not storage.exists(art):
+        return None
+    if storage.size(art) != side.get("size_bytes"):
+        return None
+    return side
 
 
-STREAM_CHUNK_SIZE = 64 * 1024   # 64 KiB, matches handlers/shared/downloader.py
-READ_TIMEOUT_SECONDS = 120      # per-read stall timeout
+STREAM_CHUNK_SIZE = 64 * 1024
+READ_TIMEOUT_SECONDS = 120
 CONNECT_TIMEOUT_SECONDS = 30
 
 
@@ -198,17 +178,7 @@ def _stream_download(
     label: str,
     on_progress: ProgressCallback | None,
 ) -> tuple[int, str, str]:
-    """Stream ``url`` into ``writer`` using ``requests``; compute SHA-256 and MD5.
-
-    Uses the ``requests`` library with (connect, read) timeouts. The read
-    timeout is enforced per underlying socket read, so a stalled server
-    surfaces as a clear ``ReadTimeout`` error rather than a silent hang.
-    ``iter_content`` yields chunks as the socket delivers them, so progress
-    updates are responsive on slow links.
-
-    Falls back to ``urllib.request`` if the ``requests`` library is not
-    installed, though that path does not detect stalls as reliably.
-    """
+    """Stream ``url`` into ``writer``; compute SHA-256 and MD5."""
     if requests is None:
         return _stream_download_urllib(url, writer, label, on_progress)
 
@@ -217,7 +187,6 @@ def _stream_download(
     size = 0
     start = time.monotonic()
     last_report = start
-    last_bytes_at = start
 
     with requests.get(
         url,
@@ -235,13 +204,11 @@ def _stream_download(
             md5.update(chunk)
             size += len(chunk)
             now = time.monotonic()
-            last_bytes_at = now
             if on_progress and now - last_report >= 2.0:
                 on_progress(label, size, total, False)
                 last_report = now
     if on_progress:
         on_progress(label, size, total or size, True)
-    _ = last_bytes_at  # reserved for future stall heuristics
     return size, sha.hexdigest(), md5.hexdigest().lower()
 
 
@@ -251,12 +218,11 @@ def _stream_download_urllib(
     label: str,
     on_progress: ProgressCallback | None,
 ) -> tuple[int, str, str]:
-    """Fallback streaming path using ``urllib.request`` (no ``requests``)."""
+    """Fallback streaming path using ``urllib.request``."""
     sha = hashlib.sha256()
     md5 = hashlib.md5()
     size = 0
-    start = time.monotonic()
-    last_report = start
+    last_report = time.monotonic()
     with urllib.request.urlopen(_request(url), timeout=READ_TIMEOUT_SECONDS) as resp:
         total = int(resp.headers.get("Content-Length") or 0)
         while True:
@@ -279,31 +245,27 @@ def _stream_download_urllib(
 def is_region_cached(
     region: str, *, storage: Storage | None = None
 ) -> bool:
-    """Quick check whether a region is cached and its local file still exists.
+    """Quick check whether a region is cached and its file still exists.
 
-    Does **not** contact Geofabrik — for that, use ``download_region`` and
-    inspect ``was_cached`` in the result.
+    Does NOT contact Geofabrik. For freshness checks use ``download_region``
+    and inspect ``was_cached``.
     """
     storage = storage or LocalStorage()
     rel_path, _ = region_to_paths(region)
-    manifest = read_manifest(CACHE_TYPE, storage)
-    entry = manifest.get("entries", {}).get(rel_path)
-    if not entry:
-        return False
-    cache_file = Storage.join(cache_dir(CACHE_TYPE, storage), rel_path)
-    if not storage.exists(cache_file):
-        return False
-    return storage.size(cache_file) == entry.get("size_bytes")
+    return sidecar.exists_and_valid(NAMESPACE, CACHE_TYPE, rel_path, storage)
 
 
-def manifest_entry_for(
+def sidecar_entry_for(
     region: str, *, storage: Storage | None = None
 ) -> dict[str, Any] | None:
-    """Return the manifest entry for ``region`` if present, else ``None``."""
+    """Return the sidecar dict for ``region`` if present, else ``None``."""
     storage = storage or LocalStorage()
     rel_path, _ = region_to_paths(region)
-    manifest = read_manifest(CACHE_TYPE, storage)
-    return manifest.get("entries", {}).get(rel_path)
+    return sidecar.read_sidecar(NAMESPACE, CACHE_TYPE, rel_path, storage)
+
+
+# Back-compat alias; older handler code may still call manifest_entry_for.
+manifest_entry_for = sidecar_entry_for
 
 
 def cached_path(
@@ -312,7 +274,7 @@ def cached_path(
     """Return the absolute cache path for ``region`` (whether or not it exists)."""
     storage = storage or LocalStorage()
     rel_path, _ = region_to_paths(region)
-    return Storage.join(cache_dir(CACHE_TYPE, storage), rel_path)
+    return sidecar.cache_path(NAMESPACE, CACHE_TYPE, rel_path, storage)
 
 
 def download_region(
@@ -324,32 +286,12 @@ def download_region(
 ) -> DownloadResult:
     """Download a Geofabrik PBF for ``region`` into the OSM cache.
 
-    This is the single entry point used by both the CLI tool and the FFL
-    handlers. The function is thread-safe: concurrent calls for the same
-    region serialize on a per-region lock, so only one download happens
-    and the other caller(s) observe ``was_cached=True``.
-
-    Args:
-        region: Geofabrik region path (e.g. ``"africa/algeria"``,
-            ``"europe/germany/berlin"``), without the ``-latest.osm.pbf``
-            suffix.
-        storage: Storage backend (default ``LocalStorage``).
-        force: If True, re-download even if the manifest reports an
-            up-to-date cached copy.
-        on_progress: Optional progress callback; see ``ProgressCallback``.
-
-    Returns:
-        ``DownloadResult`` with the cached file path, metadata, and
-        ``was_cached`` flag.
-
-    Raises:
-        DownloadError: On network failure or MD5 mismatch against
-            Geofabrik's published ``.md5``.
+    Thread-safe: concurrent calls for the same region serialize on a
+    per-region lock so only one download happens.
     """
     storage = storage or LocalStorage()
     rel_path, url = region_to_paths(region)
-    cdir = cache_dir(CACHE_TYPE, storage)
-    cache_file = Storage.join(cdir, rel_path)
+    cache_file = sidecar.cache_path(NAMESPACE, CACHE_TYPE, rel_path, storage)
 
     with _region_lock(region):
         storage.mkdir_p(Storage.dirname(cache_file))
@@ -358,28 +300,25 @@ def download_region(
         source_ts = head_last_modified(url)
 
         if not force:
-            manifest = read_manifest(CACHE_TYPE, storage)
-            if _already_cached(manifest, rel_path, expected_md5, cache_file, storage):
-                entry = manifest["entries"][rel_path]
+            side = _already_cached(rel_path, expected_md5, storage)
+            if side is not None:
+                source = side.get("source", {})
                 return DownloadResult(
                     region=region,
                     path=cache_file,
                     relative_path=rel_path,
-                    source_url=url,
-                    size_bytes=entry.get("size_bytes", storage.size(cache_file)),
-                    sha256=entry.get("sha256", ""),
-                    md5=entry.get("source_checksum", {}).get("value", expected_md5),
-                    source_timestamp=entry.get("source_timestamp"),
-                    downloaded_at=entry.get("downloaded_at", ""),
+                    source_url=source.get("url", url),
+                    size_bytes=side.get("size_bytes", storage.size(cache_file)),
+                    sha256=side.get("sha256", ""),
+                    md5=source.get("source_checksum", {}).get("value", expected_md5),
+                    source_timestamp=source.get("source_timestamp"),
+                    downloaded_at=source.get("downloaded_at", ""),
                     was_cached=True,
-                    manifest_entry=entry,
+                    sidecar=side,
                 )
 
-        # Stage the download onto local disk first. Writing directly to
-        # the destination (which may be a slow network- or USB-attached
-        # volume) can stall the TCP receive window and look like a hung
-        # download. Local staging decouples socket-read from the possibly
-        # slow finalize copy.
+        # Stage onto local disk first so socket-read rate is decoupled from
+        # destination write rate (matters when dst is a slow network volume).
         staged = staging_path(region)
         if os.path.exists(staged):
             os.unlink(staged)
@@ -402,25 +341,29 @@ def download_region(
 
         storage.finalize_from_local(staged, cache_file)
 
-        downloaded_at = utcnow_iso()
-        entry = {
-            "relative_path": rel_path,
-            "source_url": url,
-            "size_bytes": size,
-            "sha256": sha256_hex,
+        downloaded_at = sidecar.utcnow_iso()
+        source = {
+            "url": url,
             "source_checksum": {
                 "algo": "md5",
                 "value": md5_hex,
                 "url": url + ".md5",
             },
-            "downloaded_at": downloaded_at,
             "source_timestamp": source_ts,
-            "extra": {"region": region},
+            "downloaded_at": downloaded_at,
         }
-        with _manifest_write_lock, manifest_transaction(
-            CACHE_TYPE, storage
-        ) as manifest:
-            manifest.setdefault("entries", {})[rel_path] = entry
+        side = sidecar.write_sidecar(
+            NAMESPACE,
+            CACHE_TYPE,
+            rel_path,
+            kind="file",
+            size_bytes=size,
+            sha256=sha256_hex,
+            source=source,
+            extra={"region": region},
+            generated_at=downloaded_at,
+            storage=storage,
+        )
 
         return DownloadResult(
             region=region,
@@ -433,26 +376,23 @@ def download_region(
             source_timestamp=source_ts,
             downloaded_at=downloaded_at,
             was_cached=False,
-            manifest_entry=entry,
+            sidecar=side,
         )
 
 
-def regions_from_pbf_manifest(
+def regions_from_pbf_cache(
     under: str | None = None, *, storage: Storage | None = None
 ) -> list[str]:
-    """Return all regions currently present in the pbf manifest.
+    """Return all regions currently cached under ``cache/osm/pbf/``.
 
     Optionally filtered by path prefix (e.g. ``europe/germany`` selects
     Germany and all its sub-regions). Sorted alphabetically.
     """
     storage = storage or LocalStorage()
-    manifest = read_manifest(CACHE_TYPE, storage)
-    suffix = "-latest.osm.pbf"
-    regions: list[str] = []
-    for rel in manifest.get("entries", {}):
-        if not rel.endswith(suffix):
-            continue
-        regions.append(rel[: -len(suffix)])
+    paths = sidecar.list_relative_paths(
+        NAMESPACE, CACHE_TYPE, under=None, storage=storage
+    )
+    regions = [r for r in (relative_path_to_region(p) for p in paths) if r]
     if under:
         u = under.strip().strip("/")
         pref = u + "/"
@@ -461,14 +401,12 @@ def regions_from_pbf_manifest(
     return regions
 
 
-def filter_leaves(regions: list[str]) -> list[str]:
-    """Drop regions that have a descendant in the set.
+# Back-compat alias.
+regions_from_pbf_manifest = regions_from_pbf_cache
 
-    For a selection like ``{europe/germany, europe/germany/berlin}``,
-    ``europe/germany`` is a non-leaf because a descendant (``berlin``)
-    is present. Parent PBFs usually fully contain their children, so
-    including both is wasteful.
-    """
+
+def filter_leaves(regions: list[str]) -> list[str]:
+    """Drop regions that have a descendant in the set."""
     selected_set = set(regions)
     non_leaves: set[str] = set()
     for r in regions:
@@ -481,14 +419,10 @@ def filter_leaves(regions: list[str]) -> list[str]:
 
 
 def to_osm_cache(result: DownloadResult) -> dict[str, Any]:
-    """Convert a ``DownloadResult`` into the ``OSMCache`` dict shape that
-    the FFL handlers return downstream.
+    """Convert a ``DownloadResult`` into the ``OSMCache`` dict shape.
 
-    The ``OSMCache`` schema (see ``osm.types.OSMCache``) is::
-
-        { url, path, date, size, wasInCache }
-
-    Handlers also include a ``source`` field by convention.
+    The FFL ``osm.types.OSMCache`` schema is ``{url, path, date, size,
+    wasInCache}``; handlers also include a ``source`` field.
     """
     return {
         "url": result.source_url,

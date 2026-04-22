@@ -128,55 +128,58 @@ All three follow the same interface. Each keys its cache on `source PBF SHA-256 
 
 - **update-all** — runs every tool's `--update-all` in dependency order: download-pbf → clip-pbf → convert-pbf-geojson → convert-pbf-shapefile → extract (all categories) → build-graphhopper-graph → build-valhalla-tiles → build-osrm-graph → build-vector-tiles → render-html-maps → download-gtfs. Safe to re-run as often as desired — each step is a no-op when nothing is stale. `UPDATE_ALL_SKIP="gtfs osrm"` skips named steps (useful when some binaries aren't installed); `UPDATE_ALL_STOP_ON_FAIL=1` aborts on first failure.
 
-## Cache layout and manifests
+## Cache layout and sidecars
+
+Each cached artifact has a sibling `.meta.json` sidecar — no shared
+manifest file per cache_type, so N writers on N different keys never
+contend. See [`agent-spec/cache-layout.agent-spec.yaml`](../../../agent-spec/cache-layout.agent-spec.yaml)
+for the full contract.
 
 ```
-$AFL_OSM_CACHE_ROOT/     (default: /Volumes/afl_data/osm — override via env)
-├── pbf/
-│   ├── manifest.json
-│   ├── europe/germany/berlin-latest.osm.pbf         ← Geofabrik paths mirrored
-│   └── clips/<name>-latest.osm.pbf                  ← from clip-pbf
-├── geojson/
-│   ├── manifest.json
-│   └── <region>-latest.geojsonseq
-├── shapefiles/
-│   ├── manifest.json
-│   └── <region>-latest/   (dir: points.shp, lines.shp, ...)
-├── <category>/             ← one cache per extract category
-│   ├── manifest.json       (water/, parks/, forests/, roads_routable/, ...)
-│   └── <region>-latest.geojsonseq
-├── graphhopper/
-│   ├── manifest.json
-│   └── <region>-latest/<profile>/
-├── valhalla/
-│   ├── manifest.json
-│   └── <region>-latest/    (tile pyramid 0/, 1/, 2/)
-├── osrm/
-│   ├── manifest.json
-│   └── <region>-latest/<profile>/
-├── vector_tiles/
-│   ├── manifest.json
-│   └── <region>-latest/<source>.pmtiles
-├── gtfs/
-│   ├── manifest.json
-│   └── <agency>-latest.zip
-├── elevation/
-│   ├── manifest.json
-│   └── <name>-latest.tif
-└── html/
-    ├── manifest.json
-    ├── index.html                   ← master index (links all regions)
-    └── <region>-latest/
-        ├── index.html               ← MapLibre map page
-        └── style.json               ← generated per-region style
+$AFL_DATA_ROOT/           (default: /Volumes/afl_data — override via env)
+├── cache/
+│   └── osm/
+│       ├── pbf/
+│       │   └── europe/germany/berlin-latest.osm.pbf
+│       │       + .meta.json sibling                  ← Geofabrik paths mirrored
+│       ├── pbf-clips/
+│       │   └── <name>-latest.osm.pbf + .meta.json     ← from clip-pbf
+│       ├── geojson/
+│       │   └── <region>-latest.geojsonseq + .meta.json
+│       ├── shapefiles/
+│       │   ├── <region>-latest/ (dir: points.shp, lines.shp, ...)
+│       │   └── <region>-latest.meta.json              (sibling of the dir)
+│       ├── <category>/         ← one cache_type per extract category
+│       │   └── <region>-latest.geojsonseq + .meta.json
+│       ├── graphhopper/
+│       │   ├── <region>-latest/<profile>/ (dir)
+│       │   └── <region>-latest/<profile>.meta.json
+│       ├── valhalla/
+│       │   ├── <region>-latest/ (tile pyramid 0/, 1/, 2/)
+│       │   └── <region>-latest.meta.json
+│       ├── osrm/
+│       │   ├── <region>-latest/<profile>/ (dir)
+│       │   └── <region>-latest/<profile>.meta.json
+│       ├── vector_tiles/
+│       │   └── <region>-latest/<source>.pmtiles + .meta.json
+│       └── html/
+│           ├── index.html                  ← master index (links all regions)
+│           ├── <region>-latest/            (index.html, style.json)
+│           └── <region>-latest.meta.json
+├── cache/gtfs/feeds/<agency>-latest.zip + .meta.json
+├── cache/elevation/srtm/<name>-latest.tif + .meta.json
+├── staging/                 ← in-flight files (atomic-rename into cache/)
+├── tmp/                     ← scratch, safe to wipe
+├── _indexes/                ← lazy, advisory cache-type indexes
+└── locks/                   ← per-entry fcntl locks (overwrite contention only)
 ```
 
 ### Backends
 
-- `local` (default) — standard POSIX filesystem, atomic temp+rename writes, `fcntl` advisory locking for safe read-modify-write on the manifest.
-- `hdfs` — HDFS via WebHDFS (soft-imports `facetwork.runtime.storage`). Default root `/user/afl/osm`. **No advisory locking** — single-writer semantics assumed. Rename is atomic at the namenode; directory-finalize tools (shapefile, graphhopper, valhalla, osrm) don't support HDFS yet.
+- `local` (default) — standard POSIX filesystem, atomic temp+rename writes, per-entry `fcntl` advisory locking when overwriting an existing entry (no global lock).
+- `hdfs` — HDFS via WebHDFS (soft-imports `facetwork.runtime.storage`). Default root `/user/afl`. **No advisory locking** — single-writer semantics assumed. Rename is atomic at the namenode; directory-finalize tools (shapefile, graphhopper, valhalla, osrm) don't support HDFS yet.
 
-Select the backend per invocation with `--backend {local,hdfs}` or globally via `AFL_OSM_STORAGE`. Override the cache root with `AFL_OSM_CACHE_ROOT`.
+Select the backend per invocation with `--backend {local,hdfs}` or globally via `AFL_STORAGE`. Override the data root with `AFL_DATA_ROOT` (or individually: `AFL_CACHE_ROOT`, `AFL_STAGING_ROOT`, `AFL_TMP_ROOT`, `AFL_INDEXES_ROOT`, `AFL_LOCKS_ROOT`).
 
 ### Manifest entry shape
 
@@ -218,7 +221,7 @@ Every tool records:
 - `main()` function and `if __name__ == "__main__": main()` guard.
 - Exit codes: `0` on success, non-zero on failure. Errors to `stderr`.
 - Log to `stderr`; reserve `stdout` for structured output (JSON, CSV, region lists).
-- Config from env vars where possible (`AFL_OSM_CACHE_ROOT`, `AFL_POSTGIS_URL`, etc.). CLI flags override env vars.
+- Config from env vars where possible (`AFL_DATA_ROOT`, `AFL_POSTGIS_URL`, etc.). CLI flags override env vars.
 - Do **not** depend on the Facetwork runtime, MongoDB, or the dashboard. Tools should run without a workflow stack. PostGIS, HDFS, external APIs are fine.
 - Type hints on every function. Module docstring with usage + external deps.
 - If your tool caches outputs, put the core logic in `_lib/<name>.py` so the FFL handlers can call it too. The CLI becomes a thin wrapper.
@@ -233,9 +236,9 @@ Every tool records:
 ### Cache conventions for new data types
 
 - Pick a short, plural-noun-ish cache type name (`shapefiles`, `parks`, `vector_tiles`, `elevation`).
-- Use `manifest.json` inside the cache subdir (not `<type>_directory.json`).
+- Use per-entry `.meta.json` sidecars (no shared manifest). See `agent-spec/cache-layout.agent-spec.yaml`.
 - Mirror upstream path hierarchy where there is one (Geofabrik: `europe/germany/berlin-...`).
-- Stage downloads / builds in `$AFL_OSM_LOCAL_TMP_DIR/facetwork-<type>-staging/` and finalize via `storage.finalize_from_local` / `finalize_dir_from_local`. Don't write partial files to the destination.
+- Stage downloads / builds under `$AFL_STAGING_ROOT/<namespace>/<cache_type>/` and finalize via `storage.finalize_from_local` / `finalize_dir_from_local`. Don't write partial files to the destination.
 - Record source-lineage SHA + tool version in every entry so cache validity is self-describing.
 - Expose a `--list`, `--list-missing`, `--update-all`, `--force`, `--dry-run` surface. If your tool has an axis (profile, category, source), match the existing tools' flag shape.
 
@@ -286,7 +289,7 @@ Every tool records:
 ./tools/render-html-maps.sh europe/liechtenstein
 
 # Serve everything and open the result in a browser:
-python -m http.server --directory "$AFL_OSM_CACHE_ROOT" 8000 &
+python -m http.server --directory "$AFL_CACHE_ROOT/osm" 8000 &
 open http://localhost:8000/html/           # the master index
 # → click into europe/liechtenstein-latest/
 ```

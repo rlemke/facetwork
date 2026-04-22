@@ -43,14 +43,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _lib.manifest import read_manifest  # noqa: E402
+from _lib import sidecar  # noqa: E402
 from _lib.pbf_download import (  # noqa: E402
     filter_leaves,
-    regions_from_pbf_manifest,
+    regions_from_pbf_cache,
 )
 from _lib.valhalla_build import (  # noqa: E402
     DEFAULT_TIMEOUT_SECONDS,
+    NAMESPACE,
     QUERY_PROFILES,
+    SOURCE_CACHE_TYPE,
     VALHALLA_VERSION,
     BuildError,
     BuildResult,
@@ -61,7 +63,6 @@ from _lib.valhalla_build import (  # noqa: E402
 )
 
 DEFAULT_JOBS = 1  # Valhalla builds are CPU+RAM heavy; default to serial
-SOURCE_CACHE_TYPE = "pbf"
 
 
 def _help_epilog() -> str:
@@ -89,12 +90,11 @@ def _read_regions_file(path: Path) -> list[str]:
 
 
 def _up_to_date_cheap(region: str) -> bool:
-    pbf_manifest = read_manifest(SOURCE_CACHE_TYPE)
     pbf_rel = f"{region}-latest.osm.pbf"
-    pbf_entry = pbf_manifest.get("entries", {}).get(pbf_rel)
-    if not pbf_entry:
+    pbf_side = sidecar.read_sidecar(NAMESPACE, SOURCE_CACHE_TYPE, pbf_rel)
+    if not pbf_side:
         return False
-    return is_up_to_date(region, pbf_entry, tileset_abs_path(region))
+    return is_up_to_date(region, pbf_side, tileset_abs_path(region))
 
 
 def _run_one(
@@ -192,7 +192,7 @@ def main() -> int:
         regions.extend(_read_regions_file(args.regions_file))
 
     if args.all or args.all_under is not None:
-        from_manifest = regions_from_pbf_manifest(under=args.all_under)
+        from_manifest = regions_from_pbf_cache(under=args.all_under)
         before = len(from_manifest)
         if not args.include_parents:
             from_manifest = filter_leaves(from_manifest)
@@ -213,7 +213,7 @@ def main() -> int:
     regions = deduped
 
     if args.update_all:
-        universe = regions_from_pbf_manifest()
+        universe = regions_from_pbf_cache()
         if not args.include_parents:
             universe = filter_leaves(universe)
         stale = [r for r in universe if not _up_to_date_cheap(r)]

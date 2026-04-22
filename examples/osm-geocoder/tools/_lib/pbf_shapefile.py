@@ -1,18 +1,15 @@
 """Shared PBF → ESRI Shapefile conversion library.
 
 Single source of truth for converting cached PBFs to multi-layer
-shapefile bundles via ``ogr2ogr``. Used by both the
-``convert-pbf-shapefile`` CLI tool and the FFL
-``osm.ops.ConvertPbfToShapefile`` handler, so they share the same
-on-disk layout, the same manifest, and the same skip logic.
+shapefile bundles via ``ogr2ogr``. Used by the CLI tool and the FFL
+``osm.ops.ConvertPbfToShapefile`` handler.
 
 Output for each region is a **directory** of shapefile bundles (one
-sibling ``.shp``/``.shx``/``.dbf``/``.prj``/``.cpg`` set per layer),
-because shapefile requires one geometry type per file.
+``.shp``/``.shx``/``.dbf``/``.prj``/``.cpg`` set per layer). The sidecar
+lives next to the directory, not inside it.
 
 The ``other_relations`` layer (GeometryCollection) is never produced —
-shapefile cannot represent it. Use ``pbf_geojson`` if you need those
-relations.
+shapefile cannot represent it. Use ``pbf_geojson`` if you need those.
 """
 
 from __future__ import annotations
@@ -28,14 +25,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from _lib.manifest import (
-    cache_dir,
-    manifest_transaction,
-    read_manifest,
-    utcnow_iso,
-)
+from _lib import sidecar
 from _lib.storage import LocalStorage
 
+NAMESPACE = "osm"
 SOURCE_CACHE_TYPE = "pbf"
 OUTPUT_CACHE_TYPE = "shapefiles"
 CHUNK_SIZE = 1024 * 1024
@@ -49,7 +42,6 @@ OSM_LAYER_NAMES: tuple[str, ...] = (
 
 _region_locks: dict[str, threading.Lock] = {}
 _region_locks_guard = threading.Lock()
-_manifest_write_lock = threading.Lock()
 
 
 def _region_lock(region: str) -> threading.Lock:
@@ -63,53 +55,51 @@ def _region_lock(region: str) -> threading.Lock:
 
 @dataclass
 class ConvertResult:
-    """Outcome of a ``convert_region`` call."""
-
     region: str
-    path: str                    # absolute path to the shapefile bundle directory
-    relative_path: str           # relative path within the shapefiles/ cache
+    path: str
+    relative_path: str
     requested_layers: tuple[str, ...]
     layers: list[dict[str, Any]]
-    total_size_bytes: int        # every file in the bundle dir
-    shp_size_bytes: int          # just the .shp files
+    total_size_bytes: int
+    shp_size_bytes: int
     generated_at: str
     duration_seconds: float
     was_cached: bool
     source_url: str
     source_pbf_path: str
-    manifest_entry: dict[str, Any] = field(default_factory=dict)
+    sidecar: dict[str, Any] = field(default_factory=dict)
 
 
 class ConversionError(RuntimeError):
-    """Raised when a conversion fails (ogr2ogr failure, missing PBF, etc.)."""
+    """Raised when a conversion fails."""
 
 
 def pbf_rel_path(region: str) -> str:
     return f"{region}-latest.osm.pbf"
 
 
-def pbf_abs_path(region: str) -> Path:
-    return Path(cache_dir(SOURCE_CACHE_TYPE)) / pbf_rel_path(region)
+def pbf_abs_path(region: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, SOURCE_CACHE_TYPE, pbf_rel_path(region), s))
 
 
 def shapefile_rel_path(region: str) -> str:
+    """Relative path (the directory name) within the shapefiles cache."""
     return f"{region}-latest"
 
 
-def shapefile_abs_path(region: str) -> Path:
-    return Path(cache_dir(OUTPUT_CACHE_TYPE)) / shapefile_rel_path(region)
+def shapefile_abs_path(region: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, OUTPUT_CACHE_TYPE, shapefile_rel_path(region), s))
 
 
-def _staging_dir(region: str) -> Path:
-    """Stage adjacent to the final destination so os.rename is same-FS and
-    staging uses destination-volume space. Override with
-    ``AFL_OSM_CONVERT_STAGING=tmp`` to fall back to local tmp.
-    """
-    if (os.environ.get("AFL_OSM_CONVERT_STAGING") or "").lower() == "tmp":
-        base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+def _staging_dir(region: str, storage: Any = None) -> Path:
+    """Stage adjacent to the final destination unless AFL_CONVERT_STAGING=tmp."""
+    if (os.environ.get("AFL_CONVERT_STAGING") or "").lower() == "tmp":
+        base = tempfile.gettempdir()
         safe = region.replace("/", "_")
         return Path(base) / "facetwork-shapefile-staging" / safe
-    out = shapefile_abs_path(region)
+    out = shapefile_abs_path(region, storage)
     return out.with_name(out.name + ".tmp")
 
 
@@ -152,13 +142,6 @@ def _layer_metadata(out_dir: Path) -> list[dict]:
 
 
 def normalize_layers(layers: tuple[str, ...] | list[str] | str | None) -> tuple[str, ...]:
-    """Canonicalize a user-supplied layer selection.
-
-    Accepts: None (defaults to all four), a comma-separated string, a
-    list, or a tuple. Order is normalized to ``OSM_LAYER_NAMES`` order
-    so on-disk layer order is deterministic regardless of input form.
-    Unknown layer names raise ``ConversionError``.
-    """
     if layers is None:
         return OSM_LAYER_NAMES
     if isinstance(layers, str):
@@ -179,30 +162,26 @@ def normalize_layers(layers: tuple[str, ...] | list[str] | str | None) -> tuple[
 
 def is_up_to_date(
     region: str,
-    pbf_entry: dict,
+    pbf_side: dict,
     out_abs: Path,
     requested_layers: tuple[str, ...],
+    storage: Any = None,
 ) -> bool:
-    """True if the cached bundle still satisfies the request.
-
-    Cache hit semantics:
-    - pbf sha256 matches, AND
-    - manifest's ``requested_layers`` is a superset of the request, AND
-    - every requested layer's ``.shp`` is present at the recorded size.
-    """
-    geo_manifest = read_manifest(OUTPUT_CACHE_TYPE)
+    """True if the cached bundle still satisfies the request."""
+    s = storage or LocalStorage()
     out_rel = shapefile_rel_path(region)
-    existing = geo_manifest.get("entries", {}).get(out_rel)
+    existing = sidecar.read_sidecar(NAMESPACE, OUTPUT_CACHE_TYPE, out_rel, s)
     if not existing:
         return False
-    if existing.get("source", {}).get("sha256") != pbf_entry.get("sha256"):
+    if existing.get("source", {}).get("sha256") != pbf_side.get("sha256"):
         return False
     if not out_abs.exists():
         return False
-    existing_layers = set(existing.get("requested_layers", []))
+    extra = existing.get("extra") or {}
+    existing_layers = set(extra.get("requested_layers", []))
     if not existing_layers.issuperset(requested_layers):
         return False
-    size_by_name = {layer["name"]: layer["size_bytes"] for layer in existing.get("layers", [])}
+    size_by_name = {layer["name"]: layer["size_bytes"] for layer in extra.get("layers", [])}
     for name in requested_layers:
         layer_file = out_abs / f"{name}.shp"
         if not layer_file.exists():
@@ -218,45 +197,47 @@ def convert_region(
     layers: tuple[str, ...] | list[str] | str | None = None,
     force: bool = False,
     ogr2ogr_bin: str = "ogr2ogr",
+    storage: Any = None,
 ) -> ConvertResult:
     """Convert a region's PBF to a multi-layer shapefile bundle."""
     layers_tuple = normalize_layers(layers)
+    s = storage or LocalStorage()
 
-    pbf_manifest = read_manifest(SOURCE_CACHE_TYPE)
     pbf_rel = pbf_rel_path(region)
-    pbf_entry = pbf_manifest.get("entries", {}).get(pbf_rel)
-    if not pbf_entry:
+    pbf_side = sidecar.read_sidecar(NAMESPACE, SOURCE_CACHE_TYPE, pbf_rel, s)
+    if not pbf_side:
         raise ConversionError(
-            f"no pbf manifest entry for {region!r}; run download-pbf first"
+            f"no pbf sidecar for {region!r}; run download-pbf first"
         )
-    src_pbf = pbf_abs_path(region)
+    src_pbf = pbf_abs_path(region, s)
     if not src_pbf.exists():
         raise ConversionError(f"pbf file missing on disk: {src_pbf}")
-    source_url = pbf_entry.get("source_url", "")
+    source_url = pbf_side.get("source", {}).get("url", "")
 
     with _region_lock(region):
-        out_abs = shapefile_abs_path(region)
+        out_abs = shapefile_abs_path(region, s)
         out_rel = shapefile_rel_path(region)
 
-        if not force and is_up_to_date(region, pbf_entry, out_abs, layers_tuple):
-            existing = read_manifest(OUTPUT_CACHE_TYPE).get("entries", {}).get(out_rel, {})
+        if not force and is_up_to_date(region, pbf_side, out_abs, layers_tuple, s):
+            existing = sidecar.read_sidecar(NAMESPACE, OUTPUT_CACHE_TYPE, out_rel, s) or {}
+            extra = existing.get("extra") or {}
             return ConvertResult(
                 region=region,
                 path=str(out_abs),
                 relative_path=out_rel + "/",
                 requested_layers=layers_tuple,
-                layers=existing.get("layers", []),
-                total_size_bytes=existing.get("total_size_bytes", 0),
-                shp_size_bytes=existing.get("shp_size_bytes", 0),
+                layers=extra.get("layers", []),
+                total_size_bytes=existing.get("size_bytes", 0),
+                shp_size_bytes=extra.get("shp_size_bytes", 0),
                 generated_at=existing.get("generated_at", ""),
                 duration_seconds=0.0,
                 was_cached=True,
                 source_url=source_url,
                 source_pbf_path=str(src_pbf),
-                manifest_entry=existing,
+                sidecar=existing,
             )
 
-        staging = _staging_dir(region)
+        staging = _staging_dir(region, s)
         if staging.exists():
             shutil.rmtree(staging)
         staging.mkdir(parents=True, exist_ok=True)
@@ -284,40 +265,54 @@ def convert_region(
             raise
         elapsed = time.monotonic() - start
 
-        storage = LocalStorage()
-        storage.finalize_dir_from_local(str(staging), str(out_abs))
+        s.finalize_dir_from_local(str(staging), str(out_abs))
 
         layer_metadata = _layer_metadata(out_abs)
         total_size_shp = sum(layer["size_bytes"] for layer in layer_metadata)
         total_size_all = sum(f.stat().st_size for f in out_abs.rglob("*") if f.is_file())
-        generated_at = utcnow_iso()
+        generated_at = sidecar.utcnow_iso()
 
-        entry = {
-            "relative_path": out_rel + "/",
-            "format": "shapefile",
-            "requested_layers": list(layers_tuple),
-            "total_size_bytes": total_size_all,
-            "shp_size_bytes": total_size_shp,
-            "layers": layer_metadata,
-            "generated_at": generated_at,
-            "duration_seconds": round(elapsed, 2),
-            "source": {
+        # Directory sidecar: sha256 is that of the primary .shp bundle (the
+        # first-named requested layer's .shp), per cache-layout spec
+        # "SHA-256 of the primary payload file". Fall back to empty if none.
+        primary_sha = ""
+        for layer in layer_metadata:
+            if layer["name"] == layers_tuple[0]:
+                primary_sha = layer.get("sha256", "")
+                break
+
+        side = sidecar.write_sidecar(
+            NAMESPACE,
+            OUTPUT_CACHE_TYPE,
+            out_rel,
+            kind="directory",
+            size_bytes=total_size_all,
+            sha256=primary_sha,
+            source={
+                "namespace": NAMESPACE,
                 "cache_type": SOURCE_CACHE_TYPE,
                 "relative_path": pbf_rel,
-                "sha256": pbf_entry.get("sha256"),
-                "size_bytes": pbf_entry.get("size_bytes"),
-                "source_checksum": pbf_entry.get("source_checksum"),
-                "source_timestamp": pbf_entry.get("source_timestamp"),
-                "downloaded_at": pbf_entry.get("downloaded_at"),
+                "sha256": pbf_side.get("sha256"),
+                "size_bytes": pbf_side.get("size_bytes"),
+                "source_checksum": pbf_side.get("source", {}).get("source_checksum"),
+                "source_timestamp": pbf_side.get("source", {}).get("source_timestamp"),
+                "downloaded_at": pbf_side.get("source", {}).get("downloaded_at"),
             },
-            "tool": {
+            tool={
                 "command": "ogr2ogr -f 'ESRI Shapefile'",
                 "ogr2ogr_version": _ogr2ogr_version(ogr2ogr_bin),
             },
-            "extra": {"region": region},
-        }
-        with _manifest_write_lock, manifest_transaction(OUTPUT_CACHE_TYPE) as manifest:
-            manifest.setdefault("entries", {})[out_rel] = entry
+            extra={
+                "region": region,
+                "format": "shapefile",
+                "requested_layers": list(layers_tuple),
+                "shp_size_bytes": total_size_shp,
+                "layers": layer_metadata,
+                "duration_seconds": round(elapsed, 2),
+            },
+            generated_at=generated_at,
+            storage=s,
+        )
 
         return ConvertResult(
             region=region,
@@ -332,16 +327,13 @@ def convert_region(
             was_cached=False,
             source_url=source_url,
             source_pbf_path=str(src_pbf),
-            manifest_entry=entry,
+            sidecar=side,
         )
 
 
 def to_osm_cache(result: ConvertResult) -> dict[str, Any]:
-    """Map a ``ConvertResult`` to the ``OSMCache`` dict FFL handlers return.
-
-    ``path`` is the bundle **directory**, not a single file — downstream
-    handlers that expect a file path need to join a specific layer's
-    filename (e.g. ``Path(cache['path']) / 'points.shp'``).
+    """Map a ``ConvertResult`` to the ``OSMCache`` dict. ``path`` is the
+    bundle directory, not a single file.
     """
     return {
         "url": result.source_url,

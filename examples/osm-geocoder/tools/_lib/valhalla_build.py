@@ -1,28 +1,15 @@
 """Valhalla tile-set build library.
 
-Single source of truth for building Valhalla routing tilesets from
-cached OSM PBFs. Used by both the ``build-valhalla-tiles`` CLI tool
-and the FFL ``osm.ops.Valhalla.BuildTiles`` handler — they share one
-cache layout (``<cache_root>/valhalla/<region>-latest/``) and one
-manifest.
-
-Valhalla differs from GraphHopper in one important way: **profiles are
-query-time, not build-time.** A single built tileset serves routing
-for ``auto``, ``bicycle``, ``pedestrian``, ``truck``, etc. — there is
-no per-profile directory. That means manifest keys are just
-``<region>-latest`` (no profile suffix), and the CLI has no
-``--profile`` axis.
+Profiles are query-time in Valhalla (unlike GraphHopper), so there is no
+per-profile directory — one tileset per region at
+``cache/osm/valhalla/<region>-latest/`` with a sibling sidecar.
 
 Cache validity requires:
-
 - Source PBF's SHA-256 still matches, AND
-- Recorded ``valhalla_version`` matches this library's constant.
-  Bumping ``VALHALLA_VERSION`` on a toolchain upgrade invalidates
-  all tilesets automatically.
+- Recorded ``valhalla_version`` matches ``VALHALLA_VERSION`` here.
 
-Requires the ``valhalla_build_config`` and ``valhalla_build_tiles``
-binaries from the Valhalla distribution (``brew install valhalla``
-on macOS).
+Requires ``valhalla_build_config`` and ``valhalla_build_tiles``
+(``brew install valhalla`` on macOS).
 """
 
 from __future__ import annotations
@@ -37,24 +24,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from _lib.manifest import (
-    cache_dir,
-    manifest_transaction,
-    read_manifest,
-    utcnow_iso,
-)
+from _lib import sidecar
 from _lib.storage import LocalStorage
 
+NAMESPACE = "osm"
 SOURCE_CACHE_TYPE = "pbf"
 OUTPUT_CACHE_TYPE = "valhalla"
 
-# Valhalla toolchain version we build against. Bump when upgrading —
-# cache entries tagged with an older version become stale automatically.
-# (Tile binary format is tied to the producing toolchain.)
 VALHALLA_VERSION = "3.5"
 
-# Profiles Valhalla serves at query time. Not a build-time axis; kept
-# here for CLI --help and FFL documentation.
 QUERY_PROFILES: tuple[str, ...] = (
     "auto",
     "bicycle",
@@ -68,11 +46,8 @@ QUERY_PROFILES: tuple[str, ...] = (
 
 DEFAULT_TIMEOUT_SECONDS = 3600
 
-# In-process locks: one per region so concurrent same-region builds
-# serialize, and a module-level manifest write lock.
 _build_locks: dict[str, threading.Lock] = {}
 _build_locks_guard = threading.Lock()
-_manifest_write_lock = threading.Lock()
 
 
 def _build_lock(region: str) -> threading.Lock:
@@ -86,53 +61,49 @@ def _build_lock(region: str) -> threading.Lock:
 
 @dataclass
 class BuildResult:
-    """Outcome of a ``build_tiles`` call."""
-
     region: str
-    tile_dir: str              # absolute path to the built tileset directory
-    relative_path: str         # relative to valhalla/ cache dir
+    tile_dir: str
+    relative_path: str
     total_size_bytes: int
     tile_count: int
-    tile_levels: dict[str, int]   # {"0": count, "1": count, "2": count}
+    tile_levels: dict[str, int]
     valhalla_version: str
     generated_at: str
     duration_seconds: float
     was_cached: bool
     source_url: str
     source_pbf_path: str
-    manifest_entry: dict[str, Any] = field(default_factory=dict)
+    sidecar: dict[str, Any] = field(default_factory=dict)
 
 
 class BuildError(RuntimeError):
-    """Raised when a tile build fails (binaries missing, valhalla error, etc.)."""
+    """Raised when a tile build fails."""
 
 
 def pbf_rel_path(region: str) -> str:
     return f"{region}-latest.osm.pbf"
 
 
-def pbf_abs_path(region: str) -> Path:
-    return Path(cache_dir(SOURCE_CACHE_TYPE)) / pbf_rel_path(region)
+def pbf_abs_path(region: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, SOURCE_CACHE_TYPE, pbf_rel_path(region), s))
 
 
 def tileset_rel_path(region: str) -> str:
-    """Manifest key — <region>-latest."""
     return f"{region}-latest"
 
 
-def tileset_abs_path(region: str) -> Path:
-    return Path(cache_dir(OUTPUT_CACHE_TYPE)) / tileset_rel_path(region)
+def tileset_abs_path(region: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, OUTPUT_CACHE_TYPE, tileset_rel_path(region), s))
 
 
-def _staging_dir(region: str) -> Path:
-    """Stage adjacent to the final destination. Override with
-    ``AFL_OSM_CONVERT_STAGING=tmp`` for the legacy local-tmp behavior.
-    """
-    if (os.environ.get("AFL_OSM_CONVERT_STAGING") or "").lower() == "tmp":
-        base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+def _staging_dir(region: str, storage: Any = None) -> Path:
+    if (os.environ.get("AFL_CONVERT_STAGING") or "").lower() == "tmp":
+        base = tempfile.gettempdir()
         safe = region.replace("/", "_")
         return Path(base) / "facetwork-valhalla-staging" / safe
-    out = tileset_abs_path(region)
+    out = tileset_abs_path(region, storage)
     return out.with_name(out.name + ".staging")
 
 
@@ -143,14 +114,12 @@ def _dir_size(path: Path) -> int:
 
 
 def _count_tiles(tile_dir: Path) -> tuple[int, dict[str, int]]:
-    """Count ``.gph`` tile files; return (total, per-level breakdown)."""
     total = 0
     per_level: dict[str, int] = {}
     if not tile_dir.exists():
         return 0, per_level
     for tile in tile_dir.rglob("*.gph"):
         total += 1
-        # First path component after tile_dir is the hierarchy level (0/1/2).
         try:
             rel = tile.relative_to(tile_dir)
             level = rel.parts[0]
@@ -161,7 +130,6 @@ def _count_tiles(tile_dir: Path) -> tuple[int, dict[str, int]]:
 
 
 def _tileset_exists(tile_dir: Path) -> bool:
-    """A tileset exists if the directory contains at least one .gph file."""
     if not tile_dir.is_dir():
         return False
     for _ in tile_dir.rglob("*.gph"):
@@ -169,16 +137,21 @@ def _tileset_exists(tile_dir: Path) -> bool:
     return False
 
 
-def is_up_to_date(region: str, pbf_entry: dict, tile_dir: Path) -> bool:
-    """True if the cached tileset still matches PBF SHA and Valhalla version."""
-    cache_manifest = read_manifest(OUTPUT_CACHE_TYPE)
+def is_up_to_date(
+    region: str,
+    pbf_side: dict,
+    tile_dir: Path,
+    storage: Any = None,
+) -> bool:
+    s = storage or LocalStorage()
     rel = tileset_rel_path(region)
-    existing = cache_manifest.get("entries", {}).get(rel)
+    existing = sidecar.read_sidecar(NAMESPACE, OUTPUT_CACHE_TYPE, rel, s)
     if not existing:
         return False
-    if existing.get("source", {}).get("sha256") != pbf_entry.get("sha256"):
+    if existing.get("source", {}).get("sha256") != pbf_side.get("sha256"):
         return False
-    if existing.get("valhalla_version") != VALHALLA_VERSION:
+    extra = existing.get("extra") or {}
+    if extra.get("valhalla_version") != VALHALLA_VERSION:
         return False
     if not _tileset_exists(tile_dir):
         return False
@@ -188,7 +161,6 @@ def is_up_to_date(region: str, pbf_entry: dict, tile_dir: Path) -> bool:
 def _generate_config(
     tile_dir: Path, config_path: Path, config_bin: str
 ) -> None:
-    """Produce a Valhalla config JSON pointing at ``tile_dir``."""
     try:
         result = subprocess.run(
             [config_bin, "--mjolnir-tile-dir", str(tile_dir)],
@@ -217,7 +189,6 @@ def _run_build(
     tiles_bin: str,
     timeout_seconds: int,
 ) -> None:
-    """Invoke ``valhalla_build_tiles``, raising BuildError on failure."""
     cmd = [tiles_bin, "-c", str(config_path), str(pbf_path)]
     try:
         result = subprocess.run(
@@ -252,36 +223,33 @@ def build_tiles(
     config_bin: str = "valhalla_build_config",
     tiles_bin: str = "valhalla_build_tiles",
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    storage: Any = None,
 ) -> BuildResult:
-    """Build a Valhalla tileset from a region's cached PBF.
-
-    Thread-safe per region. Concurrent same-region calls serialize;
-    different regions run independently.
-    """
-    pbf_manifest = read_manifest(SOURCE_CACHE_TYPE)
+    """Build a Valhalla tileset from a region's cached PBF."""
+    s = storage or LocalStorage()
     pbf_rel = pbf_rel_path(region)
-    pbf_entry = pbf_manifest.get("entries", {}).get(pbf_rel)
-    if not pbf_entry:
+    pbf_side = sidecar.read_sidecar(NAMESPACE, SOURCE_CACHE_TYPE, pbf_rel, s)
+    if not pbf_side:
         raise BuildError(
-            f"no pbf manifest entry for {region!r}; run download-pbf first"
+            f"no pbf sidecar for {region!r}; run download-pbf first"
         )
-    src_pbf = pbf_abs_path(region)
+    src_pbf = pbf_abs_path(region, s)
     if not src_pbf.exists():
         raise BuildError(f"pbf file missing on disk: {src_pbf}")
-    source_url = pbf_entry.get("source_url", "")
+    source_url = pbf_side.get("source", {}).get("url", "")
 
     with _build_lock(region):
-        tile_dir = tileset_abs_path(region)
+        tile_dir = tileset_abs_path(region, s)
         rel = tileset_rel_path(region)
 
-        if not force and is_up_to_date(region, pbf_entry, tile_dir):
+        if not force and is_up_to_date(region, pbf_side, tile_dir, s):
             tile_count, levels = _count_tiles(tile_dir)
-            existing = read_manifest(OUTPUT_CACHE_TYPE).get("entries", {}).get(rel, {})
+            existing = sidecar.read_sidecar(NAMESPACE, OUTPUT_CACHE_TYPE, rel, s) or {}
             return BuildResult(
                 region=region,
                 tile_dir=str(tile_dir),
                 relative_path=rel + "/",
-                total_size_bytes=existing.get("total_size_bytes", _dir_size(tile_dir)),
+                total_size_bytes=existing.get("size_bytes", _dir_size(tile_dir)),
                 tile_count=tile_count,
                 tile_levels=levels,
                 valhalla_version=VALHALLA_VERSION,
@@ -290,12 +258,10 @@ def build_tiles(
                 was_cached=True,
                 source_url=source_url,
                 source_pbf_path=str(src_pbf),
-                manifest_entry=existing,
+                sidecar=existing,
             )
 
-        # Stage the build locally so the destination doesn't see a
-        # partial tree if the subprocess crashes.
-        staging = _staging_dir(region)
+        staging = _staging_dir(region, s)
         if staging.exists():
             shutil.rmtree(staging)
         staging.mkdir(parents=True, exist_ok=True)
@@ -319,41 +285,49 @@ def build_tiles(
                 f"valhalla_build_tiles produced no tiles for {region}"
             )
 
-        storage = LocalStorage()
-        storage.finalize_dir_from_local(str(staging_tiles), str(tile_dir))
-        # finalize_dir_from_local removes staging_tiles but leaves the
-        # parent staging/ and the valhalla.json config behind.
+        s.finalize_dir_from_local(str(staging_tiles), str(tile_dir))
         shutil.rmtree(staging, ignore_errors=True)
 
         total_size = _dir_size(tile_dir)
-        generated_at = utcnow_iso()
-        entry = {
-            "relative_path": rel + "/",
-            "region": region,
-            "valhalla_version": VALHALLA_VERSION,
-            "total_size_bytes": total_size,
-            "tile_count": tile_count,
-            "tile_levels": levels,
-            "generated_at": generated_at,
-            "duration_seconds": round(elapsed, 2),
-            "source": {
+        generated_at = sidecar.utcnow_iso()
+        # Primary sha: first .gph file encountered (stable key).
+        primary_sha = ""
+        for first_tile in tile_dir.rglob("*.gph"):
+            primary_sha = _sha256_file(first_tile)
+            break
+
+        side = sidecar.write_sidecar(
+            NAMESPACE,
+            OUTPUT_CACHE_TYPE,
+            rel,
+            kind="directory",
+            size_bytes=total_size,
+            sha256=primary_sha,
+            source={
+                "namespace": NAMESPACE,
                 "cache_type": SOURCE_CACHE_TYPE,
                 "relative_path": pbf_rel,
-                "sha256": pbf_entry.get("sha256"),
-                "size_bytes": pbf_entry.get("size_bytes"),
-                "source_checksum": pbf_entry.get("source_checksum"),
-                "source_timestamp": pbf_entry.get("source_timestamp"),
-                "downloaded_at": pbf_entry.get("downloaded_at"),
+                "sha256": pbf_side.get("sha256"),
+                "size_bytes": pbf_side.get("size_bytes"),
+                "source_checksum": pbf_side.get("source", {}).get("source_checksum"),
+                "source_timestamp": pbf_side.get("source", {}).get("source_timestamp"),
+                "downloaded_at": pbf_side.get("source", {}).get("downloaded_at"),
             },
-            "tool": {
+            tool={
                 "command": "valhalla_build_tiles",
                 "config_bin": config_bin,
                 "tiles_bin": tiles_bin,
             },
-            "extra": {},
-        }
-        with _manifest_write_lock, manifest_transaction(OUTPUT_CACHE_TYPE) as manifest:
-            manifest.setdefault("entries", {})[rel] = entry
+            extra={
+                "region": region,
+                "valhalla_version": VALHALLA_VERSION,
+                "tile_count": tile_count,
+                "tile_levels": levels,
+                "duration_seconds": round(elapsed, 2),
+            },
+            generated_at=generated_at,
+            storage=s,
+        )
 
         return BuildResult(
             region=region,
@@ -368,12 +342,20 @@ def build_tiles(
             was_cached=False,
             source_url=source_url,
             source_pbf_path=str(src_pbf),
-            manifest_entry=entry,
+            sidecar=side,
         )
 
 
+def _sha256_file(path: Path) -> str:
+    import hashlib
+    sha = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            sha.update(chunk)
+    return sha.hexdigest()
+
+
 def clean_tiles(tile_dir: str) -> bool:
-    """Remove a built tileset directory. Returns True if deleted."""
     p = Path(tile_dir)
     if p.exists():
         shutil.rmtree(p)
@@ -382,7 +364,6 @@ def clean_tiles(tile_dir: str) -> bool:
 
 
 def to_valhalla_cache(result: BuildResult) -> dict[str, Any]:
-    """Map a ``BuildResult`` to the ``ValhallaCache`` FFL schema dict."""
     return {
         "osmSource": result.source_pbf_path,
         "tileDir": result.tile_dir,

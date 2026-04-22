@@ -100,8 +100,13 @@ class RangeRequestHandler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    # Resolve the default directory relative to AFL_OSM_CACHE_ROOT.
-    default_dir = os.environ.get("AFL_OSM_CACHE_ROOT", "/Volumes/afl_data/osm")
+    # Resolve the default directory to AFL_CACHE_ROOT/osm so existing URLs
+    # like /html/ continue to resolve.
+    default_data = os.environ.get("AFL_DATA_ROOT", "/Volumes/afl_data")
+    default_cache = os.environ.get(
+        "AFL_CACHE_ROOT", os.path.join(default_data, "cache")
+    )
+    default_dir = os.path.join(default_cache, "osm")
 
     parser = argparse.ArgumentParser(description="Serve HTML maps with Range request support")
     parser.add_argument("--port", type=int, default=8000)

@@ -1,19 +1,17 @@
 """Elevation raster download library — Copernicus DEM GLO-30 via gdalwarp.
 
-Pulls Copernicus DEM 30m tiles from the AWS Open Data registry (no
-auth required) and mosaics them into a single GeoTIFF cropped to a
-caller-supplied bbox. Each call produces one entry at
-``<cache_root>/elevation/<name>-latest.tif`` with its own manifest.
+Pulls Copernicus DEM 30m tiles from the AWS Open Data registry and
+mosaics them into a GeoTIFF cropped to a caller-supplied bbox. Each
+call produces one entry at ``cache/elevation/srtm/<name>-latest.tif``
+with a sibling ``.meta.json`` sidecar.
+
+Namespace: ``elevation`` (not ``osm`` — elevation is its own domain).
+Cache_type: ``srtm`` for Copernicus (same 1-degree-grid shape as SRTM).
 
 Cache validity:
-
-- bbox matches what the manifest recorded, AND
+- bbox matches what the sidecar recorded, AND
 - source identifier (``cop-dem-30m``) matches, AND
 - ``elevation_version`` matches.
-
-Bumping ``ELEVATION_VERSION`` below invalidates every cached entry —
-useful if we change the tile URL convention, gdalwarp flags, or output
-format.
 """
 
 from __future__ import annotations
@@ -21,7 +19,6 @@ from __future__ import annotations
 import hashlib
 import math
 import os
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -30,31 +27,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from _lib.manifest import (
-    cache_dir,
-    manifest_transaction,
-    read_manifest,
-    utcnow_iso,
-)
+from _lib import sidecar
 from _lib.storage import LocalStorage
 
-CACHE_TYPE = "elevation"
+NAMESPACE = "elevation"
+CACHE_TYPE = "srtm"
 ELEVATION_VERSION = 1
 CHUNK_SIZE = 1024 * 1024
 DEFAULT_TIMEOUT_SECONDS = 1800
 
-# Supported sources. For v1 only Copernicus DEM 30m is wired up; SRTM and
-# ALOS would be additional entries here mapping to a URL-builder function.
 SOURCE_COP_DEM_30M = "cop-dem-30m"
 SUPPORTED_SOURCES = (SOURCE_COP_DEM_30M,)
 
-# AWS Open Data: https://registry.opendata.aws/copernicus-dem/
-# Tile naming: Copernicus_DSM_COG_10_{LAT}_00_{LON}_00_DEM/*.tif
 _COP_DEM_BASE = "https://copernicus-dem-30m.s3.amazonaws.com"
 
 _build_locks: dict[str, threading.Lock] = {}
 _build_locks_guard = threading.Lock()
-_manifest_write_lock = threading.Lock()
 
 
 def _build_lock(name: str) -> threading.Lock:
@@ -80,7 +68,7 @@ class DownloadResult:
     generated_at: str
     duration_seconds: float
     was_cached: bool
-    manifest_entry: dict[str, Any] = field(default_factory=dict)
+    sidecar: dict[str, Any] = field(default_factory=dict)
 
 
 class ElevationError(RuntimeError):
@@ -91,12 +79,13 @@ def raster_rel_path(name: str) -> str:
     return f"{name}-latest.tif"
 
 
-def raster_abs_path(name: str) -> Path:
-    return Path(cache_dir(CACHE_TYPE)) / raster_rel_path(name)
+def raster_abs_path(name: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, CACHE_TYPE, raster_rel_path(name), s))
 
 
 def _staging_path(name: str) -> Path:
-    base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+    base = tempfile.gettempdir()
     safe = name.replace("/", "_")
     return Path(base) / "facetwork-elevation-staging" / f"{safe}-latest.tif"
 
@@ -112,8 +101,6 @@ def _validate_bbox(bbox: tuple[float, float, float, float]) -> None:
 
 
 def _cop_dem_tile_name(lat_deg: int, lon_deg: int) -> str:
-    """Copernicus DEM GLO-30 tile directory / file base name."""
-    # Latitude: N for >=0, S for <0. Formatted as 2-digit absolute value.
     lat_prefix = "N" if lat_deg >= 0 else "S"
     lon_prefix = "E" if lon_deg >= 0 else "W"
     return (
@@ -131,13 +118,11 @@ def _cop_dem_tile_url(lat_deg: int, lon_deg: int) -> str:
 def _tiles_for_bbox(
     bbox: tuple[float, float, float, float], source: str
 ) -> list[str]:
-    """Return URLs of 1°×1° tiles needed to cover ``bbox`` for the given source."""
     if source != SOURCE_COP_DEM_30M:
         raise ElevationError(f"unsupported source: {source!r}")
     w, s, e, n = bbox
-    # Tile's lat is the southern edge; tile's lon is the western edge.
     lat_start = math.floor(s)
-    lat_end = math.floor(n - 1e-9)  # exclusive upper
+    lat_end = math.floor(n - 1e-9)
     lon_start = math.floor(w)
     lon_end = math.floor(e - 1e-9)
     urls: list[str] = []
@@ -179,19 +164,21 @@ def is_up_to_date(
     name: str,
     source: str,
     bbox: tuple[float, float, float, float],
+    storage: Any = None,
 ) -> bool:
-    cache_manifest = read_manifest(CACHE_TYPE)
+    s = storage or LocalStorage()
     rel = raster_rel_path(name)
-    existing = cache_manifest.get("entries", {}).get(rel)
+    existing = sidecar.read_sidecar(NAMESPACE, CACHE_TYPE, rel, s)
     if not existing:
         return False
-    if existing.get("source") != source:
+    extra = existing.get("extra") or {}
+    if extra.get("source") != source:
         return False
-    if list(bbox) != existing.get("bbox"):
+    if list(bbox) != extra.get("bbox"):
         return False
-    if existing.get("elevation_version") != ELEVATION_VERSION:
+    if extra.get("elevation_version") != ELEVATION_VERSION:
         return False
-    out_abs = raster_abs_path(name)
+    out_abs = raster_abs_path(name, s)
     if not out_abs.exists():
         return False
     return out_abs.stat().st_size == existing.get("size_bytes")
@@ -205,6 +192,7 @@ def download_elevation(
     force: bool = False,
     gdalwarp_bin: str = "gdalwarp",
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    storage: Any = None,
 ) -> DownloadResult:
     """Download a cropped elevation raster for ``bbox`` under the name ``name``."""
     if not name or "/" in name:
@@ -216,27 +204,29 @@ def download_elevation(
         raise ElevationError(
             f"unknown source: {source!r}. Supported: {', '.join(SUPPORTED_SOURCES)}"
         )
+    s = storage or LocalStorage()
 
     with _build_lock(name):
-        out_abs = raster_abs_path(name)
+        out_abs = raster_abs_path(name, s)
         rel = raster_rel_path(name)
 
-        if not force and is_up_to_date(name, source, bbox):
-            existing = read_manifest(CACHE_TYPE).get("entries", {}).get(rel, {})
+        if not force and is_up_to_date(name, source, bbox, s):
+            existing = sidecar.read_sidecar(NAMESPACE, CACHE_TYPE, rel, s) or {}
+            extra = existing.get("extra") or {}
             return DownloadResult(
                 name=name,
                 path=str(out_abs),
                 relative_path=rel,
                 source=source,
                 bbox=bbox,
-                tile_urls=existing.get("tile_urls", []),
+                tile_urls=extra.get("tile_urls", []),
                 size_bytes=existing.get("size_bytes", out_abs.stat().st_size),
                 sha256=existing.get("sha256", ""),
                 elevation_version=ELEVATION_VERSION,
                 generated_at=existing.get("generated_at", ""),
                 duration_seconds=0.0,
                 was_cached=True,
-                manifest_entry=existing,
+                sidecar=existing,
             )
 
         urls = _tiles_for_bbox(bbox, source)
@@ -250,13 +240,9 @@ def download_elevation(
         if staging.exists():
             staging.unlink()
 
-        # /vsicurl/ prefix tells GDAL to stream from HTTP. Missing tiles
-        # (ocean) raise; gdalwarp supports -skipfailures but we don't
-        # use it because it can mask genuine URL errors. If you hit
-        # "ocean" tiles that don't exist upstream, file a refinement.
         vsi_urls = [f"/vsicurl/{u}" for u in urls]
 
-        w, s, e, n = bbox
+        w, s_lat, e, n = bbox
         cmd = [
             gdalwarp_bin,
             "-overwrite",
@@ -264,7 +250,7 @@ def download_elevation(
             "-co", "COMPRESS=LZW",
             "-co", "TILED=YES",
             "-t_srs", "EPSG:4326",
-            "-te", f"{w}", f"{s}", f"{e}", f"{n}",
+            "-te", f"{w}", f"{s_lat}", f"{e}", f"{n}",
             *vsi_urls,
             str(staging),
         ]
@@ -301,30 +287,32 @@ def download_elevation(
 
         size, sha = _sha256_file(staging)
 
-        storage = LocalStorage()
-        storage.finalize_from_local(str(staging), str(out_abs))
+        s.finalize_from_local(str(staging), str(out_abs))
 
-        generated_at = utcnow_iso()
-        entry = {
-            "relative_path": rel,
-            "name": name,
-            "source": source,
-            "bbox": list(bbox),
-            "tile_urls": urls,
-            "tile_count": len(urls),
-            "size_bytes": size,
-            "sha256": sha,
-            "elevation_version": ELEVATION_VERSION,
-            "generated_at": generated_at,
-            "duration_seconds": round(elapsed, 2),
-            "tool": {
+        generated_at = sidecar.utcnow_iso()
+        side = sidecar.write_sidecar(
+            NAMESPACE,
+            CACHE_TYPE,
+            rel,
+            kind="file",
+            size_bytes=size,
+            sha256=sha,
+            tool={
                 "command": "gdalwarp",
                 "gdal_version": _gdalwarp_version(gdalwarp_bin),
             },
-            "extra": {},
-        }
-        with _manifest_write_lock, manifest_transaction(CACHE_TYPE) as manifest:
-            manifest.setdefault("entries", {})[rel] = entry
+            extra={
+                "name": name,
+                "source": source,
+                "bbox": list(bbox),
+                "tile_urls": urls,
+                "tile_count": len(urls),
+                "elevation_version": ELEVATION_VERSION,
+                "duration_seconds": round(elapsed, 2),
+            },
+            generated_at=generated_at,
+            storage=s,
+        )
 
         return DownloadResult(
             name=name,
@@ -339,12 +327,12 @@ def download_elevation(
             generated_at=generated_at,
             duration_seconds=elapsed,
             was_cached=False,
-            manifest_entry=entry,
+            sidecar=side,
         )
 
 
-def list_rasters() -> list[dict[str, Any]]:
-    manifest = read_manifest(CACHE_TYPE)
-    out = list(manifest.get("entries", {}).values())
-    out.sort(key=lambda e: e.get("name", ""))
+def list_rasters(storage: Any = None) -> list[dict[str, Any]]:
+    s = storage or LocalStorage()
+    out = sidecar.list_entries(NAMESPACE, CACHE_TYPE, s)
+    out.sort(key=lambda e: (e.get("extra") or {}).get("name", ""))
     return out

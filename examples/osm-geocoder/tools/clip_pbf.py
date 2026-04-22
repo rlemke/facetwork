@@ -37,9 +37,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _lib.manifest import read_manifest  # noqa: E402
+from _lib import sidecar  # noqa: E402
 from _lib.pbf_clip import (  # noqa: E402
     CACHE_TYPE,
+    NAMESPACE,
+    SOURCE_CACHE_TYPE,
     DEFAULT_TIMEOUT_SECONDS,
     ClipError,
     ClipResult,
@@ -65,26 +67,33 @@ def _parse_bbox(raw: str) -> tuple[float, float, float, float]:
     return (w, s, e, n)
 
 
+def _clip_info(entry: dict) -> dict:
+    return (entry.get("extra") or {}).get("clip") or {}
+
+
+def _name_from_entry(entry: dict) -> str:
+    rel = entry.get("relative_path", "")
+    suffix = "-latest.osm.pbf"
+    if rel.endswith(suffix):
+        return rel[: -len(suffix)]
+    return ""
+
+
 def _up_to_date_cheap(entry: dict) -> bool:
-    """Cheap local-only check for one clip manifest entry."""
-    clip = entry.get("clip") or {}
+    """Cheap local-only check for one clip sidecar."""
+    clip = _clip_info(entry)
     source_region = clip.get("source_region") or ""
     if not source_region:
         return False
-    pbf_manifest = read_manifest(CACHE_TYPE)
     source_rel = f"{source_region}-latest.osm.pbf"
-    source_entry = pbf_manifest.get("entries", {}).get(source_rel)
-    if not source_entry:
+    source_side = sidecar.read_sidecar(NAMESPACE, SOURCE_CACHE_TYPE, source_rel)
+    if not source_side:
         return False
-    if source_entry.get("sha256") != clip.get("source_sha256"):
+    if source_side.get("sha256") != clip.get("source_sha256"):
         return False
-    # Clip file still present at recorded size?
-    rel = entry.get("relative_path", "")
-    if not rel:
+    name = _name_from_entry(entry)
+    if not name:
         return False
-    out_abs = Path(clip_rel_path(rel[len("clips/") : -len("-latest.osm.pbf")]))
-    # Actually compute the absolute path directly:
-    name = rel[len("clips/") : -len("-latest.osm.pbf")]
     out_abs = clip_abs_path(name)
     if not out_abs.exists():
         return False
@@ -92,21 +101,19 @@ def _up_to_date_cheap(entry: dict) -> bool:
 
 
 def _spec_from_entry(entry: dict) -> ClipSpec:
-    clip = entry.get("clip") or {}
-    return ClipSpec.from_dict(clip)
+    return ClipSpec.from_dict(_clip_info(entry))
 
 
 def _rebuild_existing(name: str, *, force: bool, dry_run: bool, osmium_bin: str) -> str:
-    """Rebuild a clip given only its name — pulls source and spec from the manifest."""
-    cache_manifest = read_manifest(CACHE_TYPE)
+    """Rebuild a clip given only its name — pulls source and spec from the sidecar."""
     rel = clip_rel_path(name)
-    entry = cache_manifest.get("entries", {}).get(rel)
-    if not entry or "clip" not in entry:
-        raise ClipError(f"no clip manifest entry for {name!r}")
-    clip_info = entry["clip"]
+    entry = sidecar.read_sidecar(NAMESPACE, CACHE_TYPE, rel)
+    if not entry or "clip" not in (entry.get("extra") or {}):
+        raise ClipError(f"no clip sidecar for {name!r}")
+    clip_info = _clip_info(entry)
     source_region = clip_info.get("source_region", "")
     if not source_region:
-        raise ClipError(f"clip {name!r} manifest missing source_region")
+        raise ClipError(f"clip {name!r} sidecar missing source_region")
     spec = _spec_from_entry(entry)
 
     if dry_run:
@@ -221,7 +228,7 @@ def main() -> int:
     if args.list:
         clips = list_clips()
         for entry in clips:
-            clip = entry.get("clip") or {}
+            clip = _clip_info(entry)
             desc = ""
             if clip.get("kind") == "bbox":
                 desc = f"bbox={clip.get('bbox')}"
@@ -268,8 +275,7 @@ def main() -> int:
         results = {"clipped": 0, "skipped": 0, "dry-run": 0, "failed": 0}
         failures: list[tuple[str, str]] = []
         for entry in stale:
-            rel = entry.get("relative_path", "")
-            name = rel[len("clips/") : -len("-latest.osm.pbf")]
+            name = _name_from_entry(entry)
             try:
                 outcome = _rebuild_existing(
                     name, force=args.force, dry_run=args.dry_run, osmium_bin=args.osmium
@@ -318,14 +324,13 @@ def main() -> int:
 
     if result.was_cached:
         print(
-            f"[{args.name}] up-to-date ({result.size_bytes / (1024 * 1024):.1f} MiB), "
-            f"region key: {result.region}",
+            f"[{args.name}] up-to-date ({result.size_bytes / (1024 * 1024):.1f} MiB)",
             file=sys.stderr,
         )
     else:
         print(
             f"[{args.name}] done ({result.size_bytes / (1024 * 1024):.1f} MiB, "
-            f"{result.duration_seconds:.1f}s), region key: {result.region}",
+            f"{result.duration_seconds:.1f}s)",
             file=sys.stderr,
         )
     return 0

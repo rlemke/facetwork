@@ -1,28 +1,16 @@
 """OSRM routing-graph build library (MLD algorithm).
 
-Runs the 3-stage OSRM build pipeline — ``osrm-extract`` →
-``osrm-partition`` → ``osrm-customize`` — against a cached PBF and
-produces per-(region, profile) graph directories at
-``<cache_root>/osrm/<region>-latest/<profile>/``.
-
-Why MLD not CH: Multi-Level Dijkstra supports live customization
-(traffic updates, restrictions toggled per query) and has become
-OSRM's default. Contraction Hierarchies is still faster at steady-
-state but can't be live-updated. Sticking with MLD for both speed-
-reasonable and future-friendly reasons.
+Runs ``osrm-extract`` → ``osrm-partition`` → ``osrm-customize`` against
+a cached PBF and produces per-(region, profile) graph directories at
+``cache/osm/osrm/<region>-latest/<profile>/`` with sibling sidecars.
 
 Cache validity requires:
-
 - Source PBF's SHA-256 match, AND
 - ``osrm_version`` match, AND
 - Profile match.
 
-Bumping ``OSRM_VERSION`` invalidates every cached graph after an
-engine upgrade. Different profiles for the same region are
-independent entries.
-
-Requires ``osrm-extract``, ``osrm-partition``, ``osrm-customize``
-from ``osrm-backend`` (``brew install osrm-backend``).
+Requires ``osrm-extract``, ``osrm-partition``, ``osrm-customize`` from
+``osrm-backend`` (``brew install osrm-backend``).
 """
 
 from __future__ import annotations
@@ -37,36 +25,28 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from _lib.manifest import (
-    cache_dir,
-    manifest_transaction,
-    read_manifest,
-    utcnow_iso,
-)
+from _lib import sidecar
 from _lib.storage import LocalStorage
 
+NAMESPACE = "osm"
 SOURCE_CACHE_TYPE = "pbf"
 OUTPUT_CACHE_TYPE = "osrm"
 
-# OSRM engine version we build against. Bump on major upgrade.
 OSRM_VERSION = "5.27"
 
-# Profiles shipped with osrm-backend.
 PROFILES: tuple[str, ...] = ("car", "bicycle", "foot")
 
 DEFAULT_TIMEOUT_SECONDS = 3600
 
-# Common brew / apt locations for OSRM profile .lua files. First one found wins.
 _PROFILE_SEARCH_PATHS: tuple[str, ...] = (
-    "/opt/homebrew/share/osrm/profiles",       # macOS Apple Silicon
-    "/usr/local/share/osrm/profiles",          # macOS Intel / Linuxbrew
-    "/usr/share/osrm/profiles",                # apt
+    "/opt/homebrew/share/osrm/profiles",
+    "/usr/local/share/osrm/profiles",
+    "/usr/share/osrm/profiles",
     "/usr/local/share/osrm-backend/profiles",
 )
 
 _build_locks: dict[tuple[str, str], threading.Lock] = {}
 _build_locks_guard = threading.Lock()
-_manifest_write_lock = threading.Lock()
 
 
 def _build_lock(region: str, profile: str) -> threading.Lock:
@@ -87,13 +67,13 @@ class BuildResult:
     relative_path: str
     total_size_bytes: int
     osrm_version: str
-    algorithm: str              # "mld"
+    algorithm: str
     generated_at: str
     duration_seconds: float
     was_cached: bool
     source_url: str
     source_pbf_path: str
-    manifest_entry: dict[str, Any] = field(default_factory=dict)
+    sidecar: dict[str, Any] = field(default_factory=dict)
 
 
 class BuildError(RuntimeError):
@@ -104,32 +84,30 @@ def pbf_rel_path(region: str) -> str:
     return f"{region}-latest.osm.pbf"
 
 
-def pbf_abs_path(region: str) -> Path:
-    return Path(cache_dir(SOURCE_CACHE_TYPE)) / pbf_rel_path(region)
+def pbf_abs_path(region: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, SOURCE_CACHE_TYPE, pbf_rel_path(region), s))
 
 
 def graph_rel_path(region: str, profile: str) -> str:
     return f"{region}-latest/{profile}"
 
 
-def graph_abs_path(region: str, profile: str) -> Path:
-    return Path(cache_dir(OUTPUT_CACHE_TYPE)) / graph_rel_path(region, profile)
+def graph_abs_path(region: str, profile: str, storage: Any = None) -> Path:
+    s = storage or LocalStorage()
+    return Path(sidecar.cache_path(NAMESPACE, OUTPUT_CACHE_TYPE, graph_rel_path(region, profile), s))
 
 
-def _staging_dir(region: str, profile: str) -> Path:
-    """Stage adjacent to the final destination. Override with
-    ``AFL_OSM_CONVERT_STAGING=tmp`` for the legacy local-tmp behavior.
-    """
-    if (os.environ.get("AFL_OSM_CONVERT_STAGING") or "").lower() == "tmp":
-        base = os.environ.get("AFL_OSM_LOCAL_TMP_DIR") or tempfile.gettempdir()
+def _staging_dir(region: str, profile: str, storage: Any = None) -> Path:
+    if (os.environ.get("AFL_CONVERT_STAGING") or "").lower() == "tmp":
+        base = tempfile.gettempdir()
         safe = region.replace("/", "_")
         return Path(base) / "facetwork-osrm-staging" / safe / profile
-    out = graph_abs_path(region, profile)
+    out = graph_abs_path(region, profile, storage)
     return out.with_name(out.name + ".tmp")
 
 
 def default_profile_file(profile: str) -> str | None:
-    """Find a profile .lua for ``profile`` by searching standard OSRM paths."""
     for base in _PROFILE_SEARCH_PATHS:
         candidate = Path(base) / f"{profile}.lua"
         if candidate.is_file():
@@ -161,7 +139,6 @@ def _dir_size(path: Path) -> int:
 def _graph_exists(graph_dir: Path) -> bool:
     if not graph_dir.is_dir():
         return False
-    # OSRM MLD output includes .osrm and many .osrm.* sidecar files.
     for entry in graph_dir.iterdir():
         if entry.name.endswith(".osrm") or entry.name.endswith(".osrm.mldgr"):
             return True
@@ -171,19 +148,21 @@ def _graph_exists(graph_dir: Path) -> bool:
 def is_up_to_date(
     region: str,
     profile: str,
-    pbf_entry: dict,
+    pbf_side: dict,
     graph_dir: Path,
+    storage: Any = None,
 ) -> bool:
     if profile not in PROFILES:
         return False
-    cache_manifest = read_manifest(OUTPUT_CACHE_TYPE)
+    s = storage or LocalStorage()
     rel = graph_rel_path(region, profile)
-    existing = cache_manifest.get("entries", {}).get(rel)
+    existing = sidecar.read_sidecar(NAMESPACE, OUTPUT_CACHE_TYPE, rel, s)
     if not existing:
         return False
-    if existing.get("source", {}).get("sha256") != pbf_entry.get("sha256"):
+    if existing.get("source", {}).get("sha256") != pbf_side.get("sha256"):
         return False
-    if existing.get("osrm_version") != OSRM_VERSION:
+    extra = existing.get("extra") or {}
+    if extra.get("osrm_version") != OSRM_VERSION:
         return False
     if not _graph_exists(graph_dir):
         return False
@@ -224,13 +203,14 @@ def build_graph(
     partition_bin: str = "osrm-partition",
     customize_bin: str = "osrm-customize",
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    storage: Any = None,
 ) -> BuildResult:
     """Build an OSRM MLD routing graph for (region, profile)."""
     if profile not in PROFILES:
         raise BuildError(
             f"unknown profile: {profile!r}. Valid: {', '.join(PROFILES)}"
         )
-    # Resolve profile .lua
+    s = storage or LocalStorage()
     lua_path = profile_file or default_profile_file(profile)
     if not lua_path or not Path(lua_path).is_file():
         raise BuildError(
@@ -239,30 +219,29 @@ def build_graph(
             f"Searched: {', '.join(_PROFILE_SEARCH_PATHS)}"
         )
 
-    pbf_manifest = read_manifest(SOURCE_CACHE_TYPE)
     pbf_rel = pbf_rel_path(region)
-    pbf_entry = pbf_manifest.get("entries", {}).get(pbf_rel)
-    if not pbf_entry:
+    pbf_side = sidecar.read_sidecar(NAMESPACE, SOURCE_CACHE_TYPE, pbf_rel, s)
+    if not pbf_side:
         raise BuildError(
-            f"no pbf manifest entry for {region!r}; run download-pbf first"
+            f"no pbf sidecar for {region!r}; run download-pbf first"
         )
-    src_pbf = pbf_abs_path(region)
+    src_pbf = pbf_abs_path(region, s)
     if not src_pbf.exists():
         raise BuildError(f"pbf file missing on disk: {src_pbf}")
-    source_url = pbf_entry.get("source_url", "")
+    source_url = pbf_side.get("source", {}).get("url", "")
 
     with _build_lock(region, profile):
-        graph_dir = graph_abs_path(region, profile)
+        graph_dir = graph_abs_path(region, profile, s)
         rel = graph_rel_path(region, profile)
 
-        if not force and is_up_to_date(region, profile, pbf_entry, graph_dir):
-            existing = read_manifest(OUTPUT_CACHE_TYPE).get("entries", {}).get(rel, {})
+        if not force and is_up_to_date(region, profile, pbf_side, graph_dir, s):
+            existing = sidecar.read_sidecar(NAMESPACE, OUTPUT_CACHE_TYPE, rel, s) or {}
             return BuildResult(
                 region=region,
                 profile=profile,
                 graph_dir=str(graph_dir),
                 relative_path=rel + "/",
-                total_size_bytes=existing.get("total_size_bytes", _dir_size(graph_dir)),
+                total_size_bytes=existing.get("size_bytes", _dir_size(graph_dir)),
                 osrm_version=OSRM_VERSION,
                 algorithm="mld",
                 generated_at=existing.get("generated_at", ""),
@@ -270,18 +249,14 @@ def build_graph(
                 was_cached=True,
                 source_url=source_url,
                 source_pbf_path=str(src_pbf),
-                manifest_entry=existing,
+                sidecar=existing,
             )
 
-        staging = _staging_dir(region, profile)
+        staging = _staging_dir(region, profile, s)
         if staging.exists():
             shutil.rmtree(staging)
         staging.mkdir(parents=True, exist_ok=True)
 
-        # OSRM writes its output into the directory of the input PBF,
-        # with filenames derived from the PBF's basename. We symlink the
-        # source PBF into staging with a safe name so everything lands
-        # in staging/.
         safe = region.replace("/", "_")
         staged_pbf = staging / f"{safe}-latest.osm.pbf"
         staged_pbf.symlink_to(src_pbf)
@@ -300,48 +275,55 @@ def build_graph(
             raise
         elapsed = time.monotonic() - start
 
-        # Remove the symlink so the finalized tree doesn't include it.
         staged_pbf.unlink()
 
-        # finalize_dir_from_local copies everything remaining in staging
-        # into the destination atomically.
         if not _graph_exists(staging):
             shutil.rmtree(staging, ignore_errors=True)
             raise BuildError(
                 f"OSRM pipeline produced no graph files for {region}/{profile}"
             )
-        storage = LocalStorage()
-        storage.finalize_dir_from_local(str(staging), str(graph_dir))
+        s.finalize_dir_from_local(str(staging), str(graph_dir))
 
         total_size = _dir_size(graph_dir)
-        generated_at = utcnow_iso()
-        entry = {
-            "relative_path": rel + "/",
-            "region": region,
-            "profile": profile,
-            "osrm_version": OSRM_VERSION,
-            "algorithm": "mld",
-            "profile_file": lua_path,
-            "total_size_bytes": total_size,
-            "generated_at": generated_at,
-            "duration_seconds": round(elapsed, 2),
-            "source": {
+        generated_at = sidecar.utcnow_iso()
+
+        primary_sha = ""
+        osrm_main = graph_dir / f"{safe}-latest.osrm"
+        if osrm_main.exists():
+            primary_sha = _sha256_file(osrm_main)
+
+        side = sidecar.write_sidecar(
+            NAMESPACE,
+            OUTPUT_CACHE_TYPE,
+            rel,
+            kind="directory",
+            size_bytes=total_size,
+            sha256=primary_sha,
+            source={
+                "namespace": NAMESPACE,
                 "cache_type": SOURCE_CACHE_TYPE,
                 "relative_path": pbf_rel,
-                "sha256": pbf_entry.get("sha256"),
-                "size_bytes": pbf_entry.get("size_bytes"),
-                "source_checksum": pbf_entry.get("source_checksum"),
-                "source_timestamp": pbf_entry.get("source_timestamp"),
-                "downloaded_at": pbf_entry.get("downloaded_at"),
+                "sha256": pbf_side.get("sha256"),
+                "size_bytes": pbf_side.get("size_bytes"),
+                "source_checksum": pbf_side.get("source", {}).get("source_checksum"),
+                "source_timestamp": pbf_side.get("source", {}).get("source_timestamp"),
+                "downloaded_at": pbf_side.get("source", {}).get("downloaded_at"),
             },
-            "tool": {
+            tool={
                 "command": "osrm-extract | osrm-partition | osrm-customize",
                 "extract_version": _osrm_binary_version(extract_bin),
             },
-            "extra": {},
-        }
-        with _manifest_write_lock, manifest_transaction(OUTPUT_CACHE_TYPE) as manifest:
-            manifest.setdefault("entries", {})[rel] = entry
+            extra={
+                "region": region,
+                "profile": profile,
+                "osrm_version": OSRM_VERSION,
+                "algorithm": "mld",
+                "profile_file": lua_path,
+                "duration_seconds": round(elapsed, 2),
+            },
+            generated_at=generated_at,
+            storage=s,
+        )
 
         return BuildResult(
             region=region,
@@ -356,8 +338,17 @@ def build_graph(
             was_cached=False,
             source_url=source_url,
             source_pbf_path=str(src_pbf),
-            manifest_entry=entry,
+            sidecar=side,
         )
+
+
+def _sha256_file(path: Path) -> str:
+    import hashlib
+    sha = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            sha.update(chunk)
+    return sha.hexdigest()
 
 
 def clean_graph(graph_dir: str) -> bool:
