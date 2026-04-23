@@ -1,0 +1,1491 @@
+{
+  "type": "Program",
+  "declarations": [
+    {
+      "type": "Namespace",
+      "name": "save_earth.types",
+      "declarations": [
+        {
+          "type": "SchemaDecl",
+          "name": "SourceFetchResult",
+          "doc": {
+            "description": "Result of any source download \u2014 one cached GeoJSON + sidecar.\n\nMatches the ``FetchResult`` dataclass the _lib modules return so\nFFL workflows can key downstream steps on ``relative_path`` or\n``feature_count`` without parsing the cached file.",
+            "params": [],
+            "returns": []
+          },
+          "fields": [
+            {
+              "name": "cache_type",
+              "type": "String"
+            },
+            {
+              "name": "relative_path",
+              "type": "String"
+            },
+            {
+              "name": "feature_count",
+              "type": "Int"
+            },
+            {
+              "name": "size_bytes",
+              "type": "Int"
+            },
+            {
+              "name": "sha256",
+              "type": "String"
+            },
+            {
+              "name": "source_url",
+              "type": "String"
+            },
+            {
+              "name": "was_cached",
+              "type": "Boolean"
+            },
+            {
+              "name": "used_mock",
+              "type": "Boolean"
+            }
+          ],
+          "id": "f8fb6616-c822-42c5-b3a3-7a19b751e7b7",
+          "location": {
+            "line": 21,
+            "column": 5,
+            "endLine": 37,
+            "endColumn": 1
+          }
+        },
+        {
+          "type": "SchemaDecl",
+          "name": "MapBundle",
+          "doc": {
+            "description": "Output of BuildMap: filesystem paths to the rendered bundle.\n\n``layer_counts`` is ``{layer_name: feature_count}`` as a JSON\nobject so the schema stays flat even when new sources get\nadded later.",
+            "params": [],
+            "returns": []
+          },
+          "fields": [
+            {
+              "name": "region_key",
+              "type": "String"
+            },
+            {
+              "name": "output_dir",
+              "type": "String"
+            },
+            {
+              "name": "html_path",
+              "type": "String"
+            },
+            {
+              "name": "layer_count",
+              "type": "Int"
+            },
+            {
+              "name": "layer_counts",
+              "type": "Json"
+            }
+          ],
+          "id": "2fabbe11-4f19-4607-95f6-a523da633906",
+          "location": {
+            "line": 37,
+            "column": 5,
+            "endLine": 49,
+            "endColumn": 1
+          }
+        }
+      ],
+      "id": "ef63316f-6937-4dcb-b774-7b0901596f15",
+      "location": {
+        "line": 20,
+        "column": 1,
+        "endLine": 55,
+        "endColumn": 1
+      }
+    },
+    {
+      "type": "Namespace",
+      "name": "save_earth.mixins",
+      "declarations": [
+        {
+          "type": "FacetDecl",
+          "name": "RetryPolicy",
+          "doc": {
+            "description": "Retry a step with exponential backoff. Applied to every\nnetwork-facing source download \u2014 OpenLitterMap's servers can\nrate-limit, EPA's ArcGIS fronts occasionally 5xx.",
+            "params": [],
+            "returns": []
+          },
+          "params": [
+            {
+              "name": "max_retries",
+              "type": "Int",
+              "default": {
+                "type": "Int",
+                "value": 3
+              }
+            },
+            {
+              "name": "backoff_ms",
+              "type": "Int",
+              "default": {
+                "type": "Int",
+                "value": 2000
+              }
+            }
+          ],
+          "returns": [
+            {
+              "name": "max_retries",
+              "type": "Int"
+            },
+            {
+              "name": "backoff_ms",
+              "type": "Int"
+            }
+          ],
+          "id": "9ee0e1e2-613a-4892-bd0b-05a4ffaa2aec",
+          "location": {
+            "line": 56,
+            "column": 5,
+            "endLine": 64,
+            "endColumn": 1
+          }
+        },
+        {
+          "type": "ImplicitDecl",
+          "name": "default_retry",
+          "call": {
+            "type": "CallExpr",
+            "target": "RetryPolicy",
+            "id": "dcb05a52-7f92-470e-9368-9cce5516e5f8",
+            "location": {
+              "line": 64,
+              "column": 30,
+              "endLine": 64,
+              "endColumn": 43
+            }
+          },
+          "id": "24ac406e-89fe-4189-982c-df74e23c6b4e",
+          "location": {
+            "line": 64,
+            "column": 5,
+            "endLine": 65,
+            "endColumn": 1
+          }
+        }
+      ],
+      "id": "8caf8297-e1df-45d6-b84f-9e198952d733",
+      "location": {
+        "line": 55,
+        "column": 1,
+        "endLine": 71,
+        "endColumn": 1
+      }
+    },
+    {
+      "type": "Namespace",
+      "name": "save_earth.sources",
+      "uses": [
+        "save_earth.types"
+      ],
+      "declarations": [
+        {
+          "type": "EventFacetDecl",
+          "name": "DownloadOpenLitterMap",
+          "doc": {
+            "description": "Download OpenLitterMap geotagged litter observations.\n\n``mode = \"clusters\"`` (default) works at any zoom; returns\naggregated cluster points. ``mode = \"points\"`` returns\nindividual photos but the upstream server enforces\n``zoom >= 15`` and a bounded ``bbox``.\n\n``bbox`` is a comma-separated ``min_lon,min_lat,max_lon,max_lat``\nstring (empty = no bbox). Keeping it a String avoids making\nJson mandatory; handlers parse it at dispatch time.",
+            "params": [],
+            "returns": []
+          },
+          "params": [
+            {
+              "name": "mode",
+              "type": "String",
+              "default": {
+                "type": "String",
+                "value": "clusters"
+              }
+            },
+            {
+              "name": "zoom",
+              "type": "Int",
+              "default": {
+                "type": "Int",
+                "value": 4
+              }
+            },
+            {
+              "name": "bbox",
+              "type": "String",
+              "default": {
+                "type": "String",
+                "value": ""
+              }
+            },
+            {
+              "name": "force",
+              "type": "Boolean",
+              "default": {
+                "type": "Boolean",
+                "value": false
+              }
+            },
+            {
+              "name": "use_mock",
+              "type": "Boolean",
+              "default": {
+                "type": "Boolean",
+                "value": false
+              }
+            }
+          ],
+          "returns": [
+            {
+              "name": "cache_type",
+              "type": "String"
+            },
+            {
+              "name": "relative_path",
+              "type": "String"
+            },
+            {
+              "name": "feature_count",
+              "type": "Int"
+            },
+            {
+              "name": "size_bytes",
+              "type": "Int"
+            },
+            {
+              "name": "sha256",
+              "type": "String"
+            },
+            {
+              "name": "source_url",
+              "type": "String"
+            },
+            {
+              "name": "was_cached",
+              "type": "Boolean"
+            },
+            {
+              "name": "used_mock",
+              "type": "Boolean"
+            }
+          ],
+          "mixins": [
+            {
+              "type": "MixinSig",
+              "target": "RetryPolicy"
+            }
+          ],
+          "id": "0c36c502-afba-4fde-9cf7-6d30f2571f00",
+          "location": {
+            "line": 74,
+            "column": 5,
+            "endLine": 101,
+            "endColumn": 1
+          }
+        },
+        {
+          "type": "EventFacetDecl",
+          "name": "DownloadEpaCleanups",
+          "doc": {
+            "description": "Download an EPA remediation-site dataset.\n\n``dataset`` = ``\"superfund\"`` (NPL sites, ~1.4k) or\n``\"brownfields\"`` (ACRES, tens of thousands \u2014 paginated\ntransparently by the handler).",
+            "params": [],
+            "returns": []
+          },
+          "params": [
+            {
+              "name": "dataset",
+              "type": "String",
+              "default": {
+                "type": "String",
+                "value": "superfund"
+              }
+            },
+            {
+              "name": "force",
+              "type": "Boolean",
+              "default": {
+                "type": "Boolean",
+                "value": false
+              }
+            },
+            {
+              "name": "use_mock",
+              "type": "Boolean",
+              "default": {
+                "type": "Boolean",
+                "value": false
+              }
+            }
+          ],
+          "returns": [
+            {
+              "name": "cache_type",
+              "type": "String"
+            },
+            {
+              "name": "relative_path",
+              "type": "String"
+            },
+            {
+              "name": "feature_count",
+              "type": "Int"
+            },
+            {
+              "name": "size_bytes",
+              "type": "Int"
+            },
+            {
+              "name": "sha256",
+              "type": "String"
+            },
+            {
+              "name": "source_url",
+              "type": "String"
+            },
+            {
+              "name": "was_cached",
+              "type": "Boolean"
+            },
+            {
+              "name": "used_mock",
+              "type": "Boolean"
+            }
+          ],
+          "mixins": [
+            {
+              "type": "MixinSig",
+              "target": "RetryPolicy"
+            }
+          ],
+          "id": "34a8cd20-3ed9-4f5c-97d5-87ef5864114c",
+          "location": {
+            "line": 101,
+            "column": 5,
+            "endLine": 120,
+            "endColumn": 1
+          }
+        }
+      ],
+      "id": "c48d2cb5-66dd-4031-a9f3-ecbec00c381a",
+      "location": {
+        "line": 71,
+        "column": 1,
+        "endLine": 126,
+        "endColumn": 1
+      }
+    },
+    {
+      "type": "Namespace",
+      "name": "save_earth.maps",
+      "uses": [
+        "save_earth.types"
+      ],
+      "declarations": [
+        {
+          "type": "EventFacetDecl",
+          "name": "BuildMap",
+          "doc": {
+            "description": "Build a MapLibre HTML map with every cached save-earth layer.\n\nAuto-discovers cached files \u2014 you don't have to list every\nlayer up-front. Passing a dependency signal (e.g. the\n``feature_count`` from a just-finished download) lets the\nruntime sequence the map build after the downloads it\nrelies on.",
+            "params": [],
+            "returns": []
+          },
+          "params": [
+            {
+              "name": "region",
+              "type": "String",
+              "default": {
+                "type": "String",
+                "value": "global"
+              }
+            },
+            {
+              "name": "center_lat",
+              "type": "Double",
+              "default": {
+                "type": "Double",
+                "value": 39.8283
+              }
+            },
+            {
+              "name": "center_lon",
+              "type": "Double",
+              "default": {
+                "type": "UnaryExpr",
+                "operator": "-",
+                "operand": {
+                  "type": "Double",
+                  "value": 98.5795
+                }
+              }
+            },
+            {
+              "name": "zoom",
+              "type": "Double",
+              "default": {
+                "type": "Double",
+                "value": 4.0
+              }
+            },
+            {
+              "name": "dependency_signal",
+              "type": "Int",
+              "default": {
+                "type": "Int",
+                "value": 0
+              }
+            }
+          ],
+          "returns": [
+            {
+              "name": "region_key",
+              "type": "String"
+            },
+            {
+              "name": "output_dir",
+              "type": "String"
+            },
+            {
+              "name": "html_path",
+              "type": "String"
+            },
+            {
+              "name": "layer_count",
+              "type": "Int"
+            },
+            {
+              "name": "layer_counts",
+              "type": "Json"
+            }
+          ],
+          "id": "baff773e-748c-4687-a550-60bf9975a1c6",
+          "location": {
+            "line": 129,
+            "column": 5,
+            "endLine": 149,
+            "endColumn": 1
+          }
+        }
+      ],
+      "id": "3d1591a6-a755-469d-9d4d-2c5790467378",
+      "location": {
+        "line": 126,
+        "column": 1,
+        "endLine": 155,
+        "endColumn": 1
+      }
+    },
+    {
+      "type": "Namespace",
+      "name": "save_earth.workflows",
+      "uses": [
+        "save_earth.types"
+      ],
+      "declarations": [
+        {
+          "type": "WorkflowDecl",
+          "name": "BuildGlobalMap",
+          "doc": {
+            "description": "Download every source and build the combined global map.\n\nDownloads run in parallel (FFL ``andThen`` siblings are\nscheduled concurrently when they don't reference each other).\nAny download failure yields ``partial_failure`` with a\ndescribing ``detail`` but does not stop the map build \u2014 the\nmap-render tool skips absent layers gracefully.",
+            "params": [],
+            "returns": []
+          },
+          "params": [
+            {
+              "name": "openlittermap_zoom",
+              "type": "Int",
+              "default": {
+                "type": "Int",
+                "value": 4
+              }
+            },
+            {
+              "name": "include_brownfields",
+              "type": "Boolean",
+              "default": {
+                "type": "Boolean",
+                "value": true
+              }
+            },
+            {
+              "name": "use_mock",
+              "type": "Boolean",
+              "default": {
+                "type": "Boolean",
+                "value": false
+              }
+            }
+          ],
+          "returns": [
+            {
+              "name": "status",
+              "type": "String"
+            },
+            {
+              "name": "html_path",
+              "type": "String"
+            },
+            {
+              "name": "detail",
+              "type": "String"
+            }
+          ],
+          "body": {
+            "type": "AndThenBlock",
+            "steps": [
+              {
+                "type": "StepStmt",
+                "name": "olm",
+                "call": {
+                  "type": "CallExpr",
+                  "target": "DownloadOpenLitterMap",
+                  "args": [
+                    {
+                      "name": "mode",
+                      "value": {
+                        "type": "String",
+                        "value": "clusters"
+                      }
+                    },
+                    {
+                      "name": "zoom",
+                      "value": {
+                        "type": "InputRef",
+                        "path": [
+                          "openlittermap_zoom"
+                        ]
+                      }
+                    },
+                    {
+                      "name": "use_mock",
+                      "value": {
+                        "type": "InputRef",
+                        "path": [
+                          "use_mock"
+                        ]
+                      }
+                    }
+                  ],
+                  "id": "a27ab835-9340-4259-a2c8-e4ce1b7afd3a",
+                  "location": {
+                    "line": 174,
+                    "column": 15,
+                    "endLine": 178,
+                    "endColumn": 10
+                  }
+                },
+                "catch": {
+                  "type": "CatchClause",
+                  "yield": {
+                    "type": "YieldStmt",
+                    "call": {
+                      "type": "CallExpr",
+                      "target": "BuildGlobalMap",
+                      "args": [
+                        {
+                          "name": "status",
+                          "value": {
+                            "type": "String",
+                            "value": "partial_failure"
+                          }
+                        },
+                        {
+                          "name": "html_path",
+                          "value": {
+                            "type": "String",
+                            "value": ""
+                          }
+                        },
+                        {
+                          "name": "detail",
+                          "value": {
+                            "type": "String",
+                            "value": "openlittermap download failed"
+                          }
+                        }
+                      ],
+                      "id": "e117fed5-92fc-4e6a-aeb8-59305cc55355",
+                      "location": {
+                        "line": 179,
+                        "column": 19,
+                        "endLine": 183,
+                        "endColumn": 14
+                      }
+                    },
+                    "id": "d1590bcf-41e0-4834-bc06-475be5a923a6",
+                    "location": {
+                      "line": 179,
+                      "column": 13,
+                      "endLine": 183,
+                      "endColumn": 14
+                    }
+                  },
+                  "id": "fcf8e816-4a6b-45a6-b25e-8dd9d0027197",
+                  "location": {
+                    "line": 178,
+                    "column": 11,
+                    "endLine": 185,
+                    "endColumn": 1
+                  }
+                },
+                "id": "a11bc76c-34e5-4c12-93f5-78ddc413c217",
+                "location": {
+                  "line": 174,
+                  "column": 9,
+                  "endLine": 185,
+                  "endColumn": 1
+                }
+              },
+              {
+                "type": "StepStmt",
+                "name": "superfund",
+                "call": {
+                  "type": "CallExpr",
+                  "target": "DownloadEpaCleanups",
+                  "args": [
+                    {
+                      "name": "dataset",
+                      "value": {
+                        "type": "String",
+                        "value": "superfund"
+                      }
+                    },
+                    {
+                      "name": "use_mock",
+                      "value": {
+                        "type": "InputRef",
+                        "path": [
+                          "use_mock"
+                        ]
+                      }
+                    }
+                  ],
+                  "id": "da4b7df2-59aa-4119-a454-bb635f4cb6de",
+                  "location": {
+                    "line": 185,
+                    "column": 21,
+                    "endLine": 188,
+                    "endColumn": 10
+                  }
+                },
+                "catch": {
+                  "type": "CatchClause",
+                  "yield": {
+                    "type": "YieldStmt",
+                    "call": {
+                      "type": "CallExpr",
+                      "target": "BuildGlobalMap",
+                      "args": [
+                        {
+                          "name": "status",
+                          "value": {
+                            "type": "String",
+                            "value": "partial_failure"
+                          }
+                        },
+                        {
+                          "name": "html_path",
+                          "value": {
+                            "type": "String",
+                            "value": ""
+                          }
+                        },
+                        {
+                          "name": "detail",
+                          "value": {
+                            "type": "String",
+                            "value": "epa superfund download failed"
+                          }
+                        }
+                      ],
+                      "id": "46a1ff8e-c230-4fe3-9dce-89a98e9ca835",
+                      "location": {
+                        "line": 189,
+                        "column": 19,
+                        "endLine": 193,
+                        "endColumn": 14
+                      }
+                    },
+                    "id": "a0126b45-7993-4d4d-8634-04b53d7d049f",
+                    "location": {
+                      "line": 189,
+                      "column": 13,
+                      "endLine": 193,
+                      "endColumn": 14
+                    }
+                  },
+                  "id": "6c0464f1-aeac-4afa-9db9-4e9e4f6c5a12",
+                  "location": {
+                    "line": 188,
+                    "column": 11,
+                    "endLine": 195,
+                    "endColumn": 1
+                  }
+                },
+                "id": "613bafbd-c6f2-4104-8098-c93d831ea0f7",
+                "location": {
+                  "line": 185,
+                  "column": 9,
+                  "endLine": 195,
+                  "endColumn": 1
+                }
+              },
+              {
+                "type": "StepStmt",
+                "name": "brownfields",
+                "call": {
+                  "type": "CallExpr",
+                  "target": "DownloadEpaCleanups",
+                  "args": [
+                    {
+                      "name": "dataset",
+                      "value": {
+                        "type": "String",
+                        "value": "brownfields"
+                      }
+                    },
+                    {
+                      "name": "use_mock",
+                      "value": {
+                        "type": "InputRef",
+                        "path": [
+                          "use_mock"
+                        ]
+                      }
+                    }
+                  ],
+                  "id": "70bae593-09ad-4e92-bddc-576cfaa834c8",
+                  "location": {
+                    "line": 195,
+                    "column": 23,
+                    "endLine": 198,
+                    "endColumn": 10
+                  }
+                },
+                "catch": {
+                  "type": "CatchClause",
+                  "yield": {
+                    "type": "YieldStmt",
+                    "call": {
+                      "type": "CallExpr",
+                      "target": "BuildGlobalMap",
+                      "args": [
+                        {
+                          "name": "status",
+                          "value": {
+                            "type": "String",
+                            "value": "partial_failure"
+                          }
+                        },
+                        {
+                          "name": "html_path",
+                          "value": {
+                            "type": "String",
+                            "value": ""
+                          }
+                        },
+                        {
+                          "name": "detail",
+                          "value": {
+                            "type": "String",
+                            "value": "epa brownfields download failed"
+                          }
+                        }
+                      ],
+                      "id": "10472753-d8b2-453d-88fd-c96811474d73",
+                      "location": {
+                        "line": 199,
+                        "column": 19,
+                        "endLine": 203,
+                        "endColumn": 14
+                      }
+                    },
+                    "id": "bd891b16-fd64-4977-ae88-30faeb8c740f",
+                    "location": {
+                      "line": 199,
+                      "column": 13,
+                      "endLine": 203,
+                      "endColumn": 14
+                    }
+                  },
+                  "id": "eb99a66a-de65-4421-8d7f-718d60c3b647",
+                  "location": {
+                    "line": 198,
+                    "column": 11,
+                    "endLine": 208,
+                    "endColumn": 1
+                  }
+                },
+                "id": "02b2515d-4b76-4d82-b4a8-618275597a9d",
+                "location": {
+                  "line": 195,
+                  "column": 9,
+                  "endLine": 208,
+                  "endColumn": 1
+                }
+              },
+              {
+                "type": "StepStmt",
+                "name": "map",
+                "call": {
+                  "type": "CallExpr",
+                  "target": "BuildMap",
+                  "args": [
+                    {
+                      "name": "region",
+                      "value": {
+                        "type": "String",
+                        "value": "global"
+                      }
+                    },
+                    {
+                      "name": "dependency_signal",
+                      "value": {
+                        "type": "BinaryExpr",
+                        "operator": "+",
+                        "left": {
+                          "type": "BinaryExpr",
+                          "operator": "+",
+                          "left": {
+                            "type": "StepRef",
+                            "path": [
+                              "olm",
+                              "feature_count"
+                            ]
+                          },
+                          "right": {
+                            "type": "StepRef",
+                            "path": [
+                              "superfund",
+                              "feature_count"
+                            ]
+                          }
+                        },
+                        "right": {
+                          "type": "StepRef",
+                          "path": [
+                            "brownfields",
+                            "feature_count"
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  "id": "b6f9d0d7-0ae0-4a24-b9e7-611d014e4619",
+                  "location": {
+                    "line": 208,
+                    "column": 15,
+                    "endLine": 211,
+                    "endColumn": 10
+                  }
+                },
+                "catch": {
+                  "type": "CatchClause",
+                  "yield": {
+                    "type": "YieldStmt",
+                    "call": {
+                      "type": "CallExpr",
+                      "target": "BuildGlobalMap",
+                      "args": [
+                        {
+                          "name": "status",
+                          "value": {
+                            "type": "String",
+                            "value": "failed"
+                          }
+                        },
+                        {
+                          "name": "html_path",
+                          "value": {
+                            "type": "String",
+                            "value": ""
+                          }
+                        },
+                        {
+                          "name": "detail",
+                          "value": {
+                            "type": "String",
+                            "value": "map build failed"
+                          }
+                        }
+                      ],
+                      "id": "1622681f-b43a-414c-8f81-3c684938e1b2",
+                      "location": {
+                        "line": 212,
+                        "column": 19,
+                        "endLine": 216,
+                        "endColumn": 14
+                      }
+                    },
+                    "id": "b3225efe-7057-4f8b-85ff-1a53095c8211",
+                    "location": {
+                      "line": 212,
+                      "column": 13,
+                      "endLine": 216,
+                      "endColumn": 14
+                    }
+                  },
+                  "id": "f89ba48d-8f02-4f82-8985-ad436214a073",
+                  "location": {
+                    "line": 211,
+                    "column": 11,
+                    "endLine": 218,
+                    "endColumn": 1
+                  }
+                },
+                "id": "d9292438-17dc-417f-b941-3ffab9910ddb",
+                "location": {
+                  "line": 208,
+                  "column": 9,
+                  "endLine": 218,
+                  "endColumn": 1
+                }
+              }
+            ],
+            "yield": {
+              "type": "YieldStmt",
+              "call": {
+                "type": "CallExpr",
+                "target": "BuildGlobalMap",
+                "args": [
+                  {
+                    "name": "status",
+                    "value": {
+                      "type": "String",
+                      "value": "completed"
+                    }
+                  },
+                  {
+                    "name": "html_path",
+                    "value": {
+                      "type": "StepRef",
+                      "path": [
+                        "map",
+                        "html_path"
+                      ]
+                    }
+                  },
+                  {
+                    "name": "detail",
+                    "value": {
+                      "type": "ConcatExpr",
+                      "operands": [
+                        {
+                          "type": "String",
+                          "value": "map "
+                        },
+                        {
+                          "type": "StepRef",
+                          "path": [
+                            "map",
+                            "region_key"
+                          ]
+                        },
+                        {
+                          "type": "String",
+                          "value": " with "
+                        },
+                        {
+                          "type": "StepRef",
+                          "path": [
+                            "map",
+                            "layer_count"
+                          ]
+                        },
+                        {
+                          "type": "String",
+                          "value": " layer(s)"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "id": "bfdfa070-d4d1-4e17-830f-86cfe04ba711",
+                "location": {
+                  "line": 218,
+                  "column": 15,
+                  "endLine": 222,
+                  "endColumn": 10
+                }
+              },
+              "id": "d16f2010-d780-4fc4-a738-193fafe0bd2e",
+              "location": {
+                "line": 218,
+                "column": 9,
+                "endLine": 222,
+                "endColumn": 10
+              }
+            },
+            "id": "195353a7-b533-4fb6-b526-b4b258b4f49c",
+            "location": {
+              "line": 173,
+              "column": 7,
+              "endLine": 225,
+              "endColumn": 1
+            }
+          },
+          "id": "af047658-7349-4510-9770-9d2255e9da41",
+          "location": {
+            "line": 158,
+            "column": 5,
+            "endLine": 225,
+            "endColumn": 1
+          }
+        },
+        {
+          "type": "WorkflowDecl",
+          "name": "BuildRegionalMap",
+          "doc": {
+            "description": "Download OpenLitterMap at a tighter zoom for a specific region\n(useful for country/state maps where the zoom-4 global feed is\ntoo coarse). Chains into the global map build so the new layer\nis picked up automatically.",
+            "params": [],
+            "returns": []
+          },
+          "params": [
+            {
+              "name": "region_key",
+              "type": "String",
+              "default": {
+                "type": "String",
+                "value": "us"
+              }
+            },
+            {
+              "name": "openlittermap_zoom",
+              "type": "Int",
+              "default": {
+                "type": "Int",
+                "value": 8
+              }
+            },
+            {
+              "name": "center_lat",
+              "type": "Double",
+              "default": {
+                "type": "Double",
+                "value": 39.8283
+              }
+            },
+            {
+              "name": "center_lon",
+              "type": "Double",
+              "default": {
+                "type": "UnaryExpr",
+                "operator": "-",
+                "operand": {
+                  "type": "Double",
+                  "value": 98.5795
+                }
+              }
+            },
+            {
+              "name": "zoom",
+              "type": "Double",
+              "default": {
+                "type": "Double",
+                "value": 4.0
+              }
+            },
+            {
+              "name": "use_mock",
+              "type": "Boolean",
+              "default": {
+                "type": "Boolean",
+                "value": false
+              }
+            }
+          ],
+          "returns": [
+            {
+              "name": "status",
+              "type": "String"
+            },
+            {
+              "name": "html_path",
+              "type": "String"
+            }
+          ],
+          "body": {
+            "type": "AndThenBlock",
+            "steps": [
+              {
+                "type": "StepStmt",
+                "name": "olm",
+                "call": {
+                  "type": "CallExpr",
+                  "target": "DownloadOpenLitterMap",
+                  "args": [
+                    {
+                      "name": "mode",
+                      "value": {
+                        "type": "String",
+                        "value": "clusters"
+                      }
+                    },
+                    {
+                      "name": "zoom",
+                      "value": {
+                        "type": "InputRef",
+                        "path": [
+                          "openlittermap_zoom"
+                        ]
+                      }
+                    },
+                    {
+                      "name": "use_mock",
+                      "value": {
+                        "type": "InputRef",
+                        "path": [
+                          "use_mock"
+                        ]
+                      }
+                    }
+                  ],
+                  "id": "78da43be-f11f-4ccd-9089-eca939ceee70",
+                  "location": {
+                    "line": 237,
+                    "column": 15,
+                    "endLine": 241,
+                    "endColumn": 10
+                  }
+                },
+                "catch": {
+                  "type": "CatchClause",
+                  "yield": {
+                    "type": "YieldStmt",
+                    "call": {
+                      "type": "CallExpr",
+                      "target": "BuildRegionalMap",
+                      "args": [
+                        {
+                          "name": "status",
+                          "value": {
+                            "type": "String",
+                            "value": "partial_failure"
+                          }
+                        },
+                        {
+                          "name": "html_path",
+                          "value": {
+                            "type": "String",
+                            "value": ""
+                          }
+                        }
+                      ],
+                      "id": "3d247178-4426-4d52-ae02-7e4a1f1b7e82",
+                      "location": {
+                        "line": 242,
+                        "column": 19,
+                        "endLine": 242,
+                        "endColumn": 79
+                      }
+                    },
+                    "id": "7a63be99-1512-4b8f-8a43-6f46621e7d2f",
+                    "location": {
+                      "line": 242,
+                      "column": 13,
+                      "endLine": 242,
+                      "endColumn": 79
+                    }
+                  },
+                  "id": "aa31f0e2-8156-4b35-98c4-f70743d7926b",
+                  "location": {
+                    "line": 241,
+                    "column": 11,
+                    "endLine": 244,
+                    "endColumn": 1
+                  }
+                },
+                "id": "8a927c17-0aa2-46f2-ab79-ec1b3e3b06e2",
+                "location": {
+                  "line": 237,
+                  "column": 9,
+                  "endLine": 244,
+                  "endColumn": 1
+                }
+              },
+              {
+                "type": "StepStmt",
+                "name": "superfund",
+                "call": {
+                  "type": "CallExpr",
+                  "target": "DownloadEpaCleanups",
+                  "args": [
+                    {
+                      "name": "dataset",
+                      "value": {
+                        "type": "String",
+                        "value": "superfund"
+                      }
+                    },
+                    {
+                      "name": "use_mock",
+                      "value": {
+                        "type": "InputRef",
+                        "path": [
+                          "use_mock"
+                        ]
+                      }
+                    }
+                  ],
+                  "id": "58c31325-ecb9-424d-b1e2-eb2a64ecc72a",
+                  "location": {
+                    "line": 244,
+                    "column": 21,
+                    "endLine": 247,
+                    "endColumn": 10
+                  }
+                },
+                "catch": {
+                  "type": "CatchClause",
+                  "yield": {
+                    "type": "YieldStmt",
+                    "call": {
+                      "type": "CallExpr",
+                      "target": "BuildRegionalMap",
+                      "args": [
+                        {
+                          "name": "status",
+                          "value": {
+                            "type": "String",
+                            "value": "partial_failure"
+                          }
+                        },
+                        {
+                          "name": "html_path",
+                          "value": {
+                            "type": "String",
+                            "value": ""
+                          }
+                        }
+                      ],
+                      "id": "b89cc21d-04b6-408c-bfb0-2a5bca0efe17",
+                      "location": {
+                        "line": 248,
+                        "column": 19,
+                        "endLine": 248,
+                        "endColumn": 79
+                      }
+                    },
+                    "id": "16aa4ac0-db37-4398-b3a3-ba023d7190ba",
+                    "location": {
+                      "line": 248,
+                      "column": 13,
+                      "endLine": 248,
+                      "endColumn": 79
+                    }
+                  },
+                  "id": "2a0cb1c7-7eb7-4c2b-ad51-2490a11716eb",
+                  "location": {
+                    "line": 247,
+                    "column": 11,
+                    "endLine": 250,
+                    "endColumn": 1
+                  }
+                },
+                "id": "b0c05306-2304-4fe1-b4b3-edbede9068f7",
+                "location": {
+                  "line": 244,
+                  "column": 9,
+                  "endLine": 250,
+                  "endColumn": 1
+                }
+              },
+              {
+                "type": "StepStmt",
+                "name": "map",
+                "call": {
+                  "type": "CallExpr",
+                  "target": "BuildMap",
+                  "args": [
+                    {
+                      "name": "region",
+                      "value": {
+                        "type": "InputRef",
+                        "path": [
+                          "region_key"
+                        ]
+                      }
+                    },
+                    {
+                      "name": "center_lat",
+                      "value": {
+                        "type": "InputRef",
+                        "path": [
+                          "center_lat"
+                        ]
+                      }
+                    },
+                    {
+                      "name": "center_lon",
+                      "value": {
+                        "type": "InputRef",
+                        "path": [
+                          "center_lon"
+                        ]
+                      }
+                    },
+                    {
+                      "name": "zoom",
+                      "value": {
+                        "type": "InputRef",
+                        "path": [
+                          "zoom"
+                        ]
+                      }
+                    },
+                    {
+                      "name": "dependency_signal",
+                      "value": {
+                        "type": "BinaryExpr",
+                        "operator": "+",
+                        "left": {
+                          "type": "StepRef",
+                          "path": [
+                            "olm",
+                            "feature_count"
+                          ]
+                        },
+                        "right": {
+                          "type": "StepRef",
+                          "path": [
+                            "superfund",
+                            "feature_count"
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  "id": "0ae39d78-e84e-4588-a3ca-8b1098ab0b9d",
+                  "location": {
+                    "line": 250,
+                    "column": 15,
+                    "endLine": 256,
+                    "endColumn": 10
+                  }
+                },
+                "catch": {
+                  "type": "CatchClause",
+                  "yield": {
+                    "type": "YieldStmt",
+                    "call": {
+                      "type": "CallExpr",
+                      "target": "BuildRegionalMap",
+                      "args": [
+                        {
+                          "name": "status",
+                          "value": {
+                            "type": "String",
+                            "value": "failed"
+                          }
+                        },
+                        {
+                          "name": "html_path",
+                          "value": {
+                            "type": "String",
+                            "value": ""
+                          }
+                        }
+                      ],
+                      "id": "8765f88f-b056-4c52-8608-2dbb342ff34d",
+                      "location": {
+                        "line": 257,
+                        "column": 19,
+                        "endLine": 257,
+                        "endColumn": 70
+                      }
+                    },
+                    "id": "ca384c5f-5103-4257-a7a0-f897f7dc8c56",
+                    "location": {
+                      "line": 257,
+                      "column": 13,
+                      "endLine": 257,
+                      "endColumn": 70
+                    }
+                  },
+                  "id": "e53aec61-c226-4f4b-a936-795ed40907fb",
+                  "location": {
+                    "line": 256,
+                    "column": 11,
+                    "endLine": 259,
+                    "endColumn": 1
+                  }
+                },
+                "id": "16f85b3a-7d54-44a0-b1ba-e4c87add4913",
+                "location": {
+                  "line": 250,
+                  "column": 9,
+                  "endLine": 259,
+                  "endColumn": 1
+                }
+              }
+            ],
+            "yield": {
+              "type": "YieldStmt",
+              "call": {
+                "type": "CallExpr",
+                "target": "BuildRegionalMap",
+                "args": [
+                  {
+                    "name": "status",
+                    "value": {
+                      "type": "String",
+                      "value": "completed"
+                    }
+                  },
+                  {
+                    "name": "html_path",
+                    "value": {
+                      "type": "StepRef",
+                      "path": [
+                        "map",
+                        "html_path"
+                      ]
+                    }
+                  }
+                ],
+                "id": "3a3a31b5-d5a3-434c-8bf6-15d3736a2400",
+                "location": {
+                  "line": 259,
+                  "column": 15,
+                  "endLine": 262,
+                  "endColumn": 10
+                }
+              },
+              "id": "eed7d537-2dd0-4ce0-b541-3dd5a9269e29",
+              "location": {
+                "line": 259,
+                "column": 9,
+                "endLine": 262,
+                "endColumn": 10
+              }
+            },
+            "id": "0d6c2761-6d52-4dd1-9f39-24e67f71e30f",
+            "location": {
+              "line": 236,
+              "column": 46,
+              "endLine": 264,
+              "endColumn": 1
+            }
+          },
+          "id": "16738b23-e15a-459d-a4cb-4071874daa9f",
+          "location": {
+            "line": 225,
+            "column": 5,
+            "endLine": 264,
+            "endColumn": 1
+          }
+        }
+      ],
+      "id": "9fc7f982-e246-4d2e-8521-405b5cf7ea4f",
+      "location": {
+        "line": 155,
+        "column": 1,
+        "endLine": 265,
+        "endColumn": 1
+      }
+    }
+  ],
+  "id": "40bd0c17-91b8-43ba-a3fa-9e1808d955dd"
+}
