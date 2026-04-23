@@ -116,6 +116,74 @@ def region_bbox(
     ).bbox
 
 
+# FIPS country-code → Geofabrik path prefix. Used by ``resolve_state_bbox``
+# to try sub-country lookups when the caller passes ``--country XX --state
+# YY`` for non-US countries. Limited to countries whose Geofabrik index
+# actually carries sub-region PBFs at time of writing — the lookup
+# gracefully falls through to ``None`` for anything else.
+FIPS_TO_GEOFABRIK_PREFIX: dict[str, str] = {
+    "US": "north-america/us",
+    "CA": "north-america/canada",
+    "MX": "north-america/mexico",
+    "GM": "europe/germany",
+    "FR": "europe/france",
+    "UK": "europe/great-britain",
+    "IT": "europe/italy",
+    "SP": "europe/spain",
+    "PL": "europe/poland",
+    "RS": "russia",
+    "AS": "australia-oceania/australia",
+    "NZ": "australia-oceania/new-zealand",
+    "BR": "south-america/brazil",
+    "IN": "asia/india",
+    "CH": "asia/china",
+    "JA": "asia/japan",
+}
+
+
+def resolve_state_bbox(
+    country: str,
+    state: str,
+    *,
+    storage: Storage | None = None,
+    use_mock: bool | None = None,
+) -> tuple[Bbox | None, str]:
+    """Return ``(bbox, resolved_path)`` for a country+state if resolvable.
+
+    Tries Geofabrik sub-region lookup (``<prefix>/<state-slug>``) for
+    non-US countries whose Geofabrik index has per-state PBFs. Examples:
+
+    - ``("CA", "Ontario")`` → ``north-america/canada/ontario`` (if that
+      path exists in the cached index).
+    - ``("GM", "Bayern")``  → ``europe/germany/bayern``.
+    - ``("AS", "NSW")``     → no match (would need the full
+      ``new-south-wales`` slug — callers are better off passing
+      ``--region australia-oceania/australia/new-south-wales``
+      directly).
+
+    Returns ``(None, "")`` when the state can't be resolved — callers
+    should then fall back to the caller-specified filter path (empty
+    station set for country+state mode) or raise.
+
+    The US state short path stays with ``ghcn_parse.US_STATE_BOUNDS``;
+    this helper is a fallback for everything else. Callers pick which
+    lookup to try first.
+    """
+    prefix = FIPS_TO_GEOFABRIK_PREFIX.get(country.upper())
+    if not prefix:
+        return None, ""
+    # Geofabrik region slugs are lowercase with hyphens.
+    slug = state.strip().lower().replace(" ", "-").replace("_", "-")
+    if not slug:
+        return None, ""
+    path = f"{prefix}/{slug}"
+    try:
+        info = resolve_region(path, storage=storage, use_mock=use_mock)
+    except KeyError:
+        return None, ""
+    return info.bbox, path
+
+
 def point_in_bbox(lat: float, lon: float, bbox: Bbox) -> bool:
     """True if ``(lat, lon)`` falls inside the bbox."""
     min_lat, max_lat, min_lon, max_lon = bbox

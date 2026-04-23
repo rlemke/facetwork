@@ -164,7 +164,7 @@ class TestCompilation:
     def test_weather_afl_compiles(self):
         from facetwork import parse, validate
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.ffl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "ffl", "weather.ffl")
         with open(afl_path) as f:
             source = f.read()
         program = parse(source)
@@ -172,7 +172,7 @@ class TestCompilation:
         assert not result.errors, f"Validation errors: {result.errors}"
 
     def test_weather_json_exists(self):
-        json_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.json")
+        json_path = os.path.join(os.path.dirname(__file__), "..", "ffl", "weather.json")
         assert os.path.exists(json_path), (
             "weather.json not found — run: python3 -m afl.cli weather.afl -o weather.json"
         )
@@ -183,7 +183,7 @@ class TestCompilation:
     def test_namespaces_present(self):
         from facetwork import parse
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.ffl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "ffl", "weather.ffl")
         with open(afl_path) as f:
             program = parse(f.read())
         ns_names = [ns.name for ns in program.namespaces]
@@ -198,7 +198,7 @@ class TestCompilation:
     def test_event_facets_defined(self):
         from facetwork import parse
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.ffl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "ffl", "weather.ffl")
         with open(afl_path) as f:
             program = parse(f.read())
 
@@ -216,7 +216,7 @@ class TestCompilation:
     def test_workflows_defined(self):
         from facetwork import parse
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.ffl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "ffl", "weather.ffl")
         with open(afl_path) as f:
             program = parse(f.read())
 
@@ -237,7 +237,7 @@ class TestCompilation:
     def test_schemas_defined(self):
         from facetwork import parse
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "weather.ffl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "ffl", "weather.ffl")
         with open(afl_path) as f:
             program = parse(f.read())
 

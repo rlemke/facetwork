@@ -20,6 +20,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import logging
 import sys
 import time
@@ -33,7 +34,9 @@ from _lib.climate_report import (  # noqa: E402
     DEFAULT_BULK_THRESHOLD,
     ReportError,
     generate_climate_report,
+    rebuild_report_derived_pages,
 )
+from _lib.storage import LocalStorage  # noqa: E402
 
 
 def _parse_baseline(s: str) -> tuple[int, int]:
@@ -124,6 +127,16 @@ def main() -> int:
         action="store_true",
         help="List the stations that would feed the report, but don't aggregate.",
     )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=4,
+        metavar="N",
+        help=(
+            "Run multi-region batches with up to N regions in parallel. "
+            "Default: 4. Set to 1 to force serial. Ignored for single-region runs."
+        ),
+    )
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args()
 
@@ -150,18 +163,16 @@ def main() -> int:
         return _dry_run(args, country_explicit, regions)
 
     # --- Generate a report per resolved region ------------------------------
-    failures: list[tuple[str, str]] = []
-    successes: list[str] = []
-    t0 = time.monotonic()
-    for idx, region in enumerate(regions, 1):
-        label = region if region else (
+    is_batch = len(regions) > 1
+    jobs = max(1, int(args.jobs or 1))
+
+    def _label(region: str) -> str:
+        return region if region else (
             f"{args.country}/{args.state}" if args.state else (args.country or "ALL")
         )
-        if len(regions) > 1:
-            print(
-                f"\n=== [{idx}/{len(regions)}] {label} ===",
-                file=sys.stderr,
-            )
+
+    def _run_one(region: str) -> tuple[str, Exception | None, str]:
+        """Generate a single report; return (label, err, output_dir)."""
         try:
             bundle = generate_climate_report(
                 country=args.country,
@@ -176,20 +187,75 @@ def main() -> int:
                 force_catalog=args.force_catalog,
                 force_download=args.force_download,
                 use_mock=args.use_mock or None,
-                output_dir=args.output_dir if len(regions) == 1 else None,
+                # In batch mode every region writes to its canonical
+                # cache dir — --output-dir applies only when there's
+                # exactly one region to generate.
+                output_dir=args.output_dir if not is_batch else None,
                 override_bulk_guard=args.i_know_this_is_huge,
                 country_explicit=country_explicit,
+                # Batch runs rebuild the master index + warming map
+                # once at the end instead of N times (those regens
+                # walk the whole climate-report tree and would clobber
+                # each other if run concurrently).
+                refresh_index=not is_batch,
             )
         except (KeyError, ReportError) as exc:
-            print(f"[fail] {label}: {exc}", file=sys.stderr)
-            failures.append((label, str(exc)))
-            continue
+            return _label(region), exc, ""
+        return _label(region), None, str(bundle.output_dir)
 
-        print(f"[report] {bundle.output_dir}")
-        successes.append(label)
+    failures: list[tuple[str, str]] = []
+    successes: list[str] = []
+    t0 = time.monotonic()
 
-    # --- Summary (only printed for multi-region runs) -----------------------
-    if len(regions) > 1:
+    if not is_batch or jobs == 1:
+        # Serial path — keeps stdout ordering readable for single-region
+        # and explicit --jobs 1 runs.
+        for idx, region in enumerate(regions, 1):
+            if is_batch:
+                print(
+                    f"\n=== [{idx}/{len(regions)}] {_label(region)} ===",
+                    file=sys.stderr,
+                )
+            label, err, out_dir = _run_one(region)
+            if err is not None:
+                print(f"[fail] {label}: {err}", file=sys.stderr)
+                failures.append((label, str(err)))
+            else:
+                print(f"[report] {out_dir}")
+                successes.append(label)
+    else:
+        # Parallel path — up to `jobs` regions in flight. Output
+        # interleaves across workers but each line still prefixes with
+        # the region label so the log remains greppable.
+        print(
+            f"# batch: {len(regions)} regions, up to {jobs} in parallel",
+            file=sys.stderr,
+        )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+            fut_to_region = {
+                pool.submit(_run_one, region): region for region in regions
+            }
+            done = 0
+            for fut in concurrent.futures.as_completed(fut_to_region):
+                done += 1
+                label, err, out_dir = fut.result()
+                prefix = f"[{done}/{len(regions)}]"
+                if err is not None:
+                    print(f"{prefix} [fail] {label}: {err}", file=sys.stderr)
+                    failures.append((label, str(err)))
+                else:
+                    print(f"{prefix} [report] {out_dir}")
+                    successes.append(label)
+
+    # --- Post-batch: rebuild derived pages once, print summary --------------
+    if is_batch:
+        try:
+            rebuild_report_derived_pages(storage=LocalStorage())
+        except Exception as exc:  # pragma: no cover — defensive
+            print(
+                f"warning: master index / warming map regen failed: {exc}",
+                file=sys.stderr,
+            )
         elapsed = time.monotonic() - t0
         print(
             f"\n# done: {len(successes)} ok, {len(failures)} failed "

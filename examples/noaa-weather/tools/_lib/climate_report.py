@@ -66,6 +66,29 @@ class ReportError(RuntimeError):
     """Report generation failed (no matches, scale guard, etc.)."""
 
 
+def rebuild_report_derived_pages(storage: "Storage | None" = None) -> None:
+    """Rebuild the master index + warming-rate choropleth.
+
+    Called once at the end of a batch run (when per-report refresh is
+    suppressed) and once per single-region run. Failures are logged
+    and swallowed so a flaky side effect never sinks a successful
+    regional report.
+    """
+    s = storage or LocalStorage()
+    try:
+        index_path = report_index.rebuild_index(storage=s)
+        if index_path is not None:
+            logger.info("master report index: %s", index_path)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("report-index regen failed: %s", exc)
+    try:
+        map_path = warming_map.rebuild_warming_map(storage=s)
+        if map_path is not None:
+            logger.info("warming choropleth: %s", map_path)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("warming-map regen failed: %s", exc)
+
+
 @dataclass
 class ReportBundle:
     """Outcome of a successful ``generate_climate_report`` call."""
@@ -102,6 +125,7 @@ def generate_climate_report(
     bulk_threshold: int = DEFAULT_BULK_THRESHOLD,
     override_bulk_guard: bool = False,
     country_explicit: bool = False,
+    refresh_index: bool = True,
 ) -> ReportBundle:
     """Run the full report pipeline and write the bundle to the cache.
 
@@ -133,13 +157,38 @@ def generate_climate_report(
     if region:
         region_info = geofabrik_regions.resolve_region(region, use_mock=use_mock)
         bbox = region_info.bbox
+    elif state and country.upper() != "US":
+        # Non-US state: try a Geofabrik sub-region lookup (e.g.
+        # CA+ontario → north-america/canada/ontario). ``state`` stays
+        # in the filter so the tag propagates into the summaries, but
+        # the bbox is what actually filters the station set.
+        fallback_bbox, resolved_path = geofabrik_regions.resolve_state_bbox(
+            country, state, use_mock=use_mock
+        )
+        if fallback_bbox is not None:
+            bbox = fallback_bbox
+            logger.info(
+                "resolved --state %r in country %r via Geofabrik path %r",
+                state,
+                country,
+                resolved_path,
+            )
 
     cap = max_stations if max_stations > 0 else len(stations)
+    # When we resolved a non-US bbox from a Geofabrik path, we don't want
+    # ghcn_parse.station_in_state to re-apply its US-only bbox table on
+    # top — it would reject every station since the code isn't in
+    # US_STATE_BOUNDS. Drop the state filter in that case; the bbox does
+    # the spatial work.
+    state_filter = state
+    if bbox is not None and state and country.upper() != "US":
+        state_filter = ""
+
     filtered = ghcn_parse.filter_stations(
         stations,
         inventory,
         country=country_filter,
-        state=state,
+        state=state_filter,
         bbox=bbox,
         max_stations=cap,
         min_years=min_years,
@@ -302,19 +351,10 @@ def generate_climate_report(
     # Refresh the master index + warming-rate choropleth so every new
     # report shows up in both views. Failures here mustn't sink the
     # whole report — worst case the derived pages are one run stale.
-    storage = LocalStorage()
-    try:
-        index_path = report_index.rebuild_index(storage=storage)
-        if index_path is not None:
-            logger.info("master report index: %s", index_path)
-    except Exception as exc:  # pragma: no cover — defensive
-        logger.warning("report-index regen failed: %s", exc)
-    try:
-        map_path = warming_map.rebuild_warming_map(storage=storage)
-        if map_path is not None:
-            logger.info("warming choropleth: %s", map_path)
-    except Exception as exc:  # pragma: no cover — defensive
-        logger.warning("warming-map regen failed: %s", exc)
+    # Batch callers pass refresh_index=False to skip this per-region;
+    # they invoke rebuild_report_derived_pages() once at the end.
+    if refresh_index:
+        rebuild_report_derived_pages(storage=LocalStorage())
 
     return ReportBundle(
         output_dir=out_dir,
