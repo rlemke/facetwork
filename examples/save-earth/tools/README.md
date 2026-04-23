@@ -122,22 +122,51 @@ open "$AFL_CACHE_ROOT/save-earth/maps/global/index.html"
 ./tools/build-save-earth-map.sh --include epa-superfund --include epa-brownfields
 ```
 
+## Map rendering details
+
+The map builder auto-discovers layers from the cache rather than requiring a fixed list — every OpenLitterMap GeoJSON file in `cache/save-earth/openlittermap/` becomes its own toggleable layer, so pulling `clusters-zoom4` and `clusters-zoom10` and `points-zoom15_<bbox>` gives you three overlaid layers automatically. EPA Superfund and Brownfields layers appear whenever their GeoJSON is present.
+
+The HTML page ships with:
+
+- **"Big dots (any zoom)" checkbox** at the top of the layer panel. Toggles every layer's circle radius to ≥ 14 px (2.5 × the per-layer default) so features stay visible at a zoomed-out world view. Off by default — normal mode auto-scales cluster dots by `point_count` so dense regions already read bigger.
+- **Per-layer visibility toggles** with a colour swatch and feature count.
+- **Click popups** surfacing the upstream `properties` verbatim (EPA primary_name / facility_url, OpenLitterMap datetime / verified / tags, etc.) — no transformation, so rows match whatever the source ships.
+- **CARTO Voyager basemap** by default. The previous OSM-direct default hit OSM's volunteer-tile Referer policy and 403'd when the HTML was opened from `file://`. CARTO is free, no-key, and works in every origin. Override with `--basemap-url` + `--basemap-attribution` (supports `{z}/{x}/{y}` and optional `{s}` for subdomain rotation).
+
 ## `_lib/` — shared library
 
 | Module | Role |
 |--------|------|
 | `sidecar.py` | Per-entry `.meta.json` read/write, per-entry locking |
 | `storage.py` | LocalStorage / HdfsStorage abstraction + root-path derivation |
-| `openlittermap.py` | OpenLitterMap fetch + cache + GeoJSON normalization + bbox trim |
-| `epa_cleanups.py` | EPA Superfund / Brownfield / RCRA ArcGIS REST fetch + cache per dataset |
-| `map_render.py` | MapLibre HTML renderer — inlines each cached GeoJSON as a toggleable layer, with click popups showing upstream `properties` |
+| `openlittermap.py` | OpenLitterMap fetch + cache + GeoJSON normalization (supports `clusters` and `points` modes; modes/zoom/bbox each cache in their own entry) |
+| `epa_cleanups.py` | EPA Superfund / Brownfield fetch via `geopub.epa.gov/EMEF/efpoints` MapServer — auto-paginates past the 10 k-record server cap |
+| `map_render.py` | MapLibre HTML renderer — inlines each cached GeoJSON as a toggleable layer with click popups and the Big-Dots toggle |
 
 The downloaders are pure fetch-and-cache — no transformation beyond normalizing the wrapper shape to a valid FeatureCollection. All per-feature metadata is preserved verbatim so popups can surface it.
+
+## FFL handlers
+
+Every CLI tool has a matching FFL event facet in `../ffl/save_earth.ffl`:
+
+| Tool | FFL facet |
+|------|-----------|
+| `download-openlittermap` | `save_earth.sources.DownloadOpenLitterMap(mode, zoom, bbox, force, use_mock)` |
+| `download-epa-cleanups` | `save_earth.sources.DownloadEpaCleanups(dataset, force, use_mock)` |
+| `build-save-earth-map` | `save_earth.maps.BuildMap(region, center_lat, center_lon, zoom, basemap_url, basemap_attribution, dependency_signal)` |
+
+Workflows:
+
+- `save_earth.workflows.BuildGlobalMap` — OLM clusters + Superfund + Brownfields in parallel, then BuildMap.
+- `save_earth.workflows.BuildRegionalMap` — region-scoped OLM zoom + Superfund, then BuildMap.
+
+Handlers are thin dispatchers (`handlers/sources/`, `handlers/maps/`) that import from `tools/_lib/` via `handlers/shared/save_earth_utils.py` — same code path as the CLI.
 
 ## Standards + references
 
 - **GeoJSON RFC 7946** — feature layer exchange format.
-- **OSM basemap** — https://tile.openstreetmap.org (the default raster source; respect the OSM usage policy at https://operations.osmfoundation.org/policies/tiles/).
+- **CARTO basemap attribution** — https://carto.com/attributions (also cite OpenStreetMap as the data source).
+- **OSM tile usage policy** — https://operations.osmfoundation.org/policies/tiles/ (the reason we don't default to tile.openstreetmap.org).
 - **CC-BY-SA 4.0** for OpenLitterMap content — when redistributing the derived HTML, attribute OpenLitterMap contributors.
 - **US Government public domain** for EPA datasets.
 
@@ -147,6 +176,5 @@ The downloaders are pure fetch-and-cache — no transformation beyond normalizin
 - `download-tree-equity` — American Forests Tree Equity Score (per-census-block canopy % + equity score) → `tree-equity/<state>.geojson`
 - `download-open311` — municipal 311 "illegal dumping" / "cleanup needed" feeds per city → `open311/<city>/<service_code>.geojson`
 - `download-surfrider` — Surfrider chapter directory + beach-cleanup events → `surfrider/{chapters,beach-cleanups}.geojson`
-- `weather.save_earth` FFL handlers wrapping each downloader, so the runtime can produce the same artifacts as the CLI.
 
-When those ship they'll slot into `build-save-earth-map` without any changes to the map renderer — new entries just get added to `DEFAULT_LAYERS`.
+When those ship they'll slot into `build-save-earth-map` automatically via the auto-discovery — new entries just get added to `DEFAULT_LAYERS`.

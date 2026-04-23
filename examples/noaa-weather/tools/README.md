@@ -81,7 +81,7 @@ Every arrow is sidecar-mediated: each tool records its SHA-256 (plus tool/versio
 | `fetch-station-csv` | `<station_id>...` or `--stations-file` | `station-csv/<station_id>.csv` | Download per-station daily-record CSVs |
 | `summarize-station` | `<station_id>` + year range | `climate-summary/<station_id>.json` (optional) | Parse CSV + compute yearly climate summaries |
 | `compute-region-trend` | summary files or `--from-cache` | `region-trend/<country>/<state>.json` (optional) | Aggregate station summaries → regional trend + narrative |
-| `climate-report` | `--region` / `--country --state` + year range | `climate-report/<country>/<region>/{report.{json,md,html},*.svg}` | Full regional climate report: monthly normals (WMO 30-year baseline), annual anomalies, decadal comparison, climograph / warming stripes / heatmap / anomaly / trend SVG charts, self-contained HTML |
+| `climate-report` | `--region` / `--country --state` + year range, plus `--all-under PREFIX` / `--include-parents` / `--list` for multi-region batches | `climate-report/<country>/<region>/{report.{json,md,html},*.svg}` + master `climate-report/index.html` regenerated after every run | Full regional climate report: monthly normals (WMO 30-year baseline), annual anomalies, decadal comparison, climograph / warming stripes / heatmap / anomaly / trend SVG charts, self-contained HTML |
 | `reverse-geocode` | `<lat> <lon>...` or `--coords-file` | `geocode/<lat>_<lon>.json` | Reverse geocode via Nominatim (rate-limited, cached) |
 
 Every tool supports:
@@ -120,6 +120,22 @@ cache/noaa-weather/
 Each artifact has a sibling `.meta.json` sidecar recording size, SHA-256, source lineage, tool name/version, and generation timestamp. See the [cache-layout spec](../../../agent-spec/cache-layout.agent-spec.yaml) for the full contract.
 
 ## Typical workflows
+
+**Canada and every province in a single run:**
+
+```bash
+./tools/climate-report.sh \
+    --all-under north-america/canada --include-parents \
+    --start-year 1950 --end-year 2026 \
+    --i-know-this-is-huge
+open "$AFL_CACHE_ROOT/noaa-weather/climate-report/index.html"
+```
+
+The master index at `climate-report/index.html` auto-regenerates after every report, so each region shows up under its continent/country as soon as it lands. Preview the region set first with `--list`:
+
+```bash
+./tools/climate-report.sh --all-under north-america/canada --include-parents --list
+```
 
 **Bootstrap a fresh machine and analyze one state:**
 
@@ -186,3 +202,17 @@ Every tool here follows [`agent-spec/tools-pattern.agent-spec.yaml`](../../../ag
 Handlers in `../handlers/` route through `../handlers/shared/ghcn_utils.py`, which adds `tools/` to `sys.path` and re-exports `_lib/` symbols. When you rename a function in `_lib/`, update the shim; handlers themselves rarely need to change.
 
 MongoDB stores (`WeatherReportStore`, `ClimateStore`) stay in the shim, not in `_lib/` — the CLI tools must be runnable standalone without a Mongo cluster.
+
+Every CLI tool has a matching FFL event facet in `../ffl/weather.ffl`:
+
+| Tool | FFL facet |
+|------|-----------|
+| `download-ghcn-catalog` + `discover-stations` | `weather.Catalog.DiscoverStations` (now accepts `region: String` for Geofabrik bbox filtering) |
+| `fetch-station-csv` | `weather.Ingest.FetchStationData` |
+| `summarize-station` | `weather.Analysis.AnalyzeStationClimate`, `AnalyzeStationMonthly` |
+| `compute-region-trend` | `weather.Analysis.ComputeRegionTrend` |
+| `climate-report` (single region) | `weather.Report.GenerateClimateReport` |
+| `climate-report --all-under` (multi-region) | `weather.Report.ListRegionsUnder` + `weather.workflows.GenerateRegionGroupReport` |
+| `reverse-geocode` | `weather.Geocode.ReverseGeocode` |
+
+The `GenerateRegionGroupReport` workflow uses `ListRegionsUnder` + `andThen foreach` so the FFL runtime can fan out a Canada-plus-all-provinces batch across the distributed runner fleet — same cache, same code path as the CLI.

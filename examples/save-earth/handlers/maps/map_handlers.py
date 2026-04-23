@@ -111,6 +111,14 @@ def handle_build_map(params: dict[str, Any]) -> dict[str, Any]:
     center_lat = float(params.get("center_lat", 39.8283))
     center_lon = float(params.get("center_lon", -98.5795))
     zoom = float(params.get("zoom", 4.0))
+    # Empty-string overrides fall back to the library defaults (CARTO
+    # Voyager + OSM/CARTO attribution) so FFL callers can leave them
+    # unset without breaking rendering.
+    basemap_url = params.get("basemap_url", "") or map_render.DEFAULT_BASEMAP_URL
+    basemap_attr = (
+        params.get("basemap_attribution", "")
+        or map_render.DEFAULT_BASEMAP_ATTRIBUTION
+    )
     step_log = params.get("_step_log")
 
     storage = LocalStorage()
@@ -154,6 +162,8 @@ def handle_build_map(params: dict[str, Any]) -> dict[str, Any]:
         center=(center_lat, center_lon),
         zoom=zoom,
         storage=storage,
+        basemap_url=basemap_url,
+        basemap_attribution=basemap_attr,
     )
     _step_log(
         step_log,

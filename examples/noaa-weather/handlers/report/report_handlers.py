@@ -13,7 +13,10 @@ import os
 import time
 from typing import Any
 
-from handlers.shared.ghcn_utils import climate_report as report_core
+from handlers.shared.ghcn_utils import (
+    climate_report as report_core,
+    geofabrik_regions,
+)
 
 logger = logging.getLogger("weather.report")
 NAMESPACE = "weather.Report"
@@ -100,9 +103,42 @@ def handle_generate_climate_report(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def handle_list_regions_under(params: dict[str, Any]) -> dict[str, Any]:
+    """Handle ListRegionsUnder — enumerate Geofabrik sub-regions.
+
+    Wraps :func:`_lib.geofabrik_regions.list_regions_under`. The
+    returned ``regions`` is a JSON array of path strings so FFL
+    workflows can use ``andThen foreach`` to fan out reports across
+    the set without any further marshalling.
+    """
+    prefix = params.get("prefix", "") or ""
+    include_parents = bool(params.get("include_parents", False))
+    step_log = params.get("_step_log")
+
+    try:
+        regions = geofabrik_regions.list_regions_under(
+            prefix, include_parents=include_parents
+        )
+    except KeyError as exc:
+        _step_log(step_log, f"ListRegionsUnder failed: {exc}", "error")
+        raise
+
+    _step_log(
+        step_log,
+        f"ListRegionsUnder prefix={prefix!r} "
+        f"include_parents={include_parents} → {len(regions)} region(s)",
+        "success",
+    )
+    return {
+        "regions": json.dumps(regions),
+        "region_count": len(regions),
+    }
+
+
 # Dispatch table
 _DISPATCH: dict[str, Any] = {
     f"{NAMESPACE}.GenerateClimateReport": handle_generate_climate_report,
+    f"{NAMESPACE}.ListRegionsUnder": handle_list_regions_under,
 }
 
 

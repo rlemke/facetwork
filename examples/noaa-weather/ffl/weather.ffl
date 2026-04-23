@@ -228,6 +228,22 @@ namespace weather.Report {
         station_count: Int,
         narrative: String
     )
+
+    /** List every Geofabrik region under a path prefix.
+      *
+      * Used by GenerateRegionGroupReport's ``andThen foreach`` to fan
+      * out a single "report on every province" workflow. Mirrors the
+      * ``climate-report.sh --all-under PREFIX --include-parents --list``
+      * CLI mode.
+      *
+      * ``prefix = ""`` returns every region in the cached Geofabrik
+      * index — usually a footgun (tens of thousands of regions).
+      * ``include_parents = false`` (default) returns leaves only;
+      * ``true`` also returns the prefix + every intermediate level. */
+    event facet ListRegionsUnder(
+        prefix: String,
+        include_parents: Boolean = false
+    ) => (regions: Json, region_count: Int)
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +352,61 @@ namespace weather.workflows {
             status = "completed",
             output_dir = report.output_dir,
             narrative = report.narrative
+        )
+    }
+
+    /** Report on every Geofabrik region under a prefix — e.g. Canada
+      * plus every province, Europe plus every country, or any sub-tree
+      * of the Geofabrik hierarchy.
+      *
+      * Equivalent to::
+      *
+      *     ./climate-report.sh --all-under <prefix> [--include-parents]
+      *
+      * Fans out via ``ListRegionsUnder`` + ``andThen foreach`` so every
+      * report runs as its own step with its own logs, retries, and
+      * output bundle. Individual failures are caught and absorbed so
+      * one bad region doesn't poison the batch.
+      *
+      * ``include_parents = true`` also runs the prefix region itself
+      * (for "Canada as a whole plus each province") — leaves only by
+      * default. */
+    workflow GenerateRegionGroupReport(
+        prefix: String,
+        include_parents: Boolean = false,
+        start_year: Int = 1950,
+        end_year: Int = 2026,
+        baseline_start: Int = 1991,
+        baseline_end: Int = 2020,
+        min_years: Int = 20,
+        max_stations: Int = 0
+    ) => (status: String, region_count: Int) andThen {
+        list = ListRegionsUnder(
+            prefix = $.prefix,
+            include_parents = $.include_parents
+        ) andThen foreach region in list.regions {
+            report = GenerateClimateReport(
+                country = "",
+                region = $.region,
+                start_year = $.start_year,
+                end_year = $.end_year,
+                baseline_start = $.baseline_start,
+                baseline_end = $.baseline_end,
+                min_years = $.min_years,
+                max_stations = $.max_stations
+            ) catch {
+                // Region without matching stations / over the guard
+                // shouldn't stop the batch. The per-region logs still
+                // surface the reason.
+                yield GenerateRegionGroupReport(
+                    status = "partial",
+                    region_count = list.region_count
+                )
+            }
+        }
+        yield GenerateRegionGroupReport(
+            status = "completed",
+            region_count = list.region_count
         )
     }
 }

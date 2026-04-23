@@ -128,16 +128,26 @@ namespace save_earth.maps {
 
     /** Build a MapLibre HTML map with every cached save-earth layer.
       *
-      * Auto-discovers cached files — you don't have to list every
-      * layer up-front. Passing a dependency signal (e.g. the
-      * ``feature_count`` from a just-finished download) lets the
-      * runtime sequence the map build after the downloads it
-      * relies on. */
+      * Auto-discovers cached files — every OpenLitterMap GeoJSON under
+      * ``cache/save-earth/openlittermap/`` and every EPA dataset
+      * becomes its own toggleable layer. Passing a dependency signal
+      * (e.g. the ``feature_count`` from a just-finished download) lets
+      * the runtime sequence the map build after the downloads it
+      * relies on.
+      *
+      * ``basemap_url`` / ``basemap_attribution`` let the caller swap
+      * the raster basemap. Default is CARTO Voyager — free, no API
+      * key, works from ``file://`` (unlike tile.openstreetmap.org,
+      * which requires a Referer header per its volunteer-tile
+      * policy). Supports ``{z}/{x}/{y}`` plus optional ``{s}`` for
+      * subdomain rotation. */
     event facet BuildMap(
         region: String = "global",
         center_lat: Double = 39.8283,
         center_lon: Double = -98.5795,
         zoom: Double = 4.0,
+        basemap_url: String = "",
+        basemap_attribution: String = "",
         dependency_signal: Int = 0
     ) => (
         region_key: String,

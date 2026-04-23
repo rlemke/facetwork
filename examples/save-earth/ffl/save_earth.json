@@ -47,7 +47,7 @@
               "type": "Boolean"
             }
           ],
-          "id": "f8fb6616-c822-42c5-b3a3-7a19b751e7b7",
+          "id": "b1dd8616-5e67-4972-b878-be84c01582b3",
           "location": {
             "line": 21,
             "column": 5,
@@ -85,7 +85,7 @@
               "type": "Json"
             }
           ],
-          "id": "2fabbe11-4f19-4607-95f6-a523da633906",
+          "id": "79023810-3a4a-4b1d-af54-15a7d3ff4540",
           "location": {
             "line": 37,
             "column": 5,
@@ -94,7 +94,7 @@
           }
         }
       ],
-      "id": "ef63316f-6937-4dcb-b774-7b0901596f15",
+      "id": "87ef22cc-fe09-4f99-8866-ccd0e77ce6b2",
       "location": {
         "line": 20,
         "column": 1,
@@ -142,7 +142,7 @@
               "type": "Int"
             }
           ],
-          "id": "9ee0e1e2-613a-4892-bd0b-05a4ffaa2aec",
+          "id": "571cef5d-5371-4ee5-8552-bca98eda2326",
           "location": {
             "line": 56,
             "column": 5,
@@ -156,7 +156,7 @@
           "call": {
             "type": "CallExpr",
             "target": "RetryPolicy",
-            "id": "dcb05a52-7f92-470e-9368-9cce5516e5f8",
+            "id": "aa91e9ef-6407-461a-aecb-ab904790188a",
             "location": {
               "line": 64,
               "column": 30,
@@ -164,7 +164,7 @@
               "endColumn": 43
             }
           },
-          "id": "24ac406e-89fe-4189-982c-df74e23c6b4e",
+          "id": "4d519023-aed6-438f-b072-2217e9af08f3",
           "location": {
             "line": 64,
             "column": 5,
@@ -173,7 +173,7 @@
           }
         }
       ],
-      "id": "8caf8297-e1df-45d6-b84f-9e198952d733",
+      "id": "f0ba722a-2fce-40c2-8752-2f6eceea85f9",
       "location": {
         "line": 55,
         "column": 1,
@@ -278,7 +278,7 @@
               "target": "RetryPolicy"
             }
           ],
-          "id": "0c36c502-afba-4fde-9cf7-6d30f2571f00",
+          "id": "8d064ca0-2340-4c52-9fde-f8702a682980",
           "location": {
             "line": 74,
             "column": 5,
@@ -360,7 +360,7 @@
               "target": "RetryPolicy"
             }
           ],
-          "id": "34a8cd20-3ed9-4f5c-97d5-87ef5864114c",
+          "id": "9d11f0b5-d770-4937-a732-fc7d03c21e11",
           "location": {
             "line": 101,
             "column": 5,
@@ -369,7 +369,7 @@
           }
         }
       ],
-      "id": "c48d2cb5-66dd-4031-a9f3-ecbec00c381a",
+      "id": "cc6ce0a3-1c7a-4774-b834-ab5395bf4ba8",
       "location": {
         "line": 71,
         "column": 1,
@@ -388,7 +388,7 @@
           "type": "EventFacetDecl",
           "name": "BuildMap",
           "doc": {
-            "description": "Build a MapLibre HTML map with every cached save-earth layer.\n\nAuto-discovers cached files \u2014 you don't have to list every\nlayer up-front. Passing a dependency signal (e.g. the\n``feature_count`` from a just-finished download) lets the\nruntime sequence the map build after the downloads it\nrelies on.",
+            "description": "Build a MapLibre HTML map with every cached save-earth layer.\n\nAuto-discovers cached files \u2014 every OpenLitterMap GeoJSON under\n``cache/save-earth/openlittermap/`` and every EPA dataset\nbecomes its own toggleable layer. Passing a dependency signal\n(e.g. the ``feature_count`` from a just-finished download) lets\nthe runtime sequence the map build after the downloads it\nrelies on.\n\n``basemap_url`` / ``basemap_attribution`` let the caller swap\nthe raster basemap. Default is CARTO Voyager \u2014 free, no API\nkey, works from ``file://`` (unlike tile.openstreetmap.org,\nwhich requires a Referer header per its volunteer-tile\npolicy). Supports ``{z}/{x}/{y}`` plus optional ``{s}`` for\nsubdomain rotation.",
             "params": [],
             "returns": []
           },
@@ -430,6 +430,22 @@
               }
             },
             {
+              "name": "basemap_url",
+              "type": "String",
+              "default": {
+                "type": "String",
+                "value": ""
+              }
+            },
+            {
+              "name": "basemap_attribution",
+              "type": "String",
+              "default": {
+                "type": "String",
+                "value": ""
+              }
+            },
+            {
               "name": "dependency_signal",
               "type": "Int",
               "default": {
@@ -460,20 +476,20 @@
               "type": "Json"
             }
           ],
-          "id": "baff773e-748c-4687-a550-60bf9975a1c6",
+          "id": "f4987abc-b598-4a47-bc50-a7476466cbe9",
           "location": {
             "line": 129,
             "column": 5,
-            "endLine": 149,
+            "endLine": 159,
             "endColumn": 1
           }
         }
       ],
-      "id": "3d1591a6-a755-469d-9d4d-2c5790467378",
+      "id": "a4e5b810-14cf-4327-917a-724bb2af7813",
       "location": {
         "line": 126,
         "column": 1,
-        "endLine": 155,
+        "endLine": 165,
         "endColumn": 1
       }
     },
@@ -568,11 +584,11 @@
                       }
                     }
                   ],
-                  "id": "a27ab835-9340-4259-a2c8-e4ce1b7afd3a",
+                  "id": "3ca6adb1-942c-49be-8759-95b2b0bf6e2b",
                   "location": {
-                    "line": 174,
+                    "line": 184,
                     "column": 15,
-                    "endLine": 178,
+                    "endLine": 188,
                     "endColumn": 10
                   }
                 },
@@ -606,35 +622,35 @@
                           }
                         }
                       ],
-                      "id": "e117fed5-92fc-4e6a-aeb8-59305cc55355",
+                      "id": "c7b26825-6025-4180-af72-b87f17959b70",
                       "location": {
-                        "line": 179,
+                        "line": 189,
                         "column": 19,
-                        "endLine": 183,
+                        "endLine": 193,
                         "endColumn": 14
                       }
                     },
-                    "id": "d1590bcf-41e0-4834-bc06-475be5a923a6",
+                    "id": "5d8dde50-1631-4db2-98bd-895b87b69cc3",
                     "location": {
-                      "line": 179,
+                      "line": 189,
                       "column": 13,
-                      "endLine": 183,
+                      "endLine": 193,
                       "endColumn": 14
                     }
                   },
-                  "id": "fcf8e816-4a6b-45a6-b25e-8dd9d0027197",
+                  "id": "205b5a3b-4610-46d1-9222-2d42cea7d6a9",
                   "location": {
-                    "line": 178,
+                    "line": 188,
                     "column": 11,
-                    "endLine": 185,
+                    "endLine": 195,
                     "endColumn": 1
                   }
                 },
-                "id": "a11bc76c-34e5-4c12-93f5-78ddc413c217",
+                "id": "4d73776a-f48f-43f9-8897-4edf759f705a",
                 "location": {
-                  "line": 174,
+                  "line": 184,
                   "column": 9,
-                  "endLine": 185,
+                  "endLine": 195,
                   "endColumn": 1
                 }
               },
@@ -662,11 +678,11 @@
                       }
                     }
                   ],
-                  "id": "da4b7df2-59aa-4119-a454-bb635f4cb6de",
+                  "id": "9e0b2e31-4fce-4df3-a1a9-f874cd70ad71",
                   "location": {
-                    "line": 185,
+                    "line": 195,
                     "column": 21,
-                    "endLine": 188,
+                    "endLine": 198,
                     "endColumn": 10
                   }
                 },
@@ -700,35 +716,35 @@
                           }
                         }
                       ],
-                      "id": "46a1ff8e-c230-4fe3-9dce-89a98e9ca835",
+                      "id": "83611367-f78b-4472-bb32-606c77754b28",
                       "location": {
-                        "line": 189,
+                        "line": 199,
                         "column": 19,
-                        "endLine": 193,
+                        "endLine": 203,
                         "endColumn": 14
                       }
                     },
-                    "id": "a0126b45-7993-4d4d-8634-04b53d7d049f",
+                    "id": "34975b06-f52e-4a93-9157-dc9972d4ce58",
                     "location": {
-                      "line": 189,
+                      "line": 199,
                       "column": 13,
-                      "endLine": 193,
+                      "endLine": 203,
                       "endColumn": 14
                     }
                   },
-                  "id": "6c0464f1-aeac-4afa-9db9-4e9e4f6c5a12",
+                  "id": "5deb7b7e-4ea9-4648-9041-870f7fda6d95",
                   "location": {
-                    "line": 188,
+                    "line": 198,
                     "column": 11,
-                    "endLine": 195,
+                    "endLine": 205,
                     "endColumn": 1
                   }
                 },
-                "id": "613bafbd-c6f2-4104-8098-c93d831ea0f7",
+                "id": "c30cbe40-8bc4-415a-9ffa-9ada187d93b7",
                 "location": {
-                  "line": 185,
+                  "line": 195,
                   "column": 9,
-                  "endLine": 195,
+                  "endLine": 205,
                   "endColumn": 1
                 }
               },
@@ -756,11 +772,11 @@
                       }
                     }
                   ],
-                  "id": "70bae593-09ad-4e92-bddc-576cfaa834c8",
+                  "id": "6d4b07d4-fc90-45b7-ad47-4486fbde8496",
                   "location": {
-                    "line": 195,
+                    "line": 205,
                     "column": 23,
-                    "endLine": 198,
+                    "endLine": 208,
                     "endColumn": 10
                   }
                 },
@@ -794,35 +810,35 @@
                           }
                         }
                       ],
-                      "id": "10472753-d8b2-453d-88fd-c96811474d73",
+                      "id": "574354b4-ae3e-4eb2-84db-b03f79f53216",
                       "location": {
-                        "line": 199,
+                        "line": 209,
                         "column": 19,
-                        "endLine": 203,
+                        "endLine": 213,
                         "endColumn": 14
                       }
                     },
-                    "id": "bd891b16-fd64-4977-ae88-30faeb8c740f",
+                    "id": "853bfe04-e656-4157-99d4-759f42857536",
                     "location": {
-                      "line": 199,
+                      "line": 209,
                       "column": 13,
-                      "endLine": 203,
+                      "endLine": 213,
                       "endColumn": 14
                     }
                   },
-                  "id": "eb99a66a-de65-4421-8d7f-718d60c3b647",
+                  "id": "fa974d21-b6a5-43e7-9941-b751d8d190fb",
                   "location": {
-                    "line": 198,
+                    "line": 208,
                     "column": 11,
-                    "endLine": 208,
+                    "endLine": 218,
                     "endColumn": 1
                   }
                 },
-                "id": "02b2515d-4b76-4d82-b4a8-618275597a9d",
+                "id": "dc3518a6-c0bc-4891-b169-ba495b15af6d",
                 "location": {
-                  "line": 195,
+                  "line": 205,
                   "column": 9,
-                  "endLine": 208,
+                  "endLine": 218,
                   "endColumn": 1
                 }
               },
@@ -873,11 +889,11 @@
                       }
                     }
                   ],
-                  "id": "b6f9d0d7-0ae0-4a24-b9e7-611d014e4619",
+                  "id": "93171d8e-8914-4294-8a76-58e3ad70d6b3",
                   "location": {
-                    "line": 208,
+                    "line": 218,
                     "column": 15,
-                    "endLine": 211,
+                    "endLine": 221,
                     "endColumn": 10
                   }
                 },
@@ -911,35 +927,35 @@
                           }
                         }
                       ],
-                      "id": "1622681f-b43a-414c-8f81-3c684938e1b2",
+                      "id": "7b53422f-9d7c-40d9-a85b-0f5b72c588a8",
                       "location": {
-                        "line": 212,
+                        "line": 222,
                         "column": 19,
-                        "endLine": 216,
+                        "endLine": 226,
                         "endColumn": 14
                       }
                     },
-                    "id": "b3225efe-7057-4f8b-85ff-1a53095c8211",
+                    "id": "1dd91610-b991-43f5-b90d-4c49ac1d6945",
                     "location": {
-                      "line": 212,
+                      "line": 222,
                       "column": 13,
-                      "endLine": 216,
+                      "endLine": 226,
                       "endColumn": 14
                     }
                   },
-                  "id": "f89ba48d-8f02-4f82-8985-ad436214a073",
+                  "id": "9d79c8cf-d78d-44c2-9844-254c0d93b4e0",
                   "location": {
-                    "line": 211,
+                    "line": 221,
                     "column": 11,
-                    "endLine": 218,
+                    "endLine": 228,
                     "endColumn": 1
                   }
                 },
-                "id": "d9292438-17dc-417f-b941-3ffab9910ddb",
+                "id": "be118362-707c-4205-a8bb-efde6ee5dbb5",
                 "location": {
-                  "line": 208,
+                  "line": 218,
                   "column": 9,
-                  "endLine": 218,
+                  "endLine": 228,
                   "endColumn": 1
                 }
               }
@@ -1002,35 +1018,35 @@
                     }
                   }
                 ],
-                "id": "bfdfa070-d4d1-4e17-830f-86cfe04ba711",
+                "id": "d67b5414-9c05-4408-b2cf-9529444729da",
                 "location": {
-                  "line": 218,
+                  "line": 228,
                   "column": 15,
-                  "endLine": 222,
+                  "endLine": 232,
                   "endColumn": 10
                 }
               },
-              "id": "d16f2010-d780-4fc4-a738-193fafe0bd2e",
+              "id": "92016435-00dc-4d6f-a4f2-cfc6fc537fe3",
               "location": {
-                "line": 218,
+                "line": 228,
                 "column": 9,
-                "endLine": 222,
+                "endLine": 232,
                 "endColumn": 10
               }
             },
-            "id": "195353a7-b533-4fb6-b526-b4b258b4f49c",
+            "id": "7bdd785c-204d-4f44-ade1-635865a35a2e",
             "location": {
-              "line": 173,
+              "line": 183,
               "column": 7,
-              "endLine": 225,
+              "endLine": 235,
               "endColumn": 1
             }
           },
-          "id": "af047658-7349-4510-9770-9d2255e9da41",
+          "id": "128fb397-4c62-4243-a261-34db03cd6e47",
           "location": {
-            "line": 158,
+            "line": 168,
             "column": 5,
-            "endLine": 225,
+            "endLine": 235,
             "endColumn": 1
           }
         },
@@ -1142,11 +1158,11 @@
                       }
                     }
                   ],
-                  "id": "78da43be-f11f-4ccd-9089-eca939ceee70",
+                  "id": "fce39889-a89e-4556-969f-594bc2c2af04",
                   "location": {
-                    "line": 237,
+                    "line": 247,
                     "column": 15,
-                    "endLine": 241,
+                    "endLine": 251,
                     "endColumn": 10
                   }
                 },
@@ -1173,35 +1189,35 @@
                           }
                         }
                       ],
-                      "id": "3d247178-4426-4d52-ae02-7e4a1f1b7e82",
+                      "id": "a4e54c6a-62d6-414d-8fe3-f23ff8e27df2",
                       "location": {
-                        "line": 242,
+                        "line": 252,
                         "column": 19,
-                        "endLine": 242,
+                        "endLine": 252,
                         "endColumn": 79
                       }
                     },
-                    "id": "7a63be99-1512-4b8f-8a43-6f46621e7d2f",
+                    "id": "4fe1f6be-2a3a-45a9-be64-b39f89e292ea",
                     "location": {
-                      "line": 242,
+                      "line": 252,
                       "column": 13,
-                      "endLine": 242,
+                      "endLine": 252,
                       "endColumn": 79
                     }
                   },
-                  "id": "aa31f0e2-8156-4b35-98c4-f70743d7926b",
+                  "id": "f3526040-b9f2-4962-b959-4e73cf8b7cf0",
                   "location": {
-                    "line": 241,
+                    "line": 251,
                     "column": 11,
-                    "endLine": 244,
+                    "endLine": 254,
                     "endColumn": 1
                   }
                 },
-                "id": "8a927c17-0aa2-46f2-ab79-ec1b3e3b06e2",
+                "id": "0cec387a-d969-4b8d-9a9c-274dbaf43b68",
                 "location": {
-                  "line": 237,
+                  "line": 247,
                   "column": 9,
-                  "endLine": 244,
+                  "endLine": 254,
                   "endColumn": 1
                 }
               },
@@ -1229,11 +1245,11 @@
                       }
                     }
                   ],
-                  "id": "58c31325-ecb9-424d-b1e2-eb2a64ecc72a",
+                  "id": "cafe2c5a-f1d3-49f3-915b-40e5236ec5e1",
                   "location": {
-                    "line": 244,
+                    "line": 254,
                     "column": 21,
-                    "endLine": 247,
+                    "endLine": 257,
                     "endColumn": 10
                   }
                 },
@@ -1260,35 +1276,35 @@
                           }
                         }
                       ],
-                      "id": "b89cc21d-04b6-408c-bfb0-2a5bca0efe17",
+                      "id": "6ef7825c-c87b-408a-8d96-1b6b06dc9810",
                       "location": {
-                        "line": 248,
+                        "line": 258,
                         "column": 19,
-                        "endLine": 248,
+                        "endLine": 258,
                         "endColumn": 79
                       }
                     },
-                    "id": "16aa4ac0-db37-4398-b3a3-ba023d7190ba",
+                    "id": "a2f3911e-c24c-4e7e-9db1-05f017076c40",
                     "location": {
-                      "line": 248,
+                      "line": 258,
                       "column": 13,
-                      "endLine": 248,
+                      "endLine": 258,
                       "endColumn": 79
                     }
                   },
-                  "id": "2a0cb1c7-7eb7-4c2b-ad51-2490a11716eb",
+                  "id": "87220124-8c47-4a98-8dec-612bde0f14bc",
                   "location": {
-                    "line": 247,
+                    "line": 257,
                     "column": 11,
-                    "endLine": 250,
+                    "endLine": 260,
                     "endColumn": 1
                   }
                 },
-                "id": "b0c05306-2304-4fe1-b4b3-edbede9068f7",
+                "id": "b3716f71-50a3-4622-93cd-94ae62199c22",
                 "location": {
-                  "line": 244,
+                  "line": 254,
                   "column": 9,
-                  "endLine": 250,
+                  "endLine": 260,
                   "endColumn": 1
                 }
               },
@@ -1357,11 +1373,11 @@
                       }
                     }
                   ],
-                  "id": "0ae39d78-e84e-4588-a3ca-8b1098ab0b9d",
+                  "id": "deee011e-cf5b-4fc6-b159-91a8b5e0212d",
                   "location": {
-                    "line": 250,
+                    "line": 260,
                     "column": 15,
-                    "endLine": 256,
+                    "endLine": 266,
                     "endColumn": 10
                   }
                 },
@@ -1388,35 +1404,35 @@
                           }
                         }
                       ],
-                      "id": "8765f88f-b056-4c52-8608-2dbb342ff34d",
+                      "id": "1551fac3-863c-48a1-84a9-c750314ff7de",
                       "location": {
-                        "line": 257,
+                        "line": 267,
                         "column": 19,
-                        "endLine": 257,
+                        "endLine": 267,
                         "endColumn": 70
                       }
                     },
-                    "id": "ca384c5f-5103-4257-a7a0-f897f7dc8c56",
+                    "id": "3c23f023-76c5-4ff9-aa13-e42ad5f28ba8",
                     "location": {
-                      "line": 257,
+                      "line": 267,
                       "column": 13,
-                      "endLine": 257,
+                      "endLine": 267,
                       "endColumn": 70
                     }
                   },
-                  "id": "e53aec61-c226-4f4b-a936-795ed40907fb",
+                  "id": "9a18b42b-bea4-4593-a279-da4e08957beb",
                   "location": {
-                    "line": 256,
+                    "line": 266,
                     "column": 11,
-                    "endLine": 259,
+                    "endLine": 269,
                     "endColumn": 1
                   }
                 },
-                "id": "16f85b3a-7d54-44a0-b1ba-e4c87add4913",
+                "id": "1f29ce5d-205f-4174-a256-08cff64e4183",
                 "location": {
-                  "line": 250,
+                  "line": 260,
                   "column": 9,
-                  "endLine": 259,
+                  "endLine": 269,
                   "endColumn": 1
                 }
               }
@@ -1445,47 +1461,47 @@
                     }
                   }
                 ],
-                "id": "3a3a31b5-d5a3-434c-8bf6-15d3736a2400",
+                "id": "fea0ad41-3c9a-4f11-9478-bdbe7eb696be",
                 "location": {
-                  "line": 259,
+                  "line": 269,
                   "column": 15,
-                  "endLine": 262,
+                  "endLine": 272,
                   "endColumn": 10
                 }
               },
-              "id": "eed7d537-2dd0-4ce0-b541-3dd5a9269e29",
+              "id": "84d575b4-a073-43ce-9597-8697b3969a70",
               "location": {
-                "line": 259,
+                "line": 269,
                 "column": 9,
-                "endLine": 262,
+                "endLine": 272,
                 "endColumn": 10
               }
             },
-            "id": "0d6c2761-6d52-4dd1-9f39-24e67f71e30f",
+            "id": "7463c4d7-a684-44c6-8420-ffd327cb1850",
             "location": {
-              "line": 236,
+              "line": 246,
               "column": 46,
-              "endLine": 264,
+              "endLine": 274,
               "endColumn": 1
             }
           },
-          "id": "16738b23-e15a-459d-a4cb-4071874daa9f",
+          "id": "b2ea79bb-f19b-4da9-ac4b-5f8d0bbb6243",
           "location": {
-            "line": 225,
+            "line": 235,
             "column": 5,
-            "endLine": 264,
+            "endLine": 274,
             "endColumn": 1
           }
         }
       ],
-      "id": "9fc7f982-e246-4d2e-8521-405b5cf7ea4f",
+      "id": "f98cbf85-ac26-4ab7-9aa5-8532673e256d",
       "location": {
-        "line": 155,
+        "line": 165,
         "column": 1,
-        "endLine": 265,
+        "endLine": 275,
         "endColumn": 1
       }
     }
   ],
-  "id": "40bd0c17-91b8-43ba-a3fa-9e1808d955dd"
+  "id": "160e29d2-e72f-4e99-9dc3-badf6a3d0488"
 }
