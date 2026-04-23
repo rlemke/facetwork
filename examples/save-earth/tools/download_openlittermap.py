@@ -1,15 +1,28 @@
 """Download OpenLitterMap geotagged litter observations.
 
+OpenLitterMap's public API has two GeoJSON endpoints:
+
+- ``clusters`` (default): aggregate clusters, any zoom, global bbox optional.
+- ``points``: individual photos with full per-observation metadata;
+  requires ``zoom >= 15`` AND a bbox (server-enforced).
+
 Outputs land at
-``$AFL_CACHE_ROOT/save-earth/openlittermap/points.geojson`` with a
-sidebar ``.meta.json`` sidecar per the cache-layout spec.
+``$AFL_CACHE_ROOT/save-earth/openlittermap/<mode>-zoom<N>[_<bbox>].geojson``
+plus a sibling ``.meta.json`` sidecar.
 
 Usage::
 
+    # Global cluster overview (default)
     python download_openlittermap.py
-    python download_openlittermap.py --force
-    python download_openlittermap.py --url <new-endpoint>
-    python download_openlittermap.py --bbox 24.4,49.4,-125.0,-66.9   # US
+
+    # Custom zoom level for clusters (higher = more / smaller clusters)
+    python download_openlittermap.py --zoom 6
+
+    # Individual points for a small area (manhattan ≈ zoom 15)
+    python download_openlittermap.py --mode points \\
+        --bbox -74.02,40.70,-73.97,40.75 --zoom 15
+
+    # Offline mock data
     python download_openlittermap.py --use-mock
 """
 
@@ -31,7 +44,9 @@ def _parse_bbox(s: str) -> tuple[float, float, float, float]:
     except ValueError as exc:
         raise SystemExit(f"error: --bbox needs 4 comma-separated numbers: {exc}")
     if len(parts) != 4:
-        raise SystemExit("error: --bbox needs exactly 4 values (min_lat,max_lat,min_lon,max_lon)")
+        raise SystemExit(
+            "error: --bbox needs 4 values: min_lon,min_lat,max_lon,max_lat"
+        )
     return tuple(parts)  # type: ignore[return-value]
 
 
@@ -41,15 +56,33 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--url",
-        default=openlittermap.DEFAULT_URL,
-        help=f"Upstream GeoJSON URL (default: {openlittermap.DEFAULT_URL}).",
+        "--mode",
+        choices=["clusters", "points"],
+        default=openlittermap.DEFAULT_MODE,
+        help=(
+            f"clusters = aggregate (any zoom); points = individual photos "
+            f"(requires zoom>={openlittermap.MIN_POINTS_ZOOM}, requires --bbox). "
+            f"Default: {openlittermap.DEFAULT_MODE}."
+        ),
     )
-    parser.add_argument("--force", action="store_true", help="Re-download even if cached.")
+    parser.add_argument(
+        "--zoom",
+        type=int,
+        default=openlittermap.DEFAULT_ZOOM,
+        help=f"Zoom level 0–24 (default {openlittermap.DEFAULT_ZOOM}).",
+    )
     parser.add_argument(
         "--bbox",
         default=None,
-        help="Trim cached features to this bbox: 'min_lat,max_lat,min_lon,max_lon'.",
+        help="min_lon,min_lat,max_lon,max_lat — required for --mode points.",
+    )
+    parser.add_argument(
+        "--url",
+        default=openlittermap.DEFAULT_BASE_URL,
+        help=f"Upstream API base (default: {openlittermap.DEFAULT_BASE_URL}).",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Re-download even if cached."
     )
     parser.add_argument(
         "--max-age-hours",
@@ -74,10 +107,12 @@ def main() -> int:
 
     try:
         res = openlittermap.download(
+            mode=args.mode,
+            zoom=args.zoom,
+            bbox=bbox,
             url=args.url,
             force=args.force,
             max_age_hours=args.max_age_hours,
-            bbox=bbox,
             use_mock=args.use_mock,
         )
     except Exception as exc:

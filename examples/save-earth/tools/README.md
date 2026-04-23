@@ -36,7 +36,7 @@ Every arrow is sidecar-mediated: each artifact has a sibling `.meta.json` with s
 
 | Tool | Input | Output cache | Purpose |
 |------|-------|--------------|---------|
-| `download-openlittermap` | `--url`, `--bbox` optional | `openlittermap/points.geojson` | Fetch crowd-sourced litter observations |
+| `download-openlittermap` | `--mode {clusters,points}`, `--zoom`, `--bbox` | `openlittermap/<mode>-zoom<N>[_<bbox>].geojson` | Fetch crowd-sourced litter observations. Default: global clusters at zoom 4. Individual photos (`--mode points`) require `--zoom>=15` and a bbox (server-enforced). |
 | `download-epa-cleanups` | `--dataset {superfund,brownfields}` (repeatable) | `epa-cleanups/<dataset>.geojson` | Fetch EPA authoritative remediation-site data from `geopub.epa.gov/EMEF/efpoints` (auto-paginates past the 10,000-record server cap) |
 | `build-save-earth-map` | `--region`, `--center`, `--zoom` | `maps/<region>/index.html` | Stitch every cached layer into a single MapLibre HTML page |
 
@@ -65,7 +65,8 @@ All outputs live at `$AFL_CACHE_ROOT/save-earth/` (default: `/Volumes/afl_data/c
 ```
 cache/save-earth/
 ├── openlittermap/
-│   └── points.geojson + .meta.json
+│   ├── clusters-zoom<N>.geojson + .meta.json
+│   └── points-zoom<N>_<bbox>.geojson + .meta.json   (if --mode points used)
 ├── epa-cleanups/
 │   ├── superfund.geojson + .meta.json
 │   └── brownfields.geojson + .meta.json
@@ -89,14 +90,29 @@ cache/save-earth/
 open "$AFL_CACHE_ROOT/save-earth/maps/global/index.html"
 ```
 
+**Real data, global overview:**
+
+```bash
+./tools/download-openlittermap.sh                    # clusters @ zoom 4
+./tools/download-epa-cleanups.sh
+./tools/build-save-earth-map.sh
+```
+
 **Real data, US-focused:**
 
 ```bash
-./tools/download-openlittermap.sh  --bbox 24.4,49.4,-125.0,-66.9
+./tools/download-openlittermap.sh --zoom 6           # finer clusters
 ./tools/download-epa-cleanups.sh
 ./tools/build-save-earth-map.sh --region us --center 39.8,-98.6 --zoom 4
+```
 
-open "$AFL_CACHE_ROOT/save-earth/maps/us/index.html"
+**Neighbourhood-level detail (individual litter photos):**
+
+```bash
+# OpenLitterMap /api/points requires zoom >= 15 and a bbox — use '=' because
+# bboxes start with '-' (argparse would read it as a flag otherwise).
+./tools/download-openlittermap.sh --mode points --zoom 15 \
+    --bbox=-74.02,40.70,-73.97,40.75
 ```
 
 **Only EPA data (no litter layer):**

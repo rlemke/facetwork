@@ -38,15 +38,27 @@ from _lib.storage import LocalStorage  # noqa: E402
 # Standard layer pipeline. Each entry becomes a toggleable map layer
 # iff its cached GeoJSON exists. The color palette is chosen so the
 # distinctions stay legible when many layers overlap.
+#
+# Default OpenLitterMap reference: the clusters-zoom4 feed (global
+# overview). Users who download additional (mode, zoom, bbox)
+# combinations can pass --include with custom LayerSpecs via the
+# extension point below.
 DEFAULT_LAYERS: list[map_render.LayerSpec] = [
     map_render.LayerSpec(
         name="openlittermap",
-        title="Litter observations (OpenLitterMap)",
+        title="Litter clusters (OpenLitterMap)",
         source_cache_type=openlittermap.CACHE_TYPE,
-        source_relative_path=openlittermap.RELATIVE_PATH,
+        source_relative_path=f"clusters-zoom{openlittermap.DEFAULT_ZOOM}.geojson",
         color="#d9534f",
-        radius=5,
-        description_fields=["city", "state", "country", "tags", "description", "datetime"],
+        radius=6,
+        description_fields=[
+            "point_count",
+            "point_count_abbreviated",
+            "datetime",
+            "verified",
+            "picked_up",
+            "username",
+        ],
     ),
     map_render.LayerSpec(
         name="epa-superfund",

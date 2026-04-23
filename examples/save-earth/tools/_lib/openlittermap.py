@@ -1,17 +1,28 @@
 """OpenLitterMap downloader — geotagged litter observations.
 
 OpenLitterMap (https://openlittermap.com) is a crowd-sourced,
-CC-BY-SA licensed database of geotagged litter photos. This module
-fetches the public GeoJSON feed, caches it with a sidecar, and
-normalizes the feature properties so downstream tools see a stable
-shape regardless of upstream field renames.
+CC-BY-SA licensed database of geotagged litter photos. The public API
+has two GeoJSON endpoints relevant to a global map:
+
+- ``/api/clusters?zoom=N`` — aggregated clusters, works at any zoom.
+  Best for a global overview; each feature has ``point_count``.
+- ``/api/points?bbox=...&zoom=N`` — individual photos with full
+  per-observation metadata (tags, materials, datetime, picked-up
+  status). Requires ``zoom >= 15``, so it only works for small
+  bboxes (neighbourhood-scale).
+
+This module wraps both endpoints behind a single ``download()`` call.
+The default mode is ``clusters`` at zoom 4 — a world-scale overview
+that fits every other save-earth layer. Pass ``mode="points"`` with
+``bbox`` + ``zoom >= 15`` for detail maps.
 
 Cache layout::
 
-    cache/save-earth/openlittermap/points.geojson        + .meta.json
+    cache/save-earth/openlittermap/<mode>-zoom<N>[_<bbox>].geojson + .meta.json
 
-Because the upstream API evolves, the URL is overridable — both via
-constructor argument and via the ``--url`` flag on the CLI.
+Each (mode, zoom, bbox) combination gets its own cache entry so you
+can have both a global clusters map and a per-city points map without
+stepping on each other.
 """
 
 from __future__ import annotations
@@ -22,10 +33,9 @@ import logging
 import os
 import sys
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 _TOOLS_ROOT = Path(__file__).resolve().parent.parent
 if str(_TOOLS_ROOT) not in sys.path:
@@ -43,21 +53,27 @@ logger = logging.getLogger("save-earth.openlittermap")
 
 NAMESPACE = "save-earth"
 CACHE_TYPE = "openlittermap"
-RELATIVE_PATH = "points.geojson"
 
-# Public global-clusters endpoint. If this is stale when you run, pass
-# ``--url`` with the current endpoint from openlittermap.com/data.
-DEFAULT_URL = "https://openlittermap.com/global.geojson"
+# API base — the mode suffix is appended at fetch time.
+DEFAULT_BASE_URL = "https://openlittermap.com/api"
 USER_AGENT = "facetwork-save-earth/1.0 (+https://github.com/rlemke/facetwork)"
 CONNECT_TIMEOUT = 30
 READ_TIMEOUT = 180
 DEFAULT_MAX_AGE_HOURS = 24.0
+
+Mode = Literal["clusters", "points"]
+DEFAULT_MODE: Mode = "clusters"
+DEFAULT_ZOOM = 4
+MIN_POINTS_ZOOM = 15  # server-enforced on /api/points
 
 _lock = threading.Lock()
 
 
 @dataclass
 class FetchResult:
+    mode: Mode
+    zoom: int
+    bbox: tuple[float, float, float, float] | None
     absolute_path: str
     relative_path: str
     size_bytes: int
@@ -71,47 +87,80 @@ class FetchResult:
 
 def download(
     *,
-    url: str = DEFAULT_URL,
+    mode: Mode = DEFAULT_MODE,
+    zoom: int = DEFAULT_ZOOM,
+    bbox: tuple[float, float, float, float] | None = None,
+    url: str = DEFAULT_BASE_URL,
     force: bool = False,
     max_age_hours: float = DEFAULT_MAX_AGE_HOURS,
-    bbox: tuple[float, float, float, float] | None = None,
     storage: Storage | None = None,
     use_mock: bool = False,
 ) -> FetchResult:
-    """Fetch the OpenLitterMap GeoJSON and cache it.
+    """Fetch an OpenLitterMap GeoJSON feed and cache it.
 
-    ``bbox``, if set, is ``(min_lat, max_lat, min_lon, max_lon)`` and
-    trims the cached feature set to that window (so re-running the
-    downloader with different bboxes gives different cached files —
-    but we still write to the same cache entry. Callers who need
-    multiple bboxes should direct-call with distinct output paths).
+    ``mode``:
+      - ``"clusters"`` (default): aggregate clusters; any zoom; bbox optional.
+      - ``"points"``: individual photos; requires ``zoom >= 15`` AND a bbox.
+
+    ``bbox`` uses ``(min_lon, min_lat, max_lon, max_lat)`` order — the
+    same (left, bottom, right, top) OpenLitterMap expects.
     """
+    if mode == "points":
+        if zoom < MIN_POINTS_ZOOM:
+            raise ValueError(
+                f"mode=points requires zoom>={MIN_POINTS_ZOOM} "
+                f"(server enforces this); got zoom={zoom}. Use mode=clusters "
+                f"for lower zooms / global maps."
+            )
+        if bbox is None:
+            raise ValueError(
+                "mode=points requires a --bbox (min_lon,min_lat,max_lon,max_lat). "
+                "The /api/points endpoint rejects unbounded queries."
+            )
+
     s = storage or LocalStorage()
-    art_path = sidecar.cache_path(NAMESPACE, CACHE_TYPE, RELATIVE_PATH, s)
+    relative_path = _relative_path(mode, zoom, bbox)
+    art_path = sidecar.cache_path(NAMESPACE, CACHE_TYPE, relative_path, s)
 
     with _lock:
         if not force:
-            side = sidecar.read_sidecar(NAMESPACE, CACHE_TYPE, RELATIVE_PATH, s)
+            side = sidecar.read_sidecar(NAMESPACE, CACHE_TYPE, relative_path, s)
             if side and sidecar.exists_and_valid(
-                NAMESPACE, CACHE_TYPE, RELATIVE_PATH, s
+                NAMESPACE, CACHE_TYPE, relative_path, s
             ):
                 age = _age_hours(side.get("generated_at"))
                 if age is None or age < max_age_hours:
-                    logger.info("openlittermap cache hit (%.1fh old)", age or -1.0)
+                    logger.info(
+                        "openlittermap/%s cache hit (%.1fh old)",
+                        relative_path,
+                        age or -1.0,
+                    )
                     return FetchResult(
+                        mode=mode,
+                        zoom=zoom,
+                        bbox=bbox,
                         absolute_path=art_path,
-                        relative_path=RELATIVE_PATH,
+                        relative_path=relative_path,
                         size_bytes=side.get("size_bytes", 0),
                         sha256=side.get("sha256", ""),
                         feature_count=int(side.get("extra", {}).get("feature_count", 0)),
-                        source_url=url,
+                        source_url=_build_url(url, mode, zoom, bbox),
                         was_cached=True,
                         generated_at=side.get("generated_at", ""),
                     )
 
         if use_mock:
-            body_bytes = json.dumps(_mock_geojson()).encode("utf-8")
-            return _persist(body_bytes, url=url, storage=s, used_mock=True, bbox=bbox)
+            body = json.dumps(_mock_geojson(mode)).encode("utf-8")
+            return _persist(
+                mode=mode,
+                zoom=zoom,
+                bbox=bbox,
+                body=body,
+                url=_build_url(url, mode, zoom, bbox),
+                storage=s,
+                used_mock=True,
+                relative_path=relative_path,
+            )
 
         if requests is None:
             raise RuntimeError(
@@ -119,57 +168,145 @@ def download(
                 "wrapper (activates .venv), or pass --use-mock."
             )
 
-        logger.info("downloading %s", url)
+        full_url = _build_url(url, mode, zoom, bbox)
+        logger.info("downloading %s", full_url)
         resp = requests.get(
-            url,
+            full_url,
             timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
             headers={"User-Agent": USER_AGENT, "Accept": "application/geo+json"},
         )
+        if resp.status_code == 422:
+            # Validation error from the Laravel API; surface it cleanly.
+            try:
+                err = resp.json()
+                msg = err.get("message") or json.dumps(err)
+            except Exception:
+                msg = resp.text[:200]
+            raise RuntimeError(f"OpenLitterMap rejected request: {msg}")
         resp.raise_for_status()
-        data = resp.json()
-        data = _normalize(data, bbox=bbox)
+        try:
+            parsed = resp.json()
+        except ValueError as exc:
+            raise RuntimeError(
+                f"OpenLitterMap returned non-JSON ({resp.status_code}): "
+                f"{resp.text[:200]!r}"
+            ) from exc
+        data = _normalize(parsed)
         body_bytes = json.dumps(data).encode("utf-8")
-        return _persist(body_bytes, url=url, storage=s, used_mock=False, bbox=bbox)
+        return _persist(
+            mode=mode,
+            zoom=zoom,
+            bbox=bbox,
+            body=body_bytes,
+            url=full_url,
+            storage=s,
+            used_mock=False,
+            relative_path=relative_path,
+        )
+
+
+# ---------------------------------------------------------------------------
+# URL + path helpers.
+# ---------------------------------------------------------------------------
+
+def _build_url(
+    base: str,
+    mode: Mode,
+    zoom: int,
+    bbox: tuple[float, float, float, float] | None,
+) -> str:
+    """Compose the full API URL for a (mode, zoom, bbox) tuple."""
+    base = base.rstrip("/")
+    params = [f"zoom={zoom}"]
+    if bbox is not None:
+        min_lon, min_lat, max_lon, max_lat = bbox
+        params.extend(
+            [
+                f"bbox%5Bleft%5D={min_lon}",
+                f"bbox%5Bbottom%5D={min_lat}",
+                f"bbox%5Bright%5D={max_lon}",
+                f"bbox%5Btop%5D={max_lat}",
+            ]
+        )
+    query = "&".join(params)
+    return f"{base}/{mode}?{query}"
+
+
+def _relative_path(
+    mode: Mode,
+    zoom: int,
+    bbox: tuple[float, float, float, float] | None,
+) -> str:
+    """Cache entry path — one per distinct (mode, zoom, bbox) combination."""
+    if bbox is None:
+        return f"{mode}-zoom{zoom}.geojson"
+    # Stable bbox suffix — floats with 4 decimal places, separators safe for FS.
+    return (
+        f"{mode}-zoom{zoom}"
+        f"_{bbox[0]:.4f},{bbox[1]:.4f},{bbox[2]:.4f},{bbox[3]:.4f}.geojson"
+    )
 
 
 def _persist(
-    body: bytes, *, url: str, storage: Storage, used_mock: bool, bbox
+    *,
+    mode: Mode,
+    zoom: int,
+    bbox: tuple[float, float, float, float] | None,
+    body: bytes,
+    url: str,
+    storage: Storage,
+    used_mock: bool,
+    relative_path: str,
 ) -> FetchResult:
     staging_dir = local_staging_subdir(f"{NAMESPACE}/{CACHE_TYPE}")
     os.makedirs(staging_dir, exist_ok=True)
-    stage_path = os.path.join(staging_dir, f"{RELATIVE_PATH}.stage-{os.getpid()}")
+    stage_path = os.path.join(
+        staging_dir, f"{relative_path.replace('/', '_')}.stage-{os.getpid()}"
+    )
     with open(stage_path, "wb") as f:
         f.write(body)
     digest = hashlib.sha256(body).hexdigest()
 
-    # Count features without re-parsing the whole blob twice.
     try:
         parsed = json.loads(body)
         feature_count = len(parsed.get("features") or [])
     except Exception:
         feature_count = 0
 
-    final_path = sidecar.cache_path(NAMESPACE, CACHE_TYPE, RELATIVE_PATH, storage)
-    with sidecar.entry_lock(NAMESPACE, CACHE_TYPE, RELATIVE_PATH, storage=storage):
+    final_path = sidecar.cache_path(NAMESPACE, CACHE_TYPE, relative_path, storage)
+    with sidecar.entry_lock(
+        NAMESPACE, CACHE_TYPE, relative_path, storage=storage
+    ):
         storage.finalize_from_local(stage_path, final_path)
         side = sidecar.write_sidecar(
             NAMESPACE,
             CACHE_TYPE,
-            RELATIVE_PATH,
+            relative_path,
             kind="file",
             size_bytes=len(body),
             sha256=digest,
-            source={"publisher": "OpenLitterMap", "url": url, "used_mock": used_mock},
+            source={
+                "publisher": "OpenLitterMap",
+                "url": url,
+                "mode": mode,
+                "zoom": zoom,
+                "bbox": list(bbox) if bbox else None,
+                "used_mock": used_mock,
+            },
             tool={"name": "openlittermap", "version": "1.0"},
             extra={
+                "mode": mode,
+                "zoom": zoom,
                 "feature_count": feature_count,
-                "bbox": list(bbox) if bbox else None,
             },
             storage=storage,
         )
     return FetchResult(
+        mode=mode,
+        zoom=zoom,
+        bbox=bbox,
         absolute_path=final_path,
-        relative_path=RELATIVE_PATH,
+        relative_path=relative_path,
         size_bytes=len(body),
         sha256=digest,
         feature_count=feature_count,
@@ -180,51 +317,22 @@ def _persist(
     )
 
 
-def _normalize(
-    data: Any, *, bbox: tuple[float, float, float, float] | None
-) -> dict[str, Any]:
+def _normalize(data: Any) -> dict[str, Any]:
     """Coerce whatever the upstream returned into a stable FeatureCollection.
 
-    OpenLitterMap's API sometimes returns cluster summaries, sometimes
-    raw points. We keep the shape as a FeatureCollection with
-    ``properties`` preserved verbatim so popups can surface whatever
-    upstream provided.
+    Both /api/clusters and /api/points return a FeatureCollection; the
+    guard handles odd wrapping if that ever changes.
     """
     if isinstance(data, dict) and data.get("type") == "FeatureCollection":
-        fc = data
-    elif isinstance(data, list):
-        # Assume list of Feature objects.
-        fc = {"type": "FeatureCollection", "features": data}
-    elif isinstance(data, dict) and isinstance(data.get("features"), list):
-        fc = {"type": "FeatureCollection", "features": data["features"]}
-    else:
-        raise ValueError(
-            "OpenLitterMap response is not a recognizable GeoJSON shape"
-        )
-
-    features = fc.get("features") or []
-    if bbox is not None:
-        min_lat, max_lat, min_lon, max_lon = bbox
-        features = [
-            f
-            for f in features
-            if _point_in_bbox(f, min_lat, max_lat, min_lon, max_lon)
-        ]
-
-    return {
-        "type": "FeatureCollection",
-        "features": features,
-    }
-
-
-def _point_in_bbox(feature, min_lat, max_lat, min_lon, max_lon) -> bool:
-    geom = (feature or {}).get("geometry") or {}
-    coords = geom.get("coordinates") or []
-    if geom.get("type") != "Point" or len(coords) < 2:
-        # Non-point features pass through — bbox is meant to trim points.
-        return True
-    lon, lat = coords[0], coords[1]
-    return min_lat <= lat <= max_lat and min_lon <= lon <= max_lon
+        return {
+            "type": "FeatureCollection",
+            "features": data.get("features") or [],
+        }
+    if isinstance(data, dict) and isinstance(data.get("features"), list):
+        return {"type": "FeatureCollection", "features": data["features"]}
+    raise ValueError(
+        "OpenLitterMap response is not a recognizable GeoJSON shape"
+    )
 
 
 def _age_hours(generated_at: str | None) -> float | None:
@@ -241,61 +349,74 @@ def _age_hours(generated_at: str | None) -> float | None:
     return (datetime.now(timezone.utc) - ts).total_seconds() / 3600.0
 
 
-def _mock_geojson() -> dict[str, Any]:
-    """Small hand-crafted feature collection for offline tests."""
+def _mock_geojson(mode: Mode) -> dict[str, Any]:
+    """Deterministic offline data matching the real-endpoint shape for each mode."""
+    if mode == "clusters":
+        return {
+            "type": "FeatureCollection",
+            "name": "clusters",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "lon": -73.9857,
+                        "lat": 40.7484,
+                        "cluster": True,
+                        "point_count": 42,
+                        "point_count_abbreviated": "42",
+                    },
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [-73.9857, 40.7484],
+                    },
+                },
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "lon": -122.4194,
+                        "lat": 37.7749,
+                        "cluster": True,
+                        "point_count": 18,
+                        "point_count_abbreviated": "18",
+                    },
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [-122.4194, 37.7749],
+                    },
+                },
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "lon": 2.3522,
+                        "lat": 48.8566,
+                        "cluster": True,
+                        "point_count": 7,
+                        "point_count_abbreviated": "7",
+                    },
+                    "geometry": {"type": "Point", "coordinates": [2.3522, 48.8566]},
+                },
+            ],
+        }
+    # points mode
     return {
         "type": "FeatureCollection",
         "features": [
             {
                 "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [-73.9857, 40.7484]},
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [-73.9857, 40.7484],
+                },
                 "properties": {
                     "id": 1,
-                    "city": "New York",
-                    "state": "NY",
-                    "country": "USA",
                     "datetime": "2026-04-10T12:30:00Z",
-                    "tags": ["plastic", "bottle"],
-                    "description": "Plastic bottle on sidewalk near Empire State Building",
-                },
-            },
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [-122.4194, 37.7749]},
-                "properties": {
-                    "id": 2,
-                    "city": "San Francisco",
-                    "state": "CA",
-                    "country": "USA",
-                    "datetime": "2026-04-12T09:15:00Z",
-                    "tags": ["cigarette", "butt"],
-                    "description": "Cigarette butts accumulated at bus stop",
-                },
-            },
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [-87.6298, 41.8781]},
-                "properties": {
-                    "id": 3,
-                    "city": "Chicago",
-                    "state": "IL",
-                    "country": "USA",
-                    "datetime": "2026-04-14T16:45:00Z",
-                    "tags": ["packaging", "food"],
-                    "description": "Fast-food packaging in park",
-                },
-            },
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [2.3522, 48.8566]},
-                "properties": {
-                    "id": 4,
-                    "city": "Paris",
-                    "state": "Île-de-France",
-                    "country": "France",
-                    "datetime": "2026-04-11T14:00:00Z",
-                    "tags": ["plastic", "bag"],
-                    "description": "Plastic bag caught in Seine embankment",
+                    "verified": 2,
+                    "picked_up": True,
+                    "summary": {
+                        "tags": [{"category_id": 1, "object_id": 10}],
+                        "totals": {"litter": 1},
+                        "keys": {"categories": {"1": "smoking"}},
+                    },
                 },
             },
         ],
