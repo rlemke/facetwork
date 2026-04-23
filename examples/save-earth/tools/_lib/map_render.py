@@ -288,6 +288,41 @@ def _render_html(
           hash: true
         }});
 
+        // Normal paint: radius stays at spec.radius; clusters with
+        // point_count auto-scale a little so dense areas read bigger.
+        function normalRadius(spec) {{
+          return [
+            'case',
+            ['has', 'point_count'],
+            [
+              'interpolate', ['linear'], ['get', 'point_count'],
+              1, spec.radius,
+              10, spec.radius + 3,
+              100, spec.radius + 7,
+              1000, spec.radius + 12
+            ],
+            spec.radius
+          ];
+        }}
+        // "Big dots" paint: inflate everything so it's obvious on a world map.
+        function bigRadius(spec) {{
+          const r = Math.max(spec.radius * 2.5, 14);
+          return [
+            'case',
+            ['has', 'point_count'],
+            [
+              'interpolate', ['linear'], ['get', 'point_count'],
+              1, r,
+              10, r + 4,
+              100, r + 10,
+              1000, r + 16
+            ],
+            r
+          ];
+        }}
+
+        let bigDotsOn = false;
+
         map.on('load', () => {{
           for (const spec of LAYER_SPECS) {{
             const data = window['DATA_' + spec.id];
@@ -297,11 +332,11 @@ def _render_html(
               type: 'circle',
               source: spec.id,
               paint: {{
-                'circle-radius': spec.radius,
+                'circle-radius': normalRadius(spec),
                 'circle-color': spec.color,
-                'circle-stroke-width': 1,
+                'circle-stroke-width': 1.5,
                 'circle-stroke-color': '#fff',
-                'circle-opacity': 0.85
+                'circle-opacity': 0.9
               }}
             }});
             map.on('click', spec.id, (e) => {{
@@ -326,8 +361,36 @@ def _render_html(
             map.on('mouseleave', spec.id, () => map.getCanvas().style.cursor = '');
           }}
 
-          // Layer-toggle panel
+          function applyRadius() {{
+            for (const spec of LAYER_SPECS) {{
+              map.setPaintProperty(
+                spec.id,
+                'circle-radius',
+                bigDotsOn ? bigRadius(spec) : normalRadius(spec)
+              );
+            }}
+          }}
+
           const panel = document.getElementById('panel');
+
+          // "Big dots" global toggle — applies to every layer, overrides radius.
+          const bigLabel = document.createElement('label');
+          bigLabel.style.borderBottom = '1px solid #ddd';
+          bigLabel.style.paddingBottom = '6px';
+          bigLabel.style.marginBottom = '4px';
+          bigLabel.style.fontWeight = '600';
+          const bigCb = document.createElement('input');
+          bigCb.type = 'checkbox';
+          bigCb.id = 'big-dots';
+          bigCb.addEventListener('change', () => {{
+            bigDotsOn = bigCb.checked;
+            applyRadius();
+          }});
+          bigLabel.appendChild(bigCb);
+          bigLabel.appendChild(document.createTextNode(' Big dots (any zoom)'));
+          panel.appendChild(bigLabel);
+
+          // Per-layer visibility toggles.
           for (const spec of LAYER_SPECS) {{
             const label = document.createElement('label');
             const cb = document.createElement('input');
