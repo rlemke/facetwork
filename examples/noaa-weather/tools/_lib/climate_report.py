@@ -48,6 +48,7 @@ from _lib import (  # noqa: E402
     report_index,
     sidecar,
     warming_map,
+    warming_time_map,
 )
 from _lib.storage import LocalStorage  # noqa: E402
 
@@ -87,6 +88,14 @@ def rebuild_report_derived_pages(storage: "Storage | None" = None) -> None:
             logger.info("warming choropleth: %s", map_path)
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("warming-map regen failed: %s", exc)
+    try:
+        point_path, trend_path = warming_time_map.rebuild_time_maps(storage=s)
+        if point_path is not None:
+            logger.info("point-in-time map: %s", point_path)
+        if trend_path is not None:
+            logger.info("running-trend map: %s", trend_path)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("warming-time-map regen failed: %s", exc)
 
 
 @dataclass

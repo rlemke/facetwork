@@ -398,7 +398,7 @@ def _render_html(geojson: dict[str, Any]) -> str:
         <header>
           <h1>Warming rate by reported region</h1>
           <p>Polygons are coloured by the climate report's OLS warming rate per decade. Click a polygon to open its report. Larger regions layer below smaller ones.</p>
-          <p><a href="index.html">&larr; Back to the master report index</a></p>
+          <p><a href="index.html">&larr; Master index</a> · <a href="warming-point-map.html">Point-in-time &rarr;</a> · <a href="warming-trend-map.html">Running trend &rarr;</a></p>
         </header>
         <aside class="legend">
           <h4>°C / decade</h4>
