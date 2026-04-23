@@ -5,6 +5,27 @@ Standalone command-line utilities for the NOAA GHCN-Daily ingestion + climate-an
 Pattern contract: [`agent-spec/tools-pattern.agent-spec.yaml`](../../../agent-spec/tools-pattern.agent-spec.yaml)
 Cache layout contract: [`agent-spec/cache-layout.agent-spec.yaml`](../../../agent-spec/cache-layout.agent-spec.yaml)
 
+## Setup
+
+```bash
+# Install every dep the tools need (requests, matplotlib for charts).
+# Idempotent — safe to re-run. Targets the repo's .venv.
+./tools/install-tools.sh
+```
+
+## Standards followed
+
+The climate report output uses established climate-data conventions:
+
+| Convention | Where it shows up |
+|---|---|
+| **WMO 30-year climate normals** (1991–2020 default baseline) | monthly normals table; anomaly baseline |
+| **Walter-Lieth climograph** (monthly temp line + precip bars) | `climograph.svg` |
+| **Ed Hawkins' warming stripes** (one coloured stripe per year) | `warming_stripes.svg` |
+| **Annual anomaly bars** (red = above normal, blue = below) | `anomaly_bars.svg` |
+| **Year × month temperature heatmap** | `heatmap.svg` |
+| **OLS trend line on annual mean temps** | `annual_trend.svg` |
+
 ## Pipeline
 
 ```
@@ -35,7 +56,13 @@ Cache layout contract: [`agent-spec/cache-layout.agent-spec.yaml`](../../../agen
     ┌────────────────────────────┐
     │  compute-region-trend      │  (aggregate across stations)
     │  region-trend/             │
-    └────────────────────────────┘
+    └─────────────┬──────────────┘
+                  │
+                  ▼
+    ┌────────────────────────────┐
+    │  climate-report            │  ← Markdown + HTML + SVG charts
+    │  climate-report/<c>/<r>/   │    (climograph, warming stripes,
+    └────────────────────────────┘     heatmap, anomaly, trend)
 
     ┌────────────────────────────┐
     │  reverse-geocode           │  ← OSM Nominatim
@@ -54,6 +81,7 @@ Every arrow is sidecar-mediated: each tool records its SHA-256 (plus tool/versio
 | `fetch-station-csv` | `<station_id>...` or `--stations-file` | `station-csv/<station_id>.csv` | Download per-station daily-record CSVs |
 | `summarize-station` | `<station_id>` + year range | `climate-summary/<station_id>.json` (optional) | Parse CSV + compute yearly climate summaries |
 | `compute-region-trend` | summary files or `--from-cache` | `region-trend/<country>/<state>.json` (optional) | Aggregate station summaries → regional trend + narrative |
+| `climate-report` | `--region` / `--country --state` + year range | `climate-report/<country>/<region>/{report.{json,md,html},*.svg}` | Full regional climate report: monthly normals (WMO 30-year baseline), annual anomalies, decadal comparison, climograph / warming stripes / heatmap / anomaly / trend SVG charts, self-contained HTML |
 | `reverse-geocode` | `<lat> <lon>...` or `--coords-file` | `geocode/<lat>_<lon>.json` | Reverse geocode via Nominatim (rate-limited, cached) |
 
 Every tool supports:
@@ -79,6 +107,12 @@ cache/noaa-weather/
 │   └── <station_id>.json + .meta.json
 ├── region-trend/
 │   └── <country>/<state>.json + .meta.json
+├── climate-report/
+│   └── <country>/<region>/
+│       ├── report.{json,md,html} + .meta.json
+│       └── {climograph,annual_trend,warming_stripes,heatmap,anomaly_bars}.svg + .meta.json
+├── geofabrik/
+│   └── index-v1.json + .meta.json
 └── geocode/
     └── <lat>_<lon>.json + .meta.json
 ```
@@ -129,7 +163,9 @@ The real implementation lives in `_lib/`. Both the CLI tools and the FFL handler
 | `storage.py` | LocalStorage / HdfsStorage abstraction + root-path derivation |
 | `ghcn_download.py` | GHCN catalog + per-station CSV download with sidecar cache |
 | `ghcn_parse.py` | Pure parsers for `ghcnd-stations.txt`, `ghcnd-inventory.txt`, per-station CSVs |
-| `climate_analysis.py` | Pure functions: yearly summaries, linear regression, region trend |
+| `climate_analysis.py` | Pure functions: yearly summaries, monthly summaries, climate normals, anomalies, linear regression, region trend |
+| `climate_charts.py` | matplotlib → SVG renderers: climograph, annual trend, warming stripes, year × month heatmap, anomaly bars (lazy-imported so non-chart callers don't pay the cost) |
+| `geofabrik_regions.py` | Geofabrik `index-v1.json` fetcher + region-path → bbox lookup |
 | `geocode_nominatim.py` | OSM Nominatim client with rate limiting + sidecar cache |
 | `ghcn_mocks.py` | Deterministic mock fallbacks for offline mode |
 

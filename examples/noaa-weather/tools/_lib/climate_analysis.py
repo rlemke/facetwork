@@ -81,6 +81,157 @@ def compute_yearly_summaries(
     return summaries
 
 
+def compute_monthly_summaries(
+    daily_data: list[dict[str, Any]],
+    station_id: str = "",
+    state: str = "",
+) -> list[dict[str, Any]]:
+    """Group daily data by (year, month) and compute per-month summaries.
+
+    Output rows: one dict per (year, month) present in the input, keyed
+    in chronological order. Fields:
+
+    - ``year`` (int), ``month`` (1–12, int)
+    - ``station_id``, ``state`` (pass-through tags)
+    - ``temp_mean`` — mean of daily ``(tmax+tmin)/2`` across the month
+    - ``temp_min_avg`` — mean of daily ``tmin``
+    - ``temp_max_avg`` — mean of daily ``tmax``
+    - ``precip_total`` — sum of daily ``prcp`` in mm
+    - ``hot_days`` — count of days with ``tmax > 35 °C``
+    - ``frost_days`` — count of days with ``tmin < 0 °C``
+    - ``precip_days`` — count of days with ``prcp > 0``
+    - ``obs_days`` — number of daily records present
+
+    Values that require data return ``None`` when the month has no
+    qualifying samples (rather than zero, which would falsely imply
+    "zero degrees" or "no precip").
+    """
+    by_ym: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for d in daily_data:
+        date_str = d.get("date", "")
+        if len(date_str) < 6:
+            continue
+        try:
+            year = int(date_str[:4])
+            month = int(date_str[4:6])
+        except ValueError:
+            continue
+        if not 1 <= month <= 12:
+            continue
+        by_ym.setdefault((year, month), []).append(d)
+
+    rows: list[dict[str, Any]] = []
+    for (year, month) in sorted(by_ym):
+        days = by_ym[(year, month)]
+        tmaxs = [d["tmax"] for d in days if d.get("tmax") is not None]
+        tmins = [d["tmin"] for d in days if d.get("tmin") is not None]
+        prcps = [d["prcp"] for d in days if d.get("prcp") is not None]
+
+        daily_means: list[float] = [
+            (d["tmax"] + d["tmin"]) / 2.0
+            for d in days
+            if d.get("tmax") is not None and d.get("tmin") is not None
+        ]
+
+        rows.append(
+            {
+                "year": year,
+                "month": month,
+                "station_id": station_id,
+                "state": state,
+                "temp_mean": round(sum(daily_means) / len(daily_means), 2)
+                if daily_means
+                else None,
+                "temp_min_avg": round(sum(tmins) / len(tmins), 2) if tmins else None,
+                "temp_max_avg": round(sum(tmaxs) / len(tmaxs), 2) if tmaxs else None,
+                "precip_total": round(sum(prcps), 1) if prcps else None,
+                "hot_days": sum(1 for t in tmaxs if t > HOT_DAY_TMAX_C),
+                "frost_days": sum(1 for t in tmins if t < FROST_DAY_TMIN_C),
+                "precip_days": sum(1 for p in prcps if p > 0.0),
+                "obs_days": len(days),
+            }
+        )
+    return rows
+
+
+def monthly_climate_normals(
+    monthly_rows: list[dict[str, Any]],
+    *,
+    baseline_start: int = 1991,
+    baseline_end: int = 2020,
+) -> dict[int, dict[str, float | None]]:
+    """Compute the 30-year WMO climate normals from per-month rows.
+
+    Returns ``{month: {"temp_mean": …, "temp_min_avg": …, "temp_max_avg": …,
+    "precip_total": …, "years_counted": …}}`` for ``month ∈ {1..12}``.
+    The WMO default baseline is 1991–2020; caller can override.
+
+    ``None`` values indicate no data in the baseline window for that
+    month — callers can either skip or render as "no data."
+    """
+    by_month: dict[int, list[dict[str, Any]]] = {m: [] for m in range(1, 13)}
+    for row in monthly_rows:
+        y = row.get("year")
+        m = row.get("month")
+        if not isinstance(y, int) or not isinstance(m, int):
+            continue
+        if baseline_start <= y <= baseline_end and 1 <= m <= 12:
+            by_month[m].append(row)
+
+    normals: dict[int, dict[str, float | None]] = {}
+    for m in range(1, 13):
+        rows = by_month[m]
+        temps = [r["temp_mean"] for r in rows if r.get("temp_mean") is not None]
+        mins = [r["temp_min_avg"] for r in rows if r.get("temp_min_avg") is not None]
+        maxs = [r["temp_max_avg"] for r in rows if r.get("temp_max_avg") is not None]
+        precs = [r["precip_total"] for r in rows if r.get("precip_total") is not None]
+        normals[m] = {
+            "temp_mean": round(sum(temps) / len(temps), 2) if temps else None,
+            "temp_min_avg": round(sum(mins) / len(mins), 2) if mins else None,
+            "temp_max_avg": round(sum(maxs) / len(maxs), 2) if maxs else None,
+            "precip_total": round(sum(precs) / len(precs), 1) if precs else None,
+            "years_counted": len({r["year"] for r in rows}),
+        }
+    return normals
+
+
+def annual_anomalies(
+    yearly_rows: list[dict[str, Any]],
+    *,
+    baseline_start: int = 1991,
+    baseline_end: int = 2020,
+) -> list[dict[str, Any]]:
+    """Return per-year deviation from the temp_mean of the baseline window.
+
+    Returns ``[{"year": …, "temp_mean": …, "anomaly_c": …}]`` sorted by
+    year. Baseline mean is computed across every ``temp_mean`` that falls
+    in ``[baseline_start, baseline_end]``. Years outside the baseline
+    keep their anomaly value; they are still included in the output.
+    """
+    in_baseline = [
+        r["temp_mean"]
+        for r in yearly_rows
+        if isinstance(r.get("year"), int)
+        and baseline_start <= r["year"] <= baseline_end
+        and r.get("temp_mean") is not None
+    ]
+    if not in_baseline:
+        baseline_mean: float | None = None
+    else:
+        baseline_mean = sum(in_baseline) / len(in_baseline)
+
+    out: list[dict[str, Any]] = []
+    for r in sorted(yearly_rows, key=lambda d: d.get("year", 0)):
+        tm = r.get("temp_mean")
+        if not isinstance(r.get("year"), int) or tm is None:
+            continue
+        anomaly: float | None = None
+        if baseline_mean is not None:
+            anomaly = round(tm - baseline_mean, 2)
+        out.append({"year": r["year"], "temp_mean": tm, "anomaly_c": anomaly})
+    return out
+
+
 def simple_linear_regression(
     xs: list[float],
     ys: list[float],
