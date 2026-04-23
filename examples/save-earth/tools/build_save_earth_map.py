@@ -138,6 +138,21 @@ def main() -> int:
             "cached layer from the standard pipeline."
         ),
     )
+    parser.add_argument(
+        "--basemap-url",
+        default=map_render.DEFAULT_BASEMAP_URL,
+        help=(
+            "Raster tile URL template (supports {z}/{x}/{y} and optional {s} "
+            "for subdomain). Default: CARTO Voyager, which is free, no-key, "
+            "and works from file:// — unlike tile.openstreetmap.org, which "
+            "blocks requests without a Referer header."
+        ),
+    )
+    parser.add_argument(
+        "--basemap-attribution",
+        default=map_render.DEFAULT_BASEMAP_ATTRIBUTION,
+        help="Attribution HTML to display. Default cites OpenStreetMap + CARTO.",
+    )
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args()
 
@@ -186,6 +201,8 @@ def main() -> int:
             zoom=args.zoom,
             output_dir=args.output_dir,
             storage=storage,
+            basemap_url=args.basemap_url,
+            basemap_attribution=args.basemap_attribution,
         )
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)

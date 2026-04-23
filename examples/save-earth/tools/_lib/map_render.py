@@ -2,12 +2,19 @@
 
 Reads the cached GeoJSON artifacts for each configured source and emits
 a self-contained MapLibre GL JS page with per-source layer toggles,
-click popups that surface the source's ``properties``, and an OSM
-basemap.
+click popups that surface the source's ``properties``, and a permissive
+raster basemap.
 
 Output::
 
     cache/save-earth/maps/<region>/index.html              (+ .meta.json sibling)
+
+Basemap: CARTO Voyager raster tiles by default — free, no API key,
+works from ``file://`` origins (OSM's direct tile server rejects
+no-Referer requests per its volunteer-tile usage policy, so opening
+the HTML locally against osm.org 403s). Callers can swap via
+``basemap_url`` / ``basemap_attribution`` on :func:`render_map` if
+they have their own tile provider.
 
 For the first version we inline every source's GeoJSON directly into
 the HTML as JS constants. This avoids needing tippecanoe / PMTiles or
@@ -39,6 +46,20 @@ from _lib.storage import LocalStorage, Storage  # noqa: E402
 NAMESPACE = "save-earth"
 CACHE_TYPE = "maps"
 
+# Default basemap — CARTO Voyager. Free, no key required, permissive
+# terms (attribute CARTO + OSM). Unlike tile.openstreetmap.org, CARTO
+# does not require a Referer header, so the generated HTML opens
+# correctly from file:// without tripping the OSM tile usage policy.
+DEFAULT_BASEMAP_URL = (
+    "https://cartodb-basemaps-{s}.global.ssl.fastly.net/rastertiles/voyager/"
+    "{z}/{x}/{y}.png"
+)
+DEFAULT_BASEMAP_SUBDOMAINS = ["a", "b", "c", "d"]
+DEFAULT_BASEMAP_ATTRIBUTION = (
+    "© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> "
+    "contributors © <a href=\"https://carto.com/attributions\">CARTO</a>"
+)
+
 
 @dataclass
 class LayerSpec:
@@ -69,6 +90,8 @@ def render_map(
     zoom: float = 4.0,
     output_dir: Path | None = None,
     storage: Storage | None = None,
+    basemap_url: str = DEFAULT_BASEMAP_URL,
+    basemap_attribution: str = DEFAULT_BASEMAP_ATTRIBUTION,
 ) -> MapBundle:
     """Stitch cached GeoJSON from each LayerSpec into a single HTML map.
 
@@ -99,7 +122,14 @@ def render_map(
         loaded_layers.append((layer, data))
         counts[layer.name] = len(data.get("features") or [])
 
-    html = _render_html(region_key, loaded_layers, center=center, zoom=zoom)
+    html = _render_html(
+        region_key,
+        loaded_layers,
+        center=center,
+        zoom=zoom,
+        basemap_url=basemap_url,
+        basemap_attribution=basemap_attribution,
+    )
 
     out_dir = _resolve_output_dir(region_key, output_dir=output_dir, storage=s)
     html_path = out_dir / "index.html"
@@ -165,7 +195,17 @@ def _render_html(
     *,
     center: tuple[float, float],
     zoom: float,
+    basemap_url: str,
+    basemap_attribution: str,
 ) -> str:
+    # Expand {s} → list of subdomains MapLibre understands. CARTO's
+    # default URL uses {s} but Fastly's subdomains are a/b/c/d.
+    if "{s}" in basemap_url:
+        tile_urls_js = json.dumps(
+            [basemap_url.replace("{s}", d) for d in DEFAULT_BASEMAP_SUBDOMAINS]
+        )
+    else:
+        tile_urls_js = json.dumps([basemap_url])
     # Inlined GeoJSON as JS constants — one per layer.
     layer_data_js = []
     for layer, data in loaded_layers:
@@ -226,19 +266,22 @@ def _render_html(
         f"""\
         const LAYER_SPECS = {layer_specs_js};
 
+        const BASEMAP_TILES = {tile_urls_js};
+        const BASEMAP_ATTRIBUTION = {json.dumps(basemap_attribution)};
+
         const map = new maplibregl.Map({{
           container: 'map',
           style: {{
             version: 8,
             sources: {{
-              osm: {{
+              basemap: {{
                 type: 'raster',
-                tiles: ['https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png'],
+                tiles: BASEMAP_TILES,
                 tileSize: 256,
-                attribution: '© OpenStreetMap contributors'
+                attribution: BASEMAP_ATTRIBUTION
               }}
             }},
-            layers: [{{ id: 'osm', type: 'raster', source: 'osm' }}]
+            layers: [{{ id: 'basemap', type: 'raster', source: 'basemap' }}]
           }},
           center: [{center_lon}, {center_lat}],
           zoom: {zoom},
