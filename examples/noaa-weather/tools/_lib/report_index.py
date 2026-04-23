@@ -379,7 +379,8 @@ def _render_index(
         f"<span class='count'>{total:,} report"
         f"{'s' if total != 1 else ''} across "
         f"{len(ordered_continents)} continent"
-        f"{'s' if len(ordered_continents) != 1 else ''}</span>"
+        f"{'s' if len(ordered_continents) != 1 else ''} · "
+        f"<a href='warming-map.html'>Warming map &rarr;</a></span>"
     )
     parts.append("</header>")
 

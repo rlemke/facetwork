@@ -122,6 +122,31 @@ def point_in_bbox(lat: float, lon: float, bbox: Bbox) -> bool:
     return min_lat <= lat <= max_lat and min_lon <= lon <= max_lon
 
 
+def get_geometry(
+    path: str,
+    *,
+    storage: Storage | None = None,
+    use_mock: bool | None = None,
+) -> dict[str, Any]:
+    """Return the raw GeoJSON geometry dict for a Geofabrik region.
+
+    Used by the warming-map choropleth, which needs the actual polygon
+    (not just the bbox that :func:`resolve_region` returns). The
+    returned dict is a GeoJSON ``{"type": "Polygon" | "MultiPolygon",
+    "coordinates": [...]}`` object. Raises ``KeyError`` on unknown
+    paths — same contract as ``resolve_region``.
+    """
+    key = path.strip().strip("/").lower()
+    index = _load_index(force=False, storage=storage, use_mock=use_mock)
+    feature = index.get(key)
+    if feature is None:
+        raise KeyError(f"Geofabrik region {path!r} not found")
+    geom = feature.get("geometry") or {}
+    if not geom.get("type") or not geom.get("coordinates"):
+        raise ValueError(f"Geofabrik feature for {path!r} has no geometry")
+    return geom
+
+
 def list_regions_under(
     prefix: str,
     *,

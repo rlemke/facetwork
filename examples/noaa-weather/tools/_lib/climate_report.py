@@ -47,6 +47,7 @@ from _lib import (  # noqa: E402
     ghcn_parse,
     report_index,
     sidecar,
+    warming_map,
 )
 from _lib.storage import LocalStorage  # noqa: E402
 
@@ -298,15 +299,22 @@ def generate_climate_report(
         charts=charts,
     )
 
-    # Refresh the master index so every new report shows up in the
-    # continent / country / sub-region tree. A failure here mustn't
-    # sink the whole report — worst case the index is one run stale.
+    # Refresh the master index + warming-rate choropleth so every new
+    # report shows up in both views. Failures here mustn't sink the
+    # whole report — worst case the derived pages are one run stale.
+    storage = LocalStorage()
     try:
-        index_path = report_index.rebuild_index(storage=LocalStorage())
+        index_path = report_index.rebuild_index(storage=storage)
         if index_path is not None:
             logger.info("master report index: %s", index_path)
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("report-index regen failed: %s", exc)
+    try:
+        map_path = warming_map.rebuild_warming_map(storage=storage)
+        if map_path is not None:
+            logger.info("warming choropleth: %s", map_path)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("warming-map regen failed: %s", exc)
 
     return ReportBundle(
         output_dir=out_dir,
