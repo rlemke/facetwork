@@ -85,6 +85,18 @@ def _discover_noaa_weather(cache_root: Path) -> PipelineCard | None:
     warming_rel = "noaa-weather/climate-report/warming-map.html"
     if (cache_root / warming_rel).is_file():
         card.primary_links.append(("Warming choropleth", warming_rel))
+    for rel, label in [
+        ("noaa-weather/climate-report/warming-point-map.html", "Annual anomaly (slider)"),
+        ("noaa-weather/climate-report/warming-trend-map.html", "Running trend (slider)"),
+    ]:
+        if (cache_root / rel).is_file():
+            card.primary_links.append((label, rel))
+    # NDBC marine outputs sit next to the land-station catalog under the
+    # same noaa-weather namespace.
+    buoys_map_rel = "noaa-weather/ndbc-catalog/buoys-map.html"
+    if (cache_root / buoys_map_rel).is_file():
+        card.primary_links.append(("NDBC buoys map", buoys_map_rel))
+
     # Catalog hint — useful for confirming ingestion.
     catalog_rel = "noaa-weather/catalog/stations.txt"
     catalog_meta_rel = catalog_rel + ".meta.json"
@@ -94,6 +106,20 @@ def _discover_noaa_weather(cache_root: Path) -> PipelineCard | None:
         if size:
             card.stats.append(
                 ("GHCN catalog", f"stations.txt {size / 1024:.0f} KB")
+            )
+    ndbc_json_meta = cache_root / "noaa-weather/ndbc-catalog/stations.json.meta.json"
+    if ndbc_json_meta.is_file():
+        meta = _read_sidecar(ndbc_json_meta)
+        if meta:
+            n = (meta.get("extra") or {}).get("station_count")
+            if n:
+                card.stats.append(("NDBC catalog", f"{n:,} active buoys"))
+    stdmet_root = cache_root / "noaa-weather/ndbc-stdmet"
+    if stdmet_root.is_dir():
+        stdmet_years = _count_artifacts(stdmet_root)
+        if stdmet_years:
+            card.stats.append(
+                ("NDBC stdmet", f"{stdmet_years:,} cached station-year(s)")
             )
     if not card.primary_links:
         return None

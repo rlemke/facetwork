@@ -83,6 +83,11 @@ Every arrow is sidecar-mediated: each tool records its SHA-256 (plus tool/versio
 | `compute-region-trend` | summary files or `--from-cache` | `region-trend/<country>/<state>.json` (optional) | Aggregate station summaries → regional trend + narrative |
 | `climate-report` | `--region` / `--country --state` + year range, plus `--all-under PREFIX` / `--include-parents` / `--list` for multi-region batches | `climate-report/<country>/<region>/{report.{json,md,html},*.svg}` + master `climate-report/index.html` regenerated after every run | Full regional climate report: monthly normals (WMO 30-year baseline), annual anomalies, decadal comparison, climograph / warming stripes / heatmap / anomaly / trend SVG charts, self-contained HTML |
 | `reverse-geocode` | `<lat> <lon>...` or `--coords-file` | `geocode/<lat>_<lon>.json` | Reverse geocode via Nominatim (rate-limited, cached) |
+| `download-ndbc-catalog` | none | `ndbc-catalog/{activestations.xml,stations.json}` | Fetch the NOAA National Data Buoy Center active-stations catalog |
+| `discover-buoys` | `--region` / `--bbox` / `--type` / `--require` | stdout JSON | Filter the cached NDBC catalog (ocean buoys + coastal + DART + NERRS) |
+| `fetch-buoy-data` | `<station_id>` or `--from-catalog` + `--start-year` / `--end-year` | `ndbc-stdmet/<station_id>/<year>.txt.gz` | Download historical stdmet observations (hourly, per-station-per-year) |
+| `summarize-buoy` | `<station_id>` or `--from-cache` | `buoy-summaries/<station_id>.json` | Yearly air-temp / sea-temp / wave-height / storm-day summaries |
+| `build-buoys-map` | none | `ndbc-catalog/buoys-map.html` | MapLibre points map of every cached buoy, coloured by station type |
 
 Every tool supports:
 - `--help` — show flags
@@ -111,6 +116,14 @@ cache/noaa-weather/
 │   └── <country>/<region>/
 │       ├── report.{json,md,html} + .meta.json
 │       └── {climograph,annual_trend,warming_stripes,heatmap,anomaly_bars}.svg + .meta.json
+├── ndbc-catalog/
+│   ├── activestations.xml + .meta.json   ← NOAA NDBC raw catalog
+│   ├── stations.json       + .meta.json  ← normalized {id, name, type, owner, lat, lon}
+│   └── buoys-map.html      + .meta.json  ← MapLibre points map of every cached buoy
+├── ndbc-stdmet/
+│   └── <station_id>/<year>.txt.gz + .meta.json   ← NOAA standard met obs (hourly)
+├── buoy-summaries/
+│   └── <station_id>.json + .meta.json    ← yearly buoy climate summaries
 ├── geofabrik/
 │   └── index-v1.json + .meta.json
 └── geocode/
@@ -169,6 +182,38 @@ done
 
 Every tool has a deterministic mock path. Tests in `../tests/` rely on this.
 
+**Marine data via NDBC (ocean buoys + coastal stations):**
+
+GHCN is land-based. For sea-surface temperature, wave heights, and
+offshore meteorology, the NOAA National Data Buoy Center publishes a
+parallel catalog + per-station-per-year stdmet records. The workflow
+mirrors the GHCN tools:
+
+```bash
+# 1. Fetch the active-stations catalog (one XML + one normalized JSON)
+./tools/download-ndbc-catalog.sh
+
+# 2. Filter — every moored buoy with a meteorology sensor
+./tools/discover-buoys.sh --type buoy --require met
+
+# 3. North-central Pacific, 2020–2024
+./tools/fetch-buoy-data.sh --from-catalog --region north-america/us \
+    --type buoy --start-year 2020 --end-year 2024
+
+# 4. Yearly summaries (air temp, sea temp, wave height, storm days)
+./tools/summarize-buoy.sh --from-cache
+
+# 5. MapLibre points map with station-type legend + click popups
+./tools/build-buoys-map.sh
+open "$AFL_CACHE_ROOT/noaa-weather/ndbc-catalog/buoys-map.html"
+```
+
+Each buoy carries `met` / `currents` / `waterquality` / `dart` sensor
+flags and a station type (`buoy`, `cman`, `dart`, `nerrs`). The
+discovery filter's `--require` flag accepts any of these. All tools
+share the same mock-data story as GHCN — pass `--use-mock` for offline
+smoke tests.
+
 ## `_lib/` — shared library
 
 The real implementation lives in `_lib/`. Both the CLI tools and the FFL handlers import from it. Every handler shim (`handlers/shared/ghcn_utils.py`) re-exports `_lib/` symbols so FFL code works with familiar names.
@@ -184,6 +229,10 @@ The real implementation lives in `_lib/`. Both the CLI tools and the FFL handler
 | `geofabrik_regions.py` | Geofabrik `index-v1.json` fetcher + region-path → bbox lookup |
 | `geocode_nominatim.py` | OSM Nominatim client with rate limiting + sidecar cache |
 | `ghcn_mocks.py` | Deterministic mock fallbacks for offline mode |
+| `ndbc_download.py` | NDBC active-stations catalog + stdmet per-station-per-year fetch |
+| `ndbc_parse.py` | Pure parsers for `activestations.xml` and stdmet text; hourly → daily downsample |
+| `ndbc_map.py` | MapLibre points map for cached buoy stations + joined summaries |
+| `ndbc_mocks.py` | Deterministic offline NDBC catalog + stdmet data |
 
 The `parse` and `analysis` modules are fully pure — no I/O, network, or database — so unit tests can exercise them directly.
 
