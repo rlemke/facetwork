@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -58,6 +59,33 @@ def main() -> int:
         "--region",
         default="",
         help="Geofabrik region path (overrides country filter unless explicit).",
+    )
+    parser.add_argument(
+        "--all-under",
+        default="",
+        metavar="PREFIX",
+        help=(
+            "Expand into every Geofabrik region under a prefix. "
+            "Example: --all-under north-america/canada reports on "
+            "every province. Combine with --include-parents to also "
+            "include the prefix region itself."
+        ),
+    )
+    parser.add_argument(
+        "--include-parents",
+        action="store_true",
+        help=(
+            "With --all-under, also report on the prefix region and "
+            "every intermediate level (not just leaves)."
+        ),
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help=(
+            "Print the resolved Geofabrik region set and exit without "
+            "generating reports. Use with --all-under to preview."
+        ),
     )
     parser.add_argument("--min-years", type=int, default=20)
     parser.add_argument(
@@ -110,45 +138,127 @@ def main() -> int:
         a == "--country" or a.startswith("--country=") for a in sys.argv[1:]
     )
 
-    # Dry-run resolves station list without generating charts / writing output.
+    # --- Resolve which region(s) to report on --------------------------------
+    regions = _resolve_region_set(args)
+
+    if args.list:
+        return _print_region_list(regions)
+
+    # Dry-run — show the stations that would feed each report without
+    # actually generating charts / writing bundles.
     if args.dry_run:
-        return _dry_run(args, country_explicit)
+        return _dry_run(args, country_explicit, regions)
 
-    try:
-        bundle = generate_climate_report(
-            country=args.country,
-            state=args.state,
-            region=args.region,
-            start_year=args.start_year,
-            end_year=args.end_year,
-            baseline=baseline,
-            min_years=args.min_years,
-            required_elements=args.required,
-            max_stations=args.max_stations,
-            force_catalog=args.force_catalog,
-            force_download=args.force_download,
-            use_mock=args.use_mock or None,
-            output_dir=args.output_dir,
-            override_bulk_guard=args.i_know_this_is_huge,
-            country_explicit=country_explicit,
+    # --- Generate a report per resolved region ------------------------------
+    failures: list[tuple[str, str]] = []
+    successes: list[str] = []
+    t0 = time.monotonic()
+    for idx, region in enumerate(regions, 1):
+        label = region if region else (
+            f"{args.country}/{args.state}" if args.state else (args.country or "ALL")
         )
-    except KeyError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-    except ReportError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
+        if len(regions) > 1:
+            print(
+                f"\n=== [{idx}/{len(regions)}] {label} ===",
+                file=sys.stderr,
+            )
+        try:
+            bundle = generate_climate_report(
+                country=args.country,
+                state=args.state,
+                region=region,
+                start_year=args.start_year,
+                end_year=args.end_year,
+                baseline=baseline,
+                min_years=args.min_years,
+                required_elements=args.required,
+                max_stations=args.max_stations,
+                force_catalog=args.force_catalog,
+                force_download=args.force_download,
+                use_mock=args.use_mock or None,
+                output_dir=args.output_dir if len(regions) == 1 else None,
+                override_bulk_guard=args.i_know_this_is_huge,
+                country_explicit=country_explicit,
+            )
+        except (KeyError, ReportError) as exc:
+            print(f"[fail] {label}: {exc}", file=sys.stderr)
+            failures.append((label, str(exc)))
+            continue
 
-    print(f"[report] {bundle.output_dir}")
+        print(f"[report] {bundle.output_dir}")
+        successes.append(label)
+
+    # --- Summary (only printed for multi-region runs) -----------------------
+    if len(regions) > 1:
+        elapsed = time.monotonic() - t0
+        print(
+            f"\n# done: {len(successes)} ok, {len(failures)} failed "
+            f"in {elapsed:.1f}s",
+            file=sys.stderr,
+        )
+        if failures:
+            print("# failures:", file=sys.stderr)
+            for label, err in failures:
+                print(f"#   {label}: {err}", file=sys.stderr)
+
+    return 1 if failures else 0
+
+
+def _resolve_region_set(args: argparse.Namespace) -> list[str]:
+    """Return the list of Geofabrik region paths this invocation covers.
+
+    Semantics:
+      - ``--all-under`` wins when set, optionally combined with ``--region``
+        (the single region is appended to the expanded set).
+      - ``--region`` alone → single-element list.
+      - Neither → empty string marker (legacy country/state mode); the
+        caller loops exactly once with no Geofabrik region.
+    """
+    if args.all_under:
+        try:
+            expanded = geofabrik_regions.list_regions_under(
+                args.all_under,
+                include_parents=args.include_parents,
+                use_mock=args.use_mock or None,
+            )
+        except KeyError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            raise SystemExit(2)
+        if args.region and args.region not in expanded:
+            expanded.append(args.region)
+            expanded.sort()
+        if not expanded:
+            print(
+                f"error: --all-under {args.all_under!r} matched zero "
+                f"regions in the Geofabrik index",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        return expanded
+    if args.region:
+        return [args.region]
+    # Legacy country/state mode — single iteration with no Geofabrik region.
+    return [""]
+
+
+def _print_region_list(regions: list[str]) -> int:
+    """Print the resolved region set to stdout (one per line)."""
+    print(f"# resolved {len(regions)} region(s):")
+    for r in regions:
+        if r:
+            print(r)
+        else:
+            print("(country/state mode — no Geofabrik region)")
     return 0
 
 
-def _dry_run(args: argparse.Namespace, country_explicit: bool) -> int:
-    """Resolve the station list only, for a --dry-run preview."""
-    country_filter = args.country
-    if args.region and not country_explicit:
-        country_filter = ""
-
+def _dry_run(
+    args: argparse.Namespace,
+    country_explicit: bool,
+    regions: list[str],
+) -> int:
+    """For each resolved region, list the stations that would feed it."""
+    # Load catalog + inventory once, reuse across regions.
     stations_text = ghcn_download.read_catalog_file(
         "stations", force=args.force_catalog, use_mock=args.use_mock or None
     )
@@ -157,34 +267,48 @@ def _dry_run(args: argparse.Namespace, country_explicit: bool) -> int:
     )
     stations = ghcn_parse.parse_stations(stations_text)
     inventory = ghcn_parse.parse_inventory(inventory_text)
-
-    bbox = None
-    if args.region:
-        try:
-            region_info = geofabrik_regions.resolve_region(
-                args.region, use_mock=args.use_mock or None
-            )
-        except KeyError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
-        bbox = region_info.bbox
-
     cap = args.max_stations if args.max_stations > 0 else len(stations)
-    filtered = ghcn_parse.filter_stations(
-        stations,
-        inventory,
-        country=country_filter,
-        state=args.state,
-        bbox=bbox,
-        max_stations=cap,
-        min_years=args.min_years,
-        required_elements=args.required,
-    )
-    print(f"# dry-run: report would aggregate {len(filtered):,} station(s)")
-    for s in filtered:
+
+    grand_total = 0
+    for region in regions:
+        country_filter = args.country
+        if region and not country_explicit:
+            country_filter = ""
+        bbox = None
+        if region:
+            try:
+                region_info = geofabrik_regions.resolve_region(
+                    region, use_mock=args.use_mock or None
+                )
+            except KeyError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
+            bbox = region_info.bbox
+        filtered = ghcn_parse.filter_stations(
+            stations,
+            inventory,
+            country=country_filter,
+            state=args.state,
+            bbox=bbox,
+            max_stations=cap,
+            min_years=args.min_years,
+            required_elements=args.required,
+        )
+        label = region or (
+            f"{args.country}/{args.state}" if args.state else (args.country or "ALL")
+        )
+        print(f"# dry-run {label}: {len(filtered):,} station(s)")
+        for s in filtered:
+            print(
+                f"  {s['station_id']}  {s.get('name', '')}  "
+                f"inv-years={s.get('first_year')}-{s.get('last_year')}"
+            )
+        grand_total += len(filtered)
+
+    if len(regions) > 1:
         print(
-            f"{s['station_id']}  {s.get('name', '')}  "
-            f"inv-years={s.get('first_year')}-{s.get('last_year')}"
+            f"# total: {len(regions)} region(s), {grand_total:,} station(s)",
+            file=sys.stderr,
         )
     return 0
 

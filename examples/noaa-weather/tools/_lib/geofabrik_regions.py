@@ -122,6 +122,55 @@ def point_in_bbox(lat: float, lon: float, bbox: Bbox) -> bool:
     return min_lat <= lat <= max_lat and min_lon <= lon <= max_lon
 
 
+def list_regions_under(
+    prefix: str,
+    *,
+    include_parents: bool = False,
+    storage: Storage | None = None,
+    use_mock: bool | None = None,
+) -> list[str]:
+    """Return every Geofabrik region path under ``prefix``, sorted.
+
+    - ``prefix`` = ``""`` → every region in the index.
+    - ``prefix`` = ``"north-america/canada"`` → every path that is
+      either ``north-america/canada`` (only if ``include_parents``)
+      or starts with ``north-america/canada/``.
+    - ``include_parents=False`` (default) additionally strips any
+      region that has a child in the result set — i.e. keeps only
+      leaf regions. ``include_parents=True`` returns every matching
+      path, including the prefix itself and every intermediate level.
+
+    Useful for "report on Canada and every province" workflows:
+    ``list_regions_under("north-america/canada", include_parents=True)``.
+    """
+    index = _load_index(force=False, storage=storage, use_mock=use_mock)
+    p = prefix.strip().strip("/").lower()
+    if p:
+        pref = p + "/"
+        matched = [
+            path for path in index
+            if path == p or path.startswith(pref)
+        ]
+    else:
+        matched = list(index)
+
+    if include_parents:
+        return sorted(matched)
+
+    # Leaves only — drop paths that are prefixes of another matched path.
+    matched_set = set(matched)
+    leaves: list[str] = []
+    for path in matched:
+        child_prefix = path + "/"
+        if any(
+            other != path and other.startswith(child_prefix)
+            for other in matched_set
+        ):
+            continue
+        leaves.append(path)
+    return sorted(leaves)
+
+
 # ---------------------------------------------------------------------------
 # Index fetch / cache.
 # ---------------------------------------------------------------------------
