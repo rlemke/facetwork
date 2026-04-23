@@ -45,6 +45,7 @@ from _lib import (  # noqa: E402
     geofabrik_regions,
     ghcn_download,
     ghcn_parse,
+    report_index,
     sidecar,
 )
 from _lib.storage import LocalStorage  # noqa: E402
@@ -296,6 +297,16 @@ def generate_climate_report(
         html=html,
         charts=charts,
     )
+
+    # Refresh the master index so every new report shows up in the
+    # continent / country / sub-region tree. A failure here mustn't
+    # sink the whole report — worst case the index is one run stale.
+    try:
+        index_path = report_index.rebuild_index(storage=LocalStorage())
+        if index_path is not None:
+            logger.info("master report index: %s", index_path)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("report-index regen failed: %s", exc)
 
     return ReportBundle(
         output_dir=out_dir,
@@ -676,6 +687,13 @@ def _write_outputs(
 ) -> tuple[Path, Path, Path, dict[str, Path]]:
     storage = LocalStorage()
 
+    trend = report.get("trend") or {}
+    trend_summary = {
+        "warming_rate_per_decade": trend.get("warming_rate_per_decade"),
+        "precip_change_pct": trend.get("precip_change_pct"),
+        "narrative": trend.get("narrative"),
+    }
+
     def _write(name: str, text: str, content_kind: str) -> Path:
         file_path = out_dir / name
         file_path.write_text(text, encoding="utf-8")
@@ -695,6 +713,7 @@ def _write_outputs(
                 "year_range": report["year_range"],
                 "baseline": report["baseline"],
                 "station_count": report["station_count"],
+                "trend": trend_summary,
             },
             storage=storage,
         )
