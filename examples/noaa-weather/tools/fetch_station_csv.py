@@ -126,6 +126,10 @@ def _resolve_from_catalog(
             (
                 s["station_id"],
                 {
+                    "name": s.get("name"),
+                    "lat": s.get("lat"),
+                    "lon": s.get("lon"),
+                    "elevation": s.get("elevation"),
                     "first_year": s.get("first_year"),
                     "last_year": s.get("last_year"),
                     "elements": s.get("elements"),
