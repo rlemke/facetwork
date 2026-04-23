@@ -451,52 +451,62 @@ class TestSimpleLinearRegression:
 
 
 class TestReverseGeocodeNominatim:
-    def test_mock_fallback(self, monkeypatch):
-        """When requests is unavailable and no cache, returns hash-based mock."""
-        import handlers.shared.ghcn_utils as ghcn_mod
+    """The on-disk cache lives at ``$AFL_DATA_ROOT/cache/noaa-weather/geocode/``
+    with a per-entry ``.meta.json`` sidecar (see
+    ``agent-spec/cache-layout.agent-spec.yaml``). Tests point
+    ``AFL_DATA_ROOT`` at a per-test tmp dir and pass ``use_mock=True``
+    to force the deterministic offline code path — no network, no
+    dependency on ``requests`` being installed.
+    """
+
+    def test_mock_fallback(self, tmp_path, monkeypatch):
+        """Offline mode returns a populated hash-based result."""
         from handlers.shared.ghcn_utils import reverse_geocode_nominatim as _rgn
 
-        monkeypatch.setattr(ghcn_mod, "HAS_REQUESTS", False)
-        monkeypatch.setattr(
-            ghcn_mod, "_GEOCODE_CACHE_DIR", "/tmp/test-ghcn-geocode-nonexistent-dir"
-        )
-        result = _rgn(40.78, -73.97)
+        monkeypatch.setenv("AFL_DATA_ROOT", str(tmp_path))
+        result = _rgn(40.78, -73.97, use_mock=True)
         assert "display_name" in result
         assert "city" in result
         assert "state" in result
         assert "country" in result
         assert result["country"]  # non-empty
 
-    def test_deterministic(self, monkeypatch):
+    def test_deterministic(self, tmp_path, monkeypatch):
         """Same coordinates always produce same mock result."""
-        import handlers.shared.ghcn_utils as ghcn_mod
         from handlers.shared.ghcn_utils import reverse_geocode_nominatim as _rgn
 
-        monkeypatch.setattr(ghcn_mod, "HAS_REQUESTS", False)
-        monkeypatch.setattr(ghcn_mod, "_GEOCODE_CACHE_DIR", "/tmp/test-ghcn-geocode-deterministic")
-        r1 = _rgn(40.78, -73.97)
-        r2 = _rgn(40.78, -73.97)
+        monkeypatch.setenv("AFL_DATA_ROOT", str(tmp_path))
+        r1 = _rgn(40.78, -73.97, use_mock=True)
+        r2 = _rgn(40.78, -73.97, use_mock=True)
         assert r1 == r2
 
     def test_cache_hit(self, tmp_path, monkeypatch):
-        """Cached JSON file is returned without network call."""
-        import handlers.shared.ghcn_utils as ghcn_mod
+        """A second call for the same coords reads from the sidecar cache
+        without a new live lookup — verified by leaving ``use_mock=True``
+        off for the second call: if it tried to go live it would fail
+        without network, but the cache short-circuits it."""
         from handlers.shared.ghcn_utils import reverse_geocode_nominatim as _rgn
 
-        monkeypatch.setattr(ghcn_mod, "_GEOCODE_CACHE_DIR", str(tmp_path))
-        monkeypatch.setattr(ghcn_mod, "HAS_REQUESTS", False)
-        cached = {
-            "display_name": "Cached",
-            "city": "TestCity",
-            "state": "TS",
-            "country": "XX",
-            "county": "TestCounty",
-        }
-        cache_file = tmp_path / "12.3456_78.9012.json"
-        cache_file.write_text(json.dumps(cached))
+        monkeypatch.setenv("AFL_DATA_ROOT", str(tmp_path))
+        # First call writes the cache in mock mode.
+        r1 = _rgn(12.3456, 78.9012, use_mock=True)
+        # Second call without use_mock — must read the cached sidecar,
+        # not attempt network.
+        r2 = _rgn(12.3456, 78.9012)
+        assert r1 == r2
 
-        result = _rgn(12.3456, 78.9012)
-        assert result == cached
+        # And the cached artifact must be where the layout says it is.
+        cache_file = (
+            tmp_path
+            / "cache"
+            / "noaa-weather"
+            / "geocode"
+            / "12.3456_78.9012.json"
+        )
+        assert cache_file.exists(), f"expected cached artifact at {cache_file}"
+        assert cache_file.with_suffix(".json.meta.json").exists(), (
+            "expected sibling .meta.json sidecar"
+        )
 
 
 # ---------------------------------------------------------------------------

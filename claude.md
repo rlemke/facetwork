@@ -126,6 +126,17 @@ Composed workflows in `osm.workflows.sourced` demonstrate the pattern:
 | Architecture overview | [docs/architecture/overview.md](docs/architecture/overview.md) |
 | Deployment guide | [docs/operations/deployment.md](docs/operations/deployment.md) |
 | Tutorial | [docs/getting-started/tutorial.md](docs/getting-started/tutorial.md) |
+| Tools + handlers pattern (per-domain CLI + `_lib/` + shim) | [agent-spec/tools-pattern.agent-spec.yaml](agent-spec/tools-pattern.agent-spec.yaml) |
+| Cache layout (sidecars, namespaces, cache types) | [agent-spec/cache-layout.agent-spec.yaml](agent-spec/cache-layout.agent-spec.yaml) |
+
+## Domain pipelines — tools / handlers / cache pattern
+
+Every domain ingestion pipeline in `examples/` (osm-geocoder, noaa-weather, …) follows one contract: a `tools/` dir of Python CLIs + shell wrappers backed by `tools/_lib/`, FFL handlers that call into the same `_lib/` via a `handlers/shared/<domain>_utils.py` shim, and a sidecar-backed cache under `$AFL_CACHE_ROOT/<namespace>/`. Canonical examples:
+
+- `examples/osm-geocoder/tools/` — OSM PBF → GeoJSON → tiles → HTML maps
+- `examples/noaa-weather/tools/` — NOAA GHCN → station CSVs → climate trends
+
+When building or modifying a domain pipeline, read [`agent-spec/tools-pattern.agent-spec.yaml`](agent-spec/tools-pattern.agent-spec.yaml) first — it defines the directory layout, CLI contract (argparse / stderr / stdout / exit codes), `_lib/` vs handler split, cache sidecar protocol, and test-writing rules.
 
 ---
 
