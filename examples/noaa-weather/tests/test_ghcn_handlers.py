@@ -923,9 +923,10 @@ class TestAnalysisHandlers:
 
         runner = FakeRunner()
         register_handlers(runner)
-        assert len(runner.registered) == 2
+        assert len(runner.registered) == 3
         names = {r["facet_name"] for r in runner.registered}
         assert "weather.Analysis.AnalyzeStationClimate" in names
+        assert "weather.Analysis.AnalyzeStationMonthly" in names
         assert "weather.Analysis.ComputeRegionTrend" in names
 
     def test_register_analysis_handlers(self):

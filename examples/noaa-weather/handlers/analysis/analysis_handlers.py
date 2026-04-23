@@ -11,6 +11,7 @@ from typing import Any
 from handlers.shared.ghcn_utils import (
     ClimateStore,
     WeatherReportStore,
+    climate_analysis,
     compute_yearly_summaries,
     download_station_csv,
     get_weather_db,
@@ -246,6 +247,61 @@ def handle_compute_region_trend(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def handle_analyze_station_monthly(params: dict[str, Any]) -> dict[str, Any]:
+    """Handle AnalyzeStationMonthly — per-(year, month) rollups for one station.
+
+    Reads the station's cached GHCN CSV (downloading if needed), parses
+    to the requested year range, and computes monthly climate summaries.
+    Returns ``monthly_rows`` as JSON, since the per-month dict shape
+    varies with data availability. No MongoDB write — the monthly shape
+    is intended as an intermediate for GenerateClimateReport.
+    """
+    station_id = params.get("station_id", "")
+    station_name = params.get("station_name", "")
+    state = params.get("state", "")
+    start_year = int(params.get("start_year", 1950))
+    end_year = int(params.get("end_year", 2026))
+    step_log = params.get("_step_log")
+
+    _step_log(
+        step_log,
+        f"Monthly analysis for {station_id} ({station_name}) {start_year}-{end_year}",
+    )
+    t0 = time.monotonic()
+
+    csv_path = download_station_csv(station_id)
+    daily_data = parse_ghcn_csv(csv_path, start_year, end_year)
+
+    if not daily_data:
+        _step_log(
+            step_log,
+            f"No data for {station_id} in {start_year}-{end_year}",
+            "warning",
+        )
+        return {
+            "monthly_rows": json.dumps([]),
+            "months_analyzed": 0,
+            "station_id": station_id,
+        }
+
+    rows = climate_analysis.compute_monthly_summaries(
+        daily_data, station_id=station_id, state=state
+    )
+
+    elapsed = time.monotonic() - t0
+    _step_log(
+        step_log,
+        f"Monthly analysis: {len(rows)} months for {station_id} in {elapsed:.1f}s",
+        "success",
+    )
+
+    return {
+        "monthly_rows": json.dumps(rows),
+        "months_analyzed": len(rows),
+        "station_id": station_id,
+    }
+
+
 def _empty_trend(state: str, start_year: int, end_year: int) -> dict[str, Any]:
     return {
         "trend": json.dumps(
@@ -265,6 +321,7 @@ def _empty_trend(state: str, start_year: int, end_year: int) -> dict[str, Any]:
 # Dispatch table
 _DISPATCH: dict[str, Any] = {
     f"{NAMESPACE}.AnalyzeStationClimate": handle_analyze_station_climate,
+    f"{NAMESPACE}.AnalyzeStationMonthly": handle_analyze_station_monthly,
     f"{NAMESPACE}.ComputeRegionTrend": handle_compute_region_trend,
 }
 

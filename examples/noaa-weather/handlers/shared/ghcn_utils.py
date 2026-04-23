@@ -39,7 +39,9 @@ if str(_TOOLS_ROOT) not in sys.path:
 
 from _lib import (  # noqa: E402,F401
     climate_analysis,
+    climate_report,
     geocode_nominatim,
+    geofabrik_regions,
     ghcn_download,
     ghcn_parse,
 )
@@ -289,6 +291,13 @@ __all__ = [
     "download_station_catalog",
     "download_station_csv",
     "reverse_geocode_nominatim",
+    # Module re-exports for handlers that need the full surface.
+    "climate_analysis",
+    "climate_report",
+    "geocode_nominatim",
+    "geofabrik_regions",
+    "ghcn_download",
+    "ghcn_parse",
     # Mongo (handler-only — not part of the ``_lib`` surface).
     "ClimateStore",
     "WeatherReportStore",
