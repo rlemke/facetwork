@@ -161,14 +161,27 @@ def is_up_to_date(
     max_zoom: int,
     layer_name: str,
     storage: Any = None,
+    source_sidecar: dict | None = None,
+    existing_sidecar: dict | None = None,
 ) -> bool:
-    """True if cached tileset matches current source SHA + build options."""
+    """True if cached tileset matches current source SHA + build options.
+
+    ``source_sidecar`` / ``existing_sidecar`` let callers pass sidecars
+    they've already read, avoiding a duplicate disk read on the hot
+    path. This matters in ``build_tiles`` which reads the source
+    sidecar itself before calling us, and again in the cached-hit
+    return path where we'd re-read the output sidecar otherwise.
+    """
     s = storage or LocalStorage()
     rel = tileset_rel_path(region, source)
-    existing = sidecar.read_sidecar(NAMESPACE, OUTPUT_CACHE_TYPE, rel, s)
+    existing = existing_sidecar
+    if existing is None:
+        existing = sidecar.read_sidecar(NAMESPACE, OUTPUT_CACHE_TYPE, rel, s)
     if not existing:
         return False
-    source_side = _source_sidecar(source, region, s)
+    source_side = source_sidecar
+    if source_side is None:
+        source_side = _source_sidecar(source, region, s)
     if not source_side:
         return False
     if existing.get("source", {}).get("sha256") != source_side.get("sha256"):
@@ -226,6 +239,11 @@ def build_tiles(
         out_abs = tileset_abs_path(region, source, s)
         rel = tileset_rel_path(region, source)
 
+        # Read the output sidecar once and pass it into both the
+        # is_up_to_date check and the BuildResult builder below —
+        # saves a redundant read on the cached-hit path.
+        existing_side = sidecar.read_sidecar(NAMESPACE, OUTPUT_CACHE_TYPE, rel, s)
+
         if not force and is_up_to_date(
             region,
             source,
@@ -233,8 +251,10 @@ def build_tiles(
             max_zoom=max_zoom,
             layer_name=effective_layer_name,
             storage=s,
+            source_sidecar=src_side,
+            existing_sidecar=existing_side,
         ):
-            existing = sidecar.read_sidecar(NAMESPACE, OUTPUT_CACHE_TYPE, rel, s) or {}
+            existing = existing_side or {}
             return BuildResult(
                 region=region,
                 source=source,

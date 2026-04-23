@@ -381,17 +381,41 @@ def download_region(
 
 
 def regions_from_pbf_cache(
-    under: str | None = None, *, storage: Storage | None = None
+    under: str | None = None,
+    *,
+    storage: Storage | None = None,
+    use_index: bool = True,
 ) -> list[str]:
     """Return all regions currently cached under ``cache/osm/pbf/``.
 
     Optionally filtered by path prefix (e.g. ``europe/germany`` selects
     Germany and all its sub-regions). Sorted alphabetically.
+
+    When ``use_index`` is True (default), consults the lazy cache index
+    at ``_indexes/osm/pbf.index.json`` for a one-file read instead of
+    walking the sidecar tree. The index is rebuilt automatically if
+    missing or if any sidecar under the cache_type subtree has a newer
+    mtime. Pass ``use_index=False`` to force a fresh walk (e.g. for
+    diagnostics).
     """
     storage = storage or LocalStorage()
-    paths = sidecar.list_relative_paths(
-        NAMESPACE, CACHE_TYPE, under=None, storage=storage
-    )
+    paths: list[str]
+    if use_index:
+        # Soft-import cache_index so unit tests that stub storage
+        # don't have to wire the index module up.
+        from _lib import cache_index
+
+        try:
+            idx = cache_index.read_index(NAMESPACE, CACHE_TYPE, storage=storage)
+            paths = list((idx.get("entries") or {}).keys())
+        except Exception:
+            paths = sidecar.list_relative_paths(
+                NAMESPACE, CACHE_TYPE, under=None, storage=storage
+            )
+    else:
+        paths = sidecar.list_relative_paths(
+            NAMESPACE, CACHE_TYPE, under=None, storage=storage
+        )
     regions = [r for r in (relative_path_to_region(p) for p in paths) if r]
     if under:
         u = under.strip().strip("/")

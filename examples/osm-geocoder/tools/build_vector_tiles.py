@@ -23,6 +23,7 @@ import argparse
 import concurrent.futures
 import shutil
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -193,12 +194,14 @@ def main() -> int:
         regions.extend(_read_regions_file(args.regions_file))
 
     if args.all or args.all_under is not None:
+        t0 = time.monotonic()
         from_manifest = regions_from_pbf_cache(under=args.all_under)
+        scan_elapsed = time.monotonic() - t0
         before = len(from_manifest)
         if not args.include_parents:
             from_manifest = filter_leaves(from_manifest)
         print(
-            f"pbf manifest: {before} region(s) matched, "
+            f"pbf manifest: {before} region(s) matched in {scan_elapsed:.2f}s, "
             f"{len(from_manifest)} selected after "
             f"{'leaves-only' if not args.include_parents else 'include-parents'} filter",
             file=sys.stderr,
@@ -216,11 +219,18 @@ def main() -> int:
     layer_name_for = lambda s: args.layer_name or s  # noqa: E731
 
     if args.update_all:
+        t0 = time.monotonic()
         universe = regions_from_pbf_cache()
         if not args.include_parents:
             universe = filter_leaves(universe)
+        scan_elapsed = time.monotonic() - t0
+        print(
+            f"update-all: scanned {len(universe)} pbf entries in {scan_elapsed:.2f}s",
+            file=sys.stderr,
+        )
         pairs: list[tuple[str, str]] = []
         for s in sources:
+            t_sweep = time.monotonic()
             stale = [
                 r
                 for r in universe
@@ -232,9 +242,11 @@ def main() -> int:
                     layer_name=layer_name_for(s),
                 )
             ]
+            sweep_elapsed = time.monotonic() - t_sweep
             print(
                 f"update-all[{s}]: {len(universe)} cached pbf(s), "
-                f"{len(stale)} need build ({len(universe) - len(stale)} current)",
+                f"{len(stale)} need build "
+                f"({len(universe) - len(stale)} current) in {sweep_elapsed:.2f}s",
                 file=sys.stderr,
             )
             for r in stale:

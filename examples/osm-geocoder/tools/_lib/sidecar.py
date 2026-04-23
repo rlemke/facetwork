@@ -346,9 +346,35 @@ def list_relative_paths(
     under: str | None = None,
     storage: Storage | None = None,
 ) -> list[str]:
-    """Return just the ``relative_path`` of every entry, optionally prefix-filtered."""
-    entries = list_entries(namespace, cache_type, storage)
-    paths = [e.get("relative_path", "") for e in entries if e.get("relative_path")]
+    """Return just the ``relative_path`` of every entry, optionally prefix-filtered.
+
+    Fast path: derives each path from the sidecar's on-disk filename
+    (``<cache_root>/<rel>.meta.json`` → ``<rel>``) instead of parsing the
+    sidecar JSON. The cache-layout spec guarantees the sidecar's
+    ``relative_path`` field matches its on-disk position, so this is
+    semantically equivalent to ``list_entries`` but avoids reading +
+    parsing every sidecar for a listing-only use case. On a cache
+    with thousands of entries this drops a multi-second scan to
+    milliseconds.
+
+    Callers that need the full sidecar body (size, sha256, lineage,
+    etc.) should still go through ``list_entries``.
+    """
+    import os as _os
+
+    s = _storage(storage)
+    root = cache_dir(namespace, cache_type, s)
+    paths: list[str] = []
+    for abs_path in _walk_sidecars(s, root):
+        # Strip the cache_type root prefix and the sidecar suffix.
+        rel = abs_path[len(root) :].lstrip("/")
+        if _os.sep != "/":
+            rel = rel.replace(_os.sep, "/")
+        if rel.endswith(SIDECAR_SUFFIX):
+            rel = rel[: -len(SIDECAR_SUFFIX)]
+        if rel:
+            paths.append(rel)
+    paths.sort()
     if under:
         u = under.strip().strip("/")
         pref = u + "/"
