@@ -206,18 +206,25 @@ def _render_html(
         )
     else:
         tile_urls_js = json.dumps([basemap_url])
-    # Inlined GeoJSON as JS constants — one per layer.
-    layer_data_js = []
+    # Inlined GeoJSON as a single JS dict keyed by layer id. Putting each
+    # layer's FeatureCollection in its own top-level `const` wouldn't be
+    # visible on `window` in modern JS (block-scoped), so the map's
+    # `map.addSource(..., { data })` call would see undefined and
+    # MapLibre would 422 the source. One dict sidesteps that.
+    layer_data_map = {}
     for layer, data in loaded_layers:
-        # Truncate to a sane max to keep HTML loadable in browsers. For the
-        # first version we cap at 50k features per layer; callers who need
-        # more should upgrade to PMTiles.
+        # Cap at 50k features per layer — callers who need more should
+        # upgrade to PMTiles.
         features = (data.get("features") or [])[:50_000]
-        truncated = {"type": "FeatureCollection", "features": features}
-        layer_data_js.append(
-            f"const DATA_{_safe_js_id(layer.name)} = "
-            f"{json.dumps(truncated, separators=(',', ':'))};"
-        )
+        layer_data_map[_safe_js_id(layer.name)] = {
+            "type": "FeatureCollection",
+            "features": features,
+        }
+    inline_data = (
+        "const LAYER_DATA = "
+        + json.dumps(layer_data_map, separators=(",", ":"))
+        + ";"
+    )
 
     layer_specs_js = json.dumps(
         [
@@ -325,7 +332,11 @@ def _render_html(
 
         map.on('load', () => {{
           for (const spec of LAYER_SPECS) {{
-            const data = window['DATA_' + spec.id];
+            const data = LAYER_DATA[spec.id];
+            if (!data) {{
+              console.warn('save-earth: missing inlined data for', spec.id);
+              continue;
+            }}
             map.addSource(spec.id, {{ type: 'geojson', data }});
             map.addLayer({{
               id: spec.id,
@@ -413,8 +424,6 @@ def _render_html(
         }});
         """
     )
-
-    inline_data = "\n".join(layer_data_js)
 
     return textwrap.dedent(
         f"""\
