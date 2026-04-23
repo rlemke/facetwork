@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _lib import ghcn_download, ghcn_parse, sidecar  # noqa: E402
+from _lib import geofabrik_regions, ghcn_download, ghcn_parse, sidecar  # noqa: E402
 from _lib.storage import LocalStorage  # noqa: E402
 
 NAMESPACE = "noaa-weather"
@@ -48,6 +48,15 @@ def main() -> int:
         "--state",
         default="",
         help="2-letter US state abbreviation (empty = no state filter).",
+    )
+    parser.add_argument(
+        "--region",
+        default="",
+        help=(
+            "Geofabrik region path (e.g. 'europe/germany', 'north-america/us/california'). "
+            "The region's bounding box is the spatial filter; overrides --country unless "
+            "--country is passed explicitly."
+        ),
     )
     parser.add_argument(
         "--max-stations", type=int, default=10, help="Max stations to return (default: 10)."
@@ -87,6 +96,10 @@ def main() -> int:
         stream=sys.stderr,
     )
 
+    country_explicit = any(
+        a == "--country" or a.startswith("--country=") for a in sys.argv[1:]
+    )
+
     stations_text = ghcn_download.read_catalog_file(
         "stations", force=args.force_download, use_mock=args.use_mock or None
     )
@@ -96,19 +109,46 @@ def main() -> int:
 
     stations = ghcn_parse.parse_stations(stations_text)
     inventory = ghcn_parse.parse_inventory(inventory_text)
+
+    bbox = None
+    region_info = None
+    if args.region:
+        try:
+            region_info = geofabrik_regions.resolve_region(
+                args.region, use_mock=args.use_mock or None
+            )
+        except KeyError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        bbox = region_info.bbox
+
+    country_filter = args.country
+    if args.region and not country_explicit:
+        country_filter = ""
+
     filtered = ghcn_parse.filter_stations(
         stations,
         inventory,
-        country=args.country,
+        country=country_filter,
         state=args.state,
+        bbox=bbox,
         max_stations=args.max_stations,
         min_years=args.min_years,
         required_elements=args.required,
     )
 
     output = {
-        "country": args.country,
+        "country": country_filter,
         "state": args.state,
+        "region": (
+            {
+                "path": region_info.path,
+                "name": region_info.name,
+                "bbox": list(region_info.bbox),
+            }
+            if region_info is not None
+            else None
+        ),
         "max_stations": args.max_stations,
         "min_years": args.min_years,
         "required_elements": args.required or ["TMAX", "TMIN", "PRCP"],

@@ -187,11 +187,21 @@ def filter_stations(
     *,
     country: str = "US",
     state: str = "",
+    bbox: tuple[float, float, float, float] | None = None,
     max_stations: int = 10,
     min_years: int = 20,
     required_elements: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Filter stations by country, state, data coverage, and elements.
+    """Filter stations by country, state, bbox, data coverage, and elements.
+
+    Filters compose — every one that's set must pass.
+
+    - ``country``: FIPS code prefix (first 2 chars of station_id). Pass
+      ``""`` to skip the country filter (useful with ``bbox`` when
+      coordinates are the authoritative region constraint).
+    - ``state``: US state abbreviation; uses bounding-box match.
+    - ``bbox``: ``(min_lat, max_lat, min_lon, max_lon)``. Intended for
+      Geofabrik-derived region boxes.
 
     Returns stations sorted by data coverage (most years first), each
     enriched with ``first_year``, ``last_year``, ``elements`` from the
@@ -203,10 +213,14 @@ def filter_stations(
     candidates: list[dict[str, Any]] = []
     for stn in stations:
         sid = stn["station_id"]
-        if station_country(sid) != country:
+        if country and station_country(sid) != country:
             continue
         if state and not station_in_state(stn["lat"], stn["lon"], state):
             continue
+        if bbox is not None:
+            min_lat, max_lat, min_lon, max_lon = bbox
+            if not (min_lat <= stn["lat"] <= max_lat and min_lon <= stn["lon"] <= max_lon):
+                continue
 
         inv = inventory.get(sid)
         if inv is None:

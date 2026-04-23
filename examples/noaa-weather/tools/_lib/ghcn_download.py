@@ -265,6 +265,7 @@ def download_station_csv(
     storage: Storage | None = None,
     use_mock: bool | None = None,
     mock_years: tuple[int, int] = (2000, 2023),
+    extra_metadata: dict[str, Any] | None = None,
 ) -> DownloadResult:
     """Download ``csv/by_station/<station_id>.csv`` from NOAA.
 
@@ -272,6 +273,10 @@ def download_station_csv(
     return the cache hit unless ``force=True``. The sidecar records the
     SHA-256 so callers that need to detect upstream changes can do so
     by ``force`` + comparing.
+
+    ``extra_metadata`` is merged into the sidecar's ``extra`` field —
+    useful for recording inventory-derived facts like ``first_year`` /
+    ``last_year`` at the time of download.
     """
     relative_path = f"{station_id}.csv"
     source_url = f"{GHCN_S3_BASE}csv/by_station/{station_id}.csv"
@@ -305,7 +310,12 @@ def download_station_csv(
                 station_id, mock_years[0], mock_years[1]
             )
             return _write_station_csv(
-                station_id, text.encode("utf-8"), source_url, s, used_mock=True
+                station_id,
+                text.encode("utf-8"),
+                source_url,
+                s,
+                used_mock=True,
+                extra_metadata=extra_metadata,
             )
 
         if requests is None:  # pragma: no cover
@@ -350,6 +360,12 @@ def download_station_csv(
         final_path = sidecar.cache_path(
             NAMESPACE, STATION_CSV_CACHE_TYPE, relative_path, s
         )
+        merged_extra: dict[str, Any] = {
+            "station_id": station_id,
+            "download_duration_seconds": round(elapsed, 2),
+        }
+        if extra_metadata:
+            merged_extra.update(extra_metadata)
         with sidecar.entry_lock(
             NAMESPACE, STATION_CSV_CACHE_TYPE, relative_path, storage=s
         ):
@@ -367,7 +383,7 @@ def download_station_csv(
                     "used_mock": False,
                 },
                 tool={"name": "ghcn_download", "version": "1.0"},
-                extra={"station_id": station_id, "download_duration_seconds": round(elapsed, 2)},
+                extra=merged_extra,
                 storage=s,
             )
         return DownloadResult(
@@ -389,6 +405,7 @@ def _write_station_csv(
     storage: Storage,
     *,
     used_mock: bool,
+    extra_metadata: dict[str, Any] | None = None,
 ) -> DownloadResult:
     relative_path = f"{station_id}.csv"
     staging_dir = local_staging_subdir(f"{NAMESPACE}/{STATION_CSV_CACHE_TYPE}")
@@ -399,6 +416,10 @@ def _write_station_csv(
         f.write(body)
     digest = hashlib.sha256(body).hexdigest()
     size_bytes = len(body)
+
+    merged_extra: dict[str, Any] = {"station_id": station_id}
+    if extra_metadata:
+        merged_extra.update(extra_metadata)
 
     final_path = sidecar.cache_path(NAMESPACE, STATION_CSV_CACHE_TYPE, relative_path, storage)
     with sidecar.entry_lock(
@@ -418,7 +439,7 @@ def _write_station_csv(
                 "used_mock": used_mock,
             },
             tool={"name": "ghcn_download", "version": "1.0"},
-            extra={"station_id": station_id},
+            extra=merged_extra,
             storage=storage,
         )
 
