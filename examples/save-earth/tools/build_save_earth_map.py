@@ -35,31 +35,31 @@ from _lib import epa_cleanups, map_render, openlittermap, sidecar  # noqa: E402
 from _lib.storage import LocalStorage  # noqa: E402
 
 
-# Standard layer pipeline. Each entry becomes a toggleable map layer
-# iff its cached GeoJSON exists. The color palette is chosen so the
-# distinctions stay legible when many layers overlap.
+# EPA layers have fixed filenames. OpenLitterMap layers are auto-
+# discovered at render time (see _openlittermap_layers) because the
+# filename depends on mode / zoom / bbox and we want every cached
+# pull to show up as its own toggleable layer.
 #
-# Default OpenLitterMap reference: the clusters-zoom4 feed (global
-# overview). Users who download additional (mode, zoom, bbox)
-# combinations can pass --include with custom LayerSpecs via the
-# extension point below.
+# Keep OpenLitterMap's description fields list stable so the popup
+# content is consistent across auto-discovered entries.
+_OLM_DESCRIPTION_FIELDS = [
+    "point_count",
+    "point_count_abbreviated",
+    "datetime",
+    "verified",
+    "picked_up",
+    "username",
+    "id",
+]
+_OLM_COLORS = [
+    "#d9534f",  # red — default/first cached zoom
+    "#e57373",
+    "#f06292",
+    "#ba68c8",
+    "#7986cb",
+]
+
 DEFAULT_LAYERS: list[map_render.LayerSpec] = [
-    map_render.LayerSpec(
-        name="openlittermap",
-        title="Litter clusters (OpenLitterMap)",
-        source_cache_type=openlittermap.CACHE_TYPE,
-        source_relative_path=f"clusters-zoom{openlittermap.DEFAULT_ZOOM}.geojson",
-        color="#d9534f",
-        radius=6,
-        description_fields=[
-            "point_count",
-            "point_count_abbreviated",
-            "datetime",
-            "verified",
-            "picked_up",
-            "username",
-        ],
-    ),
     map_render.LayerSpec(
         name="epa-superfund",
         title="EPA Superfund (NPL) sites",
@@ -95,6 +95,44 @@ DEFAULT_LAYERS: list[map_render.LayerSpec] = [
         ],
     ),
 ]
+
+
+def _openlittermap_layers(storage: LocalStorage) -> list[map_render.LayerSpec]:
+    """Auto-discover every cached OpenLitterMap GeoJSON file and expose each
+    as its own toggleable layer.
+
+    Users commonly pull multiple (mode, zoom, bbox) combinations — e.g. a
+    global ``clusters-zoom4`` overview plus a city-level
+    ``points-zoom15_<bbox>`` detail feed. Without auto-discovery they'd
+    only see the default clusters-zoom4 layer on the map.
+    """
+    olm_dir = sidecar.cache_path(
+        map_render.NAMESPACE, openlittermap.CACHE_TYPE, "", storage
+    )
+    if not os.path.isdir(olm_dir):
+        return []
+    layers: list[map_render.LayerSpec] = []
+    names = sorted(
+        fn for fn in os.listdir(olm_dir)
+        if fn.endswith(".geojson") and not fn.endswith(".meta.json")
+    )
+    for i, fn in enumerate(names):
+        # Radius scales with zoom: a clusters-zoom4 overview paints bigger
+        # dots because each cluster represents many reports; points-zoomN
+        # entries are single photos, so small dots are fine.
+        base_radius = 9 if fn.startswith("clusters-") else 5
+        layers.append(
+            map_render.LayerSpec(
+                name=f"olm-{fn[: -len('.geojson')]}",
+                title=f"OpenLitterMap — {fn[: -len('.geojson')]}",
+                source_cache_type=openlittermap.CACHE_TYPE,
+                source_relative_path=fn,
+                color=_OLM_COLORS[i % len(_OLM_COLORS)],
+                radius=base_radius,
+                description_fields=_OLM_DESCRIPTION_FIELDS,
+            )
+        )
+    return layers
 
 
 def _parse_center(s: str) -> tuple[float, float]:
@@ -168,8 +206,9 @@ def main() -> int:
     # Pick the layers with actual cached data present. Users with only
     # OpenLitterMap cached shouldn't be forced to download every EPA
     # dataset to render a map.
+    candidates = DEFAULT_LAYERS + _openlittermap_layers(storage)
     present: list[map_render.LayerSpec] = []
-    for layer in DEFAULT_LAYERS:
+    for layer in candidates:
         if args.include and layer.name not in args.include:
             continue
         geojson_path = sidecar.cache_path(
