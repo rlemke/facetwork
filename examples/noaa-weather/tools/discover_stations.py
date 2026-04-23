@@ -78,7 +78,10 @@ def main() -> int:
     parser.add_argument(
         "--use-mock",
         action="store_true",
-        help="Use offline mock catalog (deterministic fake data).",
+        help=(
+            "Opt in to deterministic mock data instead of a live NOAA fetch. "
+            "Default is real data; errors out if requests is not installed."
+        ),
     )
     parser.add_argument(
         "--write-cache",

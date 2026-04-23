@@ -51,7 +51,12 @@ def main() -> int:
         help="Re-download the CSV even if cached.",
     )
     parser.add_argument(
-        "--use-mock", action="store_true", help="Use offline mock data."
+        "--use-mock",
+        action="store_true",
+        help=(
+            "Opt in to deterministic mock data instead of a live NOAA fetch. "
+            "Default is real data; errors out if requests is not installed."
+        ),
     )
     parser.add_argument(
         "--write-cache",

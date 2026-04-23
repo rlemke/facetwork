@@ -165,8 +165,12 @@ def _load_index(
             raw = _mock_index()
             _persist(raw, s, used_mock=True)
         else:
-            if requests is None:  # pragma: no cover
-                raise RuntimeError("requests is unavailable and use_mock=False")
+            if requests is None:
+                raise RuntimeError(
+                    "requests library is not installed. Install it, run via "
+                    "the .sh wrapper (activates .venv), or pass --use-mock if "
+                    "deterministic mock data is acceptable."
+                )
             logger.info("Downloading Geofabrik index from %s", INDEX_URL)
             resp = requests.get(
                 INDEX_URL,
@@ -333,9 +337,8 @@ def _age_hours(generated_at: str | None) -> float | None:
 
 
 def _resolve_use_mock(explicit: bool | None) -> bool:
-    if explicit is not None:
-        return explicit
-    return requests is None
+    """Mock is opt-in. Default (``explicit`` is None) is False."""
+    return bool(explicit)
 
 
 def _mock_index() -> dict[str, Any]:

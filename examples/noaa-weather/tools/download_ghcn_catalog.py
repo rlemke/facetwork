@@ -52,7 +52,11 @@ def main() -> int:
     parser.add_argument(
         "--use-mock",
         action="store_true",
-        help="Force offline mock mode (deterministic fake catalog).",
+        help=(
+            "Opt in to deterministic mock data instead of a live NOAA fetch. "
+            "Default is to fetch real data; if requests is not installed, "
+            "the tool errors out rather than silently substituting mock."
+        ),
     )
     parser.add_argument(
         "--log-level",

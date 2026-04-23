@@ -172,7 +172,11 @@ def download_catalog_file(
             )
 
         if requests is None:  # pragma: no cover — guarded by _resolve_use_mock
-            raise RuntimeError("requests is unavailable and use_mock=False")
+            raise RuntimeError(
+                "requests library is not installed. Install it, run via "
+                "the .sh wrapper (activates .venv), or pass --use-mock if "
+                "deterministic mock data is acceptable."
+            )
 
         logger.info("Downloading catalog %s from %s", kind, source_url)
         resp = requests.get(
@@ -319,7 +323,11 @@ def download_station_csv(
             )
 
         if requests is None:  # pragma: no cover
-            raise RuntimeError("requests is unavailable and use_mock=False")
+            raise RuntimeError(
+                "requests library is not installed. Install it, run via "
+                "the .sh wrapper (activates .venv), or pass --use-mock if "
+                "deterministic mock data is acceptable."
+            )
 
         logger.info("Downloading %s from %s", station_id, source_url)
         t0 = time.monotonic()
@@ -477,7 +485,10 @@ def _age_hours(generated_at: str | None) -> float | None:
 
 
 def _resolve_use_mock(explicit: bool | None) -> bool:
-    """Decide whether to use mock data. Default: true iff requests is missing."""
-    if explicit is not None:
-        return explicit
-    return requests is None
+    """Decide whether to use mock data.
+
+    Default (``explicit`` is None) is ``False``: mock data is opt-in via
+    ``use_mock=True``. If ``requests`` is not available and mock is off,
+    the caller will raise — we don't silently substitute fake data.
+    """
+    return bool(explicit)

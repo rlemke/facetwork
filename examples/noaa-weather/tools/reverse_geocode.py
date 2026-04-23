@@ -77,7 +77,13 @@ def main() -> int:
         "--force", action="store_true", help="Re-query even if cached."
     )
     parser.add_argument(
-        "--use-mock", action="store_true", help="Use offline deterministic mock data."
+        "--use-mock",
+        action="store_true",
+        help=(
+            "Opt in to deterministic mock data instead of a live Nominatim lookup. "
+            "Default is real data; errors out if requests is not installed or "
+            "the lookup fails."
+        ),
     )
     parser.add_argument(
         "--log-level", default="INFO", help="Python logging level (default: INFO)."

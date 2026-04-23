@@ -75,41 +75,42 @@ def reverse_geocode(
         if cached is not None:
             return cached
 
-    should_mock = use_mock if use_mock is not None else requests is None
-    if should_mock:
+    # Mock is opt-in. Default (use_mock is None) is a real lookup.
+    if use_mock:
         result = _mock_result(lat, lon)
         _write_cached(relative_path, result, s, source="mock")
         return result
 
-    if requests is None:  # pragma: no cover
-        raise RuntimeError("requests is unavailable and use_mock=False")
-
-    try:
-        resp = requests.get(
-            NOMINATIM_URL,
-            params={"lat": lat, "lon": lon, "format": "json"},
-            headers={"User-Agent": USER_AGENT},
-            timeout=REQUEST_TIMEOUT,
+    if requests is None:
+        raise RuntimeError(
+            "reverse_geocode: requests library is not installed. "
+            "Install it, run via the .sh wrapper (activates .venv), "
+            "or pass use_mock=True (--use-mock at the CLI) if deterministic "
+            "mock data is acceptable."
         )
-        resp.raise_for_status()
-        data = resp.json()
-        addr = data.get("address", {})
-        result = {
-            "display_name": data.get("display_name", ""),
-            "city": addr.get("city", addr.get("town", addr.get("village", ""))),
-            "state": addr.get("state", ""),
-            "country": addr.get("country", ""),
-            "county": addr.get("county", ""),
-        }
-        _write_cached(relative_path, result, s, source="nominatim")
-        # Enforce Nominatim rate limit only after successful live calls.
-        time.sleep(RATE_LIMIT_SECONDS)
-        return result
-    except Exception as exc:
-        logger.warning("Nominatim lookup failed for (%s, %s): %s", lat, lon, exc)
-        result = _mock_result(lat, lon)
-        _write_cached(relative_path, result, s, source="mock_fallback")
-        return result
+
+    # No silent fallback on network / API errors — callers need to see the
+    # failure so the cache isn't polluted with mock_fallback entries.
+    resp = requests.get(
+        NOMINATIM_URL,
+        params={"lat": lat, "lon": lon, "format": "json"},
+        headers={"User-Agent": USER_AGENT},
+        timeout=REQUEST_TIMEOUT,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    addr = data.get("address", {})
+    result = {
+        "display_name": data.get("display_name", ""),
+        "city": addr.get("city", addr.get("town", addr.get("village", ""))),
+        "state": addr.get("state", ""),
+        "country": addr.get("country", ""),
+        "county": addr.get("county", ""),
+    }
+    _write_cached(relative_path, result, s, source="nominatim")
+    # Enforce Nominatim rate limit only after successful live calls.
+    time.sleep(RATE_LIMIT_SECONDS)
+    return result
 
 
 def _read_cached(relative_path: str, storage: Storage) -> dict[str, Any] | None:
