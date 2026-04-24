@@ -44,6 +44,9 @@ from _lib import (  # noqa: E402,F401
     geofabrik_regions,
     ghcn_download,
     ghcn_parse,
+    ndbc_download,
+    ndbc_map,
+    ndbc_parse,
 )
 from _lib.climate_analysis import (  # noqa: E402,F401
     aggregate_region_trend,
@@ -298,6 +301,9 @@ __all__ = [
     "geofabrik_regions",
     "ghcn_download",
     "ghcn_parse",
+    "ndbc_download",
+    "ndbc_map",
+    "ndbc_parse",
     # Mongo (handler-only — not part of the ``_lib`` surface).
     "ClimateStore",
     "WeatherReportStore",

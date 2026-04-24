@@ -87,6 +87,24 @@ namespace weather.types {
         station_count: Int,
         narrative: String
     }
+
+    /** A single NDBC buoy / coastal station from activestations.xml.
+      *
+      * ``type`` is one of ``buoy``, ``cman``, ``dart``, ``nerrs``,
+      * ``oil``, ``other``. Sensor-family booleans say which payloads
+      * that station reports — ``met`` is the closest GHCN analogue. */
+    schema BuoyStation {
+        station_id: String,
+        name: String,
+        type: String,
+        owner: String,
+        lat: Double,
+        lon: Double,
+        met: Boolean,
+        currents: Boolean,
+        waterquality: Boolean,
+        dart: Boolean
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +199,87 @@ namespace weather.Geocode {
 
     /** Reverse geocode station coordinates via OSM Nominatim. */
     event facet ReverseGeocode(lat: Double, lon: Double) => (geo: GeoContext) with RateLimit()
+}
+
+// ---------------------------------------------------------------------------
+// Marine — NOAA National Data Buoy Center catalog + stdmet + map
+// ---------------------------------------------------------------------------
+//
+// Parallels the land-based catalog / ingest / analysis chain but for
+// ocean buoys + coastal observing stations. Outputs land under:
+//   cache/noaa-weather/ndbc-catalog/   (XML + normalized JSON + map)
+//   cache/noaa-weather/ndbc-stdmet/    (per-station-per-year .txt.gz)
+//   cache/noaa-weather/buoy-summaries/ (yearly summaries)
+
+namespace weather.Marine {
+    use weather.types
+
+    /** Download the NDBC active-stations catalog (XML + normalized JSON).
+      *
+      * Writes two sidecar-backed artifacts so downstream tools can
+      * consume the JSON without re-parsing XML. Cached by default;
+      * pass ``force = true`` to refresh. */
+    event facet DownloadNdbcCatalog(
+        force: Boolean = false,
+        use_mock: Boolean = false
+    ) => (
+        xml_path: String,
+        json_path: String,
+        station_count: Int,
+        was_cached: Boolean,
+        used_mock: Boolean
+    ) with RetryPolicy()
+
+    /** Filter the cached NDBC catalog to a candidate buoy set.
+      *
+      * Mirrors ``discover-buoys`` — accepts Geofabrik ``region`` or
+      * explicit ``bbox``, ``types`` (``buoy|cman|dart|nerrs|oil``),
+      * ``require_fields`` (any of ``met|currents|waterquality|dart``).
+      * Returns the filtered station list as JSON for ``foreach``. */
+    event facet DiscoverBuoys(
+        region: String = "",
+        bbox: String = "",
+        types: Json = [],
+        require_fields: Json = [],
+        max_stations: Int = 0,
+        use_mock: Boolean = false
+    ) => (stations: Json, station_count: Int)
+
+    /** Download every stdmet year in ``[start_year, end_year]`` for one
+      * station. Iterates internally so FFL callers don't need a range
+      * primitive. Individual-year failures (e.g. 404s on pre-instal
+      * years) are counted but don't abort. */
+    event facet FetchBuoyData(
+        station_id: String,
+        start_year: Int = 2015,
+        end_year: Int = 2024,
+        force: Boolean = false,
+        use_mock: Boolean = false
+    ) => (
+        station_id: String,
+        requested: Int,
+        fetched: Int,
+        failed: Int
+    ) with RetryPolicy()
+
+    /** Summarize every cached stdmet year for one station into a yearly
+      * buoy-climate JSON. No-op for stations without cached stdmet. */
+    event facet SummarizeBuoy(
+        station_id: String,
+        start_year: Int = 0,
+        end_year: Int = 0
+    ) => (
+        station_id: String,
+        summary_path: String,
+        years_analyzed: Int
+    )
+
+    /** Render the MapLibre buoy points map from the cached catalog
+      * (and any per-station summaries). Uses CARTO Voyager basemap;
+      * colour-codes circles by station type. */
+    event facet BuildBuoysMap(
+        dependency_signal: Int = 0
+    ) => (html_path: String, station_count: Int)
 }
 
 // ---------------------------------------------------------------------------
@@ -352,6 +451,82 @@ namespace weather.workflows {
             status = "completed",
             output_dir = report.output_dir,
             narrative = report.narrative
+        )
+    }
+
+    /** End-to-end NDBC run: catalog → discover → fetch + summarize
+      * each buoy → render the points map.
+      *
+      * Equivalent to the 5-command marine recipe in the tools README,
+      * expressed as one workflow. Discovery fans out ``foreach`` so
+      * the fetch + summarize steps run in parallel across stations
+      * (concurrency governed by the runner's pool). Individual
+      * station failures are caught and absorbed so one bad buoy
+      * doesn't poison the batch. */
+    workflow AnalyzeBuoyRegion(
+        region: String = "",
+        types: Json = ["buoy"],
+        require_fields: Json = ["met"],
+        max_stations: Int = 10,
+        start_year: Int = 2015,
+        end_year: Int = 2024,
+        use_mock: Boolean = false
+    ) => (
+        status: String,
+        station_count: Int,
+        html_path: String
+    ) andThen {
+        catalog = DownloadNdbcCatalog(use_mock = $.use_mock) catch {
+            yield AnalyzeBuoyRegion(
+                status = "catalog_failed",
+                station_count = 0,
+                html_path = ""
+            )
+        }
+        discovery = DiscoverBuoys(
+            region = $.region,
+            types = $.types,
+            require_fields = $.require_fields,
+            max_stations = $.max_stations,
+            use_mock = $.use_mock
+        ) andThen foreach station in discovery.stations {
+            fetch = FetchBuoyData(
+                station_id = $.station.station_id,
+                start_year = $.start_year,
+                end_year = $.end_year,
+                use_mock = $.use_mock
+            ) catch {
+                yield AnalyzeBuoyRegion(
+                    status = "partial",
+                    station_count = 0,
+                    html_path = ""
+                )
+            }
+            summary = SummarizeBuoy(
+                station_id = $.station.station_id,
+                start_year = $.start_year,
+                end_year = $.end_year
+            ) catch {
+                yield AnalyzeBuoyRegion(
+                    status = "partial",
+                    station_count = 0,
+                    html_path = ""
+                )
+            }
+        }
+        map = BuildBuoysMap(
+            dependency_signal = discovery.station_count
+        ) catch {
+            yield AnalyzeBuoyRegion(
+                status = "map_failed",
+                station_count = discovery.station_count,
+                html_path = ""
+            )
+        }
+        yield AnalyzeBuoyRegion(
+            status = "completed",
+            station_count = discovery.station_count,
+            html_path = map.html_path
         )
     }
 

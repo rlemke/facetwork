@@ -15,6 +15,7 @@ def register_all_handlers(poller) -> None:
     from .catalog.catalog_handlers import register_catalog_handlers
     from .geocode.geocode_handlers import register_geocode_handlers
     from .ingest.ingest_handlers import register_ingest_handlers
+    from .marine.marine_handlers import register_marine_handlers
     from .report.report_handlers import register_report_handlers
 
     register_catalog_handlers(poller)
@@ -22,6 +23,7 @@ def register_all_handlers(poller) -> None:
     register_analysis_handlers(poller)
     register_geocode_handlers(poller)
     register_report_handlers(poller)
+    register_marine_handlers(poller)
 
 
 def register_all_registry_handlers(runner) -> None:
@@ -30,6 +32,7 @@ def register_all_registry_handlers(runner) -> None:
     from .catalog.catalog_handlers import register_handlers as reg_catalog
     from .geocode.geocode_handlers import register_handlers as reg_geocode
     from .ingest.ingest_handlers import register_handlers as reg_ingest
+    from .marine.marine_handlers import register_handlers as reg_marine
     from .report.report_handlers import register_handlers as reg_report
 
     reg_catalog(runner)
@@ -37,3 +40,4 @@ def register_all_registry_handlers(runner) -> None:
     reg_analysis(runner)
     reg_geocode(runner)
     reg_report(runner)
+    reg_marine(runner)
