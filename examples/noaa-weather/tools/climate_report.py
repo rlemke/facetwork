@@ -75,6 +75,19 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--all",
+        action="store_true",
+        help=(
+            "Expand into EVERY Geofabrik region in the cached index. "
+            "Equivalent to --all-under \"\" (empty prefix, matches any "
+            "path). Heads up: ~40,000 regions × per-region catalog + "
+            "filter overhead is a multi-day run even with --jobs 4, "
+            "and most regions have no matching GHCN stations. Combine "
+            "with --include-parents to also include continent / "
+            "country-level aggregates."
+        ),
+    )
+    parser.add_argument(
         "--include-parents",
         action="store_true",
         help=(
@@ -280,6 +293,26 @@ def _resolve_region_set(args: argparse.Namespace) -> list[str]:
       - Neither → empty string marker (legacy country/state mode); the
         caller loops exactly once with no Geofabrik region.
     """
+    if args.all:
+        # Every region in the Geofabrik index. Includes parents by
+        # definition — you can't have leaves without their ancestors.
+        expanded = geofabrik_regions.list_regions_under(
+            "",
+            include_parents=True,
+            use_mock=args.use_mock or None,
+        )
+        if args.region and args.region not in expanded:
+            expanded.append(args.region)
+            expanded.sort()
+        if not expanded:
+            print(
+                "error: --all resolved to zero regions — is the "
+                "Geofabrik index cached?",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        return expanded
+
     if args.all_under:
         try:
             expanded = geofabrik_regions.list_regions_under(
