@@ -34,7 +34,7 @@ _TOOLS_ROOT = Path(__file__).resolve().parent.parent
 if str(_TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(_TOOLS_ROOT))
 
-from _lib import geofabrik_regions, ghcn_parse, sidecar  # noqa: E402
+from _lib import geofabrik_regions, ghcn_parse, natural_earth, sidecar  # noqa: E402
 from _lib.storage import LocalStorage, Storage  # noqa: E402
 
 logger = logging.getLogger("noaa-weather.warming-map")
@@ -162,11 +162,16 @@ def _geometry_for_region(
 ) -> dict[str, Any] | None:
     """Resolve a region dict to a GeoJSON geometry.
 
-    Preference:
-      1. Geofabrik path → real polygon from the cached index.
-      2. US country + state → rectangle from ghcn_parse.US_STATE_BOUNDS.
-      3. Country-only report → Geofabrik country path if we can infer
-         one; otherwise skip (no sensible polygon).
+    Preference order:
+      1. Geofabrik path → real polygon from the cached index (accurate
+         where Geofabrik has a per-region PBF).
+      2. Country + state → Natural Earth admin-1 polygon (real state
+         boundary worldwide, not just the US).
+      3. US-state last-resort → rectangle from
+         ``ghcn_parse.US_STATE_BOUNDS`` if Natural Earth wasn't
+         reachable or the state isn't in the admin-1 set.
+      4. None — report is included in the master index but skipped on
+         the map.
     """
     path = region.get("path")
     if path:
@@ -176,16 +181,39 @@ def _geometry_for_region(
             logger.info("skipping %r: %s", path, exc)
             return None
 
+    country = region.get("country") or ""
     state = region.get("state") or ""
+
+    # Natural Earth admin-1 catches the non-US case AND replaces the
+    # rectangle for US states with a real polygon.
+    if country and state:
+        try:
+            poly = natural_earth.resolve_state_polygon(
+                country, state, storage=storage
+            )
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.info("natural-earth lookup failed for %s/%s: %s", country, state, exc)
+            poly = None
+        if poly is not None:
+            return poly
+
+    # Last-resort US-state bbox rectangle. Kept so a first-run map
+    # still shows the region even if the Natural Earth GeoJSON isn't
+    # cached yet (e.g. offline or pre-install).
     if state:
         bounds = ghcn_parse.US_STATE_BOUNDS.get(state.upper())
         if bounds is not None:
+            logger.info(
+                "using US_STATE_BOUNDS rectangle for %s — "
+                "natural-earth didn't match",
+                state,
+            )
             return _bbox_to_polygon(bounds)
-        logger.info("no bbox for state %r — skipping", state)
+        logger.info("no polygon for state %r — skipping", state)
 
-    # No state, no geofabrik path → we'd need a FIPS-to-country polygon
-    # to draw country-level reports. Leave them out for v1; the master
-    # index still lists them.
+    # Country-only reports (no state, no Geofabrik path) are still
+    # skipped on the map. Adding a country polygon layer would need
+    # either Geofabrik country-level paths or Natural Earth admin-0.
     return None
 
 
