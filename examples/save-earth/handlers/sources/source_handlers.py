@@ -15,6 +15,7 @@ from handlers.shared.save_earth_utils import (
     epa_cleanups,
     openlittermap,
     parse_bbox,
+    tri,
 )
 
 logger = logging.getLogger("save-earth.sources")
@@ -29,9 +30,15 @@ def _step_log(step_log: Any, msg: str, level: str = "info") -> None:
 
 
 def _result_payload(res: Any) -> dict[str, Any]:
-    """Project a dataclass FetchResult into the FFL-visible return shape."""
+    """Project a dataclass FetchResult into the FFL-visible return shape.
+
+    ``cache_type`` is intentionally not included — each handler spreads
+    this dict **after** setting its own cache_type, so setting it here
+    would shadow the explicit value via Python's dict-merge semantics
+    (later keys win). Callers: ``return {"cache_type": <X>.CACHE_TYPE,
+    **_result_payload(res)}``.
+    """
     return {
-        "cache_type": getattr(res, "cache_type", openlittermap.CACHE_TYPE),
         "relative_path": res.relative_path,
         "feature_count": res.feature_count,
         "size_bytes": res.size_bytes,
@@ -75,6 +82,25 @@ def handle_download_openlittermap(params: dict[str, Any]) -> dict[str, Any]:
     return {"cache_type": openlittermap.CACHE_TYPE, **_result_payload(res)}
 
 
+def handle_download_tri(params: dict[str, Any]) -> dict[str, Any]:
+    """Handle DownloadTri — EPA Toxic Release Inventory facility points."""
+    active_only = bool(params.get("active_only", True))
+    force = bool(params.get("force", False))
+    use_mock = bool(params.get("use_mock", False))
+    step_log = params.get("_step_log")
+
+    _step_log(step_log, f"DownloadTri active_only={active_only}")
+    res = tri.download(active_only=active_only, force=force, use_mock=use_mock)
+    status = "cache" if res.was_cached else ("mock" if res.used_mock else "download")
+    _step_log(
+        step_log,
+        f"[{status}] tri/{res.absolute_path}  "
+        f"{res.feature_count:,} facilities",
+        "success",
+    )
+    return {"cache_type": tri.CACHE_TYPE, **_result_payload(res)}
+
+
 def handle_download_epa_cleanups(params: dict[str, Any]) -> dict[str, Any]:
     """Handle DownloadEpaCleanups."""
     dataset = params.get("dataset", "superfund")
@@ -107,6 +133,7 @@ def handle_download_epa_cleanups(params: dict[str, Any]) -> dict[str, Any]:
 _DISPATCH: dict[str, Any] = {
     f"{NAMESPACE}.DownloadOpenLitterMap": handle_download_openlittermap,
     f"{NAMESPACE}.DownloadEpaCleanups": handle_download_epa_cleanups,
+    f"{NAMESPACE}.DownloadTri": handle_download_tri,
 }
 
 

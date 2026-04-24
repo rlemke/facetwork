@@ -98,6 +98,30 @@ namespace save_earth.sources {
         used_mock: Boolean
     ) with RetryPolicy()
 
+    /** Download the EPA Toxic Release Inventory facility table.
+      *
+      * Fetches TRI_FACILITY from ``data.epa.gov/efservice/`` (the
+      * old ``enviro.epa.gov`` URL redirects there). ~65 k rows
+      * total, paginated at 10 k/request. Normalizes longitude sign
+      * for western-hemisphere state codes.
+      *
+      * ``active_only`` (default true) drops facilities whose
+      * ``fac_closed_ind`` is ``"1"``. */
+    event facet DownloadTri(
+        active_only: Boolean = true,
+        force: Boolean = false,
+        use_mock: Boolean = false
+    ) => (
+        cache_type: String,
+        relative_path: String,
+        feature_count: Int,
+        size_bytes: Int,
+        sha256: String,
+        source_url: String,
+        was_cached: Boolean,
+        used_mock: Boolean
+    ) with RetryPolicy()
+
     /** Download an EPA remediation-site dataset.
       *
       * ``dataset`` = ``"superfund"`` (NPL sites, ~1.4k) or

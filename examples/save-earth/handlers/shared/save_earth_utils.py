@@ -30,6 +30,7 @@ from _lib import (  # noqa: E402,F401
     map_render,
     openlittermap,
     sidecar,
+    tri,
 )
 from _lib.storage import LocalStorage  # noqa: E402,F401
 
@@ -60,4 +61,5 @@ __all__ = [
     "openlittermap",
     "parse_bbox",
     "sidecar",
+    "tri",
 ]

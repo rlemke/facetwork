@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _lib import epa_cleanups, map_render, openlittermap, sidecar  # noqa: E402
+from _lib import epa_cleanups, map_render, openlittermap, sidecar, tri  # noqa: E402
 from _lib.storage import LocalStorage  # noqa: E402
 
 
@@ -92,6 +92,25 @@ DEFAULT_LAYERS: list[map_render.LayerSpec] = [
             "epa_region",
             "pgm_sys_id",
             "facility_url",
+        ],
+    ),
+    map_render.LayerSpec(
+        name="epa-tri",
+        title="EPA TRI reporters (Toxic Release Inventory)",
+        source_cache_type=tri.CACHE_TYPE,
+        source_relative_path=tri.RELATIVE_PATH,
+        color="#b30000",
+        radius=5,
+        description_fields=[
+            "facility_name",
+            "parent_co_name",
+            "standardized_parent_company",
+            "city_name",
+            "state_abbr",
+            "county_name",
+            "region",
+            "tri_facility_id",
+            "closed",
         ],
     ),
 ]

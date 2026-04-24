@@ -38,6 +38,7 @@ Every arrow is sidecar-mediated: each artifact has a sibling `.meta.json` with s
 |------|-------|--------------|---------|
 | `download-openlittermap` | `--mode {clusters,points}`, `--zoom`, `--bbox` | `openlittermap/<mode>-zoom<N>[_<bbox>].geojson` | Fetch crowd-sourced litter observations. Default: global clusters at zoom 4. Individual photos (`--mode points`) require `--zoom>=15` and a bbox (server-enforced). |
 | `download-epa-cleanups` | `--dataset {superfund,brownfields}` (repeatable) | `epa-cleanups/<dataset>.geojson` | Fetch EPA authoritative remediation-site data from `geopub.epa.gov/EMEF/efpoints` (auto-paginates past the 10,000-record server cap) |
+| `download-tri` | `--include-closed` / `--force` / `--use-mock` | `tri/facilities.geojson` | Fetch the EPA Toxic Release Inventory facility table (~65k facilities) from `data.epa.gov/efservice/`. Paginates past the 10k-row cap; negates longitude for western-hemisphere state codes (the DB stores longitude unsigned). Default filter drops closed facilities. |
 | `build-save-earth-map` | `--region`, `--center`, `--zoom` | `maps/<region>/index.html` | Stitch every cached layer into a single MapLibre HTML page |
 
 Every tool supports:
@@ -55,6 +56,7 @@ Defaults are real endpoints; if an upstream URL rotates, pass `--url` and it'll 
 | **OpenLitterMap** (openlittermap.com) | Points | CC-BY-SA 4.0 | Crowd-sourced, ~1M+ geotagged litter photos globally |
 | **EPA Superfund NPL** — `geopub.epa.gov/EMEF/efpoints` layer 0 | Points | US Government public domain | ~1,400 NPL sites |
 | **EPA Brownfields (ACRES)** — `geopub.epa.gov/EMEF/efpoints` layer 5 | Points | US Government public domain | ~40,000+ redevelopment sites |
+| **EPA TRI** — `data.epa.gov/efservice/TRI_FACILITY` | Points | US Government public domain | ~65,000 Toxic Release Inventory reporters (all time); ~35,000 currently active |
 
 Feature popups preserve the upstream `properties` so every point carries a real name, status, description, and (where available) a link back to the source system.
 
@@ -70,6 +72,8 @@ cache/save-earth/
 ├── epa-cleanups/
 │   ├── superfund.geojson + .meta.json
 │   └── brownfields.geojson + .meta.json
+├── tri/
+│   └── facilities.geojson + .meta.json   ← EPA TRI facility points
 └── maps/
     └── <region>/
         ├── index.html

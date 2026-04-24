@@ -47,7 +47,7 @@
               "type": "Boolean"
             }
           ],
-          "id": "b1dd8616-5e67-4972-b878-be84c01582b3",
+          "id": "c50f2701-9339-4905-8f89-3dbddf987f29",
           "location": {
             "line": 21,
             "column": 5,
@@ -85,7 +85,7 @@
               "type": "Json"
             }
           ],
-          "id": "79023810-3a4a-4b1d-af54-15a7d3ff4540",
+          "id": "04b3dee9-89db-4439-8045-8ae8f7d1ab1c",
           "location": {
             "line": 37,
             "column": 5,
@@ -94,7 +94,7 @@
           }
         }
       ],
-      "id": "87ef22cc-fe09-4f99-8866-ccd0e77ce6b2",
+      "id": "eda40eb0-bd5a-44c6-950c-4269cb5243a1",
       "location": {
         "line": 20,
         "column": 1,
@@ -142,7 +142,7 @@
               "type": "Int"
             }
           ],
-          "id": "571cef5d-5371-4ee5-8552-bca98eda2326",
+          "id": "4b6c8a64-8b01-4e0e-b313-60a742d5ba3d",
           "location": {
             "line": 56,
             "column": 5,
@@ -156,7 +156,7 @@
           "call": {
             "type": "CallExpr",
             "target": "RetryPolicy",
-            "id": "aa91e9ef-6407-461a-aecb-ab904790188a",
+            "id": "0effd2f6-2874-4cc6-8adf-12d2ec4bb394",
             "location": {
               "line": 64,
               "column": 30,
@@ -164,7 +164,7 @@
               "endColumn": 43
             }
           },
-          "id": "4d519023-aed6-438f-b072-2217e9af08f3",
+          "id": "fd3188f1-5e99-4c29-bd66-71ae20f16ae9",
           "location": {
             "line": 64,
             "column": 5,
@@ -173,7 +173,7 @@
           }
         }
       ],
-      "id": "f0ba722a-2fce-40c2-8752-2f6eceea85f9",
+      "id": "680d947e-250c-4b36-bea8-98f6c0e26699",
       "location": {
         "line": 55,
         "column": 1,
@@ -278,11 +278,93 @@
               "target": "RetryPolicy"
             }
           ],
-          "id": "8d064ca0-2340-4c52-9fde-f8702a682980",
+          "id": "ae90b1ba-d22b-4ae3-90c8-a795c9d74ff8",
           "location": {
             "line": 74,
             "column": 5,
             "endLine": 101,
+            "endColumn": 1
+          }
+        },
+        {
+          "type": "EventFacetDecl",
+          "name": "DownloadTri",
+          "doc": {
+            "description": "Download the EPA Toxic Release Inventory facility table.\n\nFetches TRI_FACILITY from ``data.epa.gov/efservice/`` (the\nold ``enviro.epa.gov`` URL redirects there). ~65 k rows\ntotal, paginated at 10 k/request. Normalizes longitude sign\nfor western-hemisphere state codes.\n\n``active_only`` (default true) drops facilities whose\n``fac_closed_ind`` is ``\"1\"``.",
+            "params": [],
+            "returns": []
+          },
+          "params": [
+            {
+              "name": "active_only",
+              "type": "Boolean",
+              "default": {
+                "type": "Boolean",
+                "value": true
+              }
+            },
+            {
+              "name": "force",
+              "type": "Boolean",
+              "default": {
+                "type": "Boolean",
+                "value": false
+              }
+            },
+            {
+              "name": "use_mock",
+              "type": "Boolean",
+              "default": {
+                "type": "Boolean",
+                "value": false
+              }
+            }
+          ],
+          "returns": [
+            {
+              "name": "cache_type",
+              "type": "String"
+            },
+            {
+              "name": "relative_path",
+              "type": "String"
+            },
+            {
+              "name": "feature_count",
+              "type": "Int"
+            },
+            {
+              "name": "size_bytes",
+              "type": "Int"
+            },
+            {
+              "name": "sha256",
+              "type": "String"
+            },
+            {
+              "name": "source_url",
+              "type": "String"
+            },
+            {
+              "name": "was_cached",
+              "type": "Boolean"
+            },
+            {
+              "name": "used_mock",
+              "type": "Boolean"
+            }
+          ],
+          "mixins": [
+            {
+              "type": "MixinSig",
+              "target": "RetryPolicy"
+            }
+          ],
+          "id": "d1f7996f-53d8-4990-89ba-a5f78e05acf2",
+          "location": {
+            "line": 101,
+            "column": 5,
+            "endLine": 125,
             "endColumn": 1
           }
         },
@@ -360,20 +442,20 @@
               "target": "RetryPolicy"
             }
           ],
-          "id": "9d11f0b5-d770-4937-a732-fc7d03c21e11",
+          "id": "32758dd0-0d8a-4d4e-b01c-a881f2a19d38",
           "location": {
-            "line": 101,
+            "line": 125,
             "column": 5,
-            "endLine": 120,
+            "endLine": 144,
             "endColumn": 1
           }
         }
       ],
-      "id": "cc6ce0a3-1c7a-4774-b834-ab5395bf4ba8",
+      "id": "c9afa1d7-baef-4144-924b-93a537536824",
       "location": {
         "line": 71,
         "column": 1,
-        "endLine": 126,
+        "endLine": 150,
         "endColumn": 1
       }
     },
@@ -476,20 +558,20 @@
               "type": "Json"
             }
           ],
-          "id": "f4987abc-b598-4a47-bc50-a7476466cbe9",
+          "id": "aa7fbeaf-8c6e-453d-b964-01bbfdace0ae",
           "location": {
-            "line": 129,
+            "line": 153,
             "column": 5,
-            "endLine": 159,
+            "endLine": 183,
             "endColumn": 1
           }
         }
       ],
-      "id": "a4e5b810-14cf-4327-917a-724bb2af7813",
+      "id": "485d0eef-9ab9-4475-b718-8bb100e3ff91",
       "location": {
-        "line": 126,
+        "line": 150,
         "column": 1,
-        "endLine": 165,
+        "endLine": 189,
         "endColumn": 1
       }
     },
@@ -584,11 +666,11 @@
                       }
                     }
                   ],
-                  "id": "3ca6adb1-942c-49be-8759-95b2b0bf6e2b",
+                  "id": "08315f60-6178-4822-9db5-0e16c08608df",
                   "location": {
-                    "line": 184,
+                    "line": 208,
                     "column": 15,
-                    "endLine": 188,
+                    "endLine": 212,
                     "endColumn": 10
                   }
                 },
@@ -622,35 +704,35 @@
                           }
                         }
                       ],
-                      "id": "c7b26825-6025-4180-af72-b87f17959b70",
+                      "id": "9d248536-c65b-4337-9852-42d6c0818316",
                       "location": {
-                        "line": 189,
+                        "line": 213,
                         "column": 19,
-                        "endLine": 193,
+                        "endLine": 217,
                         "endColumn": 14
                       }
                     },
-                    "id": "5d8dde50-1631-4db2-98bd-895b87b69cc3",
+                    "id": "dda69532-b419-4d9a-a4da-ef72ae285d6c",
                     "location": {
-                      "line": 189,
+                      "line": 213,
                       "column": 13,
-                      "endLine": 193,
+                      "endLine": 217,
                       "endColumn": 14
                     }
                   },
-                  "id": "205b5a3b-4610-46d1-9222-2d42cea7d6a9",
+                  "id": "2e5c0a69-fb56-4acd-9c51-1f2d1a69e47e",
                   "location": {
-                    "line": 188,
+                    "line": 212,
                     "column": 11,
-                    "endLine": 195,
+                    "endLine": 219,
                     "endColumn": 1
                   }
                 },
-                "id": "4d73776a-f48f-43f9-8897-4edf759f705a",
+                "id": "1939d5c6-985c-4717-8510-bbb455cf3c2d",
                 "location": {
-                  "line": 184,
+                  "line": 208,
                   "column": 9,
-                  "endLine": 195,
+                  "endLine": 219,
                   "endColumn": 1
                 }
               },
@@ -678,11 +760,11 @@
                       }
                     }
                   ],
-                  "id": "9e0b2e31-4fce-4df3-a1a9-f874cd70ad71",
+                  "id": "da495151-dfa2-4ce0-a2ae-5f604db83b8a",
                   "location": {
-                    "line": 195,
+                    "line": 219,
                     "column": 21,
-                    "endLine": 198,
+                    "endLine": 222,
                     "endColumn": 10
                   }
                 },
@@ -716,35 +798,35 @@
                           }
                         }
                       ],
-                      "id": "83611367-f78b-4472-bb32-606c77754b28",
+                      "id": "5d4055f7-b8ee-43c0-acf0-bfddc6526e25",
                       "location": {
-                        "line": 199,
+                        "line": 223,
                         "column": 19,
-                        "endLine": 203,
+                        "endLine": 227,
                         "endColumn": 14
                       }
                     },
-                    "id": "34975b06-f52e-4a93-9157-dc9972d4ce58",
+                    "id": "7691871c-2654-467a-bef4-a8e080282250",
                     "location": {
-                      "line": 199,
+                      "line": 223,
                       "column": 13,
-                      "endLine": 203,
+                      "endLine": 227,
                       "endColumn": 14
                     }
                   },
-                  "id": "5deb7b7e-4ea9-4648-9041-870f7fda6d95",
+                  "id": "aa5a7b97-67a7-42be-bd5c-ad498f4fa64c",
                   "location": {
-                    "line": 198,
+                    "line": 222,
                     "column": 11,
-                    "endLine": 205,
+                    "endLine": 229,
                     "endColumn": 1
                   }
                 },
-                "id": "c30cbe40-8bc4-415a-9ffa-9ada187d93b7",
+                "id": "06d53de8-a917-4aaf-8a8c-e1f32e91ce24",
                 "location": {
-                  "line": 195,
+                  "line": 219,
                   "column": 9,
-                  "endLine": 205,
+                  "endLine": 229,
                   "endColumn": 1
                 }
               },
@@ -772,11 +854,11 @@
                       }
                     }
                   ],
-                  "id": "6d4b07d4-fc90-45b7-ad47-4486fbde8496",
+                  "id": "59437b42-3966-42cc-8da9-db2e2ce96940",
                   "location": {
-                    "line": 205,
+                    "line": 229,
                     "column": 23,
-                    "endLine": 208,
+                    "endLine": 232,
                     "endColumn": 10
                   }
                 },
@@ -810,35 +892,35 @@
                           }
                         }
                       ],
-                      "id": "574354b4-ae3e-4eb2-84db-b03f79f53216",
+                      "id": "dc89e48f-3c45-4a94-86b1-650cf3c5ced4",
                       "location": {
-                        "line": 209,
+                        "line": 233,
                         "column": 19,
-                        "endLine": 213,
+                        "endLine": 237,
                         "endColumn": 14
                       }
                     },
-                    "id": "853bfe04-e656-4157-99d4-759f42857536",
+                    "id": "85741ceb-649b-48cb-89b0-8ed62175e7c5",
                     "location": {
-                      "line": 209,
+                      "line": 233,
                       "column": 13,
-                      "endLine": 213,
+                      "endLine": 237,
                       "endColumn": 14
                     }
                   },
-                  "id": "fa974d21-b6a5-43e7-9941-b751d8d190fb",
+                  "id": "154a8a67-cff3-4534-875b-438883a786dd",
                   "location": {
-                    "line": 208,
+                    "line": 232,
                     "column": 11,
-                    "endLine": 218,
+                    "endLine": 242,
                     "endColumn": 1
                   }
                 },
-                "id": "dc3518a6-c0bc-4891-b169-ba495b15af6d",
+                "id": "9a05ec40-72a7-43cd-98d3-f59c96c84b00",
                 "location": {
-                  "line": 205,
+                  "line": 229,
                   "column": 9,
-                  "endLine": 218,
+                  "endLine": 242,
                   "endColumn": 1
                 }
               },
@@ -889,11 +971,11 @@
                       }
                     }
                   ],
-                  "id": "93171d8e-8914-4294-8a76-58e3ad70d6b3",
+                  "id": "0b8249c1-03c3-4ab2-b10f-2176ed6dd0f4",
                   "location": {
-                    "line": 218,
+                    "line": 242,
                     "column": 15,
-                    "endLine": 221,
+                    "endLine": 245,
                     "endColumn": 10
                   }
                 },
@@ -927,35 +1009,35 @@
                           }
                         }
                       ],
-                      "id": "7b53422f-9d7c-40d9-a85b-0f5b72c588a8",
+                      "id": "40a77810-96af-4179-bbe4-cbe5f8c38d3b",
                       "location": {
-                        "line": 222,
+                        "line": 246,
                         "column": 19,
-                        "endLine": 226,
+                        "endLine": 250,
                         "endColumn": 14
                       }
                     },
-                    "id": "1dd91610-b991-43f5-b90d-4c49ac1d6945",
+                    "id": "9f8a45bd-5975-4f8e-ad81-78b187bcc8a7",
                     "location": {
-                      "line": 222,
+                      "line": 246,
                       "column": 13,
-                      "endLine": 226,
+                      "endLine": 250,
                       "endColumn": 14
                     }
                   },
-                  "id": "9d79c8cf-d78d-44c2-9844-254c0d93b4e0",
+                  "id": "18ea2538-9f32-4018-abd1-8ef3f544bd34",
                   "location": {
-                    "line": 221,
+                    "line": 245,
                     "column": 11,
-                    "endLine": 228,
+                    "endLine": 252,
                     "endColumn": 1
                   }
                 },
-                "id": "be118362-707c-4205-a8bb-efde6ee5dbb5",
+                "id": "55517c37-3295-4898-8681-42e3500159e2",
                 "location": {
-                  "line": 218,
+                  "line": 242,
                   "column": 9,
-                  "endLine": 228,
+                  "endLine": 252,
                   "endColumn": 1
                 }
               }
@@ -1018,35 +1100,35 @@
                     }
                   }
                 ],
-                "id": "d67b5414-9c05-4408-b2cf-9529444729da",
+                "id": "c082bcd7-420d-41d4-a01e-c94f3d25b2d4",
                 "location": {
-                  "line": 228,
+                  "line": 252,
                   "column": 15,
-                  "endLine": 232,
+                  "endLine": 256,
                   "endColumn": 10
                 }
               },
-              "id": "92016435-00dc-4d6f-a4f2-cfc6fc537fe3",
+              "id": "15e7195f-f35c-40fd-810e-48a61808e462",
               "location": {
-                "line": 228,
+                "line": 252,
                 "column": 9,
-                "endLine": 232,
+                "endLine": 256,
                 "endColumn": 10
               }
             },
-            "id": "7bdd785c-204d-4f44-ade1-635865a35a2e",
+            "id": "018bfd46-0a4f-490b-8b07-908210aeed2d",
             "location": {
-              "line": 183,
+              "line": 207,
               "column": 7,
-              "endLine": 235,
+              "endLine": 259,
               "endColumn": 1
             }
           },
-          "id": "128fb397-4c62-4243-a261-34db03cd6e47",
+          "id": "e5d4f400-bc36-4d2d-be1f-bf8e6553dffb",
           "location": {
-            "line": 168,
+            "line": 192,
             "column": 5,
-            "endLine": 235,
+            "endLine": 259,
             "endColumn": 1
           }
         },
@@ -1158,11 +1240,11 @@
                       }
                     }
                   ],
-                  "id": "fce39889-a89e-4556-969f-594bc2c2af04",
+                  "id": "66c16b4c-99c0-4ac8-81e8-4d3b3372adc3",
                   "location": {
-                    "line": 247,
+                    "line": 271,
                     "column": 15,
-                    "endLine": 251,
+                    "endLine": 275,
                     "endColumn": 10
                   }
                 },
@@ -1189,35 +1271,35 @@
                           }
                         }
                       ],
-                      "id": "a4e54c6a-62d6-414d-8fe3-f23ff8e27df2",
+                      "id": "378f94dd-f7f6-40d7-8d36-d587c6b33373",
                       "location": {
-                        "line": 252,
+                        "line": 276,
                         "column": 19,
-                        "endLine": 252,
+                        "endLine": 276,
                         "endColumn": 79
                       }
                     },
-                    "id": "4fe1f6be-2a3a-45a9-be64-b39f89e292ea",
+                    "id": "b9327332-7c05-4bfb-8a36-c28e6f27d87f",
                     "location": {
-                      "line": 252,
+                      "line": 276,
                       "column": 13,
-                      "endLine": 252,
+                      "endLine": 276,
                       "endColumn": 79
                     }
                   },
-                  "id": "f3526040-b9f2-4962-b959-4e73cf8b7cf0",
+                  "id": "149043a4-5463-4cf5-80eb-a9827bfb3e1a",
                   "location": {
-                    "line": 251,
+                    "line": 275,
                     "column": 11,
-                    "endLine": 254,
+                    "endLine": 278,
                     "endColumn": 1
                   }
                 },
-                "id": "0cec387a-d969-4b8d-9a9c-274dbaf43b68",
+                "id": "213f2c09-14bc-40a0-ad2f-b5e67cc47fd8",
                 "location": {
-                  "line": 247,
+                  "line": 271,
                   "column": 9,
-                  "endLine": 254,
+                  "endLine": 278,
                   "endColumn": 1
                 }
               },
@@ -1245,11 +1327,11 @@
                       }
                     }
                   ],
-                  "id": "cafe2c5a-f1d3-49f3-915b-40e5236ec5e1",
+                  "id": "db874a31-d389-4ea3-9ea5-7d8b88a5ceaf",
                   "location": {
-                    "line": 254,
+                    "line": 278,
                     "column": 21,
-                    "endLine": 257,
+                    "endLine": 281,
                     "endColumn": 10
                   }
                 },
@@ -1276,35 +1358,35 @@
                           }
                         }
                       ],
-                      "id": "6ef7825c-c87b-408a-8d96-1b6b06dc9810",
+                      "id": "f2a0798c-4cec-4ae9-96be-3800a68b9e0d",
                       "location": {
-                        "line": 258,
+                        "line": 282,
                         "column": 19,
-                        "endLine": 258,
+                        "endLine": 282,
                         "endColumn": 79
                       }
                     },
-                    "id": "a2f3911e-c24c-4e7e-9db1-05f017076c40",
+                    "id": "700c507b-9764-4c3c-80e8-56d52f0f9459",
                     "location": {
-                      "line": 258,
+                      "line": 282,
                       "column": 13,
-                      "endLine": 258,
+                      "endLine": 282,
                       "endColumn": 79
                     }
                   },
-                  "id": "87220124-8c47-4a98-8dec-612bde0f14bc",
+                  "id": "b5fa3503-bae5-4f5a-8bec-997f13d9538f",
                   "location": {
-                    "line": 257,
+                    "line": 281,
                     "column": 11,
-                    "endLine": 260,
+                    "endLine": 284,
                     "endColumn": 1
                   }
                 },
-                "id": "b3716f71-50a3-4622-93cd-94ae62199c22",
+                "id": "f62a2cff-0481-47ce-8f3c-80a142d78606",
                 "location": {
-                  "line": 254,
+                  "line": 278,
                   "column": 9,
-                  "endLine": 260,
+                  "endLine": 284,
                   "endColumn": 1
                 }
               },
@@ -1373,11 +1455,11 @@
                       }
                     }
                   ],
-                  "id": "deee011e-cf5b-4fc6-b159-91a8b5e0212d",
+                  "id": "4a006080-63fd-47e3-909c-7e93639cc1c5",
                   "location": {
-                    "line": 260,
+                    "line": 284,
                     "column": 15,
-                    "endLine": 266,
+                    "endLine": 290,
                     "endColumn": 10
                   }
                 },
@@ -1404,35 +1486,35 @@
                           }
                         }
                       ],
-                      "id": "1551fac3-863c-48a1-84a9-c750314ff7de",
+                      "id": "ff7a3de0-f43a-4e35-afdd-4c281f8a1ae1",
                       "location": {
-                        "line": 267,
+                        "line": 291,
                         "column": 19,
-                        "endLine": 267,
+                        "endLine": 291,
                         "endColumn": 70
                       }
                     },
-                    "id": "3c23f023-76c5-4ff9-aa13-e42ad5f28ba8",
+                    "id": "2ed92d6f-f659-4cd3-b18a-eb5a01e6d407",
                     "location": {
-                      "line": 267,
+                      "line": 291,
                       "column": 13,
-                      "endLine": 267,
+                      "endLine": 291,
                       "endColumn": 70
                     }
                   },
-                  "id": "9a18b42b-bea4-4593-a279-da4e08957beb",
+                  "id": "d64fab22-5a2b-4d81-9fe5-b934a995fa60",
                   "location": {
-                    "line": 266,
+                    "line": 290,
                     "column": 11,
-                    "endLine": 269,
+                    "endLine": 293,
                     "endColumn": 1
                   }
                 },
-                "id": "1f29ce5d-205f-4174-a256-08cff64e4183",
+                "id": "d2d5a60b-77f1-4014-aad5-33f836b37410",
                 "location": {
-                  "line": 260,
+                  "line": 284,
                   "column": 9,
-                  "endLine": 269,
+                  "endLine": 293,
                   "endColumn": 1
                 }
               }
@@ -1461,47 +1543,47 @@
                     }
                   }
                 ],
-                "id": "fea0ad41-3c9a-4f11-9478-bdbe7eb696be",
+                "id": "b69d5756-efc0-41da-a5ad-166bfbe2f1d2",
                 "location": {
-                  "line": 269,
+                  "line": 293,
                   "column": 15,
-                  "endLine": 272,
+                  "endLine": 296,
                   "endColumn": 10
                 }
               },
-              "id": "84d575b4-a073-43ce-9597-8697b3969a70",
+              "id": "90f7101d-d685-43cf-ae58-2bab9261d030",
               "location": {
-                "line": 269,
+                "line": 293,
                 "column": 9,
-                "endLine": 272,
+                "endLine": 296,
                 "endColumn": 10
               }
             },
-            "id": "7463c4d7-a684-44c6-8420-ffd327cb1850",
+            "id": "7ae8eb3f-32b0-4181-8a1e-eb69f3a0c3ca",
             "location": {
-              "line": 246,
+              "line": 270,
               "column": 46,
-              "endLine": 274,
+              "endLine": 298,
               "endColumn": 1
             }
           },
-          "id": "b2ea79bb-f19b-4da9-ac4b-5f8d0bbb6243",
+          "id": "ad1ec028-7103-4e66-9e44-74e3660dc250",
           "location": {
-            "line": 235,
+            "line": 259,
             "column": 5,
-            "endLine": 274,
+            "endLine": 298,
             "endColumn": 1
           }
         }
       ],
-      "id": "f98cbf85-ac26-4ab7-9aa5-8532673e256d",
+      "id": "0d1d58d1-7adf-40cc-9490-5780a58f66ef",
       "location": {
-        "line": 165,
+        "line": 189,
         "column": 1,
-        "endLine": 275,
+        "endLine": 299,
         "endColumn": 1
       }
     }
   ],
-  "id": "160e29d2-e72f-4e99-9dc3-badf6a3d0488"
+  "id": "a581b63d-cd5a-439e-8cd9-de2423d426d4"
 }

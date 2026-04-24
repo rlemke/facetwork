@@ -149,14 +149,25 @@ def _discover_save_earth(cache_root: Path) -> PipelineCard | None:
                 card.primary_links.append((f"Map — {region_dir.name}", rel))
 
     # Layer stats.
-    for cache_type in ("openlittermap", "epa-cleanups"):
+    for cache_type in ("openlittermap", "epa-cleanups", "tri"):
         sub = ns / cache_type
         if sub.is_dir():
             files = [f for f in sub.iterdir() if f.suffix == ".geojson"]
             if files:
-                card.stats.append(
-                    (cache_type, f"{len(files)} cached file(s)")
-                )
+                label = cache_type.replace("-", " ")
+                if cache_type == "tri":
+                    # Surface the feature count too since TRI is one big file.
+                    tri_side = sub / "facilities.geojson.meta.json"
+                    if tri_side.is_file():
+                        meta = _read_sidecar(tri_side)
+                        if meta:
+                            n = (meta.get("extra") or {}).get("feature_count")
+                            if n:
+                                card.stats.append(
+                                    ("TRI", f"{n:,} facilities")
+                                )
+                                continue
+                card.stats.append((label, f"{len(files)} cached file(s)"))
     if not card.primary_links:
         return None
     return card
