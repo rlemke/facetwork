@@ -31,6 +31,11 @@
 #                         forwarded to build-vector-tiles as --timeout SECS
 #                         (per-region tippecanoe timeout). The other tools
 #                         don't accept --timeout.
+#   --max-zoom N          forwarded to build-vector-tiles as --max-zoom N
+#                         (default 14; lower is dramatically faster — at
+#                         z10 tippecanoe runtime is ~16× shorter). The
+#                         other tools don't accept --max-zoom.
+#   --min-zoom N          forwarded to build-vector-tiles as --min-zoom N.
 #   -h | --help           show this help
 #
 # All other flags and positional args are forwarded to each tool verbatim,
@@ -57,7 +62,11 @@ step_skip()   { printf '%s[skip]%s %s\n' "$YELLOW" "$RESET" "$*"; }
 step_fail()   { printf '%s[fail]%s %s\n' "$RED" "$RESET" "$*"; }
 
 print_help() {
-    sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    # Print every leading-comment line at the top of this file (between
+    # the shebang and the first non-comment statement). Avoids drift
+    # when help text grows.
+    awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' \
+        "${BASH_SOURCE[0]}"
 }
 
 SKIP=""
@@ -65,6 +74,7 @@ STOP_ON_FAIL=0
 FORWARD_ARGS=()       # sent to every stage
 JOBS_ARGS=()          # sent only to stages that accept --jobs
 VECTOR_TILES_TIMEOUT_ARGS=()   # sent only to build-vector-tiles
+VECTOR_TILES_ZOOM_ARGS=()      # sent only to build-vector-tiles
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -97,6 +107,24 @@ while [ $# -gt 0 ]; do
             ;;
         --vector-tiles-timeout=*)
             VECTOR_TILES_TIMEOUT_ARGS=(--timeout "${1#--vector-tiles-timeout=}")
+            shift
+            ;;
+        --max-zoom)
+            [ $# -ge 2 ] || { echo "--max-zoom requires a value" >&2; exit 2; }
+            VECTOR_TILES_ZOOM_ARGS+=(--max-zoom "$2")
+            shift 2
+            ;;
+        --max-zoom=*)
+            VECTOR_TILES_ZOOM_ARGS+=(--max-zoom "${1#--max-zoom=}")
+            shift
+            ;;
+        --min-zoom)
+            [ $# -ge 2 ] || { echo "--min-zoom requires a value" >&2; exit 2; }
+            VECTOR_TILES_ZOOM_ARGS+=(--min-zoom "$2")
+            shift 2
+            ;;
+        --min-zoom=*)
+            VECTOR_TILES_ZOOM_ARGS+=(--min-zoom "${1#--min-zoom=}")
             shift
             ;;
         -h|--help)
@@ -154,7 +182,7 @@ run_step() {
 run_step "pbf"           "${SCRIPT_DIR}/download-pbf.sh"          "${FORWARD_ARGS[@]}"
 run_step "geojson"       "${SCRIPT_DIR}/convert-pbf-geojson.sh"   "${JOBS_ARGS[@]}" "${FORWARD_ARGS[@]}"
 run_step "extract"       "${SCRIPT_DIR}/extract.sh"               --extract-all-categories "${JOBS_ARGS[@]}" "${FORWARD_ARGS[@]}"
-run_step "vector-tiles"  "${SCRIPT_DIR}/build-vector-tiles.sh"    --all-sources "${JOBS_ARGS[@]}" "${VECTOR_TILES_TIMEOUT_ARGS[@]}" "${FORWARD_ARGS[@]}"
+run_step "vector-tiles"  "${SCRIPT_DIR}/build-vector-tiles.sh"    --all-sources "${JOBS_ARGS[@]}" "${VECTOR_TILES_TIMEOUT_ARGS[@]}" "${VECTOR_TILES_ZOOM_ARGS[@]}" "${FORWARD_ARGS[@]}"
 run_step "html"          "${SCRIPT_DIR}/render-html-maps.sh"      "${JOBS_ARGS[@]}" "${FORWARD_ARGS[@]}"
 
 echo
