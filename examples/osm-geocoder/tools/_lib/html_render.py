@@ -451,6 +451,20 @@ def _html_template(
         </head>
         <body>
           <div id="banner">{html_escape(region)}</div>
+          <div id="file-protocol-warning" style="display:none; position:absolute;
+               top:10px; left:50%; transform:translateX(-50%); z-index:10;
+               background:#fff3cd; color:#664d03; border:1px solid #ffe69c;
+               border-radius:6px; padding:10px 14px; font-size:13px; line-height:1.4;
+               max-width:560px; box-shadow:0 2px 6px rgba(0,0,0,0.15);">
+            <strong>Map data won't load over <code>file://</code></strong>
+            — PMTiles needs HTTP Range requests, and the OSM basemap rejects
+            requests without a Referer.
+            Run <code>./tools/serve-html-maps.sh</code> from the cache root,
+            then open
+            <code>http://localhost:8000/html/{html_escape(region)}-latest/</code>.
+            <span id="file-warning-dismiss" style="float:right; cursor:pointer;
+                  color:#664d03; padding-left:10px; font-weight:700;">×</span>
+          </div>
           <div id="layers-panel">
             <div id="layers-toggle">Layers <span class="arrow">&#9660;</span></div>
             <div id="basemap-section">
@@ -469,6 +483,22 @@ def _html_template(
           <script src="{MAPLIBRE_JS}"></script>
           <script src="{PMTILES_JS}"></script>
           <script>
+            // PMTiles + OSM basemap both fail over file:// — show a banner
+            // pointing at the existing serve-html-maps.sh helper so the
+            // user knows where to look. No-op when served via http(s).
+            (() => {{
+              if (location.protocol !== "file:") return;
+              const warn = document.getElementById("file-protocol-warning");
+              if (!warn) return;
+              warn.style.display = "block";
+              const dismiss = document.getElementById("file-warning-dismiss");
+              if (dismiss) {{
+                dismiss.addEventListener("click", () => {{
+                  warn.style.display = "none";
+                }});
+              }}
+            }})();
+
             const protocol = new pmtiles.Protocol();
             maplibregl.addProtocol("pmtiles", protocol.tile);
 
