@@ -378,6 +378,28 @@ Both fixes are diagnostic safety nets, not behavior changes. Their existence dep
 
 ---
 
+## Fleet uniformity and storage-volume failure modes (v0.48, 2026-06-01)
+
+Surfaced building the cities-by-zoom + per-band-routes maps and running them across a scaled (1→8 replica) OSM runner fleet. Three failure modes, each of which *looked* like a workflow bug but was infrastructure.
+
+### A. A scaled fleet is only as capable as its image — never hand-install into one container
+
+`tippecanoe` (builds `.mbtiles`) and the `pmtiles` CLI (`.mbtiles`→`.pmtiles`) had each been installed by hand into one long-lived runner container. Scaling the service to 8 replicas added 7 that lacked them, so tile-build tasks **dead-lettered** where tippecanoe was missing, and **silently fell back to `.mbtiles`** where pmtiles was missing — and the browser PMTiles client cannot read `.mbtiles`, so route/line layers vanished while cities (whose `.pmtiles` were cached from an earlier build) still rendered. Any binary a handler shells out to must be in the **image**, with a build-time `--version` smoke check so a missing tool fails the build, not a production task. "Cattle, not pets" is not aesthetic here — a heterogeneous fleet makes task success depend on *which replica claimed it*, the hardest class of bug to reproduce.
+
+### B. Long-running extractors must opt out of the default handler timeout
+
+`osm.Source.PBF.Extract*` and the network primitives (`BuildNetwork`/`RouteLayer`/`RouteMatrix`) registered with the default 30 s handler timeout. Fine for a state-sized region; over a continental (~19 GB) PBF they blew past 30 s, timed out, retried, and **dead-lettered with no error recorded** — indistinguishable at a glance from a "no handler" release. Any handler that does a full-PBF osmium scan or a whole-graph traversal must register `timeout_ms=0` (fall back to the global execution timeout), exactly as `AllPopulatedPlaces` already did. The tell: dead-letters whose `timeout_ms` is the default and whose error is empty.
+
+### C. An ejected external volume leaves a stale Docker mount that reads but cannot write
+
+The cache + output volume (`/Volumes/afl_data`, bind-mounted into every container) ejected when the host slept overnight. Containers kept a **stale mount handle**: cache *reads* still returned bytes (Downloads "completed", cache hits succeeded), but every *write* failed with `[Errno 1] Operation not permitted` / `Not a directory`, dead-lettering tasks — while the host `diskutil list` showed the volume simply gone. A half-alive mount is worse than a cleanly-absent one because the read path masks the failure until the first write. Recovery is not graceful: reconnect the drive, then `docker compose down && up -d` (a stale handle does not self-heal). Corollary: serve user-facing artifacts from an isolated **local** copy, not directly off the shared volume — maps served off `/Volumes/afl_data` 404'd on eject; copies under `~/osm-route-cache` survived.
+
+### Why this section
+
+All three cost real debugging time because the symptom (dead-lettered tasks, a map with dots but no lines) pointed at the workflow, while the cause was the fleet image or the host's disk. When a task fails *non-deterministically across replicas* or *only at continental scale* or *only on writes*, suspect the substrate before the FFL.
+
+---
+
 ## Future Requirements: From Distributed Systems Literature
 
 The following requirements are drawn from *Designing Data-Intensive Applications* (Kleppmann), *Release It!* (Nygard), Temporal's durable execution model, and the Recovery Oriented Computing research (Patterson et al.). These represent gaps not yet addressed in Facetwork.
