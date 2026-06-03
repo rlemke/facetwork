@@ -4,7 +4,8 @@
       "command": "/Users/ralph_lemke/agentflow/.venv/bin/python",
       "args": ["-m", "facetwork.mcp", "--log-level", "WARNING"],
       "env": {
-        "AFL_POSTGIS_URL": "postgresql://afl:afl@afl-postgres:5432/afl_gis"
+        "AFL_MONGODB_URL": "mongodb://localhost:27017",
+        "AFL_POSTGIS_URL": "postgresql://afl:afl@localhost:5432/afl_gis"
       }
     }
   }
