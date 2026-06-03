@@ -195,8 +195,18 @@ services:
       AFL_GEOFABRIK_MIRROR: /Volumes/afl_data/osm
       AFL_OSM_OUTPUT_BASE: /Volumes/afl_data/osm-output
       AFL_LOCAL_OUTPUT_DIR: ${AFL_DATA_DIR:-/Volumes/afl_data}/output
+      # Pinned-cache mode: reuse an already-downloaded PBF as-is instead of
+      # re-downloading because Geofabrik's daily rebuild changed the md5. Lets a
+      # large cached region set drive the pipeline without gigabytes of refetch.
+      AFL_OSM_USE_CACHE_IF_PRESENT: ${AFL_OSM_USE_CACHE_IF_PRESENT:-true}
       AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list osm"
+      # OSM PBF parses can run for hours on full-region files. Override
+      # the runner-service default (15min) so the watchdog doesn't kill
+      # long-running facets like AllPopulatedPlaces. Matches the
+      # runner_env declared in fwh_osm's ExamplePackage.
+      AFL_TASK_EXECUTION_TIMEOUT_MS: "14400000"
+      AFL_STUCK_TIMEOUT_MS: "14400000"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm
       - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
