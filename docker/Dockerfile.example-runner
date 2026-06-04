@@ -74,10 +74,13 @@ RUN ARCH="$(dpkg --print-architecture)" \
 
 # Install facetwork from the build context.  Optional extras commonly
 # needed across examples (folium / pyshp / osm2geojson / requests)
-# come along for free.
+# come along for free. The `s3` extra (boto3) MUST be baked in: the OSM
+# runners write their cache + output to MinIO/S3, and scaled replicas all
+# race the same task list — a replica without boto3 would dead-letter every
+# storage write (same pet-vs-cattle reason as tippecanoe/pmtiles above).
 COPY pyproject.toml .
 COPY facetwork/ ./facetwork/
-RUN pip install --no-cache-dir -e ".[mongodb]" \
+RUN pip install --no-cache-dir -e ".[mongodb,s3]" \
     && pip install --no-cache-dir requests pyshp folium osm2geojson
 
 # Entrypoint installs the named example then starts the runner.

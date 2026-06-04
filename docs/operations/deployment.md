@@ -536,11 +536,31 @@ When the variables are unset, Docker uses named volumes (the original behavior).
 
 Facetwork also supports any **S3-compatible object store** (AWS S3, or a self-hosted **MinIO** surfacing the cache over HTTP) as a storage backend. This is the simplest way to make handler caches and outputs **portable across a multi-server runner fleet**: a task's step payload carries `s3://…` URIs that any runner on any host can resolve, instead of host-local paths like `/Volumes/afl_data/…`. `get_storage_backend()` detects `s3://` URIs and returns an `S3StorageBackend` (backed by `boto3`); reads are localized to a per-runner cache, writes upload on close.
 
+### Bundled in the full-stack compose (OSM fleet)
+
+`docker-compose.full-stack.yml` **already bundles MinIO** and the OSM runners
+(`osm-geocoder`, `osm-lz`) default to it — their durable cache + output go to
+`s3://afl-cache` with **no external disk**, and staging/tmp/locks stay on a
+local `afl_scratch` volume:
+
+```bash
+docker compose -f docker-compose.full-stack.yml up -d \
+    mongodb postgis minio minio-setup dashboard runner-osm-geocoder
+# minio-setup creates the bucket and exits 0; the runner waits for it.
+# MinIO console: http://localhost:9001 (minioadmin / minioadmin)
+```
+
+The example-runner image bakes in `boto3` (the `s3` extra), so scaled replicas
+all have it — a replica without it would dead-letter every storage write. To
+point the fleet at a different MinIO/S3, override `AFL_S3_ENDPOINT` /
+`AFL_S3_ACCESS_KEY` / `AFL_S3_SECRET_KEY` / `AFL_S3_BUCKET` in `.env`. The rest
+of this section covers a standalone MinIO + the env contract in detail.
+
 ### Requirements
 
-- **`boto3`** — install the `s3` extra: `pip install -e ".[s3]"` (boto3 is soft-imported, so it's only needed when an `s3://` path is used).
-- **A bucket** on the object store (created once, below).
-- For MinIO: the **MinIO container** (below). For AWS S3: nothing to run — just set credentials and omit `AFL_S3_ENDPOINT`.
+- **`boto3`** — install the `s3` extra: `pip install -e ".[s3]"` (boto3 is soft-imported, so it's only needed when an `s3://` path is used). The full-stack example-runner image already includes it.
+- **A bucket** on the object store (the bundled `minio-setup` creates it; standalone instructions below).
+- For MinIO: the **MinIO container** (below, or the bundled compose service). For AWS S3: nothing to run — just set credentials and omit `AFL_S3_ENDPOINT`.
 
 ### Starting MinIO (what the container requires)
 
