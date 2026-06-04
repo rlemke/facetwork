@@ -33,9 +33,37 @@
 # pinned container_names; runners use Compose's auto-naming so they're
 # scalable — `docker logs <project>-runner-osm-geocoder-1` etc.)
 #
-# External disk: /Volumes/afl_data is mounted into the dashboard and
-# every runner so all examples share the same cache + output paths.
-# Override the host path with AFL_DATA_DIR in .env or your shell.
+# Storage: the OSM runners (osm-geocoder, osm-lz) write their durable
+# cache + output to the bundled MinIO (S3) service — no external disk.
+# Their local-only scratch/output/geofabrik mirror live on internal-disk
+# named volumes. Other example runners still use a shared local-output
+# named volume (afl_output). The legacy /Volumes/afl_data bind mount is
+# gone, so a disconnected external drive no longer breaks the stack.
+# Point the OSM fleet at a different S3/MinIO by overriding AFL_S3_ENDPOINT
+# / AFL_S3_ACCESS_KEY / AFL_S3_SECRET_KEY / AFL_S3_BUCKET in .env.
+
+# Reusable S3/MinIO env for the OSM runners — durable cache + output go to
+# the object store; staging/tmp/locks stay on a local scratch volume.
+x-osm-s3-env: &osm-s3-env
+  AFL_STORAGE: s3
+  AFL_DATA_ROOT: s3://${AFL_S3_BUCKET:-afl-cache}
+  AFL_OSM_OUTPUT_BASE: s3://${AFL_S3_BUCKET:-afl-cache}/osm-output
+  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://minio:9000}
+  AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
+  AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
+  AFL_S3_REGION: ${AFL_S3_REGION:-us-east-1}
+  AFL_LOCAL_SCRATCH: /scratch
+  # get_output_base()/get_temp_dir() — keep handler temp + local output on the
+  # local scratch/output volumes, never on the object store.
+  AFL_LOCAL_OUTPUT_DIR: /data/output
+
+# Read-only S3 access for services that only resolve s3:// step payloads
+# (the dashboard) — no AFL_STORAGE switch, just endpoint + credentials.
+x-s3-creds: &s3-creds
+  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://minio:9000}
+  AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
+  AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
+  AFL_S3_REGION: ${AFL_S3_REGION:-us-east-1}
 
 services:
 
@@ -79,6 +107,43 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  # MinIO — S3-compatible object store backing the OSM cache + output.
+  # Data persists in the afl_minio_data named volume (internal disk).
+  minio:
+    image: minio/minio
+    container_name: facetwork-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${AFL_S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${AFL_S3_SECRET_KEY:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - afl_minio_data:/data
+    restart: unless-stopped
+
+  # One-shot: wait for MinIO, then create the bucket. Exits 0. OSM runners
+  # depend on this completing so the bucket exists before first write.
+  minio-setup:
+    image: minio/mc
+    container_name: facetwork-minio-setup
+    depends_on:
+      - minio
+    environment:
+      AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
+      AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
+      AFL_S3_BUCKET: ${AFL_S3_BUCKET:-afl-cache}
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 \"$$AFL_S3_ACCESS_KEY\" \"$$AFL_S3_SECRET_KEY\" >/dev/null 2>&1; do
+        echo 'waiting for minio...'; sleep 2;
+      done;
+      mc mb --ignore-existing local/\"$$AFL_S3_BUCKET\";
+      echo \"bucket local/$$AFL_S3_BUCKET ready\";
+      "
+    restart: "no"
+
   jenkins:
     image: jenkins/jenkins:lts
     container_name: facetwork-jenkins
@@ -113,12 +178,17 @@ services:
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
       AFL_EXAMPLES_DATABASE: ${AFL_EXAMPLES_DATABASE:-afl_examples}
       AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
-      AFL_LOCAL_OUTPUT_DIR: ${AFL_DATA_DIR:-/Volumes/afl_data}/output
+      # Local output volume (non-OSM examples write here). OSM durable output
+      # now lives in MinIO — the S3 creds below let the dashboard resolve
+      # s3:// step-payload paths; rendered OSM maps are served host-side via
+      # scripts/serve-tiled-map after localizing from S3.
+      <<: *s3-creds
+      AFL_LOCAL_OUTPUT_DIR: /data/output
       AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
     ports:
       - "${DASHBOARD_PORT:-8080}:8080"
     volumes:
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data:ro
+      - afl_output:/data/output:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\""]
       interval: 10s
@@ -186,15 +256,18 @@ services:
         condition: service_healthy
       postgis:
         condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
     environment:
+      # Durable cache (s3://afl-cache/cache/…) + output (…/osm-output) → MinIO;
+      # staging/tmp/locks → /scratch; handler temp/local output → /data/output.
+      <<: *osm-s3-env
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
       AFL_EXAMPLE_NAME: osm-geocoder
       AFL_EXAMPLE_REPO: fwh_osm
       AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
-      AFL_GEOFABRIK_MIRROR: /Volumes/afl_data/osm
-      AFL_OSM_OUTPUT_BASE: /Volumes/afl_data/osm-output
-      AFL_LOCAL_OUTPUT_DIR: ${AFL_DATA_DIR:-/Volumes/afl_data}/output
+      AFL_GEOFABRIK_MIRROR: /geofabrik
       # Pinned-cache mode: reuse an already-downloaded PBF as-is instead of
       # re-downloading because Geofabrik's daily rebuild changed the md5. Lets a
       # large cached region set drive the pipeline without gigabytes of refetch.
@@ -209,7 +282,9 @@ services:
       AFL_STUCK_TIMEOUT_MS: "14400000"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - afl_output:/data/output
+      - afl_scratch:/scratch
+      - afl_geofabrik:/geofabrik
     restart: unless-stopped
 
   runner-osm-lz:
@@ -224,19 +299,23 @@ services:
       # one first so it has its handlers registered when we seed.
       runner-osm-geocoder:
         condition: service_started
+      minio-setup:
+        condition: service_completed_successfully
     environment:
+      # Same S3/MinIO storage as osm-geocoder (it dispatches to those handlers).
+      <<: *osm-s3-env
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
       AFL_EXAMPLE_NAME: osm-lz
       AFL_EXAMPLE_REPO: fwh_osm_lz
       AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
-      AFL_LOCAL_OUTPUT_DIR: ${AFL_DATA_DIR:-/Volumes/afl_data}/output
       AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list continental"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm_lz:/handlers/fwh_osm_lz
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm:ro
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - afl_output:/data/output
+      - afl_scratch:/scratch
     restart: unless-stopped
 
   runner-noaa-weather:
@@ -361,8 +440,12 @@ services:
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
     restart: "no"
 
-# Persistent volumes for MongoDB, PostGIS, and Jenkins state.
+# Persistent volumes — all on Docker's internal disk (never /Volumes/afl_data).
 volumes:
   mongodb_data:
   postgis_data:
   jenkins_home:
+  afl_minio_data:    # MinIO object store (durable OSM cache + output)
+  afl_output:        # shared local handler output (dashboard serves from here)
+  afl_scratch:       # OSM local scratch: staging / tmp / locks (stage-then-finalize)
+  afl_geofabrik:     # OSM Geofabrik PBF mirror (optional local download cache)
