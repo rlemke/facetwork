@@ -108,7 +108,12 @@ services:
     restart: unless-stopped
 
   # MinIO — S3-compatible object store backing the OSM cache + output.
-  # Data persists in the afl_minio_data named volume (internal disk).
+  # Object bytes are stored on the attached APFS disk (capacity), bind-mounted
+  # at /data; override with AFL_MINIO_DATA_DIR. MinIO is the *only* service
+  # coupled to the attached disk now (single, contained failure boundary) —
+  # if the disk ejects mid-run, restart just this container after reconnect.
+  # The path must be a case-sensitive POSIX FS (APFS/ext4); MinIO needs atomic
+  # rename + xattrs. Do NOT point it at exFAT/FAT.
   minio:
     image: minio/minio
     container_name: facetwork-minio
@@ -120,7 +125,7 @@ services:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
-      - afl_minio_data:/data
+      - ${AFL_MINIO_DATA_DIR:-/Volumes/afl_data/minio}:/data
     restart: unless-stopped
 
   # One-shot: wait for MinIO, then create the bucket. Exits 0. OSM runners
@@ -440,12 +445,13 @@ services:
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
     restart: "no"
 
-# Persistent volumes — all on Docker's internal disk (never /Volumes/afl_data).
+# Persistent volumes — on Docker's internal disk. Exception: MinIO's object
+# store is bind-mounted to the attached APFS disk (see the minio service /
+# AFL_MINIO_DATA_DIR) for capacity, so afl_minio_data is no longer used.
 volumes:
   mongodb_data:
   postgis_data:
   jenkins_home:
-  afl_minio_data:    # MinIO object store (durable OSM cache + output)
   afl_output:        # shared local handler output (dashboard serves from here)
   afl_scratch:       # OSM local scratch: staging / tmp / locks (stage-then-finalize)
   afl_geofabrik:     # OSM Geofabrik PBF mirror (optional local download cache)
