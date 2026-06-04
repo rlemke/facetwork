@@ -185,3 +185,89 @@ class TestHDFSPayloads:
         payload = bytes(range(256)) * 100
         hdfs.create(path, payload)
         assert hdfs.read(path) == payload
+
+
+# ---------------------------------------------------------------------------
+# FileSystem facade, end-to-end against HDFS
+# ---------------------------------------------------------------------------
+
+
+class TestHDFSFileSystemFacade:
+    """Drive the init/config-driven facade against HDFS with bare paths, then
+    confirm independently (via the WebHDFS helper) that bytes land in HDFS.
+
+    Note: WebHDFS redirects the client to the datanode at its registered
+    hostname. From the Docker host that must resolve to a reachable address —
+    run the single-node cluster with ``--hostname localhost`` (and publish the
+    datanode HTTP port) or run in-cluster. If the datanode is unreachable the
+    facade write's redirect hop raises ConnectionError and the test skips
+    rather than fails.
+    """
+
+    def _facade(self, root):
+        from facetwork.runtime.storage import configure_fs
+
+        return configure_fs(backend="hdfs", root=root)
+
+    def test_live_facade_roundtrip(self, hdfs, workdir):
+        import json
+
+        import requests as _rq
+
+        from facetwork.runtime.storage import reset_fs
+
+        root = f"hdfs://localhost{workdir}"
+        try:
+            fs = self._facade(root)
+            assert fs.kind == "hdfs"
+            assert fs.resolve("a/b.json") == f"{root}/a/b.json"
+
+            obj = {"count": 42, "names": ["café", "二"], "nested": {"x": [1, 2, 3]}}
+            try:
+                fs.write_json("regions/summary.json", obj)
+            except _rq.exceptions.ConnectionError as exc:
+                pytest.skip(f"HDFS datanode not reachable from host (redirect): {exc}")
+            assert fs.read_json("regions/summary.json") == obj
+
+            blob = bytes(range(256)) * 4
+            fs.write_bytes("data/blob.bin", blob)
+            assert fs.read_bytes("data/blob.bin") == blob
+            assert fs.getsize("data/blob.bin") == len(blob)
+
+            fs.write_text("notes/u.txt", "héllo 世界")
+            assert fs.read_text("notes/u.txt") == "héllo 世界"
+
+            assert fs.exists("regions/summary.json") is True
+            assert fs.exists("regions/nope.json") is False
+            assert fs.isfile("data/blob.bin") is True
+            assert fs.isdir("regions") is True
+            assert "summary.json" in fs.listdir("regions")
+
+            # explicit hdfs:// URI overrides the configured default
+            fs.write_text(f"{root}/explicit/x.txt", "via explicit uri")
+            assert fs.read_text(f"{root}/explicit/x.txt") == "via explicit uri"
+
+            # independence: read via the WebHDFS helper (localizes redirects)
+            assert json.loads(hdfs.read(f"{workdir}/regions/summary.json")) == obj
+            assert hdfs.read(f"{workdir}/data/blob.bin") == blob
+        finally:
+            reset_fs()
+
+    def test_live_facade_autodetect(self, hdfs, workdir, monkeypatch):
+        from facetwork.runtime.storage import FileSystem
+
+        import requests as _rq
+
+        base = f"{workdir}/auto"
+        monkeypatch.setenv("AFL_STORAGE", "hdfs")
+        monkeypatch.setenv("AFL_HDFS_HOST", "localhost")
+        monkeypatch.setenv("AFL_HDFS_BASE", base)
+
+        fs = FileSystem(backend="auto", root="")
+        assert fs.kind == "hdfs"
+        assert fs.root == f"hdfs://localhost{base}"
+        try:
+            fs.write_text("hello.txt", "auto wrote me")
+        except _rq.exceptions.ConnectionError as exc:
+            pytest.skip(f"HDFS datanode not reachable from host (redirect): {exc}")
+        assert hdfs.read(f"{base}/hello.txt") == b"auto wrote me"

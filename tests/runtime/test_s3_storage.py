@@ -77,3 +77,73 @@ def test_live_roundtrip(tmp_path):
     finally:
         b.rmtree(prefix)
         assert b.isdir(prefix) is False
+
+
+# --- FileSystem facade, end-to-end against MinIO ------------------------------
+#
+# Exercises the init/config-driven facade exactly as handler code would (bare,
+# scheme-less paths under an s3:// root), and independently confirms via the raw
+# backend that the bytes really land in the object store.
+
+
+@_live_only
+def test_live_facade_roundtrip():
+    import json
+
+    from facetwork.runtime.storage import configure_fs, get_storage_backend, reset_fs
+
+    root = f"s3://{_BUCKET}/_pytest/{uuid.uuid4().hex}"
+    try:
+        fs = configure_fs(backend="s3", root=root)
+        assert fs.kind == "s3"
+        assert fs.resolve("a/b.json") == f"{root}/a/b.json"
+
+        obj = {"count": 42, "names": ["café", "二"], "nested": {"x": [1, 2, 3]}}
+        fs.write_json("regions/summary.json", obj)
+        assert fs.read_json("regions/summary.json") == obj
+
+        blob = bytes(range(256)) * 4
+        fs.write_bytes("data/blob.bin", blob)
+        assert fs.read_bytes("data/blob.bin") == blob
+        assert fs.getsize("data/blob.bin") == len(blob)
+
+        fs.write_text("notes/u.txt", "héllo 世界")
+        assert fs.read_text("notes/u.txt") == "héllo 世界"
+
+        assert fs.exists("regions/summary.json") is True
+        assert fs.exists("regions/nope.json") is False
+        assert fs.isfile("data/blob.bin") is True
+        assert "summary.json" in fs.listdir("regions")
+
+        # explicit s3:// URI overrides the configured default
+        fs.write_text(f"{root}/explicit/x.txt", "via explicit uri")
+        assert fs.read_text(f"{root}/explicit/x.txt") == "via explicit uri"
+
+        # independence: the object is really in MinIO (raw backend, not the facade)
+        raw = get_storage_backend(f"s3://{_BUCKET}/x")
+        with raw.open(f"{root}/regions/summary.json", "rb") as f:
+            assert json.loads(f.read()) == obj
+    finally:
+        reset_fs()
+        get_storage_backend(f"s3://{_BUCKET}/x").rmtree(root)
+
+
+@_live_only
+def test_live_facade_autodetect(monkeypatch):
+    from facetwork.runtime.storage import FileSystem, get_storage_backend
+
+    prefix = uuid.uuid4().hex
+    monkeypatch.setenv("AFL_STORAGE", "s3")
+    monkeypatch.setenv("AFL_S3_BUCKET", _BUCKET)
+    monkeypatch.setenv("AFL_S3_PREFIX", f"_pytest/{prefix}")
+
+    fs = FileSystem(backend="auto", root="")
+    assert fs.kind == "s3"
+    assert fs.root == f"s3://{_BUCKET}/_pytest/{prefix}"
+    try:
+        fs.write_text("hello.txt", "auto wrote me")
+        raw = get_storage_backend(f"s3://{_BUCKET}/x")
+        with raw.open(f"s3://{_BUCKET}/_pytest/{prefix}/hello.txt", "rb") as f:
+            assert f.read() == b"auto wrote me"
+    finally:
+        get_storage_backend(f"s3://{_BUCKET}/x").rmtree(f"s3://{_BUCKET}/_pytest/{prefix}")
