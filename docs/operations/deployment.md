@@ -398,6 +398,60 @@ curl http://localhost:8080/api/flows
 - Failed agents are detected via heartbeat timeout
 - Use the `RegistryRunner` model for simpler deployment (handlers in database)
 
+## Unified file access — the `FileSystem` facade
+
+Every module that reads or writes **data files** should go through one interface
+rather than calling `open()` / `pathlib` directly, so the same code works against
+local disk, HDFS, or S3/MinIO. There are two complementary entry points in
+[`facetwork/runtime/storage.py`](../../facetwork/runtime/storage.py):
+
+- **`get_storage_backend(path)`** — per-path dispatch *by URI scheme*. A path
+  starting with `hdfs://` → HDFS, `s3://` → S3, otherwise local. Use it when you
+  already hold a fully-qualified path/URI.
+- **`get_fs()` / `FileSystem`** — an **init/config-driven facade**. It selects
+  *one default backend* at startup and resolves bare, scheme-less paths under a
+  configured root, so handler code reads `regions/california.osm.pbf` and the
+  facade decides where that lives. An explicit `hdfs://` / `s3://` path still
+  overrides per call.
+
+```python
+from facetwork.runtime.storage import get_fs
+
+fs = get_fs()                                  # backend chosen from config (below)
+data = fs.read_bytes("regions/california.osm.pbf")
+fs.write_json("out/summary.json", {"count": 42})
+text = fs.read_text("s3://other-bucket/notes.txt")   # explicit URI overrides default
+```
+
+Convenience methods: `open / read_bytes / read_text / read_json / write_bytes /
+write_text / write_json / exists / isfile / isdir / listdir / walk / makedirs /
+getsize / localize`. Module-level shims (`read_text`, `write_text`, `fs_open`,
+`fs_exists`, …) delegate to the process-global `get_fs()` for terse call sites.
+
+### Selecting the default backend (`AFL_FS_BACKEND` / `AFL_FS_ROOT`)
+
+The facade picks its default backend in the order **Hadoop → MinIO/S3 → local
+file**:
+
+| Variable | Meaning |
+|----------|---------|
+| `AFL_FS_ROOT` | Base URI/path bare paths resolve under. Its **URI scheme decides the backend** — `hdfs://nn/user/afl`, `s3://my-bucket/cache`, or a local dir. |
+| `AFL_FS_BACKEND` | Explicit override: `auto` (default), `hdfs`, `s3`, or `local`. |
+
+With `auto` (no `AFL_FS_ROOT`), the facade also honours the existing fleet
+signals so it "just works" alongside the cache config: `AFL_STORAGE=hdfs` +
+`AFL_HDFS_HOST` → HDFS; `AFL_STORAGE=s3` or `AFL_S3_BUCKET` → S3; otherwise
+local. Backend credentials/endpoints are unchanged (`AFL_S3_ENDPOINT`,
+`AFL_WEBHDFS_PORT`, the standard AWS chain, etc.).
+
+> **Large-file caveat — stage locally, then finalize.** The HDFS/S3 backends
+> buffer a whole object in memory on write, so multi-GB artifacts (streamed
+> GeoJSON, tile pyramids) are **not** written through the facade. They are
+> streamed to a local temp and published with `finalize_output_file` /
+> `Storage.finalize_dir_from_local` (the OSM tools' `get_storage()` interface).
+> Use the facade for *modest, durable* artifacts (JSON summaries, graphs,
+> sidecars, small GeoJSON, HTML maps); keep big streaming I/O local-then-finalize.
+
 ## HDFS Integration
 
 Facetwork supports HDFS as a storage backend for OSM handler caches. When enabled, OSM agents read and write cache data (PBF files, GraphHopper graphs, GTFS feeds) to HDFS instead of local disk.

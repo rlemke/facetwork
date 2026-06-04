@@ -220,6 +220,13 @@ class StorageConfig:
         hdfs_max_retries: Maximum retries for transient HDFS errors
         hdfs_retry_delay: Base delay in seconds for HDFS retry backoff
         hdfs_user: HDFS user name for WebHDFS requests
+        fs_backend: Default storage backend for the ``FileSystem`` facade —
+            one of ``"auto"`` (default), ``"hdfs"``, ``"s3"`` or ``"local"``.
+            With ``"auto"`` the backend is inferred from ``fs_root``'s URI
+            scheme (precedence Hadoop → MinIO/S3 → local file).
+        fs_root: Base URI/path that bare (scheme-less) paths resolve under for
+            the default backend, e.g. ``hdfs://namenode/user/afl``,
+            ``s3://my-bucket/cache`` or a local directory. Empty → local CWD.
     """
 
     local_output_dir: str = _OUTPUT_BASE_DEFAULT
@@ -227,6 +234,8 @@ class StorageConfig:
     hdfs_max_retries: int = 3
     hdfs_retry_delay: float = 1.0
     hdfs_user: str = "root"
+    fs_backend: str = "auto"
+    fs_root: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dictionary (camelCase keys)."""
@@ -236,6 +245,8 @@ class StorageConfig:
             "hdfsMaxRetries": self.hdfs_max_retries,
             "hdfsRetryDelay": self.hdfs_retry_delay,
             "hdfsUser": self.hdfs_user,
+            "fsBackend": self.fs_backend,
+            "fsRoot": self.fs_root,
         }
 
     @classmethod
@@ -249,6 +260,8 @@ class StorageConfig:
             hdfs_max_retries=int(data.get("hdfs_max_retries", data.get("hdfsMaxRetries", 3))),
             hdfs_retry_delay=float(data.get("hdfs_retry_delay", data.get("hdfsRetryDelay", 1.0))),
             hdfs_user=str(data.get("hdfs_user", data.get("hdfsUser", "root"))),
+            fs_backend=str(data.get("fs_backend", data.get("fsBackend", "auto"))),
+            fs_root=str(data.get("fs_root", data.get("fsRoot", ""))),
         )
 
     @classmethod
@@ -261,6 +274,8 @@ class StorageConfig:
             AFL_HDFS_MAX_RETRIES
             AFL_HDFS_RETRY_DELAY
             HADOOP_USER_NAME
+            AFL_FS_BACKEND
+            AFL_FS_ROOT
         """
         defaults = cls()
         return cls(
@@ -275,6 +290,8 @@ class StorageConfig:
                 os.environ.get("AFL_HDFS_RETRY_DELAY", str(defaults.hdfs_retry_delay))
             ),
             hdfs_user=os.environ.get("HADOOP_USER_NAME", defaults.hdfs_user),
+            fs_backend=os.environ.get("AFL_FS_BACKEND", defaults.fs_backend),
+            fs_root=os.environ.get("AFL_FS_ROOT", defaults.fs_root),
         )
 
 
