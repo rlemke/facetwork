@@ -1,7 +1,14 @@
-"""Storage abstraction layer for local and HDFS file systems.
+"""Storage abstraction layer for local, HDFS and S3/MinIO file systems.
 
-Provides a unified interface for file operations across local and HDFS storage,
-enabling handlers to work with both local paths and hdfs:// URIs transparently.
+Two complementary entry points:
+
+- ``get_storage_backend(path)`` — per-path dispatch by URI scheme
+  (``hdfs://`` / ``s3://`` / local), returning the matching ``StorageBackend``.
+- ``FileSystem`` / ``get_fs()`` — an init/config-driven facade that selects one
+  default backend (Hadoop → MinIO/S3 → local file) and resolves bare,
+  scheme-less paths under a configured root. This is the interface every module
+  that reads data files should use; explicit ``scheme://`` paths still override
+  per call.
 """
 
 from __future__ import annotations
@@ -743,3 +750,289 @@ def get_storage_backend(path: str | None = None) -> StorageBackend:
     if _local_backend is None:
         _local_backend = LocalStorageBackend()
     return _local_backend
+
+
+# ---------------------------------------------------------------------------
+# FileSystem facade — one interface, configuration-selected default backend
+# ---------------------------------------------------------------------------
+#
+# ``get_storage_backend`` above dispatches *per path* by URI scheme. The
+# ``FileSystem`` facade below adds the complementary, *init/config-driven*
+# selection the platform wants for everyday data access: configure one default
+# backend once (Hadoop → MinIO/S3 → local file, per the user's stated order),
+# then read/write with bare, scheme-less paths everywhere. An explicit
+# ``hdfs://`` / ``s3://`` / ``file://`` path still overrides per call.
+
+_SCHEME_TO_BACKEND = {"hdfs": "hdfs", "s3": "s3", "file": "local"}
+
+
+def _detect_backend_and_root(backend: str, root: str) -> tuple[str, str]:
+    """Resolve the effective ``(backend_kind, root_uri)`` from config + env.
+
+    Precedence when *backend* is ``"auto"`` follows the requested order
+    Hadoop → MinIO/S3 → local file:
+
+    1. A URI scheme on *root* (``hdfs://`` / ``s3://`` / ``file://``) pins the
+       backend and *root* is the base URI.
+    2. Hadoop signal (``AFL_STORAGE=hdfs`` + ``AFL_HDFS_HOST``) →
+       ``hdfs://<host>[/AFL_HDFS_BASE]``.
+    3. MinIO/S3 signal (``AFL_STORAGE=s3`` or ``AFL_S3_BUCKET``) →
+       ``s3://<bucket>[/AFL_S3_PREFIX]``.
+    4. Otherwise local, with *root* used verbatim (empty → CWD-relative).
+
+    An explicit *backend* (``hdfs`` / ``s3`` / ``local``) wins over auto-detect;
+    *root* is then used as given (or synthesised from the per-backend env vars).
+    """
+    backend = (backend or "auto").lower()
+    root = root or ""
+
+    scheme = urlparse(root).scheme if "://" in root else ""
+    if scheme in _SCHEME_TO_BACKEND:
+        kind = _SCHEME_TO_BACKEND[scheme]
+        if backend not in ("auto", kind):
+            logger.warning(
+                "FileSystem: AFL_FS_BACKEND=%s conflicts with root scheme %s://; using %s",
+                backend,
+                scheme,
+                kind,
+            )
+        return kind, root
+
+    storage_env = (os.environ.get("AFL_STORAGE") or "").lower()
+
+    if backend == "hdfs" or (backend == "auto" and storage_env == "hdfs"):
+        host = os.environ.get("AFL_HDFS_HOST", "default")
+        base = os.environ.get("AFL_HDFS_BASE", "").strip("/")
+        return "hdfs", root or (f"hdfs://{host}/{base}".rstrip("/"))
+
+    if backend == "s3" or (
+        backend == "auto" and (storage_env == "s3" or os.environ.get("AFL_S3_BUCKET"))
+    ):
+        bucket = os.environ.get("AFL_S3_BUCKET", "")
+        prefix = os.environ.get("AFL_S3_PREFIX", "").strip("/")
+        synth = f"s3://{bucket}/{prefix}".rstrip("/") if bucket else ""
+        return "s3", root or synth
+
+    return "local", root
+
+
+class FileSystem:
+    """Unified, init-configured interface over local / HDFS / S3 (MinIO).
+
+    Selection is *configuration-driven*: at construction the facade picks one
+    default backend (Hadoop → MinIO/S3 → local file, per ``AFL_FS_BACKEND`` /
+    ``AFL_FS_ROOT``). Bare, scheme-less paths resolve under ``root`` on that
+    backend; a path carrying an explicit ``hdfs://`` / ``s3://`` / ``file://``
+    scheme always overrides and is routed there instead.
+
+    This is the interface every module that reads data files should use::
+
+        from facetwork.runtime.storage import get_fs
+
+        data = get_fs().read_bytes("regions/california.osm.pbf")
+        get_fs().write_json("out/summary.json", {"count": 42})
+
+    The underlying per-scheme backends (``LocalStorageBackend`` /
+    ``HDFSStorageBackend`` / ``S3StorageBackend``) are reused, so the facade
+    adds no new transport code — only the default-backend selection and a
+    convenience read/write surface.
+    """
+
+    def __init__(self, backend: str = "auto", root: str = "") -> None:
+        self.kind, self.root = _detect_backend_and_root(backend, root)
+
+    @classmethod
+    def from_config(cls) -> "FileSystem":
+        """Build from the centralized ``StorageConfig`` (env-backed)."""
+        from facetwork.config import get_config
+
+        cfg = get_config().storage
+        return cls(backend=cfg.fs_backend, root=cfg.fs_root)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return f"FileSystem(kind={self.kind!r}, root={self.root!r})"
+
+    # -- path resolution ---------------------------------------------------
+
+    def resolve(self, path: str) -> str:
+        """Resolve a (possibly bare) path to a concrete path/URI.
+
+        Explicit ``scheme://`` paths pass through untouched (per-call override).
+        Bare paths resolve under the configured ``root`` on the default backend.
+        For the local backend an absolute path is returned unchanged.
+        """
+        if "://" in path:
+            return path
+        if self.kind == "local":
+            if os.path.isabs(path) or not self.root:
+                return path
+            return os.path.join(self.root, path)
+        if not self.root:
+            # No root configured for a remote backend — caller must pass a full
+            # URI. Returning the path lets get_storage_backend raise clearly.
+            return path
+        # Remote roots are URI-shaped; a plain join matches HDFS/S3 join() and
+        # avoids instantiating a transport backend just to compute a string.
+        return self.root.rstrip("/") + "/" + path.lstrip("/")
+
+    def backend_for(self, path: str) -> StorageBackend:
+        """Return the concrete backend that will service *path*."""
+        return get_storage_backend(self.resolve(path))
+
+    # -- core operations (delegate to the resolved backend) ----------------
+
+    def open(self, path: str, mode: str = "r") -> IO:
+        rp = self.resolve(path)
+        return get_storage_backend(rp).open(rp, mode)
+
+    def exists(self, path: str) -> bool:
+        rp = self.resolve(path)
+        return get_storage_backend(rp).exists(rp)
+
+    def isfile(self, path: str) -> bool:
+        rp = self.resolve(path)
+        return get_storage_backend(rp).isfile(rp)
+
+    def isdir(self, path: str) -> bool:
+        rp = self.resolve(path)
+        return get_storage_backend(rp).isdir(rp)
+
+    def listdir(self, path: str) -> list[str]:
+        rp = self.resolve(path)
+        return get_storage_backend(rp).listdir(rp)
+
+    def walk(self, path: str) -> Iterator[tuple[str, list[str], list[str]]]:
+        rp = self.resolve(path)
+        yield from get_storage_backend(rp).walk(rp)
+
+    def makedirs(self, path: str, exist_ok: bool = True) -> None:
+        rp = self.resolve(path)
+        get_storage_backend(rp).makedirs(rp, exist_ok=exist_ok)
+
+    def getsize(self, path: str) -> int:
+        rp = self.resolve(path)
+        return get_storage_backend(rp).getsize(rp)
+
+    def getmtime(self, path: str) -> float:
+        rp = self.resolve(path)
+        return get_storage_backend(rp).getmtime(rp)
+
+    def remove(self, path: str) -> None:
+        rp = self.resolve(path)
+        get_storage_backend(rp).remove(rp)
+
+    def rmtree(self, path: str) -> None:
+        rp = self.resolve(path)
+        get_storage_backend(rp).rmtree(rp)
+
+    def join(self, *parts: str) -> str:
+        if not parts:
+            return ""
+        rp = self.resolve(parts[0])
+        return get_storage_backend(rp).join(rp, *parts[1:])
+
+    def dirname(self, path: str) -> str:
+        rp = self.resolve(path)
+        return get_storage_backend(rp).dirname(rp)
+
+    def basename(self, path: str) -> str:
+        rp = self.resolve(path)
+        return get_storage_backend(rp).basename(rp)
+
+    # -- convenience read/write -------------------------------------------
+
+    def read_bytes(self, path: str) -> bytes:
+        with self.open(path, "rb") as f:
+            return f.read()
+
+    def read_text(self, path: str, encoding: str = "utf-8") -> str:
+        # Read as binary then decode so behaviour is identical across backends
+        # (remote streams differ in how text mode is handled).
+        return self.read_bytes(path).decode(encoding)
+
+    def write_bytes(self, path: str, data: bytes) -> None:
+        rp = self.resolve(path)
+        backend = get_storage_backend(rp)
+        parent = backend.dirname(rp)
+        if parent:
+            try:
+                backend.makedirs(parent, exist_ok=True)
+            except Exception:  # pragma: no cover - best-effort parent create
+                pass
+        with backend.open(rp, "wb") as f:
+            f.write(data)
+
+    def write_text(self, path: str, data: str, encoding: str = "utf-8") -> None:
+        self.write_bytes(path, data.encode(encoding))
+
+    def read_json(self, path: str) -> Any:
+        import json
+
+        return json.loads(self.read_text(path))
+
+    def write_json(self, path: str, obj: Any, **dumps_kwargs: Any) -> None:
+        import json
+
+        self.write_text(path, json.dumps(obj, **dumps_kwargs))
+
+    def localize(self, path: str, target_dir: str | None = None) -> str:
+        """Ensure *path* is on local disk and return the local path.
+
+        Resolves the bare path first, then defers to the module-level
+        ``localize`` (which no-ops for already-local paths).
+        """
+        return localize(self.resolve(path), target_dir)
+
+
+# Process-global facade — initialized lazily from config on first use.
+_fs: FileSystem | None = None
+
+
+def get_fs() -> FileSystem:
+    """Return the process-global :class:`FileSystem` (built from config once)."""
+    global _fs
+    if _fs is None:
+        _fs = FileSystem.from_config()
+    return _fs
+
+
+def configure_fs(backend: str = "auto", root: str = "") -> FileSystem:
+    """Install a process-global :class:`FileSystem` with an explicit backend.
+
+    Use at startup (or in tests) to override the env/config-derived default.
+    """
+    global _fs
+    _fs = FileSystem(backend=backend, root=root)
+    return _fs
+
+
+def reset_fs() -> None:
+    """Drop the cached global facade so the next ``get_fs()`` rebuilds it."""
+    global _fs
+    _fs = None
+
+
+# Thin module-level helpers for ergonomic call-site migration. Each delegates
+# to the global facade; ``fs_open`` is named to avoid shadowing builtins.open.
+def fs_open(path: str, mode: str = "r") -> IO:
+    return get_fs().open(path, mode)
+
+
+def read_bytes(path: str) -> bytes:
+    return get_fs().read_bytes(path)
+
+
+def read_text(path: str, encoding: str = "utf-8") -> str:
+    return get_fs().read_text(path, encoding)
+
+
+def write_bytes(path: str, data: bytes) -> None:
+    get_fs().write_bytes(path, data)
+
+
+def write_text(path: str, data: str, encoding: str = "utf-8") -> None:
+    get_fs().write_text(path, data, encoding)
+
+
+def fs_exists(path: str) -> bool:
+    return get_fs().exists(path)

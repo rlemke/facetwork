@@ -65,8 +65,10 @@ def export(service: Any) -> dict:
 
 def export_to_file(service: Any, path: str | Path) -> dict:
     """Write ``export(service)`` to ``path`` as indented JSON. Returns a summary."""
+    from facetwork.runtime.storage import get_fs
+
     data = export(service)
-    Path(path).write_text(json.dumps(data, indent=2, default=str))
+    get_fs().write_text(str(path), json.dumps(data, indent=2, default=str))
     return {
         "path": str(path),
         "entries": len(data["entries"]),
@@ -128,7 +130,9 @@ def restore(data: dict, service: Any, *, rematerialize: bool = True) -> dict:
 
 def restore_from_file(path: str | Path, service: Any, *, rematerialize: bool = True) -> dict:
     """Read a backup JSON file and ``restore`` it."""
-    data = json.loads(Path(path).read_text())
+    from facetwork.runtime.storage import get_fs
+
+    data = get_fs().read_json(str(path))
     return restore(data, service, rematerialize=rematerialize)
 
 

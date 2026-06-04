@@ -183,6 +183,8 @@ scripts/easy.sh        # runs the full pipeline using .env values
 | **OSM data paths** | | |
 | `AFL_DATA_ROOT` | `/Volumes/afl_data` | Unified data root; OSM/handler caches live under `$AFL_DATA_ROOT/cache/<namespace>/`. Override just the cache with `AFL_CACHE_ROOT`; set `AFL_STORAGE=hdfs` or `s3` for remote storage. (Replaces the retired `AFL_CACHE_DIR`.) |
 | `AFL_STORAGE` | `local` | Storage backend: `local` \| `hdfs` \| `s3`. `s3` (AWS S3 / MinIO) makes cache + outputs portable across the fleet — see [S3 / MinIO Integration](../operations/deployment.md#s3--minio-integration). |
+| `AFL_FS_BACKEND` | `auto` | Default backend for the `get_fs()` [`FileSystem` facade](../operations/deployment.md#unified-file-access--the-filesystem-facade): `auto` \| `hdfs` \| `s3` \| `local`. `auto` infers from `AFL_FS_ROOT`'s scheme (Hadoop → S3 → local). |
+| `AFL_FS_ROOT` | *(empty)* | Base URI/path bare paths resolve under for the facade, e.g. `hdfs://nn/user/afl`, `s3://my-bucket/cache`, or a local dir. The URI scheme selects the backend. |
 | `AFL_OSM_OUTPUT_BASE` | `/tmp` | OSM extractor output base (local path, `hdfs://`, or `s3://` URI) |
 | **S3 / MinIO (when `AFL_STORAGE=s3`)** | | Requires the `s3` extra (boto3). Keep `AFL_OUTPUT_BASE` local. |
 | `AFL_S3_ENDPOINT` | *(AWS S3)* | Object-store endpoint, e.g. `http://localhost:9000` for MinIO. Unset → real AWS S3. |
