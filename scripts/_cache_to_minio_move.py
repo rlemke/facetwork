@@ -35,11 +35,16 @@ s3 = boto3.client(
     region_name=os.environ.get("AFL_S3_REGION", "us-east-1"),
     config=Config(s3={"addressing_style": "path"}, retries={"max_attempts": 3}),
 )
+# On a USB spinning disk, concurrent part reads interleave seeks and can
+# short-read -> MinIO rejects the part with IncompleteBody. Set
+# XFER_MAX_CONCURRENCY=1 to serialize reads for the flaky large files.
+_conc = int(os.environ.get("XFER_MAX_CONCURRENCY", "4") or 4)
+_chunk_mb = int(os.environ.get("XFER_CHUNK_MB", "64") or 64)
 xfer = TransferConfig(
-    multipart_threshold=64 * 1024 * 1024,
-    multipart_chunksize=64 * 1024 * 1024,
-    max_concurrency=4,
-    use_threads=True,
+    multipart_threshold=_chunk_mb * 1024 * 1024,
+    multipart_chunksize=_chunk_mb * 1024 * 1024,
+    max_concurrency=_conc,
+    use_threads=_conc > 1,
 )
 
 
