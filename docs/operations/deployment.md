@@ -611,6 +611,23 @@ AFL_OUTPUT_BASE=/var/afl/local                      # KEEP LOCAL — see gotcha 
 
 > **Gotcha — keep `AFL_OUTPUT_BASE` local.** Scratch/staging/temp must live on a local filesystem (you stage locally, then finalize onto the object store). The cache's `staging`/`tmp`/`locks` roots fall back to a local base automatically when `AFL_DATA_ROOT` is remote (override with `AFL_LOCAL_SCRATCH`), but `AFL_OUTPUT_BASE` also feeds the runtime's temp dir — point it at a **local** path, not an `s3://` URI. Put the durable artifacts on S3 via `AFL_DATA_ROOT` + `AFL_OSM_OUTPUT_BASE`.
 
+### Migrating an existing local cache into MinIO
+
+If you already have a populated local cache (e.g. the legacy `/Volumes/afl_data/cache`) and want to move it into the bundled MinIO so the fleet reads it over S3, use the host-driven migrator `scripts/_cache_to_minio_move.py`. It streams each file `/Volumes/afl_data/cache/<X>` → `s3://afl-cache/cache/<X>`, **verifies the uploaded object's size, then deletes the local source** — a true move that is idempotent and restart-safe (a file already in the bucket at the matching size is skipped, never re-uploaded). Because it verifies before deleting, it is safe to kill at any time.
+
+```bash
+docker compose -f docker-compose.full-stack.yml up -d minio
+SKIP_PATH_SUBSTR="osm/geojson/" .venv/bin/python scripts/_cache_to_minio_move.py
+# On "=== ALL MOVED CLEAN ===", sweep the emptied source dirs:
+find /Volumes/afl_data/cache -type d -empty -delete
+```
+
+- **Run it from the host, not `mc` inside a container.** Docker Desktop's virtiofs mishandles deep recursion over an external USB/APFS disk — directory walks return zero files (silent no-op "complete") and multipart parts short-read. Host-side reads are reliable; it uploads straight to `localhost:9000`.
+- **`SKIP_PATH_SUBSTR`** leaves any source path containing the substring in place — e.g. `osm/geojson/` skips the large regenerable whole-region `*.geojsonseq` dumps (recreate them from PBFs on next use). `SKIP_LARGER_THAN_GB` caps by size instead. Files move smallest-first, so a late "skip the giants" decision wastes almost nothing.
+- **Spinning / USB source disks — serialize multipart reads.** Large uploads can fail `UploadPart` with `IncompleteBody: You did not provide the number of bytes specified by the Content-Length HTTP header`: boto3's default `TransferConfig` reads several parts concurrently and the interleaved head-seeks on a spinning disk short-read, which MinIO rejects. Set `XFER_MAX_CONCURRENCY=1` to serialize part reads (reliable, somewhat slower since source and the MinIO data dir may share one disk); `XFER_CHUNK_MB` tunes the multipart chunk size.
+
+> The migrator only moves the durable `cache/` tree. Throughput is bounded by the slowest disk in the path — on a USB spinning disk where the MinIO data dir lives on the *same* drive, every byte is read once and written once on that one drive, so batching/SSD-staging doesn't beat it; the only real lever is **scope** (skip regenerable artifacts via `SKIP_PATH_SUBSTR`).
+
 ### Running S3 tests
 
 ```bash
