@@ -365,6 +365,12 @@ Copy `.env.example` to `.env` to configure MongoDB, scaling, overlays, and data 
 
 MongoDB, HDFS, and PostGIS run on external servers (defined in `/etc/hosts`): `afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn`, `afl-postgres` — they are **not** managed by Docker Compose.
 
+### Durable storage backend (cache + outputs)
+
+Handler caches and outputs live on a backend selected by `AFL_STORAGE` + `AFL_DATA_ROOT`: `local` (a path such as `/Volumes/afl_data`), `hdfs://`, or `s3://` — AWS S3 or a self-hosted **MinIO**. On `s3`/`hdfs`, step payloads carry portable `s3://`/`hdfs://` URIs that any runner on any host can resolve, so a multi-server fleet needs no shared disk; object stores don't do partial writes, so handlers stage to a local scratch dir and finalize on close (keep `AFL_OUTPUT_BASE`/`AFL_LOCAL_SCRATCH` **local**).
+
+`docker-compose.full-stack.yml` **bundles a MinIO service** and the OSM runners (`osm-geocoder`, `osm-lz`) default to it — durable cache + output go to `s3://afl-cache` (console http://localhost:9001, `minioadmin`/`minioadmin`), **no external disk**. The legacy local cache at `/Volumes/afl_data/cache` was migrated into the bundled MinIO with `scripts/_cache_to_minio_move.py` (host-driven, verify-before-delete, idempotent). Full setup, the env contract, and the cache-migration recipe live in [docs/operations/deployment.md](docs/operations/deployment.md) → **S3 / MinIO Integration**.
+
 ### Multi-server database access
 
 By default, the database start scripts bind to `127.0.0.1` (localhost only). To allow other machines to connect (e.g. runners on a second server), the databases must bind to `0.0.0.0`:

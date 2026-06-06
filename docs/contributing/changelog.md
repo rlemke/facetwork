@@ -1,6 +1,19 @@
 # Implementation Changelog
 
-**Current version: v0.46.0**
+**Current version: v0.47.0**
+
+## Completed (v0.47.0) — S3 / MinIO storage backend, bundled-MinIO cutover, legacy-cache migration
+
+Made handler **caches and outputs portable across a multi-server fleet** by backing them with an S3-compatible object store, bundled MinIO into the full-stack compose as the default durable store for the OSM runners, and migrated the legacy local cache into it. Step payloads now carry `s3://…` URIs any runner on any host can resolve, so the fleet needs no shared external disk. Details: [docs/operations/deployment.md](../operations/deployment.md) → *S3 / MinIO Integration*.
+
+**Storage backend (`facetwork/` + `_osm_tools/`):**
+- `S3StorageBackend` (resolved by `get_storage_backend()` for `s3://` URIs, backed by soft-imported `boto3`) + `_osm_tools` `S3Storage`: reads localize to a per-runner cache, writes upload on close. Object stores don't do partial writes, so scratch/staging/tmp/locks stay on a local base (`AFL_LOCAL_SCRATCH`); `AFL_OUTPUT_BASE` must stay local (feeds the runtime temp dir).
+- **FileSystem facade** (`get_fs()`): one config-driven file interface over local / HDFS / S3, selected via `AFL_FS_BACKEND` / `AFL_FS_ROOT` (priority Hadoop → MinIO/S3 → local). Routed ~68 stray `open()` sites in `fwh_osm` through it; streaming/osmium/scratch correctly left local (stage-then-finalize).
+- Env contract: `AFL_STORAGE=s3`, `AFL_DATA_ROOT=s3://afl-cache`, `AFL_OSM_OUTPUT_BASE`, `AFL_S3_ENDPOINT` (MinIO; omit for real AWS S3), `AFL_S3_ACCESS_KEY`/`AFL_S3_SECRET_KEY`/`AFL_S3_REGION`. `s3` pip extra. Live round-trip test gated on `AFL_S3_ENDPOINT` (`tests/runtime/test_s3_storage.py`).
+
+**Bundled MinIO (`docker-compose.full-stack.yml`):** a `minio` service + one-shot `minio-setup` (creates the `afl-cache` bucket); the OSM runners (`osm-geocoder`, `osm-lz`) default to `s3://afl-cache` with **no external disk** (console http://localhost:9001, `minioadmin`/`minioadmin`). The example-runner image bakes in `boto3` so scaled replicas all have it. Overridable via `AFL_S3_BUCKET` / `MINIO_API_PORT` / `MINIO_CONSOLE_PORT` / `AFL_MINIO_DATA_DIR`.
+
+**Legacy-cache migration (`scripts/_cache_to_minio_move.py`):** host-driven boto3 migrator that **moves** `/Volumes/afl_data/cache/<X>` → `s3://afl-cache/cache/<X>` — upload, size-verify, then delete the source. Idempotent and restart-safe (skips files already in the bucket at matching size; verify-before-delete → killable any time), smallest-first, with `SKIP_PATH_SUBSTR` / `SKIP_LARGER_THAN_GB` to leave regenerable artifacts (e.g. the ~1.65 TB `osm/geojson/*.geojsonseq`) on disk. Driven from the host because Docker virtiofs mishandles deep recursion over an external USB/APFS disk. Added `XFER_MAX_CONCURRENCY` / `XFER_CHUNK_MB` knobs after large multipart uploads from a USB spinning disk failed `UploadPart` with `IncompleteBody` (concurrent part-reads short-read on head-seek); `XFER_MAX_CONCURRENCY=1` serializes reads and fixes it. Used to move all 183.5 GB of non-geojson cache (PBFs, routable roads) into the bundled MinIO.
 
 ## Completed (v0.46.0) — Claude Workflow Catalog (store / version / run FFL with no file)
 
