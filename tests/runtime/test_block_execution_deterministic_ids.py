@@ -19,6 +19,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from facetwork.runtime.handlers.block_execution import BlockExecutionBeginHandler
+from facetwork.runtime.handlers.blocks import StatementBlocksBeginHandler
 from facetwork.runtime.step import StepDefinition
 from facetwork.runtime.types import ObjectType, deterministic_step_id
 
@@ -132,3 +133,51 @@ class TestForeachFanOutConvergence:
         created = ctx.changes.created_steps
         assert [s.foreach_value for s in created] == ["africa", "europe"]
         assert all(s.foreach_var == "r" for s in created)
+
+
+class TestStatementBlockConvergence:
+    """The workflow-body andThen blocks (``block-0``, ``block-1``, …) are the
+    *top* of the fan-out cascade. If these get random ids, two runners produce
+    different ``block-N`` instances, and every descendant (foreach sub-blocks,
+    grandchild steps) multiplies underneath them. Pin their convergence."""
+
+    @staticmethod
+    def _wf_step(workflow_id: str = "wf-1") -> StepDefinition:
+        return StepDefinition.create(
+            workflow_id=workflow_id,
+            object_type=ObjectType.WORKFLOW,
+            facet_name="W",
+        )
+
+    @staticmethod
+    def _ctx() -> MagicMock:
+        ctx = MagicMock()
+        ctx.persistence.block_step_exists.return_value = False
+        ctx.changes.created_steps = []
+        ctx.changes.add_created_step.side_effect = (
+            lambda s: ctx.changes.created_steps.append(s)
+        )
+        return ctx
+
+    def test_two_runners_produce_identical_block_ids(self):
+        body = [
+            {"type": "AndThenBlock", "steps": []},
+            {"type": "AndThenBlock", "foreach": {"variable": "r", "iterable": []}},
+        ]
+        step_a = self._wf_step()
+        ctx_a = self._ctx()
+        StatementBlocksBeginHandler(step_a, ctx_a)._create_block_steps(body)
+
+        step_b = step_a.clone()
+        ctx_b = self._ctx()
+        StatementBlocksBeginHandler(step_b, ctx_b)._create_block_steps(body)
+
+        ids_a = [s.id for s in ctx_a.changes.created_steps]
+        ids_b = [s.id for s in ctx_b.changes.created_steps]
+        assert len(ids_a) == 2
+        assert ids_a == ids_b  # converge → unique index dedups duplicates
+        # and match the dedup-index key (container-scoped, block_id None)
+        for i, blk in enumerate(ctx_a.changes.created_steps):
+            assert blk.id == deterministic_step_id(
+                step_a.workflow_id, None, f"block-{i}", step_a.id
+            )
