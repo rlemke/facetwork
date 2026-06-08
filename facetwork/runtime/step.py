@@ -161,6 +161,7 @@ class StepDefinition:
         container_type: str | None = None,
         block_id: StepId | BlockId | None = None,
         root_id: StepId | None = None,
+        step_uuid: StepId | None = None,
     ) -> "StepDefinition":
         """Create a new step in CREATED state.
 
@@ -174,12 +175,16 @@ class StepDefinition:
             container_type: Type of container
             block_id: Block containing this step
             root_id: Root step in the flow
+            step_uuid: Explicit step id. When provided (e.g. a
+                deterministic block-scoped id), concurrent creators of the
+                same logical step converge on one id so the unique index
+                dedups duplicates. Defaults to a fresh random id.
 
         Returns:
             New StepDefinition in CREATED state
         """
         return cls(
-            id=step_id(),
+            id=step_uuid if step_uuid is not None else step_id(),
             object_type=object_type,
             workflow_id=workflow_id,
             statement_id=statement_id,

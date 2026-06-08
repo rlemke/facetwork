@@ -35,6 +35,31 @@ def step_id() -> StepId:
     return StepId(generate_id())
 
 
+# Stable namespace for deriving deterministic, block-scoped step ids.
+_STEP_ID_NAMESPACE = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
+
+
+def deterministic_step_id(
+    workflow_id: str,
+    block_id: str | None,
+    statement_id: str | None,
+    container_id: str | None,
+) -> StepId:
+    """Derive a deterministic StepId for a block-scoped child step.
+
+    Two runners that concurrently create the *same* logical step (same
+    ``workflow_id``/``block_id``/``statement_id``/``container_id``) produce the
+    **same** id, so the unique ``uuid`` index — and the
+    ``(statement_id, block_id, container_id)`` dedup index — collapse the
+    duplicates instead of letting losers survive with fresh random ids.
+
+    This mirrors the dedup index key (plus ``workflow_id`` so re-runs with a
+    fresh execution workflow id never collide with a prior run's steps).
+    """
+    key = f"{workflow_id}|{container_id}|{block_id}|{statement_id}"
+    return StepId(str(uuid.uuid5(_STEP_ID_NAMESPACE, key)))
+
+
 def block_id() -> BlockId:
     """Generate a new BlockId."""
     return BlockId(generate_id())

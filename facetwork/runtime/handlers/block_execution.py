@@ -97,7 +97,7 @@ class BlockExecutionBeginHandler(StateHandler):
         """
         from ..expression import EvaluationContext, ExpressionEvaluator
         from ..step import StepDefinition
-        from ..types import ObjectType
+        from ..types import ObjectType, deterministic_step_id
 
         foreach = block_ast["foreach"]
         variable = foreach.get("variable", "")
@@ -200,6 +200,12 @@ class BlockExecutionBeginHandler(StateHandler):
                 container_id=self.step.container_id,
                 block_id=self.step.id,
                 root_id=self.step.root_id or self.step.container_id,
+                step_uuid=deterministic_step_id(
+                    self.step.workflow_id,
+                    self.step.id,
+                    foreach_stmt_id,
+                    self.step.container_id,
+                ),
             )
             sub_block.foreach_var = variable
             sub_block.foreach_value = element
@@ -239,7 +245,7 @@ class BlockExecutionBeginHandler(StateHandler):
         """
         from ..expression import EvaluationContext, ExpressionEvaluator
         from ..step import StepDefinition
-        from ..types import ObjectType
+        from ..types import ObjectType, deterministic_step_id
 
         match_ast = block_ast["when"]
         cases = match_ast.get("cases", [])
@@ -360,6 +366,12 @@ class BlockExecutionBeginHandler(StateHandler):
                 container_id=self.step.container_id,
                 block_id=self.step.id,
                 root_id=self.step.root_id or self.step.container_id,
+                step_uuid=deterministic_step_id(
+                    self.step.workflow_id,
+                    self.step.id,
+                    match_stmt_id,
+                    self.step.container_id,
+                ),
             )
 
             # Cache the body AST for this sub-block
@@ -442,6 +454,7 @@ class BlockExecutionBeginHandler(StateHandler):
             completed: Set of completed statement IDs
         """
         from ..step import StepDefinition
+        from ..types import deterministic_step_id
 
         ready = graph.get_ready_statements(completed)
         for stmt in ready:
@@ -459,6 +472,12 @@ class BlockExecutionBeginHandler(StateHandler):
                 block_id=self.step.id,
                 container_id=self.step.container_id,
                 root_id=self.step.root_id or self.step.container_id,
+                step_uuid=deterministic_step_id(
+                    self.step.workflow_id,
+                    self.step.id,
+                    stmt.id,
+                    self.step.container_id,
+                ),
             )
 
             logger.debug(
@@ -745,6 +764,7 @@ class BlockExecutionContinueHandler(StateHandler):
     ) -> None:
         """Create steps for statements that are ready."""
         from ..step import StepDefinition
+        from ..types import deterministic_step_id
 
         ready = graph.get_ready_statements(completed)
         for stmt in ready:
@@ -772,6 +792,12 @@ class BlockExecutionContinueHandler(StateHandler):
                 block_id=self.step.id,
                 container_id=self.step.container_id,
                 root_id=self.step.root_id or self.step.container_id,
+                step_uuid=deterministic_step_id(
+                    self.step.workflow_id,
+                    self.step.id,
+                    stmt.id,
+                    self.step.container_id,
+                ),
             )
 
             logger.debug(
