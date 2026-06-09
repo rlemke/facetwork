@@ -264,7 +264,7 @@ class StatementBlocksBeginHandler(StateHandler):
     def _create_block_steps(self, body) -> None:
         """Create block steps for andThen blocks in body."""
         from ..step import StepDefinition
-        from ..types import ObjectType
+        from ..types import ObjectType, deterministic_step_id
 
         # The body could be a single andThen block or a list of blocks
         bodies = body if isinstance(body, list) else [body]
@@ -296,6 +296,12 @@ class StatementBlocksBeginHandler(StateHandler):
                 container_id=self.step.id,
                 container_type=self.step.object_type,
                 root_id=self.step.root_id or self.step.id,
+                step_uuid=deterministic_step_id(
+                    self.step.workflow_id,
+                    None,
+                    statement_id,
+                    self.step.id,
+                ),
             )
 
             # Add to pending changes

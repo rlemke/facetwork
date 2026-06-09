@@ -66,7 +66,7 @@ class CatchBeginHandler(StateHandler):
     def _process_catch_simple(self, catch_ast: dict) -> StateChangeResult:
         """Create a single catch sub-block."""
         from ..step import StepDefinition
-        from ..types import ObjectType
+        from ..types import ObjectType, deterministic_step_id
 
         statement_id = "catch-block-0"
 
@@ -100,6 +100,12 @@ class CatchBeginHandler(StateHandler):
             container_id=self.step.id,
             container_type=self.step.object_type,
             root_id=self.step.root_id or self.step.id,
+            step_uuid=deterministic_step_id(
+                self.step.workflow_id,
+                None,
+                statement_id,
+                self.step.id,
+            ),
         )
 
         # Cache the body AST for this sub-block
@@ -119,7 +125,7 @@ class CatchBeginHandler(StateHandler):
         """Process catch when block — evaluate conditions and create sub-blocks."""
         from ..expression import EvaluationContext, ExpressionEvaluator
         from ..step import StepDefinition
-        from ..types import ObjectType
+        from ..types import ObjectType, deterministic_step_id
 
         cases = when_ast.get("cases", [])
 
@@ -221,6 +227,12 @@ class CatchBeginHandler(StateHandler):
                 container_id=self.step.container_id,
                 block_id=self.step.id,
                 root_id=self.step.root_id or self.step.container_id,
+                step_uuid=deterministic_step_id(
+                    self.step.workflow_id,
+                    self.step.id,
+                    catch_stmt_id,
+                    self.step.container_id,
+                ),
             )
 
             self.context.set_block_ast_cache(sub_block.id, case_body)
