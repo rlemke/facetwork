@@ -13,7 +13,7 @@ cd ..
 cd fwh_noaa_weather
 git pull
 cd ..
-cd fwh_censor_monitoring
+cd fwh_sensor_monitoring
 git pull
 cd ..
 cd fwh_genomics
