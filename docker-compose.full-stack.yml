@@ -34,13 +34,15 @@
 # scalable — `docker logs <project>-runner-osm-geocoder-1` etc.)
 #
 # Storage: the OSM runners (osm-geocoder, osm-lz) write their durable
-# cache + output to the bundled MinIO (S3) service — no external disk.
-# Their local-only scratch/output/geofabrik mirror live on internal-disk
-# named volumes. Other example runners still use a shared local-output
-# named volume (afl_output). The legacy /Volumes/afl_data bind mount is
-# gone, so a disconnected external drive no longer breaks the stack.
-# Point the OSM fleet at a different S3/MinIO by overriding AFL_S3_ENDPOINT
-# / AFL_S3_ACCESS_KEY / AFL_S3_SECRET_KEY / AFL_S3_BUCKET in .env.
+# cache + output to the bundled MinIO (S3) service. osm-geocoder STAGING is
+# bind-mounted to the external disk (${AFL_DATA_DIR}/osm-scratch): continent
+# extracts (europe ~30GB, north-america ~15GB) staged concurrently overflow
+# the small internal Docker disk and ENOSPC-crash mongodb (which shares it via
+# mongodb_data). Tradeoff: like MinIO's /data, osm-scratch is now coupled to
+# the attached disk — if it ejects mid-download, restart the OSM runners after
+# reconnect. Smaller runners' output/geofabrik mirror stay on internal-disk
+# named volumes. Point the OSM fleet at a different S3/MinIO by overriding
+# AFL_S3_ENDPOINT / AFL_S3_ACCESS_KEY / AFL_S3_SECRET_KEY / AFL_S3_BUCKET in .env.
 
 # Reusable S3/MinIO env for the OSM runners — durable cache + output go to
 # the object store; staging/tmp/locks stay on a local scratch volume.
@@ -292,10 +294,22 @@ services:
       # runner_env declared in fwh_osm's ExamplePackage.
       AFL_TASK_EXECUTION_TIMEOUT_MS: "14400000"
       AFL_STUCK_TIMEOUT_MS: "14400000"
+      # Multi-GB Geofabrik downloads (europe ~30GB, north-america ~15GB) do
+      # blocking stream I/O that can't renew the task lease mid-download. The
+      # 5-min default lease expires and another runner steals + restarts the
+      # download from zero — a 30GB extract then never finishes. Match the lease
+      # to the execution timeout so a long download holds its task to completion.
+      AFL_LEASE_DURATION_MS: "14400000"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm
       - afl_output:/data/output
-      - afl_scratch:/scratch
+      # OSM staging (in-flight multi-GB PBF downloads) MUST go on the large
+      # external disk, NOT the small internal Docker volume. Continent extracts
+      # (europe ~30GB, north-america ~15GB) staged concurrently on the ~58GB
+      # internal disk overflow it and ENOSPC-crash mongodb (shared volume). The
+      # external disk is a local POSIX FS (satisfies "scratch stays local") with
+      # terabytes free. AFL_LOCAL_SCRATCH=/scratch resolves staging under here.
+      - ${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch
       - afl_geofabrik:/geofabrik
     restart: unless-stopped
 
