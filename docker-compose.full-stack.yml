@@ -341,7 +341,10 @@ services:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm_lz:/handlers/fwh_osm_lz
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm:ro
       - afl_output:/data/output
-      - afl_scratch:/scratch
+      # External scratch (same as osm-geocoder): osm-lz dispatches osm.* work
+      # that can stage multi-GB PBFs; on the small internal disk that ENOSPC-
+      # crashes the shared mongodb_data volume.
+      - ${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch
     restart: unless-stopped
 
   runner-noaa-weather:
