@@ -34,13 +34,15 @@
 # scalable — `docker logs <project>-runner-osm-geocoder-1` etc.)
 #
 # Storage: the OSM runners (osm-geocoder, osm-lz) write their durable
-# cache + output to the bundled MinIO (S3) service — no external disk.
-# Their local-only scratch/output/geofabrik mirror live on internal-disk
-# named volumes. Other example runners still use a shared local-output
-# named volume (afl_output). The legacy /Volumes/afl_data bind mount is
-# gone, so a disconnected external drive no longer breaks the stack.
-# Point the OSM fleet at a different S3/MinIO by overriding AFL_S3_ENDPOINT
-# / AFL_S3_ACCESS_KEY / AFL_S3_SECRET_KEY / AFL_S3_BUCKET in .env.
+# cache + output to the bundled MinIO (S3) service. osm-geocoder STAGING is
+# bind-mounted to the external disk (${AFL_DATA_DIR}/osm-scratch): continent
+# extracts (europe ~30GB, north-america ~15GB) staged concurrently overflow
+# the small internal Docker disk and ENOSPC-crash mongodb (which shares it via
+# mongodb_data). Tradeoff: like MinIO's /data, osm-scratch is now coupled to
+# the attached disk — if it ejects mid-download, restart the OSM runners after
+# reconnect. Smaller runners' output/geofabrik mirror stay on internal-disk
+# named volumes. Point the OSM fleet at a different S3/MinIO by overriding
+# AFL_S3_ENDPOINT / AFL_S3_ACCESS_KEY / AFL_S3_SECRET_KEY / AFL_S3_BUCKET in .env.
 
 # Reusable S3/MinIO env for the OSM runners — durable cache + output go to
 # the object store; staging/tmp/locks stay on a local scratch volume.
