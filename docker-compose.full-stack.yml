@@ -277,6 +277,13 @@ services:
       # re-downloading because Geofabrik's daily rebuild changed the md5. Lets a
       # large cached region set drive the pipeline without gigabytes of refetch.
       AFL_OSM_USE_CACHE_IF_PRESENT: ${AFL_OSM_USE_CACHE_IF_PRESENT:-true}
+      # Accept a COMPLETE download whose md5 no longer matches upstream: for
+      # multi-GB extracts (germany, russia, …) the .md5 is fetched before the
+      # long download finishes, and Geofabrik's daily rebuild can advance the
+      # .md5 mid-download — a stale-upstream mismatch, not a corrupt file. Off
+      # would retry forever and dead-letter. (A *missing* .md5 is handled
+      # separately by fetch_md5_or_none.)
+      AFL_OSM_TOLERATE_MD5: ${AFL_OSM_TOLERATE_MD5:-true}
       AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list osm"
       # OSM PBF parses can run for hours on full-region files. Override
@@ -455,3 +462,14 @@ volumes:
   afl_output:        # shared local handler output (dashboard serves from here)
   afl_scratch:       # OSM local scratch: staging / tmp / locks (stage-then-finalize)
   afl_geofabrik:     # OSM Geofabrik PBF mirror (optional local download cache)
+
+# Enable IPv6 on the project's default network so OSM runners can reach
+# download.geofabrik.de over IPv6 (Geofabrik's IPv4 endpoints are
+# intermittently unreachable from this host; IPv6 stays up). Requires the
+# daemon to have "ipv6": true + "ip6tables": true (see ~/.docker/daemon.json).
+networks:
+  default:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:cafe:e701::/64
