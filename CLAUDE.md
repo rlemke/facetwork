@@ -111,6 +111,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Approximate freeway routing (`osm.Network`, design): pure in-process graph search over a tiny noded-freeway artifact — no engine daemon; tiny network → read-once-per-runner, embarrassingly parallel | [docs/architecture/approximate-freeway-routing.md](docs/architecture/approximate-freeway-routing.md) |
 | Deployment guide | [docs/operations/deployment.md](docs/operations/deployment.md) |
 | Full-stack Docker Compose (one runner per fwh_* example) | [docs/operations/full-stack-compose.md](docs/operations/full-stack-compose.md) |
+| **Multi-server fleet** (`fleet`/`fleet-agent`/`start-worker`: shared external MinIO+MongoDB, central config, encrypted secrets, discovery) **+ local simulation** (`scripts/simulate-fleet`) | [#multi-server-runner-fleet--local-simulation](#multi-server-runner-fleet--local-simulation) · [docs/operations/deployment.md](docs/operations/deployment.md) |
 | Tutorial | [docs/getting-started/tutorial.md](docs/getting-started/tutorial.md) |
 | Tools + handlers pattern (per-domain CLI + `_<pkg>_tools/` + shim) | [agent-spec/tools-pattern.agent-spec.yaml](agent-spec/tools-pattern.agent-spec.yaml) |
 | Cache layout (sidecars, namespaces, cache types) | [agent-spec/cache-layout.agent-spec.yaml](agent-spec/cache-layout.agent-spec.yaml) |
@@ -393,6 +394,44 @@ scripts/start-runner --example osm-geocoder -- --log-format text
 Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets.
 
 Set `AFL_POSTGIS_URL` (e.g. `postgresql://afl:afl@afl-postgres:5432/afl_gis`) for PostGIS imports. Without this, the importer falls back to a hardcoded default that may not match your setup.
+
+### Multi-server runner fleet + local simulation
+
+A fleet of runner servers shares **one** MongoDB + **one** MinIO; each extra
+server runs *runners only* and self-configures from a central config. The
+controller lives in `scripts/`:
+
+| Script | Role |
+|--------|------|
+| `scripts/start-worker` | Bring up runners on this host against an external Mongo+MinIO (`.env.worker`); preflight-checks both. `docker-compose.worker.yml` is the override that drops the bundled infra. |
+| `scripts/fleet` | Admin (run anywhere): `set` the central config (MinIO endpoint / replicas / image), `status` (live runners + per-host drift), `secret gen-key\|set\|show` (MinIO creds encrypted in Mongo with `AFL_FLEET_KEY`). |
+| `scripts/fleet-agent` | Per server: `apply` (one-shot) or `watch` (daemon) — reads the central config, **discovers Mongo** (explicit → `AFL_MONGODB_URL` → mDNS → `afl-mongodb`), decrypts creds, brings runners up, records drift. Bootstrap = the Mongo URL only. |
+| `scripts/fleet-advertise` | Optional mDNS advertiser for the infra host (needs `zeroconf`). |
+
+A new server joins with one command — `export AFL_FLEET_KEY=<key>; scripts/fleet-agent watch` — and the whole fleet is driven by editing the central config once (`fleet set --osm-replicas N`, `--image …`). Full guide: [docs/operations/deployment.md](docs/operations/deployment.md) → **"Adding a server to the fleet"** / **"Central fleet config"**.
+
+**Local simulation — verify the whole thing on one box.** `scripts/simulate-fleet`
+spins up N "servers" as separate compose projects on the running full-stack's
+shared network, each brought up by `fleet-agent` from the central config +
+encrypted secret store, then runs a fan-out heat map across them and confirms the
+leaves distributed across servers and the merge pulled every server's MinIO output.
+
+```bash
+# Prereqs: the full stack must be up (shared MinIO+MongoDB), and the venv must have
+# pymongo + cryptography (for the secret store; zeroconf only for mDNS):
+docker compose -f docker-compose.full-stack.yml up -d        # shared infra
+pip install -e ".[mongodb,s3]" && pip install cryptography   # if not already
+
+scripts/simulate-fleet --servers 3                           # bring up 3 servers + fleet status
+#   then submit a fan-out:  scripts/ffl-run --primary .../osmheatmap.ffl --library … \
+#     --workflow osm.heatmap.ContinentHeatmap \
+#     --inputs '{"region_names":["California","Nevada","Arizona"]}' --task-list osm
+scripts/simulate-fleet --down                                # tear it all down
+```
+
+It addresses the shared MinIO/Mongo by the host's LAN IP (reachable from both the
+host and the sim containers). Each sim "server" is `fleet-srv1/2/3`; `fleet status`
+shows them up-to-date and the fan-out's `ByScript` leaves run on different servers.
 
 ### Runner resilience tuning
 
