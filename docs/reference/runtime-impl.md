@@ -1116,8 +1116,17 @@ Handler completes on Server A:
 2. **Continuation events (`continuation.py`):**
    - Generates `TaskDefinition` entries on the `_afl_continue` task list
    - Each continuation carries only `step_id` and `reason` (lightweight)
-   - Deduplicated per target step — at most one pending continuation per step
+   - Deduplicated per target step — at most one pending continuation per step (see *Continuation coalescing* below)
    - Committed atomically alongside step changes (no partial state)
+
+**Continuation coalescing (per-block, generation-time + claim-time):**
+
+A continuation says "a child of block B progressed — re-evaluate B." One re-evaluation of B already inspects all of B's children, so N children progressing must collapse into one continuation, not N. Without this, a large `foreach` fan-out (hundreds of sub-blocks, each re-dirtying the parent block as it progresses) produces O(N²) duplicate continuations that flood the runner thread pool and starve event-task claiming — the runner spins re-evaluating the same block (`resume_step done iterations=0`) and stops dispatching handlers (the foreach **livelock**). Coalescing happens at two points:
+
+- **Generation-time dedup** — `process_single_step()` (`evaluator.py`) filters `remaining_dirty` against `Persistence.get_pending_continuation_step_ids(workflow_id)` before calling `generate_continuation_events()`, so a block that already has a PENDING continuation gets no second one. The default implementation scans the workflow's tasks; stores may override with an indexed query.
+- **Claim-time coalescing** — `_process_continuation()` (`registry_runner.py`) calls `Persistence.delete_pending_continuations_for_step(step_id, except_task_id=task.uuid)` the moment it begins processing. That single re-evaluation satisfies every other continuation already queued for the step, so the redundant siblings are *deleted* (mongo `delete_many` in `mongo_store/tasks.py`; in-memory filter in `memory_store.py`; base no-op on `PersistenceAPI`) rather than each claimed and processed to a no-op. This also closes the generation-time race: if two continuations for the same block are enqueued concurrently, whichever is claimed first collapses the rest.
+
+Both check **PENDING state only**. A child event that arrives *after* a continuation has been claimed (i.e. its sibling is no longer pending) still generates a fresh continuation — coalescing only ever removes redundant in-flight notifications, never a genuinely-new one, so no completion is lost.
 
 3. **Optimistic concurrency (`version.sequence`):**
    - Each `StepDefinition.version` has a `sequence` counter (monotonic)
@@ -1129,7 +1138,7 @@ Handler completes on Server A:
 4. **RegistryRunner integration:**
    - `_poll_cycle()` claims both handler tasks (from `default` task list) and continuation tasks (from `_afl_continue` task list)
    - `poll_once()` also processes continuations (for testing)
-   - `_process_continuation()` calls `process_single_step()` on the target step
+   - `_process_continuation()` first coalesces redundant sibling continuations (`delete_pending_continuations_for_step`), then calls `process_single_step()` on the target step
    - `_process_event()` calls `continue_step()` then falls back to `_resume_workflow()` for inline dispatch compatibility
 
 **Multi-server execution model:**
@@ -1168,19 +1177,24 @@ No server holds a lock on the workflow. Each processes its step independently. T
 | 1 server | `resume_step()` (O(depth)) | Sequential, 22ms per step |
 | 100 servers | `process_single_step()` | Parallel — each server processes independently |
 
-**Files:** `evaluator.py:process_single_step()`, `continuation.py`, `registry_runner.py:_process_continuation()`
+**Files:** `evaluator.py:process_single_step()`, `persistence.py:get_pending_continuation_step_ids()` / `delete_pending_continuations_for_step()`, `continuation.py`, `registry_runner.py:_process_continuation()`, `mongo_store/tasks.py`, `memory_store.py`
 
 ### 17.5.2 Stuck-Step Sweep (safety net)
 
 **Problem:** The event-driven processing (§17.5.1, §17.5.3) handles the 99% case, but edge cases can leave steps stuck: MongoDB goes down during commit, the runner crashes between `continue_step()` and `process_single_step()`, continuation events are lost, or tasks are never created for new `EventTransmit` steps.
 
-**Mechanism:** The sweep runs every 5 minutes as a safety net:
+**Mechanism:** The sweep runs every 5s on the registry runner (`runner/service.py` uses a longer interval) as a safety net:
 
 1. Finds all workflows with steps at intermediate states (`EventTransmit` with `request_transition`, `blocks.Begin`, `block.execution.Begin`)
 2. For each stuck step: calls `process_single_step()` directly to cascade completion and generate continuation events
 3. For `EventTransmit` steps with event facets but no pending/running task: creates a new task so the handler can run
 
 The sweep never calls full `resume()` — it processes each stuck step individually via `process_single_step()`, avoiding O(N²) scans and generating continuation events for any remaining dirty blocks.
+
+**Bounded sweep (yields to event claiming).** `process_single_step()` runs *synchronously on the poll thread*, so an unbounded sweep over a large `foreach` fan-out runs longer than the poll interval and starves `_poll_cycle()`'s event-task claiming — the steps it tries to unstick never get their handler dispatched, so the next sweep re-finds them and the runner livelocks (busy sweeping, ~0 events claimed). `_maybe_sweep_stuck_steps()` therefore:
+
+- **Skips entirely when all worker slots are busy** (`_active_count() >= max_concurrent`) — event handlers take priority over the safety net when there is real work in flight.
+- **Caps the work per invocation** at `SWEEP_MAX_STEPS = 25` steps / `SWEEP_MAX_MS = 1500`ms; the remainder is handled by the next sweep, by which point normal claiming has advanced the backlog.
 
 **Files:** `registry_runner.py:_maybe_sweep_stuck_steps()`, `runner/service.py:_maybe_sweep_stuck_steps()`
 

@@ -400,6 +400,44 @@ All three cost real debugging time because the symptom (dead-lettered tasks, a m
 
 ---
 
+## Large-foreach livelock: the continuation storm and a self-starving sweep (v0.48.x, 2026-06-09)
+
+Surfaced converting all 255 cached OSM regions to GeoJSON in one run — a workflow (`osm.convert.ConvertAllRegionsToGeoJson`: `ListCachedRegions → foreach → Download → ToGeoJson`) whose `foreach` fans out to 255 sub-blocks, each running a multi-minute event facet (`osm.Source.PBF.ToGeoJson`). The runner **livelocked**: it spun on `resume_step` (logging `resume_step done iterations=0` hundreds of times/sec) and stopped claiming the pending event tasks, so only a handful of sub-blocks ever ran and the output count froze. Two compounding causes, both in the distributed step-processing layer (§10.3.1 / runtime-impl §17.5).
+
+### A. A per-block continuation must be coalesced, not re-enqueued per child — at generation *and* at claim
+
+**Requirement**: When N children of a block each notify the parent that they progressed, the runtime must collapse those N notifications into one re-evaluation. Enqueuing one continuation per child is O(N²) and floods the worker pool.
+
+**What happened**: A foreach child progressing marks the parent foreach block dirty and enqueues a `_fw_continue` continuation targeting that parent. Continuations had a random uuid, were deduped only *within a single generate call*, and were marked COMPLETED (not deleted) after processing — so every one of the 255 children re-enqueued *another* continuation for the same parent block. The resulting O(N²) duplicate continuations saturated the runner thread pool and starved actual osmium execution: the runner was busy processing no-op re-evaluations of the same block instead of running handlers. The fix has two halves, by design: **generation-time dedup** — `process_single_step()` filters `remaining_dirty` against `Persistence.get_pending_continuation_step_ids(workflow_id)` so at most one PENDING continuation per block is ever enqueued; and **claim-time coalescing** — `_process_continuation()` calls `Persistence.delete_pending_continuations_for_step(step_id, except_task_id=…)` the moment it begins, deleting the redundant siblings (that single re-evaluation already reflects all children's current state) rather than letting each be claimed and processed to a no-op. The claim-time half closes the generation-time race (two enqueued concurrently → whichever is claimed first collapses the rest). Both check **PENDING state only**, so a child event arriving *after* a continuation is claimed still generates a fresh one — coalescing the redundant, never dropping the genuinely-new.
+
+**Upfront requirement**:
+- A notification that says "a child of block B changed" is *idempotent in B* — one re-evaluation of B sees all of B's children. Treat the pending continuation for a block as a **set membership** (one in flight), not a per-event message; enforce it both where they are created and where they are claimed.
+- Coalesce at claim time as well as at generation: dedup-on-enqueue alone has a race (two enqueued before either is claimed). Deleting siblings on claim is cheap and makes the bound hold under concurrency.
+- The discriminator is state: only collapse PENDING siblings. A continuation created *after* processing started reflects a newer child event and must survive, or you lose completions.
+
+### B. A safety-net sweep that runs on the poll thread must yield to event claiming
+
+**Requirement**: A periodic stuck-step sweep is a *safety net*; it must never run ahead of, or starve, the normal event-claiming path it shares a thread with.
+
+**What happened**: `_maybe_sweep_stuck_steps()` ran every 5s and processed *every* stuck step synchronously on the poll thread via `process_single_step()`. On a 255-way fan-out the sweep ran longer than the 5s poll interval, so `_poll_cycle()` (which claims the event tasks) rarely got to run — the very steps the sweep tried to unstick never had their handler dispatched, so the next sweep re-found the same steps: a self-perpetuating livelock (runners busy sweeping, ~0 events claimed). The fix bounds the sweep (≤25 steps / ≤1.5s per invocation, remainder deferred to the next cycle) and **skips it entirely when all worker slots are busy** (`_active_count() >= max_concurrent`) — when there is real work in flight, claiming and running it always wins over sweeping for stuck ones.
+
+**Upfront requirement**:
+- Any recovery loop that shares a thread with the hot path must be **bounded** (cap count *and* wall-clock per invocation) and **preemptible by load** (skip when at capacity). A safety net that can consume the whole poll budget stops being a net and becomes the failure.
+- This is §8 (capacity) seen from the scheduler side: don't just protect capacity *release*, protect the poll thread's *time* — background maintenance must defer to claiming when the system is busy.
+
+Verified live: the `resume_step` storm dropped from hundreds/sec to ~0 and the bulk conversion resumed finalizing to MinIO steadily; full runtime+lifecycle suite green (1097 passed).
+
+### C. Memory-heavy native-tool conversions need a disk-backed index and external staging
+
+The facet that surfaced the livelock — `osm.Source.PBF.ToGeoJson` (full-region PBF→GeoJSON via `osmium export`, object-store-native) — carried its own operational lessons, independent of the runtime fix:
+
+- **Disk-backed node index, not in-RAM.** osmium's default `flex_mem` node-location index grows unbounded and **OOM-kills** on large regions (a continent needs GBs just for the index) on a memory-constrained VM. Use a disk-backed index on local scratch (`osmium export -i sparse_file_array,<scratch>`, overridable via `AFL_OSMIUM_INDEX_TYPE` — e.g. `flex_mem` for small regions where RAM is fine and speed matters).
+- **Stage on the external/scratch disk, never the internal Docker disk.** The GeoJSON staging output *and* the `localize()` warm cache for the input PBF must sit on the external/scratch disk (`AFL_OUTPUT_BASE` / `AFL_LOCAL_SCRATCH`). On the internal Docker disk they share space with mongodb, and an ENOSPC there crashes mongo — turning a disk-full into a cluster outage. (Echoes the §A/§B storage-volume lessons of the v0.48 section: keep heavy I/O off the substrate the control plane lives on.)
+- **Storage must be symmetric — `localize()` is the read-side counterpart of `finalize_from_local()`.** A native tool (osmium) only reads local files, so an object-store (S3/MinIO) input must be downloaded locally first. `Storage.localize()` (read side) mirrors `finalize_from_local()` (write side); a backend that has one without the other can write to the object store but can't feed the next native step its input.
+- **Concurrency must match BOTH RAM and disk, not just core count.** Each disk-backed index is multi-GB, so too many concurrent osmium exports blow past the page cache and seek-thrash the single external disk (slower than serial); too few worker threads/runner starve task execution because orchestration shares the pool. Tune concurrency against the binding resource (disk bandwidth + page cache for these conversions), not nominal CPU parallelism.
+
+---
+
 ## Future Requirements: From Distributed Systems Literature
 
 The following requirements are drawn from *Designing Data-Intensive Applications* (Kleppmann), *Release It!* (Nygard), Temporal's durable execution model, and the Recovery Oriented Computing research (Patterson et al.). These represent gaps not yet addressed in Facetwork.

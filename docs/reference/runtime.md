@@ -512,7 +512,7 @@ Server B: claims continuation task for block Y
 
 - All changes (step updates, created steps, handler tasks, continuation tasks) MUST be committed atomically.
 - Step updates SHOULD use optimistic concurrency (version check) to detect concurrent modifications.
-- Continuation task deduplication MUST prevent unbounded task growth — at most one pending continuation per target step.
+- Continuation task deduplication MUST prevent unbounded task growth — at most one pending continuation per target step. **Continuations are coalesced per block, at both generation and claim time**: a block is given a continuation only if it has no PENDING one (generation-time dedup), and a runner claiming a continuation for a step first deletes the step's other PENDING continuations (claim-time coalescing) — one re-evaluation already reflects all the step's children. Both check PENDING state only, so an event arriving *after* a continuation is claimed still gets a fresh one (nothing is lost). Without this, a large `foreach` fan-out (each of N children re-dirtying the parent block) produces O(N²) duplicate continuations that storm the runner pool and livelock it (see `runtime-impl.md` §17.5.1).
 - `process_single_step()` MUST follow the parent chain within the same call when possible, generating continuation events only for blocks that cannot be processed locally.
 
 ### 10.4 Stuck-Step Sweep (safety net, v0.44.0)
@@ -528,6 +528,8 @@ The sweep:
 3. For `EventTransmit` steps with event facets but no pending/running task: creates a new task
 
 The sweep MUST NOT call the full `resume()` — it processes each stuck step individually to avoid O(N²) scans.
+
+The sweep runs synchronously on the poll thread, so it MUST yield to event-task claiming: skip the sweep entirely when all worker slots are busy, and bound the work per invocation (step count and wall-clock), deferring the remainder to the next cycle. An unbounded sweep over a large `foreach` fan-out otherwise out-runs the poll interval and starves claiming — the steps it tries to unstick never get dispatched and the next sweep re-finds them (livelock). See `runtime-impl.md` §17.5.2.
 
 ---
 
