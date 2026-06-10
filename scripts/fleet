@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""fleet — manage the Facetwork fleet's CENTRAL config (in MongoDB) and view the
+live fleet. Set MinIO + runner counts ONCE here instead of on every server; each
+server's `fleet-agent` reads this to self-configure.
+
+  fleet set    --mongo <url> [--minio URL] [--bucket B] [--osm-replicas N] [--task-list X]
+  fleet get    --mongo <url>
+  fleet status --mongo <url>
+
+The config lives in the `fleet_config` collection (_id="default"); `status`
+reads live runners from the `servers` heartbeat collection. The only thing a
+server needs to join is the Mongo URL (or a resolvable `afl-mongodb` hostname);
+the MinIO endpoint and replica counts flow from here.
+"""
+from __future__ import annotations
+
+import os
+import sys
+
+# Re-exec under the repo venv if the current interpreter lacks pymongo.
+try:
+    import pymongo  # noqa: F401
+except ModuleNotFoundError:
+    _venv = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".venv", "bin", "python3")
+    if os.path.exists(_venv) and os.path.realpath(_venv) != os.path.realpath(sys.executable):
+        os.execv(_venv, [_venv, *sys.argv])
+    sys.exit("pymongo not found — run inside the repo venv (pip install pymongo).")
+
+import argparse
+import json
+from collections import Counter
+from datetime import datetime, timezone
+
+from pymongo import MongoClient
+
+DEFAULT_MONGO = os.environ.get("AFL_MONGODB_URL", "mongodb://afl-mongodb:27017")
+DB = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
+
+
+def _db(url):
+    return MongoClient(url, serverSelectionTimeoutMS=5000)[DB]
+
+
+def _print_cfg(cfg):
+    minio = cfg.get("minio", {})
+    print(f"  version:   {cfg.get('version', '-')}")
+    print(f"  updated:   {cfg.get('updated_at', '-')}")
+    print(f"  minio:     {minio.get('endpoint', '-')}  bucket={minio.get('bucket', '-')}")
+    for role, spec in (cfg.get("roles") or {}).items():
+        print(f"  role {role}: replicas={spec.get('replicas', '-')} task_list={spec.get('task_list', '-')}")
+
+
+def cmd_set(a):
+    d = _db(a.mongo)
+    cfg = d.fleet_config.find_one({"_id": "default"}) or {
+        "_id": "default", "minio": {}, "roles": {}, "version": 0,
+    }
+    if a.minio:
+        cfg.setdefault("minio", {})["endpoint"] = a.minio
+    if a.bucket:
+        cfg.setdefault("minio", {})["bucket"] = a.bucket
+    if a.osm_replicas is not None:
+        cfg.setdefault("roles", {}).setdefault("osm-geocoder", {})["replicas"] = a.osm_replicas
+    if a.task_list:
+        cfg.setdefault("roles", {}).setdefault("osm-geocoder", {})["task_list"] = a.task_list
+    cfg["version"] = int(cfg.get("version", 0)) + 1
+    cfg["updated_at"] = datetime.now(timezone.utc).isoformat()
+    d.fleet_config.replace_one({"_id": "default"}, cfg, upsert=True)
+    print(f"fleet_config updated → version {cfg['version']}")
+    _print_cfg(cfg)
+    print("\nServers reconcile on their next `fleet-agent apply`.")
+
+
+def cmd_get(a):
+    cfg = _db(a.mongo).fleet_config.find_one({"_id": "default"})
+    if not cfg:
+        print("no fleet_config set yet — run `fleet set --minio … --osm-replicas N`")
+        return
+    if a.json:
+        cfg.pop("_id", None)
+        print(json.dumps(cfg, indent=2, default=str))
+    else:
+        _print_cfg(cfg)
+
+
+def cmd_status(a):
+    d = _db(a.mongo)
+    cfg = d.fleet_config.find_one({"_id": "default"}) or {}
+    print(f"fleet_config v{cfg.get('version', '-')}  minio={cfg.get('minio', {}).get('endpoint', '-')}")
+    servers = list(d.servers.find({"state": "running"}))
+    by_host = Counter(s.get("server_name", "?") for s in servers)
+    print(f"\nlive runners: {len(servers)} across {len(by_host)} host(s)")
+    for host, n in sorted(by_host.items()):
+        ips = next((s.get("server_ips") for s in servers if s.get("server_name") == host), None)
+        print(f"  {host:<28} {n:>2} runner(s)   {ips or ''}")
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    def add_mongo(sp):
+        sp.add_argument("--mongo", default=DEFAULT_MONGO, help=f"MongoDB URL (default: {DEFAULT_MONGO})")
+
+    ps = sub.add_parser("set", help="update the central fleet config")
+    add_mongo(ps)
+    ps.add_argument("--minio", help="shared MinIO/S3 endpoint, e.g. http://afl-minio:9000")
+    ps.add_argument("--bucket", help="durable bucket (default afl-cache)")
+    ps.add_argument("--osm-replicas", type=int, help="osm runners per server")
+    ps.add_argument("--task-list", help="task list for osm runners (default osm)")
+    ps.set_defaults(func=cmd_set)
+
+    pg = sub.add_parser("get", help="print the central fleet config")
+    add_mongo(pg)
+    pg.add_argument("--json", action="store_true")
+    pg.set_defaults(func=cmd_get)
+
+    pst = sub.add_parser("status", help="config version + live runners by host")
+    add_mongo(pst)
+    pst.set_defaults(func=cmd_status)
+
+    a = p.parse_args()
+    try:
+        a.func(a)
+    except Exception as exc:  # noqa: BLE001
+        sys.exit(f"error: {exc}")
+
+
+if __name__ == "__main__":
+    main()
