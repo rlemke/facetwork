@@ -438,6 +438,34 @@ The facet that surfaced the livelock — `osm.Source.PBF.ToGeoJson` (full-region
 
 ---
 
+## Converting at the edge of a host's memory — a size gate beats endless tuning (v0.47.x, 2026-06-10)
+
+Surfaced finishing the all-255-region bulk conversion (`osm.convert.ConvertAllRegionsToGeoJson`) on a 32GB Mac under Docker Desktop, *after* the livelock fix above made the run actually progress. The remaining problem wasn't the runtime — it was that whole-region `osmium export` simply does not fit on this host for the largest extracts, and the tuning knobs that help one constraint hurt another. The lesson: when a workload has a hard memory floor above the host's ceiling, **skip the work you can't do** rather than tuning forever to make it fit.
+
+### A. Whole-region export has a memory floor set by the node-location index
+
+`osmium export` must hold a node-location index for the whole region. The disk-backed `sparse_file_array` index (from the §C lesson above) keeps it off the heap, but the OS still has to page it: for a multi-GB index on a small VM it spills the page cache and the external disk **seek-thrashes to ~KB/s** — the export technically runs but never finishes. Empirically on this host the largest region that converted cleanly was ~0.68GB PBF; regions ≥~1.4GB (china 1.4GB, india 1.6GB, japan 2.3GB … up to us 10GB, africa 7.4GB) thrash. That floor is a property of the data and the host, not a misconfiguration to tune away.
+
+### B. The tuning constraints conflict on a marginal host — you cannot satisfy all four
+
+Four levers, and moving any one to help its constraint hurts another:
+- **A LARGE Docker VM** (e.g. 20GB on a 32GB host) gives page-cache room for the big indexes — but drives macOS into heavy memory compression and **crashes Docker Desktop**, and can wedge the VM's linuxkit network.
+- **A SMALL VM** (14GB) keeps Docker stable — but the big regions' indexes spill cache and thrash (constraint A).
+- **High osmium concurrency** finishes the small regions faster — but OOM-kills the large ones (osmium way-assembly needs ~3-8GB/region).
+- **Too-low per-runner thread concurrency** avoids OOM — but starves task execution, because workflow orchestration shares the same worker pool as the exports.
+
+There is no setting that converts every region on this host; the feasible region of the four-way tradeoff excludes the largest extracts entirely.
+
+### C. A wedged Docker-Desktop VM network needs a FULL teardown, not a reopen
+
+When the large-VM attempt crashed Docker Desktop, the VM's linuxkit network wedged: the host log (`~/Library/Containers/com.docker.docker/Data/log/host/*.log`) showed `no route to host 192.168.65.7:2376` and `tx dropped packets`. A simple quit-and-reopen of Docker Desktop did **not** clear it. Recovery required a full process teardown: quit Docker, `pkill com.docker`, `pkill com.docker.backend`, wait ~20s for the processes to actually exit, then `open -a Docker`. Worth knowing before you burn time reopening a half-dead daemon. (The VM `MemoryMiB` itself lives in `~/Library/Group Containers/group.com.docker/settings-store.json` — host config, not a repo file.)
+
+### D. Resolution: a size gate makes the infeasible explicit instead of failing it slowly
+
+The pragmatic fix is the `max_pbf_mb` parameter on `osm.Source.PBF.ToGeoJson` (with the `AFL_OSM_MAX_PBF_MB` env fallback for capping a run already in flight): it checks the cached PBF's `size` **before** localizing or converting and returns `skipped = true` with an empty path for anything over the limit. Paired with a host-sustainable VM (14GB on 32GB) and `AFL_MAX_CONCURRENT=2` (~2 concurrent exports at ~5-6GB each so the mid-size regions fit), the bulk run reaches its **achievable ceiling — ~226/255** here (138 already done + ~88 sub-1GB mediums) — and *cleanly skips* the ~25 regions ≥1GB rather than thrashing or OOM-killing on them. Those need a larger host (more RAM for a bigger VM) to convert; the size gate makes that boundary a deliberate, observable `skipped` result instead of a slow failure. The general principle: when part of a batch exceeds the host's hard limits, encode the limit as a first-class skip so the run completes deterministically and the deferred work is visible, rather than tuning the whole batch down to the lowest common denominator or letting the giants fail late.
+
+---
+
 ## Future Requirements: From Distributed Systems Literature
 
 The following requirements are drawn from *Designing Data-Intensive Applications* (Kleppmann), *Release It!* (Nygard), Temporal's durable execution model, and the Recovery Oriented Computing research (Patterson et al.). These represent gaps not yet addressed in Facetwork.
