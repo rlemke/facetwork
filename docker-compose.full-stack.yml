@@ -49,13 +49,22 @@
 x-osm-s3-env: &osm-s3-env
   AFL_STORAGE: s3
   AFL_DATA_ROOT: s3://${AFL_S3_BUCKET:-afl-cache}
-  # Keep the default 2 worker threads/runner: ToGeoJson's osmium export is long,
-  # and the workflow's resume_step orchestration needs a thread too — with only 1
-  # thread the resume loop starves task execution (0 exports ever start). Cap
-  # TOTAL concurrent exports via the *runner count* instead: ToGeoJson's
-  # disk-backed node index is ~2-3GB/region, so >~6 concurrent exceeds the page
-  # cache and seek-thrashes the single external disk (collapses to ~120KB/s).
-  # 3 runners x 2 threads = ~6 concurrent fits the cache and runs at full speed.
+  # 2 worker threads/runner. ToGeoJson's osmium export is long, and the workflow
+  # orchestration needs a thread too — with only 1 thread, exports can stall
+  # behind resume processing. Cap TOTAL concurrent exports via runner COUNT to
+  # match BOTH the page cache (disk-backed node index ~2-3GB/region; >~6
+  # concurrent seek-thrashes the single external disk) AND available RAM (osmium
+  # way-assembly needs ~3-8GB/region for the largest extracts; on the 14GB VM,
+  # >~2-3 concurrent OOM-kills india and the continents). 1 runner x 2 threads
+  # = ~2 concurrent gives each big export ~5-6GB so india + the giants fit, at
+  # ~3x lower throughput than the 3-runner config. AFL_MAX_CONCURRENT pins it.
+  AFL_MAX_CONCURRENT: "2"
+  # ToGeoJson size gate: skip regions whose cached PBF exceeds this many MB
+  # (fallback when the workflow's max_pbf_mb param is 0). On this 14GB VM the
+  # node index for extracts >~1GB PBF doesn't fit the page cache and seek-thrashes
+  # to ~KB/s (the continents + big countries — us 10GB, africa 7.4GB, …), so cap
+  # the bulk run at ~1GB and skip the rest. Raise/remove on a larger host.
+  AFL_OSM_MAX_PBF_MB: "1024"
   AFL_OSM_OUTPUT_BASE: s3://${AFL_S3_BUCKET:-afl-cache}/osm-output
   AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://minio:9000}
   AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
