@@ -16,12 +16,14 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$REPO_ROOT/.env.worker"
 REPLICAS=""
 CHECK_ONLY=0
+RECREATE=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --env) ENV_FILE="$2"; shift 2 ;;
         --replicas) REPLICAS="$2"; shift 2 ;;
         --check) CHECK_ONLY=1; shift ;;
+        --recreate) RECREATE=1; shift ;;   # force-recreate runners (e.g. on an image change)
         -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
@@ -61,10 +63,17 @@ else
     exit 1
 fi
 
-# 2) MinIO / S3 (health endpoint; works for MinIO, harmless 404 tolerated for AWS)
-if curl -sf -m 5 "${AFL_S3_ENDPOINT%/}/minio/health/live" >/dev/null 2>&1 \
-   || curl -sf -m 5 -o /dev/null "${AFL_S3_ENDPOINT%/}" 2>/dev/null \
-   || [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "${AFL_S3_ENDPOINT%/}" 2>/dev/null)" =~ ^(200|403|400)$ ]]; then
+# 2) MinIO / S3 — TCP connect to the endpoint host:port (no curl dependency;
+#    works for MinIO and real S3 alike).
+if "$PY" - "$AFL_S3_ENDPOINT" <<'PYEOF' 2>/dev/null
+import socket, sys
+from urllib.parse import urlparse
+u = urlparse(sys.argv[1])
+host = u.hostname or sys.argv[1]
+port = u.port or (443 if u.scheme == "https" else 80)
+socket.create_connection((host, port), timeout=5).close()
+PYEOF
+then
     echo "  ✓ MinIO/S3 reachable: $AFL_S3_ENDPOINT"
 else
     echo "  ✗ MinIO/S3 NOT reachable: $AFL_S3_ENDPOINT" >&2
@@ -78,11 +87,20 @@ if [[ "$CHECK_ONLY" == "1" ]]; then
 fi
 
 echo "Starting $REPLICAS osm runner(s), joining MongoDB=$AFL_MONGODB_URL  MinIO=$AFL_S3_ENDPOINT"
+RECREATE_ARG=()
+if [[ "$RECREATE" == "1" ]]; then
+    RECREATE_ARG=(--force-recreate)
+    # Pull a pinned/registry image if one is set (no-op/ignored for a local build).
+    if [[ -n "${AFL_RUNNER_IMAGE:-}" ]]; then
+        docker compose -f "$REPO_ROOT/docker-compose.full-stack.yml" -f "$REPO_ROOT/docker-compose.worker.yml" \
+            --env-file "$ENV_FILE" pull runner-osm-geocoder runner-osm-lz 2>/dev/null || true
+    fi
+fi
 docker compose \
     -f "$REPO_ROOT/docker-compose.full-stack.yml" \
     -f "$REPO_ROOT/docker-compose.worker.yml" \
     --env-file "$ENV_FILE" \
-    up -d --scale "runner-osm-geocoder=$REPLICAS" \
+    up -d "${RECREATE_ARG[@]}" --scale "runner-osm-geocoder=$REPLICAS" \
     runner-osm-geocoder runner-osm-lz
 
 echo "Done. This server's runners now claim tasks from the shared fleet."

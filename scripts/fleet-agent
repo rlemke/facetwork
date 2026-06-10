@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""fleet-agent — on THIS server, read the central fleet config from MongoDB and
-bring the runners up to match. Bootstrap is just the Mongo URL; the MinIO
-endpoint and replica counts come from the central `fleet_config`, so a new
-server joins the fleet with no per-server config editing:
+"""fleet-agent — on THIS server, reconcile the runners to the central fleet config
+in MongoDB. Bootstrap is just the Mongo URL; the MinIO endpoint, replica count
+and runner image come from `fleet_config`, so a new server joins with no
+per-server editing.
 
-  fleet-agent apply --mongo mongodb://afl-mongodb:27017 [--data-dir /Volumes/afl_data]
-  fleet-agent apply                 # uses AFL_MONGODB_URL or afl-mongodb default
-  fleet-agent apply --dry-run       # show what it would do, don't start anything
+  fleet-agent apply [--mongo URL] [--data-dir DIR] [--dry-run]   # one-shot reconcile
+  fleet-agent watch [--mongo URL] [--data-dir DIR] [--interval N]# daemon: auto-reconcile on config changes
 
-Secrets stay local (Phase 1): MinIO creds come from this host's environment
-(AFL_S3_ACCESS_KEY / AFL_S3_SECRET_KEY, default minioadmin); everything else —
-endpoint, bucket, replicas — is central in Mongo. Reconcile after a
-`fleet set …` by re-running `fleet-agent apply`.
+`watch` polls `fleet_config.version` and reconciles whenever it changes — so a
+fleet-wide change is one `fleet set …` and every server picks it up. An image
+change triggers a force-recreate (pull + recreate); a replica-only change just
+rescales. Each apply records this host's applied version/image into the
+`fleet_agents` collection, so `fleet status` shows which hosts are up to date.
+
+Secrets stay local (Phase 1/2): MinIO creds come from this host's environment
+(AFL_S3_ACCESS_KEY / AFL_S3_SECRET_KEY); only endpoints/replicas/image are central.
 """
 from __future__ import annotations
 
@@ -27,48 +30,71 @@ except ModuleNotFoundError:
     sys.exit("pymongo not found — run inside the repo venv (pip install pymongo).")
 
 import argparse
+import signal
+import socket
 import subprocess
 import tempfile
+import time
+from datetime import datetime, timezone
 
 from pymongo import MongoClient
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_MONGO = os.environ.get("AFL_MONGODB_URL", "mongodb://afl-mongodb:27017")
 DB = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
+HOST = socket.gethostname()
 
 
-def cmd_apply(a):
-    cfg = MongoClient(a.mongo, serverSelectionTimeoutMS=5000)[DB].fleet_config.find_one({"_id": "default"})
+def _read_cfg(mongo):
+    cfg = MongoClient(mongo, serverSelectionTimeoutMS=5000)[DB].fleet_config.find_one({"_id": "default"})
     if not cfg:
-        sys.exit("no fleet_config in Mongo — an admin must run `fleet set --minio … --osm-replicas N` first")
+        raise SystemExit("no fleet_config in Mongo — an admin must run `fleet set --minio … --osm-replicas N` first")
+    if not cfg.get("minio", {}).get("endpoint"):
+        raise SystemExit("fleet_config.minio.endpoint is not set")
+    return cfg
 
+
+def _record(mongo, version, image, replicas):
+    """Record this host's applied state so `fleet status` can show drift."""
+    try:
+        MongoClient(mongo, serverSelectionTimeoutMS=5000)[DB].fleet_agents.update_one(
+            {"_id": HOST},
+            {"$set": {
+                "host": HOST, "applied_version": version, "applied_image": image,
+                "replicas": replicas, "applied_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - reporting is best-effort
+        print(f"  (warning: could not record applied state: {exc})")
+
+
+def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     minio = cfg.get("minio", {})
-    endpoint = minio.get("endpoint")
-    if not endpoint:
-        sys.exit("fleet_config.minio.endpoint is not set")
     osm = (cfg.get("roles") or {}).get("osm-geocoder", {})
-    replicas = a.replicas if a.replicas is not None else int(osm.get("replicas", 4))
+    replicas = replicas_override if replicas_override is not None else int(osm.get("replicas", 4))
+    image = osm.get("image")
 
     env = {
-        "AFL_MONGODB_URL": a.mongo,
+        "AFL_MONGODB_URL": mongo,
         "AFL_MONGODB_DATABASE": DB,
-        "AFL_S3_ENDPOINT": endpoint,
+        "AFL_S3_ENDPOINT": minio["endpoint"],
         "AFL_S3_BUCKET": minio.get("bucket", "afl-cache"),
-        # Secrets stay local to this host (not in Mongo).
         "AFL_S3_ACCESS_KEY": os.environ.get("AFL_S3_ACCESS_KEY", "minioadmin"),
         "AFL_S3_SECRET_KEY": os.environ.get("AFL_S3_SECRET_KEY", "minioadmin"),
-        "AFL_DATA_DIR": a.data_dir or os.environ.get("AFL_DATA_DIR", "/Volumes/afl_data"),
+        "AFL_DATA_DIR": data_dir or os.environ.get("AFL_DATA_DIR", "/Volumes/afl_data"),
         "AFL_OSM_REPLICAS": str(replicas),
     }
+    if image:
+        env["AFL_RUNNER_IMAGE"] = image
     if osm.get("task_list"):
         env["AFL_REGISTRY_RUNNER_ARGS"] = f"--task-list {osm['task_list']}"
 
-    print(f"fleet-agent: fleet_config v{cfg.get('version')} → minio={endpoint} osm-replicas={replicas}")
-    if a.dry_run:
-        print("--dry-run — would write this env and run scripts/start-worker:")
+    label = f"v{cfg.get('version')} minio={minio['endpoint']} osm-replicas={replicas}" + (f" image={image}" if image else "")
+    print(f"fleet-agent[{HOST}]: applying fleet_config {label}" + (" (recreate)" if recreate else ""))
+    if dry_run:
         for k, v in env.items():
-            shown = v if "SECRET" not in k and "ACCESS" not in k else "***"
-            print(f"    {k}={shown}")
+            print(f"    {k}={'***' if ('SECRET' in k or 'ACCESS' in k) else v}")
         return
 
     fd, envf = tempfile.mkstemp(prefix=".env.fleet-agent.", dir=REPO)
@@ -76,20 +102,71 @@ def cmd_apply(a):
         with os.fdopen(fd, "w") as f:
             for k, v in env.items():
                 f.write(f"{k}={v}\n")
-        subprocess.run([os.path.join(REPO, "scripts", "start-worker"), "--env", envf], check=True)
+        cmd = [os.path.join(REPO, "scripts", "start-worker"), "--env", envf]
+        if recreate:
+            cmd.append("--recreate")
+        subprocess.run(cmd, check=True)
+        _record(mongo, cfg.get("version"), image, replicas)
     finally:
         os.unlink(envf)
+
+
+def cmd_apply(a):
+    cfg = _read_cfg(a.mongo)
+    _apply(cfg, a.mongo, a.data_dir, a.replicas, recreate=a.recreate, dry_run=a.dry_run)
+
+
+def cmd_watch(a):
+    print(f"fleet-agent[{HOST}]: watching fleet_config on {a.mongo} every {a.interval}s (Ctrl-C to stop)")
+    stop = {"v": False}
+    signal.signal(signal.SIGTERM, lambda *_: stop.update(v=True))
+    signal.signal(signal.SIGINT, lambda *_: stop.update(v=True))
+    last_version = None
+    last_image = None
+    while not stop["v"]:
+        try:
+            cfg = _read_cfg(a.mongo)
+            version = cfg.get("version")
+            image = (cfg.get("roles") or {}).get("osm-geocoder", {}).get("image")
+            if version != last_version:
+                # Recreate only when the image actually changed (replica-only
+                # changes just rescale, no downtime for existing runners).
+                recreate = last_version is not None and image != last_image
+                _apply(cfg, a.mongo, a.data_dir, a.replicas, recreate=recreate)
+                last_version, last_image = version, image
+            else:
+                print(f"fleet-agent[{HOST}]: up to date (v{version})", flush=True)
+        except SystemExit as exc:
+            print(f"fleet-agent[{HOST}]: {exc}", flush=True)
+        except Exception as exc:  # noqa: BLE001 - keep the daemon alive across transient errors
+            print(f"fleet-agent[{HOST}]: reconcile error: {exc}", flush=True)
+        for _ in range(a.interval):
+            if stop["v"]:
+                break
+            time.sleep(1)
+    print(f"fleet-agent[{HOST}]: stopped (runners left running).")
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    pa = sub.add_parser("apply", help="bring this host's runners up to the central fleet config")
-    pa.add_argument("--mongo", default=DEFAULT_MONGO, help=f"MongoDB URL (default: {DEFAULT_MONGO})")
-    pa.add_argument("--data-dir", help="large LOCAL scratch dir on this host (default /Volumes/afl_data)")
-    pa.add_argument("--replicas", type=int, help="override osm runner count for this host")
-    pa.add_argument("--dry-run", action="store_true", help="print the plan, don't start runners")
+
+    def common(sp):
+        sp.add_argument("--mongo", default=DEFAULT_MONGO, help=f"MongoDB URL (default: {DEFAULT_MONGO})")
+        sp.add_argument("--data-dir", help="large LOCAL scratch dir on this host (default /Volumes/afl_data)")
+        sp.add_argument("--replicas", type=int, help="override osm runner count for this host")
+
+    pa = sub.add_parser("apply", help="one-shot reconcile to the central config")
+    common(pa)
+    pa.add_argument("--recreate", action="store_true", help="force-recreate runners")
+    pa.add_argument("--dry-run", action="store_true", help="print the plan, start nothing")
     pa.set_defaults(func=cmd_apply)
+
+    pw = sub.add_parser("watch", help="daemon: auto-reconcile when the config changes")
+    common(pw)
+    pw.add_argument("--interval", type=int, default=30, help="poll seconds (default 30)")
+    pw.set_defaults(func=cmd_watch)
+
     a = p.parse_args()
     a.func(a)
 

@@ -17,8 +17,15 @@
 # `depends_on: !reset []` drops the local-infra dependency so the runners don't
 # try to start (or wait on) a bundled mongodb/minio that doesn't exist here.
 
+# AFL_RUNNER_IMAGE pins the runner image fleet-wide (a registry tag for a real
+# fleet, so every server runs the same build). With pull_policy=missing it uses a
+# locally-built image of that tag if present, else pulls. The fleet controller
+# sets it from fleet_config.roles.*.image; an image change triggers a recreate.
+
 services:
   runner-osm-geocoder:
+    image: ${AFL_RUNNER_IMAGE:-facetwork-runner-osm-geocoder:latest}
+    pull_policy: ${AFL_RUNNER_PULL_POLICY:-missing}
     depends_on: !reset []
     environment:
       AFL_MONGODB_URL: ${AFL_MONGODB_URL:?set AFL_MONGODB_URL to the shared MongoDB, e.g. mongodb://afl-mongodb:27017}
@@ -26,6 +33,8 @@ services:
       AFL_POSTGIS_URL: ${AFL_POSTGIS_URL:-}
 
   runner-osm-lz:
+    image: ${AFL_RUNNER_IMAGE:-facetwork-runner-osm-geocoder:latest}
+    pull_policy: ${AFL_RUNNER_PULL_POLICY:-missing}
     depends_on: !reset []
     environment:
       AFL_MONGODB_URL: ${AFL_MONGODB_URL:?set AFL_MONGODB_URL to the shared MongoDB, e.g. mongodb://afl-mongodb:27017}
