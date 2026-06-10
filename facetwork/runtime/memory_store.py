@@ -146,6 +146,26 @@ class MemoryStore(PersistenceAPI):
             self._tasks.pop(tid)
         return len(to_remove)
 
+    def delete_pending_continuations_for_step(
+        self, step_id: str, except_task_id: str = ""
+    ) -> int:
+        """Delete PENDING continuation tasks for ``step_id`` except the given one
+        (claim-time continuation coalescing). See the base-class docstring."""
+        from .continuation import CONTINUATION_TASK_NAME
+        from .entities import TaskState
+
+        to_remove = [
+            tid
+            for tid, t in self._tasks.items()
+            if t.step_id == step_id
+            and getattr(t, "name", None) == CONTINUATION_TASK_NAME
+            and t.state == TaskState.PENDING
+            and t.uuid != except_task_id
+        ]
+        for tid in to_remove:
+            self._tasks.pop(tid, None)
+        return len(to_remove)
+
     def delete_step_logs_for_steps(self, step_ids: Sequence[str]) -> int:
         """Delete step log entries for the given step IDs."""
         ids_set = set(step_ids)

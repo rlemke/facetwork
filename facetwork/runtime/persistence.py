@@ -252,6 +252,25 @@ class PersistenceAPI(Protocol):
                 result.add(t.step_id)
         return result
 
+    def delete_pending_continuations_for_step(
+        self, step_id: str, except_task_id: str = ""
+    ) -> int:
+        """Delete PENDING continuation tasks for ``step_id`` other than
+        ``except_task_id`` and return how many were removed.
+
+        Called when a runner *begins* processing a continuation for a step: that
+        single re-evaluation already reflects the current state of all the step's
+        children, so any other continuations queued for it are redundant.
+        Deleting them — rather than letting each be claimed and processed to a
+        no-op — is the claim-time half of continuation coalescing (the
+        generation-time dedup in get_pending_continuation_step_ids is the other
+        half, and also closes the race where two of them are enqueued at once).
+        Continuations created *after* processing begins are unaffected, so new
+        child events are never lost. Default is a no-op; stores override with an
+        efficient delete.
+        """
+        return 0
+
     @abstractmethod
     def get_steps_by_state(self, state: str) -> Sequence[StepDefinition]:
         """Fetch all steps in a given state.

@@ -585,6 +585,26 @@ class RegistryRunner:
         step_id = task.data.get("step_id") if task.data else task.step_id
         workflow_id = task.workflow_id
 
+        # Claim-time coalescing: this continuation re-evaluates the step against
+        # the current state of all its children, which satisfies every other
+        # continuation already queued for it. Drop those redundant siblings so
+        # they aren't each claimed and processed to a no-op (the fan-out storm).
+        # Continuations enqueued AFTER this point reflect genuinely newer child
+        # events and are left untouched, so nothing is lost.
+        if step_id:
+            try:
+                coalesced = self._persistence.delete_pending_continuations_for_step(
+                    step_id, except_task_id=task.uuid
+                )
+                if coalesced:
+                    logger.debug(
+                        "Coalesced %d redundant continuation(s) for step %s",
+                        coalesced,
+                        step_id,
+                    )
+            except Exception:
+                logger.debug("continuation sibling-delete failed", exc_info=True)
+
         try:
             workflow_ast = self._ast_cache.get(workflow_id)
             if workflow_ast is None:
