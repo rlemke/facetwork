@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Start osm runners on THIS server that join an existing Facetwork fleet's
+# external, shared MinIO + MongoDB. Preflight-checks that both shared services
+# are reachable, then brings the runners up (no bundled mongodb/minio here).
+#
+#   scripts/start-worker                       # uses .env.worker, AFL_OSM_REPLICAS
+#   scripts/start-worker --env .env.worker2    # alternate config file
+#   scripts/start-worker --replicas 6          # override runner count
+#   scripts/start-worker --check               # preflight only, don't start
+#
+# Required in the env file: AFL_MONGODB_URL and AFL_S3_ENDPOINT (the shared
+# services). See .env.worker.example.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="$REPO_ROOT/.env.worker"
+REPLICAS=""
+CHECK_ONLY=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --env) ENV_FILE="$2"; shift 2 ;;
+        --replicas) REPLICAS="$2"; shift 2 ;;
+        --check) CHECK_ONLY=1; shift ;;
+        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+if [[ ! -f "$ENV_FILE" ]]; then
+    echo "ERROR: env file not found: $ENV_FILE" >&2
+    echo "  cp .env.worker.example .env.worker  and edit the shared endpoints." >&2
+    exit 1
+fi
+
+# Load the worker env (export every var).
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+
+: "${AFL_MONGODB_URL:?set AFL_MONGODB_URL (shared MongoDB) in $ENV_FILE}"
+: "${AFL_S3_ENDPOINT:?set AFL_S3_ENDPOINT (shared MinIO) in $ENV_FILE}"
+REPLICAS="${REPLICAS:-${AFL_OSM_REPLICAS:-4}}"
+
+PY="${REPO_ROOT}/.venv/bin/python3"; [[ -x "$PY" ]] || PY=python3
+
+echo "Preflight — shared services must be reachable from this host:"
+
+# 1) MongoDB
+if "$PY" - "$AFL_MONGODB_URL" <<'PYEOF' 2>/dev/null
+import sys
+from pymongo import MongoClient
+MongoClient(sys.argv[1], serverSelectionTimeoutMS=5000).admin.command("ping")
+PYEOF
+then
+    echo "  ✓ MongoDB reachable: $AFL_MONGODB_URL"
+else
+    echo "  ✗ MongoDB NOT reachable: $AFL_MONGODB_URL" >&2
+    echo "    Check the host/port, /etc/hosts (afl-mongodb -> IP), that mongod binds 0.0.0.0, and the firewall." >&2
+    exit 1
+fi
+
+# 2) MinIO / S3 (health endpoint; works for MinIO, harmless 404 tolerated for AWS)
+if curl -sf -m 5 "${AFL_S3_ENDPOINT%/}/minio/health/live" >/dev/null 2>&1 \
+   || curl -sf -m 5 -o /dev/null "${AFL_S3_ENDPOINT%/}" 2>/dev/null \
+   || [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "${AFL_S3_ENDPOINT%/}" 2>/dev/null)" =~ ^(200|403|400)$ ]]; then
+    echo "  ✓ MinIO/S3 reachable: $AFL_S3_ENDPOINT"
+else
+    echo "  ✗ MinIO/S3 NOT reachable: $AFL_S3_ENDPOINT" >&2
+    echo "    Check the endpoint URL/port, that MinIO binds 0.0.0.0, and the firewall." >&2
+    exit 1
+fi
+
+if [[ "$CHECK_ONLY" == "1" ]]; then
+    echo "Preflight OK (--check): not starting runners."
+    exit 0
+fi
+
+echo "Starting $REPLICAS osm runner(s), joining MongoDB=$AFL_MONGODB_URL  MinIO=$AFL_S3_ENDPOINT"
+docker compose \
+    -f "$REPO_ROOT/docker-compose.full-stack.yml" \
+    -f "$REPO_ROOT/docker-compose.worker.yml" \
+    --env-file "$ENV_FILE" \
+    up -d --scale "runner-osm-geocoder=$REPLICAS" \
+    runner-osm-geocoder runner-osm-lz
+
+echo "Done. This server's runners now claim tasks from the shared fleet."
+echo "Watch:  docker compose -f docker-compose.full-stack.yml -f docker-compose.worker.yml logs -f runner-osm-geocoder"

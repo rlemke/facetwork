@@ -1,0 +1,33 @@
+# Worker-only override — run osm runners on an ADDITIONAL server that JOIN an
+# existing fleet's EXTERNAL, SHARED MinIO + MongoDB. This host runs runners only:
+# no bundled mongodb / minio / postgis. Layer it on top of the full-stack file.
+#
+#   docker compose -f docker-compose.full-stack.yml -f docker-compose.worker.yml \
+#     --env-file .env.worker up -d --scale runner-osm-geocoder=$AFL_OSM_REPLICAS \
+#     runner-osm-geocoder runner-osm-lz
+#
+# Or just:  scripts/start-worker            (preflight-checks the shared services first)
+#
+# REQUIRED in .env.worker: AFL_MONGODB_URL and AFL_S3_ENDPOINT — the shared
+# services, reachable over the network from this host. AFL_DATA_DIR must point at
+# a LARGE LOCAL disk on this server: scratch/staging stays local; outputs finalize
+# to the shared MinIO (portable s3:// URIs any runner on any host can resolve, so
+# a runner here can produce a leaf and the merge — anywhere — pulls it back).
+#
+# `depends_on: !reset []` drops the local-infra dependency so the runners don't
+# try to start (or wait on) a bundled mongodb/minio that doesn't exist here.
+
+services:
+  runner-osm-geocoder:
+    depends_on: !reset []
+    environment:
+      AFL_MONGODB_URL: ${AFL_MONGODB_URL:?set AFL_MONGODB_URL to the shared MongoDB, e.g. mongodb://afl-mongodb:27017}
+      AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:?set AFL_S3_ENDPOINT to the shared MinIO, e.g. http://afl-minio:9000}
+      AFL_POSTGIS_URL: ${AFL_POSTGIS_URL:-}
+
+  runner-osm-lz:
+    depends_on: !reset []
+    environment:
+      AFL_MONGODB_URL: ${AFL_MONGODB_URL:?set AFL_MONGODB_URL to the shared MongoDB, e.g. mongodb://afl-mongodb:27017}
+      AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:?set AFL_S3_ENDPOINT to the shared MinIO, e.g. http://afl-minio:9000}
+      AFL_POSTGIS_URL: ${AFL_POSTGIS_URL:-}
