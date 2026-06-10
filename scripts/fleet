@@ -31,10 +31,16 @@ import json
 from collections import Counter
 from datetime import datetime, timezone
 
-from pymongo import MongoClient
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _fleet_lib  # noqa: E402
+from pymongo import MongoClient  # noqa: E402
 
-DEFAULT_MONGO = os.environ.get("AFL_MONGODB_URL", "mongodb://afl-mongodb:27017")
 DB = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
+
+
+def _resolve(a):
+    """Discover the Mongo URL if not given explicitly (Phase 3)."""
+    return _fleet_lib.resolve_mongo(getattr(a, "mongo", None), log=lambda m: print(f"  {m}"))
 
 
 def _db(url):
@@ -51,7 +57,7 @@ def _print_cfg(cfg):
 
 
 def cmd_set(a):
-    d = _db(a.mongo)
+    d = _db(_resolve(a))
     cfg = d.fleet_config.find_one({"_id": "default"}) or {
         "_id": "default", "minio": {}, "roles": {}, "version": 0,
     }
@@ -74,7 +80,7 @@ def cmd_set(a):
 
 
 def cmd_get(a):
-    cfg = _db(a.mongo).fleet_config.find_one({"_id": "default"})
+    cfg = _db(_resolve(a)).fleet_config.find_one({"_id": "default"})
     if not cfg:
         print("no fleet_config set yet — run `fleet set --minio … --osm-replicas N`")
         return
@@ -86,7 +92,7 @@ def cmd_get(a):
 
 
 def cmd_status(a):
-    d = _db(a.mongo)
+    d = _db(_resolve(a))
     cfg = d.fleet_config.find_one({"_id": "default"}) or {}
     desired = cfg.get("version", "-")
     print(f"fleet_config v{desired}  minio={cfg.get('minio', {}).get('endpoint', '-')}")
@@ -115,12 +121,34 @@ def cmd_status(a):
             print(f"  {h:<24} applied v{ag.get('applied_version')} image={ag.get('applied_image', '-')} at {ag.get('applied_at', '-')}")
 
 
+def cmd_secret(a):
+    if a.action == "gen-key":
+        print(_fleet_lib.gen_key())
+        print("# export AFL_FLEET_KEY=<above> on the admin and every host (one bootstrap secret).", file=sys.stderr)
+        return
+    d = _db(_resolve(a))
+    if a.action == "set":
+        if not (a.minio_access and a.minio_secret):
+            sys.exit("secret set needs --minio-access and --minio-secret")
+        _fleet_lib.set_minio_secret(d, a.minio_access, a.minio_secret)
+        print("MinIO credentials encrypted into fleet_secrets (key = AFL_FLEET_KEY).")
+        print("Each host with AFL_FLEET_KEY now decrypts them at apply — no creds in host env.")
+    elif a.action == "show":
+        sec = _fleet_lib.get_minio_secret(d)
+        if not sec:
+            print("no MinIO secret stored (`fleet secret set …`)")
+        else:
+            print(f"  minio access_key: {sec['access_key']}")
+            print(f"  minio secret_key: {'*' * len(sec['secret_key'])}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def add_mongo(sp):
-        sp.add_argument("--mongo", default=DEFAULT_MONGO, help=f"MongoDB URL (default: {DEFAULT_MONGO})")
+        sp.add_argument("--mongo", default=None,
+                        help="MongoDB URL (auto-discovered if omitted: AFL_MONGODB_URL → mDNS → afl-mongodb)")
 
     ps = sub.add_parser("set", help="update the central fleet config")
     add_mongo(ps)
@@ -139,6 +167,13 @@ def main():
     pst = sub.add_parser("status", help="config version + live runners by host")
     add_mongo(pst)
     pst.set_defaults(func=cmd_status)
+
+    psec = sub.add_parser("secret", help="manage encrypted MinIO creds (Fernet, key=AFL_FLEET_KEY)")
+    add_mongo(psec)
+    psec.add_argument("action", choices=["gen-key", "set", "show"])
+    psec.add_argument("--minio-access", help="MinIO access key (for `set`)")
+    psec.add_argument("--minio-secret", help="MinIO secret key (for `set`)")
+    psec.set_defaults(func=cmd_secret)
 
     a = p.parse_args()
     try:
