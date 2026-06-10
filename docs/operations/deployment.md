@@ -236,16 +236,37 @@ scripts/fleet-agent apply --dry-run                        # show the plan, star
 count from it**, fills in this host's local scratch dir, and runs `start-worker`
 (which preflight-checks both shared services, then brings the runners up). To
 change the whole fleet — more runners, a different MinIO — run one `fleet set …`
-(it bumps `fleet_config.version`), then `fleet-agent apply` on each server
-reconciles. Secrets stay **local** to each host in Phase 1: MinIO credentials
-come from the host environment (`AFL_S3_ACCESS_KEY` / `AFL_S3_SECRET_KEY`);
-only endpoints/replicas live in Mongo.
+(it bumps `fleet_config.version`), then reconcile on each server. Secrets stay
+**local** to each host: MinIO credentials come from the host environment
+(`AFL_S3_ACCESS_KEY` / `AFL_S3_SECRET_KEY`); only endpoints/replicas/image live in
+Mongo.
+
+**Auto-reconcile + rolling image updates (Phase 2).** Instead of re-running
+`apply` by hand, run the agent as a **daemon** on each server — it watches
+`fleet_config.version` and reconciles whenever it changes:
+
+```bash
+scripts/fleet-agent watch --mongo mongodb://afl-mongodb:27017 --interval 30   # daemon (systemd/nohup)
+
+# Then drive the WHOLE fleet from one place:
+scripts/fleet set --osm-replicas 8                       # every host rescales to 8
+scripts/fleet set --image registry/facetwork-runner:v2  # every host pulls v2 + recreates (rolling)
+scripts/fleet status                                     # per-host: up-to-date vs LAGGING (applied version)
+```
+
+A replica-only change just rescales (no downtime for running runners); an
+**image** change triggers a pull + force-recreate. Each agent records its applied
+version/image into the `fleet_agents` collection, so `fleet status` shows which
+hosts are current and which are still catching up. The agent survives transient
+Mongo/MinIO blips (logs and retries on the next poll) and leaves runners running
+when stopped.
 
 > The MinIO endpoint in the config must be reachable both from the host running
 > the agent (for preflight) and from the runner containers — i.e. a real network
-> address or DNS name (`http://afl-minio:9000`), not `localhost`. (Phase 2 adds a
-> daemon that watches `fleet_config.version` and reconciles automatically with
-> rolling image updates; Phase 3 adds DNS/mDNS discovery and a secret store.)
+> address or DNS name (`http://afl-minio:9000`), not `localhost`. `--image`
+> should be a registry tag every server can pull. (Phase 3 adds DNS/mDNS
+> discovery of `afl-mongodb`/`afl-minio` and a proper secret store so creds need
+> not sit in each host's env.)
 
 ### Local Scratch & Multi-Server Semantics
 
