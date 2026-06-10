@@ -75,6 +75,23 @@ class TaskMixin(_MixinBase):
             > 0
         )
 
+    def delete_pending_continuations_for_step(
+        self, step_id: str, except_task_id: str = ""
+    ) -> int:
+        """Delete PENDING continuation tasks for ``step_id`` except the given one
+        (claim-time continuation coalescing). See the base-class docstring."""
+        from ..continuation import CONTINUATION_TASK_NAME
+
+        query: dict = {
+            "step_id": step_id,
+            "name": CONTINUATION_TASK_NAME,
+            "state": "pending",
+        }
+        if except_task_id:
+            query["uuid"] = {"$ne": except_task_id}
+        result = self._db.tasks.delete_many(query)
+        return result.deleted_count
+
     def get_pending_tasks(self, task_list: str) -> Sequence[TaskDefinition]:
         """Get pending tasks for a task list."""
         docs = self._db.tasks.find({"task_list_name": task_list, "state": "pending"})

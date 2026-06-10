@@ -1527,6 +1527,78 @@ class TestStuckStepSweep:
         # free to claim and dispatch the pending event tasks.
         assert evaluator.process_single_step.call_count == 25
 
+    def test_delete_pending_continuations_coalesces_siblings(self, store):
+        """Claim-time coalescing: removes other PENDING continuations for the
+        same step, keeping the one being processed; running ones, event tasks,
+        and other steps' continuations are untouched."""
+        from facetwork.runtime.continuation import (
+            CONTINUATION_TASK_LIST,
+            CONTINUATION_TASK_NAME,
+        )
+        from facetwork.runtime.entities import TaskDefinition, TaskState
+
+        def mk(uuid, step, state=TaskState.PENDING, name=CONTINUATION_TASK_NAME):
+            return TaskDefinition(
+                uuid=uuid,
+                name=name,
+                runner_id="r",
+                workflow_id="wf",
+                flow_id="",
+                step_id=step,
+                state=state,
+                created=0,
+                updated=0,
+                task_list_name=CONTINUATION_TASK_LIST,
+                data={"step_id": step},
+            )
+
+        for u in ["a1", "a2", "a3", "a4"]:
+            store.save_task(mk(u, "stepA"))
+        store.save_task(mk("b1", "stepB"))
+        store.save_task(mk("a-run", "stepA", state=TaskState.RUNNING))
+        store.save_task(mk("evt", "stepA", name="osm.X.DoThing"))  # event task
+
+        removed = store.delete_pending_continuations_for_step("stepA", except_task_id="a1")
+
+        assert removed == 3  # a2, a3, a4 deleted
+        remaining = {t.uuid for t in store.get_tasks_by_step("stepA")}
+        assert "a1" in remaining  # the one being processed is kept
+        assert "a-run" in remaining  # RUNNING, not pending -> untouched
+        assert "evt" in remaining  # event task -> untouched
+        assert not ({"a2", "a3", "a4"} & remaining)
+        assert {t.uuid for t in store.get_tasks_by_step("stepB")} == {"b1"}
+
+    def test_process_continuation_coalesces_before_processing(self, store, evaluator):
+        """_process_continuation drops sibling PENDING continuations for the step
+        before re-evaluating it."""
+        from unittest.mock import MagicMock
+
+        from facetwork.runtime.entities import TaskDefinition, TaskState
+
+        runner = RegistryRunner(
+            persistence=store,
+            evaluator=evaluator,
+            config=RegistryRunnerConfig(),
+        )
+        store.delete_pending_continuations_for_step = MagicMock(return_value=2)
+        task = TaskDefinition(
+            uuid="cur",
+            name="_fw_continue",
+            runner_id="r",
+            workflow_id="wf-x",
+            flow_id="",
+            step_id="stepZ",
+            state=TaskState.PENDING,
+            created=0,
+            updated=0,
+            task_list_name="_fw_continue",
+            data={"step_id": "stepZ"},
+        )
+        runner._process_continuation(task)
+        store.delete_pending_continuations_for_step.assert_called_once_with(
+            "stepZ", except_task_id="cur"
+        )
+
     def test_sweep_skipped_when_at_capacity(self):
         """When every worker slot is busy (e.g. long-running osmium exports), the
         sweep is skipped entirely so it never runs ahead of active handlers."""
