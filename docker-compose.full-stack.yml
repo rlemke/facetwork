@@ -64,7 +64,7 @@ x-osm-s3-env: &osm-s3-env
   # node index for extracts >~1GB PBF doesn't fit the page cache and seek-thrashes
   # to ~KB/s (the continents + big countries — us 10GB, africa 7.4GB, …), so cap
   # the bulk run at ~1GB and skip the rest. Raise/remove on a larger host.
-  AFL_OSM_MAX_PBF_MB: "800"
+  AFL_OSM_MAX_PBF_MB: "700"
   AFL_OSM_OUTPUT_BASE: s3://${AFL_S3_BUCKET:-afl-cache}/osm-output
   AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://minio:9000}
   AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
