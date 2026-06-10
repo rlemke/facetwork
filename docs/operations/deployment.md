@@ -264,9 +264,37 @@ when stopped.
 > The MinIO endpoint in the config must be reachable both from the host running
 > the agent (for preflight) and from the runner containers — i.e. a real network
 > address or DNS name (`http://afl-minio:9000`), not `localhost`. `--image`
-> should be a registry tag every server can pull. (Phase 3 adds DNS/mDNS
-> discovery of `afl-mongodb`/`afl-minio` and a proper secret store so creds need
-> not sit in each host's env.)
+> should be a registry tag every server can pull.
+
+**Zero-config discovery + a secret store (Phase 3).** A server no longer needs the
+Mongo URL spelled out, and MinIO credentials no longer live in each host's env:
+
+```bash
+# Discovery: --mongo is now OPTIONAL on every fleet/fleet-agent command. The agent
+# finds Mongo by: explicit --mongo → AFL_MONGODB_URL → mDNS → the conventional
+# `afl-mongodb` hostname. MinIO is read from the config (afl-minio fallback). So
+# with a resolvable afl-mongodb (DNS/hosts) or mDNS, a server joins with just:
+scripts/fleet-agent watch
+
+# mDNS advertiser — run on the infra host so agents find Mongo+MinIO with no
+# /etc/hosts at all (needs `pip install zeroconf`):
+scripts/fleet-advertise
+
+# Secret store: MinIO creds are encrypted (Fernet) in the `fleet_secrets`
+# collection. Each host needs only the fleet key — ONE bootstrap secret — not the
+# actual creds, which are set once centrally:
+scripts/fleet secret gen-key                 # generate AFL_FLEET_KEY (export on admin + each host)
+scripts/fleet secret set --minio-access KEY --minio-secret SECRET   # encrypt + store (admin)
+scripts/fleet secret show                    # decrypt + show (masked)
+```
+
+When `fleet_secrets` holds a credential and `AFL_FLEET_KEY` is set, the agent
+**decrypts the creds at apply time** and injects them transiently — they never sit
+in a per-host file or env. The fleet key is one rotatable secret per host instead
+of the actual MinIO credentials; if a secret is stored but `AFL_FLEET_KEY` is
+missing, the agent fails with a clear message rather than starting mis-credentialed
+runners. Hosts without the secret store fall back to `AFL_S3_ACCESS_KEY` /
+`AFL_S3_SECRET_KEY` from the env.
 
 ### Local Scratch & Multi-Server Semantics
 
