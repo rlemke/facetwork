@@ -1493,6 +1493,58 @@ class TestStuckStepSweep:
         runner._maybe_sweep_stuck_steps()
         # No error, no workflows to resume
 
+    def test_sweep_bounded_on_large_fanout(self):
+        """A large fan-out (e.g. a foreach with hundreds of sub-blocks) must not
+        starve the poll thread: the sweep processes synchronously, so it caps how
+        many stuck steps it handles per invocation and defers the rest."""
+        from unittest.mock import MagicMock
+
+        persistence = MagicMock()
+        persistence.get_pending_resume_workflow_ids.return_value = ["wf-big"]
+        persistence.get_runners_by_workflow.return_value = []
+        stuck = []
+        for i in range(200):
+            s = MagicMock()
+            s.id = f"step-{i}"
+            s.state = StepState.STATEMENT_BLOCKS_BEGIN  # non-terminal, not EventTransmit
+            s.statement_name = f"s{i}"
+            s.facet_name = None
+            s.object_type = "VariableAssignment"
+            stuck.append(s)
+        persistence.get_actionable_steps_by_workflow.return_value = stuck
+
+        evaluator = MagicMock()
+        runner = RegistryRunner(
+            persistence=persistence,
+            evaluator=evaluator,
+            config=RegistryRunnerConfig(),
+        )
+        runner._ast_cache["wf-big"] = MagicMock()  # so process_single_step is reached
+        runner._last_sweep = 0
+        runner._maybe_sweep_stuck_steps()
+
+        # Capped at SWEEP_MAX_STEPS (25), NOT all 200 — leaves the poll thread
+        # free to claim and dispatch the pending event tasks.
+        assert evaluator.process_single_step.call_count == 25
+
+    def test_sweep_skipped_when_at_capacity(self):
+        """When every worker slot is busy (e.g. long-running osmium exports), the
+        sweep is skipped entirely so it never runs ahead of active handlers."""
+        from unittest.mock import MagicMock
+
+        persistence = MagicMock()
+        runner = RegistryRunner(
+            persistence=persistence,
+            evaluator=MagicMock(),
+            config=RegistryRunnerConfig(max_concurrent=2),
+        )
+        busy = MagicMock()
+        busy.done.return_value = False
+        runner._active_futures = [busy, busy]  # at capacity
+        runner._last_sweep = 0
+        runner._maybe_sweep_stuck_steps()
+        persistence.get_pending_resume_workflow_ids.assert_not_called()
+
     def test_pending_resume_workflow_ids_empty(self, store):
         """get_pending_resume_workflow_ids returns empty list when no stuck steps."""
         assert store.get_pending_resume_workflow_ids() == []

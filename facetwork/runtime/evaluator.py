@@ -2179,6 +2179,20 @@ class Evaluator:
                 bid for bid in (context._dirty_blocks or set()) if bid not in processed_ids
             }
             if remaining_dirty:
+                # Suppress duplicate continuations: if a block already has a
+                # PENDING continuation task, don't enqueue another. On a large
+                # fan-out (foreach with hundreds of sub-blocks) every child event
+                # re-dirties the parent block, and without this each one would
+                # generate a fresh continuation — an O(N^2) storm that floods the
+                # runner pool and starves event execution (the foreach livelock).
+                try:
+                    already = self.persistence.get_pending_continuation_step_ids(
+                        workflow_id_val
+                    )
+                    remaining_dirty -= already
+                except Exception:
+                    logger.debug("continuation dedup query failed", exc_info=True)
+            if remaining_dirty:
                 context.changes = IterationChanges()
                 generate_continuation_events(
                     context.changes,

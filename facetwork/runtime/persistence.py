@@ -227,6 +227,31 @@ class PersistenceAPI(Protocol):
                     seen.add(step.workflow_id)
         return list(seen)
 
+    def get_pending_continuation_step_ids(self, workflow_id: str) -> "set[str]":
+        """Return step_ids that already have a PENDING continuation task for
+        this workflow.
+
+        Used to suppress duplicate continuation tasks for the same block. On a
+        large fan-out (a foreach with hundreds of sub-blocks) every child event
+        would otherwise regenerate a continuation for the parent block, piling
+        up duplicates that flood the runner thread pool and starve event-task
+        execution — an O(N^2) "continuation storm" that livelocks the runner.
+        The default scans the workflow's tasks; subclasses may override with an
+        indexed query.
+        """
+        from .continuation import CONTINUATION_TASK_NAME
+        from .entities import TaskState
+
+        result: set[str] = set()
+        for t in self.get_tasks_by_workflow(workflow_id):
+            if (
+                getattr(t, "name", None) == CONTINUATION_TASK_NAME
+                and t.state == TaskState.PENDING
+                and getattr(t, "step_id", None)
+            ):
+                result.add(t.step_id)
+        return result
+
     @abstractmethod
     def get_steps_by_state(self, state: str) -> Sequence[StepDefinition]:
         """Fetch all steps in a given state.

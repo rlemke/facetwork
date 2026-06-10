@@ -649,6 +649,25 @@ class RegistryRunner:
             return
         self._last_sweep = now
 
+        # Event handlers take priority. If every worker slot is occupied (e.g.
+        # by long-running osmium exports), skip the sweep so it cannot run ahead
+        # of active work on the poll thread.
+        if self._active_count() >= self._config.max_concurrent:
+            return
+
+        # Bound the work per sweep. process_single_step runs SYNCHRONOUSLY on the
+        # poll thread, so an unbounded sweep over a large fan-out (a foreach with
+        # hundreds of sub-blocks) runs longer than the poll interval and starves
+        # _poll_cycle's event-task claiming — the very steps it tries to unstick
+        # never get their handler dispatched, so the next sweep re-finds them and
+        # the loop livelocks (runners busy sweeping, 0 events claimed). Cap the
+        # count and wall-clock time; the remainder is handled by the next sweep,
+        # by which point normal claiming has advanced the backlog.
+        SWEEP_MAX_STEPS = 25
+        SWEEP_MAX_MS = 1500
+        processed = 0
+        sweep_start = now
+
         try:
             workflow_ids = self._persistence.get_pending_resume_workflow_ids()
             if not workflow_ids:
@@ -671,7 +690,11 @@ class RegistryRunner:
                 names,
             )
 
+            capped = False
             for wf_id in workflow_ids:
+                if processed >= SWEEP_MAX_STEPS or _current_time_ms() - sweep_start > SWEEP_MAX_MS:
+                    capped = True
+                    break
                 steps = self._persistence.get_actionable_steps_by_workflow(wf_id)
                 stuck = [
                     s
@@ -685,7 +708,7 @@ class RegistryRunner:
                 if stuck:
                     step_details = ", ".join(
                         f"{s.statement_name or s.facet_name or s.object_type} ({s.state})"
-                        for s in stuck
+                        for s in stuck[:SWEEP_MAX_STEPS]
                     )
                     logger.info(
                         "Sweep workflow %s: %d stuck steps: %s",
@@ -695,6 +718,12 @@ class RegistryRunner:
                     )
 
                 for step in stuck:
+                    if (
+                        processed >= SWEEP_MAX_STEPS
+                        or _current_time_ms() - sweep_start > SWEEP_MAX_MS
+                    ):
+                        capped = True
+                        break
                     workflow_ast = self._ast_cache.get(wf_id)
                     if workflow_ast is None:
                         workflow_ast = self._load_workflow_ast(wf_id)
@@ -708,6 +737,16 @@ class RegistryRunner:
                             program_ast=program_ast,
                             dispatcher=self._dispatcher,
                         )
+                        processed += 1
+                if capped:
+                    break
+
+            if capped:
+                logger.info(
+                    "Stuck-step sweep bounded at %d steps in %dms; remainder next sweep",
+                    processed,
+                    _current_time_ms() - sweep_start,
+                )
 
         except Exception:
             logger.debug("Stuck-step sweep failed", exc_info=True)
