@@ -210,6 +210,43 @@ mc anonymous set download <alias>/afl-cache/osm-output
 
 The MinIO console (`http://<minio-host>:9001`) also browses/previews objects after login.
 
+### Central fleet config — join + manage servers without per-host setup
+
+Editing `.env.worker` on every server doesn't scale. The fleet controller
+(Phase 1) keeps the desired state **once, centrally, in MongoDB** (the
+`fleet_config` collection) and has each server pull it. The only thing a server
+needs to know is **how to reach Mongo** — the MinIO endpoint and replica counts
+come from the config, so there is no per-server editing.
+
+```bash
+# Admin (run anywhere with Mongo access) — set the fleet config ONCE:
+scripts/fleet set --mongo mongodb://afl-mongodb:27017 \
+    --minio http://afl-minio:9000 --bucket afl-cache --osm-replicas 4 --task-list osm
+
+scripts/fleet status --mongo mongodb://afl-mongodb:27017   # config version + live runners by host
+scripts/fleet get    --mongo mongodb://afl-mongodb:27017   # show the config
+
+# On EACH server — the same one command joins the fleet (bootstrap = Mongo URL):
+scripts/fleet-agent apply --mongo mongodb://afl-mongodb:27017 --data-dir /Volumes/afl_data
+scripts/fleet-agent apply --dry-run                        # show the plan, start nothing
+#   (with a resolvable `afl-mongodb` hostname or AFL_MONGODB_URL set, just: scripts/fleet-agent apply)
+```
+
+`fleet-agent apply` reads `fleet_config`, **discovers the MinIO endpoint + replica
+count from it**, fills in this host's local scratch dir, and runs `start-worker`
+(which preflight-checks both shared services, then brings the runners up). To
+change the whole fleet — more runners, a different MinIO — run one `fleet set …`
+(it bumps `fleet_config.version`), then `fleet-agent apply` on each server
+reconciles. Secrets stay **local** to each host in Phase 1: MinIO credentials
+come from the host environment (`AFL_S3_ACCESS_KEY` / `AFL_S3_SECRET_KEY`);
+only endpoints/replicas live in Mongo.
+
+> The MinIO endpoint in the config must be reachable both from the host running
+> the agent (for preflight) and from the runner containers — i.e. a real network
+> address or DNS name (`http://afl-minio:9000`), not `localhost`. (Phase 2 adds a
+> daemon that watches `fleet_config.version` and reconciles automatically with
+> rolling image updates; Phase 3 adds DNS/mDNS discovery and a secret store.)
+
 ### Local Scratch & Multi-Server Semantics
 
 A common question when going multi-server: *each runner has its own local `/tmp` — doesn't that break distributed execution?* No: **temp is intentionally per-runner, per-task, local-only, and never crosses hosts.** Everything that needs to be shared crosses host boundaries through MongoDB (coordination) and the durable storage backend (data).

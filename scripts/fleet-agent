@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""fleet-agent — on THIS server, read the central fleet config from MongoDB and
+bring the runners up to match. Bootstrap is just the Mongo URL; the MinIO
+endpoint and replica counts come from the central `fleet_config`, so a new
+server joins the fleet with no per-server config editing:
+
+  fleet-agent apply --mongo mongodb://afl-mongodb:27017 [--data-dir /Volumes/afl_data]
+  fleet-agent apply                 # uses AFL_MONGODB_URL or afl-mongodb default
+  fleet-agent apply --dry-run       # show what it would do, don't start anything
+
+Secrets stay local (Phase 1): MinIO creds come from this host's environment
+(AFL_S3_ACCESS_KEY / AFL_S3_SECRET_KEY, default minioadmin); everything else —
+endpoint, bucket, replicas — is central in Mongo. Reconcile after a
+`fleet set …` by re-running `fleet-agent apply`.
+"""
+from __future__ import annotations
+
+import os
+import sys
+
+try:
+    import pymongo  # noqa: F401
+except ModuleNotFoundError:
+    _venv = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".venv", "bin", "python3")
+    if os.path.exists(_venv) and os.path.realpath(_venv) != os.path.realpath(sys.executable):
+        os.execv(_venv, [_venv, *sys.argv])
+    sys.exit("pymongo not found — run inside the repo venv (pip install pymongo).")
+
+import argparse
+import subprocess
+import tempfile
+
+from pymongo import MongoClient
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_MONGO = os.environ.get("AFL_MONGODB_URL", "mongodb://afl-mongodb:27017")
+DB = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
+
+
+def cmd_apply(a):
+    cfg = MongoClient(a.mongo, serverSelectionTimeoutMS=5000)[DB].fleet_config.find_one({"_id": "default"})
+    if not cfg:
+        sys.exit("no fleet_config in Mongo — an admin must run `fleet set --minio … --osm-replicas N` first")
+
+    minio = cfg.get("minio", {})
+    endpoint = minio.get("endpoint")
+    if not endpoint:
+        sys.exit("fleet_config.minio.endpoint is not set")
+    osm = (cfg.get("roles") or {}).get("osm-geocoder", {})
+    replicas = a.replicas if a.replicas is not None else int(osm.get("replicas", 4))
+
+    env = {
+        "AFL_MONGODB_URL": a.mongo,
+        "AFL_MONGODB_DATABASE": DB,
+        "AFL_S3_ENDPOINT": endpoint,
+        "AFL_S3_BUCKET": minio.get("bucket", "afl-cache"),
+        # Secrets stay local to this host (not in Mongo).
+        "AFL_S3_ACCESS_KEY": os.environ.get("AFL_S3_ACCESS_KEY", "minioadmin"),
+        "AFL_S3_SECRET_KEY": os.environ.get("AFL_S3_SECRET_KEY", "minioadmin"),
+        "AFL_DATA_DIR": a.data_dir or os.environ.get("AFL_DATA_DIR", "/Volumes/afl_data"),
+        "AFL_OSM_REPLICAS": str(replicas),
+    }
+    if osm.get("task_list"):
+        env["AFL_REGISTRY_RUNNER_ARGS"] = f"--task-list {osm['task_list']}"
+
+    print(f"fleet-agent: fleet_config v{cfg.get('version')} → minio={endpoint} osm-replicas={replicas}")
+    if a.dry_run:
+        print("--dry-run — would write this env and run scripts/start-worker:")
+        for k, v in env.items():
+            shown = v if "SECRET" not in k and "ACCESS" not in k else "***"
+            print(f"    {k}={shown}")
+        return
+
+    fd, envf = tempfile.mkstemp(prefix=".env.fleet-agent.", dir=REPO)
+    try:
+        with os.fdopen(fd, "w") as f:
+            for k, v in env.items():
+                f.write(f"{k}={v}\n")
+        subprocess.run([os.path.join(REPO, "scripts", "start-worker"), "--env", envf], check=True)
+    finally:
+        os.unlink(envf)
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+    pa = sub.add_parser("apply", help="bring this host's runners up to the central fleet config")
+    pa.add_argument("--mongo", default=DEFAULT_MONGO, help=f"MongoDB URL (default: {DEFAULT_MONGO})")
+    pa.add_argument("--data-dir", help="large LOCAL scratch dir on this host (default /Volumes/afl_data)")
+    pa.add_argument("--replicas", type=int, help="override osm runner count for this host")
+    pa.add_argument("--dry-run", action="store_true", help="print the plan, don't start runners")
+    pa.set_defaults(func=cmd_apply)
+    a = p.parse_args()
+    a.func(a)
+
+
+if __name__ == "__main__":
+    main()
