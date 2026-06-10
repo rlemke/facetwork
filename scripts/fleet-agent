@@ -43,7 +43,9 @@ from pymongo import MongoClient  # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
-HOST = socket.gethostname()
+# AFL_FLEET_HOST names this server in fleet_agents/status (defaults to the
+# machine hostname); lets several agents on one box act as distinct servers.
+HOST = os.environ.get("AFL_FLEET_HOST") or socket.gethostname()
 
 
 def _read_cfg(mongo):
@@ -103,8 +105,13 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     }
     if image:
         env["AFL_RUNNER_IMAGE"] = image
-    if osm.get("task_list"):
-        env["AFL_REGISTRY_RUNNER_ARGS"] = f"--task-list {osm['task_list']}"
+    tl = osm.get("task_list")
+    if tl:
+        env["AFL_REGISTRY_RUNNER_ARGS"] = f"--task-list {tl}"
+        # Route osm.* workflows' child tasks to the osm task list (else they land
+        # on `default`, which a --task-list osm runner never polls). A fuller map
+        # in the host env wins.
+        env["AFL_WORKFLOW_TASK_LIST_MAP"] = os.environ.get("AFL_WORKFLOW_TASK_LIST_MAP") or f"osm.={tl}"
 
     label = f"v{cfg.get('version')} minio={endpoint} osm-replicas={replicas} creds={creds_src}" + (f" image={image}" if image else "")
     print(f"fleet-agent[{HOST}]: applying fleet_config {label}" + (" (recreate)" if recreate else ""))
@@ -118,10 +125,23 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         with os.fdopen(fd, "w") as f:
             for k, v in env.items():
                 f.write(f"{k}={v}\n")
-        cmd = [os.path.join(REPO, "scripts", "start-worker"), "--env", envf]
+        # Invoke via bash explicitly (avoid shebang/exec resolution differences
+        # in a subprocess context). Force a full env with a sane PATH so `docker`
+        # resolves even when the parent was launched with a minimal PATH.
+        cmd = ["bash", os.path.join(REPO, "scripts", "start-worker"), "--env", envf]
         if recreate:
             cmd.append("--recreate")
-        subprocess.run(cmd, check=True)
+        child_env = os.environ.copy()
+        child_env["PATH"] = (
+            child_env.get("PATH", "")
+            + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+        )
+        r = subprocess.run(cmd, env=child_env, capture_output=True, text=True)
+        if r.returncode != 0:
+            sys.stdout.write(r.stdout)
+            sys.stderr.write(r.stderr)
+            raise SystemExit(f"fleet-agent[{HOST}]: start-worker failed (exit {r.returncode})")
+        sys.stdout.write(r.stdout)
         _record(mongo, cfg.get("version"), image, replicas)
     finally:
         os.unlink(envf)

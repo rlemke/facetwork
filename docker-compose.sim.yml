@@ -1,0 +1,20 @@
+# LOCAL multi-server SIMULATION override (used by scripts/simulate-fleet only).
+#
+# Each simulated "server" runs as a separate compose project. Without this, every
+# project would create its own bridge network — quickly exhausting Docker's
+# address pool. Instead, attach the sim runners to the already-running full-stack
+# network so no new network is created per server. The runners still reach the
+# shared MinIO/MongoDB by the host's LAN IP (set in the fleet config), which is
+# reachable from both the host (agent preflight) and the containers.
+networks:
+  default:
+    name: facetwork_default
+    external: true
+
+# Give each sim server's runners a stable hostname (= the server name) so they
+# register in MongoDB as fleet-srv1/2/3 instead of a random container id.
+services:
+  runner-osm-geocoder:
+    hostname: ${AFL_FLEET_HOST:-sim-server}
+  runner-osm-lz:
+    hostname: ${AFL_FLEET_HOST:-sim-server}

@@ -35,15 +35,19 @@ if [[ ! -f "$ENV_FILE" ]]; then
     exit 1
 fi
 
-# Load the worker env (export every var).
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+# Read the few vars THIS script needs without `source`ing the file: a value may
+# legitimately contain spaces (e.g. AFL_REGISTRY_RUNNER_ARGS=--task-list osm),
+# which `source` mis-parses ("osm: command not found"). docker compose reads the
+# full file safely via --env-file below.
+_envget() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -1; }
+AFL_MONGODB_URL="$(_envget AFL_MONGODB_URL)"
+AFL_S3_ENDPOINT="$(_envget AFL_S3_ENDPOINT)"
+AFL_RUNNER_IMAGE="${AFL_RUNNER_IMAGE:-$(_envget AFL_RUNNER_IMAGE)}"
+_REPLICAS_ENV="$(_envget AFL_OSM_REPLICAS)"
 
 : "${AFL_MONGODB_URL:?set AFL_MONGODB_URL (shared MongoDB) in $ENV_FILE}"
 : "${AFL_S3_ENDPOINT:?set AFL_S3_ENDPOINT (shared MinIO) in $ENV_FILE}"
-REPLICAS="${REPLICAS:-${AFL_OSM_REPLICAS:-4}}"
+REPLICAS="${REPLICAS:-${_REPLICAS_ENV:-4}}"
 
 PY="${REPO_ROOT}/.venv/bin/python3"; [[ -x "$PY" ]] || PY=python3
 
@@ -87,20 +91,26 @@ if [[ "$CHECK_ONLY" == "1" ]]; then
 fi
 
 echo "Starting $REPLICAS osm runner(s), joining MongoDB=$AFL_MONGODB_URL  MinIO=$AFL_S3_ENDPOINT"
+COMPOSE_F=(-f "$REPO_ROOT/docker-compose.full-stack.yml" -f "$REPO_ROOT/docker-compose.worker.yml")
+# Extra compose files (space/colon-separated), e.g. a local multi-server sim
+# network override. Lets the same path serve real workers and simulation.
+if [[ -n "${AFL_WORKER_EXTRA_COMPOSE:-}" ]]; then
+    IFS=': ' read -ra _extra <<< "$AFL_WORKER_EXTRA_COMPOSE"
+    for _f in "${_extra[@]}"; do [[ -n "$_f" ]] && COMPOSE_F+=(-f "$_f"); done
+fi
 RECREATE_ARG=()
 if [[ "$RECREATE" == "1" ]]; then
     RECREATE_ARG=(--force-recreate)
     # Pull a pinned/registry image if one is set (no-op/ignored for a local build).
     if [[ -n "${AFL_RUNNER_IMAGE:-}" ]]; then
-        docker compose -f "$REPO_ROOT/docker-compose.full-stack.yml" -f "$REPO_ROOT/docker-compose.worker.yml" \
-            --env-file "$ENV_FILE" pull runner-osm-geocoder runner-osm-lz 2>/dev/null || true
+        docker compose "${COMPOSE_F[@]}" --env-file "$ENV_FILE" \
+            pull runner-osm-geocoder runner-osm-lz 2>/dev/null || true
     fi
 fi
-docker compose \
-    -f "$REPO_ROOT/docker-compose.full-stack.yml" \
-    -f "$REPO_ROOT/docker-compose.worker.yml" \
-    --env-file "$ENV_FILE" \
-    up -d "${RECREATE_ARG[@]}" --scale "runner-osm-geocoder=$REPLICAS" \
+# Note: ${arr[@]+"${arr[@]}"} expands an EMPTY array safely under `set -u`
+# (macOS bash 3.2 otherwise errors on an empty-array expansion).
+docker compose "${COMPOSE_F[@]}" --env-file "$ENV_FILE" \
+    up -d ${RECREATE_ARG[@]+"${RECREATE_ARG[@]}"} --scale "runner-osm-geocoder=$REPLICAS" \
     runner-osm-geocoder runner-osm-lz
 
 echo "Done. This server's runners now claim tasks from the shared fleet."
