@@ -412,9 +412,22 @@ class _S3WriteStream:
         return self._buffer.write(data)
 
     def close(self):
+        import mimetypes
+
         body = self._buffer.getvalue()
         logger.info("S3 upload: s3://%s/%s (%.1f MB)", self._bucket, self._key, len(body) / 1_048_576)
-        self._backend._client.put_object(Bucket=self._bucket, Key=self._key, Body=body)
+        # Set Content-Type from the key's extension so objects are served
+        # correctly when fetched over HTTP (e.g. a presigned/public URL): an
+        # .html map renders in the browser instead of downloading as
+        # octet-stream; .geojson/.json get a JSON type. Falls back to
+        # octet-stream for unknown extensions.
+        content_type = mimetypes.guess_type(self._key)[0]
+        if self._key.endswith(".geojson"):
+            content_type = "application/geo+json"
+        extra = {"ContentType": content_type} if content_type else {}
+        self._backend._client.put_object(
+            Bucket=self._bucket, Key=self._key, Body=body, **extra
+        )
 
     def __enter__(self):
         return self

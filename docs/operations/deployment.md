@@ -161,6 +161,55 @@ scripts/rolling-deploy --example osm-geocoder        # zero-downtime restart
 
 Each runner independently polls the shared task queue. When a workflow creates 100 event tasks, all 12 runners (4 per machine) compete for tasks via atomic `claim_task()`. The workload distributes naturally across all available runners.
 
+### Adding a server to the fleet — the worker stack (shared external MinIO + MongoDB)
+
+The full-stack compose **bundles a MinIO and a MongoDB per host**. That is wrong for a multi-server fleet: if you bring it up independently on N servers, each gets its *own* MinIO, so outputs are siloed and a merge on one server can't see another's. A fleet needs **one shared MinIO and one shared MongoDB**, reachable from every server; each additional server runs *runners only*.
+
+Use **`docker-compose.worker.yml`** (a thin override that drops the local-infra dependency and points the runners at the shared services) and **`scripts/start-worker`**:
+
+```bash
+# On the server hosting the shared services (once):
+docker compose -f docker-compose.full-stack.yml up -d        # MinIO :9000, MongoDB :27017
+#   ensure both bind 0.0.0.0 and the ports are reachable from the other servers
+
+# On each ADDITIONAL server:
+cp .env.worker.example .env.worker
+#   edit AFL_MONGODB_URL + AFL_S3_ENDPOINT to the shared host, AFL_DATA_DIR to a
+#   large LOCAL disk, AFL_OSM_REPLICAS to this host's runner count
+scripts/start-worker                    # preflight-checks both shared services, then starts the runners
+scripts/start-worker --check            # preflight only
+scripts/start-worker --replicas 6       # override the runner count
+```
+
+`start-worker` fails fast with a clear message if the shared MongoDB or MinIO is not reachable (host/port, `/etc/hosts`, `0.0.0.0` binding, firewall), instead of letting the runners crash-loop. Under the hood it runs:
+
+```bash
+docker compose -f docker-compose.full-stack.yml -f docker-compose.worker.yml \
+  --env-file .env.worker up -d --scale runner-osm-geocoder=$AFL_OSM_REPLICAS \
+  runner-osm-geocoder runner-osm-lz
+```
+
+Because the storage backend is `s3`, every step payload carries a **portable `s3://` URI any runner on any host can resolve**. So a leaf extracted on server B writes its filtered GeoJSON to the shared MinIO, the foreach aggregates the URIs through MongoDB, and the `MergeLayers` step — claimed by *whichever* runner anywhere — localizes every leaf from MinIO and merges. **Scratch stays local per server** (`AFL_DATA_DIR` → a large local disk); only finalized objects cross to MinIO. This is exactly what makes the `ContinentHeatmap` subregion fan-out scale across servers: N servers × M runners each pull leaves from the shared queue in parallel, and the single merge sees them all.
+
+#### Viewing the final map from MinIO in a browser
+
+The merged heat-map HTML lives in MinIO. Objects are now uploaded with a correct
+`Content-Type` (`.html → text/html`, `.geojson → application/geo+json`), so a
+browser renders the map instead of downloading it. MinIO buckets are private, so
+the raw URL returns 403 — open it one of two ways, pointing at the **shared
+MinIO's network address** (not `localhost` from another machine):
+
+```bash
+# Presigned URL — time-limited, embeds the signature, no bucket change:
+mc share download --expire 24h <alias>/afl-cache/osm-output/.../map.html
+
+# Or make a prefix public-read for a shareable map gallery:
+mc anonymous set download <alias>/afl-cache/osm-output
+#   then: http://<minio-host>:9000/afl-cache/osm-output/.../map.html
+```
+
+The MinIO console (`http://<minio-host>:9001`) also browses/previews objects after login.
+
 ### Local Scratch & Multi-Server Semantics
 
 A common question when going multi-server: *each runner has its own local `/tmp` — doesn't that break distributed execution?* No: **temp is intentionally per-runner, per-task, local-only, and never crosses hosts.** Everything that needs to be shared crosses host boundaries through MongoDB (coordination) and the durable storage backend (data).
