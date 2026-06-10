@@ -56,7 +56,12 @@ x-osm-s3-env: &osm-s3-env
   AFL_S3_REGION: ${AFL_S3_REGION:-us-east-1}
   AFL_LOCAL_SCRATCH: /scratch
   # get_output_base()/get_temp_dir() — keep handler temp + local output on the
-  # local scratch/output volumes, never on the object store.
+  # local scratch/output volumes, never on the object store. AFL_OUTPUT_BASE
+  # points at the EXTERNAL scratch disk (not the internal /data/output volume)
+  # because get_output_base() also roots the localize cache: reading a cached
+  # PBF back from MinIO for osmium (e.g. ToGeoJson) downloads it there, and
+  # europe (~30GB) would ENOSPC-crash the internal mongo disk otherwise.
+  AFL_OUTPUT_BASE: /scratch/output
   AFL_LOCAL_OUTPUT_DIR: /data/output
 
 # Read-only S3 access for services that only resolve s3:// step payloads
