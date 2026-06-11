@@ -14,6 +14,7 @@
                 <th>Progress</th>
                 <th>Started</th>
                 <th>Duration</th>
+                <th>Source</th>
             </tr>
         </thead>
         <tbody>
@@ -47,6 +48,10 @@
                 </td>
                 <td>{{ runner.start_time|timestamp }}</td>
                 <td>{{ runner.duration|duration }}</td>
+                <td>
+                    <a href="/v2/workflows/{{ runner.uuid }}/source"
+                       role="button" class="outline" style="padding:0.1rem 0.5rem;font-size:0.8rem;">Source</a>
+                </td>
             </tr>
         {% endfor %}
         </tbody>
