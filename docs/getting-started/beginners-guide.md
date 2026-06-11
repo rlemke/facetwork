@@ -94,7 +94,7 @@ scripts/run-workflow handlers.AddOneWorkflow --input value=41
 | **Handlers** | `/v2/handlers` | Registered event facet handlers — the code that does the work |
 | **Handler Detail** | `/v2/handlers/{name}` | Handler config, documentation, parameters, active tasks |
 | **Servers** | `/v2/servers` | Runner processes, health status, what they're handling |
-| **Fleet** | `/v2/fleet` | Bird's-eye view of all servers and their task throughput |
+| **Fleet** | `/v2/fleet` | Infra services (MongoDB/MinIO/Dashboard, by URL) + runner roles (every server is a runner — no master), plus per-server task throughput |
 | **Steps** | `/steps/{id}` | Individual step detail — state, parameters, returns, logs, duration |
 
 ### Finding Your Workflow

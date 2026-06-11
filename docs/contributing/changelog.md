@@ -1,6 +1,20 @@
 # Implementation Changelog
 
-**Current version: v0.47.0**
+**Current version: v0.48.0**
+
+## Completed (v0.48.0) — Fleet role model (no master), converged runner launcher, all-examples-on-S3, and dashboard fleet/source views
+
+Made the multi-server model match the leaderless runtime it already is, and removed the "master/worker" framing entirely.
+
+**Server-role model (`scripts/`, `docs/operations/*`, `CLAUDE.md`):** there is no "master". A fleet has just two participant kinds — **infra services** (MongoDB, MinIO, Dashboard) identified by their **access URL only** (the fleet never enumerates their cluster members; each may be a single node, a cluster, or a managed service), and **homogeneous runner servers** (`AFL_SERVER_GROUP` default flipped `worker` → `runner`). Runners are leaderless and don't contend (atomic `claim_task()` in Mongo), so any runner with Mongo access can also seed workflow definitions. `fleet set` gained `--mongo-url`/`--dashboard-url`, recording the three service URLs in `fleet_config.endpoints`.
+
+**Converged launcher (`scripts/start-runner`):** the old `scripts/start-worker` is folded into `start-runner --fleet` (containers joining an external shared Mongo+MinIO; preflights both) and `--docker` (containers on the local bundled infra), with `--replicas`/`--env`/`--recreate`/`--check`. `--example NAME` maps to any per-example `runner-NAME` compose service (validated), so the fleet is no longer OSM-only. `start-worker` remains as a back-compat shim.
+
+**Renames:** `docker-compose.worker.yml` → `docker-compose.fleet.yml`, `.env.worker.example` → `.env.fleet.example`, `.env.worker.fleet` → `.env.fleet.preset` (active `.env.fleet` gitignored); env vars `AFL_WORKER_EXTRA_COMPOSE` → `AFL_FLEET_EXTRA_COMPOSE`, `AFL_WORKER_NAME` → `AFL_RUNNER_NAME`.
+
+**All examples on S3 (`docker-compose.full-stack.yml`):** a generic `x-s3-storage` YAML anchor points every per-example runner's cache + output at the shared MinIO (`AFL_STORAGE=s3`, `s3://<bucket>`), so nothing is siloed on one host's disk — previously only the OSM runners used S3, the rest wrote a local output dir. The `.fleet.yml` override applies the fleet-join env (reset deps, external endpoints, `extra_hosts`) to **all** per-example runners via an anchor, not just the two OSM ones. OSM keeps its PBF-tuned `x-osm-s3-env` anchor.
+
+**Dashboard (`routes/v2/dashboard_v2.py`, `routes/execution/flows.py`, templates):** `/v2/fleet` now shows an **Infra services** table (the three URL-addressed services) and a **Runner roles** section ("there is no master"). The flow namespace list (`/flows/{id}/ns/{ns}`) gained a per-workflow **Source** button beside **Run** — `GET /flows/{flow_id}/source/{workflow_id}` reconstructs the focused FFL for that one workflow (via `reconstruct_workflow_source`), the same JSON→FFL reconstruction used for a running instance.
 
 ## Completed (v0.47.x) — `max_pbf_mb` size gate on ToGeoJson + memory-fit tuning for the bulk GeoJSON conversion
 

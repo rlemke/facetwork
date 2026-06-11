@@ -38,7 +38,7 @@ starts a database or object store locally.
 # 1. Clone this repo + the OSM handler package (the runner mounts the handlers).
 git clone <facetwork repo url> ~/facetwork && cd ~/facetwork
 git clone https://github.com/rlemke/fwh_osm ~/fw_handlers/fwh_osm
-#    (the worker runner mounts ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm)
+#    (the runner mounts ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm)
 
 # 2. Python venv with the deps the fleet tooling needs.
 python3 -m venv .venv
@@ -50,10 +50,12 @@ cp .env.fleet.preset .env.fleet
 #    path on THIS server (macOS: /Volumes/afl_data ; Linux: e.g. /var/lib/afl_data).
 
 # 4. Preflight: confirm both shared services are reachable from here.
-scripts/start-worker --check          # ✓ MongoDB reachable  ✓ MinIO reachable
+scripts/start-runner --fleet --check          # ✓ MongoDB reachable  ✓ MinIO reachable
 
 # 5. Start the runners (first run BUILDS the runner image locally — a few minutes).
-scripts/start-worker                  # uses AFL_OSM_REPLICAS from .env.fleet
+scripts/start-runner --fleet                  # uses AFL_OSM_REPLICAS from .env.fleet
+#    default runners are osm-geocoder + osm-lz; add --example NAME for others.
+#    (scripts/start-worker still works — it's a back-compat shim for this.)
 ```
 
 That's it — the runners register in the shared MongoDB and immediately start
@@ -97,5 +99,5 @@ box is `scripts/simulate-fleet` (see CLAUDE.md → *Multi-server runner fleet*).
   can't resolve those). For a container-resolvable alias, set `AFL_INFRA_IP` and
   use `afl-mongodb`/`afl-minio` (mapped via `extra_hosts`).
 - **Images.** Without a registry, each server builds the runner image locally on
-  first `start-worker`. To skip per-server builds, push the image to a registry
+  the first `start-runner --fleet`. To skip per-server builds, push the image to a registry
   and set it fleet-wide: `scripts/fleet set --image <registry>/<tag>` (agents pull).

@@ -111,7 +111,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Approximate freeway routing (`osm.Network`, design): pure in-process graph search over a tiny noded-freeway artifact — no engine daemon; tiny network → read-once-per-runner, embarrassingly parallel | [docs/architecture/approximate-freeway-routing.md](docs/architecture/approximate-freeway-routing.md) |
 | Deployment guide | [docs/operations/deployment.md](docs/operations/deployment.md) |
 | Full-stack Docker Compose (one runner per fwh_* example) | [docs/operations/full-stack-compose.md](docs/operations/full-stack-compose.md) |
-| **Multi-server fleet** (`fleet`/`fleet-agent`/`start-worker`: shared external MinIO+MongoDB, central config, encrypted secrets, discovery) **+ local simulation** (`scripts/simulate-fleet`) | [#multi-server-runner-fleet--local-simulation](#multi-server-runner-fleet--local-simulation) · [docs/operations/deployment.md](docs/operations/deployment.md) |
+| **Multi-server fleet** (`fleet`/`fleet-agent`/`start-runner --fleet`: shared external MinIO+MongoDB, central config, encrypted secrets, discovery) **+ local simulation** (`scripts/simulate-fleet`) | [#multi-server-runner-fleet--local-simulation](#multi-server-runner-fleet--local-simulation) · [docs/operations/deployment.md](docs/operations/deployment.md) |
 | Tutorial | [docs/getting-started/tutorial.md](docs/getting-started/tutorial.md) |
 | Tools + handlers pattern (per-domain CLI + `_<pkg>_tools/` + shim) | [agent-spec/tools-pattern.agent-spec.yaml](agent-spec/tools-pattern.agent-spec.yaml) |
 | Cache layout (sidecars, namespaces, cache types) | [agent-spec/cache-layout.agent-spec.yaml](agent-spec/cache-layout.agent-spec.yaml) |
@@ -426,7 +426,7 @@ A new server joins with one command — `export AFL_FLEET_KEY=<key>; scripts/fle
 > **Bringing up an ADDITIONAL runner server that points at this fleet's shared
 > infra (MongoDB + MinIO)? Follow [docs/operations/join-fleet-from-new-server.md](docs/operations/join-fleet-from-new-server.md)** — it
 > has the infra host's coordinates, the clone/venv/config steps, and `cp
-> .env.fleet.preset .env.fleet && scripts/start-worker`. The pre-filled
+> .env.fleet.preset .env.fleet && scripts/start-runner --fleet`. The pre-filled
 > [`.env.fleet.preset`](../.env.fleet.preset) points at the shared infra URLs.
 
 **Local simulation — verify the whole thing on one box.** `scripts/simulate-fleet`

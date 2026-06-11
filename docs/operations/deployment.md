@@ -239,8 +239,9 @@ scripts/fleet-agent apply --dry-run                        # show the plan, star
 ```
 
 `fleet-agent apply` reads `fleet_config`, **discovers the MinIO endpoint + replica
-count from it**, fills in this host's local scratch dir, and runs `start-worker`
-(which preflight-checks both shared services, then brings the runners up). To
+count from it**, fills in this host's local scratch dir, and runs `start-runner
+--fleet` (via the `start-worker` shim) — which preflight-checks both shared
+services, then brings the runners up. To
 change the whole fleet — more runners, a different MinIO — run one `fleet set …`
 (it bumps `fleet_config.version`), then reconcile on each server. Secrets stay
 **local** to each host: MinIO credentials come from the host environment
@@ -489,8 +490,9 @@ The main navigation uses a 2-tab layout (**Workflows** / **Servers**) with a **M
 | Workflow Detail (v2) | `/v2/workflows/{id}` | Step sub-tabs (Running/Error/Complete), inline step expansion, pause/cancel/resume actions |
 | Servers (v2) | `/v2/servers` | Server-group accordion with Running/Startup/Error/Shutdown sub-tabs, HTMX 5s auto-refresh |
 | Server Detail (v2) | `/v2/servers/{id}` | Details, topics, handlers, handled stats, error display with live polling |
+| Fleet (v2) | `/v2/fleet` | Central `fleet_config`: **Infra services** (MongoDB/MinIO/Dashboard, addressed by URL only) + **Runner roles** (homogeneous runners — there is no master), per-host reconcile drift, and per-facet task throughput |
 | Runners | `/runners` | Active/completed/failed workflow executions (legacy) |
-| Flows | `/flows` | Compiled workflow definitions and sources |
+| Flows | `/flows` | Compiled workflow definitions and sources; the per-namespace list (`/flows/{id}/ns/{ns}`) has **Run** and **Source** (reconstructed FFL) buttons per workflow |
 | Tasks | `/tasks` | Event task queue (pending, running, completed, failed) |
 | Servers | `/servers` | Registered agent servers with heartbeat status (legacy) |
 | Events | `/events` | Event lifecycle tracking |
