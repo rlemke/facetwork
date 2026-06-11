@@ -103,6 +103,70 @@ def flow_source(flow_id: str, request: Request, store=Depends(get_store)):
     )
 
 
+@router.get("/{flow_id}/source/{workflow_id}")
+def flow_workflow_source(
+    flow_id: str,
+    workflow_id: str,
+    request: Request,
+    store=Depends(get_store),
+):
+    """Reconstruct and show the FFL source for a SINGLE workflow in this flow.
+
+    The flow stores the compiled program (``compiled_ast``, or ``compiled_sources``
+    we re-compile to JSON); this reconstructs the focused source for just the
+    selected workflow plus the facets, events, and schemas it references — the
+    same reconstruction used for a running workflow instance.
+    """
+    import json
+
+    from facetwork.workflow_source import (
+        WorkflowNotFoundError,
+        reconstruct_workflow_source,
+    )
+
+    flow = store.get_flow(flow_id)
+    workflow_def = store.get_workflow(workflow_id)
+    workflow_name = workflow_def.name if workflow_def else None
+    source = None
+    error = None
+
+    if not flow:
+        error = "Flow not found."
+    elif not workflow_name:
+        error = "Workflow not found."
+    elif not (flow.compiled_ast or flow.compiled_sources):
+        error = "This flow has no compiled program — source cannot be reconstructed."
+    else:
+        try:
+            if flow.compiled_ast:
+                program_dict = flow.compiled_ast
+            else:
+                from facetwork.emitter import JSONEmitter
+                from facetwork.parser import FFLParser
+
+                parser = FFLParser()
+                ast = parser.parse(flow.compiled_sources[0].content)
+                emitter = JSONEmitter(include_locations=False)
+                program_dict = json.loads(emitter.emit(ast))
+
+            source = reconstruct_workflow_source(program_dict, workflow_name)
+        except WorkflowNotFoundError as exc:
+            error = str(exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            error = f"Failed to reconstruct source: {exc}"
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "flows/workflow_source.html",
+        {
+            "flow": flow,
+            "workflow_name": workflow_name,
+            "source": source,
+            "error": error,
+        },
+    )
+
+
 @router.get("/{flow_id}/json")
 def flow_json(flow_id: str, request: Request, store=Depends(get_store)):
     """Parse FFL source and show the compiled JSON output."""

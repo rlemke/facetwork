@@ -26,7 +26,7 @@
         <tr>
             <td><strong>{{ item.short_name }}</strong>{% if item.wf.documentation %}{{ render_doc(item.wf.documentation) }}{% endif %}</td>
             <td>{{ item.wf.version }}</td>
-            {% if flow.compiled_sources %}<td><a href="/flows/{{ flow.uuid }}/run/{{ item.wf.uuid }}" role="button" class="outline">Run</a></td>{% endif %}
+            {% if flow.compiled_sources %}<td><a href="/flows/{{ flow.uuid }}/source/{{ item.wf.uuid }}" role="button" class="outline secondary">Source</a> <a href="/flows/{{ flow.uuid }}/run/{{ item.wf.uuid }}" role="button" class="outline">Run</a></td>{% endif %}
         </tr>
         {% endfor %}
     </tbody>
