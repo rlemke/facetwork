@@ -154,8 +154,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--server-group",
-        default="default",
-        help="Server group name (default: default)",
+        default=os.environ.get("AFL_SERVER_GROUP", "default"),
+        help="Server group name (env AFL_SERVER_GROUP; default: default). "
+        "Groups servers by role in fleet status / the dashboard — e.g. 'master' "
+        "for the infra host, 'worker' for runner-only servers.",
     )
     parser.add_argument(
         "--service-name",

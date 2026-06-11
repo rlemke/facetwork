@@ -105,9 +105,12 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     }
     if image:
         env["AFL_RUNNER_IMAGE"] = image
+    # Role group for fleet status / dashboard (worker servers default to "worker").
+    grp = os.environ.get("AFL_SERVER_GROUP", "worker")
+    env["AFL_SERVER_GROUP"] = grp
     tl = osm.get("task_list")
     if tl:
-        env["AFL_REGISTRY_RUNNER_ARGS"] = f"--task-list {tl}"
+        env["AFL_REGISTRY_RUNNER_ARGS"] = f"--task-list {tl} --server-group {grp}"
         # Route osm.* workflows' child tasks to the osm task list (else they land
         # on `default`, which a --task-list osm runner never polls). A fuller map
         # in the host env wins.

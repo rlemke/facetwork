@@ -55,6 +55,10 @@ REPLICAS="${REPLICAS:-${_REPLICAS_ENV:-4}}"
 # fleet-agent drift records (keyed by the same name) line up.
 export AFL_FLEET_HOST="${AFL_FLEET_HOST:-$(_envget AFL_WORKER_NAME)}"
 export AFL_FLEET_HOST="${AFL_FLEET_HOST:-$(hostname -s 2>/dev/null || hostname)}"
+# Group these runner-only servers under "worker" (the infra/master host runs the
+# full stack with AFL_SERVER_GROUP=master). Override via AFL_SERVER_GROUP.
+export AFL_SERVER_GROUP="${AFL_SERVER_GROUP:-$(_envget AFL_SERVER_GROUP)}"
+export AFL_SERVER_GROUP="${AFL_SERVER_GROUP:-worker}"
 
 PY="${REPO_ROOT}/.venv/bin/python3"; [[ -x "$PY" ]] || PY=python3
 

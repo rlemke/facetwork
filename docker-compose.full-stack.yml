@@ -49,6 +49,9 @@
 x-osm-s3-env: &osm-s3-env
   AFL_STORAGE: s3
   AFL_DATA_ROOT: s3://${AFL_S3_BUCKET:-afl-cache}
+  # Role group for fleet status / dashboard grouping. The master sets
+  # AFL_SERVER_GROUP=master; start-worker defaults workers to "worker".
+  AFL_SERVER_GROUP: ${AFL_SERVER_GROUP:-default}
   # 2 worker threads/runner. ToGeoJson's osmium export is long, and the workflow
   # orchestration needs a thread too — with only 1 thread, exports can stall
   # behind resume processing. Cap TOTAL concurrent exports via runner COUNT to
@@ -311,7 +314,7 @@ services:
       # separately by fetch_md5_or_none.)
       AFL_OSM_TOLERATE_MD5: ${AFL_OSM_TOLERATE_MD5:-true}
       AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list osm"
+      AFL_REGISTRY_RUNNER_ARGS: "--task-list osm --server-group ${AFL_SERVER_GROUP:-default}"
       # OSM PBF parses can run for hours on full-region files. Override
       # the runner-service default (15min) so the watchdog doesn't kill
       # long-running facets like AllPopulatedPlaces. Matches the
