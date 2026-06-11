@@ -49,6 +49,13 @@ _REPLICAS_ENV="$(_envget AFL_OSM_REPLICAS)"
 : "${AFL_S3_ENDPOINT:?set AFL_S3_ENDPOINT (shared MinIO) in $ENV_FILE}"
 REPLICAS="${REPLICAS:-${_REPLICAS_ENV:-4}}"
 
+# Register this server's runners under a meaningful name (this host's hostname by
+# default, or AFL_FLEET_HOST / AFL_WORKER_NAME from the env) instead of a random
+# container id — so `fleet status` and the dashboard show the server by name, and
+# fleet-agent drift records (keyed by the same name) line up.
+export AFL_FLEET_HOST="${AFL_FLEET_HOST:-$(_envget AFL_WORKER_NAME)}"
+export AFL_FLEET_HOST="${AFL_FLEET_HOST:-$(hostname -s 2>/dev/null || hostname)}"
+
 PY="${REPO_ROOT}/.venv/bin/python3"; [[ -x "$PY" ]] || PY=python3
 
 echo "Preflight — shared services must be reachable from this host:"

@@ -26,6 +26,10 @@ services:
   runner-osm-geocoder:
     image: ${AFL_RUNNER_IMAGE:-facetwork-runner-osm-geocoder:latest}
     pull_policy: ${AFL_RUNNER_PULL_POLICY:-missing}
+    # Register under a meaningful name (set by start-worker to this host's
+    # hostname / AFL_FLEET_HOST) so `fleet status` shows the server by name, not
+    # a random container id.
+    hostname: ${AFL_FLEET_HOST:-}
     depends_on: !reset []
     # Make the conventional names resolve INSIDE the runner containers. Docker's
     # DNS does NOT resolve mDNS/.local names, and containers don't read the host's
@@ -45,6 +49,7 @@ services:
   runner-osm-lz:
     image: ${AFL_RUNNER_IMAGE:-facetwork-runner-osm-geocoder:latest}
     pull_policy: ${AFL_RUNNER_PULL_POLICY:-missing}
+    hostname: ${AFL_FLEET_HOST:-}
     depends_on: !reset []
     extra_hosts:
       - "afl-mongodb:${AFL_INFRA_IP:-127.0.0.1}"

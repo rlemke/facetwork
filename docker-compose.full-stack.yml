@@ -276,6 +276,9 @@ services:
     restart: unless-stopped
 
   runner-osm-geocoder:
+    # Optional: name this runner in `fleet status` / the dashboard (else the
+    # container id is used). e.g. AFL_FLEET_HOST=master docker compose … up -d.
+    hostname: ${AFL_FLEET_HOST:-}
     build:
       context: .
       dockerfile: docker/Dockerfile.example-runner
@@ -335,6 +338,7 @@ services:
     restart: unless-stopped
 
   runner-osm-lz:
+    hostname: ${AFL_FLEET_HOST:-}
     build:
       context: .
       dockerfile: docker/Dockerfile.example-runner
