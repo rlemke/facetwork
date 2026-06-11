@@ -41,3 +41,7 @@ oms-mirror
 # OS
 .DS_Store
 afl-test.log
+
+# Build artifacts + runtime locks
+target/
+.claude/scheduled_tasks.lock
