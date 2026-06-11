@@ -410,6 +410,12 @@ controller lives in `scripts/`:
 
 A new server joins with one command — `export AFL_FLEET_KEY=<key>; scripts/fleet-agent watch` — and the whole fleet is driven by editing the central config once (`fleet set --osm-replicas N`, `--image …`). Full guide: [docs/operations/deployment.md](docs/operations/deployment.md) → **"Adding a server to the fleet"** / **"Central fleet config"**.
 
+> **Bringing up an ADDITIONAL server that points at this fleet's master (shared
+> MongoDB + MinIO)? Follow [docs/operations/join-fleet-from-new-server.md](docs/operations/join-fleet-from-new-server.md)** — it
+> has the master's coordinates, the clone/venv/config steps, and `cp
+> .env.worker.fleet .env.worker && scripts/start-worker`. The pre-filled
+> [`.env.worker.fleet`](../.env.worker.fleet) points at the master.
+
 **Local simulation — verify the whole thing on one box.** `scripts/simulate-fleet`
 spins up N "servers" as separate compose projects on the running full-stack's
 shared network, each brought up by `fleet-agent` from the central config +
