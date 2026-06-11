@@ -1,3 +1,47 @@
+{# ── Fleet controller: central config + per-host reconcile drift ──── #}
+{% if fleet_controller and fleet_controller.config %}
+<article>
+    <header>Fleet Controller &middot; central config <strong>v{{ fleet_controller.config.version }}</strong></header>
+    <p class="text-muted" style="margin-bottom:0.5rem">
+        MinIO <code>{{ fleet_controller.config.minio }}</code> &middot;
+        bucket <code>{{ fleet_controller.config.bucket }}</code> &middot;
+        updated {{ fleet_controller.config.updated_at }}
+    </p>
+    <table role="grid">
+        <thead><tr><th>Role</th><th style="text-align:right">Replicas/server</th><th>Image</th><th>Task&nbsp;list</th></tr></thead>
+        <tbody>
+        {% for r in fleet_controller.config.roles %}
+            <tr><td>{{ r.name }}</td><td style="text-align:right">{{ r.replicas }}</td><td class="mono">{{ r.image }}</td><td class="mono">{{ r.task_list }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <header style="margin-top:1rem">Per-host reconcile state <small class="text-muted">(fleet-agent)</small></header>
+    {% if fleet_controller.agents %}
+    <table role="grid">
+        <thead><tr><th>Host</th><th>Status</th><th>Applied</th><th>Image</th><th>Applied at</th></tr></thead>
+        <tbody>
+        {% for a in fleet_controller.agents %}
+            <tr>
+                <td>{{ a.host }}</td>
+                <td>{% if a.uptodate %}<span class="fleet-ok">up-to-date</span>{% else %}<span class="fleet-lag">LAGGING</span>{% endif %}</td>
+                <td>v{{ a.applied_version }}</td>
+                <td class="mono">{{ a.applied_image }}</td>
+                <td class="text-muted">{{ a.applied_at }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">No <code>fleet-agent</code> has reported yet — servers started directly (e.g. the master via compose) run fine but don't record a reconcile entry. Drive the fleet with <code>scripts/fleet set …</code> and run <code>scripts/fleet-agent watch</code> on each worker.</p>
+    {% endif %}
+    <style>
+    .fleet-ok  { color:#1a8917; font-weight:600 }
+    .fleet-lag { color:#b8860b; font-weight:600 }
+    </style>
+</article>
+{% endif %}
+
 {% if facets %}
 {# ── Aggregate totals by facet ─────────────────────────────── #}
 <article>
