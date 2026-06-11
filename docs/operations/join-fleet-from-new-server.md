@@ -14,11 +14,16 @@ starts a database or object store locally.
 | MinIO | `http://192.168.68.75:9000` | bundled, published `0.0.0.0:9000`; bucket `afl-cache` |
 | MinIO creds | `minioadmin` / `minioadmin` | bundled dev default (use the secret store for prod — see below) |
 
-> The IP is the infra host's LAN address; it can change on DHCP. If it has,
-> update it (one place: `.env.worker`), or — more robust — add to **every server's**
-> `/etc/hosts`: `192.168.68.75  afl-mongodb afl-minio` and use
-> `mongodb://afl-mongodb:27017` + `http://afl-minio:9000` (survives IP changes; the
-> fleet tooling also auto-discovers these names).
+> **Use the master's IP in `.env.worker`, not a `.local`/mDNS name.** The runners
+> run in Docker containers, and Docker's DNS does **not** resolve mDNS/`.local`
+> names, and containers don't read the host's `/etc/hosts`. So `mongodb://server3.local:27017`
+> works for `fleet status` (which runs on the host) but the **runner container
+> can't reach it → the worker never registers** (the #1 "my worker doesn't show
+> up" cause). If the IP changes, update it in `.env.worker` (one place). To use a
+> stable **name** instead: set `AFL_INFRA_IP=<master IP>` in `.env.worker` and use
+> `mongodb://afl-mongodb:27017` + `http://afl-minio:9000` — `docker-compose.worker.yml`
+> maps those names *inside the containers* via `extra_hosts` (a host `/etc/hosts`
+> entry alone does **not** reach the container).
 
 ## Prerequisites on the new server
 - Docker + Docker Compose, `git`, Python 3.11+.
@@ -87,8 +92,10 @@ box is `scripts/simulate-fleet` (see CLAUDE.md → *Multi-server runner fleet*).
   Each server then needs only `AFL_FLEET_KEY` (one rotatable secret); `fleet-agent`
   decrypts the creds at apply.
 - **Endpoint reachability.** The MinIO/Mongo addresses must resolve from both the
-  host (preflight) and the runner *containers* — a LAN IP or DNS name, never
-  `localhost`.
+  host (preflight) and the runner *containers* — a **LAN IP** (simplest) or a real
+  **DNS A-record**, never `localhost` and never a `.local`/mDNS name (containers
+  can't resolve those). For a container-resolvable alias, set `AFL_INFRA_IP` and
+  use `afl-mongodb`/`afl-minio` (mapped via `extra_hosts`).
 - **Images.** Without a registry, each server builds the runner image locally on
   first `start-worker`. To skip per-server builds, push the image to a registry
   and set it fleet-wide: `scripts/fleet set --image <registry>/<tag>` (agents pull).

@@ -27,6 +27,16 @@ services:
     image: ${AFL_RUNNER_IMAGE:-facetwork-runner-osm-geocoder:latest}
     pull_policy: ${AFL_RUNNER_PULL_POLICY:-missing}
     depends_on: !reset []
+    # Make the conventional names resolve INSIDE the runner containers. Docker's
+    # DNS does NOT resolve mDNS/.local names, and containers don't read the host's
+    # /etc/hosts — so a `.local` master name works for `fleet status` (host) but
+    # NOT for the runner (container). Set AFL_INFRA_IP=<master IP> to use
+    # mongodb://afl-mongodb:27017 + http://afl-minio:9000 everywhere; otherwise
+    # just put the master's IP directly in AFL_MONGODB_URL / AFL_S3_ENDPOINT and
+    # these mappings are harmlessly unused.
+    extra_hosts:
+      - "afl-mongodb:${AFL_INFRA_IP:-127.0.0.1}"
+      - "afl-minio:${AFL_INFRA_IP:-127.0.0.1}"
     environment:
       AFL_MONGODB_URL: ${AFL_MONGODB_URL:?set AFL_MONGODB_URL to the shared MongoDB, e.g. mongodb://afl-mongodb:27017}
       AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:?set AFL_S3_ENDPOINT to the shared MinIO, e.g. http://afl-minio:9000}
@@ -36,6 +46,9 @@ services:
     image: ${AFL_RUNNER_IMAGE:-facetwork-runner-osm-geocoder:latest}
     pull_policy: ${AFL_RUNNER_PULL_POLICY:-missing}
     depends_on: !reset []
+    extra_hosts:
+      - "afl-mongodb:${AFL_INFRA_IP:-127.0.0.1}"
+      - "afl-minio:${AFL_INFRA_IP:-127.0.0.1}"
     environment:
       AFL_MONGODB_URL: ${AFL_MONGODB_URL:?set AFL_MONGODB_URL to the shared MongoDB, e.g. mongodb://afl-mongodb:27017}
       AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:?set AFL_S3_ENDPOINT to the shared MinIO, e.g. http://afl-minio:9000}
