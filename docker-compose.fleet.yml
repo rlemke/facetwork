@@ -48,10 +48,15 @@ x-fleet-runner: &fleet-runner
   # Register under a meaningful name (set by start-runner to this host's hostname
   # / AFL_FLEET_HOST) so `fleet status` shows the server by name, not a random id.
   hostname: ${AFL_FLEET_HOST:-}
-  depends_on: !reset []
   extra_hosts:
     - "afl-mongodb:${AFL_INFRA_IP:-127.0.0.1}"
     - "afl-minio:${AFL_INFRA_IP:-127.0.0.1}"
+
+# NOTE: `depends_on: !reset []` must sit DIRECTLY on each service, not in the
+# anchor above — Compose's `!reset` tag is not preserved through a `<<:` alias
+# merge, so anchoring it silently leaves the base file's infra deps in place
+# (the runner then tries to start the bundled mongodb/postgis/minio on a
+# runner-only host). Keep it inline per service below.
 
 # Merged into each runner's `environment` (compose deep-merges env maps; these
 # keys override the base file's localhost defaults with the shared endpoints).
@@ -63,40 +68,48 @@ x-fleet-env: &fleet-env
 services:
   runner-anthropic:
     <<: *fleet-runner
+    depends_on: !reset []
     environment:
       <<: *fleet-env
 
   runner-osm-geocoder:
     <<: *fleet-runner
+    depends_on: !reset []
     environment:
       <<: *fleet-env
 
   runner-osm-lz:
     <<: *fleet-runner
+    depends_on: !reset []
     environment:
       <<: *fleet-env
 
   runner-noaa-weather:
     <<: *fleet-runner
+    depends_on: !reset []
     environment:
       <<: *fleet-env
 
   runner-jenkins-example:
     <<: *fleet-runner
+    depends_on: !reset []
     environment:
       <<: *fleet-env
 
   runner-census-us:
     <<: *fleet-runner
+    depends_on: !reset []
     environment:
       <<: *fleet-env
 
   runner-genomics:
     <<: *fleet-runner
+    depends_on: !reset []
     environment:
       <<: *fleet-env
 
   runner-sensor-monitoring:
     <<: *fleet-runner
+    depends_on: !reset []
     environment:
       <<: *fleet-env
