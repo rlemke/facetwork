@@ -365,6 +365,14 @@ services:
       AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
       AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list continental"
+      # Match runner-osm-geocoder timeouts. osm-lz is a workflow catalog over
+      # fwh_osm — many of the workflows it orchestrates fan out across continents
+      # and run for hours. With the runtime defaults (15min exec / 30min stuck
+      # / 5min lease) the bootstrap or any continental-task lease expires and
+      # gets re-claimed mid-flight.
+      AFL_TASK_EXECUTION_TIMEOUT_MS: "14400000"
+      AFL_STUCK_TIMEOUT_MS: "14400000"
+      AFL_LEASE_DURATION_MS: "14400000"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm_lz:/handlers/fwh_osm_lz
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm:ro
