@@ -9,7 +9,7 @@ starts a database or object store locally.
 
 | What | Value (as of 2026-06-11) | How to re-derive |
 |------|--------------------------|------------------|
-| Infra host | `server3.local` @ **`192.168.68.75`** | on the infra host: `ipconfig getifaddr en0` (macOS) / `hostname -I` (Linux) |
+| Infra host | `server3` @ **`192.168.68.75`** | on the infra host: `ipconfig getifaddr en0` (macOS) / `hostname -I` (Linux) |
 | MongoDB | `mongodb://192.168.68.75:27017` | bundled, `--bind_ip_all`, published `0.0.0.0:27017` |
 | MinIO | `http://192.168.68.75:9000` | bundled, published `0.0.0.0:9000`; bucket `afl-cache` |
 | MinIO creds | `minioadmin` / `minioadmin` | bundled dev default (use the secret store for prod — see below) |
