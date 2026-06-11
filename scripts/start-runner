@@ -21,10 +21,26 @@
 #   scripts/start-runner --all --example hiv-drug-resistance    # all AFL_RUNNER_HOSTS
 #   scripts/start-runner --host h1 --host h2 --example hiv-drug-resistance
 #
+# Container modes (replaces the old start-worker):
+#   scripts/start-runner --docker --example osm-geocoder        # runners as containers, local bundled infra
+#   scripts/start-runner --fleet                                # join an external shared Mongo+MinIO (default: osm-geocoder + osm-lz)
+#   scripts/start-runner --fleet --example noaa-weather         # any per-example runner service in the fleet
+#   scripts/start-runner --fleet --example census-us --replicas 6
+#
 # Options:
-#   --example NAME   Register handlers from examples/NAME only (repeatable)
-#   --instances N    Start N runner processes per host (default: 1)
-#   --no-dashboard   Do not start the dashboard
+#   --example NAME   Register handlers from examples/NAME only (repeatable).
+#                    In --docker/--fleet, selects the runner-NAME compose service
+#                    (e.g. osm-geocoder, osm-lz, anthropic, noaa-weather,
+#                    jenkins-example, census-us, genomics, sensor-monitoring).
+#   --instances N    Start N runner processes per host (process mode; default: 1)
+#   --no-dashboard   Do not start the dashboard (process mode)
+#   --docker         Run runners as containers via compose (local bundled infra)
+#   --fleet          Containers joining an EXTERNAL shared Mongo+MinIO; preflights
+#                    both and reads --env FILE (default .env.fleet)
+#   --replicas N     --docker/--fleet: containers per selected runner service
+#                    (default: AFL_OSM_REPLICAS or 4 for --fleet, 1 for --docker)
+#   --env FILE       --fleet: shared-endpoints env file (default .env.fleet)
+#   --recreate       --docker/--fleet: force-recreate the containers
 #   --all            Start on all hosts from AFL_RUNNER_HOSTS
 #   --host HOST      Start on specific remote host (repeatable)
 #   --start-timeout N  Seconds to wait for remote runner startup (default: 30)
@@ -53,6 +69,10 @@ DASHBOARD=true
 MODE="local"
 HOST_ARGS=()
 START_TIMEOUT=30
+REPLICAS=""          # docker/fleet: containers per selected runner service
+ENV_FILE=""          # fleet: env file with the shared endpoints (default .env.fleet)
+RECREATE=0           # docker/fleet: force-recreate (e.g. on an image change)
+CHECK_ONLY=0         # docker/fleet: preflight + validate only, don't start
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -62,6 +82,18 @@ while [[ $# -gt 0 ]]; do
             INSTANCES="$2"; shift 2 ;;
         --no-dashboard)
             DASHBOARD=false; shift ;;
+        --docker)
+            MODE="docker"; shift ;;          # run runners as containers (local bundled infra)
+        --fleet)
+            MODE="fleet"; shift ;;           # containers joining an external shared Mongo+MinIO
+        --replicas)
+            REPLICAS="$2"; shift 2 ;;        # docker/fleet: scale each runner service
+        --env)
+            ENV_FILE="$2"; shift 2 ;;        # fleet: shared-endpoints env file
+        --recreate)
+            RECREATE=1; shift ;;
+        --check)
+            CHECK_ONLY=1; shift ;;           # docker/fleet: preflight + validate only
         --all)
             MODE="remote"; shift ;;
         --host)
@@ -75,10 +107,128 @@ while [[ $# -gt 0 ]]; do
             shift; RUNNER_ARGS=("$@"); break ;;
         *)
             echo "Unknown option: $1" >&2
-            echo "Usage: scripts/start-runner [--example NAME]... [--instances N] [--no-dashboard] [--all | --host HOST]... [-- RUNNER_ARGS...]" >&2
+            echo "Usage: scripts/start-runner [--example NAME]... [--instances N] [--no-dashboard]" >&2
+            echo "                            [--docker | --fleet [--env FILE]] [--replicas N] [--recreate]" >&2
+            echo "                            [--all | --host HOST]... [-- RUNNER_ARGS...]" >&2
             exit 1 ;;
     esac
 done
+
+# =========================================================================
+# Container modes (--docker / --fleet) — converged from the old start-worker.
+# Runs per-example runner CONTAINERS via compose instead of bare processes.
+# Each --example NAME maps to the `runner-NAME` compose service; all per-example
+# runners build from the same image, so one tag serves any example.
+# =========================================================================
+if [[ "$MODE" == "docker" || "$MODE" == "fleet" ]]; then
+    PY="${REPO_ROOT}/.venv/bin/python3"; [[ -x "$PY" ]] || PY=python3
+
+    # Map examples → runner services. Default preserves the old start-worker set.
+    SERVICES=()
+    if [[ ${#EXAMPLES[@]} -eq 0 ]]; then
+        SERVICES=(runner-osm-geocoder runner-osm-lz)
+    else
+        for e in "${EXAMPLES[@]}"; do SERVICES+=("runner-$e"); done
+    fi
+
+    COMPOSE_F=(-f "$REPO_ROOT/docker-compose.full-stack.yml")
+    COMPOSE_ENV=()
+
+    if [[ "$MODE" == "fleet" ]]; then
+        COMPOSE_F+=(-f "$REPO_ROOT/docker-compose.fleet.yml")
+        ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env.fleet}"
+        if [[ ! -f "$ENV_FILE" ]]; then
+            echo "ERROR: env file not found: $ENV_FILE" >&2
+            echo "  cp .env.fleet.example .env.fleet  and edit the shared endpoints." >&2
+            echo "  (or, to join this fleet:  cp .env.fleet.preset .env.fleet)" >&2
+            exit 1
+        fi
+        COMPOSE_ENV=(--env-file "$ENV_FILE")
+
+        # Read the few vars this script needs WITHOUT sourcing (a value may contain
+        # spaces, e.g. AFL_REGISTRY_RUNNER_ARGS=--task-list osm); compose reads the
+        # full file safely via --env-file.
+        _envget() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -1; }
+        AFL_MONGODB_URL="$(_envget AFL_MONGODB_URL)"
+        AFL_S3_ENDPOINT="$(_envget AFL_S3_ENDPOINT)"
+        AFL_RUNNER_IMAGE="${AFL_RUNNER_IMAGE:-$(_envget AFL_RUNNER_IMAGE)}"
+        : "${AFL_MONGODB_URL:?set AFL_MONGODB_URL (shared MongoDB) in $ENV_FILE}"
+        : "${AFL_S3_ENDPOINT:?set AFL_S3_ENDPOINT (shared MinIO) in $ENV_FILE}"
+        REPLICAS="${REPLICAS:-$(_envget AFL_OSM_REPLICAS)}"; REPLICAS="${REPLICAS:-4}"
+
+        # Name this server's runners (hostname by default) so `fleet status` /
+        # the dashboard show it by name and fleet-agent drift records line up.
+        export AFL_FLEET_HOST="${AFL_FLEET_HOST:-$(_envget AFL_RUNNER_NAME)}"
+        export AFL_FLEET_HOST="${AFL_FLEET_HOST:-$(hostname -s 2>/dev/null || hostname)}"
+        # Every Facetwork server is a runner — group under "runner" by default.
+        export AFL_SERVER_GROUP="${AFL_SERVER_GROUP:-$(_envget AFL_SERVER_GROUP)}"
+        export AFL_SERVER_GROUP="${AFL_SERVER_GROUP:-runner}"
+
+        echo "Preflight — shared services must be reachable from this host:"
+        if "$PY" - "$AFL_MONGODB_URL" <<'PYEOF' 2>/dev/null
+import sys
+from pymongo import MongoClient
+MongoClient(sys.argv[1], serverSelectionTimeoutMS=5000).admin.command("ping")
+PYEOF
+        then echo "  ✓ MongoDB reachable: $AFL_MONGODB_URL"
+        else
+            echo "  ✗ MongoDB NOT reachable: $AFL_MONGODB_URL" >&2
+            echo "    Check host/port, /etc/hosts (afl-mongodb -> IP), mongod binds 0.0.0.0, firewall." >&2
+            exit 1
+        fi
+        if "$PY" - "$AFL_S3_ENDPOINT" <<'PYEOF' 2>/dev/null
+import socket, sys
+from urllib.parse import urlparse
+u = urlparse(sys.argv[1]); host = u.hostname or sys.argv[1]
+port = u.port or (443 if u.scheme == "https" else 80)
+socket.create_connection((host, port), timeout=5).close()
+PYEOF
+        then echo "  ✓ MinIO/S3 reachable: $AFL_S3_ENDPOINT"
+        else
+            echo "  ✗ MinIO/S3 NOT reachable: $AFL_S3_ENDPOINT" >&2
+            echo "    Check the endpoint URL/port, MinIO binds 0.0.0.0, firewall." >&2
+            exit 1
+        fi
+    fi
+    REPLICAS="${REPLICAS:-1}"
+
+    # Extra compose files (space/colon-separated), e.g. the local multi-server
+    # sim's network override. Lets the same path serve real fleets and simulation.
+    if [[ -n "${AFL_FLEET_EXTRA_COMPOSE:-}" ]]; then
+        IFS=': ' read -ra _extra <<< "$AFL_FLEET_EXTRA_COMPOSE"
+        for _f in "${_extra[@]}"; do [[ -n "$_f" ]] && COMPOSE_F+=(-f "$_f"); done
+    fi
+
+    # Validate each selected service exists (catches typos / wrong example name).
+    AVAIL="$(docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} config --services 2>/dev/null | grep '^runner-' || true)"
+    for s in "${SERVICES[@]}"; do
+        if ! grep -qx "$s" <<<"$AVAIL"; then
+            echo "ERROR: no compose service '$s' (from --example ${s#runner-})." >&2
+            echo "Available runner services:" >&2
+            echo "$AVAIL" | sed 's/^runner-/  /' >&2
+            exit 1
+        fi
+    done
+
+    if [[ "$CHECK_ONLY" == "1" ]]; then
+        echo "Preflight + service validation OK (--check): not starting runners."
+        exit 0
+    fi
+
+    SCALE=()
+    for s in "${SERVICES[@]}"; do SCALE+=(--scale "$s=$REPLICAS"); done
+    RECREATE_ARG=()
+    [[ "$RECREATE" == "1" ]] && RECREATE_ARG=(--force-recreate)
+
+    echo "Starting [${SERVICES[*]}] x${REPLICAS} via docker compose (mode=$MODE)"
+    [[ "$MODE" == "fleet" ]] && echo "  joining MongoDB=$AFL_MONGODB_URL  MinIO=$AFL_S3_ENDPOINT"
+    docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} \
+        up -d ${RECREATE_ARG[@]+"${RECREATE_ARG[@]}"} "${SCALE[@]}" "${SERVICES[@]}"
+
+    echo "Done. Runners now claim tasks from $( [[ "$MODE" == "fleet" ]] && echo "the shared fleet" || echo "the local stack" )."
+    echo "Watch:  docker compose ${COMPOSE_F[*]} logs -f ${SERVICES[*]}"
+    exit 0
+fi
 
 if ! [[ "$INSTANCES" =~ ^[1-9][0-9]*$ ]]; then
     echo "Error: --instances must be a positive integer, got '$INSTANCES'" >&2

@@ -1,128 +1,28 @@
 #!/usr/bin/env bash
-# Start osm runners on THIS server that join an existing Facetwork fleet's
-# external, shared MinIO + MongoDB. Preflight-checks that both shared services
-# are reachable, then brings the runners up (no bundled mongodb/minio here).
+# DEPRECATED SHIM — start-worker has been converged into `start-runner --fleet`.
+# Kept so existing callers (fleet-agent, docs, muscle memory) keep working.
 #
-#   scripts/start-worker                       # uses .env.worker, AFL_OSM_REPLICAS
-#   scripts/start-worker --env .env.worker2    # alternate config file
+# Run per-example runner containers on an ADDITIONAL server that join an existing
+# fleet's external, shared MinIO + MongoDB. Preflights both, then brings runners
+# up (no bundled mongodb/minio here). Defaults to osm-geocoder + osm-lz.
+#
+#   scripts/start-worker                       # = start-runner --fleet
+#   scripts/start-worker --env .env.fleet2     # alternate config file
 #   scripts/start-worker --replicas 6          # override runner count
 #   scripts/start-worker --check               # preflight only, don't start
 #
-# Required in the env file: AFL_MONGODB_URL and AFL_S3_ENDPOINT (the shared
-# services). See .env.worker.example.
+# To run OTHER examples in the fleet, call the converged command directly:
+#   scripts/start-runner --fleet --example noaa-weather
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="$REPO_ROOT/.env.worker"
-REPLICAS=""
-CHECK_ONLY=0
-RECREATE=0
 
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --env) ENV_FILE="$2"; shift 2 ;;
-        --replicas) REPLICAS="$2"; shift 2 ;;
-        --check) CHECK_ONLY=1; shift ;;
-        --recreate) RECREATE=1; shift ;;   # force-recreate runners (e.g. on an image change)
-        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
-        *) echo "unknown arg: $1" >&2; exit 2 ;;
-    esac
-done
-
-if [[ ! -f "$ENV_FILE" ]]; then
-    echo "ERROR: env file not found: $ENV_FILE" >&2
-    echo "  cp .env.worker.example .env.worker  and edit the shared endpoints." >&2
-    exit 1
-fi
-
-# Read the few vars THIS script needs without `source`ing the file: a value may
-# legitimately contain spaces (e.g. AFL_REGISTRY_RUNNER_ARGS=--task-list osm),
-# which `source` mis-parses ("osm: command not found"). docker compose reads the
-# full file safely via --env-file below.
-_envget() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -1; }
-AFL_MONGODB_URL="$(_envget AFL_MONGODB_URL)"
-AFL_S3_ENDPOINT="$(_envget AFL_S3_ENDPOINT)"
-AFL_RUNNER_IMAGE="${AFL_RUNNER_IMAGE:-$(_envget AFL_RUNNER_IMAGE)}"
-_REPLICAS_ENV="$(_envget AFL_OSM_REPLICAS)"
-
-: "${AFL_MONGODB_URL:?set AFL_MONGODB_URL (shared MongoDB) in $ENV_FILE}"
-: "${AFL_S3_ENDPOINT:?set AFL_S3_ENDPOINT (shared MinIO) in $ENV_FILE}"
-REPLICAS="${REPLICAS:-${_REPLICAS_ENV:-4}}"
-
-# Register this server's runners under a meaningful name (this host's hostname by
-# default, or AFL_FLEET_HOST / AFL_WORKER_NAME from the env) instead of a random
-# container id — so `fleet status` and the dashboard show the server by name, and
-# fleet-agent drift records (keyed by the same name) line up.
-export AFL_FLEET_HOST="${AFL_FLEET_HOST:-$(_envget AFL_WORKER_NAME)}"
-export AFL_FLEET_HOST="${AFL_FLEET_HOST:-$(hostname -s 2>/dev/null || hostname)}"
-# Group these runner-only servers under "worker" (the infra/master host runs the
-# full stack with AFL_SERVER_GROUP=master). Override via AFL_SERVER_GROUP.
-export AFL_SERVER_GROUP="${AFL_SERVER_GROUP:-$(_envget AFL_SERVER_GROUP)}"
-export AFL_SERVER_GROUP="${AFL_SERVER_GROUP:-worker}"
-
-PY="${REPO_ROOT}/.venv/bin/python3"; [[ -x "$PY" ]] || PY=python3
-
-echo "Preflight — shared services must be reachable from this host:"
-
-# 1) MongoDB
-if "$PY" - "$AFL_MONGODB_URL" <<'PYEOF' 2>/dev/null
-import sys
-from pymongo import MongoClient
-MongoClient(sys.argv[1], serverSelectionTimeoutMS=5000).admin.command("ping")
-PYEOF
-then
-    echo "  ✓ MongoDB reachable: $AFL_MONGODB_URL"
-else
-    echo "  ✗ MongoDB NOT reachable: $AFL_MONGODB_URL" >&2
-    echo "    Check the host/port, /etc/hosts (afl-mongodb -> IP), that mongod binds 0.0.0.0, and the firewall." >&2
-    exit 1
-fi
-
-# 2) MinIO / S3 — TCP connect to the endpoint host:port (no curl dependency;
-#    works for MinIO and real S3 alike).
-if "$PY" - "$AFL_S3_ENDPOINT" <<'PYEOF' 2>/dev/null
-import socket, sys
-from urllib.parse import urlparse
-u = urlparse(sys.argv[1])
-host = u.hostname or sys.argv[1]
-port = u.port or (443 if u.scheme == "https" else 80)
-socket.create_connection((host, port), timeout=5).close()
-PYEOF
-then
-    echo "  ✓ MinIO/S3 reachable: $AFL_S3_ENDPOINT"
-else
-    echo "  ✗ MinIO/S3 NOT reachable: $AFL_S3_ENDPOINT" >&2
-    echo "    Check the endpoint URL/port, that MinIO binds 0.0.0.0, and the firewall." >&2
-    exit 1
-fi
-
-if [[ "$CHECK_ONLY" == "1" ]]; then
-    echo "Preflight OK (--check): not starting runners."
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    sed -n '2,18p' "$0"
     exit 0
 fi
 
-echo "Starting $REPLICAS osm runner(s), joining MongoDB=$AFL_MONGODB_URL  MinIO=$AFL_S3_ENDPOINT"
-COMPOSE_F=(-f "$REPO_ROOT/docker-compose.full-stack.yml" -f "$REPO_ROOT/docker-compose.worker.yml")
-# Extra compose files (space/colon-separated), e.g. a local multi-server sim
-# network override. Lets the same path serve real workers and simulation.
-if [[ -n "${AFL_WORKER_EXTRA_COMPOSE:-}" ]]; then
-    IFS=': ' read -ra _extra <<< "$AFL_WORKER_EXTRA_COMPOSE"
-    for _f in "${_extra[@]}"; do [[ -n "$_f" ]] && COMPOSE_F+=(-f "$_f"); done
-fi
-RECREATE_ARG=()
-if [[ "$RECREATE" == "1" ]]; then
-    RECREATE_ARG=(--force-recreate)
-    # Pull a pinned/registry image if one is set (no-op/ignored for a local build).
-    if [[ -n "${AFL_RUNNER_IMAGE:-}" ]]; then
-        docker compose "${COMPOSE_F[@]}" --env-file "$ENV_FILE" \
-            pull runner-osm-geocoder runner-osm-lz 2>/dev/null || true
-    fi
-fi
-# Note: ${arr[@]+"${arr[@]}"} expands an EMPTY array safely under `set -u`
-# (macOS bash 3.2 otherwise errors on an empty-array expansion).
-docker compose "${COMPOSE_F[@]}" --env-file "$ENV_FILE" \
-    up -d ${RECREATE_ARG[@]+"${RECREATE_ARG[@]}"} --scale "runner-osm-geocoder=$REPLICAS" \
-    runner-osm-geocoder runner-osm-lz
-
-echo "Done. This server's runners now claim tasks from the shared fleet."
-echo "Watch:  docker compose -f docker-compose.full-stack.yml -f docker-compose.worker.yml logs -f runner-osm-geocoder"
+echo "note: start-worker is now a shim for 'start-runner --fleet'." >&2
+# All flags (--env, --replicas, --check, --recreate) map 1:1 to start-runner's
+# container/fleet mode, so forward them verbatim.
+exec "$REPO_ROOT/scripts/start-runner" --fleet "$@"

@@ -156,8 +156,9 @@ def main() -> None:
         "--server-group",
         default=os.environ.get("AFL_SERVER_GROUP", "default"),
         help="Server group name (env AFL_SERVER_GROUP; default: default). "
-        "Groups servers by role in fleet status / the dashboard — e.g. 'master' "
-        "for the infra host, 'worker' for runner-only servers.",
+        "Groups servers by role in fleet status / the dashboard. Every Facetwork "
+        "server is a runner (there is no 'master'); infra services (MongoDB, MinIO, "
+        "dashboard) are addressed by URL, not run as fleet servers.",
     )
     parser.add_argument(
         "--service-name",

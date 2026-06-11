@@ -1,0 +1,102 @@
+# Fleet runner override — run per-example runner containers on an ADDITIONAL
+# server that JOINs an existing fleet's EXTERNAL, SHARED MinIO + MongoDB. This
+# host runs runners only: no bundled mongodb / minio / postgis. Layer it on top
+# of the full-stack file.
+#
+#   scripts/start-runner --fleet                          # default: osm-geocoder + osm-lz
+#   scripts/start-runner --fleet --example noaa-weather   # any per-example runner
+#   scripts/start-runner --fleet --example census-us --example genomics
+#
+# (Or directly:
+#   docker compose -f docker-compose.full-stack.yml -f docker-compose.fleet.yml \
+#     --env-file .env.fleet up -d --scale runner-osm-geocoder=$AFL_OSM_REPLICAS \
+#     runner-osm-geocoder runner-osm-lz )
+#
+# `start-runner --fleet` preflight-checks the shared services first and maps each
+# --example NAME to its `runner-NAME` compose service.
+#
+# REQUIRED in .env.fleet: AFL_MONGODB_URL and AFL_S3_ENDPOINT — the shared
+# services, reachable over the network from this host. AFL_DATA_DIR must point at
+# a LARGE LOCAL disk on this server: scratch/staging stays local; outputs finalize
+# to the shared MinIO (portable s3:// URIs any runner on any host can resolve, so
+# a runner here can produce a leaf and the merge — anywhere — pulls it back).
+#
+# ALL per-example runners default to S3 storage (AFL_STORAGE=s3) in the full-stack
+# file, so every example's cache + output finalize to the shared MinIO — outputs
+# are never siloed per host. This override just repoints them at the shared
+# endpoint (AFL_S3_ENDPOINT) and drops the local-infra dependency.
+#
+# AFL_RUNNER_IMAGE pins the runner image fleet-wide (a registry tag for a real
+# fleet, so every server runs the same build). With pull_policy=missing it uses a
+# locally-built image of that tag if present, else pulls. The fleet controller
+# sets it from fleet_config.roles.*.image; an image change triggers a recreate.
+# All per-example runners build from the SAME docker/Dockerfile.example-runner
+# (the example is chosen at runtime via AFL_EXAMPLE_NAME), so one image tag serves
+# every example.
+
+# ── Shared fleet-join override, applied to every per-example runner ──────────
+# `depends_on: !reset []` drops the local-infra dependency so the runners don't
+# try to start (or wait on) a bundled mongodb/minio that doesn't exist here.
+# extra_hosts make the conventional names resolve INSIDE the runner containers:
+# Docker's DNS does NOT resolve mDNS/.local names and containers don't read the
+# host's /etc/hosts, so an `afl-mongodb`/`afl-minio` name needs an explicit map
+# (AFL_INFRA_IP=<infra host IP>). Otherwise put the infra host's IP directly in
+# AFL_MONGODB_URL / AFL_S3_ENDPOINT and these mappings are harmlessly unused.
+x-fleet-runner: &fleet-runner
+  image: ${AFL_RUNNER_IMAGE:-facetwork-runner-osm-geocoder:latest}
+  pull_policy: ${AFL_RUNNER_PULL_POLICY:-missing}
+  # Register under a meaningful name (set by start-runner to this host's hostname
+  # / AFL_FLEET_HOST) so `fleet status` shows the server by name, not a random id.
+  hostname: ${AFL_FLEET_HOST:-}
+  depends_on: !reset []
+  extra_hosts:
+    - "afl-mongodb:${AFL_INFRA_IP:-127.0.0.1}"
+    - "afl-minio:${AFL_INFRA_IP:-127.0.0.1}"
+
+# Merged into each runner's `environment` (compose deep-merges env maps; these
+# keys override the base file's localhost defaults with the shared endpoints).
+x-fleet-env: &fleet-env
+  AFL_MONGODB_URL: ${AFL_MONGODB_URL:?set AFL_MONGODB_URL to the shared MongoDB, e.g. mongodb://afl-mongodb:27017}
+  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:?set AFL_S3_ENDPOINT to the shared MinIO, e.g. http://afl-minio:9000}
+  AFL_POSTGIS_URL: ${AFL_POSTGIS_URL:-}
+
+services:
+  runner-anthropic:
+    <<: *fleet-runner
+    environment:
+      <<: *fleet-env
+
+  runner-osm-geocoder:
+    <<: *fleet-runner
+    environment:
+      <<: *fleet-env
+
+  runner-osm-lz:
+    <<: *fleet-runner
+    environment:
+      <<: *fleet-env
+
+  runner-noaa-weather:
+    <<: *fleet-runner
+    environment:
+      <<: *fleet-env
+
+  runner-jenkins-example:
+    <<: *fleet-runner
+    environment:
+      <<: *fleet-env
+
+  runner-census-us:
+    <<: *fleet-runner
+    environment:
+      <<: *fleet-env
+
+  runner-genomics:
+    <<: *fleet-runner
+    environment:
+      <<: *fleet-env
+
+  runner-sensor-monitoring:
+    <<: *fleet-runner
+    environment:
+      <<: *fleet-env

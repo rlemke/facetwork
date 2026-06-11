@@ -91,6 +91,25 @@ x-s3-creds: &s3-creds
   AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
   AFL_S3_REGION: ${AFL_S3_REGION:-us-east-1}
 
+# Generic S3 STORAGE for every per-example runner — cache + outputs finalize to
+# the shared MinIO/S3 (s3://<bucket>), so a leaf produced anywhere and the merge
+# run anywhere resolve the same objects (nothing siloed on a single host's disk).
+# Object stores can't do partial writes, so handlers stage to a LOCAL scratch dir
+# and finalize on close — those local paths live under the already-mounted
+# /Volumes/afl_data (container-absolute, so they're correct regardless of the
+# host's AFL_DATA_DIR). The OSM runners use their own *osm-s3-env anchor instead
+# (PBF-specific tuning + external scratch volume).
+x-s3-storage: &s3-storage
+  AFL_STORAGE: s3
+  AFL_DATA_ROOT: s3://${AFL_S3_BUCKET:-afl-cache}
+  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://minio:9000}
+  AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
+  AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
+  AFL_S3_REGION: ${AFL_S3_REGION:-us-east-1}
+  AFL_LOCAL_SCRATCH: /Volumes/afl_data/scratch
+  AFL_OUTPUT_BASE: /Volumes/afl_data/scratch/output
+  AFL_LOCAL_OUTPUT_DIR: /Volumes/afl_data/output
+
 services:
 
   # =====================================================================
@@ -266,11 +285,11 @@ services:
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      <<: *s3-storage
       AFL_EXAMPLE_NAME: anthropic
       AFL_EXAMPLE_REPO: fwh_anthropic
       AFL_EXAMPLE_EXTRAS: ${ANTHROPIC_EXTRAS:-agent_sdk,mcp}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      AFL_LOCAL_OUTPUT_DIR: ${AFL_DATA_DIR:-/Volumes/afl_data}/output
       AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list anthropic"
     volumes:
@@ -393,9 +412,9 @@ services:
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      <<: *s3-storage
       AFL_EXAMPLE_NAME: noaa-weather
       AFL_EXAMPLE_REPO: fwh_noaa_weather
-      AFL_LOCAL_OUTPUT_DIR: ${AFL_DATA_DIR:-/Volumes/afl_data}/output
       AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list weather"
     volumes:
@@ -413,10 +432,10 @@ services:
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      <<: *s3-storage
       AFL_EXAMPLE_NAME: jenkins
       AFL_EXAMPLE_REPO: fwh_jenkins
       JENKINS_URL: http://jenkins:8080
-      AFL_LOCAL_OUTPUT_DIR: ${AFL_DATA_DIR:-/Volumes/afl_data}/output
       AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list jenkins"
     volumes:
@@ -434,10 +453,10 @@ services:
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      <<: *s3-storage
       AFL_EXAMPLE_NAME: census-us
       AFL_EXAMPLE_REPO: fwh_census_us
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
-      AFL_LOCAL_OUTPUT_DIR: ${AFL_DATA_DIR:-/Volumes/afl_data}/output
       AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list census"
     volumes:
@@ -455,9 +474,9 @@ services:
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      <<: *s3-storage
       AFL_EXAMPLE_NAME: genomics
       AFL_EXAMPLE_REPO: fwh_genomics
-      AFL_LOCAL_OUTPUT_DIR: ${AFL_DATA_DIR:-/Volumes/afl_data}/output
       AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list genomics"
     volumes:
@@ -475,9 +494,9 @@ services:
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      <<: *s3-storage
       AFL_EXAMPLE_NAME: sensor-monitoring
       AFL_EXAMPLE_REPO: fwh_sensor_monitoring
-      AFL_LOCAL_OUTPUT_DIR: ${AFL_DATA_DIR:-/Volumes/afl_data}/output
       AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list monitor"
     volumes:

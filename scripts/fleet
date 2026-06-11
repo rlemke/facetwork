@@ -3,7 +3,7 @@
 live fleet. Set MinIO + runner counts ONCE here instead of on every server; each
 server's `fleet-agent` reads this to self-configure.
 
-  fleet set    --mongo <url> [--minio URL] [--bucket B] [--osm-replicas N] [--task-list X]
+  fleet set    --mongo <url> [--minio URL] [--bucket B] [--mongo-url URL] [--dashboard-url URL] [--osm-replicas N] [--task-list X]
   fleet get    --mongo <url>
   fleet status --mongo <url>
 
@@ -11,6 +11,12 @@ The config lives in the `fleet_config` collection (_id="default"); `status`
 reads live runners from the `servers` heartbeat collection. The only thing a
 server needs to join is the Mongo URL (or a resolvable `afl-mongodb` hostname);
 the MinIO endpoint and replica counts flow from here.
+
+Model: the infra services — MongoDB, MinIO, Dashboard — are identified by their
+access URL ONLY. The fleet does not enumerate their cluster members; each may be
+a single node, a replica set / distributed deployment, or a managed service.
+Every Facetwork server is a homogeneous RUNNER (there is no "master"); any runner
+with Mongo access can seed workflow definitions.
 """
 from __future__ import annotations
 
@@ -49,9 +55,14 @@ def _db(url):
 
 def _print_cfg(cfg):
     minio = cfg.get("minio", {})
+    eps = cfg.get("endpoints", {})
     print(f"  version:   {cfg.get('version', '-')}")
     print(f"  updated:   {cfg.get('updated_at', '-')}")
+    # Infra services are identified by access URL only (single node, cluster, or
+    # managed service — the fleet does not track their internal membership).
+    print(f"  mongodb:   {eps.get('mongodb', '-')}")
     print(f"  minio:     {minio.get('endpoint', '-')}  bucket={minio.get('bucket', '-')}")
+    print(f"  dashboard: {eps.get('dashboard', '-')}")
     for role, spec in (cfg.get("roles") or {}).items():
         print(f"  role {role}: replicas={spec.get('replicas', '-')} task_list={spec.get('task_list', '-')} image={spec.get('image', '-')}")
 
@@ -59,12 +70,20 @@ def _print_cfg(cfg):
 def cmd_set(a):
     d = _db(_resolve(a))
     cfg = d.fleet_config.find_one({"_id": "default"}) or {
-        "_id": "default", "minio": {}, "roles": {}, "version": 0,
+        "_id": "default", "minio": {}, "endpoints": {}, "roles": {}, "version": 0,
     }
     if a.minio:
         cfg.setdefault("minio", {})["endpoint"] = a.minio
     if a.bucket:
         cfg.setdefault("minio", {})["bucket"] = a.bucket
+    # Infra services addressed by URL only — no fleet membership is recorded for
+    # them. MinIO's endpoint also mirrors into `endpoints.minio` for a unified view.
+    if a.mongo_url:
+        cfg.setdefault("endpoints", {})["mongodb"] = a.mongo_url
+    if a.dashboard_url:
+        cfg.setdefault("endpoints", {})["dashboard"] = a.dashboard_url
+    if a.minio:
+        cfg.setdefault("endpoints", {})["minio"] = a.minio
     if a.osm_replicas is not None:
         cfg.setdefault("roles", {}).setdefault("osm-geocoder", {})["replicas"] = a.osm_replicas
     if a.task_list:
@@ -152,8 +171,10 @@ def main():
 
     ps = sub.add_parser("set", help="update the central fleet config")
     add_mongo(ps)
-    ps.add_argument("--minio", help="shared MinIO/S3 endpoint, e.g. http://afl-minio:9000")
+    ps.add_argument("--minio", help="shared MinIO/S3 endpoint (URL), e.g. http://afl-minio:9000")
     ps.add_argument("--bucket", help="durable bucket (default afl-cache)")
+    ps.add_argument("--mongo-url", help="advertised MongoDB URL runners connect to (URL of the service, not a server list)")
+    ps.add_argument("--dashboard-url", help="dashboard URL, e.g. http://afl-dashboard:8080 (informational; URL-addressed service)")
     ps.add_argument("--osm-replicas", type=int, help="osm runners per server")
     ps.add_argument("--task-list", help="task list for osm runners (default osm)")
     ps.add_argument("--image", help="runner image tag (a change triggers a rolling recreate fleet-wide)")

@@ -66,7 +66,7 @@ for i in $(seq 1 "$SERVERS"); do
     if out=$(COMPOSE_PROJECT_NAME="fleet-srv$i" \
              AFL_FLEET_HOST="fleet-srv$i" \
              AFL_FLEET_KEY="$KEY" \
-             AFL_WORKER_EXTRA_COMPOSE="$REPO/docker-compose.sim.yml" \
+             AFL_FLEET_EXTRA_COMPOSE="$REPO/docker-compose.sim.yml" \
              AFL_DATA_DIR="${AFL_DATA_DIR:-/Volumes/afl_data}/sim-srv$i" \
              "$REPO/scripts/fleet-agent" apply --mongo "$MONGO" 2>&1); then
         printf '%s\n' "$out" | grep -iE "applying|Started" | head -3 | sed 's/^/    /' || true

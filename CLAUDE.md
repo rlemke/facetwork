@@ -386,7 +386,7 @@ On each remote server, add `/etc/hosts` entries pointing `afl-mongodb` and `afl-
 scripts/start_mongo                    # binds 0.0.0.0
 scripts/start_postgres                 # check listen_addresses in postgresql.conf
 
-# On each worker server:
+# On each runner server:
 # /etc/hosts: 192.168.x.x afl-mongodb afl-postgres
 scripts/start-runner --example osm-geocoder -- --log-format text
 ```
@@ -397,24 +397,37 @@ Set `AFL_POSTGIS_URL` (e.g. `postgresql://afl:afl@afl-postgres:5432/afl_gis`) fo
 
 ### Multi-server runner fleet + local simulation
 
+**Server-role model — there is no "master".** The fleet has exactly two kinds of
+participant: (1) **infra services** — MongoDB, MinIO, and the Dashboard — each
+identified by its **access URL only**; the fleet never enumerates their cluster
+members, so each may be a single node, a replica set / distributed deployment, or
+a managed service; and (2) **runner servers** — every Facetwork server is a
+homogeneous, stateless runner (`AFL_SERVER_GROUP` role tag, default `runner`),
+holding nothing but local scratch. Runners are leaderless and don't contend
+(coordination is the atomic `claim_task()` in Mongo), so any runner with Mongo
+access can also **seed** workflow definitions (`scripts/seed-examples`) — no box
+is privileged. The central `fleet set --mongo-url … --minio … --dashboard-url …`
+records those three service URLs; the dashboard's Fleet page shows them as
+URL-addressed services, not as fleet servers.
+
 A fleet of runner servers shares **one** MongoDB + **one** MinIO; each extra
 server runs *runners only* and self-configures from a central config. The
 controller lives in `scripts/`:
 
 | Script | Role |
 |--------|------|
-| `scripts/start-worker` | Bring up runners on this host against an external Mongo+MinIO (`.env.worker`); preflight-checks both. `docker-compose.worker.yml` is the override that drops the bundled infra. |
+| `scripts/start-runner --fleet` | Bring up runner **containers** on this host against an external Mongo+MinIO (`.env.fleet`); preflight-checks both. `--example NAME` runs any per-example runner (default osm-geocoder + osm-lz); `--docker` is the same but against the local bundled infra. `docker-compose.fleet.yml` is the override that drops the bundled infra (now applied to every per-example runner via a YAML anchor). `scripts/start-worker` is a back-compat shim for `start-runner --fleet`. |
 | `scripts/fleet` | Admin (run anywhere): `set` the central config (MinIO endpoint / replicas / image), `status` (live runners + per-host drift), `secret gen-key\|set\|show` (MinIO creds encrypted in Mongo with `AFL_FLEET_KEY`). |
 | `scripts/fleet-agent` | Per server: `apply` (one-shot) or `watch` (daemon) — reads the central config, **discovers Mongo** (explicit → `AFL_MONGODB_URL` → mDNS → `afl-mongodb`), decrypts creds, brings runners up, records drift. Bootstrap = the Mongo URL only. |
 | `scripts/fleet-advertise` | Optional mDNS advertiser for the infra host (needs `zeroconf`). |
 
 A new server joins with one command — `export AFL_FLEET_KEY=<key>; scripts/fleet-agent watch` — and the whole fleet is driven by editing the central config once (`fleet set --osm-replicas N`, `--image …`). Full guide: [docs/operations/deployment.md](docs/operations/deployment.md) → **"Adding a server to the fleet"** / **"Central fleet config"**.
 
-> **Bringing up an ADDITIONAL server that points at this fleet's master (shared
-> MongoDB + MinIO)? Follow [docs/operations/join-fleet-from-new-server.md](docs/operations/join-fleet-from-new-server.md)** — it
-> has the master's coordinates, the clone/venv/config steps, and `cp
-> .env.worker.fleet .env.worker && scripts/start-worker`. The pre-filled
-> [`.env.worker.fleet`](../.env.worker.fleet) points at the master.
+> **Bringing up an ADDITIONAL runner server that points at this fleet's shared
+> infra (MongoDB + MinIO)? Follow [docs/operations/join-fleet-from-new-server.md](docs/operations/join-fleet-from-new-server.md)** — it
+> has the infra host's coordinates, the clone/venv/config steps, and `cp
+> .env.fleet.preset .env.fleet && scripts/start-worker`. The pre-filled
+> [`.env.fleet.preset`](../.env.fleet.preset) points at the shared infra URLs.
 
 **Local simulation — verify the whole thing on one box.** `scripts/simulate-fleet`
 spins up N "servers" as separate compose projects on the running full-stack's

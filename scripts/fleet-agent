@@ -105,8 +105,8 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     }
     if image:
         env["AFL_RUNNER_IMAGE"] = image
-    # Role group for fleet status / dashboard (worker servers default to "worker").
-    grp = os.environ.get("AFL_SERVER_GROUP", "worker")
+    # Role group for fleet status / dashboard (every server is a runner by default).
+    grp = os.environ.get("AFL_SERVER_GROUP", "runner")
     env["AFL_SERVER_GROUP"] = grp
     tl = osm.get("task_list")
     if tl:

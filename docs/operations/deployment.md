@@ -161,31 +161,37 @@ scripts/rolling-deploy --example osm-geocoder        # zero-downtime restart
 
 Each runner independently polls the shared task queue. When a workflow creates 100 event tasks, all 12 runners (4 per machine) compete for tasks via atomic `claim_task()`. The workload distributes naturally across all available runners.
 
-### Adding a server to the fleet — the worker stack (shared external MinIO + MongoDB)
+### Adding a runner server to the fleet (shared external MinIO + MongoDB)
+
+**Server-role model — there is no "master".** A fleet has just two kinds of participant: **infra services** (MongoDB, MinIO, and the Dashboard), each identified by its **access URL only** — the fleet never enumerates their cluster members, so each can be a single node, a replica set / distributed deployment, or a managed service — and **runner servers**, which are homogeneous and stateless (`AFL_SERVER_GROUP` defaults to `runner`). Runners are leaderless and don't contend (coordination is the atomic `claim_task()` in Mongo), so no box is privileged: any runner with Mongo access can also seed workflow definitions.
 
 The full-stack compose **bundles a MinIO and a MongoDB per host**. That is wrong for a multi-server fleet: if you bring it up independently on N servers, each gets its *own* MinIO, so outputs are siloed and a merge on one server can't see another's. A fleet needs **one shared MinIO and one shared MongoDB**, reachable from every server; each additional server runs *runners only*.
 
-Use **`docker-compose.worker.yml`** (a thin override that drops the local-infra dependency and points the runners at the shared services) and **`scripts/start-worker`**:
+Use **`docker-compose.fleet.yml`** (a thin override that drops the local-infra dependency and points the runners at the shared services — applied to **every** per-example runner via a YAML anchor) and **`scripts/start-runner --fleet`** (the container/fleet mode converged from the old `start-worker`):
 
 ```bash
 # On the server hosting the shared services (once):
 docker compose -f docker-compose.full-stack.yml up -d        # MinIO :9000, MongoDB :27017
 #   ensure both bind 0.0.0.0 and the ports are reachable from the other servers
 
-# On each ADDITIONAL server:
-cp .env.worker.example .env.worker
+# On each ADDITIONAL runner server:
+cp .env.fleet.example .env.fleet
 #   edit AFL_MONGODB_URL + AFL_S3_ENDPOINT to the shared host, AFL_DATA_DIR to a
 #   large LOCAL disk, AFL_OSM_REPLICAS to this host's runner count
-scripts/start-worker                    # preflight-checks both shared services, then starts the runners
-scripts/start-worker --check            # preflight only
-scripts/start-worker --replicas 6       # override the runner count
+scripts/start-runner --fleet                       # preflight both shared services, then start runners (default: osm-geocoder + osm-lz)
+scripts/start-runner --fleet --check               # preflight + validate only
+scripts/start-runner --fleet --replicas 6          # override the runner count
+scripts/start-runner --fleet --example noaa-weather --example census-us   # run ANY per-example runner in the fleet
+#   (scripts/start-worker still works — it's a back-compat shim for `start-runner --fleet`)
+#   All per-example runners default to S3 storage, so every example's output finalizes
+#   to the shared MinIO (nothing siloed per host) — no extra config needed.
 ```
 
-`start-worker` fails fast with a clear message if the shared MongoDB or MinIO is not reachable (host/port, `/etc/hosts`, `0.0.0.0` binding, firewall), instead of letting the runners crash-loop. Under the hood it runs:
+`start-runner --fleet` fails fast with a clear message if the shared MongoDB or MinIO is not reachable (host/port, `/etc/hosts`, `0.0.0.0` binding, firewall), instead of letting the runners crash-loop. Under the hood it runs:
 
 ```bash
-docker compose -f docker-compose.full-stack.yml -f docker-compose.worker.yml \
-  --env-file .env.worker up -d --scale runner-osm-geocoder=$AFL_OSM_REPLICAS \
+docker compose -f docker-compose.full-stack.yml -f docker-compose.fleet.yml \
+  --env-file .env.fleet up -d --scale runner-osm-geocoder=$AFL_OSM_REPLICAS \
   runner-osm-geocoder runner-osm-lz
 ```
 
@@ -212,7 +218,7 @@ The MinIO console (`http://<minio-host>:9001`) also browses/previews objects aft
 
 ### Central fleet config — join + manage servers without per-host setup
 
-Editing `.env.worker` on every server doesn't scale. The fleet controller
+Editing `.env.fleet` on every server doesn't scale. The fleet controller
 (Phase 1) keeps the desired state **once, centrally, in MongoDB** (the
 `fleet_config` collection) and has each server pull it. The only thing a server
 needs to know is **how to reach Mongo** — the MinIO endpoint and replica counts
@@ -367,7 +373,7 @@ If you skip this — e.g. keep `AFL_OSM_OUTPUT_BASE` pointed at a *local* path w
 
 - **MongoDB**: Dedicated server or managed service (MongoDB Atlas) with replica sets for HA
 - **Dashboard**: Single instance behind a reverse proxy (nginx/caddy)
-- **Runners**: Multiple instances per worker node, scaled via `--instances N` and `--max-concurrent M`
+- **Runners**: Multiple instances per runner server, scaled via `--instances N` and `--max-concurrent M`
 - **Monitoring**: Dashboard at `/v2/workflows` and `/v2/servers`; API at `/api/servers` for health checks
 - **Crash recovery**: Orphan reaper automatically resets tasks from dead runners (configurable via `AFL_REAPER_TIMEOUT_MS`)
 

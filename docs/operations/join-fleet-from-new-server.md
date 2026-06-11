@@ -14,14 +14,14 @@ starts a database or object store locally.
 | MinIO | `http://192.168.68.75:9000` | bundled, published `0.0.0.0:9000`; bucket `afl-cache` |
 | MinIO creds | `minioadmin` / `minioadmin` | bundled dev default (use the secret store for prod — see below) |
 
-> **Use the master's IP in `.env.worker`, not a `.local`/mDNS name.** The runners
+> **Use the infra host's IP in `.env.fleet`, not a `.local`/mDNS name.** The runners
 > run in Docker containers, and Docker's DNS does **not** resolve mDNS/`.local`
 > names, and containers don't read the host's `/etc/hosts`. So `mongodb://server3.local:27017`
 > works for `fleet status` (which runs on the host) but the **runner container
-> can't reach it → the worker never registers** (the #1 "my worker doesn't show
-> up" cause). If the IP changes, update it in `.env.worker` (one place). To use a
-> stable **name** instead: set `AFL_INFRA_IP=<master IP>` in `.env.worker` and use
-> `mongodb://afl-mongodb:27017` + `http://afl-minio:9000` — `docker-compose.worker.yml`
+> can't reach it → the runner never registers** (the #1 "my runner doesn't show
+> up" cause). If the IP changes, update it in `.env.fleet` (one place). To use a
+> stable **name** instead: set `AFL_INFRA_IP=<infra host IP>` in `.env.fleet` and use
+> `mongodb://afl-mongodb:27017` + `http://afl-minio:9000` — `docker-compose.fleet.yml`
 > maps those names *inside the containers* via `extra_hosts` (a host `/etc/hosts`
 > entry alone does **not** reach the container).
 
@@ -45,15 +45,15 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[mongodb,s3]" cryptography   # cryptography = secret store; zeroconf optional (mDNS)
 
 # 3. Point at the shared infra — the committed template is pre-filled.
-cp .env.worker.fleet .env.worker
-#    Edit .env.worker if the infra IP changed, and set AFL_DATA_DIR to a big LOCAL
+cp .env.fleet.preset .env.fleet
+#    Edit .env.fleet if the infra IP changed, and set AFL_DATA_DIR to a big LOCAL
 #    path on THIS server (macOS: /Volumes/afl_data ; Linux: e.g. /var/lib/afl_data).
 
 # 4. Preflight: confirm both shared services are reachable from here.
 scripts/start-worker --check          # ✓ MongoDB reachable  ✓ MinIO reachable
 
 # 5. Start the runners (first run BUILDS the runner image locally — a few minutes).
-scripts/start-worker                  # uses AFL_OSM_REPLICAS from .env.worker
+scripts/start-worker                  # uses AFL_OSM_REPLICAS from .env.fleet
 ```
 
 That's it — the runners register in the shared MongoDB and immediately start
@@ -61,7 +61,7 @@ claiming tasks from the shared queue, writing outputs to the shared MinIO.
 
 ### Option B — central-config daemon (recommended for a managed fleet)
 
-Instead of `.env.worker`, let the server pull its config (MinIO endpoint, replica
+Instead of `.env.fleet`, let the server pull its config (MinIO endpoint, replica
 count, image) from the central `fleet_config` in Mongo, and auto-reconcile:
 
 ```bash
@@ -87,7 +87,7 @@ box is `scripts/simulate-fleet` (see CLAUDE.md → *Multi-server runner fleet*).
 
 ## Notes
 - **Secrets (prod).** For real deployments, don't keep MinIO creds in each
-  `.env.worker`. On the infra host: `scripts/fleet secret gen-key` (share
+  `.env.fleet`. On the infra host: `scripts/fleet secret gen-key` (share
   `AFL_FLEET_KEY` out-of-band), `scripts/fleet secret set --minio-access … --minio-secret …`.
   Each server then needs only `AFL_FLEET_KEY` (one rotatable secret); `fleet-agent`
   decrypts the creds at apply.

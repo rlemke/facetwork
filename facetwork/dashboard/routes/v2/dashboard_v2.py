@@ -1245,6 +1245,14 @@ def _fleet_controller_data(store) -> dict:
         return {}
     desired = cfg.get("version")
     minio = cfg.get("minio") or {}
+    eps = cfg.get("endpoints") or {}
+    # Infra services are identified by access URL only — not enumerated as fleet
+    # servers. Each may be a single node, a cluster, or a managed service.
+    services = [
+        {"name": "MongoDB", "url": eps.get("mongodb") or "—"},
+        {"name": "MinIO", "url": eps.get("minio") or minio.get("endpoint") or "—"},
+        {"name": "Dashboard", "url": eps.get("dashboard") or "—"},
+    ]
     roles = [
         {
             "name": name,
@@ -1274,6 +1282,7 @@ def _fleet_controller_data(store) -> dict:
             "bucket": minio.get("bucket") or "—",
             "updated_at": cfg.get("updated_at") or "—",
             "roles": roles,
+            "services": services,
         },
         "agents": agents,
     }
