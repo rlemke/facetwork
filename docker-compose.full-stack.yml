@@ -287,6 +287,11 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      # S3-backed (x-s3-storage) → needs the shared MinIO + its bucket setup, so a
+      # self-contained `start-runner --docker --example <name>` boots MinIO too.
+      # docker-compose.fleet.yml resets depends_on to [] for --fleet (external infra).
+      minio-setup:
+        condition: service_completed_successfully
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
@@ -414,6 +419,11 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      # S3-backed (x-s3-storage) → needs the shared MinIO + its bucket setup, so a
+      # self-contained `start-runner --docker --example <name>` boots MinIO too.
+      # docker-compose.fleet.yml resets depends_on to [] for --fleet (external infra).
+      minio-setup:
+        condition: service_completed_successfully
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
@@ -434,6 +444,11 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      # S3-backed (x-s3-storage) → needs the shared MinIO + its bucket setup, so a
+      # self-contained `start-runner --docker --example <name>` boots MinIO too.
+      # docker-compose.fleet.yml resets depends_on to [] for --fleet (external infra).
+      minio-setup:
+        condition: service_completed_successfully
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
@@ -455,6 +470,11 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      # S3-backed (x-s3-storage) → needs the shared MinIO + its bucket setup, so a
+      # self-contained `start-runner --docker --example <name>` boots MinIO too.
+      # docker-compose.fleet.yml resets depends_on to [] for --fleet (external infra).
+      minio-setup:
+        condition: service_completed_successfully
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
@@ -476,6 +496,11 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      # S3-backed (x-s3-storage) → needs the shared MinIO + its bucket setup, so a
+      # self-contained `start-runner --docker --example <name>` boots MinIO too.
+      # docker-compose.fleet.yml resets depends_on to [] for --fleet (external infra).
+      minio-setup:
+        condition: service_completed_successfully
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
@@ -496,6 +521,11 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      # S3-backed (x-s3-storage) → needs the shared MinIO + its bucket setup, so a
+      # self-contained `start-runner --docker --example <name>` boots MinIO too.
+      # docker-compose.fleet.yml resets depends_on to [] for --fleet (external infra).
+      minio-setup:
+        condition: service_completed_successfully
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
