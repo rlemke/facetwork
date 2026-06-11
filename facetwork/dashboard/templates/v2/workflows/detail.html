@@ -80,6 +80,7 @@
             hx-confirm="Repair this workflow? This will reset orphaned tasks, retry transient errors, and fix runner state."
             hx-target="#repair-result"
             hx-swap="innerHTML">Repair Workflow</button>
+    <a href="/v2/workflows/{{ runner.uuid }}/source" role="button" class="outline">View Source</a>
     <span id="repair-result"></span>
 </div>
 

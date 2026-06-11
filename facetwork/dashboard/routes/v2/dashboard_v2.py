@@ -185,6 +185,49 @@ def workflow_detail(
     )
 
 
+@router.get("/workflows/{runner_id}/source")
+def workflow_source(runner_id: str, request: Request, store=Depends(get_store)):
+    """Reconstruct and show the FFL source for this run's workflow.
+
+    A runner snapshots the full compiled program AST (``compiled_ast``) at start
+    but not the original sources, so the source shown here is reconstructed from
+    that AST and sliced down to just this workflow plus the declarations it
+    references.
+    """
+    from facetwork.workflow_source import (
+        WorkflowNotFoundError,
+        reconstruct_workflow_source,
+    )
+
+    runner = store.get_runner(runner_id)
+    source = None
+    error = None
+    if runner is None:
+        error = "Workflow run not found."
+    elif not runner.compiled_ast:
+        error = "No compiled AST was snapshotted for this run — source cannot be reconstructed."
+    else:
+        try:
+            source = reconstruct_workflow_source(
+                runner.compiled_ast, runner.workflow.name
+            )
+        except WorkflowNotFoundError as exc:
+            error = str(exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            error = f"Failed to reconstruct source: {exc}"
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v2/workflows/source.html",
+        {
+            "runner": runner,
+            "source": source,
+            "error": error,
+            "active_tab": "workflows",
+        },
+    )
+
+
 @router.get("/workflows/{runner_id}/summary/partial")
 def workflow_summary_partial(
     runner_id: str,
