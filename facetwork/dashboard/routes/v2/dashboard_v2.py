@@ -1189,6 +1189,53 @@ def _enrich_runners_with_progress(
 # =============================================================================
 
 
+def _fleet_controller_data(store) -> dict:
+    """Central fleet config + per-host reconcile drift (from the `fleet`/
+    `fleet-agent` controller's fleet_config + fleet_agents collections). Returns
+    {} if the controller has never been used."""
+    try:
+        db = store._db
+        cfg = db.fleet_config.find_one({"_id": "default"})
+    except Exception:
+        return {}
+    if not cfg:
+        return {}
+    desired = cfg.get("version")
+    minio = cfg.get("minio") or {}
+    roles = [
+        {
+            "name": name,
+            "replicas": spec.get("replicas", "—"),
+            "image": spec.get("image") or "—",
+            "task_list": spec.get("task_list") or "—",
+        }
+        for name, spec in (cfg.get("roles") or {}).items()
+    ]
+    agents = []
+    for a in db.fleet_agents.find({}):
+        av = a.get("applied_version")
+        agents.append(
+            {
+                "host": a.get("host") or a.get("_id"),
+                "applied_version": av,
+                "applied_image": a.get("applied_image") or "—",
+                "applied_at": a.get("applied_at") or "—",
+                "uptodate": av == desired,
+            }
+        )
+    agents.sort(key=lambda x: str(x["host"]))
+    return {
+        "config": {
+            "version": desired,
+            "minio": minio.get("endpoint") or "—",
+            "bucket": minio.get("bucket") or "—",
+            "updated_at": cfg.get("updated_at") or "—",
+            "roles": roles,
+        },
+        "agents": agents,
+    }
+
+
 @router.get("/fleet")
 def fleet_view(request: Request, store=Depends(get_store)):
     """Fleet overview: per-server task counts broken down by event facet."""
@@ -1233,6 +1280,7 @@ def fleet_view(request: Request, store=Depends(get_store)):
             "max_total": max_total,
             "server_count": len(running),
             "active_tab": "fleet",
+            "fleet_controller": _fleet_controller_data(store),
         },
     )
 
@@ -1275,5 +1323,6 @@ def fleet_partial(request: Request, store=Depends(get_store)):
             "totals": totals,
             "max_total": max_total,
             "server_count": len(running),
+            "fleet_controller": _fleet_controller_data(store),
         },
     )
