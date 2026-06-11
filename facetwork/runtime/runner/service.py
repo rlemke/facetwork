@@ -1511,6 +1511,7 @@ class RunnerService:
                 runner_id=runner_id,
                 wf_id=submitted_wf_id,
                 qualified_workflow_name=workflow_name,
+                runner_task_list=self._config.task_list,
             )
 
             # Cache AST for resume
@@ -1793,6 +1794,7 @@ class RunnerService:
                 program_ast=program_ast,
                 runner_id=runner_id,
                 qualified_workflow_name=qualified_workflow_name,
+                runner_task_list=self._config.task_list,
             )
             result = future.result(timeout=resume_timeout_s)
         except concurrent.futures.TimeoutError:
@@ -1864,6 +1866,7 @@ class RunnerService:
                 program_ast=program_ast,
                 runner_id=runner_id,
                 qualified_workflow_name=qualified_workflow_name,
+                runner_task_list=self._config.task_list,
             )
 
             if result.status in (ExecutionStatus.COMPLETED, ExecutionStatus.ERROR):

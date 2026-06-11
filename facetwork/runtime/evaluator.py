@@ -98,6 +98,13 @@ class ExecutionContext:
     # separately to apply prefix matches like "osm.=osm".
     qualified_workflow_name: str = ""
 
+    # Task list of the runner processing this workflow. Child event tasks inherit
+    # it so the whole workflow — including nested sub-workflow / foreach children —
+    # stays on the list the claiming runner (and its peers) actually poll, rather
+    # than falling back to "default" when the short workflow name can't be
+    # prefix-matched. Empty → fall back to resolve_task_list(qualified name).
+    runner_task_list: str = ""
+
     # Cache for block dependency graphs (keyed by block step ID)
     _block_graphs: dict[str, DependencyGraph] = field(default_factory=dict)
 
@@ -751,6 +758,7 @@ class Evaluator:
         dispatcher: "HandlerDispatcher | None" = None,
         wf_id: str = "",
         qualified_workflow_name: str = "",
+        runner_task_list: str = "",
     ) -> ExecutionResult:
         """Execute a workflow.
 
@@ -792,6 +800,7 @@ class Evaluator:
             runner_id=runner_id,
             dispatcher=dispatcher,
             qualified_workflow_name=qualified_workflow_name or workflow_name,
+            runner_task_list=runner_task_list,
         )
 
         try:
@@ -1762,6 +1771,7 @@ class Evaluator:
         runner_id: str = "",
         dispatcher: "HandlerDispatcher | None" = None,
         qualified_workflow_name: str = "",
+        runner_task_list: str = "",
     ) -> ExecutionResult:
         """Resume execution of a paused workflow.
 
@@ -1793,6 +1803,7 @@ class Evaluator:
             runner_id=runner_id,
             dispatcher=dispatcher,
             qualified_workflow_name=qualified_workflow_name,
+            runner_task_list=runner_task_list,
         )
 
         try:
@@ -1866,6 +1877,7 @@ class Evaluator:
         program_ast: dict | None = None,
         runner_id: str = "",
         qualified_workflow_name: str = "",
+        runner_task_list: str = "",
     ) -> ExecutionResult:
         """Resume execution via parent notification cascade.
 
@@ -1906,6 +1918,7 @@ class Evaluator:
             program_ast=program_ast,
             runner_id=runner_id,
             qualified_workflow_name=qualified_workflow_name,
+            runner_task_list=runner_task_list,
             _dirty_blocks=set(),
         )
 
@@ -2063,6 +2076,7 @@ class Evaluator:
         runner_id: str = "",
         dispatcher: "HandlerDispatcher | None" = None,
         qualified_workflow_name: str = "",
+        runner_task_list: str = "",
     ) -> ExecutionResult:
         """Process a single step and generate continuation events.
 
@@ -2117,6 +2131,7 @@ class Evaluator:
             runner_id=runner_id,
             dispatcher=dispatcher,
             qualified_workflow_name=qualified_workflow_name,
+            runner_task_list=runner_task_list,
             _dirty_blocks=set(),
         )
 

@@ -255,12 +255,18 @@ class EventTransmitHandler(StateHandler):
 
         now = _current_time_ms()
         timeout_ms = self._extract_timeout_ms()
-        # workflow_ast["name"] is the short name (find_workflow returns the
-        # WorkflowDecl with its inner name) — for prefix-based task-list
-        # routing we need the fully qualified name from the context.
-        workflow_name = self.context.qualified_workflow_name or (
-            self.context.workflow_ast or {}
-        ).get("name", "")
+        # Child event tasks inherit the task list of the runner processing this
+        # workflow, so nested sub-workflow / foreach children land on the list the
+        # claiming runner and its peers poll (spreading across the fleet) instead
+        # of falling back to "default". Only when that's unknown do we fall back
+        # to prefix routing on the qualified workflow name (workflow_ast["name"]
+        # is just the short name, which can't be prefix-matched).
+        task_list = self.context.runner_task_list
+        if not task_list:
+            workflow_name = self.context.qualified_workflow_name or (
+                self.context.workflow_ast or {}
+            ).get("name", "")
+            task_list = resolve_task_list(workflow_name)
         task = TaskDefinition(
             uuid=generate_id(),
             name=self.step.facet_name,
@@ -271,7 +277,7 @@ class EventTransmitHandler(StateHandler):
             state=TaskState.PENDING,
             created=now,
             updated=now,
-            task_list_name=resolve_task_list(workflow_name),
+            task_list_name=task_list,
             data=self._build_payload(),
             timeout_ms=timeout_ms,
         )
