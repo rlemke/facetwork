@@ -29,12 +29,10 @@ try:
     import pymongo  # noqa: F401
 except ModuleNotFoundError:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from _fleet_bootstrap import ensure_venv_and_deps
+    from _fleet_bootstrap import bootstrap_and_reexec
 
-    _venv = ensure_venv_and_deps()
-    if os.path.realpath(_venv) != os.path.realpath(sys.executable):
-        os.execv(_venv, [_venv, *sys.argv])
-    import pymongo  # noqa: F401  # deps were just installed into this interpreter
+    bootstrap_and_reexec()  # re-execs under the venv unless already running it
+    import pymongo  # noqa: F401
 
 import argparse
 import json

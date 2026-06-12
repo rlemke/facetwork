@@ -132,3 +132,26 @@ def ensure_venv_and_deps() -> str:
         subprocess.run([venv_py, "-m", "pip", "install", "-q", *REQUIRED], check=True)
 
     return venv_py
+
+
+def _running_in_repo_venv() -> bool:
+    """True if the current interpreter IS the repo venv.
+
+    Uses ``sys.prefix`` (a venv sets it to its own directory), NOT a realpath
+    comparison of the executables: on macOS the venv's ``python3`` is a symlink
+    to the same base interpreter that's on PATH, so ``realpath`` collapses them
+    and a re-exec guard built on that wrongly thinks it's already in the venv —
+    skipping the re-exec and running on without the deps.
+    """
+    venv_dir = os.path.join(_repo_root(), ".venv")
+    return os.path.realpath(sys.prefix) == os.path.realpath(venv_dir)
+
+
+def bootstrap_and_reexec() -> None:
+    """Ensure the repo venv has the fleet deps, then re-exec under it unless we
+    are already running it. Returns only when the current interpreter is the
+    prepared venv (so the caller can import pymongo / cryptography directly)."""
+    venv_py = ensure_venv_and_deps()
+    if not _running_in_repo_venv():
+        os.execv(venv_py, [venv_py, *sys.argv])
+    # else: already in the venv; deps were just installed into this interpreter.
