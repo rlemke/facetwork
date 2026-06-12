@@ -161,7 +161,6 @@ automatically.
 | `ANTHROPIC_API_KEY` | _(unset)_ | Required for live Claude calls |
 | `ANTHROPIC_EXTRAS` | `agent_sdk,mcp` | fwh_anthropic pip extras |
 | `CENSUS_API_KEY` | _(unset)_ | Required for fwh_census_us live calls |
-| `AFL_WORKFLOW_TASK_LIST_MAP` | (set in `.env.full-stack.example`) | `prefix=list,...` workflow→task-list routing |
 | `AFL_OSM_REPLICAS` | `1` | # of `runner-osm-geocoder` replicas |
 | `AFL_OSM_LZ_REPLICAS` | `1` | # of `runner-osm-lz` replicas |
 | `AFL_ANTHROPIC_REPLICAS` | `1` | # of `runner-anthropic` replicas |
@@ -174,35 +173,23 @@ automatically.
 
 ### Workload partitioning (task lists)
 
-Every per-example runner is started with a dedicated `--task-list <name>`
-(`osm`, `anthropic`, `continental`, `weather`, etc.) and the dashboard
-routes a workflow's tasks to the matching list via
-`AFL_WORKFLOW_TASK_LIST_MAP`. The default map (in
-`.env.full-stack.example`) covers every shipped example:
+A task's `task_list_name` is **derived from the facet's top-level namespace** —
+not configured. A task for `osm.cache.Download` is tagged with list `osm`; a
+runner serving `osm.*` facets polls `osm` (the namespaces of the handlers it
+loaded). Because both sides compute the label from the same qualified name,
+they can never disagree, and per-domain isolation is automatic: an `osm.*`
+workflow's tasks all land on `osm` (where only the osm runners listen), an
+`anthropic.*` workflow's on `anthropic`, etc.
 
-```text
-AFL_WORKFLOW_TASK_LIST_MAP=osm.=osm,continental.=continental,anthropic.=anthropic,\
-                           weather.=weather,jenkins.=jenkins,census.=census,\
-                           genomics.=genomics,monitor.=monitor
-```
-
-A workflow whose qualified name starts with `osm.` lands on the `osm`
-task list (where only `runner-osm-geocoder` is listening); a workflow
-starting with `anthropic.` lands on `anthropic`; anything unmapped falls
-back to `default` (which the main `runner` polls).
-
-The consequence is that a flooded queue (say, an hour-long OSM import)
-can never starve unrelated work — the `runner-anthropic` pool's
-`find_one_and_update` query filters on `task_list_name = "anthropic"` and
-literally cannot see the `osm` backlog. See
+The consequence is that a flooded queue (say, an hour-long OSM import) can never
+starve unrelated work — the `runner-anthropic` pool's `find_one_and_update`
+query never matches the `osm` backlog. See
 [runtime-impl.md §17.1.2](../reference/runtime-impl.md) and
 [thesis §5.4](../thesis/thesis.md).
 
-To repartition: edit `AFL_WORKFLOW_TASK_LIST_MAP` in `.env.full-stack`
-**and** change the `AFL_REGISTRY_RUNNER_ARGS: "--task-list <name>"` of
-the affected runner blocks in `docker-compose.full-stack.yml`. Both
-ends have to agree — the submission side stamps the list, the runner
-side polls it.
+There is nothing to configure or keep in sync — partitioning follows the
+namespaces in the handler set. (Removed in productionization: the old
+`AFL_WORKFLOW_TASK_LIST_MAP` prefix map and per-runner `--task-list` routing.)
 
 ### Scaling runners
 
@@ -425,12 +412,11 @@ picks them up automatically.
 `/tasks` shows a filter row with one pill per task list, formatted as
 `<name> <task-count> ·<runner-count>r`:
 
-- A red `·0r` badge means tasks exist but no runner is polling — the
-  silent-idleness failure mode (start the matching runner, or fix
-  `AFL_WORKFLOW_TASK_LIST_MAP`).
-- A pill with `0 ·Nr` means runners are listening on a list nobody
-  submits to — likely a stale `--task-list` arg or a missing entry in
-  `AFL_WORKFLOW_TASK_LIST_MAP`.
+- A red `·0r` badge means tasks exist but no runner is polling that
+  namespace — the silent-idleness failure mode (start a runner whose
+  handler set covers that namespace).
+- A pill with `0 ·Nr` means runners poll a namespace nobody submits work
+  to — usually fine (an idle example).
 - Click any pill to filter the task table to that list; combines with
   the state subnav (`/tasks?task_list=osm&state=pending`).
 

@@ -423,7 +423,8 @@ class TestWorkflowRun:
             },
             follow_redirects=False,
         )
-        tasks = store.get_pending_tasks("default")
+        # Bootstrap routes by the workflow's namespace (test.SimpleWF -> "test").
+        tasks = store.get_pending_tasks("test")
         assert len(tasks) == 1
         assert tasks[0].name == "fw:execute"
         assert tasks[0].data["workflow_name"] == "test.SimpleWF"

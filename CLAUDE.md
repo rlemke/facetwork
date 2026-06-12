@@ -252,31 +252,28 @@ Task creation is also lock-free: each task has a unique `uuid` and is written
 once by its creator, so there's no write contention either. See
 [docs/reference/runtime-impl.md §17.1.3](docs/reference/runtime-impl.md).
 
-### Dedicated task lists — per-workflow queue isolation
+### Task-list routing — derived from the facet namespace
 
-Tasks also carry a `task_list_name` and runners poll a single list
-(`--task-list <name>`, default `"default"`). By default all workflows
-submit onto `"default"` and routing is purely by handler-set. To isolate
-a flooded queue from starving an unrelated one, configure
-`AFL_WORKFLOW_TASK_LIST_MAP` (comma-separated `prefix=list` pairs;
-longest-prefix wins):
+Tasks carry a `task_list_name` for per-domain queue isolation (so a flooded
+`osm` queue can't starve `anthropic` claims), and it is **derived from the
+facet's top-level namespace** — never configured. The same intrinsic fact (the
+qualified name) is used on **both** sides of the queue, so the label can't
+desync from where the handler lives:
 
-```bash
-# .env or runner.env
-AFL_WORKFLOW_TASK_LIST_MAP=osm.=osm,anthropic.=anthropic
+- **Producing** — a task for `osm.cache.Download` is tagged with list `osm`
+  (`namespace_of`); submission tags the `fw:execute:<Workflow>` bootstrap with
+  the workflow's namespace.
+- **Consuming** — a runner polls the namespaces of the handlers it loaded
+  (`namespaces_for`) plus its `--task-list` (default `"default"`, for shared/
+  unnamespaced work). An `osm.*` runner polls `osm`.
 
-# Start runners on their dedicated lists:
-scripts/start-runner --example osm-geocoder -- --task-list osm
-scripts/start-runner --example anthropic -- --task-list anthropic
-```
-
-Submission paths (CLI, dashboard "New run", `flows.py`) call
-`resolve_task_list(workflow_name)` to pick the list for the bootstrap
-`fw:execute:<Workflow>` task. Child step tasks created by the
-orchestrating runner inherit the runner's `--task-list`. Continuation
-tasks (`_fw_continue`) stay on a shared internal list — every runner
-polls it because continuations are step-state-machine machinery, not
-handler work. See [facetwork/runtime/task_list_routing.py](facetwork/runtime/task_list_routing.py).
+A task is claimed only if it's on one of the runner's namespace lists **and**
+the runner has its handler, so work always reaches a runner that can serve it.
+Continuation tasks (`_fw_continue`) stay on a shared internal list every runner
+polls (step-state-machine machinery, not handler work). There is **no**
+`AFL_WORKFLOW_TASK_LIST_MAP` and no `--task-list` plumbing for routing — the
+namespace is the routing key. See
+[facetwork/runtime/task_list_routing.py](facetwork/runtime/task_list_routing.py).
 
 ### Agent execution models
 - **RegistryRunner** (recommended): auto-loads handlers from DB

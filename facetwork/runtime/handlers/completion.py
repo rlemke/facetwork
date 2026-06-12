@@ -255,12 +255,9 @@ class EventTransmitHandler(StateHandler):
 
         now = _current_time_ms()
         timeout_ms = self._extract_timeout_ms()
-        # Route the child event task by its OWN facet's top-level namespace
-        # (prototype). The runners that have this facet's handler poll that
-        # namespace's list, so the label follows the handler and can't desync —
-        # this is what the old runner_task_list-inheritance / AFL_WORKFLOW_TASK_LIST_MAP
-        # path got wrong (a `osm.cache.Download` child landed on `census`, which
-        # only runners lacking the osm handler polled, deadlocking the fan-out).
+        # Route the child event task by its OWN facet's top-level namespace. The
+        # runners that have this facet's handler poll that namespace's list, so the
+        # queue label follows the handler and can't desync.
         task_list = namespace_of(self.step.facet_name)
         task = TaskDefinition(
             uuid=generate_id(),

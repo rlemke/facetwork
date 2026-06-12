@@ -428,9 +428,9 @@ class CatalogService:
         from facetwork.runtime.types import generate_id
 
         try:
-            from facetwork.runtime.task_list_routing import resolve_task_list
+            from facetwork.runtime.task_list_routing import namespace_of
 
-            resolved_list = task_list or resolve_task_list(rev.entry_workflow)
+            resolved_list = task_list or namespace_of(rev.entry_workflow)
         except Exception:
             resolved_list = task_list or "default"
 

@@ -218,9 +218,10 @@ noding pass); the routing verbs are `cheap`.
   `andThen foreach pair … ApproxRoute(network, a, b)` — each leaf is `pure/cheap`,
   claimed across the fleet by the lock-free protocol, each runner serving from
   its in-memory graph. No engine contention, no central server.
-- **Task-list isolation:** route the routing flood onto its own list
-  (`AFL_WORKFLOW_TASK_LIST_MAP=osm.Network.=routing`) so a big all-pairs job does
-  not starve extraction.
+- **Task-list isolation:** the routing flood lands on its own queue
+  automatically — `osm.Network.*` facets route to the `osm` namespace list
+  (task lists are derived from the facet namespace), so a big all-pairs job is
+  isolated to runners serving that namespace and does not starve other work.
 - **Sync points:** `MergeLayers` (gather per-region interstates) and the final
   matrix assembly (`RouteMatrix`, or aggregating per-pair yields).
 

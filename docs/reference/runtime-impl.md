@@ -895,52 +895,31 @@ A runner only ever claims a task it can actually run. Concretely:
   *does* have the handler can pick it up. It is failed for good only once
   `retry_count` is exhausted — i.e. no runner in the fleet could service it.
 
-#### 17.1.2 Dedicated Task Lists
+#### 17.1.2 Task Lists Derived from the Facet Namespace
 
-Beyond name-filtering, tasks also carry `task_list_name` and runners poll a
-single list (`--task-list <name>`, default `"default"`). This is the
-partitioning lever for isolating workloads — a flooded `osm` queue can't starve
-the `anthropic` queue if they're on separate lists, even when both fleets share
-handlers.
+Beyond name-filtering, tasks also carry `task_list_name` for workload isolation —
+a flooded `osm` queue can't starve the `anthropic` queue. The label is **derived
+from the facet's top-level namespace**, not configured, and the *same* derivation
+runs on both sides of the queue so they can never desync:
 
-Routing is configured via `AFL_WORKFLOW_TASK_LIST_MAP` — comma-separated
-`prefix=list` pairs, longest-prefix wins, empty prefix sets the global fallback:
+- **Producing** — `task_list_routing.namespace_of(name)` returns the top-level
+  segment (`osm.cache.Download` → `osm`). `handlers/completion.py:_create_event_task`
+  tags each child event task with the namespace of its **own facet**; submission
+  (`submit.py`, dashboard `workflows.py` / `flows.py`) tags the bootstrap with the
+  **workflow's** namespace.
+- **Consuming** — a runner polls `namespaces_for(handler_names)` (the distinct
+  namespaces of the handlers it loaded) plus its `--task-list` (default
+  `"default"`, for shared/unnamespaced work). An `osm.*` runner polls `osm`.
+  `claim_task` matches `task_list_name ∈ {poll lists}` via `$in`.
 
-```
-AFL_WORKFLOW_TASK_LIST_MAP=osm.=osm,osm.heavy.=osm-heavy,anthropic.=anthropic
-```
-
-**Routing requires the fully qualified workflow name.** `ast_utils.find_workflow()`
-returns the inner `WorkflowDecl` dict whose `"name"` field is only the
-unqualified tail (`"AnalyzeRegion"`) — the namespace prefix lives on the
-enclosing `Namespace` decl. So `workflow_ast["name"]` is the *wrong*
-input to the resolver; passing the short name silently falls back to
-`"default"` because no prefix can match. `ExecutionContext.qualified_workflow_name`
-carries the correct value end-to-end and is what `_create_event_task` reads.
-Submission sites pass the workflow name they were given by the caller
-(CLI argument, dashboard form, etc.), which is already qualified.
-
-`facetwork/runtime/task_list_routing.py:resolve_task_list(workflow_name)` is
-called by every site that *originates* a task list:
-
-- CLI `submit.py` — `--task-list` overrides; otherwise the resolver decides.
-- Dashboard "New run" pages (`workflows.py:366`, `flows.py:549`) — always
-  resolver-driven.
-- `handlers/completion.py:_create_event_task` — child event tasks created
-  during workflow execution use the resolver against the current workflow AST.
-
-Child step tasks created by `RunnerService` (`service.py:464/477/492/1547`)
-inherit the orchestrating runner's `self._config.task_list`. Since that runner
-claimed the bootstrap from the resolved list, all of a workflow's tasks land on
-the same list by construction. **Continuation tasks** (`CONTINUATION_TASK_LIST
-= "_fw_continue"`) are exempt — they're step-state-machine machinery, not
-handler work, and every runner polls the shared continuation queue regardless
-of `--task-list`.
-
-A runner whose `--task-list` doesn't match any workflow's mapped list will
-simply never claim work — easy to spot via `scripts/list-runners` and a
-pending-task count in Mongo. The `(state, name, task_list_name)` compound index
-makes per-list claims cheap.
+A task is claimed only if it's on one of the runner's namespace lists **and** the
+runner advertises its facet — so the queue label always follows the handler.
+This eliminates the prior failure mode where a child task could land on a list
+whose runners lacked the handler (deadlock). **Continuation tasks**
+(`CONTINUATION_TASK_LIST = "_fw_continue"`) are exempt — every runner polls that
+shared queue. The `(state, name, task_list_name)` compound index keeps per-list
+claims cheap. (Productionized from a prototype; the old prefix-map
+`AFL_WORKFLOW_TASK_LIST_MAP` and `runner_task_list` inheritance were removed.)
 
 #### 17.1.3 Per-Runner Polling — No In-Process Contention
 

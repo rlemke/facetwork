@@ -139,11 +139,10 @@ class TestRepairResetContainerStepNotEventTransmit:
 
     EVENT_TRANSMIT on a container step makes the runtime spawn a bogus
     event task named after the workflow (via ``_create_event_task``) —
-    one that no runner can service (the workflow facet has no handler)
-    and which mis-routes through ``resolve_task_list`` on the unqualified
-    name, leaving the run wedged. Container steps must instead re-drive
-    their block continuation. Regression for the repair-workflow
-    continuation mis-routing bug.
+    one that no runner can service (the workflow facet has no handler),
+    leaving the run wedged. Container steps must instead re-drive their
+    block continuation. Regression for the repair-workflow continuation
+    mis-routing bug.
     """
 
     def test_workflow_step_resets_to_statement_blocks_continue(self, store):

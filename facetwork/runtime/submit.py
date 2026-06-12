@@ -32,7 +32,7 @@ import sys
 import time
 
 from .expression import evaluate_default
-from .task_list_routing import namespace_of, resolve_task_list  # noqa: F401
+from .task_list_routing import namespace_of
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +88,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="NAME",
         help=(
-            "Task list name. If omitted, resolved from the workflow name via "
-            "AFL_WORKFLOW_TASK_LIST_MAP (falls back to 'default')."
+            "Task list name (override). If omitted, the bootstrap routes to the "
+            "workflow's top-level namespace (e.g. 'osm'), which the runners "
+            "serving that namespace poll."
         ),
     )
 
@@ -338,7 +339,7 @@ def main(args: list[str] | None = None) -> int:
         created=now_ms,
         updated=now_ms,
         # Bootstrap routes by the workflow's namespace so a runner serving that
-        # namespace claims it (prototype namespace routing); an explicit
+        # namespace claims it (namespace routing); an explicit
         # --task-list still overrides for back-compat.
         task_list_name=(
             parsed.task_list

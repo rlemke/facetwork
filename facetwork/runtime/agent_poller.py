@@ -228,7 +228,7 @@ class AgentPoller:
 
     def _poll_task_lists(self) -> list[str]:
         """Lists to poll: the namespaces of registered handlers plus the
-        configured list (prototype namespace routing) — the queue label follows
+        configured list (namespace routing) — the queue label follows
         the handler instead of a separately-configured task list.
         """
         from .task_list_routing import namespaces_for

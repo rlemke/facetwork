@@ -111,10 +111,8 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     tl = osm.get("task_list")
     if tl:
         env["AFL_REGISTRY_RUNNER_ARGS"] = f"--task-list {tl} --server-group {grp}"
-        # Route osm.* workflows' child tasks to the osm task list (else they land
-        # on `default`, which a --task-list osm runner never polls). A fuller map
-        # in the host env wins.
-        env["AFL_WORKFLOW_TASK_LIST_MAP"] = os.environ.get("AFL_WORKFLOW_TASK_LIST_MAP") or f"osm.={tl}"
+        # Child tasks route by the facet's namespace (the runtime derives the
+        # queue from the handler), so no task-list map is needed here.
 
     label = f"v{cfg.get('version')} minio={endpoint} osm-replicas={replicas} creds={creds_src}" + (f" image={image}" if image else "")
     print(f"fleet-agent[{HOST}]: applying fleet_config {label}" + (" (recreate)" if recreate else ""))

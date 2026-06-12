@@ -309,7 +309,7 @@ class RegistryRunner:
 
     def _poll_task_lists(self) -> list[str]:
         """Lists this runner polls: the namespaces of its loaded handlers plus
-        its configured list (prototype namespace routing). A task is claimable
+        its configured list (namespace routing). A task is claimable
         only if it's on one of these AND the runner has its handler, so the
         queue label follows the handler — no per-runner task-list config needed.
         """

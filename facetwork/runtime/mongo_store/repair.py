@@ -170,9 +170,8 @@ class RepairMixin(_MixinBase):
             # Workflow or Block step lands in STATEMENT_ERROR only because a
             # descendant errored; resetting *it* to EVENT_TRANSMIT makes the
             # runtime spawn a bogus event task named after the workflow —
-            # one no runner can service (the workflow facet has no handler)
-            # and which mis-routes via resolve_task_list on the unqualified
-            # name. Such a container step must instead re-drive its block
+            # one no runner can service (the workflow facet has no handler).
+            # Such a container step must instead re-drive its block
             # continuation, mirroring the ancestor-walk states below
             # (blocks -> BLOCK_EXECUTION_CONTINUE, workflow / other
             # containers -> STATEMENT_BLOCKS_CONTINUE).

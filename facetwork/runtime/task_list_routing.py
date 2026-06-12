@@ -12,101 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Workflow name → task list routing.
+"""Task-list routing by namespace.
 
-Used by submission and completion paths to decide which task list a
-workflow's tasks should land on. Configured via the
-``AFL_WORKFLOW_TASK_LIST_MAP`` environment variable using comma-separated
-``prefix=list`` pairs::
+A task's queue label is the **top-level namespace** of its facet/workflow name,
+derived identically on both sides of the queue:
 
-    AFL_WORKFLOW_TASK_LIST_MAP=osm.=osm,anthropic.=anthropic,noaa.=weather
+- **Producing side** — a task for facet ``osm.cache.Download`` is tagged with
+  list ``osm`` (:func:`namespace_of`). Submission tags the bootstrap with the
+  workflow's namespace.
+- **Consuming side** — a runner polls the namespaces of the handlers it actually
+  loaded (:func:`namespaces_for`), e.g. a runner serving ``osm.*`` facets polls
+  ``osm``.
 
-Longest-prefix match wins; the empty prefix ``=foo`` sets the global
-fallback (otherwise ``"default"``).
+Because both sides compute the label from the same intrinsic fact (the qualified
+name), it can never desync from where the handler lives: a task is claimed only
+if it is on one of the runner's namespace lists **and** the runner has its
+handler. This preserves per-domain queue isolation (osm work on ``osm``,
+anthropic on ``anthropic``) without any per-runner configuration.
 
-.. note::
-   Callers must pass the **fully qualified** workflow name (e.g.
-   ``"osm.UnitedStates.analysis.AnalyzeRegion"``), not the short name.
-   ``ast_utils.find_workflow()`` returns the inner ``WorkflowDecl`` dict
-   whose ``"name"`` field is only the *unqualified* tail (``"AnalyzeRegion"``)
-   — the namespace prefix lives on the enclosing ``Namespace`` decl and is
-   stripped during lookup. Passing the short name here silently falls back
-   to ``"default"`` because no prefix can match it.
-
-   ``ExecutionContext.qualified_workflow_name`` carries the correct value
-   end-to-end; submission sites pass the workflow name they were given
-   (which is already qualified).
+Unqualified names (no dot) and internal protocol names (``fw:…``, ``_fw…``) have
+no namespace and route to :data:`DEFAULT_TASK_LIST`; protocol tasks are claimed
+on their own dedicated lists.
 """
 
 from __future__ import annotations
 
-import logging
-import os
-
 DEFAULT_TASK_LIST = "default"
-ENV_VAR = "AFL_WORKFLOW_TASK_LIST_MAP"
-
-logger = logging.getLogger(__name__)
-
-
-def parse_map(spec: str) -> list[tuple[str, str]]:
-    """Parse a ``prefix=list,prefix=list`` spec into sorted-longest-first pairs.
-
-    Empty or malformed entries are skipped with a warning. Returns a list of
-    ``(prefix, task_list)`` tuples sorted by descending prefix length so the
-    first match in iteration order is the longest-prefix match.
-    """
-    pairs: list[tuple[str, str]] = []
-    for raw in spec.split(","):
-        entry = raw.strip()
-        if not entry:
-            continue
-        if "=" not in entry:
-            logger.warning("%s: ignoring malformed entry %r (no '=')", ENV_VAR, entry)
-            continue
-        prefix, _, task_list = entry.partition("=")
-        prefix = prefix.strip()
-        task_list = task_list.strip()
-        if not task_list:
-            logger.warning("%s: ignoring entry %r (empty task list)", ENV_VAR, entry)
-            continue
-        pairs.append((prefix, task_list))
-    pairs.sort(key=lambda p: len(p[0]), reverse=True)
-    return pairs
-
-
-def _load_map() -> list[tuple[str, str]]:
-    spec = os.environ.get(ENV_VAR, "")
-    return parse_map(spec) if spec else []
-
-
-def resolve_task_list(workflow_name: str, *, default: str = DEFAULT_TASK_LIST) -> str:
-    """Resolve the task list for a workflow by longest-prefix match.
-
-    Args:
-        workflow_name: Fully-qualified workflow name (e.g. ``osm.AnalyzeRegion``).
-        default: Fallback when no prefix matches and no empty-prefix entry is set.
-
-    Returns:
-        The configured task list, or ``default`` if no entry matches.
-    """
-    name = workflow_name or ""
-    for prefix, task_list in _load_map():
-        if name.startswith(prefix):
-            return task_list
-    return default
-
-
-# ---------------------------------------------------------------------------
-# Namespace-derived routing (prototype)
-#
-# Instead of a separately-configured prefix map, derive the task list from the
-# *facet's own top-level namespace*. The same intrinsic fact (the qualified
-# name) is used on BOTH sides — task creation tags `osm.cache.Download` with
-# list ``osm``, and a runner serving osm.* facets polls list ``osm`` — so the
-# queue label can never desync from where the handler actually lives. The
-# convention "top namespace == queue" already holds for osm/anthropic/census/…
-# ---------------------------------------------------------------------------
 
 
 def namespace_of(qualified_name: str, *, default: str = DEFAULT_TASK_LIST) -> str:
@@ -114,7 +45,7 @@ def namespace_of(qualified_name: str, *, default: str = DEFAULT_TASK_LIST) -> st
 
     ``osm.cache.Download`` -> ``osm``; ``anthropic.Messages.Create`` ->
     ``anthropic``; an unqualified name (no dot) -> *default*. Internal/protocol
-    names (``fw:…``, ``_fw_…``) have no namespace and return *default*.
+    names (``fw:…``, ``_fw…``) have no namespace and return *default*.
     """
     name = qualified_name or ""
     if name.startswith("fw:") or name.startswith("_fw"):

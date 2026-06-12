@@ -239,7 +239,6 @@ services:
       # scripts/serve-tiled-map after localizing from S3.
       <<: *s3-creds
       AFL_LOCAL_OUTPUT_DIR: /data/output
-      AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
     ports:
       - "${DASHBOARD_PORT:-8080}:8080"
     volumes:
@@ -268,7 +267,6 @@ services:
       AFL_MAX_CONCURRENT: ${AFL_MAX_CONCURRENT:-4}
       AFL_POLL_INTERVAL_MS: ${AFL_POLL_INTERVAL_MS:-1000}
       AFL_LOCAL_OUTPUT_DIR: ${AFL_DATA_DIR:-/Volumes/afl_data}/output
-      AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       PYTHONPATH: /app
     volumes:
       - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
@@ -300,7 +298,6 @@ services:
       AFL_EXAMPLE_REPO: fwh_anthropic
       AFL_EXAMPLE_EXTRAS: ${ANTHROPIC_EXTRAS:-agent_sdk,mcp}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list anthropic"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_anthropic:/handlers/fwh_anthropic
@@ -342,7 +339,6 @@ services:
       # would retry forever and dead-letter. (A *missing* .md5 is handled
       # separately by fetch_md5_or_none.)
       AFL_OSM_TOLERATE_MD5: ${AFL_OSM_TOLERATE_MD5:-true}
-      AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list osm --server-group ${AFL_SERVER_GROUP:-default}"
       # OSM PBF parses can run for hours on full-region files. Override
       # the runner-service default (15min) so the watchdog doesn't kill
@@ -392,7 +388,6 @@ services:
       AFL_EXAMPLE_NAME: osm-lz
       AFL_EXAMPLE_REPO: fwh_osm_lz
       AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
-      AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list continental"
       # Match runner-osm-geocoder timeouts. osm-lz is a workflow catalog over
       # fwh_osm — many of the workflows it orchestrates fan out across continents
@@ -430,7 +425,6 @@ services:
       <<: *s3-storage
       AFL_EXAMPLE_NAME: noaa-weather
       AFL_EXAMPLE_REPO: fwh_noaa_weather
-      AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list weather"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_noaa_weather:/handlers/fwh_noaa_weather
@@ -456,7 +450,6 @@ services:
       AFL_EXAMPLE_NAME: jenkins
       AFL_EXAMPLE_REPO: fwh_jenkins
       JENKINS_URL: http://jenkins:8080
-      AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list jenkins"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_jenkins:/handlers/fwh_jenkins
@@ -482,7 +475,6 @@ services:
       AFL_EXAMPLE_NAME: census-us
       AFL_EXAMPLE_REPO: fwh_census_us
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
-      AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list census"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_census_us:/handlers/fwh_census_us
@@ -507,7 +499,6 @@ services:
       <<: *s3-storage
       AFL_EXAMPLE_NAME: genomics
       AFL_EXAMPLE_REPO: fwh_genomics
-      AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list genomics"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_genomics:/handlers/fwh_genomics
@@ -532,7 +523,6 @@ services:
       <<: *s3-storage
       AFL_EXAMPLE_NAME: sensor-monitoring
       AFL_EXAMPLE_REPO: fwh_sensor_monitoring
-      AFL_WORKFLOW_TASK_LIST_MAP: ${AFL_WORKFLOW_TASK_LIST_MAP:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list monitor"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_sensor_monitoring:/handlers/fwh_sensor_monitoring
