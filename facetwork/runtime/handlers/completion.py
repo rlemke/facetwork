@@ -251,22 +251,17 @@ class EventTransmitHandler(StateHandler):
     def _create_event_task(self) -> None:
         """Create a TaskDefinition for the event and add to iteration changes."""
         from ..entities import TaskDefinition, TaskState
-        from ..task_list_routing import resolve_task_list
+        from ..task_list_routing import namespace_of
 
         now = _current_time_ms()
         timeout_ms = self._extract_timeout_ms()
-        # Child event tasks inherit the task list of the runner processing this
-        # workflow, so nested sub-workflow / foreach children land on the list the
-        # claiming runner and its peers poll (spreading across the fleet) instead
-        # of falling back to "default". Only when that's unknown do we fall back
-        # to prefix routing on the qualified workflow name (workflow_ast["name"]
-        # is just the short name, which can't be prefix-matched).
-        task_list = self.context.runner_task_list
-        if not task_list:
-            workflow_name = self.context.qualified_workflow_name or (
-                self.context.workflow_ast or {}
-            ).get("name", "")
-            task_list = resolve_task_list(workflow_name)
+        # Route the child event task by its OWN facet's top-level namespace
+        # (prototype). The runners that have this facet's handler poll that
+        # namespace's list, so the label follows the handler and can't desync —
+        # this is what the old runner_task_list-inheritance / AFL_WORKFLOW_TASK_LIST_MAP
+        # path got wrong (a `osm.cache.Download` child landed on `census`, which
+        # only runners lacking the osm handler polled, deadlocking the fan-out).
+        task_list = namespace_of(self.step.facet_name)
         task = TaskDefinition(
             uuid=generate_id(),
             name=self.step.facet_name,

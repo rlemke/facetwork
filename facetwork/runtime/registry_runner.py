@@ -307,6 +307,18 @@ class RegistryRunner:
         logger.info("RegistryRunner stopping: server_id=%s", self._server_id)
         self._stopping.set()
 
+    def _poll_task_lists(self) -> list[str]:
+        """Lists this runner polls: the namespaces of its loaded handlers plus
+        its configured list (prototype namespace routing). A task is claimable
+        only if it's on one of these AND the runner has its handler, so the
+        queue label follows the handler — no per-runner task-list config needed.
+        """
+        from .task_list_routing import namespaces_for
+
+        return sorted(
+            set(namespaces_for(self._registered_names)) | {self._config.task_list}
+        )
+
     def poll_once(self) -> int:
         """Run a single poll cycle (synchronous, for testing).
 
@@ -330,7 +342,7 @@ class RegistryRunner:
             while capacity > 0:
                 task = self._persistence.claim_task(
                     task_names=task_names,
-                    task_list=self._config.task_list,
+                    task_list=self._poll_task_lists(),
                     server_id=self._server_id,
                 )
                 if task is None:
@@ -518,7 +530,7 @@ class RegistryRunner:
             while capacity > 0:
                 task = self._persistence.claim_task(
                     task_names=task_names,
-                    task_list=self._config.task_list,
+                    task_list=self._poll_task_lists(),
                     server_id=self._server_id,
                 )
                 if task is None:

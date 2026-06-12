@@ -406,18 +406,23 @@ class MemoryStore(PersistenceAPI):
     def claim_task(
         self,
         task_names: list[str],
-        task_list: str = "default",
+        task_list: str | list[str] = "default",
         server_id: str = "",
     ) -> Optional["TaskDefinition"]:
         """Atomically claim a pending task matching one of the given names."""
         with self._claim_lock:
             names_set = set(task_names)
+            tl_set = (
+                set(task_list)
+                if isinstance(task_list, (list, tuple, set))
+                else {task_list}
+            )
             for task in self._tasks.values():
                 now = _current_time_ms()
                 if (
                     task.state == "pending"
                     and task.name in names_set
-                    and task.task_list_name == task_list
+                    and task.task_list_name in tl_set
                     and (task.next_retry_after == 0 or task.next_retry_after <= now)
                 ):
                     task.state = "running"

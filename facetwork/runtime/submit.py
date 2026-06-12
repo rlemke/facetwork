@@ -32,7 +32,7 @@ import sys
 import time
 
 from .expression import evaluate_default
-from .task_list_routing import resolve_task_list
+from .task_list_routing import namespace_of, resolve_task_list  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -337,10 +337,13 @@ def main(args: list[str] | None = None) -> int:
         state=TaskState.PENDING,
         created=now_ms,
         updated=now_ms,
+        # Bootstrap routes by the workflow's namespace so a runner serving that
+        # namespace claims it (prototype namespace routing); an explicit
+        # --task-list still overrides for back-compat.
         task_list_name=(
             parsed.task_list
             if parsed.task_list is not None
-            else resolve_task_list(parsed.workflow)
+            else namespace_of(parsed.workflow)
         ),
         data={
             "flow_id": flow_id,

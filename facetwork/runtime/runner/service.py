@@ -472,13 +472,24 @@ class RunnerService:
         if capacity <= 0:
             return 0
 
+        # Poll the lists for the namespaces this runner actually serves (derived
+        # from its loaded handlers), plus its configured list for shared/default
+        # work — prototype namespace routing. A task is claimed only if it's on
+        # one of these AND the runner has its handler, so the queue label always
+        # follows the handler.
+        from ..task_list_routing import namespaces_for
+
+        poll_lists = sorted(
+            set(namespaces_for(self._get_event_names())) | {self._config.task_list}
+        )
+
         # Claim event tasks from the task queue (filtered by circuit breaker)
         event_names = [n for n in self._get_event_names() if self._circuit_breakers.is_allowed(n)]
         if event_names:
             while capacity > 0:
                 task = self._persistence.claim_task(
                     task_names=event_names,
-                    task_list=self._config.task_list,
+                    task_list=poll_lists,
                     server_id=self._server_id,
                 )
                 if task is None:
@@ -491,7 +502,7 @@ class RunnerService:
         while capacity > 0:
             task = self._persistence.claim_task(
                 task_names=[RESUME_TASK_NAME],
-                task_list=self._config.task_list,
+                task_list=poll_lists,
                 server_id=self._server_id,
             )
             if task is None:
@@ -506,7 +517,7 @@ class RunnerService:
             while capacity > 0:
                 task = self._persistence.claim_task(
                     task_names=builtin_names,
-                    task_list=self._config.task_list,
+                    task_list=poll_lists,
                     server_id=self._server_id,
                 )
                 if task is None:
@@ -1634,6 +1645,8 @@ class RunnerService:
 
         # For EventTransmit steps without tasks, create tasks so handlers run.
         # resume_step() can't do this — it only walks the ancestor chain.
+        from ..task_list_routing import namespace_of
+
         for step in leaf_steps:
             facet_name = step.facet_name
             if not facet_name:
@@ -1650,7 +1663,9 @@ class RunnerService:
                 flow_id="",
                 step_id=step.id,
                 state=TaskState.PENDING,
-                task_list_name=self._config.task_list,
+                # Route by the facet's own namespace (prototype) so the recreated
+                # task lands on the list its handler-runners poll.
+                task_list_name=namespace_of(facet_name),
                 data=_step_params_as_payload(step),
             )
             self._persistence.save_task(task)

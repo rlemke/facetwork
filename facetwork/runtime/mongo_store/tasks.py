@@ -130,7 +130,7 @@ class TaskMixin(_MixinBase):
     def claim_task(
         self,
         task_names: list[str],
-        task_list: str = "default",
+        task_list: str | list[str] = "default",
         server_id: str = "",
     ) -> TaskDefinition | None:
         """Atomically claim a pending task matching one of the given names.
@@ -145,6 +145,13 @@ class TaskMixin(_MixinBase):
         """
         now = _current_time_ms()
         lease_ms = self._lease_ms()
+        # A runner may poll several lists at once (the namespaces of its
+        # handlers) — match any of them.
+        tl_filter: Any = (
+            {"$in": list(task_list)}
+            if isinstance(task_list, (list, tuple, set))
+            else task_list
+        )
         update: dict[str, Any] = {
             "state": "running",
             "updated": now,
@@ -177,7 +184,7 @@ class TaskMixin(_MixinBase):
         doc = self._db.tasks.find_one_and_update(
             {
                 "state": "pending",
-                "task_list_name": task_list,
+                "task_list_name": tl_filter,
                 "$and": [name_filter, retry_eligible],
             },
             {"$set": update},
@@ -190,7 +197,7 @@ class TaskMixin(_MixinBase):
         doc = self._db.tasks.find_one_and_update(
             {
                 "state": "running",
-                "task_list_name": task_list,
+                "task_list_name": tl_filter,
                 "lease_expires": {"$lt": now, "$gt": 0},
                 "$and": [name_filter],
             },

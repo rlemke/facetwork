@@ -662,7 +662,7 @@ class TestTimeoutMixin:
         assert result.status == ExecutionStatus.PAUSED
 
         # Check the created task has timeout_ms set (2 minutes = 120000ms)
-        tasks = store.get_pending_tasks("default")
+        tasks = store.get_pending_tasks("ns")
         slow_tasks = [t for t in tasks if t.name == "ns.SlowOp"]
         assert len(slow_tasks) == 1
         assert slow_tasks[0].timeout_ms == 120000
@@ -736,7 +736,7 @@ class TestTimeoutMixin:
         }
 
         evaluator.execute(workflow_ast, inputs={}, program_ast=program_ast)
-        tasks = store.get_pending_tasks("default")
+        tasks = store.get_pending_tasks("ns")
         fast_tasks = [t for t in tasks if t.name == "ns.FastOp"]
         assert len(fast_tasks) == 1
         assert fast_tasks[0].timeout_ms == 0
@@ -829,7 +829,7 @@ class TestTimeoutMixin:
         }
 
         evaluator.execute(workflow_ast, inputs={}, program_ast=program_ast)
-        tasks = store.get_pending_tasks("default")
+        tasks = store.get_pending_tasks("ns")
         op_tasks = [t for t in tasks if t.name == "ns.Op"]
         assert len(op_tasks) == 1
         # Call-site (300000) overrides facet-level (60000)

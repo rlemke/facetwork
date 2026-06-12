@@ -95,3 +95,44 @@ def resolve_task_list(workflow_name: str, *, default: str = DEFAULT_TASK_LIST) -
         if name.startswith(prefix):
             return task_list
     return default
+
+
+# ---------------------------------------------------------------------------
+# Namespace-derived routing (prototype)
+#
+# Instead of a separately-configured prefix map, derive the task list from the
+# *facet's own top-level namespace*. The same intrinsic fact (the qualified
+# name) is used on BOTH sides — task creation tags `osm.cache.Download` with
+# list ``osm``, and a runner serving osm.* facets polls list ``osm`` — so the
+# queue label can never desync from where the handler actually lives. The
+# convention "top namespace == queue" already holds for osm/anthropic/census/…
+# ---------------------------------------------------------------------------
+
+
+def namespace_of(qualified_name: str, *, default: str = DEFAULT_TASK_LIST) -> str:
+    """Top-level namespace segment of a qualified facet/workflow name.
+
+    ``osm.cache.Download`` -> ``osm``; ``anthropic.Messages.Create`` ->
+    ``anthropic``; an unqualified name (no dot) -> *default*. Internal/protocol
+    names (``fw:…``, ``_fw_…``) have no namespace and return *default*.
+    """
+    name = qualified_name or ""
+    if name.startswith("fw:") or name.startswith("_fw"):
+        return default
+    head, sep, _ = name.partition(".")
+    return head if sep and head else default
+
+
+def namespaces_for(names) -> list[str]:
+    """Distinct top-level namespaces a runner serves, from its facet names.
+
+    The set of queue labels a runner should poll, derived from the handlers it
+    actually loaded — no per-runner configuration. Unqualified/protocol names
+    contribute nothing (those are claimed on their own dedicated lists).
+    """
+    out: set[str] = set()
+    for n in names or ():
+        ns = namespace_of(n, default="")
+        if ns:
+            out.add(ns)
+    return sorted(out)

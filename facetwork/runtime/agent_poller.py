@@ -226,6 +226,17 @@ class AgentPoller:
         """Return the list of registered facet names."""
         return list(self._handlers.keys())
 
+    def _poll_task_lists(self) -> list[str]:
+        """Lists to poll: the namespaces of registered handlers plus the
+        configured list (prototype namespace routing) — the queue label follows
+        the handler instead of a separately-configured task list.
+        """
+        from .task_list_routing import namespaces_for
+
+        return sorted(
+            set(namespaces_for(self._handlers.keys())) | {self._config.task_list}
+        )
+
     def update_step(self, step_id: str, partial_result: dict) -> None:
         """Update a step with partial results (for streaming handlers).
 
@@ -342,7 +353,7 @@ class AgentPoller:
         while capacity > 0:
             task = self._persistence.claim_task(
                 task_names=task_names,
-                task_list=self._config.task_list,
+                task_list=self._poll_task_lists(),
                 server_id=self._server_id,
             )
             if task is None:
@@ -524,7 +535,7 @@ class AgentPoller:
         while capacity > 0:
             task = self._persistence.claim_task(
                 task_names=task_names,
-                task_list=self._config.task_list,
+                task_list=self._poll_task_lists(),
                 server_id=self._server_id,
             )
             if task is None:

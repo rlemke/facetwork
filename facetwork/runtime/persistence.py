@@ -526,10 +526,13 @@ class PersistenceAPI(Protocol):
     def claim_task(
         self,
         task_names: list[str],
-        task_list: str = "default",
+        task_list: str | list[str] = "default",
         server_id: str = "",
     ) -> Optional["TaskDefinition"]:
         """Atomically claim a pending task matching one of the given names.
+
+        ``task_list`` may be a single list name or several (a runner polling the
+        namespaces of its handlers); a task on any of them is eligible.
 
         Transitions a single task from PENDING to RUNNING atomically.
         Returns the claimed task, or None if no matching task is available.
