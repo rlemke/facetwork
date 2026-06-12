@@ -233,15 +233,26 @@ scripts/fleet status --mongo mongodb://afl-mongodb:27017   # config version + li
 scripts/fleet get    --mongo mongodb://afl-mongodb:27017   # show the config
 
 # On EACH server — the same one command joins the fleet (bootstrap = Mongo URL):
-scripts/fleet-agent apply --mongo mongodb://afl-mongodb:27017 --data-dir /Volumes/afl_data
+mkdir -p "$HOME/afl_data"                                   # big LOCAL scratch on THIS server
+scripts/fleet-agent apply --mongo mongodb://afl-mongodb:27017 --data-dir "$HOME/afl_data"
 scripts/fleet-agent apply --dry-run                        # show the plan, start nothing
-#   (with a resolvable `afl-mongodb` hostname or AFL_MONGODB_URL set, just: scripts/fleet-agent apply)
+#   (with a resolvable `afl-mongodb` hostname or AFL_MONGODB_URL set, the --mongo is
+#    optional, but --data-dir stays — it is REQUIRED, see below.)
 ```
 
+`--data-dir` is **required and per-server** — there is no `/Volumes/afl_data`
+default (that path is the infra host's disk; on macOS only root can `mkdir`
+under `/Volumes`). Prefer the `--data-dir` flag over exporting `AFL_DATA_DIR`:
+an exported env var isn't inherited by an already-running `watch` daemon or
+under `sudo`/`launchd`/`systemd`, so the flag is the reliable knob. If it's
+unset, `fleet-agent` fails fast naming the right knob (rather than crashing
+deep in `docker compose up`), and `start-runner --fleet` separately preflights
+the scratch dir for writability.
+
 `fleet-agent apply` reads `fleet_config`, **discovers the MinIO endpoint + replica
-count from it**, fills in this host's local scratch dir, and runs `start-runner
+count from it**, uses this host's `--data-dir` as local scratch, and runs `start-runner
 --fleet` (via the `start-worker` shim) — which preflight-checks both shared
-services, then brings the runners up. To
+services and the local scratch dir, then brings the runners up. To
 change the whole fleet — more runners, a different MinIO — run one `fleet set …`
 (it bumps `fleet_config.version`), then reconcile on each server. Secrets stay
 **local** to each host: MinIO credentials come from the host environment
@@ -253,7 +264,8 @@ Mongo.
 `fleet_config.version` and reconciles whenever it changes:
 
 ```bash
-scripts/fleet-agent watch --mongo mongodb://afl-mongodb:27017 --interval 30   # daemon (systemd/nohup)
+scripts/fleet-agent watch --mongo mongodb://afl-mongodb:27017 \
+    --data-dir "$HOME/afl_data" --interval 30                 # daemon (systemd/nohup); --data-dir REQUIRED
 
 # Then drive the WHOLE fleet from one place:
 scripts/fleet set --osm-replicas 8                       # every host rescales to 8
@@ -280,8 +292,9 @@ Mongo URL spelled out, and MinIO credentials no longer live in each host's env:
 # Discovery: --mongo is now OPTIONAL on every fleet/fleet-agent command. The agent
 # finds Mongo by: explicit --mongo → AFL_MONGODB_URL → mDNS → the conventional
 # `afl-mongodb` hostname. MinIO is read from the config (afl-minio fallback). So
-# with a resolvable afl-mongodb (DNS/hosts) or mDNS, a server joins with just:
-scripts/fleet-agent watch
+# with a resolvable afl-mongodb (DNS/hosts) or mDNS, a server joins with just
+# (--data-dir is still REQUIRED — there is no /Volumes/afl_data default):
+scripts/fleet-agent watch --data-dir "$HOME/afl_data"
 
 # mDNS advertiser — run on the infra host so agents find Mongo+MinIO with no
 # /etc/hosts at all (needs `pip install zeroconf`):
