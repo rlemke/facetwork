@@ -1,4 +1,0 @@
-  docker compose --env-file .env.fleet \
-    -f docker-compose.full-stack.yml \
-    -f docker-compose.fleet.yml \
-    build
