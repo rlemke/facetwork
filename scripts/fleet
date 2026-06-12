@@ -23,14 +23,18 @@ from __future__ import annotations
 import os
 import sys
 
-# Re-exec under the repo venv if the current interpreter lacks pymongo.
+# Self-bootstrap under the repo venv: ensure the required tools (pymongo,
+# cryptography) are installed — creating the venv if needed — then re-exec.
 try:
     import pymongo  # noqa: F401
 except ModuleNotFoundError:
-    _venv = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".venv", "bin", "python3")
-    if os.path.exists(_venv) and os.path.realpath(_venv) != os.path.realpath(sys.executable):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from _fleet_bootstrap import ensure_venv_and_deps
+
+    _venv = ensure_venv_and_deps()
+    if os.path.realpath(_venv) != os.path.realpath(sys.executable):
         os.execv(_venv, [_venv, *sys.argv])
-    sys.exit("pymongo not found — run inside the repo venv (pip install pymongo).")
+    import pymongo  # noqa: F401  # deps were just installed into this interpreter
 
 import argparse
 import json
