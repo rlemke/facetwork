@@ -189,6 +189,24 @@ PYEOF
             echo "    Check the endpoint URL/port, MinIO binds 0.0.0.0, firewall." >&2
             exit 1
         fi
+
+        # The osm runners bind-mount ${AFL_DATA_DIR}/osm-scratch into the
+        # container for local PBF staging. Docker creates a MISSING source dir
+        # as root, but it can't mkdir under an unwritable parent (e.g. macOS
+        # /Volumes, which only root can write) — that surfaces as a cryptic
+        # "mkdir /host_mnt/...: permission denied" at `up` time. Validate it
+        # here so a server whose .env.fleet still points AFL_DATA_DIR at another
+        # host's disk fails with an actionable message instead.
+        AFL_DATA_DIR="${AFL_DATA_DIR:-$(_envget AFL_DATA_DIR)}"; AFL_DATA_DIR="${AFL_DATA_DIR:-/Volumes/afl_data}"
+        _SCRATCH="$AFL_DATA_DIR/osm-scratch"
+        if mkdir -p "$_SCRATCH" 2>/dev/null && [[ -w "$_SCRATCH" ]]; then
+            echo "  ✓ Local scratch writable: $_SCRATCH"
+        else
+            echo "  ✗ Local scratch NOT writable: $_SCRATCH" >&2
+            echo "    Set AFL_DATA_DIR in $ENV_FILE to a large LOCAL path this server can write" >&2
+            echo "    (the preset's /Volumes/afl_data is this fleet's infra host, not every server)." >&2
+            exit 1
+        fi
     fi
     REPLICAS="${REPLICAS:-1}"
 
