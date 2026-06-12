@@ -46,11 +46,15 @@ python3 -m venv .venv
 
 # 3. Point at the shared infra — the committed template is pre-filled.
 cp .env.fleet.preset .env.fleet
-#    Edit .env.fleet if the infra IP changed, and set AFL_DATA_DIR to a big LOCAL
-#    path on THIS server (macOS: /Volumes/afl_data ; Linux: e.g. /var/lib/afl_data).
+#    REQUIRED: set AFL_DATA_DIR in .env.fleet to a big LOCAL path on THIS server
+#    (it ships empty — do not skip). macOS: e.g. $HOME/afl_data ; Linux: e.g.
+#    /var/lib/afl_data. Create it first — `mkdir -p "$AFL_DATA_DIR"`. Do NOT use
+#    /Volumes/afl_data (that's the infra host's disk; on macOS only root can
+#    mkdir under /Volumes, so the runner bind-mount fails). Also edit the infra
+#    IP if it changed.
 
-# 4. Preflight: confirm both shared services are reachable from here.
-scripts/start-runner --fleet --check          # ✓ MongoDB reachable  ✓ MinIO reachable
+# 4. Preflight: confirm shared services + local scratch are usable from here.
+scripts/start-runner --fleet --check          # ✓ MongoDB  ✓ MinIO  ✓ Local scratch writable
 
 # 5. Start the runners (first run BUILDS the runner image locally — a few minutes).
 scripts/start-runner --fleet                  # uses AFL_OSM_REPLICAS from .env.fleet
