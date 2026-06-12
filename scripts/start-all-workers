@@ -2,5 +2,6 @@
       --example osm-geocoder --example osm-lz --example anthropic \
       --example noaa-weather --example jenkins-example --example census-us \
       --example genomics --example sensor-monitoring
+docker compose -f docker-compose.full-stack.yml up -d --no-deps dashboard
  scripts/fleet-agent watch --data-dir $HOME/afl_data
 
