@@ -45,6 +45,14 @@
 x-fleet-runner: &fleet-runner
   image: ${AFL_RUNNER_IMAGE:-facetwork-runner-osm-geocoder:latest}
   pull_policy: ${AFL_RUNNER_PULL_POLICY:-missing}
+  # On `docker compose up --recreate` (how a fleet image rollout lands) the runner
+  # gets SIGTERM and drains in-flight tasks for up to shutdown_timeout_ms (30s, see
+  # runner/service.py RunnerConfig). Docker's DEFAULT grace is only 10s, which would
+  # SIGKILL mid-drain — orphaning running tasks until the ~2-3min reaper resets them.
+  # 35s (slightly over the 30s drain) lets the runner exit cleanly first, so a
+  # rollout finishes in-flight tasks instead of killing them. Override per-host with
+  # AFL_RUNNER_STOP_GRACE if some handlers need longer.
+  stop_grace_period: ${AFL_RUNNER_STOP_GRACE:-35s}
   # Register under a meaningful name (set by start-runner to this host's hostname
   # / AFL_FLEET_HOST) so `fleet status` shows the server by name, not a random id.
   hostname: ${AFL_FLEET_HOST:-}

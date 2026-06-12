@@ -280,6 +280,13 @@ hosts are current and which are still catching up. The agent survives transient
 Mongo/MinIO blips (logs and retries on the next poll) and leaves runners running
 when stopped.
 
+> **Full rollout runbook** — building/pushing the runner image (buildx → registry),
+> the exact `fleet set --image` flow, **what happens to running tasks during a
+> recreate** (graceful drain → reaper recovery → retry/dead-letter), starting /
+> stopping / draining runners from the CLI, and a comparison to
+> Kubernetes/Temporal-grade pipelines: see
+> [fleet-rollouts.md](fleet-rollouts.md).
+
 > The MinIO endpoint in the config must be reachable both from the host running
 > the agent (for preflight) and from the runner containers — i.e. a real network
 > address or DNS name (`http://afl-minio:9000`), not `localhost`. `--image`

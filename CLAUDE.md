@@ -112,6 +112,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Deployment guide | [docs/operations/deployment.md](docs/operations/deployment.md) |
 | Full-stack Docker Compose (one runner per fwh_* example) | [docs/operations/full-stack-compose.md](docs/operations/full-stack-compose.md) |
 | **Multi-server fleet** (`fleet`/`fleet-agent`/`start-runner --fleet`: shared external MinIO+MongoDB, central config, encrypted secrets, discovery) **+ local simulation** (`scripts/simulate-fleet`) | [#multi-server-runner-fleet--local-simulation](#multi-server-runner-fleet--local-simulation) · [docs/operations/deployment.md](docs/operations/deployment.md) |
+| **Fleet rollouts & runner lifecycle** — image-based change deployment (buildx→registry→`fleet set --image`), what happens to running tasks during a rollout (graceful drain → reaper recovery → retry/dead-letter), start/stop/drain runners from the CLI, and how this auto-deploy compares to Kubernetes/Temporal-grade pipelines | [docs/operations/fleet-rollouts.md](docs/operations/fleet-rollouts.md) |
 | Tutorial | [docs/getting-started/tutorial.md](docs/getting-started/tutorial.md) |
 | Tools + handlers pattern (per-domain CLI + `_<pkg>_tools/` + shim) | [agent-spec/tools-pattern.agent-spec.yaml](agent-spec/tools-pattern.agent-spec.yaml) |
 | Cache layout (sidecars, namespaces, cache types) | [agent-spec/cache-layout.agent-spec.yaml](agent-spec/cache-layout.agent-spec.yaml) |
