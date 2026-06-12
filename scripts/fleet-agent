@@ -96,6 +96,20 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     endpoint = _fleet_lib.resolve_minio(minio.get("endpoint"))
     access_key, secret_key, creds_src = _resolve_creds(mongo)
 
+    # Large LOCAL scratch dir — per-server, never inherited. We do NOT default to
+    # /Volumes/afl_data (the infra host's disk): a joiner that fell back to it
+    # would fail deep in `docker compose up` pointing at our throwaway temp env
+    # file. Require it here so the message names the real knob.
+    data_dir = data_dir or os.environ.get("AFL_DATA_DIR")
+    if not data_dir:
+        raise SystemExit(
+            f"fleet-agent[{HOST}]: AFL_DATA_DIR not set — this server needs a large "
+            "LOCAL scratch dir for staging. Export AFL_DATA_DIR=<path> before "
+            "running fleet-agent, or pass --data-dir <path> (macOS: e.g. "
+            "$HOME/afl_data ; Linux: e.g. /var/lib/afl_data). Do NOT use "
+            "/Volumes/afl_data — that's the infra host's disk."
+        )
+
     env = {
         "AFL_MONGODB_URL": mongo,
         "AFL_MONGODB_DATABASE": DB,
@@ -103,7 +117,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         "AFL_S3_BUCKET": minio.get("bucket", "afl-cache"),
         "AFL_S3_ACCESS_KEY": access_key,
         "AFL_S3_SECRET_KEY": secret_key,
-        "AFL_DATA_DIR": data_dir or os.environ.get("AFL_DATA_DIR", "/Volumes/afl_data"),
+        "AFL_DATA_DIR": data_dir,
         "AFL_OSM_REPLICAS": str(replicas),
     }
     if image:
@@ -196,7 +210,7 @@ def main():
     def common(sp):
         sp.add_argument("--mongo", default=None,
                         help="MongoDB URL (auto-discovered if omitted: AFL_MONGODB_URL → mDNS → afl-mongodb)")
-        sp.add_argument("--data-dir", help="large LOCAL scratch dir on this host (default /Volumes/afl_data)")
+        sp.add_argument("--data-dir", help="large LOCAL scratch dir on this host (REQUIRED; or set AFL_DATA_DIR)")
         sp.add_argument("--replicas", type=int, help="override osm runner count for this host")
 
     pa = sub.add_parser("apply", help="one-shot reconcile to the central config")
