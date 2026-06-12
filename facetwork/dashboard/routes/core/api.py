@@ -77,6 +77,43 @@ def api_repair_workflow(runner_id: str, store=Depends(get_store)):
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
+@router.post("/runners/bulk-delete")
+async def api_bulk_delete_runners(request: Request, store=Depends(get_store)):
+    """Delete multiple workflow runs and all of their execution data.
+
+    Body: ``{"runner_ids": ["<uuid>", ...]}``.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    runner_ids = body.get("runner_ids") or []
+    if not isinstance(runner_ids, list) or not runner_ids:
+        return JSONResponse(
+            {"success": False, "error": "runner_ids must be a non-empty list"},
+            status_code=400,
+        )
+    try:
+        result = store.delete_runners(runner_ids)
+        return JSONResponse({"success": True, **result})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/runners/{runner_id}/delete")
+def api_delete_runner(runner_id: str, store=Depends(get_store)):
+    """Delete a workflow run and all of its steps, tasks, and logs."""
+    try:
+        result = store.delete_runner(runner_id)
+        if not result.get("found"):
+            return JSONResponse(
+                {"success": False, "error": "Workflow run not found"}, status_code=404
+            )
+        return JSONResponse({"success": True, **result})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
 @router.get("/runners/{runner_id}/steps")
 def api_runner_steps(
     runner_id: str,

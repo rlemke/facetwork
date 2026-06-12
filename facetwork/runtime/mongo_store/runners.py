@@ -51,6 +51,38 @@ class RunnerMixin(_MixinBase):
         docs = self._db.runners.find().sort("start_time", -1).limit(limit)
         return [self._doc_to_runner(doc) for doc in docs]
 
+    def delete_runner(self, runner_id: str) -> dict:
+        """Delete a runner and all of its execution data.
+
+        Cascades to the run's steps, tasks, and step logs (keyed by
+        ``workflow_id``) plus the workflow logs (keyed by ``runner_id``).
+        A missing runner is a no-op returning ``found=False``.
+        """
+        runner = self.get_runner(runner_id)
+        if runner is None:
+            return {
+                "found": False,
+                "runners": 0,
+                "steps": 0,
+                "tasks": 0,
+                "step_logs": 0,
+                "logs": 0,
+            }
+        workflow_id = runner.workflow_id
+        steps = self._db.steps.delete_many({"workflow_id": workflow_id}).deleted_count
+        tasks = self._db.tasks.delete_many({"workflow_id": workflow_id}).deleted_count
+        step_logs = self._db.step_logs.delete_many({"workflow_id": workflow_id}).deleted_count
+        logs = self._db.logs.delete_many({"runner_id": runner_id}).deleted_count
+        runners = self._db.runners.delete_one({"uuid": runner_id}).deleted_count
+        return {
+            "found": True,
+            "runners": runners,
+            "steps": steps,
+            "tasks": tasks,
+            "step_logs": step_logs,
+            "logs": logs,
+        }
+
     # =========================================================================
     # Serialization Helpers — Runners
     # =========================================================================

@@ -304,6 +304,36 @@ class MemoryStore(PersistenceAPI):
         """Save a runner."""
         self._runners[runner.uuid] = runner
 
+    def delete_runner(self, runner_id: str) -> dict:
+        """Delete a runner and all of its execution data (steps/tasks/logs)."""
+        runner = self._runners.get(runner_id)
+        if runner is None:
+            return {
+                "found": False,
+                "runners": 0,
+                "steps": 0,
+                "tasks": 0,
+                "step_logs": 0,
+                "logs": 0,
+            }
+        workflow_id = runner.workflow_id
+        step_ids = list(self._steps_by_workflow.get(workflow_id, []))
+        tasks = self.delete_tasks_for_steps(step_ids)
+        step_logs = self.delete_step_logs_for_steps(step_ids)
+        steps = self.delete_steps(step_ids)
+        before_logs = len(self._logs)
+        self._logs = [log for log in self._logs if log.runner_id != runner_id]
+        logs = before_logs - len(self._logs)
+        del self._runners[runner_id]
+        return {
+            "found": True,
+            "runners": 1,
+            "steps": steps,
+            "tasks": tasks,
+            "step_logs": step_logs,
+            "logs": logs,
+        }
+
     def get_runners_by_state(self, state: str) -> Sequence["RunnerDefinition"]:
         """Get runners by state."""
         return [r for r in self._runners.values() if r.state == state]

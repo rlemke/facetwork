@@ -8,6 +8,7 @@
     <table role="grid">
         <thead>
             <tr>
+                <th class="wf-select-col"><input type="checkbox" data-select-all-group title="Select all in group"></th>
                 <th>Workflow</th>
                 <th>ID</th>
                 <th>State</th>
@@ -15,11 +16,15 @@
                 <th>Started</th>
                 <th>Duration</th>
                 <th>Source</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
         {% for runner in group.runners %}
             <tr>
+                <td class="wf-select-col">
+                    <input type="checkbox" data-runner-checkbox value="{{ runner.uuid }}">
+                </td>
                 <td>
                     <a href="/v2/workflows/{{ runner.uuid }}">
                         {{ runner.workflow.name|short_workflow_name }}
@@ -51,6 +56,13 @@
                 <td>
                     <a href="/v2/workflows/{{ runner.uuid }}/source"
                        role="button" class="outline" style="padding:0.1rem 0.5rem;font-size:0.8rem;">Source</a>
+                </td>
+                <td>
+                    <button type="button" class="outline wf-delete-btn"
+                            data-delete-runner="{{ runner.uuid }}"
+                            data-runner-name="{{ runner.workflow.name|short_workflow_name }}"
+                            title="Delete this run"
+                            style="padding:0.1rem 0.5rem;font-size:0.8rem;">Delete</button>
                 </td>
             </tr>
         {% endfor %}

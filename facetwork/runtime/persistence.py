@@ -350,6 +350,36 @@ class PersistenceAPI(Protocol):
         """
         raise NotImplementedError
 
+    def delete_runner(self, runner_id: str) -> dict:
+        """Delete a runner (workflow run) and all of its execution data.
+
+        Cascades to the run's steps, tasks, step logs, and workflow logs so
+        no orphaned documents are left behind and the stuck-step sweep stops
+        re-processing them.
+
+        Args:
+            runner_id: The runner UUID to delete
+
+        Returns:
+            A dict of deleted counts plus ``found`` (False if no such runner).
+        """
+        raise NotImplementedError
+
+    def delete_runners(self, runner_ids: Sequence[str]) -> dict:
+        """Delete multiple runners and their execution data.
+
+        Aggregates the per-runner counts from :meth:`delete_runner`. Missing
+        runners are skipped. Returns ``{"deleted": N, ...aggregated counts}``.
+        """
+        totals = {"deleted": 0, "runners": 0, "steps": 0, "tasks": 0, "step_logs": 0, "logs": 0}
+        for rid in runner_ids:
+            res = self.delete_runner(rid)
+            if res.get("found"):
+                totals["deleted"] += 1
+            for key in ("runners", "steps", "tasks", "step_logs", "logs"):
+                totals[key] += res.get(key, 0)
+        return totals
+
     # Atomic operations
     @abstractmethod
     def commit(self, changes: IterationChanges) -> None:
