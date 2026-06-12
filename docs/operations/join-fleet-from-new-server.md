@@ -71,9 +71,17 @@ Instead of `.env.fleet`, let the server pull its config (MinIO endpoint, replica
 count, image) from the central `fleet_config` in Mongo, and auto-reconcile:
 
 ```bash
-scripts/fleet-agent watch --mongo mongodb://192.168.68.75:27017
-#   (with the /etc/hosts entry above, just: scripts/fleet-agent watch)
+mkdir -p "$HOME/afl_data"                                     # big LOCAL scratch on THIS server
+scripts/fleet-agent watch --mongo mongodb://192.168.68.75:27017 --data-dir "$HOME/afl_data"
+#   (with the /etc/hosts entry above, just: scripts/fleet-agent watch --data-dir "$HOME/afl_data")
 ```
+
+> **Pass `--data-dir` (don't rely on `export AFL_DATA_DIR`).** The agent needs a
+> large LOCAL scratch path on this server, and it's REQUIRED — there is no
+> `/Volumes/afl_data` default (that's the infra host's disk). An exported
+> `AFL_DATA_DIR` is fragile: it isn't inherited by an already-running `watch`
+> daemon, or under `sudo`/`launchd`/`systemd`. `--data-dir` always wins. Do NOT
+> use `/Volumes/afl_data` (on macOS only root can mkdir under `/Volumes`).
 
 Then drive the whole fleet from one place (run on any machine):
 `scripts/fleet set --osm-replicas N`, `scripts/fleet set --image <tag>`,
