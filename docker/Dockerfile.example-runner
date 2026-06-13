@@ -109,9 +109,14 @@ RUN pip install --no-cache-dir -e ".[mongodb,s3]" \
 # source tree on disk (the _osm_tools shim adds it to sys.path) and pulls
 # fwh_osm's own deps at build time. Pin a specific commit with
 # --build-arg FWH_OSM_REF=<branch|tag>.
+# FWH_OSM_REF is a branch, tag, OR commit SHA. It is referenced in the RUN below,
+# so changing it busts BuildKit's layer cache — pass the exact commit you want
+# baked (e.g. --build-arg FWH_OSM_REF=<sha>) to guarantee a fresh clone of that
+# revision rather than a cache-reused older one. A full clone (no --depth) is used
+# so an arbitrary SHA can be checked out.
 ARG FWH_OSM_REF=main
-RUN git clone --depth 1 --branch "${FWH_OSM_REF}" \
-        https://github.com/rlemke/fwh_osm.git /opt/fwh_osm \
+RUN git clone https://github.com/rlemke/fwh_osm.git /opt/fwh_osm \
+    && git -C /opt/fwh_osm checkout --quiet "${FWH_OSM_REF}" \
     && pip install --no-cache-dir -e /opt/fwh_osm \
     && (cd /opt/fwh_osm && git rev-parse HEAD > /opt/fwh_osm.commit && rm -rf .git) \
     && echo "osm-geocoder" > /etc/afl-baked-examples \
