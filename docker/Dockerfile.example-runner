@@ -101,6 +101,22 @@ COPY facetwork/ ./facetwork/
 RUN pip install --no-cache-dir -e ".[mongodb,s3]" \
     && pip install --no-cache-dir requests pyshp folium osm2geojson
 
+# Bake the osm-geocoder example (fwh_osm) INTO the image so handler code ships
+# via `fleet set --image` — the one deploy channel that reaches every fleet
+# server without SSH/git-pull. The entrypoint prefers this baked copy over any
+# (possibly stale) bind-mount for examples listed in /etc/afl-baked-examples, so
+# a rollout alone updates handler code fleet-wide. Editable install keeps the
+# source tree on disk (the _osm_tools shim adds it to sys.path) and pulls
+# fwh_osm's own deps at build time. Pin a specific commit with
+# --build-arg FWH_OSM_REF=<branch|tag>.
+ARG FWH_OSM_REF=main
+RUN git clone --depth 1 --branch "${FWH_OSM_REF}" \
+        https://github.com/rlemke/fwh_osm.git /opt/fwh_osm \
+    && pip install --no-cache-dir -e /opt/fwh_osm \
+    && (cd /opt/fwh_osm && git rev-parse HEAD > /opt/fwh_osm.commit && rm -rf .git) \
+    && echo "osm-geocoder" > /etc/afl-baked-examples \
+    && echo "baked fwh_osm @ $(cat /opt/fwh_osm.commit)"
+
 # Entrypoint installs the named example then starts the runner.
 COPY docker/entrypoint-example-runner.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

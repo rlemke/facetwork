@@ -25,20 +25,41 @@ echo "==> example=$AFL_EXAMPLE_NAME repo=$AFL_EXAMPLE_REPO"
 echo "    mongodb=$AFL_MONGODB_URL"
 echo "    handlers=$EXAMPLE_DIR"
 
-if [[ ! -d "$EXAMPLE_DIR" ]]; then
-    echo "ERROR: $EXAMPLE_DIR not found. Bind-mount ~/fw_handlers/$AFL_EXAMPLE_REPO into the container." >&2
-    exit 1
-fi
+# Resolve the example's source. Precedence:
+#   1. AFL_EXAMPLE_FORCE_MOUNT=1 + a bind-mount  -> install the mount (hot-reload
+#      local edits, even for a baked example).
+#   2. baked into the image (listed in /etc/afl-baked-examples) -> use baked,
+#      IGNORE any bind-mount. This is the fleet default: handler code ships in
+#      the image, so a `fleet set --image` rollout updates every server with no
+#      git-pull — a (possibly stale) bind-mount on a fleet host is bypassed.
+#   3. a bind-mount is present -> install it (local dev / non-baked examples).
+#   4. neither -> error.
+BAKED_LIST="/etc/afl-baked-examples"
+is_baked() { [[ -f "$BAKED_LIST" ]] && grep -qxF "$AFL_EXAMPLE_NAME" "$BAKED_LIST"; }
 
-# Install the example as editable so handlers stay in lockstep with
-# the bind-mounted source.  Run from /tmp so the egg-info doesn't
-# pollute the read-only mount if the user mounted it ro.
-if [[ -n "${AFL_EXAMPLE_EXTRAS:-}" ]]; then
-    echo "    pip install -e $EXAMPLE_DIR[$AFL_EXAMPLE_EXTRAS]"
-    pip install --quiet --no-cache-dir -e "$EXAMPLE_DIR[$AFL_EXAMPLE_EXTRAS]"
+install_mount() {
+    # Editable so handlers stay in lockstep with the bind-mounted source.
+    if [[ -n "${AFL_EXAMPLE_EXTRAS:-}" ]]; then
+        echo "    pip install -e $EXAMPLE_DIR[$AFL_EXAMPLE_EXTRAS]"
+        pip install --quiet --no-cache-dir -e "$EXAMPLE_DIR[$AFL_EXAMPLE_EXTRAS]"
+    else
+        echo "    pip install -e $EXAMPLE_DIR"
+        pip install --quiet --no-cache-dir -e "$EXAMPLE_DIR"
+    fi
+}
+
+if [[ "${AFL_EXAMPLE_FORCE_MOUNT:-0}" == "1" && -d "$EXAMPLE_DIR" ]]; then
+    echo "    AFL_EXAMPLE_FORCE_MOUNT=1 -> using bind-mounted source at $EXAMPLE_DIR"
+    install_mount
+elif is_baked; then
+    echo "    using baked-in $AFL_EXAMPLE_NAME (image is source of truth; bind-mount ignored)"
+    [[ -f /opt/fwh_osm.commit ]] && echo "    fwh_osm @ $(cat /opt/fwh_osm.commit)"
+elif [[ -d "$EXAMPLE_DIR" ]]; then
+    install_mount
 else
-    echo "    pip install -e $EXAMPLE_DIR"
-    pip install --quiet --no-cache-dir -e "$EXAMPLE_DIR"
+    echo "ERROR: $AFL_EXAMPLE_NAME is neither baked into the image nor bind-mounted at $EXAMPLE_DIR." >&2
+    echo "       Bake it (add to /etc/afl-baked-examples) or bind-mount ~/fw_handlers/$AFL_EXAMPLE_REPO." >&2
+    exit 1
 fi
 
 # Register handler routing in MongoDB so the registry runner knows which
