@@ -259,6 +259,22 @@ class BaseMixin:
         handler_regs = self._db.handler_registrations
         handler_regs.create_index("facet_name", unique=True, name="handler_reg_facet_name_index")
 
+        # Users collection
+        users = self._db.users
+        users.create_index("email", unique=True, name="user_email_index")
+        users.create_index("status", name="user_status_index")
+        users.create_index("teams", name="user_teams_index")
+
+        # Teams collection
+        teams = self._db.teams
+        teams.create_index("uuid", unique=True, name="team_uuid_index")
+        teams.create_index("name", unique=True, name="team_name_index")
+
+        # Seed the built-in principals (system / claude / deleted / anonymous).
+        # ``ensure_special_users`` is contributed by UsersMixin; it is always
+        # present on the assembled MongoStore and is idempotent.
+        self.ensure_special_users()  # type: ignore[attr-defined]
+
     def close(self) -> None:
         """Close the MongoDB connection."""
         self._client.close()

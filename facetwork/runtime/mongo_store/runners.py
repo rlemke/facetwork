@@ -106,6 +106,9 @@ class RunnerMixin(_MixinBase):
             "parameters": [asdict(p) for p in runner.parameters],
             "step_id": runner.step_id,
             "user": asdict(runner.user) if runner.user else None,
+            "author": asdict(runner.author) if runner.author else None,
+            "purpose": runner.purpose,
+            "teams": runner.teams,
             "start_time": runner.start_time,
             "end_time": runner.end_time,
             "duration": runner.duration,
@@ -123,6 +126,9 @@ class RunnerMixin(_MixinBase):
         user = None
         if doc.get("user"):
             user = UserDefinition(**doc["user"])
+        author = None
+        if doc.get("author"):
+            author = UserDefinition(**doc["author"])
 
         return RunnerDefinition(
             uuid=doc["uuid"],
@@ -131,6 +137,9 @@ class RunnerMixin(_MixinBase):
             parameters=[Parameter(**p) for p in doc.get("parameters", [])],
             step_id=doc.get("step_id"),
             user=user,
+            author=author,
+            purpose=doc.get("purpose", "none"),
+            teams=doc.get("teams", []),
             start_time=doc.get("start_time", 0),
             end_time=doc.get("end_time", 0),
             duration=doc.get("duration", 0),

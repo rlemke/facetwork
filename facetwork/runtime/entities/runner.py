@@ -30,7 +30,10 @@ class RunnerDefinition:
     workflow: WorkflowDefinition
     parameters: list[Parameter] = field(default_factory=list)
     step_id: str | None = None
-    user: UserDefinition | None = None
+    user: UserDefinition | None = None  # who STARTED the run (started_by)
+    author: UserDefinition | None = None  # who AUTHORED the workflow (from the Author mixin)
+    purpose: str = "none"  # production | beta | test | personal | none
+    teams: list[str] = field(default_factory=list)  # teams this run is listed for
     start_time: int = 0  # Execution start timestamp (ms)
     end_time: int = 0  # Execution end timestamp (ms)
     duration: int = 0  # Total execution duration (ms)

@@ -25,6 +25,8 @@ from .runners import RunnerMixin
 from .servers import ServerMixin
 from .steps import StepMixin
 from .tasks import TaskMixin
+from .teams import TeamsMixin
+from .users import UsersMixin
 from .workflows import WorkflowMixin
 
 
@@ -34,6 +36,8 @@ class MongoStore(
     TaskMixin,
     RunnerMixin,
     WorkflowMixin,
+    UsersMixin,
+    TeamsMixin,
     RepairMixin,
     ServerMixin,
     PersistenceAPI,

@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from pymongo.database import Database
 
-    from ..entities import TaskDefinition, WorkflowDefinition
+    from ..entities import TaskDefinition, User, WorkflowDefinition
     from ..persistence import PersistenceAPI
 
     class _StoreInternals(PersistenceAPI):
@@ -47,6 +47,8 @@ if TYPE_CHECKING:
         def _task_to_doc(self, task: TaskDefinition) -> dict: ...
         def _workflow_to_doc(self, workflow: WorkflowDefinition) -> dict: ...
         def _doc_to_workflow(self, doc: dict) -> WorkflowDefinition: ...
+        def _doc_to_user(self, doc: dict) -> User: ...
+        def delete_runner(self, runner_id: str) -> dict: ...
 
     _MixinBase = _StoreInternals
 else:

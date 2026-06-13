@@ -104,3 +104,4 @@ class WorkflowMetaData:
     description: str = ""
     author: str = ""
     tags: list[str] = field(default_factory=list)
+    teams: list[str] = field(default_factory=list)
