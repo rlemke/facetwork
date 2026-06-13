@@ -1,0 +1,23 @@
+// Ownership annotation mixins — declare a workflow's author and teams.
+//
+// `with Author(email = "…")` and `with Teams(names = ["…", …])` are advisory
+// annotation mixins (like `with Effect(...)` / `with Cost(...)`): they carry no
+// return attributes, so nothing yields to them — they just tag the workflow.
+//
+// The runtime reads them when a run is created: the run is attributed to the
+// author, and listed under each named team (the dashboard filters runs and
+// flows by team). The capability index and workflow catalog surface the same
+// tags for discovery. Teams referenced here are just names; manage the Team
+// records and membership in the dashboard's Admin pages.
+
+namespace demo {
+    event facet Greet(name: String) => (message: String)
+
+    workflow Welcome(name: String) => (message: String)
+      with Author(email = "ada@example.com")
+      with Teams(names = ["geo", "research"])
+      andThen {
+        g = Greet(name = $.name)
+        yield Welcome(message = g.message)
+    }
+}

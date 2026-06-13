@@ -58,6 +58,9 @@ class FacetCapability:
     # composer prefer pure/cheap primitives and know which steps hit an engine.
     effect: str = ""             # "" | "pure" | "external" | "io"
     cost: str = ""               # "" | "free" | "cheap" | "moderate" | "expensive"
+    # Ownership annotations (from `with Author(email=…)` / `with Teams(names=[…])`).
+    author: str = ""             # author email; "" when unknown
+    teams: list[str] = field(default_factory=list)  # teams this facet/flow belongs to
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -69,6 +72,8 @@ class FacetCapability:
             "signature": self.signature,
             "effect": self.effect,
             "cost": self.cost,
+            "author": self.author,
+            "teams": self.teams,
             "params": [p.to_dict() for p in self.params],
             "returns": [r.to_dict() for r in self.returns],
             "mixins": self.mixins,
@@ -133,6 +138,51 @@ def _mixin_arg(mixin: dict, *names: str):
     return None
 
 
+def _mixin_str_list(value: Any) -> list[str]:
+    """Coerce a mixin arg value to a list of strings.
+
+    Handles an emitted ``ArrayLiteral`` (``{type, elements:[{value}, …]}``), a
+    raw list, or a single scalar.
+    """
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        elems = value.get("elements")
+        if isinstance(elems, list):
+            return [
+                str(e.get("value"))
+                for e in elems
+                if isinstance(e, dict) and e.get("value") is not None
+            ]
+        if "value" in value and value["value"] is not None:
+            return [str(value["value"])]
+        return []
+    if isinstance(value, list):
+        return [str(v.get("value") if isinstance(v, dict) else v) for v in value]
+    return [str(value)]
+
+
+def author_and_teams(mixins_raw: list | None) -> tuple[str, list[str]]:
+    """Extract ``(author_email, team_names)`` from a node's mixins.
+
+    Reads ``with Author(email=…)`` and ``with Teams(names=[…])`` — the ownership
+    annotation mixins that a workflow or facet may declare. Public so the
+    submit/seed/catalog paths can tag runs and flows from the same source of
+    truth the capability index uses. Returns ``("", [])`` when absent.
+    """
+    author = ""
+    teams: list[str] = []
+    for m in mixins_raw or []:
+        if not isinstance(m, dict):
+            continue
+        target = m.get("target") or m.get("name") or ""
+        if target == "Author":
+            author = str(_mixin_arg(m, "email", "user") or "") or author
+        elif target == "Teams":
+            teams = _mixin_str_list(_mixin_arg(m, "names", "teams")) or teams
+    return author, teams
+
+
 def _annotations(mixins_raw: list | None) -> tuple[list[str], str, str]:
     """Parse a facet's mixins into (mixin target names, effect, cost).
 
@@ -170,6 +220,7 @@ def _facet_capability(decl: dict, namespace: str) -> FacetCapability:
     qualified = f"{namespace}.{name}" if namespace else name
     doc = (decl.get("doc") or {}).get("description", "") if isinstance(decl.get("doc"), dict) else ""
     mixins, effect, cost = _annotations(decl.get("mixins"))
+    author, teams = author_and_teams(decl.get("mixins"))
     return FacetCapability(
         qualified_name=qualified,
         name=name,
@@ -182,6 +233,8 @@ def _facet_capability(decl: dict, namespace: str) -> FacetCapability:
         mixins=mixins,
         effect=effect,
         cost=cost,
+        author=author,
+        teams=teams,
     )
 
 

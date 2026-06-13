@@ -271,6 +271,8 @@ def main(args: list[str] | None = None) -> int:
     # -------------------------------------------------------------------------
     # 6. Connect to MongoDB and create entities
     # -------------------------------------------------------------------------
+    from facetwork.capabilities import author_and_teams
+
     from .entities import (
         FlowDefinition,
         FlowIdentity,
@@ -279,9 +281,15 @@ def main(args: list[str] | None = None) -> int:
         SourceText,
         TaskDefinition,
         TaskState,
+        UserDefinition,
         WorkflowDefinition,
+        WorkflowMetaData,
     )
     from .types import generate_id
+
+    # Ownership tags from the workflow's `with Author(email=…)` / `with Teams(…)`
+    # mixins — author the run with them so the dashboard can attribute and filter.
+    author_email, flow_teams = author_and_teams(workflow_ast.get("mixins"))
 
     try:
         store = _connect_store(config)
@@ -316,15 +324,28 @@ def main(args: list[str] | None = None) -> int:
         flow_id=flow_id,
         starting_step="",
         version="1.0",
+        metadata=WorkflowMetaData(author=author_email, teams=flow_teams),
         date=now_ms,
     )
     store.save_workflow(workflow)
+
+    # Resolve the author email to a rich User snapshot if one exists.
+    author_def: UserDefinition | None = None
+    if author_email:
+        author_user = store.get_user(author_email)
+        author_def = (
+            author_user.to_user_definition()
+            if author_user
+            else UserDefinition(email=author_email)
+        )
 
     runner = RunnerDefinition(
         uuid=runner_id,
         workflow_id=wf_id,
         workflow=workflow,
         state=RunnerState.CREATED,
+        author=author_def,
+        teams=list(flow_teams),
     )
     store.save_runner(runner)
 

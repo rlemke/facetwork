@@ -151,7 +151,14 @@ class CatalogService:
         )
 
         wf_ast = self._find_wf(program_dict, entry_name) if entry_name else None
+        from facetwork.capabilities import author_and_teams
         from facetwork.runtime.types import generate_id
+
+        # Ownership from the entry workflow's `with Author(email=…)` /
+        # `with Teams(names=[…])` mixins. The FFL-declared author wins over the
+        # caller-supplied default.
+        mixin_author, mixin_teams = author_and_teams(wf_ast.get("mixins")) if wf_ast else ("", [])
+        effective_author = mixin_author or author
 
         rev = CatalogRevision(
             revision_id=generate_id(),
@@ -170,13 +177,16 @@ class CatalogService:
             status=STATUS_DRAFT,
             is_valid=is_valid,
             warnings=warnings,
-            author=author,
+            author=effective_author,
+            teams=mixin_teams,
             note=note,
             summary=summary,
             created_at=_now_ms(),
         )
         self._catalog.save_revision(rev)
-        self._upsert_entry(slug, kind, title, description, tags, author, version)
+        self._upsert_entry(
+            slug, kind, title, description, tags, effective_author, version, teams=mixin_teams
+        )
 
         return SaveResult(
             ok=True,
@@ -811,13 +821,15 @@ class CatalogService:
         tags: list[str],
         author: str,
         version: int,
+        teams: list[str] | None = None,
     ) -> None:
         entry = self._catalog.get_entry(slug)
         now = _now_ms()
         if entry is None:
             entry = CatalogEntry(
                 slug=slug, kind=kind, title=title, description=description, tags=tags,
-                latest_version=version, author=author, created_at=now, updated_at=now,
+                teams=teams or [], latest_version=version, author=author,
+                created_at=now, updated_at=now,
             )
         else:
             if title:
@@ -826,6 +838,8 @@ class CatalogService:
                 entry.description = description
             if tags:
                 entry.tags = tags
+            if teams:
+                entry.teams = teams
             entry.latest_version = max(entry.latest_version, version)
             entry.updated_at = now
         self._catalog.save_entry(entry)

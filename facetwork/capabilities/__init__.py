@@ -12,9 +12,16 @@ See ``docs/architecture/composable-facet-library.md`` §6.
 
 from .index import (
     FacetCapability,
+    author_and_teams,
     index_program,
     index_programs,
     search,
 )
 
-__all__ = ["FacetCapability", "index_program", "index_programs", "search"]
+__all__ = [
+    "FacetCapability",
+    "author_and_teams",
+    "index_program",
+    "index_programs",
+    "search",
+]

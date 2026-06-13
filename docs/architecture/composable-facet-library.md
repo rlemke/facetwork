@@ -154,7 +154,13 @@ NL → facet must be *reliable*, not guesswork. Two pieces:
    → `osm.geocode.ReverseGeocode`, "buffer service area" → `osm.Spatial.Buffer`, namespace-filtered
    "within distance" → the `osm.Spatial` distance verbs. The index also carries **effect** (`pure` /
    `external`) and **cost** (`free`…`expensive`) per facet (§9 item 7), so `fw_capabilities(effect=,
-   max_cost=)` can return e.g. only the pure/cheap primitives that are free to chain.
+   max_cost=)` can return e.g. only the pure/cheap primitives that are free to chain. It likewise
+   carries **author** and **teams** ownership tags from the `with Author(email = …)` /
+   `with Teams(names = […])` annotation mixins (same `with`-mixin mechanism as `Effect`/`Cost`, no
+   new grammar). The runtime reads those mixins off the **entry workflow** when a run or catalog
+   revision is created: the run is attributed to the author (resolved to a `User` record when one
+   exists) and listed under each named team, and the dashboard filters runs and flows by team. See
+   the canonical template `examples/canonical/11-author-teams.ffl`.
 2. **A domain vocabulary (ontology)** — ✅ *shipped* (`osm.Vocab`, backed by
    `_osm_tools/vocab.py`). A curated OSM tag ontology — `amenity` / `shop` / `highway` / `tourism` /
    `leisure` / `natural` / `landuse` values, each with synonyms — exposed as `ResolveTag(term, key?)`

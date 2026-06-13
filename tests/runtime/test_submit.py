@@ -268,6 +268,37 @@ class TestMongoSubmit:
         assert "namespace types" in source_content
         assert "namespace app" in source_content
 
+    def test_submit_tags_run_from_author_teams_mixins(self, tmp_path, mock_store, capsys):
+        """A workflow's Author/Teams mixins attribute and team-tag the run."""
+        from facetwork.runtime.entities import User
+
+        # A rich User record lets the run carry the author's display name.
+        mock_store.save_user(User(email="ada@example.com", first_name="Ada", last_name="Lovelace"))
+
+        f = tmp_path / "owned.ffl"
+        f.write_text(
+            "namespace app {\n"
+            "  event facet Do(x: String) => (y: String)\n"
+            "  workflow Flow(x: String) => (y: String)\n"
+            '    with Author(email = "ada@example.com")\n'
+            '    with Teams(names = ["geo", "research"])\n'
+            "    andThen { d = Do(x = $.x) yield Flow(y = d.y) }\n"
+            "}"
+        )
+        result = self._run_with_mock_store(
+            mock_store, [str(f), "--workflow", "app.Flow", "--inputs", '{"x": "hi"}']
+        )
+        assert result == 0
+        ids = self._parse_ids(capsys.readouterr().out)
+
+        runner = mock_store.get_runner(ids["runner_id"])
+        assert runner.author is not None
+        assert runner.author.email == "ada@example.com"
+        assert runner.author.name == "Ada Lovelace"  # resolved from the User record
+        assert runner.teams == ["geo", "research"]
+        assert runner.workflow.metadata.teams == ["geo", "research"]
+        assert runner.workflow.metadata.author == "ada@example.com"
+
     def test_submit_with_default_params(self, tmp_path, mock_store, capsys):
         f = tmp_path / "wf.ffl"
         f.write_text('namespace n {\n  workflow Go(count: Int = 5, name: String = "test")\n}')

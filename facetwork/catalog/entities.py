@@ -68,6 +68,7 @@ class CatalogRevision:
     is_valid: bool = True
     warnings: list[str] = field(default_factory=list)
     author: str = "claude"
+    teams: list[str] = field(default_factory=list)  # from the entry workflow's Teams mixin
     note: str = ""
     # Free-text (markdown) narrative of *why* this revision exists — the request
     # it was built from and how the workflow addresses it. Recorded by the author
@@ -89,6 +90,7 @@ class CatalogEntry:
     title: str = ""
     description: str = ""
     tags: list[str] = field(default_factory=list)
+    teams: list[str] = field(default_factory=list)  # teams this workflow is listed for
     latest_version: int = 0
     published_version: int | None = None  # highest published version, if any
     author: str = "claude"
