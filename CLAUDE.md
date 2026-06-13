@@ -96,6 +96,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Distributed step processing | [docs/reference/runtime.md §10.3.1](docs/reference/runtime.md) |
 | Runtime implementation details | [docs/reference/runtime-impl.md](docs/reference/runtime-impl.md) |
 | Building handlers | [docs/reference/agent-sdk.md](docs/reference/agent-sdk.md) |
+| **Multi-language (polyglot) handlers** — Java/Go/Scala/TS handlers alongside Python via the Mongo-coordinated agent protocol (name-filtered claim → coexistence); worked example: the embedded-GraphHopper Java agent (`fwh_osm/java/osm-gh-router`) | [docs/guides/multi-language-handlers.md](docs/guides/multi-language-handlers.md) |
 | LLM integration | [docs/guides/llm-integration.md](docs/guides/llm-integration.md) |
 | Long-running handlers | [docs/guides/long-running-handlers.md](docs/guides/long-running-handlers.md) |
 | FFL examples | [docs/reference/examples.md](docs/reference/examples.md) |
@@ -113,6 +114,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Full-stack Docker Compose (one runner per fwh_* example) | [docs/operations/full-stack-compose.md](docs/operations/full-stack-compose.md) |
 | **Multi-server fleet** (`fleet`/`fleet-agent`/`start-runner --fleet`: shared external MinIO+MongoDB, central config, encrypted secrets, discovery) **+ local simulation** (`scripts/simulate-fleet`) | [#multi-server-runner-fleet--local-simulation](#multi-server-runner-fleet--local-simulation) · [docs/operations/deployment.md](docs/operations/deployment.md) |
 | **Fleet rollouts & runner lifecycle** — image-based change deployment (buildx→registry→`fleet set --image`), what happens to running tasks during a rollout (graceful drain → reaper recovery → retry/dead-letter), start/stop/drain runners from the CLI, and how this auto-deploy compares to Kubernetes/Temporal-grade pipelines | [docs/operations/fleet-rollouts.md](docs/operations/fleet-rollouts.md) |
+| **Informal fleet — your team's own machines as the cluster** — only central MongoDB+MinIO must be stable; runner machines (desktops/laptops) are stateless & disposable and can come/go (reaper → re-claim); who this model is for (small/research teams); large-scale data-center operation is architecturally **possible but untested** — treat it as a real engineering investment (hardening/scheduling/observability), not a config change | [docs/operations/informal-fleet.md](docs/operations/informal-fleet.md) |
 | Tutorial | [docs/getting-started/tutorial.md](docs/getting-started/tutorial.md) |
 | Tools + handlers pattern (per-domain CLI + `_<pkg>_tools/` + shim) | [agent-spec/tools-pattern.agent-spec.yaml](agent-spec/tools-pattern.agent-spec.yaml) |
 | Cache layout (sidecars, namespaces, cache types) | [agent-spec/cache-layout.agent-spec.yaml](agent-spec/cache-layout.agent-spec.yaml) |

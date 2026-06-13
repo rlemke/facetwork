@@ -445,10 +445,29 @@ this is — those simplifications are reasonable; the gaps matter most if the
 handlers become non-idempotent or the work becomes latency-sensitive request
 serving rather than batch tasks.
 
+**Who it's for, in one line:** this is built for **small/trusted teams and
+research groups** turning the machines they already have into a resilient batch
+fleet — *not* multi-team, SLO-bound production at scale. The runner machines can
+literally be your team's desktops and laptops coming and going; see
+[informal-fleet.md](informal-fleet.md).
+
+**Large-scale / data-center operation is possible but untested.** The
+fundamentals scale horizontally, so a shared Mongo + MinIO fronting hundreds of
+nodes is architecturally plausible — but it has **not** been validated at that
+scale (all testing to date is small-team / research scale). Treat large-scale
+data-center data processing as a real engineering investment: budget time to
+prove it out and to add the hardening/scheduling/observability that mature
+large-scale data-processing deployments require (the §6.2 gaps above). See
+[informal-fleet.md → "Could it run in a real data center, at large scale?"](informal-fleet.md).
+
 ---
 
 ## See also
 
+- [informal-fleet.md](informal-fleet.md) — your team's own machines as the
+  cluster, who this model is for, and where it stops
+- [multi-language-handlers.md](../guides/multi-language-handlers.md) — Java / Go
+  / TS handlers alongside the Python runners
 - [deployment.md](deployment.md) — full fleet setup, central config, secret store
 - [join-fleet-from-new-server.md](join-fleet-from-new-server.md) — adding a server
 - [full-stack-compose.md](full-stack-compose.md) — one runner per `fwh_*` example
