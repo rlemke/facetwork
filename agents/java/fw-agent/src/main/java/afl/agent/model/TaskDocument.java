@@ -58,13 +58,23 @@ public record TaskDocument(
                 doc.getString("flow_id"),
                 doc.getString("step_id"),
                 doc.getString("state"),
-                doc.getLong("created"),
-                doc.getLong("updated"),
+                asLong(doc.get("created")),
+                asLong(doc.get("updated")),
                 errorMessage,
                 doc.getString("task_list_name"),
                 doc.getString("data_type"),
                 data
         );
+    }
+
+    /**
+     * Reads a numeric field that may be stored as int32 (Integer) or int64
+     * (Long) in BSON. Document.getLong() throws ClassCastException on an
+     * Integer, which broke task parsing for tasks whose timestamps were written
+     * as int32. Returns 0 if absent.
+     */
+    private static long asLong(Object v) {
+        return (v instanceof Number) ? ((Number) v).longValue() : 0L;
     }
 
     /**
