@@ -365,6 +365,28 @@ services:
       - afl_geofabrik:/geofabrik
     restart: unless-stopped
 
+  # Embedded-GraphHopper Java routing agent (osm.Routing.GraphHopper.RouteBatch).
+  # Built from fwh_osm/java/osm-gh-router (its own image, NOT the generic
+  # facetwork-runner), pinned fleet-wide via AFL_GH_ROUTER_IMAGE (fleet_config
+  # role `gh-router`). Coexists with the Python osm runners via the name-filtered
+  # claim — it advertises only RouteBatch and polls the `osm` task list. Run at a
+  # single replica (it loads a whole state graph into JVM heap per region).
+  runner-gh-router:
+    image: ${AFL_GH_ROUTER_IMAGE:-osm-gh-router:latest}
+    pull_policy: ${AFL_RUNNER_PULL_POLICY:-missing}
+    hostname: ${AFL_FLEET_HOST:-}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *osm-s3-env
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      AFL_TASK_LIST: osm
+    restart: unless-stopped
+
   runner-osm-lz:
     hostname: ${AFL_FLEET_HOST:-}
     build:

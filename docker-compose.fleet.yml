@@ -92,6 +92,15 @@ services:
     environment:
       <<: *fleet-env
 
+  # Java routing agent — its own image (AFL_GH_ROUTER_IMAGE), not the shared
+  # AFL_RUNNER_IMAGE; the explicit `image:` overrides the anchor's default.
+  runner-gh-router:
+    <<: *fleet-runner
+    image: ${AFL_GH_ROUTER_IMAGE:-osm-gh-router:latest}
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+
   runner-noaa-weather:
     <<: *fleet-runner
     depends_on: !reset []

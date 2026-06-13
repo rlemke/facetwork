@@ -93,6 +93,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     osm = (cfg.get("roles") or {}).get("osm-geocoder", {})
     replicas = replicas_override if replicas_override is not None else int(osm.get("replicas", 4))
     image = osm.get("image")
+    gh_image = (cfg.get("roles") or {}).get("gh-router", {}).get("image")
     endpoint = _fleet_lib.resolve_minio(minio.get("endpoint"))
     access_key, secret_key, creds_src = _resolve_creds(mongo)
 
@@ -122,6 +123,8 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     }
     if image:
         env["AFL_RUNNER_IMAGE"] = image
+    if gh_image:
+        env["AFL_GH_ROUTER_IMAGE"] = gh_image
     # Role group for fleet status / dashboard (every server is a runner by default).
     grp = os.environ.get("AFL_SERVER_GROUP", "runner")
     env["AFL_SERVER_GROUP"] = grp
@@ -131,11 +134,15 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         # Child tasks route by the facet's namespace (the runtime derives the
         # queue from the handler), so no task-list map is needed here.
 
-    label = f"v{cfg.get('version')} minio={endpoint} osm-replicas={replicas} creds={creds_src}" + (f" image={image}" if image else "")
+    label = (f"v{cfg.get('version')} minio={endpoint} osm-replicas={replicas} creds={creds_src}"
+             + (f" image={image}" if image else "")
+             + (f" gh-router={gh_image}" if gh_image else ""))
     print(f"fleet-agent[{HOST}]: applying fleet_config {label}" + (" (recreate)" if recreate else ""))
     if dry_run:
         for k, v in env.items():
             print(f"    {k}={'***' if ('SECRET' in k or 'ACCESS' in k) else v}")
+        if gh_image:
+            print("    + would bring up runner-gh-router (1 replica) from AFL_GH_ROUTER_IMAGE")
         return
 
     fd, envf = tempfile.mkstemp(prefix=".env.fleet-agent.", dir=REPO)
@@ -160,6 +167,23 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
             sys.stderr.write(r.stderr)
             raise SystemExit(f"fleet-agent[{HOST}]: start-worker failed (exit {r.returncode})")
         sys.stdout.write(r.stdout)
+        # gh-router role: bring up the embedded-GraphHopper Java agent as its own
+        # single-replica service (its own image; coexists with the osm runners
+        # via the name-filtered claim). Same env file (carries AFL_GH_ROUTER_IMAGE).
+        if gh_image:
+            gh_cmd = ["bash", os.path.join(REPO, "scripts", "start-worker"),
+                      "--env", envf, "--example", "gh-router", "--replicas", "1"]
+            if recreate:
+                gh_cmd.append("--recreate")
+            gr = subprocess.run(gh_cmd, env=child_env, capture_output=True, text=True)
+            sys.stdout.write(gr.stdout)
+            if gr.returncode != 0:
+                # Non-fatal: gh-router only needs to run on ONE host (it's the sole
+                # RouteBatch claimant). A host that can't bring it up (e.g. can't
+                # pull the image) shouldn't fail its osm-runner reconcile.
+                sys.stderr.write(gr.stderr)
+                print(f"fleet-agent[{HOST}]: WARNING gh-router start failed (exit {gr.returncode}); "
+                      "continuing — another host can serve RouteBatch")
         _record(mongo, cfg.get("version"), image, replicas)
     finally:
         os.unlink(envf)
