@@ -69,9 +69,19 @@ class RunnerMixin(_MixinBase):
                 "logs": 0,
             }
         workflow_id = runner.workflow_id
-        steps = self._db.steps.delete_many({"workflow_id": workflow_id}).deleted_count
-        tasks = self._db.tasks.delete_many({"workflow_id": workflow_id}).deleted_count
-        step_logs = self._db.step_logs.delete_many({"workflow_id": workflow_id}).deleted_count
+        # A task/step-log belongs to the run by ``runner_id``; but continuation/
+        # resume tasks (and agent-inserted ``fw:resume`` tasks) may carry only
+        # ``workflow_id`` with no ``runner_id``. Match BOTH so nothing is orphaned.
+        # (Guard the workflow_id clause when it's falsy so we never match every
+        # document whose workflow_id is null/empty.)
+        run_clauses = [{"runner_id": runner_id}]
+        if workflow_id:
+            run_clauses.append({"workflow_id": workflow_id})
+        run_filter = {"$or": run_clauses} if len(run_clauses) > 1 else run_clauses[0]
+
+        steps = self._db.steps.delete_many({"workflow_id": workflow_id}).deleted_count if workflow_id else 0
+        tasks = self._db.tasks.delete_many(run_filter).deleted_count
+        step_logs = self._db.step_logs.delete_many(run_filter).deleted_count
         logs = self._db.logs.delete_many({"runner_id": runner_id}).deleted_count
         runners = self._db.runners.delete_one({"uuid": runner_id}).deleted_count
         return {
