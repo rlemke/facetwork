@@ -71,6 +71,23 @@ class TeamsMixin(_MixinBase):
             "default_cleared": default_cleared,
         }
 
+    def set_team_members(self, team_name: str, emails: list[str]) -> dict:
+        """Make exactly ``emails`` the members of ``team_name``.
+
+        Adds the team to every listed user's membership and removes it from any
+        user no longer listed — membership lives on the user record.
+        """
+        wanted = list(dict.fromkeys(emails))  # dedupe, preserve order
+        added = self._db.users.update_many(
+            {"email": {"$in": wanted}, "teams": {"$ne": team_name}},
+            {"$push": {"teams": team_name}},
+        ).modified_count
+        removed = self._db.users.update_many(
+            {"teams": team_name, "email": {"$nin": wanted}},
+            {"$pull": {"teams": team_name}},
+        ).modified_count
+        return {"added": added, "removed": removed}
+
     def get_team_members(self, name: str, include_deleted: bool = False) -> Sequence[User]:
         """List the active users who belong to a team (queried from users)."""
         query: dict = {"teams": name}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}{{ "Edit" if user else "New" }} User — Facetwork{% endblock %}
+
+{% block breadcrumb %}
+<div class="container">
+    <nav class="breadcrumb">
+        <a href="/v2/users">Users</a> / {{ user.email if user else "New" }}
+    </nav>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{{ "Edit User" if user else "New User" }}</h1>
+
+<form method="post" action="/v2/users" style="max-width:42rem;">
+    <label>Email (unique)
+        <input type="email" name="email" required value="{{ user.email if user else '' }}"
+               {% if user %}readonly{% endif %}>
+    </label>
+    <div class="grid">
+        <label>First name
+            <input type="text" name="first_name" value="{{ user.first_name if user else '' }}">
+        </label>
+        <label>Last name
+            <input type="text" name="last_name" value="{{ user.last_name if user else '' }}">
+        </label>
+    </div>
+    <div class="grid">
+        <label>Phone (optional)
+            <input type="text" name="phone" value="{{ user.phone if user else '' }}">
+        </label>
+        <label>Title (optional)
+            <input type="text" name="title" value="{{ user.title if user else '' }}">
+        </label>
+    </div>
+
+    <fieldset>
+        <legend>Teams</legend>
+        {% if teams %}
+            {% for t in teams %}
+            <label style="display:inline-block;margin-right:1rem;">
+                <input type="checkbox" name="teams" value="{{ t.name }}"
+                       {% if user and t.name in user.teams %}checked{% endif %}>
+                {{ t.name }}
+            </label>
+            {% endfor %}
+        {% else %}
+            <small>No teams yet. <a href="/v2/teams/new">Create one</a>.</small>
+        {% endif %}
+    </fieldset>
+
+    <label>Default team
+        <select name="default_team">
+            <option value="">— none —</option>
+            {% for t in teams %}
+            <option value="{{ t.name }}" {% if user and user.default_team == t.name %}selected{% endif %}>{{ t.name }}</option>
+            {% endfor %}
+        </select>
+    </label>
+
+    <button type="submit">{{ "Save" if user else "Create" }}</button>
+    <a href="/v2/users" role="button" class="secondary outline">Cancel</a>
+</form>
+{% endblock %}

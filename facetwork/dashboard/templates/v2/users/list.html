@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Users — Facetwork Dashboard{% endblock %}
+
+{% block breadcrumb %}
+<div class="container">
+    <nav class="breadcrumb"><a href="/v2/users">Users</a></nav>
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Users</h1>
+<p>
+    Acting as: <strong>{{ current_user.display_name }}</strong>
+    <small>({{ current_user.email }})</small>
+</p>
+
+<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;">
+    <a href="/v2/users/new" role="button">&#x2795; New User</a>
+    <a href="/v2/teams" role="button" class="outline">Teams</a>
+    <span style="flex:1"></span>
+    <a href="/v2/users?show_deleted={{ 'false' if show_deleted else 'true' }}" class="outline" role="button">
+        {{ 'Hide deleted' if show_deleted else 'Show deleted' }}
+    </a>
+</div>
+
+<table role="grid">
+    <thead>
+        <tr>
+            <th>Name</th><th>Email</th><th>Teams</th><th>Default</th>
+            <th>Kind</th><th>Status</th><th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for u in users %}
+        <tr{% if u.is_deleted %} style="opacity:0.55"{% endif %}>
+            <td>{{ u.display_name }}{% if u.title %} <small>· {{ u.title }}</small>{% endif %}</td>
+            <td class="mono">{{ u.email }}</td>
+            <td>{% for t in u.teams %}<span class="badge badge-secondary">{{ t }}</span> {% endfor %}</td>
+            <td>{{ u.default_team or "—" }}</td>
+            <td>{% if u.is_special %}<span class="badge">{{ u.kind }}</span>{% else %}human{% endif %}</td>
+            <td>{{ "deleted" if u.is_deleted else "active" }}</td>
+            <td style="white-space:nowrap;">
+                <form method="post" action="/v2/users/act-as" style="display:inline">
+                    <input type="hidden" name="email" value="{{ u.email }}">
+                    <input type="hidden" name="next" value="/v2/users">
+                    <button type="submit" class="outline" style="padding:0.1rem 0.5rem;font-size:0.8rem;">Act as</button>
+                </form>
+                {% if not u.is_special %}
+                <a href="/v2/users/{{ u.email }}/edit" role="button" class="outline"
+                   style="padding:0.1rem 0.5rem;font-size:0.8rem;">Edit</a>
+                {% if not u.is_deleted %}
+                <form method="post" action="/v2/users/{{ u.email }}/delete" style="display:inline"
+                      onsubmit="return confirm('Soft-delete {{ u.email }}? Their runs keep their author.');">
+                    <button type="submit" class="outline" style="padding:0.1rem 0.5rem;font-size:0.8rem;">Delete</button>
+                </form>
+                {% endif %}
+                <form method="post" action="/v2/users/{{ u.email }}/force-delete" style="display:inline"
+                      onsubmit="return confirm('FORCE-DELETE {{ u.email }}? References flip to the deleted user. This cannot be undone.');">
+                    <label style="display:inline;font-size:0.75rem;margin-right:0.3rem;">
+                        <input type="checkbox" name="delete_work" value="1" style="margin:0"> + delete their work
+                    </label>
+                    <button type="submit" class="outline" style="padding:0.1rem 0.5rem;font-size:0.8rem;color:var(--state-failed);">Force</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

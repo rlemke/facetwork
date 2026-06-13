@@ -22,24 +22,65 @@ from fastapi.responses import RedirectResponse
 from facetwork.runtime.expression import evaluate_default
 from facetwork.runtime.task_list_routing import namespace_of
 
-from ...dependencies import get_store
+from ...dependencies import get_current_user, get_store
 
 router = APIRouter(prefix="/flows")
 
 
+def _flow_teams(flow) -> set[str]:
+    """Teams a flow belongs to — union of its workflows' Teams mixins.
+
+    Read from the compiled AST (where the mixins live); falls back to any
+    embedded workflow metadata.
+    """
+    from facetwork.capabilities import author_and_teams
+
+    teams: set[str] = set()
+    ast = getattr(flow, "compiled_ast", None)
+    if ast:
+
+        def _walk(decls):
+            for d in decls or []:
+                if not isinstance(d, dict):
+                    continue
+                t = d.get("type")
+                if t == "Namespace":
+                    _walk(d.get("declarations") or d.get("body") or [])
+                elif t in ("WorkflowDecl", "Workflow"):
+                    _author, tm = author_and_teams(d.get("mixins"))
+                    teams.update(tm)
+
+        _walk(ast.get("declarations"))
+    for wf in getattr(flow, "workflows", []) or []:
+        md = getattr(wf, "metadata", None)
+        if md and getattr(md, "teams", None):
+            teams.update(md.teams)
+    return teams
+
+
 @router.get("")
-def flow_list(request: Request, q: str | None = None, store=Depends(get_store)):
-    """List all flows, optionally filtered by name search."""
+def flow_list(
+    request: Request, q: str | None = None, team: str | None = None, store=Depends(get_store)
+):
+    """List all flows, optionally filtered by name search and/or team."""
     flows = store.get_all_flows()
     # Filter out auto-generated CLI submissions (Run, app.Execute, test.Run, etc.)
     # These have path=cli:submit; seeded examples have path=cli:seed.
     flows = [f for f in flows if getattr(f.name, "path", "") != "cli:submit"]
     if q:
         flows = [f for f in flows if q.lower() in f.name.name.lower()]
+    if team:
+        flows = [f for f in flows if team in _flow_teams(f)]
     return request.app.state.templates.TemplateResponse(
         request,
         "flows/list.html",
-        {"flows": flows, "search_query": q, "active_tab": "flows"},
+        {
+            "flows": flows,
+            "search_query": q,
+            "active_tab": "flows",
+            "teams": [t.name for t in store.list_teams()],
+            "team": team,
+        },
     )
 
 
@@ -438,6 +479,7 @@ def flow_run_form(
     workflow_id: str,
     request: Request,
     store=Depends(get_store),
+    current_user=Depends(get_current_user),
 ):
     """Show parameter input form for running a workflow from a flow."""
     import json
@@ -512,6 +554,9 @@ def flow_run_form(
             "params": params,
             "parse_error": parse_error,
             "workflow_doc": workflow_doc,
+            "purposes": ["production", "beta", "test", "personal", "none"],
+            "all_teams": [t.name for t in store.list_teams()],
+            "current_user": current_user,
         },
     )
 
@@ -522,13 +567,22 @@ def flow_run_execute(
     workflow_id: str,
     request: Request,
     inputs_json: str = Form("{}"),
+    purpose: str = Form("none"),
+    teams: list[str] = Form(default=[]),
     store=Depends(get_store),
+    current_user=Depends(get_current_user),
 ):
-    """Execute a workflow from an existing flow — creates only Runner + Task."""
+    """Execute a workflow from an existing flow — creates only Runner + Task.
+
+    Tags the run with the acting user (started_by), the workflow's declared
+    author/teams (from its Author/Teams mixins), the chosen purpose, and the
+    teams it is listed for.
+    """
     import json
     import time
 
     from facetwork.ast_utils import find_workflow
+    from facetwork.capabilities import author_and_teams
     from facetwork.emitter import JSONEmitter
     from facetwork.parser import FFLParser
     from facetwork.runtime.entities import (
@@ -536,6 +590,7 @@ def flow_run_execute(
         RunnerState,
         TaskDefinition,
         TaskState,
+        UserDefinition,
     )
     from facetwork.runtime.types import generate_id
 
@@ -591,11 +646,26 @@ def flow_run_execute(
     task_id = generate_id()
     execution_workflow_id = generate_id()
 
+    # Ownership tags: author/teams from the workflow's mixins; started_by is the
+    # acting user; the run is listed for the chosen teams (or the user's default).
+    mixin_author, mixin_teams = author_and_teams(wf_ast.get("mixins")) if wf_ast else ("", [])
+    author_def = None
+    if mixin_author:
+        au = store.get_user(mixin_author)
+        author_def = au.to_user_definition() if au else UserDefinition(email=mixin_author)
+    run_teams = [t for t in teams if t]
+    if not run_teams:
+        run_teams = [current_user.default_team] if current_user.default_team else list(mixin_teams)
+
     runner = RunnerDefinition(
         uuid=runner_id,
         workflow_id=execution_workflow_id,
         workflow=workflow_def,
         state=RunnerState.CREATED,
+        user=current_user.to_user_definition(),
+        author=author_def,
+        purpose=purpose,
+        teams=run_teams,
         compiled_ast=program_dict,
         workflow_ast=wf_ast,
     )

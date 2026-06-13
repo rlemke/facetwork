@@ -53,6 +53,32 @@
     <p>No parameters.</p>
     {% endif %}
 
+    <h2>Run tags</h2>
+    <p><small>Started by <strong>{{ current_user.display_name }}</strong> ({{ current_user.email }})
+       — <a href="/v2/users">change</a></small></p>
+    <div class="grid">
+        <label>Purpose
+            <select name="purpose">
+                {% for p in purposes %}
+                <option value="{{ p }}" {% if p == 'none' %}selected{% endif %}>{{ p }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </div>
+    {% if all_teams %}
+    <fieldset>
+        <legend>List this run for teams
+            <small>(default: your team{% if current_user.default_team %} — {{ current_user.default_team }}{% endif %})</small>
+        </legend>
+        {% for t in all_teams %}
+        <label style="display:inline-block;margin-right:1rem;">
+            <input type="checkbox" name="teams" value="{{ t }}"
+                   {% if t == current_user.default_team %}checked{% endif %}> {{ t }}
+        </label>
+        {% endfor %}
+    </fieldset>
+    {% endif %}
+
     <button type="submit">Run Workflow</button>
 </form>
 <script>

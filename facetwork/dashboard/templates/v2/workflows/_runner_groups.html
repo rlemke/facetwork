@@ -13,6 +13,10 @@
                 <th>ID</th>
                 <th>State</th>
                 <th>Progress</th>
+                <th>Started by</th>
+                <th>Author</th>
+                <th>Purpose</th>
+                <th>Teams</th>
                 <th>Started</th>
                 <th>Duration</th>
                 <th>Source</th>
@@ -51,6 +55,14 @@
                     —
                     {% endif %}
                 </td>
+                <td>{% if runner.user %}{{ runner.user.name or runner.user.email }}{% else %}—{% endif %}</td>
+                <td>{% if runner.author %}{{ runner.author.name or runner.author.email }}{% else %}—{% endif %}</td>
+                <td>
+                    {% if runner.purpose and runner.purpose != 'none' %}
+                        <span class="badge badge-secondary">{{ runner.purpose }}</span>
+                    {% else %}—{% endif %}
+                </td>
+                <td>{% for t in runner.teams %}<span class="badge badge-secondary">{{ t }}</span> {% else %}—{% endfor %}</td>
                 <td>{{ runner.start_time|timestamp }}</td>
                 <td>{{ runner.duration|duration }}</td>
                 <td>

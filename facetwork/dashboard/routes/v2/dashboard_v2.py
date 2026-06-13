@@ -78,16 +78,24 @@ def _count_by_tab(runners: list) -> dict[str, int]:
     return counts
 
 
+def _filter_runners_by_team(runners: list, team: str | None) -> list:
+    """Keep only runs listed for ``team`` (run.teams contains it)."""
+    if not team:
+        return runners
+    return [r for r in runners if team in (getattr(r, "teams", None) or [])]
+
+
 @router.get("/workflows")
 def workflow_list(
     request: Request,
     tab: str = "running",
+    team: str | None = None,
     store=Depends(get_store),
 ):
-    """Main workflow list with state tabs and namespace grouping."""
+    """Main workflow list with state tabs, namespace grouping, and team filter."""
     all_runners = store.get_all_runners(limit=1000)
     tab_counts = _count_by_tab(all_runners)
-    filtered = _filter_runners(all_runners, tab)
+    filtered = _filter_runners_by_team(_filter_runners(all_runners, tab), team)
     groups = group_runners_by_namespace(filtered)
     progress = _enrich_runners_with_progress(filtered, store)
 
@@ -100,6 +108,8 @@ def workflow_list(
             "tab_counts": tab_counts,
             "active_tab": "workflows",
             "progress": progress,
+            "teams": [t.name for t in store.list_teams()],
+            "team": team,
         },
     )
 
@@ -108,12 +118,13 @@ def workflow_list(
 def workflow_list_partial(
     request: Request,
     tab: str = "running",
+    team: str | None = None,
     store=Depends(get_store),
 ):
     """HTMX partial for auto-refresh of runner groups."""
     all_runners = store.get_all_runners(limit=1000)
     tab_counts = _count_by_tab(all_runners)
-    filtered = _filter_runners(all_runners, tab)
+    filtered = _filter_runners_by_team(_filter_runners(all_runners, tab), team)
     groups = group_runners_by_namespace(filtered)
     progress = _enrich_runners_with_progress(filtered, store)
 

@@ -70,6 +70,13 @@
             <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">&#x2630;</button>
         </div>
 
+        <a href="/v2/users" class="sidebar-link" title="Acting as — click to change user">
+            <span class="sidebar-icon">&#x1F464;</span>
+            <span class="sidebar-label" style="overflow:hidden;text-overflow:ellipsis;">
+                {{ (request.cookies.get('afl_current_user') or 'anonymous').split('@')[0] }}
+            </span>
+        </a>
+
         <div class="sidebar-search" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true}))">
             <span class="sidebar-search-icon">&#x1F50D;</span>
             <span class="sidebar-search-text">Search...</span>
@@ -125,6 +132,17 @@
                 <a href="/events" class="sidebar-link{% if active_tab == 'events' %} active{% endif %}">
                     <span class="sidebar-icon">&#x23F5;</span>
                     <span class="sidebar-label">Events</span>
+                </a>
+            </div>
+            <div class="sidebar-group">
+                <span class="sidebar-group-label">Admin</span>
+                <a href="/v2/users" class="sidebar-link{% if active_tab == 'users' %} active{% endif %}">
+                    <span class="sidebar-icon">&#x1F465;</span>
+                    <span class="sidebar-label">Users</span>
+                </a>
+                <a href="/v2/teams" class="sidebar-link{% if active_tab == 'teams' %} active{% endif %}">
+                    <span class="sidebar-icon">&#x1F3E2;</span>
+                    <span class="sidebar-label">Teams</span>
                 </a>
             </div>
             <div class="sidebar-group">

@@ -19,10 +19,16 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from fastapi import Request
+from fastapi import Depends, Request
 
 if TYPE_CHECKING:
+    from facetwork.runtime.entities import User
     from facetwork.runtime.mongo_store import MongoStore
+
+# Cookie that records the "acting as" user (email). No passwords — this is a
+# lightweight identity selector for an internal team tool, not access control.
+CURRENT_USER_COOKIE = "afl_current_user"
+ANONYMOUS_EMAIL = "anonymous@facetwork.local"
 
 
 @lru_cache(maxsize=1)
@@ -40,3 +46,21 @@ def get_store(request: Request) -> MongoStore:
     """FastAPI dependency — returns the shared MongoStore."""
     config_path = getattr(request.app.state, "config_path", None)
     return _get_store(config_path)
+
+
+def get_current_user(request: Request, store: MongoStore = Depends(get_store)) -> User:
+    """FastAPI dependency — the "acting as" user from the cookie.
+
+    Falls back to the seeded ``anonymous`` principal when no (or an unknown)
+    user is selected. There is no authentication; this just attributes runs.
+    """
+    from facetwork.runtime.entities import User
+    from facetwork.runtime.entities.user import KIND_ANONYMOUS
+
+    email = request.cookies.get(CURRENT_USER_COOKIE, "")
+    if email:
+        user = store.get_user(email)
+        if user is not None:
+            return user
+    anon = store.get_user(ANONYMOUS_EMAIL)
+    return anon or User(email=ANONYMOUS_EMAIL, first_name="Anonymous", kind=KIND_ANONYMOUS)

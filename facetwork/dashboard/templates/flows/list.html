@@ -12,9 +12,18 @@
 {% block content %}
 <h1>Flows</h1>
 
-<div class="page-search">
+<div class="page-search" style="display:flex;gap:0.75rem;align-items:center;">
     <input type="search" placeholder="Filter flows by name..."
-           data-list-filter=".flow-table tbody tr">
+           data-list-filter=".flow-table tbody tr" style="flex:1;margin:0;">
+    {% if teams %}
+    <select onchange="window.location.href='/flows' + (this.value ? '?team=' + encodeURIComponent(this.value) : '')"
+            style="width:auto;margin:0;">
+        <option value="" {% if not team %}selected{% endif %}>All teams</option>
+        {% for t in teams %}
+        <option value="{{ t }}" {% if team == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+    </select>
+    {% endif %}
 </div>
 
 <figure>
