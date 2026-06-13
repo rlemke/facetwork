@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fw.agent;
+package afl.agent;
 
-import fw.agent.model.StepAttribute;
-import fw.agent.model.TaskDocument;
+import afl.agent.model.StepAttribute;
+import afl.agent.model.TaskDocument;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.FindOneAndUpdateOptions;

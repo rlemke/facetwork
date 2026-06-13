@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fw.agent;
+package afl.agent;
 
-import fw.agent.model.StepAttribute;
+import afl.agent.model.StepAttribute;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

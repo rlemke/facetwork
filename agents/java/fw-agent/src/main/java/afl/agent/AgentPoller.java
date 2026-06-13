@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fw.agent;
+package afl.agent;
 
-import fw.agent.model.TaskDocument;
+import afl.agent.model.TaskDocument;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
