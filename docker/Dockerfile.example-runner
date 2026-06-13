@@ -72,6 +72,24 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && chmod +x /usr/local/bin/pmtiles \
     && pmtiles version
 
+# GraphHopper routing-graph builds (osm.ops.GraphHopper.BuildGraph) shell out
+# to `java -jar graphhopper-web.jar import`. Both a JRE (17+) and the pinned
+# GraphHopper 8.0 server jar MUST live in the image: the osm runners are scaled
+# to N replicas racing the same task list, so a runner missing Java or the jar
+# would dead-letter every state graph-build that lands on it (same pet-vs-cattle
+# reason as tippecanoe/pmtiles above). The version MUST match GRAPHHOPPER_VERSION
+# in fwh_osm tools/_osm_tools/graphhopper_build.py. default-jre-headless on
+# bookworm is OpenJDK 17.
+ARG GRAPHHOPPER_VERSION=8.0
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends default-jre-headless \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/graphhopper \
+    && curl -fsSL -o /opt/graphhopper/graphhopper-web.jar \
+        "https://repo1.maven.org/maven2/com/graphhopper/graphhopper-web/${GRAPHHOPPER_VERSION}/graphhopper-web-${GRAPHHOPPER_VERSION}.jar" \
+    && java -version
+ENV GRAPHHOPPER_JAR=/opt/graphhopper/graphhopper-web.jar
+
 # Install facetwork from the build context.  Optional extras commonly
 # needed across examples (folium / pyshp / osm2geojson / requests)
 # come along for free. The `s3` extra (boto3) MUST be baked in: the OSM
