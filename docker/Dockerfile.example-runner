@@ -115,6 +115,12 @@ RUN pip install --no-cache-dir -e ".[mongodb,s3]" \
 # revision rather than a cache-reused older one. A full clone (no --depth) is used
 # so an arbitrary SHA can be checked out.
 ARG FWH_OSM_REF=main
+# Cache-bust the clone layer when the ref's commit changes: a `git clone` in a
+# RUN is not content-addressed, so BuildKit (esp. with --cache-from) happily
+# reuses a stale clone. ADD of the GitHub commit metadata IS re-fetched and its
+# content changes per commit, so the layers below it rebuild exactly when the
+# baked commit changes — and are cached when it doesn't.
+ADD https://api.github.com/repos/rlemke/fwh_osm/commits/${FWH_OSM_REF} /tmp/fwh_osm_ref.json
 RUN git clone https://github.com/rlemke/fwh_osm.git /opt/fwh_osm \
     && git -C /opt/fwh_osm checkout --quiet "${FWH_OSM_REF}" \
     && pip install --no-cache-dir -e /opt/fwh_osm \
