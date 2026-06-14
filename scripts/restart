@@ -1,0 +1,30 @@
+git pull
+./scripts/pull_handlers.sh
+./scripts/stop-runners
+./scripts/rebuild
+./scripts/rebuild-workers
+./scripts/start-all-workers
+
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+-- INSERT --                                                  2,27          All
+./scripts/rebuild
+./scripts/rebuild-workers
+./scripts/start-all-workers
+
