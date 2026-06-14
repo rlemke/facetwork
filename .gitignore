@@ -31,10 +31,8 @@ examples/osm-geocoder/tests/real/*.json
 
 # AgentFlow runtime config
 .env
-.env.full-stack
-.ffl-active-config
-facetwork.config.*.json
-
+.env.fleet
+.env.fleet.override
 # macOS aliases
 oms-mirror
 
@@ -45,4 +43,3 @@ afl-test.log
 # Build artifacts + runtime locks
 target/
 .claude/scheduled_tasks.lock
-.env.fleet

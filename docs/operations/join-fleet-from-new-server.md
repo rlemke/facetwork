@@ -44,20 +44,28 @@ git clone https://github.com/rlemke/fwh_osm ~/fw_handlers/fwh_osm
 python3 -m venv .venv
 .venv/bin/pip install -e ".[mongodb,s3]" cryptography   # cryptography = secret store; zeroconf optional (mDNS)
 
-# 3. Point at the shared infra — the committed template is pre-filled.
+# 3. Point at the shared infra. The shared base is the committed, pre-filled
+#    template — copy it as-is, never hand-edit it:
 cp .env.fleet.preset .env.fleet
-#    REQUIRED: set AFL_DATA_DIR in .env.fleet to a big LOCAL path on THIS server
-#    (it ships empty — do not skip). macOS: e.g. $HOME/afl_data ; Linux: e.g.
-#    /var/lib/afl_data. Create it first — `mkdir -p "$AFL_DATA_DIR"`. Do NOT use
-#    /Volumes/afl_data (that's the infra host's disk; on macOS only root can
-#    mkdir under /Volumes, so the runner bind-mount fails). Also edit the infra
-#    IP if it changed.
+#    Put THIS server's specifics in a separate per-server override file instead,
+#    so future `cp .env.fleet.preset .env.fleet` updates never clobber them:
+cp .env.fleet.override.example .env.fleet.override
+#    REQUIRED in .env.fleet.override: set AFL_DATA_DIR to a big LOCAL path on THIS
+#    server (it ships empty — do not skip). macOS: e.g. $HOME/afl_data ; Linux:
+#    e.g. /var/lib/afl_data. Create it first — `mkdir -p "$AFL_DATA_DIR"`. Do NOT
+#    use /Volumes/afl_data (that's the infra host's disk; on macOS only root can
+#    mkdir under /Volumes, so the runner bind-mount fails). Optionally set
+#    AFL_OSM_REPLICAS / AFL_INFRA_IP there too. start-runner loads .env.fleet then
+#    .env.fleet.override ON TOP (override wins); .env.fleet.override is gitignored.
+#
+#    Updating later = `git pull && cp .env.fleet.preset .env.fleet` — your
+#    .env.fleet.override survives untouched.
 
 # 4. Preflight: confirm shared services + local scratch are usable from here.
 scripts/start-runner --fleet --check          # ✓ MongoDB  ✓ MinIO  ✓ Local scratch writable
 
 # 5. Start the runners (first run BUILDS the runner image locally — a few minutes).
-scripts/start-runner --fleet                  # uses AFL_OSM_REPLICAS from .env.fleet
+scripts/start-runner --fleet                  # AFL_OSM_REPLICAS from .env.fleet(.override)
 #    default runners are osm-geocoder + osm-lz; add --example NAME for others.
 #    (scripts/start-worker still works — it's a back-compat shim for this.)
 ```
