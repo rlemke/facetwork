@@ -45,6 +45,7 @@ def register_routes(app: FastAPI) -> None:
     from .monitoring.sources import router as sources_router
     from .v2.admin import router as admin_router
     from .v2.dashboard_v2 import router as dashboard_v2_router
+    from .v3.workflow_detail import router as v3_workflow_router
 
     app.include_router(health_router)
     app.include_router(home_router)
@@ -62,6 +63,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(workflows_router)
     app.include_router(catalog_router)
     app.include_router(dashboard_v2_router)
+    app.include_router(v3_workflow_router)
     app.include_router(admin_router)
     app.include_router(output_router)
     app.include_router(census_maps_router)
