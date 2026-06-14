@@ -46,3 +46,4 @@ afl-test.log
 target/
 .claude/scheduled_tasks.lock
 .env.fleet
+.env.fleet.override
