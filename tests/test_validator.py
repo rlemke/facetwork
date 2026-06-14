@@ -300,6 +300,27 @@ class TestStepReferences:
         result = validator.validate(ast)
         assert result.is_valid
 
+    def test_foreach_variable_in_nested_andthen_body_valid(self, validator):
+        """A foreach loop variable stays in scope inside a nested `andThen {}` body.
+
+        Regression: the loop var was visible directly in the foreach block but
+        flagged as an unknown parameter one level into a nested step body.
+        """
+        ast = parse(
+            _ns("""
+        facet F(v: String) => (out: String)
+        facet G(v: String) => (out: String)
+        workflow Test(xs: Json) => (done: String) andThen foreach x in $.xs {
+            a = F(v = $.x) andThen {
+                b = G(v = $.x)
+            }
+            yield Test(done = $.x)
+        }
+        """)
+        )
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
 
 class TestYieldValidation:
     """Test yield statement validation."""

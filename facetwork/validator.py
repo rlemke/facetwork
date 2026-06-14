@@ -1111,6 +1111,12 @@ class FFLValidator:
                     parent_steps=steps,
                     parent_step_returns=step_returns,
                     parent_step_returns_types=step_returns_types,
+                    # A nested step body sits inside the enclosing block's scope,
+                    # so an enclosing `foreach` loop variable stays visible here
+                    # (loop vars share the workflow-input scope, which nested
+                    # bodies inherit). Without this the loop var is flagged as an
+                    # unknown parameter one level into an `andThen { }` body.
+                    parent_foreach_var=foreach_var,
                 )
 
             # Validate inline catch clause if present
