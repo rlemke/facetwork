@@ -56,9 +56,14 @@ x-fleet-runner: &fleet-runner
   # Register under a meaningful name (set by start-runner to this host's hostname
   # / AFL_FLEET_HOST) so `fleet status` shows the server by name, not a random id.
   hostname: ${AFL_FLEET_HOST:-}
+  # Default to the fleet's infra host (server3 @ 192.168.68.96) so the
+  # afl-mongodb/afl-minio names resolve inside runner containers even when a
+  # joiner hasn't set AFL_INFRA_IP — i.e. a plain `git pull` + restart picks up
+  # the shared MinIO/MongoDB with no per-host edit. Override AFL_INFRA_IP if the
+  # infra host moves.
   extra_hosts:
-    - "afl-mongodb:${AFL_INFRA_IP:-127.0.0.1}"
-    - "afl-minio:${AFL_INFRA_IP:-127.0.0.1}"
+    - "afl-mongodb:${AFL_INFRA_IP:-192.168.68.96}"
+    - "afl-minio:${AFL_INFRA_IP:-192.168.68.96}"
 
 # NOTE: `depends_on: !reset []` must sit DIRECTLY on each service, not in the
 # anchor above — Compose's `!reset` tag is not preserved through a `<<:` alias

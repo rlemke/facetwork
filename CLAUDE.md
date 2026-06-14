@@ -364,7 +364,7 @@ scripts/start-grafana --status         # check if running
 ### Environment configuration
 Copy `.env.example` to `.env` to configure MongoDB, scaling, overlays, and data directories. All `scripts/` commands source `_env.sh` which loads `.env` without overriding already-set vars. See `docs/reference/cli.md` for the full variable reference.
 
-MongoDB, HDFS, and PostGIS run on external servers (defined in `/etc/hosts`): `afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn`, `afl-postgres` — they are **not** managed by Docker Compose.
+MongoDB, HDFS, PostGIS, and the shared MinIO object store run on external/infra servers (defined in `/etc/hosts`): `afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn`, `afl-postgres`, `afl-minio` — they are **not** managed by Docker Compose. `afl-minio` is the fleet-wide S3 endpoint default (`AFL_S3_ENDPOINT=http://afl-minio:9000`); add an `/etc/hosts` entry on each server pointing it at the infra host (e.g. `192.168.68.96 afl-minio`). For Docker runner containers (which don't read the host's `/etc/hosts`), `docker-compose.fleet.yml` maps `afl-minio`/`afl-mongodb` to the infra host via `extra_hosts` (defaulting `AFL_INFRA_IP` to the infra IP), and the bundled `docker-compose.full-stack.yml` exposes MinIO under the `afl-minio` network alias.
 
 ### Durable storage backend (cache + outputs)
 
