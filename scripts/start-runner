@@ -145,10 +145,28 @@ if [[ "$MODE" == "docker" || "$MODE" == "fleet" ]]; then
         fi
         COMPOSE_ENV=(--env-file "$ENV_FILE")
 
+        # Per-server override layer: an optional sibling file holding ONLY this
+        # server's specifics (AFL_DATA_DIR, AFL_OSM_REPLICAS, AFL_INFRA_IP if the
+        # infra host moved, …). Loaded AFTER the shared base so its values WIN
+        # (compose merges multiple --env-file, later wins), and it is gitignored.
+        # So when the shared base (.env.fleet, copied from .env.fleet.preset)
+        # changes, you just re-copy the preset — this file's per-server values
+        # survive untouched. No more re-editing .env.fleet after every update.
+        OVERRIDE_FILE="${ENV_FILE}.override"
+        if [[ -f "$OVERRIDE_FILE" ]]; then
+            COMPOSE_ENV+=(--env-file "$OVERRIDE_FILE")
+            echo "  Per-server overrides: $OVERRIDE_FILE"
+        fi
+
         # Read the few vars this script needs WITHOUT sourcing (a value may contain
         # spaces, e.g. AFL_REGISTRY_RUNNER_ARGS=--task-list osm); compose reads the
-        # full file safely via --env-file.
-        _envget() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -1; }
+        # full file safely via --env-file. The override file wins, matching compose.
+        _envget() {
+            local v=""
+            [[ -f "$OVERRIDE_FILE" ]] && v="$(sed -n "s/^$1=//p" "$OVERRIDE_FILE" | tail -1)"
+            [[ -n "$v" ]] && { printf '%s\n' "$v"; return; }
+            sed -n "s/^$1=//p" "$ENV_FILE" | tail -1
+        }
         AFL_MONGODB_URL="$(_envget AFL_MONGODB_URL)"
         AFL_S3_ENDPOINT="$(_envget AFL_S3_ENDPOINT)"
         AFL_RUNNER_IMAGE="${AFL_RUNNER_IMAGE:-$(_envget AFL_RUNNER_IMAGE)}"
