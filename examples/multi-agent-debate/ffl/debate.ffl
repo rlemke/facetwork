@@ -225,18 +225,15 @@ namespace debate.workflows {
         a0 = GenerateArgument(role = roles.assignments[0], topic = $.topic, context = frame.stakes) with AgentRole(persona = "proposer", expertise = "advocacy")
         a1 = GenerateArgument(role = roles.assignments[1], topic = $.topic, context = frame.stakes) with AgentRole(persona = "critic", expertise = "analysis")
         a2 = GenerateArgument(role = roles.assignments[2], topic = $.topic, context = frame.stakes) with AgentRole(persona = "synthesizer", expertise = "integration")
-        r0 = GenerateRebuttal(role = roles.assignments[0], arguments = [a1.argument, a2.argument]) with AgentRole(persona = "proposer") andThen {
-            s0 = ScoreArguments(arguments = [a0.argument], rebuttals = [r0.rebuttal])
-        }
-        r1 = GenerateRebuttal(role = roles.assignments[1], arguments = [a0.argument, a2.argument]) with AgentRole(persona = "critic") andThen {
-            s1 = ScoreArguments(arguments = [a1.argument], rebuttals = [r1.rebuttal])
-        }
-        r2 = GenerateRebuttal(role = roles.assignments[2], arguments = [a0.argument, a1.argument]) with AgentRole(persona = "synthesizer") andThen {
-            s2 = ScoreArguments(arguments = [a2.argument], rebuttals = [r2.rebuttal])
-        }
+        r0 = GenerateRebuttal(role = roles.assignments[0], arguments = [a1.argument, a2.argument]) with AgentRole(persona = "proposer")
+        r1 = GenerateRebuttal(role = roles.assignments[1], arguments = [a0.argument, a2.argument]) with AgentRole(persona = "critic")
+        r2 = GenerateRebuttal(role = roles.assignments[2], arguments = [a0.argument, a1.argument]) with AgentRole(persona = "synthesizer")
+        s0 = ScoreArguments(arguments = [a0.argument], rebuttals = [r0.rebuttal])
+        s1 = ScoreArguments(arguments = [a1.argument], rebuttals = [r1.rebuttal])
+        s2 = ScoreArguments(arguments = [a2.argument], rebuttals = [r2.rebuttal])
         synth = SynthesizePositions(arguments = [a0.argument, a1.argument, a2.argument], rebuttals = [r0.rebuttal, r1.rebuttal, r2.rebuttal], scores = [s0.scores, s1.scores, s2.scores])
         verdict = JudgeDebate(topic = $.topic, synthesis = synth.synthesis, scores = [s0.scores, s1.scores, s2.scores])
-        yield StructuredDebate(verdict = verdict.verdict, synthesis = synth.synthesis, total_arguments = $.total_arguments, summary = $.summary)
+        yield StructuredDebate(verdict = verdict.verdict, synthesis = synth.synthesis, total_arguments = $.num_agents * 2, summary = "Structured debate on: " ++ $.topic)
     } andThen script {
         result["summary"] = (
             "Completed debate on: " + params.get("topic", "unknown")
@@ -248,7 +245,8 @@ namespace debate.workflows {
     /** Consensus-seeking debate with foreach fan-out for parallel agent investigation. */
     workflow ConsensusDebate(
         topic: String,
-        num_agents: Int = 3
+        num_agents: Int = 3,
+        agent_roles: Json = ["proposer", "critic", "synthesizer"]
     ) => (
         consensus: ConsensusResult,
         verdict: Verdict,
@@ -263,10 +261,9 @@ namespace debate.workflows {
         verdict = JudgeDebate(topic = $.topic, synthesis = synth.synthesis, scores = [])
         cons = BuildConsensus(verdict = verdict.verdict, synthesis = synth.synthesis, themes = synth.themes) with Timeout(minutes = 60)
         yield ConsensusDebate(consensus = cons.consensus, verdict = verdict.verdict, synthesis = synth.synthesis)
-    } andThen foreach agent in $.assignments {
-        arg = GenerateArgument(role = $.agent, topic = $.topic) with AgentRole(persona = "debater") andThen {
-            reb = GenerateRebuttal(role = $.agent, arguments = [arg.argument])
-        }
+    } andThen foreach agent in $.agent_roles {
+        arg = GenerateArgument(role = $.agent, topic = $.topic) with AgentRole(persona = "debater")
+        reb = GenerateRebuttal(role = $.agent, arguments = [arg.argument])
         yield ConsensusDebate(synthesis = reb.rebuttal)
     }
 }

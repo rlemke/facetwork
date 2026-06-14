@@ -222,9 +222,8 @@ namespace ml.workflows {
             hyperparams = #{"learning_rate": 0.001, "epochs": 50, "batch_size": 32, "dropout": 0.3, "optimizer": "adam"},
             model_config = #{"model_type": "mlp", "hidden_layers": "[128, 64]", "activation": "relu"},
             run_label = "lr_0.001"
-        ) with Timeout(minutes = 30) with GPU(device_id = 0) andThen {
-            e0 = EvaluateModel(model_id = t0.result.model_id, test_path = split.test_path)
-        }
+        ) with Timeout(minutes = 30) with GPU(device_id = 0)
+        e0 = EvaluateModel(model_id = t0.result.model_id, test_path = split.test_path)
         t1 = TrainModel(
             dataset_name = $.dataset_name,
             train_path = split.train_path,
@@ -232,9 +231,8 @@ namespace ml.workflows {
             hyperparams = #{"learning_rate": 0.01, "epochs": 50, "batch_size": 32, "dropout": 0.3, "optimizer": "adam"},
             model_config = #{"model_type": "mlp", "hidden_layers": "[128, 64]", "activation": "relu"},
             run_label = "lr_0.01"
-        ) with Timeout(minutes = 30) with GPU(device_id = 0) andThen {
-            e1 = EvaluateModel(model_id = t1.result.model_id, test_path = split.test_path)
-        }
+        ) with Timeout(minutes = 30) with GPU(device_id = 0)
+        e1 = EvaluateModel(model_id = t1.result.model_id, test_path = split.test_path)
         t2 = TrainModel(
             dataset_name = $.dataset_name,
             train_path = split.train_path,
@@ -242,9 +240,8 @@ namespace ml.workflows {
             hyperparams = #{"learning_rate": 0.05, "epochs": 50, "batch_size": 32, "dropout": 0.2, "optimizer": "adam"},
             model_config = #{"model_type": "mlp", "hidden_layers": "[128, 64]", "activation": "relu"},
             run_label = "lr_0.05"
-        ) with Timeout(minutes = 30) with GPU(device_id = 1) andThen {
-            e2 = EvaluateModel(model_id = t2.result.model_id, test_path = split.test_path)
-        }
+        ) with Timeout(minutes = 30) with GPU(device_id = 1)
+        e2 = EvaluateModel(model_id = t2.result.model_id, test_path = split.test_path)
         t3 = TrainModel(
             dataset_name = $.dataset_name,
             train_path = split.train_path,
@@ -252,9 +249,8 @@ namespace ml.workflows {
             hyperparams = #{"learning_rate": 0.1, "epochs": 50, "batch_size": 64, "dropout": 0.1, "optimizer": "sgd"},
             model_config = #{"model_type": "mlp", "hidden_layers": "[256, 128, 64]", "activation": "relu"},
             run_label = "lr_0.1"
-        ) with Timeout(minutes = 30) with GPU(device_id = 1) andThen {
-            e3 = EvaluateModel(model_id = t3.result.model_id, test_path = split.test_path)
-        }
+        ) with Timeout(minutes = 30) with GPU(device_id = 1)
+        e3 = EvaluateModel(model_id = t3.result.model_id, test_path = split.test_path)
         best = CompareToBestModel(eval_results = [e0.result, e1.result, e2.result, e3.result], metric_name = "f1_score")
         rpt = GenerateSweepReport(dataset_name = $.dataset_name, comparison = best.comparison, sweep_config = #{"num_configs": 4, "model_type": "mlp", "varied_param": "learning_rate"})
         yield HyperparamSweep(best_model = best.comparison, report = rpt.report)
@@ -281,9 +277,8 @@ namespace ml.workflows {
         split = SplitDataset(dataset = prep.dataset, config = #{"train_ratio": 0.8, "val_ratio": 0.1, "test_ratio": 0.1, "stratified": false, "random_seed": 99})
         yield GridSearchSweep(dataset = prep.dataset, train_path = split.train_path, test_path = split.test_path)
     } andThen foreach cfg in $.configs {
-        run = TrainModel(dataset_name = $.dataset_name, train_path = $.cfg.train_path, val_path = $.cfg.val_path, hyperparams = $.cfg.hyperparams, model_config = #{"model_type": "mlp", "hidden_layers": "[64, 32]", "activation": "tanh"}, run_label = "grid") with Timeout(minutes = 45) andThen {
-            ev = EvaluateModel(model_id = run.result.model_id, test_path = $.cfg.test_path)
-        }
+        run = TrainModel(dataset_name = $.dataset_name, train_path = $.cfg.train_path, val_path = $.cfg.val_path, hyperparams = $.cfg.hyperparams, model_config = #{"model_type": "mlp", "hidden_layers": "[64, 32]", "activation": "tanh"}, run_label = "grid") with Timeout(minutes = 45)
+        ev = EvaluateModel(model_id = run.result.model_id, test_path = $.cfg.test_path)
         yield GridSearchSweep(train_path = ev.result.model_id)
     }
 }

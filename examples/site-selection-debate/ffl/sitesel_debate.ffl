@@ -336,8 +336,10 @@ namespace siteselection.workflows {
     } andThen {
         cfg = DebateConfig(below_market_penalty = -0.15, max_rounds = 3, convergence_threshold = 0.1)
         spatial = ScoreCandidate(candidate_id = $.candidate_id, demographics = $.demographics, competition = $.competition, penalty = cfg.below_market_penalty) with ResearchConfig(depth = 5, market_area = "metro") as research_cfg
-        access = ComputeAccessibility(candidate_id = $.candidate_id) andThen { regs = GatherRegulations(candidate_id = $.candidate_id) }
-        market = SearchMarketTrends(candidate_id = $.candidate_id) andThen { competitors = AnalyzeCompetitors(candidate_id = $.candidate_id) }
+        access = ComputeAccessibility(candidate_id = $.candidate_id)
+        regs = GatherRegulations(candidate_id = $.candidate_id)
+        market = SearchMarketTrends(candidate_id = $.candidate_id)
+        competitors = AnalyzeCompetitors(candidate_id = $.candidate_id)
         r1 = EvaluationRound(candidate_id = $.candidate_id, spatial_score = spatial.score, market_data = #{"market": market.research, "regulations": regs.regulations, "accessibility": access.metrics, "competitors": competitors.competitors}, round_num = 1, prev_rankings = null)
         r2 = EvaluationRound(candidate_id = $.candidate_id, spatial_score = spatial.score, market_data = #{"market": market.research, "regulations": regs.regulations, "accessibility": access.metrics, "competitors": competitors.competitors}, round_num = 2, prev_synthesis = r1.synthesis, prev_rankings = r1.rankings)
         r3 = EvaluationRound(candidate_id = $.candidate_id, spatial_score = spatial.score, market_data = #{"market": market.research, "regulations": regs.regulations, "accessibility": access.metrics, "competitors": competitors.competitors}, round_num = 3, prev_synthesis = r2.synthesis, prev_rankings = r2.rankings)
@@ -363,9 +365,9 @@ namespace siteselection.workflows {
         batch_cfg = DebateConfig(below_market_penalty = -0.15, max_rounds = 3, convergence_threshold = 0.1)
         yield BatchEvaluate(summary = "Batch started", report = "Configured with penalty " ++ (batch_cfg.below_market_penalty + 1) * 100 ++ "%")
     } andThen foreach cid in $.candidate_ids {
-        spatial = ScoreCandidate(candidate_id = $.cid, demographics = $.demographics, competition = $.competition, penalty = batch_cfg.below_market_penalty) with ResearchConfig() as research_cfg andThen {
-            market = SearchMarketTrends(candidate_id = $.cid)
-        }
+        batch_cfg = DebateConfig(below_market_penalty = -0.15, max_rounds = 3, convergence_threshold = 0.1)
+        spatial = ScoreCandidate(candidate_id = $.cid, demographics = $.demographics, competition = $.competition, penalty = batch_cfg.below_market_penalty) with ResearchConfig() as research_cfg
+        market = SearchMarketTrends(candidate_id = $.cid)
         yield BatchEvaluate(summary = "Processed candidate: " ++ $.cid)
     }
 }

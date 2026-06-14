@@ -240,9 +240,8 @@ namespace dataquality.workflows {
         weights = ScoringWeights(completeness = 0.4, accuracy = 0.35, freshness = 0.25)
         prof = ProfileDataset(dataset = $.dataset, columns = $.columns)
         anom = DetectAnomalies(profiles = prof.profiles, row_count = prof.row_count, missing_threshold = cfg.missing_threshold)
-        comp = ValidateCompleteness(profiles = prof.profiles, row_count = prof.row_count, missing_threshold = cfg.missing_threshold) andThen {
-            acc = ValidateAccuracy(profiles = prof.profiles, type_error_max = cfg.type_error_max)
-        }
+        comp = ValidateCompleteness(profiles = prof.profiles, row_count = prof.row_count, missing_threshold = cfg.missing_threshold)
+        acc = ValidateAccuracy(profiles = prof.profiles, type_error_max = cfg.type_error_max)
         sc = ComputeScores(completeness_score = comp.completeness_score, accuracy_score = acc.accuracy_score, w_completeness = weights.completeness, w_accuracy = weights.accuracy, w_freshness = weights.freshness)
         gr = AssignGrade(overall = sc.overall, min_score = 0.7)
         rem = PlanRemediation(results = comp.results, flagged_columns = anom.flagged_columns)

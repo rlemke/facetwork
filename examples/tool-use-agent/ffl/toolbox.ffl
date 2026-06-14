@@ -219,12 +219,11 @@ namespace tools.workflows {
         result["summary"] = "Solving: " + params.get("query", "unknown")
     } andThen {
         plan = PlanToolUse(query = $.query)
-        ws = WebSearch(query = $.query, max_results = $.max_results) andThen {
-            ds = DeepSearch(query = $.query, initial_results = [ws.search_result], depth = 2)
-            calc = Calculate(expression = "relevance / 100", precision = 2)
-            code = ExecuteCode(code = "print('analysis')", language = "python")
-        }
-        synth = SynthesizeResults(search_results = [ws.search_result], calculations = [calc.calculation], code_results = [code.code_result], query = $.query)
+        ws = WebSearch(query = $.query, max_results = $.max_results)
+        ds = DeepSearch(query = $.query, initial_results = [ws.search_result], depth = 2)
+        calc = Calculate(expression = "relevance / 100", precision = 2)
+        code = ExecuteCode(code = "print('analysis')", language = "python")
+        synth = SynthesizeResults(search_results = [ws.search_result, ds.search_result], calculations = [calc.calculation], code_results = [code.code_result], query = $.query)
         fmt = FormatAnswer(synthesis = synth.synthesis, key_findings = synth.key_findings, confidence = synth.confidence, query = $.query)
         yield SolveWithTools(answer = fmt.answer, tools_used = 4, summary = "Solved: " ++ $.query ++ " using 4 tools")
     } andThen script {

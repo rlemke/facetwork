@@ -212,20 +212,17 @@ namespace research.workflows {
     } andThen {
         planned = PlanResearch(topic = $.topic, depth = $.depth, max_subtopics = $.max_subtopics) with Retry(max_attempts = 3, backoff_ms = 2000) with Citation(style = "apa", include_urls = true)
         decomp = DecomposeIntoSubtopics(topic = planned.plan, max_subtopics = $.max_subtopics)
-        g0 = GatherSources(subtopic = decomp.subtopics[0], max_sources = $.sources_per_subtopic) with Retry(max_attempts = 3) andThen {
-            f0 = ExtractFindings(subtopic = decomp.subtopics[0], sources = g0.sources)
-        }
-        g1 = GatherSources(subtopic = decomp.subtopics[1], max_sources = $.sources_per_subtopic) with Retry(max_attempts = 3) andThen {
-            f1 = ExtractFindings(subtopic = decomp.subtopics[1], sources = g1.sources)
-        }
-        g2 = GatherSources(subtopic = decomp.subtopics[2], max_sources = $.sources_per_subtopic) with Retry(max_attempts = 3) andThen {
-            f2 = ExtractFindings(subtopic = decomp.subtopics[2], sources = g2.sources)
-        }
+        g0 = GatherSources(subtopic = decomp.subtopics[0], max_sources = $.sources_per_subtopic) with Retry(max_attempts = 3)
+        f0 = ExtractFindings(subtopic = decomp.subtopics[0], sources = g0.sources)
+        g1 = GatherSources(subtopic = decomp.subtopics[1], max_sources = $.sources_per_subtopic) with Retry(max_attempts = 3)
+        f1 = ExtractFindings(subtopic = decomp.subtopics[1], sources = g1.sources)
+        g2 = GatherSources(subtopic = decomp.subtopics[2], max_sources = $.sources_per_subtopic) with Retry(max_attempts = 3)
+        f2 = ExtractFindings(subtopic = decomp.subtopics[2], sources = g2.sources)
         synth = SynthesizeFindings(topic = planned.plan, all_findings = [f0.findings, f1.findings, f2.findings])
         gapcheck = IdentifyGaps(analysis = synth.analysis, topic = planned.plan)
         report = DraftReport(topic = planned.plan, analysis = synth.analysis, gaps = gapcheck.gaps)
         rev = ReviewDraft(draft = report.draft, topic = planned.plan, analysis = synth.analysis)
-        yield ResearchTopic(report = report.draft, review = rev.review, total_sources = $.total_sources, summary = $.summary)
+        yield ResearchTopic(report = report.draft, review = rev.review, total_sources = $.max_subtopics * $.sources_per_subtopic, summary = "Research pipeline for: " ++ $.topic)
     } andThen script {
         result["summary"] = (
             "Completed research on: " + params.get("topic", "unknown")
@@ -248,9 +245,8 @@ namespace research.workflows {
         decomp = DecomposeIntoSubtopics(topic = planned.plan, max_subtopics = $.max_subtopics)
         yield DeepDive(plan = planned.plan, subtopics = decomp.subtopics)
     } andThen foreach sub in $.subtopics {
-        g = GatherSources(subtopic = $.sub, max_sources = $.max_sources) with Retry(max_attempts = 5, backoff_ms = 3000) andThen {
-            f = ExtractFindings(subtopic = $.sub, sources = g.sources)
-        }
+        g = GatherSources(subtopic = $.sub, max_sources = $.max_sources) with Retry(max_attempts = 5, backoff_ms = 3000)
+        f = ExtractFindings(subtopic = $.sub, sources = g.sources)
         yield DeepDive(subtopics = f.findings)
     }
 }

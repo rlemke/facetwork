@@ -91,10 +91,9 @@ namespace etl.Pipelines {
     /** Simple ETL pipeline: extract a single source, validate, transform, load. */
     workflow SimpleETL(source: String, target: String, format: String = "csv", delimiter: String = ",", expected_fields: [String] = ["id", "name", "value"]) => (report: String, success: Boolean) andThen {
         ext = ExtractCSV(source = $.source, delimiter = $.delimiter)
-        val = ValidateSchema(records = ext.records, expected_fields = $.expected_fields) andThen {
-            cfg = TransformConfig(filter_expr = "true", rename_map = #{}, deduplicate = true)
-            tx = TransformRecords(records = val.valid_records, filter_expr = cfg.filter_expr, deduplicate = cfg.deduplicate)
-        }
+        val = ValidateSchema(records = ext.records, expected_fields = $.expected_fields)
+        cfg = TransformConfig(filter_expr = "true", rename_map = #{}, deduplicate = true)
+        tx = TransformRecords(records = val.valid_records, filter_expr = cfg.filter_expr, deduplicate = cfg.deduplicate)
         ld = LoadToStore(records = tx.transformed, target = $.target, mode = "append")
         rpt = GenerateReport(source = $.source, target = $.target, row_count = ext.row_count, error_count = val.error_count, load_result = ld.result)
         yield SimpleETL(report = rpt.report, success = rpt.success)
