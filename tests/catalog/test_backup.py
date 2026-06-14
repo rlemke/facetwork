@@ -232,3 +232,43 @@ def test_import_package_backup_restore_keeps_one_flow(tmp_path):
     assert hello.flow_id == hola.flow_id == lib.flow_id
     assert hello.status == "published"
     assert dst.run("pkg.flows.Hola", inputs={"name": "q"})["workflow"] == "pkg.flows.Hola"
+
+
+# ── import-all CLI subcommand (facetwork.catalog.cli._cmd_import_all) ──────────
+
+
+def _import_all_args(**over):
+    import argparse
+
+    base = dict(tags="", only=[], exclude=[], dir=[], no_publish=False, list_only=False)
+    base.update(over)
+    return argparse.Namespace(**base)
+
+
+def test_import_all_imports_dir_targets(tmp_path):
+    from facetwork.catalog.cli import _cmd_import_all
+
+    svc = _svc()
+    pkg_dir = _write_pkg(tmp_path)
+    # `only=["__none__"]` filters out every discovered in-repo package, leaving
+    # just the explicit --dir target — keeps the test deterministic.
+    rc = _cmd_import_all(svc, _import_all_args(only=["__none__"], dir=[pkg_dir]))
+    assert rc == 0
+    # The dir is imported as a package: a shared library + its workflows.
+    libname = tmp_path.name
+    assert svc._catalog.get_entry(libname) is not None
+    assert svc._catalog.get_entry(libname).kind == "library"
+    assert {s["slug"] for s in svc.list_all() if s["kind"] == "workflow"} == {
+        "pkg.flows.Hello",
+        "pkg.flows.Hola",
+    }
+
+
+def test_import_all_list_only_imports_nothing(tmp_path, capsys):
+    from facetwork.catalog.cli import _cmd_import_all
+
+    svc = _svc()
+    rc = _cmd_import_all(svc, _import_all_args(dir=[_write_pkg(tmp_path)], list_only=True))
+    assert rc == 0
+    assert "would be imported" in capsys.readouterr().out
+    assert svc.list_all() == []  # nothing written

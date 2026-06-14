@@ -113,6 +113,23 @@ def _build_parser() -> argparse.ArgumentParser:
     pp.add_argument("--tags", default="", help="Comma-separated tags")
     pp.add_argument("--no-publish", action="store_true",
                     help="Import as drafts (default: publish valid revisions)")
+
+    pa = sub.add_parser(
+        "import-all",
+        help="Import EVERY discoverable example package's FFL into the catalog "
+             "(one shared library + per-workflow entries per package)",
+    )
+    pa.add_argument("--tags", default="", help="Comma-separated tags applied to every import")
+    pa.add_argument("--only", action="append", default=[],
+                    help="Restrict to these package names (repeatable)")
+    pa.add_argument("--exclude", action="append", default=[],
+                    help="Skip these package names (repeatable)")
+    pa.add_argument("--dir", action="append", default=[],
+                    help="Also import every .ffl under this directory as a package (repeatable)")
+    pa.add_argument("--no-publish", action="store_true",
+                    help="Import as drafts (default: publish valid revisions)")
+    pa.add_argument("--list", action="store_true", dest="list_only",
+                    help="List the packages that would be imported, then exit")
     return p
 
 
@@ -200,6 +217,77 @@ def _cmd_list(svc: Any, args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_import_all(svc: Any, args: argparse.Namespace) -> int:
+    """Import every discoverable example package (and any --dir) as a package."""
+    from facetwork.catalog import backup
+    from facetwork.catalog.entities import STATUS_PUBLISHED
+    from facetwork.examples import collect_ffl_files, discover_all_examples
+
+    repo_root = Path(__file__).resolve().parents[2]
+    user_tags = [t.strip() for t in args.tags.split(",") if t.strip()]
+    publish = not args.no_publish
+
+    pkgs = discover_all_examples(repo_root)
+    if args.only:
+        only = set(args.only)
+        pkgs = [p for p in pkgs if p.name in only]
+    if args.exclude:
+        excl = set(args.exclude)
+        pkgs = [p for p in pkgs if p.name not in excl]
+    pkgs = sorted(pkgs, key=lambda p: p.name)
+
+    # Work list: registered packages first, then any explicit --dir targets.
+    targets: list[tuple[str, str, dict]] = [
+        ("package", p.name, {"name": p.name}) for p in pkgs
+    ]
+    for d in args.dir:
+        targets.append(("dir", Path(d).name, {"ffl_dir": d, "lib_slug": Path(d).name}))
+
+    if args.list_only:
+        print(f"{len(targets)} target(s) would be imported:")
+        for kind, label, _kw in targets:
+            print(f"  [{kind}] {label}")
+        return 0
+
+    pkg_by_name = {p.name: p for p in pkgs}
+    ok: list[tuple[str, int, int]] = []
+    skipped: list[tuple[str, str]] = []
+    failed: list[tuple[str, str]] = []
+    total_wf = total_pub = 0
+
+    for kind, label, kw in targets:
+        # Skip registered packages that ship no FFL (handler-only packages).
+        if kind == "package" and label in pkg_by_name and not collect_ffl_files(pkg_by_name[label]):
+            skipped.append((label, "no FFL files"))
+            print(f"SKIP  {label}: no FFL files")
+            continue
+        try:
+            results = backup.import_package(
+                svc, tags=(user_tags + [label]) or None, publish=publish, **kw
+            )
+        except Exception as e:  # keep going — one bad package shouldn't abort the rest
+            failed.append((label, str(e)))
+            print(f"FAIL  {label}: {e}", file=sys.stderr)
+            continue
+        wfs = results[1:]
+        npub = sum(1 for _slug, r in wfs if getattr(r, "status", "") == STATUS_PUBLISHED)
+        total_wf += len(wfs)
+        total_pub += npub
+        ok.append((label, len(wfs), npub))
+        print(f"OK    {label}: {len(wfs)} workflows ({npub} published)")
+
+    print("\n=== import-all summary ===")
+    print(f"  packages imported: {len(ok)}")
+    print(f"  workflows: {total_wf} ({total_pub} published)")
+    if skipped:
+        print(f"  skipped ({len(skipped)}): " + ", ".join(n for n, _ in skipped))
+    if failed:
+        print(f"  FAILED ({len(failed)}):")
+        for n, err in failed:
+            print(f"    {n}: {err}", file=sys.stderr)
+    return 1 if failed else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     from facetwork.catalog import backup
@@ -212,6 +300,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "list":
         return _cmd_list(svc, args)
+
+    if args.cmd == "import-all":
+        return _cmd_import_all(svc, args)
 
     if args.cmd == "backup":
         summary = backup.export_to_file(svc, args.outfile)
