@@ -31,9 +31,6 @@ examples/osm-geocoder/tests/real/*.json
 
 # AgentFlow runtime config
 .env
-.env.full-stack
-.ffl-active-config
-facetwork.config.*.json
 
 # macOS aliases
 oms-mirror
