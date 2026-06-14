@@ -316,7 +316,7 @@ class TestCompilation:
     def parsed_ast(self):
         from facetwork.parser import FFLParser
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "deploy.ffl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "ffl", "deploy.ffl")
         with open(afl_path) as f:
             source = f.read()
         return FFLParser().parse(source)

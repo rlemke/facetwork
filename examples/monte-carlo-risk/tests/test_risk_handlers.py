@@ -382,7 +382,7 @@ class TestCompilation:
         """Parse the risk.afl file and return the AST."""
         from facetwork.parser import FFLParser
 
-        afl_path = os.path.join(os.path.dirname(__file__), "..", "afl", "risk.ffl")
+        afl_path = os.path.join(os.path.dirname(__file__), "..", "ffl", "risk.ffl")
         with open(afl_path) as f:
             source = f.read()
         return FFLParser().parse(source)

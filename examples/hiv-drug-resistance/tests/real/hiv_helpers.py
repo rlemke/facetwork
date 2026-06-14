@@ -19,7 +19,7 @@ from facetwork.validator import validate
 
 # examples/hiv-drug-resistance/tests/real/ → examples/hiv-drug-resistance/
 _EXAMPLE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-_AFL_DIR = os.path.join(_EXAMPLE_ROOT, "afl")
+_AFL_DIR = os.path.join(_EXAMPLE_ROOT, "ffl")
 
 
 def compile_resistance_afl() -> dict[str, Any]:

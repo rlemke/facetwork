@@ -13,7 +13,7 @@ from facetwork.parser import FFLParser
 from facetwork.source import CompilerInput, FileOrigin, SourceEntry
 from facetwork.validator import validate
 
-_AFL_DIR = Path(__file__).resolve().parent.parent.parent.parent / "afl"
+_AFL_DIR = Path(__file__).resolve().parent.parent.parent.parent / "ffl"
 
 
 def _compile(*filenames: str) -> dict:
