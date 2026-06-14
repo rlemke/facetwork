@@ -69,7 +69,7 @@ x-osm-s3-env: &osm-s3-env
   # the bulk run at ~1GB and skip the rest. Raise/remove on a larger host.
   AFL_OSM_MAX_PBF_MB: "3072"
   AFL_OSM_OUTPUT_BASE: s3://${AFL_S3_BUCKET:-afl-cache}/osm-output
-  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://minio:9000}
+  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://afl-minio:9000}
   AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
   AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
   AFL_S3_REGION: ${AFL_S3_REGION:-us-east-1}
@@ -86,7 +86,7 @@ x-osm-s3-env: &osm-s3-env
 # Read-only S3 access for services that only resolve s3:// step payloads
 # (the dashboard) — no AFL_STORAGE switch, just endpoint + credentials.
 x-s3-creds: &s3-creds
-  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://minio:9000}
+  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://afl-minio:9000}
   AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
   AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
   AFL_S3_REGION: ${AFL_S3_REGION:-us-east-1}
@@ -107,7 +107,7 @@ x-s3-storage: &s3-storage
   # "runner" (not "default"). The non-osm services don't pass --server-group in
   # AFL_REGISTRY_RUNNER_ARGS, so the runner falls back to this env value.
   AFL_SERVER_GROUP: ${AFL_SERVER_GROUP:-default}
-  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://minio:9000}
+  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://afl-minio:9000}
   AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
   AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
   AFL_S3_REGION: ${AFL_S3_REGION:-us-east-1}
@@ -176,6 +176,14 @@ services:
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - ${AFL_MINIO_DATA_DIR:-/Volumes/afl_data/minio}:/data
+    # Resolve as `afl-minio` on the compose network too, so the unified default
+    # endpoint (http://afl-minio:9000) works on the infra host exactly as it does
+    # on remote runner hosts (which map afl-minio via extra_hosts). Keeps ONE
+    # endpoint name fleet-wide.
+    networks:
+      default:
+        aliases:
+          - afl-minio
     restart: unless-stopped
 
   # One-shot: wait for MinIO, then create the bucket. Exits 0. OSM runners
