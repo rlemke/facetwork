@@ -263,7 +263,8 @@ def _cmd_import_all(svc: Any, args: argparse.Namespace) -> int:
             continue
         try:
             results = backup.import_package(
-                svc, tags=(user_tags + [label]) or None, publish=publish, **kw
+                svc, tags=(user_tags + [label]) or None, publish=publish,
+                repo_root=repo_root, **kw
             )
         except Exception as e:  # keep going — one bad package shouldn't abort the rest
             failed.append((label, str(e)))
@@ -367,6 +368,7 @@ def main(argv: list[str] | None = None) -> int:
                 prefix=args.prefix,
                 tags=[t.strip() for t in args.tags.split(",") if t.strip()] or None,
                 publish=not args.no_publish,
+                repo_root=Path(__file__).resolve().parents[2],
             )
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)

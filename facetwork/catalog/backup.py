@@ -162,6 +162,7 @@ def import_package(
     prefix: str = "",
     tags: list[str] | None = None,
     publish: bool = True,
+    repo_root: str | Path | None = None,
 ) -> list[tuple[str, Any]]:
     """Import a whole multi-file FFL package as ONE shared library plus ONE
     thin catalog entry per workflow it defines.
@@ -203,7 +204,7 @@ def import_package(
     # 1. Gather all FFL sources (the package + any cross-package merges).
     sources: list[str] = []
     for n in ([name] if name else []) + list(also or []):
-        pkg = get_example(n)
+        pkg = get_example(n, repo_root)
         if pkg is None:
             raise CatalogError(f"package not discoverable as a facetwork example: {n!r}")
         for f in collect_ffl_files(pkg):
