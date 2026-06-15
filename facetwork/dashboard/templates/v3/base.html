@@ -56,17 +56,19 @@
       <a href="/output" class="{% if active_nav=='output' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/></svg> Output</a>
       <a href="/v2/postgis" class="{% if active_nav=='postgis' %}active{% endif %}"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/></svg> PostGIS</a>
     </nav>
-    <a class="v3-foot" href="/v2/users" title="Acting as — click to change">
-      {% set _u = (request.cookies.get('afl_current_user') or 'anonymous').split('@')[0] %}
-      <span class="av">{{ _u[:2]|upper }}</span> {{ _u }}
-    </a>
+    <div class="v3-foot-wrap">
+      <a class="v3-foot" href="/v2/users" title="Acting as — click to change">
+        {% set _u = (request.cookies.get('afl_current_user') or 'anonymous').split('@')[0] %}
+        <span class="av">{{ _u[:2]|upper }}</span> {{ _u }}
+      </a>
+      <a class="v3-classic" href="/v2/workflows" title="Switch to the classic (v2) UI">Classic UI ↗</a>
+    </div>
   </aside>
 
   <main class="v3-main">
     <header class="topbar">
       {% block breadcrumb %}<nav class="crumb"></nav>{% endblock %}
       <span class="spacer"></span>
-      <span class="previewtag">v3 preview</span>
       {% block topbar_actions %}{% endblock %}
       <button class="iconbtn" id="density" title="Toggle density">
         <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
