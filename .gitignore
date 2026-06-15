@@ -33,6 +33,7 @@ examples/osm-geocoder/tests/real/*.json
 .env
 .env.fleet
 .env.fleet.override
+.env.fleet.bak
 # macOS aliases
 oms-mirror
 
