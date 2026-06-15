@@ -1,0 +1,68 @@
+{% extends "v3/base.html" %}
+{% block title %}{{ "Edit" if user else "New" }} user · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.fwrap{max-width:680px}
+.ffield{padding:.8rem .9rem;border-top:1px solid var(--border)}
+.ffield:first-child{border-top:none}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.fgrid .ffield{border-top:1px solid var(--border)}
+@media(max-width:600px){.fgrid{grid-template-columns:1fr}}
+.ffield label.lbl{display:block;font:600 12.5px var(--sans);margin-bottom:.35rem}
+.ffield input,.ffield select{width:100%;padding:.45rem .6rem;background:var(--bg);border:1px solid var(--border);
+  border-radius:var(--r-sm);color:var(--text);font:500 13px var(--sans);outline:none}
+.ffield input:focus,.ffield select:focus{border-color:var(--accent)}
+.ffield input[readonly]{opacity:.6;font-family:var(--mono)}
+.teamchecks{display:flex;flex-wrap:wrap;gap:.6rem}
+.teamchecks label{display:inline-flex;align-items:center;gap:.35rem;font:500 13px var(--sans);color:var(--text-2)}
+.formbar{display:flex;gap:.7rem;padding:.9rem;border-top:1px solid var(--border)}
+.hint{font-size:11.5px;color:var(--muted)}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><a href="/v3/users">Users</a>
+  <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="cur">{{ user.email if user else "New" }}</span></nav>
+{% endblock %}
+
+{% block content %}
+<div class="fwrap">
+<form method="post" action="/v3/users">
+  <section class="panel">
+    <div class="panel-head"><h2>{{ "Edit user" if user else "New user" }}</h2></div>
+    <div class="ffield">
+      <label class="lbl">Email (unique)</label>
+      <input type="email" name="email" required value="{{ user.email if user else '' }}"{% if user %} readonly{% endif %}>
+    </div>
+    <div class="fgrid">
+      <div class="ffield"><label class="lbl">First name</label><input type="text" name="first_name" value="{{ user.first_name if user else '' }}"></div>
+      <div class="ffield"><label class="lbl">Last name</label><input type="text" name="last_name" value="{{ user.last_name if user else '' }}"></div>
+    </div>
+    <div class="fgrid">
+      <div class="ffield"><label class="lbl">Phone <span class="hint">(optional)</span></label><input type="text" name="phone" value="{{ user.phone if user else '' }}"></div>
+      <div class="ffield"><label class="lbl">Title <span class="hint">(optional)</span></label><input type="text" name="title" value="{{ user.title if user else '' }}"></div>
+    </div>
+    <div class="ffield">
+      <label class="lbl">Teams</label>
+      {% if teams %}
+      <div class="teamchecks">
+        {% for t in teams %}<label><input type="checkbox" name="teams" value="{{ t.name }}"{% if user and t.name in user.teams %} checked{% endif %}> {{ t.name }}</label>{% endfor %}
+      </div>
+      {% else %}<span class="hint">No teams yet. <a href="/v3/teams/new">Create one</a>.</span>{% endif %}
+    </div>
+    <div class="ffield">
+      <label class="lbl">Default team</label>
+      <select name="default_team">
+        <option value="">— none —</option>
+        {% for t in teams %}<option value="{{ t.name }}"{% if user and user.default_team == t.name %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="formbar">
+      <button type="submit" class="btn primary">{{ "Save" if user else "Create" }}</button>
+      <a href="/v3/users" class="btn">Cancel</a>
+    </div>
+  </section>
+</form>
+</div>
+{% endblock %}

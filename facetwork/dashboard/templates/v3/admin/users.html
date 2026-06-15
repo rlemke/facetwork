@@ -1,0 +1,83 @@
+{% extends "v3/base.html" %}
+{% block title %}Users · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.actbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem}
+.tagrow{display:flex;flex-wrap:wrap;gap:.3rem}
+.tag{display:inline-block;padding:.1rem .45rem;border-radius:30px;font:600 10.5px var(--mono);
+  background:var(--surface-3);color:var(--text-2);border:1px solid var(--border)}
+.rowacts{display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.rowacts form{display:inline}
+.btn.xs{padding:.25rem .5rem;font-size:11px}
+.actingbox{display:flex;align-items:center;gap:.6rem;padding:.7rem 1rem;margin-bottom:1rem;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);font-size:13px;color:var(--text-2)}
+.actingbox .av{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#001;
+  display:inline-flex;align-items:center;justify-content:center;font:700 11px var(--mono)}
+.fd-wrap{display:inline-flex;align-items:center;gap:.3rem;font-size:11px;color:var(--muted)}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><span class="cur">Users</span></nav>
+{% endblock %}
+{% block topbar_actions %}<a class="btn" href="/v3/teams">Teams</a>{% endblock %}
+
+{% block content %}
+{% set _cu = current_user %}
+<div class="actingbox">
+  <span class="av">{{ (_cu.display_name or _cu.email)[:2]|upper }}</span>
+  <span>Acting as <strong style="color:var(--text)">{{ _cu.display_name }}</strong> · <span class="mono">{{ _cu.email }}</span></span>
+</div>
+
+<div class="actbar">
+  <a class="btn primary" href="/v3/users/new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> New user</a>
+  <span style="flex:1"></span>
+  <a class="btn" href="/v3/users?show_deleted={{ 'false' if show_deleted else 'true' }}">{{ 'Hide deleted' if show_deleted else 'Show deleted' }}</a>
+</div>
+
+{% if users %}
+<div class="dtable-wrap">
+  <table class="dtable">
+    <thead><tr><th>Name</th><th>Email</th><th>Teams</th><th>Default</th><th>Kind</th><th>Status</th><th class="num">Actions</th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr{% if u.is_deleted %} style="opacity:.5"{% endif %}>
+        <td>{{ u.display_name }}{% if u.title %} <span style="color:var(--muted)">· {{ u.title }}</span>{% endif %}</td>
+        <td class="mono">{{ u.email }}</td>
+        <td><div class="tagrow">{% for t in u.teams %}<span class="tag">{{ t }}</span>{% endfor %}</div></td>
+        <td>{{ u.default_team or "—" }}</td>
+        <td>{% if u.is_special %}<span class="tag">{{ u.kind }}</span>{% else %}human{% endif %}</td>
+        <td>{{ "deleted" if u.is_deleted else "active" }}</td>
+        <td>
+          <div class="rowacts">
+            <form method="post" action="/v3/users/act-as">
+              <input type="hidden" name="email" value="{{ u.email }}">
+              <input type="hidden" name="next" value="/v3/users">
+              <button type="submit" class="btn xs">Act as</button>
+            </form>
+            {% if not u.is_special %}
+            <a href="/v3/users/{{ u.email }}/edit" class="btn xs">Edit</a>
+            {% if not u.is_deleted %}
+            <form method="post" action="/v3/users/{{ u.email }}/delete"
+                  onsubmit="return confirm('Soft-delete {{ u.email }}? Their runs keep their author.');">
+              <button type="submit" class="btn xs">Delete</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/v3/users/{{ u.email }}/force-delete"
+                  onsubmit="return confirm('FORCE-DELETE {{ u.email }}? References flip to the deleted user. This cannot be undone.');">
+              <label class="fd-wrap"><input type="checkbox" name="delete_work" value="1"> + work</label>
+              <button type="submit" class="btn xs danger">Force</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty"><p>No users yet.</p><a class="btn primary" href="/v3/users/new">New user</a></div>
+{% endif %}
+{% endblock %}

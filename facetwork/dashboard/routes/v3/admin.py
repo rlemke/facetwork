@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Admin routes — Users and Teams management + the "acting as" selector."""
+"""Admin (v3) — Users and Teams management + the "acting as" selector.
+
+Native v3-shell pages; the POST handlers redirect back into /v3 so the user
+never leaves the v3 UI.
+"""
 
 from __future__ import annotations
 
@@ -23,9 +27,7 @@ from ....runtime.entities import TeamDefinition, User
 from ....runtime.types import generate_id
 from ...dependencies import CURRENT_USER_COOKIE, get_current_user, get_store
 
-router = APIRouter(prefix="/v2")
-
-PURPOSES = ["production", "beta", "test", "personal", "none"]
+router = APIRouter(prefix="/v3")
 
 
 def _tmpl(request: Request, name: str, ctx: dict):
@@ -36,9 +38,9 @@ def _tmpl(request: Request, name: str, ctx: dict):
 
 
 @router.post("/users/act-as")
-def act_as(email: str = Form(...), next: str = Form("/v2/users")):
+def act_as(email: str = Form(...), next: str = Form("/v3/users")):
     """Set the current 'acting as' user cookie (no password)."""
-    resp = RedirectResponse(url=next or "/v2/users", status_code=303)
+    resp = RedirectResponse(url=next or "/v3/users", status_code=303)
     if email:
         resp.set_cookie(CURRENT_USER_COOKIE, email, max_age=60 * 60 * 24 * 365, samesite="lax")
     else:
@@ -50,7 +52,7 @@ def act_as(email: str = Form(...), next: str = Form("/v2/users")):
 
 
 @router.get("/users")
-def user_list(
+def users_v3(
     request: Request,
     show_deleted: bool = False,
     store=Depends(get_store),
@@ -59,38 +61,38 @@ def user_list(
     users = list(store.list_users(include_deleted=show_deleted))
     return _tmpl(
         request,
-        "v2/users/list.html",
+        "v3/admin/users.html",
         {
             "users": users,
             "teams": list(store.list_teams()),
             "show_deleted": show_deleted,
             "current_user": current_user,
-            "active_tab": "users",
+            "active_nav": "users",
         },
     )
 
 
 @router.get("/users/new")
-def user_new(request: Request, store=Depends(get_store)):
+def user_new_v3(request: Request, store=Depends(get_store)):
     return _tmpl(
         request,
-        "v2/users/form.html",
-        {"user": None, "teams": list(store.list_teams()), "active_tab": "users"},
+        "v3/admin/user_form.html",
+        {"user": None, "teams": list(store.list_teams()), "active_nav": "users"},
     )
 
 
 @router.get("/users/{email}/edit")
-def user_edit(email: str, request: Request, store=Depends(get_store)):
+def user_edit_v3(email: str, request: Request, store=Depends(get_store)):
     user = store.get_user(email)
     return _tmpl(
         request,
-        "v2/users/form.html",
-        {"user": user, "teams": list(store.list_teams()), "active_tab": "users"},
+        "v3/admin/user_form.html",
+        {"user": user, "teams": list(store.list_teams()), "active_nav": "users"},
     )
 
 
 @router.post("/users")
-def user_save(
+def user_save_v3(
     request: Request,
     email: str = Form(...),
     first_name: str = Form(""),
@@ -117,67 +119,65 @@ def user_save(
         created_at=existing.created_at if existing else 0,
     )
     store.save_user(user)
-    return RedirectResponse(url="/v2/users", status_code=303)
+    return RedirectResponse(url="/v3/users", status_code=303)
 
 
 @router.post("/users/{email}/delete")
-def user_delete(email: str, store=Depends(get_store)):
+def user_delete_v3(email: str, store=Depends(get_store)):
     """Soft delete — marks the user deleted but keeps their runs' authorship."""
     store.soft_delete_user(email)
-    return RedirectResponse(url="/v2/users", status_code=303)
+    return RedirectResponse(url="/v3/users", status_code=303)
 
 
 @router.post("/users/{email}/force-delete")
-def user_force_delete(
-    email: str, delete_work: str = Form(""), store=Depends(get_store)
-):
+def user_force_delete_v3(email: str, delete_work: str = Form(""), store=Depends(get_store)):
     """Permanently delete — reassigns references to the 'deleted' user;
     optionally removes the user's runs/flows."""
     store.force_delete_user(email, delete_work=bool(delete_work))
-    return RedirectResponse(url="/v2/users", status_code=303)
+    return RedirectResponse(url="/v3/users", status_code=303)
 
 
 # ── Teams ────────────────────────────────────────────────────────────────────
 
 
 @router.get("/teams")
-def team_list(request: Request, store=Depends(get_store)):
+def teams_v3(request: Request, store=Depends(get_store)):
     teams = list(store.list_teams())
     counts = {t.name: len(list(store.get_team_members(t.name))) for t in teams}
     return _tmpl(
         request,
-        "v2/teams/list.html",
-        {"teams": teams, "member_counts": counts, "active_tab": "teams"},
+        "v3/admin/teams.html",
+        {"teams": teams, "member_counts": counts, "active_nav": "teams"},
     )
 
 
 @router.get("/teams/new")
-def team_new(request: Request, store=Depends(get_store)):
+def team_new_v3(request: Request, store=Depends(get_store)):
     return _tmpl(
         request,
-        "v2/teams/form.html",
-        {"team": None, "members": [], "users": list(store.list_users()), "active_tab": "teams"},
+        "v3/admin/team_form.html",
+        {"team": None, "members": set(), "users": list(store.list_users()), "active_nav": "teams"},
     )
 
 
 @router.get("/teams/{uuid}/edit")
-def team_edit(uuid: str, request: Request, store=Depends(get_store)):
+def team_edit_v3(uuid: str, request: Request, store=Depends(get_store)):
     team = store.get_team(uuid)
     members = {u.email for u in store.get_team_members(team.name)} if team else set()
     return _tmpl(
         request,
-        "v2/teams/form.html",
+        "v3/admin/team_form.html",
         {
             "team": team,
             "members": members,
             "users": list(store.list_users()),
-            "active_tab": "teams",
+            "active_nav": "teams",
         },
     )
 
 
 @router.post("/teams")
-def team_save(
+def team_save_v3(
     request: Request,
     uuid: str = Form(""),
     name: str = Form(...),
@@ -199,11 +199,11 @@ def team_save(
     )
     store.save_team(team)
     store.set_team_members(team.name, [m for m in members if m])
-    return RedirectResponse(url="/v2/teams", status_code=303)
+    return RedirectResponse(url="/v3/teams", status_code=303)
 
 
 @router.post("/teams/{uuid}/delete")
-def team_delete(uuid: str, store=Depends(get_store)):
+def team_delete_v3(uuid: str, store=Depends(get_store)):
     """Delete a team and scrub its name from all users' membership."""
     store.delete_team(uuid)
-    return RedirectResponse(url="/v2/teams", status_code=303)
+    return RedirectResponse(url="/v3/teams", status_code=303)

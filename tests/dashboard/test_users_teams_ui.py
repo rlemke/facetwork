@@ -82,7 +82,7 @@ def _seed_flow(store):
 
 def test_user_list_shows_special_users(client):
     tc, _store = client
-    resp = tc.get("/v2/users")
+    resp = tc.get("/v3/users")
     assert resp.status_code == 200
     assert "anonymous@facetwork.local" in resp.text
     assert "Users" in resp.text
@@ -91,22 +91,22 @@ def test_user_list_shows_special_users(client):
 def test_create_and_soft_delete_user(client):
     tc, store = client
     r = tc.post(
-        "/v2/users",
+        "/v3/users",
         data={"email": "ada@example.com", "first_name": "Ada", "last_name": "Lovelace"},
         follow_redirects=False,
     )
     assert r.status_code == 303
     assert store.get_user("ada@example.com").display_name == "Ada Lovelace"
 
-    tc.post("/v2/users/ada@example.com/delete", follow_redirects=False)
+    tc.post("/v3/users/ada@example.com/delete", follow_redirects=False)
     assert store.get_user("ada@example.com").is_deleted
 
 
 def test_force_delete_user(client):
     tc, store = client
-    tc.post("/v2/users", data={"email": "ada@example.com", "first_name": "Ada"},
+    tc.post("/v3/users", data={"email": "ada@example.com", "first_name": "Ada"},
             follow_redirects=False)
-    tc.post("/v2/users/ada@example.com/force-delete", follow_redirects=False)
+    tc.post("/v3/users/ada@example.com/force-delete", follow_redirects=False)
     assert store.get_user("ada@example.com") is None
 
 
@@ -115,9 +115,9 @@ def test_force_delete_user(client):
 
 def test_act_as_sets_cookie(client):
     tc, store = client
-    tc.post("/v2/users", data={"email": "ada@example.com", "first_name": "Ada"},
+    tc.post("/v3/users", data={"email": "ada@example.com", "first_name": "Ada"},
             follow_redirects=False)
-    r = tc.post("/v2/users/act-as", data={"email": "ada@example.com", "next": "/v2/users"},
+    r = tc.post("/v3/users/act-as", data={"email": "ada@example.com", "next": "/v3/users"},
                 follow_redirects=False)
     assert r.status_code == 303
     # Starlette quotes the "@" in the cookie value; just assert it carries the email.
@@ -129,10 +129,10 @@ def test_act_as_sets_cookie(client):
 
 def test_create_team_with_members(client):
     tc, store = client
-    tc.post("/v2/users", data={"email": "ada@example.com", "first_name": "Ada"},
+    tc.post("/v3/users", data={"email": "ada@example.com", "first_name": "Ada"},
             follow_redirects=False)
     r = tc.post(
-        "/v2/teams",
+        "/v3/teams",
         data={"name": "geo", "description": "Geospatial", "members": ["ada@example.com"]},
         follow_redirects=False,
     )
@@ -142,7 +142,7 @@ def test_create_team_with_members(client):
     assert {u.email for u in store.get_team_members("geo")} == {"ada@example.com"}
 
     # delete scrubs membership
-    tc.post(f"/v2/teams/{team.uuid}/delete", follow_redirects=False)
+    tc.post(f"/v3/teams/{team.uuid}/delete", follow_redirects=False)
     assert store.get_team("geo") is None
     assert store.get_user("ada@example.com").teams == []
 
@@ -166,7 +166,7 @@ def test_run_execute_tags_run_with_user_author_purpose_teams(client):
     store.save_user(_user("ada@example.com", "Ada"))
     flow, wf = _seed_flow(store)
     # Act as Ada, then run with purpose=test and team geo
-    tc.post("/v2/users/act-as", data={"email": "ada@example.com", "next": "/"},
+    tc.post("/v3/users/act-as", data={"email": "ada@example.com", "next": "/"},
             follow_redirects=False)
     r = tc.post(
         f"/flows/{flow.uuid}/run/{wf.uuid}",

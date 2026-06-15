@@ -1,0 +1,52 @@
+{% extends "v3/base.html" %}
+{% block title %}Teams · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.actbar{display:flex;gap:.5rem;align-items:center;margin-bottom:1rem}
+.rowacts{display:flex;gap:.35rem;justify-content:flex-end}
+.rowacts form{display:inline}
+.btn.xs{padding:.25rem .5rem;font-size:11px}
+.cnt{display:inline-block;padding:.1rem .5rem;border-radius:30px;font:600 11px var(--mono);background:var(--surface-3);border:1px solid var(--border)}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><span class="cur">Teams</span></nav>
+{% endblock %}
+{% block topbar_actions %}<a class="btn" href="/v3/users">Users</a>{% endblock %}
+
+{% block content %}
+<div class="actbar">
+  <a class="btn primary" href="/v3/teams/new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> New team</a>
+</div>
+
+{% if teams %}
+<div class="dtable-wrap">
+  <table class="dtable">
+    <thead><tr><th>Name</th><th>Description</th><th>Leader</th><th class="num">Members</th><th class="num">Actions</th></tr></thead>
+    <tbody>
+      {% for t in teams %}
+      <tr>
+        <td><strong>{{ t.name }}</strong></td>
+        <td>{{ t.description or "—" }}</td>
+        <td class="mono">{{ t.leader_email or "—" }}</td>
+        <td class="num"><span class="cnt">{{ member_counts.get(t.name, 0) }}</span></td>
+        <td>
+          <div class="rowacts">
+            <a href="/v3/teams/{{ t.uuid }}/edit" class="btn xs">Edit</a>
+            <form method="post" action="/v3/teams/{{ t.uuid }}/delete"
+                  onsubmit="return confirm('Delete team {{ t.name }}? It will be removed from all members.');">
+              <button type="submit" class="btn xs danger">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty"><p>No teams yet.</p><a class="btn primary" href="/v3/teams/new">New team</a></div>
+{% endif %}
+{% endblock %}

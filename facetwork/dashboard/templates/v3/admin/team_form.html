@@ -1,0 +1,53 @@
+{% extends "v3/base.html" %}
+{% block title %}{{ "Edit" if team else "New" }} team · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.fwrap{max-width:680px}
+.ffield{padding:.8rem .9rem;border-top:1px solid var(--border)}
+.ffield:first-child{border-top:none}
+.ffield label.lbl{display:block;font:600 12.5px var(--sans);margin-bottom:.35rem}
+.ffield input,.ffield select,.ffield textarea{width:100%;padding:.45rem .6rem;background:var(--bg);border:1px solid var(--border);
+  border-radius:var(--r-sm);color:var(--text);font:500 13px var(--sans);outline:none;resize:vertical}
+.ffield input:focus,.ffield select:focus,.ffield textarea:focus{border-color:var(--accent)}
+.memchecks{display:flex;flex-wrap:wrap;gap:.6rem}
+.memchecks label{display:inline-flex;align-items:center;gap:.35rem;font:500 13px var(--sans);color:var(--text-2)}
+.formbar{display:flex;gap:.7rem;padding:.9rem;border-top:1px solid var(--border)}
+.hint{font-size:11.5px;color:var(--muted)}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><a href="/v3/teams">Teams</a>
+  <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="cur">{{ team.name if team else "New" }}</span></nav>
+{% endblock %}
+
+{% block content %}
+<div class="fwrap">
+<form method="post" action="/v3/teams">
+  {% if team %}<input type="hidden" name="uuid" value="{{ team.uuid }}">{% endif %}
+  <section class="panel">
+    <div class="panel-head"><h2>{{ "Edit team" if team else "New team" }}</h2></div>
+    <div class="ffield"><label class="lbl">Name (unique)</label><input type="text" name="name" required value="{{ team.name if team else '' }}"></div>
+    <div class="ffield"><label class="lbl">Description</label><textarea name="description" rows="2">{{ team.description if team else '' }}</textarea></div>
+    <div class="ffield">
+      <label class="lbl">Leader (contact)</label>
+      <select name="leader_email">
+        <option value="">— none —</option>
+        {% for u in users %}<option value="{{ u.email }}"{% if team and team.leader_email == u.email %} selected{% endif %}>{{ u.display_name }} ({{ u.email }})</option>{% endfor %}
+      </select>
+    </div>
+    <div class="ffield">
+      <label class="lbl">Members</label>
+      <div class="memchecks">
+        {% for u in users %}{% if not u.is_special %}<label><input type="checkbox" name="members" value="{{ u.email }}"{% if u.email in members %} checked{% endif %}> {{ u.display_name }}</label>{% endif %}{% endfor %}
+      </div>
+    </div>
+    <div class="formbar">
+      <button type="submit" class="btn primary">{{ "Save" if team else "Create" }}</button>
+      <a href="/v3/teams" class="btn">Cancel</a>
+    </div>
+  </section>
+</form>
+</div>
+{% endblock %}
