@@ -35,7 +35,7 @@
     <span class="col-h">Flow</span><span class="col-h">Workflows</span><span class="col-h">Facets</span><span class="col-h">Namespaces</span>
   </div>
   {% for f in flows %}
-  <a class="f-row" href="/flows/{{ f.uuid }}">
+  <a class="f-row" href="/v3/flows/{{ f.uuid }}">
     <span class="f-name"><b>{{ f.name }}</b>{% if f.path %}<small>{{ f.path }}</small>{% endif %}</span>
     <span class="f-meta">{{ f.workflows }}<span class="l">wf</span></span>
     <span class="f-meta">{{ f.facets }}<span class="l">fc</span></span>

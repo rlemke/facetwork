@@ -224,7 +224,7 @@ function renderInspector(n){
     h+='<button class="btn" onclick="stepAction(\''+sid+'\',\'retry\',false)"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9"/><path d="M21 3v6h-6"/></svg> Retry</button>';
   if(n.cat==='error'||n.cat==='complete'||n.cat==='running')
     h+='<button class="btn'+(n.cat==='running'?' danger':'')+'" onclick="stepAction(\''+sid+'\',\'rerun\',true)"><svg viewBox="0 0 24 24"><path d="M14 7l-5 5 5 5"/><path d="M5 5v14"/></svg> Re-run from here</button>';
-  h+='<a class="btn" href="/steps/'+encodeURIComponent(n.id)+'"><svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-5"/></svg> Details &amp; output</a>';
+  h+='<a class="btn" href="/v3/steps/'+encodeURIComponent(n.id)+'"><svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-5"/></svg> Details &amp; output</a>';
   h+='</div><div id="ins-msg" class="ins-msg"></div>';
   document.getElementById('inspect').innerHTML=h;
   lastSelSig=sigOf(n);

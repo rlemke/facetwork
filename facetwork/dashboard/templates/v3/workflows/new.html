@@ -1,0 +1,72 @@
+{% extends "v3/base.html" %}
+{% block title %}New run · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.n-bar{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+.n-search{flex:1;max-width:360px;padding:.45rem .75rem;font:500 13px var(--sans);color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);outline:none}
+.n-search:focus{border-color:var(--accent)}
+.n-count{font:500 12px var(--mono);color:var(--muted)}
+.ns{margin-top:.2rem}
+.ns-head{display:flex;align-items:center;gap:.5rem;padding:.5rem .2rem;font:600 12px var(--mono);color:var(--text-2)}
+.ns-head .c{font:600 10.5px/1 var(--mono);color:var(--muted);background:var(--surface-3);padding:.15rem .4rem;border-radius:20px}
+.wfs{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.wf{border-bottom:1px solid var(--border)}.wf:last-child{border-bottom:none}
+.wf-top{display:flex;align-items:center;gap:.6rem;padding:.55rem .9rem}
+.wf-top b{font-weight:600;font-size:13.5px}
+.wf-top .q{font:500 11px var(--mono);color:var(--muted)}
+.wf-top .acts{margin-left:auto;display:flex;gap:.4rem;align-items:center}
+.wf-src{cursor:pointer;font:500 11px var(--mono);color:var(--text-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:.2rem .5rem;background:none}
+.wf-src:hover{color:var(--text);border-color:var(--border-strong)}
+.wf pre{display:none;margin:0;padding:.8rem .9rem;background:var(--bg);border-top:1px solid var(--border);font:500 11.5px/1.5 var(--mono);color:var(--text-2);overflow:auto;max-height:280px;white-space:pre;tab-size:2}
+.wf.open pre{display:block}
+.wf-hide{display:none}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><a href="/v3/workflows">Runs</a><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="cur">New run</span></nav>{% endblock %}
+
+{% block content %}
+<div class="n-bar">
+  <input class="n-search" id="n-search" type="search" placeholder="Find a workflow to run…" autocomplete="off">
+  <span class="n-count">{{ total }} workflow{{ '' if total==1 else 's' }}</span>
+</div>
+
+{% if ns_groups %}
+{% for group in ns_groups %}
+<div class="ns" data-ns>
+  <div class="ns-head">{{ group.name }} <span class="c">{{ group.workflows|length }}</span></div>
+  <div class="wfs">
+    {% for w in group.workflows %}
+    <div class="wf" data-row data-name="{{ w.qualified_name|lower }}">
+      <div class="wf-top">
+        <b>{{ w.name }}</b><span class="q">{{ w.qualified_name }}</span>
+        <span class="acts">
+          <button class="wf-src" type="button" onclick="this.closest('.wf').classList.toggle('open')">FFL</button>
+          {% if w.run_url %}<a class="btn primary" href="{{ w.run_url }}"><svg viewBox="0 0 24 24"><path d="M5 4l14 8-14 8z"/></svg> Run</a>
+          {% else %}<span class="q" title="not runnable (no compiled record)">—</span>{% endif %}
+        </span>
+      </div>
+      <pre>{{ w.afl_source }}</pre>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="empty"><svg viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/></svg>
+  <h1>No workflows available</h1><p>Seed examples or compile a flow to run one.</p></div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){var q=document.getElementById('n-search');if(!q)return;
+  q.addEventListener('input',function(){var v=q.value.trim().toLowerCase();
+    document.querySelectorAll('[data-ns]').forEach(function(ns){var n=0;
+      ns.querySelectorAll('[data-row]').forEach(function(r){var hit=!v||r.getAttribute('data-name').indexOf(v)>=0;
+        r.classList.toggle('wf-hide',!hit);if(hit)n++;});
+      ns.style.display=n?'':'none';});});
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,98 @@
+{% extends "v3/base.html" %}
+{% block title %}{% if d %}{{ d.title or slug }} · Catalog{% else %}Not found{% endif %}{% endblock %}
+
+{% block head_extra %}
+<style>
+.status-head{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.1rem 1.3rem}
+.sh-top{display:flex;align-items:flex-start;gap:.8rem;flex-wrap:wrap}
+.sh-top h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.02em}
+.sh-top .slug{font:500 12px/1.4 var(--mono);color:var(--muted);display:block;margin-top:.3rem}
+.kindtag{font:600 9.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;padding:.25rem .45rem;border-radius:5px}
+.kindtag.workflow{color:var(--st-running);background:color-mix(in srgb,var(--st-running) 14%,transparent)}
+.kindtag.library{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.sh-actions{margin-left:auto;display:flex;gap:.5rem}
+.desc{color:var(--text-2);font-size:13px;margin:.7rem 0 0}
+.cols{display:grid;grid-template-columns:1fr 360px;gap:1.1rem}
+@media (max-width:1000px){.cols{grid-template-columns:1fr}}
+pre.ffl{margin:0;padding:1rem;background:var(--bg);border:0;border-radius:0;font:500 12px/1.55 var(--mono);
+  color:var(--text-2);overflow:auto;max-height:560px;white-space:pre;tab-size:2}
+.at{width:100%;border-collapse:collapse;font-size:12px}
+.at th,.at td{text-align:left;padding:.4rem .9rem;border-top:1px solid var(--border)}
+.at th{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.at code{font-family:var(--mono);font-size:11px;background:var(--surface-2);padding:.1rem .35rem;border-radius:4px}
+.runform{padding:.9rem}
+.runform label{display:block;font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:.2rem 0 .35rem}
+.runform textarea{width:100%;min-height:150px;padding:.6rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);
+  color:var(--text);font:500 12px/1.5 var(--mono);resize:vertical;outline:none}
+.runform textarea:focus{border-color:var(--accent)}
+.runform .chk{display:flex;align-items:center;gap:.4rem;font-size:12px;color:var(--text-2);margin:.6rem 0}
+.verlist{padding:.5rem .9rem;font:500 12px var(--mono);color:var(--text-2)}
+.verlist .v{display:inline-block;margin:.15rem .3rem .15rem 0;padding:.1rem .45rem;border-radius:20px;background:var(--surface-2);border:1px solid var(--border)}
+.errbox{margin:.9rem 0 0;padding:.6rem .8rem;background:color-mix(in srgb,var(--st-error) 8%,transparent);border:1px solid color-mix(in srgb,var(--st-error) 30%,transparent);border-radius:var(--r-sm);color:var(--st-error);font-size:12px}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><a href="/v3/catalog">Catalog</a>
+  {% if d %}<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="cur">{{ d.title or slug }}</span>{% endif %}</nav>
+{% endblock %}
+{% block topbar_actions %}{% if d %}<a class="iconbtn" href="/catalog/{{ slug }}" title="Open in classic UI"><svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-5"/></svg></a>{% endif %}{% endblock %}
+
+{% block content %}
+{% if unavailable or not d %}
+  <div class="empty"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    <h1>{{ 'Catalog unavailable' if unavailable else 'Entry not found' }}</h1><p><a href="/v3/catalog">← Back to catalog</a></p></div>
+{% else %}
+{% if request.query_params.get('error') %}<div class="errbox">⚠ {{ request.query_params.get('error') }}</div>{% endif %}
+<section class="status-head">
+  <div class="sh-top">
+    <span class="kindtag {{ d.kind }}">{{ d.kind }}</span>
+    <div><h1>{{ d.title or slug }}</h1><span class="slug">{{ slug }} · v{{ d.version }}{% if d.status %} · {{ d.status }}{% endif %}</span></div>
+  </div>
+  {% if d.description %}<p class="desc">{{ d.description }}</p>{% endif %}
+</section>
+
+<div class="cols">
+  <section class="panel">
+    <div class="panel-head"><h2>FFL source</h2>{% if d.entry_workflow %}<span class="legend"><span>entry: {{ d.entry_workflow }}</span></span>{% endif %}</div>
+    {% if d.ffl_source %}<pre class="ffl">{{ d.ffl_source }}</pre>
+    {% else %}<div style="padding:1.2rem .9rem;color:var(--muted);font-size:12.5px">No inline FFL (this entry references a package — see its dependencies).</div>{% endif %}
+  </section>
+
+  <div style="display:flex;flex-direction:column;gap:1.1rem">
+    {% if d.kind == 'workflow' %}
+    <section class="panel">
+      <div class="panel-head"><h2>Run</h2></div>
+      <form class="runform" method="post" action="/catalog/{{ slug }}/run">
+        <label>Inputs (JSON)</label>
+        <textarea name="inputs_json" spellcheck="false">{{ default_inputs_json }}</textarea>
+        <label class="chk"><input type="checkbox" name="allow_unpublished" value="1"> allow unpublished revision</label>
+        <button class="btn primary" type="submit" style="width:100%;justify-content:center"><svg viewBox="0 0 24 24"><path d="M5 4l14 8-14 8z"/></svg> Run</button>
+      </form>
+    </section>
+    {% endif %}
+
+    {% if d.param_schema %}
+    <section class="panel">
+      <div class="panel-head"><h2>Parameters</h2></div>
+      <table class="at"><thead><tr><th>Name</th><th>Type</th><th>Default</th></tr></thead><tbody>
+        {% for p in d.param_schema %}<tr><td>{{ p.name }}</td><td><code>{{ p.type }}</code></td><td><code>{{ p.default }}</code></td></tr>{% endfor %}
+      </tbody></table>
+    </section>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head"><h2>Versions</h2></div>
+      <div class="verlist">{% for v in d.all_versions or [] %}<span class="v">v{{ v.version }} · {{ v.status }}{{ ' ✓' if v.is_valid }}</span>{% else %}<span style="color:var(--muted)">—</span>{% endfor %}</div>
+    </section>
+
+    {% if d.depends_on %}
+    <section class="panel">
+      <div class="panel-head"><h2>Dependencies</h2></div>
+      <div class="verlist">{% for dep in d.depends_on %}<span class="v">{{ dep.slug if dep.slug is defined else dep }}{% if dep.version is defined %} v{{ dep.version }}{% endif %}</span>{% endfor %}</div>
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

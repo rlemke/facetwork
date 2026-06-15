@@ -1,0 +1,82 @@
+{% extends "v3/base.html" %}
+{% block title %}{% if flow %}{{ flow.name.name }} · Flow{% else %}Flow not found{% endif %}{% endblock %}
+
+{% block head_extra %}
+<style>
+.status-head{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.1rem 1.3rem}
+.sh-top{display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap}
+.sh-top h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.02em}
+.sh-top .p{font:500 12px/1.4 var(--mono);color:var(--muted);display:block;margin-top:.3rem}
+.sh-actions{margin-left:auto;display:flex;gap:.5rem}
+.metrics{display:flex;gap:2rem;margin-top:1rem}
+.metric .v{font:600 18px/1 var(--mono)}.metric .l{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:.25rem}
+.cols{display:grid;grid-template-columns:1fr 320px;gap:1.1rem}
+@media (max-width:1000px){.cols{grid-template-columns:1fr}}
+.ns-grp{border-top:1px solid var(--border)}
+.ns-grp:first-child{border-top:none}
+.ns-grp summary{cursor:pointer;padding:.55rem .9rem;font:600 12px var(--mono);color:var(--text-2);display:flex;align-items:center;gap:.5rem}
+.ns-grp summary .c{font:600 10.5px/1 var(--mono);color:var(--muted);background:var(--surface-3);padding:.15rem .4rem;border-radius:20px}
+.wf-row{display:flex;align-items:center;gap:.6rem;padding:.45rem .9rem .45rem 1.6rem;border-top:1px solid var(--border);text-decoration:none;color:var(--text);font-size:13px}
+.wf-row:hover{background:var(--surface-2)}
+.wf-row .run{margin-left:auto;font:600 11px var(--mono);color:var(--accent)}
+.runrow{display:grid;grid-template-columns:8px 1fr 90px;gap:.6rem;align-items:center;padding:.45rem .9rem;border-top:1px solid var(--border);text-decoration:none;color:var(--text);font-size:12.5px}
+.runrow:first-child{border-top:none}.runrow:hover{background:var(--surface-2)}
+.runrow .t{font:500 11px var(--mono);color:var(--muted)}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><a href="/v3/flows">Library</a>
+  {% if flow %}<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="cur">{{ flow.name.name }}</span>{% endif %}</nav>
+{% endblock %}
+{% block topbar_actions %}{% if flow %}<a class="iconbtn" href="/flows/{{ flow.uuid }}" title="Open in classic UI"><svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-5"/></svg></a>{% endif %}{% endblock %}
+
+{% block content %}
+{% if not flow %}
+  <div class="empty"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    <h1>Flow not found</h1><p><a href="/v3/flows">← Back to library</a></p></div>
+{% else %}
+<section class="status-head">
+  <div class="sh-top">
+    <div><h1>{{ flow.name.name }}</h1><span class="p">{{ flow.name.path or '' }} · {{ flow.uuid }}</span></div>
+    <div class="sh-actions">
+      <a class="btn" href="/flows/{{ flow.uuid }}/source"><svg viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg> Source</a>
+      <a class="btn" href="/flows/{{ flow.uuid }}/json">JSON</a>
+    </div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="v">{{ total_wf }}</div><div class="l">Workflows</div></div>
+    <div class="metric"><div class="v">{{ flow.facets|length }}</div><div class="l">Facets</div></div>
+    <div class="metric"><div class="v">{{ flow.namespaces|length }}</div><div class="l">Namespaces</div></div>
+  </div>
+</section>
+
+<div class="cols">
+  <section class="panel">
+    <div class="panel-head"><h2>Workflows</h2></div>
+    {% for g in namespace_list %}
+    <details class="ns-grp" open>
+      <summary>{{ g.name }} <span class="c">{{ g.workflows|length }}</span></summary>
+      {% for wf in g.workflows %}
+      <a class="wf-row" href="/flows/{{ flow.uuid }}/run/{{ wf.uuid }}">
+        {{ wf.name.rsplit('.',1)[-1] if '.' in wf.name else wf.name }}
+        <span class="run">Run →</span>
+      </a>
+      {% endfor %}
+    </details>
+    {% else %}<div style="padding:1.2rem .9rem;color:var(--muted);font-size:12.5px">No workflows in this flow.</div>{% endfor %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Recent runs</h2></div>
+    {% for r in runners %}
+    <a class="runrow" href="/v3/workflows/{{ r.uuid }}">
+      <span class="statusdot" style="background:{{ {'running':'var(--st-running)','completed':'var(--st-complete)','failed':'var(--st-error)','cancelled':'var(--st-error)'}.get(r.state,'var(--muted)') }}"></span>
+      <span>{{ r.workflow.name|short_workflow_name }}</span>
+      <span class="t">{{ r.start_time|timestamp }}</span>
+    </a>
+    {% else %}<div style="padding:1.2rem .9rem;color:var(--muted);font-size:12.5px">No runs yet.</div>{% endfor %}
+  </section>
+</div>
+{% endif %}
+{% endblock %}
