@@ -166,7 +166,7 @@ def workflow_detail_v3(
     runner = store.get_runner(runner_id)
     if not runner:
         return request.app.state.templates.TemplateResponse(
-            request, "v3/workflows/detail.html", {"runner": None}
+            request, "v3/workflows/detail.html", {"runner": None, "active_nav": "runs"}
         )
 
     graph = _compute_graph(runner, store)
@@ -182,6 +182,7 @@ def workflow_detail_v3(
         "runner": runner,
         "selected": selected,
         "active": runner.state in _ACTIVE_STATES,
+        "active_nav": "runs",
         **graph,
     }
     return request.app.state.templates.TemplateResponse(
