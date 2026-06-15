@@ -126,6 +126,7 @@ class FlowDefinition:
     ownership: Ownership | None = None
     compiled_sources: list[SourceText] = field(default_factory=list)
     compiled_ast: dict | None = None  # Immutable compiled JSON (program_ast)
+    created_at: int = 0  # epoch ms, stamped on first save (publish time)
 
 
 @dataclass

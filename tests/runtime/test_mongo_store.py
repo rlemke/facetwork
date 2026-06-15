@@ -739,6 +739,32 @@ class TestFlowOperations:
         assert retrieved.uuid == "flow-123"
         assert retrieved.name.name == "TestFlow"
 
+    def test_save_flow_stamps_created_at(self, mongo_store):
+        """First save stamps created_at; re-save preserves it; explicit value is kept."""
+        flow = FlowDefinition(
+            uuid="flow-ts", name=FlowIdentity(name="TS", path="/ts", uuid="flow-ts")
+        )
+        assert flow.created_at == 0
+        mongo_store.save_flow(flow)
+        first = mongo_store.get_flow("flow-ts").created_at
+        assert first > 0
+
+        # Re-saving a fresh object (created_at=0) must preserve the original stamp.
+        again = FlowDefinition(
+            uuid="flow-ts", name=FlowIdentity(name="TS", path="/ts", uuid="flow-ts")
+        )
+        mongo_store.save_flow(again)
+        assert mongo_store.get_flow("flow-ts").created_at == first
+
+        # An explicit non-zero created_at is trusted as-is.
+        explicit = FlowDefinition(
+            uuid="flow-exp",
+            name=FlowIdentity(name="E", path="/e", uuid="flow-exp"),
+            created_at=12345,
+        )
+        mongo_store.save_flow(explicit)
+        assert mongo_store.get_flow("flow-exp").created_at == 12345
+
     def test_get_flow_by_path(self, mongo_store):
         """Test getting a flow by path."""
         flow = FlowDefinition(

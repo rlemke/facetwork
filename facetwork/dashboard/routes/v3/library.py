@@ -267,6 +267,7 @@ def flows_v3(request: Request, q: str = "", store=Depends(get_store)):
             "workflows": len(f.workflows or []),
             "facets": len(f.facets or []),
             "namespaces": len(f.namespaces or []),
+            "created_at": getattr(f, "created_at", 0) or 0,
         }
         for f in flows
     ]

@@ -174,7 +174,14 @@ def flow_tags(flow) -> set[str]:
 
 
 def flow_created_ms(flow) -> int | None:
-    """Proxy a flow's creation time as the earliest of its workflows' dates."""
+    """A flow's creation time (epoch ms).
+
+    Prefer the real ``created_at`` stamped at publish time; for legacy flows
+    saved before that field existed, fall back to the earliest workflow date.
+    """
+    created = int(getattr(flow, "created_at", 0) or 0)
+    if created > 0:
+        return created
     dates = [int(getattr(wf, "date", 0) or 0) for wf in getattr(flow, "workflows", []) or []]
     dates = [d for d in dates if d > 0]
     return min(dates) if dates else None

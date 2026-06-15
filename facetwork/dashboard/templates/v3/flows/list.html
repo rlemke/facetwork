@@ -47,7 +47,7 @@
   </div>
   {% for f in flows %}
   <a class="f-row" href="/v3/flows/{{ f.uuid }}">
-    <span class="f-name"><b>{{ f.name }}</b>{% if f.path %}<small>{{ f.path }}</small>{% endif %}</span>
+    <span class="f-name"><b>{{ f.name }}</b><small>{% if f.path %}{{ f.path }}{% endif %}{% if f.created_at %} · created {{ f.created_at|time_ago }}{% endif %}</small></span>
     <span class="f-meta">{{ f.workflows }}<span class="l">wf</span></span>
     <span class="f-meta">{{ f.facets }}<span class="l">fc</span></span>
     <span class="f-meta">{{ f.namespaces }}<span class="l">ns</span></span>

@@ -75,7 +75,17 @@ class WorkflowMixin(_MixinBase):
         return self._find_decoded(self._db.flows, {"name.name": name}, self._doc_to_flow)
 
     def save_flow(self, flow: FlowDefinition) -> None:
-        """Save a flow."""
+        """Save a flow, stamping ``created_at`` once at publish time.
+
+        On the first save the flow gets the current time; subsequent saves
+        preserve the original timestamp (an explicit non-zero ``created_at``
+        on the passed flow is trusted as-is).
+        """
+        from .base import _current_time_ms
+
+        if not flow.created_at:
+            existing = self._db.flows.find_one({"uuid": flow.uuid}, {"created_at": 1})
+            flow.created_at = (existing or {}).get("created_at") or _current_time_ms()
         self._upsert_by_uuid(self._db.flows, self._flow_to_doc(flow))
 
     def delete_flow(self, flow_id: str) -> bool:
@@ -270,6 +280,7 @@ class WorkflowMixin(_MixinBase):
             "ownership": asdict(flow.ownership) if flow.ownership else None,
             "compiled_sources": [asdict(s) for s in flow.compiled_sources],
             "compiled_ast": flow.compiled_ast,
+            "created_at": flow.created_at,
         }
 
     def _doc_to_flow(self, doc: dict) -> FlowDefinition:
@@ -334,6 +345,7 @@ class WorkflowMixin(_MixinBase):
             ownership=ownership,
             compiled_sources=[SourceText(**s) for s in doc.get("compiled_sources", [])],
             compiled_ast=doc.get("compiled_ast"),
+            created_at=doc.get("created_at", 0),
         )
 
     def _doc_to_published_source(self, doc: dict) -> PublishedSource:
