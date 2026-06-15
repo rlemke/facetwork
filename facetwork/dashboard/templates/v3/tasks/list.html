@@ -1,0 +1,77 @@
+{% extends "v3/base.html" %}
+{% block title %}Tasks · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.t-bar{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+.segtabs{display:flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px;flex-wrap:wrap}
+.segtabs a{display:flex;align-items:center;gap:.4rem;padding:.4rem .7rem;border-radius:7px;text-decoration:none;color:var(--text-2);font:600 12px var(--sans)}
+.segtabs a.active{background:var(--surface-3);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.segtabs a .n{font:600 10px/1 var(--mono);color:var(--muted);background:var(--surface);padding:.12rem .3rem;border-radius:20px}
+.segtabs a.active .n{color:var(--text)}
+.chips{display:flex;gap:.4rem;flex-wrap:wrap;font:500 11.5px var(--mono)}
+.chips a{padding:.25rem .55rem;border:1px solid var(--border);border-radius:20px;color:var(--text-2);text-decoration:none}
+.chips a:hover{border-color:var(--border-strong);color:var(--text)}
+.chips a.active{background:color-mix(in srgb,var(--accent) 14%,transparent);border-color:color-mix(in srgb,var(--accent) 40%,transparent);color:var(--accent)}
+.warn{font:600 12px var(--mono);color:var(--st-warning)}
+.note{font:500 11.5px var(--mono);color:var(--muted);margin:.2rem 0}
+.tbl{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-top:.3rem}
+.trow{display:grid;grid-template-columns:14px 1.4fr 1fr 110px 90px 80px 60px;gap:.8rem;align-items:center;padding:.5rem .9rem;border-bottom:1px solid var(--border);font-size:12.5px}
+.trow:last-child{border-bottom:none}.trow:hover{background:var(--surface-2)}
+.trow.head{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.tname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tname .nh{margin-left:.4rem;font:600 9.5px var(--mono);color:var(--st-warning);border:1px solid color-mix(in srgb,var(--st-warning) 40%,transparent);border-radius:4px;padding:.05rem .3rem}
+.tsub,.tmeta{font:500 11px var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:1000px){.trow{grid-template-columns:14px 1fr 90px 60px}.tsub,.tmeta:nth-of-type(even){display:none}}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><span class="cur">Tasks</span></nav>{% endblock %}
+{% block topbar_actions %}<button class="iconbtn" onclick="location.reload()" title="Refresh"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9"/><path d="M21 3v6h-6"/></svg></button>{% endblock %}
+
+{% block content %}
+<div class="t-bar">
+  <div class="segtabs">
+    {% set tl = '&task_list=' ~ filter_task_list if filter_task_list else '' %}
+    <a href="?{{ tl[1:] }}" class="{% if not filter_state %}active{% endif %}">All <span class="n">{{ tab_counts.all }}</span></a>
+    {% for k,lbl in [('pending','Pending'),('running','Running'),('completed','Completed'),('failed','Failed'),('dead_letter','Dead-letter')] %}
+    <a href="?state={{ k }}{{ tl }}" class="{% if filter_state==k %}active{% endif %}">{{ lbl }} <span class="n">{{ tab_counts.get(k,0) }}</span></a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if list_counts %}
+<div class="chips">
+  {% set st = '?state=' ~ filter_state if filter_state else '?' %}
+  <a href="{{ st }}" class="{% if not filter_task_list %}active{% endif %}">all lists</a>
+  {% for name, n in list_counts %}
+  <a href="{{ st }}{{ '&' if filter_state else '' }}task_list={{ name }}" class="{% if filter_task_list==name %}active{% endif %}">{{ name }} · {{ n }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if unmatched %}<p class="note"><span class="warn">▲ {{ unmatched|length }} task(s) have no matching live handler</span> — non-terminal but unclaimable.</p>{% endif %}
+{% if shown < total %}<p class="note">Showing {{ shown }} of {{ total }} tasks.</p>{% endif %}
+
+{% if tasks %}
+<div class="tbl">
+  <div class="trow head"><span></span><span>Task</span><span>Step</span><span>Task list</span><span>Server</span><span>Updated</span><span>Retry</span></div>
+  {% for t in tasks %}
+  <div class="trow">
+    <span class="statusdot" style="background:{{ dot.get(t.state,'var(--muted)') }}" title="{{ t.state }}"></span>
+    <span class="tname">{{ t.name }}{% if t.uuid in unmatched %}<span class="nh">no handler</span>{% endif %}</span>
+    <span class="tsub">{{ step_names.get(t.step_id, '') or '—' }}</span>
+    <span class="tmeta">{{ t.task_list_name }}</span>
+    <span class="tmeta">{{ (server_info.get(t.server_id) or {}).get('name', '—') if t.server_id else '—' }}</span>
+    <span class="tmeta">{{ t.updated|time_ago if t.updated else '—' }}</span>
+    <span class="tmeta">{{ t.retry_count if t.retry_count is defined else 0 }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+  <h1>No {{ filter_state or '' }} tasks</h1><p>Tasks appear here as workflows run.</p></div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}<script>setTimeout(function(){location.reload();},15000);</script>{% endblock %}
