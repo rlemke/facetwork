@@ -72,8 +72,8 @@ It compiles the FFL, validates it, and creates the flow + workflow + **runner re
 | Runner record | ✗ — **not** dashboard-visible | ✓ — **dashboard-visible** |
 | Requires a runner up | no | yes (`scripts/start-runner …`) |
 
-Because `ffl-run` creates the runner record, the run appears in the dashboard's **Workflows** tab
-(http://localhost:8080/v2/workflows) for live tracking — the same submission path the dashboard's
+Because `ffl-run` creates the runner record, the run appears in the dashboard's **Runs** list
+(http://localhost:8080/v3/workflows) for live tracking — the same submission path the dashboard's
 "New run" button uses.
 
 ## See also

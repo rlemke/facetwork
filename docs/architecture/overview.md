@@ -148,14 +148,20 @@ The Model Context Protocol server exposes Facetwork to LLM agents. It provides:
 
 ## Dashboard
 
-`afl/dashboard/`
+`facetwork/dashboard/`
 
-A FastAPI web application providing monitoring and management:
-- **V2 views** with 2-tab navigation (Workflows / Servers) and namespace/group accordion grouping
-- Runner, flow, task, server, event, handler, source, lock, and namespace views
-- Real-time status with HTMX 5s auto-refresh on v2 pages
-- Workflow compilation and validation
-- API endpoints (`/api/*`) for programmatic access
+A FastAPI web application providing monitoring and management. The UI is **v3**
+and is the default (`/` → `/v3/workflows`); the older v2 UI and the original
+non-prefixed page routes have been removed (only `/namespaces` and `/sources`
+remain outside `/v3`). See [the dashboard reference](../reference/dashboard.md).
+- **v3 shell** (sidebar + app switcher + acting-as) over: Runs, Library, Catalog,
+  Filters, Servers, Handlers, Fleet, Tasks, Events, Output, PostGIS, Users/Teams
+- A run's detail page has a **live execution graph** (polled JSON) and SSE step logs
+- A **global Filters page** persists Flow/Workflow filters (cookie) and applies
+  them to the Library and Runs lists; flows carry a real `created_at` (publish time)
+- Domain "apps" on the same shell: Census Maps, Site Selection, Climate Trends
+- API endpoints (`/api/*`), SSE log streams, and POST action endpoints are the
+  backend the v3 pages call
 
 ## Data Flow
 
@@ -267,10 +273,13 @@ afl/
     app.py               # FastAPI application factory
     dependencies.py      # MongoStore dependency injection
     helpers.py           # Shared utilities (grouping, categorization)
-    filters.py           # Template filters
-    routes/              # Route handlers (dashboard_v2, home, runners, flows, etc.)
-    templates/           # Jinja2 templates (v2/workflows/, v2/servers/, legacy)
-    static/              # CSS/JS assets
+    viewdata.py          # View-data builders (filter/count/enrich) shared by v3 routes
+    filters.py           # Jinja2 template filters
+    viewfilters.py       # Global Flow/Workflow filter state (cookie + matchers)
+    routes/v3/           # The v3 UI (default): workflows, library, filters, admin, …
+    routes/              # Backend kept behind v3: /api/*, POST actions, SSE, namespaces, sources
+    templates/v3/        # Jinja2 templates for the v3 shell + pages
+    static/v3.css        # v3 design system
     __main__.py          # CLI entry point
 agents/
   python/               # Python agent library

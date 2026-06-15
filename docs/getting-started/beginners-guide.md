@@ -85,23 +85,29 @@ scripts/run-workflow handlers.AddOneWorkflow --input value=41
 
 ## Understanding the Dashboard
 
+The dashboard UI is **v3** and is the default — opening `/` lands on **Runs**
+(`/v3/workflows`). Full reference: [../reference/dashboard.md](../reference/dashboard.md).
+
 ### Key Pages
 
 | Page | URL | What It Shows |
 |------|-----|---------------|
-| **Workflows** | `/v2/workflows` | All workflow runs grouped by namespace, with state tabs (running/completed/failed) |
-| **Workflow Detail** | `/v2/workflows/{id}` | Step tree, timeline, progress bar for a single run |
-| **Handlers** | `/v2/handlers` | Registered event facet handlers — the code that does the work |
-| **Handler Detail** | `/v2/handlers/{name}` | Handler config, documentation, parameters, active tasks |
-| **Servers** | `/v2/servers` | Runner processes, health status, what they're handling |
-| **Fleet** | `/v2/fleet` | Infra services (MongoDB/MinIO/Dashboard, by URL) + runner roles (every server is a runner — no master), plus per-server task throughput |
-| **Steps** | `/steps/{id}` | Individual step detail — state, parameters, returns, logs, duration |
+| **Runs** | `/v3/workflows` | All workflow runs grouped by namespace, with running/completed/failed tabs and a name filter |
+| **Run Detail** | `/v3/workflows/{id}` | Live execution graph, step logs, progress, and recovery actions for a single run |
+| **Library** | `/v3/flows` | Compiled FFL flows (namespaces/facets/workflows); shows when each flow was created |
+| **Catalog** | `/v3/catalog` | Reusable, versioned workflows/libraries you can run |
+| **Filters** | `/v3/filters` | Global, persistent filters for the Library and Runs lists (see below) |
+| **Handlers** | `/v3/handlers` | Registered event facet handlers — the code that does the work |
+| **Servers** | `/v3/servers` | Runner processes, health status, what they're handling |
+| **Fleet** | `/v3/fleet` | Infra services (MongoDB/MinIO/Dashboard, by URL) + runner roles (every server is a runner — no master) |
+| **Step Detail** | `/v3/steps/{id}` | Individual step detail — state, parameters, returns, logs, duration |
+| **Users / Teams** | `/v3/users`, `/v3/teams` | Manage identities and teams; set who you're "acting as" |
 
 ### Finding Your Workflow
 
-- **Running workflows**: Click Workflows, then the "Running" tab
-- **Completed workflows**: Click Workflows, then the "Completed" tab
-- **Search**: Use the search bar (Cmd+K) to find workflows, handlers, or servers by name
+- **By state**: on **Runs**, use the **Running** / **Completed** / **Failed** tabs
+- **By name**: type in the filter box on the Runs (or Library) page
+- **Persistent filters**: the **Filters** page narrows the Library and Runs lists by team, author / runner-user, created / run date range, state, and more — every selector has an **Any** option, and your selections stick across pages until you clear them
 
 ### Reading Step Logs
 

@@ -395,7 +395,7 @@ If you skip this — e.g. keep `AFL_OSM_OUTPUT_BASE` pointed at a *local* path w
 - **MongoDB**: Dedicated server or managed service (MongoDB Atlas) with replica sets for HA
 - **Dashboard**: Single instance behind a reverse proxy (nginx/caddy)
 - **Runners**: Multiple instances per runner server, scaled via `--instances N` and `--max-concurrent M`
-- **Monitoring**: Dashboard at `/v2/workflows` and `/v2/servers`; API at `/api/servers` for health checks
+- **Monitoring**: Dashboard at `/v3/workflows` and `/v3/servers`; API at `/api/servers` for health checks
 - **Crash recovery**: Orphan reaper automatically resets tasks from dead runners (configurable via `AFL_REAPER_TIMEOUT_MS`)
 
 ## Configuration Reference
@@ -502,24 +502,28 @@ python -m afl.mcp
 
 ### Dashboard Pages
 
-The main navigation uses a 2-tab layout (**Workflows** / **Servers**) with a **More** dropdown for secondary pages. `GET /` redirects to `/v2/workflows`.
+The UI is **v3** and is the default — `GET /` redirects to `/v3/workflows`. Every
+page lives under `/v3/…` on a shared sidebar shell (the v2 UI and the original
+non-prefixed page routes were removed). Full reference:
+[../reference/dashboard.md](../reference/dashboard.md).
 
 | Page | URL | Content |
 |------|-----|---------|
-| Workflows (v2) | `/v2/workflows` | Namespace-grouped runners with Running/Completed/Failed sub-tabs, HTMX 5s auto-refresh |
-| Workflow Detail (v2) | `/v2/workflows/{id}` | Step sub-tabs (Running/Error/Complete), inline step expansion, pause/cancel/resume actions |
-| Servers (v2) | `/v2/servers` | Server-group accordion with Running/Startup/Error/Shutdown sub-tabs, HTMX 5s auto-refresh |
-| Server Detail (v2) | `/v2/servers/{id}` | Details, topics, handlers, handled stats, error display with live polling |
-| Fleet (v2) | `/v2/fleet` | Central `fleet_config`: **Infra services** (MongoDB/MinIO/Dashboard, addressed by URL only) + **Runner roles** (homogeneous runners — there is no master), per-host reconcile drift, and per-facet task throughput |
-| Runners | `/runners` | Active/completed/failed workflow executions (legacy) |
-| Flows | `/flows` | Compiled workflow definitions and sources; the per-namespace list (`/flows/{id}/ns/{ns}`) has **Run** and **Source** (reconstructed FFL) buttons per workflow |
-| Tasks | `/tasks` | Event task queue (pending, running, completed, failed) |
-| Servers | `/servers` | Registered agent servers with heartbeat status (legacy) |
-| Events | `/events` | Event lifecycle tracking |
-| Handlers | `/handlers` | Registered handler modules |
-| Sources | `/sources` | Published FFL source namespaces |
-| Locks | `/locks` | Distributed lock status |
-| Namespaces | `/namespaces` | Namespace definitions across flows |
+| Runs | `/v3/workflows` | Namespace-grouped runners with Running/Completed/Failed tabs and a name filter |
+| Run Detail | `/v3/workflows/{id}` | Live execution graph, SSE step logs, progress, pause/cancel/resume + per-step recovery |
+| Library | `/v3/flows` | Compiled flows (namespaces/facets/workflows); shows each flow's `created_at` |
+| Catalog | `/v3/catalog` | Reusable, versioned workflows/libraries |
+| Filters | `/v3/filters` | Persistent global Flow/Workflow filters applied to the Library and Runs lists |
+| Servers | `/v3/servers` | Registered runner servers with heartbeat status |
+| Handlers | `/v3/handlers` | Registered handler modules |
+| Fleet | `/v3/fleet` | Central `fleet_config`: **Infra services** (MongoDB/MinIO/Dashboard, by URL) + **Runner roles** (no master) |
+| Tasks | `/v3/tasks` | Event task queue (pending, running, completed, failed) |
+| Events | `/v3/events` | Event-facet work dispatched to agents |
+| Output | `/v3/output` | Handler output / cached artifacts |
+| PostGIS | `/v3/postgis` | PostGIS database summary |
+| Users / Teams | `/v3/users`, `/v3/teams` | Identity + team management and the acting-as selector |
+| Namespaces | `/namespaces` | Namespace definitions across flows (no v3 page yet) |
+| Sources | `/sources` | Published FFL source namespaces (no v3 page yet) |
 
 ### API Endpoints
 
@@ -1156,7 +1160,7 @@ The **orphaned task reaper** runs automatically inside every `RunnerService` and
 **Safety:**
 - Gracefully shut-down servers (state = `shutdown`) are NOT reaped — only servers that died without completing their drain
 - The 5-minute stale threshold (matching `SERVER_DOWN_TIMEOUT_MS`) avoids false positives from brief network hiccups or GC pauses
-- The dashboard Fleet page (`/v2/fleet`) shows servers in `down` state when their heartbeat is stale, providing visual confirmation
+- The dashboard Fleet page (`/v3/fleet`) shows servers in `down` state when their heartbeat is stale, providing visual confirmation
 
 **Manual recovery** (for tasks without `server_id`, e.g. from before the reaper was added):
 ```bash

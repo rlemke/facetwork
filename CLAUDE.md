@@ -28,12 +28,15 @@ python -m facetwork.dashboard --log-format text
 
 ## Running Workflows from the Dashboard
 
-1. Open http://localhost:8080 and click **Workflows**
-2. Click **New** to create a run
-3. Select a workflow, fill in parameters, click **Run**
-4. Watch execution on the detail page — steps, logs, and progress update live
+The dashboard UI is **v3** and is the default — `/` redirects to `/v3/workflows`.
 
-To find running workflows, use the **Running** tab. Use **Cmd+K** to search by name.
+1. Open http://localhost:8080 (lands on **Runs**) and click **New run**
+2. Pick a workflow, fill in parameters, click **Run**
+3. Watch execution on the detail page — live execution graph, step logs, progress
+
+Use the **Running / Completed / Failed** tabs and the name filter on the Runs
+page; set persistent cross-page filters on the **Filters** page. Full UI
+reference (navigation, pages, global filters, Users/Teams): [docs/reference/dashboard.md](docs/reference/dashboard.md).
 
 ## Common Operations
 
@@ -91,6 +94,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 
 | Topic | Document |
 |-------|----------|
+| **Dashboard (v3 UI)** — navigation, pages, the global **Filters** page (persisted Flow/Workflow filters), Users/Teams + acting-as, domain apps; v3 is the default and the only UI (v2 + legacy non-prefixed pages removed; only `/namespaces` + `/sources` remain outside `/v3`) | [docs/reference/dashboard.md](docs/reference/dashboard.md) |
 | FFL syntax | [docs/reference/language/grammar.md](docs/reference/language/grammar.md) |
 | Runtime execution model | [docs/reference/runtime.md](docs/reference/runtime.md) |
 | Distributed step processing | [docs/reference/runtime.md §10.3.1](docs/reference/runtime.md) |

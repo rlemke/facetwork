@@ -1,6 +1,20 @@
 # Implementation Changelog
 
-**Current version: v0.48.0**
+**Current version: v0.49.0**
+
+## Completed (v0.49.0) — v3 dashboard becomes the only UI, global Flow/Workflow filters, native Users/Teams, and flow `created_at`
+
+Finished the dashboard's move to the **v3** design and removed everything it superseded; added a persistent global filter page and a real flow creation timestamp. Reference: [docs/reference/dashboard.md](../reference/dashboard.md).
+
+**v3 is the default and only UI.** `/` redirects to `/v3/workflows`; every page lives under `/v3/…` on one shell (`templates/v3/base.html` + `static/v3.css`: sidebar + app switcher + acting-as footer, top bar with breadcrumb/actions/theme/density). The domain dashboards (Census Maps, Site Selection, Climate Trends) render on the same shell via the app switcher.
+
+**v2 and legacy pages removed (backend kept).** The v2 Classic UI (`routes/v2/dashboard_v2.py` + its templates) and the original non-prefixed *page* routes (`/catalog`, `/events`, `/flows/*` views, `/runners/{id}/steps|logs`, `/steps/{id}`, `/tasks`, `/workflows/new|compile|validate|run`, `/servers`, `/output` browser, `/logs/{id}`) were deleted along with ~30 templates. Kept: all POST actions, `/api/*`, SSE log streams, `/output/view`, the helper functions v3 imports (extracted into `viewdata.py`; `flows`/`events`/`workflows` are now helper-only modules), and the `/runners` + `/handlers` convenience redirects (now → `/v3/*`). Only `/namespaces` and `/sources` remain outside `/v3` (no v3 equivalent yet). Dead helpers/orphan templates were pruned and the dashboard test suite repointed to v3.
+
+**Native v3 Users/Teams.** Admin moved off the retired v2 shell to `/v3/users` and `/v3/teams` (`routes/v3/admin.py` + `templates/v3/admin/`), reachable from a new **Access** sidebar group and the acting-as footer; the POST handlers (save/delete/force-delete/act-as) redirect back into `/v3`.
+
+**Global Flow/Workflow filters (`/v3/filters`).** A new **Filters** page persists selections in an `afl_filters` cookie and applies them to the Library (Flows) and Runs (Workflows) lists. Flows filter by **teams** (multi), **author**, **created** date range, and **tag**; Workflows by **teams** (multi), the **workflows** belonging to those teams (team-dependent list), **runner user**, **run** date range, **state**, and **purpose**. Every single-select offers **Any**; empty multi-select/blank date = Any. The list pages show an active-filter banner (Edit/Clear) and the Runs tab counts reflect the filtered set. Logic in `facetwork/dashboard/viewfilters.py`.
+
+**Flow `created_at` at publish time.** `FlowDefinition` gained `created_at` (epoch ms); `MongoStore.save_flow` stamps it once on first save and preserves it on later saves (explicit values trusted), so all publish paths (catalog publish, CLI submit, example seeding) record a real timestamp. The Flows list shows it, and the created-date filter prefers it (legacy flows fall back to their earliest workflow date).
 
 ## Completed (v0.48.0) — Fleet role model (no master), converged runner launcher, all-examples-on-S3, and dashboard fleet/source views
 

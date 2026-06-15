@@ -59,7 +59,7 @@ docker compose up
 docker compose run seed
 ```
 
-Open **http://localhost:8080** — that's the dashboard. Click **Workflows** to see what's available, then click **New** to run one.
+Open **http://localhost:8080** — that's the dashboard (it lands on **Runs**). Click **New run** to start one, or browse the **Library** to see what's available.
 
 | Service | URL | Description |
 |---------|-----|-------------|
@@ -88,18 +88,19 @@ Open http://localhost:8080.
 
 The dashboard is where you run workflows, monitor progress, and troubleshoot issues.
 
+The UI is **v3** and is the default — opening `/` lands on **Runs**.
+
 **Running a workflow:**
-1. Click **Workflows** in the sidebar
-2. Click **New**
-3. Select a workflow, fill in the parameters, click **Run**
-4. Watch it execute on the detail page — steps, logs, and progress update automatically
+1. Click **New run** in the sidebar
+2. Pick a workflow, fill in the parameters, click **Run**
+3. Watch it execute on the detail page — live execution graph, step logs, and progress update automatically
 
 **Finding things:**
-- Use **Cmd+K** (or click the search bar) to find any workflow, handler, or server by name
-- **Running** / **Completed** / **Failed** tabs filter the workflow list
-- Click any step to see its parameters, return values, logs, and execution duration
+- The **Running** / **Completed** / **Failed** tabs and the name box filter the Runs list
+- The **Filters** page sets persistent, cross-page filters for the **Library** (Flows) and **Runs** (Workflows) lists — by team, author/runner-user, created/run date range, state, and more (every selector has an **Any**)
+- Click any run, then any step, to see its parameters, return values, logs, and duration
 
-**Key pages:** Workflows, Handlers (registered event facet code), Servers (runner health), Fleet (bird's-eye view), Steps (individual step detail with logs).
+**Key pages:** Runs, Library (compiled flows), Catalog, Filters, Servers, Handlers, Fleet, Tasks, Events, Output, PostGIS, and Users/Teams. Full reference: [docs/reference/dashboard.md](docs/reference/dashboard.md).
 
 ## What is FFL?
 

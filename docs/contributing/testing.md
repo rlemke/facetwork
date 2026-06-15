@@ -50,18 +50,27 @@ The implementation includes pytest tests that verify parser, emitter, validator,
 | Runtime | `tests/runtime/test_inline_dispatch.py` | 14 | Inline handler dispatch |
 | Runtime | `tests/runtime/test_script_handlers.py` | 8 | Script handler tests |
 | Dashboard | `tests/dashboard/test_app.py` | 3 | App creation and route registration |
-| Dashboard | `tests/dashboard/test_filters.py` | 42 | Jinja2 filter unit tests |
-| Dashboard | `tests/dashboard/test_routes.py` | 131 | Route integration tests |
+| Dashboard | `tests/dashboard/test_filters.py` | 53 | Jinja2 filter unit tests |
+| Dashboard | `tests/dashboard/test_global_filters.py` | 13 | Global Flow/Workflow filter page + cookie application |
+| Dashboard | `tests/dashboard/test_routes.py` | 97 | Route integration tests (v3) |
 | Dashboard | `tests/dashboard/test_step_routes.py` | 14 | Step detail and name resolution |
-| Dashboard | `tests/dashboard/test_workflows.py` | 13 | Workflow routes |
+| Dashboard | `tests/dashboard/test_workflows.py` | 10 | Workflow routes |
 | Dashboard | `tests/dashboard/test_dependencies.py` | 5 | Dependency injection |
-| Dashboard | `tests/dashboard/test_dashboard_v2.py` | 33 | V2 workflow helpers and routes |
-| Dashboard | `tests/dashboard/test_servers_v2.py` | 21 | V2 server helpers and routes |
-| Dashboard | `tests/dashboard/test_template_rendering.py` | 14 | Navigation and template rendering |
-| Dashboard | `tests/dashboard/test_edge_cases.py` | 39 | Dashboard edge cases |
-| Dashboard | `tests/dashboard/test_flow_namespaces.py` | 17 | Flow namespace views |
+| Dashboard | `tests/dashboard/test_users_teams_ui.py` | 7 | v3 Users/Teams admin + acting-as |
+| Dashboard | `tests/dashboard/test_template_rendering.py` | 12 | Navigation and template rendering |
+| Dashboard | `tests/dashboard/test_edge_cases.py` | 33 | Dashboard edge cases |
+| Dashboard | `tests/dashboard/test_flow_namespaces.py` | 8 | Flow namespace views |
 | Dashboard | `tests/dashboard/test_flow_run.py` | 14 | Flow run execution |
-| Dashboard | `tests/dashboard/test_step_tree.py` | 11 | Step tree view |
+| Dashboard | `tests/dashboard/test_step_tree.py` | 10 | Execution graph / step tree |
+| Dashboard | `tests/dashboard/test_catalog_page.py` | 6 | v3 Catalog page + run/publish |
+| Dashboard | `tests/dashboard/test_output_browser.py` | 33 | v3 Output browser + `/output/view` |
+| Dashboard | `tests/dashboard/test_census_maps.py` | 139 | Census Maps domain app |
+| Dashboard | `tests/dashboard/test_site_selection.py` | 13 | Site Selection domain app |
+| Dashboard | `tests/dashboard/test_climate_trends.py` | 12 | Climate Trends domain app |
+
+> The v2-UI test suites (`test_dashboard_v2.py`, `test_servers_v2.py`,
+> `test_handlers_v2.py`) were removed along with the v2 UI; the remaining tests
+> assert v3 behavior.
 | MCP | `tests/mcp/test_server.py` | 49 | Tool + resource integration |
 | MCP | `tests/mcp/test_server_extended.py` | 18 | Continue/resume/resource edge cases |
 | MCP | `tests/mcp/test_serializers.py` | 23 | Serializer unit tests |
