@@ -104,6 +104,29 @@ scripts/start-runner --fleet                  # AFL_OSM_REPLICAS from .env.fleet
 That's it — the runners register in the shared MongoDB and immediately start
 claiming tasks from the shared queue, writing outputs to the shared MinIO.
 
+### Migrating an EXISTING server to the base + override split
+
+A server set up before the `.env.fleet.override` split (or cloned from another
+host) may carry per-server values — and drifted *shared* values — inside its
+`.env.fleet`. The classic symptom is a host whose config was copied from another:
+its `AFL_MONGODB_URL`/name still point at the *source* host, so its containers
+can't reach Mongo (a host-only name doesn't resolve inside a container) or it
+registers under the wrong name. Fix it in one step:
+
+```bash
+git pull
+scripts/fleet-env-migrate            # moves AFL_DATA_DIR / AFL_OSM_REPLICAS /
+                                     # AFL_RUNNER_NAME(/FLEET_HOST) into
+                                     # .env.fleet.override; resets .env.fleet to
+                                     # the preset (drifted SHARED values dropped).
+                                     # --dry-run to preview; backs up what it replaces.
+scripts/start-runner --fleet --recreate
+```
+
+After it, `.env.fleet` is a clean copy of the preset and this host's specifics
+live in `.env.fleet.override` — so the next `git pull && cp .env.fleet.preset
+.env.fleet` can never reintroduce the drift.
+
 ### Option B — central-config daemon (recommended for a managed fleet)
 
 Instead of `.env.fleet`, let the server pull its config (MinIO endpoint, replica
