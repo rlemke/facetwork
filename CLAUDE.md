@@ -184,6 +184,7 @@ surface as `--example <name>` exactly like in-repo examples:
 - [sensor-monitoring](https://github.com/rlemke/fwh_sensor_monitoring) — sensor pipelines, RegistryRunner-first
 - [anthropic](https://github.com/rlemke/fwh_anthropic) — multi-area wrappers for surfaces at github.com/anthropics (16 facets across Messages / Batch / Files / Agent SDK / Claude Code / Computer Use + `DocumentQA` composition workflow + opt-in live tests)
 - [save-earth](https://github.com/rlemke/fwh_save_earth) — open environmental datasets (OpenLitterMap, EPA Superfund/Brownfields, EPA TRI) → cached GeoJSON → MapLibre HTML maps; source-adapter + tools/`_<pkg>_tools`/shim pattern
+- [sentinel2-landchange](https://github.com/rlemke/fwh_sentinel2) — Sentinel-2 land-cover change: STAC + Cloud-Optimized GeoTIFF → NDVI/composite → `difference`/`classify` change → MapLibre XYZ-tiled map; per-scene `foreach` fan-out, content-addressed cache, real (rio-tiler) + offline-mock paths (`pip install -e ".[geo]"`)
 
 ## Domain pipelines — tools / handlers / cache pattern
 

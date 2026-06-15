@@ -39,6 +39,7 @@ REGISTRY=(
     "genomics|fwh_genomics||Bioinformatics foreach fan-out demo"
     "sensor-monitoring|fwh_sensor_monitoring||Sensor pipelines (RegistryRunner-first)"
     "save-earth|fwh_save_earth||Open environmental datasets (OpenLitterMap, EPA Superfund/Brownfields/TRI) → MapLibre HTML maps"
+    "sentinel2-landchange|fwh_sentinel2|geo|Sentinel-2 land-cover change (STAC + COG → NDVI/composite → difference/classify → MapLibre tiled map)"
 )
 
 usage() {
