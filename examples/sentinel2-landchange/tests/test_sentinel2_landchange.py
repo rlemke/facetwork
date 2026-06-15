@@ -96,8 +96,24 @@ def test_mock_chain_end_to_end(tools_env):
     assert 0.0 <= change["pct_loss"] <= 100.0
 
     bundle = map_render.render_change_map(change["relative_path"], change["aoi_key"], detail="test")
-    assert Path(bundle["html_path"]).is_file()
-    assert "land-cover change" in Path(bundle["html_path"]).read_text()
+    html = Path(bundle["html_path"]).read_text()
+    assert "land-cover change" in html
+
+    # Real tiled map when the geo stack is present; canvas fallback otherwise.
+    try:
+        import morecantile  # noqa: F401
+        import rasterio  # noqa: F401
+        import rio_tiler  # noqa: F401
+        has_geo = True
+    except ImportError:
+        has_geo = False
+    tiles = list(Path(bundle["tiles_path"]).rglob("*.png"))
+    if has_geo:
+        assert "maplibre" in html.lower(), "expected a MapLibre tiled viewer"
+        assert tiles, "expected an XYZ tile pyramid"
+        assert Path(bundle["output_dir"], "change.tif").is_file(), "expected the georeferenced COG"
+    else:
+        assert "canvas" in html.lower()
 
 
 def test_unknown_index_rejected(tools_env):

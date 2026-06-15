@@ -87,10 +87,16 @@ How the real path works (all runtime-free — stdlib + domain libs only, per
   shared `numpy` (median stack, then thresholded delta). Rasters are cached as
   `.npz` (array + bounds + CRS).
 
+- **`_s2_tools/map_render.py`** — `ChangeMap` colorizes the change raster to a
+  georeferenced RGBA `change.tif`, slices it into an **XYZ PNG tile pyramid**
+  (reprojected to Web Mercator via `rio-tiler` + `morecantile`), and writes a
+  **MapLibre GL** viewer that loads `tiles/{z}/{x}/{y}.png` over a CARTO basemap.
+  Zoom range is matched to the AOI + raster resolution, and the tile count is
+  capped (logged if hit). When the geo stack is absent it degrades to the
+  self-contained canvas view, so the offline mock still renders.
+
 Bigger AOIs / longer windows just mean more `FetchSceneIndex` steps fanned out by
-`ScanScenes` — each cached once, so re-runs are cheap. A `render` upgrade (real
-web tiles via rio-tiler/titiler instead of the inline canvas) is the natural next
-step.
+`ScanScenes` — each cached once, so re-runs are cheap.
 
 ## Layout
 
