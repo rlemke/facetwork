@@ -27,10 +27,10 @@ router = APIRouter(prefix="/runners")
 
 @router.get("")
 def runner_list(state: str | None = None):
-    """Redirect to v2 workflows list."""
-    url = "/v2/workflows"
+    """Redirect to the v3 Runs list."""
+    url = "/v3/workflows"
     if state:
-        # Map old state param to v2 tab
+        # Map old state param to the v3 tab
         tab_map = {
             "running": "running",
             "paused": "running",
@@ -40,14 +40,14 @@ def runner_list(state: str | None = None):
             "cancelled": "failed",
         }
         tab = tab_map.get(state, "running")
-        url = f"/v2/workflows?tab={tab}"
+        url = f"/v3/workflows?tab={tab}"
     return RedirectResponse(url=url, status_code=307)
 
 
 @router.get("/{runner_id}")
 def runner_detail(runner_id: str):
-    """Redirect to v2 workflow detail."""
-    return RedirectResponse(url=f"/v2/workflows/{runner_id}", status_code=307)
+    """Redirect to the v3 workflow detail."""
+    return RedirectResponse(url=f"/v3/workflows/{runner_id}", status_code=307)
 
 
 @router.get("/{runner_id}/steps")
@@ -99,18 +99,18 @@ def _build_step_log_counts(store, workflow_id: str) -> dict[str, int]:
 def cancel_runner(runner_id: str, store=Depends(get_store)):
     """Cancel a runner."""
     store.update_runner_state(runner_id, "cancelled")
-    return RedirectResponse(url=f"/v2/workflows/{runner_id}", status_code=303)
+    return RedirectResponse(url=f"/v3/workflows/{runner_id}", status_code=303)
 
 
 @router.post("/{runner_id}/pause")
 def pause_runner(runner_id: str, store=Depends(get_store)):
     """Pause a running runner."""
     store.update_runner_state(runner_id, "paused")
-    return RedirectResponse(url=f"/v2/workflows/{runner_id}", status_code=303)
+    return RedirectResponse(url=f"/v3/workflows/{runner_id}", status_code=303)
 
 
 @router.post("/{runner_id}/resume")
 def resume_runner(runner_id: str, store=Depends(get_store)):
     """Resume a paused runner."""
     store.update_runner_state(runner_id, "running")
-    return RedirectResponse(url=f"/v2/workflows/{runner_id}", status_code=303)
+    return RedirectResponse(url=f"/v3/workflows/{runner_id}", status_code=303)

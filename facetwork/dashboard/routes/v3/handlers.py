@@ -27,7 +27,7 @@ router = APIRouter(prefix="/v3")
 @router.get("/handlers")
 def handlers_v3(request: Request, tab: str = "all", store=Depends(get_store)):
     """Redesigned Handlers list — All / Active / Working, grouped by namespace."""
-    from ..v2.dashboard_v2 import _build_handler_stats
+    from ...viewdata import _build_handler_stats
 
     all_h = list(store.list_handler_registrations())
     active, busy, stats = _build_handler_stats(store)

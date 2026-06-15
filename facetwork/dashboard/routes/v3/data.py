@@ -55,7 +55,7 @@ def output_v3(request: Request, path: str = ""):
 @router.get("/postgis")
 def postgis_v3(request: Request):
     """Redesigned PostGIS summary (regions, element counts, db size)."""
-    from ..v2.dashboard_v2 import _get_postgis_summary
+    from ...viewdata import _get_postgis_summary
 
     return request.app.state.templates.TemplateResponse(
         request,

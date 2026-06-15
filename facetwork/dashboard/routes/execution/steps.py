@@ -224,7 +224,7 @@ def retry_step(step_id: str, force: bool = False, store=Depends(get_store)):
 
     step = store.get_step(step_id)
     if not step:
-        return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+        return RedirectResponse(url=f"/v3/steps/{step_id}", status_code=303)
 
     prev_state = step.state
     task = store.get_task_for_step(step_id)
@@ -302,7 +302,7 @@ def retry_step(step_id: str, force: bool = False, store=Depends(get_store)):
         time=int(_time.time() * 1000),
     )
     store.save_step_log(entry)
-    return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+    return RedirectResponse(url=f"/v3/steps/{step_id}", status_code=303)
 
 
 @router.post("/{step_id}/retry-block")
@@ -327,7 +327,7 @@ def retry_block(step_id: str, force: bool = False, store=Depends(get_store)):
 
     root = store.get_step(step_id)
     if not root:
-        return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+        return RedirectResponse(url=f"/v3/steps/{step_id}", status_code=303)
 
     # Collect all steps in the workflow
     all_steps = list(store.get_steps_by_workflow(root.workflow_id))
@@ -441,7 +441,7 @@ def retry_block(step_id: str, force: bool = False, store=Depends(get_store)):
     )
     store.save_step_log(entry)
 
-    return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+    return RedirectResponse(url=f"/v3/steps/{step_id}", status_code=303)
 
 
 @router.post("/{step_id}/reset-block")
@@ -467,7 +467,7 @@ def reset_block(step_id: str, force: bool = False, store=Depends(get_store)):
 
     block = store.get_step(step_id)
     if not block:
-        return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+        return RedirectResponse(url=f"/v3/steps/{step_id}", status_code=303)
 
     # Collect all descendant step IDs recursively
     all_steps = list(store.get_steps_by_workflow(block.workflow_id))
@@ -570,7 +570,7 @@ def reset_block(step_id: str, force: bool = False, store=Depends(get_store)):
     )
     store.save_step_log(entry)
 
-    return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+    return RedirectResponse(url=f"/v3/steps/{step_id}", status_code=303)
 
 
 @router.post("/{step_id}/rerun")
@@ -596,7 +596,7 @@ def rerun_step(step_id: str, force: bool = False, store=Depends(get_store)):
 
     step = store.get_step(step_id)
     if not step:
-        return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+        return RedirectResponse(url=f"/v3/steps/{step_id}", status_code=303)
 
     prev_state = step.state
     block_id = step.block_id
@@ -804,7 +804,7 @@ def rerun_step(step_id: str, force: bool = False, store=Depends(get_store)):
     )
     store.save_step_log(entry)
 
-    return RedirectResponse(url=f"/steps/{step_id}", status_code=303)
+    return RedirectResponse(url=f"/v3/steps/{step_id}", status_code=303)
 
 
 def _find_downstream_by_name(

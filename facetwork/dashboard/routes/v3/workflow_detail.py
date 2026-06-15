@@ -54,7 +54,7 @@ def workflow_list_v3(
 ):
     """Redesigned Runs list — same data pipeline as ``/v2/workflows``."""
     # Reuse the v2 helpers so the two lists never diverge on filtering/counting.
-    from ..v2.dashboard_v2 import (
+    from ...viewdata import (
         _count_by_tab,
         _enrich_runners_with_progress,
         _filter_runners,

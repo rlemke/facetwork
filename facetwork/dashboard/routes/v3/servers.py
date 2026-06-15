@@ -38,7 +38,7 @@ _DOT = {
 @router.get("/servers")
 def servers_v3(request: Request, tab: str = "running", store=Depends(get_store)):
     """Redesigned Servers list — runner processes grouped by host."""
-    from ..v2.dashboard_v2 import (
+    from ...viewdata import (
         _apply_effective_state,
         _count_servers_by_tab,
         _enrich_servers_with_tasks,

@@ -41,7 +41,7 @@ def _norm(host) -> str:
 
 def _fleet_data(store) -> dict:
     # Reuse the v2 controller reader so config/agent parsing never diverges.
-    from ..v2.dashboard_v2 import _fleet_controller_data
+    from ...viewdata import _fleet_controller_data
 
     ctrl = _fleet_controller_data(store) or {}
     cfg = ctrl.get("config") or {}

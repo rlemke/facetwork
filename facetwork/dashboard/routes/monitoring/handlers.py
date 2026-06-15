@@ -26,18 +26,18 @@ router = APIRouter(prefix="/handlers")
 
 @router.get("")
 def handler_list(q: str | None = None):
-    """Redirect to v2 handlers list."""
-    return RedirectResponse(url="/v2/handlers", status_code=307)
+    """Redirect to the v3 handlers list."""
+    return RedirectResponse(url="/v3/handlers", status_code=307)
 
 
 @router.get("/{facet_name:path}")
 def handler_detail(facet_name: str):
-    """Redirect to v2 handler detail."""
-    return RedirectResponse(url=f"/v2/handlers/{facet_name}", status_code=307)
+    """Redirect to the v3 handlers list (no standalone detail page in v3)."""
+    return RedirectResponse(url="/v3/handlers", status_code=307)
 
 
 @router.post("/{facet_name:path}/delete")
 def delete_handler(facet_name: str, store=Depends(get_store)):
     """Delete a handler registration and redirect to list."""
     store.delete_handler_registration(facet_name)
-    return RedirectResponse(url="/v2/handlers", status_code=303)
+    return RedirectResponse(url="/v3/handlers", status_code=303)
