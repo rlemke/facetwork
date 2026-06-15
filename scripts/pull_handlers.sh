@@ -28,5 +28,6 @@ cd ..
 cd fwh_jenkins
 git pull
 cd ..
-
-
+cd fwh_wentinel2
+git pull
+cd ..

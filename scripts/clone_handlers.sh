@@ -11,6 +11,7 @@ git clone https://github.com/rlemke/fwh_genomics.git
 git clone https://github.com/rlemke/fwh_census_us.git
 git clone https://github.com/rlemke/fwh_osm_lz.git
 git clone https://github.com/rlemke/fwh_jenkins.git
+git clone https://github.com/rlemke/fwh_sentinel2.git
 popd
 
 
