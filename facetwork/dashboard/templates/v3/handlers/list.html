@@ -1,0 +1,83 @@
+{% extends "v3/base.html" %}
+{% block title %}Handlers · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.h-bar{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+.segtabs{display:flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px}
+.segtabs a{display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;border-radius:7px;text-decoration:none;color:var(--text-2);font:600 12.5px var(--sans)}
+.segtabs a.active{background:var(--surface-3);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.segtabs a .n{font:600 10.5px/1 var(--mono);color:var(--muted);background:var(--surface);padding:.15rem .35rem;border-radius:20px}
+.segtabs a.active .n{color:var(--text)}
+.h-search{flex:1;max-width:320px;padding:.45rem .75rem;font:500 13px var(--sans);color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);outline:none}
+.h-search:focus{border-color:var(--accent)}
+
+.ns{margin-top:.2rem}
+.ns-head{display:flex;align-items:center;gap:.5rem;padding:.5rem .2rem;font:600 12px var(--mono);color:var(--text-2)}
+.ns-head .c{font:600 10.5px/1 var(--mono);color:var(--muted);background:var(--surface-3);padding:.15rem .4rem;border-radius:20px}
+.hl{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.h-row{display:grid;grid-template-columns:16px 1fr 200px 70px 90px;gap:.9rem;align-items:center;padding:.55rem .9rem;border-bottom:1px solid var(--border);font-size:13px}
+.h-row:last-child{border-bottom:none}.h-row:hover{background:var(--surface-2)}
+.h-name b{font-weight:600;font-size:13px}
+.h-name small{display:block;font:500 11px/1.4 var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h-mod{font:500 11px var(--mono);color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h-meta{font:500 11.5px var(--mono);color:var(--muted)}
+.h-st .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.h-st .dot.work{background:var(--st-running);animation:pulse 1.6s infinite}
+.h-st .dot.ready{background:var(--st-complete)}
+.h-st .dot.idle{background:var(--muted)}
+.h-hide{display:none}
+@media (max-width:900px){.h-row{grid-template-columns:16px 1fr 70px}.h-mod,.h-meta:nth-of-type(odd){display:none}}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><span class="cur">Handlers</span></nav>{% endblock %}
+
+{% block content %}
+<div class="h-bar">
+  <div class="segtabs">
+    <a href="?tab=all"     class="{% if tab=='all' %}active{% endif %}">All <span class="n">{{ counts.all }}</span></a>
+    <a href="?tab=active"  class="{% if tab=='active' %}active{% endif %}">Active <span class="n">{{ counts.active }}</span></a>
+    <a href="?tab=working" class="{% if tab=='working' %}active{% endif %}">Working <span class="n">{{ counts.working }}</span></a>
+  </div>
+  <input class="h-search" id="h-search" type="search" placeholder="Filter handlers by name…" autocomplete="off">
+</div>
+
+{% if groups %}
+{% for group in groups %}
+<div class="ns" data-ns>
+  <div class="ns-head">{{ group.namespace }} <span class="c">{{ group.total }}</span></div>
+  <div class="hl">
+    {% for h in group.handlers %}
+    {% set facet = h.facet_name %}
+    {% set work = facet in busy %}
+    {% set ready = facet in active %}
+    {% set short = facet.rsplit('.',1)[-1] %}
+    {% set hc = (stats.get(facet) or {}).get('handled', 0) %}
+    <div class="h-row" data-row data-name="{{ facet|lower }}">
+      <span class="h-st"><span class="dot {{ 'work' if work else ('ready' if ready else 'idle') }}" title="{{ 'working' if work else ('ready' if ready else 'no runner loaded') }}"></span></span>
+      <span class="h-name"><b>{{ short }}</b><small>{{ facet }}</small></span>
+      <span class="h-mod">{{ h.module_uri }}</span>
+      <span class="h-meta">v{{ h.version }}</span>
+      <span class="h-meta" title="tasks handled">{% if hc %}{{ hc }} ✓{% else %}—{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="empty"><p>No {{ tab }} handlers.</p></div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){var q=document.getElementById('h-search');if(!q)return;
+  q.addEventListener('input',function(){var v=q.value.trim().toLowerCase();
+    document.querySelectorAll('[data-ns]').forEach(function(ns){var n=0;
+      ns.querySelectorAll('[data-row]').forEach(function(r){var hit=!v||r.getAttribute('data-name').indexOf(v)>=0;
+        r.classList.toggle('h-hide',!hit);if(hit)n++;});
+      ns.style.display=n?'':'none';});
+  });})();
+</script>
+{% endblock %}
