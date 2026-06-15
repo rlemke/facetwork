@@ -295,55 +295,16 @@ class TestRunnerRoutes:
         updated = store.get_runner("r-1")
         assert updated.state == "running"
 
-    def test_runner_steps_page(self, client):
-        """Covers runners.py runner_steps route."""
-        tc, store = client
-        from facetwork.runtime.step import StepDefinition
-        from facetwork.runtime.types import step_id
-        from facetwork.runtime.types import workflow_id as wf_id_fn
-
-        wf = _make_workflow()
-        runner = _make_runner("r-1", workflow=wf)
-        store.save_runner(runner)
-
-        sid = step_id()
-        step = StepDefinition(
-            id=sid,
-            workflow_id=wf_id_fn(),
-            object_type="VariableAssignment",
-            state="state.facet.initialization.Begin",
-        )
-        step.workflow_id = wf.uuid  # match the runner's workflow
-        store.save_step(step)
-
-        resp = tc.get("/runners/r-1/steps")
-        assert resp.status_code == 200
-        assert "VariableAssignment" in resp.text
-
-    def test_runner_logs_page(self, client):
-        """Covers runners.py runner_logs route."""
-        tc, store = client
-        from facetwork.runtime.entities import LogDefinition
-
-        store.save_runner(_make_runner("r-1"))
-        log = LogDefinition(
-            uuid="log-1",
-            order=1,
-            runner_id="r-1",
-            message="Step started",
-            time=1000,
-        )
-        store.save_log(log)
-
-        resp = tc.get("/runners/r-1/logs")
-        assert resp.status_code == 200
-        assert "Step started" in resp.text
+    # NOTE: the legacy /runners/{id}/steps and /runners/{id}/logs pages were
+    # removed with the v3 migration (the v3 workflow-detail page renders a live
+    # DAG graph instead of a flat steps/logs list), so those tests were deleted.
 
 
 class TestStepRoutes:
     def test_step_detail_not_found(self, client):
         tc, store = client
-        resp = tc.get("/steps/nonexistent")
+        # Legacy /steps/{id} is gone; the v3 step detail page supersedes it.
+        resp = tc.get("/v3/steps/nonexistent")
         assert resp.status_code == 200
         assert "not found" in resp.text.lower()
 
@@ -362,7 +323,7 @@ class TestStepRoutes:
         )
         store.save_step(step)
 
-        resp = tc.get(f"/steps/{sid}")
+        resp = tc.get(f"/v3/steps/{sid}")
         assert resp.status_code == 200
         assert "VariableAssignment" in resp.text
 
@@ -427,33 +388,18 @@ class TestStepRoutes:
         assert updated_task.error is None
 
 
-class TestLogRoutes:
-    def test_log_list(self, client):
-        """Covers logs.py log_list route."""
-        tc, store = client
-        from facetwork.runtime.entities import LogDefinition
-
-        store.save_runner(_make_runner("r-1"))
-        log = LogDefinition(
-            uuid="log-1",
-            order=1,
-            runner_id="r-1",
-            message="Hello log",
-            time=5000,
-        )
-        store.save_log(log)
-
-        resp = tc.get("/logs/r-1")
-        assert resp.status_code == 200
-        assert "Hello log" in resp.text
+# NOTE: TestLogRoutes (the legacy /logs/{runner_id} page) was removed with the
+# v3 migration; per-runner log viewing is now part of the v3 workflow/step
+# pages, so that test was deleted (no standalone analog).
 
 
 class TestFlowRoutes:
     def test_flow_list_empty(self, client):
         tc, store = client
-        resp = tc.get("/flows")
+        # Legacy /flows is gone; the v3 Library page supersedes it.
+        resp = tc.get("/v3/flows")
         assert resp.status_code == 200
-        assert "Flows" in resp.text
+        assert "Library" in resp.text
 
     def test_flow_list_with_data(self, client):
         tc, store = client
@@ -465,7 +411,7 @@ class TestFlowRoutes:
         )
         store.save_flow(flow)
 
-        resp = tc.get("/flows")
+        resp = tc.get("/v3/flows")
         assert resp.status_code == 200
         assert "TestFlow" in resp.text
 
@@ -479,18 +425,18 @@ class TestFlowRoutes:
         )
         store.save_flow(flow)
 
-        resp = tc.get("/flows/flow-1")
+        resp = tc.get("/v3/flows/flow-1")
         assert resp.status_code == 200
         assert "TestFlow" in resp.text
 
     def test_flow_detail_not_found(self, client):
         tc, store = client
-        resp = tc.get("/flows/nonexistent")
+        resp = tc.get("/v3/flows/nonexistent")
         assert resp.status_code == 200
         assert "not found" in resp.text.lower()
 
     def test_flow_source_with_data(self, client):
-        """Covers flows.py flow_source route."""
+        """Covers v3 flow_source route (renders FFL on the code view)."""
         tc, store = client
         from facetwork.runtime.entities import FlowDefinition, FlowIdentity, SourceText
 
@@ -501,18 +447,18 @@ class TestFlowRoutes:
         )
         store.save_flow(flow)
 
-        resp = tc.get("/flows/flow-1/source")
+        resp = tc.get("/v3/flows/flow-1/source")
         assert resp.status_code == 200
         assert "facet Foo()" in resp.text
 
     def test_flow_source_not_found(self, client):
         tc, store = client
-        resp = tc.get("/flows/nonexistent/source")
+        resp = tc.get("/v3/flows/nonexistent/source")
         assert resp.status_code == 200
         assert "not found" in resp.text.lower()
 
     def test_flow_json_with_valid_afl(self, client):
-        """Covers flows.py flow_json route — successful parse."""
+        """Covers v3 flow_json route — successful parse."""
         tc, store = client
         from facetwork.runtime.entities import FlowDefinition, FlowIdentity, SourceText
 
@@ -525,13 +471,13 @@ class TestFlowRoutes:
         )
         store.save_flow(flow)
 
-        resp = tc.get("/flows/flow-1/json")
+        resp = tc.get("/v3/flows/flow-1/json")
         assert resp.status_code == 200
         assert "Bar" in resp.text
         assert "String" in resp.text
 
     def test_flow_json_with_parse_error(self, client):
-        """Covers flows.py flow_json route — parse error path."""
+        """Covers v3 flow_json route — parse error path."""
         tc, store = client
         from facetwork.runtime.entities import FlowDefinition, FlowIdentity, SourceText
 
@@ -544,18 +490,18 @@ class TestFlowRoutes:
         )
         store.save_flow(flow)
 
-        resp = tc.get("/flows/flow-1/json")
+        resp = tc.get("/v3/flows/flow-1/json")
         assert resp.status_code == 200
-        assert "Parse Error" in resp.text or "Error" in resp.text
+        assert "Failed to emit JSON" in resp.text or "Error" in resp.text
 
     def test_flow_json_not_found(self, client):
         tc, store = client
-        resp = tc.get("/flows/nonexistent/json")
+        resp = tc.get("/v3/flows/nonexistent/json")
         assert resp.status_code == 200
         assert "not found" in resp.text.lower()
 
     def test_flow_json_no_sources(self, client):
-        """Covers flow_json when flow exists but has no compiled_sources."""
+        """Covers v3 flow_json when flow exists but has no compiled sources/AST."""
         tc, store = client
         from facetwork.runtime.entities import FlowDefinition, FlowIdentity
 
@@ -565,20 +511,23 @@ class TestFlowRoutes:
         )
         store.save_flow(flow)
 
-        resp = tc.get("/flows/flow-1/json")
+        resp = tc.get("/v3/flows/flow-1/json")
         assert resp.status_code == 200
-        assert "No compiled sources" in resp.text or "EmptyFlow" in resp.text
+        assert "No compiled AST or sources" in resp.text
 
 
 class TestServerRoutes:
     def test_server_list(self, client):
         tc, store = client
-        resp = tc.get("/servers")
+        # Legacy /servers page is gone; the v3 Servers page supersedes it.
+        resp = tc.get("/v3/servers")
         assert resp.status_code == 200
         assert "Servers" in resp.text
 
     def test_server_list_with_data(self, client):
         tc, store = client
+        import time as _time
+
         from facetwork.runtime.entities import ServerDefinition, ServerState
 
         server = ServerDefinition(
@@ -587,92 +536,21 @@ class TestServerRoutes:
             service_name="facetwork",
             server_name="worker-01",
             state=ServerState.RUNNING,
+            # Fresh heartbeat so the effective state stays "running" (a stale
+            # ping_time would make the v3 page mark it "down").
+            ping_time=int(_time.time() * 1000),
         )
         store.save_server(server)
 
-        resp = tc.get("/servers")
+        resp = tc.get("/v3/servers")
         assert resp.status_code == 200
         assert "worker-01" in resp.text
 
-    def test_server_list_links_to_detail(self, client):
-        tc, store = client
-        from facetwork.runtime.entities import ServerDefinition, ServerState
-
-        server = ServerDefinition(
-            uuid="s-1",
-            server_group="workers",
-            service_name="facetwork",
-            server_name="worker-01",
-            state=ServerState.RUNNING,
-        )
-        store.save_server(server)
-
-        resp = tc.get("/servers")
-        assert resp.status_code == 200
-        assert "/servers/s-1" in resp.text
-
-    def test_server_detail(self, client):
-        tc, store = client
-        from facetwork.runtime.entities import HandledCount, ServerDefinition, ServerState
-
-        server = ServerDefinition(
-            uuid="s-1",
-            server_group="workers",
-            service_name="facetwork",
-            server_name="worker-01",
-            state=ServerState.RUNNING,
-            topics=["osm.*"],
-            handlers=["osm.CacheLookup"],
-            handled=[HandledCount(handler="osm.CacheLookup", handled=10, not_handled=2)],
-        )
-        store.save_server(server)
-
-        resp = tc.get("/servers/s-1")
-        assert resp.status_code == 200
-        assert "worker-01" in resp.text
-        assert "workers" in resp.text
-
-    def test_server_detail_not_found(self, client):
-        tc, store = client
-        resp = tc.get("/servers/nonexistent")
-        assert resp.status_code == 200
-        assert "not found" in resp.text.lower()
-
-    def test_server_detail_handled_stats(self, client):
-        tc, store = client
-        from facetwork.runtime.entities import HandledCount, ServerDefinition, ServerState
-
-        server = ServerDefinition(
-            uuid="s-1",
-            server_group="workers",
-            service_name="facetwork",
-            server_name="worker-01",
-            state=ServerState.RUNNING,
-            handled=[HandledCount(handler="osm.CacheLookup", handled=10, not_handled=2)],
-        )
-        store.save_server(server)
-
-        resp = tc.get("/servers/s-1")
-        assert resp.status_code == 200
-        assert "osm.CacheLookup" in resp.text
-
-    def test_server_detail_with_error(self, client):
-        tc, store = client
-        from facetwork.runtime.entities import ServerDefinition, ServerState
-
-        server = ServerDefinition(
-            uuid="s-1",
-            server_group="workers",
-            service_name="facetwork",
-            server_name="worker-01",
-            state=ServerState.ERROR,
-            error={"message": "Connection timeout"},
-        )
-        store.save_server(server)
-
-        resp = tc.get("/servers/s-1")
-        assert resp.status_code == 200
-        assert "Connection timeout" in resp.text
+    # NOTE: the v3 Servers page is a single list (runner processes grouped by
+    # host) with no per-server detail page, so the server-detail tests
+    # (detail, detail_not_found, handled_stats, with_error) and the
+    # list-links-to-detail test were deleted — they have no v3 analog.
+    # The /api/servers/{id} JSON endpoint below is unchanged and still tested.
 
     def test_api_server_detail(self, client):
         tc, store = client
@@ -700,7 +578,8 @@ class TestServerRoutes:
 class TestTaskRoutes:
     def test_task_list(self, client):
         tc, store = client
-        resp = tc.get("/tasks")
+        # Legacy /tasks page is gone; the v3 Tasks page supersedes it.
+        resp = tc.get("/v3/tasks")
         assert resp.status_code == 200
         assert "Task" in resp.text
 
@@ -720,7 +599,7 @@ class TestTaskRoutes:
         )
         store.save_task(task)
 
-        resp = tc.get("/tasks")
+        resp = tc.get("/v3/tasks")
         assert resp.status_code == 200
         assert "SendEmail" in resp.text
 
@@ -1013,37 +892,22 @@ def _make_event_task(
 class TestEventRoutes:
     def test_event_list_empty(self, client):
         tc, store = client
-        resp = tc.get("/events")
+        # Legacy /events page is gone; the v3 Events page supersedes it.
+        resp = tc.get("/v3/events")
         assert resp.status_code == 200
         assert "Events" in resp.text
 
     def test_event_list_with_data(self, client):
         tc, store = client
         store.save_task(_make_event_task())
-        resp = tc.get("/events")
+        resp = tc.get("/v3/events")
         assert resp.status_code == 200
-        assert "evt-1" in resp.text
-
-    def test_event_detail(self, client):
-        tc, store = client
-        store.save_task(_make_event_task())
-        resp = tc.get("/events/evt-1")
-        assert resp.status_code == 200
-        assert "evt-1" in resp.text
+        # The v3 events list renders the event name (task name), not its uuid.
         assert "fw:execute" in resp.text
 
-    def test_event_detail_not_found(self, client):
-        tc, store = client
-        resp = tc.get("/events/nonexistent")
-        assert resp.status_code == 200
-        assert "not found" in resp.text.lower()
-
-    def test_event_detail_shows_data(self, client):
-        tc, store = client
-        store.save_task(_make_event_task())
-        resp = tc.get("/events/evt-1")
-        assert resp.status_code == 200
-        assert "key" in resp.text
+    # NOTE: the legacy /events/{id} detail page was removed with the v3
+    # migration and has no v3 analog (the v3 events page is list-only), so the
+    # event-detail tests were deleted.
 
     def test_api_events_empty(self, client):
         tc, store = client
@@ -1205,33 +1069,11 @@ class TestNamespaceRoutes:
         assert "not found" in resp.text.lower()
 
 
-class TestWorkflowValidation:
-    def test_validate_valid_source(self, client):
-        tc, store = client
-        source = "namespace test {\nfacet MyFacet(input: Long)\n}"
-        resp = tc.post("/workflows/validate", data={"source": source})
-        assert resp.status_code == 200
-        assert "Valid" in resp.text
-
-    def test_validate_invalid_source(self, client):
-        tc, store = client
-        source = "this is not valid afl {{{{"
-        resp = tc.post("/workflows/validate", data={"source": source})
-        assert resp.status_code == 200
-        assert "Invalid" in resp.text or "Error" in resp.text
-
-    def test_validate_shows_namespaces(self, client):
-        tc, store = client
-        source = "namespace myns {\nfacet Foo(x: String)\nworkflow Bar(y: Long) andThen {\n  s = Foo(x = $.y)\n}\n}"
-        resp = tc.post("/workflows/validate", data={"source": source})
-        assert resp.status_code == 200
-        assert "myns" in resp.text
-
-    def test_validate_button_exists(self, client):
-        tc, store = client
-        resp = tc.get("/workflows/new")
-        assert resp.status_code == 200
-        assert "Validate Only" in resp.text
+# NOTE: TestWorkflowValidation was removed in full. The legacy authoring form
+# (/workflows/new with a "Validate Only" button and the /workflows/validate
+# POST endpoint) was removed with the v3 migration. The v3 /workflows/new page
+# is a browser of already-compiled workflows to run — there is no in-dashboard
+# FFL authoring/validation surface, so these tests have no v3 analog.
 
 
 # =============================================================================
@@ -1260,53 +1102,20 @@ def _make_task(uuid="task-1", name="SendEmail", state="pending", error=None, dat
 class TestTaskDetailAndFiltering:
     def test_task_list_filter_by_state(self, client):
         tc, store = client
-        store.save_task(_make_task("t-1", state="pending"))
-        store.save_task(_make_task("t-2", state="running"))
+        # The v3 tasks list renders the task NAME (not uuid), so distinct
+        # names make the state filter observable.
+        store.save_task(_make_task("t-1", name="PendingTask", state="pending"))
+        store.save_task(_make_task("t-2", name="RunningTask", state="running"))
 
-        resp = tc.get("/tasks?state=pending")
+        resp = tc.get("/v3/tasks?state=pending")
         assert resp.status_code == 200
-        assert "t-1" in resp.text
-        assert "t-2" not in resp.text
+        assert "PendingTask" in resp.text
+        assert "RunningTask" not in resp.text
 
-    def test_task_detail(self, client):
-        tc, store = client
-        store.save_task(_make_task("t-1", name="ProcessOrder"))
-
-        resp = tc.get("/tasks/t-1")
-        assert resp.status_code == 200
-        assert "ProcessOrder" in resp.text
-
-    def test_task_detail_not_found(self, client):
-        tc, store = client
-        resp = tc.get("/tasks/nonexistent")
-        assert resp.status_code == 200
-        assert "not found" in resp.text.lower()
-
-    def test_task_detail_shows_error(self, client):
-        tc, store = client
-        store.save_task(_make_task("t-1", error={"message": "Connection failed"}))
-
-        resp = tc.get("/tasks/t-1")
-        assert resp.status_code == 200
-        assert "Connection failed" in resp.text
-
-    def test_task_detail_shows_data(self, client):
-        tc, store = client
-        store.save_task(_make_task("t-1", data={"recipient": "test@example.com"}))
-
-        resp = tc.get("/tasks/t-1")
-        assert resp.status_code == 200
-        assert "test@example.com" in resp.text
-
-    def test_task_detail_links(self, client):
-        tc, store = client
-        store.save_task(_make_task("t-1"))
-
-        resp = tc.get("/tasks/t-1")
-        assert resp.status_code == 200
-        assert "/v2/workflows/r-1" in resp.text
-        assert "/flows/flow-1" in resp.text
-        assert "/steps/step-1" in resp.text
+    # NOTE: the legacy /tasks/{id} detail page was removed with the v3
+    # migration and the v3 Tasks page is list-only (no per-task detail), so the
+    # task-detail tests (detail, not_found, shows_error, shows_data, links,
+    # shows_step_name_and_duration) were deleted — no v3 analog.
 
     def test_task_list_shows_step_name(self, client):
         tc, store = client
@@ -1323,54 +1132,13 @@ class TestTaskDetailAndFiltering:
         store.save_step(step)
         store.save_task(_make_task("t-1"))
 
-        resp = tc.get("/tasks")
+        resp = tc.get("/v3/tasks")
         assert resp.status_code == 200
         assert "myStep" in resp.text
 
-    def test_task_detail_shows_step_name_and_duration(self, client):
-        tc, store = client
-        from facetwork.runtime.step import StepDefinition
-        from facetwork.runtime.types import StepId, WorkflowId
-
-        step = StepDefinition(
-            id=StepId("step-1"),
-            workflow_id=WorkflowId("wf-1"),
-            object_type="VariableAssignment",
-            state="state.facet.initialization.Begin",
-            statement_id="myStep",
-        )
-        store.save_step(step)
-        store.save_task(_make_task("t-1", state="completed"))
-
-        resp = tc.get("/tasks/t-1")
-        assert resp.status_code == 200
-        assert "Step Name" in resp.text
-        assert "myStep" in resp.text
-        assert "Duration" in resp.text
-
-    def test_step_list_shows_duration(self, client):
-        tc, store = client
-        from facetwork.runtime.step import StepDefinition
-        from facetwork.runtime.types import step_id as make_step_id
-
-        wf = _make_workflow()
-        runner = _make_runner("r-1", workflow=wf)
-        store.save_runner(runner)
-
-        sid = make_step_id()
-        step = StepDefinition(
-            id=sid,
-            workflow_id=wf.uuid,
-            object_type="VariableAssignment",
-            state="state.facet.initialization.Begin",
-            start_time=1000,
-            last_modified=6000,
-        )
-        store.save_step(step)
-
-        resp = tc.get("/runners/r-1/steps")
-        assert resp.status_code == 200
-        assert "Duration" in resp.text
+    # NOTE: test_step_list_shows_duration was removed — the legacy
+    # /runners/{id}/steps list (which rendered a per-step "Duration" column) is
+    # gone; the v3 workflow-detail page shows a live DAG graph instead.
 
 
 class TestFlowDetailImprovements:
@@ -1378,19 +1146,19 @@ class TestFlowDetailImprovements:
         tc, store = client
         store.save_flow(_make_flow_with_ns())
 
-        resp = tc.get("/flows/flow-1")
+        # v3 flow detail surfaces a "Namespaces" metric (namespace names are
+        # derived from workflow names, not shown verbatim).
+        resp = tc.get("/v3/flows/flow-1")
         assert resp.status_code == 200
         assert "Namespaces" in resp.text
-        assert "test.ns" in resp.text
 
     def test_flow_detail_shows_facets(self, client):
         tc, store = client
         store.save_flow(_make_flow_with_ns())
 
-        resp = tc.get("/flows/flow-1")
+        resp = tc.get("/v3/flows/flow-1")
         assert resp.status_code == 200
         assert "Facets" in resp.text
-        assert "MyFacet" in resp.text
 
     def test_flow_detail_shows_execution_history(self, client):
         tc, store = client
@@ -1399,23 +1167,31 @@ class TestFlowDetailImprovements:
         runner = _make_runner("r-1", workflow=flow.workflows[0], state="completed")
         store.save_runner(runner)
 
-        resp = tc.get("/flows/flow-1")
+        # v3 names the run history section "Recent runs".
+        resp = tc.get("/v3/flows/flow-1")
         assert resp.status_code == 200
-        assert "Execution History" in resp.text
+        assert "Recent runs" in resp.text
 
 
 class TestListFiltering:
     def test_event_list_filter_by_state(self, client):
         tc, store = client
-        store.save_task(_make_event_task("evt-1", state="pending"))
-        store.save_task(_make_event_task("evt-2", step_id="step-2", state="completed"))
+        # The v3 events list renders the event name; distinct names make the
+        # state filter observable.
+        store.save_task(_make_event_task("evt-1", state="pending", name="PendingEvent"))
+        store.save_task(
+            _make_event_task("evt-2", step_id="step-2", state="completed", name="DoneEvent")
+        )
 
-        resp = tc.get("/events?state=pending")
+        resp = tc.get("/v3/events?state=pending")
         assert resp.status_code == 200
-        assert "evt-1" in resp.text
+        assert "PendingEvent" in resp.text
+        assert "DoneEvent" not in resp.text
 
     def test_server_list_filter_by_state(self, client):
         tc, store = client
+        import time as _time
+
         from facetwork.runtime.entities import ServerDefinition, ServerState
 
         server = ServerDefinition(
@@ -1424,10 +1200,13 @@ class TestListFiltering:
             service_name="facetwork",
             server_name="worker-01",
             state=ServerState.RUNNING,
+            ping_time=int(_time.time() * 1000),
         )
         store.save_server(server)
 
-        resp = tc.get("/servers?state=running")
+        # v3 servers filters via ?tab=… (default "running"); a freshly-pinged
+        # running server appears under the Running tab.
+        resp = tc.get("/v3/servers?tab=running")
         assert resp.status_code == 200
         assert "worker-01" in resp.text
 
@@ -1448,7 +1227,7 @@ class TestListFiltering:
             )
         )
 
-        resp = tc.get("/flows?q=Test")
+        resp = tc.get("/v3/flows?q=Test")
         assert resp.status_code == 200
         assert "TestFlow" in resp.text
         assert "OtherFlow" not in resp.text
@@ -1691,71 +1470,34 @@ namespace handlers {
 
 
 class TestDocCommentDisplay:
-    def test_flow_detail_shows_namespace_doc(self, client):
-        """Namespaces table on flow detail page shows documentation."""
-        tc, store = client
-        flow = _make_flow_with_docs()
-        store.save_flow(flow)
-
-        resp = tc.get("/flows/flow-doc")
-        assert resp.status_code == 200
-        assert "Core handlers namespace" in resp.text
-
-    def test_flow_detail_shows_facet_doc(self, client):
-        """Facets table on flow detail page shows documentation."""
-        tc, store = client
-        flow = _make_flow_with_docs()
-        store.save_flow(flow)
-
-        resp = tc.get("/flows/flow-doc")
-        assert resp.status_code == 200
-        assert "Increments a value" in resp.text
-
-    def test_flow_namespace_shows_facets(self, client):
-        """Flow namespace page shows a facets section."""
-        tc, store = client
-        flow = _make_flow_with_docs()
-        store.save_flow(flow)
-        store.save_workflow(flow.workflows[0])
-
-        resp = tc.get("/flows/flow-doc/ns/handlers")
-        assert resp.status_code == 200
-        assert "Facets" in resp.text
-        assert "AddOne" in resp.text
-        assert "Increments a value" in resp.text
-
-    def test_flow_namespace_shows_workflow_doc(self, client):
-        """Flow namespace page shows workflow documentation."""
-        tc, store = client
-        flow = _make_flow_with_docs()
-        store.save_flow(flow)
-        store.save_workflow(flow.workflows[0])
-
-        resp = tc.get("/flows/flow-doc/ns/handlers")
-        assert resp.status_code == 200
-        assert "Adds one twice" in resp.text
+    # NOTE: the legacy flow-detail doc tables (namespace/facet documentation)
+    # and the per-namespace page (/flows/{id}/ns/{ns}) were removed with the v3
+    # migration. The v3 flow detail page shows namespace-grouped workflows +
+    # recent runs (no doc tables), and there is no per-namespace page — so
+    # test_flow_detail_shows_namespace_doc, test_flow_detail_shows_facet_doc,
+    # test_flow_namespace_shows_facets and test_flow_namespace_shows_workflow_doc
+    # were deleted. The run-form doc surfacing below survives in v3.
 
     def test_flow_run_shows_workflow_doc(self, client):
-        """Run page shows workflow documentation above parameters."""
+        """v3 run page shows workflow documentation above parameters."""
         tc, store = client
         flow = _make_flow_with_docs()
         store.save_flow(flow)
         store.save_workflow(flow.workflows[0])
 
-        resp = tc.get("/flows/flow-doc/run/wf-doc")
+        resp = tc.get("/v3/flows/flow-doc/run/wf-doc")
         assert resp.status_code == 200
         assert "Adds one twice" in resp.text
 
     def test_flow_run_shows_param_descriptions(self, client):
-        """Run page shows parameter descriptions from @param tags."""
+        """v3 run page shows parameter descriptions from @param tags."""
         tc, store = client
         flow = _make_flow_with_docs()
         store.save_flow(flow)
         store.save_workflow(flow.workflows[0])
 
-        resp = tc.get("/flows/flow-doc/run/wf-doc")
+        resp = tc.get("/v3/flows/flow-doc/run/wf-doc")
         assert resp.status_code == 200
-        assert "Description" in resp.text
         assert "The starting value" in resp.text
 
 
@@ -1868,7 +1610,7 @@ class TestStepLogs:
         assert resp.json() == []
 
     def test_step_detail_shows_logs_section(self, client):
-        """Step detail page shows 'Step Logs' section when logs exist."""
+        """v3 step detail page shows a 'Logs' section when logs exist."""
         tc, store = client
         from facetwork.runtime.entities import StepLogEntry
         from facetwork.runtime.step import StepDefinition
@@ -1896,7 +1638,7 @@ class TestStepLogs:
             )
         )
 
-        resp = tc.get(f"/steps/{sid}")
+        resp = tc.get(f"/v3/steps/{sid}")
         assert resp.status_code == 200
-        assert "Step Logs" in resp.text
+        assert "Logs" in resp.text
         assert "Task claimed: ns.Test" in resp.text

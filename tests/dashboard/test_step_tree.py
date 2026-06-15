@@ -240,13 +240,3 @@ class TestTreeIntegration:
         assert resp.status_code == 200
         assert "Execution graph" in resp.text
         assert 'id="dag-svg"' in resp.text
-
-    def test_runner_steps_page_has_toggle(self, client):
-        tc, store = client
-        self._seed(store)
-
-        resp = tc.get("/runners/r-1/steps")
-        assert resp.status_code == 200
-        assert "view-toggle" in resp.text
-        assert 'id="step-flat"' in resp.text
-        assert 'id="step-tree"' in resp.text

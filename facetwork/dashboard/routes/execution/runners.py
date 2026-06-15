@@ -16,11 +16,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
 
 from ...dependencies import get_store
-from ...tree import build_step_tree
 
 router = APIRouter(prefix="/runners")
 
@@ -48,36 +47,6 @@ def runner_list(state: str | None = None):
 def runner_detail(runner_id: str):
     """Redirect to the v3 workflow detail."""
     return RedirectResponse(url=f"/v3/workflows/{runner_id}", status_code=307)
-
-
-@router.get("/{runner_id}/steps")
-def runner_steps(runner_id: str, request: Request, store=Depends(get_store)):
-    """Steps list for a runner's workflow."""
-    runner = store.get_runner(runner_id)
-    steps = store.get_steps_by_workflow(runner.workflow_id) if runner else []
-    step_log_counts = _build_step_log_counts(store, runner.workflow_id) if runner else {}
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "steps/list.html",
-        {
-            "steps": steps,
-            "tree": build_step_tree(list(steps)),
-            "runner": runner,
-            "step_log_counts": step_log_counts,
-        },
-    )
-
-
-@router.get("/{runner_id}/logs")
-def runner_logs(runner_id: str, request: Request, store=Depends(get_store)):
-    """Logs for a runner."""
-    runner = store.get_runner(runner_id)
-    logs = store.get_logs_by_runner(runner_id)
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "logs/list.html",
-        {"logs": logs, "runner": runner},
-    )
 
 
 def _build_step_log_counts(store, workflow_id: str) -> dict[str, int]:

@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 
 from ...dependencies import get_store
 from ...helpers import qualify_step_names
@@ -98,117 +98,6 @@ def _resolve_server_info(tasks, store) -> dict[str, dict]:
                     "ping_time": server.ping_time,
                 }
     return server_info
-
-
-@router.get("")
-def task_list(
-    request: Request,
-    state: str | None = None,
-    task_list: str | None = None,
-    store=Depends(get_store),
-):
-    """List all tasks, optionally filtered by state and/or task list."""
-    if state:
-        tasks = store.get_tasks_by_state(state, task_list=task_list)
-    else:
-        tasks = store.get_all_tasks(task_list=task_list)
-
-    step_names = _resolve_step_names(tasks, store)
-    server_info = _resolve_server_info(tasks, store)
-    tab_counts = _count_tasks_by_state(store)
-    list_counts = store.task_list_counts()
-    runners_per_list = store.runners_per_task_list()
-    duplicate_completions = (
-        store.duplicate_completion_count()
-        if hasattr(store, "duplicate_completion_count")
-        else 0
-    )
-
-    # "No matching handler" detection: a non-terminal task whose name no
-    # live runner advertises is silently stuck. Protocol-prefix tasks
-    # (fw:execute, fw:resume) are claimed by every runner, so we never
-    # treat them as no-handler.
-    dispatchable = (
-        store.dispatchable_facet_names()
-        if hasattr(store, "dispatchable_facet_names")
-        else set()
-    )
-    unmatched_task_ids: set[str] = set()
-    if dispatchable:
-        for t in tasks:
-            if t.state not in ("pending", "running"):
-                continue
-            name = getattr(t, "name", "") or ""
-            if name.startswith("fw:execute") or name.startswith("fw:resume"):
-                continue
-            if name and name not in dispatchable:
-                unmatched_task_ids.add(t.uuid)
-    unmatched_count = len(unmatched_task_ids)
-
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "tasks/list.html",
-        {
-            "tasks": tasks,
-            "filter_state": state,
-            "filter_task_list": task_list,
-            "step_names": step_names,
-            "server_info": server_info,
-            "tab_counts": tab_counts,
-            "list_counts": list_counts,
-            "runners_per_list": runners_per_list,
-            "duplicate_completions": duplicate_completions,
-            "unmatched_task_ids": unmatched_task_ids,
-            "unmatched_count": unmatched_count,
-            "active_tab": "tasks",
-        },
-    )
-
-
-@router.get("/partial")
-def task_list_partial(
-    request: Request,
-    state: str | None = None,
-    task_list: str | None = None,
-    store=Depends(get_store),
-):
-    """HTMX partial for auto-refresh of task table."""
-    if state:
-        tasks = store.get_tasks_by_state(state, task_list=task_list)
-    else:
-        tasks = store.get_all_tasks(task_list=task_list)
-
-    step_names = _resolve_step_names(tasks, store)
-    server_info = _resolve_server_info(tasks, store)
-
-    dispatchable = (
-        store.dispatchable_facet_names()
-        if hasattr(store, "dispatchable_facet_names")
-        else set()
-    )
-    unmatched_task_ids: set[str] = set()
-    if dispatchable:
-        for t in tasks:
-            if t.state not in ("pending", "running"):
-                continue
-            name = getattr(t, "name", "") or ""
-            if name.startswith("fw:execute") or name.startswith("fw:resume"):
-                continue
-            if name and name not in dispatchable:
-                unmatched_task_ids.add(t.uuid)
-
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "tasks/_table_content.html",
-        {
-            "tasks": tasks,
-            "filter_state": state,
-            "filter_task_list": task_list,
-            "step_names": step_names,
-            "server_info": server_info,
-            "unmatched_task_ids": unmatched_task_ids,
-        },
-    )
 
 
 @router.post("/{task_id}/reenqueue")
@@ -297,17 +186,3 @@ def task_retry_all_failed(store=Depends(get_store)):
     return JSONResponse({"success": True, "count": result.modified_count})
 
 
-@router.get("/{task_id}")
-def task_detail(task_id: str, request: Request, store=Depends(get_store)):
-    """Show task detail."""
-    task = store.get_task(task_id)
-    step_name = ""
-    if task and task.step_id:
-        step = store.get_step(task.step_id)
-        if step:
-            step_name = step.statement_name or step.statement_id or step.facet_name or ""
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "tasks/detail.html",
-        {"task": task, "step_name": step_name},
-    )

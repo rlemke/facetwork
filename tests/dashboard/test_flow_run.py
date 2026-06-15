@@ -112,72 +112,34 @@ def _seed_flow(store, source=VALID_AFL_SOURCE, workflow_name="SimpleWF"):
 
 
 class TestFlowDetailRunButton:
-    """Tests for the Run button in the flow detail page."""
+    """Tests for the Run links on the v3 flow detail page."""
 
-    def test_run_link_appears_in_namespace_view(self, client):
+    def test_run_link_appears_in_detail(self, client):
         tc, store = client
         flow, wf = _seed_flow(store)
-        # Detail page now shows namespace groups — navigate to namespace page
-        resp = tc.get(f"/flows/{flow.uuid}")
+        # The v3 detail page groups workflows by namespace inline; each row
+        # links to the run form by workflow UUID.
+        resp = tc.get(f"/v3/flows/{flow.uuid}")
         assert resp.status_code == 200
-        assert f"/flows/{flow.uuid}/ns/_top" in resp.text
-        # Run link appears on the namespace sub-page
-        resp = tc.get(f"/flows/{flow.uuid}/ns/_top")
-        assert resp.status_code == 200
-        assert f"/flows/{flow.uuid}/run/{wf.uuid}" in resp.text
-        assert "Run</a>" in resp.text
-
-    def test_run_link_hidden_without_compiled_sources(self, client):
-        """When compiled_sources is empty, no Run button should appear."""
-        from facetwork.runtime.entities import (
-            FlowDefinition,
-            FlowIdentity,
-            WorkflowDefinition,
-        )
-        from facetwork.runtime.types import generate_id
-
-        tc, store = client
-        flow_id = generate_id()
-        wf_id = generate_id()
-
-        flow = FlowDefinition(
-            uuid=flow_id,
-            name=FlowIdentity(name="NoSource", path="test", uuid=flow_id),
-            compiled_sources=[],
-        )
-        store.save_flow(flow)
-        wf = WorkflowDefinition(
-            uuid=wf_id,
-            name="NoSource",
-            namespace_id="test",
-            facet_id=wf_id,
-            flow_id=flow_id,
-            starting_step="",
-            version="1.0",
-            date=0,
-        )
-        store.save_workflow(wf)
-
-        resp = tc.get(f"/flows/{flow_id}")
-        assert resp.status_code == 200
-        assert "/run/" not in resp.text
+        assert f"/v3/flows/{flow.uuid}/run/{wf.uuid}" in resp.text
+        assert "Run →" in resp.text
 
 
 class TestFlowRunForm:
-    """Tests for GET /flows/{flow_id}/run/{workflow_id}."""
+    """Tests for GET /v3/flows/{flow_id}/run/{workflow_id}."""
 
     def test_form_renders(self, client):
         tc, store = client
         flow, wf = _seed_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/run/{wf.uuid}")
+        resp = tc.get(f"/v3/flows/{flow.uuid}/run/{wf.uuid}")
         assert resp.status_code == 200
-        assert "Run Workflow" in resp.text
+        assert "Run workflow" in resp.text
         assert wf.name in resp.text
 
     def test_form_shows_params(self, client):
         tc, store = client
         flow, wf = _seed_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/run/{wf.uuid}")
+        resp = tc.get(f"/v3/flows/{flow.uuid}/run/{wf.uuid}")
         assert resp.status_code == 200
         assert "x" in resp.text
         assert "Long" in resp.text
@@ -185,45 +147,46 @@ class TestFlowRunForm:
     def test_form_shows_defaults(self, client):
         tc, store = client
         flow, wf = _seed_flow(store, source=DEFAULTS_AFL_SOURCE, workflow_name="DefaultsWF")
-        resp = tc.get(f"/flows/{flow.uuid}/run/{wf.uuid}")
+        resp = tc.get(f"/v3/flows/{flow.uuid}/run/{wf.uuid}")
         assert resp.status_code == 200
         assert "42" in resp.text
         assert "hello" in resp.text
 
-    def test_form_has_back_link(self, client):
+    def test_form_has_cancel_link(self, client):
         tc, store = client
         flow, wf = _seed_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/run/{wf.uuid}")
+        resp = tc.get(f"/v3/flows/{flow.uuid}/run/{wf.uuid}")
         assert resp.status_code == 200
-        assert f"/flows/{flow.uuid}" in resp.text
-        assert "Back to flow" in resp.text
+        # The v3 run form's Cancel link returns to the flow detail page.
+        assert f"/v3/flows/{flow.uuid}" in resp.text
+        assert "Cancel" in resp.text
 
     def test_form_missing_flow(self, client):
         tc, store = client
-        resp = tc.get("/flows/nonexistent/run/wf123")
+        resp = tc.get("/v3/flows/nonexistent/run/wf123")
         assert resp.status_code == 200
-        assert "Flow not found" in resp.text
+        assert "Workflow not found" in resp.text
 
 
 class TestFlowRunExecute:
-    """Tests for POST /flows/{flow_id}/run/{workflow_id}."""
+    """Tests for POST /v3/flows/{flow_id}/run/{workflow_id}."""
 
     def test_creates_runner_and_redirects(self, client):
         tc, store = client
         flow, wf = _seed_flow(store)
         resp = tc.post(
-            f"/flows/{flow.uuid}/run/{wf.uuid}",
+            f"/v3/flows/{flow.uuid}/run/{wf.uuid}",
             data={"inputs_json": "{}"},
             follow_redirects=False,
         )
         assert resp.status_code == 303
-        assert "/runners/" in resp.headers["location"]
+        assert "/v3/workflows/" in resp.headers["location"]
 
     def test_reuses_existing_flow_and_workflow(self, client):
         tc, store = client
         flow, wf = _seed_flow(store)
         tc.post(
-            f"/flows/{flow.uuid}/run/{wf.uuid}",
+            f"/v3/flows/{flow.uuid}/run/{wf.uuid}",
             data={"inputs_json": "{}"},
             follow_redirects=False,
         )
@@ -239,12 +202,12 @@ class TestFlowRunExecute:
         tc, store = client
         flow, wf = _seed_flow(store)
         resp = tc.post(
-            f"/flows/{flow.uuid}/run/{wf.uuid}",
+            f"/v3/flows/{flow.uuid}/run/{wf.uuid}",
             data={"inputs_json": "{}"},
             follow_redirects=False,
         )
         location = resp.headers["location"]
-        runner_id = location.split("/runners/")[1]
+        runner_id = location.split("/v3/workflows/")[1]
         runner = store.get_runner(runner_id)
         assert runner is not None
         assert runner.state == "created"
@@ -256,7 +219,7 @@ class TestFlowRunExecute:
         tc, store = client
         flow, wf = _seed_flow(store)
         tc.post(
-            f"/flows/{flow.uuid}/run/{wf.uuid}",
+            f"/v3/flows/{flow.uuid}/run/{wf.uuid}",
             data={"inputs_json": "{}"},
             follow_redirects=False,
         )
@@ -276,7 +239,7 @@ class TestFlowRunExecute:
         flow, wf = _seed_flow(store, source=DEFAULTS_AFL_SOURCE, workflow_name="DefaultsWF")
         user_inputs = json.dumps({"x": 99, "name": "world"})
         tc.post(
-            f"/flows/{flow.uuid}/run/{wf.uuid}",
+            f"/v3/flows/{flow.uuid}/run/{wf.uuid}",
             data={"inputs_json": user_inputs},
             follow_redirects=False,
         )
@@ -289,7 +252,7 @@ class TestFlowRunExecute:
         tc, store = client
         flow, wf = _seed_flow(store, source=DEFAULTS_AFL_SOURCE, workflow_name="DefaultsWF")
         tc.post(
-            f"/flows/{flow.uuid}/run/{wf.uuid}",
+            f"/v3/flows/{flow.uuid}/run/{wf.uuid}",
             data={"inputs_json": "{}"},
             follow_redirects=False,
         )
@@ -303,12 +266,12 @@ class TestFlowRunExecute:
         tc, store = client
         flow, wf = _seed_flow(store)
         resp = tc.post(
-            f"/flows/{flow.uuid}/run/{wf.uuid}",
+            f"/v3/flows/{flow.uuid}/run/{wf.uuid}",
             data={"inputs_json": "{}"},
             follow_redirects=False,
         )
         location = resp.headers["location"]
-        runner_id = location.split("/runners/")[1]
+        runner_id = location.split("/v3/workflows/")[1]
         runner = store.get_runner(runner_id)
         assert runner is not None
         assert runner.compiled_ast is not None
@@ -320,9 +283,11 @@ class TestFlowRunExecute:
     def test_missing_flow_returns_gracefully(self, client):
         tc, store = client
         resp = tc.post(
-            "/flows/nonexistent/run/wf123",
+            "/v3/flows/nonexistent/run/wf123",
             data={"inputs_json": "{}"},
             follow_redirects=False,
         )
-        # Should not crash — returns a template response (not a redirect)
-        assert resp.status_code == 200
+        # Should not crash — the v3 submit redirects back to the flows list
+        # when the flow/workflow can't be found.
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/v3/flows"

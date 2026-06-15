@@ -82,6 +82,21 @@ def _make_runner(uuid="r-1", workflow=None, state="running"):
     )
 
 
+def _make_task(uuid="task-1", name="SendEmail", state="pending"):
+    from facetwork.runtime.entities import TaskDefinition
+
+    return TaskDefinition(
+        uuid=uuid,
+        name=name,
+        runner_id="r-1",
+        workflow_id="wf-1",
+        flow_id="flow-1",
+        step_id="step-1",
+        task_list_name="default",
+        state=state,
+    )
+
+
 # =============================================================================
 # TestStateColorRendering
 # =============================================================================
@@ -151,11 +166,12 @@ class TestNavigationRendering:
 
     def test_nav_links_on_tasks_page(self, client):
         tc, store = client
-        resp = tc.get("/tasks")
+        resp = tc.get("/v3/tasks")
         assert resp.status_code == 200
         html = resp.text
-        assert 'href="/events"' in html
-        assert 'href="/v2/servers"' in html
+        # Base nav (present on every v3 page) links to Events and Servers.
+        assert 'href="/v3/events"' in html
+        assert 'href="/v3/servers"' in html
 
     def test_breadcrumb_on_workflow_detail(self, client):
         tc, store = client
@@ -183,51 +199,62 @@ class TestTableRendering:
 
     def test_task_list_column_headers(self, client):
         tc, store = client
-        resp = tc.get("/tasks")
+        # A task is needed for the v3 list to render its (grid) header row.
+        store.save_task(_make_task("t-1", state="pending"))
+        resp = tc.get("/v3/tasks")
         assert resp.status_code == 200
         html = resp.text
-        assert "<th>ID</th>" in html
-        assert "<th>Name / Step</th>" in html
-        assert "<th>State / List</th>" in html
-        assert "<th>Runner / Server</th>" in html
-        assert "<th>Duration / Ping</th>" in html
-        assert "<th>Retries</th>" in html
-        assert "<th>Created</th>" in html
+        # v3 uses a CSS-grid table with <span> column headers, not <th>.
+        assert "<span>Task</span>" in html
+        assert "<span>Step</span>" in html
+        assert "<span>Task list</span>" in html
+        assert "<span>Server</span>" in html
+        assert "<span>Updated</span>" in html
+        assert "<span>Retry</span>" in html
 
     def test_flow_list_column_headers(self, client):
         tc, store = client
-        resp = tc.get("/flows")
+        from facetwork.runtime.entities import FlowDefinition, FlowIdentity
+
+        store.save_flow(
+            FlowDefinition(
+                uuid="flow-1",
+                name=FlowIdentity(name="HeaderFlow", path="/h", uuid="flow-1"),
+            )
+        )
+        resp = tc.get("/v3/flows")
         assert resp.status_code == 200
         html = resp.text
-        assert "<th>Name</th>" in html
-        assert "<th>Path</th>" in html
+        # v3 Library list column headers (.col-h spans).
+        assert ">Flow<" in html
+        assert ">Workflows<" in html
+        assert ">Facets<" in html
+        assert ">Namespaces<" in html
 
     def test_server_list_column_headers(self, client):
         tc, store = client
-        resp = tc.get("/servers")
+        import time
+
+        from facetwork.runtime.entities import ServerDefinition, ServerState
+
+        store.save_server(
+            ServerDefinition(
+                uuid="s-1",
+                server_group="workers",
+                service_name="facetwork",
+                server_name="worker-01",
+                state=ServerState.RUNNING,
+                ping_time=int(time.time() * 1000),  # fresh → stays "running"
+            )
+        )
+        resp = tc.get("/v3/servers")
         assert resp.status_code == 200
         html = resp.text
-        assert "<th>Name</th>" in html
-        assert "<th>Group</th>" in html
-        assert "<th>Service</th>" in html
-        assert "<th>State</th>" in html
+        # v3 Servers list column headers (.col-h spans), grouped by host.
+        assert ">Runner<" in html
+        assert ">Group<" in html
+        assert ">Handlers<" in html
+        assert ">Active tasks<" in html
+        assert ">Last ping<" in html
 
 
-# =============================================================================
-# TestFormRendering
-# =============================================================================
-
-
-class TestFormRendering:
-    def test_textarea_on_new_workflow_page(self, client):
-        tc, store = client
-        resp = tc.get("/workflows/new")
-        assert resp.status_code == 200
-        assert "<textarea" in resp.text
-        assert 'name="source"' in resp.text
-
-    def test_validate_button_exists(self, client):
-        tc, store = client
-        resp = tc.get("/workflows/new")
-        assert resp.status_code == 200
-        assert "Validate Only" in resp.text

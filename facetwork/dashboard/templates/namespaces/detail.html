@@ -26,7 +26,7 @@
         <tr>
             <td><strong>{{ wf.short_name }}</strong>{% if wf.documentation %}{{ render_doc(wf.documentation) }}{% endif %}</td>
             <td>{{ wf.version }}</td>
-            <td><a href="/flows/{{ wf.flow_id }}/run/{{ wf.uuid }}" role="button" class="outline">Run</a></td>
+            <td><a href="/v3/flows/{{ wf.flow_id }}/run/{{ wf.uuid }}" role="button" class="outline">Run</a></td>
         </tr>
         {% endfor %}
     </tbody>

@@ -154,11 +154,11 @@ def test_run_form_shows_purpose_and_teams(client):
     tc, store = client
     store.save_team(_team("geo"))
     flow, wf = _seed_flow(store)
-    resp = tc.get(f"/flows/{flow.uuid}/run/{wf.uuid}")
+    resp = tc.get(f"/v3/flows/{flow.uuid}/run/{wf.uuid}")
     assert resp.status_code == 200
     assert "Purpose" in resp.text
     assert "production" in resp.text
-    assert "List this run for teams" in resp.text
+    assert "List for teams" in resp.text
 
 
 def test_run_execute_tags_run_with_user_author_purpose_teams(client):
@@ -169,7 +169,7 @@ def test_run_execute_tags_run_with_user_author_purpose_teams(client):
     tc.post("/v3/users/act-as", data={"email": "ada@example.com", "next": "/"},
             follow_redirects=False)
     r = tc.post(
-        f"/flows/{flow.uuid}/run/{wf.uuid}",
+        f"/v3/flows/{flow.uuid}/run/{wf.uuid}",
         data={"inputs_json": json.dumps({"x": 5}), "purpose": "test", "teams": ["geo"]},
         follow_redirects=False,
     )

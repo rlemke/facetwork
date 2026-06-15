@@ -55,36 +55,6 @@ def client():
     store.close()
 
 
-VALID_AFL_SOURCE = """
-namespace test {
-    facet Compute(input: Long)
-
-    workflow SimpleWF(x: Long) => (result: Long) andThen {
-        s1 = Compute(input = $.x)
-        yield SimpleWF(result = s1.input)
-    }
-}
-"""
-
-MULTI_WORKFLOW_SOURCE = """
-namespace test {
-    facet Compute(input: Long)
-
-    workflow WF_A(x: Long) => (result: Long) andThen {
-        s1 = Compute(input = $.x)
-        yield WF_A(result = s1.input)
-    }
-
-    workflow WF_B(y: String) => (out: String) andThen {
-        s1 = Compute(input = 1)
-        yield WF_B(out = "done")
-    }
-}
-"""
-
-INVALID_AFL_SOURCE = "this is not valid FFL %%% syntax"
-
-
 def _make_flow(uuid, name, compiled_ast):
     """Helper to create a FlowDefinition with compiled_ast."""
     from facetwork.runtime.entities import FlowDefinition, FlowIdentity
@@ -176,28 +146,25 @@ TOPLEVEL_AST = {
 
 
 class TestWorkflowNew:
-    """Tests for GET /workflows/new."""
+    """Tests for GET /v3/workflows/new (the new-run workflow browser)."""
 
     def test_new_page_renders(self, client):
         tc, store = client
-        resp = tc.get("/workflows/new")
+        resp = tc.get("/v3/workflows/new")
         assert resp.status_code == 200
-        assert "New Workflow" in resp.text
-        assert "<textarea" in resp.text
-
-    def test_new_page_has_compile_form(self, client):
-        tc, store = client
-        resp = tc.get("/workflows/new")
-        assert "/workflows/compile" in resp.text
+        assert "New run" in resp.text
+        # The browser has a search box to find a workflow to run.
+        assert 'id="n-search"' in resp.text
 
     def test_new_page_empty_db(self, client):
         """Page renders fine with no flows in the database."""
         tc, store = client
-        resp = tc.get("/workflows/new")
+        resp = tc.get("/v3/workflows/new")
         assert resp.status_code == 200
-        assert "New Workflow" in resp.text
-        # No accordion sections when DB is empty
-        assert "<details" not in resp.text
+        assert "New run" in resp.text
+        # Empty-state message, no namespace groups.
+        assert "No workflows available" in resp.text
+        assert 'class="ns-head"' not in resp.text
 
     def test_new_page_shows_workflows_from_db(self, client):
         """Workflows from seeded flows appear in the browser."""
@@ -207,66 +174,62 @@ class TestWorkflowNew:
         # Seed workflow records so run URLs can be resolved
         _seed_workflows(store, "flow-1", NAMESPACED_AST)
 
-        resp = tc.get("/workflows/new")
+        resp = tc.get("/v3/workflows/new")
         assert resp.status_code == 200
         assert "BicycleRoutes" in resp.text
         assert "HikingTrails" in resp.text
         assert "StateBoundaries" in resp.text
 
     def test_new_page_groups_by_namespace(self, client):
-        """Workflows are grouped under namespace <details> sections."""
+        """Workflows are grouped under per-namespace sections."""
         tc, store = client
         flow = _make_flow("flow-2", "TestFlow", NAMESPACED_AST)
         store.save_flow(flow)
 
-        resp = tc.get("/workflows/new")
+        resp = tc.get("/v3/workflows/new")
         assert resp.status_code == 200
-        # Both namespace groups appear as <details> accordions
+        # Both namespace groups appear as namespace sections.
         assert "geo.Routes" in resp.text
         assert "geo.Boundaries" in resp.text
-        assert resp.text.count("<details") == 2
+        assert resp.text.count('class="ns-head"') == 2
 
     def test_new_page_toplevel_workflows(self, client):
-        """Top-level workflows (no namespace) appear under (top-level) group."""
+        """Top-level workflows (no namespace) appear under the unnamespaced group."""
         tc, store = client
         flow = _make_flow("flow-3", "TestFlow", TOPLEVEL_AST)
         store.save_flow(flow)
 
-        resp = tc.get("/workflows/new")
+        resp = tc.get("/v3/workflows/new")
         assert resp.status_code == 200
         assert "system.unnamespaced" in resp.text
         assert "SimpleWF" in resp.text
 
-    def test_new_page_afl_snippet_in_data_source(self, client):
-        """Each workflow link has a data-source attribute with FFL snippet."""
+    def test_new_page_afl_snippet_rendered(self, client):
+        """Each workflow row renders its FFL snippet in a <pre> block."""
         tc, store = client
         flow = _make_flow("flow-4", "TestFlow", NAMESPACED_AST)
         store.save_flow(flow)
 
-        resp = tc.get("/workflows/new")
+        resp = tc.get("/v3/workflows/new")
         assert resp.status_code == 200
         # The FFL snippet should contain a namespace wrapper and workflow keyword
-        assert "data-source=" in resp.text
         assert "namespace geo.Routes" in resp.text
-        # Jinja2 |e escapes " as &#34; or &quot;
         assert "region: String = " in resp.text
         assert "Alaska" in resp.text
 
     def test_new_page_has_run_links(self, client):
-        """Workflows with DB records get run links to /flows/.../run/..."""
+        """Workflows with DB records get run links to /v3/flows/.../run/..."""
         tc, store = client
         flow = _make_flow("flow-run", "TestFlow", NAMESPACED_AST)
         store.save_flow(flow)
         _seed_workflows(store, "flow-run", NAMESPACED_AST)
 
-        resp = tc.get("/workflows/new")
+        resp = tc.get("/v3/workflows/new")
         assert resp.status_code == 200
-        # Each workflow should have a run link pointing to the flow run page
-        assert "/flows/flow-run/run/wf-geo.Routes.BicycleRoutes" in resp.text
-        assert "/flows/flow-run/run/wf-geo.Routes.HikingTrails" in resp.text
-        assert "/flows/flow-run/run/wf-geo.Boundaries.StateBoundaries" in resp.text
-        # Links should have the wf-run CSS class
-        assert 'class="wf-run"' in resp.text
+        # Each workflow should have a run link pointing to the v3 flow run page
+        assert "/v3/flows/flow-run/run/wf-geo.Routes.BicycleRoutes" in resp.text
+        assert "/v3/flows/flow-run/run/wf-geo.Routes.HikingTrails" in resp.text
+        assert "/v3/flows/flow-run/run/wf-geo.Boundaries.StateBoundaries" in resp.text
 
     def test_new_page_no_run_links_without_workflow_records(self, client):
         """Workflows without DB records don't get run links."""
@@ -275,13 +238,12 @@ class TestWorkflowNew:
         store.save_flow(flow)
         # Don't seed workflow records
 
-        resp = tc.get("/workflows/new")
+        resp = tc.get("/v3/workflows/new")
         assert resp.status_code == 200
         # Workflow names still appear
         assert "BicycleRoutes" in resp.text
         # But no run links
-        assert "wf-run" not in resp.text
-        assert "/flows/flow-nowr/run/" not in resp.text
+        assert "/v3/flows/flow-nowr/run/" not in resp.text
 
     def test_new_page_flow_without_compiled_ast(self, client):
         """Flows without compiled_ast are silently skipped."""
@@ -289,166 +251,11 @@ class TestWorkflowNew:
         flow = _make_flow("flow-5", "NoAST", None)
         store.save_flow(flow)
 
-        resp = tc.get("/workflows/new")
+        resp = tc.get("/v3/workflows/new")
         assert resp.status_code == 200
-        # No accordion sections
-        assert "<details" not in resp.text
-
-
-class TestWorkflowCompile:
-    """Tests for POST /workflows/compile."""
-
-    def test_compile_valid_source(self, client):
-        tc, store = client
-        resp = tc.post(
-            "/workflows/compile",
-            data={"source": VALID_AFL_SOURCE},
-        )
-        assert resp.status_code == 200
-        assert "SimpleWF" in resp.text
-        assert "Run Workflow" in resp.text
-
-    def test_compile_shows_params(self, client):
-        tc, store = client
-        resp = tc.post(
-            "/workflows/compile",
-            data={"source": VALID_AFL_SOURCE},
-        )
-        assert resp.status_code == 200
-        assert "x" in resp.text
-        assert "Long" in resp.text
-
-    def test_compile_invalid_source(self, client):
-        tc, store = client
-        resp = tc.post(
-            "/workflows/compile",
-            data={"source": INVALID_AFL_SOURCE},
-        )
-        assert resp.status_code == 200
-        # Should show error
-        assert "Errors" in resp.text or "error" in resp.text.lower()
-
-    def test_compile_multiple_workflows(self, client):
-        tc, store = client
-        resp = tc.post(
-            "/workflows/compile",
-            data={"source": MULTI_WORKFLOW_SOURCE},
-        )
-        assert resp.status_code == 200
-        assert "WF_A" in resp.text
-        assert "WF_B" in resp.text
-
-    def test_compile_no_workflows(self, client):
-        tc, store = client
-        resp = tc.post(
-            "/workflows/compile",
-            data={"source": "facet Standalone(x: Long)"},
-        )
-        assert resp.status_code == 200
-        assert "No workflows found" in resp.text
-
-
-class TestWorkflowRun:
-    """Tests for POST /workflows/run."""
-
-    def test_run_creates_entities_and_redirects(self, client):
-        tc, store = client
-        resp = tc.post(
-            "/workflows/run",
-            data={
-                "source": VALID_AFL_SOURCE,
-                "workflow_name": "test.SimpleWF",
-            },
-            follow_redirects=False,
-        )
-        assert resp.status_code == 303
-        assert "/runners/" in resp.headers["location"]
-
-    def test_run_creates_flow(self, client):
-        tc, store = client
-        tc.post(
-            "/workflows/run",
-            data={
-                "source": VALID_AFL_SOURCE,
-                "workflow_name": "test.SimpleWF",
-            },
-            follow_redirects=False,
-        )
-        flows = store.get_all_flows()
-        assert len(flows) == 1
-        assert flows[0].name.name == "test.SimpleWF"
-        assert len(flows[0].compiled_sources) == 1
-        assert flows[0].compiled_sources[0].name == "source.ffl"
-
-    def test_run_creates_workflow(self, client):
-        tc, store = client
-        tc.post(
-            "/workflows/run",
-            data={
-                "source": VALID_AFL_SOURCE,
-                "workflow_name": "test.SimpleWF",
-            },
-            follow_redirects=False,
-        )
-        flows = store.get_all_flows()
-        flow = flows[0]
-        workflows = store.get_workflows_by_flow(flow.uuid)
-        assert len(workflows) == 1
-        assert workflows[0].name == "test.SimpleWF"
-
-    def test_run_creates_runner(self, client):
-        tc, store = client
-        resp = tc.post(
-            "/workflows/run",
-            data={
-                "source": VALID_AFL_SOURCE,
-                "workflow_name": "test.SimpleWF",
-            },
-            follow_redirects=False,
-        )
-        # Extract runner_id from redirect URL
-        location = resp.headers["location"]
-        runner_id = location.split("/runners/")[1]
-        runner = store.get_runner(runner_id)
-        assert runner is not None
-        assert runner.state == "created"
-
-    def test_run_creates_task(self, client):
-        tc, store = client
-        tc.post(
-            "/workflows/run",
-            data={
-                "source": VALID_AFL_SOURCE,
-                "workflow_name": "test.SimpleWF",
-            },
-            follow_redirects=False,
-        )
-        # Bootstrap routes by the workflow's namespace (test.SimpleWF -> "test").
-        tasks = store.get_pending_tasks("test")
-        assert len(tasks) == 1
-        assert tasks[0].name == "fw:execute"
-        assert tasks[0].data["workflow_name"] == "test.SimpleWF"
-
-    def test_run_runner_has_snapshotted_asts(self, client):
-        """Runner created by workflow_run has compiled_ast and workflow_ast."""
-        tc, store = client
-        resp = tc.post(
-            "/workflows/run",
-            data={
-                "source": VALID_AFL_SOURCE,
-                "workflow_name": "test.SimpleWF",
-            },
-            follow_redirects=False,
-        )
-        location = resp.headers["location"]
-        runner_id = location.split("/runners/")[1]
-        runner = store.get_runner(runner_id)
-        assert runner is not None
-        assert runner.compiled_ast is not None
-        assert isinstance(runner.compiled_ast, dict)
-        assert "declarations" in runner.compiled_ast
-        assert runner.workflow_ast is not None
-        assert runner.workflow_ast["name"] == "SimpleWF"
+        # No namespace groups; empty state shown.
+        assert 'class="ns-head"' not in resp.text
+        assert "No workflows available" in resp.text
 
 
 class TestNavLink:

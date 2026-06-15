@@ -12,19 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Flow routes — list, detail, source, JSON, and run views."""
+"""Flow view-data helpers.
+
+The flow UI (list / detail / source / JSON / run) lives in the v3 routes; this
+module now provides the shared helpers they import — `build_run_params` and
+`create_flow_run` (the run-submission logic) plus the team/param utilities.
+"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
-
 from facetwork.runtime.expression import evaluate_default
 from facetwork.runtime.task_list_routing import namespace_of
-
-from ...dependencies import get_current_user, get_store
-
-router = APIRouter(prefix="/flows")
 
 
 def _flow_teams(flow) -> set[str]:
@@ -56,249 +54,6 @@ def _flow_teams(flow) -> set[str]:
         if md and getattr(md, "teams", None):
             teams.update(md.teams)
     return teams
-
-
-@router.get("")
-def flow_list(
-    request: Request, q: str | None = None, team: str | None = None, store=Depends(get_store)
-):
-    """List all flows, optionally filtered by name search and/or team."""
-    flows = store.get_all_flows()
-    # Filter out auto-generated CLI submissions (Run, app.Execute, test.Run, etc.)
-    # These have path=cli:submit; seeded examples have path=cli:seed.
-    flows = [f for f in flows if getattr(f.name, "path", "") != "cli:submit"]
-    if q:
-        flows = [f for f in flows if q.lower() in f.name.name.lower()]
-    if team:
-        flows = [f for f in flows if team in _flow_teams(f)]
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "flows/list.html",
-        {
-            "flows": flows,
-            "search_query": q,
-            "active_tab": "flows",
-            "teams": [t.name for t in store.list_teams()],
-            "team": team,
-        },
-    )
-
-
-@router.get("/{flow_id}")
-def flow_detail(flow_id: str, request: Request, store=Depends(get_store)):
-    """Show flow detail with namespace-grouped workflows."""
-    flow = store.get_flow(flow_id)
-    workflows = store.get_workflows_by_flow(flow_id) if flow else []
-    runners = []
-    if flow:
-        for wf in flow.workflows:
-            runners.extend(store.get_runners_by_workflow(wf.uuid))
-        runners.sort(key=lambda r: r.start_time, reverse=True)
-        runners = runners[:20]
-
-    # Group workflows by namespace prefix derived from qualified names
-    ns_groups: dict[str, list] = {}
-    for wf in workflows:
-        if "." in wf.name:
-            ns_prefix, _short = wf.name.rsplit(".", 1)
-        else:
-            ns_prefix = ""
-        ns_groups.setdefault(ns_prefix, []).append(wf)
-
-    namespace_list = sorted(
-        [
-            {"name": ns or "system.unnamespaced", "prefix": ns or "_top", "count": len(wfs)}
-            for ns, wfs in ns_groups.items()
-        ],
-        key=lambda x: str(x["name"]),
-    )
-
-    # Compute declaration counts from compiled AST (entity lists may be empty)
-    ast_counts = {"namespaces": 0, "workflows": 0, "event_facets": 0, "facets": 0, "schemas": 0}
-    if flow and flow.compiled_ast:
-        _count_declarations(flow.compiled_ast.get("declarations", []), ast_counts)
-
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "flows/detail.html",
-        {
-            "flow": flow,
-            "workflows": workflows,
-            "namespace_list": namespace_list,
-            "runners": runners,
-            "ast_counts": ast_counts,
-            "active_tab": "flows",
-        },
-    )
-
-
-@router.get("/{flow_id}/source")
-def flow_source(flow_id: str, request: Request, store=Depends(get_store)):
-    """Show FFL source code for a flow."""
-    flow = store.get_flow(flow_id)
-    sources = flow.compiled_sources if flow else []
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "flows/source.html",
-        {"flow": flow, "sources": sources},
-    )
-
-
-@router.get("/{flow_id}/source/{workflow_id}")
-def flow_workflow_source(
-    flow_id: str,
-    workflow_id: str,
-    request: Request,
-    store=Depends(get_store),
-):
-    """Reconstruct and show the FFL source for a SINGLE workflow in this flow.
-
-    The flow stores the compiled program (``compiled_ast``, or ``compiled_sources``
-    we re-compile to JSON); this reconstructs the focused source for just the
-    selected workflow plus the facets, events, and schemas it references — the
-    same reconstruction used for a running workflow instance.
-    """
-    import json
-
-    from facetwork.workflow_source import (
-        WorkflowNotFoundError,
-        reconstruct_workflow_source,
-    )
-
-    flow = store.get_flow(flow_id)
-    workflow_def = store.get_workflow(workflow_id)
-    workflow_name = workflow_def.name if workflow_def else None
-    source = None
-    error = None
-
-    if not flow:
-        error = "Flow not found."
-    elif not workflow_name:
-        error = "Workflow not found."
-    elif not (flow.compiled_ast or flow.compiled_sources):
-        error = "This flow has no compiled program — source cannot be reconstructed."
-    else:
-        try:
-            if flow.compiled_ast:
-                program_dict = flow.compiled_ast
-            else:
-                from facetwork.emitter import JSONEmitter
-                from facetwork.parser import FFLParser
-
-                parser = FFLParser()
-                ast = parser.parse(flow.compiled_sources[0].content)
-                emitter = JSONEmitter(include_locations=False)
-                program_dict = json.loads(emitter.emit(ast))
-
-            source = reconstruct_workflow_source(program_dict, workflow_name)
-        except WorkflowNotFoundError as exc:
-            error = str(exc)
-        except Exception as exc:  # pragma: no cover - defensive
-            error = f"Failed to reconstruct source: {exc}"
-
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "flows/workflow_source.html",
-        {
-            "flow": flow,
-            "workflow_name": workflow_name,
-            "source": source,
-            "error": error,
-        },
-    )
-
-
-@router.get("/{flow_id}/json")
-def flow_json(flow_id: str, request: Request, store=Depends(get_store)):
-    """Parse FFL source and show the compiled JSON output."""
-    flow = store.get_flow(flow_id)
-    json_output = None
-    parse_error = None
-
-    if flow:
-        try:
-            if flow.compiled_ast:
-                import json
-
-                json_output = json.dumps(flow.compiled_ast, indent=2)
-            elif flow.compiled_sources:
-                from facetwork.emitter import JSONEmitter
-                from facetwork.parser import FFLParser
-
-                parser = FFLParser()
-                source_text = flow.compiled_sources[0].content
-                ast = parser.parse(source_text)
-                emitter = JSONEmitter(indent=2)
-                json_output = emitter.emit(ast)
-        except Exception as exc:
-            parse_error = str(exc)
-
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "flows/json.html",
-        {
-            "flow": flow,
-            "json_output": json_output,
-            "parse_error": parse_error,
-        },
-    )
-
-
-@router.get("/{flow_id}/browse")
-def flow_browse(flow_id: str, request: Request, store=Depends(get_store)):
-    """Browse compiled JSON grouped by declaration type with clickable cross-refs."""
-    import json
-
-    flow = store.get_flow(flow_id)
-    groups: dict[str, list] = {
-        "workflows": [],
-        "event_facets": [],
-        "facets": [],
-        "schemas": [],
-    }
-    parse_error = None
-
-    if flow:
-        try:
-            if flow.compiled_ast:
-                program_dict = flow.compiled_ast
-            elif flow.compiled_sources:
-                from facetwork.emitter import JSONEmitter
-                from facetwork.parser import FFLParser
-
-                parser = FFLParser()
-                source_text = flow.compiled_sources[0].content
-                ast = parser.parse(source_text)
-                emitter = JSONEmitter(include_locations=False)
-                program_json = emitter.emit(ast)
-                program_dict = json.loads(program_json)
-            else:
-                program_dict = None
-
-            if program_dict:
-                _collect_declarations(program_dict.get("declarations", []), "", groups)
-        except Exception as exc:
-            parse_error = str(exc)
-
-    category_order = ["workflows", "event_facets", "facets", "schemas"]
-    category_labels = {
-        "workflows": "Workflows",
-        "event_facets": "Event Facets",
-        "facets": "Facets",
-        "schemas": "Schemas",
-    }
-
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "flows/browse.html",
-        {
-            "flow": flow,
-            "groups": groups,
-            "category_order": category_order,
-            "category_labels": category_labels,
-            "parse_error": parse_error,
-        },
-    )
 
 
 def _count_declarations(declarations: list, counts: dict[str, int]) -> None:
@@ -421,58 +176,6 @@ def _collect_steps(decl: dict, entry: dict, namespace: str) -> None:
                         )
 
 
-@router.get("/{flow_id}/ns/{namespace_name:path}")
-def flow_namespace(
-    flow_id: str,
-    namespace_name: str,
-    request: Request,
-    store=Depends(get_store),
-):
-    """Show workflows within a specific namespace of a flow."""
-    flow = store.get_flow(flow_id)
-    all_workflows = store.get_workflows_by_flow(flow_id) if flow else []
-
-    # Filter workflows by namespace prefix
-    if namespace_name == "_top":
-        filtered = [wf for wf in all_workflows if "." not in wf.name]
-        display_name = "system.unnamespaced"
-    else:
-        filtered = [
-            wf
-            for wf in all_workflows
-            if "." in wf.name and wf.name.rsplit(".", 1)[0] == namespace_name
-        ]
-        display_name = namespace_name
-
-    # Build display list with short names
-    ns_workflows = []
-    for wf in filtered:
-        short_name = wf.name.rsplit(".", 1)[1] if "." in wf.name else wf.name
-        ns_workflows.append({"wf": wf, "short_name": short_name})
-
-    # Filter facets by namespace prefix
-    ns_facets = []
-    if flow:
-        for facet in flow.facets:
-            if namespace_name == "_top":
-                if "." not in facet.name:
-                    ns_facets.append({"facet": facet, "short_name": facet.name})
-            elif "." in facet.name and facet.name.rsplit(".", 1)[0] == namespace_name:
-                short_name = facet.name.rsplit(".", 1)[1]
-                ns_facets.append({"facet": facet, "short_name": short_name})
-
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "flows/namespace.html",
-        {
-            "flow": flow,
-            "namespace_name": display_name,
-            "ns_workflows": ns_workflows,
-            "ns_facets": ns_facets,
-        },
-    )
-
-
 def build_run_params(flow, workflow_name: str):
     """Extract a workflow's params from a flow's compiled AST.
 
@@ -525,43 +228,6 @@ def build_run_params(flow, workflow_name: str):
     except Exception as exc:
         parse_error = str(exc)
     return params, parse_error, workflow_doc
-
-
-@router.get("/{flow_id}/run/{workflow_id}")
-def flow_run_form(
-    flow_id: str,
-    workflow_id: str,
-    request: Request,
-    store=Depends(get_store),
-    current_user=Depends(get_current_user),
-):
-    """Show parameter input form for running a workflow from a flow."""
-    flow = store.get_flow(flow_id)
-    if not flow:
-        return request.app.state.templates.TemplateResponse(
-            request,
-            "flows/detail.html",
-            {"flow": None, "workflows": [], "runners": []},
-        )
-    workflow_def = store.get_workflow(workflow_id)
-    workflow_name = workflow_def.name if workflow_def else "Unknown"
-    params, parse_error, workflow_doc = build_run_params(flow, workflow_name)
-
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "flows/run.html",
-        {
-            "flow": flow,
-            "workflow_def": workflow_def,
-            "workflow_name": workflow_name,
-            "params": params,
-            "parse_error": parse_error,
-            "workflow_doc": workflow_doc,
-            "purposes": ["production", "beta", "test", "personal", "none"],
-            "all_teams": [t.name for t in store.list_teams()],
-            "current_user": current_user,
-        },
-    )
 
 
 def create_flow_run(flow, workflow_def, inputs_json, purpose, teams, store, current_user) -> str:
@@ -666,23 +332,3 @@ def create_flow_run(flow, workflow_def, inputs_json, purpose, teams, store, curr
     return runner_id
 
 
-@router.post("/{flow_id}/run/{workflow_id}")
-def flow_run_execute(
-    flow_id: str,
-    workflow_id: str,
-    request: Request,
-    inputs_json: str = Form("{}"),
-    purpose: str = Form("none"),
-    teams: list[str] = Form(default=[]),
-    store=Depends(get_store),
-    current_user=Depends(get_current_user),
-):
-    """Execute a workflow from an existing flow — creates only Runner + Task."""
-    flow = store.get_flow(flow_id)
-    workflow_def = store.get_workflow(workflow_id) if flow else None
-    if not flow or not workflow_def:
-        return request.app.state.templates.TemplateResponse(
-            request, "flows/detail.html", {"flow": flow, "workflows": [], "runners": []}
-        )
-    runner_id = create_flow_run(flow, workflow_def, inputs_json, purpose, teams, store, current_user)
-    return RedirectResponse(url=f"/runners/{runner_id}", status_code=303)

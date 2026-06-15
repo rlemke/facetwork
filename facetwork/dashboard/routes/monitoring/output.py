@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from fastapi.responses import FileResponse, HTMLResponse
 
 router = APIRouter(prefix="/output")
@@ -84,33 +84,6 @@ def _build_tree(dir_path: Path) -> list[dict]:
             }
         )
     return entries
-
-
-@router.get("")
-def output_browser(request: Request, path: str = ""):
-    """Browse the output directory tree."""
-    resolved = _safe_path(path)
-    if resolved is None:
-        return HTMLResponse("Path traversal not allowed", status_code=400)
-
-    if not resolved.exists():
-        return HTMLResponse("Directory not found", status_code=404)
-
-    entries = _build_tree(resolved)
-    breadcrumbs = _build_breadcrumbs(path)
-    base_dir = str(_output_base())
-
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "output/browser.html",
-        {
-            "entries": entries,
-            "breadcrumbs": breadcrumbs,
-            "base_dir": base_dir,
-            "current_path": path,
-            "active_tab": "output",
-        },
-    )
 
 
 @router.get("/view")

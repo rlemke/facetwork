@@ -117,177 +117,91 @@ def _seed_namespaced_flow(store):
 
 
 class TestFlowDetailNamespaces:
-    """Tests for namespace grouping on the flow detail page."""
+    """Tests for namespace grouping on the v3 flow detail page.
 
-    def test_namespace_list_shown(self, client):
-        """Detail page shows namespace list instead of flat workflows."""
+    The v3 detail page (``/v3/flows/{id}``) groups workflows by namespace
+    inline (collapsible ``<details>`` groups) — there are no separate
+    ``/ns/{namespace}`` sub-pages. Each group shows the namespace name, a
+    count badge, and short workflow names that link to the run form.
+    """
+
+    def test_namespace_groups_shown(self, client):
+        """Detail page shows each namespace as a group."""
         tc, store = client
         flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}")
+        resp = tc.get(f"/v3/flows/{flow.uuid}")
         assert resp.status_code == 200
-        # Should show namespace names, not individual workflow names
         assert "osm.RegionMap" in resp.text
         assert "osm.Geocode" in resp.text
+        # Top-level (unqualified) workflows group under system.unnamespaced.
         assert "system.unnamespaced" in resp.text
 
-    def test_namespace_links(self, client):
-        """Detail page has links to /ns/ routes."""
+    def test_run_links_point_to_run_form(self, client):
+        """Each workflow row links to the v3 run form by workflow UUID."""
         tc, store = client
         flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}")
+        resp = tc.get(f"/v3/flows/{flow.uuid}")
         assert resp.status_code == 200
-        assert f"/flows/{flow.uuid}/ns/osm.Geocode" in resp.text
-        assert f"/flows/{flow.uuid}/ns/osm.RegionMap" in resp.text
-        assert f"/flows/{flow.uuid}/ns/_top" in resp.text
+        for wf in wfs:
+            assert f"/v3/flows/{flow.uuid}/run/{wf.uuid}" in resp.text
 
-    def test_total_count_in_heading(self, client):
-        """Heading shows total workflow count."""
+    def test_total_count_in_metrics(self, client):
+        """The Workflows metric shows the total workflow count."""
         tc, store = client
         flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}")
+        resp = tc.get(f"/v3/flows/{flow.uuid}")
         assert resp.status_code == 200
-        assert "Workflows (5)" in resp.text
+        # total_wf is rendered as the value of the "Workflows" metric.
+        assert ">5</div>" in resp.text
 
     def test_namespace_counts(self, client):
-        """Each namespace row shows correct workflow count."""
+        """Each namespace group shows its workflow count badge."""
         tc, store = client
         flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}")
+        resp = tc.get(f"/v3/flows/{flow.uuid}")
         assert resp.status_code == 200
-        # The table should contain count cells
         html = resp.text
-        # osm.Geocode has 2, osm.RegionMap has 2, (top-level) has 1
-        assert ">2<" in html
-        assert ">1<" in html
+        # osm.Geocode has 2, osm.RegionMap has 2, system.unnamespaced has 1.
+        # Counts render in a <span class="c"> badge.
+        assert '<span class="c">2</span>' in html
+        assert '<span class="c">1</span>' in html
 
     def test_top_level_group_for_unqualified(self, client):
-        """Unqualified workflows appear under (top-level) group."""
+        """Unqualified workflows appear under the system.unnamespaced group."""
         tc, store = client
         flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}")
+        resp = tc.get(f"/v3/flows/{flow.uuid}")
         assert resp.status_code == 200
         assert "system.unnamespaced" in resp.text
-        assert f"/flows/{flow.uuid}/ns/_top" in resp.text
+        # The unqualified SimpleWF appears under that group.
+        assert "SimpleWF" in resp.text
 
-    def test_no_flat_workflow_names(self, client):
-        """Detail page should NOT show individual workflow names in the table."""
+    def test_short_names_in_rows(self, client):
+        """Workflow rows show short names, not fully qualified names."""
         tc, store = client
         flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}")
+        resp = tc.get(f"/v3/flows/{flow.uuid}")
         assert resp.status_code == 200
-        # Individual workflow names should not appear in the namespace table
-        assert "Address" not in resp.text
-        assert "BicycleMap" not in resp.text
-
-
-class TestFlowNamespaceView:
-    """Tests for GET /flows/{flow_id}/ns/{namespace_name}."""
-
-    def test_correct_workflows_shown(self, client):
-        """Namespace view shows only workflows from that namespace."""
-        tc, store = client
-        flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/ns/osm.Geocode")
-        assert resp.status_code == 200
+        # Short names render as the row label.
         assert "Address" in resp.text
-        assert "BatchGeocode" in resp.text
-        # Should NOT show RegionMap workflows (different namespace)
-        assert "BicycleMap" not in resp.text
-        assert "HikingMap" not in resp.text
-
-    def test_short_names_used(self, client):
-        """Namespace view shows short names, not fully qualified names."""
-        tc, store = client
-        flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/ns/osm.Geocode")
-        assert resp.status_code == 200
-        # Short names should appear
-        assert "Address" in resp.text
-        # Full qualified names should NOT appear
-        assert "osm.Geocode.Address" not in resp.text
-
-    def test_nested_namespace(self, client):
-        """Dotted namespace path works for nested namespaces."""
-        tc, store = client
-        flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/ns/osm.RegionMap")
-        assert resp.status_code == 200
         assert "BicycleMap" in resp.text
-        assert "HikingMap" in resp.text
-        assert "Address" not in resp.text
-
-    def test_other_namespaces_excluded(self, client):
-        """Namespace view excludes workflows from other namespaces."""
-        tc, store = client
-        flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/ns/osm.RegionMap")
-        assert resp.status_code == 200
-        assert "Address" not in resp.text
-        assert "BatchGeocode" not in resp.text
-        assert "SimpleWF" not in resp.text
-
-    def test_run_button_present(self, client):
-        """Namespace view shows Run buttons for each workflow."""
-        tc, store = client
-        flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/ns/osm.Geocode")
-        assert resp.status_code == 200
-        assert "Run</a>" in resp.text
-        # Check run links point to workflow UUIDs
-        geo_wfs = [w for w in wfs if w.name.startswith("osm.Geocode")]
-        for wf in geo_wfs:
-            assert f"/flows/{flow.uuid}/run/{wf.uuid}" in resp.text
-
-    def test_back_link(self, client):
-        """Namespace view has a back link to the flow detail page."""
-        tc, store = client
-        flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/ns/osm.Geocode")
-        assert resp.status_code == 200
-        assert f"/flows/{flow.uuid}" in resp.text
-        assert "Back to flow" in resp.text
-
-    def test_source_json_links(self, client):
-        """Namespace view shows source and JSON links when compiled_sources exists."""
-        tc, store = client
-        flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/ns/osm.Geocode")
-        assert resp.status_code == 200
-        assert f"/flows/{flow.uuid}/source" in resp.text
-        assert f"/flows/{flow.uuid}/json" in resp.text
+        # The namespace prefix is the group header, not part of the row label,
+        # so the fully qualified name never appears verbatim.
+        assert "osm.Geocode.Address" not in resp.text
+        assert "osm.RegionMap.BicycleMap" not in resp.text
 
     def test_missing_flow(self, client):
-        """Namespace view handles missing flow gracefully."""
+        """Detail page handles a missing flow gracefully."""
         tc, store = client
-        resp = tc.get("/flows/nonexistent/ns/osm.Geocode")
+        resp = tc.get("/v3/flows/nonexistent")
         assert resp.status_code == 200
         assert "Flow not found" in resp.text
 
-    def test_empty_namespace(self, client):
-        """Namespace view returns empty table for nonexistent namespace."""
+    def test_source_json_links(self, client):
+        """Detail page links to the v3 source and JSON code views."""
         tc, store = client
         flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/ns/nonexistent.namespace")
+        resp = tc.get(f"/v3/flows/{flow.uuid}")
         assert resp.status_code == 200
-        assert "Workflows (0)" in resp.text
-
-    def test_top_level_namespace(self, client):
-        """_top prefix shows only top-level (unqualified) workflows."""
-        tc, store = client
-        flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/ns/_top")
-        assert resp.status_code == 200
-        assert "SimpleWF" in resp.text
-        assert "system.unnamespaced" in resp.text
-        # Should not show namespaced workflows
-        assert "Address" not in resp.text
-        assert "BicycleMap" not in resp.text
-
-    def test_namespace_heading(self, client):
-        """Namespace view shows flow name and namespace in heading."""
-        tc, store = client
-        flow, wfs = _seed_namespaced_flow(store)
-        resp = tc.get(f"/flows/{flow.uuid}/ns/osm.Geocode")
-        assert resp.status_code == 200
-        assert "demo-flow" in resp.text
-        assert "osm.Geocode" in resp.text
+        assert f"/v3/flows/{flow.uuid}/source" in resp.text
+        assert f"/v3/flows/{flow.uuid}/json" in resp.text

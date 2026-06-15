@@ -63,7 +63,7 @@
 <body class="sidebar-layout">
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <a href="/v2/workflows" class="sidebar-brand">
+            <a href="/v3/workflows" class="sidebar-brand">
                 <span class="sidebar-brand-icon">&#x25B6;</span>
                 <span class="sidebar-brand-text">Facetwork</span>
             </a>
@@ -84,52 +84,52 @@
         </div>
 
         <nav class="sidebar-nav">
-            <a href="/v2/workflows" class="sidebar-link{% if active_tab == 'workflows' %} active{% endif %}">
+            <a href="/v3/workflows" class="sidebar-link{% if active_tab == 'workflows' %} active{% endif %}">
                 <span class="sidebar-icon">&#x25B6;</span>
                 <span class="sidebar-label">Workflows</span>
             </a>
-            <a href="/flows" class="sidebar-link{% if active_tab == 'flows' %} active{% endif %}">
+            <a href="/v3/flows" class="sidebar-link{% if active_tab == 'flows' %} active{% endif %}">
                 <span class="sidebar-icon">&#x2B22;</span>
                 <span class="sidebar-label">Flows</span>
             </a>
-            <a href="/catalog" class="sidebar-link{% if active_tab == 'catalog' %} active{% endif %}">
+            <a href="/v3/catalog" class="sidebar-link{% if active_tab == 'catalog' %} active{% endif %}">
                 <span class="sidebar-icon">&#x1F4D8;</span>
                 <span class="sidebar-label">Catalog</span>
             </a>
             <div class="sidebar-group">
                 <span class="sidebar-group-label">Infrastructure</span>
-                <a href="/v2/servers" class="sidebar-link{% if active_tab == 'servers' %} active{% endif %}">
+                <a href="/v3/servers" class="sidebar-link{% if active_tab == 'servers' %} active{% endif %}">
                     <span class="sidebar-icon">&#x2699;</span>
                     <span class="sidebar-label">Servers</span>
                 </a>
-                <a href="/v2/handlers" class="sidebar-link{% if active_tab == 'handlers' %} active{% endif %}">
+                <a href="/v3/handlers" class="sidebar-link{% if active_tab == 'handlers' %} active{% endif %}">
                     <span class="sidebar-icon">&#x26A1;</span>
                     <span class="sidebar-label">Handlers</span>
                 </a>
-                <a href="/v2/fleet" class="sidebar-link{% if active_tab == 'fleet' %} active{% endif %}">
+                <a href="/v3/fleet" class="sidebar-link{% if active_tab == 'fleet' %} active{% endif %}">
                     <span class="sidebar-icon">&#x2637;</span>
                     <span class="sidebar-label">Fleet</span>
                 </a>
-                <a href="/tasks" class="sidebar-link{% if active_tab == 'tasks' %} active{% endif %}">
+                <a href="/v3/tasks" class="sidebar-link{% if active_tab == 'tasks' %} active{% endif %}">
                     <span class="sidebar-icon">&#x2611;</span>
                     <span class="sidebar-label">Tasks</span>
                 </a>
-                <a href="/v2/postgis" class="sidebar-link{% if active_tab == 'postgis' %} active{% endif %}">
+                <a href="/v3/postgis" class="sidebar-link{% if active_tab == 'postgis' %} active{% endif %}">
                     <span class="sidebar-icon">&#x1F5FA;</span>
                     <span class="sidebar-label">PostGIS</span>
                 </a>
             </div>
             <div class="sidebar-group">
                 <span class="sidebar-group-label">Tools</span>
-                <a href="/workflows/new" class="sidebar-link{% if active_tab == 'new_workflow' %} active{% endif %}">
+                <a href="/v3/workflows/new" class="sidebar-link{% if active_tab == 'new_workflow' %} active{% endif %}">
                     <span class="sidebar-icon">&#x2795;</span>
                     <span class="sidebar-label">New Workflow</span>
                 </a>
-                <a href="/output" class="sidebar-link{% if active_tab == 'output' %} active{% endif %}">
+                <a href="/v3/output" class="sidebar-link{% if active_tab == 'output' %} active{% endif %}">
                     <span class="sidebar-icon">&#x1F4C1;</span>
                     <span class="sidebar-label">Output</span>
                 </a>
-                <a href="/events" class="sidebar-link{% if active_tab == 'events' %} active{% endif %}">
+                <a href="/v3/events" class="sidebar-link{% if active_tab == 'events' %} active{% endif %}">
                     <span class="sidebar-icon">&#x23F5;</span>
                     <span class="sidebar-label">Events</span>
                 </a>

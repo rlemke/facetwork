@@ -124,78 +124,6 @@ def _parse_version(raw: str | None) -> int | None:
         return None
 
 
-@router.get("")
-def catalog_list(request: Request, q: str = "", package: str = "", store=Depends(get_store)):
-    """Catalog browser with three modes:
-
-    - ``?q=`` — ranked search results (flat).
-    - ``?package=<slug>`` — the workflows belonging to one library/package (flat).
-    - neither — a grouped overview: packages/libraries (with member counts),
-      standalone workflows, and a per-package workflow tally.
-    """
-    svc = _service(store)
-    ctx: dict = {
-        "q": q,
-        "package": package,
-        "unavailable": svc is None,
-        "active_tab": "catalog",
-    }
-    if svc is None:
-        ctx["flat"] = True
-        ctx["entries"] = []
-        return request.app.state.templates.TemplateResponse(request, "catalog/list.html", ctx)
-
-    if q:
-        ctx["flat"] = True
-        ctx["entries"] = svc.search(q)
-        return request.app.state.templates.TemplateResponse(request, "catalog/list.html", ctx)
-
-    rows = svc.list_all()
-    if package:
-        ctx["flat"] = True
-        ctx["entries"] = [s for s in rows if s.get("package") == package]
-        return request.app.state.templates.TemplateResponse(request, "catalog/list.html", ctx)
-
-    counts: dict[str, int] = {}
-    for s in rows:
-        if s["kind"] == "workflow" and s.get("package"):
-            counts[s["package"]] = counts.get(s["package"], 0) + 1
-    ctx.update(
-        flat=False,
-        libraries=[s for s in rows if s["kind"] == "library"],
-        standalone=[s for s in rows if s["kind"] == "workflow" and not s.get("package")],
-        package_counts=sorted(counts.items()),
-        total=len(rows),
-    )
-    return request.app.state.templates.TemplateResponse(request, "catalog/list.html", ctx)
-
-
-@router.get("/{slug}")
-def catalog_detail(
-    request: Request, slug: str, version: str | None = None, error: str = "", store=Depends(get_store)
-):
-    """Show one catalog entry + a revision (FFL, params, deps, versions)."""
-    svc = _service(store)
-    detail = svc.get(slug, _parse_version(version)) if svc else None
-    default_inputs = {}
-    if detail:
-        for p in detail.get("param_schema", []) or []:
-            default_inputs[p["name"]] = p.get("default")
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "catalog/detail.html",
-        {
-            "d": detail,
-            "slug": slug,
-            "error": error,
-            "summary_html": render_summary_md(detail.get("summary")) if detail else "",
-            "default_inputs_json": json.dumps(default_inputs, indent=2, default=str),
-            "unavailable": svc is None,
-            "active_tab": "catalog",
-        },
-    )
-
-
 @router.post("/{slug}/publish")
 def catalog_publish(
     request: Request, slug: str, version: str = Form(""), store=Depends(get_store)
@@ -206,8 +134,8 @@ def catalog_publish(
         try:
             svc.publish(slug, _parse_version(version))
         except Exception as e:
-            return RedirectResponse(f"/catalog/{slug}?error={str(e)[:200]}", status_code=303)
-    return RedirectResponse(f"/catalog/{slug}", status_code=303)
+            return RedirectResponse(f"/v3/catalog/{slug}?error={str(e)[:200]}", status_code=303)
+    return RedirectResponse(f"/v3/catalog/{slug}", status_code=303)
 
 
 @router.post("/{slug}/run")
@@ -222,11 +150,11 @@ def catalog_run(
     """Pin a revision and submit a bootstrap run with the given inputs."""
     svc = _service(store)
     if svc is None:
-        return RedirectResponse(f"/catalog/{slug}?error=catalog+unavailable", status_code=303)
+        return RedirectResponse(f"/v3/catalog/{slug}?error=catalog+unavailable", status_code=303)
     try:
         inputs = json.loads(inputs_json) if inputs_json.strip() else {}
     except json.JSONDecodeError as e:
-        return RedirectResponse(f"/catalog/{slug}?error=bad+inputs+JSON:+{e}", status_code=303)
+        return RedirectResponse(f"/v3/catalog/{slug}?error=bad+inputs+JSON:+{e}", status_code=303)
     try:
         res = svc.run(
             slug,
@@ -235,5 +163,5 @@ def catalog_run(
             allow_unpublished=bool(allow_unpublished),
         )
     except Exception as e:
-        return RedirectResponse(f"/catalog/{slug}?error={str(e)[:200]}", status_code=303)
+        return RedirectResponse(f"/v3/catalog/{slug}?error={str(e)[:200]}", status_code=303)
     return RedirectResponse(f"/runners/{res['runner_id']}", status_code=303)

@@ -42,10 +42,12 @@ def test_app_has_routes():
     app = create_app()
     routes = [r.path for r in app.routes]
     assert "/" in routes
+    # Legacy page routes were removed in favour of the v3 UI; the kept
+    # redirect (`/runners`→/v3/workflows) plus the v3 pages stand in for them.
     assert "/runners" in routes
-    assert "/flows" in routes
-    assert "/servers" in routes
-    assert "/tasks" in routes
+    assert "/v3/flows" in routes
+    assert "/v3/servers" in routes
+    assert "/v3/tasks" in routes
     assert "/api/runners" in routes
     assert "/api/flows" in routes
     assert "/api/servers" in routes

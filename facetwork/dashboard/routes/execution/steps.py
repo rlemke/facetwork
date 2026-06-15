@@ -18,33 +18,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
 
 from ...dependencies import get_store
 
 router = APIRouter(prefix="/steps")
-
-
-@router.get("/{step_id}")
-def step_detail(step_id: str, request: Request, store=Depends(get_store)):
-    """Show step detail: state, attributes, retry action."""
-    step = store.get_step(step_id)
-    names = _resolve_step_names(step, store) if step else {}
-    step_logs = store.get_step_logs_by_step(step_id) if step else []
-    heartbeat_ts = _get_heartbeat_ts(step, store) if step else None
-    is_mixin = _is_mixin_sub_step(step) if step else False
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "steps/detail.html",
-        {
-            "step": step,
-            "names": names,
-            "step_logs": step_logs,
-            "heartbeat_ts": heartbeat_ts,
-            "is_mixin_sub_step": is_mixin,
-        },
-    )
 
 
 def _resolve_step_names(step, store) -> dict:
@@ -177,27 +156,6 @@ def _get_heartbeat_ts(step, store) -> int | None:
     if not task or task.state != "running":
         return None
     return task.task_heartbeat or task.updated or task.created
-
-
-@router.get("/{step_id}/partial")
-def step_detail_partial(step_id: str, request: Request, store=Depends(get_store)):
-    """HTMX partial for auto-refresh of step detail content."""
-    step = store.get_step(step_id)
-    names = _resolve_step_names(step, store) if step else {}
-    step_logs = store.get_step_logs_by_step(step_id) if step else []
-    heartbeat_ts = _get_heartbeat_ts(step, store) if step else None
-    is_mixin = _is_mixin_sub_step(step) if step else False
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "steps/_detail_content.html",
-        {
-            "step": step,
-            "names": names,
-            "step_logs": step_logs,
-            "heartbeat_ts": heartbeat_ts,
-            "is_mixin_sub_step": is_mixin,
-        },
-    )
 
 
 @router.post("/{step_id}/retry")

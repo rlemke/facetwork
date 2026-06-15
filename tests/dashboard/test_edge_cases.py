@@ -225,7 +225,7 @@ class TestStepEdgeCases:
         )
         store.save_step(step)
 
-        resp = tc.get(f"/steps/{sid}")
+        resp = tc.get(f"/v3/steps/{sid}")
         assert resp.status_code == 200
         assert "VariableAssignment" in resp.text
 
@@ -244,7 +244,7 @@ class TestStepEdgeCases:
         )
         store.save_step(step)
 
-        resp = tc.get(f"/steps/{sid}")
+        resp = tc.get(f"/v3/steps/{sid}")
         assert resp.status_code == 200
         assert "Transmit" in resp.text or "event_transmit" in resp.text
 
@@ -272,7 +272,7 @@ class TestStepEdgeCases:
         )
         store.save_step(step)
 
-        resp = tc.get(f"/steps/{sid}")
+        resp = tc.get(f"/v3/steps/{sid}")
         assert resp.status_code == 200
 
 
@@ -316,7 +316,7 @@ class TestFlowEdgeCases:
         )
         store.save_flow(flow)
 
-        resp = tc.get("/flows/flow-1")
+        resp = tc.get("/v3/flows/flow-1")
         assert resp.status_code == 200
         assert "MultiFlow" in resp.text
 
@@ -330,7 +330,7 @@ class TestFlowEdgeCases:
         )
         store.save_flow(flow)
 
-        resp = tc.get("/flows/flow-2/source")
+        resp = tc.get("/v3/flows/flow-2/source")
         assert resp.status_code == 200
 
     def test_flow_source_view_with_content(self, client):
@@ -344,7 +344,7 @@ class TestFlowEdgeCases:
         )
         store.save_flow(flow)
 
-        resp = tc.get("/flows/flow-3/source")
+        resp = tc.get("/v3/flows/flow-3/source")
         assert resp.status_code == 200
         assert "facet Hello(x: Long)" in resp.text
 
@@ -363,7 +363,7 @@ class TestFlowEdgeCases:
         store.save_flow(flow)
 
         # JSON view uses the first source
-        resp = tc.get("/flows/flow-4/json")
+        resp = tc.get("/v3/flows/flow-4/json")
         assert resp.status_code == 200
         assert "A" in resp.text
 
@@ -374,60 +374,62 @@ class TestFlowEdgeCases:
 
 
 class TestTaskEdgeCases:
+    # The legacy single-task detail page was removed; the v3 Tasks list (with a
+    # ?state= filter) is the page-level analog. Each row shows the task name and
+    # its state (state dot title + per-state tab), so state-specific tests stay
+    # meaningful there. Tests that asserted detail-only data (error message /
+    # data payload) have no v3 page analog and were dropped.
     def test_task_pending_state(self, client):
         tc, store = client
         store.save_task(_make_task("t-1", state="pending"))
-        resp = tc.get("/tasks/t-1")
+        resp = tc.get("/v3/tasks?state=pending")
         assert resp.status_code == 200
         assert "pending" in resp.text
+        assert "SendEmail" in resp.text
 
     def test_task_running_state(self, client):
         tc, store = client
         store.save_task(_make_task("t-2", state="running"))
-        resp = tc.get("/tasks/t-2")
+        resp = tc.get("/v3/tasks?state=running")
         assert resp.status_code == 200
         assert "running" in resp.text
+        assert "SendEmail" in resp.text
 
     def test_task_completed_state(self, client):
         tc, store = client
         store.save_task(_make_task("t-3", state="completed"))
-        resp = tc.get("/tasks/t-3")
+        resp = tc.get("/v3/tasks?state=completed")
         assert resp.status_code == 200
         assert "completed" in resp.text
+        assert "SendEmail" in resp.text
 
     def test_task_failed_state(self, client):
         tc, store = client
         store.save_task(_make_task("t-4", state="failed"))
-        resp = tc.get("/tasks/t-4")
+        resp = tc.get("/v3/tasks?state=failed")
         assert resp.status_code == 200
         assert "failed" in resp.text
-
-    def test_task_with_error_message(self, client):
-        tc, store = client
-        store.save_task(_make_task("t-5", error={"message": "Timeout exceeded"}))
-        resp = tc.get("/tasks/t-5")
-        assert resp.status_code == 200
-        assert "Timeout exceeded" in resp.text
-
-    def test_task_with_data_payload(self, client):
-        tc, store = client
-        store.save_task(_make_task("t-6", data={"recipient": "user@example.com"}))
-        resp = tc.get("/tasks/t-6")
-        assert resp.status_code == 200
-        assert "user@example.com" in resp.text
+        assert "SendEmail" in resp.text
 
     def test_empty_state_filter_returns_all_tasks(self, client):
         tc, store = client
         store.save_task(_make_task("t-7", state="pending"))
         store.save_task(_make_task("t-8", name="Other", state="running"))
-        resp = tc.get("/tasks")
+        resp = tc.get("/v3/tasks")
         assert resp.status_code == 200
-        assert "t-7" in resp.text or "SendEmail" in resp.text
+        assert "SendEmail" in resp.text
+        assert "Other" in resp.text
 
 
 # =============================================================================
 # TestServerEdgeCases
 # =============================================================================
+
+
+def _now_ms():
+    import time
+
+    return int(time.time() * 1000)
 
 
 class TestServerEdgeCases:
@@ -442,6 +444,7 @@ class TestServerEdgeCases:
                 service_name="facetwork",
                 server_name="worker-01",
                 state=ServerState.RUNNING,
+                ping_time=_now_ms(),
             )
         )
         store.save_server(
@@ -451,9 +454,12 @@ class TestServerEdgeCases:
                 service_name="facetwork",
                 server_name="manager-01",
                 state=ServerState.RUNNING,
+                ping_time=_now_ms(),
             )
         )
-        resp = tc.get("/servers")
+        # Both servers are RUNNING (fresh ping) → on the default "running" tab;
+        # their groups render in the Group column.
+        resp = tc.get("/v3/servers")
         assert resp.status_code == 200
         assert "workers" in resp.text
         assert "managers" in resp.text
@@ -469,9 +475,11 @@ class TestServerEdgeCases:
             server_name="worker-02",
             state=ServerState.RUNNING,
             handlers=["osm.CacheLookup", "osm.ReverseGeocode"],
+            ping_time=_now_ms(),
         )
         store.save_server(server)
-        resp = tc.get("/servers/s-3")
+        # v3 Servers groups by host (server_name); running tab is default.
+        resp = tc.get("/v3/servers")
         assert resp.status_code == 200
         assert "worker-02" in resp.text
 
@@ -487,7 +495,7 @@ class TestServerEdgeCases:
             state=ServerState.SHUTDOWN,
         )
         store.save_server(server)
-        resp = tc.get("/servers/s-4")
+        resp = tc.get("/v3/servers?tab=shutdown")
         assert resp.status_code == 200
         assert "shutdown" in resp.text
 
@@ -501,9 +509,10 @@ class TestServerEdgeCases:
             service_name="facetwork",
             server_name="minimal-server",
             state=ServerState.STARTUP,
+            ping_time=_now_ms(),
         )
         store.save_server(server)
-        resp = tc.get("/servers/s-5")
+        resp = tc.get("/v3/servers?tab=startup")
         assert resp.status_code == 200
         assert "minimal-server" in resp.text
 
@@ -514,41 +523,22 @@ class TestServerEdgeCases:
 
 
 class TestEventEdgeCases:
+    # The legacy single-event detail page was removed; the v3 Events list is the
+    # page-level analog. It renders each event's name (e.g. fw:execute) and state.
+    # The detail-only large-data test has no v3 page analog and was dropped.
     def test_event_execute_vs_resume_types(self, client):
         tc, store = client
         store.save_task(_make_event_task("evt-1", name="fw:execute"))
         store.save_task(_make_event_task("evt-2", step_id="step-2", name="fw:resume"))
-        resp = tc.get("/events")
+        resp = tc.get("/v3/events")
         assert resp.status_code == 200
-        assert "evt-1" in resp.text
-        assert "evt-2" in resp.text
-
-    def test_event_with_large_data(self, client):
-        tc, store = client
-        from facetwork.runtime.entities import TaskDefinition
-
-        large_data = {"data": "x" * 5000}
-        task = TaskDefinition(
-            uuid="evt-big",
-            name="fw:execute",
-            runner_id="",
-            workflow_id="wf-1",
-            flow_id="",
-            step_id="step-1",
-            state="pending",
-            created=0,
-            updated=0,
-            task_list_name="default",
-            data=large_data,
-        )
-        store.save_task(task)
-        resp = tc.get("/events/evt-big")
-        assert resp.status_code == 200
+        assert "fw:execute" in resp.text
+        assert "fw:resume" in resp.text
 
     def test_event_filter_nonexistent_state_returns_empty(self, client):
         tc, store = client
         store.save_task(_make_event_task("evt-1"))
-        resp = tc.get("/events?state=nonexistent_state")
+        resp = tc.get("/v3/events?state=nonexistent_state")
         assert resp.status_code == 200
         # Should return a page but without the event that has a different state
         assert "Events" in resp.text
@@ -610,7 +600,7 @@ class TestFilteringEdgeCases:
             )
         )
         # Search with lowercase should match uppercase name
-        resp = tc.get("/flows?q=testflow")
+        resp = tc.get("/v3/flows?q=testflow")
         assert resp.status_code == 200
         assert "TestFlow" in resp.text
 
@@ -630,7 +620,7 @@ class TestFilteringEdgeCases:
                 name=FlowIdentity(name="FlowB", path="/b", uuid="flow-2"),
             )
         )
-        resp = tc.get("/flows")
+        resp = tc.get("/v3/flows")
         assert resp.status_code == 200
         assert "FlowA" in resp.text
         assert "FlowB" in resp.text

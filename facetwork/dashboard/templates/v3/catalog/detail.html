@@ -36,7 +36,7 @@ pre.ffl{margin:0;padding:1rem;background:var(--bg);border:0;border-radius:0;font
 <nav class="crumb"><a href="/v3/catalog">Catalog</a>
   {% if d %}<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="cur">{{ d.title or slug }}</span>{% endif %}</nav>
 {% endblock %}
-{% block topbar_actions %}{% if d %}<a class="iconbtn" href="/catalog/{{ slug }}" title="Open in classic UI"><svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-5"/></svg></a>{% endif %}{% endblock %}
+{% block topbar_actions %}{% if d %}<a class="iconbtn" href="/v3/catalog/{{ slug }}" title="Open in classic UI"><svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-5"/></svg></a>{% endif %}{% endblock %}
 
 {% block content %}
 {% if unavailable or not d %}

@@ -78,21 +78,3 @@ class TestStateBadgePartial:
         tmpl = env.get_template("partials/_state_badge.html")
         html = tmpl.render(state="something_else")
         assert "badge-secondary" in html
-
-
-class TestEmptyStatePartial:
-    """Test _empty_state.html partial."""
-
-    def test_default_icon_and_message(self, env):
-        """Default empty state should use search icon."""
-        tmpl = env.get_template("partials/_empty_state.html")
-        html = tmpl.render()
-        assert "empty-state" in html
-        assert "No items found." in html
-
-    def test_custom_icon_and_message(self, env):
-        """Custom icon and message should render."""
-        tmpl = env.get_template("partials/_empty_state.html")
-        html = tmpl.render(empty_icon="&#x2699;", empty_message="No servers found.")
-        assert "No servers found." in html
-        assert "&#x2699;" in html

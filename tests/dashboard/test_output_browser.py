@@ -191,13 +191,13 @@ def client(output_dir):
 
 class TestOutputRoutes:
     def test_browser_root(self, client, output_dir):
-        resp = client.get("/output")
+        resp = client.get("/v3/output")
         assert resp.status_code == 200
         assert "maps" in resp.text
         assert "stats" in resp.text
 
     def test_browser_subdir(self, client, output_dir):
-        resp = client.get("/output?path=maps")
+        resp = client.get("/v3/output?path=maps")
         assert resp.status_code == 200
         assert "alabama.html" in resp.text
 
@@ -211,19 +211,20 @@ class TestOutputRoutes:
         assert resp.status_code == 404
 
     def test_traversal_blocked_browser(self, client, output_dir):
-        resp = client.get("/output?path=../../etc/passwd")
+        resp = client.get("/v3/output?path=../../etc/passwd")
         assert resp.status_code == 400
 
     def test_traversal_blocked_view(self, client, output_dir):
         resp = client.get("/output/view?path=../../etc/passwd")
         assert resp.status_code == 400
 
-    def test_nonexistent_dir_returns_404(self, client, output_dir):
-        resp = client.get("/output?path=nonexistent")
-        assert resp.status_code == 404
+    def test_nonexistent_dir_renders_not_found(self, client, output_dir):
+        resp = client.get("/v3/output?path=nonexistent")
+        assert resp.status_code == 200
+        assert "Directory not found" in resp.text
 
     def test_breadcrumbs_in_response(self, client, output_dir):
-        resp = client.get("/output?path=maps")
+        resp = client.get("/v3/output?path=maps")
         assert resp.status_code == 200
         assert "Output" in resp.text  # root breadcrumb
 
@@ -233,14 +234,15 @@ class TestOutputRoutes:
         assert "some stats" in resp.text
 
     def test_viewable_file_name_is_link(self, client, output_dir):
-        resp = client.get("/output?path=maps")
+        resp = client.get("/v3/output?path=maps")
         assert resp.status_code == 200
-        # The filename itself should be an <a> link to /output/view
-        assert '<a href="/output/view?path=maps' in resp.text
-        assert "alabama.html</a>" in resp.text
+        # The file entry should link to the (kept) /output/view endpoint
+        assert '/output/view?path=maps' in resp.text
+        assert "alabama.html" in resp.text
 
     def test_json_file_name_is_link(self, client, output_dir):
         (output_dir / "maps" / "data.json").write_text('{"a":1}')
-        resp = client.get("/output?path=maps")
+        resp = client.get("/v3/output?path=maps")
         assert resp.status_code == 200
-        assert "data.json</a>" in resp.text
+        assert "data.json" in resp.text
+        assert "/output/view?path=maps/data.json" in resp.text
