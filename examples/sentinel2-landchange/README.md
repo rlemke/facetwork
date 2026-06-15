@@ -6,11 +6,13 @@ as an interactive map. Built on open data and open algorithms; designed to show
 off Facetwork's per-scene fan-out, content-addressed caching, and source-adapter
 shape.
 
-> **Scaffold status.** The FFL, handlers, tool library, cache protocol, tests,
-> and an offline **mock** path are complete and green. The two heavy lifts — the
-> real STAC query and the real COG raster math — are stubbed with clear TODOs and
-> raise `NotImplementedError` until implemented (run with `use_mock=true` for
-> now). See *Implementing the real path* below.
+> **Status.** Real path **implemented and verified live**: the real STAC search
+> (`requests`) and the real COG window-read + NDVI/NDWI/NDBI (`rio-tiler` +
+> `numpy`) both work against Element84 Earth Search + the public Sentinel-2 COGs.
+> The composite → change → render chain is shared numpy code (one path for real
+> and mock). An offline **mock** path (`use_mock=true`) runs the whole chain with
+> no network/GDAL — that's what the default test suite exercises; a live STAC
+> test is opt-in (`S2_LIVE=1`).
 
 ## What it does
 
@@ -59,23 +61,36 @@ The run appears in the dashboard's **Runs** list; the per-scene `FetchSceneIndex
 steps fan out under `ScanScenes`, and the final `AnalyzeAOI` yields the path to
 the rendered `index.html`.
 
-## Implementing the real path
+## Real run
 
-Two stubs to fill (signatures + cache keys + return shapes already fixed, so
-handlers and FFL don't change):
+Install the geospatial deps and drop `use_mock`:
 
-- **`tools/_s2_tools/stac.py` → `_search_real`** — query `{stac_url}/search`
-  (bbox + datetime + `eo:cloud_cover<max`), paginate, project items to scene
-  dicts with COG band hrefs. Deps: `requests` (or `pystac-client`).
-- **`tools/_s2_tools/raster.py` → `_fetch_real`** (and real `composite` /
-  `detect_change`) — window-read COG bands for the AOI, compute the index, write
-  a Cloud-Optimized GeoTIFF, median-composite and difference with numpy. Deps:
-  `rasterio` + `rio-tiler` (or GDAL) + `numpy`. For `render`, turn the change COG
-  into web tiles (rio-tiler / gdal2tiles / titiler) and point the MapLibre source
-  at them.
+```bash
+pip install rio-tiler requests        # rio-tiler pulls rasterio; requests for STAC
+S2_LIVE=1 pytest examples/sentinel2-landchange/tests/ -q -k live   # opt-in live STAC check
 
-Keep the tools runtime-free (stdlib + domain libs only), per
-`agent-spec/tools-pattern.agent-spec.yaml`.
+scripts/start-runner --example sentinel2-landchange -- --log-format text
+scripts/ffl-run examples/sentinel2-landchange/ffl/sentinel2_landchange.ffl \
+  --workflow s2.workflows.AnalyzeAOI \
+  --inputs '{"aoi":"-122.46,37.76,-122.44,37.78","use_mock":false}' --task-list s2
+```
+
+How the real path works (all runtime-free — stdlib + domain libs only, per
+`agent-spec/tools-pattern.agent-spec.yaml`):
+
+- **`_s2_tools/stac.py`** — `search` POSTs to `{stac_url}/search` (bbox + datetime
+  + `eo:cloud_cover<max`, paginated); `get_item_assets` resolves a scene's band
+  COG hrefs. `requests` only.
+- **`_s2_tools/raster.py`** — `_fetch_real` window-reads the index bands for the
+  AOI with `rio-tiler` (reprojected to a fixed grid so scenes/epochs align) and
+  computes the normalized-difference index; `composite`/`detect_change` are
+  shared `numpy` (median stack, then thresholded delta). Rasters are cached as
+  `.npz` (array + bounds + CRS).
+
+Bigger AOIs / longer windows just mean more `FetchSceneIndex` steps fanned out by
+`ScanScenes` — each cached once, so re-runs are cheap. A `render` upgrade (real
+web tiles via rio-tiler/titiler instead of the inline canvas) is the natural next
+step.
 
 ## Layout
 

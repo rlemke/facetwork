@@ -12,6 +12,7 @@ suite needs no network, GDAL, or external storage.
 from __future__ import annotations
 
 import importlib
+import os
 import sys
 from pathlib import Path
 
@@ -106,11 +107,17 @@ def test_unknown_index_rejected(tools_env):
         raster.fetch_scene_index("S2_X", "-1,-1,1,1", index="bogus", use_mock=True)
 
 
-def test_real_path_is_not_implemented(tools_env):
+@pytest.mark.skipif(os.environ.get("S2_LIVE") != "1",
+                    reason="live STAC test; set S2_LIVE=1 to run (hits the network)")
+def test_real_stac_search_live(tools_env):
+    """Opt-in: the real STAC search returns scenes + resolvable band assets."""
     from _s2_tools import stac
 
-    with pytest.raises(NotImplementedError):
-        stac.search("-1,-1,1,1", "2024-01-01", "2024-02-01", use_mock=False)
+    aoi = "-122.50,37.74,-122.40,37.80"
+    scenes = stac.search(aoi, "2024-07-01", "2024-07-31", max_cloud=20.0, use_mock=False)
+    assert scenes, "no scenes returned for a known-good AOI/window"
+    assets = stac.get_item_assets(scenes[0]["scene_id"])
+    assert "nir" in assets and "red" in assets and assets["nir"].startswith(("http", "s3"))
 
 
 # ── handler dispatch ───────────────────────────────────────────────────────────

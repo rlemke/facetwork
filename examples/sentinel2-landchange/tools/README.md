@@ -26,5 +26,6 @@ python tools/search_scenes.py --aoi=-122.55,37.70,-122.35,37.85 \
 ```
 
 `--use-mock` runs against deterministic fixtures (`_s2_tools/s2_mocks.py`) — no
-network, no GDAL. Drop it once the real STAC/raster paths are implemented (see
-the TODOs in `_s2_tools/stac.py` and `_s2_tools/raster.py`).
+network, no GDAL. Drop it to hit the real path (real STAC search + COG read are
+implemented in `_s2_tools/stac.py` and `_s2_tools/raster.py`); that needs
+`pip install rio-tiler requests`.

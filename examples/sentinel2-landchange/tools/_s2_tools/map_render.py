@@ -13,7 +13,7 @@ import json
 import os
 from typing import Any
 
-from _s2_tools import raster, sidecar, storage
+from _s2_tools import raster, storage
 
 _HTML = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>{title}</title>
@@ -42,9 +42,7 @@ def render_change_map(
     change_rel: str, aoi_key: str, *, title: str = "Sentinel-2 land-cover change",
     basemap_url: str = "", detail: str = ""
 ) -> dict[str, Any]:
-    abs_change = sidecar.cache_path(raster.CHANGE, change_rel)
-    with open(abs_change, encoding="utf-8") as f:
-        change = json.load(f)
+    change = raster.load_change_grid(change_rel)
 
     out_dir = storage.join(storage.output_root(), "s2", aoi_key)
     tiles_dir = storage.join(out_dir, "tiles")
