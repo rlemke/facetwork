@@ -27,8 +27,18 @@ starts a database or object store locally.
 
 ## Prerequisites on the new server
 - Docker + Docker Compose, `git`, Python 3.11+.
-- Network: the new server must reach the infra host on **27017** and **9000**
-  (same LAN; open the firewall if needed).
+- Network: the new server must reach the infra host on **27017** (MongoDB),
+  **9000** (MinIO), and **5050** (the runner image registry) — same LAN; open
+  the firewall if needed.
+- **The Docker daemon must trust the plain-HTTP registry** at
+  `<infra-host-ip>:5050` (see step 3b). Throughout this guide, **`<infra-host-ip>`
+  is your fleet's infra host** — the single machine running MongoDB + MinIO + the
+  registry, i.e. the `AFL_INFRA_IP` you set in `.env.fleet`. Substitute your
+  fleet's value (e.g. find it with `grep AFL_INFRA_IP .env.fleet`). Without this
+  registry trust, the runner image pull fails with `http: server gave HTTP
+  response to HTTPS client` and **no runners start** — even though MongoDB/MinIO
+  preflight passes. This is host-level config, not in the repo, so it's easy to
+  miss on a new or freshly-reinstalled host.
 - A **large local disk** for scratch (multi-GB staging stays local; only outputs
   go to the shared MinIO).
 
@@ -60,6 +70,27 @@ cp .env.fleet.override.example .env.fleet.override
 #
 #    Updating later = `git pull && cp .env.fleet.preset .env.fleet` — your
 #    .env.fleet.override survives untouched.
+
+# 3b. Trust the plain-HTTP image registry (REQUIRED — the runners pull from it).
+#     Add <infra-host-ip>:5050 to the daemon's insecure-registries, then RESTART
+#     the Docker engine. Skipping this → "http: server gave HTTP response to
+#     HTTPS client" on pull and zero runners start (preflight still passes).
+#
+#   Linux:  add to /etc/docker/daemon.json then restart dockerd
+#     {"insecure-registries": ["<infra-host-ip>:5050"]}
+#     sudo systemctl restart docker
+#
+#   macOS (Docker Desktop): add the same key to ~/.docker/daemon.json, then
+#   FORCE-restart Docker Desktop — a graceful `quit` can wedge the VM
+#   ("no route to host", engine never returns):
+#     osascript -e 'quit app "Docker"'; sleep 3
+#     pkill -f "Docker Desktop.app"; pkill -f "com.docker.backend"; sleep 4
+#     open -a Docker        # wait ~1-2 min for the engine
+#   NOTE: on the INFRA host this also bounces the bundled MongoDB/MinIO/registry
+#   (a brief fleet-wide blip) — do it deliberately. Runner-only hosts are safe.
+#
+#   Verify before continuing:
+docker pull <infra-host-ip>:5050/facetwork-runner:latest   # must succeed (no HTTPS error)
 
 # 4. Preflight: confirm shared services + local scratch are usable from here.
 scripts/start-runner --fleet --check          # ✓ MongoDB  ✓ MinIO  ✓ Local scratch writable
