@@ -278,6 +278,46 @@ def workflow_detail_v3(
     )
 
 
+@router.get("/workflows/{runner_id}/source")
+def workflow_source_v3(runner_id: str, request: Request, store=Depends(get_store)):
+    """Reconstructed FFL source for a run, on the v3 code view."""
+    from facetwork.workflow_source import (
+        WorkflowNotFoundError,
+        reconstruct_workflow_source,
+    )
+
+    runner = store.get_runner(runner_id)
+    source = None
+    error = None
+    if runner is None:
+        error = "Workflow run not found."
+    elif not runner.compiled_ast:
+        error = "No compiled AST was snapshotted for this run — source can't be reconstructed."
+    else:
+        try:
+            source = reconstruct_workflow_source(runner.compiled_ast, runner.workflow.name)
+        except WorkflowNotFoundError as exc:
+            error = str(exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            error = f"Failed to reconstruct source: {exc}"
+
+    short = runner.workflow.name.rsplit(".", 1)[-1] if runner else ""
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v3/codeview.html",
+        {
+            "title": short,
+            "subtitle": (runner.workflow.name + " · reconstructed FFL") if runner else "",
+            "crumb": "Source",
+            "back_href": f"/v3/workflows/{runner_id}",
+            "back_label": short or "Run",
+            "blocks": [{"name": runner.workflow.name, "content": source}] if source else [],
+            "error": error,
+            "active_nav": "runs",
+        },
+    )
+
+
 @router.get("/workflows/{runner_id}/graph")
 def workflow_graph_v3(
     runner_id: str,

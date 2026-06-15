@@ -40,8 +40,8 @@
   <div class="sh-top">
     <div><h1>{{ flow.name.name }}</h1><span class="p">{{ flow.name.path or '' }} · {{ flow.uuid }}</span></div>
     <div class="sh-actions">
-      <a class="btn" href="/flows/{{ flow.uuid }}/source"><svg viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg> Source</a>
-      <a class="btn" href="/flows/{{ flow.uuid }}/json">JSON</a>
+      <a class="btn" href="/v3/flows/{{ flow.uuid }}/source"><svg viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg> Source</a>
+      <a class="btn" href="/v3/flows/{{ flow.uuid }}/json">JSON</a>
     </div>
   </div>
   <div class="metrics">
