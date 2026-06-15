@@ -24,5 +24,5 @@ router = APIRouter()
 
 @router.get("/")
 def home():
-    """Redirect to the v2 workflow list."""
-    return RedirectResponse(url="/v2/workflows", status_code=302)
+    """Redirect to the v3 Runs list (the default UI). v2 remains at /v2/*."""
+    return RedirectResponse(url="/v3/workflows", status_code=302)
