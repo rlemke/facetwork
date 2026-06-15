@@ -208,10 +208,11 @@ class TestDeleteRunnerRoutes:
         assert resp.status_code == 400
         assert resp.json()["success"] is False
 
-    def test_delete_button_rendered_in_list(self, client):
+    def test_run_row_rendered_in_list(self, client):
         tc, store = client
         _seed_run(store, "r-1", "wf-1")
-        resp = tc.get("/v2/workflows?tab=completed")
+        # The v3 Runs list renders each run as a row linking to its detail page,
+        # which is where per-run management (incl. delete) now lives.
+        resp = tc.get("/v3/workflows?tab=completed")
         assert resp.status_code == 200
-        assert 'data-delete-runner="r-1"' in resp.text
-        assert 'id="select-toggle"' in resp.text
+        assert 'href="/v3/workflows/r-1"' in resp.text

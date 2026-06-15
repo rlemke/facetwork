@@ -88,15 +88,18 @@ def _make_runner(uuid="r-1", workflow=None, state="running"):
 class TestHomeRoute:
     def test_home_page(self, client):
         tc, store = client
-        resp = tc.get("/")
-        assert resp.status_code == 200
-        assert "Dashboard" in resp.text
+        # "/" is no longer a standalone home page — it 302-redirects to /v3/workflows.
+        resp = tc.get("/", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "/v3/workflows"
 
     def test_home_shows_counts(self, client):
         tc, store = client
+        # Following the redirect lands on the v3 Runs list, whose sidebar nav
+        # exposes the Servers section.
         resp = tc.get("/")
         assert resp.status_code == 200
-        assert "Workflows" in resp.text
+        assert "Runs" in resp.text
         assert "Servers" in resp.text
 
     def test_home_with_data(self, client):
@@ -123,11 +126,11 @@ class TestHomeRoute:
 
 
 class TestRunnerRoutes:
-    def test_runner_list_redirects_to_v2(self, client):
+    def test_runner_list_redirects_to_v3(self, client):
         tc, store = client
         resp = tc.get("/runners", follow_redirects=False)
         assert resp.status_code == 307
-        assert resp.headers["location"] == "/v2/workflows"
+        assert resp.headers["location"] == "/v3/workflows"
 
     def test_runner_list_with_data_redirects(self, client):
         tc, store = client
@@ -156,7 +159,7 @@ class TestRunnerRoutes:
 
         resp = tc.get("/runners", follow_redirects=False)
         assert resp.status_code == 307
-        assert resp.headers["location"] == "/v2/workflows"
+        assert resp.headers["location"] == "/v3/workflows"
 
     def test_runner_list_filter_by_state_redirects(self, client):
         tc, store = client
@@ -164,11 +167,11 @@ class TestRunnerRoutes:
         assert resp.status_code == 307
         assert "tab=running" in resp.headers["location"]
 
-    def test_runner_detail_redirects_to_v2(self, client):
+    def test_runner_detail_redirects_to_v3(self, client):
         tc, store = client
         resp = tc.get("/runners/nonexistent", follow_redirects=False)
         assert resp.status_code == 307
-        assert resp.headers["location"] == "/v2/workflows/nonexistent"
+        assert resp.headers["location"] == "/v3/workflows/nonexistent"
 
     def test_runner_detail_with_data_redirects(self, client):
         tc, store = client
@@ -197,7 +200,7 @@ class TestRunnerRoutes:
 
         resp = tc.get("/runners/r-1", follow_redirects=False)
         assert resp.status_code == 307
-        assert resp.headers["location"] == "/v2/workflows/r-1"
+        assert resp.headers["location"] == "/v3/workflows/r-1"
 
     def test_cancel_runner(self, client):
         tc, store = client
@@ -925,31 +928,31 @@ def _make_handler(facet_name="ns.TestFacet", module_uri="my.handlers", entrypoin
 
 
 class TestHandlerRoutes:
-    def test_handler_list_redirects_to_v2(self, client):
+    def test_handler_list_redirects_to_v3(self, client):
         tc, store = client
         resp = tc.get("/handlers", follow_redirects=False)
         assert resp.status_code == 307
-        assert resp.headers["location"] == "/v2/handlers"
+        assert resp.headers["location"] == "/v3/handlers"
 
     def test_handler_list_with_data_redirects(self, client):
         tc, store = client
         store.save_handler_registration(_make_handler())
         resp = tc.get("/handlers", follow_redirects=False)
         assert resp.status_code == 307
-        assert resp.headers["location"] == "/v2/handlers"
+        assert resp.headers["location"] == "/v3/handlers"
 
-    def test_handler_detail_redirects_to_v2(self, client):
+    def test_handler_detail_redirects_to_v3(self, client):
         tc, store = client
         store.save_handler_registration(_make_handler())
         resp = tc.get("/handlers/ns.TestFacet", follow_redirects=False)
         assert resp.status_code == 307
-        assert resp.headers["location"] == "/v2/handlers/ns.TestFacet"
+        assert resp.headers["location"] == "/v3/handlers"
 
     def test_handler_detail_not_found_redirects(self, client):
         tc, store = client
         resp = tc.get("/handlers/ns.Missing", follow_redirects=False)
         assert resp.status_code == 307
-        assert resp.headers["location"] == "/v2/handlers/ns.Missing"
+        assert resp.headers["location"] == "/v3/handlers"
 
     def test_delete_handler(self, client):
         tc, store = client
@@ -982,7 +985,7 @@ class TestHandlerRoutes:
     def test_home_handler_route(self, client):
         tc, store = client
         store.save_handler_registration(_make_handler())
-        resp = tc.get("/v2/handlers")
+        resp = tc.get("/v3/handlers")
         assert resp.status_code == 200
         assert "Handlers" in resp.text
 
@@ -1457,7 +1460,7 @@ class TestListFiltering:
 
         resp = tc.get("/handlers?q=ns.Test", follow_redirects=False)
         assert resp.status_code == 307
-        assert resp.headers["location"] == "/v2/handlers"
+        assert resp.headers["location"] == "/v3/handlers"
 
     def test_source_list_search(self, client):
         tc, store = client

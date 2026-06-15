@@ -230,15 +230,16 @@ class TestTreeIntegration:
         # Flat view should not contain tree markup
         assert "step-tree-node" not in resp.text
 
-    def test_runner_detail_has_toggle(self, client):
+    def test_runner_detail_has_execution_graph(self, client):
         tc, store = client
         self._seed(store)
 
-        resp = tc.get("/v2/workflows/r-1")
+        # The v3 detail page replaces the flat/tree step toggle with an
+        # interactive execution-graph (DAG) view.
+        resp = tc.get("/v3/workflows/r-1")
         assert resp.status_code == 200
-        assert "view-toggle" in resp.text
-        assert 'id="v2-step-flat"' in resp.text
-        assert 'id="v2-step-tree"' in resp.text
+        assert "Execution graph" in resp.text
+        assert 'id="dag-svg"' in resp.text
 
     def test_runner_steps_page_has_toggle(self, client):
         tc, store = client

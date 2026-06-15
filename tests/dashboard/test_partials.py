@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for shared dashboard partials (_state_badge, _empty_state, _attrs_table)."""
+"""Tests for shared dashboard partials (_state_badge, _empty_state)."""
 
 from pathlib import Path
 
@@ -96,30 +96,3 @@ class TestEmptyStatePartial:
         html = tmpl.render(empty_icon="&#x2699;", empty_message="No servers found.")
         assert "No servers found." in html
         assert "&#x2699;" in html
-
-
-class TestAttrsTablePartial:
-    """Test _attrs_table.html partial."""
-
-    class FakeAttr:
-        def __init__(self, value, type_hint="String"):
-            self.value = value
-            self.type_hint = type_hint
-
-    def test_full_table(self, env):
-        """Full table should include Name, Value, Type headers."""
-        tmpl = env.get_template("partials/_attrs_table.html")
-        attrs = {"name": self.FakeAttr("Alice"), "age": self.FakeAttr(30, "Int")}
-        html = tmpl.render(attrs=attrs)
-        assert "<th>Name</th>" in html
-        assert "<th>Value</th>" in html
-        assert "<th>Type</th>" in html
-        assert "Alice" in html
-
-    def test_compact_table(self, env):
-        """Compact table should omit headers."""
-        tmpl = env.get_template("partials/_attrs_table.html")
-        attrs = {"name": self.FakeAttr("Alice")}
-        html = tmpl.render(attrs=attrs, attrs_compact=True)
-        assert "<th>" not in html
-        assert "Alice" in html

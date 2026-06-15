@@ -456,7 +456,8 @@ class TestNavLink:
 
     def test_nav_has_new_link(self, client):
         tc, store = client
+        # "/" redirects to the v3 Runs list, whose sidebar has a "New run" CTA.
         resp = tc.get("/")
         assert resp.status_code == 200
-        assert "/workflows/new" in resp.text
-        assert ">New Workflow<" in resp.text
+        assert 'href="/v3/workflows/new"' in resp.text
+        assert "New run" in resp.text

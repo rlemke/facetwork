@@ -257,7 +257,7 @@ class TestCensusMapList:
         tc, store = client
         resp = tc.get("/census/maps")
         assert resp.status_code == 200
-        assert "No GeoJSON datasets found" in resp.text
+        assert "No GeoJSON datasets" in resp.text
 
     def test_lists_geojson_datasets(self, client):
         tc, store = client
@@ -1063,14 +1063,14 @@ class TestCensusTableView:
 
         resp = tc.get("/census/maps/census.joined.01/table")
         assert resp.status_code == 200
-        assert "Summary Statistics" in resp.text
+        assert "Summary statistics" in resp.text
 
     def test_map_link(self, client):
         tc, store = client
         resp = tc.get("/census/maps/census.joined.01/table")
         assert resp.status_code == 200
         assert 'href="/census/maps/census.joined.01"' in resp.text
-        assert "Map View" in resp.text
+        assert "Map view" in resp.text
 
     def test_back_link(self, client):
         tc, store = client
@@ -1265,7 +1265,7 @@ class TestCensusMapStates:
 
         resp = tc.get("/census/maps/states")
         assert resp.status_code == 200
-        assert "Summary Statistics" in resp.text
+        assert "Summary statistics" in resp.text
         assert "55869" in resp.text
 
     def test_back_link(self, client):
@@ -1553,7 +1553,8 @@ class TestNavLink:
         tc, store = client
         resp = tc.get("/census/maps")
         assert resp.status_code == 200
-        assert "sidebar-link active" in resp.text
+        # The v3 app switcher reflects the active domain app as the current one.
+        assert '<span class="nm">Census Maps</span>' in resp.text
 
 
 class TestColorLegend:

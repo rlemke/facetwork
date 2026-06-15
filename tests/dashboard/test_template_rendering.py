@@ -91,30 +91,34 @@ class TestStateColorRendering:
     def test_running_badge_primary(self, client):
         tc, store = client
         store.save_runner(_make_runner("r-1", state="running"))
-        resp = tc.get("/v2/workflows?tab=running")
+        resp = tc.get("/v3/workflows?tab=running")
         assert resp.status_code == 200
-        assert "badge-primary" in resp.text
+        assert "--pc:var(--st-running)" in resp.text
+        assert "Running" in resp.text
 
     def test_completed_badge_success(self, client):
         tc, store = client
         store.save_runner(_make_runner("r-2", state="completed"))
-        resp = tc.get("/v2/workflows?tab=completed")
+        resp = tc.get("/v3/workflows?tab=completed")
         assert resp.status_code == 200
-        assert "badge-success" in resp.text
+        assert "--pc:var(--st-complete)" in resp.text
+        assert "Completed" in resp.text
 
     def test_failed_badge_danger(self, client):
         tc, store = client
         store.save_runner(_make_runner("r-3", state="failed"))
-        resp = tc.get("/v2/workflows?tab=failed")
+        resp = tc.get("/v3/workflows?tab=failed")
         assert resp.status_code == 200
-        assert "badge-danger" in resp.text
+        assert "--pc:var(--st-error)" in resp.text
+        assert "Failed" in resp.text
 
     def test_paused_badge_warning(self, client):
         tc, store = client
         store.save_runner(_make_runner("r-4", state="paused"))
-        resp = tc.get("/v2/workflows?tab=running")
+        resp = tc.get("/v3/workflows?tab=running")
         assert resp.status_code == 200
-        assert "badge-warning" in resp.text
+        assert "--pc:var(--st-paused)" in resp.text
+        assert "Paused" in resp.text
 
 
 # =============================================================================
@@ -125,24 +129,25 @@ class TestStateColorRendering:
 class TestNavigationRendering:
     def test_nav_links_on_home_page(self, client):
         tc, store = client
+        # "/" 302-redirects to the v3 Runs list, which the TestClient follows.
         resp = tc.get("/")
         assert resp.status_code == 200
         html = resp.text
-        assert 'href="/v2/workflows"' in html
-        assert 'href="/flows"' in html
-        assert 'href="/tasks"' in html
-        assert 'href="/v2/servers"' in html
-        assert 'href="/output"' in html
-        assert 'href="/workflows/new"' in html
+        assert 'href="/v3/workflows"' in html
+        assert 'href="/v3/flows"' in html
+        assert 'href="/v3/tasks"' in html
+        assert 'href="/v3/servers"' in html
+        assert 'href="/v3/output"' in html
+        assert 'href="/v3/workflows/new"' in html
 
     def test_nav_links_on_workflows_page(self, client):
         tc, store = client
-        resp = tc.get("/v2/workflows")
+        resp = tc.get("/v3/workflows")
         assert resp.status_code == 200
         html = resp.text
         # Base template nav should be present on every page
-        assert 'href="/v2/workflows"' in html
-        assert 'href="/flows"' in html
+        assert 'href="/v3/workflows"' in html
+        assert 'href="/v3/flows"' in html
 
     def test_nav_links_on_tasks_page(self, client):
         tc, store = client
@@ -155,10 +160,10 @@ class TestNavigationRendering:
     def test_breadcrumb_on_workflow_detail(self, client):
         tc, store = client
         store.save_runner(_make_runner("r-1"))
-        resp = tc.get("/v2/workflows/r-1")
+        resp = tc.get("/v3/workflows/r-1")
         assert resp.status_code == 200
-        # Workflow detail page should contain a link back to workflows
-        assert "workflows" in resp.text.lower()
+        # Workflow detail page breadcrumb links back to the runs list.
+        assert 'href="/v3/workflows"' in resp.text
 
 
 # =============================================================================
@@ -169,10 +174,12 @@ class TestNavigationRendering:
 class TestTableRendering:
     def test_workflow_list_page_renders(self, client):
         tc, store = client
-        resp = tc.get("/v2/workflows")
+        resp = tc.get("/v3/workflows")
         assert resp.status_code == 200
         html = resp.text
-        assert "Workflows" in html
+        # v3 Runs list: breadcrumb/title say "Runs" and the new-run CTA is present.
+        assert "Runs" in html
+        assert 'href="/v3/workflows/new"' in html
 
     def test_task_list_column_headers(self, client):
         tc, store = client

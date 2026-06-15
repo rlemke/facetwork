@@ -156,7 +156,7 @@ class TestSiteSelectionList:
         tc, store = client
         resp = tc.get("/site-selection/")
         assert resp.status_code == 200
-        assert "No scored datasets found" in resp.text
+        assert "No scored datasets" in resp.text
 
     def test_lists_states(self, client):
         tc, store = client
