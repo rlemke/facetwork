@@ -1,0 +1,49 @@
+{% extends "v3/base.html" %}
+{% block title %}Library · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.f-bar{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+.f-search{flex:1;max-width:340px}
+.f-search input{width:100%;padding:.45rem .75rem;font:500 13px var(--sans);color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);outline:none}
+.f-search input:focus{border-color:var(--accent)}
+.f-count{font:500 12px var(--mono);color:var(--muted)}
+.flows{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-top:.3rem}
+.f-row{display:grid;grid-template-columns:1fr 90px 90px 110px;gap:.9rem;align-items:center;padding:.6rem .9rem;border-bottom:1px solid var(--border);text-decoration:none;color:var(--text)}
+.f-row:last-child{border-bottom:none}.f-row:hover{background:var(--surface-2)}
+.f-name b{font-weight:600;font-size:13.5px}
+.f-name small{display:block;font:500 11px/1.4 var(--mono);color:var(--muted)}
+.f-meta{font:600 12px var(--mono)}.f-meta .l{font:500 10px var(--sans);color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-left:.25rem}
+.col-h{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+@media (max-width:800px){.f-row{grid-template-columns:1fr 70px}.f-meta:nth-of-type(even){display:none}}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><span class="cur">Library</span></nav>{% endblock %}
+
+{% block content %}
+<div class="f-bar">
+  <form class="f-search" method="get" action="/v3/flows">
+    <input type="search" name="q" value="{{ q }}" placeholder="Filter flows by name…">
+  </form>
+  <span class="f-count">{{ total }} flow{{ '' if total==1 else 's' }}</span>
+</div>
+
+{% if flows %}
+<div class="flows">
+  <div class="f-row" style="border-bottom:1px solid var(--border)">
+    <span class="col-h">Flow</span><span class="col-h">Workflows</span><span class="col-h">Facets</span><span class="col-h">Namespaces</span>
+  </div>
+  {% for f in flows %}
+  <a class="f-row" href="/flows/{{ f.uuid }}">
+    <span class="f-name"><b>{{ f.name }}</b>{% if f.path %}<small>{{ f.path }}</small>{% endif %}</span>
+    <span class="f-meta">{{ f.workflows }}<span class="l">wf</span></span>
+    <span class="f-meta">{{ f.facets }}<span class="l">fc</span></span>
+    <span class="f-meta">{{ f.namespaces }}<span class="l">ns</span></span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty"><p>No flows{% if q %} match “{{ q }}”{% endif %}. Seed examples or author one with <a href="/workflows/new">New run</a>.</p></div>
+{% endif %}
+{% endblock %}
