@@ -1,42 +1,58 @@
-{% extends "base.html" %}
-{% block title %}{% if region %}{{ region }} — {% endif %}{{ dataset_key }} — Census Map{% endblock %}
+{% extends "v3/base.html" %}
+{% block title %}{% if region %}{{ region }} — {% endif %}{{ dataset_key }} · Census Maps{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+.mapctl{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.mapctl label{font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.mapctl select{padding:.4rem .6rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font:500 13px var(--sans);outline:none;max-width:300px}
+.mapctl select:focus{border-color:var(--accent)}
+#map{height:70vh;border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.leaflet-popup-content{font-family:var(--sans)}
+#legend small{color:var(--text-2)}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><a href="/census/maps">Census Maps</a>
+  <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="cur">{% if region %}{{ region }}{% else %}{{ dataset_key }}{% endif %}</span></nav>
+{% endblock %}
+{% block topbar_actions %}<a class="iconbtn" href="/census/maps/{{ dataset_key }}/table" title="Table view"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></a>{% endblock %}
 
 {% block content %}
-<hgroup>
-    <h1>{% if region %}{{ region }} — {% endif %}{{ dataset_key }}</h1>
-    <p>{{ feature_count }} features — <a href="/census/maps/{{ dataset_key }}/table">Table View</a> | <a href="/census/maps">Back to datasets</a></p>
-</hgroup>
-<p>
-    <a href="/census/api/maps/{{ dataset_key }}/download?format=geojson" role="button" class="outline secondary">Download GeoJSON</a>
-    <a href="/census/api/maps/{{ dataset_key }}/download?format=csv" role="button" class="outline secondary">Download CSV</a>
-</p>
+<section class="panel" style="padding:1rem 1.3rem">
+  <div style="display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+    <div><h1 style="margin:0;font-size:18px;font-weight:700;letter-spacing:-.02em">{% if region %}{{ region }} — {% endif %}{{ dataset_key }}</h1>
+      <p style="margin:.3rem 0 0;color:var(--text-2);font-size:13px">{{ feature_count }} features.</p></div>
+    <div style="margin-left:auto;display:flex;gap:.5rem">
+      <a class="btn" href="/census/maps/{{ dataset_key }}/table">Table</a>
+      <a class="btn" href="/census/api/maps/{{ dataset_key }}/download?format=geojson">GeoJSON</a>
+      <a class="btn" href="/census/api/maps/{{ dataset_key }}/download?format=csv">CSV</a>
+    </div>
+  </div>
+  {% if numeric_fields %}
+  <div class="mapctl" style="margin-top:.8rem">
+    <label for="choropleth-field">Color by</label>
+    <select id="choropleth-field">
+      <option value="">None (uniform)</option>
+      {% for field in numeric_fields %}<option value="{{ field }}">{{ field_labels.get(field, field) }}</option>{% endfor %}
+    </select>
+    <span id="legend" style="display:none"><small>
+      <span id="legend-min" style="color:#9ecae1"></span>
+      <span style="display:inline-block;width:160px;height:12px;background:linear-gradient(to right,#f7fbff,#08306b);vertical-align:middle;border:1px solid var(--border)"></span>
+      <span id="legend-max" style="color:#6baed6"></span>
+      <span id="legend-label" style="margin-left:.5rem"></span>
+    </small></span>
+  </div>
+  {% endif %}
+</section>
 
-{% if numeric_fields %}
-<label for="choropleth-field">Color by:</label>
-<select id="choropleth-field" style="max-width:300px;display:inline-block;margin-left:.5rem">
-    <option value="">None (uniform)</option>
-    {% for field in numeric_fields %}
-    <option value="{{ field }}">{{ field_labels.get(field, field) }}</option>
-    {% endfor %}
-</select>
-{% endif %}
-
-<div id="map" style="height:70vh;margin-top:1rem;border:1px solid var(--pico-muted-border-color);border-radius:var(--pico-border-radius)"></div>
-
-<div id="legend" style="margin-top:.5rem;display:none">
-    <small>
-        <span id="legend-min" style="color:#f7fbff"></span>
-        <span style="display:inline-block;width:200px;height:12px;background:linear-gradient(to right,#f7fbff,#08306b);vertical-align:middle;border:1px solid #ccc"></span>
-        <span id="legend-max" style="color:#08306b"></span>
-        <span id="legend-label" style="margin-left:.5rem"></span>
-    </small>
-</div>
+<div id="map"></div>
 {% endblock %}
 
 {% block scripts %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script>
 (function() {
     var geojsonData = {{ geojson_str | safe }};
@@ -52,45 +68,27 @@
     var currentField = '';
 
     function interpolateColor(t) {
-        // White (#f7fbff) to dark blue (#08306b)
         var r = Math.round(247 + (8 - 247) * t);
         var g = Math.round(251 + (48 - 251) * t);
         var b = Math.round(255 + (107 - 255) * t);
         return 'rgb(' + r + ',' + g + ',' + b + ')';
     }
-
     function computeRange(field) {
         var min = Infinity, max = -Infinity;
         geojsonData.features.forEach(function(f) {
             var v = f.properties[field];
-            if (typeof v === 'number' && isFinite(v)) {
-                if (v < min) min = v;
-                if (v > max) max = v;
-            }
+            if (typeof v === 'number' && isFinite(v)) { if (v < min) min = v; if (v > max) max = v; }
         });
         return {min: min, max: max};
     }
-
     function getStyle(feature) {
-        if (!currentField) {
-            return {color: '#3388ff', weight: 1, fillColor: '#3388ff', fillOpacity: 0.3};
-        }
+        if (!currentField) return {color: '#3388ff', weight: 1, fillColor: '#3388ff', fillOpacity: 0.3};
         var range = computeRange(currentField);
         var v = feature.properties[currentField];
         var t = 0;
-        if (typeof v === 'number' && isFinite(v) && range.max > range.min) {
-            t = (v - range.min) / (range.max - range.min);
-        }
+        if (typeof v === 'number' && isFinite(v) && range.max > range.min) t = (v - range.min) / (range.max - range.min);
         return {color: '#333', weight: 1, fillColor: interpolateColor(t), fillOpacity: 0.7};
     }
-
-    function formatValue(v) {
-        if (typeof v === 'number') {
-            return v.toLocaleString();
-        }
-        return v == null ? '—' : String(v);
-    }
-
     function formatMetric(key, v) {
         if (v == null) return '—';
         if (typeof v !== 'number') return String(v);
@@ -98,7 +96,6 @@
         if (key.startsWith('pct_') || key === 'unemployment_rate' || key === 'labor_force_participation') return v.toFixed(1) + '%';
         return v.toLocaleString();
     }
-
     function onEachFeature(feature, layer) {
         layer.on('click', function() {
             var props = feature.properties;
@@ -106,54 +103,33 @@
             if (props.GEOID) html += ' <small>(' + props.GEOID + ')</small>';
             html += '<table style="font-size:12px;border-collapse:collapse;margin-top:4px">';
             popupFields.forEach(function(key) {
-                if (props[key] != null) {
-                    html += '<tr><td style="padding:1px 6px 1px 0"><strong>' + (fieldLabels[key] || key) + '</strong></td><td>' + formatMetric(key, props[key]) + '</td></tr>';
-                }
+                if (props[key] != null) html += '<tr><td style="padding:1px 6px 1px 0"><strong>' + (fieldLabels[key] || key) + '</strong></td><td>' + formatMetric(key, props[key]) + '</td></tr>';
             });
             html += '</table>';
             html += '<a href="/census/maps/{{ dataset_key }}/table" style="font-size:11px">View all fields</a>';
             layer.bindPopup(html, {maxWidth: 400, maxHeight: 300}).openPopup();
         });
     }
+    var geojsonLayer = L.geoJSON(geojsonData, {style: getStyle, onEachFeature: onEachFeature}).addTo(map);
+    if (geojsonData.features.length > 0) map.fitBounds(geojsonLayer.getBounds());
 
-    var geojsonLayer = L.geoJSON(geojsonData, {
-        style: getStyle,
-        onEachFeature: onEachFeature
-    }).addTo(map);
-
-    if (geojsonData.features.length > 0) {
-        map.fitBounds(geojsonLayer.getBounds());
-    }
-
-    // Legend elements
     var legendEl = document.getElementById('legend');
     var legendMin = document.getElementById('legend-min');
     var legendMax = document.getElementById('legend-max');
     var legendLabel = document.getElementById('legend-label');
-
     function updateLegend(field, range) {
-        if (!field) {
-            legendEl.style.display = 'none';
-            return;
-        }
-        legendEl.style.display = 'block';
+        if (!field) { legendEl.style.display = 'none'; return; }
+        legendEl.style.display = 'inline';
         legendMin.textContent = range.min.toLocaleString();
         legendMax.textContent = range.max.toLocaleString();
         legendLabel.textContent = fieldLabels[field] || field;
     }
-
     var dropdown = document.getElementById('choropleth-field');
-    if (dropdown) {
-        dropdown.addEventListener('change', function() {
-            currentField = this.value;
-            geojsonLayer.setStyle(getStyle);
-            if (currentField) {
-                updateLegend(currentField, computeRange(currentField));
-            } else {
-                updateLegend('', {});
-            }
-        });
-    }
+    if (dropdown) dropdown.addEventListener('change', function() {
+        currentField = this.value;
+        geojsonLayer.setStyle(getStyle);
+        if (currentField) updateLegend(currentField, computeRange(currentField)); else updateLegend('', {});
+    });
 })();
 </script>
 {% endblock %}

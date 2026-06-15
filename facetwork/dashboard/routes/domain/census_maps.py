@@ -457,6 +457,7 @@ def census_map_all(
             "field_labels": _FIELD_LABELS,
             "popup_fields": _POPUP_FIELDS,
             "active_tab": "census_maps",
+            "active_app": "Census Maps",
         },
     )
 
@@ -607,6 +608,7 @@ def census_map_states(
             "field_labels": _FIELD_LABELS,
             "popup_fields": _POPUP_FIELDS,
             "active_tab": "census_maps",
+            "active_app": "Census Maps",
         },
     )
 
@@ -707,6 +709,7 @@ def census_table_view(
             "stats": stats,
             "field_labels": _FIELD_LABELS,
             "active_tab": "census_maps",
+            "active_app": "Census Maps",
         },
     )
 
@@ -751,6 +754,7 @@ def census_map_view(
             "field_labels": _FIELD_LABELS,
             "popup_fields": _POPUP_FIELDS,
             "active_tab": "census_maps",
+            "active_app": "Census Maps",
         },
     )
 
@@ -845,5 +849,6 @@ def census_compare(
             "field_labels": _FIELD_LABELS,
             "popup_fields": _POPUP_FIELDS,
             "active_tab": "census_maps",
+            "active_app": "Census Maps",
         },
     )
