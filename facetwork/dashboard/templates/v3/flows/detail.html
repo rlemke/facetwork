@@ -58,7 +58,7 @@
     <details class="ns-grp" open>
       <summary>{{ g.name }} <span class="c">{{ g.workflows|length }}</span></summary>
       {% for wf in g.workflows %}
-      <a class="wf-row" href="/flows/{{ flow.uuid }}/run/{{ wf.uuid }}">
+      <a class="wf-row" href="/v3/flows/{{ flow.uuid }}/run/{{ wf.uuid }}">
         {{ wf.name.rsplit('.',1)[-1] if '.' in wf.name else wf.name }}
         <span class="run">Run →</span>
       </a>

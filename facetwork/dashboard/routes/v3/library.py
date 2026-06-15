@@ -18,11 +18,14 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import RedirectResponse
 
-from ...dependencies import get_store
+from ...dependencies import get_current_user, get_store
 
 router = APIRouter(prefix="/v3")
+
+_PURPOSES = ["production", "beta", "test", "personal", "none"]
 
 
 @router.get("/catalog/{slug}")
@@ -50,6 +53,62 @@ def catalog_detail_v3(
             "active_nav": "catalog",
         },
     )
+
+
+@router.get("/flows/{flow_id}/run/{workflow_id}")
+def flow_run_form_v3(
+    request: Request,
+    flow_id: str,
+    workflow_id: str,
+    store=Depends(get_store),
+    current_user=Depends(get_current_user),
+):
+    """Redesigned run form — per-param inputs + purpose/teams, then run."""
+    from ..execution.flows import build_run_params
+
+    flow = store.get_flow(flow_id)
+    wf = store.get_workflow(workflow_id) if flow else None
+    if not flow or not wf:
+        return request.app.state.templates.TemplateResponse(
+            request, "v3/flows/run.html", {"flow": None, "active_nav": "library"}
+        )
+    params, parse_error, workflow_doc = build_run_params(flow, wf.name)
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v3/flows/run.html",
+        {
+            "flow": flow,
+            "workflow_def": wf,
+            "workflow_name": wf.name,
+            "params": params,
+            "parse_error": parse_error,
+            "workflow_doc": workflow_doc,
+            "purposes": _PURPOSES,
+            "all_teams": [t.name for t in store.list_teams()],
+            "active_nav": "library",
+        },
+    )
+
+
+@router.post("/flows/{flow_id}/run/{workflow_id}")
+def flow_run_execute_v3(
+    flow_id: str,
+    workflow_id: str,
+    inputs_json: str = Form("{}"),
+    purpose: str = Form("none"),
+    teams: list[str] = Form(default=[]),
+    store=Depends(get_store),
+    current_user=Depends(get_current_user),
+):
+    """Submit the run (reusing the shared creator), then land on the v3 detail."""
+    from ..execution.flows import create_flow_run
+
+    flow = store.get_flow(flow_id)
+    wf = store.get_workflow(workflow_id) if flow else None
+    if not flow or not wf:
+        return RedirectResponse(url="/v3/flows", status_code=303)
+    runner_id = create_flow_run(flow, wf, inputs_json, purpose, teams, store, current_user)
+    return RedirectResponse(url=f"/v3/workflows/{runner_id}", status_code=303)
 
 
 @router.get("/flows/{flow_id}")

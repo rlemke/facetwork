@@ -106,7 +106,7 @@ def workflow_new_v3(request: Request, store=Depends(get_store)):
                 "name": wf.get("name", ""),
                 "qualified_name": qualified,
                 "afl_source": _build_afl_snippet(ns, wf),
-                "run_url": f"/flows/{flow.uuid}/run/{wf_uuid}" if wf_uuid else "",
+                "run_url": f"/v3/flows/{flow.uuid}/run/{wf_uuid}" if wf_uuid else "",
             }
             ns_map.setdefault(item["ns"], []).append(item)
 

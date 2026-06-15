@@ -473,6 +473,60 @@ def flow_namespace(
     )
 
 
+def build_run_params(flow, workflow_name: str):
+    """Extract a workflow's params from a flow's compiled AST.
+
+    Returns ``(params, parse_error, workflow_doc)`` where each param is
+    ``{name, type, default, default_json, description}``. Shared by the v2 and
+    v3 run forms so they can't diverge on parameter extraction.
+    """
+    import json
+
+    params: list[dict] = []
+    parse_error = None
+    workflow_doc = None
+    if not (flow.compiled_ast or flow.compiled_sources):
+        return params, parse_error, workflow_doc
+    try:
+        from facetwork.ast_utils import find_workflow
+
+        if flow.compiled_ast:
+            program_dict = flow.compiled_ast
+        else:
+            from facetwork.emitter import JSONEmitter
+            from facetwork.parser import FFLParser
+
+            parser = FFLParser()
+            ast = parser.parse(flow.compiled_sources[0].content)
+            program_dict = json.loads(JSONEmitter(include_locations=False).emit(ast))
+
+        wf_ast = find_workflow(program_dict, workflow_name)
+        if wf_ast:
+            workflow_doc = wf_ast.get("doc")
+            param_descs: dict[str, str] = {}
+            if workflow_doc and isinstance(workflow_doc, dict):
+                for pd in workflow_doc.get("params", []):
+                    param_descs[pd.get("name", "")] = pd.get("description", "")
+            for p in wf_ast.get("params", []):
+                default_val = evaluate_default(p.get("default"))
+                if isinstance(default_val, (list, dict)):
+                    default_json = json.dumps(default_val)
+                else:
+                    default_json = str(default_val) if default_val is not None else None
+                params.append(
+                    {
+                        "name": p.get("name", ""),
+                        "type": p.get("type", ""),
+                        "default": default_val,
+                        "default_json": default_json,
+                        "description": param_descs.get(p.get("name", ""), ""),
+                    }
+                )
+    except Exception as exc:
+        parse_error = str(exc)
+    return params, parse_error, workflow_doc
+
+
 @router.get("/{flow_id}/run/{workflow_id}")
 def flow_run_form(
     flow_id: str,
@@ -482,8 +536,6 @@ def flow_run_form(
     current_user=Depends(get_current_user),
 ):
     """Show parameter input form for running a workflow from a flow."""
-    import json
-
     flow = store.get_flow(flow_id)
     if not flow:
         return request.app.state.templates.TemplateResponse(
@@ -493,56 +545,7 @@ def flow_run_form(
         )
     workflow_def = store.get_workflow(workflow_id)
     workflow_name = workflow_def.name if workflow_def else "Unknown"
-    params: list[dict] = []
-    parse_error = None
-    workflow_doc = None
-
-    if flow.compiled_ast or flow.compiled_sources:
-        try:
-            from facetwork.ast_utils import find_workflow
-
-            if flow.compiled_ast:
-                program_dict = flow.compiled_ast
-            else:
-                from facetwork.emitter import JSONEmitter
-                from facetwork.parser import FFLParser
-
-                parser = FFLParser()
-                source_text = flow.compiled_sources[0].content
-                ast = parser.parse(source_text)
-                emitter = JSONEmitter(include_locations=False)
-                program_json = emitter.emit(ast)
-                program_dict = json.loads(program_json)
-
-            wf_ast = find_workflow(program_dict, workflow_name)
-            if wf_ast:
-                workflow_doc = wf_ast.get("doc")
-
-                # Build param description lookup from @param tags
-                param_descs: dict[str, str] = {}
-                if workflow_doc and isinstance(workflow_doc, dict):
-                    for pd in workflow_doc.get("params", []):
-                        param_descs[pd.get("name", "")] = pd.get("description", "")
-
-                for p in wf_ast.get("params", []):
-                    default_val = evaluate_default(p.get("default"))
-                    # Render as JSON for complex types so the form round-trips correctly
-                    default_json: str | None
-                    if isinstance(default_val, (list, dict)):
-                        default_json = json.dumps(default_val)
-                    else:
-                        default_json = str(default_val) if default_val is not None else None
-                    params.append(
-                        {
-                            "name": p.get("name", ""),
-                            "type": p.get("type", ""),
-                            "default": default_val,
-                            "default_json": default_json,
-                            "description": param_descs.get(p.get("name", ""), ""),
-                        }
-                    )
-        except Exception as exc:
-            parse_error = str(exc)
+    params, parse_error, workflow_doc = build_run_params(flow, workflow_name)
 
     return request.app.state.templates.TemplateResponse(
         request,
@@ -561,22 +564,12 @@ def flow_run_form(
     )
 
 
-@router.post("/{flow_id}/run/{workflow_id}")
-def flow_run_execute(
-    flow_id: str,
-    workflow_id: str,
-    request: Request,
-    inputs_json: str = Form("{}"),
-    purpose: str = Form("none"),
-    teams: list[str] = Form(default=[]),
-    store=Depends(get_store),
-    current_user=Depends(get_current_user),
-):
-    """Execute a workflow from an existing flow — creates only Runner + Task.
+def create_flow_run(flow, workflow_def, inputs_json, purpose, teams, store, current_user) -> str:
+    """Create a Runner + bootstrap Task for a workflow from a flow; return runner_id.
 
-    Tags the run with the acting user (started_by), the workflow's declared
-    author/teams (from its Author/Teams mixins), the chosen purpose, and the
-    teams it is listed for.
+    Shared by the v2 and v3 run forms so the run-submission logic (default
+    extraction, user-input override, author/team tagging, runner+task creation)
+    can't diverge.
     """
     import json
     import time
@@ -594,17 +587,6 @@ def flow_run_execute(
     )
     from facetwork.runtime.types import generate_id
 
-    flow = store.get_flow(flow_id)
-    workflow_def = store.get_workflow(workflow_id) if flow else None
-
-    if not flow or not workflow_def:
-        return request.app.state.templates.TemplateResponse(
-            request,
-            "flows/detail.html",
-            {"flow": flow, "workflows": [], "runners": []},
-        )
-
-    # Extract defaults from compiled AST and capture for runner snapshot
     inputs: dict = {}
     program_dict: dict | None = None
     wf_ast: dict | None = None
@@ -614,12 +596,8 @@ def flow_run_execute(
                 program_dict = flow.compiled_ast
             else:
                 parser = FFLParser()
-                source_text = flow.compiled_sources[0].content
-                ast = parser.parse(source_text)
-                emitter = JSONEmitter(include_locations=False)
-                program_json = emitter.emit(ast)
-                program_dict = json.loads(program_json)
-
+                ast = parser.parse(flow.compiled_sources[0].content)
+                program_dict = json.loads(JSONEmitter(include_locations=False).emit(ast))
             if program_dict is None:
                 raise ValueError("Flow has no compiled AST or sources")
             wf_ast = find_workflow(program_dict, workflow_def.name)
@@ -631,23 +609,16 @@ def flow_run_execute(
         except Exception:
             pass
 
-    # Override with user-provided inputs from form
     try:
         user_inputs = json.loads(inputs_json) if inputs_json else {}
         inputs.update(user_inputs)
     except (json.JSONDecodeError, ValueError):
         pass
 
-    # Create Runner + Task with a unique execution workflow_id.
-    # Each run gets its own workflow_id so steps don't collide between runs
-    # of the same workflow definition.
     now_ms = int(time.time() * 1000)
     runner_id = generate_id()
-    task_id = generate_id()
     execution_workflow_id = generate_id()
 
-    # Ownership tags: author/teams from the workflow's mixins; started_by is the
-    # acting user; the run is listed for the chosen teams (or the user's default).
     mixin_author, mixin_teams = author_and_teams(wf_ast.get("mixins")) if wf_ast else ("", [])
     author_def = None
     if mixin_author:
@@ -657,42 +628,61 @@ def flow_run_execute(
     if not run_teams:
         run_teams = [current_user.default_team] if current_user.default_team else list(mixin_teams)
 
-    runner = RunnerDefinition(
-        uuid=runner_id,
-        workflow_id=execution_workflow_id,
-        workflow=workflow_def,
-        state=RunnerState.CREATED,
-        user=current_user.to_user_definition(),
-        author=author_def,
-        purpose=purpose,
-        teams=run_teams,
-        compiled_ast=program_dict,
-        workflow_ast=wf_ast,
+    store.save_runner(
+        RunnerDefinition(
+            uuid=runner_id,
+            workflow_id=execution_workflow_id,
+            workflow=workflow_def,
+            state=RunnerState.CREATED,
+            user=current_user.to_user_definition(),
+            author=author_def,
+            purpose=purpose,
+            teams=run_teams,
+            compiled_ast=program_dict,
+            workflow_ast=wf_ast,
+        )
     )
-    store.save_runner(runner)
+    store.save_task(
+        TaskDefinition(
+            uuid=generate_id(),
+            name=f"fw:execute:{workflow_def.name}",
+            runner_id=runner_id,
+            workflow_id=execution_workflow_id,
+            flow_id=flow.uuid,
+            step_id="",
+            state=TaskState.PENDING,
+            created=now_ms,
+            updated=now_ms,
+            task_list_name=namespace_of(workflow_def.name),
+            data={
+                "flow_id": flow.uuid,
+                "workflow_id": execution_workflow_id,
+                "workflow_name": workflow_def.name,
+                "inputs": inputs,
+                "runner_id": runner_id,
+            },
+        )
+    )
+    return runner_id
 
-    task = TaskDefinition(
-        uuid=task_id,
-        name=f"fw:execute:{workflow_def.name}",
-        runner_id=runner_id,
-        workflow_id=execution_workflow_id,
-        flow_id=flow_id,
-        step_id="",
-        state=TaskState.PENDING,
-        created=now_ms,
-        updated=now_ms,
-        task_list_name=namespace_of(workflow_def.name),
-        data={
-            "flow_id": flow_id,
-            "workflow_id": execution_workflow_id,
-            "workflow_name": workflow_def.name,
-            "inputs": inputs,
-            "runner_id": runner_id,
-        },
-    )
-    store.save_task(task)
 
-    return RedirectResponse(
-        url=f"/runners/{runner_id}",
-        status_code=303,
-    )
+@router.post("/{flow_id}/run/{workflow_id}")
+def flow_run_execute(
+    flow_id: str,
+    workflow_id: str,
+    request: Request,
+    inputs_json: str = Form("{}"),
+    purpose: str = Form("none"),
+    teams: list[str] = Form(default=[]),
+    store=Depends(get_store),
+    current_user=Depends(get_current_user),
+):
+    """Execute a workflow from an existing flow — creates only Runner + Task."""
+    flow = store.get_flow(flow_id)
+    workflow_def = store.get_workflow(workflow_id) if flow else None
+    if not flow or not workflow_def:
+        return request.app.state.templates.TemplateResponse(
+            request, "flows/detail.html", {"flow": flow, "workflows": [], "runners": []}
+        )
+    runner_id = create_flow_run(flow, workflow_def, inputs_json, purpose, teams, store, current_user)
+    return RedirectResponse(url=f"/runners/{runner_id}", status_code=303)

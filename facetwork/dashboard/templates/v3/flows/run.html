@@ -1,0 +1,110 @@
+{% extends "v3/base.html" %}
+{% block title %}Run {{ workflow_name or '' }} · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.runwrap{max-width:760px}
+.rh h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.02em}
+.rh .q{font:500 12px/1.4 var(--mono);color:var(--muted);display:block;margin-top:.3rem}
+.rh .doc{color:var(--text-2);font-size:13px;margin:.7rem 0 0}
+.pblock{padding:.2rem 0}
+.pfield{padding:.7rem .9rem;border-top:1px solid var(--border)}
+.pfield:first-child{border-top:none}
+.pfield label{display:block;font:600 12.5px var(--sans);margin-bottom:.1rem}
+.pfield .meta{font:500 11px var(--mono);color:var(--muted);margin-bottom:.4rem}
+.pfield .meta .ty{color:var(--accent)}
+.pfield input,.pfield textarea{width:100%;padding:.45rem .6rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);
+  color:var(--text);font:500 12.5px/1.5 var(--mono);outline:none;resize:vertical}
+.pfield input:focus,.pfield textarea:focus{border-color:var(--accent)}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:1rem;padding:.9rem}
+@media (max-width:700px){.opts{grid-template-columns:1fr}}
+.opts label{display:block;font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:.35rem}
+.opts select{width:100%;padding:.45rem .6rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font:500 13px var(--sans);outline:none}
+.teams{display:flex;flex-wrap:wrap;gap:.5rem}
+.teams label{display:inline-flex;align-items:center;gap:.35rem;text-transform:none;letter-spacing:0;font:500 12px var(--sans);color:var(--text-2);margin:0}
+.runbar{display:flex;align-items:center;gap:.8rem;padding:.9rem;border-top:1px solid var(--border)}
+.errbox{margin:0 0 1rem;padding:.6rem .8rem;background:color-mix(in srgb,var(--st-error) 8%,transparent);border:1px solid color-mix(in srgb,var(--st-error) 30%,transparent);border-radius:var(--r-sm);color:var(--st-error);font-size:12px}
+.noparams{padding:1.2rem .9rem;color:var(--muted);font-size:12.5px}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><a href="/v3/workflows/new">New run</a>
+  {% if flow %}<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="cur">{{ workflow_name }}</span>{% endif %}</nav>
+{% endblock %}
+
+{% block content %}
+{% if not flow %}
+  <div class="empty"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    <h1>Workflow not found</h1><p><a href="/v3/workflows/new">← Back</a></p></div>
+{% else %}
+<div class="runwrap" style="display:flex;flex-direction:column;gap:1.1rem">
+  <section class="status-head rh" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.1rem 1.3rem">
+    <h1>{{ workflow_name }}</h1>
+    <span class="q">run from flow {{ flow.name.name }}</span>
+    {% if workflow_doc and workflow_doc.description %}<p class="doc">{{ workflow_doc.description }}</p>{% endif %}
+  </section>
+
+  {% if parse_error %}<div class="errbox">⚠ Could not read params: {{ parse_error }}</div>{% endif %}
+
+  <form id="runform" method="post" action="/v3/flows/{{ flow.uuid }}/run/{{ workflow_def.uuid }}">
+    <input type="hidden" name="inputs_json" id="inputs_json" value="{}">
+
+    <section class="panel">
+      <div class="panel-head"><h2>Parameters</h2></div>
+      <div class="pblock">
+        {% for p in params %}
+        <div class="pfield">
+          <label for="p-{{ loop.index }}">{{ p.name }}</label>
+          <div class="meta"><span class="ty">{{ p.type }}</span>{% if p.description %} — {{ p.description }}{% endif %}</div>
+          {% set v = p.default_json if p.default_json is not none else '' %}
+          {% if '[' in (p.type or '') or '{' in (p.type or '') or (v|length) > 60 %}
+          <textarea class="param-input" id="p-{{ loop.index }}" data-param="{{ p.name }}" rows="2" spellcheck="false">{{ v }}</textarea>
+          {% else %}
+          <input class="param-input" id="p-{{ loop.index }}" type="text" data-param="{{ p.name }}" value="{{ v }}" spellcheck="false">
+          {% endif %}
+        </div>
+        {% else %}
+        <div class="noparams">This workflow takes no parameters.</div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Run options</h2></div>
+      <div class="opts">
+        <div>
+          <label>Purpose</label>
+          <select name="purpose">{% for pu in purposes %}<option value="{{ pu }}"{% if pu=='none' %} selected{% endif %}>{{ pu }}</option>{% endfor %}</select>
+        </div>
+        {% if all_teams %}
+        <div>
+          <label>List for teams</label>
+          <div class="teams">{% for t in all_teams %}<label><input type="checkbox" name="teams" value="{{ t }}"> {{ t }}</label>{% endfor %}</div>
+        </div>
+        {% endif %}
+      </div>
+      <div class="runbar">
+        <button class="btn primary" type="submit"><svg viewBox="0 0 24 24"><path d="M5 4l14 8-14 8z"/></svg> Run workflow</button>
+        <a class="btn" href="/v3/flows/{{ flow.uuid }}">Cancel</a>
+      </div>
+    </section>
+  </form>
+</div>
+
+<script>
+// Assemble inputs_json from per-param fields — JSON.parse each (numbers/bools/
+// arrays/objects round-trip), string fallback. Mirrors the v2 run form.
+document.getElementById('runform').addEventListener('submit', function(){
+  var inputs={};
+  document.querySelectorAll('.param-input').forEach(function(el){
+    var raw=el.value, val=raw;
+    if(raw.trim()===''){return;}
+    try{val=JSON.parse(raw);}catch(e){val=raw;}
+    inputs[el.dataset.param]=val;
+  });
+  document.getElementById('inputs_json').value=JSON.stringify(inputs);
+});
+</script>
+{% endif %}
+{% endblock %}
