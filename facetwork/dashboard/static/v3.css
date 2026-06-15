@@ -139,6 +139,18 @@ a{color:var(--accent)}
 .empty p{margin:0;font-size:13px}
 .empty .btn{margin-top:.6rem}
 
+/* ---- reusable data table ---- */
+.dtable-wrap{border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;background:var(--surface)}
+.dtable{width:100%;border-collapse:collapse;font-size:13px}
+.dtable th{text-align:left;font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;
+  color:var(--muted);padding:.6rem .9rem;border-bottom:1px solid var(--border);background:var(--surface-2)}
+.dtable td{padding:.55rem .9rem;border-bottom:1px solid var(--border);color:var(--text)}
+.dtable tbody tr:last-child td{border-bottom:none}
+.dtable tbody tr:hover{background:var(--surface-2)}
+.dtable a{color:var(--accent);text-decoration:none}.dtable a:hover{text-decoration:underline}
+.dtable .num{font-family:var(--mono);text-align:right;color:var(--text-2)}
+.dtable .t{font-family:var(--mono);font-size:11px;color:var(--muted)}
+
 /* ---- density toggle (compact trims paddings) ---- */
 body.compact .content{gap:.7rem;padding:1rem}
 body.compact .panel-head{padding:.45rem .7rem}

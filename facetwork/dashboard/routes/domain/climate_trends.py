@@ -109,7 +109,7 @@ def climate_trends_page(request: Request, store=Depends(get_store)):
     return request.app.state.templates.TemplateResponse(
         request,
         "climate/trends.html",
-        {"states": states, "active_tab": "climate_trends"},
+        {"states": states, "active_tab": "climate_trends", "active_app": "Climate Trends"},
     )
 
 

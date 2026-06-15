@@ -417,7 +417,7 @@ def census_map_list(request: Request, store=Depends(get_store)):
     return request.app.state.templates.TemplateResponse(
         request,
         "census/maps.html",
-        {"datasets": metas, "active_tab": "census_maps"},
+        {"datasets": metas, "active_tab": "census_maps", "active_app": "Census Maps"},
     )
 
 

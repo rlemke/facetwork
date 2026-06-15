@@ -190,7 +190,7 @@ def site_selection_list(request: Request, store=Depends(get_store)):
     return request.app.state.templates.TemplateResponse(
         request,
         "site_selection/list.html",
-        {"states": states, "active_tab": "site_selection"},
+        {"states": states, "active_tab": "site_selection", "active_app": "Site Selection"},
     )
 
 
