@@ -119,6 +119,7 @@ namespace s2.analyze {
         aoi: String,
         date_from: String,
         date_to: String,
+        scene_ids: Json,
         index: String = "ndvi",
         reducer: String = "median",
         dependency_signal: Long = 0,
@@ -140,8 +141,15 @@ namespace s2.analyze {
         with Cost(tier = "moderate")
 
     /** Compare a baseline composite to a recent composite and emit a change
-      * raster + summary stats. `method` = "difference" (index delta + threshold)
-      * or "classify" (per-pixel land-cover transition via a random-forest model). */
+      * raster + summary stats. `method`:
+      *   - "difference" — index delta thresholded into loss/stable/gain.
+      *   - "classify"   — bin each epoch into land-cover classes (water /
+      *     built-bare / sparse-veg / dense-veg by NDVI) and report the per-pixel
+      *     class transition; `class_counts` carries the per-class histograms and
+      *     the from->to transition matrix. (Threshold classifier over a veg index;
+      *     a trained random-forest over the full spectral stack is the upgrade.)
+      * The change raster is loss(-1)/stable(0)/gain(+1) either way, so the
+      * renderer is method-agnostic. */
     event facet DetectChange(
         baseline_path: String,
         recent_path: String,
@@ -218,7 +226,8 @@ namespace s2.workflows {
             )
             base = Composite(
                 aoi = $.aoi, date_from = $.baseline_from, date_to = $.baseline_to,
-                index = $.index, dependency_signal = base_scan.count, use_mock = $.use_mock
+                scene_ids = base_search.scene_ids, index = $.index,
+                dependency_signal = base_scan.count, use_mock = $.use_mock
             )
             recent_search = SearchScenes(
                 aoi = $.aoi, date_from = $.recent_from, date_to = $.recent_to,
@@ -229,7 +238,8 @@ namespace s2.workflows {
             )
             recent = Composite(
                 aoi = $.aoi, date_from = $.recent_from, date_to = $.recent_to,
-                index = $.index, dependency_signal = recent_scan.count, use_mock = $.use_mock
+                scene_ids = recent_search.scene_ids, index = $.index,
+                dependency_signal = recent_scan.count, use_mock = $.use_mock
             )
             change = DetectChange(
                 baseline_path = base.relative_path, recent_path = recent.relative_path,

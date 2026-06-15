@@ -20,6 +20,7 @@ def handle_composite(params: dict[str, Any]) -> dict[str, Any]:
         aoi=params["aoi"],
         date_from=params["date_from"],
         date_to=params["date_to"],
+        scene_ids=params.get("scene_ids") or None,
         index=params.get("index", "ndvi"),
         reducer=params.get("reducer", "median"),
         use_mock=bool(params.get("use_mock", False)),

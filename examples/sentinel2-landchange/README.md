@@ -27,10 +27,17 @@ For each of a **baseline** and a **recent** date window:
 3. **`s2.analyze.Composite`** — reduce the cached per-scene rasters into one
    cloud-robust median composite for the epoch.
 
-Then **`s2.analyze.DetectChange`** compares the two composites (index-difference
-+ threshold, or a random-forest classify) and **`s2.render.ChangeMap`** renders a
-MapLibre HTML viewer (loss in red, gain in green). The entry workflow is
-**`s2.workflows.AnalyzeAOI`**.
+Then **`s2.analyze.DetectChange`** compares the two composites — `method`:
+- **`difference`** — index delta thresholded into loss / stable / gain.
+- **`classify`** — bin each epoch into land-cover classes (water / built-bare /
+  sparse-veg / dense-veg by NDVI) and report the per-pixel class transition;
+  `class_counts` then carries the per-class histograms and the from→to transition
+  matrix (e.g. `built_bare→water: 33`). An interpretable threshold classifier; a
+  trained random-forest over the full spectral stack is the drop-in upgrade.
+
+Both emit the same loss(-1)/stable(0)/gain(+1) raster, so **`s2.render.ChangeMap`**
+(MapLibre tiled map, loss red / gain green) is method-agnostic. The entry
+workflow is **`s2.workflows.AnalyzeAOI`** (`method="classify"` to switch).
 
 Every scene raster and composite is content-addressed in the cache
 (`$AFL_CACHE_ROOT/s2/`), so changing the threshold, the change method, or adding

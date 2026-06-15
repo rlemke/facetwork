@@ -76,7 +76,9 @@ def test_mock_chain_end_to_end(tools_env):
     assert base_scenes
     for s in base_scenes:
         raster.fetch_scene_index(s["scene_id"], aoi, index="ndvi", use_mock=True)
-    base = raster.composite(aoi, "2018-06-01", "2018-09-30", index="ndvi", use_mock=True)
+    base_ids = [s["scene_id"] for s in base_scenes]
+    base = raster.composite(aoi, "2018-06-01", "2018-09-30", scene_ids=base_ids,
+                            index="ndvi", use_mock=True)
     assert base["scene_count"] == len(base_scenes)
 
     # idempotent: a second fetch is a cache hit
@@ -87,7 +89,9 @@ def test_mock_chain_end_to_end(tools_env):
     recent_scenes = stac.search(aoi, "2024-06-01", "2024-09-30", use_mock=True)
     for s in recent_scenes:
         raster.fetch_scene_index(s["scene_id"], aoi, index="ndvi", use_mock=True)
-    recent = raster.composite(aoi, "2024-06-01", "2024-09-30", index="ndvi", use_mock=True)
+    recent = raster.composite(aoi, "2024-06-01", "2024-09-30",
+                              scene_ids=[s["scene_id"] for s in recent_scenes],
+                              index="ndvi", use_mock=True)
 
     change = raster.detect_change(base["relative_path"], recent["relative_path"],
                                   base["aoi_key"], method="difference", threshold=0.15, use_mock=True)
@@ -114,6 +118,48 @@ def test_mock_chain_end_to_end(tools_env):
         assert Path(bundle["output_dir"], "change.tif").is_file(), "expected the georeferenced COG"
     else:
         assert "canvas" in html.lower()
+
+
+def test_classify_change_method(tools_env):
+    from _s2_tools import raster, stac
+
+    aoi = "-122.55,37.70,-122.35,37.85"
+    ids = {}
+    for win in (("2018-06-01", "2018-09-30"), ("2024-06-01", "2024-09-30")):
+        scenes = stac.search(aoi, *win, use_mock=True)
+        ids[win[0]] = [s["scene_id"] for s in scenes]
+        for s in scenes:
+            raster.fetch_scene_index(s["scene_id"], aoi, index="ndvi", use_mock=True)
+    base = raster.composite(aoi, "2018-06-01", "2018-09-30", scene_ids=ids["2018-06-01"],
+                            index="ndvi", use_mock=True)
+    recent = raster.composite(aoi, "2024-06-01", "2024-09-30", scene_ids=ids["2024-06-01"],
+                              index="ndvi", use_mock=True)
+
+    ch = raster.detect_change(base["relative_path"], recent["relative_path"], base["aoi_key"],
+                              method="classify", use_mock=True)
+    assert ch["method"] == "classify"
+    # the mock simulates recent vegetation loss, so classify must find change
+    assert ch["changed_pixels"] > 0 and ch["pct_loss"] > 0
+    cc = ch["class_counts"]
+    # classify carries per-class histograms + a from->to transition matrix
+    assert set(cc) >= {"loss", "gain", "stable", "baseline", "recent", "transitions"}
+    assert set(cc["baseline"]) == {"water", "built_bare", "sparse_veg", "dense_veg"}
+    assert sum(cc["baseline"].values()) == ch["total_pixels"]
+    # every transition is between two *different* classes and they sum to changed pixels
+    assert all("->" in k and k.split("->")[0] != k.split("->")[1] for k in cc["transitions"])
+    assert sum(cc["transitions"].values()) == ch["changed_pixels"]
+
+
+def test_unknown_method_rejected(tools_env):
+    from _s2_tools import raster, stac
+
+    aoi = "-1,-1,1,1"
+    for s in stac.search(aoi, "2024-06-01", "2024-09-30", use_mock=True):
+        raster.fetch_scene_index(s["scene_id"], aoi, index="ndvi", use_mock=True)
+    c = raster.composite(aoi, "2024-06-01", "2024-09-30", index="ndvi", use_mock=True)
+    with pytest.raises(ValueError):
+        raster.detect_change(c["relative_path"], c["relative_path"], c["aoi_key"],
+                             method="bogus", use_mock=True)
 
 
 def test_unknown_index_rejected(tools_env):

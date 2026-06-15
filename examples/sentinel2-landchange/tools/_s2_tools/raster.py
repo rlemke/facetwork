@@ -126,11 +126,21 @@ def _fetch_real(scene_id, aoi, index, collection, stac_url):
 
 
 def composite(
-    aoi: str, date_from: str, date_to: str, *, index: str = "ndvi",
-    reducer: str = "median", use_mock: bool = False
+    aoi: str, date_from: str, date_to: str, *, scene_ids: list[str] | None = None,
+    index: str = "ndvi", reducer: str = "median", use_mock: bool = False
 ) -> dict[str, Any]:
+    """Median/mean composite over the per-scene index rasters for ``scene_ids``.
+
+    Scoping to the epoch's scene ids is what separates the baseline and recent
+    composites — they share one AOI+index cache namespace, so without it both
+    epochs would reduce over the same mixed set. ``scene_ids=None`` falls back to
+    every cached scene for the AOI+index (single-epoch / CLI use)."""
     ak = aoi_key(aoi)
-    rels = [r for r in sidecar.list_entries(SCENE_INDEX) if r.startswith(f"{ak}/{index}/")]
+    if scene_ids:
+        rels = [f"{ak}/{index}/{sid}.npz" for sid in scene_ids
+                if sidecar.exists(SCENE_INDEX, f"{ak}/{index}/{sid}.npz")]
+    else:
+        rels = [r for r in sidecar.list_entries(SCENE_INDEX) if r.startswith(f"{ak}/{index}/")]
     if not rels:
         raise FileNotFoundError(
             f"no cached scene-index rasters for aoi={ak} index={index}; run ScanScenes first"
@@ -147,6 +157,12 @@ def composite(
 # ── change detection ───────────────────────────────────────────────────────────
 
 
+# Land-cover classes for the `classify` method, as (name, NDVI upper bound).
+# Monotonic by greenness, so class index up = greening (gain), down = loss.
+NDVI_CLASS_BREAKS = (0.0, 0.2, 0.4)  # → 4 classes
+NDVI_CLASS_NAMES = ("water", "built_bare", "sparse_veg", "dense_veg")
+
+
 def detect_change(
     baseline_rel: str, recent_rel: str, aoi_key_str: str, *,
     method: str = "difference", threshold: float = 0.15, use_mock: bool = False
@@ -155,23 +171,77 @@ def detect_change(
     recent, _b, _c = _load(COMPOSITE, recent_rel)
     if base.shape != recent.shape:
         raise ValueError(f"composite shapes differ {base.shape} vs {recent.shape}")
+
+    if method == "classify":
+        change, class_counts, source = _classify_change(base, recent)
+    elif method == "difference":
+        change, class_counts, source = _difference_change(base, recent, threshold)
+    else:
+        raise ValueError(f"unknown method {method!r} (expected 'difference' or 'classify')")
+
+    loss = int((change == -1).sum())
+    gain = int((change == 1).sum())
+    total = int(change.size)
+    rel = f"{aoi_key_str}/{method}.npz"
+    meta = _save(CHANGE, rel, change, bounds=bounds, crs=crs, source=source, tool="detect_change")
+    return {
+        "relative_path": rel, "aoi_key": aoi_key_str, "method": method,
+        "changed_pixels": loss + gain, "total_pixels": total,
+        "pct_loss": round(100.0 * loss / total, 2), "pct_gain": round(100.0 * gain / total, 2),
+        "class_counts": class_counts,
+        "size_bytes": meta["size_bytes"], "sha256": meta["sha256"],
+    }
+
+
+def _difference_change(base, recent, threshold):
+    """Index delta thresholded into loss(-1)/stable(0)/gain(+1)."""
     delta = recent - base
     change = np.zeros(base.shape, dtype="int8")
     change[delta <= -threshold] = -1
     change[delta >= threshold] = 1
     loss = int((change == -1).sum())
     gain = int((change == 1).sum())
-    total = int(change.size)
-    rel = f"{aoi_key_str}/{method}.npz"
-    meta = _save(CHANGE, rel, change, bounds=bounds, crs=crs,
-                 source=f"{method}(threshold={threshold})", tool="detect_change")
-    return {
-        "relative_path": rel, "aoi_key": aoi_key_str, "method": method,
-        "changed_pixels": loss + gain, "total_pixels": total,
-        "pct_loss": round(100.0 * loss / total, 2), "pct_gain": round(100.0 * gain / total, 2),
-        "class_counts": {"loss": loss, "gain": gain, "stable": total - loss - gain},
-        "size_bytes": meta["size_bytes"], "sha256": meta["sha256"],
+    counts = {"loss": loss, "gain": gain, "stable": int(change.size) - loss - gain}
+    return change, counts, f"difference(threshold={threshold})"
+
+
+def _classify_change(base, recent):
+    """Bin each epoch into land-cover classes, then report the per-pixel
+    class transition. The change raster is the sign of the class shift
+    (greening = +1 gain, browning = -1 loss); ``class_counts`` carries the
+    per-class histograms and the from→to transition matrix.
+
+    This is an interpretable threshold classifier over a vegetation index; a
+    drop-in upgrade is a trained random-forest over the full spectral stack
+    (would require caching multiple bands per scene + a fitted model).
+    """
+    base_cls = np.digitize(base, NDVI_CLASS_BREAKS).astype("int8")     # 0..3
+    recent_cls = np.digitize(recent, NDVI_CLASS_BREAKS).astype("int8")  # 0..3
+    shift = recent_cls.astype("int16") - base_cls.astype("int16")
+    change = np.zeros(base.shape, dtype="int8")
+    change[shift < 0] = -1
+    change[shift > 0] = 1
+
+    def _hist(cls):
+        return {NDVI_CLASS_NAMES[i]: int((cls == i).sum()) for i in range(len(NDVI_CLASS_NAMES))}
+
+    transitions: dict[str, int] = {}
+    for i in range(len(NDVI_CLASS_NAMES)):
+        for j in range(len(NDVI_CLASS_NAMES)):
+            if i == j:
+                continue
+            n = int(((base_cls == i) & (recent_cls == j)).sum())
+            if n:
+                transitions[f"{NDVI_CLASS_NAMES[i]}->{NDVI_CLASS_NAMES[j]}"] = n
+
+    loss = int((change == -1).sum())
+    gain = int((change == 1).sum())
+    counts = {
+        "loss": loss, "gain": gain, "stable": int(change.size) - loss - gain,
+        "baseline": _hist(base_cls), "recent": _hist(recent_cls),
+        "transitions": transitions,
     }
+    return change, counts, "classify(ndvi-classes)"
 
 
 def load_change_grid(change_rel: str) -> dict[str, Any]:

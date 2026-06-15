@@ -25,15 +25,33 @@ def mock_scene_ids(aoi: str, date_from: str, date_to: str, max_cloud: float) -> 
     return [f"S2_MOCK_{date_from}_{date_to}_{i:02d}" for i in range(n)]
 
 
+def _year_of(scene_id: str) -> int:
+    """Pull the acquisition year from a mock scene id (``S2_MOCK_2024-...``)."""
+    for tok in scene_id.replace("_", "-").split("-"):
+        if len(tok) == 4 and tok.isdigit():
+            return int(tok)
+    return 2020
+
+
 def mock_index_grid(scene_id: str, aoi: str, index: str) -> list[list[float]]:
-    """A deterministic WxH grid of index values in [-1, 1]."""
-    base = _seed(scene_id, aoi, index)
+    """A deterministic WxH grid of index values in [-1, 1].
+
+    Models a realistic scene rather than pure noise so the change methods have
+    something to find: a smooth spatial gradient (greener toward the top-right)
+    that is *shared across epochs*, plus a localized **vegetation loss** in the
+    lower-left quadrant for recent (>= 2022) scenes — e.g. a clear-cut / new
+    development. Plus a little per-scene noise that the epoch median smooths out.
+    """
+    year = _year_of(scene_id)
     grid: list[list[float]] = []
     for y in range(MOCK_H):
         row = []
         for x in range(MOCK_W):
-            cell = _seed(scene_id, index, str(x), str(y))
-            v = ((base + x * 7 + y * 13 + cell % 97) % 200) / 100.0 - 1.0
-            row.append(round(v, 4))
+            spatial = (x / (MOCK_W - 1)) * 0.5 + ((MOCK_H - 1 - y) / (MOCK_H - 1)) * 0.5
+            v = -0.2 + 1.2 * spatial  # baseline NDVI ~ [-0.2, 1.0]
+            if year >= 2022 and x < MOCK_W / 2 and y > MOCK_H / 2:
+                v -= 0.45  # recent vegetation loss in the lower-left
+            noise = ((_seed(scene_id, index, str(x), str(y)) % 21) - 10) / 100.0  # ±0.10
+            row.append(round(max(-1.0, min(1.0, v + noise)), 4))
         grid.append(row)
     return grid
