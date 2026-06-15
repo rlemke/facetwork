@@ -42,6 +42,31 @@ a{color:var(--accent)}
 .v3-brand .mark{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;color:#001;
   background:conic-gradient(from 210deg,var(--accent),#7fdcff,var(--accent));
   box-shadow:0 0 0 1px var(--border-strong),0 4px 14px -4px var(--accent)}
+/* app switcher — jump between the platform and domain "apps" (keeps domain
+   views out of the main platform nav) */
+.appswitch{position:relative;margin:.2rem .8rem .5rem}
+.appswitch>.cur{display:flex;align-items:center;gap:.5rem;padding:.5rem .7rem;border:1px solid var(--border);
+  border-radius:var(--r-md);background:var(--surface-2);color:var(--text-2);font-size:12.5px;cursor:pointer;width:100%}
+.appswitch>.cur:hover{border-color:var(--border-strong);color:var(--text)}
+.appswitch .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+.appswitch .nm{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.appswitch .chev{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8;flex:none}
+.appmenu{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--surface);
+  border:1px solid var(--border-strong);border-radius:var(--r-md);box-shadow:var(--shadow);padding:.3rem;z-index:60;display:none}
+.appswitch.open .appmenu{display:block}
+.appmenu .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:.45rem .55rem .2rem}
+.appmenu a{display:flex;align-items:center;gap:.5rem;padding:.42rem .55rem;border-radius:var(--r-sm);
+  color:var(--text-2);text-decoration:none;font-size:12.5px}
+.appmenu a:hover{background:var(--surface-2);color:var(--text)}
+.appmenu a.cur{color:var(--text);font-weight:600}
+.appmenu a svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;opacity:.85;flex:none}
+
+/* primary action */
+.newbtn{margin:0 .8rem .5rem;display:flex;align-items:center;justify-content:center;gap:.4rem;padding:.5rem;
+  border-radius:var(--r-md);background:var(--accent);color:#001;font:600 13px var(--sans);text-decoration:none}
+.newbtn:hover{filter:brightness(1.08)}
+.newbtn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4}
+
 .v3-nav{padding:.3rem .5rem;display:flex;flex-direction:column;gap:1px}
 .v3-nav .group{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
   padding:.9rem .7rem .35rem;font-weight:600}
