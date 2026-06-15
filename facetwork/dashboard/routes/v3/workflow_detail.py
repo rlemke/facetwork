@@ -30,9 +30,54 @@ _ACTIVE_STATES = {"created", "running", "paused"}
 
 from ...dependencies import get_store
 from ...graph import compute_dag_layout
-from ...helpers import categorize_step_state, qualify_step_names
+from ...helpers import (
+    categorize_step_state,
+    group_runners_by_namespace,
+    qualify_step_names,
+)
 
 router = APIRouter(prefix="/v3")
+
+# state → pill colour var, shared by the list rows and detail header
+_PILL = {
+    "running": "var(--st-running)", "created": "var(--st-running)",
+    "paused": "var(--st-paused)", "completed": "var(--st-complete)",
+    "failed": "var(--st-error)", "cancelled": "var(--st-error)",
+}
+
+
+@router.get("/workflows")
+def workflow_list_v3(
+    request: Request,
+    tab: str = "running",
+    store=Depends(get_store),
+):
+    """Redesigned Runs list — same data pipeline as ``/v2/workflows``."""
+    # Reuse the v2 helpers so the two lists never diverge on filtering/counting.
+    from ..v2.dashboard_v2 import (
+        _count_by_tab,
+        _enrich_runners_with_progress,
+        _filter_runners,
+    )
+
+    all_runners = store.get_all_runners(limit=1000)
+    tab_counts = _count_by_tab(all_runners)
+    filtered = _filter_runners(all_runners, tab)
+    groups = group_runners_by_namespace(filtered)
+    progress = _enrich_runners_with_progress(filtered, store)
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v3/workflows/list.html",
+        {
+            "groups": groups,
+            "tab": tab,
+            "tab_counts": tab_counts,
+            "progress": progress,
+            "pill": _PILL,
+            "active_nav": "runs",
+        },
+    )
 
 
 def _short_state(state: str) -> str:

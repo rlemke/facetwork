@@ -1,0 +1,101 @@
+{% extends "v3/base.html" %}
+{% block title %}Runs · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.runs-bar{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+.segtabs{display:flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px}
+.segtabs a{display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;border-radius:7px;text-decoration:none;
+  color:var(--text-2);font:600 12.5px var(--sans)}
+.segtabs a.active{background:var(--surface-3);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.segtabs a .n{font:600 10.5px/1 var(--mono);color:var(--muted);background:var(--surface);padding:.15rem .35rem;border-radius:20px}
+.segtabs a.active .n{color:var(--text)}
+.runs-search{flex:1;max-width:320px;padding:.45rem .75rem;font:500 13px var(--sans);color:var(--text);
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);outline:none}
+.runs-search:focus{border-color:var(--accent)}
+
+.ns{margin-top:.2rem}
+.ns-head{display:flex;align-items:center;gap:.5rem;padding:.5rem .2rem;font:600 12px var(--mono);color:var(--text-2)}
+.ns-head .c{font:600 10.5px/1 var(--mono);color:var(--muted);background:var(--surface-3);padding:.15rem .4rem;border-radius:20px}
+.runs{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.run-row{display:grid;grid-template-columns:14px 1fr 160px 120px 90px 96px;gap:.9rem;align-items:center;
+  padding:.6rem .9rem;border-bottom:1px solid var(--border);text-decoration:none;color:var(--text)}
+.run-row:last-child{border-bottom:none}
+.run-row:hover{background:var(--surface-2)}
+.run-name{min-width:0}
+.run-name b{font-weight:600;font-size:13.5px}
+.run-name small{display:block;font:500 11px/1.4 var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.run-prog{display:flex;align-items:center;gap:.5rem;font:500 11.5px var(--mono);color:var(--muted)}
+.run-prog .bar{flex:1;height:6px;border-radius:4px;background:var(--surface-3);overflow:hidden}
+.run-prog .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--st-complete),#5fd97a);border-radius:4px}
+.run-meta{font:500 11.5px var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.run-pill{justify-self:start;display:inline-flex;align-items:center;gap:.4rem;padding:.2rem .55rem;border-radius:20px;
+  font-size:11px;font-weight:600;background:color-mix(in srgb,var(--pc) 16%,transparent);color:var(--pc);
+  border:1px solid color-mix(in srgb,var(--pc) 35%,transparent)}
+.run-hide{display:none}
+@media (max-width:900px){.run-row{grid-template-columns:14px 1fr 90px}.run-prog,.run-meta:nth-of-type(odd){display:none}}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><span class="cur">Runs</span></nav>{% endblock %}
+
+{% block content %}
+<div class="runs-bar">
+  <div class="segtabs">
+    <a href="?tab=running"   class="{% if tab=='running' %}active{% endif %}">Running <span class="n">{{ tab_counts.running }}</span></a>
+    <a href="?tab=completed" class="{% if tab=='completed' %}active{% endif %}">Completed <span class="n">{{ tab_counts.completed }}</span></a>
+    <a href="?tab=failed"    class="{% if tab=='failed' %}active{% endif %}">Failed <span class="n">{{ tab_counts.failed }}</span></a>
+  </div>
+  <input class="runs-search" id="runs-search" type="search" placeholder="Filter runs by name…" autocomplete="off">
+</div>
+
+{% if groups %}
+{% for group in groups %}
+<div class="ns" data-ns>
+  <div class="ns-head">{{ group.namespace }} <span class="c">{{ group.total }}</span></div>
+  <div class="runs">
+    {% for runner in group.runners %}
+    {% set st = runner.state %}
+    {% set p = progress.get(runner.uuid) if progress else None %}
+    <a class="run-row" data-row data-name="{{ (runner.workflow.name|short_workflow_name)|lower }} {{ runner.workflow.name|lower }}"
+       href="/v3/workflows/{{ runner.uuid }}" style="--pc:{{ pill.get(st, 'var(--muted)') }}">
+      <span class="statusdot" style="background:{{ pill.get(st, 'var(--muted)') }}"></span>
+      <span class="run-name"><b>{{ runner.workflow.name|short_workflow_name }}</b><small>{{ runner.workflow.name }}</small></span>
+      <span class="run-prog">
+        {% if p and p.total %}<span class="bar"><i style="width:{{ p.pct }}%"></i></span>{{ p.completed }}/{{ p.total }}{% else %}<span style="opacity:.5">—</span>{% endif %}
+      </span>
+      <span class="run-meta">{{ runner.start_time|timestamp }}</span>
+      <span class="run-meta">{{ runner.duration|duration }}</span>
+      <span class="run-pill">{{ st|capitalize }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="empty">
+  <p>No {{ tab }} runs.</p>
+  <p><a class="btn" href="/workflows/new">＋ New run</a></p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// client-side filter by name; hides empty namespace groups
+(function(){
+  var q=document.getElementById('runs-search');if(!q)return;
+  q.addEventListener('input',function(){
+    var v=q.value.trim().toLowerCase();
+    document.querySelectorAll('[data-ns]').forEach(function(ns){
+      var shown=0;
+      ns.querySelectorAll('[data-row]').forEach(function(r){
+        var hit=!v||r.getAttribute('data-name').indexOf(v)>=0;
+        r.classList.toggle('run-hide',!hit);if(hit)shown++;
+      });
+      ns.style.display=shown?'':'none';
+    });
+  });
+})();
+</script>
+{% endblock %}
