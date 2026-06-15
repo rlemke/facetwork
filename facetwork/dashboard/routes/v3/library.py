@@ -55,6 +55,63 @@ def catalog_detail_v3(
     )
 
 
+@router.get("/flows/{flow_id}/source")
+def flow_source_v3(request: Request, flow_id: str, store=Depends(get_store)):
+    """Flow FFL source on the v3 code view (one block per compiled source)."""
+    flow = store.get_flow(flow_id)
+    blocks = [{"name": s.name or "source.ffl", "content": s.content} for s in (flow.compiled_sources if flow else [])]
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v3/codeview.html",
+        {
+            "title": flow.name.name if flow else "Flow",
+            "subtitle": "FFL source",
+            "crumb": "Source",
+            "back_href": f"/v3/flows/{flow_id}",
+            "back_label": flow.name.name if flow else "Flow",
+            "blocks": blocks,
+            "error": None if flow else "Flow not found.",
+            "active_nav": "library",
+        },
+    )
+
+
+@router.get("/flows/{flow_id}/json")
+def flow_json_v3(request: Request, flow_id: str, store=Depends(get_store)):
+    """Flow compiled JSON (AST) on the v3 code view."""
+    flow = store.get_flow(flow_id)
+    out = None
+    error = None if flow else "Flow not found."
+    if flow:
+        try:
+            if flow.compiled_ast:
+                out = json.dumps(flow.compiled_ast, indent=2)
+            elif flow.compiled_sources:
+                from facetwork.emitter import JSONEmitter
+                from facetwork.parser import FFLParser
+
+                ast = FFLParser().parse(flow.compiled_sources[0].content)
+                out = JSONEmitter(indent=2).emit(ast)
+            else:
+                error = "No compiled AST or sources for this flow."
+        except Exception as exc:  # pragma: no cover - defensive
+            error = f"Failed to emit JSON: {exc}"
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v3/codeview.html",
+        {
+            "title": flow.name.name if flow else "Flow",
+            "subtitle": "compiled JSON (AST)",
+            "crumb": "JSON",
+            "back_href": f"/v3/flows/{flow_id}",
+            "back_label": flow.name.name if flow else "Flow",
+            "blocks": [{"name": "program.json", "content": out}] if out else [],
+            "error": error,
+            "active_nav": "library",
+        },
+    )
+
+
 @router.get("/flows/{flow_id}/run/{workflow_id}")
 def flow_run_form_v3(
     request: Request,

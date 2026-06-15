@@ -1,0 +1,52 @@
+{% extends "v3/base.html" %}
+{% block title %}{{ title }} · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.cv-head{display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1rem 1.3rem}
+.cv-head h1{margin:0;font-size:18px;font-weight:700;letter-spacing:-.02em}
+.cv-head .sub{font:500 12px/1.4 var(--mono);color:var(--muted);display:block;margin-top:.25rem}
+.cv-block{overflow:hidden}
+.cv-block .panel-head{justify-content:space-between}
+.cv-name{font:600 11.5px var(--mono);color:var(--text-2)}
+.cv-copy{cursor:pointer;font:600 11px var(--mono);color:var(--text-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:.2rem .55rem;background:none}
+.cv-copy:hover{color:var(--text);border-color:var(--border-strong)}
+.cv-copy.done{color:var(--st-complete);border-color:color-mix(in srgb,var(--st-complete) 40%,transparent)}
+pre.cv{margin:0;padding:1rem;background:var(--bg);font:500 12px/1.55 var(--mono);color:var(--text-2);overflow:auto;max-height:680px;white-space:pre;tab-size:2}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><a href="{{ back_href }}">{{ back_label }}</a>
+  <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="cur">{{ crumb }}</span></nav>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+  <div class="empty"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    <h1>{{ error }}</h1><p><a href="{{ back_href }}">← Back</a></p></div>
+{% else %}
+<section class="cv-head">
+  <div><h1>{{ title }}</h1>{% if subtitle %}<span class="sub">{{ subtitle }}</span>{% endif %}</div>
+</section>
+{% for b in blocks %}
+<section class="panel cv-block">
+  <div class="panel-head"><span class="cv-name">{{ b.name }}</span>
+    <button class="cv-copy" type="button" onclick="cvCopy(this)">Copy</button></div>
+  <pre class="cv">{{ b.content }}</pre>
+</section>
+{% endfor %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function cvCopy(btn){
+  var pre=btn.closest('.cv-block').querySelector('pre.cv');
+  navigator.clipboard.writeText(pre.textContent).then(function(){
+    btn.textContent='Copied';btn.classList.add('done');
+    setTimeout(function(){btn.textContent='Copy';btn.classList.remove('done');},1500);
+  });
+}
+</script>
+{% endblock %}
