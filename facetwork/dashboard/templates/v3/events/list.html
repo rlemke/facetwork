@@ -1,0 +1,53 @@
+{% extends "v3/base.html" %}
+{% block title %}Events · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.segtabs{display:flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px;flex-wrap:wrap}
+.segtabs a{display:flex;align-items:center;gap:.4rem;padding:.4rem .7rem;border-radius:7px;text-decoration:none;color:var(--text-2);font:600 12px var(--sans)}
+.segtabs a.active{background:var(--surface-3);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.segtabs a .n{font:600 10px/1 var(--mono);color:var(--muted);background:var(--surface);padding:.12rem .3rem;border-radius:20px}
+.segtabs a.active .n{color:var(--text)}
+.note{font:500 11.5px var(--mono);color:var(--muted);margin:.2rem 0}
+.evs{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-top:.3rem;font:500 12.5px var(--mono)}
+.ev{display:grid;grid-template-columns:150px 1fr 200px 96px;gap:.9rem;align-items:center;padding:.4rem .9rem;border-bottom:1px solid var(--border)}
+.ev:last-child{border-bottom:none}.ev:hover{background:var(--surface-2)}
+.ev .ts{color:var(--muted)}
+.ev .nm{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev .st{color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev .pill{justify-self:start;display:inline-flex;align-items:center;gap:.35rem;padding:.12rem .5rem;border-radius:20px;font:600 10.5px var(--sans);
+  background:color-mix(in srgb,var(--c) 16%,transparent);color:var(--c);border:1px solid color-mix(in srgb,var(--c) 35%,transparent)}
+@media (max-width:900px){.ev{grid-template-columns:120px 1fr 96px}.ev .st{display:none}}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><span class="cur">Events</span></nav>{% endblock %}
+{% block topbar_actions %}<button class="iconbtn" onclick="location.reload()" title="Refresh"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9"/><path d="M21 3v6h-6"/></svg></button>{% endblock %}
+
+{% block content %}
+<div class="segtabs">
+  <a href="?" class="{% if not filter_state %}active{% endif %}">All <span class="n">{{ tab_counts.all }}</span></a>
+  {% for k,lbl in [('pending','Pending'),('running','Running'),('completed','Completed'),('failed','Failed')] %}
+  <a href="?state={{ k }}" class="{% if filter_state==k %}active{% endif %}">{{ lbl }} <span class="n">{{ tab_counts.get(k,0) }}</span></a>
+  {% endfor %}
+</div>
+{% if shown < total %}<p class="note">Showing the {{ shown }} most recent of {{ total }} events.</p>{% endif %}
+
+{% if events %}
+<div class="evs">
+  {% for e in events %}
+  <div class="ev" style="--c:{{ dot.get(e.state,'var(--muted)') }}">
+    <span class="ts">{{ e.updated|timestamp if e.updated else '—' }}</span>
+    <span class="nm">{{ e.name }}</span>
+    <span class="st">{{ step_names.get(e.step_id, '') or '' }}</span>
+    <span class="pill">{{ e.state }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg>
+  <h1>No {{ filter_state or '' }} events</h1><p>Task events appear here as work flows through the runtime.</p></div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}<script>setTimeout(function(){location.reload();},15000);</script>{% endblock %}
