@@ -80,6 +80,49 @@ def workflow_list_v3(
     )
 
 
+@router.get("/workflows/new")
+def workflow_new_v3(request: Request, store=Depends(get_store)):
+    """Redesigned new-run browser — workflows grouped by namespace.
+
+    Declared BEFORE /workflows/{runner_id} so the static 'new' path wins.
+    Each workflow links to the existing run form (/flows/{flow}/run/{wf}).
+    """
+    from ..execution.workflows import _build_afl_snippet, _collect_workflows_with_ns
+
+    ns_map: dict[str, list[dict]] = {}
+    for flow in store.get_all_flows():
+        if not flow.compiled_ast:
+            continue
+        wf_records = store.get_workflows_by_flow(flow.uuid)
+        name_to_uuid = {wr.name: wr.uuid for wr in wf_records}
+        entries: list[dict] = []
+        _collect_workflows_with_ns(flow.compiled_ast, "", entries)
+        for entry in entries:
+            ns, wf = entry["ns"], entry["wf"]
+            qualified = f"{ns}.{wf['name']}" if ns else wf["name"]
+            wf_uuid = name_to_uuid.get(qualified, "")
+            item = {
+                "ns": ns or "system.unnamespaced",
+                "name": wf.get("name", ""),
+                "qualified_name": qualified,
+                "afl_source": _build_afl_snippet(ns, wf),
+                "run_url": f"/flows/{flow.uuid}/run/{wf_uuid}" if wf_uuid else "",
+            }
+            ns_map.setdefault(item["ns"], []).append(item)
+
+    ns_groups = sorted(
+        ({"name": ns, "workflows": sorted(wfs, key=lambda w: w["name"])} for ns, wfs in ns_map.items()),
+        key=lambda g: str(g["name"]),
+    )
+    total = sum(len(g["workflows"]) for g in ns_groups)
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v3/workflows/new.html",
+        {"ns_groups": ns_groups, "total": total, "active_nav": "runs"},
+    )
+
+
 def _short_state(state: str) -> str:
     """Last dotted segment of a step state, e.g. ``EventTransmit``."""
     if not state:

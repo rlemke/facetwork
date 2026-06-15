@@ -50,7 +50,7 @@
 {% if entries %}
 <div class="cards">
   {% for e in entries %}
-  <a class="card" href="/catalog/{{ e.slug }}">
+  <a class="card" href="/v3/catalog/{{ e.slug }}">
     <div class="card-top">
       <span class="kindtag {{ e.kind }}">{{ e.kind }}</span>
       {% if e.member_count %}<span class="card-foot" style="margin-left:auto">{{ e.member_count }} member{{ '' if e.member_count==1 else 's' }}</span>{% endif %}

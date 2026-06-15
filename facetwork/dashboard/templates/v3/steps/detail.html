@@ -1,0 +1,155 @@
+{% extends "v3/base.html" %}
+{% block title %}{% if step %}Step {{ step.statement_name or step.id[:8] }} · Facetwork{% else %}Step not found{% endif %}{% endblock %}
+
+{% block head_extra %}
+<style>
+.status-head{background:linear-gradient(180deg,color-mix(in srgb,var(--pill-c) 6%,var(--surface)),var(--surface));
+  border:1px solid var(--border);border-radius:var(--r-lg);padding:1.2rem 1.3rem;position:relative;overflow:hidden;box-shadow:var(--shadow)}
+.status-head::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:linear-gradient(var(--pill-c),transparent)}
+.sh-top{display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap}
+.sh-title h1{margin:0;font-size:21px;letter-spacing:-.02em;font-weight:700}
+.sh-title .qn{font:500 12px/1.4 var(--mono);color:var(--muted);margin-top:.35rem;display:block}
+.sh-actions{display:flex;gap:.5rem;margin-left:auto;flex-wrap:wrap}
+.ins-msg{font:500 11.5px var(--mono);color:var(--muted);margin-top:.6rem;min-height:1em}
+.ins-msg.ok{color:var(--st-complete)}.ins-msg.err{color:var(--st-error)}
+
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:1.1rem}
+@media (max-width:1000px){.cols{grid-template-columns:1fr}}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:.45rem 1rem;padding:.9rem;font-size:12.5px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;font-family:var(--mono);font-size:11.5px;text-align:right;word-break:break-all}
+.kv dd b{font-family:var(--sans);font-weight:600}
+.at{width:100%;border-collapse:collapse;font-size:12px}
+.at th,.at td{text-align:left;padding:.4rem .9rem;border-top:1px solid var(--border);vertical-align:top}
+.at th{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.at td.v{font-family:var(--mono);font-size:11px;word-break:break-all;max-width:0}
+.at td.t{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
+.errbox{margin:.9rem;padding:.7rem;background:color-mix(in srgb,var(--st-error) 8%,var(--surface));border:1px solid color-mix(in srgb,var(--st-error) 30%,transparent);
+  border-radius:var(--r-sm);font:500 11.5px/1.5 var(--mono);color:var(--st-error);word-break:break-word;white-space:pre-wrap;max-height:200px;overflow:auto}
+
+.logs{font:500 12px/1.7 var(--mono)}
+.logrow{display:grid;grid-template-columns:96px 130px 56px 1fr;gap:.8rem;padding:.28rem .9rem;border-bottom:1px solid var(--border)}
+.logrow:last-child{border-bottom:none}.logrow:hover{background:var(--surface-2)}
+.logrow .ts{color:var(--muted)}.logrow .src{color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logrow .lvl{font-weight:600}
+.lvl.info{color:var(--st-running)}.lvl.warning{color:var(--st-warning)}.lvl.success{color:var(--st-complete)}.lvl.error{color:var(--st-error)}
+.logrow.new{animation:slidein .4s ease}@keyframes slidein{from{opacity:0;transform:translateY(-4px)}}
+.live-tag{display:inline-flex;align-items:center;gap:.4rem;font-size:11px;color:var(--st-running);font-weight:600;cursor:pointer;border:1px solid var(--border);border-radius:20px;padding:.25rem .6rem}
+.live-tag .d{width:6px;height:6px;border-radius:50%;background:var(--muted)}.live-tag.on .d{background:currentColor;animation:pulse 1.4s infinite}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb">
+  <a href="/v3/workflows">Runs</a>
+  {% if step %}<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+  <span class="cur">Step {{ step.statement_name or step.id[:8] }}</span>{% endif %}
+</nav>
+{% endblock %}
+
+{% block content %}
+{% if not step %}
+  <div class="empty"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    <h1>Step not found</h1><p><a href="/v3/workflows">← Back to runs</a></p></div>
+{% else %}
+<section class="status-head" style="--pill-c:{{ pill }}">
+  <div class="sh-top">
+    <div class="sh-title">
+      <h1>{{ step.statement_name or step.facet_name or 'Step' }}</h1>
+      <span class="qn">{% if names.workflow %}{{ names.workflow }} · {% endif %}{{ step.id }}</span>
+    </div>
+    <span class="statuspill">{% if cat=='running' %}<span class="pulse"></span>{% endif %}{{ step.state.rsplit('.',1)[-1] }}</span>
+    <div class="sh-actions" id="actions">
+      {% if cat == 'error' %}
+      <button class="btn" onclick="act('retry',false,'Retry this step? It resets to EventTransmit and re-executes.')"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9"/><path d="M21 3v6h-6"/></svg> Retry</button>
+      <button class="btn" onclick="act('retry-block',false,'Retry ALL errored steps under this block?')">Retry all errors</button>
+      <button class="btn danger" onclick="act('reset-block',true,'Reset this block? All descendant steps are deleted and the block restarts from scratch.')">Reset block</button>
+      {% endif %}
+      {% if cat in ('complete','error') %}
+      <button class="btn{{ ' danger' if cat=='running' }}" onclick="act('rerun',true,'Re-run from here? This step resets and all downstream dependent steps are deleted and re-executed.')"><svg viewBox="0 0 24 24"><path d="M14 7l-5 5 5 5"/><path d="M5 5v14"/></svg> Re-run from here</button>
+      {% endif %}
+    </div>
+  </div>
+  <div class="ins-msg" id="act-msg"></div>
+</section>
+
+<div class="cols">
+  <section class="panel">
+    <div class="panel-head"><h2>Step</h2></div>
+    <dl class="kv">
+      <dt>Type</dt><dd>{{ step.object_type or '—' }}{% if is_mixin_sub_step %} · mixin{% endif %}</dd>
+      <dt>Facet</dt><dd>{{ step.facet_name or '—' }}</dd>
+      {% if names.workflow %}<dt>Workflow</dt><dd><b>{{ names.workflow }}</b></dd>{% endif %}
+      <dt>Statement</dt><dd>{{ step.statement_name or names.statement or '—' }}</dd>
+      {% if names.container %}<dt>Container</dt><dd>{{ names.container }}</dd>{% endif %}
+      {% if names.block %}<dt>Block</dt><dd>{{ names.block }}</dd>{% endif %}
+      {% if step_logs %}<dt>Started</dt><dd>{{ step_logs[0].time|timestamp }}</dd>
+      {% if step_logs|length > 1 %}<dt>Duration</dt><dd>{{ (step_logs[-1].time - step_logs[0].time)|duration_long }}</dd>{% endif %}{% endif %}
+      {% if heartbeat_ts is not none %}<dt>Heartbeat</dt><dd><span class="live-heartbeat" data-ts="{{ heartbeat_ts }}"></span></dd>{% endif %}
+    </dl>
+    {% if step.error %}<div class="errbox">{{ step.error }}</div>{% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Parameters &amp; returns</h2></div>
+    {% if step.attributes and step.attributes.params %}
+    <table class="at"><thead><tr><th>Param</th><th>Value</th><th>Type</th></tr></thead><tbody>
+      {% for name, attr in step.attributes.params.items() %}<tr><td>{{ name }}</td><td class="v">{{ attr.value }}</td><td class="t">{{ attr.type_hint }}</td></tr>{% endfor %}
+    </tbody></table>{% endif %}
+    {% if step.attributes and step.attributes.returns %}
+    <table class="at"><thead><tr><th>Return</th><th>Value</th><th>Type</th></tr></thead><tbody>
+      {% for name, attr in step.attributes.returns.items() %}<tr><td>{{ name }}</td><td class="v">{{ attr.value }}</td><td class="t">{{ attr.type_hint }}</td></tr>{% endfor %}
+    </tbody></table>{% endif %}
+    {% if not (step.attributes and (step.attributes.params or step.attributes.returns)) %}
+    <div style="padding:1.2rem .9rem;color:var(--muted);font-size:12.5px">No parameters or returns.</div>{% endif %}
+  </section>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><h2>Logs</h2>
+    <span class="live-tag" id="livebtn" data-url="/api/steps/{{ step.id }}/logs/stream"><span class="d"></span> <span class="lbl">Live</span></span>
+  </div>
+  <div class="logs" id="logbody">
+    {% if step_logs %}{% for log in step_logs %}
+    <div class="logrow"><span class="ts">{{ log.time|timestamp }}</span><span class="src">{{ log.source }}</span>
+      <span class="lvl {{ log.level }}">{{ log.level }}</span><span>{{ log.message }}</span></div>
+    {% endfor %}{% else %}<div style="padding:1.2rem .9rem;color:var(--muted);font-size:12.5px">No logs yet.</div>{% endif %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if step %}
+<script>
+function esc(t){var d=document.createElement('div');d.textContent=t==null?'':t;return d.innerHTML;}
+// POST a recovery action to the real /steps/{id}/{action} endpoint (same as v2 + the graph inspector).
+async function act(action, destructive, prompt, force){
+  if(!force && destructive && !confirm(prompt))return;
+  if(!force && !destructive && prompt && !confirm(prompt))return;
+  var msg=document.getElementById('act-msg');msg.textContent='Working…';msg.className='ins-msg';
+  var url='/steps/{{ step.id }}/'+action+(force?'?force=true':'');
+  try{
+    var r=await fetch(url,{method:'POST',redirect:'manual'});
+    if(r.status===409){var j=await r.json().catch(function(){return{};});
+      if(confirm((j.message||'A conflict prevents this.')+'\n\nForce it anyway?'))return act(action,destructive,prompt,true);
+      msg.textContent='Cancelled.';return;}
+    if(r.ok||r.type==='opaqueredirect'||r.status===0){msg.textContent='Done — reloading…';msg.className='ins-msg ok';setTimeout(function(){location.reload();},600);return;}
+    msg.textContent='Failed ('+r.status+').';msg.className='ins-msg err';
+  }catch(e){msg.textContent='Error: '+e.message;msg.className='ins-msg err';}
+}
+// live logs via SSE
+(function(){var btn=document.getElementById('livebtn'),body=document.getElementById('logbody');var src=null;
+  var colors={info:'info',warning:'warning',error:'error',success:'success'};
+  btn.onclick=function(){
+    if(src){src.close();src=null;btn.classList.remove('on');btn.querySelector('.lbl').textContent='Live';return;}
+    btn.classList.add('on');btn.querySelector('.lbl').textContent='Stop';body.innerHTML='';
+    src=new EventSource(btn.dataset.url);
+    src.onmessage=function(ev){try{var l=JSON.parse(ev.data);var r=document.createElement('div');
+      r.className='logrow new';var t=new Date(l.time).toLocaleTimeString();
+      r.innerHTML='<span class="ts">'+t+'</span><span class="src">'+esc(l.source)+'</span><span class="lvl '+(colors[l.level]||'')+'">'+esc(l.level)+'</span><span>'+esc(l.message)+'</span>';
+      body.prepend(r);while(body.children.length>300)body.lastElementChild.remove();}catch(e){}};
+  };})();
+</script>
+{% endif %}
+{% endblock %}

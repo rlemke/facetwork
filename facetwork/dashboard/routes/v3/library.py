@@ -16,11 +16,81 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, Request
 
 from ...dependencies import get_store
 
 router = APIRouter(prefix="/v3")
+
+
+@router.get("/catalog/{slug}")
+def catalog_detail_v3(
+    request: Request, slug: str, version: str | None = None, store=Depends(get_store)
+):
+    """Redesigned catalog entry detail — FFL source, params, versions, run."""
+    from ..execution.catalog import _parse_version, _service
+
+    svc = _service(store)
+    d = svc.get(slug, _parse_version(version)) if svc else None
+    default_inputs = {}
+    if d:
+        for p in d.get("param_schema", []) or []:
+            default_inputs[p["name"]] = p.get("default")
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v3/catalog/detail.html",
+        {
+            "d": d,
+            "slug": slug,
+            "default_inputs_json": json.dumps(default_inputs, indent=2, default=str),
+            "unavailable": svc is None,
+            "active_nav": "catalog",
+        },
+    )
+
+
+@router.get("/flows/{flow_id}")
+def flow_detail_v3(request: Request, flow_id: str, store=Depends(get_store)):
+    """Redesigned flow detail — namespace-grouped workflows + recent runs."""
+    flow = store.get_flow(flow_id)
+    workflows = list(store.get_workflows_by_flow(flow_id)) if flow else []
+
+    ns_groups: dict[str, list] = {}
+    for wf in workflows:
+        try:
+            ns, _ = wf.name.rsplit(".", 1)
+        except ValueError:
+            ns = ""
+        ns_groups.setdefault(ns, []).append(wf)
+    namespace_list = sorted(
+        (
+            {"name": ns or "system.unnamespaced", "workflows": sorted(wfs, key=lambda w: w.name)}
+            for ns, wfs in ns_groups.items()
+        ),
+        key=lambda x: str(x["name"]),
+    )
+
+    runners = []
+    if flow:
+        for wf in flow.workflows:
+            runners.extend(store.get_runners_by_workflow(wf.uuid))
+        runners.sort(key=lambda r: r.start_time, reverse=True)
+        runners = runners[:10]
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v3/flows/detail.html",
+        {
+            "flow": flow,
+            "namespace_list": namespace_list,
+            "total_wf": len(workflows),
+            "runners": runners,
+            "active_nav": "library",
+        },
+    )
 
 
 @router.get("/catalog")
