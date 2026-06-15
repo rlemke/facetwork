@@ -75,7 +75,7 @@
 
 {% block breadcrumb %}
 <nav class="crumb">
-  <a href="/v2/workflows">Runs</a>
+  <a href="/v3/workflows">Runs</a>
   {% if runner %}<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
   <span class="cur">{{ runner.workflow.name|short_workflow_name }}</span>{% endif %}
 </nav>
@@ -91,7 +91,7 @@
 
 {% block content %}
 {% if not runner %}
-  <div class="empty"><h1>Workflow run not found</h1><p><a href="/v2/workflows">← Back to runs</a></p></div>
+  <div class="empty"><h1>Workflow run not found</h1><p><a href="/v3/workflows">← Back to runs</a></p></div>
 {% else %}
 {% set st = runner.state %}
 {% set pill = {'running':'var(--st-running)','paused':'var(--st-paused)','completed':'var(--st-complete)','failed':'var(--st-error)','cancelled':'var(--st-error)','created':'var(--st-running)'}.get(st, 'var(--muted)') %}
