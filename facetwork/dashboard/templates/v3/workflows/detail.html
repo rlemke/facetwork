@@ -1,72 +1,16 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="dark">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% if runner %}{{ runner.workflow.name|short_workflow_name }} · Facetwork{% else %}Not found · Facetwork{% endif %}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+{% extends "v3/base.html" %}
+
+{% block title %}{% if runner %}{{ runner.workflow.name|short_workflow_name }} · Facetwork{% else %}Not found · Facetwork{% endif %}{% endblock %}
+
+{% block head_extra %}
 <style>
-:root{
-  --bg:#0b0e14;--surface:#11151e;--surface-2:#171c28;--surface-3:#1e2533;
-  --border:rgba(255,255,255,.08);--border-strong:rgba(255,255,255,.14);
-  --text:#e7ebf3;--text-2:#aab2c5;--muted:#6b7488;
-  --accent:#36c7c0;
-  --st-running:#38bdf8;--st-complete:#3fb950;--st-error:#f85149;--st-pending:#6e7681;--st-paused:#bc8cff;--st-warning:#d29922;
-  --glow-running:rgba(56,189,248,.18);--glow-error:rgba(248,81,73,.16);
-  --r-sm:6px;--r-md:9px;--r-lg:14px;--shadow:0 12px 40px -12px rgba(0,0,0,.6);
-  --sans:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;
-}
-[data-theme="light"]{
-  --bg:#f6f7f9;--surface:#fff;--surface-2:#f1f3f6;--surface-3:#e8ebf0;
-  --border:rgba(10,15,30,.09);--border-strong:rgba(10,15,30,.16);
-  --text:#1a2030;--text-2:#454e63;--muted:#7a8298;--accent:#0c8f88;
-  --glow-running:rgba(56,189,248,.14);--glow-error:rgba(248,81,73,.12);
-  --shadow:0 10px 30px -14px rgba(20,30,60,.25);
-}
-*{box-sizing:border-box}html,body{margin:0;height:100%}
-body{background:radial-gradient(900px 500px at 85% -10%,rgba(54,199,192,.06),transparent 60%),var(--bg);
-  color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;}
-::selection{background:var(--accent);color:#001}
-a{color:var(--accent)}
-
-.topbar{display:flex;align-items:center;gap:1rem;padding:.7rem 1.4rem;border-bottom:1px solid var(--border);
-  position:sticky;top:0;z-index:20;backdrop-filter:blur(10px);background:color-mix(in srgb,var(--bg) 78%,transparent);}
-.crumb{display:flex;align-items:center;gap:.5rem;font-size:13px;color:var(--muted)}
-.crumb a{color:var(--text-2);text-decoration:none}.crumb a:hover{color:var(--text)}
-.crumb .cur{color:var(--text);font-weight:600}
-.crumb svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.6}
-.topbar .spacer{flex:1}
-.previewtag{font:600 10.5px/1 var(--mono);letter-spacing:.06em;color:var(--accent);
-  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:20px;padding:.3rem .6rem;text-transform:uppercase}
-.iconbtn{width:32px;height:32px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--surface);
-  color:var(--text-2);cursor:pointer;display:grid;place-items:center}
-.iconbtn:hover{color:var(--text);border-color:var(--border-strong)}
-.iconbtn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7}
-
-.content{padding:1.4rem;display:flex;flex-direction:column;gap:1.1rem;max-width:1400px;margin:0 auto}
-
 .status-head{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 6%,var(--surface)),var(--surface));
   border:1px solid var(--border);border-radius:var(--r-lg);padding:1.2rem 1.3rem;position:relative;overflow:hidden;box-shadow:var(--shadow)}
 .status-head::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:linear-gradient(var(--pill-c,var(--accent)),transparent)}
 .sh-top{display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap}
 .sh-title h1{margin:0;font-size:22px;letter-spacing:-.02em;font-weight:700}
 .sh-title .qn{font:500 12px/1.4 var(--mono);color:var(--muted);margin-top:.35rem;display:block}
-.statuspill{display:inline-flex;align-items:center;gap:.5rem;padding:.35rem .7rem;border-radius:30px;font-size:12.5px;font-weight:600;
-  background:color-mix(in srgb,var(--pill-c) 16%,transparent);color:var(--pill-c);
-  border:1px solid color-mix(in srgb,var(--pill-c) 35%,transparent)}
-.statuspill .pulse{width:8px;height:8px;border-radius:50%;background:currentColor;animation:pulse 1.8s infinite}
-@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--pill-c) 60%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
 .sh-actions{display:flex;gap:.5rem;margin-left:auto;flex-wrap:wrap}
-.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.46rem .8rem;border-radius:var(--r-sm);font-size:12.5px;font-weight:600;
-  border:1px solid var(--border-strong);background:var(--surface-2);color:var(--text);cursor:pointer;text-decoration:none;font-family:var(--sans)}
-.btn:hover{background:var(--surface-3)}
-.btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#001}
-.btn.danger{color:var(--st-error);border-color:color-mix(in srgb,var(--st-error) 40%,transparent)}
-.btn.danger:hover{background:color-mix(in srgb,var(--st-error) 12%,transparent)}
-
 .sh-progress{margin-top:1.2rem}
 .pbar{height:8px;border-radius:6px;background:var(--surface-3);overflow:hidden;position:relative}
 .pbar>i{display:block;height:100%;background:linear-gradient(90deg,var(--st-complete),#5fd97a);border-radius:6px;position:relative;transition:width .4s}
@@ -76,12 +20,6 @@ a{color:var(--accent)}
 .metric .v{font:600 19px/1 var(--mono);letter-spacing:-.02em}
 .metric .v small{font-size:12px;color:var(--muted);font-weight:500}
 .metric .l{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:.3rem}
-
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
-.panel-head{display:flex;align-items:center;gap:1rem;padding:.7rem .9rem;border-bottom:1px solid var(--border);flex-wrap:wrap}
-.panel-head h2{margin:0;font-size:13.5px;font-weight:600}
-.legend{margin-left:auto;display:flex;gap:.9rem;font-size:11.5px;color:var(--muted)}
-.legend i{width:8px;height:8px;border-radius:3px;display:inline-block;margin-right:.35rem;vertical-align:middle}
 
 .dag-wrap{display:grid;grid-template-columns:1fr 300px;min-height:430px}
 .dag-canvas{position:relative;overflow:auto;background:radial-gradient(circle at 1px 1px,var(--border) 1px,transparent 0) 0 0/22px 22px;max-height:620px}
@@ -106,7 +44,6 @@ a{color:var(--accent)}
 .inspect{border-left:1px solid var(--border);background:var(--surface-2);padding:1rem;overflow-y:auto;max-height:620px}
 .inspect .ttl{display:flex;align-items:center;gap:.5rem;font:600 13px/1.3 var(--mono);margin-bottom:.2rem;word-break:break-all}
 .inspect .face{font-size:11.5px;color:var(--muted);margin-bottom:.9rem;word-break:break-all}
-.statusdot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:.45rem .9rem;font-size:12px;margin-bottom:1rem}
 .kv dt{color:var(--muted)}
 .kv dd{margin:0;font-family:var(--mono);font-size:11.5px;text-align:right;word-break:break-all}
@@ -132,43 +69,35 @@ a{color:var(--accent)}
   border:1px solid var(--border);border-radius:20px;padding:.25rem .6rem}
 .live-tag .d{width:6px;height:6px;border-radius:50%;background:var(--muted)}
 .live-tag.on .d{background:currentColor;animation:pulse 1.4s infinite}
-
-.content>*{animation:rise .5s cubic-bezier(.2,.7,.3,1) backwards}
-.content>*:nth-child(1){animation-delay:.02s}.content>*:nth-child(2){animation-delay:.09s}.content>*:nth-child(3){animation-delay:.16s}
-@keyframes rise{from{opacity:0;transform:translateY(8px)}}
-.notfound{padding:5rem 2rem;text-align:center;color:var(--text-2)}
 @media (max-width:1080px){.dag-wrap{grid-template-columns:1fr}.inspect{border-left:none;border-top:1px solid var(--border);max-height:none}}
 </style>
-</head>
-<body>
+{% endblock %}
 
+{% block breadcrumb %}
+<nav class="crumb">
+  <a href="/v2/workflows">Runs</a>
+  {% if runner %}<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+  <span class="cur">{{ runner.workflow.name|short_workflow_name }}</span>{% endif %}
+</nav>
+{% endblock %}
+
+{% block topbar_actions %}
+{% if runner %}
+<a class="iconbtn" href="/v2/workflows/{{ runner.uuid }}" title="Open the current (v2) view">
+  <svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-5"/></svg>
+</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
 {% if not runner %}
-  <header class="topbar"><nav class="crumb"><a href="/v2/workflows">Runs</a></nav></header>
-  <div class="notfound"><h1>Workflow run not found</h1><p><a href="/v2/workflows">← Back to runs</a></p></div>
+  <div class="empty"><h1>Workflow run not found</h1><p><a href="/v2/workflows">← Back to runs</a></p></div>
 {% else %}
 {% set st = runner.state %}
 {% set pill = {'running':'var(--st-running)','paused':'var(--st-paused)','completed':'var(--st-complete)','failed':'var(--st-error)','cancelled':'var(--st-error)','created':'var(--st-running)'}.get(st, 'var(--muted)') %}
 
-<header class="topbar">
-  <nav class="crumb">
-    <a href="/v2/workflows">Runs</a>
-    <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-    <span class="cur">{{ runner.workflow.name|short_workflow_name }}</span>
-  </nav>
-  <span class="spacer"></span>
-  <span class="previewtag">v3 preview</span>
-  <a class="iconbtn" href="/v2/workflows/{{ runner.uuid }}" title="Open the current (v2) view">
-    <svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-5"/></svg>
-  </a>
-  <button class="iconbtn" id="theme" title="Toggle theme">
-    <svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3 7 7 0 0021 12.8z"/></svg>
-  </button>
-</header>
-
-<div class="content" style="--pill-c:{{ pill }}">
-
   <!-- STATUS HEADER -->
-  <section class="status-head">
+  <section class="status-head" id="status-head" style="--pill-c:{{ pill }}">
     <div class="sh-top">
       <div class="sh-title">
         <h1>{{ runner.workflow.name|short_workflow_name }}</h1>
@@ -252,20 +181,18 @@ a{color:var(--accent)}
   <section class="panel">
     <div class="panel-head">
       <h2>Logs</h2>
-      <span class="live-tag" id="livebtn"
-            data-url="/api/runners/{{ runner.uuid }}/logs/stream"><span class="d"></span> <span class="lbl">Live</span></span>
+      <span class="live-tag" id="livebtn" data-url="/api/runners/{{ runner.uuid }}/logs/stream"><span class="d"></span> <span class="lbl">Live</span></span>
       <div class="legend"><span>server-sent events</span></div>
     </div>
     <div class="logs" id="logbody"><div class="logs-empty">Click <b>Live</b> to stream logs as they arrive.</div></div>
   </section>
+{% endif %}
+{% endblock %}
 
-</div>
-
+{% block scripts %}
+{% if runner %}
 <script type="application/json" id="nodes-data">{{ nodes|tojson }}</script>
 <script>
-// theme
-document.getElementById('theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';};
-
 // elapsed clock (ticks when running). elapsedTimer is cleared when the run ends.
 let elapsedTimer=null;
 (function(){const el=document.getElementById('elapsed');if(!el||el.dataset.running!=='1')return;
@@ -310,7 +237,6 @@ function selectNode(id){
 }
 
 // POST a step action to the real /steps/{id}/{action} endpoint.
-// Mirrors the v2 confirm + ?force=true escalation on a 409 (running task/dependents).
 async function stepAction(id, action, destructive, force){
   const prompts={
     retry:'Retry this step? It will be reset and re-executed.',
@@ -359,11 +285,9 @@ function repair(){if(!confirm('Repair this workflow? Resets orphaned tasks, retr
     document.getElementById('repair-result').textContent=' '+(t||'Repair submitted.');});}
 
 // ---- LIVE GRAPH UPDATES ----
-// Poll a JSON snapshot and patch the SVG + header IN PLACE, so node colours
-// animate via CSS rather than blinking, and the inspector selection + scroll
-// survive. (Client polling is used over server SSE because node-state diffing
-// would need a server poll loop anyway — Mongo change streams need a replica
-// set — and a held-open stream per viewer buys nothing here.)
+// Poll a JSON snapshot and patch the SVG + header IN PLACE (colours animate, no blink;
+// selection + scroll survive). Client polling — node-state diffing needs a server poll
+// loop anyway (Mongo change streams need a replica set), so a held-open stream buys nothing.
 const GRAPH_URL='/v3/workflows/{{ runner.uuid }}/graph';
 const RUN_ACTIVE={{ 'true' if active else 'false' }};
 function edgeD(e){const mx=Math.round((e.x1+e.x2)/2);return 'M'+e.x1+' '+e.y1+' C'+mx+' '+e.y1+' '+mx+' '+e.y2+' '+e.x2+' '+e.y2;}
@@ -384,8 +308,6 @@ function patchGraph(data){
   if(data.nodes.length){svg.style.display='';if(empty)empty.style.display='none';}
   svg.setAttribute('width',data.dag_w||1);svg.setAttribute('height',data.dag_h||1);
   svg.setAttribute('viewBox','0 0 '+(data.dag_w||1)+' '+(data.dag_h||1));
-
-  // nodes — patch in place by id; add new (with enter anim); remove gone
   const seen=new Set();
   data.nodes.forEach(n=>{seen.add(n.id);NODES[n.id]=n;
     let g=nl.querySelector('.node[data-id="'+CSS.escape(n.id)+'"]');
@@ -397,8 +319,6 @@ function patchGraph(data){
       if(ts[1]&&ts[1].textContent!==n.sub)ts[1].textContent=n.sub;}
   });
   nl.querySelectorAll('.node').forEach(g=>{if(!seen.has(g.getAttribute('data-id')))g.remove();});
-
-  // edges — patch by source|target key; preserve elements so dash anim continues
   const seenE=new Set();
   data.edges.forEach(e=>{const k=e.s+'|'+e.t;seenE.add(k);
     let p=el.querySelector('path[data-edge="'+CSS.escape(k)+'"]');
@@ -406,16 +326,11 @@ function patchGraph(data){
     p.setAttribute('d',edgeD(e));p.setAttribute('class','edge'+(e.live?' live':''));
   });
   el.querySelectorAll('path').forEach(p=>{if(!seenE.has(p.getAttribute('data-edge')))p.remove();});
-
-  // header
   const c=data.step_counts;
   setTxt('m-complete',c.complete);setTxt('m-total',data.total);setTxt('m-running',c.running);
   setTxt('m-error',c.error);setTxt('m-servers',data.server_count);
   const fill=document.getElementById('pbar-fill');if(fill)fill.style.width=data.pct+'%';
-
-  // refresh inspector only if the selected node's status actually changed
   if(SELECTED&&NODES[SELECTED]){const n=NODES[SELECTED];if(sigOf(n)!==lastSelSig)renderInspector(n);}
-
   if(!data.active)finish(data);
 }
 function setTxt(id,v){const e=document.getElementById(id);if(e&&e.textContent!=String(v))e.textContent=v;}
@@ -426,14 +341,14 @@ function finish(data){
   if(pill){const p=pill.querySelector('.pulse');if(p)p.remove();
     const lbl=pill.querySelector('.lbl');if(lbl)lbl.textContent=data.state.charAt(0).toUpperCase()+data.state.slice(1);
     const col={completed:'var(--st-complete)',failed:'var(--st-error)',cancelled:'var(--st-error)'}[data.state]||'var(--muted)';
-    document.querySelector('.content').style.setProperty('--pill-c',col);}
+    const sh=document.getElementById('status-head');if(sh)sh.style.setProperty('--pill-c',col);}
   const el=document.getElementById('elapsed'),ll=document.getElementById('elapsed-l');
   if(el&&data.duration_ms){let s=Math.floor(data.duration_ms/1000);const h=String(Math.floor(s/3600)).padStart(2,'0');
     const m=String(Math.floor(s%3600/60)).padStart(2,'0');s=String(s%60).padStart(2,'0');el.textContent=h+':'+m+':'+s;}
   if(ll)ll.textContent='Duration';
 }
 if(RUN_ACTIVE){
-  const POLL=4000;let busy=false;
+  let busy=false;
   async function tickGraph(){
     if(busy||document.hidden)return;busy=true;
     try{const r=await fetch(GRAPH_URL,{headers:{'Accept':'application/json'}});
@@ -443,11 +358,10 @@ if(RUN_ACTIVE){
         if(cv){cv.scrollLeft=sl;cv.scrollTop=stp;}
         if(!data.active){clearInterval(POLLER);}
       }
-    }catch(e){/* transient — try again next tick */}finally{busy=false;}
+    }catch(e){}finally{busy=false;}
   }
-  const POLLER=setInterval(tickGraph,POLL);
+  const POLLER=setInterval(tickGraph,4000);
 }
 </script>
 {% endif %}
-</body>
-</html>
+{% endblock %}

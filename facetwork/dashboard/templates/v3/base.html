@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Facetwork{% endblock %}</title>
+{# apply persisted theme before paint to avoid a flash #}
+<script>try{var t=localStorage.getItem('v3-theme');if(t)document.documentElement.dataset.theme=t;
+  if(localStorage.getItem('v3-compact')==='1')document.documentElement.classList.add('compact-pending');}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/v3.css?v=1">
+{% block head_extra %}{% endblock %}
+</head>
+<body>
+<div class="v3-app">
+
+  <aside class="v3-sidebar">
+    <a class="v3-brand" href="/v3/workflows">
+      <span class="mark"><svg width="14" height="14" viewBox="0 0 24 24" fill="#001"><path d="M5 4l14 8-14 8z"/></svg></span>
+      Facetwork
+    </a>
+    <nav class="v3-nav">
+      <a href="/v2/workflows" class="{% if active_nav=='runs' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg> Runs</a>
+      <a href="/flows" class="{% if active_nav=='library' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/></svg> Library</a>
+      <a href="/catalog" class="{% if active_nav=='catalog' %}active{% endif %}"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Catalog</a>
+
+      <div class="group">Infrastructure</div>
+      <a href="/v2/servers" class="{% if active_nav=='servers' %}active{% endif %}"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/></svg> Servers</a>
+      <a href="/v2/handlers" class="{% if active_nav=='handlers' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg> Handlers</a>
+      <a href="/v2/fleet" class="{% if active_nav=='fleet' %}active{% endif %}"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M6 8v3a3 3 0 003 3h6a3 3 0 003-3V8M12 16V14"/></svg> Fleet</a>
+      <a href="/tasks" class="{% if active_nav=='tasks' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg> Tasks</a>
+
+      <div class="group">Data</div>
+      <a href="/output" class="{% if active_nav=='output' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/></svg> Output</a>
+      <a href="/v2/postgis" class="{% if active_nav=='postgis' %}active{% endif %}"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/></svg> PostGIS</a>
+    </nav>
+    <a class="v3-foot" href="/v2/users" title="Acting as — click to change">
+      {% set _u = (request.cookies.get('afl_current_user') or 'anonymous').split('@')[0] %}
+      <span class="av">{{ _u[:2]|upper }}</span> {{ _u }}
+    </a>
+  </aside>
+
+  <main class="v3-main">
+    <header class="topbar">
+      {% block breadcrumb %}<nav class="crumb"></nav>{% endblock %}
+      <span class="spacer"></span>
+      <span class="previewtag">v3 preview</span>
+      {% block topbar_actions %}{% endblock %}
+      <button class="iconbtn" id="density" title="Toggle density">
+        <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <button class="iconbtn" id="theme" title="Toggle theme">
+        <svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3 7 7 0 0021 12.8z"/></svg></button>
+    </header>
+
+    {% block content_raw %}<div class="content">{% block content %}{% endblock %}</div>{% endblock %}
+  </main>
+</div>
+
+<script>
+// theme toggle — persisted
+document.getElementById('theme').onclick=function(){
+  var r=document.documentElement;var t=r.dataset.theme==='dark'?'light':'dark';
+  r.dataset.theme=t;try{localStorage.setItem('v3-theme',t);}catch(e){}
+};
+// density toggle — persisted
+(function(){var on=false;try{on=localStorage.getItem('v3-compact')==='1';}catch(e){}
+  if(on)document.body.classList.add('compact');
+  document.documentElement.classList.remove('compact-pending');
+  document.getElementById('density').onclick=function(){
+    on=!on;document.body.classList.toggle('compact',on);
+    try{localStorage.setItem('v3-compact',on?'1':'0');}catch(e){}
+  };})();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
