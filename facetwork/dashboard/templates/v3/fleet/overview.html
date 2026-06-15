@@ -1,0 +1,124 @@
+{% extends "v3/base.html" %}
+{% block title %}Fleet · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.fl-metrics{display:flex;gap:2.2rem;flex-wrap:wrap;padding:1.1rem 1.3rem}
+.fl-metric .v{font:600 22px/1 var(--mono);letter-spacing:-.02em}
+.fl-metric .l{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:.3rem}
+.fl-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.1rem}
+@media (max-width:1000px){.fl-grid{grid-template-columns:1fr}}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:.5rem 1rem;padding:.9rem;font-size:12.5px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;font-family:var(--mono);font-size:11.5px;text-align:right;word-break:break-all}
+.roles{width:100%;border-collapse:collapse;font-size:12px}
+.roles th,.roles td{text-align:left;padding:.45rem .9rem;border-top:1px solid var(--border)}
+.roles th{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.roles td.mono,.roles code{font-family:var(--mono);font-size:11px}
+.roles code{background:var(--surface-2);padding:.1rem .35rem;border-radius:4px;color:var(--text-2)}
+
+.hosts{width:100%;border-collapse:collapse}
+.hosts th{text-align:left;font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;
+  color:var(--muted);padding:.55rem .9rem;border-bottom:1px solid var(--border)}
+.hosts td{padding:.6rem .9rem;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}
+.hosts tr:last-child td{border-bottom:none}
+.hosts .host{font-weight:600;display:flex;align-items:center;gap:.5rem}
+.hosts .num{font:600 14px var(--mono)}
+.hosts .tag{font:500 11px var(--mono);color:var(--text-2)}
+.hosts .ver{font:600 11px/1 var(--mono);padding:.15rem .45rem;border-radius:20px;background:var(--surface-2);color:var(--text-2)}
+.ok-badge{display:inline-flex;align-items:center;gap:.35rem;font-size:11px;font-weight:600;color:var(--st-complete)}
+.warn-badge{display:inline-flex;align-items:center;gap:.35rem;font-size:11px;font-weight:600;color:var(--st-warning)}
+.warnlist{margin:.35rem 0 0;padding:0;list-style:none;font-size:11.5px;color:var(--st-warning)}
+.warnlist li{margin-top:.15rem}
+.warnlist li::before{content:"▲ ";font-size:9px}
+.svc{display:flex;align-items:center;gap:.6rem;padding:.5rem .9rem;border-top:1px solid var(--border);font-size:12.5px}
+.svc .nm{width:90px;color:var(--muted)}
+.svc .u{font-family:var(--mono);font-size:11px;color:var(--text-2);word-break:break-all}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><span class="cur">Fleet</span></nav>{% endblock %}
+{% block topbar_actions %}<button class="iconbtn" onclick="location.reload()" title="Refresh"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9"/><path d="M21 3v6h-6"/></svg></button>{% endblock %}
+
+{% block content %}
+{% if not has_controller %}
+  <div class="empty"><h1>No fleet controller config</h1>
+    <p>This becomes useful once the fleet is driven centrally — run <code>scripts/fleet set …</code>.</p></div>
+{% else %}
+
+<!-- SUMMARY -->
+<section class="panel">
+  <div class="fl-metrics">
+    <div class="fl-metric"><div class="v">{{ summary.hosts }}</div><div class="l">Hosts</div></div>
+    <div class="fl-metric"><div class="v" style="color:var(--st-running)">{{ summary.live }}</div><div class="l">Live runners</div></div>
+    <div class="fl-metric"><div class="v" style="color:var(--st-complete)">{{ summary.uptodate }}<small style="font-size:13px;color:var(--muted)">/{{ summary.hosts }}</small></div><div class="l">Up to date</div></div>
+    <div class="fl-metric"><div class="v" style="color:{{ 'var(--st-warning)' if summary.warnings else 'var(--muted)' }}">{{ summary.warnings }}</div><div class="l">Hosts with warnings</div></div>
+    <div class="fl-metric"><div class="v" style="color:var(--accent)">v{{ desired_version }}</div><div class="l">Config version</div></div>
+  </div>
+</section>
+
+<!-- CENTRAL CONFIG -->
+<div class="fl-grid">
+  <section class="panel">
+    <div class="panel-head"><h2>Central config</h2></div>
+    <dl class="kv">
+      <dt>MinIO</dt><dd>{{ config.minio }}</dd>
+      <dt>Bucket</dt><dd>{{ config.bucket }}</dd>
+      <dt>Updated</dt><dd>{{ config.updated_at }}</dd>
+    </dl>
+    {% for s in services %}
+    <div class="svc"><span class="nm">{{ s.name }}</span><span class="u">{{ s.url }}</span></div>
+    {% endfor %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Roles</h2></div>
+    <table class="roles">
+      <thead><tr><th>Role</th><th>Replicas</th><th>Task list</th><th>Image</th></tr></thead>
+      <tbody>
+      {% for r in roles %}
+        <tr><td>{{ r.name }}</td><td class="mono">{{ r.replicas }}</td><td class="mono">{{ r.task_list }}</td>
+          <td><code>{{ r.image.split('/')[-1] if '/' in r.image else r.image }}</code></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<!-- HOSTS -->
+<section class="panel">
+  <div class="panel-head"><h2>Hosts</h2>
+    <div class="legend">
+      <span><span class="statusdot" style="background:var(--st-complete);width:8px;height:8px"></span> healthy</span>
+      <span><span class="statusdot" style="background:var(--st-warning);width:8px;height:8px"></span> warning</span>
+    </div>
+  </div>
+  <table class="hosts">
+    <thead><tr><th>Host</th><th>Live runners</th><th>Version</th><th>Image</th><th>Last ping</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for h in hosts %}
+      <tr>
+        <td><span class="host"><span class="statusdot" style="background:{{ 'var(--st-complete)' if h.ok else ('var(--st-warning)' if h.warns else 'var(--muted)') }}"></span>{{ h.host }}</span></td>
+        <td><span class="num" style="color:{{ 'var(--st-running)' if h.live else 'var(--st-warning)' }}">{{ h.live }}</span></td>
+        <td>{% if h.version is not none %}<span class="ver">v{{ h.version }}</span>{% else %}<span class="tag" style="opacity:.6">no agent</span>{% endif %}</td>
+        <td><span class="tag">{{ h.image.split('/')[-1] if '/' in h.image else h.image }}</span></td>
+        <td><span class="tag">{% if h.last_ping_s is not none %}{{ h.last_ping_s }}s ago{% else %}—{% endif %}</span></td>
+        <td>
+          {% if h.ok %}<span class="ok-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5L20 6"/></svg> OK</span>
+          {% else %}<span class="warn-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L14.4 3.9a2 2 0 00-3.4 0z"/></svg> attention</span>{% endif %}
+          {% if h.warns %}<ul class="warnlist">{% for w in h.warns %}<li>{{ w }}</li>{% endfor %}</ul>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// fleet state changes slowly — refresh every 15s so a rollout converges on-screen
+setTimeout(function(){location.reload();},15000);
+</script>
+{% endblock %}
