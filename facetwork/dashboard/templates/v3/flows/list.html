@@ -29,6 +29,17 @@
   <span class="f-count">{{ total }} flow{{ '' if total==1 else 's' }}</span>
 </div>
 
+{% if filter_active %}
+<div class="filterbar">
+  <svg viewBox="0 0 24 24"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg>
+  <span class="crit">Filters active</span> <span>{{ filter_active|join(' · ') }}</span>
+  {% if filter_hidden %}<span class="hid">{{ filter_hidden }} hidden</span>{% endif %}
+  <span class="sp"></span>
+  <a href="/v3/filters">Edit</a>
+  <form method="post" action="/v3/filters/clear"><input type="hidden" name="next" value="/v3/flows"><button type="submit">Clear</button></form>
+</div>
+{% endif %}
+
 {% if flows %}
 <div class="flows">
   <div class="f-row" style="border-bottom:1px solid var(--border)">

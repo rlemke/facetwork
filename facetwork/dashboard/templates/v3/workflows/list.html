@@ -49,6 +49,16 @@
   <input class="runs-search" id="runs-search" type="search" placeholder="Filter runs by name…" autocomplete="off">
 </div>
 
+{% if filter_active %}
+<div class="filterbar">
+  <svg viewBox="0 0 24 24"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg>
+  <span class="crit">Filters active</span> <span>{{ filter_active|join(' · ') }}</span>
+  <span class="sp"></span>
+  <a href="/v3/filters">Edit</a>
+  <form method="post" action="/v3/filters/clear"><input type="hidden" name="next" value="/v3/workflows"><button type="submit">Clear</button></form>
+</div>
+{% endif %}
+
 {% if groups %}
 {% for group in groups %}
 <div class="ns" data-ns>

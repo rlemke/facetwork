@@ -1,0 +1,195 @@
+{% extends "v3/base.html" %}
+{% block title %}Filters · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.fl-wrap{display:flex;flex-direction:column;gap:1.1rem;max-width:920px}
+.fsec .panel-head{display:flex;align-items:center;gap:.6rem}
+.fsec .panel-head .sub{font:500 11.5px var(--mono);color:var(--muted)}
+.frow{padding:.85rem 1rem;border-top:1px solid var(--border)}
+.frow:first-child{border-top:none}
+.frow > label.k{display:block;font:600 12px var(--sans);margin-bottom:.5rem}
+.frow .hint{font-size:11px;color:var(--muted);font-weight:400;margin-left:.4rem}
+.chips{display:flex;flex-wrap:wrap;gap:.45rem}
+.chip{display:inline-flex;align-items:center;gap:.4rem;padding:.3rem .6rem;border:1px solid var(--border);
+  border-radius:30px;font:500 12px var(--sans);color:var(--text-2);cursor:pointer;user-select:none;background:var(--bg)}
+.chip input{margin:0}
+.chip:has(input:checked){background:color-mix(in srgb,var(--accent) 16%,transparent);border-color:var(--accent);color:var(--text)}
+.seg{display:flex;flex-wrap:wrap;gap:.4rem}
+.seg label{padding:.3rem .65rem;border:1px solid var(--border);border-radius:var(--r-sm);font:600 12px var(--sans);
+  color:var(--text-2);cursor:pointer;background:var(--bg)}
+.seg label:has(input:checked){background:var(--accent);border-color:var(--accent);color:#001}
+.seg input{display:none}
+.fsel{padding:.45rem .6rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);
+  color:var(--text);font:500 13px var(--sans);outline:none;min-width:260px}
+.fsel:focus{border-color:var(--accent)}
+.daterow{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.daterow input[type=date]{padding:.4rem .55rem;background:var(--bg);border:1px solid var(--border);
+  border-radius:var(--r-sm);color:var(--text);font:500 12.5px var(--mono);outline:none;color-scheme:dark}
+.daterow input[type=date]:focus{border-color:var(--accent)}
+.daterow .arrow{color:var(--muted)}
+.wflist{max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-sm);padding:.5rem}
+.wflist .chip{display:flex;margin:.15rem 0}
+.wflist .nores{color:var(--muted);font-size:12px;padding:.4rem}
+.bar{display:flex;gap:.7rem;align-items:center;position:sticky;bottom:0;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--r-lg);padding:.8rem 1rem}
+.bar .note{color:var(--text-2);font-size:12.5px;margin-left:auto}
+.anybtn{font:600 11px var(--mono);color:var(--accent);background:none;border:none;cursor:pointer;margin-left:.4rem}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><span class="cur">Filters</span></nav>{% endblock %}
+
+{% block content %}
+<form method="post" action="/v3/filters" class="fl-wrap" id="filterform">
+  <input type="hidden" name="next" value="/v3/filters">
+
+  {# ── FLOWS ─────────────────────────────────────────────────────────────── #}
+  <section class="panel fsec">
+    <div class="panel-head"><h2>Flows</h2><span class="sub">Library — applies to /v3/flows</span></div>
+
+    <div class="frow">
+      <label class="k">Teams <span class="hint">select several · none = Any team</span>
+        <button type="button" class="anybtn" data-clear="flow_teams">Any</button></label>
+      <div class="chips">
+        {% for t in opts.teams %}
+        <label class="chip"><input type="checkbox" name="flow_teams" value="{{ t }}"{% if t in f.flows.teams %} checked{% endif %}> {{ t }}</label>
+        {% else %}<span class="nores">No teams found.</span>{% endfor %}
+      </div>
+    </div>
+
+    <div class="frow">
+      <label class="k" for="flow_author">Author <span class="hint">one · Any = all authors</span></label>
+      <select class="fsel" id="flow_author" name="flow_author">
+        <option value="">Any author</option>
+        {% for a in opts.flow_authors %}<option value="{{ a }}"{% if a == f.flows.author %} selected{% endif %}>{{ a }}</option>{% endfor %}
+      </select>
+    </div>
+
+    {% if opts.flow_tags %}
+    <div class="frow">
+      <label class="k" for="flow_tag">Tag</label>
+      <select class="fsel" id="flow_tag" name="flow_tag">
+        <option value="">Any tag</option>
+        {% for tg in opts.flow_tags %}<option value="{{ tg }}"{% if tg == f.flows.tag %} selected{% endif %}>{{ tg }}</option>{% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    <div class="frow">
+      <label class="k">Created <span class="hint">empty = Any date</span></label>
+      <div class="daterow">
+        <input type="date" name="flow_created_from" value="{{ f.flows.created_from }}" aria-label="created from">
+        <span class="arrow">→</span>
+        <input type="date" name="flow_created_to" value="{{ f.flows.created_to }}" aria-label="created to">
+      </div>
+    </div>
+  </section>
+
+  {# ── WORKFLOWS ─────────────────────────────────────────────────────────── #}
+  <section class="panel fsec">
+    <div class="panel-head"><h2>Workflows</h2><span class="sub">Runs — applies to /v3/workflows</span></div>
+
+    <div class="frow">
+      <label class="k">Teams <span class="hint">select several · none = Any team</span>
+        <button type="button" class="anybtn" data-clear="wf_teams">Any</button></label>
+      <div class="chips" id="wf_teams_chips">
+        {% for t in opts.teams %}
+        <label class="chip"><input type="checkbox" name="wf_teams" value="{{ t }}"{% if t in f.workflows.teams %} checked{% endif %}> {{ t }}</label>
+        {% else %}<span class="nores">No teams found.</span>{% endfor %}
+      </div>
+    </div>
+
+    <div class="frow">
+      <label class="k">Workflows <span class="hint">for the selected teams · none = Any workflow</span>
+        <button type="button" class="anybtn" data-clear="wf_workflows">Any</button></label>
+      <div class="wflist" id="wflist">
+        {% for w in opts.workflows %}
+        <label class="chip wf-item" data-teams="{{ w.teams|join(',') }}">
+          <input type="checkbox" name="wf_workflows" value="{{ w.name }}"{% if w.name in f.workflows.workflows %} checked{% endif %}> {{ w.name }}</label>
+        {% else %}<span class="nores">No workflow runs found.</span>{% endfor %}
+        <div class="nores" id="wf-empty" style="display:none">No workflows for the selected teams.</div>
+      </div>
+    </div>
+
+    <div class="frow">
+      <label class="k" for="wf_user">Ran by <span class="hint">runner user · Any = anyone</span></label>
+      <select class="fsel" id="wf_user" name="wf_user">
+        <option value="">Any user</option>
+        {% for u in opts.run_users %}<option value="{{ u }}"{% if u == f.workflows.user %} selected{% endif %}>{{ u }}</option>{% endfor %}
+      </select>
+    </div>
+
+    <div class="frow">
+      <label class="k">State</label>
+      <div class="seg">
+        {% for s in ['any','running','completed','failed'] %}
+        <label><input type="radio" name="wf_state" value="{{ s }}"{% if f.workflows.state == s %} checked{% endif %}> {{ 'Any' if s=='any' else s|capitalize }}</label>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if opts.purposes %}
+    <div class="frow">
+      <label class="k" for="wf_purpose">Purpose</label>
+      <select class="fsel" id="wf_purpose" name="wf_purpose">
+        <option value="any">Any purpose</option>
+        {% for p in opts.purposes %}<option value="{{ p }}"{% if p == f.workflows.purpose %} selected{% endif %}>{{ p }}</option>{% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    <div class="frow">
+      <label class="k">Run date <span class="hint">when the workflow was run · empty = Any date</span></label>
+      <div class="daterow">
+        <input type="date" name="wf_run_from" value="{{ f.workflows.run_from }}" aria-label="run from">
+        <span class="arrow">→</span>
+        <input type="date" name="wf_run_to" value="{{ f.workflows.run_to }}" aria-label="run to">
+      </div>
+    </div>
+  </section>
+
+  <div class="bar">
+    <button type="submit" class="btn primary"><svg viewBox="0 0 24 24"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></svg> Apply filters</button>
+    <button type="submit" class="btn" formaction="/v3/filters/clear">Clear all</button>
+    <a class="btn" href="/v3/flows">View Flows →</a>
+    <a class="btn" href="/v3/workflows">View Runs →</a>
+    <span class="note">Saved to your browser; applies across the Library and Runs lists.</span>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  // "Any" reset buttons — clear all checkboxes/inputs for a field name.
+  document.querySelectorAll('.anybtn[data-clear]').forEach(function(b){
+    b.addEventListener('click',function(){
+      document.querySelectorAll('[name="'+b.dataset.clear+'"]').forEach(function(el){
+        if(el.type==='checkbox'||el.type==='radio') el.checked=false; else el.value='';
+      });
+      if(b.dataset.clear==='wf_teams') filterWf();
+    });
+  });
+  // Workflow list depends on the workflow-section team selection.
+  var teamChips=document.getElementById('wf_teams_chips');
+  var empty=document.getElementById('wf-empty');
+  function selectedWfTeams(){
+    return Array.from(document.querySelectorAll('[name="wf_teams"]:checked')).map(function(c){return c.value;});
+  }
+  function filterWf(){
+    var sel=selectedWfTeams(), any=sel.length===0, shown=0;
+    document.querySelectorAll('.wf-item').forEach(function(it){
+      var teams=(it.dataset.teams||'').split(',').filter(Boolean);
+      var match=any||teams.some(function(t){return sel.indexOf(t)>=0;});
+      it.style.display=match?'':'none';
+      if(match) shown++;
+      if(!match){var cb=it.querySelector('input');/* keep checked state but it's hidden */}
+    });
+    if(empty) empty.style.display=shown?'none':'';
+  }
+  if(teamChips) teamChips.addEventListener('change',function(e){ if(e.target.name==='wf_teams') filterWf(); });
+  filterWf();
+})();
+</script>
+{% endblock %}

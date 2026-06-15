@@ -246,11 +246,17 @@ def catalog_v3(request: Request, q: str = "", tab: str = "all", store=Depends(ge
 @router.get("/flows")
 def flows_v3(request: Request, q: str = "", store=Depends(get_store)):
     """Redesigned Flows — compiled FFL programs (namespaces/facets/workflows)."""
+    from ...viewfilters import flow_matches, flows_active, read_filters
+
     flows = list(store.get_all_flows())
     # Drop auto-generated CLI submissions (path=cli:submit); keep seeded/authored.
     flows = [f for f in flows if getattr(f.name, "path", "") != "cli:submit"]
+    total_before = len(flows)
     if q:
         flows = [f for f in flows if q.lower() in f.name.name.lower()]
+    # Apply the persisted global filters.
+    gf = read_filters(request)
+    flows = [f for f in flows if flow_matches(f, gf)]
     flows.sort(key=lambda f: f.name.name.lower())
 
     rows = [
@@ -265,8 +271,16 @@ def flows_v3(request: Request, q: str = "", store=Depends(get_store)):
         for f in flows
     ]
 
+    active = flows_active(gf)
     return request.app.state.templates.TemplateResponse(
         request,
         "v3/flows/list.html",
-        {"flows": rows, "q": q, "total": len(rows), "active_nav": "library"},
+        {
+            "flows": rows,
+            "q": q,
+            "total": len(rows),
+            "active_nav": "library",
+            "filter_active": active,
+            "filter_hidden": max(0, total_before - len(rows)) if active else 0,
+        },
     )

@@ -59,8 +59,12 @@ def workflow_list_v3(
         _enrich_runners_with_progress,
         _filter_runners,
     )
+    from ...viewfilters import read_filters, runner_matches, workflows_active
 
     all_runners = store.get_all_runners(limit=1000)
+    # Narrow the universe by the persisted global filters, then tab on top.
+    gf = read_filters(request)
+    all_runners = [r for r in all_runners if runner_matches(r, gf)]
     tab_counts = _count_by_tab(all_runners)
     filtered = _filter_runners(all_runners, tab)
     groups = group_runners_by_namespace(filtered)
@@ -76,6 +80,7 @@ def workflow_list_v3(
             "progress": progress,
             "pill": _PILL,
             "active_nav": "runs",
+            "filter_active": workflows_active(gf),
         },
     )
 

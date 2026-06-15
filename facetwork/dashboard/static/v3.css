@@ -155,6 +155,17 @@ a{color:var(--accent)}
 body.compact .content{gap:.7rem;padding:1rem}
 body.compact .panel-head{padding:.45rem .7rem}
 
+/* ---- global-filter banner ---- */
+.filterbar{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin:.2rem 0 .1rem;padding:.5rem .8rem;
+  background:color-mix(in srgb,var(--accent) 9%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 35%,var(--border));
+  border-radius:var(--r-md);font-size:12.5px;color:var(--text-2)}
+.filterbar svg{width:15px;height:15px;stroke:var(--accent);fill:none;stroke-width:1.8;flex:none}
+.filterbar .crit{color:var(--text);font-weight:600}
+.filterbar .hid{font:600 11px var(--mono);color:var(--muted);background:var(--surface-3);padding:.1rem .45rem;border-radius:20px}
+.filterbar .sp{flex:1}
+.filterbar a,.filterbar button{font:600 12px var(--sans);color:var(--accent);text-decoration:none;background:none;border:none;cursor:pointer;padding:0}
+.filterbar form{display:inline}
+
 /* ---- responsive ---- */
 @media (max-width:880px){
   .v3-app{grid-template-columns:1fr}
