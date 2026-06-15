@@ -1,94 +1,71 @@
-{% extends "base.html" %}
-{% block title %}{% if region %}{{ region }} — {% endif %}{{ dataset_key }} — Data Table{% endblock %}
+{% extends "v3/base.html" %}
+{% block title %}{{ dataset_key }} · Census Maps{% endblock %}
+
+{% block head_extra %}
+<style>
+.statbox{margin-bottom:1.1rem}
+.statbox summary{cursor:pointer;padding:.7rem .9rem;font:600 12.5px var(--sans);color:var(--text-2)}
+.scroll{overflow-x:auto}
+.dtable th[data-col]{cursor:pointer}
+.dtable th[data-col]:hover{color:var(--text)}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><a href="/census/maps">Census Maps</a>
+  <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="cur">{{ dataset_key }} · Table</span></nav>
+{% endblock %}
+{% block topbar_actions %}<a class="iconbtn" href="/census/maps/{{ dataset_key }}" title="Map view"><svg viewBox="0 0 24 24"><path d="M9 4l6 2 6-2v14l-6 2-6-2-6 2V6z"/></svg></a>{% endblock %}
 
 {% block content %}
-<hgroup>
-    <h1>{% if region %}{{ region }} — {% endif %}{{ dataset_key }}</h1>
-    <p>{{ feature_count }} features —
-        <a href="/census/maps/{{ dataset_key }}">Map View</a> |
-        <a href="/census/maps">Back to datasets</a>
-    </p>
-</hgroup>
-<p>
-    <a href="/census/api/maps/{{ dataset_key }}/download?format=geojson" role="button" class="outline secondary">Download GeoJSON</a>
-    <a href="/census/api/maps/{{ dataset_key }}/download?format=csv" role="button" class="outline secondary">Download CSV</a>
-</p>
+<section class="panel" style="padding:1rem 1.3rem">
+  <h1 style="margin:0;font-size:18px;font-weight:700;letter-spacing:-.02em">{% if region %}{{ region }} — {% endif %}{{ dataset_key }}</h1>
+  <p style="margin:.3rem 0 0;color:var(--text-2);font-size:13px">{{ feature_count }} features.</p>
+  <div style="margin-top:.7rem;display:flex;gap:.5rem;flex-wrap:wrap">
+    <a class="btn" href="/census/maps/{{ dataset_key }}">Map view</a>
+    <a class="btn" href="/census/api/maps/{{ dataset_key }}/download?format=geojson">Download GeoJSON</a>
+    <a class="btn" href="/census/api/maps/{{ dataset_key }}/download?format=csv">Download CSV</a>
+  </div>
+</section>
 
 {% if stats %}
-<details>
-    <summary>Summary Statistics</summary>
-    <table>
-        <thead>
-            <tr><th>Field</th><th>Min</th><th>Max</th><th>Mean</th><th>Median</th></tr>
-        </thead>
-        <tbody>
-            {% for field, s in stats.items() %}
-            <tr>
-                <td>{{ field_labels.get(field, field) }}</td>
-                <td>{{ s.min }}</td>
-                <td>{{ s.max }}</td>
-                <td>{{ s.mean }}</td>
-                <td>{{ s.median }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
+<details class="panel statbox">
+  <summary>Summary statistics</summary>
+  <div class="dtable-wrap" style="border:none;border-radius:0">
+    <table class="dtable">
+      <thead><tr><th>Field</th><th class="num">Min</th><th class="num">Max</th><th class="num">Mean</th><th class="num">Median</th></tr></thead>
+      <tbody>{% for field, s in stats.items() %}
+        <tr><td>{{ field_labels.get(field, field) }}</td><td class="num">{{ s.min }}</td><td class="num">{{ s.max }}</td><td class="num">{{ s.mean }}</td><td class="num">{{ s.median }}</td></tr>
+      {% endfor %}</tbody>
     </table>
+  </div>
 </details>
 {% endif %}
 
 {% if features %}
-<div style="overflow-x:auto">
-<table id="data-table">
-    <thead>
-        <tr>
-            {% for col in columns %}
-            <th data-col="{{ loop.index0 }}" style="cursor:pointer" title="{{ col }}">{{ field_labels.get(col, col) }}</th>
-            {% endfor %}
-        </tr>
-    </thead>
+<div class="dtable-wrap"><div class="scroll">
+  <table class="dtable" id="data-table">
+    <thead><tr>{% for col in columns %}<th data-col="{{ loop.index0 }}" title="{{ col }}">{{ field_labels.get(col, col) }}</th>{% endfor %}</tr></thead>
     <tbody>
-        {% for f in features %}
-        <tr>
-            {% for col in columns %}
-            <td>{% if f.properties[col] is not none %}{{ f.properties[col] }}{% else %}&mdash;{% endif %}</td>
-            {% endfor %}
-        </tr>
-        {% endfor %}
+      {% for f in features %}<tr>{% for col in columns %}<td>{% if f.properties[col] is not none %}{{ f.properties[col] }}{% else %}—{% endif %}</td>{% endfor %}</tr>{% endfor %}
     </tbody>
-</table>
-</div>
-{% else %}
-<p>No features with geometry found for this dataset.</p>
-{% endif %}
+  </table>
+</div></div>
+{% else %}<div class="empty"><p>No features with geometry for this dataset.</p></div>{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
-(function() {
-    var table = document.getElementById('data-table');
-    if (!table) return;
-    var headers = table.querySelectorAll('th');
-    var sortDir = {};
-    headers.forEach(function(th) {
-        th.addEventListener('click', function() {
-            var col = parseInt(th.getAttribute('data-col'));
-            var dir = sortDir[col] === 'asc' ? 'desc' : 'asc';
-            sortDir[col] = dir;
-            var tbody = table.querySelector('tbody');
-            var rows = Array.from(tbody.querySelectorAll('tr'));
-            rows.sort(function(a, b) {
-                var av = a.children[col].textContent.trim();
-                var bv = b.children[col].textContent.trim();
-                var an = parseFloat(av.replace(/,/g, ''));
-                var bn = parseFloat(bv.replace(/,/g, ''));
-                if (!isNaN(an) && !isNaN(bn)) {
-                    return dir === 'asc' ? an - bn : bn - an;
-                }
-                return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-            });
-            rows.forEach(function(r) { tbody.appendChild(r); });
-        });
-    });
+(function(){var table=document.getElementById('data-table');if(!table)return;
+  var sortDir={};
+  table.querySelectorAll('th').forEach(function(th){th.addEventListener('click',function(){
+    var col=parseInt(th.getAttribute('data-col'));var dir=sortDir[col]==='asc'?'desc':'asc';sortDir[col]=dir;
+    var tb=table.querySelector('tbody');var rows=Array.from(tb.querySelectorAll('tr'));
+    rows.sort(function(a,b){var av=a.children[col].textContent.trim(),bv=b.children[col].textContent.trim();
+      var an=parseFloat(av.replace(/,/g,'')),bn=parseFloat(bv.replace(/,/g,''));
+      if(!isNaN(an)&&!isNaN(bn))return dir==='asc'?an-bn:bn-an;
+      return dir==='asc'?av.localeCompare(bv):bv.localeCompare(av);});
+    rows.forEach(function(r){tb.appendChild(r);});});});
 })();
 </script>
 {% endblock %}

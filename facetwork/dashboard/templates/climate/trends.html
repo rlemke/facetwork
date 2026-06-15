@@ -1,83 +1,83 @@
-{% extends "base.html" %}
-{% block title %}Climate Trends — Facetwork Dashboard{% endblock %}
+{% extends "v3/base.html" %}
+{% block title %}Climate Trends · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.cl-grid{display:grid;grid-template-columns:300px 1fr;gap:1.1rem;align-items:start}
+@media (max-width:900px){.cl-grid{grid-template-columns:1fr}}
+.fld{padding:.9rem}
+.fld label{display:block;font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:.2rem 0 .35rem}
+.fld select{width:100%;padding:.45rem .6rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font:500 13px var(--sans);outline:none}
+.fld select:focus{border-color:var(--accent)}
+.sumtxt{font-size:12.5px;color:var(--text-2);line-height:1.55}
+.sumtxt p{margin:.3rem 0}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:1.1rem}
+@media (max-width:1100px){.charts{grid-template-columns:1fr}}
+.chartcard{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:.9rem}
+.chartcard h3{margin:0 0 .6rem;font-size:12.5px;font-weight:600;color:var(--text-2)}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><span class="cur">Climate Trends</span></nav>{% endblock %}
 
 {% block content %}
-<hgroup>
-    <h2>Climate Trends</h2>
-    <p>80-year temperature, precipitation, and extreme event analysis by state</p>
-</hgroup>
-
-<div class="grid" style="grid-template-columns: 1fr 2fr; gap: 1.5rem; align-items: start;">
-    <!-- Controls -->
-    <div>
-        <label for="state-select"><strong>State</strong></label>
+<div class="cl-grid">
+  <div style="display:flex;flex-direction:column;gap:1.1rem">
+    <section class="panel">
+      <div class="panel-head"><h2>Controls</h2></div>
+      <div class="fld">
+        <label for="state-select">State</label>
         <select id="state-select">
-            <option value="">Select a state...</option>
-            {% for s in states %}
-            <option value="{{ s.code }}">{{ s.name }}</option>
-            {% endfor %}
+          <option value="">Select a state…</option>
+          {% for s in states %}<option value="{{ s.code }}">{{ s.name }}</option>{% endfor %}
         </select>
-
-        <label for="unit-select" style="margin-top:0.75rem;"><strong>Unit</strong></label>
+        <label for="unit-select" style="margin-top:.75rem">Unit</label>
         <select id="unit-select">
-            <option value="F">°F (Fahrenheit)</option>
-            <option value="C">°C (Celsius)</option>
+          <option value="F">°F (Fahrenheit)</option>
+          <option value="C">°C (Celsius)</option>
         </select>
+      </div>
+    </section>
 
-        <!-- Summary panel -->
-        <div id="summary-panel" style="display:none; margin-top:1rem;">
-            <article>
-                <header><strong>Trend Summary</strong></header>
-                <p><span id="summary-warming"></span></p>
-                <p><span id="summary-precip"></span></p>
-                <p><span id="summary-years"></span></p>
-            </article>
-        </div>
+    <section class="panel" id="summary-panel" style="display:none">
+      <div class="panel-head"><h2>Trend summary</h2></div>
+      <div class="fld sumtxt">
+        <p><span id="summary-warming"></span></p>
+        <p><span id="summary-precip"></span></p>
+        <p><span id="summary-years"></span></p>
+      </div>
+    </section>
 
-        <!-- Narrative panel -->
-        <div id="narrative-panel" style="display:none; margin-top:1rem;">
-            <article>
-                <header><strong>Climate Narrative</strong></header>
-                <p id="narrative-text" style="line-height:1.6;"></p>
-            </article>
-        </div>
+    <section class="panel" id="narrative-panel" style="display:none">
+      <div class="panel-head"><h2>Climate narrative</h2></div>
+      <div class="fld sumtxt"><p id="narrative-text"></p></div>
+    </section>
+  </div>
+
+  <div>
+    <div id="no-data-msg">
+      <div class="empty"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 4 8-8"/><path d="M21 8v5h-5"/></svg>
+        <h1>Select a state</h1><p>Pick a state to view its 80-year climate trends.</p></div>
     </div>
-
-    <!-- Charts -->
-    <div>
-        <div id="no-data-msg">
-            <article>
-                <p>Select a state to view climate trend charts.</p>
-            </article>
-        </div>
-
-        <div id="charts-container" style="display:none;">
-            <div class="grid" style="grid-template-columns:1fr 1fr; gap:1rem;">
-                <article>
-                    <header>Temperature Trend</header>
-                    <canvas id="chart-temperature" height="250"></canvas>
-                </article>
-                <article>
-                    <header>Annual Precipitation</header>
-                    <canvas id="chart-precipitation" height="250"></canvas>
-                </article>
-                <article>
-                    <header>Extreme Events</header>
-                    <canvas id="chart-extremes" height="250"></canvas>
-                </article>
-                <article>
-                    <header>Decadal Comparison</header>
-                    <canvas id="chart-decades" height="250"></canvas>
-                </article>
-            </div>
-        </div>
+    <div id="charts-container" style="display:none">
+      <div class="charts">
+        <div class="chartcard"><h3>Temperature trend</h3><canvas id="chart-temperature" height="250"></canvas></div>
+        <div class="chartcard"><h3>Annual precipitation</h3><canvas id="chart-precipitation" height="250"></canvas></div>
+        <div class="chartcard"><h3>Extreme events</h3><canvas id="chart-extremes" height="250"></canvas></div>
+        <div class="chartcard"><h3>Decadal comparison</h3><canvas id="chart-decades" height="250"></canvas></div>
+      </div>
     </div>
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script type="module">
+// Theme chart.js for the v3 surface (legible axis text + gridlines on dark).
+const cs = getComputedStyle(document.documentElement);
+Chart.defaults.color = (cs.getPropertyValue('--text-2') || '#aab2c5').trim();
+Chart.defaults.borderColor = (cs.getPropertyValue('--border') || 'rgba(255,255,255,.08)').trim();
 import { initClimateCharts } from "/static/climate_charts.js";
 initClimateCharts();
 </script>

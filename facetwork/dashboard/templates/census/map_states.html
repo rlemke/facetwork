@@ -1,67 +1,67 @@
-{% extends "base.html" %}
-{% block title %}State-Level Summary — Census Maps{% endblock %}
+{% extends "v3/base.html" %}
+{% block title %}State Summary · Census Maps{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+.mapctl{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.mapctl label{font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.mapctl select{padding:.4rem .6rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font:500 13px var(--sans);outline:none;max-width:300px}
+.mapctl select:focus{border-color:var(--accent)}
+#map{height:60vh;border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.leaflet-popup-content{font-family:var(--sans)}
+#legend small{color:var(--text-2)}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><a href="/census/maps">Census Maps</a>
+  <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="cur">State Summary</span></nav>
+{% endblock %}
+{% block topbar_actions %}<a class="btn" href="/census/maps/_all">All counties</a>{% endblock %}
 
 {% block content %}
-<hgroup>
-    <h1>State-Level Summary</h1>
-    <p>{{ state_count }} states — <a href="/census/maps/_all">View All Counties</a> | <a href="/census/maps">Back to datasets</a></p>
-</hgroup>
+<section class="panel" style="padding:1rem 1.3rem">
+  <h1 style="margin:0;font-size:18px;font-weight:700;letter-spacing:-.02em">State-level summary</h1>
+  <p style="margin:.3rem 0 0;color:var(--text-2);font-size:13px">{{ state_count }} states aggregated from county data.</p>
+  {% if choropleth_fields %}
+  <div class="mapctl" style="margin-top:.8rem">
+    <label for="choropleth-field">Color by</label>
+    <select id="choropleth-field">
+      {% for field in choropleth_fields %}<option value="{{ field }}"{% if loop.first %} selected{% endif %}>{{ field_labels.get(field, field) }}</option>{% endfor %}
+    </select>
+    <span id="legend" style="display:none"><small>
+      <span id="legend-min" style="color:#9ecae1"></span>
+      <span style="display:inline-block;width:160px;height:12px;background:linear-gradient(to right,#f7fbff,#08306b);vertical-align:middle;border:1px solid var(--border)"></span>
+      <span id="legend-max" style="color:#6baed6"></span>
+      <span id="legend-label" style="margin-left:.5rem"></span>
+    </small></span>
+    <span id="loading-msg" aria-busy="true" style="color:var(--text-2);font-size:13px">Loading state data&hellip;</span>
+  </div>
+  {% endif %}
+</section>
 
-{% if choropleth_fields %}
-<label for="choropleth-field">Color by:</label>
-<select id="choropleth-field" style="max-width:300px;display:inline-block;margin-left:.5rem">
-    {% for field in choropleth_fields %}
-    <option value="{{ field }}"{% if loop.first %} selected{% endif %}>{{ field_labels.get(field, field) }}</option>
-    {% endfor %}
-</select>
-{% endif %}
-
-<div id="map" style="height:60vh;margin-top:1rem;border:1px solid var(--pico-muted-border-color);border-radius:var(--pico-border-radius)"></div>
-
-<div id="legend" style="margin-top:.5rem;display:none">
-    <small>
-        <span id="legend-min" style="color:#f7fbff"></span>
-        <span style="display:inline-block;width:200px;height:12px;background:linear-gradient(to right,#f7fbff,#08306b);vertical-align:middle;border:1px solid #ccc"></span>
-        <span id="legend-max" style="color:#08306b"></span>
-        <span id="legend-label" style="margin-left:.5rem"></span>
-    </small>
-</div>
-
-<p id="loading-msg" aria-busy="true">Loading state data&hellip;</p>
+<div id="map"></div>
 
 {% if state_stats %}
-<h2>Summary Statistics</h2>
-<table id="state-summary-table">
-    <thead>
-        <tr>
-            <th>State</th>
-            <th>Counties</th>
-            <th>Population</th>
-            <th>Housing Units</th>
-            <th>Median Income (weighted)</th>
-            <th>Pop. Density (per km&sup2;)</th>
-        </tr>
-    </thead>
-    <tbody>
+<section class="panel" style="margin-top:1.1rem">
+  <div class="panel-head"><h2>Summary statistics</h2></div>
+  <div class="dtable-wrap" style="border:none;border-radius:0">
+    <table class="dtable">
+      <thead><tr><th>State</th><th class="num">Counties</th><th class="num">Population</th><th class="num">Housing units</th><th class="num">Median income (wtd)</th><th class="num">Pop. density /km²</th></tr></thead>
+      <tbody>
         {% for s in state_stats %}
-        <tr>
-            <td>{{ s.state_name }}</td>
-            <td>{{ s.county_count }}</td>
-            <td>{{ s.total_population }}</td>
-            <td>{{ s.total_housing_units }}</td>
-            <td>{{ s.weighted_median_income }}</td>
-            <td>{{ s.population_density }}</td>
-        </tr>
+        <tr><td>{{ s.state_name }}</td><td class="num">{{ s.county_count }}</td><td class="num">{{ s.total_population }}</td><td class="num">{{ s.total_housing_units }}</td><td class="num">{{ s.weighted_median_income }}</td><td class="num">{{ s.population_density }}</td></tr>
         {% endfor %}
-    </tbody>
-</table>
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script>
 (function() {
     var fieldLabels = {{ field_labels | tojson }};
@@ -80,28 +80,20 @@
         var b = Math.round(255 + (107 - 255) * t);
         return 'rgb(' + r + ',' + g + ',' + b + ')';
     }
-
     function getStyle(feature) {
         if (!geojsonData) return {};
         var min = Infinity, max = -Infinity;
         geojsonData.features.forEach(function(f) {
             var v = f.properties._state_value;
-            if (typeof v === 'number' && isFinite(v)) {
-                if (v < min) min = v;
-                if (v > max) max = v;
-            }
+            if (typeof v === 'number' && isFinite(v)) { if (v < min) min = v; if (v > max) max = v; }
         });
         var v = feature.properties._state_value || 0;
         var t = (max > min) ? (v - min) / (max - min) : 0;
         return {color: '#333', weight: 0.5, fillColor: interpolateColor(t), fillOpacity: 0.7};
     }
-
     function loadData(field) {
         fetch('/census/api/maps/states?field=' + encodeURIComponent(field))
-            .then(function(resp) {
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                return resp.json();
-            })
+            .then(function(resp) { if (!resp.ok) throw new Error('HTTP ' + resp.status); return resp.json(); })
             .then(function(data) {
                 geojsonData = data;
                 if (geojsonLayer) map.removeLayer(geojsonLayer);
@@ -118,32 +110,25 @@
                 }).addTo(map);
                 if (data.features.length > 0) map.fitBounds(geojsonLayer.getBounds());
 
-                // Update legend
                 var min = Infinity, max = -Infinity;
                 data.features.forEach(function(f) {
                     var v = f.properties._state_value;
-                    if (typeof v === 'number' && isFinite(v)) {
-                        if (v < min) min = v;
-                        if (v > max) max = v;
-                    }
+                    if (typeof v === 'number' && isFinite(v)) { if (v < min) min = v; if (v > max) max = v; }
                 });
                 var legendEl = document.getElementById('legend');
                 if (data.features.length > 0) {
-                    legendEl.style.display = 'block';
+                    legendEl.style.display = 'inline';
                     document.getElementById('legend-min').textContent = min.toLocaleString();
                     document.getElementById('legend-max').textContent = max.toLocaleString();
                     document.getElementById('legend-label').textContent = fieldLabels[field] || field;
                 }
-                document.getElementById('loading-msg').style.display = 'none';
+                var m = document.getElementById('loading-msg'); if (m) m.style.display = 'none';
             })
             .catch(function(err) {
                 var msg = document.getElementById('loading-msg');
-                msg.removeAttribute('aria-busy');
-                msg.textContent = 'Failed to load data: ' + err.message;
-                msg.style.color = 'var(--pico-del-color, #c62828)';
+                if (msg) { msg.removeAttribute('aria-busy'); msg.textContent = 'Failed to load data: ' + err.message; msg.style.color = 'var(--danger,#f87171)'; }
             });
     }
-
     var dropdown = document.getElementById('choropleth-field');
     if (dropdown) {
         dropdown.addEventListener('change', function() { loadData(this.value); });

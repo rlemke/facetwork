@@ -190,7 +190,7 @@ def site_selection_list(request: Request, store=Depends(get_store)):
     return request.app.state.templates.TemplateResponse(
         request,
         "site_selection/list.html",
-        {"states": states, "active_tab": "site_selection"},
+        {"states": states, "active_tab": "site_selection", "active_app": "Site Selection"},
     )
 
 
@@ -220,6 +220,7 @@ def site_selection_map(request: Request, state_fips: str, store=Depends(get_stor
             "popup_fields": _POPUP_FIELDS,
             "geojson_str": json.dumps(geojson),
             "active_tab": "site_selection",
+            "active_app": "Site Selection",
         },
     )
 
@@ -259,6 +260,7 @@ def site_selection_table(request: Request, state_fips: str, store=Depends(get_st
             "rows": rows,
             "field_labels": _FIELD_LABELS,
             "active_tab": "site_selection",
+            "active_app": "Site Selection",
         },
     )
 
