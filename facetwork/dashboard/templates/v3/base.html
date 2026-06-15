@@ -21,6 +21,25 @@
       <span class="mark"><svg width="14" height="14" viewBox="0 0 24 24" fill="#001"><path d="M5 4l14 8-14 8z"/></svg></span>
       Facetwork
     </a>
+
+    {# app switcher — domain dashboards live here, not in the platform nav #}
+    <div class="appswitch" id="appswitch">
+      <button class="cur" id="appswitch-btn" type="button">
+        <span class="dot"></span>
+        <span class="nm">{{ active_app|default('Platform') }}</span>
+        <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="appmenu">
+        <a href="/v3/workflows" class="{% if active_app|default('Platform')=='Platform' %}cur{% endif %}"><svg viewBox="0 0 24 24"><path d="M5 4l14 8-14 8z"/></svg> Platform</a>
+        <div class="lbl">Apps</div>
+        <a href="/census/maps"><svg viewBox="0 0 24 24"><path d="M9 4l6 2 6-2v14l-6 2-6-2-6 2V6z"/><path d="M9 4v14M15 6v14"/></svg> Census Maps</a>
+        <a href="/site-selection/"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.7 7-12a7 7 0 10-14 0c0 5.3 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg> Site Selection</a>
+        <a href="/climate-trends/"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 4 8-8"/><path d="M21 8v5h-5"/></svg> Climate Trends</a>
+      </div>
+    </div>
+
+    <a class="newbtn" href="/workflows/new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> New run</a>
+
     <nav class="v3-nav">
       <a href="/v3/workflows" class="{% if active_nav=='runs' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg> Runs</a>
       <a href="/flows" class="{% if active_nav=='library' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/></svg> Library</a>
@@ -31,6 +50,7 @@
       <a href="/v2/handlers" class="{% if active_nav=='handlers' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg> Handlers</a>
       <a href="/v3/fleet" class="{% if active_nav=='fleet' %}active{% endif %}"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M6 8v3a3 3 0 003 3h6a3 3 0 003-3V8M12 16V14"/></svg> Fleet</a>
       <a href="/tasks" class="{% if active_nav=='tasks' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg> Tasks</a>
+      <a href="/events" class="{% if active_nav=='events' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg> Events</a>
 
       <div class="group">Data</div>
       <a href="/output" class="{% if active_nav=='output' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/></svg> Output</a>
@@ -59,6 +79,12 @@
 </div>
 
 <script>
+// app switcher dropdown
+(function(){var sw=document.getElementById('appswitch'),btn=document.getElementById('appswitch-btn');
+  if(!sw)return;
+  btn.addEventListener('click',function(e){e.stopPropagation();sw.classList.toggle('open');});
+  document.addEventListener('click',function(e){if(!sw.contains(e.target))sw.classList.remove('open');});
+})();
 // theme toggle — persisted
 document.getElementById('theme').onclick=function(){
   var r=document.documentElement;var t=r.dataset.theme==='dark'?'light':'dark';
