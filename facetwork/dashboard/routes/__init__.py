@@ -45,6 +45,7 @@ def register_routes(app: FastAPI) -> None:
     from .monitoring.sources import router as sources_router
     from .v2.admin import router as admin_router
     from .v2.dashboard_v2 import router as dashboard_v2_router
+    from .v3.data import router as v3_data_router
     from .v3.fleet import router as v3_fleet_router
     from .v3.handlers import router as v3_handlers_router
     from .v3.library import router as v3_library_router
@@ -76,6 +77,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(v3_library_router)
     app.include_router(v3_steps_router)
     app.include_router(v3_tasks_router)
+    app.include_router(v3_data_router)
     app.include_router(admin_router)
     app.include_router(output_router)
     app.include_router(census_maps_router)

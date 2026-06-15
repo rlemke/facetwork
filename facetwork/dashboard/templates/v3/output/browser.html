@@ -1,0 +1,56 @@
+{% extends "v3/base.html" %}
+{% block title %}Output · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.obc{display:flex;align-items:center;gap:.35rem;font:500 12.5px var(--mono);color:var(--muted);flex-wrap:wrap;margin-bottom:.2rem}
+.obc a{color:var(--text-2);text-decoration:none}.obc a:hover{color:var(--text)}
+.obc .sep{color:var(--border-strong)}
+.obc .cur{color:var(--text);font-weight:600}
+.basedir{font:500 11px var(--mono);color:var(--muted);margin-bottom:.3rem}
+.fl{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.frow{display:grid;grid-template-columns:22px 1fr 110px 160px 56px;gap:.9rem;align-items:center;padding:.5rem .9rem;border-bottom:1px solid var(--border);font-size:13px;text-decoration:none;color:var(--text)}
+.frow:last-child{border-bottom:none}.frow:hover{background:var(--surface-2)}
+.frow.head{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.fi{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7}
+.fi.dir{color:var(--accent)}.fi.file{color:var(--muted)}
+.fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fmeta{font:500 11.5px var(--mono);color:var(--muted)}
+.fview{justify-self:end;font:600 11px var(--mono);color:var(--accent)}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><span class="cur">Output</span></nav>{% endblock %}
+{% block topbar_actions %}<button class="iconbtn" onclick="location.reload()" title="Refresh"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9"/><path d="M21 3v6h-6"/></svg></button>{% endblock %}
+
+{% block content %}
+<nav class="obc">
+  {% for b in breadcrumbs %}
+    {% if not loop.last %}<a href="/v3/output{% if b.path %}?path={{ b.path }}{% endif %}">{{ b.name }}</a><span class="sep">/</span>
+    {% else %}<span class="cur">{{ b.name }}</span>{% endif %}
+  {% endfor %}
+</nav>
+<div class="basedir">{{ base_dir }}</div>
+
+{% if missing %}
+  <div class="empty"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/></svg>
+    <h1>Directory not found</h1><p>Nothing at this path yet.</p></div>
+{% elif entries %}
+<div class="fl">
+  <div class="frow head"><span></span><span>Name</span><span>Size</span><span>Modified</span><span></span></div>
+  {% for e in entries %}
+  <a class="frow" href="{% if e.is_dir %}/v3/output?path={{ e.path }}{% else %}/output/view?path={{ e.path }}{% endif %}"{% if not e.is_dir %} target="_blank"{% endif %}>
+    {% if e.is_dir %}<svg class="fi dir" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg>
+    {% else %}<svg class="fi file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>{% endif %}
+    <span class="fname">{{ e.name }}</span>
+    <span class="fmeta">{% if e.is_dir %}—{% else %}{{ e.size|filesizeformat }}{% endif %}</span>
+    <span class="fmeta">{{ e.mtime|file_timestamp }}</span>
+    <span class="fview">{% if not e.is_dir %}view ↗{% endif %}</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+  <div class="empty"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/></svg>
+    <h1>Empty</h1><p>No files in this directory.</p></div>
+{% endif %}
+{% endblock %}
