@@ -40,6 +40,13 @@ def test_artifact_url_detects_html(out_root):
     assert url == "/output/raw/s2/aoi1/index.html"
 
 
+def test_artifact_url_cross_mount(out_root):
+    """A host absolute path resolves via its /output/ tail under a mounted root."""
+    tmp_path, bundle = out_root  # AFL_OUTPUT_BASE=tmp_path holds s2/aoi1/index.html
+    host_path = "/Users/someone/afl_data/output/s2/aoi1/index.html"  # doesn't exist here
+    assert out.artifact_url(host_path) == "/output/raw/s2/aoi1/index.html"
+
+
 def test_artifact_url_rejects_non_html_and_missing(out_root):
     tmp_path, bundle = out_root
     assert out.artifact_url(str(bundle / "change.tif")) is None      # wrong suffix

@@ -80,21 +80,34 @@ def artifact_url(value) -> str | None:
 
     Used to turn an ``html_path`` step return into a clickable link. The serve
     route is path-based so the page's relative asset URLs (tiles, css) resolve.
+    Handles the host↔container split: a runner stores an absolute *host* path,
+    but a containerized dashboard sees the same tree under a different mount, so
+    we also match by the path tail after the last ``/output/`` segment.
     """
     if not isinstance(value, str) or not value.lower().endswith((".html", ".htm")):
         return None
+
+    # 1) Exact: the path is under a current root and exists (local dev).
     try:
         ap = Path(value).expanduser().resolve()
     except (OSError, RuntimeError, ValueError):
-        return None
-    if not ap.is_file():
-        return None
-    for base in _output_roots():
-        try:
-            rel = ap.relative_to(base)
-        except ValueError:
-            continue
-        return "/output/raw/" + str(rel)
+        ap = None
+    if ap and ap.is_file():
+        for base in _output_roots():
+            try:
+                return "/output/raw/" + str(ap.relative_to(base))
+            except ValueError:
+                continue
+
+    # 2) Cross-mount: derive the tail after the last "/output/" and locate it
+    #    under a current root (e.g. a host path served via a bind mount).
+    norm = value.replace("\\", "/")
+    marker = "/output/"
+    idx = norm.rfind(marker)
+    if idx != -1:
+        rel = norm[idx + len(marker):]
+        if rel and _resolve_under_roots(rel) is not None:
+            return "/output/raw/" + rel
     return None
 
 
