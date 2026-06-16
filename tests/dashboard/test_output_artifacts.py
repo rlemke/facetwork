@@ -69,3 +69,42 @@ def test_raw_blocks_traversal_and_missing(out_root):
     c = TestClient(create_app(), raise_server_exceptions=True)
     assert c.get("/output/raw/../../../../etc/passwd").status_code == 404
     assert c.get("/output/raw/s2/aoi1/missing.html").status_code == 404
+
+
+@pytest.fixture
+def fake_s3(monkeypatch):
+    """An s3 output base backed by an in-memory fake storage backend."""
+    import io
+
+    monkeypatch.setenv("AFL_S3_OUTPUT_BASE", "s3://testbucket/output")
+    files = {
+        "s3://testbucket/output/s2/s3aoi/index.html": b"<html>maplibre-gl s3 map</html>",
+        "s3://testbucket/output/s2/s3aoi/tiles/1/2/3.png": b"\x89PNG\r\n\x1a\n s3tile",
+    }
+
+    class FakeBE:
+        def isfile(self, uri):
+            return uri in files
+
+        def open(self, uri, mode="rb"):
+            return io.BytesIO(files[uri])
+
+    monkeypatch.setattr("facetwork.runtime.storage.get_storage_backend",
+                        lambda path=None: FakeBE())
+    return files
+
+
+def test_artifact_url_s3(fake_s3):
+    # an s3:// html_path resolves via its /output/ tail under the configured s3 base
+    url = out.artifact_url("s3://testbucket/output/s2/s3aoi/index.html")
+    assert url == "/output/raw/s2/s3aoi/index.html"
+
+
+def test_raw_proxies_s3(fake_s3):
+    c = TestClient(create_app(), raise_server_exceptions=True)
+    r = c.get("/output/raw/s2/s3aoi/index.html")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
+    assert "maplibre-gl" in r.text
+    t = c.get("/output/raw/s2/s3aoi/tiles/1/2/3.png")
+    assert t.status_code == 200 and t.headers["content-type"] == "image/png"
+    assert c.get("/output/raw/s2/s3aoi/missing.html").status_code == 404

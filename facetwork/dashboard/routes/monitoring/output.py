@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from fastapi import APIRouter
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 router = APIRouter(prefix="/output")
 
@@ -74,6 +74,64 @@ def _resolve_under_roots(subpath: str) -> Path | None:
     return None
 
 
+def _s3_output_bases() -> list[str]:
+    """``s3://…`` output prefixes to check when a path isn't on local disk.
+
+    Configure explicitly with ``AFL_S3_OUTPUT_BASE``; otherwise derived from
+    ``AFL_OUTPUT_BASE`` / ``AFL_DATA_ROOT`` (when they are s3 URIs) and
+    ``AFL_S3_BUCKET``.
+    """
+    bases: list[str] = []
+
+    def add(u) -> None:
+        if isinstance(u, str) and u.startswith("s3://"):
+            u = u.rstrip("/")
+            if u not in bases:
+                bases.append(u)
+
+    add(os.environ.get("AFL_S3_OUTPUT_BASE"))
+    add(os.environ.get("AFL_OUTPUT_BASE"))
+    dr = os.environ.get("AFL_DATA_ROOT")
+    if dr and dr.startswith("s3://"):
+        add(dr.rstrip("/") + "/output")
+    bucket = os.environ.get("AFL_S3_BUCKET")
+    if bucket:
+        add(f"s3://{bucket}/output")
+    return bases
+
+
+def _resolve_s3(subpath: str) -> str | None:
+    """Return the s3 URI for ``subpath`` under the first output base that has
+    it, or None. Best-effort: needs boto3 + s3 config, else returns None."""
+    if not subpath:
+        return None
+    bases = _s3_output_bases()
+    if not bases:
+        return None
+    try:
+        from facetwork.runtime.storage import get_storage_backend
+    except Exception:
+        return None
+    for base in bases:
+        uri = base + "/" + subpath.lstrip("/")
+        try:
+            if get_storage_backend(uri).isfile(uri):
+                return uri
+        except Exception:
+            continue
+    return None
+
+
+def _read_s3(uri: str) -> bytes | None:
+    try:
+        from facetwork.runtime.storage import get_storage_backend
+
+        with get_storage_backend(uri).open(uri, "rb") as f:
+            return f.read()
+    except Exception:
+        return None
+
+
 def artifact_url(value) -> str | None:
     """If ``value`` is a path to an existing HTML file under an output root,
     return the dashboard URL that serves it (with its sibling assets); else None.
@@ -106,7 +164,7 @@ def artifact_url(value) -> str | None:
     idx = norm.rfind(marker)
     if idx != -1:
         rel = norm[idx + len(marker):]
-        if rel and _resolve_under_roots(rel) is not None:
+        if rel and (_resolve_under_roots(rel) is not None or _resolve_s3(rel) is not None):
             return "/output/raw/" + rel
     return None
 
@@ -188,10 +246,20 @@ def output_raw(path: str):
     traversal is blocked and only files under a known output root are served.
     """
     resolved = _resolve_under_roots(path)
-    if resolved is None or not resolved.is_file():
-        return HTMLResponse("Not found", status_code=404)
-    media_type = _MEDIA_TYPES.get(resolved.suffix.lower(), "application/octet-stream")
-    return FileResponse(str(resolved), media_type=media_type)
+    if resolved is not None and resolved.is_file():
+        media_type = _MEDIA_TYPES.get(resolved.suffix.lower(), "application/octet-stream")
+        return FileResponse(str(resolved), media_type=media_type)
+
+    # Fall back to the S3/MinIO output store (fleet runs write there).
+    s3_uri = _resolve_s3(path)
+    if s3_uri:
+        data = _read_s3(s3_uri)
+        if data is not None:
+            suffix = ("." + path.rsplit(".", 1)[-1].lower()) if "." in path else ""
+            media_type = _MEDIA_TYPES.get(suffix, "application/octet-stream")
+            return Response(content=data, media_type=media_type)
+
+    return HTMLResponse("Not found", status_code=404)
 
 
 @router.get("/view")

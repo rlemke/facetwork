@@ -115,6 +115,7 @@
         </form>
         {% endif %}
         <a class="btn" href="/v3/workflows/{{ runner.uuid }}/source"><svg viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg> Source</a>
+        <button class="btn danger" onclick="delRun()"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg> Delete</button>
       </div>
     </div>
 
@@ -277,6 +278,10 @@ async function stepAction(id, action, destructive, force){
 function repair(){if(!confirm('Repair this workflow? Resets orphaned tasks, retries transient errors, fixes runner state.'))return;
   fetch('/api/runners/{{ runner.uuid }}/repair',{method:'POST'}).then(r=>r.text()).then(t=>{
     document.getElementById('repair-result').textContent=' '+(t||'Repair submitted.');});}
+function delRun(){if(!confirm('Delete this run? This removes its steps, tasks, and logs. This cannot be undone.'))return;
+  fetch('/api/runners/bulk-delete',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({runner_ids:['{{ runner.uuid }}']})}).then(r=>r.json()).then(j=>{
+    if(j.success){location.href='/v3/workflows';}else{alert('Delete failed: '+(j.error||'unknown'));}});}
 
 // ---- LIVE GRAPH UPDATES ----
 // Poll a JSON snapshot and patch the SVG + header IN PLACE (colours animate, no blink;

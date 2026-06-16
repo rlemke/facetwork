@@ -34,6 +34,14 @@
   border:1px solid color-mix(in srgb,var(--pc) 35%,transparent)}
 .run-hide{display:none}
 @media (max-width:900px){.run-row{grid-template-columns:14px 1fr 90px}.run-prog,.run-meta:nth-of-type(odd){display:none}}
+/* select + bulk delete */
+.run-line{display:flex;align-items:stretch}
+.run-line .run-row{flex:1;min-width:0}
+.rsel{display:none;align-items:center;padding:0 .55rem;cursor:pointer}
+.rsel input{width:15px;height:15px;cursor:pointer}
+body.selmode .rsel{display:flex}
+.selctl{display:flex;align-items:center;gap:.5rem;margin-left:auto}
+#delbar{display:none;align-items:center;gap:.5rem}
 </style>
 {% endblock %}
 
@@ -47,6 +55,14 @@
     <a href="?tab=failed"    class="{% if tab=='failed' %}active{% endif %}">Failed <span class="n">{{ tab_counts.failed }}</span></a>
   </div>
   <input class="runs-search" id="runs-search" type="search" placeholder="Filter runs by name…" autocomplete="off">
+  <div class="selctl">
+    <button type="button" id="selbtn" class="btn">Select</button>
+    <span id="delbar">
+      <label style="font-size:12px;color:var(--text-2);display:inline-flex;gap:.3rem;align-items:center"><input type="checkbox" id="selall"> All</label>
+      <button type="button" id="delbtn" class="btn danger" disabled>Delete (0)</button>
+      <button type="button" id="selcancel" class="btn">Cancel</button>
+    </span>
+  </div>
 </div>
 
 {% if filter_active %}
@@ -67,7 +83,9 @@
     {% for runner in group.runners %}
     {% set st = runner.state %}
     {% set p = progress.get(runner.uuid) if progress else None %}
-    <a class="run-row" data-row data-name="{{ (runner.workflow.name|short_workflow_name)|lower }} {{ runner.workflow.name|lower }}"
+    <div class="run-line" data-row data-name="{{ (runner.workflow.name|short_workflow_name)|lower }} {{ runner.workflow.name|lower }}">
+    <label class="rsel"><input type="checkbox" class="rcb" value="{{ runner.uuid }}"></label>
+    <a class="run-row"
        href="/v3/workflows/{{ runner.uuid }}" style="--pc:{{ pill.get(st, 'var(--muted)') }}">
       <span class="statusdot" style="background:{{ pill.get(st, 'var(--muted)') }}"></span>
       <span class="run-name"><b>{{ runner.workflow.name|short_workflow_name }}</b><small>{{ runner.workflow.name }}</small></span>
@@ -78,6 +96,7 @@
       <span class="run-meta">{{ runner.duration|duration }}</span>
       <span class="run-pill">{{ st|capitalize }}</span>
     </a>
+    </div>
     {% endfor %}
   </div>
 </div>
@@ -108,6 +127,38 @@
       ns.style.display=shown?'':'none';
     });
   });
+})();
+
+// select + bulk delete
+(function(){
+  var selbtn=document.getElementById('selbtn'), delbar=document.getElementById('delbar'),
+      delbtn=document.getElementById('delbtn'), cancel=document.getElementById('selcancel'),
+      selall=document.getElementById('selall');
+  if(!selbtn)return;
+  function cbs(){return Array.prototype.slice.call(document.querySelectorAll('.rcb'));}
+  function checked(){return cbs().filter(function(c){return c.checked;});}
+  function refresh(){var n=checked().length;delbtn.textContent='Delete ('+n+')';delbtn.disabled=n===0;}
+  function setMode(on){
+    document.body.classList.toggle('selmode',on);
+    selbtn.style.display=on?'none':'';delbar.style.display=on?'inline-flex':'none';
+    if(!on){cbs().forEach(function(c){c.checked=false;});selall.checked=false;refresh();}
+  }
+  selbtn.onclick=function(){setMode(true);};
+  cancel.onclick=function(){setMode(false);};
+  selall.onclick=function(){cbs().forEach(function(c){c.checked=selall.checked;});refresh();};
+  document.addEventListener('change',function(e){if(e.target.classList&&e.target.classList.contains('rcb'))refresh();});
+  delbtn.onclick=function(){
+    var ids=checked().map(function(c){return c.value;});
+    if(!ids.length)return;
+    if(!confirm('Delete '+ids.length+' run(s)? This removes their steps, tasks, and logs. This cannot be undone.'))return;
+    delbtn.disabled=true;delbtn.textContent='Deleting…';
+    fetch('/api/runners/bulk-delete',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({runner_ids:ids})})
+      .then(function(r){return r.json();})
+      .then(function(j){ if(j.success){location.reload();}
+        else{alert('Delete failed: '+(j.error||'unknown'));delbtn.disabled=false;refresh();} })
+      .catch(function(e){alert('Delete failed: '+e.message);delbtn.disabled=false;refresh();});
+  };
 })();
 </script>
 {% endblock %}
