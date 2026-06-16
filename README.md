@@ -46,6 +46,12 @@ You don't need to be a developer to use Facetwork — if you can fill in a form,
 
 ## Quick Start
 
+> **Brand new — no tools installed, nothing cloned?** Start with the
+> **[First-time Install guide](docs/getting-started/install.md)**: what the pieces
+> are, prerequisites from scratch, which repo to clone, and four setups (one
+> machine · your-machine-as-hub + teammate runners · shared infra on dedicated
+> servers · company/cloud deployment). The steps below are the one-machine path.
+
 ### Docker (recommended for first-timers)
 
 ```bash

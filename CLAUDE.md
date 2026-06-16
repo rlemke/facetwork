@@ -6,6 +6,7 @@ Facetwork is a platform for defining and executing distributed workflows. You wr
 
 | Guide | Audience | What You'll Learn |
 |-------|----------|-------------------|
+| **[First-time Install](docs/getting-started/install.md)** | Brand-new users (no tools, nothing cloned) | Zero-to-running from a blank machine — what the pieces are, prerequisites, which repo to clone, and four setups: one machine, your-machine-as-hub + teammate runners, shared infra on dedicated servers, and company/cloud deployment |
 | **[Beginner's Guide](docs/getting-started/beginners-guide.md)** | New users | Local setup, running your first workflow from the UI, writing basic FFL |
 | **[README](README.md)** | Developers | Installation, Docker setup, parser/emitter API, CLI usage |
 | **[Full Technical Reference](#full-technical-reference)** | Contributors | Compiler internals, runtime architecture, all commands, code conventions |
