@@ -84,10 +84,12 @@ def _s3_output_bases() -> list[str]:
     bases: list[str] = []
 
     def add(u) -> None:
-        if isinstance(u, str) and u.startswith("s3://"):
-            u = u.rstrip("/")
-            if u not in bases:
-                bases.append(u)
+        if not isinstance(u, str):
+            return
+        for part in u.split(","):  # allow a comma-separated list of prefixes
+            p = part.strip().rstrip("/")
+            if p.startswith("s3://") and p not in bases:
+                bases.append(p)
 
     add(os.environ.get("AFL_S3_OUTPUT_BASE"))
     add(os.environ.get("AFL_OUTPUT_BASE"))
