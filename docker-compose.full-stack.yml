@@ -247,10 +247,14 @@ services:
       # scripts/serve-tiled-map after localizing from S3.
       <<: *s3-creds
       AFL_LOCAL_OUTPUT_DIR: /data/output
+      # Host-run runners write rendered outputs here (bind-mounted below); the
+      # /output/raw artifact server checks it so it can serve those maps too.
+      AFL_HOST_OUTPUT_DIR: /host_output
     ports:
       - "${DASHBOARD_PORT:-8080}:8080"
     volumes:
       - afl_output:/data/output:ro
+      - ${AFL_HOST_OUTPUT_DIR:-${HOME}/afl_data/output}:/host_output:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\""]
       interval: 10s

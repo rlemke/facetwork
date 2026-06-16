@@ -51,6 +51,9 @@ def _output_roots() -> list[Path]:
 
     add(_output_base())
     add(os.environ.get("AFL_OUTPUT_BASE"))
+    # Where the host's output dir is bind-mounted into a containerized dashboard
+    # (so it can serve outputs a host-run runner wrote). See docker-compose.
+    add(os.environ.get("AFL_HOST_OUTPUT_DIR"))
     dr = os.environ.get("AFL_DATA_ROOT")
     if dr:
         add(Path(dr) / "output")
