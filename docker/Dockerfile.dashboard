@@ -8,10 +8,10 @@ WORKDIR /app
 # the panel hard-fails with "could not connect to the database" even
 # when the postgis service is reachable on the network.
 COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[dashboard,mongodb]" || \
-    pip install --no-cache-dir fastapi uvicorn jinja2 pymongo python-multipart markdown && \
+RUN pip install --no-cache-dir -e ".[dashboard,mongodb,s3]" || \
+    pip install --no-cache-dir fastapi uvicorn jinja2 pymongo python-multipart markdown boto3 && \
     pip install --no-cache-dir python-multipart psycopg2-binary
-RUN pip install --no-cache-dir psycopg2-binary
+RUN pip install --no-cache-dir psycopg2-binary boto3
 
 # Copy application code. The package is `facetwork`, not `afl`; the
 # earlier `./afl/` rename was a relic of the project's rename and
