@@ -60,6 +60,9 @@
     </div>
     <span class="statuspill">{% if cat=='running' %}<span class="pulse"></span>{% endif %}{{ step.state.rsplit('.',1)[-1] }}</span>
     <div class="sh-actions" id="actions">
+      {% if artifact_url %}
+      <a class="btn primary" href="{{ artifact_url }}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-5"/></svg> Open output</a>
+      {% endif %}
       {% if cat == 'error' %}
       <button class="btn" onclick="act('retry',false,'Retry this step? It resets to EventTransmit and re-executes.')"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9"/><path d="M21 3v6h-6"/></svg> Retry</button>
       <button class="btn" onclick="act('retry-block',false,'Retry ALL errored steps under this block?')">Retry all errors</button>
@@ -98,7 +101,7 @@
     </tbody></table>{% endif %}
     {% if step.attributes and step.attributes.returns %}
     <table class="at"><thead><tr><th>Return</th><th>Value</th><th>Type</th></tr></thead><tbody>
-      {% for name, attr in step.attributes.returns.items() %}<tr><td>{{ name }}</td><td class="v">{{ attr.value }}</td><td class="t">{{ attr.type_hint }}</td></tr>{% endfor %}
+      {% for name, attr in step.attributes.returns.items() %}<tr><td>{{ name }}</td><td class="v">{{ attr.value }}{% if artifacts.get(name) %} <a href="{{ artifacts[name] }}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600;white-space:nowrap">Open ↗</a>{% endif %}</td><td class="t">{{ attr.type_hint }}</td></tr>{% endfor %}
     </tbody></table>{% endif %}
     {% if not (step.attributes and (step.attributes.params or step.attributes.returns)) %}
     <div style="padding:1.2rem .9rem;color:var(--muted);font-size:12.5px">No parameters or returns.</div>{% endif %}

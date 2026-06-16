@@ -271,11 +271,30 @@ def workflow_detail_v3(
         next((n for n in nodes if n["cat"] == "error"), nodes[0] if nodes else None),
     )
 
+    # Surface a viewable HTML output (e.g. a rendered map) straight on the run
+    # header, so you don't have to drill into the step that produced it.
+    from ..monitoring.output import artifact_url
+
+    run_artifact = None
+    for s in store.get_steps_by_workflow(runner.workflow_id):
+        attrs = getattr(s, "attributes", None)
+        if not (attrs and attrs.returns):
+            continue
+        for _n, attr in attrs.returns.items():
+            val = attr.get("value") if isinstance(attr, dict) else getattr(attr, "value", None)
+            u = artifact_url(val)
+            if u:
+                run_artifact = u
+                break
+        if run_artifact:
+            break
+
     ctx: dict[str, Any] = {
         "runner": runner,
         "selected": selected,
         "active": runner.state in _ACTIVE_STATES,
         "active_nav": "runs",
+        "artifact_url": run_artifact,
         **graph,
     }
     return request.app.state.templates.TemplateResponse(

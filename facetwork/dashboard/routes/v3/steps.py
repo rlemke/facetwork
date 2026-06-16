@@ -37,11 +37,22 @@ def step_detail_v3(step_id: str, request: Request, store=Depends(get_store)):
         _is_mixin_sub_step,
         _resolve_step_names,
     )
+    from ..monitoring.output import artifact_url
 
     step = store.get_step(step_id)
     names = _resolve_step_names(step, store) if step else {}
     step_logs = list(store.get_step_logs_by_step(step_id)) if step else []
     cat = categorize_step_state(step.state) if step else "other"
+
+    # Detect viewable HTML artifacts among the step's returns (e.g. html_path)
+    # and link them to the dashboard's artifact server.
+    artifacts: dict[str, str] = {}
+    if step and getattr(step, "attributes", None) and step.attributes.returns:
+        for name, attr in step.attributes.returns.items():
+            val = attr.get("value") if isinstance(attr, dict) else getattr(attr, "value", None)
+            url = artifact_url(val)
+            if url:
+                artifacts[name] = url
 
     return request.app.state.templates.TemplateResponse(
         request,
@@ -54,6 +65,8 @@ def step_detail_v3(step_id: str, request: Request, store=Depends(get_store)):
             "is_mixin_sub_step": _is_mixin_sub_step(step) if step else False,
             "cat": cat,
             "pill": _CAT_COLOR.get(cat, "var(--muted)"),
+            "artifacts": artifacts,
+            "artifact_url": next(iter(artifacts.values()), None),
             "active_nav": "runs",
         },
     )
