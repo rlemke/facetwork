@@ -1,14 +1,32 @@
 # Facetwork
+> This project was built entirely with [Claude](https://claude.ai) — the only human input is the specification 
+> documents in `docs/`. And actually claude wrote those, I just gave suggestions. Having been retired for a while, 
+> when I heard about Claude, I needed to see how much of my previous career had just been eliminated 
+> (or at least made possible in a very small fraction of the time). 
+> This is a substantial, fully functional platform written exclusively through AI-assisted development, 
+> although it should only be used as an example of what beginners can do with AI coding assistance. 
+> This is still a work in progress and goes many ways as I say "I want to try this or that".
 
-> This project was built entirely with [Claude](https://claude.ai) — the only human input is the specification documents in `spec/`. And actually claude wrote those, I just gave suggestions. Having been retired for a while, when I heard about Claude, I needed to see how much of my previous career had just been eliminated (or at least made possible in a very small fraction of the time). This is a substantial, fully functional platform written exclusively through AI-assisted development, although it should only be used as an example of what beginners can do with AI coding assistance. This is still a work in progress and goes many ways as I say "I want to try this or that". 
-> It has been over a month now. Claude and I have come close to breaking up now and then :-) But I am amazed how far it has come without serious detailed help from me.
-> If I do a quick grading these are the areas: 1. A+ : Creating a DSL, truely amazed how it created the AST tree and serialization and parsing. 2. A : Create focus api to other services (ie MongoDb, PostGres, downloads, etc) 3: B+ Understaning the overall intent, that is, this is a workflow language, 4: C: implementing the workflow engine in a distributed fashion. It kept try to make it operate like a controlling process like Jenkins. This is where we had some serious layout of plans and examples. Now I think it understands.
-> But to be honest, I still have not learned Python yet so I have not detailed examined the code. There is a .md in specs called 75_execution_traces.md that I use to check it method of execution.
-> I have not learned Python yet, I suspect many others are in the same boat. I am worried about that for key validations.
-> For example: if it were written is scala or java, I could quickly scan the code and have a good idea of what it was doing and did it look correct especially with respect to concurrency, but I can not do that with python yet.
-> The good news is that this has made programing fun again. I get to develop my ideas without spending days if not weeks on learning api and interface behaviors that may or may not be correct.
-> The other good news, if something goes wrong it does a great job of find out what went wrong. Although this can lead to a rabbit hole where it really does not understand the issue and puts in fixes that actually makes the situation worse for other scenarios.
+> UPDATE: It's been 3 months since I started this project with Claude, and the progress has been incredible. 
+> The core platform is fully functional, with a custom DSL, distributed workflow execution, 
+> and a web dashboard — all authored through AI-assisted development. 
+> While there were challenges, especially around implementing the workflow engine in a distributed fashion, 
+> the system now understands the design and executes workflows as intended. 
+> I haven't learned Python yet, so I haven't deeply examined the code, but the execution traces show it's working correctly.
+> This experience has made programming fun again, allowing me to focus on developing ideas without getting bogged down in API details.
+> If something goes wrong, it does a great job of diagnosing issues, though sometimes it can lead to a rabbit hole of fixes that
+> don't fully address the underlying problem. 
+> Overall, I'm amazed at how far it's come with minimal detailed help from me.
 > 
+> UPDATE: I think the project is now at a point where it can be used to build real applications. 
+> Especially for small teams or solo developers, the ability to quickly iterate on workflow design and implementation with AI assistance is a game-changer.
+> So if you are a research team or a small start up, you can use this platform to build your own workflow-based applications using
+> your desktop or laptop computers, without needing to hire a team of engineers or set up complex infrastructure.
+> There are a lot of examples especially with OSM which is a great dataset to experiment with and show the kinds of 
+> workflows that this platform can support. The platform is designed to be flexible and extensible, so you can build on top of it and customize it to your needs.
+> 
+
+
 
 ## Start Here: Read the Thesis Documents
 
