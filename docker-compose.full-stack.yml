@@ -102,6 +102,17 @@ x-s3-creds: &s3-creds
 x-s3-storage: &s3-storage
   AFL_STORAGE: s3
   AFL_DATA_ROOT: s3://${AFL_S3_BUCKET:-afl-cache}
+  # Every RegistryRunner auto-loads the baked osm handlers, so ANY per-example
+  # runner can be picked to serve an osm task. Without this, osm output falls
+  # back to AFL_OUTPUT_BASE (local /Volumes scratch) — unreadable by the S3-backed
+  # downstream steps (ByScript, MergeLayers) that run on a different runner, which
+  # then dead-letter. Point osm output at the shared object store so a non-osm
+  # runner that wins an osm claim writes where downstream can read it.
+  AFL_OSM_OUTPUT_BASE: s3://${AFL_S3_BUCKET:-afl-cache}/osm-output
+  # Same reason: an osm Download served on a non-osm runner has no Geofabrik
+  # egress, so it must reuse the cached PBF as-is. cache_policy=prefer_cache in
+  # the workflow covers current handler code; this env covers the fallback path.
+  AFL_OSM_USE_CACHE_IF_PRESENT: ${AFL_OSM_USE_CACHE_IF_PRESENT:-true}
   # Role group, same as the osm runners: `start-runner --fleet` sets
   # AFL_SERVER_GROUP=runner so every per-example fleet runner groups under
   # "runner" (not "default"). The non-osm services don't pass --server-group in
