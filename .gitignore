@@ -44,3 +44,5 @@ afl-test.log
 # Build artifacts + runtime locks
 target/
 .claude/scheduled_tasks.lock
+.env.fleet
+.env.fleet.override
