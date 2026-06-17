@@ -92,6 +92,10 @@ scripts/install-example sentinel2-landchange   # clone + install one
 | **2** | Your machine as the hub; teammates join as runners that come & go | **your machine** (containers) | your machine + teammates' laptops | [Scenario 2](#scenario-2--your-machine-is-the-hub-teammates-are-runners) |
 | **3** | Small team, but the database & store are on shared/company servers | dedicated/shared servers | team machines or servers | [Scenario 3](#scenario-3--shared-infra-on-dedicated-servers) |
 | **4** | A production company/cloud deployment | managed/cloud (replica set, S3/MinIO) | a managed runner fleet | [Scenario 4](#scenario-4--company--cloud-deployment) |
+| **5** | **Just to *use* Claude to run workflows** — a teammate already set up a shared server | a shared server (someone else's) | the shared server's fleet | [Scenario 5](#scenario-5--just-claude--a-shared-mcp-server-no-clone) |
+
+> Scenario 5 is the **thin-client** path: you **skip Step 1 (no clone)** and install
+> nothing but your editor — everything runs on a server someone else set up.
 
 ---
 
@@ -212,6 +216,60 @@ References:
 - [docs/operations/deployment.md](../operations/deployment.md) — the full deployment guide (storage backends, S3/MinIO, fleet config, secrets)
 - [docs/operations/fleet-rollouts.md](../operations/fleet-rollouts.md) — image-based change deployment + runner lifecycle, and how this compares to Kubernetes/Temporal-grade pipelines
 - [docs/operations/informal-fleet.md](../operations/informal-fleet.md) — note on what's required to go from a small team to data-center scale (a real engineering investment: hardening / scheduling / observability)
+
+---
+
+## Scenario 5 — Just Claude + a shared MCP server (no clone)
+
+**For:** someone who only wants to *use* Claude to run (or author) workflows, where
+a teammate has **already set up a shared server** running the whole stack — MongoDB,
+MinIO, the runner fleet, the catalog, **and the MCP server**. You **don't clone the
+repo, don't install Python/Docker, and don't run a runner.** You connect your AI
+editor to the shared MCP server and drive everything in plain language. The
+server's fleet does the work.
+
+**The one prerequisite the server side must satisfy:** that shared server is itself
+a Scenario 3/4 setup *plus* it runs the MCP (`python -m facetwork.mcp`) pointed at
+the shared MongoDB, and its runners have the example handler packages installed.
+(Whoever owns the server does this once.)
+
+**What you (the thin client) need:**
+- An MCP client — e.g. **Claude Code** — on your laptop.
+- **SSH access** to the shared server (Facetwork's MCP speaks stdio, so the standard
+  way to reach a remote one is to launch it over SSH).
+
+**Setup — a tiny `.mcp.json` in your working folder (no repo):**
+
+```json
+{
+  "mcpServers": {
+    "facetwork": {
+      "command": "ssh",
+      "args": [
+        "you@fw-server",
+        "cd /opt/facetwork && .venv/bin/python -m facetwork.mcp --log-level WARNING"
+      ]
+    }
+  }
+}
+```
+
+Replace `you@fw-server` and the server path. That's the whole install — Claude Code
+auto-detects the config and connects; the MCP runs **on the server**, already wired
+to the team's MongoDB/MinIO/catalog. (If the team instead exposes the MCP over a
+network transport, point your client at that URL — ask whoever set it up.)
+
+**Then just talk to Claude** (each maps to the catalog/runtime MCP tools):
+
+- *"List the workflows in the catalog."* → `fw_catalog_search`
+- *"Run `s2.water-level-vs-extent` on Lake Tahoe."* → `fw_catalog_match` → `fw_catalog_run`
+- *"How did the Great Salt Lake's water change 2004–2024? Use a cataloged workflow."* → match → run
+- *"Validate this FFL / save it to the catalog and publish."* → `fw_validate`, `fw_catalog_save/publish`
+
+You never clone, seed, or start a runner — the shared server's fleet executes, and
+you watch progress on its dashboard URL. **Limit:** you can only run what the
+server's runners have handlers for (the installed example packages); ask the server
+owner to add a package if you need one it doesn't have.
 
 ---
 
