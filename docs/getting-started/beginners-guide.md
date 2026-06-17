@@ -79,9 +79,78 @@ The workflow moves through steps. Each step that needs external work (an *event 
 # Start a runner to process tasks
 scripts/start-runner --example hiv-drug-resistance -- --log-format text
 
-# Submit a workflow
-scripts/run-workflow handlers.AddOneWorkflow --input value=41
+# Submit a workflow (dashboard-visible — creates the runner record the UI tracks)
+scripts/ffl-run path/to/workflow.ffl --workflow handlers.AddOneWorkflow --inputs '{"value": 41}'
 ```
+
+All of the above — the dashboard's **New run** button and `scripts/ffl-run` —
+run workflows **without any AI involved**. Facetwork is a plain workflow engine;
+Claude is optional (see [AI-assisted authoring](#ai-assisted-authoring-claude--mcp) below).
+
+## The Catalog — reusable, versioned workflows
+
+The **Catalog** (dashboard page `/v3/catalog`) stores workflows you can run
+**by name (slug), with no file** — each save is an immutable, versioned revision,
+and a workflow can pin library dependencies. It's how you share a finished
+workflow so anyone can re-run it with new parameters.
+
+**Populate it (no Claude needed)** with the `scripts/catalog` CLI:
+
+```bash
+scripts/catalog list                                   # what's already in the catalog
+scripts/catalog import my_workflow.ffl --slug demo.my-workflow --publish
+scripts/catalog import-package osm-geocoder --tags osm # import an example package's workflows
+scripts/catalog backup catalog.json                    # back up / move the catalog
+scripts/catalog restore catalog.json
+```
+
+`--publish` marks the revision runnable for unattended use (omit it to save a
+draft first). Once published, **run it from the dashboard**: open `/v3/catalog`,
+pick the workflow, fill parameters, **Run** — again, no AI.
+
+(Claude can also populate the catalog via the MCP `fw_catalog_save` /
+`fw_catalog_publish` tools — see below — but the CLI is the no-AI path.)
+
+## AI-assisted authoring (Claude + MCP)
+
+Claude is **optional** but handy for writing, validating, discovering, and
+running workflows in plain language. It talks to Facetwork through an **MCP
+server** (Model Context Protocol) that exposes the compiler, the catalog, and
+runtime tools.
+
+**1. Set up the MCP.** The repo ships an `.mcp.json` at its root — Claude Code
+auto-detects it when you open the project. It launches the server with
+`python -m facetwork.mcp` and points it at your MongoDB:
+
+```json
+{
+  "mcpServers": {
+    "facetwork": {
+      "command": "${FW_PYTHON:-/path/to/.venv/bin/python}",
+      "args": ["-m", "facetwork.mcp", "--log-level", "WARNING"],
+      "env": { "AFL_MONGODB_URL": "mongodb://localhost:27017" }
+    }
+  }
+}
+```
+
+Edit the Python path / Mongo URL to match your setup. (You can run the server
+by hand to check it: `python -m facetwork.mcp`.) For other MCP clients, point
+them at the same command.
+
+**2. Example Claude prompts** (each maps to MCP tools — `fw_validate`,
+`fw_capabilities`, `fw_catalog_match` / `_run` / `_save`):
+
+- *"Validate this FFL and explain any errors."* → `fw_validate`, with rule docs.
+- *"What facets operate on a GeoJSON path?"* → `fw_capabilities` (discover primitives).
+- *"Find a cataloged workflow that charts a lake's water over time and run it on the Great Salt Lake."* → `fw_catalog_match` → `fw_catalog_run` (reuse, no re-authoring).
+- *"Save this workflow to the catalog as `geo.lake-water` and publish it."* → `fw_catalog_save` + `fw_catalog_publish`.
+- *"/ffl-first show Tesla charging stations across the US as a heatmap"* → the `ffl-first` skill: discover → reuse-or-author (with review gates) → run.
+
+Claude composes and runs the same workflows you can run by hand — it just turns
+a sentence into the right FFL + tool calls. Full MCP reference:
+[../architecture/claude-workflow-catalog.md](../architecture/claude-workflow-catalog.md)
+and the **MCP server** section of [CLAUDE.md](../../CLAUDE.md).
 
 ## Understanding the Dashboard
 
@@ -199,10 +268,10 @@ For local development, Docker runs everything on your machine. For production, s
 - **[Building Handlers](../reference/agent-sdk.md)** — write Python handlers for your event facets
 - **[Runtime & Execution](../reference/runtime.md)** — how the engine evaluates workflows
 - **[Deployment Guide](../operations/deployment.md)** — cluster setup with multiple runners
-- **[Full Reference (CLAUDE.md)](../../claude.md)** — complete technical reference for contributors
+- **[Full Reference (CLAUDE.md)](../../CLAUDE.md)** — complete technical reference for contributors
 
 ## Getting Help
 
 - Browse the `examples/` directory — each example has FFL files, handlers, and tests
 - Check `docs/reference/` for detailed specifications
-- Use the MCP server (`python -m afl.mcp`) for AI-assisted workflow authoring
+- Use the MCP server (`python -m facetwork.mcp`) for AI-assisted authoring — see [AI-assisted authoring](#ai-assisted-authoring-claude--mcp)
