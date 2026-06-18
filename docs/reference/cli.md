@@ -99,6 +99,54 @@ docker compose down -v                                      # stop + remove volu
 | `--build` | - | Force image rebuild before starting |
 | `--check-only` | - | Verify Docker availability, then exit |
 
+#### Rebuilding images — `rebuild` vs `rebuild-workers`
+
+Two rebuild scripts exist; they target **different stacks** and read **different
+compose files + env**, so picking the wrong one rebuilds the wrong images.
+
+| | `scripts/rebuild` | `scripts/rebuild-workers` |
+|---|---|---|
+| Stack | base / overlay dev stack | fleet / full-stack |
+| Compose files | `docker-compose.yml` + overlays (from `.afl-active-config`/`.env`, via `_compute_compose_args`) | `docker-compose.full-stack.yml` + `docker-compose.fleet.yml` |
+| Env | `.env` (via `_env.sh`) | `.env.fleet` then `.env.fleet.override` (per-host, wins) |
+| Cache | **off** by default (`--cached` to reuse) | **on** by default (`--no-cache` to disable) |
+| Restart | `--up` restarts the stack | `--up` **recreates** the runner containers (removes existing first → no orphan replicas) |
+| Pin baked code | n/a | `--ref <sha\|branch>` → `--build-arg FWH_OSM_REF` (default `main`) |
+| Scope | this host | this host |
+
+**When to use which:**
+
+- **`scripts/rebuild`** — you changed **core engine / dashboard / compiler** code
+  (the `facetwork/` package or the dashboard image), toggled an **overlay** or
+  `INSTALL_HDFS`, and run the base stack (`scripts/setup` → `docker-compose.yml`).
+  Defaults to a full no-cache rebuild; add `--up` to restart.
+  ```bash
+  scripts/rebuild            # full rebuild of the base stack
+  scripts/rebuild --cached   # reuse layer cache
+  scripts/rebuild --up       # rebuild + restart
+  ```
+
+- **`scripts/rebuild-workers`** — you changed **handler code in an `fwh_*` example**
+  (osm, anthropic, …) baked into the per-example runner ("worker") images, or you
+  need to **recreate the runners cleanly** on the fleet/full-stack host.
+  ```bash
+  scripts/rebuild-workers                 # build all worker images (cached)
+  scripts/rebuild-workers --ref <sha> --up  # bake a specific fwh_osm commit, then clean-recreate
+  ```
+  The `--up` path removes the existing worker containers **first**, then
+  `up -d --remove-orphans` — so orphan replicas left by a plain `--force-recreate`
+  don't linger and keep serving stale code/env.
+
+**Neither deploys across machines.** To roll new handler code to the
+`osm-geocoder` / `gh-router` **role on every fleet server**, use the registry
+path instead — `buildx → push → scripts/fleet set --image` — see
+[fleet-rollouts.md](../operations/fleet-rollouts.md). `rebuild`/`rebuild-workers`
+only build (and optionally recreate) on the **local** host.
+
+> Unsure which stack is up? `docker compose ls` shows the project's config
+> files. If they're `full-stack.yml` + `fleet.yml`, you're on the fleet → use
+> `rebuild-workers`; otherwise it's the base stack → use `rebuild`.
+
 ### macOS Docker Desktop: Volume Mounts and Network Storage
 
 Docker Desktop for Mac uses VirtioFS to share host directories with containers. This introduces filesystem semantics differences when mounting network-attached storage (NAS) volumes.

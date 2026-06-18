@@ -253,13 +253,24 @@ PYEOF
 
     SCALE=()
     for s in "${SERVICES[@]}"; do SCALE+=(--scale "$s=$REPLICAS"); done
-    RECREATE_ARG=()
-    [[ "$RECREATE" == "1" ]] && RECREATE_ARG=(--force-recreate)
+
+    # --recreate: remove the selected services' containers FIRST, then bring them
+    # up fresh. A plain `up -d --force-recreate --scale` replaces the *current*
+    # containers but leaves ORPHAN replicas from a prior run/scale still running —
+    # on the fleet those stale containers keep claiming tasks with old code/env
+    # (the cause of osm leaves writing host-local paths that S3 downstream can't
+    # read). Removing first guarantees exactly $REPLICAS fresh containers per
+    # service. Same pattern as scripts/rebuild-workers --up.
+    if [[ "$RECREATE" == "1" ]]; then
+        echo "Recreate: removing existing containers for [${SERVICES[*]}] (clears orphan replicas)"
+        docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} \
+            rm -sf "${SERVICES[@]}" || true
+    fi
 
     echo "Starting [${SERVICES[*]}] x${REPLICAS} via docker compose (mode=$MODE)"
     [[ "$MODE" == "fleet" ]] && echo "  joining MongoDB=$AFL_MONGODB_URL  MinIO=$AFL_S3_ENDPOINT"
     docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} \
-        up -d ${RECREATE_ARG[@]+"${RECREATE_ARG[@]}"} "${SCALE[@]}" "${SERVICES[@]}"
+        up -d --remove-orphans "${SCALE[@]}" "${SERVICES[@]}"
 
     echo "Done. Runners now claim tasks from $( [[ "$MODE" == "fleet" ]] && echo "the shared fleet" || echo "the local stack" )."
     echo "Watch:  docker compose ${COMPOSE_F[*]} logs -f ${SERVICES[*]}"

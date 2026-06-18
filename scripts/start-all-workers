@@ -1,9 +1,28 @@
-docker compose -f docker-compose.full-stack.yml up -d --no-deps dashboard
+#!/usr/bin/env bash
+# Start the full fleet on THIS host: dashboard + every per-example runner, then
+# a fleet-agent watcher that keeps the osm-geocoder/gh-router roles reconciled
+# to the central fleet_config.
+#
+# start-runner --fleet --recreate removes each service's existing containers
+# before bringing them up (no orphan replicas) and layers .env.fleet +
+# .env.fleet.override.
+set -euo pipefail
 
- scripts/start-runner --fleet --recreate \
-      --example osm-geocoder --example osm-lz --example anthropic \
-      --example noaa-weather --example jenkins-example --example census-us \
-      --example genomics --example sensor-monitoring --example sentinel2-landchange
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
 
-scripts/fleet-agent watch --data-dir $HOME/afl_data
+# Dashboard (base full-stack service) — same env layering as the fleet runners.
+docker compose --env-file .env.fleet --env-file .env.fleet.override \
+  -f docker-compose.full-stack.yml -f docker-compose.fleet.yml \
+  up -d --no-deps dashboard
 
+# Per-example runners. Only services that exist in the compose files — NB there
+# is no runner-sentinel2-landchange service, so it is intentionally omitted
+# (start-runner validates service existence and would otherwise abort).
+scripts/start-runner --fleet --recreate \
+    --example osm-geocoder --example osm-lz --example anthropic \
+    --example noaa-weather --example jenkins-example --example census-us \
+    --example genomics --example sensor-monitoring
+
+# Keep this host's roles reconciled to the central fleet config.
+scripts/fleet-agent watch --data-dir "$HOME/afl_data"
