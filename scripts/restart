@@ -1,29 +1,11 @@
 git pull
 ./scripts/pull_handlers.sh
 ./scripts/stop-runners
-./scripts/rebuild
-./scripts/rebuild-workers
-./scripts/start-all-workers
-
-~
-~
-~
-~
-~
-~
-~
-~
-~
-~
-~
-~
-~
-~
-~
-~
-~
-~
--- INSERT --                                                  2,27          All
+docker compose -f docker-compose.full-stack.yml -f docker-compose.fleet.yml \
+    --env-file .env.fleet --env-file .env.fleet.override down \
+          osm-geocoder osm-lz anthropic \
+          noaa-weather jenkins-example census-us \
+          genomics sensor-monitoring sentinel2-landchange
 ./scripts/rebuild
 ./scripts/rebuild-workers
 ./scripts/start-all-workers

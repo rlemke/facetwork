@@ -7,23 +7,29 @@
 > although it should only be used as an example of what beginners can do with AI coding assistance. 
 > This is still a work in progress and goes many ways as I say "I want to try this or that".
 
-> UPDATE: It's been 3 months since I started this project with Claude, and the progress has been incredible. 
+> UPDATE: It's been 3 months since I started this project with Claude, and the progress has been incredible
+> especially considering the only time I have put into the project is between cruises, family travel, bike riding, and
+> other things people do in retirement. I get up at night, give a few suggestions to Claude, and wake up to a working system 
+> that has evolved in ways I didn't even expect (mostly good but there are times ....) .
 > The core platform is fully functional, with a custom DSL, distributed workflow execution, 
 > and a web dashboard — all authored through AI-assisted development. 
 > While there were challenges, especially around implementing the workflow engine in a distributed fashion, 
 > the system now understands the design and executes workflows as intended. 
-> I haven't learned Python yet, so I haven't deeply examined the code, but the execution traces show it's working correctly.
+> I am still learning Python, so I haven't deeply examined the code, but the execution traces show it's working correctly.
 > This experience has made programming fun again, allowing me to focus on developing ideas without getting bogged down in API details.
 > If something goes wrong, it does a great job of diagnosing issues, though sometimes it can lead to a rabbit hole of fixes that
 > don't fully address the underlying problem. 
 > Overall, I'm amazed at how far it's come with minimal detailed help from me.
+> I have learned it is more about asking Claude questions and asking for alternatives than giving it detailed instructions. 
+> I have also learned that it is important to give it feedback on the code it generates,
 > 
 > UPDATE: I think the project is now at a point where it can be used to build real applications. 
 > Especially for small teams or solo developers, the ability to quickly iterate on workflow design and implementation with AI assistance is a game-changer.
 > So if you are a research team or a small start up, you can use this platform to build your own workflow-based applications using
 > your desktop or laptop computers, without needing to hire a team of engineers or set up complex infrastructure.
 > There are a lot of examples especially with OSM which is a great dataset to experiment with and show the kinds of 
-> workflows that this platform can support. The platform is designed to be flexible and extensible, so you can build on top of it and customize it to your needs.
+> workflows that this platform can support. The platform is designed to be flexible and extensible, 
+> so you can build on top of it and customize it to your needs.
 > 
 
 
