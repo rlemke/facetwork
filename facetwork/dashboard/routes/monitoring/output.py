@@ -99,6 +99,14 @@ def _s3_output_bases() -> list[str]:
     bucket = os.environ.get("AFL_S3_BUCKET")
     if bucket:
         add(f"s3://{bucket}/output")
+    # Bucket root of every base collected above, so the raw route can reconstruct
+    # output keys that are NOT under .../output/ — e.g. the OSM pipeline writes
+    # maps under s3://<bucket>/osm-output/osm-transform/…. artifact_url() links
+    # those by their bucket-relative key, which only resolves against the root.
+    # Derived from the bases (not AFL_S3_BUCKET) so it works on the dashboard,
+    # which sets AFL_S3_OUTPUT_BASE but not necessarily AFL_S3_BUCKET.
+    for b in list(bases):
+        add("s3://" + b[len("s3://"):].split("/", 1)[0])
     return bases
 
 
@@ -146,6 +154,18 @@ def artifact_url(value) -> str | None:
     """
     if not isinstance(value, str) or not value.lower().endswith((".html", ".htm")):
         return None
+
+    # 0) Object-store URI (s3://bucket/key): the fleet writes durable HTML
+    #    outputs straight to the store, e.g.
+    #    s3://afl-cache/osm-output/osm-transform/<map>.html — which has no
+    #    "/output/" segment, so the marker logic below never matches. Link it via
+    #    the raw route by its bucket-relative key; the route's S3 fallback
+    #    (_resolve_s3, now incl. the bucket root) reconstructs + serves it. Verify
+    #    it exists before linking so a dead path shows no button.
+    if value.startswith("s3://"):
+        rest = value[len("s3://"):]
+        key = rest.split("/", 1)[1] if "/" in rest else ""
+        return "/output/raw/" + key if (key and _resolve_s3(key)) else None
 
     # 1) Exact: the path is under a current root and exists (local dev).
     try:
