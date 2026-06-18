@@ -66,11 +66,13 @@ BUILD_ARGS=(--build-arg "FWH_OSM_REF=${FWH_OSM_REF}")
 [[ "$NO_CACHE" == 1 ]] && BUILD_ARGS+=(--no-cache)
 
 echo "=== Building worker images (FWH_OSM_REF=${FWH_OSM_REF}, cache=$([[ $NO_CACHE == 1 ]] && echo off || echo on)) ==="
-"${COMPOSE[@]}" build "${BUILD_ARGS[@]}" "${SERVICES[@]}"
+# Guarded expansion: bash 3.2 (macOS default) + set -u errors on "${arr[@]}"
+# when arr is empty. ${arr[@]+"${arr[@]}"} expands to nothing when unset/empty.
+"${COMPOSE[@]}" build "${BUILD_ARGS[@]}" ${SERVICES[@]+"${SERVICES[@]}"}
 
 if [[ "$RECREATE" == 1 ]]; then
     # Recreate target: the services named on the CLI, else all worker services.
-    TARGET=("${SERVICES[@]}")
+    TARGET=(${SERVICES[@]+"${SERVICES[@]}"})
     [[ ${#TARGET[@]} -eq 0 ]] && TARGET=("${WORKER_SERVICES[@]}")
 
     echo ""
