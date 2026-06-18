@@ -135,3 +135,15 @@ services:
     depends_on: !reset []
     environment:
       <<: *fleet-env
+
+  # Orchestration tier (continuation_mode=shared, set in the full-stack file).
+  # Shares the core runner image by default so `fleet set --image` rolls it
+  # along with the handler runners; pin it independently with AFL_FFL_IMAGE to
+  # roll an engine change to ONLY the ffl tier. Brought up by fleet-agent when
+  # the ffl-runner role is configured (`fleet set --ffl-replicas N`).
+  runner-ffl:
+    <<: *fleet-runner
+    image: ${AFL_FFL_IMAGE:-${AFL_RUNNER_IMAGE:-facetwork-runner-osm-geocoder:latest}}
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env

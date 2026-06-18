@@ -94,6 +94,10 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     replicas = replicas_override if replicas_override is not None else int(osm.get("replicas", 4))
     image = osm.get("image")
     gh_image = (cfg.get("roles") or {}).get("gh-router", {}).get("image")
+    # ffl-runner orchestration tier (opt-in: only brought up when replicas>0).
+    ffl = (cfg.get("roles") or {}).get("ffl-runner", {})
+    ffl_replicas = int(ffl.get("replicas", 0) or 0)
+    ffl_image = ffl.get("image")
     endpoint = _fleet_lib.resolve_minio(minio.get("endpoint"))
     access_key, secret_key, creds_src = _resolve_creds(mongo)
 
@@ -125,6 +129,8 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         env["AFL_RUNNER_IMAGE"] = image
     if gh_image:
         env["AFL_GH_ROUTER_IMAGE"] = gh_image
+    if ffl_image:
+        env["AFL_FFL_IMAGE"] = ffl_image
     # Role group for fleet status / dashboard (every server is a runner by default).
     grp = os.environ.get("AFL_SERVER_GROUP", "runner")
     env["AFL_SERVER_GROUP"] = grp
@@ -136,13 +142,16 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
 
     label = (f"v{cfg.get('version')} minio={endpoint} osm-replicas={replicas} creds={creds_src}"
              + (f" image={image}" if image else "")
-             + (f" gh-router={gh_image}" if gh_image else ""))
+             + (f" gh-router={gh_image}" if gh_image else "")
+             + (f" ffl-replicas={ffl_replicas}" if ffl_replicas else ""))
     print(f"fleet-agent[{HOST}]: applying fleet_config {label}" + (" (recreate)" if recreate else ""))
     if dry_run:
         for k, v in env.items():
             print(f"    {k}={'***' if ('SECRET' in k or 'ACCESS' in k) else v}")
         if gh_image:
             print("    + would bring up runner-gh-router (1 replica) from AFL_GH_ROUTER_IMAGE")
+        if ffl_replicas:
+            print(f"    + would bring up runner-ffl ({ffl_replicas} replicas) — orchestration tier")
         return
 
     fd, envf = tempfile.mkstemp(prefix=".env.fleet-agent.", dir=REPO)
@@ -184,6 +193,22 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
                 sys.stderr.write(gr.stderr)
                 print(f"fleet-agent[{HOST}]: WARNING gh-router start failed (exit {gr.returncode}); "
                       "continuing — another host can serve RouteBatch")
+        # ffl-runner role: bring up the orchestration tier (continuation_mode=
+        # shared, set in the compose file) at the configured replica count. Same
+        # env file (carries AFL_FFL_IMAGE if pinned). Non-fatal: the tier only
+        # needs to run on SOME host(s), so a host that can't bring it up
+        # shouldn't fail its handler-runner reconcile.
+        if ffl_replicas > 0:
+            ffl_cmd = ["bash", os.path.join(REPO, "scripts", "start-worker"),
+                       "--env", envf, "--example", "ffl", "--replicas", str(ffl_replicas)]
+            if recreate:
+                ffl_cmd.append("--recreate")
+            fr = subprocess.run(ffl_cmd, env=child_env, capture_output=True, text=True)
+            sys.stdout.write(fr.stdout)
+            if fr.returncode != 0:
+                sys.stderr.write(fr.stderr)
+                print(f"fleet-agent[{HOST}]: WARNING ffl-runner start failed (exit {fr.returncode}); "
+                      "continuing — another host can run the orchestration tier")
         _record(mongo, cfg.get("version"), image, replicas)
     finally:
         os.unlink(envf)
