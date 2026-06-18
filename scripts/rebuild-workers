@@ -25,12 +25,18 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# All per-example runner services (the "workers"). Used as the default recreate
-# target for --up so `rm -sf` never touches the infra services (mongo/minio/…).
+# Per-example runner services built from docker/Dockerfile.example-runner (the
+# "workers" this script builds + recreates). Default --up target, so `rm -sf`
+# never touches infra (mongo/minio/…). EXCLUDES runner-gh-router: it uses a
+# prebuilt image (osm-gh-router, the GraphHopper Java agent) with no build:
+# section, so `up --no-build` would try to PULL it and fail ("pull access
+# denied"). gh-router ships via its own image build + `scripts/fleet set
+# --gh-router-image`, not through rebuild-workers. Pass it explicitly only if
+# its image already exists locally / via AFL_GH_ROUTER_IMAGE.
 WORKER_SERVICES=(
     runner-anthropic runner-census-us runner-genomics runner-jenkins-example
     runner-noaa-weather runner-sensor-monitoring
-    runner-osm-geocoder runner-osm-lz runner-gh-router
+    runner-osm-geocoder runner-osm-lz
 )
 
 FWH_OSM_REF="${FWH_OSM_REF:-main}"   # baked fwh_osm revision; override with --ref
