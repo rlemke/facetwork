@@ -79,7 +79,11 @@ if [[ "$RECREATE" == 1 ]]; then
 
     echo ""
     echo "=== Recreating workers from the freshly built image ==="
-    "${COMPOSE[@]}" up -d --no-build --remove-orphans "${TARGET[@]}"
+    # NB: no --remove-orphans — on the shared full-stack network it makes compose
+    # try to reconcile/remove facetwork_default and fails with "network has active
+    # endpoints" (infra mongodb/postgis/jenkins are attached). The rm -sf above
+    # already cleared this service's orphan replicas, which is all we need.
+    "${COMPOSE[@]}" up -d --no-build "${TARGET[@]}"
 
     echo ""
     echo "=== Done. Verify osm output resolves to the object store: ==="

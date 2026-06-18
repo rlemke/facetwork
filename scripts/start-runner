@@ -269,8 +269,12 @@ PYEOF
 
     echo "Starting [${SERVICES[*]}] x${REPLICAS} via docker compose (mode=$MODE)"
     [[ "$MODE" == "fleet" ]] && echo "  joining MongoDB=$AFL_MONGODB_URL  MinIO=$AFL_S3_ENDPOINT"
+    # NB: no --remove-orphans — on the shared full-stack network it makes compose
+    # try to remove facetwork_default and fails ("network has active endpoints":
+    # infra mongodb/postgis/jenkins are attached). The rm -sf above already
+    # cleared the selected services' orphan replicas.
     docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} \
-        up -d --remove-orphans "${SCALE[@]}" "${SERVICES[@]}"
+        up -d "${SCALE[@]}" "${SERVICES[@]}"
 
     echo "Done. Runners now claim tasks from $( [[ "$MODE" == "fleet" ]] && echo "the shared fleet" || echo "the local stack" )."
     echo "Watch:  docker compose ${COMPOSE_F[*]} logs -f ${SERVICES[*]}"
