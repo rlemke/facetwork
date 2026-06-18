@@ -475,16 +475,52 @@ This is O(depth): only steps that receive a child-completion notification are lo
 
 > **Implemented** — see `runtime-impl.md` §17.5.3 for the full implementation details.
 
+**Who decides what runs next?** There is **no dedicated scheduler/orchestrator process** — no leader, no master, no per-workflow lock. "What runs next" is computed *in-process* by whichever runner claims the next **continuation event** (`_fw_continue`). Every runner is homogeneous and does the same two things each poll cycle: run handler work it can load, and advance the workflow state machine. Coordination is only the atomic `claim_task()` + optimistic step versioning in MongoDB.
+
+```
+                MongoDB — single source of truth; atomic claim_task()
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │ tasks                                                                  │
+  │  • fw:execute:<Workflow>   bootstrap — start the first step            │
+  │  • <facet handler tasks>   the real work  (osm.cache.Download, …)      │
+  │  • fw:resume:<Facet>       external agent finished a step → resume     │
+  │  • _fw_continue            "re-evaluate parent block & schedule next"  │
+  └──────────────────────────────────────────────────────────────────────┘
+        ▲  claim / commit atomically (optimistic version.sequence)
+        │                  │                          │
+        │   any runner can claim any of these — disjoint by task-list/namespace
+        │                  │                          │
+  ┌─────┴───────┐    ┌─────┴───────┐            ┌─────┴───────┐
+  │  Runner 1   │    │  Runner 2   │    …       │  Runner N   │   (RegistryRunner /
+  │             │    │             │            │             │    RunnerService —
+  │ each poll cycle (identical on every runner):              │    leaderless)
+  │  1. claim a HANDLER task  → run the handler (only facets   │
+  │     whose module it can import)                           │
+  │  2. claim a _fw_continue  → ADVANCE THE WORKFLOW:         │
+  │     ┌──────────────────────────────────────────────────┐ │
+  │     │ continuation processor   (continuation.py)        │ │
+  │     │   → step state machine   (StateHandlers +         │ │
+  │     │       StepStateChanger over StepState)            │ │
+  │     │   → evaluator            (refs / when / foreach)  │ │
+  │     │   ⇒ which child steps are now runnable?           │ │
+  │     │   ⇒ create their handler tasks, and emit more     │ │
+  │     │     _fw_continue for parent blocks not local      │ │
+  │     └──────────────────────────────────────────────────┘ │
+  └─────────────┘    └─────────────┘            └─────────────┘
+```
+
+So the "thing that determines the next steps" is the **continuation processor + step state machine + evaluator**, embedded in *every* runner — not a separate service. `fw:execute` kicks off the first step; `_fw_continue` events drive all subsequent block re-evaluation and step scheduling; the periodic stuck-step sweep (§10.4) is the safety net for lost events.
+
 The notification-driven `resume_step()` (§10.3) eliminates O(N²) scans but still requires **per-workflow locking**: only one server can resume a given workflow at a time. For large distributed deployments (100+ servers processing the same workflow), this becomes a bottleneck.
 
 **`process_single_step()` replaces per-workflow locking with per-step atomic operations:**
 
 1. When a handler completes, `continue_step()` advances the step past `EventTransmit` (same as §10.3).
 2. `process_single_step(step_id)` processes the continued step and cascades up through parent blocks in the same call. Each round commits atomically and follows dirty-block notifications up the hierarchy.
-3. If any dirty blocks remain unprocessed (e.g., the step is on a different server), **continuation tasks** are generated on the `_afl_continue` task list. Any server can claim and process these.
+3. If any dirty blocks remain unprocessed (e.g., the step is on a different server), **continuation tasks** are generated on the `_fw_continue` task list. Any server can claim and process these.
 4. Step updates use **optimistic concurrency** via a `version.sequence` counter. If two servers process the same step concurrently, the version check prevents conflicting writes.
 
-**Continuation events** are the distributed equivalent of the Scala `ContextCache.addContinuationEvents()` pattern. They are lightweight tasks (`_afl_continue`) that carry only a `step_id` and `reason`. They are committed atomically alongside step changes and handler tasks in a single persistence operation.
+**Continuation events** are the distributed equivalent of the Scala `ContextCache.addContinuationEvents()` pattern. They are lightweight tasks (`_fw_continue`) that carry only a `step_id` and `reason`. They are committed atomically alongside step changes and handler tasks in a single persistence operation.
 
 ```
 Server A: handler completes for step X
