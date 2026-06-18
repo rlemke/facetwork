@@ -37,6 +37,7 @@ WORKER_SERVICES=(
     runner-anthropic runner-census-us runner-genomics runner-jenkins-example
     runner-noaa-weather runner-sensor-monitoring
     runner-osm-geocoder runner-osm-lz
+    runner-ffl
 )
 
 FWH_OSM_REF="${FWH_OSM_REF:-main}"   # baked fwh_osm revision; override with --ref

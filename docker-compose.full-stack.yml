@@ -580,6 +580,42 @@ services:
     restart: unless-stopped
 
   # =====================================================================
+  # ffl-runner — dedicated orchestration tier (continuation_mode=shared).
+  #
+  # Owns the stuck-step sweep (and, in the RegistryRunner model, the shared
+  # _fw_continue backlog), so handler runners can run --continuation off and
+  # the blast radius of a step-state-machine change shrinks to this small,
+  # homogeneous role. Runs the CORE ENGINE ONLY (no example handlers,
+  # no --registry), so heavy handler work never starves orchestration — a
+  # bulkhead. Bring up >=2 for liveness:
+  #   start-runner --fleet --example ffl --replicas 2
+  # See docs/architecture/ffl-runner-orchestration-tier.md.
+  # =====================================================================
+  runner-ffl:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.example-runner
+    # Bypass entrypoint-example-runner.sh (which requires an example to seed);
+    # run the runner core directly. AFL_CONTINUATION_MODE=shared (below) makes
+    # it own the sweep + backlog.
+    entrypoint: ["python", "-m", "facetwork.runtime.runner", "--log-format", "text"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      <<: *s3-storage
+      AFL_CONTINUATION_MODE: shared
+      # Tag the tier so it groups separately in fleet status / the dashboard.
+      AFL_SERVER_GROUP: ${AFL_SERVER_GROUP:-ffl-runner}
+    volumes:
+      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+
+  # =====================================================================
   # One-shot seed: populates FlowDefinition + WorkflowDefinition entities
   # so the dashboard's "Flows" tab has something to show.
   #
