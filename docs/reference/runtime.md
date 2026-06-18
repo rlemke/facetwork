@@ -677,7 +677,7 @@ event.Error
 3. `continue_step()` advances the step past `EventTransmit` to `state.statement.blocks.Begin` and persists the new state.
 4. `process_single_step()` processes the continued step, cascades up through parent blocks, and generates continuation events for any remaining dirty blocks (see §10.3.1). In single-server mode, `resume_step()` may be used instead (see §10.3).
 
-**Continuation events:** When `process_single_step()` cannot process all dirty parent blocks within the same call (e.g., the parent is on another server), it generates `_afl_continue` continuation tasks. These are lightweight tasks that carry only the target `step_id`. Any server can claim and process them.
+**Continuation events:** When `process_single_step()` cannot process all dirty parent blocks within the same call (e.g., the parent is on another server), it generates `_fw_continue` continuation tasks. These are lightweight tasks that carry only the target `step_id`. Any server can claim and process them.
 
 **Idempotency:** Processing a `StepContinue` for a step that has already advanced past `EventTransmit` MUST be a no-op. Duplicate `StepContinue` events MUST NOT cause errors. Continuation tasks for already-completed steps are harmless — `process_single_step()` detects terminal states and returns immediately.
 
