@@ -40,11 +40,41 @@ class BaseRunnerConfig:
     max_concurrent: int = _SENTINEL
     heartbeat_interval_ms: int = _SENTINEL
     topics: list[str] = field(default_factory=list)
+    # Continuation/orchestration role (see docs/architecture/ffl-runner-orchestration-tier.md):
+    #   "inline" (default) — today's behaviour: poll the shared _fw_continue
+    #                        backlog AND run the stuck-step sweep, in addition to
+    #                        the inline cascade after this runner's own handler.
+    #   "off"              — handler-only: keep the inline cascade after own
+    #                        handler, but do NOT poll the shared backlog and do
+    #                        NOT run the sweep (a dedicated ffl-runner owns those).
+    #   "shared"           — ffl-runner: own the shared backlog + sweep.
+    # Empty resolves to AFL_CONTINUATION_MODE, else "inline".
+    continuation_mode: str = ""
+
+    _CONTINUATION_MODES = ("inline", "off", "shared")
 
     def __post_init__(self) -> None:
         if not self.server_name:
             self.server_name = socket.gethostname()
+        if not self.continuation_mode:
+            import os
+
+            self.continuation_mode = os.environ.get("AFL_CONTINUATION_MODE", "inline").strip() or "inline"
+        if self.continuation_mode not in self._CONTINUATION_MODES:
+            raise ValueError(
+                f"continuation_mode must be one of {self._CONTINUATION_MODES}, "
+                f"got {self.continuation_mode!r}"
+            )
         self._resolve_sentinels()
+
+    # --- continuation-mode helpers (used by the runner poll loops) -----------
+    def polls_shared_continuations(self) -> bool:
+        """Whether this runner drains the shared ``_fw_continue`` backlog."""
+        return self.continuation_mode in ("inline", "shared")
+
+    def runs_stuck_step_sweep(self) -> bool:
+        """Whether this runner runs the stuck-step recovery sweep."""
+        return self.continuation_mode in ("inline", "shared")
 
     def _resolve_sentinels(self) -> None:
         """Replace sentinel values with global config defaults."""

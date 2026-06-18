@@ -1,6 +1,8 @@
 # Dedicated `ffl-runner` orchestration tier (design)
 
-**Status:** Proposed / design. Not implemented.
+**Status:** Steps 1 & 2 of the rollout (§7) are **implemented** (the `--continuation` mode flag + the `runtime_version` gate, both no-ops by default). Steps 3–5 (the `ffl-runner` fleet role + flipping handler runners to `off`) are not yet done.
+
+**Implementation note (code vs this doc's model):** the two runner classes drain continuations differently — `RegistryRunner` polls the shared `_fw_continue` backlog directly, while `RunnerService` (the fleet's "runner service in registry mode") relies on the inline cascade after its own handler plus the stuck-step sweep. The `--continuation` flag therefore gates *wherever each mechanism exists*: the `_fw_continue` poll loops in `RegistryRunner` and the stuck-step sweep in both classes. Mode `off` skips both; `inline`/`shared` keep them.
 **Related:** [runtime.md §10.3.1](../reference/runtime.md) (per-step processing + continuation events), [runtime.md §10.4](../reference/runtime.md) (stuck-step sweep), [fleet-rollouts.md](../operations/fleet-rollouts.md) (image rollout), [task_list_routing.py](../../facetwork/runtime/task_list_routing.py).
 
 ## 1. Problem
@@ -112,8 +114,8 @@ The tier still processes shared continuations concurrently, so mixed versions ar
 
 ## 7. Rollout plan (incremental, low-risk)
 
-1. Add the `--continuation` mode flag (default `inline` = today's behaviour). No-op until used.
-2. Add the `runtime_version` gate (§3.3) — valuable on its own, independent of the tier.
+1. ✅ **Done** — `--continuation {inline,off,shared}` mode flag (`AFL_CONTINUATION_MODE`), default `inline` = today's behaviour. Gates the `_fw_continue` poll (`RegistryRunner`) and the stuck-step sweep (both runner classes) via `BaseRunnerConfig.polls_shared_continuations()` / `runs_stuck_step_sweep()`.
+2. ✅ **Done** — `runtime_version` gate (§3.3): `STEP_RUNTIME_VERSION` single-source constant + `is_runtime_compatible()` (`types.py`), enforced in `process_single_step()` (leaves an incompatible step untouched) and `RegistryRunner._process_continuation()` (releases the continuation back to pending for a compatible runner). No-op until `STEP_RUNTIME_VERSION` is bumped. Tests: `tests/test_continuation_mode_and_version_gate.py`.
 3. Add the `ffl-runner` role to `fleet_config` + compose; bring up ≥2.
 4. Flip the per-example handler runners to `--continuation off`.
 5. Observe: continuation latency, `ffl-runner` queue depth, sweep cadence. Tune `ffl-runner` replicas.

@@ -1582,6 +1582,11 @@ class RunnerService:
         at EventTransmit that need tasks created, creates the tasks
         directly.
         """
+        # Orchestration role: only inline/shared runners run the sweep. A
+        # handler-only runner (--continuation off) leaves it to the ffl-runner
+        # tier. See docs/architecture/ffl-runner-orchestration-tier.md.
+        if not self._config.runs_stuck_step_sweep():
+            return
         now = _current_time_ms()
         if now - self._last_sweep < self._sweep_interval_ms:
             return

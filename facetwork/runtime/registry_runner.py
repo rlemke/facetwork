@@ -354,19 +354,23 @@ class RegistryRunner:
         # Claim continuation tasks (may have been generated during
         # handler processing above).  Loop until no more continuations
         # are available — each processed continuation may generate more.
-        from .continuation import CONTINUATION_TASK_LIST, CONTINUATION_TASK_NAME
+        # Skipped for handler-only runners (--continuation off): a dedicated
+        # ffl-runner owns the shared backlog. See
+        # docs/architecture/ffl-runner-orchestration-tier.md.
+        if self._config.polls_shared_continuations():
+            from .continuation import CONTINUATION_TASK_LIST, CONTINUATION_TASK_NAME
 
-        while capacity > 0:
-            task = self._persistence.claim_task(
-                task_names=[CONTINUATION_TASK_NAME],
-                task_list=CONTINUATION_TASK_LIST,
-                server_id=self._server_id,
-            )
-            if task is None:
-                break
-            self._process_continuation(task)
-            capacity -= 1
-            dispatched += 1
+            while capacity > 0:
+                task = self._persistence.claim_task(
+                    task_names=[CONTINUATION_TASK_NAME],
+                    task_list=CONTINUATION_TASK_LIST,
+                    server_id=self._server_id,
+                )
+                if task is None:
+                    break
+                self._process_continuation(task)
+                capacity -= 1
+                dispatched += 1
 
         return dispatched
 
@@ -539,20 +543,24 @@ class RegistryRunner:
                 capacity -= 1
                 dispatched += 1
 
-        # Claim continuation tasks (internal step-processing events)
-        from .continuation import CONTINUATION_TASK_LIST, CONTINUATION_TASK_NAME
+        # Claim continuation tasks (internal step-processing events).
+        # Skipped for handler-only runners (--continuation off): the ffl-runner
+        # tier owns the shared backlog. See
+        # docs/architecture/ffl-runner-orchestration-tier.md.
+        if self._config.polls_shared_continuations():
+            from .continuation import CONTINUATION_TASK_LIST, CONTINUATION_TASK_NAME
 
-        while capacity > 0:
-            task = self._persistence.claim_task(
-                task_names=[CONTINUATION_TASK_NAME],
-                task_list=CONTINUATION_TASK_LIST,
-                server_id=self._server_id,
-            )
-            if task is None:
-                break
-            self._submit_continuation(task)
-            capacity -= 1
-            dispatched += 1
+            while capacity > 0:
+                task = self._persistence.claim_task(
+                    task_names=[CONTINUATION_TASK_NAME],
+                    task_list=CONTINUATION_TASK_LIST,
+                    server_id=self._server_id,
+                )
+                if task is None:
+                    break
+                self._submit_continuation(task)
+                capacity -= 1
+                dispatched += 1
 
         return dispatched
 
@@ -596,6 +604,32 @@ class RegistryRunner:
         """
         step_id = task.data.get("step_id") if task.data else task.step_id
         workflow_id = task.workflow_id
+
+        # Runtime-version gate: if the target step was stamped with a runtime
+        # version this build can't safely process, RELEASE the continuation
+        # (back to pending, with a short backoff) so a compatible runner claims
+        # it — rather than consuming it to a no-op and stranding the step. No-op
+        # today (every step is STEP_RUNTIME_VERSION). See
+        # docs/architecture/ffl-runner-orchestration-tier.md §3.3.
+        if step_id:
+            from .types import STEP_RUNTIME_VERSION, is_runtime_compatible
+
+            _gate_step = self._persistence.get_step(step_id)
+            _runtime_ver = getattr(getattr(_gate_step, "version", None), "runtime_version", None)
+            if _gate_step is not None and not is_runtime_compatible(_runtime_ver):
+                task.state = TaskState.PENDING
+                task.server_id = ""
+                task.next_retry_after = _current_time_ms() + 5000
+                task.updated = _current_time_ms()
+                self._persistence.save_task(task)
+                logger.warning(
+                    "Continuation for step %s has incompatible runtime_version "
+                    "%r (this build: %s) — released for a compatible runner",
+                    step_id,
+                    _runtime_ver,
+                    STEP_RUNTIME_VERSION,
+                )
+                return
 
         # Claim-time coalescing: this continuation re-evaluates the step against
         # the current state of all its children, which satisfies every other
@@ -675,7 +709,12 @@ class RegistryRunner:
         (e.g. lost continuation events, server crashes).  Processes
         stuck steps via process_single_step, which follows the parent
         chain and generates continuation events as needed.
+
+        Skipped for handler-only runners (--continuation off): the ffl-runner
+        tier owns the sweep. See docs/architecture/ffl-runner-orchestration-tier.md.
         """
+        if not self._config.runs_stuck_step_sweep():
+            return
         now = _current_time_ms()
         if now - self._last_sweep < self._sweep_interval_ms:
             return

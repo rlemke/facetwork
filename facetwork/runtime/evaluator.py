@@ -2096,6 +2096,27 @@ class Evaluator:
                 status=ExecutionStatus.ERROR,
             )
 
+        # Runtime-version gate: never advance a step stamped with a runtime
+        # version this build can't safely process — leave it untouched so a
+        # compatible runner handles it (the basis for a drained engine cutover).
+        # No-op today (every step is STEP_RUNTIME_VERSION). See
+        # docs/architecture/ffl-runner-orchestration-tier.md §3.3.
+        from .types import is_runtime_compatible
+
+        _runtime_ver = getattr(getattr(step, "version", None), "runtime_version", None)
+        if not is_runtime_compatible(_runtime_ver):
+            logger.warning(
+                "process_single_step: step %s runtime_version %r incompatible "
+                "with this build — leaving it for a compatible runner",
+                step_id,
+                _runtime_ver,
+            )
+            return ExecutionResult(
+                success=True,
+                workflow_id=step.workflow_id,
+                status=ExecutionStatus.PAUSED,
+            )
+
         workflow_id_val = step.workflow_id
         logger.info(
             "process_single_step: step_id=%s workflow_id=%s state=%s",

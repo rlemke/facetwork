@@ -116,18 +116,43 @@ class ObjectType:
         return object_type in (cls.VARIABLE_ASSIGNMENT, cls.YIELD_ASSIGNMENT)
 
 
+# Step-state-machine / continuation runtime version stamped on persisted steps.
+# Bump ONLY for a step-state change an older runner cannot safely process (a
+# new/renamed StepState, a changed step-doc shape, or changed continuation
+# semantics). is_runtime_compatible() then makes mixed-version runners refuse
+# each other's steps, so an incompatible engine change is cut over by draining
+# rather than rolled blindly. Backward-compatible changes leave it unchanged, so
+# the gate stays a no-op (every step today carries this same value).
+# See docs/architecture/ffl-runner-orchestration-tier.md §3.3.
+STEP_RUNTIME_VERSION = "0.1.0"
+
+
 @dataclass
 class VersionInfo:
     """Version information for persisted artifacts."""
 
     workflow_version: str = "1.0"
     step_schema_version: str = "1.0"
-    runtime_version: str = "0.1.0"
+    runtime_version: str = STEP_RUNTIME_VERSION
     sequence: int = 0  # Monotonic version for optimistic concurrency
 
     def increment(self) -> None:
         """Bump the optimistic concurrency counter."""
         self.sequence += 1
+
+
+def is_runtime_compatible(step_runtime_version: str | None) -> bool:
+    """Whether a step stamped with ``step_runtime_version`` may be processed by
+    this runtime build.
+
+    Compatible iff it equals this build's ``STEP_RUNTIME_VERSION``; an
+    empty/unknown value is permissive (legacy steps are never stranded). Today
+    every step carries ``STEP_RUNTIME_VERSION`` so this always returns True — it
+    only starts gating once the constant is bumped for an incompatible change.
+    """
+    if not step_runtime_version:
+        return True
+    return step_runtime_version == STEP_RUNTIME_VERSION
 
 
 @dataclass

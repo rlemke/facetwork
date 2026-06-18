@@ -229,6 +229,17 @@ def main() -> None:
         default=None,
         help="Load handler registrations from MongoDB (env: AFL_USE_REGISTRY=1)",
     )
+    parser.add_argument(
+        "--continuation",
+        default=None,
+        choices=["inline", "off", "shared"],
+        help="Orchestration role (env AFL_CONTINUATION_MODE; default inline). "
+        "inline = poll the shared _fw_continue backlog + run the stuck-step sweep "
+        "(today's behaviour); off = handler-only (keep inline cascade after own "
+        "handler, but don't poll the backlog or sweep); shared = dedicated "
+        "ffl-runner that owns the backlog + sweep. "
+        "See docs/architecture/ffl-runner-orchestration-tier.md.",
+    )
 
     args = parser.parse_args()
 
@@ -304,6 +315,7 @@ def main() -> None:
         heartbeat_interval_ms=args.heartbeat_interval,
         max_concurrent=args.max_concurrent,
         http_port=args.port,
+        continuation_mode=args.continuation or "",
     )
 
     service = RunnerService(
