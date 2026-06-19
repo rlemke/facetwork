@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# fw-summary: scale a per-example runner service on THIS host (docker compose --scale)
+#
+# Wraps `docker compose --scale runner-<example>=<n>` with the fleet env layering,
+# so you never type the raw compose incantation. Scaling down removes the excess
+# containers (drained/reaped); scaling up adds fresh ones.
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+EXAMPLE="" REPLICAS="" DRY=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --example) EXAMPLE="$2"; shift 2 ;;
+        --replicas) REPLICAS="$2"; shift 2 ;;
+        --dry|--dry-run) DRY=1; shift ;;
+        -h|--help)
+            echo "Usage: fw runner scale --example NAME --replicas N [--dry]"
+            echo "  NAME: anthropic|census-us|genomics|noaa-weather|jenkins-example|sensor-monitoring|osm-geocoder|osm-lz|ffl"
+            exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+[ -z "$EXAMPLE" ] || [ -z "$REPLICAS" ] && { echo "fw runner scale: --example and --replicas are required" >&2; exit 2; }
+
+SVC="runner-$EXAMPLE"
+ENV_ARGS=(--env-file "$FW_ROOT/.env.fleet")
+[ -f "$FW_ROOT/.env.fleet.override" ] && ENV_ARGS+=(--env-file "$FW_ROOT/.env.fleet.override")
+COMPOSE=(docker compose "${ENV_ARGS[@]}"
+         -f "$FW_ROOT/docker-compose.full-stack.yml" -f "$FW_ROOT/docker-compose.fleet.yml")
+
+CMD=("${COMPOSE[@]}" up -d --no-recreate --scale "$SVC=$REPLICAS" "$SVC")
+if [ "$DRY" = 1 ]; then
+    echo "[dry-run] would run:"; printf '  %q ' "${CMD[@]}"; echo; exit 0
+fi
+echo "Scaling $SVC -> $REPLICAS on $(hostname -s)…"
+"${CMD[@]}"
+echo "Done. Current $SVC containers:"
+docker ps --filter "label=com.docker.compose.service=$SVC" --format '  {{.Names}}  up {{.RunningFor}}'

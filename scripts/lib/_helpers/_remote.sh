@@ -10,7 +10,8 @@
 #   _afl_poll_new_server       — poll until a new server appears on a hostname
 
 _REMOTE_SH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_REMOTE_REPO_ROOT="$(cd "$_REMOTE_SH_DIR/.." && pwd)"
+[ -z "${FW_ROOT:-}" ] && source "$_REMOTE_SH_DIR/_bootstrap.sh"
+_REMOTE_REPO_ROOT="$FW_ROOT"
 _REMOTE_PYTHON="${_REMOTE_REPO_ROOT}/.venv/bin/python3"
 [[ -x "$_REMOTE_PYTHON" ]] || _REMOTE_PYTHON=python3
 

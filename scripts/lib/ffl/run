@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# ffl-run — FFL-first workflow submission.
+#
+# Compiles FFL source, validates it, creates the runtime entities in MongoDB
+# (flow, workflow, runner record, and the fw:execute bootstrap task), and hands
+# off to the runner fleet to execute. Because it creates the *runner record*,
+# the run is tracked in the dashboard (Workflows tab) — the same submission path
+# the dashboard's "New run" button uses.
+#
+# This is the FFL-first counterpart to `run-workflow`: hand it a .ffl file and a
+# workflow name and it compiles + submits in one step. (By contrast
+# `run-workflow` runs a PRE-SEEDED workflow in-process via the evaluator and
+# does NOT create a runner record, so those runs don't show in the dashboard.)
+# A runner must be up to pick up the work — e.g. `scripts/start-runner ...`.
+#
+# Usage:
+#   scripts/ffl-run workflow.ffl --workflow ns.WorkflowName
+#   scripts/ffl-run --primary wf.ffl --library types.ffl --workflow ns.Name --inputs '{"x": 1}'
+#   scripts/ffl-run wf.ffl --workflow ns.Name --task-list osm
+#
+# Flags (forwarded to `python -m facetwork.runtime.submit`):
+#   <file.ffl>         primary FFL source (single-file positional form)
+#   --primary FILE     primary FFL source (repeatable, multi-file form)
+#   --library FILE     library/dependency FFL source (repeatable)
+#   --workflow NAME    qualified workflow to execute
+#   --inputs JSON      workflow input parameters (JSON object)
+#   --task-list NAME   task list to submit onto (default: routed by workflow name)
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+REPO_ROOT="$FW_ROOT"
+
+# Load shared env (.env sets AFL_MONGODB_URL etc.), same as the other scripts.
+source "$FW_LIB/_helpers/_env.sh"
+
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+# Forward all arguments to the FFL-first submit CLI. It compiles + validates the
+# sources, persists flow/workflow/runner/task, and prints the Runner ID.
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.runtime.submit "$@"

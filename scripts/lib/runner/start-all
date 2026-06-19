@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Start the full fleet on THIS host: dashboard + the ffl-runner orchestration
+# tier + every per-example handler runner, then a fleet-agent watcher.
+#
+# Orchestration split (docs/architecture/ffl-runner-orchestration-tier.md):
+# bring up the ffl-runner tier (continuation_mode=shared) FIRST, then start the
+# handler runners with AFL_HANDLER_CONTINUATION_MODE=off so they keep the inline
+# cascade after their own handler but leave the shared backlog + stuck-step
+# sweep to the ffl tier. (A bare `docker compose up` leaves AFL_CONTINUATION_MODE
+# at its "inline" default, so it still self-orchestrates without the tier.)
+#
+# start-runner --fleet --recreate removes each service's existing containers
+# before bringing them up (no orphan replicas) and layers .env.fleet +
+# .env.fleet.override.
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+REPO_ROOT="$FW_ROOT"
+cd "$REPO_ROOT"
+
+# Number of ffl-runners on this host (>=2 recommended for liveness).
+FFL_REPLICAS="${FFL_REPLICAS:-2}"
+
+# Dashboard (base full-stack service) — same env layering as the fleet runners.
+docker compose --env-file .env.fleet --env-file .env.fleet.override \
+  -f docker-compose.full-stack.yml -f docker-compose.fleet.yml \
+  up -d --no-deps dashboard
+
+# 1) Orchestration tier FIRST, so handler runners can safely run --continuation
+#    off (the tier must own the sweep before the handlers stop running it).
+scripts/start-runner --fleet --recreate --example ffl --replicas "$FFL_REPLICAS"
+
+# 2) Handler runners — off (the ffl tier owns the sweep/backlog). The env var is
+#    read by the *s3-storage / *osm-s3-env anchors; runner-ffl overrides it back
+#    to "shared" explicitly, so this does not affect the tier. Only services that
+#    exist in the compose files — there is no runner-sentinel2-landchange.
+#
+#    Two scale tiers: only the osm runners (heavy, parallel workload) get
+#    AFL_OSM_REPLICAS; every other example is a single replica. Passing all
+#    examples to ONE start-runner call fans AFL_OSM_REPLICAS out across ALL
+#    services (start-runner applies one `--scale N` to every selected service),
+#    spinning up N copies of anthropic/census/genomics/etc. that nothing needs.
+export AFL_HANDLER_CONTINUATION_MODE=off
+
+# 2a) osm runners — scaled by the throughput knob (start-runner --fleet default 4;
+#     .env.fleet sets AFL_OSM_REPLICAS=3).
+scripts/start-runner --fleet --recreate \
+    --example osm-geocoder --example osm-lz
+
+# 2b) every other handler runner — exactly one replica each.
+scripts/start-runner --fleet --recreate --replicas 1 \
+    --example anthropic --example noaa-weather --example jenkins-example \
+    --example census-us --example genomics --example sensor-monitoring
+
+# Keep this host's roles reconciled to the central fleet config.
+scripts/fleet-agent watch --data-dir "$HOME/afl_data"

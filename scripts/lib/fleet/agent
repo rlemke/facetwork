@@ -1,0 +1,283 @@
+#!/usr/bin/env python3
+# fw-summary: per-server daemon: reconcile this host to fleet_config (apply/watch)
+"""fleet-agent — on THIS server, reconcile the runners to the central fleet config
+in MongoDB. Bootstrap is just the Mongo URL; the MinIO endpoint, replica count
+and runner image come from `fleet_config`, so a new server joins with no
+per-server editing.
+
+  fleet-agent apply [--mongo URL] [--data-dir DIR] [--dry-run]   # one-shot reconcile
+  fleet-agent watch [--mongo URL] [--data-dir DIR] [--interval N]# daemon: auto-reconcile on config changes
+
+`watch` polls `fleet_config.version` and reconciles whenever it changes — so a
+fleet-wide change is one `fleet set …` and every server picks it up. An image
+change triggers a force-recreate (pull + recreate); a replica-only change just
+rescales. Each apply records this host's applied version/image into the
+`fleet_agents` collection, so `fleet status` shows which hosts are up to date.
+
+Secrets stay local (Phase 1/2): MinIO creds come from this host's environment
+(AFL_S3_ACCESS_KEY / AFL_S3_SECRET_KEY); only endpoints/replicas/image are central.
+"""
+from __future__ import annotations
+
+import os
+import sys
+
+try:
+    import pymongo  # noqa: F401
+except ModuleNotFoundError:
+    # Self-bootstrap: ensure a repo venv with the required tools (pymongo,
+    # cryptography), installing them if missing, then re-exec under it.
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_helpers"))
+    from _fleet_bootstrap import bootstrap_and_reexec
+
+    bootstrap_and_reexec()  # re-execs under the venv unless already running it
+    import pymongo  # noqa: F401
+
+import argparse
+import signal
+import socket
+import subprocess
+import tempfile
+import time
+from datetime import datetime, timezone
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_helpers"))
+import _fleet_lib  # noqa: E402
+from pymongo import MongoClient  # noqa: E402
+
+from fwroot import fw_root  # noqa: E402
+REPO = fw_root()
+DB = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
+# AFL_FLEET_HOST names this server in fleet_agents/status (defaults to the
+# machine hostname); lets several agents on one box act as distinct servers.
+HOST = os.environ.get("AFL_FLEET_HOST") or socket.gethostname()
+
+
+def _read_cfg(mongo):
+    cfg = MongoClient(mongo, serverSelectionTimeoutMS=5000)[DB].fleet_config.find_one({"_id": "default"})
+    if not cfg:
+        raise SystemExit("no fleet_config in Mongo — an admin must run `fleet set --minio … --osm-replicas N` first")
+    if not cfg.get("minio", {}).get("endpoint"):
+        raise SystemExit("fleet_config.minio.endpoint is not set")
+    return cfg
+
+
+def _record(mongo, version, image, replicas):
+    """Record this host's applied state so `fleet status` can show drift."""
+    try:
+        MongoClient(mongo, serverSelectionTimeoutMS=5000)[DB].fleet_agents.update_one(
+            {"_id": HOST},
+            {"$set": {
+                "host": HOST, "applied_version": version, "applied_image": image,
+                "replicas": replicas, "applied_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - reporting is best-effort
+        print(f"  (warning: could not record applied state: {exc})")
+
+
+def _resolve_creds(mongo):
+    """MinIO creds from the encrypted secret store if present (host needs only
+    AFL_FLEET_KEY), else this host's env, else minioadmin defaults."""
+    try:
+        sec = _fleet_lib.get_minio_secret(MongoClient(mongo, serverSelectionTimeoutMS=5000)[DB])
+    except RuntimeError as exc:  # a secret exists but AFL_FLEET_KEY is missing/wrong
+        raise SystemExit(f"fleet-agent: {exc}")
+    if sec:
+        return sec["access_key"], sec["secret_key"], "secret-store"
+    return (os.environ.get("AFL_S3_ACCESS_KEY", "minioadmin"),
+            os.environ.get("AFL_S3_SECRET_KEY", "minioadmin"), "host-env")
+
+
+def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
+    minio = cfg.get("minio", {})
+    osm = (cfg.get("roles") or {}).get("osm-geocoder", {})
+    replicas = replicas_override if replicas_override is not None else int(osm.get("replicas", 4))
+    image = osm.get("image")
+    gh_image = (cfg.get("roles") or {}).get("gh-router", {}).get("image")
+    # ffl-runner orchestration tier (opt-in: only brought up when replicas>0).
+    ffl = (cfg.get("roles") or {}).get("ffl-runner", {})
+    ffl_replicas = int(ffl.get("replicas", 0) or 0)
+    ffl_image = ffl.get("image")
+    endpoint = _fleet_lib.resolve_minio(minio.get("endpoint"))
+    access_key, secret_key, creds_src = _resolve_creds(mongo)
+
+    # Large LOCAL scratch dir — per-server, never inherited. We do NOT default to
+    # /Volumes/afl_data (the infra host's disk): a joiner that fell back to it
+    # would fail deep in `docker compose up` pointing at our throwaway temp env
+    # file. Require it here so the message names the real knob.
+    data_dir = data_dir or os.environ.get("AFL_DATA_DIR")
+    if not data_dir:
+        raise SystemExit(
+            f"fleet-agent[{HOST}]: AFL_DATA_DIR not set — this server needs a large "
+            "LOCAL scratch dir for staging. Export AFL_DATA_DIR=<path> before "
+            "running fleet-agent, or pass --data-dir <path> (macOS: e.g. "
+            "$HOME/afl_data ; Linux: e.g. /var/lib/afl_data). Do NOT use "
+            "/Volumes/afl_data — that's the infra host's disk."
+        )
+
+    env = {
+        "AFL_MONGODB_URL": mongo,
+        "AFL_MONGODB_DATABASE": DB,
+        "AFL_S3_ENDPOINT": endpoint,
+        "AFL_S3_BUCKET": minio.get("bucket", "afl-cache"),
+        "AFL_S3_ACCESS_KEY": access_key,
+        "AFL_S3_SECRET_KEY": secret_key,
+        "AFL_DATA_DIR": data_dir,
+        "AFL_OSM_REPLICAS": str(replicas),
+    }
+    if image:
+        env["AFL_RUNNER_IMAGE"] = image
+    if gh_image:
+        env["AFL_GH_ROUTER_IMAGE"] = gh_image
+    if ffl_image:
+        env["AFL_FFL_IMAGE"] = ffl_image
+    # Role group for fleet status / dashboard (every server is a runner by default).
+    grp = os.environ.get("AFL_SERVER_GROUP", "runner")
+    env["AFL_SERVER_GROUP"] = grp
+    tl = osm.get("task_list")
+    if tl:
+        env["AFL_REGISTRY_RUNNER_ARGS"] = f"--task-list {tl} --server-group {grp}"
+        # Child tasks route by the facet's namespace (the runtime derives the
+        # queue from the handler), so no task-list map is needed here.
+
+    label = (f"v{cfg.get('version')} minio={endpoint} osm-replicas={replicas} creds={creds_src}"
+             + (f" image={image}" if image else "")
+             + (f" gh-router={gh_image}" if gh_image else "")
+             + (f" ffl-replicas={ffl_replicas}" if ffl_replicas else ""))
+    print(f"fleet-agent[{HOST}]: applying fleet_config {label}" + (" (recreate)" if recreate else ""))
+    if dry_run:
+        for k, v in env.items():
+            print(f"    {k}={'***' if ('SECRET' in k or 'ACCESS' in k) else v}")
+        if gh_image:
+            print("    + would bring up runner-gh-router (1 replica) from AFL_GH_ROUTER_IMAGE")
+        if ffl_replicas:
+            print(f"    + would bring up runner-ffl ({ffl_replicas} replicas) — orchestration tier")
+        return
+
+    fd, envf = tempfile.mkstemp(prefix=".env.fleet-agent.", dir=REPO)
+    try:
+        with os.fdopen(fd, "w") as f:
+            for k, v in env.items():
+                f.write(f"{k}={v}\n")
+        # Invoke via bash explicitly (avoid shebang/exec resolution differences
+        # in a subprocess context). Force a full env with a sane PATH so `docker`
+        # resolves even when the parent was launched with a minimal PATH.
+        cmd = ["bash", os.path.join(REPO, "scripts", "start-worker"), "--env", envf]
+        if recreate:
+            cmd.append("--recreate")
+        child_env = os.environ.copy()
+        child_env["PATH"] = (
+            child_env.get("PATH", "")
+            + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+        )
+        r = subprocess.run(cmd, env=child_env, capture_output=True, text=True)
+        if r.returncode != 0:
+            sys.stdout.write(r.stdout)
+            sys.stderr.write(r.stderr)
+            raise SystemExit(f"fleet-agent[{HOST}]: start-worker failed (exit {r.returncode})")
+        sys.stdout.write(r.stdout)
+        # gh-router role: bring up the embedded-GraphHopper Java agent as its own
+        # single-replica service (its own image; coexists with the osm runners
+        # via the name-filtered claim). Same env file (carries AFL_GH_ROUTER_IMAGE).
+        if gh_image:
+            gh_cmd = ["bash", os.path.join(REPO, "scripts", "start-worker"),
+                      "--env", envf, "--example", "gh-router", "--replicas", "1"]
+            if recreate:
+                gh_cmd.append("--recreate")
+            gr = subprocess.run(gh_cmd, env=child_env, capture_output=True, text=True)
+            sys.stdout.write(gr.stdout)
+            if gr.returncode != 0:
+                # Non-fatal: gh-router only needs to run on ONE host (it's the sole
+                # RouteBatch claimant). A host that can't bring it up (e.g. can't
+                # pull the image) shouldn't fail its osm-runner reconcile.
+                sys.stderr.write(gr.stderr)
+                print(f"fleet-agent[{HOST}]: WARNING gh-router start failed (exit {gr.returncode}); "
+                      "continuing — another host can serve RouteBatch")
+        # ffl-runner role: bring up the orchestration tier (continuation_mode=
+        # shared, set in the compose file) at the configured replica count. Same
+        # env file (carries AFL_FFL_IMAGE if pinned). Non-fatal: the tier only
+        # needs to run on SOME host(s), so a host that can't bring it up
+        # shouldn't fail its handler-runner reconcile.
+        if ffl_replicas > 0:
+            ffl_cmd = ["bash", os.path.join(REPO, "scripts", "start-worker"),
+                       "--env", envf, "--example", "ffl", "--replicas", str(ffl_replicas)]
+            if recreate:
+                ffl_cmd.append("--recreate")
+            fr = subprocess.run(ffl_cmd, env=child_env, capture_output=True, text=True)
+            sys.stdout.write(fr.stdout)
+            if fr.returncode != 0:
+                sys.stderr.write(fr.stderr)
+                print(f"fleet-agent[{HOST}]: WARNING ffl-runner start failed (exit {fr.returncode}); "
+                      "continuing — another host can run the orchestration tier")
+        _record(mongo, cfg.get("version"), image, replicas)
+    finally:
+        os.unlink(envf)
+
+
+def cmd_apply(a):
+    mongo = _fleet_lib.resolve_mongo(a.mongo, log=lambda m: print(f"  {m}"))
+    cfg = _read_cfg(mongo)
+    _apply(cfg, mongo, a.data_dir, a.replicas, recreate=a.recreate, dry_run=a.dry_run)
+
+
+def cmd_watch(a):
+    mongo = _fleet_lib.resolve_mongo(a.mongo, log=lambda m: print(f"  {m}"))
+    print(f"fleet-agent[{HOST}]: watching fleet_config on {mongo} every {a.interval}s (Ctrl-C to stop)")
+    stop = {"v": False}
+    signal.signal(signal.SIGTERM, lambda *_: stop.update(v=True))
+    signal.signal(signal.SIGINT, lambda *_: stop.update(v=True))
+    last_version = None
+    last_image = None
+    while not stop["v"]:
+        try:
+            cfg = _read_cfg(mongo)
+            version = cfg.get("version")
+            image = (cfg.get("roles") or {}).get("osm-geocoder", {}).get("image")
+            if version != last_version:
+                # Recreate only when the image actually changed (replica-only
+                # changes just rescale, no downtime for existing runners).
+                recreate = last_version is not None and image != last_image
+                _apply(cfg, mongo, a.data_dir, a.replicas, recreate=recreate)
+                last_version, last_image = version, image
+            else:
+                print(f"fleet-agent[{HOST}]: up to date (v{version})", flush=True)
+        except SystemExit as exc:
+            print(f"fleet-agent[{HOST}]: {exc}", flush=True)
+        except Exception as exc:  # noqa: BLE001 - keep the daemon alive across transient errors
+            print(f"fleet-agent[{HOST}]: reconcile error: {exc}", flush=True)
+        for _ in range(a.interval):
+            if stop["v"]:
+                break
+            time.sleep(1)
+    print(f"fleet-agent[{HOST}]: stopped (runners left running).")
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    def common(sp):
+        sp.add_argument("--mongo", default=None,
+                        help="MongoDB URL (auto-discovered if omitted: AFL_MONGODB_URL → mDNS → afl-mongodb)")
+        sp.add_argument("--data-dir", help="large LOCAL scratch dir on this host (REQUIRED; or set AFL_DATA_DIR)")
+        sp.add_argument("--replicas", type=int, help="override osm runner count for this host")
+
+    pa = sub.add_parser("apply", help="one-shot reconcile to the central config")
+    common(pa)
+    pa.add_argument("--recreate", action="store_true", help="force-recreate runners")
+    pa.add_argument("--dry-run", action="store_true", help="print the plan, start nothing")
+    pa.set_defaults(func=cmd_apply)
+
+    pw = sub.add_parser("watch", help="daemon: auto-reconcile when the config changes")
+    common(pw)
+    pw.add_argument("--interval", type=int, default=30, help="poll seconds (default 30)")
+    pw.set_defaults(func=cmd_watch)
+
+    a = p.parse_args()
+    a.func(a)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,27 +1,4 @@
 #!/usr/bin/env bash
-# Pull latest code + handlers, then rebuild and cleanly recreate the fleet's
-# per-example runner ("worker") containers on THIS host.
-#
-# Replaces an earlier version that ran `docker compose down osm-geocoder …` with
-# BARE service names (the services are `runner-osm-geocoder` etc., so the down
-# matched nothing and left old containers up → orphan replicas serving stale
-# code/env) and also rebuilt the unrelated base/overlay dev stack.
-#
-# rebuild-workers --up does the right thing: builds the worker images from the
-# freshly pulled code, removes the existing runner containers FIRST, then
-# recreates them (layering .env.fleet + .env.fleet.override).
-set -euo pipefail
-
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$REPO_ROOT"
-
-git pull
-./scripts/pull_handlers.sh
-
-# Build worker images from current code, then clean-recreate the runners.
-./scripts/rebuild-workers --up
-
-# Bring up the dashboard (base full-stack service), same env layering as the fleet.
-docker compose --env-file .env.fleet --env-file .env.fleet.override \
-  -f docker-compose.full-stack.yml -f docker-compose.fleet.yml \
-  up -d --no-deps dashboard
+# TRANSITION SHIM — this flat path is deprecated; use the `fw` front-door.
+# Removed after the clean-break cutover. Forwards to the new location.
+exec "$(dirname "$0")/lib/single/restart" "$@"

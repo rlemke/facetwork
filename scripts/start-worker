@@ -1,28 +1,3 @@
 #!/usr/bin/env bash
-# DEPRECATED SHIM — start-worker has been converged into `start-runner --fleet`.
-# Kept so existing callers (fleet-agent, docs, muscle memory) keep working.
-#
-# Run per-example runner containers on an ADDITIONAL server that join an existing
-# fleet's external, shared MinIO + MongoDB. Preflights both, then brings runners
-# up (no bundled mongodb/minio here). Defaults to osm-geocoder + osm-lz.
-#
-#   scripts/start-worker                       # = start-runner --fleet
-#   scripts/start-worker --env .env.fleet2     # alternate config file
-#   scripts/start-worker --replicas 6          # override runner count
-#   scripts/start-worker --check               # preflight only, don't start
-#
-# To run OTHER examples in the fleet, call the converged command directly:
-#   scripts/start-runner --fleet --example noaa-weather
-set -euo pipefail
-
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-    sed -n '2,18p' "$0"
-    exit 0
-fi
-
-echo "note: start-worker is now a shim for 'start-runner --fleet'." >&2
-# All flags (--env, --replicas, --check, --recreate) map 1:1 to start-runner's
-# container/fleet mode, so forward them verbatim.
-exec "$REPO_ROOT/scripts/start-runner" --fleet "$@"
+# TRANSITION SHIM (deprecated) — was `start-worker`; now `fw runner start --fleet`.
+exec "$(dirname "$0")/lib/runner/start" --fleet "$@"

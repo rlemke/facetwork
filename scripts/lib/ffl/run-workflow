@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+# Run a workflow stored in MongoDB.
+#
+# Lists available workflows, lets the user pick one interactively,
+# shows parameters with defaults, prompts for values, and starts execution.
+#
+# Usage:
+#   scripts/run-workflow                                      # interactive
+#   scripts/run-workflow --list                                # list available workflows
+#   scripts/run-workflow --workflow MyWorkflow                  # prompt for params
+#   scripts/run-workflow --workflow MyWorkflow --input '{"x": 1}'  # non-interactive
+#   scripts/run-workflow --flow-id UUID                         # pick by flow ID
+#   scripts/run-workflow --config /path/to/config.json         # custom config
+#
+# Options:
+#   --config FILE        Path to AFL config file
+#   --list               List available workflows and exit
+#   --workflow NAME       Workflow name to run
+#   --flow-id ID         Flow ID to load workflows from
+#   --input JSON         JSON input parameters (skip prompts)
+#   --help               Show this help message
+
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+REPO_ROOT="$FW_ROOT"
+
+# Load shared env (.env sets AFL_MONGODB_URL etc.)
+source "$FW_LIB/_helpers/_env.sh"
+
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+CONFIG_ARG=""
+LIST_ONLY="false"
+WORKFLOW=""
+FLOW_ID=""
+INPUT=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --config)   CONFIG_ARG="$2"; shift 2 ;;
+        --list)     LIST_ONLY="true"; shift ;;
+        --workflow) WORKFLOW="$2"; shift 2 ;;
+        --flow-id)  FLOW_ID="$2"; shift 2 ;;
+        --input)    INPUT="$2"; shift 2 ;;
+        --help|-h)
+            awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -c "
+import json
+import sys
+
+from facetwork.config import load_config
+from facetwork.emitter import JSONEmitter
+from facetwork.parser import FFLParser
+from facetwork.runtime import Evaluator, Telemetry
+from facetwork.runtime.mongo_store import MongoStore
+
+config_path = '${CONFIG_ARG}' or None
+list_only = '${LIST_ONLY}' == 'true'
+workflow_name = '${WORKFLOW}'
+flow_id = '${FLOW_ID}'
+input_json = '''${INPUT}'''
+
+config = load_config(config_path)
+store = MongoStore.from_config(config.mongodb)
+
+# ── List mode ────────────────────────────────────────────────────────
+if list_only:
+    workflows = store.get_all_workflows(limit=200)
+    if not workflows:
+        print('No workflows found in the database.')
+        sys.exit(0)
+    print()
+    print(f'  {'#':<4} {'Workflow':<40} {'Version':<12} {'Flow ID'}')
+    print(f'  {'─'*4} {'─'*40} {'─'*12} {'─'*36}')
+    for i, wf in enumerate(workflows, 1):
+        print(f'  {i:<4} {wf.name:<40} {wf.version:<12} {wf.flow_id}')
+    print()
+    print(f'  {len(workflows)} workflow(s) found.')
+    print()
+    sys.exit(0)
+
+# ── Resolve workflow ─────────────────────────────────────────────────
+wf = None
+
+if flow_id:
+    flow = store.get_flow(flow_id)
+    if not flow:
+        print(f'Error: flow {flow_id} not found', file=sys.stderr)
+        sys.exit(1)
+    workflows = store.get_workflows_by_flow(flow_id)
+    if workflow_name:
+        wf = next((w for w in workflows if w.name == workflow_name), None)
+    elif len(workflows) == 1:
+        wf = workflows[0]
+    else:
+        # Multiple workflows in this flow — let user pick
+        print()
+        print(f'Workflows in flow {flow_id}:')
+        for i, w in enumerate(workflows, 1):
+            print(f'  {i}. {w.name}')
+        print()
+        try:
+            choice = input('Select workflow number: ').strip()
+            idx = int(choice) - 1
+            if 0 <= idx < len(workflows):
+                wf = workflows[idx]
+        except (ValueError, EOFError):
+            pass
+
+elif workflow_name:
+    wf = store.get_workflow_by_name(workflow_name)
+
+else:
+    # Interactive: list all, let user pick
+    workflows = store.get_all_workflows(limit=200)
+    if not workflows:
+        print('No workflows found in the database.')
+        sys.exit(0)
+    print()
+    print(f'Available workflows:')
+    print()
+    for i, w in enumerate(workflows, 1):
+        print(f'  {i}. {w.name:<40} (v{w.version})')
+    print()
+    try:
+        choice = input('Select workflow number: ').strip()
+        idx = int(choice) - 1
+        if 0 <= idx < len(workflows):
+            wf = workflows[idx]
+    except (ValueError, EOFError):
+        pass
+
+if not wf:
+    print('Error: workflow not found or no selection made', file=sys.stderr)
+    sys.exit(1)
+
+# ── Load and parse the flow's compiled source ────────────────────────
+flow = store.get_flow(wf.flow_id)
+if not flow:
+    print(f'Error: flow {wf.flow_id} not found', file=sys.stderr)
+    sys.exit(1)
+
+if not flow.compiled_sources:
+    print('Error: no compiled sources in flow', file=sys.stderr)
+    sys.exit(1)
+
+parser = FFLParser()
+ast = parser.parse(flow.compiled_sources[0].content)
+emitter = JSONEmitter(include_locations=False)
+program_dict = json.loads(emitter.emit(ast))
+
+# Find matching workflow AST
+from facetwork.ast_utils import find_workflow
+wf_ast = find_workflow(program_dict, wf.name)
+
+if not wf_ast:
+    print(f'Error: workflow {wf.name} not found in compiled AST', file=sys.stderr)
+    sys.exit(1)
+
+# ── Extract parameters and defaults ─────────────────────────────────
+params = wf_ast.get('params', [])
+defaults = {}
+for p in params:
+    default_val = p.get('default')
+    if default_val is not None:
+        if isinstance(default_val, dict) and 'value' in default_val:
+            defaults[p['name']] = default_val['value']
+        else:
+            defaults[p['name']] = default_val
+
+# ── Gather inputs ────────────────────────────────────────────────────
+if input_json.strip():
+    try:
+        user_inputs = json.loads(input_json)
+    except json.JSONDecodeError as e:
+        print(f'Error: invalid --input JSON: {e}', file=sys.stderr)
+        sys.exit(1)
+    inputs = dict(defaults)
+    inputs.update(user_inputs)
+elif params:
+    # Interactive prompting
+    inputs = {}
+    print()
+    print(f'Parameters for {wf.name}:')
+    print()
+    for p in params:
+        pname = p.get('name', '')
+        ptype = p.get('type', 'Any')
+        default = defaults.get(pname)
+        default_str = json.dumps(default) if default is not None else ''
+
+        prompt_str = f'  {pname} ({ptype})'
+        if default_str:
+            prompt_str += f' [{default_str}]'
+        prompt_str += ': '
+
+        try:
+            raw = input(prompt_str).strip()
+        except EOFError:
+            raw = ''
+
+        if not raw:
+            # Use default
+            if default is not None:
+                inputs[pname] = default
+        else:
+            # Parse typed value
+            if raw.lower() == 'true':
+                inputs[pname] = True
+            elif raw.lower() == 'false':
+                inputs[pname] = False
+            else:
+                try:
+                    inputs[pname] = int(raw)
+                except ValueError:
+                    try:
+                        inputs[pname] = float(raw)
+                    except ValueError:
+                        if (raw.startswith('{') or raw.startswith('[')):
+                            try:
+                                inputs[pname] = json.loads(raw)
+                            except json.JSONDecodeError:
+                                inputs[pname] = raw
+                        else:
+                            inputs[pname] = raw
+    print()
+else:
+    inputs = {}
+
+# ── Execute ──────────────────────────────────────────────────────────
+print(f'Starting workflow: {wf.name} (id={wf.uuid})')
+print(f'Inputs: {json.dumps(inputs, default=str)}')
+print()
+
+telemetry = Telemetry(enabled=True)
+evaluator = Evaluator(persistence=store, telemetry=telemetry)
+
+result = evaluator.execute(wf_ast, inputs=inputs, program_ast=program_dict, wf_id=wf.uuid)
+
+if result.success:
+    print(f'Completed successfully.')
+    print(f'Outputs: {json.dumps(result.outputs, default=str)}')
+else:
+    print(f'Failed: {result.error}', file=sys.stderr)
+    sys.exit(1)
+"

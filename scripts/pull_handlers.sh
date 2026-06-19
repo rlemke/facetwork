@@ -1,33 +1,4 @@
-pushd
-cd ~
-cd fw_handlers
-cd fwh_osm
-git pull
-cd ..
-cd fwh_anthropic
-git pull
-cd ..
-cd fwh_save_earth
-git pull
-cd ..
-cd fwh_noaa_weather
-git pull
-cd ..
-cd fwh_sensor_monitoring
-git pull
-cd ..
-cd fwh_genomics
-git pull
-cd ..
-cd fwh_census_us
-git pull
-cd ..
-cd fwh_osm_lz
-git pull
-cd ..
-cd fwh_jenkins
-git pull
-cd ..
-cd fwh_sentinel2
-git pull
-cd ..
+#!/usr/bin/env bash
+# TRANSITION SHIM — this flat path is deprecated; use the `fw` front-door.
+# Removed after the clean-break cutover. Forwards to the new location.
+exec "$(dirname "$0")/lib/install/pull-handlers" "$@"

@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Re-render the thesis Markdown sources as PDFs.
+#
+# Toolchain: pandoc → HTML (with embedded CSS) → headless Google Chrome
+# → PDF.  This matches the toolchain that produced the previously-
+# committed PDFs (Creator: HeadlessChrome / Producer: Skia/PDF), so
+# regenerated files stay visually consistent with the originals.
+#
+# Usage:
+#   scripts/build-thesis-pdf                       # all .md files in docs/thesis/
+#   scripts/build-thesis-pdf thesis                # one file (without .md)
+#   scripts/build-thesis-pdf thesis defense        # several
+#
+# Requires: pandoc, /Applications/Google Chrome.app on macOS.
+
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$FW_ROOT"
+THESIS_DIR="$REPO_ROOT/docs/thesis"
+STYLE_CSS="$THESIS_DIR/_pdf-style.css"
+
+CHROME_BIN="${CHROME_BIN:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+if [[ ! -x "$CHROME_BIN" ]]; then
+    if command -v chromium >/dev/null 2>&1; then
+        CHROME_BIN="$(command -v chromium)"
+    elif command -v google-chrome >/dev/null 2>&1; then
+        CHROME_BIN="$(command -v google-chrome)"
+    else
+        echo "Error: Google Chrome not found. Set CHROME_BIN to the binary path." >&2
+        exit 1
+    fi
+fi
+
+if ! command -v pandoc >/dev/null 2>&1; then
+    echo "Error: pandoc not found. Install with: brew install pandoc" >&2
+    exit 1
+fi
+
+# Default to every .md in docs/thesis/ if no args given.
+if [[ $# -eq 0 ]]; then
+    NAMES=()
+    while IFS= read -r f; do
+        NAMES+=("$(basename "$f" .md)")
+    done < <(find "$THESIS_DIR" -maxdepth 1 -type f -name "*.md" | sort)
+else
+    NAMES=("$@")
+fi
+
+for name in "${NAMES[@]}"; do
+    md_path="$THESIS_DIR/$name.md"
+    pdf_path="$THESIS_DIR/$name.pdf"
+    if [[ ! -f "$md_path" ]]; then
+        echo "Skipping $name — $md_path not found" >&2
+        continue
+    fi
+
+    echo "==> $name.md → $name.pdf"
+    tmp_html="$(mktemp -t thesis-html.XXXXXX).html"
+    trap 'rm -f "$tmp_html"' EXIT
+
+    pandoc "$md_path" \
+        --from=gfm \
+        --to=html5 \
+        --standalone \
+        --toc --toc-depth=3 \
+        --css="$STYLE_CSS" \
+        --embed-resources \
+        -o "$tmp_html"
+
+    "$CHROME_BIN" \
+        --headless \
+        --disable-gpu \
+        --no-pdf-header-footer \
+        --no-sandbox \
+        --print-to-pdf="$pdf_path" \
+        "file://$tmp_html" 2>&1 | grep -v "DevTools\|chrome_crashpad" || true
+
+    size=$(wc -c < "$pdf_path" | tr -d ' ')
+    pages=$(pdfinfo "$pdf_path" 2>/dev/null | awk '/^Pages/ {print $2}')
+    echo "    wrote $pdf_path  ${size} bytes  ${pages:-?} pages"
+    rm -f "$tmp_html"
+done
+
+echo
+echo "Done."

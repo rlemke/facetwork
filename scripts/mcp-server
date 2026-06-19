@@ -1,16 +1,4 @@
 #!/usr/bin/env bash
-# Start the AFL MCP server.
-#
-# Usage:
-#   scripts/mcp-server                                # start stdio server
-#   scripts/mcp-server --config /path/to/config.json  # custom config
-#   scripts/mcp-server --help                         # show options
-
-set -euo pipefail
-
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-
-PYTHON="${REPO_ROOT}/.venv/bin/python3"
-[[ -x "$PYTHON" ]] || PYTHON=python3
-
-exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.mcp "$@"
+# TRANSITION SHIM — this flat path is deprecated; use the `fw` front-door.
+# Removed after the clean-break cutover. Forwards to the new location.
+exec "$(dirname "$0")/lib/svc/mcp" "$@"

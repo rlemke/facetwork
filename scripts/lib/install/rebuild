@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# AgentFlow Docker Rebuild Script
+#
+# Rebuilds all Docker images and optionally restarts services.
+# Overlay-aware: reads .afl-active-config (written by setup) or .env
+# so that --up restarts with the correct compose files and profiles.
+#
+# Usage:
+#   scripts/rebuild                # Rebuild all images (no cache)
+#   scripts/rebuild --cached       # Rebuild using Docker layer cache
+#   scripts/rebuild --up           # Rebuild and restart services
+#
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$FW_ROOT"
+cd "$PROJECT_DIR"
+
+# Load shared env (sets defaults from .env)
+source "$FW_LIB/_helpers/_env.sh"
+
+USE_CACHE=false
+RESTART=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --cached)  USE_CACHE=true ;;
+        --up)      RESTART=true ;;
+        *)         echo "Unknown option: $arg"; echo "Usage: scripts/rebuild [--cached] [--up]"; exit 1 ;;
+    esac
+done
+
+# Load .afl-active-config if it exists (written by scripts/setup).
+# These override .env values so rebuild matches the last setup invocation.
+if [ -f "$PROJECT_DIR/.afl-active-config" ]; then
+    source "$PROJECT_DIR/.afl-active-config"
+fi
+
+# Compute compose files and profiles from active overlay state
+_compute_compose_args
+
+echo "=== Rebuilding AgentFlow Docker images ==="
+
+BUILD_ARGS=()
+if [ "$USE_CACHE" = false ]; then
+    BUILD_ARGS+=(--no-cache)
+    echo "  Cache: disabled"
+else
+    echo "  Cache: enabled"
+fi
+
+# Pass HDFS build arg so the Dockerfile installs HDFS dependencies
+if [ "${AFL_HDFS:-false}" = true ]; then
+    export INSTALL_HDFS=true
+    echo "  HDFS:  enabled (INSTALL_HDFS=true)"
+fi
+
+docker compose $AFL_COMPOSE_FILES $AFL_PROFILE_ARGS build "${BUILD_ARGS[@]}"
+
+echo ""
+echo "=== All images rebuilt ==="
+
+if [ "$RESTART" = true ]; then
+    if [ -z "${AFL_COMPOSE_FILES:-}" ] && [ ! -f "$PROJECT_DIR/.afl-active-config" ] && [ ! -f "$PROJECT_DIR/.env" ]; then
+        echo ""
+        echo "WARNING: No .afl-active-config or .env found."
+        echo "  Restarting with base docker-compose.yml only."
+        echo "  Run scripts/setup to configure overlays, or copy .env.example to .env."
+    fi
+    echo ""
+    echo "=== Restarting services ==="
+    docker compose $AFL_COMPOSE_FILES $AFL_PROFILE_ARGS up -d
+    echo ""
+    echo "=== Services restarted ==="
+fi

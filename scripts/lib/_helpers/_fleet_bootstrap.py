@@ -66,7 +66,14 @@ def _py_version(py: str) -> tuple[int, int] | None:
 
 
 def _repo_root() -> str:
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # This file lives at scripts/lib/_helpers/; fwroot resolves the true repo
+    # root robustly (git toplevel / sentinel walk) regardless of nesting depth.
+    import sys
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from fwroot import fw_root
+
+    return fw_root()
 
 
 def _venv_python(repo: str) -> str:

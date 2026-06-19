@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Start the AFL MCP server.
+#
+# Usage:
+#   scripts/mcp-server                                # start stdio server
+#   scripts/mcp-server --config /path/to/config.json  # custom config
+#   scripts/mcp-server --help                         # show options
+
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+REPO_ROOT="$FW_ROOT"
+
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.mcp "$@"

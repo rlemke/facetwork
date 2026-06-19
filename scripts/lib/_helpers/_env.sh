@@ -1,11 +1,14 @@
 # Shared environment helper for AgentFlow scripts.
-# Source this at the top of every script:
-#   source "$(dirname "$0")/_env.sh"
+# Source this AFTER _bootstrap.sh (which sets FW_ROOT):
+#   source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+#   source "$FW_LIB/_helpers/_env.sh"
 #
 # Loads .env (without overriding already-set vars) and exports
 # _compute_compose_args which populates AFL_COMPOSE_FILES and AFL_PROFILE_ARGS.
 
-_ENV_PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Ensure FW_ROOT is set even if a caller sources us directly (idempotent).
+[ -z "${FW_ROOT:-}" ] && source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_bootstrap.sh"
+_ENV_PROJECT_DIR="$FW_ROOT"
 
 # Load .env from project root (set only vars that are not already set)
 if [ -f "$_ENV_PROJECT_DIR/.env" ]; then

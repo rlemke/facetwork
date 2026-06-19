@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# fw-summary: build+push the runner image at HEAD, point fleet_config at it, wait for converge
+#
+# One-shot codification of docs/operations/fleet-rollouts.md §2:
+#   buildx build (cache-from current image) + push  ->  fleet config set --image
+#   ->  poll `fleet config status` until every host's fleet-agent applies it.
+# Tag = git short SHA of HEAD. Requires the `fleetbuilder` buildx builder and a
+# host daemon configured for the HTTP registry (see `fw fleet registry-setup`).
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+REGISTRY="${AFL_FLEET_REGISTRY:-192.168.68.96:5050}"
+IMAGE_REPO="$REGISTRY/facetwork-runner"
+BUILDER="${AFL_FLEET_BUILDER:-fleetbuilder}"
+PLATFORM="${AFL_FLEET_PLATFORM:-linux/arm64}"
+MONGO="${AFL_MONGODB_URL:-mongodb://server3.local:27017}"
+DRY=0 TIMEOUT=240
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry|--dry-run) DRY=1; shift ;;
+        --mongo) MONGO="$2"; shift 2 ;;
+        --platform) PLATFORM="$2"; shift 2 ;;
+        --timeout) TIMEOUT="$2"; shift 2 ;;
+        -h|--help) echo "Usage: fw fleet rollout [--dry] [--mongo URL] [--platform P] [--timeout SEC]"; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+cd "$FW_ROOT"
+[ -n "$(git status --porcelain 2>/dev/null)" ] && echo "WARNING: working tree is dirty — rolling out HEAD, not your uncommitted edits." >&2
+TAG="$(git rev-parse --short HEAD)"
+NEW_IMAGE="$IMAGE_REPO:$TAG"
+# cache-from the image the fleet currently runs (best-effort)
+PREV="$("$FW_LIB/fleet/config" get --mongo "$MONGO" 2>/dev/null | grep -oE "$IMAGE_REPO:[a-f0-9]+" | head -1 || true)"
+
+echo "Rollout plan:"
+echo "  image:     $NEW_IMAGE"
+echo "  cache-from: ${PREV:-<none>}"
+echo "  builder:   $BUILDER   platform: $PLATFORM"
+echo "  registry:  $REGISTRY"
+if [ "$DRY" = 1 ]; then echo "[dry-run] no build, no push, no fleet set."; exit 0; fi
+
+echo "=== 1/3 buildx build + push ==="
+BUILD=(docker buildx build --builder "$BUILDER" --platform "$PLATFORM"
+       -f docker/Dockerfile.example-runner -t "$NEW_IMAGE" --provenance=false)
+[ -n "$PREV" ] && BUILD+=(--cache-from "type=registry,ref=$PREV")
+BUILD+=(--push .)
+"${BUILD[@]}"
+
+echo "=== 2/3 fleet config set --image ==="
+SET_OUT="$("$FW_LIB/fleet/config" set --mongo "$MONGO" --image "$NEW_IMAGE")"
+echo "$SET_OUT"
+NEWVER="$(printf '%s' "$SET_OUT" | grep -oE 'version[: ]+[0-9]+' | grep -oE '[0-9]+' | head -1)"
+
+echo "=== 3/3 waiting for hosts to converge to v${NEWVER:-?} (timeout ${TIMEOUT}s) ==="
+elapsed=0
+while [ "$elapsed" -lt "$TIMEOUT" ]; do
+    STATUS="$("$FW_LIB/fleet/config" status --mongo "$MONGO" 2>/dev/null || true)"
+    total="$(printf '%s' "$STATUS" | grep -c 'applied v' || true)"
+    onnew="$(printf '%s' "$STATUS" | grep -c "applied v${NEWVER}" || true)"
+    echo "  ${onnew}/${total} host(s) on v${NEWVER} (${elapsed}s)"
+    [ -n "$NEWVER" ] && [ "$onnew" -ge "$total" ] && [ "$total" -gt 0 ] && { echo "All hosts converged."; break; }
+    sleep 12; elapsed=$((elapsed+12))
+done
+"$FW_LIB/fleet/config" status --mongo "$MONGO" | grep -E 'applied v' || true
+echo "Rollout complete: $NEW_IMAGE"

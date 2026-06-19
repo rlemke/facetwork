@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# Bootstrap a local Python development environment for Facetwork.
+#
+# Creates a virtual environment, installs dependencies, and verifies the setup.
+#
+# Usage:
+#   scripts/install              # install core + dev + test + dashboard + mcp
+#   scripts/install --minimal    # install core + test only
+#   scripts/install --full       # install all extras (including mongodb, hdfs)
+#   scripts/install -h, --help   # show this help message
+
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$FW_ROOT"
+
+VENV_DIR="$PROJECT_DIR/.venv"
+MIN_PYTHON_MAJOR=3
+MIN_PYTHON_MINOR=11
+
+# Defaults
+MODE="default"
+
+usage() {
+    cat <<'EOF'
+Usage: scripts/install [OPTIONS]
+
+Bootstrap a local Python development environment for Facetwork.
+
+Options:
+  --minimal    Install only core + test dependencies
+  --full       Install all extras including mongodb and hdfs
+  -h, --help   Show this help message
+
+By default, installs core + dev + test + dashboard + mcp extras.
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Parse arguments
+# ---------------------------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --minimal)   MODE="minimal";  shift ;;
+        --full)      MODE="full";     shift ;;
+        -h|--help)   usage; exit 0 ;;
+        *)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
+
+# ---------------------------------------------------------------------------
+# Phase 1: Check Python version
+# ---------------------------------------------------------------------------
+echo "=== Facetwork Local Setup ==="
+echo ""
+
+# Find Python
+PYTHON=""
+for candidate in python3 python; do
+    if command -v "$candidate" &>/dev/null; then
+        PYTHON="$candidate"
+        break
+    fi
+done
+
+if [[ -z "$PYTHON" ]]; then
+    echo "Error: Python not found. Please install Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+." >&2
+    exit 1
+fi
+
+# Check version
+PYTHON_VERSION="$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")"
+PYTHON_MAJOR="$("$PYTHON" -c "import sys; print(sys.version_info.major)")"
+PYTHON_MINOR="$("$PYTHON" -c "import sys; print(sys.version_info.minor)")"
+
+if [[ "$PYTHON_MAJOR" -lt "$MIN_PYTHON_MAJOR" ]] || \
+   { [[ "$PYTHON_MAJOR" -eq "$MIN_PYTHON_MAJOR" ]] && [[ "$PYTHON_MINOR" -lt "$MIN_PYTHON_MINOR" ]]; }; then
+    echo "Error: Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+ is required (found ${PYTHON_VERSION})." >&2
+    exit 1
+fi
+
+echo "Using Python ${PYTHON_VERSION} ($(command -v "$PYTHON"))"
+
+# ---------------------------------------------------------------------------
+# Phase 2: Create virtual environment
+# ---------------------------------------------------------------------------
+if [[ -d "$VENV_DIR" ]]; then
+    echo "Virtual environment already exists at .venv/"
+else
+    echo "Creating virtual environment at .venv/..."
+    "$PYTHON" -m venv "$VENV_DIR"
+fi
+
+# Use the venv Python from here on
+VENV_PYTHON="$VENV_DIR/bin/python3"
+
+# Upgrade pip
+echo "Upgrading pip..."
+"$VENV_PYTHON" -m pip install --upgrade pip --quiet
+
+# ---------------------------------------------------------------------------
+# Phase 3: Install dependencies
+# ---------------------------------------------------------------------------
+echo ""
+case "$MODE" in
+    minimal)
+        echo "Installing core + test dependencies (--minimal)..."
+        "$VENV_PYTHON" -m pip install -e ".[test]" --quiet
+        ;;
+    full)
+        echo "Installing all dependencies (--full)..."
+        "$VENV_PYTHON" -m pip install -e ".[dev,test,dashboard,mcp,mongodb,hdfs]" --quiet
+        ;;
+    *)
+        echo "Installing core + dev + test + dashboard + mcp dependencies..."
+        "$VENV_PYTHON" -m pip install -e ".[dev,test,dashboard,mcp]" --quiet
+        ;;
+esac
+
+# ---------------------------------------------------------------------------
+# Phase 4: Verify installation
+# ---------------------------------------------------------------------------
+echo ""
+echo "Verifying installation..."
+
+# Check CLI is available
+if "$VENV_PYTHON" -m facetwork.cli --help &>/dev/null; then
+    echo "  afl CLI:    OK"
+else
+    echo "  afl CLI:    FAILED" >&2
+    exit 1
+fi
+
+# Check pytest is available
+if "$VENV_PYTHON" -m pytest --version &>/dev/null; then
+    echo "  pytest:     OK"
+else
+    echo "  pytest:     FAILED" >&2
+    exit 1
+fi
+
+# Check mode-specific extras
+if [[ "$MODE" != "minimal" ]]; then
+    if "$VENV_PYTHON" -c "import fastapi" &>/dev/null; then
+        echo "  dashboard:  OK"
+    else
+        echo "  dashboard:  FAILED" >&2
+    fi
+    if "$VENV_PYTHON" -c "import mcp" &>/dev/null; then
+        echo "  mcp:        OK"
+    else
+        echo "  mcp:        FAILED" >&2
+    fi
+fi
+
+if [[ "$MODE" == "full" ]]; then
+    if "$VENV_PYTHON" -c "import pymongo" &>/dev/null; then
+        echo "  pymongo:    OK"
+    else
+        echo "  pymongo:    FAILED" >&2
+    fi
+    if "$VENV_PYTHON" -c "import pyarrow" &>/dev/null; then
+        echo "  pyarrow:    OK"
+    else
+        echo "  pyarrow:    FAILED" >&2
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== Setup complete ==="
+echo ""
+echo "Activate the virtual environment:"
+echo "  source .venv/bin/activate"
+echo ""
+echo "Run tests:"
+echo "  pytest tests/ examples/ -v"
+echo ""
+echo "Compile FFL files:"
+echo "  ffl input.ffl -o output.json"
+echo ""
+echo "Start the dashboard:"
+echo "  afl-dashboard"
+echo ""

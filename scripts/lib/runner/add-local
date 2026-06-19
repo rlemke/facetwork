@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# fw-summary: add a couple of local handler runners (no dashboard), convenience shorthand
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+exec "$FW_LIB/runner/start" --no-dashboard --instances 2 "$@" -- --log-format text
