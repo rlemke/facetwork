@@ -931,6 +931,31 @@ scripts/setup --mongodb-data-dir /mnt/ssd/mongodb
 |----------|---------|-------------|
 | `MONGODB_DATA_DIR` | `mongodb_data` (named volume) | Host path for MongoDB data files |
 
+#### Docker VM disk guard (prevent ENOSPC mongo crashes)
+
+On Docker Desktop, the bundled mongo/minio live on the **Docker VM's** internal
+disk (a fixed-size overlay, *not* the host's free space). Heavy image building —
+e.g. repeated `buildx`/`rebuild-workers` during a rollout — can fill that VM
+disk to 100%, at which point WiredTiger can't write its journal and **mongo
+crash-loops, taking the whole fleet down** (the cause is invisible in `df` on the
+host, which still shows free space — check `docker run --rm busybox df /`).
+
+`scripts/docker-disk-guard` reclaims build cache + unused images (re-pullable
+from the registry) + stopped containers when the VM disk crosses a threshold
+(default 80%); it never touches volumes (your mongo/minio/postgis data). Install
+it on the **infra host** (and any host that builds images) via cron:
+
+```bash
+( crontab -l 2>/dev/null | grep -v docker-disk-guard; \
+  echo "*/30 * * * * $PWD/scripts/docker-disk-guard >/dev/null 2>&1" ) | crontab -
+# tune with DOCKER_DISK_THRESHOLD; log at ~/.docker-disk-guard.log
+```
+
+If the VM-disk *baseline* (after pruning) is itself high, that's durable data
+(the `minio`/`mongodb` volumes) — enlarge the Docker VM disk or move mongo/minio
+to dedicated infra (`MONGODB_DATA_DIR`, external MinIO) rather than relying on
+the guard.
+
 ### External Storage for GraphHopper
 
 GraphHopper graph storage is configured by the OSM example package itself
