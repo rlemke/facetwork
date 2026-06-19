@@ -940,6 +940,42 @@ class TestServerOperations:
         assert len(running) == 1
         assert running[0].uuid == "s-1"
 
+    def test_prune_stale_servers_state_aware_windows(self, mongo_store):
+        """Shutdown rows prune on the short terminal window; live rows keep the
+        generous window so a transiently-slow runner is never deleted."""
+        import time
+
+        now = int(time.time() * 1000)
+        min2 = 120_000
+        min20 = 1_200_000
+
+        def _srv(uuid, state, age_ms):
+            return ServerDefinition(
+                uuid=uuid,
+                server_group="workers",
+                service_name="facetwork",
+                server_name=uuid,
+                state=state,
+                ping_time=now - age_ms,
+            )
+
+        # shutdown, 5 min stale -> past terminal window -> PRUNED
+        mongo_store.save_server(_srv("dead-old", ServerState.SHUTDOWN, 5 * min2))
+        # shutdown, fresh ping (just deregistered) -> within terminal window -> KEPT
+        mongo_store.save_server(_srv("dead-fresh", ServerState.SHUTDOWN, 1_000))
+        # running, 5 min quiet -> within live window -> KEPT (must not self-delete)
+        mongo_store.save_server(_srv("live-slow", ServerState.RUNNING, 5 * min2))
+        # running, 25 min stale -> past live window -> PRUNED (truly dead)
+        mongo_store.save_server(_srv("live-dead", ServerState.RUNNING, 25 * min2))
+
+        deleted = mongo_store.prune_stale_servers(
+            older_than_ms=min20, terminal_older_than_ms=min2
+        )
+
+        assert deleted == 2
+        remaining = {s.uuid for s in mongo_store.get_all_servers()}
+        assert remaining == {"dead-fresh", "live-slow"}
+
 
 # =============================================================================
 # Orphaned Task Reaper Tests (MongoStore-specific)

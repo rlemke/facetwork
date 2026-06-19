@@ -18,9 +18,15 @@ from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Any
 
-from ..entities import HandledCount, ServerDefinition
+from ..entities import HandledCount, ServerDefinition, ServerState
 from ._internals import _MixinBase
 from .base import _current_time_ms
+
+# States a server only reaches once it is *explicitly* dead: a graceful
+# `_deregister_server` or the orphan reaper set it, stamping a fresh
+# `ping_time`. Such records carry no live work to protect, so they are pruned
+# on a short window rather than lingering for the full live grace period.
+_TERMINAL_SERVER_STATES = (ServerState.SHUTDOWN,)
 
 
 class ServerMixin(_MixinBase):
@@ -44,9 +50,12 @@ class ServerMixin(_MixinBase):
         """Save a server."""
         self._upsert_by_uuid(self._db.servers, self._server_to_doc(server))
 
-    def prune_stale_servers(self, older_than_ms: int = 600_000) -> int:
-        """Delete ServerDefinition records whose last ping is older than
-        ``older_than_ms`` (default 10 min).
+    def prune_stale_servers(
+        self,
+        older_than_ms: int = 600_000,
+        terminal_older_than_ms: int | None = None,
+    ) -> int:
+        """Delete ServerDefinition records whose last ping is stale.
 
         Long-stopped containers leave heartbeat-stale records in
         ``db.servers``. Periodic pruning keeps the collection bounded so
@@ -54,10 +63,43 @@ class ServerMixin(_MixinBase):
         dashboard's grouped-by-task_list view doesn't accumulate dead
         servers in the "null task_list" bucket from older agent versions.
 
+        Two windows, because the two cases want different grace periods:
+
+        - **Live states** (``running``/``startup``): pruned only after the
+          generous ``older_than_ms`` window. A live runner that goes briefly
+          quiet (GC pause, slow Mongo) must NOT be deleted out from under
+          itself, so this stays long (default 10 min).
+        - **Terminal states** (``shutdown``): the server is *explicitly* dead
+          — a graceful ``_deregister_server`` or the reaper marked it so, and
+          it stamped a fresh ``ping_time`` doing it. There is nothing to
+          protect, so these are pruned on the much shorter
+          ``terminal_older_than_ms`` window (default = ``older_than_ms``, but
+          callers pass the reaper timeout ~2 min) instead of lingering for the
+          full live window and inflating ``list-runners`` / dashboard counts.
+
         Returns the number of records deleted.
         """
-        cutoff = _current_time_ms() - older_than_ms
-        result = self._db.servers.delete_many({"ping_time": {"$lt": cutoff}})
+        now = _current_time_ms()
+        if terminal_older_than_ms is None:
+            terminal_older_than_ms = older_than_ms
+        live_cutoff = now - older_than_ms
+        terminal_cutoff = now - terminal_older_than_ms
+        result = self._db.servers.delete_many(
+            {
+                "$or": [
+                    # Live (or unknown-state) servers: long grace window.
+                    {
+                        "state": {"$nin": list(_TERMINAL_SERVER_STATES)},
+                        "ping_time": {"$lt": live_cutoff},
+                    },
+                    # Explicitly-dead servers: short grace window.
+                    {
+                        "state": {"$in": list(_TERMINAL_SERVER_STATES)},
+                        "ping_time": {"$lt": terminal_cutoff},
+                    },
+                ]
+            }
+        )
         return result.deleted_count
 
     def dispatchable_facet_names(self, fresh_window_ms: int = 60_000) -> set[str]:

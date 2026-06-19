@@ -538,13 +538,37 @@ class MemoryStore(PersistenceAPI):
         """Save a server."""
         self._servers[server.uuid] = server
 
-    def prune_stale_servers(self, older_than_ms: int = 600_000) -> int:
-        """Delete ServerDefinition records whose last ping is older than
-        ``older_than_ms`` (default 10 min). Returns the count deleted."""
+    def prune_stale_servers(
+        self,
+        older_than_ms: int = 600_000,
+        terminal_older_than_ms: int | None = None,
+    ) -> int:
+        """Delete ServerDefinition records whose last ping is stale.
+
+        Live (``running``/``startup``) rows use the generous ``older_than_ms``
+        window; explicitly-dead ``shutdown`` rows use the shorter
+        ``terminal_older_than_ms`` (default = ``older_than_ms``) so they don't
+        linger and inflate counts. Returns the count deleted. Mirrors
+        ``MongoStore.prune_stale_servers``."""
         import time as _t
 
-        cutoff = int(_t.time() * 1000) - older_than_ms
-        stale = [uuid for uuid, s in self._servers.items() if getattr(s, "ping_time", 0) < cutoff]
+        from .entities import ServerState
+
+        if terminal_older_than_ms is None:
+            terminal_older_than_ms = older_than_ms
+        now = int(_t.time() * 1000)
+        live_cutoff = now - older_than_ms
+        terminal_cutoff = now - terminal_older_than_ms
+        stale = []
+        for uuid, s in self._servers.items():
+            ping = getattr(s, "ping_time", 0)
+            cutoff = (
+                terminal_cutoff
+                if getattr(s, "state", None) == ServerState.SHUTDOWN
+                else live_cutoff
+            )
+            if ping < cutoff:
+                stale.append(uuid)
         for uuid in stale:
             del self._servers[uuid]
         return len(stale)
