@@ -27,6 +27,41 @@ python -m facetwork.dashboard --log-format text
 # Open http://localhost:8080
 ```
 
+## The `fw` CLI — single front-door for every operation
+
+**All operational tooling lives behind one command: `fw <group> <command>`** (the
+`fw` executable is at the repo root). The old flat `scripts/<name>` paths **no
+longer exist** — `scripts/` now contains only `scripts/lib/<group>/<command>`,
+which `fw` dispatches to. Start with `fw help` to see the groups, `fw <group>` to
+list a group's commands:
+
+```bash
+fw help                       # list all groups
+fw fleet                      # list the fleet commands (with one-line blurbs)
+fw runner start --example osm-geocoder -- --log-format text
+fw runner list                # the fleet (was scripts/list-runners)
+fw ffl seed                   # seed examples (was scripts/seed-examples)
+fw db postgis vacuum          # nested groups work
+```
+
+Groups: **`install`** (toolchain/venv/examples) · **`single`** (local dev stack:
+up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgroup) ·
+**`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
+agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
+(compile/run/publish/seed/scaffold/catalog) · **`maint`** (disk-guard/repair-workflow/
+terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana) ·
+**`util`**.
+
+Notes for working with `fw`:
+- It's just a thin dispatcher: each command is a file under `scripts/lib/<group>/`,
+  `exec`'d with your args verbatim. The filesystem is the registry; `# fw-summary:`
+  comments drive the listings. Path resolution is via `scripts/lib/_helpers/_bootstrap.sh`.
+- The bolded commands above (`fw fleet rollout`, `fw fleet scale`, `fw fleet
+  registry-setup`, `fw runner scale`, `fw maint purge-servers`) are the standard
+  fleet/runner ops — prefer them over raw `docker`/`pymongo`. Most take `--dry`.
+- Mongo-touching commands default to `localhost:27017`; on a runner host that isn't
+  the DB, pass `--mongo mongodb://server3.local:27017` (or set `AFL_MONGODB_URL`).
+
 ## Running Workflows from the Dashboard
 
 The dashboard UI is **v3** and is the default — `/` redirects to `/v3/workflows`.
@@ -87,7 +122,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | `examples/` | 15+ example workflows with FFL, handlers, and tests |
 | `docs/` | All documentation: getting-started, guides, reference, operations, architecture, contributing |
 | `spec/` | Redirect stubs (documentation moved to `docs/`) |
-| `scripts/` | Operations scripts (start, stop, deploy, vacuum, etc.) |
+| `fw` + `scripts/lib/` | Operations CLI — `fw <group> <command>` dispatches to `scripts/lib/<group>/<command>` (see [The `fw` CLI](#the-fw-cli--single-front-door-for-every-operation)). No flat scripts. |
 | `agents/` | Multi-language agent libraries (Python, Scala, Go, TypeScript, Java) |
 | `grafana/` | Grafana provisioning: data sources, dashboards (OSM overview, spatial explorer) |
 
