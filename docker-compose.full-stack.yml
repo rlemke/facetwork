@@ -52,6 +52,11 @@ x-osm-s3-env: &osm-s3-env
   # Role group for fleet status / dashboard grouping. `start-runner --fleet`
   # sets AFL_SERVER_GROUP=runner; local full-stack leaves it at "default".
   AFL_SERVER_GROUP: ${AFL_SERVER_GROUP:-default}
+  # Orchestration role (docs/architecture/ffl-runner-orchestration-tier.md).
+  # Default "inline" so a bare `docker compose up` (no ffl tier) self-orchestrates.
+  # start-all-workers sets AFL_HANDLER_CONTINUATION_MODE=off after bringing up the
+  # ffl-runner tier, so handler runners stop owning the sweep/backlog.
+  AFL_CONTINUATION_MODE: ${AFL_HANDLER_CONTINUATION_MODE:-inline}
   # 2 worker threads/runner. ToGeoJson's osmium export is long, and the workflow
   # orchestration needs a thread too — with only 1 thread, exports can stall
   # behind resume processing. Cap TOTAL concurrent exports via runner COUNT to
@@ -118,6 +123,11 @@ x-s3-storage: &s3-storage
   # "runner" (not "default"). The non-osm services don't pass --server-group in
   # AFL_REGISTRY_RUNNER_ARGS, so the runner falls back to this env value.
   AFL_SERVER_GROUP: ${AFL_SERVER_GROUP:-default}
+  # Orchestration role — default "inline" (self-orchestrating) so a bare
+  # `docker compose up` works without the ffl tier; start-all-workers sets
+  # AFL_HANDLER_CONTINUATION_MODE=off once the ffl-runner tier is up. See
+  # docs/architecture/ffl-runner-orchestration-tier.md.
+  AFL_CONTINUATION_MODE: ${AFL_HANDLER_CONTINUATION_MODE:-inline}
   AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://afl-minio:9000}
   AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
   AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
