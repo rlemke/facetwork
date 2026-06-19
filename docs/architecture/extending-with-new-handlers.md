@@ -30,11 +30,11 @@ Don't guess whether a capability exists. Compose the FFL and let the tooling tel
   event facet reachable from the entry workflow is checked against the fleet registry;
   a missing/unimportable handler → `CatalogRunBlocked` naming the facet, **before any
   task is posted**. (This is what blocked `osm.Roads.Motorways`, a declared facet with no handler.)
-- **`scripts/scaffold-handler --detect-gaps`** — list the handler gaps for a composed
+- **`fw ffl scaffold --detect-gaps`** — list the handler gaps for a composed
   workflow offline:
 
   ```bash
-  scripts/scaffold-handler --detect-gaps --ffl workflow.ffl --entry MyWorkflow \
+  fw ffl scaffold --detect-gaps --ffl workflow.ffl --entry MyWorkflow \
       --registered "osm.ops.CacheRegion,osm.viz.RenderMap"   # or --registered @facets.txt
   ```
 
@@ -43,7 +43,7 @@ If there's no gap, you're in the "new workflow" case — just author + validate 
 ## Step 1 — scaffold the facet + handler + test (for review)
 
 ```bash
-scripts/scaffold-handler osm.Filters.FilterGeoJSONByTagContains \
+fw ffl scaffold osm.Filters.FilterGeoJSONByTagContains \
     --params  "input_path:String,tag_key:String,substring:String" \
     --returns "result:OSMFilteredFeatures" \
     --doc "Keep GeoJSON features whose tag value CONTAINS substring." \
@@ -86,9 +86,9 @@ facet's tasks.
 ## Step 4 — deploy + expose
 
 - `pip install -e <pkg>` against the runner's venv, then **(re)start the runner** so it
-  registers the new handler. Confirm with `scripts/list-runners` or by re-running the
+  registers the new handler. Confirm with `fw runner list` or by re-running the
   catalog preflight (the gap is gone).
-- `scripts/catalog import-package <pkg>` to refresh the cataloged library so workflows
+- `fw ffl catalog import-package <pkg>` to refresh the cataloged library so workflows
   can `use` the new facet (the catalog is hermetic — a facet must be in a pinned library,
   not a loose file: see [`use` resolution](catalog-use-resolution.md)).
 

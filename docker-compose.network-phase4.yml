@@ -15,7 +15,7 @@
 #   docker compose -p phase4 -f docker-compose.network-phase4.yml up -d --build --scale route-runner=2
 #   # seed happens per-container at start; then submit from the host venv:
 #   AFL_MONGODB_URL=mongodb://localhost:27019 AFL_MONGODB_DATABASE=facetwork \
-#     scripts/run-workflow --workflow osm.Network.workflows.RouteFanout \
+#     fw ffl run-workflow --workflow osm.Network.workflows.RouteFanout \
 #       --input '{"network_path":"/data/cache/osm/network/motorways@tol25-i","pairs":[...]}'
 #
 # AFL_DATA_DIR must contain the prebuilt artifact at

@@ -8,7 +8,7 @@ With no names, operates on every discovered example. ``--seed`` also
 compiles each example's FFL and upserts a FlowDefinition + its
 WorkflowDefinitions so the workflows appear in the dashboard's Flows tab
 (idempotent — re-running replaces the example's prior seed). Used by
-``scripts/start-runner``, ``scripts/seed-examples``, and the per-example
+``fw runner start``, ``fw ffl seed``, and the per-example
 runner container entrypoint; safe to call directly for ad-hoc registration.
 """
 

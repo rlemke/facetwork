@@ -35,7 +35,7 @@ fleet_config (Mongo, _id="default")
 Each server runs `fleet-agent watch`, a daemon that polls `fleet_config.version`
 every 30s. When the version changes, the agent reconciles **its own** host to the
 desired state. Nothing is pushed; every server pulls. See
-[`scripts/fleet-agent`](../../scripts/fleet-agent) lines 174-202.
+[`fw fleet agent`](../../scripts/lib/fleet/agent) lines 174-202.
 
 There are two reconcile paths, chosen by the agent:
 
@@ -49,9 +49,13 @@ There are two reconcile paths, chosen by the agent:
 ## 2. Change deployments (image-based rollout)
 
 A real code rollout means: build a new runner image, push it to the registry
-every server can pull from, then point the central config at the new tag. The
-image build/push is **not** scripted in this repo — it is an out-of-band step;
-the steps below are the canonical procedure.
+every server can pull from, then point the central config at the new tag.
+
+> **TL;DR — `fw fleet rollout`** does all of §2.2–§2.4 in one shot: builds the
+> image at `HEAD` (tagged by git short SHA, cache-from the current image), pushes
+> it, runs `fw fleet set --image`, and polls until every host converges. Use
+> `--dry` to preview. The manual steps below are the underlying procedure (useful
+> when you need a custom tag, a different builder/arch, or to debug a step).
 
 ### 2.1 Tag convention
 
@@ -110,7 +114,7 @@ docker buildx rm fleetbuilder
 ### 2.3 Trigger the rollout
 
 ```bash
-scripts/fleet set --image 192.168.68.96:5050/facetwork-runner:<new-tag>
+fw fleet set --image 192.168.68.96:5050/facetwork-runner:<new-tag>
 ```
 
 This bumps `fleet_config.version` and changes the image. Within one ~30s poll
@@ -121,7 +125,7 @@ and records its `applied_version` / `applied_image`.
 ### 2.4 Verify
 
 ```bash
-scripts/fleet status          # config version + per-host applied version/image
+fw fleet status          # config version + per-host applied version/image
 ```
 
 Watch the per-host reconcile records converge to the new version and image. On
@@ -138,7 +142,7 @@ docker ps --filter name=runner-osm-geocoder \
 Both tags remain in the registry, so rollback is just another `fleet set`:
 
 ```bash
-scripts/fleet set --image 192.168.68.96:5050/facetwork-runner:<previous-tag>
+fw fleet set --image 192.168.68.96:5050/facetwork-runner:<previous-tag>
 ```
 
 ### 2.6 What `fleet set` cannot deploy
@@ -229,7 +233,7 @@ For no in-flight interruption at all, **drain first** so tasks are cleanly
 re-queued before any container stops:
 
 ```bash
-scripts/drain-runners --all        # reset running -> pending, then stop
+fw runner drain --all        # reset running -> pending, then stop
 # ... then fleet set --image ...
 ```
 
@@ -259,8 +263,8 @@ role or facet name):
 | `shutdown` (terminal) | `AFL_REAPER_TIMEOUT_MS` ≈ **2 min** | Explicitly dead — a graceful deregister or the reaper marked it. Nothing to protect, so it clears fast instead of inflating counts. |
 
 So any `shutdown` row — post-rollout or otherwise — self-clears within ~2 min;
-no manual cleanup is needed. Until then, **`scripts/list-runners` (no filter)
-counts them** — use `scripts/list-runners --state running` for the true live
+no manual cleanup is needed. Until then, **`fw runner list` (no filter)
+counts them** — use `fw runner list --state running` for the true live
 count during the window, or just wait. The prune runs from any live runner and
 acts on the whole `servers` collection, so a single up-to-date runner keeps the
 collection clean fleet-wide (one reason a lagging host is rarely urgent).
@@ -275,28 +279,28 @@ There are three operating modes. Pick by where the runners run.
 
 ```bash
 # register handlers from examples + start dashboard + start the runner service
-scripts/start-runner                                   # ALL examples
-scripts/start-runner --example osm-geocoder            # one example
-scripts/start-runner --example osm-geocoder -- --log-format text
-scripts/start-runner --instances 3                     # 3 concurrent runner processes
-scripts/start-runner --no-dashboard                    # skip the dashboard
+fw runner start                                   # ALL examples
+fw runner start --example osm-geocoder            # one example
+fw runner start --example osm-geocoder -- --log-format text
+fw runner start --instances 3                     # 3 concurrent runner processes
+fw runner start --no-dashboard                    # skip the dashboard
 ```
 
 ### 4.2 Containers (this host)
 
 ```bash
 # runners as containers against the LOCAL bundled infra
-scripts/start-runner --docker --example osm-geocoder
+fw runner start --docker --example osm-geocoder
 
 # runners as containers joining the EXTERNAL shared Mongo+MinIO (the fleet);
 # preflights both, reads .env.fleet. Default services: osm-geocoder + osm-lz.
-scripts/start-runner --fleet
-scripts/start-runner --fleet --example noaa-weather
-scripts/start-runner --fleet --example census-us --replicas 6
-scripts/start-runner --fleet --recreate                # force-recreate containers
+fw runner start --fleet
+fw runner start --fleet --example noaa-weather
+fw runner start --fleet --example census-us --replicas 6
+fw runner start --fleet --recreate                # force-recreate containers
 ```
 
-`scripts/start-worker` is a back-compat shim for `start-runner --fleet`.
+`fw runner start --fleet` is a back-compat shim for `start-runner --fleet`.
 
 ### 4.3 The fleet way (config-driven, all servers at once)
 
@@ -305,15 +309,15 @@ boxes. Edit the central config once; every server's agent reconciles.
 
 ```bash
 # change desired state centrally (each bumps fleet_config.version)
-scripts/fleet set --osm-replicas 8                     # every host rescales to 8
-scripts/fleet set --image <registry>/facetwork-runner:<tag>   # rolling image deploy
-scripts/fleet status                                   # config + per-host drift
+fw fleet set --osm-replicas 8                     # every host rescales to 8
+fw fleet set --image <registry>/facetwork-runner:<tag>   # rolling image deploy
+fw fleet status                                   # config + per-host drift
 
 # on each runner server (one-time join): a daemon that auto-applies changes
 export AFL_FLEET_KEY=<key>
-scripts/fleet-agent watch                              # poll + reconcile forever
-scripts/fleet-agent apply                              # one-shot reconcile (no daemon)
-scripts/fleet-agent apply --dry-run                    # preview
+fw fleet agent watch                              # poll + reconcile forever
+fw fleet agent apply                              # one-shot reconcile (no daemon)
+fw fleet agent apply --dry-run                    # preview
 ```
 
 A brand-new server joins with one command (`fleet-agent watch`) and self-configures
@@ -325,13 +329,13 @@ from the central config + encrypted secret store. See
 For process-mode runners on remote hosts (requires `AFL_RUNNER_HOSTS` or `--host`):
 
 ```bash
-scripts/start-runner --all --example osm-geocoder      # all AFL_RUNNER_HOSTS
-scripts/start-runner --host h1 --host h2 --example osm-geocoder
+fw runner start --all --example osm-geocoder      # all AFL_RUNNER_HOSTS
+fw runner start --host h1 --host h2 --example osm-geocoder
 
 # zero-downtime SERIAL restart: drain -> wait SHUTDOWN -> start -> wait RUNNING,
 # one host at a time. Re-registers handlers once before the loop.
-scripts/rolling-deploy --example osm-geocoder
-scripts/rolling-deploy --host h1 --host h2 --drain-timeout 90
+fw fleet rolling-deploy --example osm-geocoder
+fw fleet rolling-deploy --host h1 --host h2 --drain-timeout 90
 ```
 
 ---
@@ -341,10 +345,10 @@ scripts/rolling-deploy --host h1 --host h2 --drain-timeout 90
 ### 5.1 Stop (may leave tasks `running` until the reaper)
 
 ```bash
-scripts/stop-runners                       # local: SIGTERM, wait 5s, then SIGKILL
-scripts/stop-runners --all                 # all remote servers found in Mongo
-scripts/stop-runners --host h1 --host h2
-scripts/stop-runners --all --drain-timeout 30
+fw runner stop                       # local: SIGTERM, wait 5s, then SIGKILL
+fw runner stop --all                 # all remote servers found in Mongo
+fw runner stop --host h1 --host h2
+fw runner stop --all --drain-timeout 30
 ```
 
 Remote mode SSHs to each host, sends SIGTERM, polls Mongo for `SHUTDOWN`, and
@@ -356,9 +360,9 @@ Prefer this when you care about in-flight work. Each reset task gets a step-log
 entry for audit.
 
 ```bash
-scripts/drain-runners                      # stop local runners + reset running->pending
-scripts/drain-runners --tasks-only         # reset tasks, leave processes running
-scripts/drain-runners --dry                # preview, change nothing
+fw runner drain                      # stop local runners + reset running->pending
+fw runner drain --tasks-only         # reset tasks, leave processes running
+fw runner drain --dry                # preview, change nothing
 ```
 
 ### 5.3 Fleet-wide scale-to-zero
@@ -367,7 +371,7 @@ To stop fleet **containers** centrally, set the role replicas to 0 and let the
 agents reconcile (or stop containers on each host directly):
 
 ```bash
-scripts/fleet set --osm-replicas 0         # agents scale osm runners to 0
+fw fleet set --osm-replicas 0         # agents scale osm runners to 0
 # or, per host:
 docker compose -f docker-compose.full-stack.yml -f docker-compose.fleet.yml \
   stop runner-osm-geocoder

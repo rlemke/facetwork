@@ -78,7 +78,7 @@ pinned dependency:
 
 ```bash
 # 1. register the file-based namespace as a catalog library
-scripts/catalog import path/to/lib.ffl --slug some.lib --kind library --publish
+fw ffl catalog import path/to/lib.ffl --slug some.lib --kind library --publish
 
 # 2. author the workflow against it (depends_on pins it by revision)
 #    fw_catalog_save(..., depends_on=[{"slug": "some.lib"}])

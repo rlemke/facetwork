@@ -1215,7 +1215,7 @@ increase the global timeout.
 **Per-example timeout configuration:**
 
 Each example can provide a `runner.env` file that overrides global
-defaults when that example is started via `scripts/start-runner`:
+defaults when that example is started via `fw runner start`:
 
 ```bash
 # https://github.com/rlemke/fwh_osm/blob/main/runner.env.example
@@ -1228,10 +1228,10 @@ different timeout profiles without affecting each other:
 
 ```bash
 # Uses osm-geocoder/runner.env (4-hour timeout)
-scripts/start-runner --example osm-geocoder
+fw runner start --example osm-geocoder
 
 # Uses default timeout (15 min) — no runner.env
-scripts/start-runner --example hiv-drug-resistance
+fw runner start --example hiv-drug-resistance
 ```
 
 #### Retries and Reclaim

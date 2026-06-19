@@ -13,7 +13,7 @@ every service that needs it.
 | Per fwh_* repo | `runner-anthropic`, `runner-osm-geocoder`, `runner-osm-lz`, `runner-noaa-weather`, `runner-jenkins-example`, `runner-census-us`, `runner-genomics`, `runner-sensor-monitoring` |
 
 The compose file is [`docker-compose.full-stack.yml`](../../docker-compose.full-stack.yml);
-the wrapper script is [`scripts/full-stack`](../../scripts/full-stack).
+the wrapper script is [`fw single full-stack`](../../scripts/lib/single/full-stack).
 
 ## Why one runner per example
 
@@ -63,7 +63,7 @@ every runner.) See [runtime-impl.md §17.1.1](../reference/runtime-impl.md).
   repos with the install helper:
 
   ```bash
-  scripts/install-example --all
+  fw install example --all
   ```
 
   Each fwh_* repo can be in any state (clean clone, dirty edits, etc.).
@@ -86,14 +86,14 @@ every runner.) See [runtime-impl.md §17.1.1](../reference/runtime-impl.md).
 
 ```bash
 # 1. Clone + install every example
-scripts/install-example --all
+fw install example --all
 
 # 2. (Optional) Copy the env template and edit for secrets
 cp .env.full-stack.example .env.full-stack
 $EDITOR .env.full-stack         # set ANTHROPIC_API_KEY, CENSUS_API_KEY, etc.
 
 # 3. Bring up the full stack (builds images on first run)
-scripts/full-stack up
+fw single full-stack up
 
 # 4. Open the dashboard
 open http://localhost:8080
@@ -108,35 +108,35 @@ After `up`, each example runner spends ~10–30 seconds pip-installing
 its bind-mounted repo. Watch the progress with:
 
 ```bash
-scripts/full-stack logs            # tail all services
-scripts/full-stack logs runner-anthropic   # one service
+fw single full-stack logs            # tail all services
+fw single full-stack logs runner-anthropic   # one service
 ```
 
-## scripts/full-stack
+## fw single full-stack
 
 One entry point for everything. Picks `.env.full-stack` from the repo
 root when present, otherwise falls back to the checked-in
 `.env.full-stack.example`.
 
 ```text
-scripts/full-stack                       start every service (detached) [default]
-scripts/full-stack up                    same as no args
-scripts/full-stack up runner-anthropic   start specific services only
-scripts/full-stack down                  stop + remove containers (keeps named volumes)
-scripts/full-stack down --volumes        also wipe mongodb/postgis/jenkins data
-scripts/full-stack stop [SERVICE...]     stop without removing
-scripts/full-stack restart [SERVICE...]  restart selected (or all) services
-scripts/full-stack status                ps with service / status / ports
-scripts/full-stack logs                  tail -f all services
-scripts/full-stack logs SERVICE          tail -f one service
-scripts/full-stack logs --tail 100 SVC   snapshot
-scripts/full-stack build [SERVICE...]    docker compose build
-scripts/full-stack rebuild [--no-cache] [SERVICE...]   build + recreate containers
-scripts/full-stack pull                  pull mongo / postgis / jenkins images
-scripts/full-stack config                resolved compose config (env expanded)
-scripts/full-stack exec SERVICE          /bin/bash shell inside a container
-scripts/full-stack exec SERVICE -- CMD   run a one-shot command
-scripts/full-stack help                  this list
+fw single full-stack                       start every service (detached) [default]
+fw single full-stack up                    same as no args
+fw single full-stack up runner-anthropic   start specific services only
+fw single full-stack down                  stop + remove containers (keeps named volumes)
+fw single full-stack down --volumes        also wipe mongodb/postgis/jenkins data
+fw single full-stack stop [SERVICE...]     stop without removing
+fw single full-stack restart [SERVICE...]  restart selected (or all) services
+fw single full-stack status                ps with service / status / ports
+fw single full-stack logs                  tail -f all services
+fw single full-stack logs SERVICE          tail -f one service
+fw single full-stack logs --tail 100 SVC   snapshot
+fw single full-stack build [SERVICE...]    docker compose build
+fw single full-stack rebuild [--no-cache] [SERVICE...]   build + recreate containers
+fw single full-stack pull                  pull mongo / postgis / jenkins images
+fw single full-stack config                resolved compose config (env expanded)
+fw single full-stack exec SERVICE          /bin/bash shell inside a container
+fw single full-stack exec SERVICE -- CMD   run a one-shot command
+fw single full-stack help                  this list
 ```
 
 ### Environment knobs
@@ -202,7 +202,7 @@ Empirically, throughput is near-uniform: three osm-geocoder replicas on
 109 with no fairness mechanism (thesis §5.4.1).
 
 **Persistent scaling — edit the env file.** `AFL_<EXAMPLE>_REPLICAS`
-checkpoints the topology in `.env.full-stack`. `scripts/full-stack up`
+checkpoints the topology in `.env.full-stack`. `fw single full-stack up`
 sources the file and emits the matching `--scale runner-<name>=N` flag
 on every invocation. The defaults are all `1`, commented out — uncomment
 and adjust:
@@ -213,23 +213,23 @@ AFL_OSM_REPLICAS=3            # 3 osm-geocoder replicas
 AFL_GENOMICS_REPLICAS=2       # 2 genomics replicas
 ```
 
-Then any `scripts/full-stack up` or `rebuild` produces the desired fleet
+Then any `fw single full-stack up` or `rebuild` produces the desired fleet
 shape. Replicas auto-name as `facetwork-runner-osm-geocoder-1/-2/-3` —
 use the service name (not container name) with logs/exec:
 
 ```bash
-scripts/full-stack logs runner-osm-geocoder    # all 3 replicas multiplexed
-scripts/full-stack exec runner-osm-geocoder /bin/bash   # picks one
+fw single full-stack logs runner-osm-geocoder    # all 3 replicas multiplexed
+fw single full-stack exec runner-osm-geocoder /bin/bash   # picks one
 ```
 
 **Ad-hoc scaling — `--scale` on the command line.** Anything after `up`
 or `rebuild` passes through to `docker compose`:
 
 ```bash
-scripts/full-stack up -d --scale runner-osm-geocoder=5 runner-osm-geocoder
+fw single full-stack up -d --scale runner-osm-geocoder=5 runner-osm-geocoder
 ```
 
-Caveat: this is *not sticky*. A subsequent plain `scripts/full-stack up`
+Caveat: this is *not sticky*. A subsequent plain `fw single full-stack up`
 re-applies the env-file's `AFL_OSM_REPLICAS` (default `1`) and scales
 back down. Use the env-file form unless you want a one-shot experiment.
 
@@ -242,7 +242,7 @@ etc. continue to work.
 
 ## Using `docker compose` directly
 
-`scripts/full-stack` is a thin wrapper around
+`fw single full-stack` is a thin wrapper around
 `docker compose --env-file <env-file> -f docker-compose.full-stack.yml …`.
 If you'd rather drive Compose yourself, two flags do the work the wrapper
 does for you:
@@ -310,25 +310,25 @@ DASHBOARD_PORT=9000 ANTHROPIC_API_KEY=sk-ant-... \
 The full stack needs the 8 standalone `fwh_*` repos cloned under
 `$FWH_HANDLERS_ROOT`. Two helpers handle this:
 
-### scripts/install-example
+### fw install example
 
 Registry-driven; knows all 8 example repos.
 
 ```bash
-scripts/install-example --list              # see the registry
-scripts/install-example anthropic --check   # clone, pip install -e, verify
-scripts/install-example --all               # clone+install every example
-scripts/install-example osm-geocoder noaa-weather   # one or more by name
-scripts/install-example anthropic --extras agent_sdk,mcp
-scripts/install-example --pull-only anthropic       # just clone/git-pull
-scripts/install-example --skip-pull anthropic       # pip install existing clone only
+fw install example --list              # see the registry
+fw install example anthropic --check   # clone, pip install -e, verify
+fw install example --all               # clone+install every example
+fw install example osm-geocoder noaa-weather   # one or more by name
+fw install example anthropic --extras agent_sdk,mcp
+fw install example --pull-only anthropic       # just clone/git-pull
+fw install example --skip-pull anthropic       # pip install existing clone only
 ```
 
 Defaults clone into `~/fw_handlers/` and pip-install into the local
 `.venv/` (auto-detected). With `--check`, verifies the example is
 discoverable via `facetwork.examples.discover_entry_point_examples()`.
 
-### scripts/install-anthropic
+### fw install anthropic
 
 Thin wrapper for `fwh_anthropic` specifically. Maps `--agent-sdk` /
 `--mcp` / `--all` to the matching pip extras, then (with `--check`)
@@ -337,9 +337,9 @@ also reports whether the `claude` CLI is on `PATH` and whether
 but the package needs at runtime.
 
 ```bash
-scripts/install-anthropic                   # core (anthropic SDK only)
-scripts/install-anthropic --all --check     # + agent_sdk + mcp + env probes
-scripts/install-anthropic --mcp             # core + mcp extras only
+fw install anthropic                   # core (anthropic SDK only)
+fw install anthropic --all --check     # + agent_sdk + mcp + env probes
+fw install anthropic --mcp             # core + mcp extras only
 ```
 
 ## Service architecture
@@ -423,16 +423,16 @@ picks them up automatically.
 ### Tail logs across runners
 
 ```bash
-scripts/full-stack logs                    # everything
-scripts/full-stack logs runner-anthropic   # one service
-scripts/full-stack logs --tail 200 runner  # built-in runner snapshot
+fw single full-stack logs                    # everything
+fw single full-stack logs runner-anthropic   # one service
+fw single full-stack logs --tail 200 runner  # built-in runner snapshot
 ```
 
 ### Shell into a runner
 
 ```bash
-scripts/full-stack exec runner-anthropic              # /bin/bash
-scripts/full-stack exec runner-osm-geocoder -- python -c \
+fw single full-stack exec runner-anthropic              # /bin/bash
+fw single full-stack exec runner-osm-geocoder -- python -c \
     "from osm_geocoder.handlers.downloads.postgis_importer import *; print('ok')"
 ```
 
@@ -442,16 +442,16 @@ The `facetwork/` source and the entrypoints are baked into the images, so
 changes to them need a rebuild + container recreate. `rebuild` does both:
 
 ```bash
-scripts/full-stack rebuild                    # rebuild every custom image, recreate containers
-scripts/full-stack rebuild dashboard runner   # just those services
-scripts/full-stack rebuild --no-cache runner-anthropic   # from-scratch rebuild of one
+fw single full-stack rebuild                    # rebuild every custom image, recreate containers
+fw single full-stack rebuild dashboard runner   # just those services
+fw single full-stack rebuild --no-cache runner-anthropic   # from-scratch rebuild of one
 
 # (lower level — the two steps `rebuild` runs for you)
-scripts/full-stack build dashboard runner
-scripts/full-stack up -d dashboard runner
+fw single full-stack build dashboard runner
+fw single full-stack up -d dashboard runner
 ```
 
-A plain `scripts/full-stack up` after a `down`/`down --volumes` does **not**
+A plain `fw single full-stack up` after a `down`/`down --volumes` does **not**
 rebuild — it only builds images that are missing — so use `rebuild` when
 you've changed `facetwork/` or a Dockerfile/entrypoint.
 
@@ -460,14 +460,14 @@ rebuild — they're bind-mounted as editable installs. Just restart the
 specific runner:
 
 ```bash
-scripts/full-stack restart runner-anthropic
+fw single full-stack restart runner-anthropic
 ```
 
 ### Tear down
 
 ```bash
-scripts/full-stack down              # stop + remove containers, KEEP volumes
-scripts/full-stack down --volumes    # also wipe mongo / postgis / jenkins data
+fw single full-stack down              # stop + remove containers, KEEP volumes
+fw single full-stack down --volumes    # also wipe mongo / postgis / jenkins data
 ```
 
 Named volumes (`facetwork_mongodb_data`, `facetwork_postgis_data`,
@@ -515,7 +515,7 @@ imported OSM data, and Jenkins job history across restarts. Use
 Check that the seed service finished and the runners registered:
 
 ```bash
-scripts/full-stack logs seed | tail -20
+fw single full-stack logs seed | tail -20
 docker exec facetwork-mongodb mongosh --quiet facetwork --eval \
     'print("flows:", db.flows.countDocuments(),
            "workflows:", db.workflows.countDocuments(),
@@ -537,8 +537,8 @@ If those are missing, the postgis-init scripts didn't run. Recreate
 the postgis volume:
 
 ```bash
-scripts/full-stack down --volumes
-scripts/full-stack up
+fw single full-stack down --volumes
+fw single full-stack up
 ```
 
 Init scripts in `docker/postgis-init/` only run on first volume
@@ -556,16 +556,16 @@ host, use `localhost:<port>` where `<port>` is whatever's mapped in
 ### Example runner keeps restarting
 
 ```bash
-scripts/full-stack logs runner-anthropic | tail -50
+fw single full-stack logs runner-anthropic | tail -50
 ```
 
 Common causes:
 1. `~/fw_handlers/fwh_<name>/` doesn't exist (run
-   `scripts/install-example <name>`).
+   `fw install example <name>`).
 2. The bind-mount source path is wrong (check `FWH_HANDLERS_ROOT`).
 3. Pip install failed — usually network issue or a syntax error in
    the example's source. Fix on the host, then
-   `scripts/full-stack restart runner-<name>`.
+   `fw single full-stack restart runner-<name>`.
 
 ### "Container name already in use" on up
 
@@ -573,7 +573,7 @@ A prior `docker compose down` left an orphan container. Clean up:
 
 ```bash
 docker rm -f $(docker ps -aq --filter "name=facetwork-")
-scripts/full-stack up
+fw single full-stack up
 ```
 
 ### Need to point at a remote MongoDB / PostGIS
@@ -589,12 +589,12 @@ AFL_POSTGIS_URL=postgresql://user:pass@my-postgis-host:5432/afl_gis
 Then start only the services you need (omit `mongodb` / `postgis`):
 
 ```bash
-scripts/full-stack up dashboard runner runner-anthropic
+fw single full-stack up dashboard runner runner-anthropic
 ```
 
 ## Related
 
 - [`docs/operations/deployment.md`](deployment.md) — non-Docker / multi-host deployment
 - [`docs/getting-started/beginners-guide.md`](../getting-started/beginners-guide.md) — workflow basics
-- [`scripts/install-example`](../../scripts/install-example) — registry of standalone example repos
+- [`fw install example`](../../scripts/lib/install/example) — registry of standalone example repos
 - [`docker-compose.full-stack.yml`](../../docker-compose.full-stack.yml) — the source of truth

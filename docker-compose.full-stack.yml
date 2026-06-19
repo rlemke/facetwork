@@ -265,7 +265,7 @@ services:
       # Local output volume (non-OSM examples write here). OSM durable output
       # now lives in MinIO — the S3 creds below let the dashboard resolve
       # s3:// step-payload paths; rendered OSM maps are served host-side via
-      # scripts/serve-tiled-map after localizing from S3.
+      # fw util serve-map after localizing from S3.
       <<: *s3-creds
       AFL_LOCAL_OUTPUT_DIR: /data/output
       # Host-run runners write rendered outputs here (bind-mounted below); the

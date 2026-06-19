@@ -17,7 +17,7 @@ scratch; all coordination goes through MongoDB and all durable output goes to
 MinIO. Concretely:
 
 - **Joining is one command.** A machine becomes a runner by starting a runner
-  pointed at the shared Mongo + MinIO (`scripts/start-runner --fleet`, or the
+  pointed at the shared Mongo + MinIO (`fw runner start --fleet`, or the
   `fleet-agent` daemon). No registration ceremony, no leader election.
 - **Leaving is safe.** If a machine disappears mid-task — someone closes their
   laptop, a desktop reboots, the Wi-Fi drops — the **reaper** notices the dead

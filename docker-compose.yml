@@ -97,14 +97,14 @@ services:
 
   # The noaa-weather agent has been extracted to its own repo
   # (https://github.com/rlemke/fwh_noaa_weather). After `pip install -e
-  # ~/fw_handlers/fwh_noaa_weather`, register it with `scripts/start-runner
+  # ~/fw_handlers/fwh_noaa_weather`, register it with `fw runner start
   # --example noaa-weather`. The previous agent-noaa-weather Compose
   # service + Dockerfile.noaa-weather are no longer maintained here.
 
 
   # OSM agents are defined in the standalone osm-geocoder repo
   # (https://github.com/rlemke/fwh_osm). After `pip install -e ~/fw_handlers/fwh_osm`
-  # they're discoverable via `scripts/start-runner --example osm-geocoder`.
+  # they're discoverable via `fw runner start --example osm-geocoder`.
 
   # MCP Server (Model Context Protocol for LLM agents)
   # MCP uses stdio transport, so run interactively:

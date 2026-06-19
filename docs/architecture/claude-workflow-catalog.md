@@ -115,21 +115,21 @@ Typical loop: `fw_catalog_search` → reuse, or `fw_validate` → `fw_catalog_sa
 → (review) `fw_catalog_publish` → `fw_catalog_run` (re-run with new inputs any
 time; the body is pinned).
 
-## Backup / restore / import (`scripts/catalog`)
+## Backup / restore / import (`fw ffl catalog`)
 
 The catalog is self-describing — each revision carries its FFL, content hash,
 version, status, and pinned deps — so a backup is just the entries + revisions as
 JSON; the materialized `FlowDefinition`s are NOT backed up (they're regenerable).
 `facetwork/catalog/backup.py` + `facetwork/catalog/cli.py`, driven by
-`scripts/catalog`:
+`fw ffl catalog`:
 
 ```bash
-scripts/catalog list                          # packages + workflows overview
-scripts/catalog backup catalog.json          # dump entries + revisions to JSON
-scripts/catalog restore catalog.json          # restore + rebuild runnable flows
-scripts/catalog import path/to/wf.ffl --slug demo.x --publish   # file -> catalog
-scripts/catalog import examples/dir/ --tags imported            # whole directory
-scripts/catalog import-package osm-geocoder --tags osm          # whole package
+fw ffl catalog list                          # packages + workflows overview
+fw ffl catalog backup catalog.json          # dump entries + revisions to JSON
+fw ffl catalog restore catalog.json          # restore + rebuild runnable flows
+fw ffl catalog import path/to/wf.ffl --slug demo.x --publish   # file -> catalog
+fw ffl catalog import examples/dir/ --tags imported            # whole directory
+fw ffl catalog import-package osm-geocoder --tags osm          # whole package
 ```
 
 - **Backup** writes a portable, readable, git-friendly JSON (`format:
@@ -170,7 +170,7 @@ link to the materialized compiled flow, links to these design docs, and a **Run*
 form (inputs as JSON, with an "allow unpublished"
 opt-in) that submits a bootstrap run to the fleet. With a non-Mongo store the page
 degrades to an "unavailable" notice. The grouping is backed by
-`CatalogService.list_all()` — the same data the `scripts/catalog list` CLI uses.
+`CatalogService.list_all()` — the same data the `fw ffl catalog list` CLI uses.
 
 ## What's not here yet
 

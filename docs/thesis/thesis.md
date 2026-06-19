@@ -1075,7 +1075,7 @@ The decomposition into four models is an operational decision; from the FFL auth
 
 Two operational primitives distinguish Facetwork's fleet management from that of most workflow systems.
 
-**Drain.** `scripts/drain-runners` stops runners and resets their in-flight tasks back to pending. The tasks are picked up by other runners; no work is lost. Drain emits a step log for each reset task, so that the audit trail records *why* a task was re-executed. Drain is the standard operational tool for fleet upgrades and planned maintenance.
+**Drain.** `fw runner drain` stops runners and resets their in-flight tasks back to pending. The tasks are picked up by other runners; no work is lost. Drain emits a step log for each reset task, so that the audit trail records *why* a task was re-executed. Drain is the standard operational tool for fleet upgrades and planned maintenance.
 
 **Quarantine.** A quarantined runner stays alive — it keeps heartbeating, it renews task leases for work it has already claimed — but it stops claiming *new* tasks. This is the right tool when an operator suspects a specific server is misbehaving and wants to stop it acquiring more work without killing its in-flight tasks. The runner can be un-quarantined to resume normal operation, or the operator can drain it after its current tasks finish. Quarantine is implemented as a per-server state (`ServerState.QUARANTINE`) stored in the `servers` collection; the runner's claim loop checks this state on each poll cycle.
 
@@ -1095,11 +1095,11 @@ A rolling deployment in Facetwork follows this recipe:
 
 Alternatively, for handlers whose implementation has not changed but whose registration metadata has (for example, a per-handler timeout adjustment), step 2 is not needed at all: the `register_handler` call is enough.
 
-This recipe is implemented in `scripts/rolling-deploy`. The interesting property is that the fleet's total throughput decreases during the deploy but never reaches zero: at any instant, some subset of runners is available to claim work. A fleet of ten runners doing a rolling deploy with one-at-a-time replacement maintains nine tenths of its throughput throughout; compare this with a Jenkins controller restart, which is a hard zero.
+This recipe is implemented in `fw fleet rolling-deploy`. The interesting property is that the fleet's total throughput decreases during the deploy but never reaches zero: at any instant, some subset of runners is available to claim work. A fleet of ten runners doing a rolling deploy with one-at-a-time replacement maintains nine tenths of its throughput throughout; compare this with a Jenkins controller restart, which is a hard zero.
 
 ### 6.8 Fleet inspection
 
-A distinguishing feature of Facetwork's operational model is that the fleet is genuinely observable. `scripts/list-runners` produces a live view of every registered runner, its state, its ping time, its currently-claimed tasks, and its loaded handlers. The dashboard's `/v2/servers` page renders the same information graphically, with quarantine toggles on each row. The combination of a live, inspectable fleet and per-server lifecycle primitives turns fleet operations from a black art into a visible, scriptable practice.
+A distinguishing feature of Facetwork's operational model is that the fleet is genuinely observable. `fw runner list` produces a live view of every registered runner, its state, its ping time, its currently-claimed tasks, and its loaded handlers. The dashboard's `/v2/servers` page renders the same information graphically, with quarantine toggles on each row. The combination of a live, inspectable fleet and per-server lifecycle primitives turns fleet operations from a black art into a visible, scriptable practice.
 
 ### 6.9 Examples as standalone pip packages
 
@@ -1145,7 +1145,7 @@ These costs are real but manageable. For long-running, heterogeneous workflows t
 
 ### 7.4 The workflow-repair mechanism
 
-Facetwork's step-level recovery actions (`Retry`, `Re-run From Here`, `Reset Block`) are manual tools for operators, but there is also an automated repair mechanism. `scripts/repair-workflow` (or the equivalent dashboard button) diagnoses and fixes a stuck workflow through five checks:
+Facetwork's step-level recovery actions (`Retry`, `Re-run From Here`, `Reset Block`) are manual tools for operators, but there is also an automated repair mechanism. `fw maint repair-workflow` (or the equivalent dashboard button) diagnoses and fixes a stuck workflow through five checks:
 
 1. **Runner state.** A workflow is marked completed but has non-terminal work; reset to running.
 2. **Orphaned tasks.** Running tasks on dead or shutdown servers; reset to pending.

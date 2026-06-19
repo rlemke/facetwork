@@ -270,7 +270,7 @@ A multi-day session built out roadmap items 2–7 of [`composable-facet-library.
 
 **Requirement**: Re-submitting a workflow must create a fresh execution, or stale terminal steps shadow the new request.
 
-**What happened**: `scripts/run-workflow --workflow X` mints a *deterministic* execution id per workflow. The hospital-deserts run completed; resubmitting the same workflow with *food-desert* parameters returned instantly with the **stale hospital results**, because the prior execution's steps were already `Complete` under that id and nothing re-ran. The catalog `run` path avoids this (it mints a fresh execution id per run); `run-workflow` did not. Workaround: clear the prior execution's steps/tasks, or use the catalog.
+**What happened**: `fw ffl run-workflow --workflow X` mints a *deterministic* execution id per workflow. The hospital-deserts run completed; resubmitting the same workflow with *food-desert* parameters returned instantly with the **stale hospital results**, because the prior execution's steps were already `Complete` under that id and nothing re-ran. The catalog `run` path avoids this (it mints a fresh execution id per run); `run-workflow` did not. Workaround: clear the prior execution's steps/tasks, or use the catalog.
 
 **Upfront requirement**:
 - This is §2 (execution isolation) seen from the *re-run* angle: a deterministic execution id is an execution-isolation bug waiting for the second run. Every submission path must mint a fresh execution id.
@@ -346,12 +346,12 @@ Two startup gotchas burned ~50 minutes of a North-America tiled render this sess
 
 **Upfront requirement**:
 - **Compare in-process declarations against registry-loaded set at runner startup.** A duck-typed `_FacetNameCollector` (`register_handler(name, **_)` → set add) lets each example's `register_handlers(runner)` be run as a dry pass that yields the source-of-truth facet set without touching MongoDB. Diff against `dispatcher.dispatchable_facets()` and WARN per-package on facets present in code but missing from the registry. Per-package filtering matters: an example with *zero* of its facets in the registry is one the user did not seed (presumably on purpose) and should be quiet — only flag packages that are *partially* present (some facets registered, some not = drift).
-- **The diagnostic must run on every `--registry` start, not just `scripts/start-runner --example`.** The trap is that a bare `python -m facetwork.runtime.runner --registry` (used for hand-restarts, profilers, debugging) bypasses the seed step entirely. The drift check belongs in the runner itself, after `preload(verify=True)`.
+- **The diagnostic must run on every `--registry` start, not just `fw runner start --example`.** The trap is that a bare `python -m facetwork.runtime.runner --registry` (used for hand-restarts, profilers, debugging) bypasses the seed step entirely. The drift check belongs in the runner itself, after `preload(verify=True)`.
 - **The warning message must name the package, the missing facets, and the fix.** "Registry drift" alone is unactionable. The shipped form is:
   ```
   Registry drift: 1 facet(s) declared in installed example code but NOT in
   handler_registrations — tasks for these will sit pending with server_id=None.
-  Re-seed with `python -m facetwork.examples <name>` (or `scripts/start-runner
+  Re-seed with `python -m facetwork.examples <name>` (or `fw runner start
   --example <name>`). osm-geocoder: osm.viz.RenderTiledMap
   ```
 
@@ -370,7 +370,7 @@ Two startup gotchas burned ~50 minutes of a North-America tiled render this sess
   AFL_OUTPUT_BASE: /tmp/output  (default in .env)
   ```
 - **Probe writability on the spot.** `mkdir -p` + `-w` test; a non-writable target emits a STDERR warning. Catches the original osm.Network case where `/Volumes/afl_data/output` doesn't exist on the host.
-- The fix lives in `scripts/start-runner` because the env resolution lives there (the runner only sees the env it was launched with). Hand-launched runners still get the silent fall-back; the documented happy path is `scripts/start-runner --example <name>` with `AFL_OUTPUT_BASE` either in `.env` or exported before the call.
+- The fix lives in `fw runner start` because the env resolution lives there (the runner only sees the env it was launched with). Hand-launched runners still get the silent fall-back; the documented happy path is `fw runner start --example <name>` with `AFL_OUTPUT_BASE` either in `.env` or exported before the call.
 
 ### Why this section, not just code comments
 

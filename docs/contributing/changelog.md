@@ -22,7 +22,7 @@ Made the multi-server model match the leaderless runtime it already is, and remo
 
 **Server-role model (`scripts/`, `docs/operations/*`, `CLAUDE.md`):** there is no "master". A fleet has just two participant kinds — **infra services** (MongoDB, MinIO, Dashboard) identified by their **access URL only** (the fleet never enumerates their cluster members; each may be a single node, a cluster, or a managed service), and **homogeneous runner servers** (`AFL_SERVER_GROUP` default flipped `worker` → `runner`). Runners are leaderless and don't contend (atomic `claim_task()` in Mongo), so any runner with Mongo access can also seed workflow definitions. `fleet set` gained `--mongo-url`/`--dashboard-url`, recording the three service URLs in `fleet_config.endpoints`.
 
-**Converged launcher (`scripts/start-runner`):** the old `scripts/start-worker` is folded into `start-runner --fleet` (containers joining an external shared Mongo+MinIO; preflights both) and `--docker` (containers on the local bundled infra), with `--replicas`/`--env`/`--recreate`/`--check`. `--example NAME` maps to any per-example `runner-NAME` compose service (validated), so the fleet is no longer OSM-only. `start-worker` remains as a back-compat shim.
+**Converged launcher (`fw runner start`):** the old `fw runner start --fleet` is folded into `start-runner --fleet` (containers joining an external shared Mongo+MinIO; preflights both) and `--docker` (containers on the local bundled infra), with `--replicas`/`--env`/`--recreate`/`--check`. `--example NAME` maps to any per-example `runner-NAME` compose service (validated), so the fleet is no longer OSM-only. `start-worker` remains as a back-compat shim.
 
 **Renames:** `docker-compose.worker.yml` → `docker-compose.fleet.yml`, `.env.worker.example` → `.env.fleet.example`, `.env.worker.fleet` → `.env.fleet.preset` (active `.env.fleet` gitignored); env vars `AFL_WORKER_EXTRA_COMPOSE` → `AFL_FLEET_EXTRA_COMPOSE`, `AFL_WORKER_NAME` → `AFL_RUNNER_NAME`.
 
@@ -74,7 +74,7 @@ A layer (`facetwork/catalog/`) that lets Claude author, store, version, discover
 - **Library composition**: `kind="library"` entries; workflows `depends_on` libraries pinned by revision, merged at compile time. FFL `use` resolves only against own source + pinned libs — the catalog is hermetic (never the filesystem or the resolver's `afl_sources`): [docs/architecture/catalog-use-resolution.md](../architecture/catalog-use-resolution.md).
 - MCP tools: `fw_catalog_{search,get,save,publish,run}`.
 
-**`scripts/catalog` CLI + `backup.py`:**
+**`fw ffl catalog` CLI + `backup.py`:**
 - `backup` / `restore` (JSON; preserves revision_id/version/content_hash/status/pins, rebuilds flows by recompiling), `import` (file/dir → catalog), and **`import-package`** — a whole multi-file package (e.g. osm-geocoder: 84 files / 99 workflows) → one shared-flow `library` + one thin entry per workflow (`rematerialize` is shared-flow aware, so backup/restore stays at 1 flow per package). `list` — grouped packages + workflows overview.
 - `catalog-backup.json` committed as a portable dev seed (3 standalone + the osm package).
 
@@ -92,7 +92,7 @@ Extraction of the save-earth example into a standalone package, an ecosystem-wid
 
 **save-earth extracted to a standalone package (`fwh_save_earth`):**
 - `examples/save-earth/` removed from the framework repo; it now ships as the pip-installable `fwh_save_earth` package (`src/save_earth/`), discovered via the `facetwork.examples` entry point (`save-earth = "save_earth:example"`) — mirrors the osm-geocoder / noaa-weather extraction.
-- Handler imports converted to package-relative (`from ..shared.save_earth_utils import ...`); registered as `save-earth` in `scripts/install-example`; added to the CLAUDE.md standalone-examples list; `docker/entrypoint-runner.sh` comment updated (no longer an in-repo example).
+- Handler imports converted to package-relative (`from ..shared.save_earth_utils import ...`); registered as `save-earth` in `fw install example`; added to the CLAUDE.md standalone-examples list; `docker/entrypoint-runner.sh` comment updated (no longer an in-repo example).
 - Verified end-to-end: `BuildGlobalMap(use_mock=true)` → completed, 3-layer MapLibre HTML.
 
 **Package-unique tool-library naming — retire the shared `_lib` (collision fix):**
@@ -116,7 +116,7 @@ Extraction of the save-earth example into a standalone package, an ecosystem-wid
 
 **Docs:**
 - `docs/thesis/thesis.md` (+ rebuilt `thesis.pdf`): example-package layout `tools/_lib/` → `tools/_<pkg>_tools/`.
-- `examples/doc/GUIDE.md` and `scripts/build-cache-index.py` comments aligned to the package-unique tool-lib naming.
+- `examples/doc/GUIDE.md` and `fw maint cache-index` comments aligned to the package-unique tool-lib naming.
 - `fwh_osm` `cache/README.md` + `shapefiles/README.md`: repointed downloader references to `_osm_tools/pbf_download.py` and corrected the PBF cache-freshness description (MD5-sidecar, not exists-on-disk).
 
 ## Completed (v0.44.0) — Workflow Resilience, Dashboard Reaper, osm2pgsql Compatibility
@@ -166,7 +166,7 @@ Comprehensive resilience improvements for long-running workflows, independent ta
 - `gssencmode=disable` on all `psycopg2.connect()` calls — prevents GSSAPI/Kerberos failures on remote connections
 - Concurrent `CREATE EXTENSION` race condition: catch `UniqueViolation` alongside `DuplicateObject`
 
-**Bash 3.2 compatibility (`scripts/stop-runners`):**
+**Bash 3.2 compatibility (`fw runner stop`):**
 - Replace `declare -A` (bash 4+) with `sort -u` for macOS default bash 3.2
 
 **Server detail UI (`afl/dashboard/templates/v2/servers/_detail_content.html`):**
@@ -364,7 +364,7 @@ fallback, and runtime integration tests to the NOAA weather example.
 
 **Files:** 4 modified
 
-**Fix (v0.35.0):** `scripts/run-workflow` used `program_dict.get('workflows', [])`
+**Fix (v0.35.0):** `fw ffl run-workflow` used `program_dict.get('workflows', [])`
 which doesn't work with the declarations-only emitter format — replaced with
 `find_workflow()` from `ast_utils`. Added `ANTHROPIC_API_KEY` placeholder to
 `.env.example`.
@@ -620,22 +620,22 @@ keeping local mode unchanged.
   (excludes old UUIDs for rolling restart detection)
 - `_afl_resolve_hosts` — resolves `--host` flags or `AFL_RUNNER_HOSTS` env var
 
-**`scripts/stop-runners` — remote mode:**
+**`fw runner stop` — remote mode:**
 - `--all` — queries MongoDB for running servers, SSHs SIGTERM to each host
 - `--host HOST` (repeatable) — targets specific remote hosts
 - `--drain-timeout N` — seconds to wait for graceful drain (default: 30)
 - Polls MongoDB for SHUTDOWN state; force-kills via SSH on timeout
 - No-flag invocation = unchanged local pgrep/kill behavior
 
-**`scripts/start-runner` — remote mode:**
+**`fw runner start` — remote mode:**
 - `--all` — starts runners on all `AFL_RUNNER_HOSTS`
 - `--host HOST` (repeatable) — targets specific remote hosts
 - `--start-timeout N` — seconds to wait for registration (default: 30)
-- Registers handlers locally (MongoDB), SSHs `nohup scripts/runner --registry`
+- Registers handlers locally (MongoDB), SSHs `nohup fw runner exec --registry`
   to each host, polls MongoDB until new server appears with state=RUNNING
 - No-flag invocation = unchanged local behavior
 
-**`scripts/rolling-deploy` (new):**
+**`fw fleet rolling-deploy` (new):**
 - Zero-downtime serial restart: drain → wait SHUTDOWN → start → wait RUNNING →
   health-check HTTP `/health` → next server
 - `--example NAME` (repeatable) — re-register specific handler sets
@@ -649,7 +649,7 @@ keeping local mode unchanged.
 - `AFL_REMOTE_PATH` — repo path on remote hosts (default: same as local)
 - `AFL_SSH_OPTS` — extra SSH options
 
-**`scripts/list-runners` (new):**
+**`fw runner list` (new):**
 - Tree view of the runner fleet: servers → runner instances → handlers
 - Groups runner instances by hostname with IP addresses
 - Per-runner: state icon (`+`/`-`/`~`/`!`), UUID, state, HTTP port, uptime, last ping
@@ -659,8 +659,8 @@ keeping local mode unchanged.
 
 Files: `afl/runtime/entities.py`, `afl/runtime/runner/service.py`,
 `afl/runtime/mongo_store.py`, `scripts/_remote.sh` (new),
-`scripts/stop-runners`, `scripts/start-runner`,
-`scripts/rolling-deploy` (new), `scripts/list-runners` (new), `.env.example`
+`fw runner stop`, `fw runner start`,
+`fw fleet rolling-deploy` (new), `fw runner list` (new), `.env.example`
 
 ## Completed (v0.32.0) - HIV Drug Resistance Genotyping Example
 
@@ -2413,7 +2413,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **Run scripts**: 21 shell scripts (`run_osm_cache_states_{02..45}.sh`, `run_osm_analyze_states_{01..45}.sh`) — each boots Docker stack, compiles AFL, and submits the workflow; analyze scripts auto-discover all library AFL files via `find`
 
 ### Seed script update
-- **`scripts/seed-examples`**: relaxed `/tests/` exclusion to allow `/tests/real/` paths — scaling workflows and other integration test AFL files now appear in dashboard when seeded (59 files, 64 workflows for osm-geocoder; 98 total workflows across all examples)
+- **`fw ffl seed`**: relaxed `/tests/` exclusion to allow `/tests/real/` paths — scaling workflows and other integration test AFL files now appear in dashboard when seeded (59 files, 64 workflows for osm-geocoder; 98 total workflows across all examples)
 
 ### Tests
 - No new test code; test suite: 2478 passed, 67 skipped; total collected 2545 (increase from 2536 due to new AFL files picked up by existing parameterized compilation tests)
@@ -2550,7 +2550,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **Shared utilities** moved to `handlers/shared/`: `_output.py`, `downloader.py`, `region_resolver.py`
 - **Cross-category imports** updated: `operations_handlers.py` → `from ..cache.cache_handlers import REGION_REGISTRY`; `region_resolver.py` → same pattern
 - **pytest cross-example isolation**: root `conftest.py` patches `_pytest.python.importtestmodule` to purge stale `handlers.*` modules immediately before each osm-geocoder module import — fixes collection conflicts where genomics/jenkins handlers would shadow osm-geocoder handlers
-- **Updated `scripts/seed-examples`** `discover_examples()`: recursive AFL glob now deduplicates by `os.path.realpath()` and excludes files resolving outside the example root (symlinks) and files inside `tests/` directories (test fixtures)
+- **Updated `fw ffl seed`** `discover_examples()`: recursive AFL glob now deduplicates by `os.path.realpath()` and excludes files resolving outside the example root (symlinks) and files inside `tests/` directories (test fixtures)
 - **continental-lz symlink** preserved: `collect_ignore_glob` in `examples/continental-lz/conftest.py` prevents test collection from symlinked handler tests
 - 181 files changed, 930 insertions, 156 deletions; test suite unchanged: 2308 passed, 79 skipped
 
@@ -2607,12 +2607,12 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **Reordered comments in `examples/genomics/ffl/genomics.afl`**: moved `//` line comments before `/** */` doc comments on both `SamplePipeline` and `CohortAnalysis` workflows — doc comments must be immediately followed by a declaration keyword, not separated by other comments
 
 ## Completed (v0.12.56) - Fix easy.sh --clean flag causing setup to exit early
-- **Removed `--clean` from `SETUP_ARGS`** in `scripts/easy.sh`: `scripts/setup --clean` exits after cleaning without starting containers, so `--clean --build` together skipped the build and start phases entirely
-- Since `easy.sh` already runs `scripts/teardown --all` first, the `--clean` flag was redundant
+- **Removed `--clean` from `SETUP_ARGS`** in `fw single up`: `fw install setup --clean` exits after cleaning without starting containers, so `--clean --build` together skipped the build and start phases entirely
+- Since `easy.sh` already runs `fw install teardown --all` first, the `--clean` flag was redundant
 
 ## Completed (v0.12.55) - Document .env.example and _env.sh configuration workflow
-- **Added "Environment Configuration" section to `spec/90_nonfunctional.md`**: documents the `.env.example` → `.env` → `_env.sh` pipeline, how `scripts/easy.sh` translates env vars to CLI flags, precedence rules (CLI flags > env vars > `.env` > defaults), and a full variable reference table grouped by category (MongoDB, Scaling, Overlays, Data directories)
-- **Updated convenience scripts listing** in `spec/90_nonfunctional.md`: added `scripts/_env.sh` (shared env loader) and `scripts/easy.sh` (one-command pipeline)
+- **Added "Environment Configuration" section to `spec/90_nonfunctional.md`**: documents the `.env.example` → `.env` → `_env.sh` pipeline, how `fw single up` translates env vars to CLI flags, precedence rules (CLI flags > env vars > `.env` > defaults), and a full variable reference table grouped by category (MongoDB, Scaling, Overlays, Data directories)
+- **Updated convenience scripts listing** in `spec/90_nonfunctional.md`: added `scripts/_env.sh` (shared env loader) and `fw single up` (one-command pipeline)
 - **Added "Environment configuration" note to `CLAUDE.md`** after "Quick commands" so contributors can discover the `.env` workflow without reading the full spec
 
 ## Completed (v0.12.54) - Extract run_agent() helper to eliminate example agent.py duplication
@@ -2717,10 +2717,10 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - Added `.env.example` template with all configurable settings (MongoDB, scaling, overlays, external data dirs)
 - Added `scripts/_env.sh` shared helper: loads `.env` without overriding already-set env vars, exports `_compute_compose_args()` for overlay-aware compose file/profile computation
 - Added `.env` and `.afl-active-config` to `.gitignore`
-- Refactored `scripts/setup`: defaults now read from env vars (`AFL_RUNNERS`, `AFL_AGENTS`, `AFL_OSM_AGENTS`, etc.); writes `.afl-active-config` after computing overlay state
-- Refactored `scripts/rebuild`: overlay-aware build and `--up` — reads `.afl-active-config` or `.env` so containers start with correct compose files (mirror, HDFS, PostGIS); fixes bug where `rebuild --up` started containers without overlay mounts
-- Refactored `scripts/teardown`: sources `_env.sh` to populate `AFL_GEOFABRIK_MIRROR` from `.env`
-- Refactored `scripts/easy.sh`: reads all config from `.env` instead of hardcoding `/Volumes/afl_data/osm`, `3 runners`, `4 osm-agents`
+- Refactored `fw install setup`: defaults now read from env vars (`AFL_RUNNERS`, `AFL_AGENTS`, `AFL_OSM_AGENTS`, etc.); writes `.afl-active-config` after computing overlay state
+- Refactored `fw install rebuild`: overlay-aware build and `--up` — reads `.afl-active-config` or `.env` so containers start with correct compose files (mirror, HDFS, PostGIS); fixes bug where `rebuild --up` started containers without overlay mounts
+- Refactored `fw install teardown`: sources `_env.sh` to populate `AFL_GEOFABRIK_MIRROR` from `.env`
+- Refactored `fw single up`: reads all config from `.env` instead of hardcoding `/Volumes/afl_data/osm`, `3 runners`, `4 osm-agents`
 - Added `source _env.sh` to `seed-examples`, `run-workflow`, `publish`, `db-stats`, `server`, `runner` for consistent MongoDB connection via `.env`
 
 ## Completed (v0.12.45) - Add Step Logging to AgentPoller and Example Handlers
@@ -3061,8 +3061,8 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - 1159 tests passing
 
 ## Completed (v0.10.1) - Publish & Run-Workflow Scripts
-- **`scripts/publish`**: bash script with inline Python that compiles AFL source and publishes to MongoDB; creates `FlowDefinition` (with AFL source in `compiled_sources`), `WorkflowDefinition` entries for each workflow found, and publishes namespaces to `afl_sources` via `SourcePublisher`; supports `--auto-resolve`, `--source-path` (repeatable), `--primary`/`--library` (repeatable), `--version`, `--config`
-- **`scripts/run-workflow`**: bash script with inline Python for interactive or non-interactive workflow execution from MongoDB; `--list` prints a table of all workflows; interactive mode lists workflows with numbers and prompts for selection; extracts parameters with types and compile-time defaults from the workflow AST; prompts for each parameter showing type and default; smart value parsing (bool, int, float, JSON objects/arrays, string fallback); `--workflow NAME` and `--input JSON` flags for non-interactive use; `--flow-id` to select by flow; executes via `Evaluator.execute()` with full `program_ast`
+- **`fw ffl publish`**: bash script with inline Python that compiles AFL source and publishes to MongoDB; creates `FlowDefinition` (with AFL source in `compiled_sources`), `WorkflowDefinition` entries for each workflow found, and publishes namespaces to `afl_sources` via `SourcePublisher`; supports `--auto-resolve`, `--source-path` (repeatable), `--primary`/`--library` (repeatable), `--version`, `--config`
+- **`fw ffl run-workflow`**: bash script with inline Python for interactive or non-interactive workflow execution from MongoDB; `--list` prints a table of all workflows; interactive mode lists workflows with numbers and prompts for selection; extracts parameters with types and compile-time defaults from the workflow AST; prompts for each parameter showing type and default; smart value parsing (bool, int, float, JSON objects/arrays, string fallback); `--workflow NAME` and `--input JSON` flags for non-interactive use; `--flow-id` to select by flow; executes via `Evaluator.execute()` with full `program_ast`
 - **`MongoStore.get_all_workflows()`**: new method returning workflows sorted by `date` descending with configurable limit, following existing `get_all_runners()` pattern
 - **Runner workflow lookup fix**: `_find_workflow_in_program` and `_search_namespace_workflows` now search both `namespaces`/`workflows` keys (emitter format) and `declarations` (alternative AST format); previously qualified workflow names like `handlers.AddOneWorkflow` failed in distributed execution because the runner only checked `declarations` while the emitter outputs under `namespaces`
 - 1159 tests passing; 457 OSM geocoder tests passing (including distributed)
@@ -3241,7 +3241,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **Shared WebHDFS test helpers** (`tests/hdfs_helpers.py`): extracted `WebHDFSClient` class (with new `getsize()` method), `hdfs` fixture, and `workdir` fixture from `tests/runtime/test_hdfs_storage.py` into a shared module for reuse across HDFS test files
 - **`tests/runtime/test_hdfs_storage.py` refactored**: imports `WebHDFSClient`, `hdfs`, `workdir` from `tests.hdfs_helpers`; local definitions removed; all 19 existing tests preserved
 - **OSM handler HDFS integration tests** (`tests/test_osm_handlers_hdfs.py`, 12 tests): `TestStorageBackendHDFSSelection` (4 tests — local/None path returns `LocalStorageBackend`, `hdfs://` URI returns `HDFSStorageBackend`, host:port caching), `TestWebHDFSCacheOperations` (5 tests — create/size/listing/overwrite/isdir on cache files), `TestHDFSCachePatterns` (3 tests — OSM PBF nested region cache, GraphHopper graph directory, GTFS feed cache); all guarded by `--hdfs` flag
-- **Setup script** (`scripts/setup`): when `--hdfs` is set, uses `docker compose -f docker-compose.yml -f docker-compose.hdfs.yml` for both build and up commands; prints HDFS support status message
+- **Setup script** (`fw install setup`): when `--hdfs` is set, uses `docker compose -f docker-compose.yml -f docker-compose.hdfs.yml` for both build and up commands; prints HDFS support status message
 - **Deployment docs** (`docs/deployment.md`): new "HDFS Integration" section with starting HDFS, building with HDFS support, running OSM agents with HDFS cache (env var table), and running HDFS tests
 - 1586 tests collected (1555 passed, 31 skipped without `--hdfs`/`--mongodb`)
 
@@ -3250,7 +3250,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **PostGIS service** (`docker-compose.yml`, profile: `postgis`): `postgis/postgis:16-3.4` image as `afl-postgis`; port `5432:5432`; environment `POSTGRES_DB=afl_gis`, `POSTGRES_USER=afl`, `POSTGRES_PASSWORD=afl`; `postgis_data` volume; healthcheck via `pg_isready -U afl`
 - **PostGIS compose override** (`docker-compose.postgis.yml`): new override file (same pattern as `docker-compose.hdfs.yml`) wiring PostGIS into OSM agents; sets `AFL_POSTGIS_URL=postgresql://afl:afl@postgis:5432/afl_gis`; adds `depends_on: postgis`; sets `INSTALL_POSTGIS=true` build arg for `psycopg2-binary` installation
 - **Dockerfile PostGIS support**: `docker/Dockerfile.osm-geocoder` and `docker/Dockerfile.osm-geocoder-lite` gain `ARG INSTALL_POSTGIS=false` with conditional `pip install psycopg2-binary` when set to `true`
-- **Setup script** (`scripts/setup`): new `--jenkins` and `--postgis` flags with defaults, arg parsing, profile/compose-file handling, and status output lines
+- **Setup script** (`fw install setup`): new `--jenkins` and `--postgis` flags with defaults, arg parsing, profile/compose-file handling, and status output lines
 - **Deployment docs** (`docs/deployment.md`): new "Jenkins CI/CD" section (starting Jenkins, initial admin password retrieval, setup script usage) and "PostGIS Integration" section (starting PostGIS, connection details table, building OSM agents with override file, environment variables table)
 - 1555 passed, 31 skipped
 
@@ -3266,7 +3266,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 
 ## Completed (v0.12.4) - Configurable External Storage for HDFS
 - **Docker Compose** (`docker-compose.yml`): HDFS volume mounts now use env var substitution — `${HDFS_NAMENODE_DIR:-hadoop_namenode}:/hadoop/dfs/name` and `${HDFS_DATANODE_DIR:-hadoop_datanode}:/hadoop/dfs/data`; when unset, uses Docker named volumes (unchanged default); when set to a host path, creates bind mounts to external storage (NFS, SSD, dedicated disk)
-- **Setup script** (`scripts/setup`): added `--hdfs-namenode-dir PATH` and `--hdfs-datanode-dir PATH` options; exports the env vars and auto-enables `--hdfs`; prints configured paths in status output
+- **Setup script** (`fw install setup`): added `--hdfs-namenode-dir PATH` and `--hdfs-datanode-dir PATH` options; exports the env vars and auto-enables `--hdfs`; prints configured paths in status output
 - **Deployment docs** (`docs/deployment.md`): new "External Storage for HDFS" section with usage examples, env var table, and permissions note
 
 ## Completed (v0.12.27) - Hierarchical Tree View for Dashboard Step List
@@ -3339,7 +3339,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 ## Completed (v0.12.39) - Geofabrik Mirror Support for Docker OSM Agents
 
 - **Docker Compose override** (`docker-compose.mirror.yml`): new override file mounts a host directory read-only at `/data/osm-mirror` in `agent-osm-geocoder` and `agent-osm-geocoder-lite` containers; sets `AFL_GEOFABRIK_MIRROR=/data/osm-mirror` env var; uses `${AFL_GEOFABRIK_MIRROR:?...}` for clear error on missing var
-- **Setup script** (`scripts/setup`): added `--mirror PATH` flag; exports `AFL_GEOFABRIK_MIRROR`, sets `MIRROR=true`, appends `-f docker-compose.mirror.yml` to compose files; prints mirror path and mount point in status output
+- **Setup script** (`fw install setup`): added `--mirror PATH` flag; exports `AFL_GEOFABRIK_MIRROR`, sets `MIRROR=true`, appends `-f docker-compose.mirror.yml` to compose files; prints mirror path and mount point in status output
 - **Run script** (`examples/osm-geocoder/tests/real/scripts/run_30states.sh`): refactored setup invocation to use bash array `SETUP_ARGS`; conditionally appends `--mirror "$GEOFABRIK_MIRROR"` when `AFL_GEOFABRIK_MIRROR` is set; reads env var at script start
 - **Dashboard formatting** (`namespaces/detail.html`, `flows/detail.html`, `flows/namespace.html`): bold facet/workflow names with inline documentation below (replaces separate Documentation column)
 - 2277 passed, 68 skipped (without `--hdfs`/`--mongodb`/`--postgis`)
@@ -3425,7 +3425,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 
 ## Completed (v0.12.30) - Seed Examples Script
 
-- **`scripts/seed-examples`** (NEW): Bash shell script that compiles all example AFL directories and pushes `FlowDefinition` + `WorkflowDefinition` entities to MongoDB so they appear in the Dashboard Flow UI; for each example, parses all `afl/*.afl` files via `AFLParser.parse()`, merges ASTs via `Program.merge()`, emits JSON via `JSONEmitter`, recursively collects workflow qualified names from compiled JSON (handles both nested and flat emitter formats), then creates one `FlowDefinition` (path=`cli:seed`) and one `WorkflowDefinition` per workflow; only creates Flow + Workflow entities (no Runner/Task — those are created at execution time); validation errors are treated as non-fatal warnings since some examples (`continental-lz`, `volcano-query`) depend on types from `osm-geocoder`
+- **`fw ffl seed`** (NEW): Bash shell script that compiles all example AFL directories and pushes `FlowDefinition` + `WorkflowDefinition` entities to MongoDB so they appear in the Dashboard Flow UI; for each example, parses all `afl/*.afl` files via `AFLParser.parse()`, merges ASTs via `Program.merge()`, emits JSON via `JSONEmitter`, recursively collects workflow qualified names from compiled JSON (handles both nested and flat emitter formats), then creates one `FlowDefinition` (path=`cli:seed`) and one `WorkflowDefinition` per workflow; only creates Flow + Workflow entities (no Runner/Task — those are created at execution time); validation errors are treated as non-fatal warnings since some examples (`continental-lz`, `volcano-query`) depend on types from `osm-geocoder`
 - **Options**: `--dry-run` (show what would be seeded without writing), `--include PATTERN` / `--exclude PATTERN` (regex filters on example names), `--clean` (remove existing `cli:seed` flows and their workflows before seeding), `--config FILE` (custom AFL config path)
 - **Coverage**: discovers 7 example directories (aws-lambda, continental-lz, genomics, jenkins, maven, osm-geocoder, volcano-query); seeds 6 flows with 328 workflows (maven skipped — event facets only, no workflows)
 - 2183 passed, 80 skipped (without `--hdfs`/`--mongodb`/`--postgis`/`--boto3`)
@@ -3520,7 +3520,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 
 ## Completed (v0.12.17) - 30-State OSM Download Workflow
 - **`osmstates30.afl`** (`examples/osm-geocoder/ffl/osmstates30.afl`): new AFL workflow in `osm.UnitedStates.sample` namespace; `Download30States` workflow downloads OSM data for 30 randomly chosen US states (Alaska, Arizona, California, Colorado, Connecticut, Florida, Georgia, Idaho, Illinois, Indiana, Iowa, Kansas, Kentucky, Louisiana, Maine, Maryland, Michigan, Minnesota, Missouri, Montana, Nevada, NewYork, NorthCarolina, Ohio, Oregon, Pennsylvania, Tennessee, Texas, Virginia, Washington); follows the `UnitedStatesIndividually` pattern — calls each state's cache facet, downloads via `Download(cache = ...)`, yields concatenated `downloadCache` results using `++`
-- **`run_30states.sh`** (`examples/osm-geocoder/run_30states.sh`): convenience startup script that creates `~/data/hdfs/{namenode,datanode}` and `~/data/mongodb` directories, bootstraps the Docker stack via `scripts/setup` with `--hdfs`, `--hdfs-namenode-dir`, `--hdfs-datanode-dir`, `--mongodb-data-dir`, and `--osm-agents 1`, waits for MongoDB readiness, compiles the AFL file with all library dependencies, submits the workflow, and prints dashboard access instructions
+- **`run_30states.sh`** (`examples/osm-geocoder/run_30states.sh`): convenience startup script that creates `~/data/hdfs/{namenode,datanode}` and `~/data/mongodb` directories, bootstraps the Docker stack via `fw install setup` with `--hdfs`, `--hdfs-namenode-dir`, `--hdfs-datanode-dir`, `--mongodb-data-dir`, and `--osm-agents 1`, waits for MongoDB readiness, compiles the AFL file with all library dependencies, submits the workflow, and prints dashboard access instructions
 - 1697 passed, 35 skipped (without `--hdfs`/`--mongodb`/`--postgis`)
 
 ## Completed (v0.12.16) - Refactor MavenArtifactRunner to Subclass RegistryRunner
@@ -3611,10 +3611,10 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 
 ## Completed (v0.12.6) - Configurable External Storage for Jenkins & GraphHopper
 - **Docker Compose** (`docker-compose.yml`): Jenkins and GraphHopper volume mounts now use env var substitution — `${JENKINS_HOME_DIR:-jenkins_home}:/var/jenkins_home` and `${GRAPHHOPPER_DATA_DIR:-graphhopper_data}:/data/graphhopper`; when unset, uses Docker named volumes (unchanged default); when set to a host path, creates bind mounts to external storage
-- **Setup script** (`scripts/setup`): added `--jenkins-home-dir PATH` and `--graphhopper-data-dir PATH` options; `--jenkins-home-dir` auto-enables `--jenkins`; prints configured paths in status output
+- **Setup script** (`fw install setup`): added `--jenkins-home-dir PATH` and `--graphhopper-data-dir PATH` options; `--jenkins-home-dir` auto-enables `--jenkins`; prints configured paths in status output
 - **Deployment docs** (`docs/deployment.md`): new "External Storage for Jenkins" and "External Storage for GraphHopper" sections with usage examples and env var tables
 
 ## Completed (v0.12.5) - Configurable External Storage for MongoDB & PostGIS
 - **Docker Compose** (`docker-compose.yml`): MongoDB and PostGIS volume mounts now use env var substitution — `${MONGODB_DATA_DIR:-mongodb_data}:/data/db` and `${POSTGIS_DATA_DIR:-postgis_data}:/var/lib/postgresql/data`; when unset, uses Docker named volumes (unchanged default); when set to a host path, creates bind mounts to external storage
-- **Setup script** (`scripts/setup`): added `--mongodb-data-dir PATH` and `--postgis-data-dir PATH` options; `--postgis-data-dir` auto-enables `--postgis`; prints configured paths in status output
+- **Setup script** (`fw install setup`): added `--mongodb-data-dir PATH` and `--postgis-data-dir PATH` options; `--postgis-data-dir` auto-enables `--postgis`; prints configured paths in status output
 - **Deployment docs** (`docs/deployment.md`): new "External Storage for PostGIS" and "External Storage for MongoDB" sections with usage examples and env var tables

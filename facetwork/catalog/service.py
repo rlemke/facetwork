@@ -317,7 +317,7 @@ class CatalogService:
         ``depends_on`` (dep slugs of the resolved revision), ``package`` (the
         first library dep, if any — i.e. the package a thin workflow belongs to),
         and ``member_count`` (workflows depending on this entry — non-zero for
-        package libraries). Used by ``scripts/catalog list`` and any UI."""
+        package libraries). Used by ``fw ffl catalog list`` and any UI."""
         entries = self._catalog.list_entries()
         resolved: list[tuple] = []
         members: dict[str, int] = {}

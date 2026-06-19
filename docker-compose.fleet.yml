@@ -3,9 +3,9 @@
 # host runs runners only: no bundled mongodb / minio / postgis. Layer it on top
 # of the full-stack file.
 #
-#   scripts/start-runner --fleet                          # default: osm-geocoder + osm-lz
-#   scripts/start-runner --fleet --example noaa-weather   # any per-example runner
-#   scripts/start-runner --fleet --example census-us --example genomics
+#   fw runner start --fleet                          # default: osm-geocoder + osm-lz
+#   fw runner start --fleet --example noaa-weather   # any per-example runner
+#   fw runner start --fleet --example census-us --example genomics
 #
 # (Or directly:
 #   docker compose -f docker-compose.full-stack.yml -f docker-compose.fleet.yml \

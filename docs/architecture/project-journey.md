@@ -253,7 +253,7 @@ AFL_GEOFABRIK_MIRROR=/Volumes/afl_data/osm
 
 One command bootstraps everything:
 ```bash
-scripts/easy.sh    # teardown → rebuild → setup → seed
+fw single up    # teardown → rebuild → setup → seed
 ```
 
 ---
@@ -551,7 +551,7 @@ cp .env.example .env
 # Edit .env: set AFL_GEOFABRIK_MIRROR, scaling, data dirs
 
 # Full pipeline: teardown → rebuild → setup → seed
-scripts/easy.sh
+fw single up
 
 # Run 2-state analysis
 https://github.com/rlemke/fwh_osm/blob/main/tests/real/scripts/run_osm_analyze_states_02.sh
