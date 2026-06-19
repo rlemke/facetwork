@@ -15,6 +15,9 @@
 """Tests for FFL configuration."""
 
 import json
+import os
+
+import pytest
 
 from facetwork.config import (
     FFLConfig,
@@ -26,6 +29,24 @@ from facetwork.config import (
     get_config,
     load_config,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_afl_env(monkeypatch):
+    """Make every config test hermetic.
+
+    `config.py` reads `AFL_*` env vars with precedence over any config file, so a
+    dev box or CI that exports e.g. `AFL_MONGODB_URL` would otherwise leak into
+    `load_config()`/`get_config()` and break the file/overlay/default assertions.
+    Strip all `AFL_*` vars (a test that needs one sets it explicitly afterward)
+    and clear the config cache around each test.
+    """
+    for key in list(os.environ):
+        if key.startswith("AFL_"):
+            monkeypatch.delenv(key, raising=False)
+    _reset_config_cache()
+    yield
+    _reset_config_cache()
 
 
 class TestMongoDBConfig:
