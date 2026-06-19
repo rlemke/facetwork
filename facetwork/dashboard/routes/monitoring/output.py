@@ -163,6 +163,19 @@ def artifact_url(value) -> str | None:
     #    (_resolve_s3, now incl. the bucket root) reconstructs + serves it. Verify
     #    it exists before linking so a dead path shows no button.
     if value.startswith("s3://"):
+        # Prefer the tail after the last "/output/" segment, resolved against a
+        # configured s3 base — so s3://bucket/output/<tail> links as
+        # /output/raw/<tail>, not the doubled /output/raw/output/<tail>. Fall
+        # back to the bucket-relative key for object-store URIs that have NO
+        # "/output/" segment (e.g. the OSM pipeline's
+        # s3://afl-cache/osm-output/osm-transform/<map>.html).
+        norm = value.replace("\\", "/")
+        marker = "/output/"
+        idx = norm.rfind(marker)
+        if idx != -1:
+            rel = norm[idx + len(marker):]
+            if rel and _resolve_s3(rel) is not None:
+                return "/output/raw/" + rel
         rest = value[len("s3://"):]
         key = rest.split("/", 1)[1] if "/" in rest else ""
         return "/output/raw/" + key if (key and _resolve_s3(key)) else None
