@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# TRANSITION SHIM — this flat path is deprecated; use the `fw` front-door.
-# Removed after the clean-break cutover. Forwards to the new location.
-exec "$(dirname "$0")/lib/ffl/catalog" "$@"

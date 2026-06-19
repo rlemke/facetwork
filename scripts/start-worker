@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-# TRANSITION SHIM (deprecated) — was `start-worker`; now `fw runner start --fleet`.
-exec "$(dirname "$0")/lib/runner/start" --fleet "$@"
