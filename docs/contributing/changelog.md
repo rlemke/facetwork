@@ -1,6 +1,18 @@
 # Implementation Changelog
 
-**Current version: v0.49.0**
+**Current version: v0.50.0**
+
+## Completed (v0.50.0) — `fw` front-door CLI over `scripts/` (+ gap-filling fleet/runner commands)
+
+Replaced the 70 flat operations scripts with a single front-door command, `fw <group> <command>`, and reorganized everything behind it. Reference: [CLAUDE.md → The `fw` CLI](../../CLAUDE.md) and the `fw help` output.
+
+**Dispatcher + reorg.** `fw` (at repo root) is a thin dispatcher: groups are subdirs of `scripts/lib/`, commands are the files in them (the filesystem is the registry — nothing to keep in sync), `exec`'d with args verbatim. `fw help` / `fw <group>` list with `# fw-summary:` blurbs; nested groups work (`fw db postgis vacuum`); typos get nearest-match suggestions; bash/zsh completion ships in `_helpers/`. The 70 scripts moved into `scripts/lib/<group>/` (install · single · db[/postgis] · runner · fleet · ffl · maint · svc · util). Path resolution is standardized in `scripts/lib/_helpers/_bootstrap.sh` / `fwroot.py` (git-toplevel → `pyproject.toml` sentinel fallback), replacing ~34 depth-sensitive `dirname "$0"/..` idioms.
+
+**New gap-filling commands** (tasks previously done by hand, most with `--dry`): `fw fleet rollout` (buildx build+push @HEAD → `fleet set --image` → poll until all hosts converge — one-shot for the manual recipe in [fleet-rollouts.md](../operations/fleet-rollouts.md)), `fw fleet scale` (central osm-geocoder replica count), `fw fleet registry-setup` (merge the HTTP registry into a host's `~/.docker/daemon.json` insecure-registries + restart Docker), `fw runner scale` (`docker compose --scale` a per-example runner on this host), `fw maint purge-servers` (delete stale `shutdown` server docs from Mongo).
+
+**Clean break, staged for the live fleet.** The cutover never left a running daemon without an entrypoint it was mid-call on: (A) move + add transition shims at every old `scripts/<name>`; (B) `git pull` on all 4 hosts; (C) flip internal callers to the new paths (`fleet/agent` → `lib/runner/start --fleet`; remote-SSH `scripts/runner` → `./fw runner exec`) and restart the `fleet-agent watch` daemons onto the new code — validated by a live reconcile (fleet_config v34) with no runner recreate; (D) remove all 63 shims (`scripts/` now contains only `lib/`). ~447 `scripts/<name>` references across docs/CLAUDE.md/README/compose/source were migrated to `fw …`; server3's `docker-disk-guard` cron was repointed to `fw maint disk-guard`.
+
+**Fixes:** `fw maint purge-servers` mis-parsed `--mongo` (its arg loop used `for a in "$@"` + `shift`, which doesn't advance the loop, so `--mongo URL` tried to connect to a host literally named `--mongo`); switched to a `while [ $# -gt 0 ]` / `shift 2` loop like the other `fw` commands.
 
 ## Completed (v0.49.0) — v3 dashboard becomes the only UI, global Flow/Workflow filters, native Users/Teams, and flow `created_at`
 
