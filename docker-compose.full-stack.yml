@@ -620,7 +620,11 @@ services:
       <<: *s3-storage
       AFL_CONTINUATION_MODE: shared
       # Tag the tier so it groups separately in fleet status / the dashboard.
-      AFL_SERVER_GROUP: ${AFL_SERVER_GROUP:-ffl-runner}
+      # Use a DEDICATED var, not the shared AFL_SERVER_GROUP: fleet-agent forces
+      # AFL_SERVER_GROUP=runner for all its runners, which would otherwise drag
+      # the ffl tier into the "runner" group. AFL_FFL_SERVER_GROUP is unset by
+      # fleet-agent, so this defaults to "ffl-runner" on every host.
+      AFL_SERVER_GROUP: ${AFL_FFL_SERVER_GROUP:-ffl-runner}
     volumes:
       - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
