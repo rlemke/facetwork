@@ -9,23 +9,23 @@
 # remote host to start runner processes, polling MongoDB for RUNNING state.
 #
 # Usage:
-#   scripts/start-runner                                        # register ALL examples
-#   scripts/start-runner --example hiv-drug-resistance          # one example
-#   scripts/start-runner --example devops-deploy --example hiv-drug-resistance
-#   scripts/start-runner --no-dashboard                         # skip dashboard
-#   scripts/start-runner -- --log-format text                   # extra args passed to runner
-#   scripts/start-runner --instances 3                          # 3 concurrent runner processes
-#   scripts/start-runner --example hiv-drug-resistance -- --log-format text --max-concurrent 10
+#   fw runner start                                        # register ALL examples
+#   fw runner start --example hiv-drug-resistance          # one example
+#   fw runner start --example devops-deploy --example hiv-drug-resistance
+#   fw runner start --no-dashboard                         # skip dashboard
+#   fw runner start -- --log-format text                   # extra args passed to runner
+#   fw runner start --instances 3                          # 3 concurrent runner processes
+#   fw runner start --example hiv-drug-resistance -- --log-format text --max-concurrent 10
 #
 # Remote mode:
-#   scripts/start-runner --all --example hiv-drug-resistance    # all AFL_RUNNER_HOSTS
-#   scripts/start-runner --host h1 --host h2 --example hiv-drug-resistance
+#   fw runner start --all --example hiv-drug-resistance    # all AFL_RUNNER_HOSTS
+#   fw runner start --host h1 --host h2 --example hiv-drug-resistance
 #
 # Container modes (replaces the old start-worker):
-#   scripts/start-runner --docker --example osm-geocoder        # runners as containers, local bundled infra
-#   scripts/start-runner --fleet                                # join an external shared Mongo+MinIO (default: osm-geocoder + osm-lz)
-#   scripts/start-runner --fleet --example noaa-weather         # any per-example runner service in the fleet
-#   scripts/start-runner --fleet --example census-us --replicas 6
+#   fw runner start --docker --example osm-geocoder        # runners as containers, local bundled infra
+#   fw runner start --fleet                                # join an external shared Mongo+MinIO (default: osm-geocoder + osm-lz)
+#   fw runner start --fleet --example noaa-weather         # any per-example runner service in the fleet
+#   fw runner start --fleet --example census-us --replicas 6
 #
 # Options:
 #   --example NAME   Register handlers from examples/NAME only (repeatable).
@@ -108,7 +108,7 @@ while [[ $# -gt 0 ]]; do
             shift; RUNNER_ARGS=("$@"); break ;;
         *)
             echo "Unknown option: $1" >&2
-            echo "Usage: scripts/start-runner [--example NAME]... [--instances N] [--no-dashboard]" >&2
+            echo "Usage: fw runner start [--example NAME]... [--instances N] [--no-dashboard]" >&2
             echo "                            [--docker | --fleet [--env FILE]] [--replicas N] [--recreate]" >&2
             echo "                            [--all | --host HOST]... [-- RUNNER_ARGS...]" >&2
             exit 1 ;;
@@ -261,7 +261,7 @@ PYEOF
     # on the fleet those stale containers keep claiming tasks with old code/env
     # (the cause of osm leaves writing host-local paths that S3 downstream can't
     # read). Removing first guarantees exactly $REPLICAS fresh containers per
-    # service. Same pattern as scripts/rebuild-workers --up.
+    # service. Same pattern as fw single rebuild-runners --up.
     if [[ "$RECREATE" == "1" ]]; then
         echo "Recreate: removing existing containers for [${SERVICES[*]}] (clears orphan replicas)"
         docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} \
@@ -407,7 +407,7 @@ if [[ "$MODE" == "local" ]]; then
 
     echo ""
     echo "All processes started. PIDs: ${PIDS[*]}"
-    echo "Use scripts/stop-runners to stop them."
+    echo "Use fw runner stop to stop them."
 
     # Wait for all — if any exits, report it
     wait "${PIDS[@]}"
@@ -458,7 +458,7 @@ for host in "${HOSTS[@]}"; do
     # Start runner on remote host (detached via nohup)
     for i in $(seq 1 "$INSTANCES"); do
         _afl_ssh "$host" \
-            "cd $AFL_REMOTE_PATH && nohup scripts/runner --registry$RUNNER_ARGS_STR > /tmp/afl-runner-\$\$.log 2>&1 &" || {
+            "cd $AFL_REMOTE_PATH && nohup ./fw runner exec --registry$RUNNER_ARGS_STR > /tmp/afl-runner-\$\$.log 2>&1 &" || {
             echo "  ERROR: SSH to $host failed"
             ALL_OK=false
             continue 2

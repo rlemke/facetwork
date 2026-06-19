@@ -8,10 +8,10 @@
 # to send SIGTERM, polls MongoDB for SHUTDOWN state, force-kills if needed.
 #
 # Usage:
-#   scripts/stop-runners                     # local mode (existing behavior)
-#   scripts/stop-runners --all               # all remote servers from MongoDB
-#   scripts/stop-runners --host h1 --host h2 # specific remote hosts
-#   scripts/stop-runners --help              # show this help
+#   fw runner stop                     # local mode (existing behavior)
+#   fw runner stop --all               # all remote servers from MongoDB
+#   fw runner stop --host h1 --host h2 # specific remote hosts
+#   fw runner stop --help              # show this help
 #
 # Remote options:
 #   --all              Stop runners on all hosts found in MongoDB

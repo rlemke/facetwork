@@ -17,10 +17,10 @@ REPO_ROOT="$FW_ROOT"
 cd "$REPO_ROOT"
 
 git pull
-./scripts/pull_handlers.sh
+"$FW_LIB/install/pull-handlers"
 
 # Build worker images from current code, then clean-recreate the runners.
-./scripts/rebuild-workers --up
+"$FW_LIB/single/rebuild-runners" --up
 
 # Bring up the dashboard (base full-stack service), same env layering as the fleet.
 docker compose --env-file .env.fleet --env-file .env.fleet.override \

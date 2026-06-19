@@ -11,12 +11,12 @@
 # and reports what's still missing (e.g. claude CLI, ANTHROPIC_API_KEY).
 #
 # Usage:
-#   scripts/install-anthropic                  # core: anthropic SDK only
-#   scripts/install-anthropic --all            # everything: agent_sdk + mcp
-#   scripts/install-anthropic --agent-sdk      # core + claude-agent-sdk
-#   scripts/install-anthropic --mcp            # core + mcp
-#   scripts/install-anthropic --agent-sdk --mcp
-#   scripts/install-anthropic --check          # also verify entry-point + env
+#   fw install anthropic                  # core: anthropic SDK only
+#   fw install anthropic --all            # everything: agent_sdk + mcp
+#   fw install anthropic --agent-sdk      # core + claude-agent-sdk
+#   fw install anthropic --mcp            # core + mcp
+#   fw install anthropic --agent-sdk --mcp
+#   fw install anthropic --check          # also verify entry-point + env
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
@@ -32,7 +32,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -h|--help)
             cat <<EOF
-Usage: scripts/install-anthropic [OPTIONS]
+Usage: fw install anthropic [OPTIONS]
 
 Clone + install fwh_anthropic with optional per-area extras.
 

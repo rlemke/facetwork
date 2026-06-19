@@ -10,8 +10,8 @@
 #   6. Inconsistent steps — steps marked Complete but with failed tasks → reset
 #
 # Usage:
-#   scripts/repair-workflow <runner_id>
-#   scripts/repair-workflow --dry <runner_id>
+#   fw maint repair-workflow <runner_id>
+#   fw maint repair-workflow --dry <runner_id>
 #
 # Environment:
 #   AFL_MONGODB_URL    MongoDB connection string (default from .env)
@@ -38,7 +38,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$RUNNER_ID" ]]; then
-    echo "Usage: scripts/repair-workflow [--dry] <runner_id>" >&2
+    echo "Usage: fw maint repair-workflow [--dry] <runner_id>" >&2
     exit 1
 fi
 

@@ -2,8 +2,8 @@
 # Drop OSM import tables from PostGIS (osm_nodes, osm_ways, osm_import_log).
 #
 # Usage:
-#   scripts/postgis-drop-tables           # prompt for confirmation
-#   scripts/postgis-drop-tables --yes     # skip confirmation
+#   fw db postgis drop-tables           # prompt for confirmation
+#   fw db postgis drop-tables --yes     # skip confirmation
 
 source "$(dirname "${BASH_SOURCE[0]}")/../../_helpers/_bootstrap.sh"
 set -euo pipefail

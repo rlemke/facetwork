@@ -2,9 +2,9 @@
 # Start the AFL MCP server.
 #
 # Usage:
-#   scripts/mcp-server                                # start stdio server
-#   scripts/mcp-server --config /path/to/config.json  # custom config
-#   scripts/mcp-server --help                         # show options
+#   fw svc mcp                                # start stdio server
+#   fw svc mcp --config /path/to/config.json  # custom config
+#   fw svc mcp --help                         # show options
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail

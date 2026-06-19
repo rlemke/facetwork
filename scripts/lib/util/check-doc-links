@@ -6,8 +6,8 @@
 # Exits 0 if all links resolve, 1 if any are broken.
 #
 # Usage:
-#   scripts/check-doc-links              # check all .md files
-#   scripts/check-doc-links docs/        # check only docs/
+#   fw util check-doc-links              # check all .md files
+#   fw util check-doc-links docs/        # check only docs/
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail

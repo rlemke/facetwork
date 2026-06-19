@@ -10,10 +10,10 @@
 # This isolates the main server from hours of sustained I/O during PBF parsing.
 #
 # Usage:
-#   scripts/start-import-pg              # start the container
-#   scripts/start-import-pg --stop       # stop and remove
-#   scripts/start-import-pg --status     # check if running
-#   scripts/start-import-pg --url        # print connection URL
+#   fw db import-pg              # start the container
+#   fw db import-pg --stop       # stop and remove
+#   fw db import-pg --status     # check if running
+#   fw db import-pg --url        # print connection URL
 #
 # Environment:
 #   AFL_IMPORT_PG_PORT    Port to bind (default: 5433)

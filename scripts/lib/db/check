@@ -9,8 +9,8 @@
 # is unset, it's reported as "skipped" and does not affect the exit code.
 #
 # Usage:
-#   scripts/check-databases
-#   scripts/check-databases --quiet    # suppress OK lines, show only failures
+#   fw db check
+#   fw db check --quiet    # suppress OK lines, show only failures
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -uo pipefail

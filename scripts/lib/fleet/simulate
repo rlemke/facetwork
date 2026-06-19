@@ -7,8 +7,8 @@
 # durable store. Then runs a fan-out heat map across them and checks the leaves
 # distributed across servers and the merge pulled everyone's output from MinIO.
 #
-#   scripts/simulate-fleet [--servers 3] [--regions "California,Nevada,Arizona"]
-#   scripts/simulate-fleet --down            # tear down a previous simulation
+#   fw fleet simulate [--servers 3] [--regions "California,Nevada,Arizona"]
+#   fw fleet simulate --down            # tear down a previous simulation
 #
 # Uses the running full-stack's bundled MinIO+MongoDB as the shared infra,
 # addressed by this host's LAN IP (reachable from host AND containers).
@@ -52,13 +52,13 @@ for p in (9000, 27017):
     socket.create_connection((sys.argv[1], p), timeout=4).close()
 PY
 
-trap 'echo; echo "(leaving sim servers up; run: scripts/simulate-fleet --down)"' EXIT
+trap 'echo; echo "(leaving sim servers up; run: fw fleet simulate --down)"' EXIT
 
 echo "== 1) central config + encrypted secret (set ONCE) =="
-"$REPO/scripts/fleet" set --mongo "$MONGO" --minio "$MINIO" --osm-replicas 1 --task-list osm >/dev/null
-KEY=$("$REPO/scripts/fleet" secret gen-key 2>/dev/null)
+""$FW_LIB/fleet/config"" set --mongo "$MONGO" --minio "$MINIO" --osm-replicas 1 --task-list osm >/dev/null
+KEY=$(""$FW_LIB/fleet/config"" secret gen-key 2>/dev/null)
 export AFL_FLEET_KEY="$KEY"
-"$REPO/scripts/fleet" secret set --mongo "$MONGO" --minio-access minioadmin --minio-secret minioadmin >/dev/null
+""$FW_LIB/fleet/config"" secret set --mongo "$MONGO" --minio-access minioadmin --minio-secret minioadmin >/dev/null
 echo "  fleet_config set; MinIO creds encrypted (fleet key generated)"
 
 echo "== 2) bring up $SERVERS servers — each a fleet-agent reading the central config =="
@@ -69,7 +69,7 @@ for i in $(seq 1 "$SERVERS"); do
              AFL_FLEET_KEY="$KEY" \
              AFL_FLEET_EXTRA_COMPOSE="$REPO/docker-compose.sim.yml" \
              AFL_DATA_DIR="${AFL_DATA_DIR:-/Volumes/afl_data}/sim-srv$i" \
-             "$REPO/scripts/fleet-agent" apply --mongo "$MONGO" 2>&1); then
+             ""$FW_LIB/fleet/agent"" apply --mongo "$MONGO" 2>&1); then
         printf '%s\n' "$out" | grep -iE "applying|Started" | head -3 | sed 's/^/    /' || true
     else
         echo "    ERROR bringing up fleet-srv$i:"; printf '%s\n' "$out" | tail -6 | sed 's/^/    /'; exit 1
@@ -82,7 +82,7 @@ for _t in $(seq 1 40); do
     [[ "$n" -ge "$SERVERS" ]] && break
     sleep 3
 done
-"$REPO/scripts/fleet" status --mongo "$MONGO"
+""$FW_LIB/fleet/config"" status --mongo "$MONGO"
 
 echo "== done bringing up the fleet. Submit a fan-out next (run-fanout step in the parent). =="
 echo "FLEET_SIM_READY mongo=$MONGO minio=$MINIO key=$KEY"

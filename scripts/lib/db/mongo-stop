@@ -9,9 +9,9 @@
 # shutdown does not finish in time. Use --force to SIGKILL immediately.
 #
 # Usage:
-#   scripts/stop_mongo
-#   scripts/stop_mongo --force    # SIGKILL without waiting
-#   scripts/stop_mongo --timeout 60
+#   fw db mongo-stop
+#   fw db mongo-stop --force    # SIGKILL without waiting
+#   fw db mongo-stop --timeout 60
 #
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -uo pipefail

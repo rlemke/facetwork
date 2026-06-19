@@ -2,13 +2,13 @@
 # Claude workflow catalog: backup / restore / import.
 #
 # Usage:
-#   scripts/catalog list                       # packages + workflows overview
-#   scripts/catalog list --package osm-geocoder # workflows in a package
-#   scripts/catalog backup catalog.json
-#   scripts/catalog restore catalog.json [--no-recompile]
-#   scripts/catalog import path/to/workflow.ffl --slug demo.x --publish
-#   scripts/catalog import examples/dir/ --tags imported
-#   scripts/catalog import-package osm-geocoder --tags osm
+#   fw ffl catalog list                       # packages + workflows overview
+#   fw ffl catalog list --package osm-geocoder # workflows in a package
+#   fw ffl catalog backup catalog.json
+#   fw ffl catalog restore catalog.json [--no-recompile]
+#   fw ffl catalog import path/to/workflow.ffl --slug demo.x --publish
+#   fw ffl catalog import examples/dir/ --tags imported
+#   fw ffl catalog import-package osm-geocoder --tags osm
 #
 # Connects to MongoDB via .env (AFL_MONGODB_URL etc.).
 

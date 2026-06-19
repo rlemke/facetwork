@@ -6,9 +6,9 @@
 # so that --up restarts with the correct compose files and profiles.
 #
 # Usage:
-#   scripts/rebuild                # Rebuild all images (no cache)
-#   scripts/rebuild --cached       # Rebuild using Docker layer cache
-#   scripts/rebuild --up           # Rebuild and restart services
+#   fw install rebuild                # Rebuild all images (no cache)
+#   fw install rebuild --cached       # Rebuild using Docker layer cache
+#   fw install rebuild --up           # Rebuild and restart services
 #
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
@@ -27,11 +27,11 @@ for arg in "$@"; do
     case "$arg" in
         --cached)  USE_CACHE=true ;;
         --up)      RESTART=true ;;
-        *)         echo "Unknown option: $arg"; echo "Usage: scripts/rebuild [--cached] [--up]"; exit 1 ;;
+        *)         echo "Unknown option: $arg"; echo "Usage: fw install rebuild [--cached] [--up]"; exit 1 ;;
     esac
 done
 
-# Load .afl-active-config if it exists (written by scripts/setup).
+# Load .afl-active-config if it exists (written by fw install setup).
 # These override .env values so rebuild matches the last setup invocation.
 if [ -f "$PROJECT_DIR/.afl-active-config" ]; then
     source "$PROJECT_DIR/.afl-active-config"
@@ -66,7 +66,7 @@ if [ "$RESTART" = true ]; then
         echo ""
         echo "WARNING: No .afl-active-config or .env found."
         echo "  Restarting with base docker-compose.yml only."
-        echo "  Run scripts/setup to configure overlays, or copy .env.example to .env."
+        echo "  Run fw install setup to configure overlays, or copy .env.example to .env."
     fi
     echo ""
     echo "=== Restarting services ==="

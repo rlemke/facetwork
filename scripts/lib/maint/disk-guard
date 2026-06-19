@@ -12,7 +12,7 @@
 # It NEVER touches volumes (your data: mongo, minio, postgis).
 #
 # Run from cron, e.g. every 30 min:
-#   */30 * * * * /Users/ralph_lemke/facetwork/scripts/docker-disk-guard >/dev/null 2>&1
+#   */30 * * * * /Users/ralph_lemke/facetwork/fw maint disk-guard >/dev/null 2>&1
 #
 # Env:
 #   DOCKER_DISK_THRESHOLD   prune at/over this % (default 80)

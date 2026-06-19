@@ -6,10 +6,10 @@
 # Multiple instances can run concurrently on different machines.
 #
 # Usage:
-#   scripts/runner                                  # start with defaults
-#   scripts/runner --config /path/to/afl.config.json
-#   scripts/runner --topics TopicA TopicB           # handle specific topics
-#   scripts/runner --max-concurrent 10              # allow 10 parallel items
+#   fw runner exec                                  # start with defaults
+#   fw runner exec --config /path/to/afl.config.json
+#   fw runner exec --topics TopicA TopicB           # handle specific topics
+#   fw runner exec --max-concurrent 10              # allow 10 parallel items
 #
 # Options:
 #   --config FILE            Path to AFL config file

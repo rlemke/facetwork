@@ -6,7 +6,7 @@
 #
 # Usage:
 #   cp .env.example .env   # one-time: edit to set mirror path, scaling, etc.
-#   scripts/easy.sh        # runs the full pipeline
+#   fw single up        # runs the full pipeline
 #
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
@@ -56,7 +56,7 @@ if [ -n "${JENKINS_HOME_DIR:-}" ]; then
     SETUP_ARGS+=(--jenkins-home-dir "$JENKINS_HOME_DIR")
 fi
 
-scripts/teardown --all
-scripts/rebuild
-scripts/setup "${SETUP_ARGS[@]}"
-scripts/seed-examples --clean
+"$FW_LIB/install/teardown" --all
+"$FW_LIB/install/rebuild"
+"$FW_LIB/install/setup" "${SETUP_ARGS[@]}"
+"$FW_LIB/ffl/seed" --clean

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install all system-level tools required for Facetwork development via Homebrew.
-# Usage: scripts/install-tools [--minimal]
+# Usage: fw install tools [--minimal]
 #
 # --minimal  Install only core tools (skip geospatial/Java/Grafana)
 
@@ -168,6 +168,6 @@ info "Post-install notes:"
 echo "  1. Activate the virtual environment:  source .venv/bin/activate"
 echo "  2. If Docker was just installed, open Docker Desktop to finish setup"
 echo "  3. Copy and edit .env:  cp .env.example .env"
-echo "  4. Seed example workflows:  scripts/seed-examples"
+echo "  4. Seed example workflows:  fw ffl seed"
 echo "  5. Start the dashboard:  python -m facetwork.dashboard --log-format text"
 echo ""

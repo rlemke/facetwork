@@ -11,12 +11,12 @@
 # workflow name and it compiles + submits in one step. (By contrast
 # `run-workflow` runs a PRE-SEEDED workflow in-process via the evaluator and
 # does NOT create a runner record, so those runs don't show in the dashboard.)
-# A runner must be up to pick up the work — e.g. `scripts/start-runner ...`.
+# A runner must be up to pick up the work — e.g. `fw runner start ...`.
 #
 # Usage:
-#   scripts/ffl-run workflow.ffl --workflow ns.WorkflowName
-#   scripts/ffl-run --primary wf.ffl --library types.ffl --workflow ns.Name --inputs '{"x": 1}'
-#   scripts/ffl-run wf.ffl --workflow ns.Name --task-list osm
+#   fw ffl run workflow.ffl --workflow ns.WorkflowName
+#   fw ffl run --primary wf.ffl --library types.ffl --workflow ns.Name --inputs '{"x": 1}'
+#   fw ffl run wf.ffl --workflow ns.Name --task-list osm
 #
 # Flags (forwarded to `python -m facetwork.runtime.submit`):
 #   <file.ffl>         primary FFL source (single-file positional form)

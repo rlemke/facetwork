@@ -5,8 +5,8 @@
 # Requires a PostgreSQL restart to take effect.
 #
 # Usage:
-#   scripts/postgis-tune              # apply and restart
-#   scripts/postgis-tune --show       # show current vs recommended
+#   fw db postgis tune              # apply and restart
+#   fw db postgis tune --show       # show current vs recommended
 
 source "$(dirname "${BASH_SOURCE[0]}")/../../_helpers/_bootstrap.sh"
 set -euo pipefail
@@ -69,4 +69,4 @@ echo ""
 echo "Restarting PostgreSQL ..."
 pg_ctl -D "$DATA_DIR" restart -l /Volumes/afl_data/local_servers/postgis/log/postgres.log
 
-echo "Done. Verify with: scripts/postgis-tune --show"
+echo "Done. Verify with: fw db postgis tune --show"

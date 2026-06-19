@@ -7,9 +7,9 @@
 # regenerated files stay visually consistent with the originals.
 #
 # Usage:
-#   scripts/build-thesis-pdf                       # all .md files in docs/thesis/
-#   scripts/build-thesis-pdf thesis                # one file (without .md)
-#   scripts/build-thesis-pdf thesis defense        # several
+#   fw util thesis-pdf                       # all .md files in docs/thesis/
+#   fw util thesis-pdf thesis                # one file (without .md)
+#   fw util thesis-pdf thesis defense        # several
 #
 # Requires: pandoc, /Applications/Google Chrome.app on macOS.
 

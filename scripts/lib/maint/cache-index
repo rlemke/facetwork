@@ -15,9 +15,9 @@ Currently detects:
 
 Usage::
 
-    python scripts/build-cache-index.py
-    python scripts/build-cache-index.py --cache-root /custom/path
-    python scripts/build-cache-index.py --open                 # also xdg-open
+    fw maint cache-index
+    fw maint cache-index --cache-root /custom/path
+    fw maint cache-index --open                 # also xdg-open
 
 Safe to re-run — overwrites the existing ``index.html`` and sidecar.
 """

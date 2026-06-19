@@ -9,9 +9,9 @@
 # rewrites the rest to match the venv's CURRENT location.
 #
 # Usage:
-#   scripts/repair-venv                 # repair ./.venv (or $VIRTUAL_ENV)
-#   scripts/repair-venv /path/to/.venv  # repair a specific venv
-#   scripts/repair-venv --dry           # show what would change, make no edits
+#   fw install repair-venv                 # repair ./.venv (or $VIRTUAL_ENV)
+#   fw install repair-venv /path/to/.venv  # repair a specific venv
+#   fw install repair-venv --dry           # show what would change, make no edits
 #
 # Idempotent and safe to re-run. Only touches regular text files under bin/;
 # symlinks and binaries are skipped.

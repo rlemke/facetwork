@@ -5,7 +5,7 @@
 # vacuumed/analyzed.
 #
 # Usage:
-#   scripts/postgis-vacuum-status
+#   fw db postgis vacuum-status
 
 source "$(dirname "${BASH_SOURCE[0]}")/../../_helpers/_bootstrap.sh"
 set -euo pipefail

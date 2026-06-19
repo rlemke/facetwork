@@ -5,9 +5,9 @@
 # Running tasks are reset to "pending" so they'll be picked up when runners restart.
 #
 # Usage:
-#   scripts/drain-runners              # stop local runners + reset tasks
-#   scripts/drain-runners --tasks-only # just reset tasks, don't stop processes
-#   scripts/drain-runners --dry        # show what would be reset without changing anything
+#   fw runner drain              # stop local runners + reset tasks
+#   fw runner drain --tasks-only # just reset tasks, don't stop processes
+#   fw runner drain --dry        # show what would be reset without changing anything
 #
 # Environment:
 #   AFL_MONGODB_URL    MongoDB connection string (default from .env)
@@ -37,7 +37,7 @@ done
 
 if [[ "$TASKS_ONLY" == "false" && "$DRY_RUN" == "false" ]]; then
     echo "=== Stopping runners ==="
-    "$REPO_ROOT/scripts/stop-runners"
+    ""$FW_LIB/runner/stop""
     echo ""
 fi
 

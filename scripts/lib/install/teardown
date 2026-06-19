@@ -4,9 +4,9 @@
 # Stops all AgentFlow containers and optionally removes volumes.
 #
 # Usage:
-#   scripts/teardown                # Stop and remove containers
-#   scripts/teardown --volumes      # Also remove Docker volumes
-#   scripts/teardown --all          # Remove containers, volumes, and images
+#   fw install teardown                # Stop and remove containers
+#   fw install teardown --volumes      # Also remove Docker volumes
+#   fw install teardown --all          # Remove containers, volumes, and images
 #
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
@@ -16,7 +16,7 @@ REMOVE_IMAGES=false
 
 usage() {
     cat <<'EOF'
-Usage: scripts/teardown [OPTIONS]
+Usage: fw install teardown [OPTIONS]
 
 Stop and remove all AgentFlow Docker containers.
 

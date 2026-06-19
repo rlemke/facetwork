@@ -13,13 +13,13 @@
 # All configuration comes from .env (copy .env.example to .env and edit).
 #
 # Usage:
-#   scripts/easy-local.sh                                   # all examples, 1 runner
-#   scripts/easy-local.sh --instances 3                     # 3 runner processes
-#   scripts/easy-local.sh --example osm-geocoder            # single example
-#   scripts/easy-local.sh --no-seed                         # skip seeding
-#   scripts/easy-local.sh --no-dashboard                    # skip dashboard
-#   scripts/easy-local.sh -- --log-format text              # pass args to runner
-#   scripts/easy-local.sh --example osm-geocoder --instances 3 -- --log-format text
+#   fw single up-local                                   # all examples, 1 runner
+#   fw single up-local --instances 3                     # 3 runner processes
+#   fw single up-local --example osm-geocoder            # single example
+#   fw single up-local --no-seed                         # skip seeding
+#   fw single up-local --no-dashboard                    # skip dashboard
+#   fw single up-local -- --log-format text              # pass args to runner
+#   fw single up-local --example osm-geocoder --instances 3 -- --log-format text
 #
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
@@ -53,7 +53,7 @@ while [[ $# -gt 0 ]]; do
             shift; RUNNER_ARGS=("$@"); break ;;
         *)
             echo "Unknown option: $1" >&2
-            echo "Usage: scripts/easy-local.sh [--instances N] [--example NAME]... [--no-seed] [--no-dashboard] [--no-clean] [-- RUNNER_ARGS...]" >&2
+            echo "Usage: fw single up-local [--instances N] [--example NAME]... [--no-seed] [--no-dashboard] [--no-clean] [-- RUNNER_ARGS...]" >&2
             exit 1 ;;
     esac
 done
@@ -74,7 +74,7 @@ echo ""
 # Step 1: Stop any existing runners/dashboard
 # ---------------------------------------------------------------------------
 echo "--- Stopping existing runners ---"
-scripts/stop-runners 2>/dev/null || true
+"$FW_LIB/runner/stop" 2>/dev/null || true
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -112,7 +112,7 @@ if [[ "$SEED" == "true" ]]; then
             SEED_ARGS+=(--include "$ex")
         done
     fi
-    scripts/seed-examples "${SEED_ARGS[@]}"
+    "$FW_LIB/ffl/seed" "${SEED_ARGS[@]}"
     echo ""
 fi
 
@@ -135,4 +135,4 @@ if [[ ${#RUNNER_ARGS[@]} -gt 0 ]]; then
     START_ARGS+=("${RUNNER_ARGS[@]}")
 fi
 
-exec scripts/start-runner "${START_ARGS[@]}"
+exec "$FW_LIB/runner/start" "${START_ARGS[@]}"

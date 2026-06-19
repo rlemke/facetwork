@@ -6,15 +6,15 @@
 # and does the clone-or-pull + `pip install -e .` work in one step.
 #
 # Usage:
-#   scripts/install-example anthropic
-#   scripts/install-example anthropic --extras agent_sdk,mcp
-#   scripts/install-example osm-geocoder
-#   scripts/install-example --list             # print the registry
-#   scripts/install-example --all              # install every known example
-#   scripts/install-example anthropic --dir /custom/path
+#   fw install example anthropic
+#   fw install example anthropic --extras agent_sdk,mcp
+#   fw install example osm-geocoder
+#   fw install example --list             # print the registry
+#   fw install example --all              # install every known example
+#   fw install example anthropic --dir /custom/path
 #
 # After install, the example is discoverable as
-#   scripts/start-runner --example <name>
+#   fw runner start --example <name>
 # and (for anthropic) `python -c "import anthropic_handlers"` works.
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
@@ -45,7 +45,7 @@ REGISTRY=(
 
 usage() {
     cat <<'EOF'
-Usage: scripts/install-example [OPTIONS] <name>...
+Usage: fw install example [OPTIONS] <name>...
 
 Clone (or update) and pip-install a standalone Facetwork example
 package from its GitHub repo.
@@ -74,10 +74,10 @@ Environment:
   FWH_HANDLERS_ROOT       Override the default install root.
 
 Examples:
-  scripts/install-example anthropic
-  scripts/install-example anthropic --extras agent_sdk,mcp --check
-  scripts/install-example osm-geocoder noaa-weather
-  scripts/install-example --all
+  fw install example anthropic
+  fw install example anthropic --extras agent_sdk,mcp --check
+  fw install example osm-geocoder noaa-weather
+  fw install example --all
 EOF
 }
 
@@ -151,7 +151,7 @@ if [[ -n "$VENV_DIR" ]]; then
 else
     PYTHON="$(command -v python3 || true)"
     if [[ -z "$PYTHON" ]]; then
-        echo "Error: python3 not found. Pass --venv DIR or run scripts/install first." >&2
+        echo "Error: python3 not found. Pass --venv DIR or run fw install repo first." >&2
         exit 1
     fi
 fi

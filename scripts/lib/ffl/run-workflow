@@ -5,12 +5,12 @@
 # shows parameters with defaults, prompts for values, and starts execution.
 #
 # Usage:
-#   scripts/run-workflow                                      # interactive
-#   scripts/run-workflow --list                                # list available workflows
-#   scripts/run-workflow --workflow MyWorkflow                  # prompt for params
-#   scripts/run-workflow --workflow MyWorkflow --input '{"x": 1}'  # non-interactive
-#   scripts/run-workflow --flow-id UUID                         # pick by flow ID
-#   scripts/run-workflow --config /path/to/config.json         # custom config
+#   fw ffl run-workflow                                      # interactive
+#   fw ffl run-workflow --list                                # list available workflows
+#   fw ffl run-workflow --workflow MyWorkflow                  # prompt for params
+#   fw ffl run-workflow --workflow MyWorkflow --input '{"x": 1}'  # non-interactive
+#   fw ffl run-workflow --flow-id UUID                         # pick by flow ID
+#   fw ffl run-workflow --config /path/to/config.json         # custom config
 #
 # Options:
 #   --config FILE        Path to AFL config file

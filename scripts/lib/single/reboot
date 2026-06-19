@@ -3,9 +3,9 @@
 # reseed examples, restart runners + dashboard.
 #
 # Usage:
-#   scripts/reboot                                          # reseed all examples
-#   scripts/reboot --example doc-processing                 # reseed specific examples
-#   scripts/reboot --example doc-processing --example site-analyzer
+#   fw single reboot                                          # reseed all examples
+#   fw single reboot --example doc-processing                 # reseed specific examples
+#   fw single reboot --example doc-processing --example site-analyzer
 #
 # Passes --example flags to both seed-examples and start-runner.
 
@@ -46,7 +46,7 @@ echo ""
 
 # 1. Stop runners and dashboard
 echo "[1/4] Stopping runners and dashboard..."
-"${REPO_ROOT}/scripts/stop-runners" 2>/dev/null || true
+""$FW_LIB/runner/stop"" 2>/dev/null || true
 echo ""
 
 # 2. Clear all MongoDB collections
@@ -75,20 +75,20 @@ if [[ ${#EXAMPLE_ARGS[@]} -gt 0 ]]; then
     i=0
     while [[ $i -lt ${#EXAMPLE_ARGS[@]} ]]; do
         if [[ "${EXAMPLE_ARGS[$i]}" == "--example" ]]; then
-            "${REPO_ROOT}/scripts/seed-examples" --include "${EXAMPLE_ARGS[$((i+1))]}"
+            ""$FW_LIB/ffl/seed"" --include "${EXAMPLE_ARGS[$((i+1))]}"
             i=$((i + 2))
         else
             i=$((i + 1))
         fi
     done
 else
-    "${REPO_ROOT}/scripts/seed-examples"
+    ""$FW_LIB/ffl/seed""
 fi
 echo ""
 
 # 4. Start runners and dashboard
 echo "[4/4] Starting runners and dashboard..."
-RUNNER_CMD=("${REPO_ROOT}/scripts/start-runner")
+RUNNER_CMD=(""$FW_LIB/runner/start"")
 if [[ ${#EXAMPLE_ARGS[@]} -gt 0 ]]; then
     RUNNER_CMD+=("${EXAMPLE_ARGS[@]}")
 fi

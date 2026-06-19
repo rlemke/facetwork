@@ -5,7 +5,7 @@
 # waits up to 5 seconds, then SIGKILL if still running.
 #
 # Usage:
-#   scripts/stop-dashboard
+#   fw svc dashboard-stop
 #
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail

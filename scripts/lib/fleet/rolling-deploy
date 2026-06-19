@@ -8,11 +8,11 @@
 # begins, so all runners pick up the latest handler code on restart.
 #
 # Usage:
-#   scripts/rolling-deploy                                        # all examples, all servers
-#   scripts/rolling-deploy --example hiv-drug-resistance          # specific handlers
-#   scripts/rolling-deploy --host h1 --host h2                    # specific hosts
-#   scripts/rolling-deploy --drain-timeout 90                     # custom drain wait
-#   scripts/rolling-deploy -- --log-format text                   # extra runner args
+#   fw fleet rolling-deploy                                        # all examples, all servers
+#   fw fleet rolling-deploy --example hiv-drug-resistance          # specific handlers
+#   fw fleet rolling-deploy --host h1 --host h2                    # specific hosts
+#   fw fleet rolling-deploy --drain-timeout 90                     # custom drain wait
+#   fw fleet rolling-deploy -- --log-format text                   # extra runner args
 #
 # Options:
 #   --example NAME      Register handlers from examples/NAME only (repeatable)
@@ -251,7 +251,7 @@ while IFS= read -r line; do
     # --- Start new runner ---
     echo "  Starting new runner on $srv_name..."
     _afl_ssh "$srv_name" \
-        "cd $AFL_REMOTE_PATH && nohup scripts/runner --registry$RUNNER_ARGS_STR > /tmp/afl-runner-\$\$.log 2>&1 &" || {
+        "cd $AFL_REMOTE_PATH && nohup ./fw runner exec --registry$RUNNER_ARGS_STR > /tmp/afl-runner-\$\$.log 2>&1 &" || {
         echo "  ERROR: SSH to $srv_name failed for start"
         FAILED=true
         echo "  ABORTING rolling deploy — $srv_name is DOWN, remaining servers untouched."

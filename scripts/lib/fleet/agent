@@ -164,7 +164,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         # Invoke via bash explicitly (avoid shebang/exec resolution differences
         # in a subprocess context). Force a full env with a sane PATH so `docker`
         # resolves even when the parent was launched with a minimal PATH.
-        cmd = ["bash", os.path.join(REPO, "scripts", "start-worker"), "--env", envf]
+        cmd = ["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"), "--fleet", "--env", envf]
         if recreate:
             cmd.append("--recreate")
         child_env = os.environ.copy()
@@ -182,7 +182,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         # single-replica service (its own image; coexists with the osm runners
         # via the name-filtered claim). Same env file (carries AFL_GH_ROUTER_IMAGE).
         if gh_image:
-            gh_cmd = ["bash", os.path.join(REPO, "scripts", "start-worker"),
+            gh_cmd = ["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"), "--fleet",
                       "--env", envf, "--example", "gh-router", "--replicas", "1"]
             if recreate:
                 gh_cmd.append("--recreate")
@@ -201,7 +201,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         # needs to run on SOME host(s), so a host that can't bring it up
         # shouldn't fail its handler-runner reconcile.
         if ffl_replicas > 0:
-            ffl_cmd = ["bash", os.path.join(REPO, "scripts", "start-worker"),
+            ffl_cmd = ["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"), "--fleet",
                        "--env", envf, "--example", "ffl", "--replicas", str(ffl_replicas)]
             if recreate:
                 ffl_cmd.append("--recreate")

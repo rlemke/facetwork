@@ -5,26 +5,26 @@
 # fwh_* example.
 #
 # Usage:
-#   scripts/full-stack                          # start every service (detached)
-#   scripts/full-stack up                       # same as no args
-#   scripts/full-stack up runner-anthropic      # start specific services only
-#   scripts/full-stack up --scale runner-osm-geocoder=3
+#   fw single full-stack                          # start every service (detached)
+#   fw single full-stack up                       # same as no args
+#   fw single full-stack up runner-anthropic      # start specific services only
+#   fw single full-stack up --scale runner-osm-geocoder=3
 #                                               # run 3 osm-geocoder replicas (any runner-* service
 #                                               # is scalable; they all share the same task list and
 #                                               # race for tasks via MongoDB's atomic claim).
-#   scripts/full-stack down                     # stop + remove containers (keeps named volumes)
-#   scripts/full-stack down --volumes           # also drop mongodb/postgis/jenkins data
-#   scripts/full-stack stop                     # stop without removing
-#   scripts/full-stack restart [SERVICE...]     # restart all or selected services
-#   scripts/full-stack status                   # ps with health
-#   scripts/full-stack logs [SERVICE...]        # tail -f logs
-#   scripts/full-stack logs --tail 100 SERVICE  # snapshot of recent logs
-#   scripts/full-stack build [SERVICE...]       # docker compose build
-#   scripts/full-stack rebuild [--no-cache] [SERVICE...]  # build + recreate containers
-#   scripts/full-stack pull                     # pull mongo / postgis / jenkins images
-#   scripts/full-stack config                   # show resolved compose config
-#   scripts/full-stack exec SERVICE [-- CMD]    # shell into a service
-#   scripts/full-stack help                     # show this message
+#   fw single full-stack down                     # stop + remove containers (keeps named volumes)
+#   fw single full-stack down --volumes           # also drop mongodb/postgis/jenkins data
+#   fw single full-stack stop                     # stop without removing
+#   fw single full-stack restart [SERVICE...]     # restart all or selected services
+#   fw single full-stack status                   # ps with health
+#   fw single full-stack logs [SERVICE...]        # tail -f logs
+#   fw single full-stack logs --tail 100 SERVICE  # snapshot of recent logs
+#   fw single full-stack build [SERVICE...]       # docker compose build
+#   fw single full-stack rebuild [--no-cache] [SERVICE...]  # build + recreate containers
+#   fw single full-stack pull                     # pull mongo / postgis / jenkins images
+#   fw single full-stack config                   # show resolved compose config
+#   fw single full-stack exec SERVICE [-- CMD]    # shell into a service
+#   fw single full-stack help                     # show this message
 #
 # Env vars (override in .env.full-stack or your shell):
 #   FWH_HANDLERS_ROOT          default $HOME/fw_handlers
@@ -102,7 +102,7 @@ compose() {
 # .env.full-stack. Set AFL_OSM_REPLICAS=3 (etc.) to bring up multiple
 # replicas of a per-example runner. Empty / unset / 1 = no flag emitted.
 # Returns nothing when no replica overrides are set, so existing
-# `scripts/full-stack up` invocations keep the same single-replica
+# `fw single full-stack up` invocations keep the same single-replica
 # behaviour.
 build_scale_args() {
     set +u  # tolerate unset vars during the test below
@@ -154,7 +154,7 @@ case "$CMD" in
         echo
         echo "Dashboard: http://localhost:${DASHBOARD_PORT:-8080}"
         echo "Jenkins:   http://localhost:${JENKINS_UI_PORT:-9090}"
-        echo "Tail logs: scripts/full-stack logs"
+        echo "Tail logs: fw single full-stack logs"
         ;;
 
     down)
@@ -210,7 +210,7 @@ case "$CMD" in
         echo
         echo "Dashboard: http://localhost:${DASHBOARD_PORT:-8080}"
         echo "Jenkins:   http://localhost:${JENKINS_UI_PORT:-9090}"
-        echo "Tail logs: scripts/full-stack logs"
+        echo "Tail logs: fw single full-stack logs"
         ;;
 
     pull)
@@ -223,7 +223,7 @@ case "$CMD" in
 
     exec)
         if [[ $# -lt 1 ]]; then
-            echo "Usage: scripts/full-stack exec SERVICE [-- CMD ...]" >&2
+            echo "Usage: fw single full-stack exec SERVICE [-- CMD ...]" >&2
             exit 2
         fi
         service="$1"

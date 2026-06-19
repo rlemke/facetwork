@@ -15,9 +15,9 @@ fetches via ``location.origin`` so it's all same-origin in practice, but
 opening on alternate ports during development trips up some configs).
 
 Usage:
-    scripts/serve-tiled-map <port> <dir>
-    scripts/serve-tiled-map <dir>                   # default port 8765
-    scripts/serve-tiled-map                         # cwd, port 8765
+    fw util serve-map <port> <dir>
+    fw util serve-map <dir>                   # default port 8765
+    fw util serve-map                         # cwd, port 8765
 """
 from __future__ import annotations
 

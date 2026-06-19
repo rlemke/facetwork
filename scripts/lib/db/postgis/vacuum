@@ -5,10 +5,10 @@
 # Run this after a large import batch completes, before starting the next.
 #
 # Usage:
-#   scripts/postgis-vacuum              # vacuum both tables
-#   scripts/postgis-vacuum --nodes      # vacuum osm_nodes only
-#   scripts/postgis-vacuum --ways       # vacuum osm_ways only
-#   scripts/postgis-vacuum --full       # VACUUM FULL (rewrites tables, takes longer)
+#   fw db postgis vacuum              # vacuum both tables
+#   fw db postgis vacuum --nodes      # vacuum osm_nodes only
+#   fw db postgis vacuum --ways       # vacuum osm_ways only
+#   fw db postgis vacuum --full       # VACUUM FULL (rewrites tables, takes longer)
 
 source "$(dirname "${BASH_SOURCE[0]}")/../../_helpers/_bootstrap.sh"
 set -euo pipefail

@@ -5,9 +5,9 @@
 # runners, steps, events, flows, workflows, tasks, logs, servers, locks.
 #
 # Usage:
-#   scripts/db-stats                              # use default config
-#   scripts/db-stats --config /path/to/config.json
-#   scripts/db-stats --json                       # output as JSON
+#   fw db stats                              # use default config
+#   fw db stats --config /path/to/config.json
+#   fw db stats --json                       # output as JSON
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail

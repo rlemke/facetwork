@@ -7,9 +7,9 @@
 # removed binary) and would otherwise retry forever.
 #
 # Usage:
-#   scripts/terminate-workflow <runner_id> [<runner_id> ...]
-#   scripts/terminate-workflow --dry <runner_id>
-#   scripts/terminate-workflow --workflow <workflow_name>   # all stuck runners for this workflow
+#   fw maint terminate-workflow <runner_id> [<runner_id> ...]
+#   fw maint terminate-workflow --dry <runner_id>
+#   fw maint terminate-workflow --workflow <workflow_name>   # all stuck runners for this workflow
 #
 # Environment:
 #   AFL_MONGODB_URL    MongoDB connection string (default from .env)

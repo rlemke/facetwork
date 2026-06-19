@@ -2,11 +2,11 @@
 # Start the Facetwork web dashboard.
 #
 # Usage:
-#   scripts/dashboard                              # start on port 8080
-#   scripts/dashboard --port 9000                  # custom port
-#   scripts/dashboard --config /path/to/config.json
-#   scripts/dashboard --reload                     # auto-reload for dev
-#   scripts/dashboard --help                       # show all options
+#   fw svc dashboard                              # start on port 8080
+#   fw svc dashboard --port 9000                  # custom port
+#   fw svc dashboard --config /path/to/config.json
+#   fw svc dashboard --reload                     # auto-reload for dev
+#   fw svc dashboard --help                       # show all options
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail

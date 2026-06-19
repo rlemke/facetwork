@@ -2,11 +2,11 @@
 # Compile FFL source files to JSON workflow definitions.
 #
 # Usage:
-#   scripts/compile input.ffl                    # print JSON to stdout
-#   scripts/compile input.ffl -o output.json     # write to file
-#   scripts/compile input.ffl --check            # syntax check only
-#   scripts/compile input.ffl --compact          # compact JSON output
-#   scripts/compile --help                       # show all options
+#   fw ffl compile input.ffl                    # print JSON to stdout
+#   fw ffl compile input.ffl -o output.json     # write to file
+#   fw ffl compile input.ffl --check            # syntax check only
+#   fw ffl compile input.ffl --compact          # compact JSON output
+#   fw ffl compile --help                       # show all options
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail

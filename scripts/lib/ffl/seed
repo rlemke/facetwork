@@ -7,13 +7,13 @@
 # scripts/run-workflow.
 #
 # Usage:
-#   scripts/seed-examples                          # seed all examples
-#   scripts/seed-examples --dry-run                # show what would be seeded
-#   scripts/seed-examples --include osm-geocoder   # seed one example
-#   scripts/seed-examples --exclude osm-geocoder   # skip one example
-#   scripts/seed-examples --clean                  # remove existing seeds first
-#   scripts/seed-examples --config path/to/cfg     # custom config file
-#   scripts/seed-examples --help                   # show all options
+#   fw ffl seed                          # seed all examples
+#   fw ffl seed --dry-run                # show what would be seeded
+#   fw ffl seed --include osm-geocoder   # seed one example
+#   fw ffl seed --exclude osm-geocoder   # skip one example
+#   fw ffl seed --clean                  # remove existing seeds first
+#   fw ffl seed --config path/to/cfg     # custom config file
+#   fw ffl seed --help                   # show all options
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail

@@ -5,9 +5,9 @@
 # (PostGIS, OSM) and dashboards (import overview, spatial explorer).
 #
 # Usage:
-#   scripts/start-grafana              # start (or restart) Grafana
-#   scripts/start-grafana --stop       # stop Grafana
-#   scripts/start-grafana --status     # check if running
+#   fw svc grafana              # start (or restart) Grafana
+#   fw svc grafana --stop       # stop Grafana
+#   fw svc grafana --status     # check if running
 #
 # Default login: admin / admin (change on first login)
 # URL: http://localhost:3000

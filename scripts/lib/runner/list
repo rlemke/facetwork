@@ -5,10 +5,10 @@
 # and registered handlers for each.
 #
 # Usage:
-#   scripts/list-runners                # all servers, all states
-#   scripts/list-runners --state running  # only running runners
-#   scripts/list-runners --json         # output as JSON
-#   scripts/list-runners --help         # show this help
+#   fw runner list                # all servers, all states
+#   fw runner list --state running  # only running runners
+#   fw runner list --json         # output as JSON
+#   fw runner list --help         # show this help
 #
 # Options:
 #   --state STATE   Filter by server state (running, shutdown, startup, error, quarantine)

@@ -5,11 +5,11 @@
 # then publishes namespaces to ffl_sources for dependency resolution.
 #
 # Usage:
-#   scripts/publish input.ffl                                # compile + publish
-#   scripts/publish input.ffl --version 1.0.0                # with version tag
-#   scripts/publish input.ffl --auto-resolve --source-path ./libs
-#   scripts/publish --primary a.ffl --library b.ffl          # multi-source
-#   scripts/publish input.ffl --config /path/to/config.json  # custom config
+#   fw ffl publish input.ffl                                # compile + publish
+#   fw ffl publish input.ffl --version 1.0.0                # with version tag
+#   fw ffl publish input.ffl --auto-resolve --source-path ./libs
+#   fw ffl publish --primary a.ffl --library b.ffl          # multi-source
+#   fw ffl publish input.ffl --config /path/to/config.json  # custom config
 #
 # Options:
 #   --config FILE        Path to FFL config file
@@ -60,7 +60,7 @@ done
 
 if [[ -z "$INPUT_FILE" && -z "$PRIMARY_FILES" ]]; then
     echo "Error: provide an input file or --primary FILE." >&2
-    echo "Run 'scripts/publish --help' for usage." >&2
+    echo "Run 'fw ffl publish --help' for usage." >&2
     exit 1
 fi
 

@@ -5,9 +5,9 @@
 # or custom-registered tool handlers via the ClaudeAgentRunner.
 #
 # Usage:
-#   scripts/server                                  # start with defaults
-#   scripts/server --config /path/to/afl.config.json
-#   scripts/server --workflow MyWorkflow --input '{"x": 1}'
+#   fw runner server                                  # start with defaults
+#   fw runner server --config /path/to/afl.config.json
+#   fw runner server --workflow MyWorkflow --input '{"x": 1}'
 #
 # Options:
 #   --config FILE        Path to AFL config file
@@ -48,7 +48,7 @@ done
 
 if [[ -z "$WORKFLOW" && -z "$FLOW_ID" ]]; then
     echo "Error: --workflow NAME or --flow-id ID is required." >&2
-    echo "Run 'scripts/server --help' for usage." >&2
+    echo "Run 'fw runner server --help' for usage." >&2
     exit 1
 fi
 

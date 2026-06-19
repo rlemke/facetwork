@@ -5,8 +5,8 @@
 # re-trigger autovacuum automatically once the load settles.
 #
 # Usage:
-#   scripts/postgis-kill-vacuum          # kill all autovacuum on osm db
-#   scripts/postgis-kill-vacuum --dry    # show what would be killed
+#   fw db postgis kill-vacuum          # kill all autovacuum on osm db
+#   fw db postgis kill-vacuum --dry    # show what would be killed
 
 source "$(dirname "${BASH_SOURCE[0]}")/../../_helpers/_bootstrap.sh"
 set -euo pipefail

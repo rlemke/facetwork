@@ -5,10 +5,10 @@
 # the collections themselves (and their indexes).
 #
 # Usage:
-#   scripts/drop-collections                # interactive confirmation
-#   scripts/drop-collections --yes          # skip confirmation
-#   scripts/drop-collections --drop         # drop collections entirely (removes indexes too)
-#   scripts/drop-collections --db NAME      # target a different database
+#   fw db drop-collections                # interactive confirmation
+#   fw db drop-collections --yes          # skip confirmation
+#   fw db drop-collections --drop         # drop collections entirely (removes indexes too)
+#   fw db drop-collections --db NAME      # target a different database
 #
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
@@ -19,7 +19,7 @@ DROP_MODE=false
 
 usage() {
     cat <<'EOF'
-Usage: scripts/drop-collections [OPTIONS]
+Usage: fw db drop-collections [OPTIONS]
 
 Empty all collections in the afl MongoDB database.
 

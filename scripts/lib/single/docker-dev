@@ -4,11 +4,11 @@
 # `--down` wipes everything cleanly.
 #
 # Usage:
-#   scripts/dockerup-dev              # start (detached)
-#   scripts/dockerup-dev --stop       # stop, keep containers (data survives)
-#   scripts/dockerup-dev --down       # stop + remove containers (wipes DB data)
-#   scripts/dockerup-dev --status     # show service status
-#   scripts/dockerup-dev --logs       # tail logs
+#   fw single docker-dev              # start (detached)
+#   fw single docker-dev --stop       # stop, keep containers (data survives)
+#   fw single docker-dev --down       # stop + remove containers (wipes DB data)
+#   fw single docker-dev --status     # show service status
+#   fw single docker-dev --logs       # tail logs
 #
 # Connection URLs (from host):
 #   MongoDB:  mongodb://localhost:27017
@@ -61,7 +61,7 @@ case "${1:-up}" in
         echo "  MongoDB:  mongodb://localhost:${AFL_DEV_MONGO_PORT:-27017}"
         echo "  PostGIS:  postgresql://afl:afl@localhost:${AFL_DEV_POSTGIS_PORT:-5432}/afl_gis"
         echo ""
-        echo "Stop with:  scripts/dockerup-dev --stop   (data survives)"
-        echo "Tear down:  scripts/dockerup-dev --down   (wipes DB data)"
+        echo "Stop with:  fw single docker-dev --stop   (data survives)"
+        echo "Tear down:  fw single docker-dev --down   (wipes DB data)"
         ;;
 esac

@@ -4,10 +4,10 @@
 # Creates a virtual environment, installs dependencies, and verifies the setup.
 #
 # Usage:
-#   scripts/install              # install core + dev + test + dashboard + mcp
-#   scripts/install --minimal    # install core + test only
-#   scripts/install --full       # install all extras (including mongodb, hdfs)
-#   scripts/install -h, --help   # show this help message
+#   fw install repo              # install core + dev + test + dashboard + mcp
+#   fw install repo --minimal    # install core + test only
+#   fw install repo --full       # install all extras (including mongodb, hdfs)
+#   fw install repo -h, --help   # show this help message
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
@@ -24,7 +24,7 @@ MODE="default"
 
 usage() {
     cat <<'EOF'
-Usage: scripts/install [OPTIONS]
+Usage: fw install repo [OPTIONS]
 
 Bootstrap a local Python development environment for Facetwork.
 

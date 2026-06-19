@@ -7,12 +7,12 @@
 # skipped; a package that fails to compile is reported but does not abort the run.
 #
 # Usage:
-#   scripts/import-all-catalog                      # import + publish every package
-#   scripts/import-all-catalog --list               # show what would be imported, then exit
-#   scripts/import-all-catalog --no-publish         # import as drafts
-#   scripts/import-all-catalog --only osm-geocoder --only osm-lz
-#   scripts/import-all-catalog --exclude genomics --tags batch1
-#   scripts/import-all-catalog --dir ~/fw_handlers/fwh_osm/src/osm_geocoder/handlers/graphhopper/ffl
+#   fw ffl catalog-import-all                      # import + publish every package
+#   fw ffl catalog-import-all --list               # show what would be imported, then exit
+#   fw ffl catalog-import-all --no-publish         # import as drafts
+#   fw ffl catalog-import-all --only osm-geocoder --only osm-lz
+#   fw ffl catalog-import-all --exclude genomics --tags batch1
+#   fw ffl catalog-import-all --dir ~/fw_handlers/fwh_osm/src/osm_geocoder/handlers/graphhopper/ffl
 #
 # Connects to MongoDB via .env (AFL_MONGODB_URL etc.).
 

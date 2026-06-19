@@ -7,11 +7,11 @@
 # .env.fleet (shared endpoints) then .env.fleet.override (per-host, wins).
 #
 # Usage:
-#   scripts/rebuild-workers                  # build all worker images (cached)
-#   scripts/rebuild-workers --no-cache       # full rebuild, no layer cache
-#   scripts/rebuild-workers --ref 5216b3a    # bake a specific fwh_osm commit/branch
-#   scripts/rebuild-workers --up             # build, then cleanly recreate containers
-#   scripts/rebuild-workers --up runner-anthropic runner-census-us   # only these
+#   fw single rebuild-runners                  # build all worker images (cached)
+#   fw single rebuild-runners --no-cache       # full rebuild, no layer cache
+#   fw single rebuild-runners --ref 5216b3a    # bake a specific fwh_osm commit/branch
+#   fw single rebuild-runners --up             # build, then cleanly recreate containers
+#   fw single rebuild-runners --up runner-anthropic runner-census-us   # only these
 #
 # --up removes the existing runner containers FIRST (so orphan replicas left by a
 # plain `up --force-recreate` don't pile up and keep serving stale code/env), then
@@ -19,7 +19,7 @@
 #
 # NOTE: this builds images on THIS host only. To roll new handler code to the
 # osm-geocoder/gh-router ROLE across every fleet server, use the registry path
-# instead: buildx -> push -> `scripts/fleet set --image` (docs/operations/fleet-rollouts.md).
+# instead: buildx -> push -> `fw fleet set --image` (docs/operations/fleet-rollouts.md).
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
 
@@ -31,7 +31,7 @@ cd "$REPO_ROOT"
 # never touches infra (mongo/minio/…). EXCLUDES runner-gh-router: it uses a
 # prebuilt image (osm-gh-router, the GraphHopper Java agent) with no build:
 # section, so `up --no-build` would try to PULL it and fail ("pull access
-# denied"). gh-router ships via its own image build + `scripts/fleet set
+# denied"). gh-router ships via its own image build + `fw fleet set
 # --gh-router-image`, not through rebuild-workers. Pass it explicitly only if
 # its image already exists locally / via AFL_GH_ROUTER_IMAGE.
 WORKER_SERVICES=(
