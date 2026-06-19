@@ -1,25 +1,4 @@
 #!/usr/bin/env bash
-# Claude workflow catalog: backup / restore / import.
-#
-# Usage:
-#   scripts/catalog list                       # packages + workflows overview
-#   scripts/catalog list --package osm-geocoder # workflows in a package
-#   scripts/catalog backup catalog.json
-#   scripts/catalog restore catalog.json [--no-recompile]
-#   scripts/catalog import path/to/workflow.ffl --slug demo.x --publish
-#   scripts/catalog import examples/dir/ --tags imported
-#   scripts/catalog import-package osm-geocoder --tags osm
-#
-# Connects to MongoDB via .env (AFL_MONGODB_URL etc.).
-
-set -euo pipefail
-
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-
-# Load shared env (.env sets AFL_MONGODB_URL etc.)
-source "$(dirname "$0")/_env.sh"
-
-PYTHON="${REPO_ROOT}/.venv/bin/python3"
-[[ -x "$PYTHON" ]] || PYTHON=python3
-
-exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.catalog.cli "$@"
+# TRANSITION SHIM — this flat path is deprecated; use the `fw` front-door.
+# Removed after the clean-break cutover. Forwards to the new location.
+exec "$(dirname "$0")/lib/ffl/catalog" "$@"

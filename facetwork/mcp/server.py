@@ -247,7 +247,7 @@ def create_server(
                     "runner to running). Use cancel for unwanted/runaway "
                     "runs. Use pause+resume for graceful intervention. To "
                     "stop and reset running tasks back to pending across the "
-                    "fleet, prefer scripts/drain-runners."
+                    "fleet, prefer fw runner drain."
                 ),
                 inputSchema={
                     "type": "object",

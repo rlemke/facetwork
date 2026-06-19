@@ -1,0 +1,358 @@
+#!/usr/bin/env bash
+# Compile all example FFL files and push FlowDefinition + WorkflowDefinition
+# entities to MongoDB so they appear in the Dashboard Flow UI.
+#
+# Only creates Flow + Workflow entities (not Runner + Task).  Runners and tasks
+# are created when the user actually runs a workflow via the dashboard or
+# scripts/run-workflow.
+#
+# Usage:
+#   scripts/seed-examples                          # seed all examples
+#   scripts/seed-examples --dry-run                # show what would be seeded
+#   scripts/seed-examples --include osm-geocoder   # seed one example
+#   scripts/seed-examples --exclude osm-geocoder   # skip one example
+#   scripts/seed-examples --clean                  # remove existing seeds first
+#   scripts/seed-examples --config path/to/cfg     # custom config file
+#   scripts/seed-examples --help                   # show all options
+
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+REPO_ROOT="$FW_ROOT"
+
+# Load shared env (.env sets AFL_MONGODB_URL etc.)
+source "$FW_LIB/_helpers/_env.sh"
+
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" - "$@" <<'PYEOF'
+"""Inline Python script for seed-examples."""
+
+import argparse
+import json
+import os
+import re
+import sys
+import time
+from pathlib import Path
+
+# PYTHONPATH is set to repo root by the bash wrapper.
+REPO_ROOT = Path(os.environ.get("PYTHONPATH", ".").split(":")[0])
+SEED_PATH = "cli:seed"
+
+
+def _collect_workflows(node: dict, prefix: str = "") -> list[tuple[str, dict]]:
+    """Collect all (qualified_name, workflow_dict) from compiled JSON.
+
+    Walks both nested and flat emitter formats to find WorkflowDecl entries.
+    """
+    results: list[tuple[str, dict]] = []
+
+    # Top-level or namespace-level workflows
+    for w in node.get("workflows", []):
+        qname = f"{prefix}{w['name']}" if prefix else w["name"]
+        results.append((qname, w))
+
+    # Declarations (flat emitter format)
+    for decl in node.get("declarations", []):
+        if decl.get("type") == "WorkflowDecl":
+            qname = f"{prefix}{decl['name']}" if prefix else decl["name"]
+            results.append((qname, decl))
+        elif decl.get("type") == "Namespace":
+            ns_prefix = f"{prefix}{decl['name']}."
+            results.extend(_collect_workflows(decl, ns_prefix))
+
+    # Nested namespaces
+    for ns in node.get("namespaces", []):
+        ns_prefix = f"{prefix}{ns['name']}."
+        results.extend(_collect_workflows(ns, ns_prefix))
+
+    return results
+
+
+def discover_examples(
+    include: str | None,
+    exclude: str | None,
+) -> list[tuple[str, list[str], object]]:
+    """Discover examples (entry-point + local) that ship FFL files.
+
+    Returns list of (example_name, [ffl_file_paths], package) sorted by name.
+    """
+    from facetwork.examples import collect_ffl_files, discover_all_examples
+
+    results: list[tuple[str, list[str], object]] = []
+    for pkg in discover_all_examples(REPO_ROOT):
+        if include and not re.search(include, pkg.name):
+            continue
+        if exclude and re.search(exclude, pkg.name):
+            continue
+        files = [str(p) for p in collect_ffl_files(pkg)]
+        if not files:
+            continue
+        results.append((pkg.name, files, pkg))
+
+    return results
+
+
+def compile_example(
+    name: str,
+    afl_files: list[str],
+) -> tuple[dict, str, list[str]]:
+    """Compile FFL files for one example.
+
+    Returns (program_dict, combined_source_text, warnings).
+
+    Raises on parse errors.  Validation errors are returned as warnings
+    (some examples depend on types from other examples).
+    """
+    from facetwork.ast import Program
+    from facetwork.emitter import JSONEmitter
+    from facetwork.parser import FFLParser
+    from facetwork.validator import validate
+
+    parser = FFLParser()
+    programs: list[Program] = []
+    source_parts: list[str] = []
+
+    for path in afl_files:
+        with open(path) as f:
+            text = f.read()
+        source_parts.append(text)
+        programs.append(parser.parse(text, filename=path))
+
+    merged = Program.merge(programs)
+
+    warnings: list[str] = []
+    result = validate(merged)
+    if not result.is_valid:
+        warnings.append(f"{len(result.errors)} validation warning(s)")
+
+    emitter = JSONEmitter(include_locations=False)
+    program_json = emitter.emit(merged)
+    program_dict = json.loads(program_json)
+    combined_source = "\n".join(source_parts)
+
+    return program_dict, combined_source, warnings
+
+
+def seed_example(
+    name: str,
+    afl_files: list[str],
+    store,
+    dry_run: bool,
+) -> tuple[int, int, list[str]]:
+    """Compile and seed one example to MongoDB.
+
+    Returns (file_count, workflow_count, warnings).
+    """
+    from facetwork.runtime.entities import (
+        FlowDefinition,
+        FlowIdentity,
+        SourceText,
+        WorkflowDefinition,
+    )
+    from facetwork.runtime.types import generate_id
+
+    program_dict, combined_source, warnings = compile_example(name, afl_files)
+    workflows = _collect_workflows(program_dict)
+
+    if not workflows:
+        return len(afl_files), 0, warnings
+
+    if dry_run:
+        return len(afl_files), len(workflows), warnings
+
+    now_ms = int(time.time() * 1000)
+    flow_id = generate_id()
+
+    flow = FlowDefinition(
+        uuid=flow_id,
+        name=FlowIdentity(name=name, path=SEED_PATH, uuid=flow_id),
+        compiled_sources=[SourceText(name="source.ffl", content=combined_source)],
+        compiled_ast=program_dict,
+    )
+    store.save_flow(flow)
+
+    for qname, _wf_dict in workflows:
+        wf_id = generate_id()
+        workflow = WorkflowDefinition(
+            uuid=wf_id,
+            name=qname,
+            namespace_id=SEED_PATH,
+            facet_id=wf_id,
+            flow_id=flow_id,
+            starting_step="",
+            version="1.0",
+            date=now_ms,
+        )
+        store.save_workflow(workflow)
+
+    return len(afl_files), len(workflows), warnings
+
+
+def clean_seeds(store) -> tuple[int, int]:
+    """Remove all previously seeded flows and their workflows.
+
+    Returns (flows_deleted, workflows_deleted).
+    """
+    db = store._db
+    flow_docs = list(db.flows.find({"name.path": SEED_PATH}, {"uuid": 1}))
+    flow_ids = [doc["uuid"] for doc in flow_docs]
+
+    workflows_deleted = 0
+    if flow_ids:
+        result = db.workflows.delete_many({"flow_id": {"$in": flow_ids}})
+        workflows_deleted = result.deleted_count
+
+    result = db.flows.delete_many({"name.path": SEED_PATH})
+    flows_deleted = result.deleted_count
+
+    return flows_deleted, workflows_deleted
+
+
+def _register_example_handlers(
+    examples: list[tuple[str, list[str], object]],
+    store,
+) -> int:
+    """Register handler implementations from examples that provide them.
+
+    Delegates to each ExamplePackage's ``register_handlers`` callback. For
+    in-repo examples this calls ``register_all_registry_handlers(runner)``
+    from the example's ``handlers/`` package; for installed packages the
+    callback was supplied via the ``facetwork.examples`` entry point.
+
+    Returns total number of handlers registered.
+    """
+    from facetwork.runtime import Evaluator, RegistryRunner, Telemetry
+
+    telemetry = Telemetry()
+    evaluator = Evaluator(store, telemetry)
+    runner = RegistryRunner(store, evaluator)
+
+    total = 0
+    for name, _afl_files, pkg in examples:
+        if pkg.handlers_path is None and pkg.source == "local":
+            continue
+        try:
+            before = store._db.handler_registrations.count_documents({})
+            pkg.register_handlers(runner)
+            count = store._db.handler_registrations.count_documents({}) - before
+            total += count
+            if count:
+                print(f"  {name:<20s} {count:>3} handlers registered  [{pkg.source}]")
+        except Exception as e:
+            print(f"  {name:<20s} handlers ERROR: {e}")
+
+    return total
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Compile example AFL files and seed FlowDefinitions to MongoDB.",
+    )
+    parser.add_argument(
+        "--config",
+        metavar="FILE",
+        help="Path to AFL config file",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be seeded without writing to MongoDB",
+    )
+    parser.add_argument(
+        "--include",
+        metavar="PATTERN",
+        help="Only seed examples matching this regex",
+    )
+    parser.add_argument(
+        "--exclude",
+        metavar="PATTERN",
+        help="Skip examples matching this regex",
+    )
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Remove existing cli:seed flows before seeding",
+    )
+    args = parser.parse_args()
+
+    # Discover examples
+    examples = discover_examples(args.include, args.exclude)
+    if not examples:
+        print("No example directories found with FFL files.")
+        sys.exit(1)
+
+    # Connect to MongoDB (unless dry-run)
+    store = None
+    if not args.dry_run:
+        from facetwork.config import load_config
+        from facetwork.runtime.mongo_store import MongoStore
+
+        config = load_config(args.config)
+        try:
+            store = MongoStore.from_config(config.mongodb)
+        except Exception as e:
+            print(f"Error connecting to MongoDB: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Clean existing seeds if requested
+    if args.clean and store is not None:
+        flows_del, wfs_del = clean_seeds(store)
+        print(f"Cleaned {flows_del} flow(s) and {wfs_del} workflow(s).\n")
+
+    print("Seeding example flows to MongoDB...\n" if not args.dry_run
+          else "Dry run — showing what would be seeded...\n")
+
+    total_flows = 0
+    total_workflows = 0
+    errors = 0
+
+    for name, afl_files, _pkg in examples:
+        try:
+            file_count, wf_count, warnings = seed_example(
+                name, afl_files, store, args.dry_run,
+            )
+        except Exception as e:
+            print(f"  {name:<20s} ERROR: {e}")
+            errors += 1
+            continue
+
+        if wf_count == 0:
+            status = "SKIP (no workflows)"
+        elif args.dry_run:
+            status = "DRY-RUN"
+        else:
+            status = "OK"
+            total_flows += 1
+
+        if args.dry_run and wf_count > 0:
+            total_flows += 1
+
+        if warnings:
+            status += f"  [{', '.join(warnings)}]"
+
+        total_workflows += wf_count
+        print(f"  {name:<20s} {file_count:>2} files  {wf_count:>2} workflows   {status}")
+
+    # Register handlers from examples that have handlers/__init__.py
+    total_handlers = 0
+    if not args.dry_run and store is not None:
+        total_handlers = _register_example_handlers(examples, store)
+        if total_handlers:
+            print(f"\nRegistered {total_handlers} handler(s).")
+
+    print(f"\nSeeded {total_flows} flows with {total_workflows} workflows."
+          if not args.dry_run else
+          f"\nWould seed {total_flows} flows with {total_workflows} workflows.")
+
+    if store is not None:
+        store.close()
+
+    if errors > 0:
+        sys.exit(1)
+
+
+main()
+PYEOF

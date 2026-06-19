@@ -1,0 +1,304 @@
+#!/usr/bin/env bash
+# AgentFlow Docker Bootstrap Script
+#
+# Checks for Docker, builds images, and starts the stack with optional scaling.
+#
+# Usage:
+#   scripts/setup                          # Start with defaults
+#   scripts/setup --runners 3 --agents 2   # Scale runners and agents
+#   scripts/setup --check-only             # Just verify Docker is available
+#   scripts/setup --build                  # Force rebuild before starting
+#   scripts/setup --clean                  # Drop MongoDB + clean HDFS caches
+#
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$FW_ROOT"
+
+# Load shared env (sets defaults from .env without overriding env vars)
+source "$FW_LIB/_helpers/_env.sh"
+
+# Defaults (env vars from .env take precedence over these hardcoded values)
+RUNNERS="${AFL_RUNNERS:-1}"
+AGENTS="${AFL_AGENTS:-1}"
+WEATHER_AGENTS="${AFL_WEATHER_AGENTS:-0}"
+HDFS="${AFL_HDFS:-false}"
+JENKINS="${AFL_JENKINS:-false}"
+CHECK_ONLY=false
+FORCE_BUILD=false
+CLEAN=false
+
+usage() {
+    cat <<'EOF'
+Usage: scripts/setup [OPTIONS]
+
+Bootstrap the AgentFlow Docker stack.
+
+Options:
+  --runners N          Number of runner instances (default: 1)
+  --agents N           Number of AddOne agent instances (default: 1)
+  --weather-agents N   Number of NOAA Weather agents (default: 0)
+  --hdfs               Enable HDFS overlay (pyarrow install in agent images)
+  --jenkins            Start Jenkins CI/CD server
+  --jenkins-home-dir PATH   Use external directory for Jenkins home
+  --clean              Drop MongoDB database and clean HDFS cache files
+  --check-only         Verify Docker is available, then exit
+  --build              Force rebuild of all images before starting
+  -h, --help           Show this help message
+
+Domain agents (OSM, etc.) live in their own repos and are managed via
+`scripts/start-runner --example <name>` after `pip install -e <repo>`.
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Parse arguments
+# ---------------------------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --runners)       RUNNERS="$2";          shift 2 ;;
+        --agents)        AGENTS="$2";           shift 2 ;;
+        --weather-agents) WEATHER_AGENTS="$2";  shift 2 ;;
+        --hdfs)          HDFS=true;             shift ;;
+        --jenkins)       JENKINS=true;          shift ;;
+        --jenkins-home-dir) export JENKINS_HOME_DIR="$2"; JENKINS=true; shift 2 ;;
+        --clean)         CLEAN=true;            shift ;;
+        --check-only)    CHECK_ONLY=true;       shift ;;
+        --build)         FORCE_BUILD=true;      shift ;;
+        -h|--help)       usage; exit 0 ;;
+        *)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
+
+# ---------------------------------------------------------------------------
+# Phase 1: Docker installation check
+# ---------------------------------------------------------------------------
+check_docker() {
+    local missing=false
+
+    if ! command -v docker &>/dev/null; then
+        missing=true
+        echo "Docker CLI not found."
+    fi
+
+    if ! docker compose version &>/dev/null 2>&1; then
+        missing=true
+        echo "docker compose plugin not found."
+    fi
+
+    if [ "$missing" = true ]; then
+        install_docker
+    else
+        echo "Docker is available: $(docker --version)"
+        echo "Compose plugin:      $(docker compose version)"
+    fi
+}
+
+install_docker() {
+    local os
+    os="$(uname -s)"
+
+    case "$os" in
+        Darwin)
+            echo ""
+            echo "On macOS, install Docker Desktop from:"
+            echo "  https://www.docker.com/products/docker-desktop/"
+            echo ""
+            echo "After installing, start Docker Desktop and re-run this script."
+            exit 1
+            ;;
+        Linux)
+            install_docker_linux
+            ;;
+        *)
+            echo "Unsupported OS: $os" >&2
+            echo "Please install Docker manually: https://docs.docker.com/get-docker/" >&2
+            exit 1
+            ;;
+    esac
+}
+
+install_docker_linux() {
+    echo ""
+    echo "Docker is not installed. This script can install it for you."
+    read -rp "Install Docker now? [y/N] " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "Aborted. Install Docker manually: https://docs.docker.com/get-docker/"
+        exit 1
+    fi
+
+    if command -v apt-get &>/dev/null; then
+        echo "Installing Docker via apt-get..."
+        sudo apt-get update
+        sudo apt-get install -y docker.io docker-compose-v2
+        sudo systemctl enable --now docker
+        sudo usermod -aG docker "$USER"
+        echo "Docker installed. You may need to log out and back in for group changes."
+    elif command -v dnf &>/dev/null; then
+        echo "Installing Docker via dnf..."
+        sudo dnf install -y docker docker-compose-plugin
+        sudo systemctl enable --now docker
+        sudo usermod -aG docker "$USER"
+        echo "Docker installed. You may need to log out and back in for group changes."
+    elif command -v pacman &>/dev/null; then
+        echo "Installing Docker via pacman..."
+        sudo pacman -Sy --noconfirm docker docker-compose
+        sudo systemctl enable --now docker
+        sudo usermod -aG docker "$USER"
+        echo "Docker installed. You may need to log out and back in for group changes."
+    else
+        echo "No supported package manager found (apt-get, dnf, pacman)." >&2
+        echo "Please install Docker manually: https://docs.docker.com/get-docker/" >&2
+        exit 1
+    fi
+
+    # Verify after install
+    if ! docker compose version &>/dev/null 2>&1; then
+        echo "Docker Compose plugin not available after install." >&2
+        echo "Try: sudo apt-get install docker-compose-v2  (or equivalent)" >&2
+        exit 1
+    fi
+}
+
+echo "=== AgentFlow Docker Setup ==="
+echo ""
+check_docker
+echo ""
+
+if [ "$CHECK_ONLY" = true ]; then
+    echo "Docker is ready. Exiting (--check-only)."
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Clean phase (--clean): drop MongoDB and remove HDFS cache directories
+# ---------------------------------------------------------------------------
+if [ "$CLEAN" = true ]; then
+    echo "=== Cleaning Facetwork data ==="
+    echo ""
+
+    # Drop MongoDB database (external server at afl-mongodb)
+    if command -v mongosh &>/dev/null; then
+        echo "Dropping MongoDB 'facetwork' database..."
+        mongosh --host "${AFL_MONGODB_HOST:-afl-mongodb}" --port "${AFL_MONGODB_PORT:-27017}" --quiet --eval 'db.getSiblingDB("facetwork").dropDatabase()' 2>/dev/null \
+            && echo "  MongoDB: done" \
+            || echo "  MongoDB: not reachable at ${AFL_MONGODB_HOST:-afl-mongodb}:${AFL_MONGODB_PORT:-27017}, skipping"
+    elif docker exec afl-mongodb mongosh --quiet --eval 'db.getSiblingDB("facetwork").dropDatabase()' 2>/dev/null; then
+        echo "  MongoDB: done (via docker exec)"
+    else
+        echo "  MongoDB: mongosh not available and afl-mongodb container not found, skipping"
+    fi
+
+    # Clean HDFS cache directories (if namenode is running)
+    if docker compose -f docker-compose.yml -f docker-compose.hdfs.yml --profile hdfs \
+        ps --status running 2>/dev/null | grep -q namenode; then
+        echo "Cleaning HDFS cache directories..."
+        for dir in /afl-cache /graphhopper /gtfs-cache; do
+            if docker compose -f docker-compose.yml -f docker-compose.hdfs.yml --profile hdfs \
+                exec -T namenode hdfs dfs -test -d "$dir" 2>/dev/null; then
+                docker compose -f docker-compose.yml -f docker-compose.hdfs.yml --profile hdfs \
+                    exec -T namenode hdfs dfs -rm -r -f "$dir"
+                echo "  HDFS: removed $dir"
+            else
+                echo "  HDFS: $dir not present"
+            fi
+        done
+    else
+        echo "  HDFS: namenode not running, skipping"
+    fi
+
+    echo ""
+    echo "Clean complete."
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 2: Build images
+# ---------------------------------------------------------------------------
+cd "$PROJECT_DIR"
+
+# Determine which services to build
+SERVICES="dashboard runner agent-addone"
+if [ "$WEATHER_AGENTS" -gt 0 ]; then
+    SERVICES="$SERVICES agent-noaa-weather"
+fi
+
+# Agent/runner services require the agents profile
+PROFILE_ARGS="--profile agents"
+COMPOSE_FILES="-f docker-compose.yml"
+if [ "$HDFS" = true ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.hdfs.yml"
+    export INSTALL_HDFS=true
+    echo "HDFS support enabled — agents will connect to hdfs://afl-hadoop-hdfs:8020"
+    echo ""
+fi
+if [ "$JENKINS" = true ]; then
+    SERVICES="$SERVICES jenkins"
+    PROFILE_ARGS="$PROFILE_ARGS --profile jenkins"
+    echo "Jenkins CI/CD enabled — Web UI at http://localhost:9090"
+    if [ -n "${JENKINS_HOME_DIR:-}" ]; then
+        echo "  Jenkins home dir: $JENKINS_HOME_DIR"
+    fi
+    echo ""
+fi
+
+# Save active config so rebuild --up can use the same overlays
+cat > "$PROJECT_DIR/.afl-active-config" <<CFGEOF
+# Auto-generated by scripts/setup — do not edit
+AFL_HDFS=$HDFS
+AFL_JENKINS=$JENKINS
+AFL_RUNNERS=$RUNNERS
+AFL_AGENTS=$AGENTS
+AFL_WEATHER_AGENTS=$WEATHER_AGENTS
+CFGEOF
+
+if [ "$FORCE_BUILD" = true ]; then
+    echo "Building all images (--build)..."
+    docker compose $COMPOSE_FILES $PROFILE_ARGS build $SERVICES
+    echo ""
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 3: Start the stack with scaling
+# ---------------------------------------------------------------------------
+SCALE_ARGS=""
+SCALE_ARGS="$SCALE_ARGS --scale runner=$RUNNERS"
+SCALE_ARGS="$SCALE_ARGS --scale agent-addone=$AGENTS"
+if [ "$WEATHER_AGENTS" -gt 0 ]; then
+    SCALE_ARGS="$SCALE_ARGS --scale agent-noaa-weather=$WEATHER_AGENTS"
+fi
+
+echo "Starting AgentFlow stack..."
+echo "  Runners:          $RUNNERS"
+echo "  AddOne agents:    $AGENTS"
+echo "  Weather agents:   $WEATHER_AGENTS"
+echo "  HDFS:             $HDFS"
+echo "  Jenkins:          $JENKINS"
+echo ""
+
+docker compose $COMPOSE_FILES $PROFILE_ARGS up -d $SCALE_ARGS $SERVICES
+
+echo ""
+echo "=== AgentFlow is running ==="
+echo "  Dashboard: http://localhost:8080"
+echo "  MongoDB:   afl-mongodb:27017 (external)"
+if [ "$HDFS" = true ]; then
+    echo "  HDFS:      afl-hadoop-hdfs:8020 (external)"
+fi
+if [ "$JENKINS" = true ]; then
+    echo "  Jenkins:   http://localhost:9090"
+fi
+echo ""
+echo "Useful commands:"
+echo "  docker compose ps          # List running services"
+echo "  docker compose logs -f     # Follow logs"
+echo "  docker compose down        # Stop everything"
+echo "  scripts/setup --clean      # Drop MongoDB + clean HDFS caches"
+echo ""
+echo "To seed example workflows:"
+echo "  docker compose --profile seed run --rm seed"

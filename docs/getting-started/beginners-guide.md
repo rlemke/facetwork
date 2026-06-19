@@ -51,7 +51,7 @@ cp .env.example .env
 # Edit .env to set your MongoDB connection string
 
 # Seed example workflows into the database
-scripts/seed-examples
+fw ffl seed
 
 # Start the dashboard
 python -m afl.dashboard --log-format text
@@ -77,13 +77,13 @@ The workflow moves through steps. Each step that needs external work (an *event 
 
 ```bash
 # Start a runner to process tasks
-scripts/start-runner --example hiv-drug-resistance -- --log-format text
+fw runner start --example hiv-drug-resistance -- --log-format text
 
 # Submit a workflow (dashboard-visible — creates the runner record the UI tracks)
-scripts/ffl-run path/to/workflow.ffl --workflow handlers.AddOneWorkflow --inputs '{"value": 41}'
+fw ffl run path/to/workflow.ffl --workflow handlers.AddOneWorkflow --inputs '{"value": 41}'
 ```
 
-All of the above — the dashboard's **New run** button and `scripts/ffl-run` —
+All of the above — the dashboard's **New run** button and `fw ffl run` —
 run workflows **without any AI involved**. Facetwork is a plain workflow engine;
 Claude is optional (see [AI-assisted authoring](#ai-assisted-authoring-claude--mcp) below).
 
@@ -94,14 +94,14 @@ The **Catalog** (dashboard page `/v3/catalog`) stores workflows you can run
 and a workflow can pin library dependencies. It's how you share a finished
 workflow so anyone can re-run it with new parameters.
 
-**Populate it (no Claude needed)** with the `scripts/catalog` CLI:
+**Populate it (no Claude needed)** with the `fw ffl catalog` CLI:
 
 ```bash
-scripts/catalog list                                   # what's already in the catalog
-scripts/catalog import my_workflow.ffl --slug demo.my-workflow --publish
-scripts/catalog import-package osm-geocoder --tags osm # import an example package's workflows
-scripts/catalog backup catalog.json                    # back up / move the catalog
-scripts/catalog restore catalog.json
+fw ffl catalog list                                   # what's already in the catalog
+fw ffl catalog import my_workflow.ffl --slug demo.my-workflow --publish
+fw ffl catalog import-package osm-geocoder --tags osm # import an example package's workflows
+fw ffl catalog backup catalog.json                    # back up / move the catalog
+fw ffl catalog restore catalog.json
 ```
 
 `--publish` marks the revision runnable for unattended use (omit it to save a
@@ -238,8 +238,8 @@ namespace my.analysis {
 
 To publish your own workflows for others to use:
 ```bash
-scripts/publish my_workflows.ffl              # publish to MongoDB
-scripts/publish my_workflows.ffl --version 2.0  # with a version tag
+fw ffl publish my_workflows.ffl              # publish to MongoDB
+fw ffl publish my_workflows.ffl --version 2.0  # with a version tag
 ```
 
 Other teams then import your namespace with `use` — the compiler validates all cross-team references at compile time. Each team deploys and updates their own handlers independently.

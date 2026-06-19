@@ -1,18 +1,4 @@
 #!/usr/bin/env bash
-# Compile FFL source files to JSON workflow definitions.
-#
-# Usage:
-#   scripts/compile input.ffl                    # print JSON to stdout
-#   scripts/compile input.ffl -o output.json     # write to file
-#   scripts/compile input.ffl --check            # syntax check only
-#   scripts/compile input.ffl --compact          # compact JSON output
-#   scripts/compile --help                       # show all options
-
-set -euo pipefail
-
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-
-PYTHON="${REPO_ROOT}/.venv/bin/python3"
-[[ -x "$PYTHON" ]] || PYTHON=python3
-
-exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.cli "$@"
+# TRANSITION SHIM — this flat path is deprecated; use the `fw` front-door.
+# Removed after the clean-break cutover. Forwards to the new location.
+exec "$(dirname "$0")/lib/ffl/compile" "$@"

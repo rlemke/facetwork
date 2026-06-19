@@ -42,13 +42,13 @@ Run everything as local Python processes — no Docker required. Only needs Mong
 
 ```bash
 # One command: stop old runners, verify MongoDB, seed examples, start runners + dashboard
-scripts/easy-local.sh
+fw single up-local
 
 # With options
-scripts/easy-local.sh --example osm-geocoder          # single example
-scripts/easy-local.sh --instances 3                    # 3 concurrent runners
-scripts/easy-local.sh --no-seed                        # skip seeding
-scripts/easy-local.sh -- --log-format text             # plain-text runner logs
+fw single up-local --example osm-geocoder          # single example
+fw single up-local --instances 3                    # 3 concurrent runners
+fw single up-local --no-seed                        # skip seeding
+fw single up-local -- --log-format text             # plain-text runner logs
 
 # Open the dashboard
 open http://localhost:8080
@@ -58,11 +58,11 @@ Or manage runners directly:
 
 ```bash
 # Register handlers and start runner(s) + dashboard
-scripts/start-runner -- --log-format text
-scripts/start-runner --example hiv-drug-resistance --instances 3
+fw runner start -- --log-format text
+fw runner start --example hiv-drug-resistance --instances 3
 
 # Stop all local runners
-scripts/stop-runners
+fw runner stop
 ```
 
 ### Quick Start: Docker Mode
@@ -72,12 +72,12 @@ scripts/stop-runners
 docker compose up -d
 
 # Or use the setup script for a guided bootstrap
-scripts/setup                              # defaults: 1 runner, 1 agent
-scripts/setup --runners 3 --agents 2       # scaled deployment
-scripts/setup --build                      # rebuild images first
+fw install setup                              # defaults: 1 runner, 1 agent
+fw install setup --runners 3 --agents 2       # scaled deployment
+fw install setup --build                      # rebuild images first
 
 # One-command pipeline: teardown → rebuild → setup → seed
-scripts/easy.sh
+fw single up
 
 # Open the dashboard
 open http://localhost:8080
@@ -90,8 +90,8 @@ top of MongoDB + PostGIS + Jenkins + the dashboard, use the
 **full-stack compose**:
 
 ```bash
-scripts/install-example --all     # clone + pip install every fwh_* repo
-scripts/full-stack up             # boots all 13 services
+fw install example --all     # clone + pip install every fwh_* repo
+fw single full-stack up             # boots all 13 services
 open http://localhost:8080
 ```
 
@@ -103,22 +103,22 @@ troubleshooting).
 
 | Aspect | Docker Mode | Local Mode |
 |--------|-------------|------------|
-| **Startup** | `scripts/easy.sh` or `docker compose up` | `scripts/easy-local.sh` or `scripts/start-runner` |
+| **Startup** | `fw single up` or `docker compose up` | `fw single up-local` or `fw runner start` |
 | **MongoDB** | Can run in Docker or external | Must be external (running separately) |
 | **Handler loading** | Container-internal paths, `RegistryRunner` | Host filesystem paths, `RegistryRunner` |
-| **Scaling** | `docker compose up --scale runner=N` | `scripts/start-runner --instances N` |
+| **Scaling** | `docker compose up --scale runner=N` | `fw runner start --instances N` |
 | **Process isolation** | Full container isolation | OS process isolation |
 | **File paths** | Container paths (`/app/...`) | Host paths (`/Users/...`) |
 | **Shared data** | Docker volumes or bind mounts | Direct filesystem access |
 | **Log output** | `docker compose logs -f runner` | Inline in terminal (stdout/stderr) |
-| **Stop** | `docker compose down` | `scripts/stop-runners` |
+| **Stop** | `docker compose down` | `fw runner stop` |
 | **Dependencies** | Docker Desktop | Python 3 + `.venv` with FFL packages |
 
 **Important**: Docker agents and local runners should not be mixed for the same handler registrations. Docker containers use container-internal `sys.path` and cannot load handler modules registered with host filesystem paths, and vice versa. Stop Docker agents/runners before starting local ones:
 
 ```bash
 docker compose down          # stop all Docker services
-scripts/easy-local.sh        # start local runners
+fw single up-local        # start local runners
 ```
 
 ### Multi-Node Distributed Execution
@@ -133,13 +133,13 @@ Both deployment models support horizontal scaling across multiple machines. Mult
 
 ```bash
 # On each machine: start local runner(s) pointing to shared MongoDB
-AFL_MONGODB_URL=mongodb://db-server:27017 scripts/easy-local.sh --no-seed --instances 4
+AFL_MONGODB_URL=mongodb://db-server:27017 fw single up-local --no-seed --instances 4
 
 # Or with remote runner management (SSH-based)
-scripts/start-runner --all --example osm-geocoder    # start on all AFL_RUNNER_HOSTS
-scripts/start-runner --host worker1 --host worker2   # specific hosts
-scripts/stop-runners --all                           # stop all remote runners
-scripts/rolling-deploy --example osm-geocoder        # zero-downtime restart
+fw runner start --all --example osm-geocoder    # start on all AFL_RUNNER_HOSTS
+fw runner start --host worker1 --host worker2   # specific hosts
+fw runner stop --all                           # stop all remote runners
+fw fleet rolling-deploy --example osm-geocoder        # zero-downtime restart
 ```
 
 **How it works:**
@@ -167,7 +167,7 @@ Each runner independently polls the shared task queue. When a workflow creates 1
 
 The full-stack compose **bundles a MinIO and a MongoDB per host**. That is wrong for a multi-server fleet: if you bring it up independently on N servers, each gets its *own* MinIO, so outputs are siloed and a merge on one server can't see another's. A fleet needs **one shared MinIO and one shared MongoDB**, reachable from every server; each additional server runs *runners only*.
 
-Use **`docker-compose.fleet.yml`** (a thin override that drops the local-infra dependency and points the runners at the shared services — applied to **every** per-example runner via a YAML anchor) and **`scripts/start-runner --fleet`** (the container/fleet mode converged from the old `start-worker`):
+Use **`docker-compose.fleet.yml`** (a thin override that drops the local-infra dependency and points the runners at the shared services — applied to **every** per-example runner via a YAML anchor) and **`fw runner start --fleet`** (the container/fleet mode converged from the old `start-worker`):
 
 ```bash
 # On the server hosting the shared services (once):
@@ -178,11 +178,11 @@ docker compose -f docker-compose.full-stack.yml up -d        # MinIO :9000, Mong
 cp .env.fleet.example .env.fleet
 #   edit AFL_MONGODB_URL + AFL_S3_ENDPOINT to the shared host, AFL_DATA_DIR to a
 #   large LOCAL disk, AFL_OSM_REPLICAS to this host's runner count
-scripts/start-runner --fleet                       # preflight both shared services, then start runners (default: osm-geocoder + osm-lz)
-scripts/start-runner --fleet --check               # preflight + validate only
-scripts/start-runner --fleet --replicas 6          # override the runner count
-scripts/start-runner --fleet --example noaa-weather --example census-us   # run ANY per-example runner in the fleet
-#   (scripts/start-worker still works — it's a back-compat shim for `start-runner --fleet`)
+fw runner start --fleet                       # preflight both shared services, then start runners (default: osm-geocoder + osm-lz)
+fw runner start --fleet --check               # preflight + validate only
+fw runner start --fleet --replicas 6          # override the runner count
+fw runner start --fleet --example noaa-weather --example census-us   # run ANY per-example runner in the fleet
+#   (fw runner start --fleet still works — it's a back-compat shim for `start-runner --fleet`)
 #   All per-example runners default to S3 storage, so every example's output finalizes
 #   to the shared MinIO (nothing siloed per host) — no extra config needed.
 ```
@@ -226,16 +226,16 @@ come from the config, so there is no per-server editing.
 
 ```bash
 # Admin (run anywhere with Mongo access) — set the fleet config ONCE:
-scripts/fleet set --mongo mongodb://afl-mongodb:27017 \
+fw fleet set --mongo mongodb://afl-mongodb:27017 \
     --minio http://afl-minio:9000 --bucket afl-cache --osm-replicas 4 --task-list osm
 
-scripts/fleet status --mongo mongodb://afl-mongodb:27017   # config version + live runners by host
-scripts/fleet get    --mongo mongodb://afl-mongodb:27017   # show the config
+fw fleet status --mongo mongodb://afl-mongodb:27017   # config version + live runners by host
+fw fleet get    --mongo mongodb://afl-mongodb:27017   # show the config
 
 # On EACH server — the same one command joins the fleet (bootstrap = Mongo URL):
 mkdir -p "$HOME/afl_data"                                   # big LOCAL scratch on THIS server
-scripts/fleet-agent apply --mongo mongodb://afl-mongodb:27017 --data-dir "$HOME/afl_data"
-scripts/fleet-agent apply --dry-run                        # show the plan, start nothing
+fw fleet agent apply --mongo mongodb://afl-mongodb:27017 --data-dir "$HOME/afl_data"
+fw fleet agent apply --dry-run                        # show the plan, start nothing
 #   (with a resolvable `afl-mongodb` hostname or AFL_MONGODB_URL set, the --mongo is
 #    optional, but --data-dir stays — it is REQUIRED, see below.)
 ```
@@ -264,13 +264,13 @@ Mongo.
 `fleet_config.version` and reconciles whenever it changes:
 
 ```bash
-scripts/fleet-agent watch --mongo mongodb://afl-mongodb:27017 \
+fw fleet agent watch --mongo mongodb://afl-mongodb:27017 \
     --data-dir "$HOME/afl_data" --interval 30                 # daemon (systemd/nohup); --data-dir REQUIRED
 
 # Then drive the WHOLE fleet from one place:
-scripts/fleet set --osm-replicas 8                       # every host rescales to 8
-scripts/fleet set --image registry/facetwork-runner:v2  # every host pulls v2 + recreates (rolling)
-scripts/fleet status                                     # per-host: up-to-date vs LAGGING (applied version)
+fw fleet set --osm-replicas 8                       # every host rescales to 8
+fw fleet set --image registry/facetwork-runner:v2  # every host pulls v2 + recreates (rolling)
+fw fleet status                                     # per-host: up-to-date vs LAGGING (applied version)
 ```
 
 A replica-only change just rescales (no downtime for running runners); an
@@ -301,18 +301,18 @@ Mongo URL spelled out, and MinIO credentials no longer live in each host's env:
 # `afl-mongodb` hostname. MinIO is read from the config (afl-minio fallback). So
 # with a resolvable afl-mongodb (DNS/hosts) or mDNS, a server joins with just
 # (--data-dir is still REQUIRED — there is no /Volumes/afl_data default):
-scripts/fleet-agent watch --data-dir "$HOME/afl_data"
+fw fleet agent watch --data-dir "$HOME/afl_data"
 
 # mDNS advertiser — run on the infra host so agents find Mongo+MinIO with no
 # /etc/hosts at all (needs `pip install zeroconf`):
-scripts/fleet-advertise
+fw fleet advertise
 
 # Secret store: MinIO creds are encrypted (Fernet) in the `fleet_secrets`
 # collection. Each host needs only the fleet key — ONE bootstrap secret — not the
 # actual creds, which are set once centrally:
-scripts/fleet secret gen-key                 # generate AFL_FLEET_KEY (export on admin + each host)
-scripts/fleet secret set --minio-access KEY --minio-secret SECRET   # encrypt + store (admin)
-scripts/fleet secret show                    # decrypt + show (masked)
+fw fleet secret gen-key                 # generate AFL_FLEET_KEY (export on admin + each host)
+fw fleet secret set --minio-access KEY --minio-secret SECRET   # encrypt + store (admin)
+fw fleet secret show                    # decrypt + show (masked)
 ```
 
 When `fleet_secrets` holds a credential and `AFL_FLEET_KEY` is set, the agent
@@ -648,7 +648,7 @@ docker compose -f docker-compose.yml -f docker-compose.hdfs.yml --profile hdfs b
 Or use the setup script:
 
 ```bash
-scripts/setup --hdfs --osm-agents 2 --build
+fw install setup --hdfs --osm-agents 2 --build
 ```
 
 ### Running OSM Agents with HDFS Cache
@@ -689,7 +689,7 @@ export HDFS_DATANODE_DIR=/mnt/hdfs/datanode
 docker compose --profile hdfs up -d
 
 # Or via the setup script
-scripts/setup --hdfs \
+fw install setup --hdfs \
   --hdfs-namenode-dir /mnt/hdfs/namenode \
   --hdfs-datanode-dir /mnt/hdfs/datanode
 ```
@@ -839,8 +839,8 @@ docker compose exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
 ### Setup Script
 
 ```bash
-scripts/setup --jenkins                    # Jenkins only
-scripts/setup --jenkins --build            # Rebuild images first
+fw install setup --jenkins                    # Jenkins only
+fw install setup --jenkins --build            # Rebuild images first
 ```
 
 ### External Storage for Jenkins
@@ -853,7 +853,7 @@ export JENKINS_HOME_DIR=/mnt/ssd/jenkins
 docker compose --profile jenkins up -d
 
 # Or via the setup script
-scripts/setup --jenkins --jenkins-home-dir /mnt/ssd/jenkins
+fw install setup --jenkins --jenkins-home-dir /mnt/ssd/jenkins
 ```
 
 | Variable | Default | Description |
@@ -907,7 +907,7 @@ export POSTGIS_DATA_DIR=/mnt/ssd/postgis
 docker compose --profile postgis up -d
 
 # Or via the setup script
-scripts/setup --postgis --postgis-data-dir /mnt/ssd/postgis
+fw install setup --postgis --postgis-data-dir /mnt/ssd/postgis
 ```
 
 | Variable | Default | Description |
@@ -924,7 +924,7 @@ export MONGODB_DATA_DIR=/mnt/ssd/mongodb
 docker compose up -d
 
 # Or via the setup script
-scripts/setup --mongodb-data-dir /mnt/ssd/mongodb
+fw install setup --mongodb-data-dir /mnt/ssd/mongodb
 ```
 
 | Variable | Default | Description |
@@ -940,14 +940,14 @@ disk to 100%, at which point WiredTiger can't write its journal and **mongo
 crash-loops, taking the whole fleet down** (the cause is invisible in `df` on the
 host, which still shows free space — check `docker run --rm busybox df /`).
 
-`scripts/docker-disk-guard` reclaims build cache + unused images (re-pullable
+`fw maint disk-guard` reclaims build cache + unused images (re-pullable
 from the registry) + stopped containers when the VM disk crosses a threshold
 (default 80%); it never touches volumes (your mongo/minio/postgis data). Install
 it on the **infra host** (and any host that builds images) via cron:
 
 ```bash
 ( crontab -l 2>/dev/null | grep -v docker-disk-guard; \
-  echo "*/30 * * * * $PWD/scripts/docker-disk-guard >/dev/null 2>&1" ) | crontab -
+  echo "*/30 * * * * $PWD/fw maint disk-guard >/dev/null 2>&1" ) | crontab -
 # tune with DOCKER_DISK_THRESHOLD; log at ~/.docker-disk-guard.log
 ```
 
@@ -1104,63 +1104,63 @@ AFL_SSH_OPTS=-i ~/.ssh/deploy_key  # optional extra SSH flags
 
 ```bash
 # Register handlers and start runner + dashboard on this machine
-scripts/start-runner --example hiv-drug-resistance -- --log-format text
+fw runner start --example hiv-drug-resistance -- --log-format text
 
 # Register ALL examples, start 3 runner instances, skip dashboard
-scripts/start-runner --instances 3 --no-dashboard
+fw runner start --instances 3 --no-dashboard
 
 # Stop all local runners and dashboard
-scripts/stop-runners
+fw runner stop
 ```
 
 ### Remote runner lifecycle
 
 ```bash
 # Start runners on all configured hosts
-scripts/start-runner --all --example hiv-drug-resistance -- --log-format text
+fw runner start --all --example hiv-drug-resistance -- --log-format text
 
 # Start on specific hosts only
-scripts/start-runner --host prod-runner-01 --host prod-runner-02 --example hiv-drug-resistance
+fw runner start --host prod-runner-01 --host prod-runner-02 --example hiv-drug-resistance
 
 # Stop all remote runners (queries MongoDB for running servers)
-scripts/stop-runners --all
+fw runner stop --all
 
 # Stop runners on specific hosts
-scripts/stop-runners --host prod-runner-01 --host prod-runner-02
+fw runner stop --host prod-runner-01 --host prod-runner-02
 
 # Stop with longer drain timeout (default: 30s)
-scripts/stop-runners --all --drain-timeout 60
+fw runner stop --all --drain-timeout 60
 ```
 
 ### Rolling deploy (zero-downtime)
 
-The `scripts/rolling-deploy` script performs a serial rolling restart: for each runner it drains the old process (SIGTERM → wait for SHUTDOWN), starts a new one, and waits for it to register in MongoDB before moving to the next. This ensures at least N-1 runners are always available.
+The `fw fleet rolling-deploy` script performs a serial rolling restart: for each runner it drains the old process (SIGTERM → wait for SHUTDOWN), starts a new one, and waits for it to register in MongoDB before moving to the next. This ensures at least N-1 runners are always available.
 
 ```bash
 # Rolling restart all servers, re-register all example handlers
-scripts/rolling-deploy
+fw fleet rolling-deploy
 
 # Rolling restart with specific handlers
-scripts/rolling-deploy --example hiv-drug-resistance --example devops-deploy
+fw fleet rolling-deploy --example hiv-drug-resistance --example devops-deploy
 
 # Target specific hosts
-scripts/rolling-deploy --host prod-runner-01 --host prod-runner-02
+fw fleet rolling-deploy --host prod-runner-01 --host prod-runner-02
 
 # Custom timeouts
-scripts/rolling-deploy --drain-timeout 90 --start-timeout 90
+fw fleet rolling-deploy --drain-timeout 90 --start-timeout 90
 
 # Skip handler re-registration (code-only restart, handlers unchanged)
-scripts/rolling-deploy --skip-registration
+fw fleet rolling-deploy --skip-registration
 
 # Pass extra args to the runner service
-scripts/rolling-deploy --example hiv-drug-resistance -- --log-format text --max-concurrent 10
+fw fleet rolling-deploy --example hiv-drug-resistance -- --log-format text --max-concurrent 10
 ```
 
 **Rolling deploy flow per server:**
 1. Send SIGTERM via SSH (triggers graceful drain — finishes current tasks, stops polling)
 2. Poll MongoDB until server state = `shutdown` (timeout: `--drain-timeout`, default 60s)
 3. If HTTP port is known (persisted in MongoDB), verify health endpoint is unreachable
-4. Start new runner via SSH (`nohup scripts/runner --registry ...`)
+4. Start new runner via SSH (`nohup fw runner exec --registry ...`)
 5. Poll MongoDB until new server registers with state = `running` (timeout: `--start-timeout`, default 60s)
 6. If HTTP port is known, health-check `http://<host>:<port>/health` for 200 OK
 7. On **any failure**, the deploy aborts immediately — remaining servers are left untouched

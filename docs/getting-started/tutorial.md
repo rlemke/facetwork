@@ -595,8 +595,8 @@ git clone https://github.com/rlemke/fwh_osm.git ~/fw_handlers/fwh_osm
 pip install -e ~/fw_handlers/fwh_osm
 
 # Seed and run from the facetwork checkout
-scripts/seed-examples --include osm-geocoder
-scripts/start-runner --example osm-geocoder
+fw ffl seed --include osm-geocoder
+fw runner start --example osm-geocoder
 
 # Start the dashboard to monitor execution
 python -m afl.dashboard

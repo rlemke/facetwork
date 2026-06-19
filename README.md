@@ -108,7 +108,7 @@ docker compose down -v    # stop and remove data
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,test,dashboard,mcp,mongodb]"
 cp .env.example .env     # edit MongoDB connection string
-scripts/seed-examples
+fw ffl seed
 python -m afl.dashboard --log-format text
 ```
 
@@ -183,7 +183,7 @@ namespace analytics.reports {
 ```
 
 **How sharing works:**
-- Teams publish their FFL namespaces to MongoDB via `scripts/publish mylib.ffl`
+- Teams publish their FFL namespaces to MongoDB via `fw ffl publish mylib.ffl`
 - Other teams import published namespaces with `use team.namespace`
 - The compiler resolves and validates all cross-team references at compile time
 - Handlers are registered independently — teams deploy and update their own handlers without affecting other teams' workflows
@@ -227,7 +227,7 @@ Facetwork doesn't run workflows on a single machine and hope for the best. It ru
 |-----------|--------------------------|
 | **Long-running jobs** | A step can take hours (e.g., importing geographic data, training a model). If a runner crashes or times out, the task is automatically reset to pending and another runner picks it up. |
 | **Scalability** | Add more runner servers to handle more tasks in parallel. Each runner independently polls MongoDB for work — no central coordinator needed. |
-| **Rolling updates** | Update handler code on runners one at a time with `scripts/rolling-deploy`. Running tasks finish on the old code; new tasks pick up the new code. No downtime. |
+| **Rolling updates** | Update handler code on runners one at a time with `fw fleet rolling-deploy`. Running tasks finish on the old code; new tasks pick up the new code. No downtime. |
 | **Fault tolerance** | If a server goes down, its orphaned tasks are automatically detected and reassigned. Workflows resume from exactly where they left off. |
 | **Monitoring** | The dashboard shows every runner's health, active tasks, step logs, and execution duration in real time. |
 
@@ -420,16 +420,16 @@ cp agents/protocol/constants.json /path/to/my-agent/constants.json
 ### Scripts
 
 ```bash
-scripts/compile input.ffl -o output.json     # compile FFL
-scripts/publish input.ffl                    # compile + publish to MongoDB
-scripts/run-workflow                         # interactive workflow execution
-scripts/start-runner --example osm-geocoder  # start runner
-scripts/stop-runners                         # stop all runners
-scripts/drain-runners                        # stop + reset tasks to pending
-scripts/list-runners                         # show runner fleet
-scripts/db-stats                             # database statistics
-scripts/postgis-vacuum                       # PostGIS maintenance
-scripts/postgis-vacuum-status                # check vacuum progress
+fw ffl compile input.ffl -o output.json     # compile FFL
+fw ffl publish input.ffl                    # compile + publish to MongoDB
+fw ffl run-workflow                         # interactive workflow execution
+fw runner start --example osm-geocoder  # start runner
+fw runner stop                         # stop all runners
+fw runner drain                        # stop + reset tasks to pending
+fw runner list                         # show runner fleet
+fw db stats                             # database statistics
+fw db postgis vacuum                       # PostGIS maintenance
+fw db postgis vacuum-status                # check vacuum progress
 ```
 
 All scripts support `--help`.

@@ -1,4 +1,4 @@
-# LOCAL multi-server SIMULATION override (used by scripts/simulate-fleet only).
+# LOCAL multi-server SIMULATION override (used by fw fleet simulate only).
 #
 # Each simulated "server" runs as a separate compose project. Without this, every
 # project would create its own bridge network — quickly exhausting Docker's

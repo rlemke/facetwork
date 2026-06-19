@@ -108,7 +108,7 @@ docker compose up -d --scale runner=3
 
 **Local:**
 ```bash
-scripts/start-runner --instances 3 -- --log-format text
+fw runner start --instances 3 -- --log-format text
 ```
 
 Both start identical `RunnerService` processes. Each registers in MongoDB's `servers` collection, sends heartbeats, and claims tasks via atomic `find_one_and_update`. Multiple instances across multiple machines cooperate automatically.

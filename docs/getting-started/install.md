@@ -75,8 +75,8 @@ own repos** (so they version independently); you install the one(s) you want
 later with a helper — you do **not** clone them by hand:
 
 ```bash
-scripts/install-example --list          # see what's available
-scripts/install-example sentinel2-landchange   # clone + install one
+fw install example --list          # see what's available
+fw install example sentinel2-landchange   # clone + install one
 ```
 
 (`fwh_sentinel2`, `fwh_osm`, `fwh_noaa_weather`, … — the helper clones them into
@@ -119,7 +119,7 @@ Stop everything with `docker compose down` (add `-v` to also wipe the local
 data volumes).
 
 > Want to run real example workflows (e.g. Sentinel-2 maps)? Install one with
-> `scripts/install-example sentinel2-landchange`, then start a runner for it —
+> `fw install example sentinel2-landchange`, then start a runner for it —
 > see the example's own README, and [beginners-guide.md](beginners-guide.md).
 
 That's the whole setup for one machine. The scenarios below only add **other
@@ -151,7 +151,7 @@ Make sure MongoDB (27017) and MinIO (9000) are reachable on your network.
 
 ```bash
 cp .env.fleet.preset .env.fleet     # then edit: set the hub's IP for Mongo + MinIO
-scripts/start-runner --fleet        # starts runner container(s) against the hub
+fw runner start --fleet        # starts runner container(s) against the hub
 ```
 
 Teammates can stop/close anytime; a background **reaper** reclaims their in-flight
@@ -175,19 +175,19 @@ the bundled containers, you point everything at the standalone MongoDB + MinIO.
 
 1. **Stand up the two services** on the dedicated server(s):
    - MongoDB, bound so other machines can reach it (`--bind_ip 0.0.0.0`; see
-     `scripts/start_mongo`), or a managed MongoDB.
+     `fw db mongo-start`), or a managed MongoDB.
    - MinIO (or any S3-compatible store), reachable on the network.
 2. **Record them centrally once** (so every runner self-configures):
 
    ```bash
-   scripts/fleet set --mongo-url mongodb://<server>:27017 \
+   fw fleet set --mongo-url mongodb://<server>:27017 \
                      --minio http://<server>:9000 --dashboard-url http://<server>:8080
    ```
 3. **On each runner machine:** clone, set the Mongo URL, and join:
 
    ```bash
    export AFL_FLEET_KEY=<shared-key>     # decrypts the central MinIO creds
-   scripts/fleet-agent watch             # reads central config, brings runners up, keeps them current
+   fw fleet agent watch             # reads central config, brings runners up, keeps them current
    ```
 
 Reference: [docs/operations/deployment.md](../operations/deployment.md) →
@@ -277,13 +277,13 @@ owner to add a package if you need one it doesn't have.
 
 1. Open the dashboard (**http://localhost:8080** locally, or the dashboard URL
    for shared infra). It lands on **Runs**.
-2. `scripts/list-runners` — confirm at least one runner is **running**.
+2. `fw runner list` — confirm at least one runner is **running**.
 3. Click **New run**, pick a seeded workflow, fill parameters, **Run**, and watch
    the live execution graph + step logs.
 
 If a run sits **pending** forever, it usually means **no runner has a handler for
 that workflow** — install/start the matching example
-(`scripts/install-example <name>` + `scripts/start-runner --example <name>`).
+(`fw install example <name>` + `fw runner start --example <name>`).
 
 ## Where to go next
 

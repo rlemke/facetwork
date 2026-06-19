@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+# Clone + install a standalone Facetwork example package.
+#
+# Each fwh_* example (anthropic, osm-geocoder, jenkins, …) lives in
+# its own GitHub repo. This script knows the short-name → repo mapping
+# and does the clone-or-pull + `pip install -e .` work in one step.
+#
+# Usage:
+#   scripts/install-example anthropic
+#   scripts/install-example anthropic --extras agent_sdk,mcp
+#   scripts/install-example osm-geocoder
+#   scripts/install-example --list             # print the registry
+#   scripts/install-example --all              # install every known example
+#   scripts/install-example anthropic --dir /custom/path
+#
+# After install, the example is discoverable as
+#   scripts/start-runner --example <name>
+# and (for anthropic) `python -c "import anthropic_handlers"` works.
+
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$FW_ROOT"
+
+# Default install root. Override with --dir.
+DEFAULT_INSTALL_ROOT="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
+
+# Registry: <short_name>|<repo_name>|<default extras>|<one-line description>
+# default extras are optional comma-separated package extras that
+# `install-example <name>` will add unless `--no-default-extras` is
+# passed.
+REGISTRY=(
+    "anthropic|fwh_anthropic||Anthropic API wrappers (Messages, Batch, Files, Agent SDK, Claude Code, Computer Use)"
+    "osm-geocoder|fwh_osm||OSM PBF → PostGIS → routing/tiles (production-scale)"
+    "osm-lz|fwh_osm_lz||Continental-scale OSM workflow catalog (depends on fwh_osm)"
+    "noaa-weather|fwh_noaa_weather||NOAA GHCN/NDBC climate trends"
+    "jenkins|fwh_jenkins||CI/CD mixin composition demo"
+    "census-us|fwh_census_us||US Census ACS + TIGER demographics"
+    "genomics|fwh_genomics||Bioinformatics foreach fan-out demo"
+    "sensor-monitoring|fwh_sensor_monitoring||Sensor pipelines (RegistryRunner-first)"
+    "save-earth|fwh_save_earth||Open environmental datasets (OpenLitterMap, EPA Superfund/Brownfields/TRI) → MapLibre HTML maps"
+    "sentinel2-landchange|fwh_sentinel2|geo|Sentinel-2 land-cover change (STAC + COG → NDVI/composite → difference/classify → MapLibre tiled map)"
+)
+
+usage() {
+    cat <<'EOF'
+Usage: scripts/install-example [OPTIONS] <name>...
+
+Clone (or update) and pip-install a standalone Facetwork example
+package from its GitHub repo.
+
+Arguments:
+  <name>...               One or more example short names. Run with --list
+                          to see the registry.
+
+Options:
+  --list                  Print the registry of known examples and exit.
+  --all                   Install every example in the registry.
+  --dir DIR               Parent directory for clones (default: ~/fw_handlers
+                          or $FWH_HANDLERS_ROOT).
+  --extras EXTRAS         Comma-separated pip extras (e.g. agent_sdk,mcp).
+                          Appended on top of the example's default extras.
+  --no-default-extras     Skip the example's default extras (if any).
+  --venv DIR              Use this venv's python/pip instead of `python3`/`pip`.
+                          Default: $PROJECT_DIR/.venv if it exists, else system.
+  --pull-only             Clone or git-pull but skip pip install.
+  --skip-pull             pip install only, don't touch the existing clone.
+  --check                 After install, verify the example is discoverable
+                          via the facetwork.examples entry point.
+  -h, --help              Show this help.
+
+Environment:
+  FWH_HANDLERS_ROOT       Override the default install root.
+
+Examples:
+  scripts/install-example anthropic
+  scripts/install-example anthropic --extras agent_sdk,mcp --check
+  scripts/install-example osm-geocoder noaa-weather
+  scripts/install-example --all
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Args
+# ---------------------------------------------------------------------------
+
+NAMES=()
+INSTALL_ROOT="$DEFAULT_INSTALL_ROOT"
+EXTRAS=""
+USE_DEFAULT_EXTRAS=true
+VENV_DIR=""
+PULL_ONLY=false
+SKIP_PULL=false
+CHECK=false
+DO_ALL=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        --list)
+            printf "%-20s %-28s %s\n" "NAME" "REPO" "DESCRIPTION"
+            printf "%-20s %-28s %s\n" "----" "----" "-----------"
+            for entry in "${REGISTRY[@]}"; do
+                IFS='|' read -r name repo _defaults desc <<< "$entry"
+                printf "%-20s %-28s %s\n" "$name" "github.com/rlemke/$repo" "$desc"
+            done
+            exit 0
+            ;;
+        --all) DO_ALL=true; shift ;;
+        --dir) INSTALL_ROOT="$2"; shift 2 ;;
+        --extras) EXTRAS="$2"; shift 2 ;;
+        --no-default-extras) USE_DEFAULT_EXTRAS=false; shift ;;
+        --venv) VENV_DIR="$2"; shift 2 ;;
+        --pull-only) PULL_ONLY=true; shift ;;
+        --skip-pull) SKIP_PULL=true; shift ;;
+        --check) CHECK=true; shift ;;
+        --) shift; NAMES+=("$@"); break ;;
+        -*) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+        *) NAMES+=("$1"); shift ;;
+    esac
+done
+
+if [[ "$DO_ALL" == "true" ]]; then
+    if [[ ${#NAMES[@]} -gt 0 ]]; then
+        echo "Error: --all conflicts with explicit names." >&2
+        exit 2
+    fi
+    for entry in "${REGISTRY[@]}"; do
+        IFS='|' read -r name _repo _defaults _desc <<< "$entry"
+        NAMES+=("$name")
+    done
+fi
+
+if [[ ${#NAMES[@]} -eq 0 ]]; then
+    echo "Error: no example name(s) given. Use --list to see the registry." >&2
+    usage >&2
+    exit 2
+fi
+
+# Pick python/pip
+if [[ -z "$VENV_DIR" && -d "$PROJECT_DIR/.venv" ]]; then
+    VENV_DIR="$PROJECT_DIR/.venv"
+fi
+if [[ -n "$VENV_DIR" ]]; then
+    PYTHON="$VENV_DIR/bin/python"
+    if [[ ! -x "$PYTHON" ]]; then
+        echo "Error: --venv $VENV_DIR has no bin/python." >&2
+        exit 1
+    fi
+else
+    PYTHON="$(command -v python3 || true)"
+    if [[ -z "$PYTHON" ]]; then
+        echo "Error: python3 not found. Pass --venv DIR or run scripts/install first." >&2
+        exit 1
+    fi
+fi
+# Always invoke pip via the chosen interpreter (`python -m pip`) — a venv's
+# bin/pip can carry a stale shebang (e.g. after a project rename) and fail with
+# "bad interpreter"; `python -m pip` is immune.
+PIP="$PYTHON -m pip"
+
+# ---------------------------------------------------------------------------
+# Registry lookup
+# ---------------------------------------------------------------------------
+
+lookup_repo() {
+    local name="$1"
+    for entry in "${REGISTRY[@]}"; do
+        IFS='|' read -r reg_name reg_repo reg_extras _desc <<< "$entry"
+        if [[ "$reg_name" == "$name" ]]; then
+            echo "$reg_repo|$reg_extras"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# ---------------------------------------------------------------------------
+# Install one example
+# ---------------------------------------------------------------------------
+
+install_one() {
+    local name="$1"
+    local lookup
+    if ! lookup="$(lookup_repo "$name")"; then
+        echo "Error: unknown example '$name'. Use --list." >&2
+        return 1
+    fi
+    IFS='|' read -r repo default_extras <<< "$lookup"
+    local target_dir="$INSTALL_ROOT/$repo"
+
+    echo "==> $name (github.com/rlemke/$repo)"
+    mkdir -p "$INSTALL_ROOT"
+
+    # Clone or update
+    if [[ "$SKIP_PULL" != "true" ]]; then
+        if [[ -d "$target_dir/.git" ]]; then
+            echo "    Updating existing clone at $target_dir"
+            git -C "$target_dir" fetch --quiet origin
+            local current_branch
+            current_branch="$(git -C "$target_dir" rev-parse --abbrev-ref HEAD)"
+            git -C "$target_dir" pull --ff-only --quiet origin "$current_branch" \
+                || echo "    WARNING: fast-forward pull failed; leaving local commits in place"
+        elif [[ -d "$target_dir" ]]; then
+            echo "    $target_dir exists but is not a git checkout — skipping clone."
+        else
+            echo "    Cloning into $target_dir"
+            git clone --quiet "https://github.com/rlemke/$repo.git" "$target_dir"
+        fi
+    fi
+
+    if [[ "$PULL_ONLY" == "true" ]]; then
+        echo "    --pull-only: skipping pip install"
+        return 0
+    fi
+
+    # Resolve extras
+    local extras_combined=""
+    if [[ "$USE_DEFAULT_EXTRAS" == "true" && -n "$default_extras" ]]; then
+        extras_combined="$default_extras"
+    fi
+    if [[ -n "$EXTRAS" ]]; then
+        if [[ -n "$extras_combined" ]]; then
+            extras_combined="$extras_combined,$EXTRAS"
+        else
+            extras_combined="$EXTRAS"
+        fi
+    fi
+
+    # pip install -e
+    if [[ -n "$extras_combined" ]]; then
+        echo "    pip install -e $target_dir[$extras_combined]"
+        $PIP install -e "$target_dir[$extras_combined]"
+    else
+        echo "    pip install -e $target_dir"
+        $PIP install -e "$target_dir"
+    fi
+
+    if [[ "$CHECK" == "true" ]]; then
+        echo "    Verifying entry-point discovery..."
+        "$PYTHON" - "$name" <<'PYEOF'
+import sys
+name = sys.argv[1]
+try:
+    from facetwork.examples import discover_entry_point_examples
+except ImportError as e:
+    print(f"    SKIP: facetwork.examples.discover_entry_point_examples unavailable ({e})", file=sys.stderr)
+    sys.exit(0)
+found = {ex.name for ex in discover_entry_point_examples()}
+if name in found:
+    print(f"    OK: --example {name} is discoverable via facetwork.examples entry point")
+else:
+    print(f"    FAIL: --example {name} not found in {sorted(found)}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+echo "Install root: $INSTALL_ROOT"
+echo "Python:       $PYTHON"
+echo
+
+failed=0
+for name in "${NAMES[@]}"; do
+    if ! install_one "$name"; then
+        failed=1
+    fi
+    echo
+done
+
+if [[ "$failed" -ne 0 ]]; then
+    echo "One or more examples failed to install." >&2
+    exit 1
+fi
+
+echo "Done."

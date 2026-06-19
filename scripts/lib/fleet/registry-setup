@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# fw-summary: add the fleet's HTTP registry to a host's docker insecure-registries (+restart)
+#
+# The fleet's image registry is plain HTTP. A host whose Docker daemon doesn't
+# list it as insecure can't pull runner images ("http: server gave HTTP response
+# to HTTPS client") and silently skips every `fw fleet rollout`. This merges the
+# registry into ~/.docker/daemon.json (backup kept) and optionally restarts
+# Docker Desktop. Run locally, or against another host with --host.
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+REGISTRY="${AFL_FLEET_REGISTRY:-192.168.68.96:5050}"
+HOST="" DRY=0 DO_RESTART=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --registry) REGISTRY="$2"; shift 2 ;;
+        --host) HOST="$2"; shift 2 ;;
+        --restart) DO_RESTART=1; shift ;;
+        --dry|--dry-run) DRY=1; shift ;;
+        -h|--help) echo "Usage: fw fleet registry-setup [--host HOST] [--registry H:PORT] [--restart] [--dry]"; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+# The merge runs as a python snippet, locally or piped over ssh.
+read -r -d '' PYSNIP <<PY || true
+import json, os, time, shutil, sys
+reg = "$REGISTRY"; dry = "$DRY" == "1"
+p = os.path.expanduser("~/.docker/daemon.json")
+d = {}
+if os.path.isfile(p):
+    try: d = json.load(open(p))
+    except Exception: d = {}
+regs = set(d.get("insecure-registries", []))
+if reg in regs:
+    print(f"already present: {reg} in {p}"); sys.exit(0)
+regs.add(reg); d["insecure-registries"] = sorted(regs)
+if dry:
+    print(f"[dry-run] would add {reg} -> insecure-registries in {p}; result:")
+    print(json.dumps(d, indent=2)); sys.exit(0)
+if os.path.isfile(p): shutil.copy(p, p + ".bak." + str(int(time.time())))
+os.makedirs(os.path.dirname(p), exist_ok=True)
+json.dump(d, open(p, "w"), indent=2)
+print(f"added {reg} to {p} (backup kept). Restart Docker for it to take effect.")
+PY
+
+run_py() { if [ -n "$HOST" ]; then ssh -o BatchMode=yes "$HOST" 'bash -lc "python3 -"'; else python3 -; fi; }
+printf '%s' "$PYSNIP" | run_py
+
+if [ "$DRY" = 1 ]; then exit 0; fi
+if [ "$DO_RESTART" = 1 ]; then
+    echo "Restarting Docker Desktop${HOST:+ on $HOST} (bounces containers)…"
+    if [ -n "$HOST" ]; then ssh -o BatchMode=yes "$HOST" 'bash -lc "docker desktop restart"'
+    else docker desktop restart; fi
+else
+    echo "Not restarting (pass --restart to bounce Docker now). The change applies on next Docker restart."
+fi

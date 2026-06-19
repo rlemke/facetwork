@@ -211,7 +211,7 @@ model — it just exposed that `Extract(roads)` and the prefix filter had to be 
 - **Parameterize for families.** One workflow should cover a request *family* (`FindBusinessMap`:
   name + type + regions → thousands of requests), not a single phrasing.
 - **Grow from solved requests.** When composition hits a missing primitive, the run preflight
-  names the gap → `scripts/scaffold-handler` scaffolds it → review → it *joins the library*. The
+  names the gap → `fw ffl scaffold` scaffolds it → review → it *joins the library*. The
   library's growth is driven by real demand, and the catalog records which compositions recur,
   pointing at which primitives to harden next.
 

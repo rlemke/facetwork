@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# fw-summary: delete stale shutdown-state server docs from Mongo (default: dry-run count)
+#
+# The reaper auto-prunes terminal `shutdown` server records on a short window
+# (see docs/operations/fleet-rollouts.md §3.6), but this forces it immediately —
+# e.g. right after a big scale-down or rollout when you want list-runners /
+# dashboard counts to read true without waiting ~2 min.
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+
+PYTHON="$FW_ROOT/.venv/bin/python3"; [ -x "$PYTHON" ] || PYTHON=python3
+MONGO_URL="${AFL_MONGODB_URL:-mongodb://server3.local:27017}"
+DB="${AFL_MONGODB_DATABASE:-facetwork}"
+APPLY=0
+for a in "$@"; do
+    case "$a" in
+        --apply|--yes) APPLY=1 ;;
+        --dry|--dry-run) APPLY=0 ;;
+        --mongo) shift; MONGO_URL="$1" ;;
+        -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; echo; echo "Usage: fw maint purge-servers [--apply] [--mongo URL]"; exit 0 ;;
+    esac
+done
+
+env AFL_PURGE_APPLY="$APPLY" AFL_MONGO_URL="$MONGO_URL" AFL_MONGO_DB="$DB" "$PYTHON" - <<'PY'
+import os
+from pymongo import MongoClient
+apply = os.environ["AFL_PURGE_APPLY"] == "1"
+db = MongoClient(os.environ["AFL_MONGO_URL"], serverSelectionTimeoutMS=5000)[os.environ["AFL_MONGO_DB"]]
+q = {"state": "shutdown"}
+n = db.servers.count_documents(q)
+if not apply:
+    print(f"[dry-run] {n} shutdown-state server doc(s) would be deleted. Re-run with --apply.")
+else:
+    res = db.servers.delete_many(q)
+    print(f"deleted {res.deleted_count} shutdown-state server doc(s).")
+    print(f"remaining servers: {db.servers.count_documents({})} ({db.servers.count_documents({'state':'running'})} running)")
+PY

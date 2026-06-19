@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Scaffold a new handler (FFL facet + Python handler + test stubs) for review when
-# a request needs a capability no facet provides. See
-# docs/architecture/extending-with-new-handlers.md
-set -euo pipefail
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PYTHON="${REPO_ROOT}/.venv/bin/python3"; [[ -x "$PYTHON" ]] || PYTHON=python3
-exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.scaffold "$@"
+# TRANSITION SHIM — this flat path is deprecated; use the `fw` front-door.
+# Removed after the clean-break cutover. Forwards to the new location.
+exec "$(dirname "$0")/lib/ffl/scaffold" "$@"

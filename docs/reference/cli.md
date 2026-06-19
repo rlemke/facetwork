@@ -38,39 +38,39 @@ All scripts are in `scripts/` and are self-contained:
 ```bash
 scripts/_env.sh                                # shared env loader (sourced by other scripts)
 scripts/_remote.sh                             # shared SSH/MongoDB helpers for remote management
-scripts/easy.sh                                # one-command pipeline (teardown → rebuild → setup → seed)
-scripts/setup                                  # bootstrap Docker stack
-scripts/setup --runners 3 --agents 2           # start with scaling
-scripts/compile input.ffl -o output.json       # compile FFL
-scripts/publish input.ffl                      # compile + publish to MongoDB
-scripts/publish input.ffl --auto-resolve       # with dependency resolution
-scripts/run-workflow                           # interactive workflow execution
-scripts/run-workflow --workflow Name            # run specific workflow
-scripts/server --workflow MyWorkflow           # execute workflow (server mode)
-scripts/runner                                 # start runner
-scripts/dashboard                              # start dashboard
-scripts/mcp-server                             # start MCP server
-scripts/db-stats                               # show DB statistics
-scripts/start-runner                           # register handlers + start runner locally
-scripts/start-runner --all                     # start runners on all remote hosts
-scripts/stop-runners                           # stop local runners
-scripts/stop-runners --all                     # stop runners on all remote hosts
-scripts/rolling-deploy                         # zero-downtime rolling restart
-scripts/list-runners                           # tree view: servers → runners → handlers
-scripts/list-runners --state running           # filter by state
-scripts/list-runners --json                    # machine-readable output
+fw single up                                # one-command pipeline (teardown → rebuild → setup → seed)
+fw install setup                                  # bootstrap Docker stack
+fw install setup --runners 3 --agents 2           # start with scaling
+fw ffl compile input.ffl -o output.json       # compile FFL
+fw ffl publish input.ffl                      # compile + publish to MongoDB
+fw ffl publish input.ffl --auto-resolve       # with dependency resolution
+fw ffl run-workflow                           # interactive workflow execution
+fw ffl run-workflow --workflow Name            # run specific workflow
+fw runner server --workflow MyWorkflow           # execute workflow (server mode)
+fw runner exec                                 # start runner
+fw svc dashboard                              # start dashboard
+fw svc mcp                             # start MCP server
+fw db stats                               # show DB statistics
+fw runner start                           # register handlers + start runner locally
+fw runner start --all                     # start runners on all remote hosts
+fw runner stop                           # stop local runners
+fw runner stop --all                     # stop runners on all remote hosts
+fw fleet rolling-deploy                         # zero-downtime rolling restart
+fw runner list                           # tree view: servers → runners → handlers
+fw runner list --state running           # filter by state
+fw runner list --json                    # machine-readable output
 ```
 
 ### Docker stack
 The `docker-compose.yml` defines the full development stack:
 ```bash
-scripts/setup                                               # bootstrap
-scripts/setup --runners 3 --agents 2 --osm-agents 1        # with scaling
+fw install setup                                               # bootstrap
+fw install setup --runners 3 --agents 2 --osm-agents 1        # with scaling
 docker compose up -d                                        # start directly
 docker compose --profile seed run --rm seed                 # seed workflows
 docker compose --profile mcp run --rm mcp                   # MCP server
 docker compose --profile hdfs up -d                         # start HDFS
-scripts/setup --hdfs                                        # bootstrap with HDFS
+fw install setup --hdfs                                        # bootstrap with HDFS
 docker compose down                                         # stop
 docker compose down -v                                      # stop + remove volumes
 ```
@@ -104,7 +104,7 @@ docker compose down -v                                      # stop + remove volu
 Two rebuild scripts exist; they target **different stacks** and read **different
 compose files + env**, so picking the wrong one rebuilds the wrong images.
 
-| | `scripts/rebuild` | `scripts/rebuild-workers` |
+| | `fw install rebuild` | `fw single rebuild-runners` |
 |---|---|---|
 | Stack | base / overlay dev stack | fleet / full-stack |
 | Compose files | `docker-compose.yml` + overlays (from `.afl-active-config`/`.env`, via `_compute_compose_args`) | `docker-compose.full-stack.yml` + `docker-compose.fleet.yml` |
@@ -116,22 +116,22 @@ compose files + env**, so picking the wrong one rebuilds the wrong images.
 
 **When to use which:**
 
-- **`scripts/rebuild`** — you changed **core engine / dashboard / compiler** code
+- **`fw install rebuild`** — you changed **core engine / dashboard / compiler** code
   (the `facetwork/` package or the dashboard image), toggled an **overlay** or
-  `INSTALL_HDFS`, and run the base stack (`scripts/setup` → `docker-compose.yml`).
+  `INSTALL_HDFS`, and run the base stack (`fw install setup` → `docker-compose.yml`).
   Defaults to a full no-cache rebuild; add `--up` to restart.
   ```bash
-  scripts/rebuild            # full rebuild of the base stack
-  scripts/rebuild --cached   # reuse layer cache
-  scripts/rebuild --up       # rebuild + restart
+  fw install rebuild            # full rebuild of the base stack
+  fw install rebuild --cached   # reuse layer cache
+  fw install rebuild --up       # rebuild + restart
   ```
 
-- **`scripts/rebuild-workers`** — you changed **handler code in an `fwh_*` example**
+- **`fw single rebuild-runners`** — you changed **handler code in an `fwh_*` example**
   (osm, anthropic, …) baked into the per-example runner ("worker") images, or you
   need to **recreate the runners cleanly** on the fleet/full-stack host.
   ```bash
-  scripts/rebuild-workers                 # build all worker images (cached)
-  scripts/rebuild-workers --ref <sha> --up  # bake a specific fwh_osm commit, then clean-recreate
+  fw single rebuild-runners                 # build all worker images (cached)
+  fw single rebuild-runners --ref <sha> --up  # bake a specific fwh_osm commit, then clean-recreate
   ```
   The `--up` path removes the existing worker containers **first**, then
   `up -d --remove-orphans` — so orphan replicas left by a plain `--force-recreate`
@@ -139,7 +139,7 @@ compose files + env**, so picking the wrong one rebuilds the wrong images.
 
 **Neither deploys across machines.** To roll new handler code to the
 `osm-geocoder` / `gh-router` **role on every fleet server**, use the registry
-path instead — `buildx → push → scripts/fleet set --image` — see
+path instead — `buildx → push → fw fleet set --image` — see
 [fleet-rollouts.md](../operations/fleet-rollouts.md). `rebuild`/`rebuild-workers`
 only build (and optionally recreate) on the **local** host.
 
@@ -202,12 +202,12 @@ The `.env` file is the primary way to configure the Docker stack and convenience
 ```bash
 cp .env.example .env   # one-time copy
 # Edit .env to set MongoDB port, scaling, overlays, data directories
-scripts/easy.sh        # runs the full pipeline using .env values
+fw single up        # runs the full pipeline using .env values
 ```
 
 **How it works:**
 - `scripts/_env.sh` is sourced by every convenience script. It reads `.env` from the project root and exports each variable **only if it is not already set** in the environment.
-- `scripts/easy.sh` translates `.env` variables into `scripts/setup` CLI flags and runs the full pipeline (teardown → rebuild → setup → seed).
+- `fw single up` translates `.env` variables into `fw install setup` CLI flags and runs the full pipeline (teardown → rebuild → setup → seed).
 - Precedence: **CLI flags > env vars > `.env` > defaults**
 
 **Variable reference:**

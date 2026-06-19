@@ -22,7 +22,7 @@ docker compose run seed
 # Or without Docker:
 pip install -e ".[dev,test,dashboard,mcp,mongodb]"
 cp .env.example .env              # edit MongoDB connection
-scripts/seed-examples             # seed example workflows
+fw ffl seed             # seed example workflows
 python -m facetwork.dashboard --log-format text
 # Open http://localhost:8080
 ```
@@ -43,22 +43,22 @@ reference (navigation, pages, global filters, Users/Teams): [docs/reference/dash
 
 ```bash
 # Start/stop runners
-scripts/start-runner --example osm-geocoder -- --log-format text
-scripts/stop-runners
-scripts/drain-runners              # stop + reset running tasks to pending
+fw runner start --example osm-geocoder -- --log-format text
+fw runner stop
+fw runner drain              # stop + reset running tasks to pending
 
 # Monitor
-scripts/list-runners               # show runner fleet
-scripts/db-stats                   # database document counts
+fw runner list               # show runner fleet
+fw db stats                   # database document counts
 
 # PostGIS maintenance (after large imports)
-scripts/postgis-vacuum             # reclaim space + update statistics
-scripts/postgis-vacuum-status      # check vacuum progress and table sizes
-scripts/postgis-kill-vacuum        # kill autovacuum blocking imports
+fw db postgis vacuum             # reclaim space + update statistics
+fw db postgis vacuum-status      # check vacuum progress and table sizes
+fw db postgis kill-vacuum        # kill autovacuum blocking imports
 
 # Local-first import (reduces I/O on main PG during large imports)
-scripts/start-import-pg            # start disposable Docker PG on port 5433
-scripts/start-import-pg --stop     # stop and remove
+fw db import-pg            # start disposable Docker PG on port 5433
+fw db import-pg --stop     # stop and remove
 ```
 
 ## Key Concepts
@@ -109,16 +109,16 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Build & run reference | [docs/reference/cli.md](docs/reference/cli.md) |
 | Non-functional requirements | [docs/reference/nonfunctional.md](docs/reference/nonfunctional.md) |
 | Architecture overview | [docs/architecture/overview.md](docs/architecture/overview.md) |
-| **`/ffl-first`** — fulfill a request as a reviewed FFL workflow (discover→reuse→gated-author→gated-scaffold→FFL-only data→run); two review gates (workflow shown before run, handler shown before use); `scripts/ffl-run` is its dashboard-visible run mechanism | [docs/guides/ffl-first.md](docs/guides/ffl-first.md) |
+| **`/ffl-first`** — fulfill a request as a reviewed FFL workflow (discover→reuse→gated-author→gated-scaffold→FFL-only data→run); two review gates (workflow shown before run, handler shown before use); `fw ffl run` is its dashboard-visible run mechanism | [docs/guides/ffl-first.md](docs/guides/ffl-first.md) |
 | Claude workflow catalog (store/version/run FFL with no file; `fw_catalog_*` MCP tools) | [docs/architecture/claude-workflow-catalog.md](docs/architecture/claude-workflow-catalog.md) |
 | `use` resolution: file-based compile vs. the catalog (hermetic pinned-dep model) | [docs/architecture/catalog-use-resolution.md](docs/architecture/catalog-use-resolution.md) |
-| Extending with new handlers (NL needs a capability no facet provides → detect gap → scaffold facet+handler+test) — `scripts/scaffold-handler` | [docs/architecture/extending-with-new-handlers.md](docs/architecture/extending-with-new-handlers.md) |
+| Extending with new handlers (NL needs a capability no facet provides → detect gap → scaffold facet+handler+test) — `fw ffl scaffold` | [docs/architecture/extending-with-new-handlers.md](docs/architecture/extending-with-new-handlers.md) |
 | Composable facet library (design): orthogonal/complete/discoverable/distributed primitives for LLM-composed workflows + the memory-of-solved-requests moat | [docs/architecture/composable-facet-library.md](docs/architecture/composable-facet-library.md) |
 | Approximate freeway routing (`osm.Network`, design): pure in-process graph search over a tiny noded-freeway artifact — no engine daemon; tiny network → read-once-per-runner, embarrassingly parallel | [docs/architecture/approximate-freeway-routing.md](docs/architecture/approximate-freeway-routing.md) |
 | **`ffl-runner` orchestration tier (design)**: split the step-state-machine/continuation processing into a dedicated leaderless `ffl-runner` role (hybrid: handler runners keep inline dispatch but stop polling the shared `_fw_continue` backlog; the tier owns the backlog + stuck-step sweep + version gate) → shrinks the fleet-wide blast radius of engine changes and bulkheads orchestration from heavy handlers, still decentralized | [docs/architecture/ffl-runner-orchestration-tier.md](docs/architecture/ffl-runner-orchestration-tier.md) |
 | Deployment guide | [docs/operations/deployment.md](docs/operations/deployment.md) |
 | Full-stack Docker Compose (one runner per fwh_* example) | [docs/operations/full-stack-compose.md](docs/operations/full-stack-compose.md) |
-| **Multi-server fleet** (`fleet`/`fleet-agent`/`start-runner --fleet`: shared external MinIO+MongoDB, central config, encrypted secrets, discovery) **+ local simulation** (`scripts/simulate-fleet`) | [#multi-server-runner-fleet--local-simulation](#multi-server-runner-fleet--local-simulation) · [docs/operations/deployment.md](docs/operations/deployment.md) |
+| **Multi-server fleet** (`fleet`/`fleet-agent`/`start-runner --fleet`: shared external MinIO+MongoDB, central config, encrypted secrets, discovery) **+ local simulation** (`fw fleet simulate`) | [#multi-server-runner-fleet--local-simulation](#multi-server-runner-fleet--local-simulation) · [docs/operations/deployment.md](docs/operations/deployment.md) |
 | **Fleet rollouts & runner lifecycle** — image-based change deployment (buildx→registry→`fleet set --image`), what happens to running tasks during a rollout (graceful drain → reaper recovery → retry/dead-letter), start/stop/drain runners from the CLI, and how this auto-deploy compares to Kubernetes/Temporal-grade pipelines | [docs/operations/fleet-rollouts.md](docs/operations/fleet-rollouts.md) |
 | **Informal fleet — your team's own machines as the cluster** — only central MongoDB+MinIO must be stable; runner machines (desktops/laptops) are stateless & disposable and can come/go (reaper → re-claim); who this model is for (small/research teams); large-scale data-center operation is architecturally **possible but untested** — treat it as a real engineering investment (hardening/scheduling/observability), not a config change | [docs/operations/informal-fleet.md](docs/operations/informal-fleet.md) |
 | Tutorial | [docs/getting-started/tutorial.md](docs/getting-started/tutorial.md) |
@@ -153,16 +153,16 @@ When adding a new validator check, give it a `rule_id` AND write the matching `d
 
 Examples can live either in this repo under `examples/<name>/` or as
 separate pip-installable packages declaring the `facetwork.examples`
-entry point. Both are discovered by `scripts/start-runner --example <name>`
-and `scripts/seed-examples`. See `example-template/` for the standalone
+entry point. Both are discovered by `fw runner start --example <name>`
+and `fw ffl seed`. See `example-template/` for the standalone
 package layout. To clone + install one (or all) of the standalone
 examples, use the registry-driven helper:
 
 ```bash
-scripts/install-example --list              # see what's registered
-scripts/install-example anthropic --check   # clone, pip install -e, verify
-scripts/install-example --all               # install every registered example
-scripts/install-anthropic --all --check     # convenience wrapper for the
+fw install example --list              # see what's registered
+fw install example anthropic --check   # clone, pip install -e, verify
+fw install example --all               # install every registered example
+fw install anthropic --all --check     # convenience wrapper for the
                                             # anthropic package — picks pip
                                             # extras (agent_sdk, mcp) and
                                             # reports env readiness
@@ -326,46 +326,46 @@ python -m facetwork.runtime.runner                # runner service
 python -m facetwork.mcp                           # MCP server (stdio)
 
 # Runner management
-scripts/start-runner --example hiv-drug-resistance -- --log-format text
-scripts/stop-runners
-scripts/drain-runners                  # stop + reset running tasks
-scripts/drain-runners --tasks-only     # reset tasks without stopping
-scripts/drain-runners --dry            # preview
+fw runner start --example hiv-drug-resistance -- --log-format text
+fw runner stop
+fw runner drain                  # stop + reset running tasks
+fw runner drain --tasks-only     # reset tasks without stopping
+fw runner drain --dry            # preview
 
 # Fleet inspection
-scripts/list-runners
-scripts/list-runners --state running
-scripts/list-runners --json
+fw runner list
+fw runner list --state running
+fw runner list --json
 
 # Remote management (requires AFL_RUNNER_HOSTS or --host)
-scripts/start-runner --all --example hiv-drug-resistance
-scripts/stop-runners --all
-scripts/rolling-deploy --example hiv-drug-resistance
+fw runner start --all --example hiv-drug-resistance
+fw runner stop --all
+fw fleet rolling-deploy --example hiv-drug-resistance
 
 # PostGIS management
-scripts/start_postgres                 # start local PostgreSQL/PostGIS server
-scripts/postgis-tune                   # tune PostgreSQL for bulk imports (32GB)
-scripts/postgis-tune --show            # show current vs recommended settings
-scripts/postgis-drop-tables            # drop osm_nodes, osm_ways, osm_import_log
-scripts/postgis-drop-tables --yes      # skip confirmation
-scripts/postgis-vacuum                 # VACUUM ANALYZE osm_nodes + osm_ways
-scripts/postgis-vacuum --nodes         # nodes only
-scripts/postgis-vacuum --ways          # ways only
-scripts/postgis-vacuum --full          # VACUUM FULL (rewrites tables)
-scripts/postgis-vacuum-status          # active vacuums, last times, table sizes
-scripts/postgis-kill-vacuum            # kill autovacuum blocking imports
-scripts/postgis-kill-vacuum --dry      # preview
+fw db pg-start                 # start local PostgreSQL/PostGIS server
+fw db postgis tune                   # tune PostgreSQL for bulk imports (32GB)
+fw db postgis tune --show            # show current vs recommended settings
+fw db postgis drop-tables            # drop osm_nodes, osm_ways, osm_import_log
+fw db postgis drop-tables --yes      # skip confirmation
+fw db postgis vacuum                 # VACUUM ANALYZE osm_nodes + osm_ways
+fw db postgis vacuum --nodes         # nodes only
+fw db postgis vacuum --ways          # ways only
+fw db postgis vacuum --full          # VACUUM FULL (rewrites tables)
+fw db postgis vacuum-status          # active vacuums, last times, table sizes
+fw db postgis kill-vacuum            # kill autovacuum blocking imports
+fw db postgis kill-vacuum --dry      # preview
 
 # Local-first PostGIS import (Docker-based disposable instance)
-scripts/start-import-pg                # start import PG on port 5433
-scripts/start-import-pg --stop         # stop and remove container
-scripts/start-import-pg --status       # check if running
-scripts/start-import-pg --url          # print connection URL
+fw db import-pg                # start import PG on port 5433
+fw db import-pg --stop         # stop and remove container
+fw db import-pg --status       # check if running
+fw db import-pg --url          # print connection URL
 
 # Grafana (operational monitoring — independent of dashboard)
-scripts/start-grafana                  # start Grafana on port 3000
-scripts/start-grafana --stop           # stop Grafana
-scripts/start-grafana --status         # check if running
+fw svc grafana                  # start Grafana on port 3000
+fw svc grafana --stop           # stop Grafana
+fw svc grafana --status         # check if running
 ```
 
 ### Environment configuration
@@ -383,19 +383,19 @@ Handler caches and outputs live on a backend selected by `AFL_STORAGE` + `AFL_DA
 
 By default, the database start scripts bind to `127.0.0.1` (localhost only). To allow other machines to connect (e.g. runners on a second server), the databases must bind to `0.0.0.0`:
 
-- **MongoDB** — `scripts/start_mongo` uses `--bind_ip 0.0.0.0`. If you see `Connection refused` from remote hosts, verify the script has `0.0.0.0` (not `127.0.0.1`).
+- **MongoDB** — `fw db mongo-start` uses `--bind_ip 0.0.0.0`. If you see `Connection refused` from remote hosts, verify the script has `0.0.0.0` (not `127.0.0.1`).
 - **PostgreSQL** — edit `postgresql.conf` and set `listen_addresses = '*'`, then ensure `pg_hba.conf` allows connections from the remote subnet (e.g. `host all all 0.0.0.0/0 md5`).
 
 On each remote server, add `/etc/hosts` entries pointing `afl-mongodb` and `afl-postgres` to the database server's IP address. Then start runners normally — they connect via the hostnames.
 
 ```bash
 # On the database server:
-scripts/start_mongo                    # binds 0.0.0.0
-scripts/start_postgres                 # check listen_addresses in postgresql.conf
+fw db mongo-start                    # binds 0.0.0.0
+fw db pg-start                 # check listen_addresses in postgresql.conf
 
 # On each runner server:
 # /etc/hosts: 192.168.x.x afl-mongodb afl-postgres
-scripts/start-runner --example osm-geocoder -- --log-format text
+fw runner start --example osm-geocoder -- --log-format text
 ```
 
 Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets.
@@ -412,7 +412,7 @@ a managed service; and (2) **runner servers** — every Facetwork server is a
 homogeneous, stateless runner (`AFL_SERVER_GROUP` role tag, default `runner`),
 holding nothing but local scratch. Runners are leaderless and don't contend
 (coordination is the atomic `claim_task()` in Mongo), so any runner with Mongo
-access can also **seed** workflow definitions (`scripts/seed-examples`) — no box
+access can also **seed** workflow definitions (`fw ffl seed`) — no box
 is privileged. The central `fleet set --mongo-url … --minio … --dashboard-url …`
 records those three service URLs; the dashboard's Fleet page shows them as
 URL-addressed services, not as fleet servers.
@@ -423,20 +423,20 @@ controller lives in `scripts/`:
 
 | Script | Role |
 |--------|------|
-| `scripts/start-runner --fleet` | Bring up runner **containers** on this host against an external Mongo+MinIO (`.env.fleet`); preflight-checks both. `--example NAME` runs any per-example runner (default osm-geocoder + osm-lz); `--docker` is the same but against the local bundled infra. `docker-compose.fleet.yml` is the override that drops the bundled infra (now applied to every per-example runner via a YAML anchor). `scripts/start-worker` is a back-compat shim for `start-runner --fleet`. |
-| `scripts/fleet` | Admin (run anywhere): `set` the central config (MinIO endpoint / replicas / image), `status` (live runners + per-host drift), `secret gen-key\|set\|show` (MinIO creds encrypted in Mongo with `AFL_FLEET_KEY`). |
-| `scripts/fleet-agent` | Per server: `apply` (one-shot) or `watch` (daemon) — reads the central config, **discovers Mongo** (explicit → `AFL_MONGODB_URL` → mDNS → `afl-mongodb`), decrypts creds, brings runners up, records drift. Bootstrap = the Mongo URL only. |
-| `scripts/fleet-advertise` | Optional mDNS advertiser for the infra host (needs `zeroconf`). |
+| `fw runner start --fleet` | Bring up runner **containers** on this host against an external Mongo+MinIO (`.env.fleet`); preflight-checks both. `--example NAME` runs any per-example runner (default osm-geocoder + osm-lz); `--docker` is the same but against the local bundled infra. `docker-compose.fleet.yml` is the override that drops the bundled infra (now applied to every per-example runner via a YAML anchor). `fw runner start --fleet` is a back-compat shim for `start-runner --fleet`. |
+| `fw fleet` | Admin (run anywhere): `set` the central config (MinIO endpoint / replicas / image), `status` (live runners + per-host drift), `secret gen-key\|set\|show` (MinIO creds encrypted in Mongo with `AFL_FLEET_KEY`). |
+| `fw fleet agent` | Per server: `apply` (one-shot) or `watch` (daemon) — reads the central config, **discovers Mongo** (explicit → `AFL_MONGODB_URL` → mDNS → `afl-mongodb`), decrypts creds, brings runners up, records drift. Bootstrap = the Mongo URL only. |
+| `fw fleet advertise` | Optional mDNS advertiser for the infra host (needs `zeroconf`). |
 
-A new server joins with one command — `export AFL_FLEET_KEY=<key>; scripts/fleet-agent watch` — and the whole fleet is driven by editing the central config once (`fleet set --osm-replicas N`, `--image …`). Full guide: [docs/operations/deployment.md](docs/operations/deployment.md) → **"Adding a server to the fleet"** / **"Central fleet config"**.
+A new server joins with one command — `export AFL_FLEET_KEY=<key>; fw fleet agent watch` — and the whole fleet is driven by editing the central config once (`fleet set --osm-replicas N`, `--image …`). Full guide: [docs/operations/deployment.md](docs/operations/deployment.md) → **"Adding a server to the fleet"** / **"Central fleet config"**.
 
 > **Bringing up an ADDITIONAL runner server that points at this fleet's shared
 > infra (MongoDB + MinIO)? Follow [docs/operations/join-fleet-from-new-server.md](docs/operations/join-fleet-from-new-server.md)** — it
 > has the infra host's coordinates, the clone/venv/config steps, and `cp
-> .env.fleet.preset .env.fleet && scripts/start-runner --fleet`. The pre-filled
+> .env.fleet.preset .env.fleet && fw runner start --fleet`. The pre-filled
 > [`.env.fleet.preset`](../.env.fleet.preset) points at the shared infra URLs.
 
-**Local simulation — verify the whole thing on one box.** `scripts/simulate-fleet`
+**Local simulation — verify the whole thing on one box.** `fw fleet simulate`
 spins up N "servers" as separate compose projects on the running full-stack's
 shared network, each brought up by `fleet-agent` from the central config +
 encrypted secret store, then runs a fan-out heat map across them and confirms the
@@ -448,11 +448,11 @@ leaves distributed across servers and the merge pulled every server's MinIO outp
 docker compose -f docker-compose.full-stack.yml up -d        # shared infra
 pip install -e ".[mongodb,s3]" && pip install cryptography   # if not already
 
-scripts/simulate-fleet --servers 3                           # bring up 3 servers + fleet status
-#   then submit a fan-out:  scripts/ffl-run --primary .../osmheatmap.ffl --library … \
+fw fleet simulate --servers 3                           # bring up 3 servers + fleet status
+#   then submit a fan-out:  fw ffl run --primary .../osmheatmap.ffl --library … \
 #     --workflow osm.heatmap.ContinentHeatmap \
 #     --inputs '{"region_names":["California","Nevada","Arizona"]}' --task-list osm
-scripts/simulate-fleet --down                                # tear it all down
+fw fleet simulate --down                                # tear it all down
 ```
 
 It addresses the shared MinIO/Mongo by the host's LAN IP (reachable from both the
@@ -492,7 +492,7 @@ osm2pgsql-compatible views (zero-storage, auto-created by `ensure_schema`):
 
 ### Grafana monitoring
 
-Grafana runs independently of the dashboard for operational monitoring. Start with `scripts/start-grafana` (Docker, port 3000). Pre-provisioned dashboards:
+Grafana runs independently of the dashboard for operational monitoring. Start with `fw svc grafana` (Docker, port 3000). Pre-provisioned dashboards:
 - **OSM Import Overview** — region counts, total nodes/ways, database size, import timeline, top amenities
 - **OSM Spatial Explorer** — geomap of amenities (hospitals, schools), road density, highway types, city/town/village map
 
@@ -512,7 +512,7 @@ The dashboard step detail page provides four recovery actions for failed or comp
 "Re-run From Here" is the primary tool for re-running a step after changing data or handler code — downstream steps are deleted and will be cleanly re-created with the new results.
 
 ### PostGIS data management
-PostGIS data directory: `/Volumes/afl_data/local_servers/postgis/data`. Start with `scripts/start_postgres`, tune with `scripts/postgis-tune`. After large import batches, run `scripts/postgis-vacuum` to reclaim space and update statistics. During bulk imports, autovacuum may compete for I/O — kill it with `scripts/postgis-kill-vacuum`. Tables have `autovacuum_analyze_threshold = 1,000,000` to reduce frequency during imports.
+PostGIS data directory: `/Volumes/afl_data/local_servers/postgis/data`. Start with `fw db pg-start`, tune with `fw db postgis tune`. After large import batches, run `fw db postgis vacuum` to reclaim space and update statistics. During bulk imports, autovacuum may compete for I/O — kill it with `fw db postgis kill-vacuum`. Tables have `autovacuum_analyze_threshold = 1,000,000` to reduce frequency during imports.
 
 ### Local-first PostGIS import
 
@@ -520,9 +520,9 @@ For large imports, a disposable Docker-based PostgreSQL instance can absorb the 
 
 ```bash
 # Start the local import instance (Docker, port 5433)
-scripts/start-import-pg
-scripts/start-import-pg --status       # check if running
-scripts/start-import-pg --stop         # stop and remove
+fw db import-pg
+fw db import-pg --status       # check if running
+fw db import-pg --stop         # stop and remove
 
 # Enable local-first import (add to .env or runner.env)
 AFL_IMPORT_POSTGIS_URL=postgresql://afl_osm:afl_osm_2024@localhost:5433/osm
@@ -543,8 +543,8 @@ The local instance is tuned with `fsync=off`, `synchronous_commit=off`, and `aut
 When a workflow gets stuck (e.g. after server restarts, MongoDB downtime, or premature runner completion), use `repair-workflow` to diagnose and fix all issues at once:
 
 ```bash
-scripts/repair-workflow <runner_id>         # apply repairs
-scripts/repair-workflow --dry <runner_id>   # preview without changes
+fw maint repair-workflow <runner_id>         # apply repairs
+fw maint repair-workflow --dry <runner_id>   # preview without changes
 ```
 
 Also available as a dashboard button ("Repair Workflow" on workflow detail page) and MCP tool (`afl_repair_workflow`).
@@ -562,21 +562,21 @@ The repair performs five checks:
 
 For runs that retry/repair can't recover (e.g. a test that failed at the
 handler layer because of a missing API key or removed binary), use
-`scripts/terminate-workflow` to mark the runner, all non-terminal steps,
+`fw maint terminate-workflow` to mark the runner, all non-terminal steps,
 and pending/running tasks as terminal so the stuck-step sweep stops
 re-processing them.
 
 ```bash
-scripts/terminate-workflow <runner_id> [<runner_id> ...]
-scripts/terminate-workflow --workflow osm.UnitedStates.analysis.AnalyzeRegion  # all stuck runs of this workflow
-scripts/terminate-workflow --workflow Foo --workflow Bar --dry                 # preview
+fw maint terminate-workflow <runner_id> [<runner_id> ...]
+fw maint terminate-workflow --workflow osm.UnitedStates.analysis.AnalyzeRegion  # all stuck runs of this workflow
+fw maint terminate-workflow --workflow Foo --workflow Bar --dry                 # preview
 ```
 
 Use this only after deciding the work isn't recoverable — `repair-workflow`
 is the right call for transient failures.
 
 ### Graceful runner shutdown
-Use `scripts/drain-runners` instead of `scripts/stop-runners` when you need running tasks reset to pending. Each drained task gets a step log entry for audit visibility.
+Use `fw runner drain` instead of `fw runner stop` when you need running tasks reset to pending. Each drained task gets a step log entry for audit visibility.
 
 ### How Claude should build and review
 

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# fw-summary: get the central fleet_config (forwards to the fleet config admin)
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+exec "$FW_LIB/fleet/config" get "$@"

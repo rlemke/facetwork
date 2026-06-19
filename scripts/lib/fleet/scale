@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# fw-summary: set the central osm-geocoder replica count (fleet_config); agents reconcile
+#
+# The central fleet_config governs the osm-geocoder ROLE replica count fleet-wide.
+# Each host's fleet-agent reconciles within ~30s. (Per-example handler-runner
+# replicas are a per-host concern — use `fw runner scale` on that host.)
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+REPLICAS="" MONGO="${AFL_MONGODB_URL:-mongodb://server3.local:27017}"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --replicas) REPLICAS="$2"; shift 2 ;;
+        --mongo) MONGO="$2"; shift 2 ;;
+        -h|--help) echo "Usage: fw fleet scale --replicas N [--mongo URL]"; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+[ -z "$REPLICAS" ] && { echo "fw fleet scale: --replicas is required" >&2; exit 2; }
+exec "$FW_LIB/fleet/config" set --mongo "$MONGO" --osm-replicas "$REPLICAS"

@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Rebuild the local per-example runner ("worker") images for the fleet stack.
+#
+# Builds the images defined by docker-compose.full-stack.yml + .fleet.yml — the
+# shared `facetwork-runner` image that bakes /opt/fwh_osm plus every per-example
+# runner service. Env is layered exactly like `start-runner --fleet`:
+# .env.fleet (shared endpoints) then .env.fleet.override (per-host, wins).
+#
+# Usage:
+#   scripts/rebuild-workers                  # build all worker images (cached)
+#   scripts/rebuild-workers --no-cache       # full rebuild, no layer cache
+#   scripts/rebuild-workers --ref 5216b3a    # bake a specific fwh_osm commit/branch
+#   scripts/rebuild-workers --up             # build, then cleanly recreate containers
+#   scripts/rebuild-workers --up runner-anthropic runner-census-us   # only these
+#
+# --up removes the existing runner containers FIRST (so orphan replicas left by a
+# plain `up --force-recreate` don't pile up and keep serving stale code/env), then
+# recreates from the freshly built image. Without --up this only builds.
+#
+# NOTE: this builds images on THIS host only. To roll new handler code to the
+# osm-geocoder/gh-router ROLE across every fleet server, use the registry path
+# instead: buildx -> push -> `scripts/fleet set --image` (docs/operations/fleet-rollouts.md).
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+REPO_ROOT="$FW_ROOT"
+cd "$REPO_ROOT"
+
+# Per-example runner services built from docker/Dockerfile.example-runner (the
+# "workers" this script builds + recreates). Default --up target, so `rm -sf`
+# never touches infra (mongo/minio/…). EXCLUDES runner-gh-router: it uses a
+# prebuilt image (osm-gh-router, the GraphHopper Java agent) with no build:
+# section, so `up --no-build` would try to PULL it and fail ("pull access
+# denied"). gh-router ships via its own image build + `scripts/fleet set
+# --gh-router-image`, not through rebuild-workers. Pass it explicitly only if
+# its image already exists locally / via AFL_GH_ROUTER_IMAGE.
+WORKER_SERVICES=(
+    runner-anthropic runner-census-us runner-genomics runner-jenkins-example
+    runner-noaa-weather runner-sensor-monitoring
+    runner-osm-geocoder runner-osm-lz
+    runner-ffl
+)
+
+FWH_OSM_REF="${FWH_OSM_REF:-main}"   # baked fwh_osm revision; override with --ref
+NO_CACHE=0
+RECREATE=0
+SERVICES=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --ref)       FWH_OSM_REF="$2"; shift 2 ;;
+        --no-cache)  NO_CACHE=1; shift ;;
+        --up)        RECREATE=1; shift ;;
+        -h|--help)   sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -*)          echo "Unknown option: $1" >&2; exit 1 ;;
+        *)           SERVICES+=("$1"); shift ;;   # explicit service names
+    esac
+done
+
+# Env-file layering, identical to `start-runner --fleet`: base then per-host override.
+ENV_FILE="$REPO_ROOT/.env.fleet"
+if [[ ! -f "$ENV_FILE" ]]; then
+    echo "ERROR: $ENV_FILE not found." >&2
+    echo "  cp .env.fleet.preset .env.fleet   (then edit if needed)" >&2
+    exit 1
+fi
+COMPOSE_ENV=(--env-file "$ENV_FILE")
+[[ -f "${ENV_FILE}.override" ]] && COMPOSE_ENV+=(--env-file "${ENV_FILE}.override")
+
+COMPOSE=(docker compose "${COMPOSE_ENV[@]}"
+         -f docker-compose.full-stack.yml -f docker-compose.fleet.yml)
+
+BUILD_ARGS=(--build-arg "FWH_OSM_REF=${FWH_OSM_REF}")
+[[ "$NO_CACHE" == 1 ]] && BUILD_ARGS+=(--no-cache)
+
+echo "=== Building worker images (FWH_OSM_REF=${FWH_OSM_REF}, cache=$([[ $NO_CACHE == 1 ]] && echo off || echo on)) ==="
+# Guarded expansion: bash 3.2 (macOS default) + set -u errors on "${arr[@]}"
+# when arr is empty. ${arr[@]+"${arr[@]}"} expands to nothing when unset/empty.
+"${COMPOSE[@]}" build "${BUILD_ARGS[@]}" ${SERVICES[@]+"${SERVICES[@]}"}
+
+if [[ "$RECREATE" == 1 ]]; then
+    # Recreate target: the services named on the CLI, else all worker services.
+    TARGET=(${SERVICES[@]+"${SERVICES[@]}"})
+    [[ ${#TARGET[@]} -eq 0 ]] && TARGET=("${WORKER_SERVICES[@]}")
+
+    echo ""
+    echo "=== Removing existing worker containers (clears orphan replicas) ==="
+    "${COMPOSE[@]}" rm -sf "${TARGET[@]}" || true
+
+    echo ""
+    echo "=== Recreating workers from the freshly built image ==="
+    # NB: no --remove-orphans — on the shared full-stack network it makes compose
+    # try to reconcile/remove facetwork_default and fails with "network has active
+    # endpoints" (infra mongodb/postgis/jenkins are attached). The rm -sf above
+    # already cleared this service's orphan replicas, which is all we need.
+    "${COMPOSE[@]}" up -d --no-build "${TARGET[@]}"
+
+    echo ""
+    echo "=== Done. Verify osm output resolves to the object store: ==="
+    echo "    docker exec <a runner> printenv AFL_OSM_OUTPUT_BASE   # -> s3://<bucket>/osm-output"
+fi

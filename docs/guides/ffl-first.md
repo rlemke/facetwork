@@ -33,13 +33,13 @@ multi-region pipelines. Examples:
    (`fw_validate` / compile against the library), then **show you the full FFL + a short rationale
    and wait for your approval before running it.**
 5. **Missing primitive — Gate B** — if a needed facet doesn't exist, scaffold it with
-   `scripts/scaffold-handler` and **show you the handler implementation for comments before it is
+   `fw ffl scaffold` and **show you the handler implementation for comments before it is
    deployed or used.** Raw `osmium`/`curl`/Python is never a workaround; if it seems necessary,
    Claude stops and names the missing FFL capability.
 6. **Data acquisition is always FFL** — regions are fetched and enumerated via
    `osm.cache.Download` + the region FFL (`osm.Region.ListRegions`, `osm.Region.ResolveRegion`).
    Never a local mirror (`~/osm-data`), never a hardcoded country list, never manual downloads.
-7. **Run it (after approval) and report** — submit via `scripts/ffl-run` (below) and report the
+7. **Run it (after approval) and report** — submit via `fw ffl run` (below) and report the
    results plus honest limitations (unreachable nodes, fragmented networks, regions that failed to
    download, excluded data).
 
@@ -51,26 +51,26 @@ multi-region pipelines. Examples:
 Each gate pauses for your comments. This is what distinguishes `/ffl-first` from "just go run
 something": nothing new executes until you've seen it.
 
-## `scripts/ffl-run` — the run mechanism (step 7)
+## `fw ffl run` — the run mechanism (step 7)
 
-`/ffl-first` runs the approved workflow with **`scripts/ffl-run`**, a thin wrapper over
+`/ffl-first` runs the approved workflow with **`fw ffl run`**, a thin wrapper over
 `python -m facetwork.runtime.submit`:
 
 ```bash
-scripts/ffl-run workflow.ffl --workflow ns.WorkflowName
-scripts/ffl-run --primary wf.ffl --library types.ffl --workflow ns.Name --inputs '{"x": 1}'
-scripts/ffl-run wf.ffl --workflow ns.Name --task-list osm
+fw ffl run workflow.ffl --workflow ns.WorkflowName
+fw ffl run --primary wf.ffl --library types.ffl --workflow ns.Name --inputs '{"x": 1}'
+fw ffl run wf.ffl --workflow ns.Name --task-list osm
 ```
 
 It compiles the FFL, validates it, and creates the flow + workflow + **runner record** + the
 `fw:execute` bootstrap task, then hands off to the runner fleet.
 
-| | `scripts/run-workflow` | **`scripts/ffl-run`** |
+| | `fw ffl run-workflow` | **`fw ffl run`** |
 |---|---|---|
 | Input | a pre-seeded workflow, by name | **an `.ffl` file** (compiles it) |
 | Execution | in-process evaluator | submits → **runner fleet** executes |
 | Runner record | ✗ — **not** dashboard-visible | ✓ — **dashboard-visible** |
-| Requires a runner up | no | yes (`scripts/start-runner …`) |
+| Requires a runner up | no | yes (`fw runner start …`) |
 
 Because `ffl-run` creates the runner record, the run appears in the dashboard's **Runs** list
 (http://localhost:8080/v3/workflows) for live tracking — the same submission path the dashboard's
@@ -83,4 +83,4 @@ Because `ffl-run` creates the runner record, the run appears in the dashboard's 
 - [Composable facet library](../architecture/composable-facet-library.md) — `fw_capabilities`,
   effect/cost, the primitive taxonomy composed in step 4.
 - [Extending with new handlers](../architecture/extending-with-new-handlers.md) — the
-  detect-gap → `scripts/scaffold-handler` flow behind Gate B (step 5).
+  detect-gap → `fw ffl scaffold` flow behind Gate B (step 5).

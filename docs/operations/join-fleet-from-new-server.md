@@ -93,12 +93,12 @@ cp .env.fleet.override.example .env.fleet.override
 docker pull <infra-host-ip>:5050/facetwork-runner:latest   # must succeed (no HTTPS error)
 
 # 4. Preflight: confirm shared services + local scratch are usable from here.
-scripts/start-runner --fleet --check          # ✓ MongoDB  ✓ MinIO  ✓ Local scratch writable
+fw runner start --fleet --check          # ✓ MongoDB  ✓ MinIO  ✓ Local scratch writable
 
 # 5. Start the runners (first run BUILDS the runner image locally — a few minutes).
-scripts/start-runner --fleet                  # AFL_OSM_REPLICAS from .env.fleet(.override)
+fw runner start --fleet                  # AFL_OSM_REPLICAS from .env.fleet(.override)
 #    default runners are osm-geocoder + osm-lz; add --example NAME for others.
-#    (scripts/start-worker still works — it's a back-compat shim for this.)
+#    (fw runner start --fleet still works — it's a back-compat shim for this.)
 ```
 
 That's it — the runners register in the shared MongoDB and immediately start
@@ -115,12 +115,12 @@ registers under the wrong name. Fix it in one step:
 
 ```bash
 git pull
-scripts/fleet-env-migrate            # moves AFL_DATA_DIR / AFL_OSM_REPLICAS /
+fw fleet env-migrate            # moves AFL_DATA_DIR / AFL_OSM_REPLICAS /
                                      # AFL_RUNNER_NAME(/FLEET_HOST) into
                                      # .env.fleet.override; resets .env.fleet to
                                      # the preset (drifted SHARED values dropped).
                                      # --dry-run to preview; backs up what it replaces.
-scripts/start-runner --fleet --recreate
+fw runner start --fleet --recreate
 ```
 
 After it, `.env.fleet` is a clean copy of the preset and this host's specifics
@@ -134,8 +134,8 @@ count, image) from the central `fleet_config` in Mongo, and auto-reconcile:
 
 ```bash
 mkdir -p "$HOME/afl_data"                                     # big LOCAL scratch on THIS server
-scripts/fleet-agent watch --mongo mongodb://192.168.68.75:27017 --data-dir "$HOME/afl_data"
-#   (with the /etc/hosts entry above, just: scripts/fleet-agent watch --data-dir "$HOME/afl_data")
+fw fleet agent watch --mongo mongodb://192.168.68.75:27017 --data-dir "$HOME/afl_data"
+#   (with the /etc/hosts entry above, just: fw fleet agent watch --data-dir "$HOME/afl_data")
 ```
 
 > **Pass `--data-dir` (don't rely on `export AFL_DATA_DIR`).** The agent needs a
@@ -146,25 +146,25 @@ scripts/fleet-agent watch --mongo mongodb://192.168.68.75:27017 --data-dir "$HOM
 > use `/Volumes/afl_data` (on macOS only root can mkdir under `/Volumes`).
 
 Then drive the whole fleet from one place (run on any machine):
-`scripts/fleet set --osm-replicas N`, `scripts/fleet set --image <tag>`,
-`scripts/fleet status` (shows every host + whether it's up to date).
+`fw fleet set --osm-replicas N`, `fw fleet set --image <tag>`,
+`fw fleet status` (shows every host + whether it's up to date).
 
 ## Verify (from the infra host, or anywhere with Mongo access)
 
 ```bash
-scripts/fleet status --mongo mongodb://192.168.68.75:27017
+fw fleet status --mongo mongodb://192.168.68.75:27017
 #   the new server appears in "live runners … across N host(s)"
 ```
 
 Then submit a fan-out and watch it spread across servers (see
 [deployment.md → Adding a server to the fleet](deployment.md) and the
 `osm.heatmap.ContinentHeatmap` workflow). A local rehearsal of all of this on one
-box is `scripts/simulate-fleet` (see CLAUDE.md → *Multi-server runner fleet*).
+box is `fw fleet simulate` (see CLAUDE.md → *Multi-server runner fleet*).
 
 ## Notes
 - **Secrets (prod).** For real deployments, don't keep MinIO creds in each
-  `.env.fleet`. On the infra host: `scripts/fleet secret gen-key` (share
-  `AFL_FLEET_KEY` out-of-band), `scripts/fleet secret set --minio-access … --minio-secret …`.
+  `.env.fleet`. On the infra host: `fw fleet secret gen-key` (share
+  `AFL_FLEET_KEY` out-of-band), `fw fleet secret set --minio-access … --minio-secret …`.
   Each server then needs only `AFL_FLEET_KEY` (one rotatable secret); `fleet-agent`
   decrypts the creds at apply.
 - **Endpoint reachability.** The MinIO/Mongo addresses must resolve from both the
@@ -174,4 +174,4 @@ box is `scripts/simulate-fleet` (see CLAUDE.md → *Multi-server runner fleet*).
   use `afl-mongodb`/`afl-minio` (mapped via `extra_hosts`).
 - **Images.** Without a registry, each server builds the runner image locally on
   the first `start-runner --fleet`. To skip per-server builds, push the image to a registry
-  and set it fleet-wide: `scripts/fleet set --image <registry>/<tag>` (agents pull).
+  and set it fleet-wide: `fw fleet set --image <registry>/<tag>` (agents pull).

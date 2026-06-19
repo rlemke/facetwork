@@ -17,7 +17,7 @@
 #   MongoDB:  mongodb://localhost:27017
 #   PostGIS:  postgresql://afl:afl@localhost:5432/afl_gis
 #
-# Note: PostGIS port 5432 collides with scripts/start_postgres. Stop the native
+# Note: PostGIS port 5432 collides with fw db pg-start. Stop the native
 # Postgres first, or override with AFL_DEV_POSTGIS_PORT.
 
 services:

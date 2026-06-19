@@ -129,7 +129,7 @@ def _warn_registry_drift(loaded_facet_names: list[str]) -> None:
         "Registry drift: %d facet(s) declared in installed example code but NOT in "
         "handler_registrations — tasks for these will sit pending with server_id=None. "
         "Re-seed with `python -m facetwork.examples <name>` "
-        "(or `scripts/start-runner --example <name>`). %s",
+        "(or `fw runner start --example <name>`). %s",
         total_missing,
         "; ".join(parts),
     )
