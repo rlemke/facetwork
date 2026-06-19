@@ -237,6 +237,26 @@ The fleet-agent does **not** drain automatically. For idempotent handlers the
 rollout-then-reaper path is usually acceptable (worst case: a couple of tasks
 redo ~2–3 min of work).
 
+### 3.6 Server records left behind by a rollout
+
+A force-recreate replaces every osm runner, so each old container deregisters
+(or is reaped) and its `servers` row goes to `state="shutdown"` with a **fresh**
+`ping_time`. These records are pruned automatically by the same reaper loop
+(`service.py` `_maybe_reap_orphaned_tasks` → `prune_stale_servers`), using
+**two windows by state** so the cleanup doesn't fight the recovery logic:
+
+| Server state | Prune window | Why |
+|--------------|--------------|-----|
+| `running` / `startup` (live) | `max(10×AFL_REAPER_TIMEOUT_MS, 10min)` ≈ **20 min** | A briefly-quiet live runner (GC pause, slow Mongo) must never be deleted out from under itself. |
+| `shutdown` (terminal) | `AFL_REAPER_TIMEOUT_MS` ≈ **2 min** | Explicitly dead — a graceful deregister or the reaper marked it. Nothing to protect, so it clears fast instead of inflating counts. |
+
+So after a rollout the post-recreate `shutdown` rows self-clear within ~2 min;
+no manual cleanup is needed. Until then, **`scripts/list-runners` (no filter)
+counts them** — use `scripts/list-runners --state running` for the true live
+count during the window, or just wait. The prune runs from any live runner and
+acts on the whole `servers` collection, so a single up-to-date runner keeps the
+collection clean fleet-wide (one reason a lagging host is rarely urgent).
+
 ---
 
 ## 4. Updating & starting runners from the command line
