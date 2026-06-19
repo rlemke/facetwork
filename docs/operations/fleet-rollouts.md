@@ -239,18 +239,26 @@ redo ~2–3 min of work).
 
 ### 3.6 Server records left behind by a rollout
 
-A force-recreate replaces every osm runner, so each old container deregisters
-(or is reaped) and its `servers` row goes to `state="shutdown"` with a **fresh**
-`ping_time`. These records are pruned automatically by the same reaper loop
-(`service.py` `_maybe_reap_orphaned_tasks` → `prune_stale_servers`), using
-**two windows by state** so the cleanup doesn't fight the recovery logic:
+A `fleet set --image` rollout force-recreates the **fleet-managed role
+runners** — osm-geocoder, plus ffl/gh-router when their image changes (it does
+**not** touch the per-example runners; see §2.6). Each recreated container
+deregisters (or is reaped) and its `servers` row goes to `state="shutdown"`.
+
+**The cleanup that follows is not specific to osm or to rollouts.** Any runner
+of any role (osm, ffl, gh-router, or an example runner like anthropic/census)
+leaves a `state="shutdown"` row whenever it stops — a rollout recreate, a manual
+`docker compose --scale` down, a `drain-runners`, a plain graceful stop, or a
+crash the reaper later marks. All of them are cleaned up the same way, by the
+reaper loop on every live runner (`service.py` `_maybe_reap_orphaned_tasks` →
+`prune_stale_servers`), using **two windows keyed only on `state`** (never on
+role or facet name):
 
 | Server state | Prune window | Why |
 |--------------|--------------|-----|
 | `running` / `startup` (live) | `max(10×AFL_REAPER_TIMEOUT_MS, 10min)` ≈ **20 min** | A briefly-quiet live runner (GC pause, slow Mongo) must never be deleted out from under itself. |
 | `shutdown` (terminal) | `AFL_REAPER_TIMEOUT_MS` ≈ **2 min** | Explicitly dead — a graceful deregister or the reaper marked it. Nothing to protect, so it clears fast instead of inflating counts. |
 
-So after a rollout the post-recreate `shutdown` rows self-clear within ~2 min;
+So any `shutdown` row — post-rollout or otherwise — self-clears within ~2 min;
 no manual cleanup is needed. Until then, **`scripts/list-runners` (no filter)
 counts them** — use `scripts/list-runners --state running` for the true live
 count during the window, or just wait. The prune runs from any live runner and
