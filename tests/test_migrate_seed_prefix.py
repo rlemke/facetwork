@@ -64,3 +64,14 @@ def test_idempotent(store):
     migrate_seed_prefix(store, apply=True, names=["osm-geocoder"])
     res = migrate_seed_prefix(store, apply=True, names=["osm-geocoder"])  # second run
     assert res["names"] == [] and res["flows"] == 0  # nothing left to migrate
+
+
+def test_supersede_when_domain_already_seeded(store):
+    # A new runner already seeded domain:osm-geocoder; the old example: one is stale.
+    _seed(store, "example:osm-geocoder", "osm-geocoder-old")
+    _seed(store, "domain:osm-geocoder", "osm-geocoder-new")
+    migrate_seed_prefix(store, apply=True, names=["osm-geocoder"])
+    # No duplicate: exactly one domain: flow (the new one), example: gone.
+    assert store._db.flows.count_documents({"name.path": "domain:osm-geocoder"}) == 1
+    assert store._db.flows.count_documents({"name.path": "example:osm-geocoder"}) == 0
+    assert store._db.flows.find_one({"name.path": "domain:osm-geocoder"})["uuid"] == "f-osm-geocoder-new"

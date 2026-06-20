@@ -51,8 +51,19 @@ def migrate_seed_prefix(store, *, apply: bool = False, names=None) -> dict:
         migrated_names.append(n)
         flows += n_flows
         workflows += n_wfs
-        if apply:
-            # Rewrite only the embedded path / namespace, never the uuid.
+        if not apply:
+            continue
+        # If domain:<n> already exists (a new runner seeded it), the example:<n>
+        # docs are SUPERSEDED — delete them rather than flipping (which would
+        # create a duplicate path). Otherwise flip in place, rewriting only the
+        # embedded path / namespace, never the uuid.
+        if db.flows.count_documents({"name.path": new}):
+            old_ids = [d["uuid"] for d in db.flows.find({"name.path": old}, {"uuid": 1})]
+            db.workflows.delete_many({"namespace_id": old})
+            if old_ids:
+                db.workflows.delete_many({"flow_id": {"$in": old_ids}})
+            db.flows.delete_many({"name.path": old})
+        else:
             db.flows.update_many({"name.path": old}, {"$set": {"name.path": new}})
             db.workflows.update_many(
                 {"namespace_id": old}, {"$set": {"namespace_id": new}}
