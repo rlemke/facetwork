@@ -38,7 +38,7 @@ list a group's commands:
 ```bash
 fw help                       # list all groups
 fw fleet                      # list the fleet commands (with one-line blurbs)
-fw runner start --example osm-geocoder -- --log-format text
+fw runner start --domain osm-geocoder -- --log-format text
 fw runner list                # the fleet (was scripts/list-runners)
 fw ffl seed                   # seed examples (was scripts/seed-examples)
 fw db postgis vacuum          # nested groups work
@@ -95,7 +95,7 @@ reference (navigation, pages, global filters, Users/Teams): [docs/reference/dash
 
 ```bash
 # Start/stop runners
-fw runner start --example osm-geocoder -- --log-format text
+fw runner start --domain osm-geocoder -- --log-format text
 fw runner stop
 fw runner drain              # stop + reset running tasks to pending
 
@@ -169,7 +169,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Approximate freeway routing (`osm.Network`, design): pure in-process graph search over a tiny noded-freeway artifact — no engine daemon; tiny network → read-once-per-runner, embarrassingly parallel | [docs/architecture/approximate-freeway-routing.md](docs/architecture/approximate-freeway-routing.md) |
 | **`ffl-runner` orchestration tier (design)**: split the step-state-machine/continuation processing into a dedicated leaderless `ffl-runner` role (hybrid: handler runners keep inline dispatch but stop polling the shared `_fw_continue` backlog; the tier owns the backlog + stuck-step sweep + version gate) → shrinks the fleet-wide blast radius of engine changes and bulkheads orchestration from heavy handlers, still decentralized | [docs/architecture/ffl-runner-orchestration-tier.md](docs/architecture/ffl-runner-orchestration-tier.md) |
 | Deployment guide | [docs/operations/deployment.md](docs/operations/deployment.md) |
-| Full-stack Docker Compose (one runner per fwh_* example) | [docs/operations/full-stack-compose.md](docs/operations/full-stack-compose.md) |
+| Full-stack Docker Compose (one runner per fwh_* domain) | [docs/operations/full-stack-compose.md](docs/operations/full-stack-compose.md) |
 | **Multi-server fleet** (`fleet`/`fleet-agent`/`start-runner --fleet`: shared external MinIO+MongoDB, central config, encrypted secrets, discovery) **+ local simulation** (`fw fleet simulate`) | [#multi-server-runner-fleet--local-simulation](#multi-server-runner-fleet--local-simulation) · [docs/operations/deployment.md](docs/operations/deployment.md) |
 | **Fleet rollouts & runner lifecycle** — image-based change deployment (buildx→registry→`fleet set --image`), what happens to running tasks during a rollout (graceful drain → reaper recovery → retry/dead-letter), start/stop/drain runners from the CLI, and how this auto-deploy compares to Kubernetes/Temporal-grade pipelines | [docs/operations/fleet-rollouts.md](docs/operations/fleet-rollouts.md) |
 | **Informal fleet — your team's own machines as the cluster** — only central MongoDB+MinIO must be stable; runner machines (desktops/laptops) are stateless & disposable and can come/go (reaper → re-claim); who this model is for (small/research teams); large-scale data-center operation is architecturally **possible but untested** — treat it as a real engineering investment (hardening/scheduling/observability), not a config change | [docs/operations/informal-fleet.md](docs/operations/informal-fleet.md) |
@@ -203,12 +203,13 @@ When adding a new validator check, give it a `rule_id` AND write the matching `d
 
 ## Standalone domain packages
 
-Examples can live either in this repo under `examples/<name>/` or as
-separate pip-installable packages declaring the `facetwork.domains`
-entry point. Both are discovered by `fw runner start --example <name>`
-and `fw ffl seed`. See `example-template/` for the standalone
-package layout. To clone + install one (or all) of the standalone
-examples, use the registry-driven helper:
+Domain pipelines ship as separate pip-installable packages declaring the
+`facetwork.domains` entry point (`DomainPackage`), discovered by
+`fw runner start --domain <name>` and `fw ffl seed`. (In-repo teaching demos
+under `examples/<name>/` are the separate "examples" family — `--example <name>`,
+`example:` seed prefix; the pluggable `fwh_*` production pipelines are "domains".)
+See `domain-template/` for the standalone package layout. To clone + install one
+(or all) of the standalone domains, use the registry-driven helper:
 
 ```bash
 fw install domain --list              # see what's registered
@@ -223,11 +224,11 @@ fw install anthropic --all --check     # convenience wrapper for the
 It clones into `~/fw_handlers/` (override via `--dir` or
 `FWH_HANDLERS_ROOT`), `pip install -e`s each repo against the current
 venv (auto-detected as `.venv/` if present), and the `--check` flag
-confirms the example surfaces in `facetwork.domains`'s entry-point
+confirms the domain surfaces in `facetwork.domains`'s entry-point
 discovery.
 
-The following examples have been extracted into their own repos and
-surface as `--example <name>` exactly like in-repo examples:
+The following domains have been extracted into their own repos and
+surface as `--domain <name>`:
 
 - [osm-geocoder](https://github.com/rlemke/fwh_osm) — production-scale OSM ingestion
 - [osm-lz](https://github.com/rlemke/fwh_osm_lz) — pure-FFL workflow catalog over `fwh_osm`
@@ -447,7 +448,7 @@ fw db pg-start                 # check listen_addresses in postgresql.conf
 
 # On each runner server:
 # /etc/hosts: 192.168.x.x afl-mongodb afl-postgres
-fw runner start --example osm-geocoder -- --log-format text
+fw runner start --domain osm-geocoder -- --log-format text
 ```
 
 Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets.
@@ -475,7 +476,7 @@ controller lives in `scripts/`:
 
 | Script | Role |
 |--------|------|
-| `fw runner start --fleet` | Bring up runner **containers** on this host against an external Mongo+MinIO (`.env.fleet`); preflight-checks both. `--example NAME` runs any per-example runner (default osm-geocoder + osm-lz); `--docker` is the same but against the local bundled infra. `docker-compose.fleet.yml` is the override that drops the bundled infra (now applied to every per-example runner via a YAML anchor). `fw runner start --fleet` is a back-compat shim for `start-runner --fleet`. |
+| `fw runner start --fleet` | Bring up runner **containers** on this host against an external Mongo+MinIO (`.env.fleet`); preflight-checks both. `--domain NAME` (or `--example NAME`) runs any per-domain runner (default osm-geocoder + osm-lz); `--docker` is the same but against the local bundled infra. `docker-compose.fleet.yml` is the override that drops the bundled infra (now applied to every per-domain runner via a YAML anchor). `fw runner start --fleet` is a back-compat shim for `start-runner --fleet`. |
 | `fw fleet` | Admin (run anywhere): `set` the central config (MinIO endpoint / replicas / image), `status` (live runners + per-host drift), `secret gen-key\|set\|show` (MinIO creds encrypted in Mongo with `AFL_FLEET_KEY`). |
 | `fw fleet agent` | Per server: `apply` (one-shot) or `watch` (daemon) — reads the central config, **discovers Mongo** (explicit → `AFL_MONGODB_URL` → mDNS → `afl-mongodb`), decrypts creds, brings runners up, records drift. Bootstrap = the Mongo URL only. |
 | `fw fleet advertise` | Optional mDNS advertiser for the infra host (needs `zeroconf`). |
@@ -520,7 +521,7 @@ shows them up-to-date and the fan-out's `ByScript` leaves run on different serve
 | `AFL_TASK_EXECUTION_TIMEOUT_MS` | `900000` (15min) | Per-task execution timeout; timed-out tasks reset to pending |
 | `AFL_LEASE_DURATION_MS` | `300000` (5min) | Task lease duration; renewed by handler heartbeat |
 
-Examples can override these defaults — local examples via a `runner.env` file in their directory, standalone packages via `runner_env={...}` on their `ExamplePackage`. The `start-runner` script applies them automatically. Handlers that perform blocking I/O (where heartbeats cannot fire) should register with `timeout_ms=0` and rely on the global execution timeout instead.
+Examples/domains can override these defaults — local examples via a `runner.env` file in their directory, standalone domain packages via `runner_env={...}` on their `DomainPackage`. The `start-runner` script applies them automatically. Handlers that perform blocking I/O (where heartbeats cannot fire) should register with `timeout_ms=0` and rely on the global execution timeout instead.
 
 ### MCP server
 
