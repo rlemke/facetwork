@@ -43,6 +43,11 @@ FW_LIB = os.environ["FW_LIB"]
 PYTHON = os.environ["FW_PYTHON"]
 DO_INSTALL = os.environ["FW_INSTALL"] == "1"
 
+# A non-venv (system/Homebrew) python is PEP 668 externally-managed — pip refuses
+# to install into it without --user. Hosts with a repo .venv install normally.
+IN_VENV = sys.prefix != sys.base_prefix
+PIP_USER = [] if IN_VENV else ["--user"]
+
 # Modules that are local/path-hacked or part of this repo — never "missing".
 EXCLUDE = {"handlers", "conftest", "facetwork", "examples", "tests", "afl"}
 STDLIB = set(getattr(sys, "stdlib_module_names", set()))
@@ -210,8 +215,8 @@ for name in example_names:
     r = subprocess.run([os.path.join(FW_LIB, "install", "example"), name, "--check"])
     rc = rc or r.returncode
 for spec in pip_specs:
-    print(f"  -> pip install {' '.join(spec)}")
-    r = subprocess.run([PYTHON, "-m", "pip", "install", *spec])
+    print(f"  -> pip install {' '.join(PIP_USER + spec)}")
+    r = subprocess.run([PYTHON, "-m", "pip", "install", *PIP_USER, *spec])
     rc = rc or r.returncode
 
 # re-check
