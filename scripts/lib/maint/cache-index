@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # fw-summary: render the durable-cache landing-page index.html
 """Render a top-level landing page for $AFL_CACHE_ROOT.
 
