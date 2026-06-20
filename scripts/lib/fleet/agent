@@ -100,6 +100,11 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     ffl = (cfg.get("roles") or {}).get("ffl-runner", {})
     ffl_replicas = int(ffl.get("replicas", 0) or 0)
     ffl_image = ffl.get("image")
+    # Per-domain handler runners (kind="domain"): {name: spec} where name is the
+    # runner-<name> compose-service suffix. Brought up generically below so a new
+    # domain runner is `fleet set --domain-runner <name>` — no agent code change.
+    domain_roles = {n: s for n, s in (cfg.get("roles") or {}).items()
+                    if s.get("kind") == "domain" and int(s.get("replicas", 1) or 0) > 0}
     endpoint = _fleet_lib.resolve_minio(minio.get("endpoint"))
     access_key, secret_key, creds_src = _resolve_creds(mongo)
 
@@ -145,7 +150,8 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     label = (f"v{cfg.get('version')} minio={endpoint} osm-replicas={replicas} creds={creds_src}"
              + (f" image={image}" if image else "")
              + (f" gh-router={gh_image}" if gh_image else "")
-             + (f" ffl-replicas={ffl_replicas}" if ffl_replicas else ""))
+             + (f" ffl-replicas={ffl_replicas}" if ffl_replicas else "")
+             + (f" domain-runners={len(domain_roles)}" if domain_roles else ""))
     print(f"fleet-agent[{HOST}]: applying fleet_config {label}" + (" (recreate)" if recreate else ""))
     if dry_run:
         for k, v in env.items():
@@ -154,6 +160,9 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
             print("    + would bring up runner-gh-router (1 replica) from AFL_GH_ROUTER_IMAGE")
         if ffl_replicas:
             print(f"    + would bring up runner-ffl ({ffl_replicas} replicas) — orchestration tier")
+        for name, spec in sorted(domain_roles.items()):
+            img = f" image={spec['image']}" if spec.get("image") else " (shared image)"
+            print(f"    + would bring up runner-{name} ({spec.get('replicas', 1)} replicas) — domain runner{img}")
         return
 
     fd, envf = tempfile.mkstemp(prefix=".env.fleet-agent.", dir=REPO)
@@ -211,6 +220,25 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
                 sys.stderr.write(fr.stderr)
                 print(f"fleet-agent[{HOST}]: WARNING ffl-runner start failed (exit {fr.returncode}); "
                       "continuing — another host can run the orchestration tier")
+        # Per-domain handler runners: bring up each kind="domain" role as its
+        # runner-<name> compose service. Image inherits the shared runner image
+        # (same env file) unless the role pins its own. Non-fatal per role — a
+        # host that can't bring one up (missing mount, pull failure) shouldn't
+        # fail its osm reconcile; another host still serves that domain's tasks.
+        for name, spec in sorted(domain_roles.items()):
+            d_cmd = ["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"), "--fleet",
+                     "--env", envf, "--domain", name, "--replicas", str(int(spec.get("replicas", 1)))]
+            if recreate:
+                d_cmd.append("--recreate")
+            d_env = child_env
+            if spec.get("image"):
+                d_env = dict(child_env, AFL_RUNNER_IMAGE=spec["image"])
+            dr = subprocess.run(d_cmd, env=d_env, capture_output=True, text=True)
+            sys.stdout.write(dr.stdout)
+            if dr.returncode != 0:
+                sys.stderr.write(dr.stderr)
+                print(f"fleet-agent[{HOST}]: WARNING domain-runner {name} start failed (exit {dr.returncode}); "
+                      "continuing — another host can serve this domain's tasks")
         _record(mongo, cfg.get("version"), image, replicas)
     finally:
         os.unlink(envf)

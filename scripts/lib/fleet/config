@@ -5,6 +5,7 @@ live fleet. Set MinIO + runner counts ONCE here instead of on every server; each
 server's `fleet-agent` reads this to self-configure.
 
   fleet set    --mongo <url> [--minio URL] [--bucket B] [--mongo-url URL] [--dashboard-url URL] [--osm-replicas N] [--task-list X]
+               [--domain-runner NAME ...] [--domain-replicas N] [--rm-domain-runner NAME ...]
   fleet get    --mongo <url>
   fleet status --mongo <url>
 
@@ -67,7 +68,8 @@ def _print_cfg(cfg):
     print(f"  minio:     {minio.get('endpoint', '-')}  bucket={minio.get('bucket', '-')}")
     print(f"  dashboard: {eps.get('dashboard', '-')}")
     for role, spec in (cfg.get("roles") or {}).items():
-        print(f"  role {role}: replicas={spec.get('replicas', '-')} task_list={spec.get('task_list', '-')} image={spec.get('image', '-')}")
+        kind = f" kind={spec['kind']}" if spec.get("kind") else ""
+        print(f"  role {role}: replicas={spec.get('replicas', '-')} task_list={spec.get('task_list', '-')} image={spec.get('image', '-')}{kind}")
 
 
 def cmd_set(a):
@@ -103,6 +105,23 @@ def cmd_set(a):
         cfg.setdefault("roles", {}).setdefault("ffl-runner", {})["replicas"] = a.ffl_replicas
     if a.ffl_image:
         cfg.setdefault("roles", {}).setdefault("ffl-runner", {})["image"] = a.ffl_image
+    # Per-domain handler runners (kind="domain"): fold the fwh_* per-domain
+    # runners into the central config so they follow rollouts/recreates like the
+    # osm tier. The role key is the compose-service suffix (runner-<key>), e.g.
+    # census-us, anthropic, jenkins-example. Image inherits the shared runner
+    # image unless --domain-image pins one. Each runs at --domain-replicas per
+    # server (default 1). `--rm-domain-runner` drops a role.
+    for name in (a.domain_runner or []):
+        spec = cfg.setdefault("roles", {}).setdefault(name, {})
+        spec["kind"] = "domain"
+        if a.domain_replicas is not None:
+            spec["replicas"] = a.domain_replicas
+        else:
+            spec.setdefault("replicas", 1)
+        if a.domain_image:
+            spec["image"] = a.domain_image
+    for name in (a.rm_domain_runner or []):
+        (cfg.get("roles") or {}).pop(name, None)
     cfg["version"] = int(cfg.get("version", 0)) + 1
     cfg["updated_at"] = datetime.now(timezone.utc).isoformat()
     d.fleet_config.replace_one({"_id": "default"}, cfg, upsert=True)
@@ -194,6 +213,11 @@ def main():
     ps.add_argument("--gh-router-image", help="embedded-GraphHopper agent image tag for the gh-router role (a change recreates it fleet-wide)")
     ps.add_argument("--ffl-replicas", type=int, help="ffl-runner (orchestration tier, continuation_mode=shared) per server; 0 disables")
     ps.add_argument("--ffl-image", help="image tag for the ffl-runner role (optional; defaults to the shared runner image — set only to roll the engine to ONLY the ffl tier)")
+    ps.add_argument("--domain-runner", action="append", metavar="NAME",
+                    help="add/update a per-domain handler runner role (compose-service suffix, e.g. census-us, anthropic, jenkins-example); repeatable. Each maps to runner-<NAME> and is managed fleet-wide by fleet-agent.")
+    ps.add_argument("--domain-replicas", type=int, help="replicas per server for the --domain-runner(s) in this call (default 1 when adding)")
+    ps.add_argument("--domain-image", help="image override for the --domain-runner(s) in this call (default: the shared runner image, so a --image roll covers them)")
+    ps.add_argument("--rm-domain-runner", action="append", metavar="NAME", help="remove a role (e.g. a domain runner); repeatable")
     ps.set_defaults(func=cmd_set)
 
     pg = sub.add_parser("get", help="print the central fleet config")
