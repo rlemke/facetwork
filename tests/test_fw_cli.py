@@ -128,6 +128,24 @@ def test_completion_path():
     assert r.stdout.strip().endswith("fw-completion.bash")
 
 
+# The gap-filling commands take destructive/networked actions, so their --help
+# must short-circuit cleanly (exit 0, print usage) *before* touching Mongo/Docker.
+NEW_COMMANDS = [
+    ("maint", "purge-servers"),
+    ("runner", "scale"),
+    ("fleet", "scale"),
+    ("fleet", "registry-setup"),
+    ("fleet", "rollout"),
+]
+
+
+@pytest.mark.parametrize("cmd", NEW_COMMANDS, ids=[" ".join(c) for c in NEW_COMMANDS])
+def test_new_command_help_is_hermetic(cmd):
+    r = _run(*cmd, "--help")
+    assert r.returncode == 0, f"`fw {' '.join(cmd)} --help` exited {r.returncode}: {r.stderr}"
+    assert "usage" in (r.stdout + r.stderr).lower()
+
+
 def test_all_command_files_parse():
     """`bash -n` every command file + helper — catches syntax errors anywhere."""
     bad = []
