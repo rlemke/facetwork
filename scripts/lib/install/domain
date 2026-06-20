@@ -18,6 +18,7 @@
 # and (for anthropic) `python -c "import anthropic_handlers"` works.
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_catalog.sh"
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -26,22 +27,15 @@ PROJECT_DIR="$FW_ROOT"
 # Default install root. Override with --dir.
 DEFAULT_INSTALL_ROOT="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
 
-# Registry: <short_name>|<repo_name>|<default extras>|<one-line description>
-# default extras are optional comma-separated package extras that
-# `install-example <name>` will add unless `--no-default-extras` is
-# passed.
-REGISTRY=(
-    "anthropic|fwh_anthropic||Anthropic API wrappers (Messages, Batch, Files, Agent SDK, Claude Code, Computer Use)"
-    "osm-geocoder|fwh_osm||OSM PBF → PostGIS → routing/tiles (production-scale)"
-    "osm-lz|fwh_osm_lz||Continental-scale OSM workflow catalog (depends on fwh_osm)"
-    "noaa-weather|fwh_noaa_weather||NOAA GHCN/NDBC climate trends"
-    "jenkins|fwh_jenkins||CI/CD mixin composition demo"
-    "census-us|fwh_census_us||US Census ACS + TIGER demographics"
-    "genomics|fwh_genomics||Bioinformatics foreach fan-out demo"
-    "sensor-monitoring|fwh_sensor_monitoring||Sensor pipelines (RegistryRunner-first)"
-    "save-earth|fwh_save_earth||Open environmental datasets (OpenLitterMap, EPA Superfund/Brownfields/TRI) → MapLibre HTML maps"
-    "sentinel2-landchange|fwh_sentinel2|geo|Sentinel-2 land-cover change (STAC + COG → NDVI/composite → difference/classify → MapLibre tiled map)"
-)
+# Registry: <short_name>|<repo_name>|<default extras>|<one-line description>.
+# Built from the catalog (domains.json + AFL_DOMAINS_FILE / domains.local.json
+# overrides) — NOT hardcoded here. A deployment adds/removes domains by editing
+# its catalog, no script change. `default extras` are comma-separated pip extras
+# the install adds unless `--no-default-extras` is passed.
+REGISTRY=()
+while IFS=$'\x1f' read -r _cn _crepo _cextras _cdesc; do
+    [[ -n "$_cn" ]] && REGISTRY+=("$_cn|$_crepo|$_cextras|$_cdesc")
+done < <(catalog_domain_rows)
 
 usage() {
     cat <<'EOF'

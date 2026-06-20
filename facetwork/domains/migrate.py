@@ -11,20 +11,7 @@ Run via ``fw maint migrate-seed-prefix [--apply]`` (default dry-run) or
 
 from __future__ import annotations
 
-# The canonical domain short-names — mirrors the REGISTRY in
-# scripts/lib/install/domain. Only seeds for these flip example: -> domain:.
-DOMAIN_NAMES = [
-    "anthropic",
-    "osm-geocoder",
-    "osm-lz",
-    "noaa-weather",
-    "jenkins",
-    "census-us",
-    "genomics",
-    "sensor-monitoring",
-    "save-earth",
-    "sentinel2-landchange",
-]
+from facetwork.domains.catalog import domain_names
 
 LEGACY_PREFIX = "example:"
 NEW_PREFIX = "domain:"
@@ -37,7 +24,7 @@ def migrate_seed_prefix(store, *, apply: bool = False, names=None) -> dict:
     were (or, in dry-run, would be) migrated. Idempotent.
     """
     db = store._db
-    names = list(names if names is not None else DOMAIN_NAMES)
+    names = list(names if names is not None else domain_names())
     migrated_names: list[str] = []
     flows = 0
     workflows = 0

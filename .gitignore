@@ -46,3 +46,6 @@ target/
 .claude/scheduled_tasks.lock
 .env.fleet
 .env.fleet.override
+
+# Per-deployment domain/example catalog override (see domains.json)
+domains.local.json

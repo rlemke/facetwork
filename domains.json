@@ -1,0 +1,81 @@
+{
+  "_comment": "Catalog of Facetwork DOMAINS (pluggable fwh_* production pipelines) and in-repo EXAMPLES (teaching demos). Single source of truth for fw install/migrate/fleet + compose-env generation. Override per deployment WITHOUT editing any command: set AFL_DOMAINS_FILE=/path (full replace), or drop a gitignored domains.local.json (merged over this file: entries add/replace by key; a top-level \"_remove\": [\"name\", ...] drops standard ones). See docs and `fw util gen-compose`.",
+  "version": 1,
+  "domains": {
+    "anthropic": {
+      "repo": "fwh_anthropic",
+      "extras": [],
+      "description": "Anthropic API wrappers (Messages, Batch, Files, Agent SDK, Claude Code, Computer Use)",
+      "service": "runner-anthropic",
+      "task_list": "anthropic",
+      "compose_extras": "agent_sdk,mcp",
+      "extras_var": "ANTHROPIC_EXTRAS"
+    },
+    "osm-geocoder": {
+      "repo": "fwh_osm",
+      "extras": [],
+      "description": "OSM PBF → PostGIS → routing/tiles (production-scale)",
+      "service": "runner-osm-geocoder",
+      "task_list": "osm",
+      "server_group_arg": true,
+      "fleet_default": true
+    },
+    "osm-lz": {
+      "repo": "fwh_osm_lz",
+      "extras": [],
+      "description": "Continental-scale OSM workflow catalog (depends on fwh_osm)",
+      "service": "runner-osm-lz",
+      "task_list": "continental",
+      "fleet_default": true
+    },
+    "noaa-weather": {
+      "repo": "fwh_noaa_weather",
+      "extras": [],
+      "description": "NOAA GHCN/NDBC climate trends",
+      "service": "runner-noaa-weather",
+      "task_list": "weather"
+    },
+    "jenkins": {
+      "repo": "fwh_jenkins",
+      "extras": [],
+      "description": "CI/CD mixin composition demo",
+      "service": "runner-jenkins-example",
+      "task_list": "jenkins"
+    },
+    "census-us": {
+      "repo": "fwh_census_us",
+      "extras": [],
+      "description": "US Census ACS + TIGER demographics",
+      "service": "runner-census-us",
+      "task_list": "census"
+    },
+    "genomics": {
+      "repo": "fwh_genomics",
+      "extras": [],
+      "description": "Bioinformatics foreach fan-out demo",
+      "service": "runner-genomics",
+      "task_list": "genomics"
+    },
+    "sensor-monitoring": {
+      "repo": "fwh_sensor_monitoring",
+      "extras": [],
+      "description": "Sensor pipelines (RegistryRunner-first)",
+      "service": "runner-sensor-monitoring",
+      "task_list": "monitor"
+    },
+    "save-earth": {
+      "repo": "fwh_save_earth",
+      "extras": [],
+      "description": "Open environmental datasets (OpenLitterMap, EPA Superfund/Brownfields/TRI) → MapLibre HTML maps"
+    },
+    "sentinel2-landchange": {
+      "repo": "fwh_sentinel2",
+      "extras": ["geo"],
+      "description": "Sentinel-2 land-cover change (STAC + COG → NDVI/composite → difference/classify → MapLibre tiled map)"
+    }
+  },
+  "examples": {
+    "hello-agent": { "dir": "examples/hello-agent", "description": "Minimal event-facet + handler walkthrough" },
+    "hiv-drug-resistance": { "dir": "examples/hiv-drug-resistance", "description": "foreach fan-out over sequences; classic teaching workflow" }
+  }
+}
