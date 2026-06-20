@@ -39,7 +39,7 @@ Each example also has a **USER_GUIDE.md** with step-by-step walkthroughs, key co
 | genomics | [USER_GUIDE.md](https://github.com/rlemke/fwh_genomics/blob/main/USER_GUIDE.md) — in standalone repo |
 | jenkins | [USER_GUIDE.md](https://github.com/rlemke/fwh_jenkins/blob/main/USER_GUIDE.md) — in standalone repo |
 | aws-lambda | [USER_GUIDE.md](aws-lambda/USER_GUIDE.md) |
-| osm-geocoder | [USER_GUIDE.md](osm-geocoder/USER_GUIDE.md) |
+| osm-geocoder | [USER_GUIDE.md](https://github.com/rlemke/fwh_osm/blob/main/USER_GUIDE.md) — in standalone repo |
 | census-us | [USER_GUIDE.md](https://github.com/rlemke/fwh_census_us/blob/main/USER_GUIDE.md) — in standalone repo |
 | osm-lz | [USER_GUIDE.md](https://github.com/rlemke/fwh_osm_lz/blob/main/USER_GUIDE.md) — in standalone repo |
 | site-selection | [USER_GUIDE.md](site-selection/USER_GUIDE.md) |

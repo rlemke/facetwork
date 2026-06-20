@@ -335,7 +335,7 @@ A common question when going multi-server: *each runner has its own local `/tmp`
 | **Durable data** — caches (`network/`, PBFs), outputs (layers, routes, maps) | `AFL_DATA_ROOT` / `AFL_OSM_OUTPUT_BASE` (local path, `hdfs://`, `s3://`, or a shared mount) | All runners on all hosts |
 | **Local scratch** — staging, in-flight temp files, the `localize()` warm cache | Per-host: `AFL_LOCAL_SCRATCH` (or system temp), `AFL_OUTPUT_BASE/tmp`, `AFL_OUTPUT_BASE/cache/osm-local` | **Only that one host** |
 
-The pattern is **stage-locally → finalize-to-durable** (see [`finalize_output_file`](../../src/osm_geocoder/handlers/shared/_output.py) and `Storage.finalize_dir_from_local`). Object stores (S3/MinIO, WebHDFS) don't do streaming/partial writes, so handlers always write to a local temp first, then upload the complete object to the durable destination as the last step. The local temp is *workspace*, not state.
+The pattern is **stage-locally → finalize-to-durable** (see [`finalize_output_file`](https://github.com/rlemke/fwh_osm/blob/main/handlers/shared/_output.py) and `Storage.finalize_dir_from_local`). Object stores (S3/MinIO, WebHDFS) don't do streaming/partial writes, so handlers always write to a local temp first, then upload the complete object to the durable destination as the last step. The local temp is *workspace*, not state.
 
 #### Why this doesn't violate multi-server execution
 

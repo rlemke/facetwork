@@ -127,6 +127,6 @@ poller.register("hello.Farewell", lambda payload: {
 ## Next Steps
 
 Once you understand this example, move on to:
-- **[volcano-query](../volcano-query/USER_GUIDE.md)** — composing existing facets without writing handlers
+- **[osm-lz](https://github.com/rlemke/fwh_osm_lz/blob/main/USER_GUIDE.md)** — composing existing facets without writing handlers
 - **[genomics](https://github.com/rlemke/fwh_genomics)** — foreach iteration for parallel processing (standalone repo)
 - **[jenkins](https://github.com/rlemke/fwh_jenkins)** — mixin composition for cross-cutting concerns (standalone repo)

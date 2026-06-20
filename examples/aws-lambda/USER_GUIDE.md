@@ -95,7 +95,6 @@ workflow DeployAndInvoke(function_name: String, runtime: String = "python3.12",
 
 **Why this matters**: The workflow calls `DeployFunction` as a single step. The user sees a clean interface — pass a function name, get back an ARN and response. The three underlying Lambda API calls are encapsulated inside the facet. You can change the implementation (add error handling, switch cloud providers) without changing the workflow.
 
-This is the same pattern used in the [volcano-query](../volcano-query/USER_GUIDE.md) example, where `LoadVolcanoData` wraps `Cache` + `Download` behind a simple interface.
 
 #### BlueGreenDeploy — andThen + Call-Time Mixins
 
@@ -333,4 +332,4 @@ def _lambda_client():
 
 - **[jenkins](https://github.com/rlemke/fwh_jenkins/blob/main/USER_GUIDE.md)** — more mixin composition patterns (standalone repo)
 - **[genomics](https://github.com/rlemke/fwh_genomics)** — factory-built handlers for large-scale fan-out (standalone repo)
-- **[osm-geocoder](../osm-geocoder/USER_GUIDE.md)** — production-scale agent with 580+ handlers
+- **[osm-geocoder](https://github.com/rlemke/fwh_osm/blob/main/USER_GUIDE.md)** — production-scale agent with 580+ handlers

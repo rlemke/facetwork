@@ -215,6 +215,6 @@ If your JVM program does not need to read step parameters or return values — f
 
 ## Next Steps
 
-- **[jenkins](../jenkins/USER_GUIDE.md)** — see mixin composition example with Jenkins CI/CD
+- **[jenkins](https://github.com/rlemke/fwh_jenkins/blob/main/USER_GUIDE.md)** — see mixin composition example with Jenkins CI/CD
 - **[aws-lambda](../aws-lambda/USER_GUIDE.md)** — combine mixins with real cloud API calls
 - **[genomics](https://github.com/rlemke/fwh_genomics)** — foreach fan-out patterns for parallel processing (standalone repo)

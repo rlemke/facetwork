@@ -477,7 +477,7 @@ A new server joins with one command — `export AFL_FLEET_KEY=<key>; fw fleet ag
 > infra (MongoDB + MinIO)? Follow [docs/operations/join-fleet-from-new-server.md](docs/operations/join-fleet-from-new-server.md)** — it
 > has the infra host's coordinates, the clone/venv/config steps, and `cp
 > .env.fleet.preset .env.fleet && fw runner start --fleet`. The pre-filled
-> [`.env.fleet.preset`](../.env.fleet.preset) points at the shared infra URLs.
+> [`.env.fleet.preset`](.env.fleet.preset) points at the shared infra URLs.
 
 **Local simulation — verify the whole thing on one box.** `fw fleet simulate`
 spins up N "servers" as separate compose projects on the running full-stack's

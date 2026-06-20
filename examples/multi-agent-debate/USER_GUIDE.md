@@ -253,5 +253,5 @@ runner = ClaudeAgentRunner(evaluator=evaluator, persistence=store, tool_registry
 ## Next Steps
 
 - **[research-agent](../research-agent/USER_GUIDE.md)** — LLM-driven research with ClaudeAgentRunner end-to-end
-- **[osm-geocoder](../osm-geocoder/USER_GUIDE.md)** — production-scale agent with 580+ handlers
+- **[osm-geocoder](https://github.com/rlemke/fwh_osm/blob/main/USER_GUIDE.md)** — production-scale agent with 580+ handlers
 - **[osm-lz](https://github.com/rlemke/fwh_osm_lz)** — continental-scale OSM LZ + GTFS workflow catalog (standalone repo)

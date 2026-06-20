@@ -7,7 +7,7 @@ This guide helps you choose the right example as a starting point for your own F
 | Example | Complexity | Key Pattern | Handlers | Best For |
 |---------|-----------|-------------|----------|----------|
 | [hello-agent](../hello-agent/) | Beginner | Single event facet + workflow | 1 (inline) | Learning the execution model |
-| [volcano-query](../volcano-query/) | Beginner | Cross-namespace composition | 0 (reuses OSM) | Composing existing facets into new workflows |
+| [osm-lz](https://github.com/rlemke/fwh_osm_lz) | Beginner | Cross-namespace composition | 0 (reuses OSM) | Composing existing facets into new workflows |
 | [genomics](https://github.com/rlemke/fwh_genomics) | Intermediate | foreach fan-out, linear fan-in | 45 | Parallel batch processing pipelines. **Standalone repo.** |
 | [jenkins](https://github.com/rlemke/fwh_jenkins) | Intermediate | Mixin composition (`with`) | 17 | Cross-cutting concerns (retry, timeout, auth). **Standalone repo.** |
 | [aws-lambda](../aws-lambda/) | Intermediate | Real cloud calls + mixins | 12 | Cloud service integration with LocalStack |
@@ -98,7 +98,7 @@ Start with **[hello-agent](../hello-agent/)**. It's a single file that walks thr
 
 ### "I want to compose existing facets into new workflows"
 
-Look at **[volcano-query](../volcano-query/)**. It has zero custom handlers — it imports event facets from the OSM geocoder and composes them into a new query pipeline using `use` imports and `andThen` chains.
+Look at **[osm-lz](https://github.com/rlemke/fwh_osm_lz)**. It has zero custom handlers — it imports event facets from the OSM geocoder and composes them into a new query pipeline using `use` imports and `andThen` chains.
 
 ### "I want to process items in parallel"
 
@@ -382,7 +382,7 @@ Each example has its own detailed user guide:
 | Example | User Guide |
 |---------|-----------|
 | hello-agent | [USER_GUIDE.md](../hello-agent/USER_GUIDE.md) |
-| volcano-query | [USER_GUIDE.md](../volcano-query/USER_GUIDE.md) |
+| osm-lz | [USER_GUIDE.md](https://github.com/rlemke/fwh_osm_lz/blob/main/USER_GUIDE.md) — in standalone repo |
 | genomics | [USER_GUIDE.md](https://github.com/rlemke/fwh_genomics/blob/main/USER_GUIDE.md) — in standalone repo |
 | jenkins | [USER_GUIDE.md](https://github.com/rlemke/fwh_jenkins/blob/main/USER_GUIDE.md) — in standalone repo |
 | aws-lambda | [USER_GUIDE.md](../aws-lambda/USER_GUIDE.md) |
