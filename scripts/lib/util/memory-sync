@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# fw-summary: commit + push this project's Claude memory repo (~/.claude/.../memory)
+#
+# Snapshots the agent's persistent memory directory to git and pushes it to the
+# 'origin' remote. The memory dir is derived from the repo path (the Claude
+# project slug = the path with '/' and '_' replaced by '-'); override with
+# AFL_MEMORY_DIR. Safe to run anytime — a no-op when there is nothing new to
+# commit, and it still pushes any unpushed commits.
+#
+# Usage:
+#   fw util memory-sync                      # add -A, commit (auto message), push
+#   fw util memory-sync -m "why this edit"   # custom commit message
+#   fw util memory-sync "why this edit"      # bare arg is the message too
+#   fw util memory-sync --dry                # show what would be committed/pushed
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+MSG=""; DRY=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -m|--message) MSG="$2"; shift 2 ;;
+        --dry|--dry-run) DRY=1; shift ;;
+        -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -*) echo "unknown arg: $1" >&2; exit 2 ;;
+        *) MSG="$1"; shift ;;   # bare arg = commit message
+    esac
+done
+
+# Derive this project's Claude memory dir from the repo path (slug = path with
+# '/' and '_' -> '-'); allow an explicit override.
+slug="$(printf '%s' "$FW_ROOT" | sed 's#/#-#g; s#_#-#g')"
+MEMORY_DIR="${AFL_MEMORY_DIR:-$HOME/.claude/projects/$slug/memory}"
+
+if [ ! -d "$MEMORY_DIR" ]; then
+    echo "memory dir not found: $MEMORY_DIR" >&2
+    echo "  set AFL_MEMORY_DIR to override the location." >&2
+    exit 1
+fi
+if ! git -C "$MEMORY_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "not a git repo: $MEMORY_DIR" >&2
+    echo "  initialize it first, e.g.:  git -C \"$MEMORY_DIR\" init && git -C \"$MEMORY_DIR\" add -A && git -C \"$MEMORY_DIR\" commit -m init" >&2
+    exit 1
+fi
+
+cd "$MEMORY_DIR"
+[ -n "$MSG" ] || MSG="memory: update $(date -u +%Y-%m-%dT%H:%MZ)"
+
+if [ "$DRY" = 1 ]; then
+    echo "memory dir: $MEMORY_DIR"
+    if git diff --quiet && git diff --cached --quiet && [ -z "$(git status --porcelain)" ]; then
+        echo "  (working tree clean — nothing to commit)"
+    else
+        echo "  changes that would be committed:"
+        git status -s | sed 's/^/    /'
+        echo "  commit message: $MSG"
+    fi
+    ahead="$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo '?')"
+    echo "  unpushed commits: $ahead"
+    exit 0
+fi
+
+git add -A
+if git diff --cached --quiet; then
+    echo "memory: nothing new to commit ($MEMORY_DIR)"
+else
+    git commit -q -m "$MSG"
+    echo "memory: committed — $MSG"
+fi
+
+if git remote get-url origin >/dev/null 2>&1; then
+    git push -q && echo "memory: pushed → $(git remote get-url origin)"
+else
+    echo "memory: no 'origin' remote — committed locally only (no push)." >&2
+fi
