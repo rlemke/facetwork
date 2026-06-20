@@ -49,10 +49,10 @@ test = [
     "pyshp>=2.3",
 ]
 dashboard = [
-    # Cap < 0.136: fastapi 0.136+ made include_router lazy (opaque `_IncludedRouter`
-    # in app.routes with no .path), which breaks route introspection (the dashboard
-    # is built on 0.135.x fleet-wide). Bump only with the route tests updated.
-    "fastapi>=0.100,<0.136",
+    # No upper bound: the route tests (tests/dashboard/test_app.py) check behavior
+    # via TestClient, not app.routes introspection, so they survive fastapi's
+    # include_router changes (the 0.136+ lazy `_IncludedRouter`). Verified on 0.138.
+    "fastapi>=0.100",
     "uvicorn[standard]>=0.20",
     "jinja2>=3.1",
     "markdown>=3.5",

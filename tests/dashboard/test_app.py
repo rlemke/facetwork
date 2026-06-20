@@ -36,28 +36,38 @@ def test_create_app():
 
 
 def test_app_has_routes():
-    """Test that all expected routes are registered."""
+    """The expected routes are registered.
+
+    Checked behaviorally via TestClient (a non-404 response means the route
+    exists) rather than by introspecting ``app.routes`` — fastapi 0.136+ makes
+    ``include_router`` lazy, so ``app.routes`` holds opaque ``_IncludedRouter``
+    entries with no ``.path``. This keeps the test robust across fastapi versions.
+    """
+    from fastapi.testclient import TestClient
+
     from facetwork.dashboard.app import create_app
 
-    app = create_app()
-    routes = [r.path for r in app.routes]
-    assert "/" in routes
-    # Legacy page routes were removed in favour of the v3 UI; the kept
-    # redirect (`/runners`→/v3/workflows) plus the v3 pages stand in for them.
-    assert "/runners" in routes
-    assert "/v3/flows" in routes
-    assert "/v3/servers" in routes
-    assert "/v3/tasks" in routes
-    assert "/api/runners" in routes
-    assert "/api/flows" in routes
-    assert "/api/servers" in routes
+    # Legacy page routes were removed in favour of the v3 UI; the kept redirect
+    # (`/runners`→/v3/workflows) plus the v3 pages stand in for them.
+    expected = [
+        "/", "/runners", "/v3/flows", "/v3/servers", "/v3/tasks",
+        "/api/runners", "/api/flows", "/api/servers",
+    ]
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    for path in expected:
+        # follow_redirects=False so a redirect route (e.g. /runners) stays 3xx;
+        # any status other than 404 means the route is registered (500 = it
+        # exists but errored without a backing DB, which still proves wiring).
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code != 404, f"route {path} not registered (404)"
 
 
 def test_static_files_mounted():
-    """Test that static files are mounted."""
+    """Static files are served (behavioral check, robust to route representation)."""
+    from fastapi.testclient import TestClient
+
     from facetwork.dashboard.app import create_app
 
-    app = create_app()
-    route_paths = [r.path for r in app.routes]
-    # Static files mount shows as /static in routes
-    assert any("/static" in str(p) for p in route_paths)
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    resp = client.get("/static/style.css")
+    assert resp.status_code == 200, "static mount not serving /static/style.css"
