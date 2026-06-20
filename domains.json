@@ -1,6 +1,10 @@
 {
   "_comment": "Catalog of Facetwork DOMAINS (pluggable fwh_* production pipelines) and in-repo EXAMPLES (teaching demos). Single source of truth for fw install/migrate/fleet + compose-env generation. Override per deployment WITHOUT editing any command: set AFL_DOMAINS_FILE=/path (full replace), or drop a gitignored domains.local.json (merged over this file: entries add/replace by key; a top-level \"_remove\": [\"name\", ...] drops standard ones). See docs and `fw util gen-compose`.",
   "version": 1,
+  "defaults": {
+    "replicas": 1,
+    "scaled_replicas": 3
+  },
   "domains": {
     "anthropic": {
       "repo": "fwh_anthropic",

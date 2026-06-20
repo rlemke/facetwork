@@ -122,3 +122,18 @@ def scaled_domain_suffixes() -> list[str]:
 def unscaled_domain_suffixes() -> list[str]:
     """``--domain`` suffixes for compose domains NOT flagged ``scaled`` (one replica each)."""
     return [_suffix(s["service"]) for _n, s in sorted(compose_domains().items()) if not s.get("scaled")]
+
+
+def _defaults() -> dict:
+    return load_catalog().get("defaults", {}) or {}
+
+
+def default_replicas() -> int:
+    """Catalog default replica count for a (non-scaled) domain runner."""
+    return int(_defaults().get("replicas", 1))
+
+
+def scaled_replicas() -> int:
+    """Catalog default replica count for the scaled tier (the throughput knob).
+    The runtime env (AFL_OSM_REPLICAS) still overrides this per host."""
+    return int(_defaults().get("scaled_replicas", default_replicas()))

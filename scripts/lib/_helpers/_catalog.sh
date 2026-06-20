@@ -58,6 +58,16 @@ catalog_unscaled_domain_suffixes() {
     _catalog_python -c 'from facetwork.domains.catalog import unscaled_domain_suffixes; print("\n".join(unscaled_domain_suffixes()))'
 }
 
+# Catalog default replica count for non-scaled domain runners.
+catalog_default_replicas() {
+    _catalog_python -c 'from facetwork.domains.catalog import default_replicas; print(default_replicas())'
+}
+
+# Catalog default replica count for the scaled tier (AFL_OSM_REPLICAS overrides).
+catalog_scaled_replicas() {
+    _catalog_python -c 'from facetwork.domains.catalog import scaled_replicas; print(scaled_replicas())'
+}
+
 # The resolved catalog source path (for diagnostics).
 catalog_source() {
     _catalog_python -c 'from facetwork.domains.catalog import catalog_source; print(catalog_source())'

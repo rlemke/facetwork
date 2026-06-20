@@ -64,6 +64,26 @@ def test_scaled_split_and_compose_services(base):
     assert catalog.compose_services() == ["runner-anthropic", "runner-osm"]
 
 
+def test_replica_defaults(base):
+    _tmp, default, _local = base
+    _write(default, {"defaults": {"replicas": 2, "scaled_replicas": 5}, "domains": {}, "examples": {}})
+    assert catalog.default_replicas() == 2
+    assert catalog.scaled_replicas() == 5
+
+
+def test_replica_defaults_fallbacks(base):
+    _tmp, default, _local = base
+    _write(default, {"domains": {}, "examples": {}})  # no "defaults" block
+    assert catalog.default_replicas() == 1            # fallback
+    assert catalog.scaled_replicas() == 1             # falls back to default_replicas
+
+
+def test_replica_defaults_overridable(base):
+    _tmp, _default, local = base
+    _write(local, {"defaults": {"scaled_replicas": 8}})
+    assert catalog.scaled_replicas() == 8  # deployment bumps the scaled default
+
+
 def test_env_file_is_full_replace(base, tmp_path, monkeypatch):
     _tmp, _default, local = base
     _write(local, {"domains": {"acme": {"repo": "fwh_acme"}}})  # should be IGNORED

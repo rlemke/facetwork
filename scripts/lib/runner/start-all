@@ -43,19 +43,22 @@ docker compose --env-file .env.fleet --env-file .env.fleet.override \
 #    spinning up N copies of anthropic/census/genomics/etc. that nothing needs.
 export AFL_HANDLER_CONTINUATION_MODE=off
 
-# 2a) scaled runners (osm) — scaled by the throughput knob (start-runner --fleet
-#     default 4; .env.fleet sets AFL_OSM_REPLICAS=3).
+# 2a) scaled runners (osm) — replica count = AFL_OSM_REPLICAS if set in the shell
+#     env (per-host throughput override), else the catalog default (defaults.
+#     scaled_replicas).
 SCALED=(); while IFS= read -r _d; do [[ -n "$_d" ]] && SCALED+=(--domain "$_d"); done \
     < <(catalog_scaled_domain_suffixes)
 if [[ ${#SCALED[@]} -gt 0 ]]; then
-    "$FW_LIB/runner/start" --fleet --recreate "${SCALED[@]}"
+    SCALED_N="${AFL_OSM_REPLICAS:-$(catalog_scaled_replicas)}"
+    "$FW_LIB/runner/start" --fleet --recreate --replicas "$SCALED_N" "${SCALED[@]}"
 fi
 
-# 2b) every other compose-domain runner — exactly one replica each.
+# 2b) every other compose-domain runner — the catalog default replica count
+#     (defaults.replicas, normally 1).
 UNSCALED=(); while IFS= read -r _d; do [[ -n "$_d" ]] && UNSCALED+=(--domain "$_d"); done \
     < <(catalog_unscaled_domain_suffixes)
 if [[ ${#UNSCALED[@]} -gt 0 ]]; then
-    "$FW_LIB/runner/start" --fleet --recreate --replicas 1 "${UNSCALED[@]}"
+    "$FW_LIB/runner/start" --fleet --recreate --replicas "$(catalog_default_replicas)" "${UNSCALED[@]}"
 fi
 
 # Keep this host's roles reconciled to the central fleet config.
