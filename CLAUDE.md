@@ -50,7 +50,7 @@ up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgrou
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog) · **`maint`** (disk-guard/repair-workflow/
 terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana) ·
-**`util`**.
+**`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**).
 
 Notes for working with `fw`:
 - It's just a thin dispatcher: each command is a file under `scripts/lib/<group>/`,
@@ -69,6 +69,15 @@ Notes for working with `fw`:
   dependency coverage instead of discovering gaps through failing test runs. A host
   with no repo `.venv` (system Homebrew python is PEP 668-locked) needs `fw install repo`
   first to create one.
+- **`fw util memory-sync [-m MSG] [--dry]`** — commit + push this project's Claude
+  memory directory (`~/.claude/projects/<slug>/memory`, where `<slug>` is the repo
+  path with `/` and `_` replaced by `-`; override with `AFL_MEMORY_DIR`) to its
+  `origin` remote. The memory repo is version-controlled separately from this repo
+  (private GitHub repo `rlemke/claude-memory-facetwork`). No-op when nothing changed,
+  but still pushes any unpushed commits; `-m` sets the commit message, `--dry`
+  previews. Run it after editing memory so changes are backed up — it is **not**
+  automatic. Only does real work on the host where Claude runs (it errors cleanly on
+  hosts with no memory repo).
 
 ## Running Workflows from the Dashboard
 
