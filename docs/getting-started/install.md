@@ -275,10 +275,13 @@ owner to add a package if you need one it doesn't have.
 
 ## Step 3 — Verify it's working (any scenario)
 
-1. Open the dashboard (**http://localhost:8080** locally, or the dashboard URL
+1. `fw install check` — confirm this host has every dependency the tests/examples
+   need (run `fw install check --install` to install any gaps; needs a repo `.venv`,
+   so run `fw install repo` first if you don't have one).
+2. Open the dashboard (**http://localhost:8080** locally, or the dashboard URL
    for shared infra). It lands on **Runs**.
-2. `fw runner list` — confirm at least one runner is **running**.
-3. Click **New run**, pick a seeded workflow, fill parameters, **Run**, and watch
+3. `fw runner list` — confirm at least one runner is **running**.
+4. Click **New run**, pick a seeded workflow, fill parameters, **Run**, and watch
    the live execution graph + step logs.
 
 If a run sits **pending** forever, it usually means **no runner has a handler for

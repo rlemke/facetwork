@@ -44,7 +44,7 @@ fw ffl seed                   # seed examples (was scripts/seed-examples)
 fw db postgis vacuum          # nested groups work
 ```
 
-Groups: **`install`** (toolchain/venv/examples) · **`single`** (local dev stack:
+Groups: **`install`** (toolchain/venv/examples/**check**) · **`single`** (local dev stack:
 up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgroup) ·
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
@@ -61,6 +61,14 @@ Notes for working with `fw`:
   fleet/runner ops — prefer them over raw `docker`/`pymongo`. Most take `--dry`.
 - Mongo-touching commands default to `localhost:27017`; on a runner host that isn't
   the DB, pass `--mongo mongodb://server3.local:27017` (or set `AFL_MONGODB_URL`).
+- **`fw install check [--install]`** — dependency analyzer. Statically scans
+  `tests/` + `examples/` for imported modules (incl. `pytest.importorskip`), reports
+  what isn't importable on this host, and lists example packages vs what's installed.
+  `--install` fixes the gaps (example modules via `fw install example`, `boto3` via the
+  `[s3]` extra, else pip; PEP 668-aware). Run it to bring a new runner host to full
+  dependency coverage instead of discovering gaps through failing test runs. A host
+  with no repo `.venv` (system Homebrew python is PEP 668-locked) needs `fw install repo`
+  first to create one.
 
 ## Running Workflows from the Dashboard
 
