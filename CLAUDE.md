@@ -70,15 +70,22 @@ Notes for working with `fw`:
   with no repo `.venv` (system Homebrew python is PEP 668-locked) needs `fw install repo`
   first to create one.
 - **`domains.json` (catalog) + `fw util gen-compose`** — the domain/example set is
-  defined ONCE in `domains.json` (name → repo, extras, description, compose
-  `service`/`task_list`, …), not hardcoded in scripts. `fw install domain`,
-  `migrate.py`, and fleet validation read it via `facetwork/domains/catalog.py`;
-  `fw util gen-compose [--check]` syncs the catalog-derived env into each
-  `runner-<service>` block of `docker-compose.full-stack.yml` (structure stays
-  hand-written). **Per-deployment override without editing any command:** set
-  `AFL_DOMAINS_FILE=/path` (full replace) or drop a gitignored `domains.local.json`
-  (merged over the defaults — entries add/replace by key; top-level `"_remove": […]`
-  drops standard ones). Run `gen-compose` after editing the catalog.
+  defined ONCE in `domains.json`, not hardcoded in scripts. Each domain entry:
+  `repo`, `extras`, `description`, and (for domains with a compose runner)
+  `service`, `task_list`, `compose_extras`/`extras_var`, `server_group_arg`,
+  `fleet_default` (in the default `--fleet` set), `scaled` (runs at the throughput
+  knob vs one replica). A top-level **`defaults` block** sets replica counts:
+  `{"replicas": 1, "scaled_replicas": 3}` — `replicas` for single-replica domain
+  runners, `scaled_replicas` for the `scaled` tier (the env `AFL_OSM_REPLICAS` still
+  overrides the scaled tier per host). `fw install domain`, `migrate.py`,
+  `runner/start`/`start-all` defaults, `rebuild-runners`, and fleet validation all
+  read the catalog via `facetwork/domains/catalog.py`; `fw util gen-compose [--check]`
+  syncs the catalog-derived env into each `runner-<service>` block of
+  `docker-compose.full-stack.yml` (structure stays hand-written). **Per-deployment
+  override without editing any command:** set `AFL_DOMAINS_FILE=/path` (full replace)
+  or drop a gitignored `domains.local.json` (merged over the defaults — entries
+  add/replace by key; top-level `"_remove": […]` drops standard ones). Run
+  `gen-compose` after editing the catalog.
 - **`fw util memory-sync [-m MSG] [--dry]`** — commit + push this project's Claude
   memory directory (`~/.claude/projects/<slug>/memory`, where `<slug>` is the repo
   path with `/` and `_` replaced by `-`; override with `AFL_MEMORY_DIR`) to its
