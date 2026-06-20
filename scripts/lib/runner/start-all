@@ -13,6 +13,7 @@
 # before bringing them up (no orphan replicas) and layers .env.fleet +
 # .env.fleet.override.
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_catalog.sh"
 set -euo pipefail
 
 REPO_ROOT="$FW_ROOT"
@@ -32,25 +33,30 @@ docker compose --env-file .env.fleet --env-file .env.fleet.override \
 
 # 2) Handler runners — off (the ffl tier owns the sweep/backlog). The env var is
 #    read by the *s3-storage / *osm-s3-env anchors; runner-ffl overrides it back
-#    to "shared" explicitly, so this does not affect the tier. Only services that
-#    exist in the compose files — there is no runner-sentinel2-landchange.
+#    to "shared" explicitly, so this does not affect the tier.
 #
-#    Two scale tiers: only the osm runners (heavy, parallel workload) get
-#    AFL_OSM_REPLICAS; every other example is a single replica. Passing all
-#    examples to ONE start-runner call fans AFL_OSM_REPLICAS out across ALL
-#    services (start-runner applies one `--scale N` to every selected service),
+#    Two scale tiers, BOTH derived from the catalog (domains.json + overrides):
+#    domains flagged `scaled` (heavy, parallel — the osm runners) get the
+#    throughput knob (AFL_OSM_REPLICAS); every other compose domain is a single
+#    replica. Passing all domains to ONE start-runner call would fan
+#    AFL_OSM_REPLICAS across ALL services (one `--scale N` per selected service),
 #    spinning up N copies of anthropic/census/genomics/etc. that nothing needs.
 export AFL_HANDLER_CONTINUATION_MODE=off
 
-# 2a) osm runners — scaled by the throughput knob (start-runner --fleet default 4;
-#     .env.fleet sets AFL_OSM_REPLICAS=3).
-"$FW_LIB/runner/start" --fleet --recreate \
-    --domain osm-geocoder --domain osm-lz
+# 2a) scaled runners (osm) — scaled by the throughput knob (start-runner --fleet
+#     default 4; .env.fleet sets AFL_OSM_REPLICAS=3).
+SCALED=(); while IFS= read -r _d; do [[ -n "$_d" ]] && SCALED+=(--domain "$_d"); done \
+    < <(catalog_scaled_domain_suffixes)
+if [[ ${#SCALED[@]} -gt 0 ]]; then
+    "$FW_LIB/runner/start" --fleet --recreate "${SCALED[@]}"
+fi
 
-# 2b) every other handler runner — exactly one replica each.
-"$FW_LIB/runner/start" --fleet --recreate --replicas 1 \
-    --domain anthropic --domain noaa-weather --domain jenkins-example \
-    --domain census-us --domain genomics --domain sensor-monitoring
+# 2b) every other compose-domain runner — exactly one replica each.
+UNSCALED=(); while IFS= read -r _d; do [[ -n "$_d" ]] && UNSCALED+=(--domain "$_d"); done \
+    < <(catalog_unscaled_domain_suffixes)
+if [[ ${#UNSCALED[@]} -gt 0 ]]; then
+    "$FW_LIB/runner/start" --fleet --recreate --replicas 1 "${UNSCALED[@]}"
+fi
 
 # Keep this host's roles reconciled to the central fleet config.
 "$FW_LIB/fleet/agent" watch --data-dir "$HOME/afl_data"

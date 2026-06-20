@@ -48,6 +48,16 @@ catalog_fleet_default_services() {
     _catalog_python -c 'from facetwork.domains.catalog import fleet_default_services; print("\n".join(fleet_default_services()))'
 }
 
+# --domain suffixes for scaled compose domains (run at the throughput knob).
+catalog_scaled_domain_suffixes() {
+    _catalog_python -c 'from facetwork.domains.catalog import scaled_domain_suffixes; print("\n".join(scaled_domain_suffixes()))'
+}
+
+# --domain suffixes for non-scaled compose domains (one replica each).
+catalog_unscaled_domain_suffixes() {
+    _catalog_python -c 'from facetwork.domains.catalog import unscaled_domain_suffixes; print("\n".join(unscaled_domain_suffixes()))'
+}
+
 # The resolved catalog source path (for diagnostics).
 catalog_source() {
     _catalog_python -c 'from facetwork.domains.catalog import catalog_source; print(catalog_source())'

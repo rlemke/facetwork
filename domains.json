@@ -18,7 +18,8 @@
       "service": "runner-osm-geocoder",
       "task_list": "osm",
       "server_group_arg": true,
-      "fleet_default": true
+      "fleet_default": true,
+      "scaled": true
     },
     "osm-lz": {
       "repo": "fwh_osm_lz",
@@ -26,7 +27,8 @@
       "description": "Continental-scale OSM workflow catalog (depends on fwh_osm)",
       "service": "runner-osm-lz",
       "task_list": "continental",
-      "fleet_default": true
+      "fleet_default": true,
+      "scaled": true
     },
     "noaa-weather": {
       "repo": "fwh_noaa_weather",

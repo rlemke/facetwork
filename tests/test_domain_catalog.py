@@ -52,6 +52,18 @@ def test_local_override_replaces_entry(base):
     assert catalog.get_domain("osm-geocoder")["repo"] == "fwh_osm_fork"
 
 
+def test_scaled_split_and_compose_services(base):
+    _tmp, default, _local = base
+    _write(default, {"domains": {
+        "osm": {"repo": "fwh_osm", "service": "runner-osm", "scaled": True},
+        "anthropic": {"repo": "fwh_anthropic", "service": "runner-anthropic"},
+        "save": {"repo": "fwh_save"},  # no service -> not a compose domain at all
+    }, "examples": {}})
+    assert catalog.scaled_domain_suffixes() == ["osm"]
+    assert catalog.unscaled_domain_suffixes() == ["anthropic"]  # 'save' excluded (no service)
+    assert catalog.compose_services() == ["runner-anthropic", "runner-osm"]
+
+
 def test_env_file_is_full_replace(base, tmp_path, monkeypatch):
     _tmp, _default, local = base
     _write(local, {"domains": {"acme": {"repo": "fwh_acme"}}})  # should be IGNORED
