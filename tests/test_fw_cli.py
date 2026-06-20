@@ -62,12 +62,15 @@ def _command_files():
     return out
 
 
+def _shebang(path):
+    with open(path, "rb") as fh:
+        return fh.readline()
+
+
 def _bash_files():
     fw_and_lib = [FW]
     for p in _command_files():
-        with open(p, "rb") as fh:
-            first = fh.readline()
-        if b"bash" in first:
+        if b"bash" in _shebang(p):
             fw_and_lib.append(p)
     # helpers are sourced bash too
     for f in ("_bootstrap.sh", "_env.sh", "_remote.sh"):
@@ -75,6 +78,10 @@ def _bash_files():
         if os.path.isfile(fp):
             fw_and_lib.append(fp)
     return fw_and_lib
+
+
+def _python_command_files():
+    return [p for p in _command_files() if b"python" in _shebang(p)]
 
 
 def test_fw_help_lists_all_groups():
@@ -138,3 +145,27 @@ def test_every_command_is_executable():
         if not os.access(p, os.X_OK)
     ]
     assert not not_exec, f"command files missing +x: {not_exec}"
+
+
+def test_every_command_has_shebang():
+    """`fw` exec()s each command, so a file without a shebang can't run even with
+    +x (this is exactly how the cache-index regression manifested)."""
+    no_shebang = [
+        os.path.relpath(p, REPO_ROOT)
+        for p in _command_files()
+        if not _shebang(p).startswith(b"#!")
+    ]
+    assert not no_shebang, f"command files missing a shebang: {no_shebang}"
+
+
+def test_python_command_files_compile():
+    import sys
+
+    bad = []
+    for f in _python_command_files():
+        r = subprocess.run(
+            [sys.executable, "-m", "py_compile", f], capture_output=True, text=True
+        )
+        if r.returncode != 0:
+            bad.append(f"{os.path.relpath(f, REPO_ROOT)}: {r.stderr.strip()}")
+    assert not bad, "python command files with syntax errors:\n" + "\n".join(bad)
