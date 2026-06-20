@@ -38,6 +38,16 @@ print(",".join(v) if isinstance(v, list) else v)
 ' "$1" "$2"
 }
 
+# All compose runner-<service> names (one per line, sorted by domain).
+catalog_compose_services() {
+    _catalog_python -c 'from facetwork.domains.catalog import compose_services; print("\n".join(compose_services()))'
+}
+
+# runner-<service> names for fleet_default domains (the default --fleet set).
+catalog_fleet_default_services() {
+    _catalog_python -c 'from facetwork.domains.catalog import fleet_default_services; print("\n".join(fleet_default_services()))'
+}
+
 # The resolved catalog source path (for diagnostics).
 catalog_source() {
     _catalog_python -c 'from facetwork.domains.catalog import catalog_source; print(catalog_source())'

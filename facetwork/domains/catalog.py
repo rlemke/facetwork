@@ -95,3 +95,15 @@ def get_domain(name: str) -> dict | None:
 def compose_domains() -> dict:
     """Domains that have a compose ``runner-<service>`` (subset with a ``service`` key)."""
     return {n: s for n, s in domains().items() if s.get("service")}
+
+
+def compose_services() -> list[str]:
+    """The ``runner-<service>`` names for all compose domains (sorted by domain)."""
+    return [s["service"] for _n, s in sorted(compose_domains().items())]
+
+
+def fleet_default_services() -> list[str]:
+    """``runner-<service>`` names for domains flagged ``fleet_default`` (the default
+    set a bare ``fw runner start --fleet`` / fleet-agent brings up)."""
+    return [s["service"] for n, s in sorted(domains().items())
+            if s.get("fleet_default") and s.get("service")]

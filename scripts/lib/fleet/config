@@ -57,6 +57,27 @@ def _db(url):
     return MongoClient(url, serverSelectionTimeoutMS=5000)[DB]
 
 
+def _warn_unknown_domain_runners(names):
+    """Best-effort: warn if a --domain-runner name isn't a known catalog
+    compose-domain service suffix (e.g. `jenkins-example`). Never fatal — a
+    deployment may run a service not yet in its catalog."""
+    try:
+        from fwroot import fw_root
+
+        sys.path.insert(0, fw_root())
+        from facetwork.domains.catalog import compose_domains
+
+        known = {s["service"][len("runner-"):] for s in compose_domains().values()
+                 if s.get("service", "").startswith("runner-")}
+        unknown = [n for n in names if n not in known]
+        if unknown:
+            print(f"  note: domain-runner(s) not in the catalog: {', '.join(unknown)}")
+            print(f"        known compose-domain suffixes: {', '.join(sorted(known))}")
+            print("        (ensure runner-<name> exists in docker-compose; harmless if it does)")
+    except Exception:  # noqa: BLE001 — validation is advisory only
+        pass
+
+
 def _print_cfg(cfg):
     minio = cfg.get("minio", {})
     eps = cfg.get("endpoints", {})
@@ -111,6 +132,8 @@ def cmd_set(a):
     # census-us, anthropic, jenkins-example. Image inherits the shared runner
     # image unless --domain-image pins one. Each runs at --domain-replicas per
     # server (default 1). `--rm-domain-runner` drops a role.
+    if a.domain_runner:
+        _warn_unknown_domain_runners(a.domain_runner)
     for name in (a.domain_runner or []):
         spec = cfg.setdefault("roles", {}).setdefault(name, {})
         spec["kind"] = "domain"

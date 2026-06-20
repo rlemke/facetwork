@@ -21,25 +21,25 @@
 # osm-geocoder/gh-router ROLE across every fleet server, use the registry path
 # instead: buildx -> push -> `fw fleet set --image` (docs/operations/fleet-rollouts.md).
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_catalog.sh"
 set -euo pipefail
 
 REPO_ROOT="$FW_ROOT"
 cd "$REPO_ROOT"
 
-# Per-example runner services built from docker/Dockerfile.domain-runner (the
-# "workers" this script builds + recreates). Default --up target, so `rm -sf`
-# never touches infra (mongo/minio/…). EXCLUDES runner-gh-router: it uses a
-# prebuilt image (osm-gh-router, the GraphHopper Java agent) with no build:
-# section, so `up --no-build` would try to PULL it and fail ("pull access
-# denied"). gh-router ships via its own image build + `fw fleet set
-# --gh-router-image`, not through rebuild-workers. Pass it explicitly only if
-# its image already exists locally / via AFL_GH_ROUTER_IMAGE.
-WORKER_SERVICES=(
-    runner-anthropic runner-census-us runner-genomics runner-jenkins-example
-    runner-noaa-weather runner-sensor-monitoring
-    runner-osm-geocoder runner-osm-lz
-    runner-ffl
-)
+# Per-domain runner services built from docker/Dockerfile.domain-runner (the
+# "workers" this script builds + recreates) — the catalog's compose domains plus
+# the orchestration tier (runner-ffl). Default --up target, so `rm -sf` never
+# touches infra (mongo/minio/…). EXCLUDES runner-gh-router: it uses a prebuilt
+# image (osm-gh-router, the GraphHopper Java agent) with no build: section, so
+# `up --no-build` would try to PULL it and fail ("pull access denied"). gh-router
+# ships via its own image build + `fw fleet set --gh-router-image`, not through
+# rebuild-runners. Pass it explicitly only if its image already exists locally /
+# via AFL_GH_ROUTER_IMAGE.
+WORKER_SERVICES=()
+while IFS= read -r _svc; do [[ -n "$_svc" ]] && WORKER_SERVICES+=("$_svc"); done \
+    < <(catalog_compose_services)
+WORKER_SERVICES+=(runner-ffl)
 
 FWH_OSM_REF="${FWH_OSM_REF:-main}"   # baked fwh_osm revision; override with --ref
 NO_CACHE=0
