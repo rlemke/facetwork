@@ -77,10 +77,10 @@ Start simple and build up to more complex patterns:
 > below. Install one (or all) with the registry-driven helper:
 >
 > ```bash
-> scripts/install-example --list              # see what's registered
-> scripts/install-example anthropic --check   # clone + pip install + verify
-> scripts/install-example --all               # install everything
-> scripts/install-anthropic --all --check     # convenience wrapper for the
+> fw install example --list              # see what's registered
+> fw install example anthropic --check   # clone + pip install + verify
+> fw install example --all               # install everything
+> fw install anthropic --all --check     # convenience wrapper for the
 >                                             # anthropic package (handles
 >                                             # agent_sdk/mcp extras and
 >                                             # reports env readiness)
@@ -353,7 +353,7 @@ pip install -r examples/<name>/requirements.txt  # if exists
 afl examples/<name>/ffl/<file>.ffl --check
 
 # 3. Register handlers + start the runner (recommended)
-scripts/start-runner --example <name> -- --log-format text
+fw runner start --example <name> -- --log-format text
 
 # 4. Or run the legacy AgentPoller directly
 PYTHONPATH=. python examples/<name>/agent.py
@@ -367,7 +367,7 @@ git clone https://github.com/rlemke/<fwh_repo>.git ~/fw_handlers/<fwh_repo>
 pip install -e ~/fw_handlers/<fwh_repo>
 
 # 2. From a Facetwork checkout — same start-runner flag as in-repo examples
-scripts/start-runner --example <name> -- --log-format text
+fw runner start --example <name> -- --log-format text
 ```
 
 The `facetwork.examples` entry point declared in each standalone repo's

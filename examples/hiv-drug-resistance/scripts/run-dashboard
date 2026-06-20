@@ -4,7 +4,7 @@
 # Steps:
 #   1. Generate synthetic FASTQ sample data at /tmp/hiv-fastq/
 #   2. Seed the HIV example to MongoDB (--clean to replace existing seeds)
-#   3. Start the runner + dashboard via scripts/start-runner
+#   3. Start the runner + dashboard via fw runner start
 #
 # Usage:
 #   examples/hiv-drug-resistance/scripts/run-dashboard
@@ -13,7 +13,7 @@
 #
 # Options:
 #   --no-seed   Skip steps 1 and 2 (data generation and seeding)
-#   --          Remaining args are passed to scripts/start-runner
+#   --          Remaining args are passed to fw runner start
 #   -h, --help  Show this help message
 #
 # After startup, open http://localhost:8080 and navigate to:
@@ -55,14 +55,14 @@ if [[ "$SEED" == "true" ]]; then
 
     echo "=== Step 2/3: Seed HIV example to MongoDB ==="
     echo ""
-    "$REPO_ROOT/scripts/seed-examples" --clean --include hiv-drug-resistance
+    "$REPO_ROOT/fw" ffl seed --clean --include hiv-drug-resistance
     echo ""
 fi
 
 echo "=== Step 3/3: Start runner + dashboard ==="
 echo ""
 if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
-    exec "$REPO_ROOT/scripts/start-runner" --example hiv-drug-resistance -- "${PASSTHROUGH_ARGS[@]}"
+    exec "$REPO_ROOT/fw" runner start --example hiv-drug-resistance -- "${PASSTHROUGH_ARGS[@]}"
 else
-    exec "$REPO_ROOT/scripts/start-runner" --example hiv-drug-resistance
+    exec "$REPO_ROOT/fw" runner start --example hiv-drug-resistance
 fi

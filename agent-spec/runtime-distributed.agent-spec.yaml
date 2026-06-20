@@ -117,7 +117,7 @@ runner_lifecycle:
     - "Runner begins polling for tasks."
 
   graceful_drain:
-    - "On SIGTERM or scripts/drain-runners: stop claiming new tasks."
+    - "On SIGTERM or fw runner drain: stop claiming new tasks."
     - "Wait for in-flight tasks to complete (or time out per execution timeout)."
     - "Reset any remaining CLAIMED tasks back to QUEUED."
     - "Write a step log entry for each drained task for audit visibility."
@@ -132,7 +132,7 @@ runner_lifecycle:
 workflow_repair:
   purpose: "Diagnose and fix workflow state after server restarts, MongoDB downtime, or premature runner completion."
   entry_points:
-    - "CLI: scripts/repair-workflow RUNNER_ID"
+    - "CLI: fw maint repair-workflow RUNNER_ID"
     - "Dashboard: Repair Workflow button on workflow detail page"
     - "MCP tool: afl_repair_workflow"
   checks:

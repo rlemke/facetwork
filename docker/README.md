@@ -6,7 +6,7 @@ This directory contains Docker configurations for running the Facetwork developm
 
 ```bash
 # Bootstrap: install Docker (if needed), build, and start
-scripts/setup
+fw install setup
 
 # Or start manually
 docker compose up -d
@@ -23,26 +23,26 @@ docker compose logs -f
 
 ## Setup Script
 
-The `scripts/setup` bootstrap script handles Docker installation, image building, and service scaling.
+The `fw install setup` bootstrap script handles Docker installation, image building, and service scaling.
 
 ```bash
 # Start with defaults (1 runner, 1 addone agent)
-scripts/setup
+fw install setup
 
 # Scale runners and agents
-scripts/setup --runners 3 --agents 2
+fw install setup --runners 3 --agents 2
 
 # Include OSM geocoder agents (full image with Java/GraphHopper)
-scripts/setup --osm-agents 2
+fw install setup --osm-agents 2
 
 # Include lightweight OSM agents (no Java/GraphHopper)
-scripts/setup --osm-lite-agents 2
+fw install setup --osm-lite-agents 2
 
 # Force rebuild before starting
-scripts/setup --build --runners 3
+fw install setup --build --runners 3
 
 # Just verify Docker is installed
-scripts/setup --check-only
+fw install setup --check-only
 ```
 
 ### Options
@@ -71,7 +71,7 @@ scripts/setup --check-only
 OSM agents (full + lite) live in the standalone osm-geocoder repo at
 [github.com/rlemke/fwh_osm](https://github.com/rlemke/fwh_osm). After
 `pip install -e ~/fw_handlers/fwh_osm`, they're discoverable via
-`scripts/start-runner --example osm-geocoder` — no Docker container is
+`fw runner start --example osm-geocoder` — no Docker container is
 shipped from this repo.
 
 ### Optional Services (profiles)
@@ -100,7 +100,7 @@ Runner and agent services can be horizontally scaled. Each instance connects to 
 docker compose up -d --scale runner=3 --scale agent-addone=2
 
 # Or use the setup script
-scripts/setup --runners 3 --agents 2 --osm-agents 1
+fw install setup --runners 3 --agents 2 --osm-agents 1
 ```
 
 Verify scaling:

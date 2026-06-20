@@ -146,7 +146,7 @@ pytest examples/research-agent/tests/ -v
 
 # Real run requires ANTHROPIC_API_KEY (fwh_anthropic's CreateMessage handler uses it)
 export ANTHROPIC_API_KEY=sk-...
-scripts/start-runner --example anthropic -- --log-format text
+fw runner start --example anthropic -- --log-format text
 # then trigger the workflow from the dashboard
 ```
 

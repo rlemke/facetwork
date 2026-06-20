@@ -40,11 +40,11 @@ callable.
 pip install -e .
 
 # In the Facetwork repo (no edits needed):
-scripts/seed-examples --include example-template
-scripts/start-runner --example example-template
+fw ffl seed --include example-template
+fw runner start --example example-template
 ```
 
-`scripts/start-runner --example NAME` and `scripts/seed-examples` discover
+`fw runner start --example NAME` and `fw ffl seed` discover
 both in-repo `examples/<name>/` directories and pip-installed packages
 declaring the `facetwork.examples` entry point — installed packages take
 precedence on name collision.
@@ -65,7 +65,7 @@ example = ExamplePackage(
 )
 ```
 
-These are exported into the runner's environment by `scripts/start-runner`.
+These are exported into the runner's environment by `fw runner start`.
 
 ## Migrating an existing `examples/<name>/` directory
 
@@ -79,12 +79,12 @@ These are exported into the runner's environment by `scripts/start-runner`.
 6. If `examples/<name>/runner.env` exists, copy its values into
    `runner_env={...}` on the `ExamplePackage`.
 7. `pip install -e .` from your new repo, then verify with
-   `scripts/seed-examples --include <name>`.
+   `fw ffl seed --include <name>`.
 8. Remove `examples/<name>/` from the Facetwork repo.
 
 ## Seed-stability invariant
 
-`scripts/seed-examples` and the per-runner entrypoint both call
+`fw ffl seed` and the per-runner entrypoint both call
 `facetwork.examples.seed_example_flows`, which seeds your FFL under
 `namespace_id = "example:<name>"`. The seeder is **UUID-stable across
 re-runs**: re-seeding the same package reuses its existing

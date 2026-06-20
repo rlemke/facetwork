@@ -44,7 +44,7 @@ If nothing fits, compose a new workflow from existing facets, then:
 
 ## 5. Missing primitive — GATE B
 If a needed facet doesn't exist, do **not** work around it with raw code:
-1. Scaffold it — **`scripts/scaffold-handler`** (review-ready facet + handler + test stubs).
+1. Scaffold it — **`fw ffl scaffold`** (review-ready facet + handler + test stubs).
 2. **Show the requestor the handler implementation for comments, and STOP**, before
    registering/deploying or using it. Apply feedback, then deploy.
 - If raw `osmium`/`curl`/Python seems necessary at any point, **stop and explain which FFL
@@ -59,9 +59,9 @@ If a needed facet doesn't exist, do **not** work around it with raw code:
   **never** use raw `osmium`/`curl`/manual downloads.
 
 ## 7. Run it on the runtime (only after approval) and report
-- Ensure a runner is up (`scripts/start-runner --example <name> ...`).
-- Submit with **`scripts/ffl-run <file.ffl> --workflow ns.Name [--inputs JSON] [--task-list X]`**
+- Ensure a runner is up (`fw runner start --example <name> ...`).
+- Submit with **`fw ffl run <file.ffl> --workflow ns.Name [--inputs JSON] [--task-list X]`**
   — the FFL-first submit that creates the runner record, so the run is trackable in the dashboard.
-  (Do **not** use `scripts/run-workflow`: it runs in-process and is not dashboard-visible.)
+  (Do **not** use `fw ffl run-workflow`: it runs in-process and is not dashboard-visible.)
 - Track progress, then report the results **and any honest limitations** (unreachable nodes,
   network fragmentation, regions that failed to download, data excluded, etc.).
