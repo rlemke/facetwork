@@ -15,20 +15,21 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 
 PYTHON="$FW_ROOT/.venv/bin/python3"; [ -x "$PYTHON" ] || PYTHON=python3
-INSTALL=0
+INSTALL=0 BREAK=0
 for a in "$@"; do
     case "$a" in
         --install|--fix) INSTALL=1 ;;
         --dry|--dry-run) INSTALL=0 ;;
+        --break-system-packages) BREAK=1 ;;
         -h|--help)
             sed -n '3,12p' "$0" | grep -v '^# fw-summary:' | sed 's/^# \{0,1\}//'
-            echo; echo "Usage: fw install check [--install]"
+            echo; echo "Usage: fw install check [--install] [--break-system-packages]"
             exit 0 ;;
         *) echo "unknown arg: $a" >&2; exit 2 ;;
     esac
 done
 
-exec env FW_ROOT="$FW_ROOT" FW_LIB="$FW_LIB" FW_PYTHON="$PYTHON" FW_INSTALL="$INSTALL" \
+exec env FW_ROOT="$FW_ROOT" FW_LIB="$FW_LIB" FW_PYTHON="$PYTHON" FW_INSTALL="$INSTALL" FW_BREAK="$BREAK" \
     "$PYTHON" - <<'PY'
 import ast
 import os
@@ -43,10 +44,12 @@ FW_LIB = os.environ["FW_LIB"]
 PYTHON = os.environ["FW_PYTHON"]
 DO_INSTALL = os.environ["FW_INSTALL"] == "1"
 
-# A non-venv (system/Homebrew) python is PEP 668 externally-managed — pip refuses
-# to install into it without --user. Hosts with a repo .venv install normally.
+# A non-venv (system/Homebrew) python may be PEP 668 externally-managed, which
+# blocks pip (even --user on Homebrew). Hosts with a repo .venv install normally;
+# a non-venv host needs a venv (fw install repo) or an explicit opt-in override.
 IN_VENV = sys.prefix != sys.base_prefix
-PIP_USER = [] if IN_VENV else ["--user"]
+BREAK = os.environ.get("FW_BREAK") == "1"
+PIP_EXTRA = ["--break-system-packages"] if BREAK else []
 
 # Modules that are local/path-hacked or part of this repo — never "missing".
 EXCLUDE = {"handlers", "conftest", "facetwork", "examples", "tests", "afl"}
@@ -214,18 +217,35 @@ for name in example_names:
     print(f"  -> fw install example {name}")
     r = subprocess.run([os.path.join(FW_LIB, "install", "example"), name, "--check"])
     rc = rc or r.returncode
+pep668 = False
 for spec in pip_specs:
-    print(f"  -> pip install {' '.join(PIP_USER + spec)}")
-    r = subprocess.run([PYTHON, "-m", "pip", "install", *PIP_USER, *spec])
-    rc = rc or r.returncode
+    print(f"  -> pip install {' '.join(PIP_EXTRA + spec)}")
+    r = subprocess.run([PYTHON, "-m", "pip", "install", *PIP_EXTRA, *spec],
+                       capture_output=True, text=True)
+    sys.stdout.write(r.stdout)
+    if r.returncode != 0:
+        sys.stderr.write(r.stderr)
+        if "externally-managed-environment" in (r.stdout + r.stderr):
+            pep668 = True
+        rc = rc or r.returncode
 
-# re-check
-still = sorted(m for m in missing_mods if not importable(m))
 print()
-if still:
-    print(f"Still missing after install: {', '.join(still)} (may need an OS lib or a manual extra)")
+if pep668:
+    print(f"pip is blocked — {PYTHON} is PEP 668 externally-managed (system/Homebrew).")
+    print("Fix the host's setup, then re-run:")
+    print("  fw install repo                 # create a repo .venv and install into it (recommended)")
+    print("  fw install check --install --break-system-packages   # override (risks the system python)")
     rc = rc or 1
 else:
-    print("✓ all previously-missing modules now importable")
+    # importable() is cached per-process; spawn a fresh interpreter so a just-
+    # installed package (possibly in a site dir not on our startup sys.path) is seen.
+    check = "import importlib.util,sys; sys.exit(0 if all(importlib.util.find_spec(m) for m in sys.argv[1:]) else 1)"
+    still = [m for m in missing_mods
+             if subprocess.run([PYTHON, "-c", check, m]).returncode != 0]
+    if still:
+        print(f"Still missing after install: {', '.join(sorted(still))} (may need a manual extra/OS lib)")
+        rc = rc or 1
+    else:
+        print("✓ all previously-missing modules now importable")
 sys.exit(rc)
 PY
