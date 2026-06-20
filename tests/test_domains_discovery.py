@@ -43,25 +43,14 @@ class TestEntryPointDiscovery:
         [pkg] = discover_entry_point_domains()
         assert pkg.name == "installed" and pkg.source == "entry_point"
 
-    def test_dual_read_legacy_group(self, tmp_path, monkeypatch):
-        """Transitional: a package still on facetwork.examples surfaces as a domain."""
+    def test_ignores_legacy_group(self, tmp_path, monkeypatch):
+        """Clean break: a package still on facetwork.examples is NOT a domain."""
         legacy = DomainPackage(
             name="oldpkg", ffl_dir=tmp_path, register_handlers=lambda r: None,
             source="entry_point",
         )
         _patch_entry_points(monkeypatch, {"facetwork.examples": [_FakeEP("oldpkg", legacy)]})
-        names = [p.name for p in discover_entry_point_domains()]
-        assert "oldpkg" in names
-
-    def test_new_group_wins_dedupe(self, tmp_path, monkeypatch):
-        new = DomainPackage(name="dup", ffl_dir=tmp_path, register_handlers=lambda r: None)
-        old = DomainPackage(name="dup", ffl_dir=None, register_handlers=lambda r: None)
-        _patch_entry_points(monkeypatch, {
-            "facetwork.domains": [_FakeEP("dup", new)],
-            "facetwork.examples": [_FakeEP("dup", old)],
-        })
-        pkgs = discover_entry_point_domains()
-        assert len(pkgs) == 1 and pkgs[0].ffl_dir is not None  # the new-group one
+        assert discover_entry_point_domains() == []
 
     def test_skips_wrong_type(self, monkeypatch):
         _patch_entry_points(monkeypatch, {"facetwork.domains": [_FakeEP("bad", "not a Package")]})

@@ -22,9 +22,6 @@ from facetwork._pkg_discovery import (
 )
 
 ENTRY_POINT_GROUP = "facetwork.domains"
-# Transitional: during the examples→domains cutover, packages that still declare
-# the old group are read as domains too. Removed once every fwh_* repo re-releases.
-LEGACY_ENTRY_POINT_GROUP = "facetwork.examples"
 
 # Path stamped onto FlowDefinitions seeded for a domain (one path per domain).
 SEED_PATH_PREFIX = "domain:"
@@ -47,9 +44,8 @@ __all__ = [
 
 
 def discover_entry_point_domains() -> list[DomainPackage]:
-    """Domains registered via the ``facetwork.domains`` entry point (plus the
-    legacy ``facetwork.examples`` group during the cutover)."""
-    return discover_entry_point([ENTRY_POINT_GROUP, LEGACY_ENTRY_POINT_GROUP])
+    """Domains registered via the ``facetwork.domains`` entry point."""
+    return discover_entry_point([ENTRY_POINT_GROUP])
 
 
 def discover_local_domains(repo_root: Path) -> list[DomainPackage]:

@@ -10,18 +10,8 @@
 #   AFL_HANDLERS_ROOT    default /handlers — bind-mount root for fwh_* repos
 #   AFL_DOMAIN_EXTRAS    comma-separated pip extras (e.g. "agent_sdk,mcp")
 #   AFL_REGISTRY_RUNNER_ARGS  extra args to forward to the registry runner
-#
-# Transitional: the legacy AFL_EXAMPLE_* vars are honored as a fallback so a
-# compose file not yet flipped during the examples->domains rollout still boots.
-# Removed in the cleanup commit once every host runs the new compose.
 
 set -euo pipefail
-
-# Prefer AFL_DOMAIN_*; fall back to the legacy AFL_EXAMPLE_* during the cutover.
-AFL_DOMAIN_NAME="${AFL_DOMAIN_NAME:-${AFL_EXAMPLE_NAME:-}}"
-AFL_DOMAIN_REPO="${AFL_DOMAIN_REPO:-${AFL_EXAMPLE_REPO:-}}"
-AFL_DOMAIN_EXTRAS="${AFL_DOMAIN_EXTRAS:-${AFL_EXAMPLE_EXTRAS:-}}"
-AFL_DOMAIN_FORCE_MOUNT="${AFL_DOMAIN_FORCE_MOUNT:-${AFL_EXAMPLE_FORCE_MOUNT:-0}}"
 
 : "${AFL_DOMAIN_NAME:?must be set (AFL_DOMAIN_NAME)}"
 : "${AFL_DOMAIN_REPO:?must be set (AFL_DOMAIN_REPO)}"
@@ -40,12 +30,8 @@ echo "    handlers=$DOMAIN_DIR"
 #      bind-mount. The fleet default: handler code ships in the image.
 #   3. a bind-mount is present -> install it (local dev / non-baked domains).
 #   4. neither -> error.
-# Check both the new and (transitionally) the legacy baked-list filenames.
 is_baked() {
-    for f in /etc/afl-baked-domains /etc/afl-baked-examples; do
-        [[ -f "$f" ]] && grep -qxF "$AFL_DOMAIN_NAME" "$f" && return 0
-    done
-    return 1
+    [[ -f /etc/afl-baked-domains ]] && grep -qxF "$AFL_DOMAIN_NAME" /etc/afl-baked-domains
 }
 
 install_mount() {

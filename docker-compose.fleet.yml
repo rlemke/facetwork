@@ -31,7 +31,7 @@
 # locally-built image of that tag if present, else pulls. The fleet controller
 # sets it from fleet_config.roles.*.image; an image change triggers a recreate.
 # All per-example runners build from the SAME docker/Dockerfile.domain-runner
-# (the example is chosen at runtime via AFL_EXAMPLE_NAME), so one image tag serves
+# (the domain is chosen at runtime via AFL_DOMAIN_NAME), so one image tag serves
 # every example.
 
 # ── Shared fleet-join override, applied to every per-example runner ──────────

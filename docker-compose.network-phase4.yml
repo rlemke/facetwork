@@ -47,8 +47,8 @@ services:
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: facetwork
-      AFL_EXAMPLE_NAME: osm-geocoder
-      AFL_EXAMPLE_REPO: fwh_osm
+      AFL_DOMAIN_NAME: osm-geocoder
+      AFL_DOMAIN_REPO: fwh_osm
       AFL_DATA_ROOT: /data            # osm cache root -> /data/cache/osm/...
       AFL_OUTPUT_BASE: /data/output   # ApproxRoute writes route GeoJSON here
       AFL_POLL_INTERVAL_MS: "500"
