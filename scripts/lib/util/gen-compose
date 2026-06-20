@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# fw-summary: sync per-domain compose ENV from the catalog into docker-compose.full-stack.yml
+#
+# Writes the catalog-derived env keys (AFL_DOMAIN_NAME/REPO/EXTRAS,
+# AFL_REGISTRY_RUNNER_ARGS) into each domain's runner-<service> block; structural
+# bits (build/depends_on/volumes/anchors) are left as-is. Run after editing
+# domains.json (or a domains.local.json override). `--check` writes nothing and
+# exits non-zero if the compose is out of sync (CI guard).
+#
+# Usage:
+#   fw util gen-compose            # sync the compose env in place
+#   fw util gen-compose --check    # report drift, change nothing
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+PY="$FW_ROOT/.venv/bin/python3"; [ -x "$PY" ] || PY="$FW_ROOT/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || command -v python)"
+exec env PYTHONPATH="$FW_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PY" -m facetwork.domains.compose_gen "$@"

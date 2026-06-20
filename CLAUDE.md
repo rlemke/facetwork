@@ -50,7 +50,7 @@ up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgrou
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog) · **`maint`** (disk-guard/repair-workflow/
 terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana) ·
-**`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**).
+**`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**).
 
 Notes for working with `fw`:
 - It's just a thin dispatcher: each command is a file under `scripts/lib/<group>/`,
@@ -69,6 +69,16 @@ Notes for working with `fw`:
   dependency coverage instead of discovering gaps through failing test runs. A host
   with no repo `.venv` (system Homebrew python is PEP 668-locked) needs `fw install repo`
   first to create one.
+- **`domains.json` (catalog) + `fw util gen-compose`** — the domain/example set is
+  defined ONCE in `domains.json` (name → repo, extras, description, compose
+  `service`/`task_list`, …), not hardcoded in scripts. `fw install domain`,
+  `migrate.py`, and fleet validation read it via `facetwork/domains/catalog.py`;
+  `fw util gen-compose [--check]` syncs the catalog-derived env into each
+  `runner-<service>` block of `docker-compose.full-stack.yml` (structure stays
+  hand-written). **Per-deployment override without editing any command:** set
+  `AFL_DOMAINS_FILE=/path` (full replace) or drop a gitignored `domains.local.json`
+  (merged over the defaults — entries add/replace by key; top-level `"_remove": […]`
+  drops standard ones). Run `gen-compose` after editing the catalog.
 - **`fw util memory-sync [-m MSG] [--dry]`** — commit + push this project's Claude
   memory directory (`~/.claude/projects/<slug>/memory`, where `<slug>` is the repo
   path with `/` and `_` replaced by `-`; override with `AFL_MEMORY_DIR`) to its
