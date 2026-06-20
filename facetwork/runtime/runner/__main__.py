@@ -59,14 +59,15 @@ def _warn_registry_drift(loaded_facet_names: list[str]) -> None:
     Best-effort: any discovery failure is debug-logged and swallowed.
     """
     try:
+        from facetwork.domains import discover_all_domains
         from facetwork.examples import discover_all_examples
     except Exception as exc:  # pragma: no cover — defensive
-        _drift_logger.debug("Drift detection skipped (examples API unavailable): %s", exc)
+        _drift_logger.debug("Drift detection skipped (discovery API unavailable): %s", exc)
         return
 
     try:
         repo_root = Path(os.environ.get("REPO_ROOT") or os.getcwd())
-        packages = discover_all_examples(repo_root)
+        packages = discover_all_domains(repo_root) + discover_all_examples(repo_root)
     except Exception as exc:  # pragma: no cover — defensive
         _drift_logger.debug("Drift detection skipped (discovery failed): %s", exc)
         return
@@ -126,10 +127,10 @@ def _warn_registry_drift(loaded_facet_names: list[str]) -> None:
         preview = ", ".join(missing[:6]) + (f", … (+{len(missing)-6} more)" if len(missing) > 6 else "")
         parts.append(f"{name}: {preview}")
     _drift_logger.warning(
-        "Registry drift: %d facet(s) declared in installed example code but NOT in "
+        "Registry drift: %d facet(s) declared in installed package code but NOT in "
         "handler_registrations — tasks for these will sit pending with server_id=None. "
-        "Re-seed with `python -m facetwork.examples <name>` "
-        "(or `fw runner start --example <name>`). %s",
+        "Re-seed with `python -m facetwork.domains <name>` / `fw runner start --domain <name>` "
+        "(or the `examples`/`--example` variants for a teaching example). %s",
         total_missing,
         "; ".join(parts),
     )

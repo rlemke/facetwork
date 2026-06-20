@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
-# fw-summary: scale a per-example runner service on THIS host (docker compose --scale)
+# fw-summary: scale a per-domain runner service on THIS host (docker compose --scale)
 #
-# Wraps `docker compose --scale runner-<example>=<n>` with the fleet env layering,
+# Wraps `docker compose --scale runner-<domain>=<n>` with the fleet env layering,
 # so you never type the raw compose incantation. Scaling down removes the excess
 # containers (drained/reaped); scaling up adds fresh ones.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 
-EXAMPLE="" REPLICAS="" DRY=0
+DOMAIN="" REPLICAS="" DRY=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        --example) EXAMPLE="$2"; shift 2 ;;
+        --domain) DOMAIN="$2"; shift 2 ;;
         --replicas) REPLICAS="$2"; shift 2 ;;
         --dry|--dry-run) DRY=1; shift ;;
         -h|--help)
-            echo "Usage: fw runner scale --example NAME --replicas N [--dry]"
+            echo "Usage: fw runner scale --domain NAME --replicas N [--dry]"
             echo "  NAME: anthropic|census-us|genomics|noaa-weather|jenkins-example|sensor-monitoring|osm-geocoder|osm-lz|ffl"
             exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
-[ -z "$EXAMPLE" ] || [ -z "$REPLICAS" ] && { echo "fw runner scale: --example and --replicas are required" >&2; exit 2; }
+[ -z "$DOMAIN" ] || [ -z "$REPLICAS" ] && { echo "fw runner scale: --domain and --replicas are required" >&2; exit 2; }
 
-SVC="runner-$EXAMPLE"
+SVC="runner-$DOMAIN"
 ENV_ARGS=(--env-file "$FW_ROOT/.env.fleet")
 [ -f "$FW_ROOT/.env.fleet.override" ] && ENV_ARGS+=(--env-file "$FW_ROOT/.env.fleet.override")
 COMPOSE=(docker compose "${ENV_ARGS[@]}"

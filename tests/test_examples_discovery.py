@@ -6,10 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from facetwork import examples as examples_mod
+from facetwork._pkg_discovery import _parse_runner_env
 from facetwork.examples import (
     ExamplePackage,
-    _parse_runner_env,
     collect_ffl_files,
     discover_all_examples,
     discover_local_examples,
@@ -206,56 +205,19 @@ class TestFflCollection:
         assert [f.name for f in files] == ["main.ffl"]
 
 
-class _FakeEP:
-    def __init__(self, name: str, target: ExamplePackage):
-        self.name = name
-        self._target = target
-
-    def load(self):
-        return self._target
+# Entry-point discovery moved to the domains family — see test_domains_discovery.py.
+# Teaching examples are in-repo only, so discover_all_examples is local-only now.
 
 
-class TestEntryPointDiscovery:
-    def test_loads_entry_point_packages(self, tmp_path, monkeypatch):
-        target = ExamplePackage(
-            name="installed",
-            ffl_dir=tmp_path,
-            register_handlers=lambda r: None,
-            source="entry_point",
-        )
-        monkeypatch.setattr(
-            examples_mod.importlib.metadata,
-            "entry_points",
-            lambda group: [_FakeEP("installed", target)],
-        )
-        [pkg] = examples_mod.discover_entry_point_examples()
-        assert pkg.name == "installed"
-        assert pkg.source == "entry_point"
+class TestExamplesLocalOnly:
+    def test_examples_are_local_only(self, tmp_path):
+        # No entry-point packages leak into the teaching-example family.
+        _make_local_example(tmp_path, "demo", with_handlers=True, with_ffl=True)
+        names = [p.name for p in discover_all_examples(tmp_path)]
+        assert names == ["demo"]
 
-    def test_skips_entry_point_returning_wrong_type(self, monkeypatch):
-        monkeypatch.setattr(
-            examples_mod.importlib.metadata,
-            "entry_points",
-            lambda group: [_FakeEP("bad", "not an ExamplePackage")],
-        )
-        assert examples_mod.discover_entry_point_examples() == []
-
-    def test_entry_point_wins_over_local_on_name_collision(self, tmp_path, monkeypatch):
-        _make_local_example(tmp_path, "shared", with_handlers=True, with_ffl=True)
-        installed = ExamplePackage(
-            name="shared",
-            ffl_dir=None,
-            register_handlers=lambda r: None,
-            source="entry_point",
-        )
-        monkeypatch.setattr(
-            examples_mod.importlib.metadata,
-            "entry_points",
-            lambda group: [_FakeEP("shared", installed)],
-        )
-        [pkg] = discover_all_examples(tmp_path)
-        assert pkg.source == "entry_point"
-        assert pkg.handlers_path is None
+    def test_none_repo_root_yields_nothing(self):
+        assert discover_all_examples(None) == []
 
 
 class TestFilter:

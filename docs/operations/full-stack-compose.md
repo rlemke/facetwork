@@ -33,7 +33,7 @@ the entrypoint (`docker/entrypoint-example-runner.sh`) does:
 
 1. `pip install -e /handlers/<repo>[<extras>]` (editable, so handler
    edits on the host land in the container with no rebuild)
-2. `python -m facetwork.examples --seed <name>` — registers handler
+2. `python -m facetwork.domains --seed <name>` — registers handler
    routing in MongoDB **and** compiles the example's FFL into a
    `FlowDefinition` + `WorkflowDefinition`s so its workflows show up in
    the dashboard's Flows tab. `--seed` is idempotent: seeded under
@@ -326,7 +326,7 @@ fw install example --skip-pull anthropic       # pip install existing clone only
 
 Defaults clone into `~/fw_handlers/` and pip-install into the local
 `.venv/` (auto-detected). With `--check`, verifies the example is
-discoverable via `facetwork.examples.discover_entry_point_examples()`.
+discoverable via `facetwork.domains.discover_entry_point_domains()`.
 
 ### fw install anthropic
 
@@ -596,5 +596,5 @@ fw single full-stack up dashboard runner runner-anthropic
 
 - [`docs/operations/deployment.md`](deployment.md) — non-Docker / multi-host deployment
 - [`docs/getting-started/beginners-guide.md`](../getting-started/beginners-guide.md) — workflow basics
-- [`fw install example`](../../scripts/lib/install/example) — registry of standalone example repos
+- [`fw install example`](../../scripts/lib/install/domain) — registry of standalone example repos
 - [`docker-compose.full-stack.yml`](../../docker-compose.full-stack.yml) — the source of truth

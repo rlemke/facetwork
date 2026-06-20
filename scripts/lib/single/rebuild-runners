@@ -26,7 +26,7 @@ set -euo pipefail
 REPO_ROOT="$FW_ROOT"
 cd "$REPO_ROOT"
 
-# Per-example runner services built from docker/Dockerfile.example-runner (the
+# Per-example runner services built from docker/Dockerfile.domain-runner (the
 # "workers" this script builds + recreates). Default --up target, so `rm -sf`
 # never touches infra (mongo/minio/…). EXCLUDES runner-gh-router: it uses a
 # prebuilt image (osm-gh-router, the GraphHopper Java agent) with no build:

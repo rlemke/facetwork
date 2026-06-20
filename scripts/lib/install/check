@@ -5,7 +5,7 @@
 # and pytest.importorskip(...) markers), reports which are NOT importable on this
 # host, and cross-checks the standalone example packages against what's actually
 # installed (facetwork.examples entry points). With --install it installs the
-# gaps: example-provided modules via `fw install example <name>`, everything else
+# gaps: example-provided modules via `fw install domain <name>`, everything else
 # via pip (boto3 → the facetwork [s3] extra).
 #
 # This is the automation of the host-by-host gap hunt: a fresh runner host can
@@ -78,10 +78,10 @@ def local_example_modules():
 EXCLUDE |= local_example_modules()
 
 # How to install a given missing top-level module. Example-provided modules map
-# to `fw install example <name>`; a few belong to a facetwork extra; the rest
+# to `fw install domain <name>`; a few belong to a facetwork extra; the rest
 # default to `pip install <module>`.
 KNOWN = {
-    "anthropic_handlers": ("example", "anthropic"),
+    "anthropic_handlers": ("domain", "anthropic"),
     "boto3": ("pip", "-e", f"{FW_ROOT}[s3]"),
     "botocore": ("pip", "-e", f"{FW_ROOT}[s3]"),
 }
@@ -125,9 +125,9 @@ def importable(mod):
 
 
 def parse_registry():
-    """name -> (repo, extras, desc) from scripts/lib/install/example."""
+    """name -> (repo, extras, desc) from scripts/lib/install/domain."""
     reg = {}
-    path = os.path.join(FW_LIB, "install", "example")
+    path = os.path.join(FW_LIB, "install", "domain")
     rx = re.compile(r'^\s*"([a-z0-9-]+)\|([^|]*)\|([^|]*)\|(.*)"')
     for line in open(path, encoding="utf-8", errors="ignore"):
         m = rx.match(line)
@@ -137,7 +137,12 @@ def parse_registry():
 
 
 def installed_examples():
-    return {e.name for e in entry_points(group="facetwork.examples")}
+    # Read both groups during the examples->domains cutover (fwh_* may still
+    # declare the legacy group).
+    names = set()
+    for group in ("facetwork.domains", "facetwork.examples"):
+        names |= {e.name for e in entry_points(group=group)}
+    return names
 
 
 # --- analyze ---------------------------------------------------------------
@@ -165,8 +170,8 @@ if not missing_mods:
 else:
     for m in missing_mods:
         action = KNOWN.get(m)
-        if action and action[0] == "example":
-            hint = f"fw install example {action[1]}"
+        if action and action[0] == "domain":
+            hint = f"fw install domain {action[1]}"
         elif action and action[0] == "pip":
             hint = "pip install " + " ".join(action[1:])
         else:
@@ -175,7 +180,7 @@ else:
 
 # Section 2: example packages (informational — install to run that example)
 print()
-print("Standalone example packages (facetwork.examples):")
+print("Standalone domain packages (facetwork.domains):")
 for name in sorted(reg):
     repo, extras, _ = reg[name]
     mark = "✓ installed" if name in inst else "○ available (not installed)"
@@ -187,7 +192,7 @@ print()
 if not DO_INSTALL:
     if n_missing:
         print(f"{n_missing} missing module(s). Re-run with --install to fix, or install an")
-        print("example package to run it:  fw install example <name>")
+        print("domain package to run it:  fw install domain <name>")
     else:
         print("All test/example module dependencies satisfied.")
     sys.exit(0)
@@ -203,7 +208,7 @@ rc = 0
 example_names, pip_specs = [], []
 for m in missing_mods:
     action = KNOWN.get(m)
-    if action and action[0] == "example":
+    if action and action[0] == "domain":
         if action[1] not in example_names:
             example_names.append(action[1])
     elif action and action[0] == "pip":
@@ -214,8 +219,8 @@ for m in missing_mods:
         pip_specs.append([m])
 
 for name in example_names:
-    print(f"  -> fw install example {name}")
-    r = subprocess.run([os.path.join(FW_LIB, "install", "example"), name, "--check"])
+    print(f"  -> fw install domain {name}")
+    r = subprocess.run([os.path.join(FW_LIB, "install", "domain"), name, "--check"])
     rc = rc or r.returncode
 pep668 = False
 for spec in pip_specs:

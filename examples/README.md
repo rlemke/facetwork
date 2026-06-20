@@ -5,7 +5,7 @@ Each subdirectory contains a complete working example with FFL source and a Pyth
 | Example | Description |
 |---------|-------------|
 | [hello-agent](hello-agent/) | Minimal end-to-end example demonstrating the Facetwork execution model |
-| [osm-geocoder](osm-geocoder/) | Geocoding agent that resolves addresses to coordinates using the OpenStreetMap Nominatim API |
+| [osm-geocoder](https://github.com/rlemke/fwh_osm) | OSM PBF → PostGIS → routing/tiles. Standalone **domain** package: `fw install domain osm-geocoder`. |
 | [genomics](https://github.com/rlemke/fwh_genomics) | Bioinformatics cohort analysis with foreach fan-out and linear fan-in workflows. Standalone repo: install with `pip install -e ~/fw_handlers/fwh_genomics`. |
 | [jenkins](https://github.com/rlemke/fwh_jenkins) | CI/CD pipelines showcasing mixin composition (Retry, Timeout, Credentials, etc.). Standalone repo: install with `pip install -e ~/fw_handlers/fwh_jenkins`. |
 | [aws-lambda](aws-lambda/) | AWS Lambda + Step Functions with real boto3 calls against LocalStack |

@@ -30,7 +30,7 @@
 # fleet, so every server runs the same build). With pull_policy=missing it uses a
 # locally-built image of that tag if present, else pulls. The fleet controller
 # sets it from fleet_config.roles.*.image; an image change triggers a recreate.
-# All per-example runners build from the SAME docker/Dockerfile.example-runner
+# All per-example runners build from the SAME docker/Dockerfile.domain-runner
 # (the example is chosen at runtime via AFL_EXAMPLE_NAME), so one image tag serves
 # every example.
 

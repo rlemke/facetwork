@@ -2,7 +2,7 @@
 #
 # The reusable contract for every domain pipeline. A pipeline ships as a
 # standalone, pip-installable package (fwh_<domain>: fwh_osm, fwh_noaa_weather,
-# fwh_save_earth, and future siblings) discovered via the `facetwork.examples`
+# fwh_save_earth, and future siblings) discovered via the `facetwork.domains`
 # entry point — not as an in-repo directory. (A simpler in-repo examples/<name>/
 # dir with no pyproject/src is a supported variant; see layout.in_repo_variant.)
 # It defines the package layout, CLI contract, shared-library split, handler-side
@@ -44,7 +44,7 @@ layout:
       path: "fwh_<domain>/pyproject.toml"
       description: |
         Declares the package and the discovery entry point:
-          [project.entry-points."facetwork.examples"]
+          [project.entry-points."facetwork.domains"]
           <domain> = "<import_pkg>:example"
         plus [tool.setuptools.packages.find] where=["src"] and
         [tool.setuptools.package-data] shipping ffl/*.ffl.
@@ -89,7 +89,7 @@ layout:
   in_repo_variant: |
     A simpler example may live in-repo at examples/<name>/ inside the Facetwork
     repo — handlers/, ffl/, tools/ directly under it, no pyproject/src/ —
-    discovered by facetwork.examples.discover_local_examples() instead of the
+    discovered by facetwork.domains.discover_local_domains() instead of the
     entry point. The same tools / handlers / _<pkg>_tools split and the
     package-unique lib-naming rule still apply. Prefer the standalone package
     for anything shipped to production; scaffold from facetwork's example-template/.
@@ -163,7 +163,7 @@ lib_contract:
       `_noaa_tools/`, `_save_earth_tools/`). NEVER name it the bare `_lib`.
     why: |
       Standalone example packages are ALL imported into the same Python
-      process by `facetwork.examples.discover_entry_point_examples()` — every
+      process by `facetwork.domains.discover_entry_point_domains()` — every
       runner calls it at startup. The tool_side / shim imports below put
       `tools/` on `sys.path` and import the library by its bare top-level name.
       If two co-installed packages both call it `_lib` they collide in
@@ -285,7 +285,7 @@ new_domain_checklist:
     - "Create src/<import_pkg>/{tools,handlers,ffl}/ and a repo-root tests/. Vendor agent-spec/{tools-pattern,cache-layout}.agent-spec.yaml."
     - "Copy https://github.com/rlemke/fwh_osm/blob/main/src/osm_geocoder/tools/_osm_tools/{sidecar,storage}.py to src/<import_pkg>/tools/_<pkg>_tools/ (they are namespace-agnostic)."
     - "Add __init__.py: src/<import_pkg>/__init__.py exports `example: ExamplePackage`; each handlers/ subpackage gets one; tools/ does NOT (keeps CLIs runnable standalone)."
-    - "pip install -e . — confirm `facetwork.examples.discover_entry_point_examples()` lists <domain>."
+    - "pip install -e . — confirm `facetwork.domains.discover_entry_point_domains()` lists <domain>."
 
   step_2_lib:
     - "Define namespace = '<name>' as a module-level constant in each _<pkg>_tools domain module."

@@ -75,14 +75,21 @@ def discover_examples(
     include: str | None,
     exclude: str | None,
 ) -> list[tuple[str, list[str], object]]:
-    """Discover examples (entry-point + local) that ship FFL files.
+    """Discover both families (domains + teaching examples) that ship FFL files.
 
-    Returns list of (example_name, [ffl_file_paths], package) sorted by name.
+    Returns list of (name, [ffl_file_paths], package) sorted by name.
     """
-    from facetwork.examples import collect_ffl_files, discover_all_examples
+    from facetwork._pkg_discovery import collect_ffl_files
+    from facetwork.domains import discover_all_domains
+    from facetwork.examples import discover_all_examples
+
+    # Merge by name (a domain wins a name collision).
+    by_name: dict[str, object] = {p.name: p for p in discover_all_examples(REPO_ROOT)}
+    by_name.update({p.name: p for p in discover_all_domains(REPO_ROOT)})
 
     results: list[tuple[str, list[str], object]] = []
-    for pkg in discover_all_examples(REPO_ROOT):
+    for name in sorted(by_name):
+        pkg = by_name[name]
         if include and not re.search(include, pkg.name):
             continue
         if exclude and re.search(exclude, pkg.name):

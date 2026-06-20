@@ -64,7 +64,7 @@ Notes for working with `fw`:
 - **`fw install check [--install]`** — dependency analyzer. Statically scans
   `tests/` + `examples/` for imported modules (incl. `pytest.importorskip`), reports
   what isn't importable on this host, and lists example packages vs what's installed.
-  `--install` fixes the gaps (example modules via `fw install example`, `boto3` via the
+  `--install` fixes the gaps (domain modules via `fw install domain`, `boto3` via the
   `[s3]` extra, else pip; PEP 668-aware). Run it to bring a new runner host to full
   dependency coverage instead of discovering gaps through failing test runs. A host
   with no repo `.venv` (system Homebrew python is PEP 668-locked) needs `fw install repo`
@@ -192,19 +192,19 @@ Key constraints the rule docs cover (and the language enforces):
 
 When adding a new validator check, give it a `rule_id` AND write the matching `docs/reference/rules/{rule_id}.md` in the same change. Coverage is currently exact (41/41 emitted rule_ids documented); the script that diffs them lives in [docs/architecture/mcp-context-engineering.md](docs/architecture/mcp-context-engineering.md).
 
-## Standalone example packages
+## Standalone domain packages
 
 Examples can live either in this repo under `examples/<name>/` or as
-separate pip-installable packages declaring the `facetwork.examples`
+separate pip-installable packages declaring the `facetwork.domains`
 entry point. Both are discovered by `fw runner start --example <name>`
 and `fw ffl seed`. See `example-template/` for the standalone
 package layout. To clone + install one (or all) of the standalone
 examples, use the registry-driven helper:
 
 ```bash
-fw install example --list              # see what's registered
-fw install example anthropic --check   # clone, pip install -e, verify
-fw install example --all               # install every registered example
+fw install domain --list              # see what's registered
+fw install domain anthropic --check   # clone, pip install -e, verify
+fw install domain --all               # install every registered domain
 fw install anthropic --all --check     # convenience wrapper for the
                                             # anthropic package — picks pip
                                             # extras (agent_sdk, mcp) and
@@ -214,7 +214,7 @@ fw install anthropic --all --check     # convenience wrapper for the
 It clones into `~/fw_handlers/` (override via `--dir` or
 `FWH_HANDLERS_ROOT`), `pip install -e`s each repo against the current
 venv (auto-detected as `.venv/` if present), and the `--check` flag
-confirms the example surfaces in `facetwork.examples`'s entry-point
+confirms the example surfaces in `facetwork.domains`'s entry-point
 discovery.
 
 The following examples have been extracted into their own repos and

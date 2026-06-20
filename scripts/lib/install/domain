@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Clone + install a standalone Facetwork example package.
+# Clone + install a standalone Facetwork domain package.
 #
 # Each fwh_* example (anthropic, osm-geocoder, jenkins, …) lives in
 # its own GitHub repo. This script knows the short-name → repo mapping
 # and does the clone-or-pull + `pip install -e .` work in one step.
 #
 # Usage:
-#   fw install example anthropic
-#   fw install example anthropic --extras agent_sdk,mcp
-#   fw install example osm-geocoder
-#   fw install example --list             # print the registry
-#   fw install example --all              # install every known example
-#   fw install example anthropic --dir /custom/path
+#   fw install domain anthropic
+#   fw install domain anthropic --extras agent_sdk,mcp
+#   fw install domain osm-geocoder
+#   fw install domain --list             # print the registry
+#   fw install domain --all              # install every known domain
+#   fw install domain anthropic --dir /custom/path
 #
 # After install, the example is discoverable as
 #   fw runner start --example <name>
@@ -45,7 +45,7 @@ REGISTRY=(
 
 usage() {
     cat <<'EOF'
-Usage: fw install example [OPTIONS] <name>...
+Usage: fw install domain [OPTIONS] <name>...
 
 Clone (or update) and pip-install a standalone Facetwork example
 package from its GitHub repo.
@@ -55,7 +55,7 @@ Arguments:
                           to see the registry.
 
 Options:
-  --list                  Print the registry of known examples and exit.
+  --list                  Print the registry of known domains and exit.
   --all                   Install every example in the registry.
   --dir DIR               Parent directory for clones (default: ~/fw_handlers
                           or $FWH_HANDLERS_ROOT).
@@ -74,10 +74,10 @@ Environment:
   FWH_HANDLERS_ROOT       Override the default install root.
 
 Examples:
-  fw install example anthropic
-  fw install example anthropic --extras agent_sdk,mcp --check
-  fw install example osm-geocoder noaa-weather
-  fw install example --all
+  fw install domain anthropic
+  fw install domain anthropic --extras agent_sdk,mcp --check
+  fw install domain osm-geocoder noaa-weather
+  fw install domain --all
 EOF
 }
 

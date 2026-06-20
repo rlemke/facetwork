@@ -136,7 +136,7 @@ class CatalogService:
         except Exception as e:  # parse error — cannot build an AST at all
             return SaveResult(ok=False, slug=slug, is_valid=False, error=f"parse error: {e}")
 
-        from facetwork.examples import _collect_workflow_names
+        from facetwork._pkg_discovery import _collect_workflow_names
 
         workflow_names = _collect_workflow_names(program_dict)
         entry_name, perr = self._resolve_entry(kind, workflow_names, entry_workflow)
@@ -550,7 +550,7 @@ class CatalogService:
             broken.warnings = [f"recompile failed: {e}"]
             return broken
 
-        from facetwork.examples import _collect_workflow_names
+        from facetwork._pkg_discovery import _collect_workflow_names
 
         workflow_names = _collect_workflow_names(program_dict)
         entry_name = rev.entry_workflow or (workflow_names[0] if workflow_names else None)

@@ -40,7 +40,7 @@ services:
   route-runner:
     build:
       context: .
-      dockerfile: docker/Dockerfile.example-runner
+      dockerfile: docker/Dockerfile.domain-runner
     depends_on:
       mongodb:
         condition: service_healthy

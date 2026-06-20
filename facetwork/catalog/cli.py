@@ -218,16 +218,21 @@ def _cmd_list(svc: Any, args: argparse.Namespace) -> int:
 
 
 def _cmd_import_all(svc: Any, args: argparse.Namespace) -> int:
-    """Import every discoverable example package (and any --dir) as a package."""
+    """Import every discoverable domain + teaching-example package (and any --dir)."""
+    from facetwork._pkg_discovery import collect_ffl_files
     from facetwork.catalog import backup
     from facetwork.catalog.entities import STATUS_PUBLISHED
-    from facetwork.examples import collect_ffl_files, discover_all_examples
+    from facetwork.domains import discover_all_domains
+    from facetwork.examples import discover_all_examples
 
     repo_root = Path(__file__).resolve().parents[2]
     user_tags = [t.strip() for t in args.tags.split(",") if t.strip()]
     publish = not args.no_publish
 
-    pkgs = discover_all_examples(repo_root)
+    # Merge both families by name (a domain wins a name collision).
+    _by_name = {p.name: p for p in discover_all_examples(repo_root)}
+    _by_name.update({p.name: p for p in discover_all_domains(repo_root)})
+    pkgs = list(_by_name.values())
     if args.only:
         only = set(args.only)
         pkgs = [p for p in pkgs if p.name in only]

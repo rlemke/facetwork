@@ -319,7 +319,7 @@ services:
   runner-anthropic:
     build:
       context: .
-      dockerfile: docker/Dockerfile.example-runner
+      dockerfile: docker/Dockerfile.domain-runner
     depends_on:
       mongodb:
         condition: service_healthy
@@ -332,9 +332,9 @@ services:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
       <<: *s3-storage
-      AFL_EXAMPLE_NAME: anthropic
-      AFL_EXAMPLE_REPO: fwh_anthropic
-      AFL_EXAMPLE_EXTRAS: ${ANTHROPIC_EXTRAS:-agent_sdk,mcp}
+      AFL_DOMAIN_NAME: anthropic
+      AFL_DOMAIN_REPO: fwh_anthropic
+      AFL_DOMAIN_EXTRAS: ${ANTHROPIC_EXTRAS:-agent_sdk,mcp}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list anthropic"
     volumes:
@@ -348,7 +348,7 @@ services:
     hostname: ${AFL_FLEET_HOST:-}
     build:
       context: .
-      dockerfile: docker/Dockerfile.example-runner
+      dockerfile: docker/Dockerfile.domain-runner
     depends_on:
       mongodb:
         condition: service_healthy
@@ -362,8 +362,8 @@ services:
       <<: *osm-s3-env
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_EXAMPLE_NAME: osm-geocoder
-      AFL_EXAMPLE_REPO: fwh_osm
+      AFL_DOMAIN_NAME: osm-geocoder
+      AFL_DOMAIN_REPO: fwh_osm
       AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
       AFL_GEOFABRIK_MIRROR: /geofabrik
       # Pinned-cache mode: reuse an already-downloaded PBF as-is instead of
@@ -429,7 +429,7 @@ services:
     hostname: ${AFL_FLEET_HOST:-}
     build:
       context: .
-      dockerfile: docker/Dockerfile.example-runner
+      dockerfile: docker/Dockerfile.domain-runner
     depends_on:
       mongodb:
         condition: service_healthy
@@ -445,8 +445,8 @@ services:
       <<: *osm-s3-env
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_EXAMPLE_NAME: osm-lz
-      AFL_EXAMPLE_REPO: fwh_osm_lz
+      AFL_DOMAIN_NAME: osm-lz
+      AFL_DOMAIN_REPO: fwh_osm_lz
       AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list continental"
       # Match runner-osm-geocoder timeouts. osm-lz is a workflow catalog over
@@ -470,7 +470,7 @@ services:
   runner-noaa-weather:
     build:
       context: .
-      dockerfile: docker/Dockerfile.example-runner
+      dockerfile: docker/Dockerfile.domain-runner
     depends_on:
       mongodb:
         condition: service_healthy
@@ -483,8 +483,8 @@ services:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
       <<: *s3-storage
-      AFL_EXAMPLE_NAME: noaa-weather
-      AFL_EXAMPLE_REPO: fwh_noaa_weather
+      AFL_DOMAIN_NAME: noaa-weather
+      AFL_DOMAIN_REPO: fwh_noaa_weather
       AFL_REGISTRY_RUNNER_ARGS: "--task-list weather"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_noaa_weather:/handlers/fwh_noaa_weather
@@ -494,7 +494,7 @@ services:
   runner-jenkins-example:
     build:
       context: .
-      dockerfile: docker/Dockerfile.example-runner
+      dockerfile: docker/Dockerfile.domain-runner
     depends_on:
       mongodb:
         condition: service_healthy
@@ -507,8 +507,8 @@ services:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
       <<: *s3-storage
-      AFL_EXAMPLE_NAME: jenkins
-      AFL_EXAMPLE_REPO: fwh_jenkins
+      AFL_DOMAIN_NAME: jenkins
+      AFL_DOMAIN_REPO: fwh_jenkins
       JENKINS_URL: http://jenkins:8080
       AFL_REGISTRY_RUNNER_ARGS: "--task-list jenkins"
     volumes:
@@ -519,7 +519,7 @@ services:
   runner-census-us:
     build:
       context: .
-      dockerfile: docker/Dockerfile.example-runner
+      dockerfile: docker/Dockerfile.domain-runner
     depends_on:
       mongodb:
         condition: service_healthy
@@ -532,8 +532,8 @@ services:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
       <<: *s3-storage
-      AFL_EXAMPLE_NAME: census-us
-      AFL_EXAMPLE_REPO: fwh_census_us
+      AFL_DOMAIN_NAME: census-us
+      AFL_DOMAIN_REPO: fwh_census_us
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list census"
     volumes:
@@ -544,7 +544,7 @@ services:
   runner-genomics:
     build:
       context: .
-      dockerfile: docker/Dockerfile.example-runner
+      dockerfile: docker/Dockerfile.domain-runner
     depends_on:
       mongodb:
         condition: service_healthy
@@ -557,8 +557,8 @@ services:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
       <<: *s3-storage
-      AFL_EXAMPLE_NAME: genomics
-      AFL_EXAMPLE_REPO: fwh_genomics
+      AFL_DOMAIN_NAME: genomics
+      AFL_DOMAIN_REPO: fwh_genomics
       AFL_REGISTRY_RUNNER_ARGS: "--task-list genomics"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_genomics:/handlers/fwh_genomics
@@ -568,7 +568,7 @@ services:
   runner-sensor-monitoring:
     build:
       context: .
-      dockerfile: docker/Dockerfile.example-runner
+      dockerfile: docker/Dockerfile.domain-runner
     depends_on:
       mongodb:
         condition: service_healthy
@@ -581,8 +581,8 @@ services:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
       <<: *s3-storage
-      AFL_EXAMPLE_NAME: sensor-monitoring
-      AFL_EXAMPLE_REPO: fwh_sensor_monitoring
+      AFL_DOMAIN_NAME: sensor-monitoring
+      AFL_DOMAIN_REPO: fwh_sensor_monitoring
       AFL_REGISTRY_RUNNER_ARGS: "--task-list monitor"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_sensor_monitoring:/handlers/fwh_sensor_monitoring
@@ -604,8 +604,8 @@ services:
   runner-ffl:
     build:
       context: .
-      dockerfile: docker/Dockerfile.example-runner
-    # Bypass entrypoint-example-runner.sh (which requires an example to seed);
+      dockerfile: docker/Dockerfile.domain-runner
+    # Bypass entrypoint-domain-runner.sh (which requires an example to seed);
     # run the runner core directly. AFL_CONTINUATION_MODE=shared (below) makes
     # it own the sweep + backlog.
     entrypoint: ["python", "-m", "facetwork.runtime.runner", "--log-format", "text"]

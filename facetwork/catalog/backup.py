@@ -180,15 +180,20 @@ def import_package(
        workflow within the shared flow. ``rematerialize`` keeps these bound to
        the library's flow, so backup/restore stays at one flow, not N.
 
-    ``name`` resolves a registered ``facetwork.examples`` package; ``ffl_dir``
-    imports a directory of ``.ffl`` instead; ``also`` merges extra packages'
-    FFL for cross-package ``use`` deps. Returns ``[("(library) <slug>",
+    ``name`` resolves a registered domain (or teaching example) package;
+    ``ffl_dir`` imports a directory of ``.ffl`` instead; ``also`` merges extra
+    packages' FFL for cross-package ``use`` deps. Returns ``[("(library) <slug>",
     SaveResult), (workflow_slug, CatalogRevision), ...]``.
     """
     import hashlib
 
-    from facetwork.examples import collect_ffl_files, get_example
+    from facetwork._pkg_discovery import collect_ffl_files
+    from facetwork.domains import get_domain
+    from facetwork.examples import get_example
     from facetwork.runtime.types import generate_id
+
+    def _resolve(n):
+        return get_domain(n, repo_root) or get_example(n, repo_root)
 
     from .entities import (
         KIND_LIBRARY,
@@ -204,9 +209,9 @@ def import_package(
     # 1. Gather all FFL sources (the package + any cross-package merges).
     sources: list[str] = []
     for n in ([name] if name else []) + list(also or []):
-        pkg = get_example(n, repo_root)
+        pkg = _resolve(n)
         if pkg is None:
-            raise CatalogError(f"package not discoverable as a facetwork example: {n!r}")
+            raise CatalogError(f"package not discoverable as a facetwork domain or example: {n!r}")
         for f in collect_ffl_files(pkg):
             sources.append(Path(f).read_text())
     if ffl_dir:

@@ -63,6 +63,7 @@ source "$FW_LIB/_helpers/_env.sh"
 PYTHON="${REPO_ROOT}/.venv/bin/python3"
 [[ -x "$PYTHON" ]] || PYTHON=python3
 
+DOMAINS=()
 EXAMPLES=()
 RUNNER_ARGS=()
 INSTANCES=1
@@ -77,6 +78,8 @@ CHECK_ONLY=0         # docker/fleet: preflight + validate only, don't start
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --domain)
+            DOMAINS+=("$2"); shift 2 ;;
         --example)
             EXAMPLES+=("$2"); shift 2 ;;
         --instances)
@@ -124,12 +127,14 @@ done
 if [[ "$MODE" == "docker" || "$MODE" == "fleet" ]]; then
     PY="${REPO_ROOT}/.venv/bin/python3"; [[ -x "$PY" ]] || PY=python3
 
-    # Map examples → runner services. Default preserves the old start-worker set.
+    # Map domains (and any --example) → runner services. The per-service runners
+    # are the fwh_* domains; default preserves the old start-worker set.
     SERVICES=()
-    if [[ ${#EXAMPLES[@]} -eq 0 ]]; then
+    SELECTED=(${DOMAINS[@]+"${DOMAINS[@]}"} ${EXAMPLES[@]+"${EXAMPLES[@]}"})
+    if [[ ${#SELECTED[@]} -eq 0 ]]; then
         SERVICES=(runner-osm-geocoder runner-osm-lz)
     else
-        for e in "${EXAMPLES[@]}"; do SERVICES+=("runner-$e"); done
+        for e in "${SELECTED[@]}"; do SERVICES+=("runner-$e"); done
     fi
 
     COMPOSE_F=(-f "$REPO_ROOT/docker-compose.full-stack.yml")
@@ -287,31 +292,35 @@ if ! [[ "$INSTANCES" =~ ^[1-9][0-9]*$ ]]; then
     exit 1
 fi
 
-# Resolve examples (entry-point + local repo). The python helper emits
-# tab-separated lines:  EXAMPLE\t<name>\t<handlers_path_or_->
-#                       ENV\t<KEY>\t<VALUE>
+# Resolve packages (domains via entry-point/domains-dir + teaching examples in
+# examples/). The python helper emits tab-separated lines:
+#   PKG\t<name>\t<handlers_path_or_->     ENV\t<KEY>\t<VALUE>
 RESOLVED=$(env PYTHONPATH="$REPO_ROOT" REPO_ROOT="$REPO_ROOT" "$PYTHON" -c "
 import os, sys
 from pathlib import Path
-from facetwork.examples import discover_all_examples, filter_examples
+from facetwork._pkg_discovery import filter_packages
+from facetwork.domains import discover_all_domains
+from facetwork.examples import discover_all_examples
 
+repo = Path(os.environ['REPO_ROOT'])
+allpkgs = discover_all_domains(repo) + discover_all_examples(repo)
 selected = sys.argv[1:] or None
-chosen = list(filter_examples(discover_all_examples(Path(os.environ['REPO_ROOT'])), include=selected))
+chosen = list(filter_packages(allpkgs, include=selected))
 for pkg in chosen:
     hp = str(pkg.handlers_path) if pkg.handlers_path else '-'
-    print(f'EXAMPLE\t{pkg.name}\t{hp}')
+    print(f'PKG\t{pkg.name}\t{hp}')
 for pkg in chosen:
     for k, v in pkg.runner_env.items():
         print(f'ENV\t{k}\t{v}')
-" "${EXAMPLES[@]}")
+" ${DOMAINS[@]+\"${DOMAINS[@]}\"} ${EXAMPLES[@]+\"${EXAMPLES[@]}\"})
 
-EXAMPLES=()
+PKGS=()
 HANDLER_PATHS=()
 while IFS=$'\t' read -r kind a b; do
     [[ -z "$kind" ]] && continue
     case "$kind" in
-        EXAMPLE)
-            EXAMPLES+=("$a")
+        PKG)
+            PKGS+=("$a")
             [[ "$b" != "-" ]] && HANDLER_PATHS+=("$b")
             ;;
         ENV)
@@ -320,14 +329,14 @@ while IFS=$'\t' read -r kind a b; do
     esac
 done <<< "$RESOLVED"
 
-if [[ ${#EXAMPLES[@]} -eq 0 ]]; then
-    echo "No examples found (checked entry points and examples/)." >&2
+if [[ ${#PKGS[@]} -eq 0 ]]; then
+    echo "No domains/examples found (checked facetwork.domains entry points, domains/, examples/)." >&2
     exit 1
 fi
 
 echo "=== Facetwork: Register Handlers & Start Runner ==="
 echo ""
-echo "  Examples:  ${EXAMPLES[*]}"
+echo "  Packages:  ${PKGS[*]}"
 echo "  Instances: $INSTANCES"
 echo "  Dashboard: $DASHBOARD"
 echo "  Mode:      $MODE"
@@ -359,8 +368,11 @@ else
 fi
 echo ""
 
-# Register handlers via the shared discovery API.
-env PYTHONPATH="$REPO_ROOT" REPO_ROOT="$REPO_ROOT" "$PYTHON" -m facetwork.examples "${EXAMPLES[@]}"
+# Register handlers via the shared discovery API. PKGS may span both families,
+# so register against each; `|| true` swallows the benign "none of these names
+# are in this family" exit (each family registers only the names it owns).
+env PYTHONPATH="$REPO_ROOT" REPO_ROOT="$REPO_ROOT" "$PYTHON" -m facetwork.domains ${PKGS[@]+"${PKGS[@]}"} || true
+env PYTHONPATH="$REPO_ROOT" REPO_ROOT="$REPO_ROOT" "$PYTHON" -m facetwork.examples ${PKGS[@]+"${PKGS[@]}"} || true
 
 # Build PYTHONPATH so the runner can import handler modules from local
 # examples (entry-point packages are already on sys.path via pip install).

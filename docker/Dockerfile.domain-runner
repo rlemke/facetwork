@@ -1,9 +1,9 @@
 # Generic per-example Facetwork runner.
 #
-# One image; the example to run is passed via AFL_EXAMPLE_NAME. The
+# One image; the domain to run is passed via AFL_DOMAIN_NAME. The
 # example's source (one of the fwh_* repos) is bind-mounted at
-# /handlers/$AFL_EXAMPLE_REPO and pip-installed at container start by
-# entrypoint-example-runner.sh.
+# /handlers/$AFL_DOMAIN_REPO and pip-installed at container start by
+# entrypoint-domain-runner.sh.
 #
 # Why bind-mount + install at start, instead of baking the example
 # into the image? Two reasons:
@@ -104,7 +104,7 @@ RUN pip install --no-cache-dir -e ".[mongodb,s3]" \
 # Bake the osm-geocoder example (fwh_osm) INTO the image so handler code ships
 # via `fleet set --image` — the one deploy channel that reaches every fleet
 # server without SSH/git-pull. The entrypoint prefers this baked copy over any
-# (possibly stale) bind-mount for examples listed in /etc/afl-baked-examples, so
+# (possibly stale) bind-mount for domains listed in /etc/afl-baked-domains, so
 # a rollout alone updates handler code fleet-wide. Editable install keeps the
 # source tree on disk (the _osm_tools shim adds it to sys.path) and pulls
 # fwh_osm's own deps at build time. Pin a specific commit with
@@ -125,11 +125,11 @@ RUN git clone https://github.com/rlemke/fwh_osm.git /opt/fwh_osm \
     && git -C /opt/fwh_osm checkout --quiet "${FWH_OSM_REF}" \
     && pip install --no-cache-dir -e /opt/fwh_osm \
     && (cd /opt/fwh_osm && git rev-parse HEAD > /opt/fwh_osm.commit && rm -rf .git) \
-    && echo "osm-geocoder" > /etc/afl-baked-examples \
+    && echo "osm-geocoder" > /etc/afl-baked-domains \
     && echo "baked fwh_osm @ $(cat /opt/fwh_osm.commit)"
 
 # Entrypoint installs the named example then starts the runner.
-COPY docker/entrypoint-example-runner.sh /usr/local/bin/entrypoint.sh
+COPY docker/entrypoint-domain-runner.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENV PYTHONUNBUFFERED=1
