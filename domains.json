@@ -1,5 +1,5 @@
 {
-  "_comment": "Catalog of Facetwork DOMAINS (pluggable fwh_* production pipelines) and in-repo EXAMPLES (teaching demos). Single source of truth for fw install/migrate/fleet + compose-env generation. Override per deployment WITHOUT editing any command: set AFL_DOMAINS_FILE=/path (full replace), or drop a gitignored domains.local.json (merged over this file: entries add/replace by key; a top-level \"_remove\": [\"name\", ...] drops standard ones). See docs and `fw util gen-compose`.",
+  "_comment": "Catalog of Facetwork DOMAINS (pluggable fwh_* production pipelines) and in-repo EXAMPLES (teaching demos). Single source of truth for fw install/migrate/fleet + compose generation. Override per deployment WITHOUT editing any command: set AFL_DOMAINS_FILE=/path (full replace), or drop a gitignored domains.local.json (merged over this file: entries add/replace by key; a top-level \"_remove\": [\"name\", ...] drops standard ones). The per-domain \"compose\" object drives `fw util gen-compose`, which regenerates the runner-<service> blocks in docker-compose.full-stack.yml between the GENERATED markers. See docs/reference/domain-catalog.md.",
   "version": 1,
   "defaults": {
     "replicas": 1,
@@ -13,7 +13,10 @@
       "service": "runner-anthropic",
       "task_list": "anthropic",
       "compose_extras": "agent_sdk,mcp",
-      "extras_var": "ANTHROPIC_EXTRAS"
+      "extras_var": "ANTHROPIC_EXTRAS",
+      "compose": {
+        "env": [["ANTHROPIC_API_KEY", "${ANTHROPIC_API_KEY:-}"]]
+      }
     },
     "osm-geocoder": {
       "repo": "fwh_osm",
@@ -23,7 +26,30 @@
       "task_list": "osm",
       "server_group_arg": true,
       "fleet_default": true,
-      "scaled": true
+      "scaled": true,
+      "compose": {
+        "storage": "osm",
+        "hostname": true,
+        "postgis": true,
+        "depends": [["postgis", "service_healthy"]],
+        "env": [
+          ["AFL_GEOFABRIK_MIRROR", "/geofabrik"],
+          ["AFL_OSM_USE_CACHE_IF_PRESENT", "${AFL_OSM_USE_CACHE_IF_PRESENT:-true}"],
+          ["AFL_OSM_TOLERATE_MD5", "${AFL_OSM_TOLERATE_MD5:-true}"],
+          ["AFL_TASK_EXECUTION_TIMEOUT_MS", "14400000"],
+          ["AFL_STUCK_TIMEOUT_MS", "14400000"],
+          ["AFL_LEASE_DURATION_MS", "14400000"]
+        ],
+        "volumes": [
+          "afl_output:/data/output",
+          "${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch",
+          "afl_geofabrik:/geofabrik"
+        ],
+        "notes": [
+          "Durable cache + output → MinIO (osm-s3-env); staging/tmp/locks → /scratch (the LARGE external disk, NOT the small internal volume — continent extracts staged on the internal disk ENOSPC-crash the shared mongodb volume).",
+          "Timeouts raised to 4h: multi-GB Geofabrik downloads + osmium parses run for hours; the 15min/30min/5min defaults would kill long facets or let another runner steal a 30GB download mid-flight. Matches fwh_osm's DomainPackage runner_env."
+        ]
+      }
     },
     "osm-lz": {
       "repo": "fwh_osm_lz",
@@ -32,7 +58,27 @@
       "service": "runner-osm-lz",
       "task_list": "continental",
       "fleet_default": true,
-      "scaled": true
+      "scaled": true,
+      "compose": {
+        "storage": "osm",
+        "hostname": true,
+        "postgis": true,
+        "depends": [["runner-osm-geocoder", "service_started"]],
+        "env": [
+          ["AFL_TASK_EXECUTION_TIMEOUT_MS", "14400000"],
+          ["AFL_STUCK_TIMEOUT_MS", "14400000"],
+          ["AFL_LEASE_DURATION_MS", "14400000"]
+        ],
+        "volumes": [
+          "${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm:ro",
+          "afl_output:/data/output",
+          "${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch"
+        ],
+        "notes": [
+          "Pure workflow catalog over fwh_osm — its facets dispatch to the osm-geocoder runner's handlers, so start that one first (depends_on) and mount fwh_osm read-only.",
+          "Same 4h timeouts + external scratch as osm-geocoder: it orchestrates continental fan-outs that stage multi-GB PBFs and run for hours."
+        ]
+      }
     },
     "noaa-weather": {
       "repo": "fwh_noaa_weather",
@@ -46,14 +92,20 @@
       "extras": [],
       "description": "CI/CD mixin composition demo",
       "service": "runner-jenkins-example",
-      "task_list": "jenkins"
+      "task_list": "jenkins",
+      "compose": {
+        "env": [["JENKINS_URL", "http://jenkins:8080"]]
+      }
     },
     "census-us": {
       "repo": "fwh_census_us",
       "extras": [],
       "description": "US Census ACS + TIGER demographics",
       "service": "runner-census-us",
-      "task_list": "census"
+      "task_list": "census",
+      "compose": {
+        "env": [["CENSUS_API_KEY", "${CENSUS_API_KEY:-}"]]
+      }
     },
     "genomics": {
       "repo": "fwh_genomics",

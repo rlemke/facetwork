@@ -1,25 +1,25 @@
-"""Sync per-domain compose ENV from the catalog into docker-compose.full-stack.yml.
+"""Generate the per-domain ``runner-<service>`` compose blocks from the catalog.
 
-The structural parts of each ``runner-<service>:`` block (build, depends_on,
-volumes, the ``<<: *anchor`` storage profiles) are hand-written templates and are
-left untouched. Only the catalog-derived ENV keys are (re)written in place:
+`fw util gen-compose` regenerates every compose domain's service block in
+`docker-compose.full-stack.yml`, in place between the markers:
 
-    AFL_DOMAIN_NAME, AFL_DOMAIN_REPO, AFL_REGISTRY_RUNNER_ARGS,
-    AFL_DOMAIN_EXTRAS (only for domains that declare ``compose_extras``)
+    # >>> BEGIN generated domain runners (fw util gen-compose — do not edit) >>>
+    …generated blocks…
+    # <<< END generated domain runners <<<
 
-So editing ``domains.json`` (task_list, repo, …) and running ``fw util gen-compose``
-keeps the compose env in sync — no hand-editing, no second source of truth. A
-brand-new domain still needs its service block added once (copy a template); the
-generator then fills its env. ``--check`` writes nothing and exits non-zero if the
-file is out of sync (CI guard).
+Everything outside the markers (the `x-*` anchors, infra services, `runner`,
+`runner-gh-router`, `runner-ffl`, volumes, networks) is hand-written and left
+untouched. The block shape comes from each domain's catalog `compose` object
+(`facetwork/domains/catalog.py`); structural notes that used to be inline YAML
+comments now live in the catalog (`compose.notes`) and are re-emitted as comments.
 
-Keys are only *replaced where they already exist* in a service block — never
-inserted — so the generator can't corrupt structure; a missing key is reported.
+`--check` writes nothing and exits non-zero if the marked region is out of sync
+with the catalog (CI guard). Correctness gate for any change here: `docker compose
+-f docker-compose.full-stack.yml config` must be byte-identical before and after.
 """
 
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
@@ -28,7 +28,13 @@ from facetwork.domains.catalog import compose_domains
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = _REPO_ROOT / "docker-compose.full-stack.yml"
 
-_SERVICE_RE = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
+BEGIN = "  # >>> BEGIN generated domain runners (fw util gen-compose — do not edit) >>>\n"
+END = "  # <<< END generated domain runners <<<\n"
+
+_POSTGIS_URL = ("postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}"
+                "@postgis:5432/${POSTGRES_DB:-afl_gis}")
+_HANDLERS = "${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
+_DATA_DIR = "${AFL_DATA_DIR:-/Volumes/afl_data}"
 
 
 def _registry_args(spec: dict) -> str:
@@ -46,86 +52,87 @@ def _extras_value(spec: dict) -> str | None:
     return f"${{{var}:-{ce}}}" if var else ce
 
 
-def _managed_values(name: str, spec: dict) -> dict[str, str]:
-    """key -> the value text (right of 'KEY: ') the generator wants."""
-    vals = {
-        "AFL_DOMAIN_NAME": name,
-        "AFL_DOMAIN_REPO": spec["repo"],
-        "AFL_REGISTRY_RUNNER_ARGS": f'"{_registry_args(spec)}"',
-    }
+def render_block(name: str, spec: dict) -> str:
+    """Render one ``runner-<service>:`` YAML block from a catalog domain spec."""
+    c = spec.get("compose", {}) or {}
+    svc = spec["service"]
+    L: list[str] = [f"  {svc}:\n"]
+    for note in c.get("notes", []):
+        L.append(f"    # {note}\n")
+    if c.get("hostname"):
+        L.append("    hostname: ${AFL_FLEET_HOST:-}\n")
+    L += [
+        "    build:\n",
+        "      context: .\n",
+        "      dockerfile: docker/Dockerfile.domain-runner\n",
+        "    depends_on:\n",
+        "      mongodb:\n",
+        "        condition: service_healthy\n",
+    ]
+    for dep, cond in c.get("depends", []):
+        L.append(f"      {dep}:\n        condition: {cond}\n")
+    L += [
+        "      minio-setup:\n",
+        "        condition: service_completed_successfully\n",
+        "    environment:\n",
+    ]
+    anchor = "osm-s3-env" if c.get("storage") == "osm" else "s3-storage"
+    L.append(f"      <<: *{anchor}\n")
+    L.append("      AFL_MONGODB_URL: mongodb://mongodb:27017\n")
+    L.append("      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}\n")
+    L.append(f"      AFL_DOMAIN_NAME: {name}\n")
+    L.append(f"      AFL_DOMAIN_REPO: {spec['repo']}\n")
+    if c.get("postgis"):
+        L.append(f"      AFL_POSTGIS_URL: {_POSTGIS_URL}\n")
     ev = _extras_value(spec)
     if ev is not None:
-        vals["AFL_DOMAIN_EXTRAS"] = ev
-    return vals
+        L.append(f"      AFL_DOMAIN_EXTRAS: {ev}\n")
+    for k, v in c.get("env", []):
+        L.append(f"      {k}: {v}\n")
+    L.append(f'      AFL_REGISTRY_RUNNER_ARGS: "{_registry_args(spec)}"\n')
+    L.append("    volumes:\n")
+    L.append(f"      - {_HANDLERS}/{spec['repo']}:/handlers/{spec['repo']}\n")
+    vols = c.get("volumes") or [f"{_DATA_DIR}:/Volumes/afl_data"]
+    for vol in vols:
+        L.append(f"      - {vol}\n")
+    L.append("    restart: unless-stopped\n")
+    return "".join(L)
 
 
-def _service_blocks(lines: list[str]) -> dict[str, tuple[int, int]]:
-    """service name -> (start, end) line indices (end exclusive)."""
-    starts = [(i, m.group(1)) for i, line in enumerate(lines)
-              if (m := _SERVICE_RE.match(line))]
-    blocks = {}
-    for k, (i, n) in enumerate(starts):
-        end = starts[k + 1][0] if k + 1 < len(starts) else len(lines)
-        blocks[n] = (i, end)
-    return blocks
+def _render_region() -> str:
+    blocks = [render_block(n, s) for n, s in sorted(compose_domains().items())]
+    return BEGIN + "\n".join(blocks) + END
 
 
-def sync(*, write: bool) -> tuple[list[str], list[str]]:
-    """Return (changes, warnings). When write=True, rewrite COMPOSE in place."""
-    lines = COMPOSE.read_text(encoding="utf-8").splitlines(keepends=True)
-    blocks = _service_blocks(lines)
-    changes: list[str] = []
-    warnings: list[str] = []
-
-    for name, spec in sorted(compose_domains().items()):
-        svc = spec.get("service")
-        if svc not in blocks:
-            warnings.append(f"{name}: no compose service '{svc}' — add its block (template) first")
-            continue
-        start, end = blocks[svc]
-        wanted = _managed_values(name, spec)
-        for key, value in wanted.items():
-            kre = re.compile(rf"^(\s*){re.escape(key)}:\s*(.*?)\s*$")
-            found = False
-            for i in range(start, end):
-                m = kre.match(lines[i])
-                if not m:
-                    continue
-                found = True
-                new_line = f"{m.group(1)}{key}: {value}\n"
-                if lines[i] != new_line:
-                    changes.append(f"{svc}: {key}: {m.group(2)!r} -> {value!r}")
-                    lines[i] = new_line
-                break
-            if not found:
-                warnings.append(f"{svc}: key {key} not present (skipped; add it to the template)")
-
-    if write and changes:
-        COMPOSE.write_text("".join(lines), encoding="utf-8")
-    return changes, warnings
+def sync(*, write: bool) -> tuple[bool, str]:
+    """Return (changed, message). With write=True, rewrite the marked region."""
+    text = COMPOSE.read_text(encoding="utf-8")
+    if BEGIN not in text or END not in text:
+        raise SystemExit(
+            f"markers not found in {COMPOSE.name} — expected the BEGIN/END "
+            "generated-domain-runners markers around the runner blocks."
+        )
+    pre, rest = text.split(BEGIN, 1)
+    _old, post = rest.split(END, 1)
+    new_text = pre + _render_region() + post
+    changed = new_text != text
+    if changed and write:
+        COMPOSE.write_text(new_text, encoding="utf-8")
+    return changed, ("region regenerated" if changed else "already in sync")
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     check = "--check" in argv
-    changes, warnings = sync(write=not check)
-    for w in warnings:
-        print(f"  warning: {w}", file=sys.stderr)
+    changed, msg = sync(write=not check)
     if check:
-        if changes:
-            print(f"docker-compose.full-stack.yml is OUT OF SYNC with the catalog ({len(changes)} change(s)):")
-            for c in changes:
-                print(f"  {c}")
-            print("Run `fw util gen-compose` to sync.")
+        if changed:
+            print("docker-compose.full-stack.yml is OUT OF SYNC with the catalog "
+                  "(generated domain-runner region differs). Run `fw util gen-compose`.")
             return 1
-        print("docker-compose.full-stack.yml is in sync with the catalog.")
+        print("docker-compose.full-stack.yml generated region is in sync with the catalog.")
         return 0
-    if changes:
-        print(f"Synced {len(changes)} env value(s) from the catalog into docker-compose.full-stack.yml:")
-        for c in changes:
-            print(f"  {c}")
-    else:
-        print("Already in sync — no changes.")
+    print(f"gen-compose: {msg} ({len(compose_domains())} domain blocks).")
     return 0
 
 

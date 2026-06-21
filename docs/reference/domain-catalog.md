@@ -18,7 +18,7 @@ repos/extras/task-lists, which run scaled vs single, replica counts — by editi
 |----------|------|
 | `fw install domain` (`--list` / `--all` / lookup) | `repo`, `extras`, `description` |
 | `fw fleet … migrate-seed-prefix` (`migrate.py`) | the domain names |
-| `fw util gen-compose` | `service`, `task_list`, `repo`, `compose_extras`/`extras_var`, `server_group_arg` → writes the per-domain env into `docker-compose.full-stack.yml` |
+| `fw util gen-compose` | `service`, `repo`, `task_list`, `compose_extras`/`extras_var`, `server_group_arg`, and the `compose` object → **generates** each domain's `runner-<service>` block in `docker-compose.full-stack.yml` (between the GENERATED markers) |
 | `fw runner start` (default `--fleet`/`--docker` set) | `fleet_default` + `service` |
 | `fw runner start-all` (replica tiers) | `scaled` + `service`, `defaults.replicas`, `defaults.scaled_replicas` |
 | `fw single rebuild-runners` | `service` (all compose domains) |
@@ -93,18 +93,51 @@ capability.
 
 ¹ Required only for a compose domain (one with a `service`).
 
+### The `compose` object — runner-block structure
+
+`fw util gen-compose` builds each compose domain's full `runner-<service>` block
+from these (all optional; absent → a plain single-replica handler runner on the
+`*s3-storage` anchor). The generated blocks live between the markers in
+`docker-compose.full-stack.yml`; everything outside (anchors, infra, `runner`,
+`runner-gh-router`, `runner-ffl`) is hand-written.
+
+| `compose.` field | Type | Effect on the generated block |
+|------------------|------|-------------------------------|
+| `storage` | `"s3"` (default) / `"osm"` | Which env anchor: `<<: *s3-storage` or `<<: *osm-s3-env`. |
+| `hostname` | bool | Adds `hostname: ${AFL_FLEET_HOST:-}`. |
+| `postgis` | bool | Adds `AFL_POSTGIS_URL` env (the standard postgis URL). Does **not** add a `depends_on` — use `depends` for that. |
+| `depends` | `[[service, condition], …]` | Extra `depends_on` entries beyond `mongodb`+`minio-setup` (e.g. `["postgis","service_healthy"]`, `["runner-osm-geocoder","service_started"]`). |
+| `env` | `[[key, value], …]` | Extra literal env, in order (e.g. `ANTHROPIC_API_KEY`, `JENKINS_URL`, OSM timeouts). |
+| `volumes` | `[string, …]` | Volume mappings **after** the auto-added handler mount. Omit → the default `${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data`. |
+| `notes` | `[string, …]` | Emitted as `#` comments in the block — operational rationale that used to be inline YAML (kept in the catalog so it survives regeneration). |
+
 ### Example entry (compose domain)
 
 ```jsonc
 "osm-geocoder": {
   "repo": "fwh_osm",
-  "extras": [],
   "description": "OSM PBF → PostGIS → routing/tiles (production-scale)",
   "service": "runner-osm-geocoder",
   "task_list": "osm",
   "server_group_arg": true,
   "fleet_default": true,
-  "scaled": true
+  "scaled": true,
+  "compose": {
+    "storage": "osm",
+    "hostname": true,
+    "postgis": true,
+    "depends": [["postgis", "service_healthy"]],
+    "env": [
+      ["AFL_GEOFABRIK_MIRROR", "/geofabrik"],
+      ["AFL_TASK_EXECUTION_TIMEOUT_MS", "14400000"]
+    ],
+    "volumes": [
+      "afl_output:/data/output",
+      "${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch",
+      "afl_geofabrik:/geofabrik"
+    ],
+    "notes": ["staging → the big external disk, not the small internal volume"]
+  }
 }
 ```
 
@@ -159,19 +192,20 @@ drop a `domains.local.json` (deployment-only):
 **B. Install it** — `fw install domain acme` (clones + `pip install -e`). It now
 shows in `fw install domain --list`, and `migrate.py` knows its name.
 
-**C. (If it needs a compose runner)** add a `runner-acme` service block to
-`docker-compose.full-stack.yml` by copying an existing standard domain's block
-(keep the structural bits: `build`, `depends_on`, the `<<: *s3-storage` anchor,
-`volumes`), then let the catalog fill its env:
+**C. (If it needs a compose runner)** there's **no hand-editing of the compose**.
+Give the catalog entry a `service` (and a `compose` object if it needs anything
+beyond a plain single-replica handler runner — e.g. `postgis`, extra `env`, custom
+`volumes`), then regenerate:
 
 ```bash
-fw util gen-compose          # writes AFL_DOMAIN_NAME/REPO/AFL_REGISTRY_RUNNER_ARGS into the block
-fw util gen-compose --check  # CI guard: exits non-zero if compose drifts from the catalog
+fw util gen-compose          # generates runner-acme between the markers, from the catalog
+fw util gen-compose --check  # CI guard: exits non-zero if the region drifts from the catalog
 ```
 
-> `gen-compose` only *replaces env keys that already exist* in the block — it
-> never invents structure. A brand-new service block must exist first (step C);
-> the generator then keeps its env in sync with the catalog.
+> `gen-compose` rewrites the whole generated region (every compose domain's
+> `runner-<service>` block) from the catalog. **Correctness gate** for any change
+> to the generator or a `compose` object: `docker compose -f
+> docker-compose.full-stack.yml config` must be identical before and after.
 
 **D. Run it** — `fw runner start --domain acme` (or add `runner-acme` to
 `fleet set --domain-runner acme` so fleet-agent manages it fleet-wide).
@@ -199,14 +233,14 @@ AFL_DOMAINS_FILE=/etc/facetwork/our-domains.json`. Either way, every `fw`
 command (`install domain`, `gen-compose`, `runner start`, `start-all`, fleet
 validation) follows the deployment's catalog with no source changes.
 
-After any catalog edit that affects compose env, run `fw util gen-compose`.
+After any catalog edit that affects a compose domain, run `fw util gen-compose`.
 
 ---
 
 ## 8. Validation
 
 ```bash
-fw util gen-compose --check      # compose env matches the catalog (CI guard)
+fw util gen-compose --check      # generated runner blocks match the catalog (CI guard)
 fw install domain --list         # the resolved domain set + descriptions
 python -m pytest tests/test_domain_catalog.py tests/test_compose_gen.py
 ```

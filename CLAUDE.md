@@ -80,8 +80,10 @@ Notes for working with `fw`:
   overrides the scaled tier per host). `fw install domain`, `migrate.py`,
   `runner/start`/`start-all` defaults, `rebuild-runners`, and fleet validation all
   read the catalog via `facetwork/domains/catalog.py`; `fw util gen-compose [--check]`
-  syncs the catalog-derived env into each `runner-<service>` block of
-  `docker-compose.full-stack.yml` (structure stays hand-written). **Per-deployment
+  **generates** each domain's full `runner-<service>` block (from its `compose`
+  object) into `docker-compose.full-stack.yml` between the GENERATED markers
+  (non-domain services — `runner-gh-router`, `runner-ffl` — stay hand-written).
+  **Per-deployment
   override without editing any command:** set `AFL_DOMAINS_FILE=/path` (full replace)
   or drop a gitignored `domains.local.json` (merged over the defaults — entries
   add/replace by key; top-level `"_remove": […]` drops standard ones). Run

@@ -312,10 +312,12 @@ services:
     restart: unless-stopped
 
   # =====================================================================
-  # Per-example runners — one container per fwh_* repo.
-  # Each bind-mounts ~/fw_handlers/<repo> and pip-installs at startup.
+  # Per-domain runners — GENERATED from domains.json by `fw util gen-compose`.
+  # Edit each domain's compose: {...} in the catalog and re-run gen-compose;
+  # do NOT hand-edit between the markers. Non-catalog singletons (gh-router,
+  # ffl) are hand-written below the region.
   # =====================================================================
-
+  # >>> BEGIN generated domain runners (fw util gen-compose — do not edit) >>>
   runner-anthropic:
     build:
       context: .
@@ -323,15 +325,12 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
-      # S3-backed (x-s3-storage) → needs the shared MinIO + its bucket setup, so a
-      # self-contained `start-runner --docker --example <name>` boots MinIO too.
-      # docker-compose.fleet.yml resets depends_on to [] for --fleet (external infra).
       minio-setup:
         condition: service_completed_successfully
     environment:
+      <<: *s3-storage
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      <<: *s3-storage
       AFL_DOMAIN_NAME: anthropic
       AFL_DOMAIN_REPO: fwh_anthropic
       AFL_DOMAIN_EXTRAS: ${ANTHROPIC_EXTRAS:-agent_sdk,mcp}
@@ -342,9 +341,95 @@ services:
       - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
+  runner-census-us:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      AFL_DOMAIN_NAME: census-us
+      AFL_DOMAIN_REPO: fwh_census_us
+      CENSUS_API_KEY: ${CENSUS_API_KEY:-}
+      AFL_REGISTRY_RUNNER_ARGS: "--task-list census"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_census_us:/handlers/fwh_census_us
+      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+
+  runner-genomics:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      AFL_DOMAIN_NAME: genomics
+      AFL_DOMAIN_REPO: fwh_genomics
+      AFL_REGISTRY_RUNNER_ARGS: "--task-list genomics"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_genomics:/handlers/fwh_genomics
+      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+
+  runner-jenkins-example:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      AFL_DOMAIN_NAME: jenkins
+      AFL_DOMAIN_REPO: fwh_jenkins
+      JENKINS_URL: http://jenkins:8080
+      AFL_REGISTRY_RUNNER_ARGS: "--task-list jenkins"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_jenkins:/handlers/fwh_jenkins
+      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+
+  runner-noaa-weather:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      AFL_DOMAIN_NAME: noaa-weather
+      AFL_DOMAIN_REPO: fwh_noaa_weather
+      AFL_REGISTRY_RUNNER_ARGS: "--task-list weather"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_noaa_weather:/handlers/fwh_noaa_weather
+      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+
   runner-osm-geocoder:
-    # Optional: name this runner in `fleet status` / the dashboard (else the
-    # container id is used). e.g. AFL_FLEET_HOST=master docker compose … up -d.
+    # Durable cache + output → MinIO (osm-s3-env); staging/tmp/locks → /scratch (the LARGE external disk, NOT the small internal volume — continent extracts staged on the internal disk ENOSPC-crash the shared mongodb volume).
+    # Timeouts raised to 4h: multi-GB Geofabrik downloads + osmium parses run for hours; the 15min/30min/5min defaults would kill long facets or let another runner steal a 30GB download mid-flight. Matches fwh_osm's DomainPackage runner_env.
     hostname: ${AFL_FLEET_HOST:-}
     build:
       context: .
@@ -357,8 +442,6 @@ services:
       minio-setup:
         condition: service_completed_successfully
     environment:
-      # Durable cache (s3://afl-cache/cache/…) + output (…/osm-output) → MinIO;
-      # staging/tmp/locks → /scratch; handler temp/local output → /data/output.
       <<: *osm-s3-env
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
@@ -366,42 +449,72 @@ services:
       AFL_DOMAIN_REPO: fwh_osm
       AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
       AFL_GEOFABRIK_MIRROR: /geofabrik
-      # Pinned-cache mode: reuse an already-downloaded PBF as-is instead of
-      # re-downloading because Geofabrik's daily rebuild changed the md5. Lets a
-      # large cached region set drive the pipeline without gigabytes of refetch.
       AFL_OSM_USE_CACHE_IF_PRESENT: ${AFL_OSM_USE_CACHE_IF_PRESENT:-true}
-      # Accept a COMPLETE download whose md5 no longer matches upstream: for
-      # multi-GB extracts (germany, russia, …) the .md5 is fetched before the
-      # long download finishes, and Geofabrik's daily rebuild can advance the
-      # .md5 mid-download — a stale-upstream mismatch, not a corrupt file. Off
-      # would retry forever and dead-letter. (A *missing* .md5 is handled
-      # separately by fetch_md5_or_none.)
       AFL_OSM_TOLERATE_MD5: ${AFL_OSM_TOLERATE_MD5:-true}
+      AFL_TASK_EXECUTION_TIMEOUT_MS: 14400000
+      AFL_STUCK_TIMEOUT_MS: 14400000
+      AFL_LEASE_DURATION_MS: 14400000
       AFL_REGISTRY_RUNNER_ARGS: "--task-list osm --server-group ${AFL_SERVER_GROUP:-default}"
-      # OSM PBF parses can run for hours on full-region files. Override
-      # the runner-service default (15min) so the watchdog doesn't kill
-      # long-running facets like AllPopulatedPlaces. Matches the
-      # runner_env declared in fwh_osm's ExamplePackage.
-      AFL_TASK_EXECUTION_TIMEOUT_MS: "14400000"
-      AFL_STUCK_TIMEOUT_MS: "14400000"
-      # Multi-GB Geofabrik downloads (europe ~30GB, north-america ~15GB) do
-      # blocking stream I/O that can't renew the task lease mid-download. The
-      # 5-min default lease expires and another runner steals + restarts the
-      # download from zero — a 30GB extract then never finishes. Match the lease
-      # to the execution timeout so a long download holds its task to completion.
-      AFL_LEASE_DURATION_MS: "14400000"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm
       - afl_output:/data/output
-      # OSM staging (in-flight multi-GB PBF downloads) MUST go on the large
-      # external disk, NOT the small internal Docker volume. Continent extracts
-      # (europe ~30GB, north-america ~15GB) staged concurrently on the ~58GB
-      # internal disk overflow it and ENOSPC-crash mongodb (shared volume). The
-      # external disk is a local POSIX FS (satisfies "scratch stays local") with
-      # terabytes free. AFL_LOCAL_SCRATCH=/scratch resolves staging under here.
       - ${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch
       - afl_geofabrik:/geofabrik
     restart: unless-stopped
+
+  runner-osm-lz:
+    # Pure workflow catalog over fwh_osm — its facets dispatch to the osm-geocoder runner's handlers, so start that one first (depends_on) and mount fwh_osm read-only.
+    # Same 4h timeouts + external scratch as osm-geocoder: it orchestrates continental fan-outs that stage multi-GB PBFs and run for hours.
+    hostname: ${AFL_FLEET_HOST:-}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      runner-osm-geocoder:
+        condition: service_started
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *osm-s3-env
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      AFL_DOMAIN_NAME: osm-lz
+      AFL_DOMAIN_REPO: fwh_osm_lz
+      AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
+      AFL_TASK_EXECUTION_TIMEOUT_MS: 14400000
+      AFL_STUCK_TIMEOUT_MS: 14400000
+      AFL_LEASE_DURATION_MS: 14400000
+      AFL_REGISTRY_RUNNER_ARGS: "--task-list continental"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm_lz:/handlers/fwh_osm_lz
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm:ro
+      - afl_output:/data/output
+      - ${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch
+    restart: unless-stopped
+
+  runner-sensor-monitoring:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      AFL_DOMAIN_NAME: sensor-monitoring
+      AFL_DOMAIN_REPO: fwh_sensor_monitoring
+      AFL_REGISTRY_RUNNER_ARGS: "--task-list monitor"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_sensor_monitoring:/handlers/fwh_sensor_monitoring
+      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+  # <<< END generated domain runners <<<
 
   # Embedded-GraphHopper Java routing agent (osm.Routing.GraphHopper.RouteBatch).
   # Built from fwh_osm/java/osm-gh-router (its own image, NOT the generic
@@ -423,170 +536,6 @@ services:
       AFL_MONGODB_URL: mongodb://mongodb:27017
       AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
       AFL_TASK_LIST: osm
-    restart: unless-stopped
-
-  runner-osm-lz:
-    hostname: ${AFL_FLEET_HOST:-}
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.domain-runner
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      # osm-lz is a pure workflow catalog over fwh_osm — its facets
-      # dispatch to handlers in the osm-geocoder runner.  Start that
-      # one first so it has its handlers registered when we seed.
-      runner-osm-geocoder:
-        condition: service_started
-      minio-setup:
-        condition: service_completed_successfully
-    environment:
-      # Same S3/MinIO storage as osm-geocoder (it dispatches to those handlers).
-      <<: *osm-s3-env
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: osm-lz
-      AFL_DOMAIN_REPO: fwh_osm_lz
-      AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list continental"
-      # Match runner-osm-geocoder timeouts. osm-lz is a workflow catalog over
-      # fwh_osm — many of the workflows it orchestrates fan out across continents
-      # and run for hours. With the runtime defaults (15min exec / 30min stuck
-      # / 5min lease) the bootstrap or any continental-task lease expires and
-      # gets re-claimed mid-flight.
-      AFL_TASK_EXECUTION_TIMEOUT_MS: "14400000"
-      AFL_STUCK_TIMEOUT_MS: "14400000"
-      AFL_LEASE_DURATION_MS: "14400000"
-    volumes:
-      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm_lz:/handlers/fwh_osm_lz
-      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm:ro
-      - afl_output:/data/output
-      # External scratch (same as osm-geocoder): osm-lz dispatches osm.* work
-      # that can stage multi-GB PBFs; on the small internal disk that ENOSPC-
-      # crashes the shared mongodb_data volume.
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch
-    restart: unless-stopped
-
-  runner-noaa-weather:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.domain-runner
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      # S3-backed (x-s3-storage) → needs the shared MinIO + its bucket setup, so a
-      # self-contained `start-runner --docker --example <name>` boots MinIO too.
-      # docker-compose.fleet.yml resets depends_on to [] for --fleet (external infra).
-      minio-setup:
-        condition: service_completed_successfully
-    environment:
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      <<: *s3-storage
-      AFL_DOMAIN_NAME: noaa-weather
-      AFL_DOMAIN_REPO: fwh_noaa_weather
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list weather"
-    volumes:
-      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_noaa_weather:/handlers/fwh_noaa_weather
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
-    restart: unless-stopped
-
-  runner-jenkins-example:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.domain-runner
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      # S3-backed (x-s3-storage) → needs the shared MinIO + its bucket setup, so a
-      # self-contained `start-runner --docker --example <name>` boots MinIO too.
-      # docker-compose.fleet.yml resets depends_on to [] for --fleet (external infra).
-      minio-setup:
-        condition: service_completed_successfully
-    environment:
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      <<: *s3-storage
-      AFL_DOMAIN_NAME: jenkins
-      AFL_DOMAIN_REPO: fwh_jenkins
-      JENKINS_URL: http://jenkins:8080
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list jenkins"
-    volumes:
-      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_jenkins:/handlers/fwh_jenkins
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
-    restart: unless-stopped
-
-  runner-census-us:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.domain-runner
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      # S3-backed (x-s3-storage) → needs the shared MinIO + its bucket setup, so a
-      # self-contained `start-runner --docker --example <name>` boots MinIO too.
-      # docker-compose.fleet.yml resets depends_on to [] for --fleet (external infra).
-      minio-setup:
-        condition: service_completed_successfully
-    environment:
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      <<: *s3-storage
-      AFL_DOMAIN_NAME: census-us
-      AFL_DOMAIN_REPO: fwh_census_us
-      CENSUS_API_KEY: ${CENSUS_API_KEY:-}
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list census"
-    volumes:
-      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_census_us:/handlers/fwh_census_us
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
-    restart: unless-stopped
-
-  runner-genomics:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.domain-runner
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      # S3-backed (x-s3-storage) → needs the shared MinIO + its bucket setup, so a
-      # self-contained `start-runner --docker --example <name>` boots MinIO too.
-      # docker-compose.fleet.yml resets depends_on to [] for --fleet (external infra).
-      minio-setup:
-        condition: service_completed_successfully
-    environment:
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      <<: *s3-storage
-      AFL_DOMAIN_NAME: genomics
-      AFL_DOMAIN_REPO: fwh_genomics
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list genomics"
-    volumes:
-      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_genomics:/handlers/fwh_genomics
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
-    restart: unless-stopped
-
-  runner-sensor-monitoring:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.domain-runner
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      # S3-backed (x-s3-storage) → needs the shared MinIO + its bucket setup, so a
-      # self-contained `start-runner --docker --example <name>` boots MinIO too.
-      # docker-compose.fleet.yml resets depends_on to [] for --fleet (external infra).
-      minio-setup:
-        condition: service_completed_successfully
-    environment:
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      <<: *s3-storage
-      AFL_DOMAIN_NAME: sensor-monitoring
-      AFL_DOMAIN_REPO: fwh_sensor_monitoring
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list monitor"
-    volumes:
-      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_sensor_monitoring:/handlers/fwh_sensor_monitoring
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
   # =====================================================================
