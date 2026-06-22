@@ -42,6 +42,26 @@ step logs (streamed via SSE), and recovery actions (Pause/Resume/Cancel/Repair,
 and per-step Retry/Re-run/Reset). A single step is at `/v3/steps/{id}`. New runs
 start at `/v3/workflows/new`.
 
+### Click-through navigation
+
+Every runtime list is click-through — rows show a hover chevron (›) and link to a
+detail page, so you can traverse the whole runtime graph by clicking:
+
+| From | Row links to |
+|------|--------------|
+| **Runs** (`/v3/workflows`) | the run detail (`/v3/workflows/{runner_id}`) |
+| **Events** / **Tasks** | the event/task's **step** (`/v3/steps/{step_id}`) — parameters & returns, mixin marker, live logs, duration/heartbeat, workflow; bootstrap rows with no step fall back to the run |
+| **Servers** (`/v3/servers`) | the **server detail** (`/v3/servers/{server_id}`) — identity, the handlers it serves, its tasks |
+| **Handlers** (`/v3/handlers`) | the **handler detail** (`/v3/handlers/{facet_name}`) — registration (module/entrypoint/timeout/version), the live servers serving the facet, recent tasks |
+| **Fleet hosts** | that host's runner processes (`/v3/servers?host=<host>`) |
+| **Fleet roles** | the role's namespace handlers (`/v3/handlers?ns=<namespace>`), or — for roles with no namespace (e.g. ffl-runner) — its runner processes (`/v3/servers?group=<role>`) |
+
+The detail pages **cross-link** (server ↔ its handlers ↔ the servers serving them ↔
+step detail), and the Servers page supports `?host=` and `?group=` filters
+(reachable from the Fleet page). Fleet roles resolve their namespace from the
+fleet config's `task_list`, falling back to the domain catalog (`domains.json`) so
+every domain runner role is clickable.
+
 ### App switcher (domain dashboards)
 
 The sidebar's app switcher (top, under the brand) flips between **Platform**

@@ -280,6 +280,28 @@ hosts are current and which are still catching up. The agent survives transient
 Mongo/MinIO blips (logs and retries on the next poll) and leaves runners running
 when stopped.
 
+**Watch-daemon resilience.** The `watch` loop is hardened against the "alive but
+hung" failure mode (a process that's up but has stopped reconciling): it reuses a
+single Mongo client across polls (rather than leaking one per poll, which over
+hours exhausts threads/sockets), bounds every Mongo op with `connectTimeoutMS` +
+`socketTimeoutMS` (server-selection timeout alone doesn't cap a wedged socket
+read), bounds each `docker compose` call, and arms a per-poll **watchdog** that
+`os._exit`s if a reconcile blows past a ceiling — so a supervisor restarts a fresh
+process and recovers any hang. Knobs: `AFL_FLEET_AGENT_WATCHDOG_SECONDS` (default
+900), `AFL_FLEET_AGENT_DOCKER_TIMEOUT` (default 600).
+
+**Supervised self-heal (macOS / launchd).** The watchdog only helps with a
+supervisor that restarts the process. On macOS, run `fleet agent watch` under a
+**launchd LaunchAgent** (`RunAtLoad` + `KeepAlive`) so it starts at login and
+restarts on exit. A robust wrapper: export `AFL_DATA_DIR` + a pinned
+`AFL_MONGODB_URL` (a host whose `.env` sets `AFL_MONGODB_URL=…localhost` would
+otherwise poison discovery under launchd), start Docker Desktop if its daemon is
+down, then `exec fw fleet agent watch --mongo … --data-dir …`. A non-supervised
+manual `watch` (`nohup`/background) is fine too but won't auto-restart. To
+non-disruptively prove every host's daemon is live, re-set the **current** image
+(`fleet set --image <current>`) — it bumps `fleet_config.version` with no container
+churn and every healthy daemon advances its `applied vN` in `fleet status`.
+
 > **Full rollout runbook** — building/pushing the runner image (buildx → registry),
 > the exact `fleet set --image` flow, **what happens to running tasks during a
 > recreate** (graceful drain → reaper recovery → retry/dead-letter), starting /
