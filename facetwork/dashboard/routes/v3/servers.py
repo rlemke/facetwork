@@ -78,3 +78,31 @@ def servers_v3(request: Request, tab: str = "running", store=Depends(get_store))
             "active_nav": "servers",
         },
     )
+
+
+@router.get("/servers/{server_id}")
+def server_detail_v3(server_id: str, request: Request, store=Depends(get_store)):
+    """Detail for one runner process: identity, the handlers it serves, its tasks."""
+    from ...viewdata import _apply_effective_state, _build_server_detail_context
+
+    server = store.get_server(server_id)
+    if server:
+        _apply_effective_state([server])
+    ctx = (_build_server_detail_context(server, store) if server
+           else {"task_groups": [], "task_counts": {}})
+    last_ping_s = None
+    if server and getattr(server, "ping_time", 0):
+        last_ping_s = round((int(time.time() * 1000) - server.ping_time) / 1000)
+
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "v3/servers/detail.html",
+        {
+            "server": server,
+            "server_id": server_id,
+            "last_ping_s": last_ping_s,
+            "dot": _DOT,
+            "active_nav": "servers",
+            **ctx,
+        },
+    )

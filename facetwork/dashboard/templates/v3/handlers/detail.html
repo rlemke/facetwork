@@ -1,0 +1,80 @@
+{% extends "v3/base.html" %}
+{% block title %}Handler · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-top:.8rem}
+.panel-head{padding:.7rem 1rem;border-bottom:1px solid var(--border)}
+.panel-head h2{margin:0;font:600 12.5px var(--sans);color:var(--text-2)}
+.dl{display:grid;grid-template-columns:140px 1fr;gap:.1rem .9rem;padding:.8rem 1rem;font:500 12.5px var(--mono)}
+.dl dt{color:var(--muted)}.dl dd{margin:0;color:var(--text);word-break:break-word}
+.srow{display:grid;grid-template-columns:14px 1fr 130px 90px 16px;gap:.8rem;align-items:center;padding:.45rem 1rem;
+  border-top:1px solid var(--border);font:500 12px var(--mono);text-decoration:none;color:inherit;cursor:pointer}
+.srow:hover{background:var(--surface-2)}.srow .nm{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow .mt{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow .chev{justify-self:end;color:var(--muted);font:600 15px/1 var(--sans);opacity:0;transition:opacity .12s}
+.srow:hover .chev{opacity:1}
+.counts{display:flex;gap:.4rem;flex-wrap:wrap;padding:.7rem 1rem;font:500 11.5px var(--mono)}
+.counts .cpill{padding:.18rem .55rem;border-radius:20px;border:1px solid var(--border);color:var(--text-2)}
+.empty2{padding:1rem;color:var(--muted);font-size:12.5px}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><a href="/v3/handlers">Handlers</a> / <span class="cur">{{ facet_name.rsplit('.',1)[-1] }}</span></nav>{% endblock %}
+{% block topbar_actions %}<button class="iconbtn" onclick="location.reload()" title="Refresh"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9"/><path d="M21 3v6h-6"/></svg></button>{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;gap:.7rem;flex-wrap:wrap">
+  <h1 style="margin:0;font:600 18px var(--sans)">{{ facet_name.rsplit('.',1)[-1] }}</h1>
+  <span style="font:500 12px var(--mono);color:var(--muted)">{{ facet_name }}</span>
+</div>
+
+<div class="panel">
+  <div class="panel-head"><h2>Registration</h2></div>
+  {% if reg %}
+  <dl class="dl">
+    <dt>Facet</dt><dd>{{ reg.facet_name }}</dd>
+    <dt>Module</dt><dd>{{ reg.module_uri }}</dd>
+    <dt>Entrypoint</dt><dd>{{ reg.entrypoint }}</dd>
+    <dt>Timeout</dt><dd>{% if reg.timeout_ms %}{{ reg.timeout_ms }} ms{% else %}0 (global execution timeout){% endif %}</dd>
+    <dt>Version</dt><dd>{{ reg.version }}</dd>
+  </dl>
+  {% else %}<div class="empty2">No registration record — this facet may be advertised by a live runner without a stored registration.</div>{% endif %}
+</div>
+
+<div class="panel">
+  <div class="panel-head"><h2>Servers serving this ({{ servers|length }})</h2></div>
+  {% if servers %}
+  {% for s in servers %}
+  <a class="srow" href="/v3/servers/{{ s.uuid }}" style="--c:{{ 'var(--st-running)' if s.alive else 'var(--muted)' }}">
+    <span class="statusdot" style="background:{{ 'var(--st-running)' if s.alive else 'var(--muted)' }}" title="{{ 'alive' if s.alive else s.state }}"></span>
+    <span class="nm">{{ s.name }}</span>
+    <span class="mt">{{ s.group }}</span>
+    <span class="mt">{{ 'alive' if s.alive else s.state }}</span>
+    <span class="chev" aria-hidden="true">›</span>
+  </a>
+  {% endfor %}
+  {% else %}<div class="empty2">No live runner currently advertises this handler.</div>{% endif %}
+</div>
+
+<div class="panel">
+  <div class="panel-head"><h2>Recent tasks ({{ tasks|length }})</h2></div>
+  {% if state_counts %}
+  <div class="counts">{% for st, n in state_counts.items() %}<span class="cpill">{{ n }} {{ st }}</span>{% endfor %}</div>
+  {% endif %}
+  {% if tasks %}
+  {% for t in tasks %}
+  {% set href = ('/v3/steps/' ~ t.step_id) if t.step_id else ('/v3/workflows/' ~ t.runner_id) %}
+  <a class="srow" href="{{ href }}">
+    <span class="statusdot" style="background:var(--muted)" title="{{ t.state }}"></span>
+    <span class="nm">{{ t.name }}</span>
+    <span class="mt">{{ t.state }}</span>
+    <span class="mt">{{ t.updated|time_ago if t.updated else '—' }}</span>
+    <span class="chev" aria-hidden="true">›</span>
+  </a>
+  {% endfor %}
+  {% else %}<div class="empty2">No tasks recorded for this facet.</div>{% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}<script>setTimeout(function(){location.reload();},15000);</script>{% endblock %}
