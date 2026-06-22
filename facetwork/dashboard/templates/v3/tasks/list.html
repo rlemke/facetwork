@@ -16,13 +16,16 @@
 .warn{font:600 12px var(--mono);color:var(--st-warning)}
 .note{font:500 11.5px var(--mono);color:var(--muted);margin:.2rem 0}
 .tbl{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-top:.3rem}
-.trow{display:grid;grid-template-columns:14px 1.4fr 1fr 110px 90px 80px 60px;gap:.8rem;align-items:center;padding:.5rem .9rem;border-bottom:1px solid var(--border);font-size:12.5px}
+.trow{display:grid;grid-template-columns:14px 1.4fr 1fr 110px 90px 80px 60px 16px;gap:.8rem;align-items:center;padding:.5rem .9rem;border-bottom:1px solid var(--border);font-size:12.5px}
 .trow:last-child{border-bottom:none}.trow:hover{background:var(--surface-2)}
-.trow.head{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+a.trow{text-decoration:none;color:inherit;cursor:pointer}
+.trow.head,.trow.head:hover{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:transparent}
 .tname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tname .nh{margin-left:.4rem;font:600 9.5px var(--mono);color:var(--st-warning);border:1px solid color-mix(in srgb,var(--st-warning) 40%,transparent);border-radius:4px;padding:.05rem .3rem}
 .tsub,.tmeta{font:500 11px var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media (max-width:1000px){.trow{grid-template-columns:14px 1fr 90px 60px}.tsub,.tmeta:nth-of-type(even){display:none}}
+.trow .chev{justify-self:end;color:var(--muted);font:600 15px/1 var(--sans);opacity:0;transition:opacity .12s}
+a.trow:hover .chev{opacity:1}
+@media (max-width:1000px){.trow{grid-template-columns:14px 1fr 90px 60px 16px}.tsub,.tmeta:nth-of-type(even){display:none}}
 </style>
 {% endblock %}
 
@@ -55,9 +58,13 @@
 
 {% if tasks %}
 <div class="tbl">
-  <div class="trow head"><span></span><span>Task</span><span>Step</span><span>Task list</span><span>Server</span><span>Updated</span><span>Retry</span></div>
+  <div class="trow head"><span></span><span>Task</span><span>Step</span><span>Task list</span><span>Server</span><span>Updated</span><span>Retry</span><span></span></div>
   {% for t in tasks %}
-  <div class="trow">
+  {# Task detail = its step (parameters, mixins, logs, duration, flow); fall
+     back to the run for bootstrap tasks that have no step yet. #}
+  {% set href = ('/v3/steps/' ~ t.step_id) if t.step_id else (('/v3/workflows/' ~ t.runner_id) if t.runner_id else '') %}
+  {% set tag = 'a' if href else 'div' %}
+  <{{ tag }} class="trow{% if not href %} static{% endif %}"{% if href %} href="{{ href }}" title="View task details"{% endif %}>
     <span class="statusdot" style="background:{{ dot.get(t.state,'var(--muted)') }}" title="{{ t.state }}"></span>
     <span class="tname">{{ t.name }}{% if t.uuid in unmatched %}<span class="nh">no handler</span>{% endif %}</span>
     <span class="tsub">{{ step_names.get(t.step_id, '') or '—' }}</span>
@@ -65,7 +72,8 @@
     <span class="tmeta">{{ (server_info.get(t.server_id) or {}).get('name', '—') if t.server_id else '—' }}</span>
     <span class="tmeta">{{ t.updated|time_ago if t.updated else '—' }}</span>
     <span class="tmeta">{{ t.retry_count if t.retry_count is defined else 0 }}</span>
-  </div>
+    <span class="chev" aria-hidden="true">{% if href %}›{% endif %}</span>
+  </{{ tag }}>
   {% endfor %}
 </div>
 {% else %}
