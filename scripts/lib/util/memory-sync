@@ -7,20 +7,28 @@
 # AFL_MEMORY_DIR. Safe to run anytime — a no-op when there is nothing new to
 # commit, and it still pushes any unpushed commits.
 #
+# After pushing it also fast-forwards the OTHER hosts' memory mirrors so they
+# don't drift behind origin — best-effort over ssh to AFL_MEMORY_HOSTS (falls
+# back to AFL_RUNNER_HOSTS); an unreachable/asleep host is skipped, not fatal.
+# Each mirror is found host-agnostically (the memory repo under
+# ~/.claude/projects), so per-host home/slug differences don't matter.
+#
 # Usage:
-#   fw util memory-sync                      # add -A, commit (auto message), push
+#   fw util memory-sync                      # commit (auto message), push, pull mirrors
 #   fw util memory-sync -m "why this edit"   # custom commit message
 #   fw util memory-sync "why this edit"      # bare arg is the message too
 #   fw util memory-sync --dry                # show what would be committed/pushed
+#   fw util memory-sync --no-mirrors         # skip the mirror fast-forward (push only)
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
 
-MSG=""; DRY=0
+MSG=""; DRY=0; PULL_MIRRORS=1
 while [ $# -gt 0 ]; do
     case "$1" in
         -m|--message) MSG="$2"; shift 2 ;;
         --dry|--dry-run) DRY=1; shift ;;
-        -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --no-mirrors) PULL_MIRRORS=0; shift ;;
+        -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "unknown arg: $1" >&2; exit 2 ;;
         *) MSG="$1"; shift ;;   # bare arg = commit message
     esac
@@ -71,4 +79,36 @@ if git remote get-url origin >/dev/null 2>&1; then
     git push -q && echo "memory: pushed → $(git remote get-url origin)"
 else
     echo "memory: no 'origin' remote — committed locally only (no push)." >&2
+fi
+
+# --- fast-forward the other hosts' memory mirrors (best-effort) -------------
+# Keeps the per-host clones from drifting behind origin. Each host's memory repo
+# lives at a host-specific path, so we LOCATE it (the claude-memory repo under
+# ~/.claude/projects) rather than assume a slug. Failures (host asleep, no
+# mirror) are reported and skipped — never fatal to the sync.
+if [ "$PULL_MIRRORS" = 1 ]; then
+    MIRROR_HOSTS="${AFL_MEMORY_HOSTS:-${AFL_RUNNER_HOSTS:-}}"
+    # _env.sh doesn't reliably export AFL_RUNNER_HOSTS (it's an unquoted
+    # multi-word value); read it straight from .env as a fallback.
+    if [ -z "$MIRROR_HOSTS" ] && [ -f "$FW_ROOT/.env" ]; then
+        MIRROR_HOSTS="$(sed -n 's/^[[:space:]]*AFL_RUNNER_HOSTS=//p' "$FW_ROOT/.env" 2>/dev/null | tail -1 | tr -d "\"'")"
+    fi
+    SELF="$(hostname -s 2>/dev/null || hostname)"
+    if [ -z "$MIRROR_HOSTS" ]; then
+        echo "memory: no mirror hosts (set AFL_MEMORY_HOSTS or AFL_RUNNER_HOSTS) — skipped mirror pull"
+    else
+        for h in $MIRROR_HOSTS; do
+            case "$h" in "$SELF"|"$SELF".*) continue ;; esac   # don't ssh to ourselves
+            out="$(ssh -o ConnectTimeout=8 -o BatchMode=yes "$h" bash -ls 2>/dev/null <<'REMOTE' || true
+d=$(find ~/.claude/projects -maxdepth 3 -type d -name memory 2>/dev/null | while read -r x; do
+      git -C "$x" remote get-url origin 2>/dev/null | grep -q claude-memory && { printf '%s' "$x"; break; }; done)
+[ -z "$d" ] && { echo "no-mirror"; exit 0; }
+git -C "$d" fetch -q origin 2>/dev/null || { echo "fetch-failed"; exit 0; }
+git -C "$d" merge --ff-only origin/main >/dev/null 2>&1 || { echo "ff-failed (diverged?)"; exit 0; }
+git -C "$d" rev-parse --short HEAD
+REMOTE
+)"
+            echo "memory mirror $h: ${out:-unreachable}"
+        done
+    fi
 fi
