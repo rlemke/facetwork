@@ -10,14 +10,18 @@
 .segtabs a.active .n{color:var(--text)}
 .note{font:500 11.5px var(--mono);color:var(--muted);margin:.2rem 0}
 .evs{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-top:.3rem;font:500 12.5px var(--mono)}
-.ev{display:grid;grid-template-columns:150px 1fr 200px 96px;gap:.9rem;align-items:center;padding:.4rem .9rem;border-bottom:1px solid var(--border)}
+.ev{display:grid;grid-template-columns:150px 1fr 200px 96px 14px;gap:.9rem;align-items:center;padding:.4rem .9rem;border-bottom:1px solid var(--border);
+  text-decoration:none;color:inherit;cursor:pointer}
 .ev:last-child{border-bottom:none}.ev:hover{background:var(--surface-2)}
+.ev.static{cursor:default}.ev.static:hover{background:transparent}
 .ev .ts{color:var(--muted)}
 .ev .nm{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ev .st{color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ev .pill{justify-self:start;display:inline-flex;align-items:center;gap:.35rem;padding:.12rem .5rem;border-radius:20px;font:600 10.5px var(--sans);
   background:color-mix(in srgb,var(--c) 16%,transparent);color:var(--c);border:1px solid color-mix(in srgb,var(--c) 35%,transparent)}
-@media (max-width:900px){.ev{grid-template-columns:120px 1fr 96px}.ev .st{display:none}}
+.ev .chev{justify-self:end;color:var(--muted);font:600 15px/1 var(--sans);opacity:0;transition:opacity .12s}
+.ev:hover .chev{opacity:1}
+@media (max-width:900px){.ev{grid-template-columns:120px 1fr 96px 14px}.ev .st{display:none}}
 </style>
 {% endblock %}
 
@@ -36,12 +40,26 @@
 {% if events %}
 <div class="evs">
   {% for e in events %}
-  <div class="ev" style="--c:{{ dot.get(e.state,'var(--muted)') }}">
+  {# Event detail = its step (parameters, mixins, logs, duration, flow); fall
+     back to the run for bootstrap events that have no step yet. #}
+  {% set href = ('/v3/steps/' ~ e.step_id) if e.step_id else (('/v3/workflows/' ~ e.runner_id) if e.runner_id else '') %}
+  {% if href %}
+  <a class="ev" href="{{ href }}" title="View event details" style="--c:{{ dot.get(e.state,'var(--muted)') }}">
     <span class="ts">{{ e.updated|timestamp if e.updated else '—' }}</span>
     <span class="nm">{{ e.name }}</span>
     <span class="st">{{ step_names.get(e.step_id, '') or '' }}</span>
     <span class="pill">{{ e.state }}</span>
+    <span class="chev" aria-hidden="true">›</span>
+  </a>
+  {% else %}
+  <div class="ev static" style="--c:{{ dot.get(e.state,'var(--muted)') }}">
+    <span class="ts">{{ e.updated|timestamp if e.updated else '—' }}</span>
+    <span class="nm">{{ e.name }}</span>
+    <span class="st">{{ step_names.get(e.step_id, '') or '' }}</span>
+    <span class="pill">{{ e.state }}</span>
+    <span></span>
   </div>
+  {% endif %}
   {% endfor %}
 </div>
 {% else %}
