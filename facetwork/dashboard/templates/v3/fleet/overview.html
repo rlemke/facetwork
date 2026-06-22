@@ -89,12 +89,11 @@
       <thead><tr><th>Role</th><th>Replicas</th><th>Task list</th><th>Image</th><th></th></tr></thead>
       <tbody>
       {% for r in roles %}
-        {% set rns = r.task_list if r.task_list not in ('—', '-', '') else '' %}
-        <tr {% if rns %}class="clk" onclick="location.href='/v3/handlers?ns={{ rns }}'" title="View {{ rns }} handlers"{% endif %}>
-          <td class="rname">{% if rns %}<a href="/v3/handlers?ns={{ rns }}" onclick="event.stopPropagation()">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</td>
+        <tr {% if r.link %}class="clk" onclick="location.href='{{ r.link }}'" title="Open {{ r.name }}"{% endif %}>
+          <td class="rname">{% if r.link %}<a href="{{ r.link }}" onclick="event.stopPropagation()">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</td>
           <td class="mono">{{ r.replicas }}</td><td class="mono">{{ r.task_list }}</td>
           <td><code>{{ r.image.split('/')[-1] if '/' in r.image else r.image }}</code></td>
-          <td class="rchev" aria-hidden="true">{% if rns %}›{% endif %}</td></tr>
+          <td class="rchev" aria-hidden="true">{% if r.link %}›{% endif %}</td></tr>
       {% endfor %}
       </tbody>
     </table>

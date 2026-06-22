@@ -42,11 +42,12 @@ def _norm_host(name) -> str:
 
 @router.get("/servers")
 def servers_v3(request: Request, tab: str = "running", host: str | None = None,
-               store=Depends(get_store)):
+               group: str | None = None, store=Depends(get_store)):
     """Redesigned Servers list — runner processes grouped by host.
 
-    ``host`` (set when arriving from the Fleet page) narrows to one host,
-    matching the Fleet page's normalized name (``.local`` stripped).
+    ``host`` (from the Fleet hosts table) narrows to one host (normalized,
+    ``.local`` stripped); ``group`` (from a Fleet role with no namespace, e.g.
+    ffl-runner) narrows to one server_group / role.
     """
     from ...viewdata import (
         _apply_effective_state,
@@ -61,6 +62,8 @@ def servers_v3(request: Request, tab: str = "running", host: str | None = None,
     if host:
         h = _norm_host(host)
         filtered = [s for s in filtered if _norm_host(getattr(s, "server_name", "")) == h]
+    if group:
+        filtered = [s for s in filtered if (getattr(s, "server_group", "") or "") == group]
     _enrich_servers_with_tasks(filtered, store)
 
     now = int(time.time() * 1000)
@@ -89,6 +92,7 @@ def servers_v3(request: Request, tab: str = "running", host: str | None = None,
             "dot": _DOT,
             "total": len(filtered),
             "filter_host": host,
+            "filter_group": group,
             "active_nav": "servers",
         },
     )

@@ -418,15 +418,25 @@ def _fleet_controller_data(store) -> dict:
     # is derived at runtime from loaded handlers). Resolve it from the domain
     # catalog so every role can link to its namespace handlers on the Fleet page.
     catalog_tl = _domain_role_task_lists()
-    roles = [
-        {
+    roles = []
+    for name, spec in (cfg.get("roles") or {}).items():
+        tl = spec.get("task_list") or catalog_tl.get(name) or ""
+        # Every role links somewhere real: namespace-scoped roles → their handlers;
+        # gh-router (embedded GraphHopper agent) → the osm routing handlers; any
+        # other role (ffl-runner orchestration tier, …) → its runner processes.
+        if tl:
+            link = f"/v3/handlers?ns={tl}"
+        elif name == "gh-router":
+            link = "/v3/handlers?ns=osm"
+        else:
+            link = f"/v3/servers?group={name}"
+        roles.append({
             "name": name,
             "replicas": spec.get("replicas", "—"),
             "image": spec.get("image") or "—",
-            "task_list": spec.get("task_list") or catalog_tl.get(name) or "—",
-        }
-        for name, spec in (cfg.get("roles") or {}).items()
-    ]
+            "task_list": tl or "—",
+            "link": link,
+        })
     agents = []
     for a in db.fleet_agents.find({}):
         av = a.get("applied_version")
