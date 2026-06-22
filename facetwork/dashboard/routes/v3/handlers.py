@@ -27,11 +27,19 @@ router = APIRouter(prefix="/v3")
 
 
 @router.get("/handlers")
-def handlers_v3(request: Request, tab: str = "all", store=Depends(get_store)):
-    """Redesigned Handlers list — All / Active / Working, grouped by namespace."""
+def handlers_v3(request: Request, tab: str = "all", ns: str | None = None,
+                store=Depends(get_store)):
+    """Redesigned Handlers list — All / Active / Working, grouped by namespace.
+
+    ``ns`` (set when arriving from a Fleet role) narrows to one top-level
+    namespace prefix, e.g. ``?ns=osm`` → every ``osm.*`` handler.
+    """
+    from ...helpers import extract_handler_prefix
     from ...viewdata import _build_handler_stats
 
     all_h = list(store.list_handler_registrations())
+    if ns:
+        all_h = [h for h in all_h if extract_handler_prefix(h.facet_name) == ns]
     active, busy, stats = _build_handler_stats(store)
 
     counts = {
@@ -58,6 +66,7 @@ def handlers_v3(request: Request, tab: str = "all", store=Depends(get_store)):
             "active": active,
             "busy": busy,
             "stats": stats,
+            "filter_ns": ns,
             "active_nav": "handlers",
         },
     )

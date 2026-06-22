@@ -39,12 +39,17 @@ a.h-row:hover .chev{opacity:1}
 {% block content %}
 <div class="h-bar">
   <div class="segtabs">
-    <a href="?tab=all"     class="{% if tab=='all' %}active{% endif %}">All <span class="n">{{ counts.all }}</span></a>
-    <a href="?tab=active"  class="{% if tab=='active' %}active{% endif %}">Active <span class="n">{{ counts.active }}</span></a>
-    <a href="?tab=working" class="{% if tab=='working' %}active{% endif %}">Working <span class="n">{{ counts.working }}</span></a>
+    {% set nsq = '&ns=' ~ filter_ns if filter_ns else '' %}
+    <a href="?tab=all{{ nsq }}"     class="{% if tab=='all' %}active{% endif %}">All <span class="n">{{ counts.all }}</span></a>
+    <a href="?tab=active{{ nsq }}"  class="{% if tab=='active' %}active{% endif %}">Active <span class="n">{{ counts.active }}</span></a>
+    <a href="?tab=working{{ nsq }}" class="{% if tab=='working' %}active{% endif %}">Working <span class="n">{{ counts.working }}</span></a>
   </div>
   <input class="h-search" id="h-search" type="search" placeholder="Filter handlers by name…" autocomplete="off">
 </div>
+{% if filter_ns %}
+<p style="font:500 11.5px var(--mono);color:var(--muted);margin:.5rem 0">
+  Namespace <b style="color:var(--text)">{{ filter_ns }}</b> · <a href="?tab={{ tab }}" style="color:var(--accent)">all namespaces</a></p>
+{% endif %}
 
 {% if groups %}
 {% for group in groups %}
