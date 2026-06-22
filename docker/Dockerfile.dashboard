@@ -17,6 +17,9 @@ RUN pip install --no-cache-dir psycopg2-binary boto3
 # earlier `./afl/` rename was a relic of the project's rename and
 # broke imports like `from facetwork.logging import ...`.
 COPY facetwork/ ./facetwork/
+# Domain catalog — lets the Fleet page resolve each domain runner role to its
+# namespace (task_list) so every role links to its handlers.
+COPY domains.json ./
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8080

@@ -368,6 +368,31 @@ def _enrich_runners_with_progress(
 # =============================================================================
 
 
+def _domain_role_task_lists() -> dict[str, str]:
+    """Map a fleet role name -> its namespace (task_list) from the domain catalog.
+
+    Keyed both by the domain name and by the ``runner-<name>`` service suffix, so
+    a role like ``jenkins-example`` (catalog key ``jenkins``, service
+    ``runner-jenkins-example``) resolves too. Empty if the catalog is unavailable.
+    """
+    try:
+        from ..domains import catalog
+
+        doms = catalog.domains()
+    except Exception:  # noqa: BLE001 - catalog optional; degrade to no mapping
+        return {}
+    out: dict[str, str] = {}
+    for name, spec in doms.items():
+        tl = spec.get("task_list")
+        if not tl:
+            continue
+        out[name] = tl
+        svc = spec.get("service") or ""
+        if svc.startswith("runner-"):
+            out[svc[len("runner-"):]] = tl
+    return out
+
+
 def _fleet_controller_data(store) -> dict:
     """Central fleet config + per-host reconcile drift (from the `fleet`/
     `fleet-agent` controller's fleet_config + fleet_agents collections). Returns
@@ -389,12 +414,16 @@ def _fleet_controller_data(store) -> dict:
         {"name": "MinIO", "url": eps.get("minio") or minio.get("endpoint") or "—"},
         {"name": "Dashboard", "url": eps.get("dashboard") or "—"},
     ]
+    # Domain-runner roles don't carry a task_list in fleet_config (their namespace
+    # is derived at runtime from loaded handlers). Resolve it from the domain
+    # catalog so every role can link to its namespace handlers on the Fleet page.
+    catalog_tl = _domain_role_task_lists()
     roles = [
         {
             "name": name,
             "replicas": spec.get("replicas", "—"),
             "image": spec.get("image") or "—",
-            "task_list": spec.get("task_list") or "—",
+            "task_list": spec.get("task_list") or catalog_tl.get(name) or "—",
         }
         for name, spec in (cfg.get("roles") or {}).items()
     ]
