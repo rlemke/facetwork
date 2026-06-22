@@ -35,9 +35,19 @@ _DOT = {
 }
 
 
+def _norm_host(name) -> str:
+    """fleet-agent records use 'server2.local'; runner heartbeats use 'server2'."""
+    return str(name or "").removesuffix(".local").lower()
+
+
 @router.get("/servers")
-def servers_v3(request: Request, tab: str = "running", store=Depends(get_store)):
-    """Redesigned Servers list — runner processes grouped by host."""
+def servers_v3(request: Request, tab: str = "running", host: str | None = None,
+               store=Depends(get_store)):
+    """Redesigned Servers list — runner processes grouped by host.
+
+    ``host`` (set when arriving from the Fleet page) narrows to one host,
+    matching the Fleet page's normalized name (``.local`` stripped).
+    """
     from ...viewdata import (
         _apply_effective_state,
         _count_servers_by_tab,
@@ -48,6 +58,9 @@ def servers_v3(request: Request, tab: str = "running", store=Depends(get_store))
     all_servers = _apply_effective_state(list(store.get_all_servers()))
     tab_counts = _count_servers_by_tab(all_servers)
     filtered = _filter_servers(all_servers, tab)
+    if host:
+        h = _norm_host(host)
+        filtered = [s for s in filtered if _norm_host(getattr(s, "server_name", "")) == h]
     _enrich_servers_with_tasks(filtered, store)
 
     now = int(time.time() * 1000)
@@ -75,6 +88,7 @@ def servers_v3(request: Request, tab: str = "running", store=Depends(get_store))
             "tab_counts": tab_counts,
             "dot": _DOT,
             "total": len(filtered),
+            "filter_host": host,
             "active_nav": "servers",
         },
     )

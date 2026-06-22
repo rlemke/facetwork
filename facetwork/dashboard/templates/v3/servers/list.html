@@ -38,10 +38,15 @@ a.srv-row:hover .chev{opacity:1}
 
 {% block content %}
 <div class="segtabs">
+  {% set hq = '&host=' ~ filter_host if filter_host else '' %}
   {% for k,lbl in [('running','Running'),('startup','Startup'),('error','Error'),('shutdown','Shutdown'),('down','Down')] %}
-  <a href="?tab={{ k }}" class="{% if tab==k %}active{% endif %}">{{ lbl }} <span class="n">{{ tab_counts.get(k,0) }}</span></a>
+  <a href="?tab={{ k }}{{ hq }}" class="{% if tab==k %}active{% endif %}">{{ lbl }} <span class="n">{{ tab_counts.get(k,0) }}</span></a>
   {% endfor %}
 </div>
+{% if filter_host %}
+<p class="note" style="font:500 11.5px var(--mono);color:var(--muted);margin:.5rem 0">
+  Filtered to host <b style="color:var(--text)">{{ filter_host }}</b> · <a href="?tab={{ tab }}" style="color:var(--accent)">all hosts</a></p>
+{% endif %}
 
 {% if groups %}
 {% for g in groups %}

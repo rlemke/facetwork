@@ -22,6 +22,12 @@
   color:var(--muted);padding:.55rem .9rem;border-bottom:1px solid var(--border)}
 .hosts td{padding:.6rem .9rem;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}
 .hosts tr:last-child td{border-bottom:none}
+.hosts tbody tr{cursor:pointer;transition:background .12s}
+.hosts tbody tr:hover{background:var(--surface-2)}
+.hosts .host a{color:inherit;text-decoration:none}
+.hosts tbody tr:hover .host a{color:var(--accent)}
+.hosts .chev{color:var(--muted);font:600 15px/1 var(--sans);opacity:0;transition:opacity .12s;text-align:right}
+.hosts tbody tr:hover .chev{opacity:1}
 .hosts .host{font-weight:600;display:flex;align-items:center;gap:.5rem}
 .hosts .num{font:600 14px var(--mono)}
 .hosts .tag{font:500 11px var(--mono);color:var(--text-2)}
@@ -94,11 +100,11 @@
     </div>
   </div>
   <table class="hosts">
-    <thead><tr><th>Host</th><th>Live runners</th><th>Version</th><th>Image</th><th>Last ping</th><th>Status</th></tr></thead>
+    <thead><tr><th>Host</th><th>Live runners</th><th>Version</th><th>Image</th><th>Last ping</th><th>Status</th><th></th></tr></thead>
     <tbody>
     {% for h in hosts %}
-      <tr>
-        <td><span class="host"><span class="statusdot" style="background:{{ 'var(--st-complete)' if h.ok else ('var(--st-warning)' if h.warns else 'var(--muted)') }}"></span>{{ h.host }}</span></td>
+      <tr onclick="location.href='/v3/servers?host={{ h.host }}'" title="View {{ h.host }}'s runners">
+        <td><span class="host"><span class="statusdot" style="background:{{ 'var(--st-complete)' if h.ok else ('var(--st-warning)' if h.warns else 'var(--muted)') }}"></span><a href="/v3/servers?host={{ h.host }}" onclick="event.stopPropagation()">{{ h.host }}</a></span></td>
         <td><span class="num" style="color:{{ 'var(--st-running)' if h.live else 'var(--st-warning)' }}">{{ h.live }}</span></td>
         <td>{% if h.version is not none %}<span class="ver">v{{ h.version }}</span>{% else %}<span class="tag" style="opacity:.6">no agent</span>{% endif %}</td>
         <td><span class="tag">{{ h.image.split('/')[-1] if '/' in h.image else h.image }}</span></td>
@@ -108,6 +114,7 @@
           {% else %}<span class="warn-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L14.4 3.9a2 2 0 00-3.4 0z"/></svg> attention</span>{% endif %}
           {% if h.warns %}<ul class="warnlist">{% for w in h.warns %}<li>{{ w }}</li>{% endfor %}</ul>{% endif %}
         </td>
+        <td class="chev" aria-hidden="true">›</td>
       </tr>
     {% endfor %}
     </tbody>
