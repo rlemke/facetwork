@@ -38,6 +38,7 @@ import signal
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -52,9 +53,70 @@ DB = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
 # machine hostname); lets several agents on one box act as distinct servers.
 HOST = os.environ.get("AFL_FLEET_HOST") or socket.gethostname()
 
+# Every Mongo client is bounded on ALL three axes — server selection AND the
+# per-op connect/socket reads. serverSelectionTimeoutMS alone does NOT cap a
+# wedged socket read (a black-holed half-open connection after sleep/wake or a
+# network blip), which is how a `watch` poll could block forever.
+_CLIENT_KW = dict(serverSelectionTimeoutMS=5000, connectTimeoutMS=10000, socketTimeoutMS=20000)
+
+# Per-poll iteration ceiling. A reconcile that runs longer than this is wedged
+# (e.g. a hung `docker` daemon, which Mongo timeouts can't see) — force-exit so
+# the launchd KeepAlive supervisor restarts a fresh process. Generous so a real
+# image rollout (pull + recreate of every role) never trips it.
+_WATCHDOG_SECONDS = int(os.environ.get("AFL_FLEET_AGENT_WATCHDOG_SECONDS", "900"))
+# Bound each docker compose call so one wedged invocation aborts on its own
+# rather than hanging the whole reconcile until the watchdog fires.
+_DOCKER_TIMEOUT = int(os.environ.get("AFL_FLEET_AGENT_DOCKER_TIMEOUT", "600"))
+
+# One reused client per (process, url). Creating a fresh MongoClient every poll
+# leaks its background monitor threads + sockets — over hours that fd/thread
+# exhaustion is what wedged long-running watchers (alive but hung).
+_client_cache = {"url": None, "client": None}
+
+
+def _db(mongo):
+    """The facetwork DB from a cached, fully-timeout-bounded client (reused
+    across polls so the daemon doesn't leak a client every cycle)."""
+    if _client_cache["client"] is None or _client_cache["url"] != mongo:
+        _close_client()
+        _client_cache.update(url=mongo, client=MongoClient(mongo, **_CLIENT_KW))
+    return _client_cache["client"][DB]
+
+
+def _close_client():
+    c = _client_cache.get("client")
+    if c is not None:
+        try:
+            c.close()
+        except Exception:  # noqa: BLE001 - best-effort teardown
+            pass
+    _client_cache.update(url=None, client=None)
+
+
+def _watchdog_fire():
+    """Last-resort: a reconcile blew past _WATCHDOG_SECONDS. Hard-exit (bypassing
+    atexit/cleanup, which themselves could be wedged) so launchd KeepAlive starts
+    a fresh process. Exit 75 (EX_TEMPFAIL) marks it as a watchdog restart."""
+    print(f"fleet-agent[{HOST}]: WATCHDOG fired — reconcile exceeded {_WATCHDOG_SECONDS}s, "
+          "force-exiting for supervisor restart", flush=True)
+    os._exit(75)
+
+
+def _run_compose(cmd, env):
+    """Run a docker compose start bounded by _DOCKER_TIMEOUT. A timeout is
+    surfaced as a non-zero CompletedProcess (exit 124) so callers' existing
+    returncode handling applies — instead of a wedged docker hanging the daemon."""
+    try:
+        return subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=_DOCKER_TIMEOUT)
+    except subprocess.TimeoutExpired as exc:
+        out = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout or b"").decode(errors="replace")
+        err = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr or b"").decode(errors="replace")
+        err += f"\nfleet-agent[{HOST}]: docker call timed out after {_DOCKER_TIMEOUT}s"
+        return subprocess.CompletedProcess(cmd, returncode=124, stdout=out, stderr=err)
+
 
 def _read_cfg(mongo):
-    cfg = MongoClient(mongo, serverSelectionTimeoutMS=5000)[DB].fleet_config.find_one({"_id": "default"})
+    cfg = _db(mongo).fleet_config.find_one({"_id": "default"})
     if not cfg:
         raise SystemExit("no fleet_config in Mongo — an admin must run `fleet set --minio … --osm-replicas N` first")
     if not cfg.get("minio", {}).get("endpoint"):
@@ -65,7 +127,7 @@ def _read_cfg(mongo):
 def _record(mongo, version, image, replicas):
     """Record this host's applied state so `fleet status` can show drift."""
     try:
-        MongoClient(mongo, serverSelectionTimeoutMS=5000)[DB].fleet_agents.update_one(
+        _db(mongo).fleet_agents.update_one(
             {"_id": HOST},
             {"$set": {
                 "host": HOST, "applied_version": version, "applied_image": image,
@@ -81,7 +143,7 @@ def _resolve_creds(mongo):
     """MinIO creds from the encrypted secret store if present (host needs only
     AFL_FLEET_KEY), else this host's env, else minioadmin defaults."""
     try:
-        sec = _fleet_lib.get_minio_secret(MongoClient(mongo, serverSelectionTimeoutMS=5000)[DB])
+        sec = _fleet_lib.get_minio_secret(_db(mongo))
     except RuntimeError as exc:  # a secret exists but AFL_FLEET_KEY is missing/wrong
         raise SystemExit(f"fleet-agent: {exc}")
     if sec:
@@ -181,7 +243,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
             child_env.get("PATH", "")
             + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
         )
-        r = subprocess.run(cmd, env=child_env, capture_output=True, text=True)
+        r = _run_compose(cmd, child_env)
         if r.returncode != 0:
             sys.stdout.write(r.stdout)
             sys.stderr.write(r.stderr)
@@ -195,7 +257,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
                       "--env", envf, "--example", "gh-router", "--replicas", "1"]
             if recreate:
                 gh_cmd.append("--recreate")
-            gr = subprocess.run(gh_cmd, env=child_env, capture_output=True, text=True)
+            gr = _run_compose(gh_cmd, child_env)
             sys.stdout.write(gr.stdout)
             if gr.returncode != 0:
                 # Non-fatal: gh-router only needs to run on ONE host (it's the sole
@@ -214,7 +276,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
                        "--env", envf, "--example", "ffl", "--replicas", str(ffl_replicas)]
             if recreate:
                 ffl_cmd.append("--recreate")
-            fr = subprocess.run(ffl_cmd, env=child_env, capture_output=True, text=True)
+            fr = _run_compose(ffl_cmd, child_env)
             sys.stdout.write(fr.stdout)
             if fr.returncode != 0:
                 sys.stderr.write(fr.stderr)
@@ -233,7 +295,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
             d_env = child_env
             if spec.get("image"):
                 d_env = dict(child_env, AFL_RUNNER_IMAGE=spec["image"])
-            dr = subprocess.run(d_cmd, env=d_env, capture_output=True, text=True)
+            dr = _run_compose(d_cmd, d_env)
             sys.stdout.write(dr.stdout)
             if dr.returncode != 0:
                 sys.stderr.write(dr.stderr)
@@ -259,6 +321,12 @@ def cmd_watch(a):
     last_version = None
     last_image = None
     while not stop["v"]:
+        # Watchdog: a poll that runs longer than _WATCHDOG_SECONDS is wedged on
+        # something Mongo/docker timeouts didn't catch — force-exit so the
+        # KeepAlive supervisor restarts a fresh process (recovers any hang).
+        wd = threading.Timer(_WATCHDOG_SECONDS, _watchdog_fire)
+        wd.daemon = True
+        wd.start()
         try:
             cfg = _read_cfg(mongo)
             version = cfg.get("version")
@@ -275,6 +343,10 @@ def cmd_watch(a):
             print(f"fleet-agent[{HOST}]: {exc}", flush=True)
         except Exception as exc:  # noqa: BLE001 - keep the daemon alive across transient errors
             print(f"fleet-agent[{HOST}]: reconcile error: {exc}", flush=True)
+            # Drop a possibly-wedged Mongo client so the next poll rebuilds it.
+            _close_client()
+        finally:
+            wd.cancel()
         for _ in range(a.interval):
             if stop["v"]:
                 break
