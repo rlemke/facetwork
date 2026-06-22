@@ -28,7 +28,7 @@ while [ $# -gt 0 ]; do
         -m|--message) MSG="$2"; shift 2 ;;
         --dry|--dry-run) DRY=1; shift ;;
         --no-mirrors) PULL_MIRRORS=0; shift ;;
-        -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "unknown arg: $1" >&2; exit 2 ;;
         *) MSG="$1"; shift ;;   # bare arg = commit message
     esac
