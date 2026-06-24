@@ -124,6 +124,12 @@ services:
     environment:
       <<: *fleet-env
 
+  runner-conflict:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+
   runner-genomics:
     <<: *fleet-runner
     depends_on: !reset []

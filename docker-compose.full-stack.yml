@@ -357,12 +357,31 @@ services:
       AFL_DOMAIN_NAME: census-us
       AFL_DOMAIN_REPO: fwh_census_us
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
-      # Enables census.Publish.PublishWebBundle (token-gated registration). Set
-      # only on the host that should publish (server3 fleet-secrets.env).
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list census"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_census_us:/handlers/fwh_census_us
+      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+
+  runner-conflict:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      AFL_DOMAIN_NAME: conflict
+      AFL_DOMAIN_REPO: fwh_conflict
+      AFL_REGISTRY_RUNNER_ARGS: "--task-list conflict"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_conflict:/handlers/fwh_conflict
       - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 

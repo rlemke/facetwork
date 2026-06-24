@@ -104,8 +104,15 @@
       "service": "runner-census-us",
       "task_list": "census",
       "compose": {
-        "env": [["CENSUS_API_KEY", "${CENSUS_API_KEY:-}"]]
+        "env": [["CENSUS_API_KEY", "${CENSUS_API_KEY:-}"], ["GITHUB_TOKEN", "${GITHUB_TOKEN:-}"]]
       }
+    },
+    "conflict": {
+      "repo": "fwh_conflict",
+      "extras": [],
+      "description": "UCDP armed-conflict world maps (events, deaths, civilian targeting, intensity, armed actors)",
+      "service": "runner-conflict",
+      "task_list": "conflict"
     },
     "genomics": {
       "repo": "fwh_genomics",
