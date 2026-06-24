@@ -357,6 +357,9 @@ services:
       AFL_DOMAIN_NAME: census-us
       AFL_DOMAIN_REPO: fwh_census_us
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
+      # Enables census.Publish.PublishWebBundle (token-gated registration). Set
+      # only on the host that should publish (server3 fleet-secrets.env).
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       AFL_REGISTRY_RUNNER_ARGS: "--task-list census"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_census_us:/handlers/fwh_census_us

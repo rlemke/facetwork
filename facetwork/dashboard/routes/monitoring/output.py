@@ -155,6 +155,12 @@ def artifact_url(value) -> str | None:
     if not isinstance(value, str) or not value.lower().endswith((".html", ".htm")):
         return None
 
+    # 0a) Already a public web URL (e.g. a GitHub Pages page published by
+    #     census.Publish.PublishWebBundle) — it's directly clickable, link as-is.
+    low = value.lower()
+    if low.startswith(("http://", "https://")):
+        return value
+
     # 0) Object-store URI (s3://bucket/key): the fleet writes durable HTML
     #    outputs straight to the store, e.g.
     #    s3://afl-cache/osm-output/osm-transform/<map>.html — which has no
