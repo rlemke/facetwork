@@ -124,7 +124,9 @@
     "save-earth": {
       "repo": "fwh_save_earth",
       "extras": [],
-      "description": "Open environmental datasets (OpenLitterMap, EPA Superfund/Brownfields/TRI) → MapLibre HTML maps"
+      "description": "Open environmental datasets (OpenLitterMap, EPA Superfund/Brownfields/TRI, OSM nuclear) → MapLibre HTML maps",
+      "service": "runner-save-earth",
+      "task_list": "save_earth"
     },
     "sentinel2-landchange": {
       "repo": "fwh_sentinel2",

@@ -494,6 +494,27 @@ services:
       - ${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch
     restart: unless-stopped
 
+  runner-save-earth:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      AFL_DOMAIN_NAME: save-earth
+      AFL_DOMAIN_REPO: fwh_save_earth
+      AFL_REGISTRY_RUNNER_ARGS: "--task-list save_earth"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_save_earth:/handlers/fwh_save_earth
+      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+
   runner-sensor-monitoring:
     build:
       context: .
