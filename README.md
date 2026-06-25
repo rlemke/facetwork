@@ -42,7 +42,8 @@ It collects real outputs produced end-to-end by FFL workflows on the runtime:
   rankings, and a Social Vulnerability Index choropleth for all 50 states + DC.
 - **World** — nuclear power sites, major volcanoes, LGBTQ+ venues (from OpenStreetMap),
   recent earthquakes & fault lines (USGS + Bird-2002 plate boundaries),
-  and an armed-conflict choropleth (UCDP / UNHCR / IDMC / IPC).
+  an armed-conflict choropleth (UCDP / UNHCR / IDMC / IPC), and an OSM
+  mapping-equity map (health facilities per capita — where OSM is under-mapped).
 
 Every map carries a footer linking back to the **FFL workflow** (and its parameters)
 that generated it, so each output is a worked example of the platform in use. The maps
