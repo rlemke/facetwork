@@ -114,6 +114,13 @@
       "service": "runner-conflict",
       "task_list": "conflict"
     },
+    "osm-mapping": {
+      "repo": "fwh_osm_mapping",
+      "extras": [],
+      "description": "OSM mapping-equity world map: mapped health facilities per capita (under-mapping vs population)",
+      "service": "runner-osm-mapping",
+      "task_list": "osm_mapping"
+    },
     "genomics": {
       "repo": "fwh_genomics",
       "extras": [],

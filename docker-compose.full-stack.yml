@@ -385,6 +385,27 @@ services:
       - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
+  runner-osm-mapping:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      AFL_DOMAIN_NAME: osm-mapping
+      AFL_DOMAIN_REPO: fwh_osm_mapping
+      AFL_REGISTRY_RUNNER_ARGS: "--task-list osm_mapping"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm_mapping:/handlers/fwh_osm_mapping
+      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+
   runner-genomics:
     build:
       context: .

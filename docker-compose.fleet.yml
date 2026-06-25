@@ -130,6 +130,12 @@ services:
     environment:
       <<: *fleet-env
 
+  runner-osm-mapping:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+
   runner-genomics:
     <<: *fleet-runner
     depends_on: !reset []
