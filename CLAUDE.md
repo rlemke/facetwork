@@ -260,6 +260,9 @@ surface as `--domain <name>`:
 - [anthropic](https://github.com/rlemke/fwh_anthropic) — multi-area wrappers for surfaces at github.com/anthropics (16 facets across Messages / Batch / Files / Agent SDK / Claude Code / Computer Use + `DocumentQA` composition workflow + opt-in live tests)
 - [save-earth](https://github.com/rlemke/fwh_save_earth) — open environmental datasets (OpenLitterMap, EPA Superfund/Brownfields, EPA TRI) → cached GeoJSON → MapLibre HTML maps; source-adapter + tools/`_<pkg>_tools`/shim pattern
 - [sentinel2-landchange](https://github.com/rlemke/fwh_sentinel2) — Sentinel-2 land-cover change: STAC + Cloud-Optimized GeoTIFF → NDVI/composite → `difference`/`classify` change → MapLibre XYZ-tiled map; per-scene `foreach` fan-out, content-addressed cache, real (rio-tiler) + offline-mock paths (`pip install -e ".[geo]"`)
+- [conflict](https://github.com/rlemke/fwh_conflict) — UCDP armed-conflict world choropleth (events/deaths/civilian/intensity/actors + UNHCR/IDMC/IPC); Natural Earth geometry + metric dropdown → GitHub Pages
+- [osm-mapping](https://github.com/rlemke/fwh_osm_mapping) — OSM mapping-equity maps: health facilities per capita, WORLD (per-country Overpass count) + US state/county (Overpass fetch + shapely spatial-join onto census county geometry); "under-mapping vs population"
+- [h1b](https://github.com/rlemke/fwh_h1b) — US H-1B visa approvals by state & county, multi-year (USCIS H-1B Employer Data Hub CSVs, FY2009-2023; ZIP→county spatial-join; year dropdown + state/county toggle)
 
 ## Domain pipelines — tools / handlers / cache pattern
 
