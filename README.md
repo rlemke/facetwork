@@ -32,6 +32,21 @@
 > so you can build on top of it and customize it to your needs.
 > 
 
+## See it in action — live example outputs
+
+Facetwork workflows publish interactive maps to a live site:
+**[facetwork-maps →](https://rlemke.github.io/facetwork-maps/)** ([repo](https://github.com/rlemke/facetwork-maps)).
+It collects real outputs produced end-to-end by FFL workflows on the runtime:
+
+- **US Census** — a per-county metric explorer (13 ACS metrics + a dropdown), state
+  rankings, and a Social Vulnerability Index choropleth for all 50 states + DC.
+- **World** — nuclear power sites, major volcanoes, LGBTQ+ venues (from OpenStreetMap),
+  and an armed-conflict choropleth (UCDP / UNHCR / IDMC / IPC).
+
+Every map carries a footer linking back to the **FFL workflow** (and its parameters)
+that generated it, so each output is a worked example of the platform in use. The maps
+themselves are pushed to GitHub Pages by an FFL workflow (`census.workflows.PublishToSite`).
+
 
 
 ## Start Here: Read the Thesis Documents
