@@ -121,6 +121,13 @@
       "service": "runner-osm-mapping",
       "task_list": "osm_mapping"
     },
+    "h1b": {
+      "repo": "fwh_h1b",
+      "extras": [],
+      "description": "US H-1B visa approvals by state & county, multi-year (USCIS H-1B Employer Data Hub)",
+      "service": "runner-h1b",
+      "task_list": "h1b"
+    },
     "genomics": {
       "repo": "fwh_genomics",
       "extras": [],

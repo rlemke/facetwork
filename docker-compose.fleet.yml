@@ -136,6 +136,12 @@ services:
     environment:
       <<: *fleet-env
 
+  runner-h1b:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+
   runner-genomics:
     <<: *fleet-runner
     depends_on: !reset []
