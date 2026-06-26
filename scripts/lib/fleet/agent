@@ -154,19 +154,41 @@ def _resolve_creds(mongo):
 
 def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     minio = cfg.get("minio", {})
-    osm = (cfg.get("roles") or {}).get("osm-geocoder", {})
+    roles = cfg.get("roles") or {}
+    # This host's server group decides which central roles it actually brings up
+    # (server_groups gating, below). Default 'runner' — a fleet that sets no
+    # groups runs every role on every host, exactly as before.
+    grp = _fleet_lib.host_server_group()
+    osm = roles.get("osm-geocoder", {})
     replicas = replicas_override if replicas_override is not None else int(osm.get("replicas", 4))
     image = osm.get("image")
-    gh_image = (cfg.get("roles") or {}).get("gh-router", {}).get("image")
+    gh_role = roles.get("gh-router", {})
+    gh_image = gh_role.get("image")
     # ffl-runner orchestration tier (opt-in: only brought up when replicas>0).
-    ffl = (cfg.get("roles") or {}).get("ffl-runner", {})
+    ffl = roles.get("ffl-runner", {})
     ffl_replicas = int(ffl.get("replicas", 0) or 0)
     ffl_image = ffl.get("image")
     # Per-domain handler runners (kind="domain"): {name: spec} where name is the
     # runner-<name> compose-service suffix. Brought up generically below so a new
     # domain runner is `fleet set --domain-runner <name>` — no agent code change.
-    domain_roles = {n: s for n, s in (cfg.get("roles") or {}).items()
+    domain_roles = {n: s for n, s in roles.items()
                     if s.get("kind") == "domain" and int(s.get("replicas", 1) or 0) > 0}
+
+    # server_groups gating: a role bearing a server_groups list runs ONLY on
+    # hosts whose group is in it; absent/empty = everywhere. This is what lets a
+    # deployment keep heavy domains (osm PBF imports, wide fan-outs) off
+    # under-provisioned machines without touching routing — a skipped role simply
+    # is not started here; another host in its group serves those tasks.
+    osm_here = _fleet_lib.role_in_group(osm, grp)
+    gh_here = _fleet_lib.role_in_group(gh_role, grp)
+    ffl_here = _fleet_lib.role_in_group(ffl, grp)
+    domain_roles = {n: s for n, s in domain_roles.items()
+                    if _fleet_lib.role_in_group(s, grp)}
+    skipped = sorted(
+        n for n, s in roles.items()
+        if (s.get("kind") == "domain" or n in ("osm-geocoder", "gh-router", "ffl-runner"))
+        and not _fleet_lib.role_in_group(s, grp)
+    )
     endpoint = _fleet_lib.resolve_minio(minio.get("endpoint"))
     access_key, secret_key, creds_src = _resolve_creds(mongo)
 
@@ -200,8 +222,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         env["AFL_GH_ROUTER_IMAGE"] = gh_image
     if ffl_image:
         env["AFL_FFL_IMAGE"] = ffl_image
-    # Role group for fleet status / dashboard (every server is a runner by default).
-    grp = os.environ.get("AFL_SERVER_GROUP", "runner")
+    # Role group for fleet status / dashboard + the server_groups gate above.
     env["AFL_SERVER_GROUP"] = grp
     tl = osm.get("task_list")
     if tl:
@@ -209,22 +230,29 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         # Child tasks route by the facet's namespace (the runtime derives the
         # queue from the handler), so no task-list map is needed here.
 
-    label = (f"v{cfg.get('version')} minio={endpoint} osm-replicas={replicas} creds={creds_src}"
+    label = (f"v{cfg.get('version')} group={grp} minio={endpoint} osm-replicas={replicas} creds={creds_src}"
              + (f" image={image}" if image else "")
              + (f" gh-router={gh_image}" if gh_image else "")
              + (f" ffl-replicas={ffl_replicas}" if ffl_replicas else "")
-             + (f" domain-runners={len(domain_roles)}" if domain_roles else ""))
+             + (f" domain-runners={len(domain_roles)}" if domain_roles else "")
+             + (f" skipped(not in group)={','.join(skipped)}" if skipped else ""))
     print(f"fleet-agent[{HOST}]: applying fleet_config {label}" + (" (recreate)" if recreate else ""))
     if dry_run:
         for k, v in env.items():
             print(f"    {k}={'***' if ('SECRET' in k or 'ACCESS' in k) else v}")
-        if gh_image:
+        if osm_here:
+            print(f"    + would bring up the osm tier (osm-geocoder + osm-lz) x{replicas}")
+        else:
+            print(f"    - would SKIP the osm tier (host group '{grp}' not in osm-geocoder.server_groups)")
+        if gh_image and gh_here:
             print("    + would bring up runner-gh-router (1 replica) from AFL_GH_ROUTER_IMAGE")
-        if ffl_replicas:
+        if ffl_replicas and ffl_here:
             print(f"    + would bring up runner-ffl ({ffl_replicas} replicas) — orchestration tier")
         for name, spec in sorted(domain_roles.items()):
             img = f" image={spec['image']}" if spec.get("image") else " (shared image)"
             print(f"    + would bring up runner-{name} ({spec.get('replicas', 1)} replicas) — domain runner{img}")
+        if skipped:
+            print(f"    - would SKIP (host group '{grp}' not listed): {', '.join(skipped)}")
         return
 
     fd, envf = tempfile.mkstemp(prefix=".env.fleet-agent.", dir=REPO)
@@ -232,27 +260,34 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         with os.fdopen(fd, "w") as f:
             for k, v in env.items():
                 f.write(f"{k}={v}\n")
-        # Invoke via bash explicitly (avoid shebang/exec resolution differences
-        # in a subprocess context). Force a full env with a sane PATH so `docker`
-        # resolves even when the parent was launched with a minimal PATH.
-        cmd = ["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"), "--fleet", "--env", envf]
-        if recreate:
-            cmd.append("--recreate")
         child_env = os.environ.copy()
         child_env["PATH"] = (
             child_env.get("PATH", "")
             + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
         )
-        r = _run_compose(cmd, child_env)
-        if r.returncode != 0:
+        # osm tier (osm-geocoder + osm-lz, the fleet_default base): the heaviest
+        # role, so it is gated by server_groups too. When this host's group isn't
+        # in osm-geocoder.server_groups it is skipped entirely — another host in
+        # that group serves osm tasks. Invoke via bash explicitly (avoid
+        # shebang/exec resolution differences in a subprocess context); the PATH
+        # above lets `docker` resolve even from a minimal parent env.
+        if osm_here:
+            cmd = ["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"), "--fleet", "--env", envf]
+            if recreate:
+                cmd.append("--recreate")
+            r = _run_compose(cmd, child_env)
+            if r.returncode != 0:
+                sys.stdout.write(r.stdout)
+                sys.stderr.write(r.stderr)
+                raise SystemExit(f"fleet-agent[{HOST}]: start-worker failed (exit {r.returncode})")
             sys.stdout.write(r.stdout)
-            sys.stderr.write(r.stderr)
-            raise SystemExit(f"fleet-agent[{HOST}]: start-worker failed (exit {r.returncode})")
-        sys.stdout.write(r.stdout)
+        else:
+            print(f"fleet-agent[{HOST}]: skipping osm tier — host group '{grp}' not in "
+                  "osm-geocoder.server_groups")
         # gh-router role: bring up the embedded-GraphHopper Java agent as its own
         # single-replica service (its own image; coexists with the osm runners
         # via the name-filtered claim). Same env file (carries AFL_GH_ROUTER_IMAGE).
-        if gh_image:
+        if gh_image and gh_here:
             gh_cmd = ["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"), "--fleet",
                       "--env", envf, "--example", "gh-router", "--replicas", "1"]
             if recreate:
@@ -271,7 +306,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         # env file (carries AFL_FFL_IMAGE if pinned). Non-fatal: the tier only
         # needs to run on SOME host(s), so a host that can't bring it up
         # shouldn't fail its handler-runner reconcile.
-        if ffl_replicas > 0:
+        if ffl_replicas > 0 and ffl_here:
             ffl_cmd = ["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"), "--fleet",
                        "--env", envf, "--example", "ffl", "--replicas", str(ffl_replicas)]
             if recreate:

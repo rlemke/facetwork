@@ -118,6 +118,48 @@ def resolve_minio(from_config: str | None) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Server groups — restrict which roles a host brings up
+# ---------------------------------------------------------------------------
+
+DEFAULT_SERVER_GROUP = "runner"
+
+
+def host_server_group() -> str:
+    """This host's server-group label (AFL_SERVER_GROUP, default 'runner').
+
+    The group is a deployment-chosen tag; it decides which central roles this
+    host actually brings up (see :func:`role_in_group`)."""
+    return os.environ.get("AFL_SERVER_GROUP") or DEFAULT_SERVER_GROUP
+
+
+def role_in_group(spec: dict, host_group: str) -> bool:
+    """Whether a role with this central-config spec should run on `host_group`.
+
+    A role MAY carry ``server_groups: [name, ...]``. When present and non-empty
+    the role runs ONLY on hosts whose group is in the list; when absent or empty
+    it runs everywhere. The empty-means-everywhere default is what makes the
+    feature backward-compatible — a fleet that sets no ``server_groups`` anywhere
+    behaves exactly as it did before groups existed. Routing correctness does not
+    depend on this (a runner only ever claims tasks it has a handler for); the
+    gate only decides which runners a host bothers to START, so heavy domains can
+    be kept off under-provisioned machines."""
+    groups = spec.get("server_groups") or []
+    return (not groups) or (host_group in groups)
+
+
+def parse_role_groups(value: str) -> tuple[str, list[str]]:
+    """Parse a ``ROLE:group1,group2`` CLI value (``ROLE:`` clears the restriction).
+
+    Returns ``(role, groups)``; an empty ``groups`` list means "run everywhere"."""
+    role, sep, rest = value.partition(":")
+    role = role.strip()
+    if not role or not sep:
+        raise ValueError(f"--role-groups expects ROLE:group1,group2 (got {value!r})")
+    groups = [g.strip() for g in rest.split(",") if g.strip()]
+    return role, groups
+
+
+# ---------------------------------------------------------------------------
 # Secret store (Fernet)
 # ---------------------------------------------------------------------------
 

@@ -90,7 +90,9 @@ def _print_cfg(cfg):
     print(f"  dashboard: {eps.get('dashboard', '-')}")
     for role, spec in (cfg.get("roles") or {}).items():
         kind = f" kind={spec['kind']}" if spec.get("kind") else ""
-        print(f"  role {role}: replicas={spec.get('replicas', '-')} task_list={spec.get('task_list', '-')} image={spec.get('image', '-')}{kind}")
+        groups = spec.get("server_groups")
+        grp = f" groups={','.join(groups)}" if groups else ""
+        print(f"  role {role}: replicas={spec.get('replicas', '-')} task_list={spec.get('task_list', '-')} image={spec.get('image', '-')}{kind}{grp}")
 
 
 def cmd_set(a):
@@ -143,6 +145,27 @@ def cmd_set(a):
             spec.setdefault("replicas", 1)
         if a.domain_image:
             spec["image"] = a.domain_image
+        # --server-groups in the SAME call applies to these domain runners (a
+        # convenience for "add census-us, but only to the 'light' group"). Empty
+        # value clears the restriction (runs everywhere).
+        if a.server_groups is not None:
+            groups = [g.strip() for g in a.server_groups.split(",") if g.strip()]
+            if groups:
+                spec["server_groups"] = groups
+            else:
+                spec.pop("server_groups", None)
+    # server_groups gating, general form: restrict ANY role (osm-geocoder,
+    # ffl-runner, gh-router, or a domain) to hosts in the named server-groups.
+    # `ROLE:` with no groups clears the restriction. The role need not be created
+    # in this call (it may already exist), but a brand-new key is left otherwise
+    # empty — set its replicas/kind in the same or a prior `fleet set`.
+    for value in (a.role_groups or []):
+        role, groups = _fleet_lib.parse_role_groups(value)
+        spec = cfg.setdefault("roles", {}).setdefault(role, {})
+        if groups:
+            spec["server_groups"] = groups
+        else:
+            spec.pop("server_groups", None)
     for name in (a.rm_domain_runner or []):
         (cfg.get("roles") or {}).pop(name, None)
     cfg["version"] = int(cfg.get("version", 0)) + 1
@@ -240,6 +263,10 @@ def main():
                     help="add/update a per-domain handler runner role (compose-service suffix, e.g. census-us, anthropic, jenkins-example); repeatable. Each maps to runner-<NAME> and is managed fleet-wide by fleet-agent.")
     ps.add_argument("--domain-replicas", type=int, help="replicas per server for the --domain-runner(s) in this call (default 1 when adding)")
     ps.add_argument("--domain-image", help="image override for the --domain-runner(s) in this call (default: the shared runner image, so a --image roll covers them)")
+    ps.add_argument("--server-groups", metavar="G1,G2",
+                    help="server-groups for the --domain-runner(s) in THIS call — they then run ONLY on hosts whose AFL_SERVER_GROUP is listed (empty value clears). Convenience for --role-groups NAME:G1,G2.")
+    ps.add_argument("--role-groups", action="append", metavar="ROLE:G1,G2",
+                    help="restrict ANY role to hosts in these server-groups; ROLE is any role key (osm-geocoder, ffl-runner, gh-router, or a domain name), 'ROLE:' clears. A role with no server_groups runs everywhere (the default). Repeatable.")
     ps.add_argument("--rm-domain-runner", action="append", metavar="NAME", help="remove a role (e.g. a domain runner); repeatable")
     ps.set_defaults(func=cmd_set)
 
