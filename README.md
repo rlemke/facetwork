@@ -43,7 +43,7 @@ It collects real outputs produced end-to-end by FFL workflows on the runtime:
   OSM health-facility mapping-equity map (per capita, by state & county), plus
   H-1B visa approvals by state & county (multi-year, FY2009-2023).
 - **World** — nuclear power sites, major volcanoes, LGBTQ+ venues, Tesla charging
-  stations (from OpenStreetMap),
+  stations, research telescopes (from OpenStreetMap),
   recent earthquakes & fault lines (USGS + Bird-2002 plate boundaries),
   an armed-conflict choropleth (UCDP / UNHCR / IDMC / IPC), and an OSM
   mapping-equity map (health facilities per capita — where OSM is under-mapped).
