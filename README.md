@@ -38,15 +38,20 @@ Facetwork workflows publish interactive maps to a live site:
 **[facetwork-maps →](https://rlemke.github.io/facetwork-maps/)** ([repo](https://github.com/rlemke/facetwork-maps)).
 It collects real outputs produced end-to-end by FFL workflows on the runtime:
 
-- **US Census** — a per-county metric explorer (13 ACS metrics + a dropdown), state
-  rankings, a Social Vulnerability Index choropleth for all 50 states + DC, and an
-  OSM health-facility mapping-equity map (per capita, by state & county), plus
-  H-1B visa approvals by state & county (multi-year, FY2009-2023).
-- **World** — nuclear power sites, major volcanoes, LGBTQ+ venues, Tesla charging
-  stations, research telescopes (from OpenStreetMap),
-  recent earthquakes & fault lines (USGS + Bird-2002 plate boundaries),
-  an armed-conflict choropleth (UCDP / UNHCR / IDMC / IPC), and an OSM
-  mapping-equity map (health facilities per capita — where OSM is under-mapped).
+**United States** ([all →](https://rlemke.github.io/facetwork-maps/census/index.html))
+- [Per-county metric explorer](https://rlemke.github.io/facetwork-maps/census/metrics/index.html) — 13 ACS metrics with a dropdown, all 50 states + DC
+- [State rankings](https://rlemke.github.io/facetwork-maps/census/rankings/index.html) — states ranked on each metric
+- [Social Vulnerability Index](https://rlemke.github.io/facetwork-maps/census/svi/index.html) — 6-indicator SVI choropleth, all states
+- [Health-facility mapping equity](https://rlemke.github.io/facetwork-maps/census/health-mapping/index.html) — OSM health facilities per capita, state & county
+- [H-1B visa approvals](https://rlemke.github.io/facetwork-maps/census/h1b/index.html) — by state & county, multi-year (FY2009–2023)
+
+**World** ([all →](https://rlemke.github.io/facetwork-maps/world/index.html))
+- [Ethnic & cultural enclaves](https://rlemke.github.io/facetwork-maps/world/enclaves/index.html) — heritage-named neighbourhoods from OSM (Chinatown, Japantown, Little Italy, …)
+- [Nuclear power sites](https://rlemke.github.io/facetwork-maps/world/nuclear/index.html) · [Major volcanoes](https://rlemke.github.io/facetwork-maps/world/volcanoes/index.html) · [Research telescopes](https://rlemke.github.io/facetwork-maps/world/telescopes/index.html) — from OpenStreetMap
+- [LGBTQ+ bars & restaurants](https://rlemke.github.io/facetwork-maps/world/lgbtq/index.html) · [Tesla charging stations](https://rlemke.github.io/facetwork-maps/world/tesla/index.html) — from OpenStreetMap
+- [Earthquakes & fault lines](https://rlemke.github.io/facetwork-maps/world/seismic/index.html) — USGS quakes over Bird-2002 plate boundaries
+- [Armed conflict](https://rlemke.github.io/facetwork-maps/world/conflict/index.html) — UCDP / UNHCR / IDMC / IPC choropleth
+- [OSM under-mapping](https://rlemke.github.io/facetwork-maps/world/under-mapping/index.html) — health facilities per capita, where OSM is under-mapped
 
 Every map carries a footer linking back to the **FFL workflow** (and its parameters)
 that generated it, so each output is a worked example of the platform in use. The maps
