@@ -53,6 +53,11 @@ It collects real outputs produced end-to-end by FFL workflows on the runtime:
 - [Armed conflict](https://rlemke.github.io/facetwork-maps/world/conflict/index.html) — UCDP / UNHCR / IDMC / IPC choropleth
 - [OSM under-mapping](https://rlemke.github.io/facetwork-maps/world/under-mapping/index.html) — health facilities per capita, where OSM is under-mapped
 
+**Health** ([all →](https://rlemke.github.io/facetwork-maps/health/index.html)) — disease burden (cancer / diabetes / Alzheimer's / stroke)
+- [US mortality by state](https://rlemke.github.io/facetwork-maps/health/us-mortality/index.html) — age-adjusted death rates, all four causes (CDC NCHS)
+- [US prevalence by county](https://rlemke.github.io/facetwork-maps/health/us-prevalence/index.html) — adult prevalence of cancer/diabetes/stroke (CDC PLACES, 2,956 counties)
+- [World NCD burden](https://rlemke.github.io/facetwork-maps/health/world-ncd/index.html) — diabetes prevalence + NCD mortality by country (WHO / World Bank)
+
 Every map carries a footer linking back to the **FFL workflow** (and its parameters)
 that generated it, so each output is a worked example of the platform in use. The maps
 themselves are pushed to GitHub Pages by an FFL workflow (`census.workflows.PublishToSite`).
