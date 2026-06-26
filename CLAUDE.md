@@ -229,7 +229,10 @@ Domain pipelines ship as separate pip-installable packages declaring the
 `fw runner start --domain <name>` and `fw ffl seed`. (In-repo teaching demos
 under `examples/<name>/` are the separate "examples" family — `--example <name>`,
 `example:` seed prefix; the pluggable `fwh_*` production pipelines are "domains".)
-See `domain-template/` for the standalone package layout. To clone + install one
+See `domain-template/` for the standalone package layout (incl. the **GitHub
+topics convention** — tag every new `fwh_*` repo `facetwork` + `facetwork-domain`
++ its domain topics, and give it a one-line source→output description, so it
+surfaces under `topic:facetwork` alongside the framework). To clone + install one
 (or all) of the standalone domains, use the registry-driven helper:
 
 ```bash

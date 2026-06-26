@@ -82,6 +82,34 @@ These are exported into the runner's environment by `fw runner start`.
    `fw ffl seed --include <name>`.
 8. Remove `examples/<name>/` from the Facetwork repo.
 
+## Discoverability: GitHub topics + description
+
+So a new domain repo shows up in search and stays part of the family, set its
+**GitHub topics** and **description** when you create it. GitHub indexes repo
+name + description + README + topics; the `topic:` qualifier and the topic
+browse pages are powered by topics specifically.
+
+Convention (keep it consistent so the ecosystem stays coherent):
+
+- **Always** tag with the two umbrella topics: **`facetwork`** (ties you to the
+  framework + every other domain — see https://github.com/topics/facetwork) and
+  **`facetwork-domain`** (marks you as a pluggable pipeline, not the framework).
+- **Then** add 3–8 domain-specific topics (data source, format, subject) —
+  prefer *recognized* topics with curated pages (`openstreetmap`, `python`,
+  `geospatial`, `remote-sensing`, `open-data`, …). Max 20 topics/repo; lowercase,
+  digits, hyphens only.
+- Write a **one-line description** that names the data source → output, e.g.
+  *"Facetwork domain: NOAA GHCN climate trends → cached station data → charts."*
+  (The description carries real search weight — don't leave it blank.)
+
+Apply it with the `gh` CLI:
+
+```bash
+gh repo edit OWNER/fwh_<name> \
+  --description "Facetwork domain: <source> -> <processing> -> <output>." \
+  --add-topic facetwork,facetwork-domain,<topic1>,<topic2>,<topic3>
+```
+
 ## Seed-stability invariant
 
 `fw ffl seed` and the per-runner entrypoint both call
