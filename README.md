@@ -58,6 +58,7 @@ It collects real outputs produced end-to-end by FFL workflows on the runtime:
 - [US mortality by state](https://rlemke.github.io/facetwork-maps/health/us-mortality/index.html) — age-adjusted death rates, all four causes (CDC NCHS)
 - [US prevalence by county](https://rlemke.github.io/facetwork-maps/health/us-prevalence/index.html) — adult prevalence of cancer/diabetes/stroke (CDC PLACES, 2,956 counties)
 - [World NCD burden](https://rlemke.github.io/facetwork-maps/health/world-ncd/index.html) — diabetes prevalence + NCD mortality by country (WHO / World Bank)
+- [US respiratory hospitalizations over time](https://rlemke.github.io/facetwork-maps/health/us-respiratory/index.html) — COVID-19 / flu / RSV new admissions per 100k by state, with a month slider (~5 yrs, CDC NHSN)
 
 Every map carries a footer linking back to the **FFL workflow** (and its parameters)
 that generated it, so each output is a worked example of the platform in use. The maps
