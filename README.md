@@ -44,6 +44,7 @@ It collects real outputs produced end-to-end by FFL workflows on the runtime:
 - [Social Vulnerability Index](https://rlemke.github.io/facetwork-maps/census/svi/index.html) — 6-indicator SVI choropleth, all states
 - [Health-facility mapping equity](https://rlemke.github.io/facetwork-maps/census/health-mapping/index.html) — OSM health facilities per capita, state & county
 - [H-1B visa approvals](https://rlemke.github.io/facetwork-maps/census/h1b/index.html) — by state & county, multi-year (FY2009–2023)
+- [OSM tag-quality by state](https://rlemke.github.io/facetwork-maps/census/tag-quality-states/index.html) — where OSM tags deviate from valid conventions (Osmose QA), per 1,000 km²
 
 **World** ([all →](https://rlemke.github.io/facetwork-maps/world/index.html))
 - [Ethnic & cultural enclaves](https://rlemke.github.io/facetwork-maps/world/enclaves/index.html) — heritage-named neighbourhoods from OSM (Chinatown, Japantown, Little Italy, …)
@@ -53,6 +54,7 @@ It collects real outputs produced end-to-end by FFL workflows on the runtime:
 - [Armed conflict](https://rlemke.github.io/facetwork-maps/world/conflict/index.html) — UCDP / UNHCR / IDMC / IPC choropleth
 - [OSM under-mapping](https://rlemke.github.io/facetwork-maps/world/under-mapping/index.html) — health facilities per capita, where OSM is under-mapped
 - [Power infrastructure](https://rlemke.github.io/facetwork-maps/world/power/index.html) — power plants by source (hydro/coal/solar/wind/nuclear, WRI) + ≥500 kV transmission lines (OSM)
+- [OSM tag-quality by country](https://rlemke.github.io/facetwork-maps/world/tag-quality/index.html) — where OSM tags deviate from valid conventions (Osmose QA deprecated + incorrect tags), per 1,000 km²
 
 **Health** ([all →](https://rlemke.github.io/facetwork-maps/health/index.html)) — chronic disease burden (cancer / diabetes / Alzheimer's / stroke) + respiratory-virus hospitalizations over time
 - [US mortality by state](https://rlemke.github.io/facetwork-maps/health/us-mortality/index.html) — age-adjusted death rates, all four causes (CDC NCHS)
