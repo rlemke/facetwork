@@ -52,6 +52,7 @@ It collects real outputs produced end-to-end by FFL workflows on the runtime:
 - [Earthquakes & fault lines](https://rlemke.github.io/facetwork-maps/world/seismic/index.html) — USGS quakes over Bird-2002 plate boundaries
 - [Armed conflict](https://rlemke.github.io/facetwork-maps/world/conflict/index.html) — UCDP / UNHCR / IDMC / IPC choropleth
 - [OSM under-mapping](https://rlemke.github.io/facetwork-maps/world/under-mapping/index.html) — health facilities per capita, where OSM is under-mapped
+- [Power infrastructure](https://rlemke.github.io/facetwork-maps/world/power/index.html) — power plants by source (hydro/coal/solar/wind/nuclear, WRI) + ≥500 kV transmission lines (OSM)
 
 **Health** ([all →](https://rlemke.github.io/facetwork-maps/health/index.html)) — disease burden (cancer / diabetes / Alzheimer's / stroke)
 - [US mortality by state](https://rlemke.github.io/facetwork-maps/health/us-mortality/index.html) — age-adjusted death rates, all four causes (CDC NCHS)
