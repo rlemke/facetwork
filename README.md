@@ -54,11 +54,15 @@ It collects real outputs produced end-to-end by FFL workflows on the runtime:
 - [OSM under-mapping](https://rlemke.github.io/facetwork-maps/world/under-mapping/index.html) — health facilities per capita, where OSM is under-mapped
 - [Power infrastructure](https://rlemke.github.io/facetwork-maps/world/power/index.html) — power plants by source (hydro/coal/solar/wind/nuclear, WRI) + ≥500 kV transmission lines (OSM)
 
-**Health** ([all →](https://rlemke.github.io/facetwork-maps/health/index.html)) — disease burden (cancer / diabetes / Alzheimer's / stroke)
+**Health** ([all →](https://rlemke.github.io/facetwork-maps/health/index.html)) — chronic disease burden (cancer / diabetes / Alzheimer's / stroke) + respiratory-virus hospitalizations over time
 - [US mortality by state](https://rlemke.github.io/facetwork-maps/health/us-mortality/index.html) — age-adjusted death rates, all four causes (CDC NCHS)
 - [US prevalence by county](https://rlemke.github.io/facetwork-maps/health/us-prevalence/index.html) — adult prevalence of cancer/diabetes/stroke (CDC PLACES, 2,956 counties)
 - [World NCD burden](https://rlemke.github.io/facetwork-maps/health/world-ncd/index.html) — diabetes prevalence + NCD mortality by country (WHO / World Bank)
 - [US respiratory hospitalizations over time](https://rlemke.github.io/facetwork-maps/health/us-respiratory/index.html) — COVID-19 / flu / RSV new admissions per 100k by state, with a month slider (~5 yrs, CDC NHSN)
+- [US hospital strain — bed occupancy](https://rlemke.github.io/facetwork-maps/health/us-hospital-strain/index.html) — % of inpatient & ICU beds occupied + share held by each virus, month slider (CDC NHSN)
+- [US respiratory ICU severity](https://rlemke.github.io/facetwork-maps/health/us-icu-severity/index.html) — share of hospitalized COVID/flu/RSV patients in the ICU, month slider (CDC NHSN)
+- [US respiratory admissions — children vs adults](https://rlemke.github.io/facetwork-maps/health/us-ped-vs-adult/index.html) — admission rates per 100k by age group (RSV/flu in kids), month slider (CDC NHSN)
+- [US "tripledemic" combined burden](https://rlemke.github.io/facetwork-maps/health/us-tripledemic/index.html) — combined COVID + flu + RSV admissions per 100k, winter over winter (CDC NHSN)
 
 Every map carries a footer linking back to the **FFL workflow** (and its parameters)
 that generated it, so each output is a worked example of the platform in use. The maps
