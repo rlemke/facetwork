@@ -55,7 +55,9 @@ pre.ffl{margin:0;padding:1rem;background:var(--bg);border:0;border-radius:0;font
 <div class="cols">
   <section class="panel">
     <div class="panel-head"><h2>FFL source</h2>{% if d.entry_workflow %}<span class="legend"><span>entry: {{ d.entry_workflow }}</span></span>{% endif %}</div>
-    {% if d.ffl_source %}<pre class="ffl">{{ d.ffl_source }}</pre>
+    {% if d.ffl_source %}
+      {% if d.ffl_reconstructed %}<div style="padding:.6rem .9rem;color:var(--muted);font-size:11.5px;border-bottom:1px solid var(--border)">Reconstructed from the <a href="/v3/catalog/{{ d.ffl_package }}">{{ d.ffl_package }}</a> package — focused to this workflow and the declarations it references. The full package FFL lives in the library entry.</div>{% endif %}
+      <pre class="ffl">{{ d.ffl_source }}</pre>
     {% else %}<div style="padding:1.2rem .9rem;color:var(--muted);font-size:12.5px">No inline FFL (this entry references a package — see its dependencies).</div>{% endif %}
   </section>
 

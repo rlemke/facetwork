@@ -346,6 +346,19 @@ class CatalogService:
         detail = self._summary(entry, rev) if rev else {"slug": slug}
         if rev is not None:
             detail["ffl_source"] = rev.ffl_source
+            detail["ffl_reconstructed"] = False
+            detail["ffl_package"] = None
+            # Thin package-imported entries store no inline FFL (the body lives
+            # in the pinned library/flow they share). Rather than show an empty
+            # pane, reconstruct the focused source for just this workflow from
+            # the shared flow's compiled program — same renderer the
+            # running-instance page uses.
+            if not rev.ffl_source and rev.flow_id and rev.entry_workflow:
+                recon = self._reconstruct_entry_ffl(rev)
+                if recon:
+                    detail["ffl_source"] = recon
+                    detail["ffl_reconstructed"] = True
+                    detail["ffl_package"] = rev.depends_on[0].slug if rev.depends_on else None
             detail["depends_on"] = [
                 {"slug": p.slug, "version": p.version, "revision_id": p.revision_id}
                 for p in rev.depends_on
@@ -787,6 +800,23 @@ class CatalogService:
         from facetwork.ast_utils import find_workflow
 
         return find_workflow(program_dict, name)
+
+    def _reconstruct_entry_ffl(self, rev: CatalogRevision) -> str | None:
+        """Focused FFL for one workflow, reconstructed from the shared flow's
+        compiled program. Used when a thin package-imported revision has no
+        inline ``ffl_source`` of its own. Returns None on any failure (the
+        caller falls back to the empty-source message)."""
+        try:
+            flow = self._flows.get_flow(rev.flow_id)
+            program = getattr(flow, "compiled_ast", None) if flow else None
+            if not program:
+                return None
+            from facetwork.workflow_source import reconstruct_workflow_source
+
+            src = reconstruct_workflow_source(program, rev.entry_workflow)
+            return src or None
+        except Exception:  # noqa: BLE001 — best-effort; never break the detail page
+            return None
 
     def _resolve_revision(
         self, slug: str, version: int | None, *, prefer_published: bool
