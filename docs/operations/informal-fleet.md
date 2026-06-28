@@ -21,7 +21,7 @@ MinIO. Concretely:
   `fleet-agent` daemon). No registration ceremony, no leader election.
 - **Leaving is safe.** If a machine disappears mid-task — someone closes their
   laptop, a desktop reboots, the Wi-Fi drops — the **reaper** notices the dead
-  server (default ~2 min, `AFL_REAPER_TIMEOUT_MS`), resets its in-flight tasks
+  server (default ~2 min, `FW_REAPER_TIMEOUT_MS`), resets its in-flight tasks
   to `pending`, and another machine claims them. Work is **retried with
   backoff**, not lost.
 - **Rejoining is automatic.** The laptop comes back, starts its runner, and

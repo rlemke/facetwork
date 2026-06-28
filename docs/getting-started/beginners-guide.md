@@ -128,7 +128,7 @@ auto-detects it when you open the project. It launches the server with
     "facetwork": {
       "command": "${FW_PYTHON:-/path/to/.venv/bin/python}",
       "args": ["-m", "facetwork.mcp", "--log-level", "WARNING"],
-      "env": { "AFL_MONGODB_URL": "mongodb://localhost:27017" }
+      "env": { "FW_MONGODB_URL": "mongodb://localhost:27017" }
     }
   }
 }

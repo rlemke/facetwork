@@ -182,7 +182,7 @@ class AgentPoller:
         self._last_reap: int = 0
         self._reap_interval_ms: int = 60000
         self._execution_timeout_ms: int = int(
-            os.environ.get("AFL_TASK_EXECUTION_TIMEOUT_MS", "900000")
+            os.environ.get("FW_TASK_EXECUTION_TIMEOUT_MS", "900000")
         )
 
     @property
@@ -567,7 +567,7 @@ class AgentPoller:
         self._last_reap = now
 
         try:
-            timeout_ms = int(os.environ.get("AFL_REAPER_TIMEOUT_MS", "120000"))
+            timeout_ms = int(os.environ.get("FW_REAPER_TIMEOUT_MS", "120000"))
             reaped = self._persistence.reap_orphaned_tasks(down_timeout_ms=timeout_ms)
             if reaped:
                 logger.warning(
@@ -587,7 +587,7 @@ class AgentPoller:
 
         # --- Stuck task watchdog ---
         try:
-            stuck_timeout_ms = int(os.environ.get("AFL_STUCK_TIMEOUT_MS", "1800000"))
+            stuck_timeout_ms = int(os.environ.get("FW_STUCK_TIMEOUT_MS", "1800000"))
             stuck = self._persistence.reap_stuck_tasks(default_stuck_ms=stuck_timeout_ms)
             if stuck:
                 logger.warning(

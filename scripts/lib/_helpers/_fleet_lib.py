@@ -2,13 +2,13 @@
 encrypted secret store. Imported by `fleet`, `fleet-agent`, `fleet-advertise`.
 
 Discovery: a server should find MongoDB with no explicit endpoint. resolve_mongo
-tries, in order, explicit → AFL_MONGODB_URL → mDNS (if `zeroconf` is installed) →
+tries, in order, explicit → FW_MONGODB_URL → mDNS (if `zeroconf` is installed) →
 the conventional `afl-mongodb` hostname (DNS/`/etc/hosts`), returning the first
 that actually answers a ping. MinIO is then learned from `fleet_config`, with a
 conventional `afl-minio` fallback.
 
 Secret store: MinIO credentials live encrypted in the `fleet_secrets` collection
-(Fernet symmetric encryption). Each host needs only the fleet key (AFL_FLEET_KEY)
+(Fernet symmetric encryption). Each host needs only the fleet key (FW_FLEET_KEY)
 — one bootstrap secret, rotatable — not the actual creds. Set once centrally.
 """
 
@@ -83,7 +83,7 @@ def mdns_lookup(service_type: str, timeout: float = 2.0) -> str | None:
 
 
 def resolve_mongo(explicit: str | None = None, *, log=None) -> str:
-    """Discover a reachable MongoDB URL. Order: explicit → AFL_MONGODB_URL →
+    """Discover a reachable MongoDB URL. Order: explicit → FW_MONGODB_URL →
     mDNS (_afl-mongo._tcp) → conventional afl-mongodb. Raises if none answer."""
 
     def _say(m):
@@ -93,9 +93,9 @@ def resolve_mongo(explicit: str | None = None, *, log=None) -> str:
     candidates: list[tuple[str, str]] = []
     if explicit:
         candidates.append(("explicit", explicit))
-    env = os.environ.get("AFL_MONGODB_URL")
+    env = os.environ.get("FW_MONGODB_URL")
     if env and env != explicit:
-        candidates.append(("AFL_MONGODB_URL", env))
+        candidates.append(("FW_MONGODB_URL", env))
     hp = mdns_lookup("_afl-mongo._tcp.local.")
     if hp:
         candidates.append(("mDNS", f"mongodb://{hp}"))
@@ -107,7 +107,7 @@ def resolve_mongo(explicit: str | None = None, *, log=None) -> str:
             return url
         _say(f"  (no MongoDB via {how}: {url})")
     raise RuntimeError(
-        "could not discover MongoDB — tried explicit/--mongo, AFL_MONGODB_URL, "
+        "could not discover MongoDB — tried explicit/--mongo, FW_MONGODB_URL, "
         "mDNS, and the afl-mongodb hostname. Pass --mongo or add an /etc/hosts entry."
     )
 
@@ -130,11 +130,11 @@ DEFAULT_SERVER_GROUP = "runner"
 
 
 def host_server_group() -> str:
-    """This host's server-group label (AFL_SERVER_GROUP, default 'runner').
+    """This host's server-group label (FW_SERVER_GROUP, default 'runner').
 
     The group is a deployment-chosen tag; it decides which central roles this
     host actually brings up (see :func:`role_in_group`)."""
-    return os.environ.get("AFL_SERVER_GROUP") or DEFAULT_SERVER_GROUP
+    return os.environ.get("FW_SERVER_GROUP") or DEFAULT_SERVER_GROUP
 
 
 def role_in_group(spec: dict, host_group: str) -> bool:
@@ -176,10 +176,10 @@ def gen_key() -> str:
 
 
 def _fernet():
-    key = os.environ.get("AFL_FLEET_KEY")
+    key = os.environ.get("FW_FLEET_KEY")
     if not key:
         raise RuntimeError(
-            "AFL_FLEET_KEY is not set. Generate one with `fleet secret gen-key`, "
+            "FW_FLEET_KEY is not set. Generate one with `fleet secret gen-key`, "
             "then export it on each host (and the admin) to use the secret store."
         )
     try:
@@ -187,7 +187,7 @@ def _fernet():
 
         return Fernet(key.encode() if isinstance(key, str) else key)
     except Exception as exc:
-        raise RuntimeError(f"invalid AFL_FLEET_KEY: {exc}") from exc
+        raise RuntimeError(f"invalid FW_FLEET_KEY: {exc}") from exc
 
 
 def set_minio_secret(db, access_key: str, secret_key: str) -> None:
@@ -201,7 +201,7 @@ def set_minio_secret(db, access_key: str, secret_key: str) -> None:
 
 def get_minio_secret(db) -> dict | None:
     """Decrypt the stored MinIO creds, or None if no secret is stored. Raises if
-    AFL_FLEET_KEY is missing/wrong while a secret exists."""
+    FW_FLEET_KEY is missing/wrong while a secret exists."""
     doc = db.fleet_secrets.find_one({"_id": "default"})
     if not doc or not doc.get("minio_enc"):
         return None

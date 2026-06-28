@@ -89,9 +89,9 @@ def handle_greet(params: dict) -> dict:
 
 def main():
     # Configuration from environment
-    mongodb_url = os.environ.get("AFL_MONGODB_URL", "mongodb://localhost:27017")
-    database = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
-    agent_name = os.environ.get("AFL_AGENT_NAME", "addone-agent")
+    mongodb_url = os.environ.get("FW_MONGODB_URL", "mongodb://localhost:27017")
+    database = os.environ.get("FW_MONGODB_DATABASE", "facetwork")
+    agent_name = os.environ.get("FW_AGENT_NAME", "addone-agent")
 
     logger.info(f"Starting {agent_name}")
     logger.info(f"MongoDB: {mongodb_url}/{database}")

@@ -125,8 +125,8 @@ func LoadConfig(path string) (Config, error) {
 		cfg.HeartbeatInterval = time.Duration(*fileCfg.Runner.HeartbeatIntervalMs) * time.Millisecond
 	}
 
-	// AFL_ENV overlay
-	if envName := os.Getenv("AFL_ENV"); envName != "" {
+	// FW_ENV overlay
+	if envName := os.Getenv("FW_ENV"); envName != "" {
 		dir := filepath.Dir(path)
 		overlayPath := filepath.Join(dir, "afl.config."+envName+".json")
 		if overlayData, err := ioutil.ReadFile(overlayPath); err == nil {
@@ -159,7 +159,7 @@ func LoadConfig(path string) (Config, error) {
 
 // ResolveConfig resolves configuration using the standard search order:
 // 1. Explicit path argument
-// 2. AFL_CONFIG environment variable
+// 2. FW_CONFIG environment variable
 // 3. afl.config.json in current directory
 // 4. ~/.afl/afl.config.json
 // 5. /etc/afl/afl.config.json
@@ -172,7 +172,7 @@ func ResolveConfig(explicitPath string) Config {
 		}
 	}
 
-	if envPath := os.Getenv("AFL_CONFIG"); envPath != "" {
+	if envPath := os.Getenv("FW_CONFIG"); envPath != "" {
 		if cfg, err := LoadConfig(envPath); err == nil {
 			return cfg
 		}
@@ -208,23 +208,23 @@ func FromEnvironment() Config {
 }
 
 func applyEnvOverrides(cfg *Config) {
-	if url := os.Getenv("AFL_MONGODB_URL"); url != "" {
+	if url := os.Getenv("FW_MONGODB_URL"); url != "" {
 		cfg.MongoURL = url
 	}
-	if db := os.Getenv("AFL_MONGODB_DATABASE"); db != "" {
+	if db := os.Getenv("FW_MONGODB_DATABASE"); db != "" {
 		cfg.Database = db
 	}
-	if v := os.Getenv("AFL_POLL_INTERVAL_MS"); v != "" {
+	if v := os.Getenv("FW_POLL_INTERVAL_MS"); v != "" {
 		if ms, err := strconv.Atoi(v); err == nil {
 			cfg.PollInterval = time.Duration(ms) * time.Millisecond
 		}
 	}
-	if v := os.Getenv("AFL_MAX_CONCURRENT"); v != "" {
+	if v := os.Getenv("FW_MAX_CONCURRENT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.MaxConcurrent = n
 		}
 	}
-	if v := os.Getenv("AFL_HEARTBEAT_INTERVAL_MS"); v != "" {
+	if v := os.Getenv("FW_HEARTBEAT_INTERVAL_MS"); v != "" {
 		if ms, err := strconv.Atoi(v); err == nil {
 			cfg.HeartbeatInterval = time.Duration(ms) * time.Millisecond
 		}

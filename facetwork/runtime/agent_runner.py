@@ -35,15 +35,15 @@ if TYPE_CHECKING:
 def make_store(database: str = "") -> PersistenceAPI:
     """Create a persistence store from environment configuration.
 
-    Uses ``AFL_MONGODB_URL`` to connect to MongoDB when set, otherwise
+    Uses ``FW_MONGODB_URL`` to connect to MongoDB when set, otherwise
     falls back to an in-memory store.
 
     Args:
         database: MongoDB database name.  When empty, reads
-            ``AFL_MONGODB_DATABASE`` (default ``"facetwork"``).
+            ``FW_MONGODB_DATABASE`` (default ``"facetwork"``).
     """
-    mongodb_url = os.environ.get("AFL_MONGODB_URL")
-    db_name = database or os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
+    mongodb_url = os.environ.get("FW_MONGODB_URL")
+    db_name = database or os.environ.get("FW_MONGODB_DATABASE", "facetwork")
 
     if mongodb_url:
         from .mongo_store import MongoStore
@@ -51,7 +51,7 @@ def make_store(database: str = "") -> PersistenceAPI:
         print(f"Using MongoDB: {mongodb_url}/{db_name}")
         return MongoStore(connection_string=mongodb_url, database_name=db_name)
 
-    print("Using in-memory store (set AFL_MONGODB_URL for MongoDB)")
+    print("Using in-memory store (set FW_MONGODB_URL for MongoDB)")
     from .memory_store import MemoryStore
 
     return MemoryStore()
@@ -94,7 +94,7 @@ def run_agent(
 
     1. Creates a persistence store (MongoDB or in-memory).
     2. Creates an ``Evaluator`` with telemetry enabled.
-    3. Branches on ``AFL_USE_REGISTRY`` env var:
+    3. Branches on ``FW_USE_REGISTRY`` env var:
        - ``"1"``: creates a ``RegistryRunner``, calls
          ``register(runner=runner)``, starts the runner.
        - otherwise: creates an ``AgentPoller``, calls

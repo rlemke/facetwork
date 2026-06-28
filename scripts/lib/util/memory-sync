@@ -4,12 +4,12 @@
 # Snapshots the agent's persistent memory directory to git and pushes it to the
 # 'origin' remote. The memory dir is derived from the repo path (the Claude
 # project slug = the path with '/' and '_' replaced by '-'); override with
-# AFL_MEMORY_DIR. Safe to run anytime — a no-op when there is nothing new to
+# FW_MEMORY_DIR. Safe to run anytime — a no-op when there is nothing new to
 # commit, and it still pushes any unpushed commits.
 #
 # After pushing it also fast-forwards the OTHER hosts' memory mirrors so they
-# don't drift behind origin — best-effort over ssh to AFL_MEMORY_HOSTS (falls
-# back to AFL_RUNNER_HOSTS); an unreachable/asleep host is skipped, not fatal.
+# don't drift behind origin — best-effort over ssh to FW_MEMORY_HOSTS (falls
+# back to FW_RUNNER_HOSTS); an unreachable/asleep host is skipped, not fatal.
 # Each mirror is found host-agnostically (the memory repo under
 # ~/.claude/projects), so per-host home/slug differences don't matter.
 #
@@ -37,11 +37,11 @@ done
 # Derive this project's Claude memory dir from the repo path (slug = path with
 # '/' and '_' -> '-'); allow an explicit override.
 slug="$(printf '%s' "$FW_ROOT" | sed 's#/#-#g; s#_#-#g')"
-MEMORY_DIR="${AFL_MEMORY_DIR:-$HOME/.claude/projects/$slug/memory}"
+MEMORY_DIR="${FW_MEMORY_DIR:-$HOME/.claude/projects/$slug/memory}"
 
 if [ ! -d "$MEMORY_DIR" ]; then
     echo "memory dir not found: $MEMORY_DIR" >&2
-    echo "  set AFL_MEMORY_DIR to override the location." >&2
+    echo "  set FW_MEMORY_DIR to override the location." >&2
     exit 1
 fi
 if ! git -C "$MEMORY_DIR" rev-parse --git-dir >/dev/null 2>&1; then
@@ -87,15 +87,15 @@ fi
 # ~/.claude/projects) rather than assume a slug. Failures (host asleep, no
 # mirror) are reported and skipped — never fatal to the sync.
 if [ "$PULL_MIRRORS" = 1 ]; then
-    MIRROR_HOSTS="${AFL_MEMORY_HOSTS:-${AFL_RUNNER_HOSTS:-}}"
-    # _env.sh doesn't reliably export AFL_RUNNER_HOSTS (it's an unquoted
+    MIRROR_HOSTS="${FW_MEMORY_HOSTS:-${FW_RUNNER_HOSTS:-}}"
+    # _env.sh doesn't reliably export FW_RUNNER_HOSTS (it's an unquoted
     # multi-word value); read it straight from .env as a fallback.
     if [ -z "$MIRROR_HOSTS" ] && [ -f "$FW_ROOT/.env" ]; then
-        MIRROR_HOSTS="$(sed -n 's/^[[:space:]]*AFL_RUNNER_HOSTS=//p' "$FW_ROOT/.env" 2>/dev/null | tail -1 | tr -d "\"'")"
+        MIRROR_HOSTS="$(sed -n 's/^[[:space:]]*FW_RUNNER_HOSTS=//p' "$FW_ROOT/.env" 2>/dev/null | tail -1 | tr -d "\"'")"
     fi
     SELF="$(hostname -s 2>/dev/null || hostname)"
     if [ -z "$MIRROR_HOSTS" ]; then
-        echo "memory: no mirror hosts (set AFL_MEMORY_HOSTS or AFL_RUNNER_HOSTS) — skipped mirror pull"
+        echo "memory: no mirror hosts (set FW_MEMORY_HOSTS or FW_RUNNER_HOSTS) — skipped mirror pull"
     else
         for h in $MIRROR_HOSTS; do
             case "$h" in "$SELF"|"$SELF".*) continue ;; esac   # don't ssh to ourselves

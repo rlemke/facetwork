@@ -15,7 +15,7 @@ rescales. Each apply records this host's applied version/image into the
 `fleet_agents` collection, so `fleet status` shows which hosts are up to date.
 
 Secrets stay local (Phase 1/2): MinIO creds come from this host's environment
-(AFL_S3_ACCESS_KEY / AFL_S3_SECRET_KEY); only endpoints/replicas/image are central.
+(FW_S3_ACCESS_KEY / FW_S3_SECRET_KEY); only endpoints/replicas/image are central.
 """
 from __future__ import annotations
 
@@ -48,10 +48,10 @@ from pymongo import MongoClient  # noqa: E402
 
 from fwroot import fw_root  # noqa: E402
 REPO = fw_root()
-DB = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
-# AFL_FLEET_HOST names this server in fleet_agents/status (defaults to the
+DB = os.environ.get("FW_MONGODB_DATABASE", "facetwork")
+# FW_FLEET_HOST names this server in fleet_agents/status (defaults to the
 # machine hostname); lets several agents on one box act as distinct servers.
-HOST = os.environ.get("AFL_FLEET_HOST") or socket.gethostname()
+HOST = os.environ.get("FW_FLEET_HOST") or socket.gethostname()
 
 # Every Mongo client is bounded on ALL three axes — server selection AND the
 # per-op connect/socket reads. serverSelectionTimeoutMS alone does NOT cap a
@@ -63,10 +63,10 @@ _CLIENT_KW = dict(serverSelectionTimeoutMS=5000, connectTimeoutMS=10000, socketT
 # (e.g. a hung `docker` daemon, which Mongo timeouts can't see) — force-exit so
 # the launchd KeepAlive supervisor restarts a fresh process. Generous so a real
 # image rollout (pull + recreate of every role) never trips it.
-_WATCHDOG_SECONDS = int(os.environ.get("AFL_FLEET_AGENT_WATCHDOG_SECONDS", "900"))
+_WATCHDOG_SECONDS = int(os.environ.get("FW_FLEET_AGENT_WATCHDOG_SECONDS", "900"))
 # Bound each docker compose call so one wedged invocation aborts on its own
 # rather than hanging the whole reconcile until the watchdog fires.
-_DOCKER_TIMEOUT = int(os.environ.get("AFL_FLEET_AGENT_DOCKER_TIMEOUT", "600"))
+_DOCKER_TIMEOUT = int(os.environ.get("FW_FLEET_AGENT_DOCKER_TIMEOUT", "600"))
 
 # One reused client per (process, url). Creating a fresh MongoClient every poll
 # leaks its background monitor threads + sockets — over hours that fd/thread
@@ -141,15 +141,15 @@ def _record(mongo, version, image, replicas):
 
 def _resolve_creds(mongo):
     """MinIO creds from the encrypted secret store if present (host needs only
-    AFL_FLEET_KEY), else this host's env, else minioadmin defaults."""
+    FW_FLEET_KEY), else this host's env, else minioadmin defaults."""
     try:
         sec = _fleet_lib.get_minio_secret(_db(mongo))
-    except RuntimeError as exc:  # a secret exists but AFL_FLEET_KEY is missing/wrong
+    except RuntimeError as exc:  # a secret exists but FW_FLEET_KEY is missing/wrong
         raise SystemExit(f"fleet-agent: {exc}")
     if sec:
         return sec["access_key"], sec["secret_key"], "secret-store"
-    return (os.environ.get("AFL_S3_ACCESS_KEY", "minioadmin"),
-            os.environ.get("AFL_S3_SECRET_KEY", "minioadmin"), "host-env")
+    return (os.environ.get("FW_S3_ACCESS_KEY", "minioadmin"),
+            os.environ.get("FW_S3_SECRET_KEY", "minioadmin"), "host-env")
 
 
 def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
@@ -196,37 +196,37 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     # /Volumes/afl_data (the infra host's disk): a joiner that fell back to it
     # would fail deep in `docker compose up` pointing at our throwaway temp env
     # file. Require it here so the message names the real knob.
-    data_dir = data_dir or os.environ.get("AFL_DATA_DIR")
+    data_dir = data_dir or os.environ.get("FW_DATA_DIR")
     if not data_dir:
         raise SystemExit(
-            f"fleet-agent[{HOST}]: AFL_DATA_DIR not set — this server needs a large "
-            "LOCAL scratch dir for staging. Export AFL_DATA_DIR=<path> before "
+            f"fleet-agent[{HOST}]: FW_DATA_DIR not set — this server needs a large "
+            "LOCAL scratch dir for staging. Export FW_DATA_DIR=<path> before "
             "running fleet-agent, or pass --data-dir <path> (macOS: e.g. "
             "$HOME/afl_data ; Linux: e.g. /var/lib/afl_data). Do NOT use "
             "/Volumes/afl_data — that's the infra host's disk."
         )
 
     env = {
-        "AFL_MONGODB_URL": mongo,
-        "AFL_MONGODB_DATABASE": DB,
-        "AFL_S3_ENDPOINT": endpoint,
-        "AFL_S3_BUCKET": minio.get("bucket", "afl-cache"),
-        "AFL_S3_ACCESS_KEY": access_key,
-        "AFL_S3_SECRET_KEY": secret_key,
-        "AFL_DATA_DIR": data_dir,
-        "AFL_OSM_REPLICAS": str(replicas),
+        "FW_MONGODB_URL": mongo,
+        "FW_MONGODB_DATABASE": DB,
+        "FW_S3_ENDPOINT": endpoint,
+        "FW_S3_BUCKET": minio.get("bucket", "afl-cache"),
+        "FW_S3_ACCESS_KEY": access_key,
+        "FW_S3_SECRET_KEY": secret_key,
+        "FW_DATA_DIR": data_dir,
+        "FW_OSM_REPLICAS": str(replicas),
     }
     if image:
-        env["AFL_RUNNER_IMAGE"] = image
+        env["FW_RUNNER_IMAGE"] = image
     if gh_image:
-        env["AFL_GH_ROUTER_IMAGE"] = gh_image
+        env["FW_GH_ROUTER_IMAGE"] = gh_image
     if ffl_image:
-        env["AFL_FFL_IMAGE"] = ffl_image
+        env["FW_FFL_IMAGE"] = ffl_image
     # Role group for fleet status / dashboard + the server_groups gate above.
-    env["AFL_SERVER_GROUP"] = grp
+    env["FW_SERVER_GROUP"] = grp
     tl = osm.get("task_list")
     if tl:
-        env["AFL_REGISTRY_RUNNER_ARGS"] = f"--task-list {tl} --server-group {grp}"
+        env["FW_REGISTRY_RUNNER_ARGS"] = f"--task-list {tl} --server-group {grp}"
         # Child tasks route by the facet's namespace (the runtime derives the
         # queue from the handler), so no task-list map is needed here.
 
@@ -245,7 +245,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         else:
             print(f"    - would SKIP the osm tier (host group '{grp}' not in osm-geocoder.server_groups)")
         if gh_image and gh_here:
-            print("    + would bring up runner-gh-router (1 replica) from AFL_GH_ROUTER_IMAGE")
+            print("    + would bring up runner-gh-router (1 replica) from FW_GH_ROUTER_IMAGE")
         if ffl_replicas and ffl_here:
             print(f"    + would bring up runner-ffl ({ffl_replicas} replicas) — orchestration tier")
         for name, spec in sorted(domain_roles.items()):
@@ -286,7 +286,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
                   "osm-geocoder.server_groups")
         # gh-router role: bring up the embedded-GraphHopper Java agent as its own
         # single-replica service (its own image; coexists with the osm runners
-        # via the name-filtered claim). Same env file (carries AFL_GH_ROUTER_IMAGE).
+        # via the name-filtered claim). Same env file (carries FW_GH_ROUTER_IMAGE).
         if gh_image and gh_here:
             gh_cmd = ["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"), "--fleet",
                       "--env", envf, "--example", "gh-router", "--replicas", "1"]
@@ -303,7 +303,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
                       "continuing — another host can serve RouteBatch")
         # ffl-runner role: bring up the orchestration tier (continuation_mode=
         # shared, set in the compose file) at the configured replica count. Same
-        # env file (carries AFL_FFL_IMAGE if pinned). Non-fatal: the tier only
+        # env file (carries FW_FFL_IMAGE if pinned). Non-fatal: the tier only
         # needs to run on SOME host(s), so a host that can't bring it up
         # shouldn't fail its handler-runner reconcile.
         if ffl_replicas > 0 and ffl_here:
@@ -329,7 +329,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
                 d_cmd.append("--recreate")
             d_env = child_env
             if spec.get("image"):
-                d_env = dict(child_env, AFL_RUNNER_IMAGE=spec["image"])
+                d_env = dict(child_env, FW_RUNNER_IMAGE=spec["image"])
             dr = _run_compose(d_cmd, d_env)
             sys.stdout.write(dr.stdout)
             if dr.returncode != 0:
@@ -395,8 +395,8 @@ def main():
 
     def common(sp):
         sp.add_argument("--mongo", default=None,
-                        help="MongoDB URL (auto-discovered if omitted: AFL_MONGODB_URL → mDNS → afl-mongodb)")
-        sp.add_argument("--data-dir", help="large LOCAL scratch dir on this host (REQUIRED; or set AFL_DATA_DIR)")
+                        help="MongoDB URL (auto-discovered if omitted: FW_MONGODB_URL → mDNS → afl-mongodb)")
+        sp.add_argument("--data-dir", help="large LOCAL scratch dir on this host (REQUIRED; or set FW_DATA_DIR)")
         sp.add_argument("--replicas", type=int, help="override osm runner count for this host")
 
     pa = sub.add_parser("apply", help="one-shot reconcile to the central config")

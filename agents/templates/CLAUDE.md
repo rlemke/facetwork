@@ -214,7 +214,7 @@ db.tasks.insertOne({
 FFL agents connect to the same MongoDB instance as the Facetwork runtime. Configuration is resolved from:
 
 1. Explicit `--config FILE` argument
-2. `AFL_CONFIG` environment variable
+2. `FW_CONFIG` environment variable
 3. `afl.config.json` in current directory, `~/.ffl/`, or `/etc/ffl/`
 4. Environment variables (see below)
 5. Built-in defaults
@@ -237,11 +237,11 @@ FFL agents connect to the same MongoDB instance as the Facetwork runtime. Config
 
 | Variable | Default |
 |----------|---------|
-| `AFL_MONGODB_URL` | `mongodb://localhost:27017` |
-| `AFL_MONGODB_USERNAME` | (empty) |
-| `AFL_MONGODB_PASSWORD` | (empty) |
-| `AFL_MONGODB_AUTH_SOURCE` | `admin` |
-| `AFL_MONGODB_DATABASE` | `afl` |
+| `FW_MONGODB_URL` | `mongodb://localhost:27017` |
+| `FW_MONGODB_USERNAME` | (empty) |
+| `FW_MONGODB_PASSWORD` | (empty) |
+| `FW_MONGODB_AUTH_SOURCE` | `admin` |
+| `FW_MONGODB_DATABASE` | `afl` |
 
 ---
 
@@ -297,7 +297,7 @@ import afl.agent.{AgentPoller, AgentPollerConfig}
 
 val config = AgentPollerConfig(
   serviceName = "my-scala-agent",
-  mongoUrl = sys.env.getOrElse("AFL_MONGODB_URL", "mongodb://localhost:27017"),
+  mongoUrl = sys.env.getOrElse("FW_MONGODB_URL", "mongodb://localhost:27017"),
   database = "afl"
 )
 val poller = AgentPoller(config)

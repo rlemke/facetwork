@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 _LOCAL_OUTPUT = get_output_base()
 _OUTPUT_DIR = os.environ.get(
-    "AFL_SITESEL_OUTPUT_DIR", os.path.join(_LOCAL_OUTPUT, "sitesel-output")
+    "FW_SITESEL_OUTPUT_DIR", os.path.join(_LOCAL_OUTPUT, "sitesel-output")
 )
 
 FOOD_AMENITIES = {

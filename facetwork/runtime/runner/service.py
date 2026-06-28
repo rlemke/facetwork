@@ -234,7 +234,7 @@ class RunnerService:
         self._last_reap: int = 0
         self._reap_interval_ms: int = 60000  # check for orphans every 60s
         self._execution_timeout_ms: int = int(
-            os.environ.get("AFL_TASK_EXECUTION_TIMEOUT_MS", "900000")
+            os.environ.get("FW_TASK_EXECUTION_TIMEOUT_MS", "900000")
         )  # default 15 minutes
 
         # Circuit breaker for cascading failure protection
@@ -1701,7 +1701,7 @@ class RunnerService:
         self._last_reap = now
 
         try:
-            timeout_ms = int(os.environ.get("AFL_REAPER_TIMEOUT_MS", "120000"))
+            timeout_ms = int(os.environ.get("FW_REAPER_TIMEOUT_MS", "120000"))
             reaped = self._persistence.reap_orphaned_tasks(down_timeout_ms=timeout_ms)
             if reaped:
                 logger.warning(
@@ -1741,7 +1741,7 @@ class RunnerService:
 
         # --- Stuck task watchdog ---
         try:
-            stuck_timeout_ms = int(os.environ.get("AFL_STUCK_TIMEOUT_MS", "1800000"))
+            stuck_timeout_ms = int(os.environ.get("FW_STUCK_TIMEOUT_MS", "1800000"))
             stuck = self._persistence.reap_stuck_tasks(default_stuck_ms=stuck_timeout_ms)
             if stuck:
                 logger.warning(
@@ -1795,7 +1795,7 @@ class RunnerService:
         # loops that consume the thread, preventing capacity from being freed.
         import concurrent.futures
 
-        resume_timeout_s = int(os.environ.get("AFL_RESUME_TIMEOUT_S", "600"))
+        resume_timeout_s = int(os.environ.get("FW_RESUME_TIMEOUT_S", "600"))
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         try:
             future = executor.submit(

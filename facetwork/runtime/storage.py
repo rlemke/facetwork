@@ -442,12 +442,12 @@ class S3StorageBackend:
 
     Configured from the environment so MinIO "just works" locally:
 
-    - ``AFL_S3_ENDPOINT``  — endpoint URL (e.g. ``http://localhost:9000`` for
+    - ``FW_S3_ENDPOINT``  — endpoint URL (e.g. ``http://localhost:9000`` for
       MinIO). Unset → real AWS S3.
-    - ``AFL_S3_REGION``    — region (default ``us-east-1``).
+    - ``FW_S3_REGION``    — region (default ``us-east-1``).
     - credentials via the standard boto3 chain (``AWS_ACCESS_KEY_ID`` /
       ``AWS_SECRET_ACCESS_KEY`` / profile / instance role), or the convenience
-      ``AFL_S3_ACCESS_KEY`` / ``AFL_S3_SECRET_KEY``.
+      ``FW_S3_ACCESS_KEY`` / ``FW_S3_SECRET_KEY``.
 
     Objects are addressed by ``s3://bucket/key`` URIs. There are no real
     directories: ``makedirs`` is a no-op and ``isdir`` is emulated by a prefix
@@ -460,10 +460,10 @@ class S3StorageBackend:
                 "boto3 is required for S3/MinIO support. Install it with: "
                 "pip install boto3 (or the package's 's3' extra)."
             )
-        endpoint = os.environ.get("AFL_S3_ENDPOINT") or None
-        region = os.environ.get("AFL_S3_REGION", "us-east-1")
-        access = os.environ.get("AFL_S3_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
-        secret = os.environ.get("AFL_S3_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
+        endpoint = os.environ.get("FW_S3_ENDPOINT") or None
+        region = os.environ.get("FW_S3_REGION", "us-east-1")
+        access = os.environ.get("FW_S3_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
+        secret = os.environ.get("FW_S3_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
         self._client = _boto3.client(
             "s3",
             endpoint_url=endpoint,
@@ -618,12 +618,12 @@ _DEFAULT_LOCAL_CACHE = None  # resolved lazily
 def _should_localize_mount(path: str) -> bool:
     """Check if a local path is on a mount that should be copied locally.
 
-    Reads ``AFL_LOCALIZE_MOUNTS`` (comma-separated list of path prefixes).
+    Reads ``FW_LOCALIZE_MOUNTS`` (comma-separated list of path prefixes).
     When a path starts with any listed prefix, ``localize()`` will copy it
     to the local cache instead of reading directly from the mount.  This
     avoids VirtioFS hangs on large files in Docker containers.
     """
-    prefixes = os.environ.get("AFL_LOCALIZE_MOUNTS", "")
+    prefixes = os.environ.get("FW_LOCALIZE_MOUNTS", "")
     if not prefixes:
         return False
     return any(path.startswith(p.strip()) for p in prefixes.split(",") if p.strip())
@@ -633,7 +633,7 @@ def localize(path: str, target_dir: str | None = None) -> str:
     """Ensure a file is available on the local filesystem.
 
     For local paths, returns *path* unchanged unless the path matches a
-    prefix in ``AFL_LOCALIZE_MOUNTS``, in which case the file is copied to
+    prefix in ``FW_LOCALIZE_MOUNTS``, in which case the file is copied to
     *target_dir*.  For ``hdfs://`` URIs, downloads the file to *target_dir*
     (preserving the HDFS directory structure) and returns the local path.
     Skips copy/download when a local copy with the same byte-size already
@@ -791,10 +791,10 @@ def _detect_backend_and_root(backend: str, root: str) -> tuple[str, str]:
 
     1. A URI scheme on *root* (``hdfs://`` / ``s3://`` / ``file://``) pins the
        backend and *root* is the base URI.
-    2. Hadoop signal (``AFL_STORAGE=hdfs`` + ``AFL_HDFS_HOST``) →
-       ``hdfs://<host>[/AFL_HDFS_BASE]``.
-    3. MinIO/S3 signal (``AFL_STORAGE=s3`` or ``AFL_S3_BUCKET``) →
-       ``s3://<bucket>[/AFL_S3_PREFIX]``.
+    2. Hadoop signal (``FW_STORAGE=hdfs`` + ``FW_HDFS_HOST``) →
+       ``hdfs://<host>[/FW_HDFS_BASE]``.
+    3. MinIO/S3 signal (``FW_STORAGE=s3`` or ``FW_S3_BUCKET``) →
+       ``s3://<bucket>[/FW_S3_PREFIX]``.
     4. Otherwise local, with *root* used verbatim (empty → CWD-relative).
 
     An explicit *backend* (``hdfs`` / ``s3`` / ``local``) wins over auto-detect;
@@ -808,25 +808,25 @@ def _detect_backend_and_root(backend: str, root: str) -> tuple[str, str]:
         kind = _SCHEME_TO_BACKEND[scheme]
         if backend not in ("auto", kind):
             logger.warning(
-                "FileSystem: AFL_FS_BACKEND=%s conflicts with root scheme %s://; using %s",
+                "FileSystem: FW_FS_BACKEND=%s conflicts with root scheme %s://; using %s",
                 backend,
                 scheme,
                 kind,
             )
         return kind, root
 
-    storage_env = (os.environ.get("AFL_STORAGE") or "").lower()
+    storage_env = (os.environ.get("FW_STORAGE") or "").lower()
 
     if backend == "hdfs" or (backend == "auto" and storage_env == "hdfs"):
-        host = os.environ.get("AFL_HDFS_HOST", "default")
-        base = os.environ.get("AFL_HDFS_BASE", "").strip("/")
+        host = os.environ.get("FW_HDFS_HOST", "default")
+        base = os.environ.get("FW_HDFS_BASE", "").strip("/")
         return "hdfs", root or (f"hdfs://{host}/{base}".rstrip("/"))
 
     if backend == "s3" or (
-        backend == "auto" and (storage_env == "s3" or os.environ.get("AFL_S3_BUCKET"))
+        backend == "auto" and (storage_env == "s3" or os.environ.get("FW_S3_BUCKET"))
     ):
-        bucket = os.environ.get("AFL_S3_BUCKET", "")
-        prefix = os.environ.get("AFL_S3_PREFIX", "").strip("/")
+        bucket = os.environ.get("FW_S3_BUCKET", "")
+        prefix = os.environ.get("FW_S3_PREFIX", "").strip("/")
         synth = f"s3://{bucket}/{prefix}".rstrip("/") if bucket else ""
         return "s3", root or synth
 
@@ -837,8 +837,8 @@ class FileSystem:
     """Unified, init-configured interface over local / HDFS / S3 (MinIO).
 
     Selection is *configuration-driven*: at construction the facade picks one
-    default backend (Hadoop → MinIO/S3 → local file, per ``AFL_FS_BACKEND`` /
-    ``AFL_FS_ROOT``). Bare, scheme-less paths resolve under ``root`` on that
+    default backend (Hadoop → MinIO/S3 → local file, per ``FW_FS_BACKEND`` /
+    ``FW_FS_ROOT``). Bare, scheme-less paths resolve under ``root`` on that
     backend; a path carrying an explicit ``hdfs://`` / ``s3://`` / ``file://``
     scheme always overrides and is routed there instead.
 

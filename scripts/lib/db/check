@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Check connectivity to the three databases Facetwork depends on:
-#   - MongoDB      (AFL_MONGODB_URL)
-#   - Main PostGIS (AFL_POSTGIS_URL)          — required for OSM imports
-#   - Import PG    (AFL_IMPORT_POSTGIS_URL)   — optional, local-first staging
+#   - MongoDB      (FW_MONGODB_URL)
+#   - Main PostGIS (FW_POSTGIS_URL)          — required for OSM imports
+#   - Import PG    (FW_IMPORT_POSTGIS_URL)   — optional, local-first staging
 #
 # Prints a status line per target and exits non-zero if any required
 # target is unreachable. The import PG is treated as optional: if its URL
@@ -43,7 +43,7 @@ _report() {
 }
 
 check_mongodb() {
-    local url="${AFL_MONGODB_URL:-mongodb://localhost:27017}"
+    local url="${FW_MONGODB_URL:-mongodb://localhost:27017}"
     local py; py="$(_python)"
     local out
     if out=$("$py" -c "
@@ -85,8 +85,8 @@ check_postgres() {
 
 echo "=== Facetwork Database Health ==="
 check_mongodb
-check_postgres "Main PostGIS"  "${AFL_POSTGIS_URL:-}"         true
-check_postgres "Import PG"     "${AFL_IMPORT_POSTGIS_URL:-}"  false
+check_postgres "Main PostGIS"  "${FW_POSTGIS_URL:-}"         true
+check_postgres "Import PG"     "${FW_IMPORT_POSTGIS_URL:-}"  false
 
 if [[ "$FAIL" -eq 0 ]]; then
     $QUIET || echo "All required databases are reachable."

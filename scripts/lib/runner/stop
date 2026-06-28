@@ -19,9 +19,9 @@
 #   --drain-timeout N  Seconds to wait for graceful drain (default: 30)
 #
 # Environment:
-#   AFL_RUNNER_HOSTS   Space-separated hostnames (used with --all if set)
-#   AFL_REMOTE_PATH    Repo path on remote hosts (default: same as local)
-#   AFL_SSH_OPTS       Extra SSH options
+#   FW_RUNNER_HOSTS   Space-separated hostnames (used with --all if set)
+#   FW_REMOTE_PATH    Repo path on remote hosts (default: same as local)
+#   FW_SSH_OPTS       Extra SSH options
 #
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail

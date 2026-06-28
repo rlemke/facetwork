@@ -919,7 +919,7 @@ whose runners lacked the handler (deadlock). **Continuation tasks**
 (`CONTINUATION_TASK_LIST = "_fw_continue"`) are exempt — every runner polls that
 shared queue. The `(state, name, task_list_name)` compound index keeps per-list
 claims cheap. (Productionized from a prototype; the old prefix-map
-`AFL_WORKFLOW_TASK_LIST_MAP` and `runner_task_list` inheritance were removed.)
+`FW_WORKFLOW_TASK_LIST_MAP` and `runner_task_list` inheritance were removed.)
 
 #### 17.1.3 Per-Runner Polling — No In-Process Contention
 
@@ -929,7 +929,7 @@ interaction goes through MongoDB. The consequences are worth stating explicitly
 because they're load-bearing for the operational model:
 
 **Polling is independent.** Each runner runs its own `_poll_cycle` on its own
-clock (`AFL_POLL_INTERVAL_MS`, default 1s). RunnerA polling once per second has
+clock (`FW_POLL_INTERVAL_MS`, default 1s). RunnerA polling once per second has
 no effect on RunnerB's poll timing. A runner that's busy on a long task is the
 only thread blocked — other runners keep polling normally.
 
@@ -991,7 +991,7 @@ structures to contend on.
 
 **Mechanism:** `reap_stuck_tasks()` runs in the same 60s cycle:
 - **Pass 1 (explicit timeout):** Tasks with `timeout_ms > 0` where `now - max(task_heartbeat, updated) > timeout_ms`
-- **Pass 2 (default timeout):** Tasks without explicit timeout where `now - max(task_heartbeat, updated) > AFL_STUCK_TIMEOUT_MS` (default: 4 hours)
+- **Pass 2 (default timeout):** Tasks without explicit timeout where `now - max(task_heartbeat, updated) > FW_STUCK_TIMEOUT_MS` (default: 4 hours)
 
 **Heartbeat-aware:** Handlers calling `update_task_heartbeat()` during long operations (e.g. PostGIS bulk import) keep their tasks alive even if the server heartbeat is stale due to I/O contention.
 
@@ -1005,7 +1005,7 @@ structures to contend on.
 - Tasks have a `lease_expires` timestamp set at claim time
 - Runners renew leases via heartbeat during execution
 - Expired leases allow other runners to reclaim without waiting for the full reaper cycle
-- Execution timeout (default: 15 min, `AFL_EXECUTION_TIMEOUT_MS`) kills hung futures and releases capacity
+- Execution timeout (default: 15 min, `FW_EXECUTION_TIMEOUT_MS`) kills hung futures and releases capacity
 - `_safe_save_task()` retries with exponential backoff on transient MongoDB errors
 
 ### 17.5 Layer 4: Errored Step Recovery (v0.44.0)
@@ -1053,7 +1053,7 @@ Each round only loads steps that received a child-completion notification. Steps
 
 3. **Always complete the task:** `_process_event_task()` always marks the task as `COMPLETED` after the handler returns a result, even if `continue_step()` or `resume_step()` throws. This ensures the thread future always finishes and capacity is always freed. If the resume failed, the stuck-step sweep will retry.
 
-4. **Resume timeout:** `_resume_workflow()` (the full `resume()` fallback) runs with a configurable timeout (`AFL_RESUME_TIMEOUT_S`, default 10 min). On timeout, the resume is abandoned and the sweep retries on the next cycle.
+4. **Resume timeout:** `_resume_workflow()` (the full `resume()` fallback) runs with a configurable timeout (`FW_RESUME_TIMEOUT_S`, default 10 min). On timeout, the resume is abandoned and the sweep retries on the next cycle.
 
 **Performance comparison (303-step Africa OSM import):**
 
@@ -1182,7 +1182,7 @@ The sweep never calls full `resume()` — it processes each stuck step individua
 **Problem:** All runners are at capacity with stale futures (the deadlock scenario). No runner can run the reaper because the reaper runs inside the poll loop which is gated by capacity. The system is stuck.
 
 **Mechanism:** The dashboard runs an independent asyncio background task:
-- Every 60s (configurable: `AFL_DASHBOARD_REAP_INTERVAL_S`), calls `reap_orphaned_tasks()` and `reap_stuck_tasks()`
+- Every 60s (configurable: `FW_DASHBOARD_REAP_INTERVAL_S`), calls `reap_orphaned_tasks()` and `reap_stuck_tasks()`
 - Completely independent of runners — runs in the FastAPI lifespan
 - Breaks the deadlock: dashboard resets orphaned tasks → capacity freed → runners resume claiming
 
@@ -1205,12 +1205,12 @@ The sweep never calls full `resume()` — it processes each stuck step individua
 
 | Variable | Default | Description |
 |---|---|---|
-| `AFL_REAPER_TIMEOUT_MS` | 300,000 (5 min) | Server heartbeat stale threshold |
-| `AFL_STUCK_TIMEOUT_MS` | 14,400,000 (4h) | Default stuck task timeout |
-| `AFL_EXECUTION_TIMEOUT_MS` | 900,000 (15 min) | Per-task execution timeout |
-| `AFL_DASHBOARD_REAP_INTERVAL_S` | 60 | Dashboard reaper cycle interval |
-| `AFL_MAX_CONCURRENT` | 2 | Max concurrent tasks per runner |
-| `AFL_POLL_INTERVAL_MS` | 1,000 | Runner poll cycle interval |
+| `FW_REAPER_TIMEOUT_MS` | 300,000 (5 min) | Server heartbeat stale threshold |
+| `FW_STUCK_TIMEOUT_MS` | 14,400,000 (4h) | Default stuck task timeout |
+| `FW_EXECUTION_TIMEOUT_MS` | 900,000 (15 min) | Per-task execution timeout |
+| `FW_DASHBOARD_REAP_INTERVAL_S` | 60 | Dashboard reaper cycle interval |
+| `FW_MAX_CONCURRENT` | 2 | Max concurrent tasks per runner |
+| `FW_POLL_INTERVAL_MS` | 1,000 | Runner poll cycle interval |
 
 ---
 

@@ -11,14 +11,14 @@
 #      from the volume once into memory; results are identical to a single host.
 #
 # Run (from the facetwork repo root):
-#   AFL_DATA_DIR=/tmp/phase4-data \
+#   FW_DATA_DIR=/tmp/phase4-data \
 #   docker compose -p phase4 -f docker-compose.network-phase4.yml up -d --build --scale route-runner=2
 #   # seed happens per-container at start; then submit from the host venv:
-#   AFL_MONGODB_URL=mongodb://localhost:27019 AFL_MONGODB_DATABASE=facetwork \
+#   FW_MONGODB_URL=mongodb://localhost:27019 FW_MONGODB_DATABASE=facetwork \
 #     fw ffl run-workflow --workflow osm.Network.workflows.RouteFanout \
 #       --input '{"network_path":"/data/cache/osm/network/motorways@tol25-i","pairs":[...]}'
 #
-# AFL_DATA_DIR must contain the prebuilt artifact at
+# FW_DATA_DIR must contain the prebuilt artifact at
 #   cache/osm/network/<name>/{nodes,edges}.geojson + graph.json  (+ .meta.json)
 
 services:
@@ -45,14 +45,14 @@ services:
       mongodb:
         condition: service_healthy
     environment:
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: facetwork
-      AFL_DOMAIN_NAME: osm-geocoder
-      AFL_DOMAIN_REPO: fwh_osm
-      AFL_DATA_ROOT: /data            # osm cache root -> /data/cache/osm/...
-      AFL_OUTPUT_BASE: /data/output   # ApproxRoute writes route GeoJSON here
-      AFL_POLL_INTERVAL_MS: "500"
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: facetwork
+      FW_DOMAIN_NAME: osm-geocoder
+      FW_DOMAIN_REPO: fwh_osm
+      FW_DATA_ROOT: /data            # osm cache root -> /data/cache/osm/...
+      FW_OUTPUT_BASE: /data/output   # ApproxRoute writes route GeoJSON here
+      FW_POLL_INTERVAL_MS: "500"
     volumes:
       - ${FWH_HANDLERS_ROOT:-/Users/ralph_lemke/fw_handlers}/fwh_osm:/handlers/fwh_osm
-      - ${AFL_DATA_DIR:-/tmp/phase4-data}:/data
+      - ${FW_DATA_DIR:-/tmp/phase4-data}:/data
     restart: unless-stopped

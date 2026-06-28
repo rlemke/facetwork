@@ -244,11 +244,11 @@ The architecture scales horizontally:
 
 Environment configuration via `.env`:
 ```bash
-AFL_RUNNERS=3
-AFL_OSM_AGENTS=3
-AFL_MAX_CONCURRENT=2
-AFL_HDFS=true
-AFL_GEOFABRIK_MIRROR=/Volumes/afl_data/osm
+FW_RUNNERS=3
+FW_OSM_AGENTS=3
+FW_MAX_CONCURRENT=2
+FW_HDFS=true
+FW_GEOFABRIK_MIRROR=/Volumes/afl_data/osm
 ```
 
 One command bootstraps everything:
@@ -548,7 +548,7 @@ Each map features:
 ```bash
 # Configure
 cp .env.example .env
-# Edit .env: set AFL_GEOFABRIK_MIRROR, scaling, data dirs
+# Edit .env: set FW_GEOFABRIK_MIRROR, scaling, data dirs
 
 # Full pipeline: teardown → rebuild → setup → seed
 fw single up

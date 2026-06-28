@@ -1,8 +1,8 @@
 # Generic per-example Facetwork runner.
 #
-# One image; the domain to run is passed via AFL_DOMAIN_NAME. The
+# One image; the domain to run is passed via FW_DOMAIN_NAME. The
 # example's source (one of the fwh_* repos) is bind-mounted at
-# /handlers/$AFL_DOMAIN_REPO and pip-installed at container start by
+# /handlers/$FW_DOMAIN_REPO and pip-installed at container start by
 # entrypoint-domain-runner.sh.
 #
 # Why bind-mount + install at start, instead of baking the example
@@ -133,6 +133,6 @@ COPY docker/entrypoint-domain-runner.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENV PYTHONUNBUFFERED=1
-ENV AFL_HANDLERS_ROOT=/handlers
+ENV FW_HANDLERS_ROOT=/handlers
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

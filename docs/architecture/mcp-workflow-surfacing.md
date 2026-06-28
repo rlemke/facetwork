@@ -146,7 +146,7 @@ To expose `BicycleRoutesPostGIS` today, documentation would go in a single docst
  *
  *  Side effects:
  *    - Reads from osm_nodes and osm_ways tables
- *    - Writes map PNG and route GeoJSON under AFL_LOCAL_OUTPUT_DIR/<run_id>/
+ *    - Writes map PNG and route GeoJSON under FW_LOCAL_OUTPUT_DIR/<run_id>/
  *
  *  Returns: map_path (PNG), route_count, total_km
  */
@@ -206,7 +206,7 @@ namespace osm.mixins {
   /** Mixin: writes output artifacts to the local output dir. */
   facet LocalOutputWriter {
     describe {
-      writes: ["file:${AFL_LOCAL_OUTPUT_DIR}/${run_id}/"]
+      writes: ["file:${FW_LOCAL_OUTPUT_DIR}/${run_id}/"]
     }
   }
 }
@@ -268,7 +268,7 @@ The compiler emits the following MCP tool definition (composed from mixin `descr
     "typical_runtime_min": 15,
     "invocation_pattern": "returns run_id; poll get_run_status",
     "reads":   ["postgis:osm_nodes", "postgis:osm_ways"],
-    "writes":  ["file:${AFL_LOCAL_OUTPUT_DIR}/${run_id}/"],
+    "writes":  ["file:${FW_LOCAL_OUTPUT_DIR}/${run_id}/"],
     "touches": ["postgis:afl-postgres"],
     "mixins":  ["WithRegion", "PostGISSource", "LongRunning", "LocalOutputWriter"]
   }
@@ -432,7 +432,7 @@ The `osm.geocode` namespace (`https://github.com/rlemke/fwh_osm/blob/main/src/os
     "osm_geocode": {
       "command": "python",
       "args": ["-m", "facetwork.mcp", "--namespace", "osm.geocode"],
-      "env": { "AFL_MONGODB_URL": "mongodb://localhost:27017" }
+      "env": { "FW_MONGODB_URL": "mongodb://localhost:27017" }
     }
   }
 }

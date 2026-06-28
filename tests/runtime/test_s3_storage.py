@@ -5,13 +5,13 @@ Two tiers:
 * **Path helpers + dispatch** — always run (boto3 client creation is lazy and
   makes no network call), so ``s3://`` URI parsing/joining and backend
   selection are covered without any server.
-* **Live round-trip** — opt-in, gated on ``AFL_S3_ENDPOINT`` pointing at a
+* **Live round-trip** — opt-in, gated on ``FW_S3_ENDPOINT`` pointing at a
   reachable S3/MinIO. Start one with::
 
       docker run -d -p 9000:9000 -e MINIO_ROOT_USER=minioadmin \\
           -e MINIO_ROOT_PASSWORD=minioadmin minio/minio server /data
-      export AFL_S3_ENDPOINT=http://localhost:9000 \\
-          AFL_S3_ACCESS_KEY=minioadmin AFL_S3_SECRET_KEY=minioadmin
+      export FW_S3_ENDPOINT=http://localhost:9000 \\
+          FW_S3_ACCESS_KEY=minioadmin FW_S3_SECRET_KEY=minioadmin
 """
 
 from __future__ import annotations
@@ -29,9 +29,9 @@ from facetwork.runtime.storage import (  # noqa: E402
     localize,
 )
 
-_LIVE = bool(os.environ.get("AFL_S3_ENDPOINT"))
-_live_only = pytest.mark.skipif(not _LIVE, reason="set AFL_S3_ENDPOINT to run live S3/MinIO tests")
-_BUCKET = os.environ.get("AFL_S3_TEST_BUCKET", "afl-cache")
+_LIVE = bool(os.environ.get("FW_S3_ENDPOINT"))
+_live_only = pytest.mark.skipif(not _LIVE, reason="set FW_S3_ENDPOINT to run live S3/MinIO tests")
+_BUCKET = os.environ.get("FW_S3_TEST_BUCKET", "afl-cache")
 
 
 # --- path helpers + dispatch (no network) -------------------------------------
@@ -133,9 +133,9 @@ def test_live_facade_autodetect(monkeypatch):
     from facetwork.runtime.storage import FileSystem, get_storage_backend
 
     prefix = uuid.uuid4().hex
-    monkeypatch.setenv("AFL_STORAGE", "s3")
-    monkeypatch.setenv("AFL_S3_BUCKET", _BUCKET)
-    monkeypatch.setenv("AFL_S3_PREFIX", f"_pytest/{prefix}")
+    monkeypatch.setenv("FW_STORAGE", "s3")
+    monkeypatch.setenv("FW_S3_BUCKET", _BUCKET)
+    monkeypatch.setenv("FW_S3_PREFIX", f"_pytest/{prefix}")
 
     fs = FileSystem(backend="auto", root="")
     assert fs.kind == "s3"

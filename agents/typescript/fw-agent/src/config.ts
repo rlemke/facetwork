@@ -108,8 +108,8 @@ export function loadConfig(filePath: string): AgentPollerConfig {
     // Ignore file read/parse errors, use defaults
   }
 
-  // AFL_ENV overlay
-  const envName = process.env.AFL_ENV;
+  // FW_ENV overlay
+  const envName = process.env.FW_ENV;
   if (envName) {
     const dir = path.dirname(filePath);
     const overlayPath = path.join(dir, `afl.config.${envName}.json`);
@@ -136,7 +136,7 @@ export function loadConfig(filePath: string): AgentPollerConfig {
 /**
  * Resolves configuration using the standard search order:
  * 1. Explicit path argument
- * 2. AFL_CONFIG environment variable
+ * 2. FW_CONFIG environment variable
  * 3. afl.config.json in current directory
  * 4. ~/.afl/afl.config.json
  * 5. /etc/afl/afl.config.json
@@ -152,7 +152,7 @@ export function resolveConfig(explicitPath?: string): AgentPollerConfig {
     }
   }
 
-  const envPath = process.env.AFL_CONFIG;
+  const envPath = process.env.FW_CONFIG;
   if (envPath) {
     try {
       return loadConfig(envPath);
@@ -190,26 +190,26 @@ export function fromEnvironment(): AgentPollerConfig {
 }
 
 function applyEnvOverrides(cfg: AgentPollerConfig): void {
-  const mongoUrl = process.env.AFL_MONGODB_URL;
+  const mongoUrl = process.env.FW_MONGODB_URL;
   if (mongoUrl) {
     cfg.mongoUrl = mongoUrl;
   }
 
-  const database = process.env.AFL_MONGODB_DATABASE;
+  const database = process.env.FW_MONGODB_DATABASE;
   if (database) {
     cfg.database = database;
   }
 
   // Runner env overrides
-  const pollInterval = process.env.AFL_POLL_INTERVAL_MS;
+  const pollInterval = process.env.FW_POLL_INTERVAL_MS;
   if (pollInterval) {
     cfg.pollIntervalMs = parseInt(pollInterval, 10);
   }
-  const maxConcurrent = process.env.AFL_MAX_CONCURRENT;
+  const maxConcurrent = process.env.FW_MAX_CONCURRENT;
   if (maxConcurrent) {
     cfg.maxConcurrent = parseInt(maxConcurrent, 10);
   }
-  const heartbeatInterval = process.env.AFL_HEARTBEAT_INTERVAL_MS;
+  const heartbeatInterval = process.env.FW_HEARTBEAT_INTERVAL_MS;
   if (heartbeatInterval) {
     cfg.heartbeatIntervalMs = parseInt(heartbeatInterval, 10);
   }

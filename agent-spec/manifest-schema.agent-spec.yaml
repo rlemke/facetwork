@@ -8,7 +8,7 @@ identity:
   version: 1
 
 purpose: |
-  Every cache type under AFL_OSM_CACHE_ROOT owns a manifest.json
+  Every cache type under FW_OSM_CACHE_ROOT owns a manifest.json
   that records one entry per cached artifact. Manifests serve three
   purposes: cache validity (comparing hashes against live source
   data), lineage (tracing a derived artifact back to its sources),
@@ -19,13 +19,13 @@ purpose: |
 # Top-level file shape.
 # ---------------------------------------------------------------------------
 file_shape:
-  path: "AFL_OSM_CACHE_ROOT/CACHE_TYPE/manifest.json"
+  path: "FW_OSM_CACHE_ROOT/CACHE_TYPE/manifest.json"
   format: "JSON (UTF-8)"
   top_level:
     version: "int — schema version; 1 for all current manifests"
     entries: "object — keyed by relative_path within the cache-type subdir"
   lockfile:
-    path: "AFL_OSM_CACHE_ROOT/CACHE_TYPE/manifest.json.lock"
+    path: "FW_OSM_CACHE_ROOT/CACHE_TYPE/manifest.json.lock"
     purpose: "fcntl advisory lock target for read-modify-write serialization on the local backend. HDFS: no-op, single-writer assumed."
 
 # ---------------------------------------------------------------------------

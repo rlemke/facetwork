@@ -159,10 +159,10 @@ SMB (Samba/CIFS) volumes mounted on macOS (e.g. `/Volumes/afl_data/`) exhibit a 
 - **Pre-existing files in subdirectories fail**: `os.path.isfile()`, `os.stat()`, and `open()` return errors for files that existed on the SMB share before the container started. `os.listdir()` (readdir) succeeds — the filenames are visible, but `stat()` on individual files fails.
 - **Root-level files work**: Only files in subdirectories are affected.
 
-**Impact on Facetwork**: The Geofabrik mirror (`AFL_GEOFABRIK_MIRROR`) contains pre-existing `.osm.pbf` files in nested directories (e.g. `north-america/us/alabama-latest.osm.pbf`). When mounted from an SMB share, containers cannot read these files even though `listdir()` shows them.
+**Impact on Facetwork**: The Geofabrik mirror (`FW_GEOFABRIK_MIRROR`) contains pre-existing `.osm.pbf` files in nested directories (e.g. `north-america/us/alabama-latest.osm.pbf`). When mounted from an SMB share, containers cannot read these files even though `listdir()` shows them.
 
 **Workarounds**:
-1. **Use a local APFS drive for the mirror** (recommended): Set `AFL_GEOFABRIK_MIRROR` to a local or directly-attached drive (e.g. `/Volumes/afl_data_local/osm`). SMB is fine for write targets (`AFL_DATA_ROOT`, `AFL_OSM_OUTPUT_BASE`, `AFL_LOCAL_OUTPUT_DIR`) since containers create those files.
+1. **Use a local APFS drive for the mirror** (recommended): Set `FW_GEOFABRIK_MIRROR` to a local or directly-attached drive (e.g. `/Volumes/afl_data_local/osm`). SMB is fine for write targets (`FW_DATA_ROOT`, `FW_OSM_OUTPUT_BASE`, `FW_LOCAL_OUTPUT_DIR`) since containers create those files.
 2. **NFS export from the NAS**: NFS does not have this VirtioFS bug. If your NAS supports NFS, export the data directory and mount via NFS on macOS.
 3. **readdir fallback**: The downloader (`https://github.com/rlemke/fwh_osm/blob/main/src/osm_geocoder/handlers/shared/downloader.py`) includes `_mirror_file_exists()` which falls back to `os.listdir()` when `os.path.isfile()` fails. This detects file presence but cannot fix the `open()` failure for actual reads.
 
@@ -183,12 +183,12 @@ SMB (Samba/CIFS) volumes mounted on macOS (e.g. `/Volumes/afl_data/`) exhibit a 
 
 ```bash
 # Mirror on local drive (pre-existing PBF files need direct access)
-AFL_GEOFABRIK_MIRROR=/Volumes/afl_data_local/osm
+FW_GEOFABRIK_MIRROR=/Volumes/afl_data_local/osm
 
 # Write targets on NAS (SMB is fine for container-created files)
-AFL_DATA_ROOT=/Volumes/afl_data
-AFL_OSM_OUTPUT_BASE=/Volumes/afl_data/osm-output
-AFL_LOCAL_OUTPUT_DIR=/Volumes/afl_data/output
+FW_DATA_ROOT=/Volumes/afl_data
+FW_OSM_OUTPUT_BASE=/Volumes/afl_data/osm-output
+FW_LOCAL_OUTPUT_DIR=/Volumes/afl_data/output
 
 # MongoDB on Docker volume (never SMB)
 # MONGODB_DATA_DIR=   (leave commented out)
@@ -215,39 +215,39 @@ fw single up        # runs the full pipeline using .env values
 | Variable | Default | Description |
 |----------|---------|-------------|
 | **MongoDB** | | |
-| `AFL_MONGODB_URL` | `mongodb://afl-mongodb:27017` | MongoDB connection URL (external server, defined in `/etc/hosts`) |
-| `AFL_MONGODB_DATABASE` | `afl` | Database name (runtime: steps, tasks, runners, flows) |
-| `AFL_EXAMPLES_DATABASE` | `afl_examples` | Database for example handler data (weather reports, census output) |
+| `FW_MONGODB_URL` | `mongodb://afl-mongodb:27017` | MongoDB connection URL (external server, defined in `/etc/hosts`) |
+| `FW_MONGODB_DATABASE` | `afl` | Database name (runtime: steps, tasks, runners, flows) |
+| `FW_EXAMPLES_DATABASE` | `afl_examples` | Database for example handler data (weather reports, census output) |
 | **Scaling** | | |
-| `AFL_RUNNERS` | `1` | Number of runner service instances |
-| `AFL_AGENTS` | `1` | Number of AddOne agent instances |
-| `AFL_OSM_AGENTS` | `0` | Full OSM Geocoder agent instances |
-| `AFL_OSM_LITE_AGENTS` | `0` | Lightweight OSM agent instances |
+| `FW_RUNNERS` | `1` | Number of runner service instances |
+| `FW_AGENTS` | `1` | Number of AddOne agent instances |
+| `FW_OSM_AGENTS` | `0` | Full OSM Geocoder agent instances |
+| `FW_OSM_LITE_AGENTS` | `0` | Lightweight OSM agent instances |
 | **Overlays** | | |
-| `AFL_HDFS` | `false` | Enable HDFS overlay compose file and profile |
-| `AFL_POSTGIS` | `false` | Enable PostGIS overlay compose file and profile |
-| `AFL_JENKINS` | `false` | Enable Jenkins profile |
-| `AFL_GEOFABRIK_MIRROR` | `/Volumes/afl_data/osm` | Path to local Geofabrik mirror; mounted read-only at `/data/osm-mirror` in containers |
+| `FW_HDFS` | `false` | Enable HDFS overlay compose file and profile |
+| `FW_POSTGIS` | `false` | Enable PostGIS overlay compose file and profile |
+| `FW_JENKINS` | `false` | Enable Jenkins profile |
+| `FW_GEOFABRIK_MIRROR` | `/Volumes/afl_data/osm` | Path to local Geofabrik mirror; mounted read-only at `/data/osm-mirror` in containers |
 | **OSM data paths** | | |
-| `AFL_DATA_ROOT` | `/Volumes/afl_data` | Unified data root; OSM/handler caches live under `$AFL_DATA_ROOT/cache/<namespace>/`. Override just the cache with `AFL_CACHE_ROOT`; set `AFL_STORAGE=hdfs` or `s3` for remote storage. (Replaces the retired `AFL_CACHE_DIR`.) |
-| `AFL_STORAGE` | `local` | Storage backend: `local` \| `hdfs` \| `s3`. `s3` (AWS S3 / MinIO) makes cache + outputs portable across the fleet — see [S3 / MinIO Integration](../operations/deployment.md#s3--minio-integration). |
-| `AFL_FS_BACKEND` | `auto` | Default backend for the `get_fs()` [`FileSystem` facade](../operations/deployment.md#unified-file-access--the-filesystem-facade): `auto` \| `hdfs` \| `s3` \| `local`. `auto` infers from `AFL_FS_ROOT`'s scheme (Hadoop → S3 → local). |
-| `AFL_FS_ROOT` | *(empty)* | Base URI/path bare paths resolve under for the facade, e.g. `hdfs://nn/user/afl`, `s3://my-bucket/cache`, or a local dir. The URI scheme selects the backend. |
-| `AFL_OSM_OUTPUT_BASE` | `/tmp` | OSM extractor output base (local path, `hdfs://`, or `s3://` URI) |
-| **S3 / MinIO (when `AFL_STORAGE=s3`)** | | Requires the `s3` extra (boto3). Keep `AFL_OUTPUT_BASE` local. |
-| `AFL_S3_ENDPOINT` | *(AWS S3)* | Object-store endpoint, e.g. `http://localhost:9000` for MinIO. Unset → real AWS S3. |
-| `AFL_S3_ACCESS_KEY` / `AFL_S3_SECRET_KEY` | *(AWS chain)* | Credentials (or the standard `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`). |
-| `AFL_S3_REGION` | `us-east-1` | S3 region. |
-| `AFL_LOCAL_SCRATCH` | *(system temp)* | Local base for staging/tmp/locks when `AFL_DATA_ROOT` is remote. |
-| `AFL_LOCAL_OUTPUT_DIR` | `/Volumes/afl_data/output` | Handler output files (reports, maps, stats, GeoJSON). Used by all examples: osm-geocoder, census-us, hiv-drug-resistance, monte-carlo-risk, maven. Falls back to `/tmp` when unset. |
-| `AFL_LOCALIZE_MOUNTS` | *(empty)* | Comma-separated path prefixes for Docker mount paths that `localize()` should copy to container-local storage before processing. Avoids VirtioFS hangs on large files. Example: `/data/osm-mirror` |
+| `FW_DATA_ROOT` | `/Volumes/afl_data` | Unified data root; OSM/handler caches live under `$FW_DATA_ROOT/cache/<namespace>/`. Override just the cache with `FW_CACHE_ROOT`; set `FW_STORAGE=hdfs` or `s3` for remote storage. (Replaces the retired `FW_CACHE_DIR`.) |
+| `FW_STORAGE` | `local` | Storage backend: `local` \| `hdfs` \| `s3`. `s3` (AWS S3 / MinIO) makes cache + outputs portable across the fleet — see [S3 / MinIO Integration](../operations/deployment.md#s3--minio-integration). |
+| `FW_FS_BACKEND` | `auto` | Default backend for the `get_fs()` [`FileSystem` facade](../operations/deployment.md#unified-file-access--the-filesystem-facade): `auto` \| `hdfs` \| `s3` \| `local`. `auto` infers from `FW_FS_ROOT`'s scheme (Hadoop → S3 → local). |
+| `FW_FS_ROOT` | *(empty)* | Base URI/path bare paths resolve under for the facade, e.g. `hdfs://nn/user/afl`, `s3://my-bucket/cache`, or a local dir. The URI scheme selects the backend. |
+| `FW_OSM_OUTPUT_BASE` | `/tmp` | OSM extractor output base (local path, `hdfs://`, or `s3://` URI) |
+| **S3 / MinIO (when `FW_STORAGE=s3`)** | | Requires the `s3` extra (boto3). Keep `FW_OUTPUT_BASE` local. |
+| `FW_S3_ENDPOINT` | *(AWS S3)* | Object-store endpoint, e.g. `http://localhost:9000` for MinIO. Unset → real AWS S3. |
+| `FW_S3_ACCESS_KEY` / `FW_S3_SECRET_KEY` | *(AWS chain)* | Credentials (or the standard `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`). |
+| `FW_S3_REGION` | `us-east-1` | S3 region. |
+| `FW_LOCAL_SCRATCH` | *(system temp)* | Local base for staging/tmp/locks when `FW_DATA_ROOT` is remote. |
+| `FW_LOCAL_OUTPUT_DIR` | `/Volumes/afl_data/output` | Handler output files (reports, maps, stats, GeoJSON). Used by all examples: osm-geocoder, census-us, hiv-drug-resistance, monte-carlo-risk, maven. Falls back to `/tmp` when unset. |
+| `FW_LOCALIZE_MOUNTS` | *(empty)* | Comma-separated path prefixes for Docker mount paths that `localize()` should copy to container-local storage before processing. Avoids VirtioFS hangs on large files. Example: `/data/osm-mirror` |
 | **Remote runner management** | | |
-| `AFL_RUNNER_HOSTS` | *(empty)* | Space-separated hostnames for remote runner management |
-| `AFL_REMOTE_PATH` | *(same as local)* | Repo path on remote hosts |
-| `AFL_SSH_OPTS` | *(empty)* | Extra SSH options (e.g. `-i ~/.ssh/deploy_key`) |
+| `FW_RUNNER_HOSTS` | *(empty)* | Space-separated hostnames for remote runner management |
+| `FW_REMOTE_PATH` | *(same as local)* | Repo path on remote hosts |
+| `FW_SSH_OPTS` | *(empty)* | Extra SSH options (e.g. `-i ~/.ssh/deploy_key`) |
 | **Runner tuning** | | |
-| `AFL_MAX_CONCURRENT` | `2` | Max concurrent work items per runner |
-| `AFL_POLL_INTERVAL_MS` | `1000` | Runner poll interval in milliseconds |
+| `FW_MAX_CONCURRENT` | `2` | Max concurrent work items per runner |
+| `FW_POLL_INTERVAL_MS` | `1000` | Runner poll interval in milliseconds |
 | **LLM / Claude API** | | |
 | `ANTHROPIC_API_KEY` | *(empty)* | Anthropic API key for Claude-powered prompt blocks. When unset, LLM handlers fall back to deterministic stubs. Required by: `ClaudeAgentRunner`, `LLMHandler`, and example handlers like `noaa-weather` GenerateNarrative. |
 | **Data directories** | | |
@@ -260,9 +260,9 @@ fw single up        # runs the full pipeline using .env values
 FFL uses a JSON config file (`afl.config.json`) for service connections. Resolution order:
 
 1. Explicit `--config FILE` CLI argument
-2. `AFL_CONFIG` environment variable
+2. `FW_CONFIG` environment variable
 3. `afl.config.json` in the current directory, `~/.ffl/`, or `/etc/ffl/`
-4. Environment variables (`AFL_MONGODB_*`)
+4. Environment variables (`FW_MONGODB_*`)
 5. Built-in defaults
 
 **Example configuration:**
@@ -281,9 +281,9 @@ FFL uses a JSON config file (`afl.config.json`) for service connections. Resolut
 **Environment variables:**
 | Variable | Default |
 |----------|---------|
-| `AFL_MONGODB_URL` | `mongodb://localhost:27017` |
-| `AFL_MONGODB_USERNAME` | (empty) |
-| `AFL_MONGODB_PASSWORD` | (empty) |
-| `AFL_MONGODB_AUTH_SOURCE` | `admin` |
-| `AFL_MONGODB_DATABASE` | `afl` |
+| `FW_MONGODB_URL` | `mongodb://localhost:27017` |
+| `FW_MONGODB_USERNAME` | (empty) |
+| `FW_MONGODB_PASSWORD` | (empty) |
+| `FW_MONGODB_AUTH_SOURCE` | `admin` |
+| `FW_MONGODB_DATABASE` | `afl` |
 

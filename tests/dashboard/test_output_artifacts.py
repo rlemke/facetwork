@@ -26,7 +26,7 @@ from facetwork.dashboard.routes.monitoring import output as out
 @pytest.fixture
 def out_root(tmp_path, monkeypatch):
     """A tmp output root with a rendered map bundle (index.html + a tile)."""
-    monkeypatch.setenv("AFL_OUTPUT_BASE", str(tmp_path))
+    monkeypatch.setenv("FW_OUTPUT_BASE", str(tmp_path))
     bundle = tmp_path / "s2" / "aoi1"
     (bundle / "tiles" / "10" / "3").mkdir(parents=True)
     (bundle / "index.html").write_text("<html><body>maplibre-gl change map</body></html>")
@@ -42,7 +42,7 @@ def test_artifact_url_detects_html(out_root):
 
 def test_artifact_url_cross_mount(out_root):
     """A host absolute path resolves via its /output/ tail under a mounted root."""
-    tmp_path, bundle = out_root  # AFL_OUTPUT_BASE=tmp_path holds s2/aoi1/index.html
+    tmp_path, bundle = out_root  # FW_OUTPUT_BASE=tmp_path holds s2/aoi1/index.html
     host_path = "/Users/someone/afl_data/output/s2/aoi1/index.html"  # doesn't exist here
     assert out.artifact_url(host_path) == "/output/raw/s2/aoi1/index.html"
 
@@ -76,7 +76,7 @@ def fake_s3(monkeypatch):
     """An s3 output base backed by an in-memory fake storage backend."""
     import io
 
-    monkeypatch.setenv("AFL_S3_OUTPUT_BASE", "s3://testbucket/output")
+    monkeypatch.setenv("FW_S3_OUTPUT_BASE", "s3://testbucket/output")
     files = {
         "s3://testbucket/output/s2/s3aoi/index.html": b"<html>maplibre-gl s3 map</html>",
         "s3://testbucket/output/s2/s3aoi/tiles/1/2/3.png": b"\x89PNG\r\n\x1a\n s3tile",

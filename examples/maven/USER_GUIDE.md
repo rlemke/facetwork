@@ -125,7 +125,7 @@ The MavenArtifactRunner bridges FFL workflows with JVM programs:
    - `java -jar artifact.jar <stepId>` (executable JAR)
    - `java -cp artifact.jar MainClass <stepId>` (with entrypoint)
    - JVM args from `metadata["jvm_args"]` are prepended
-   - Environment variables: `AFL_STEP_ID`, `AFL_MONGODB_URL`, `AFL_MONGODB_DATABASE`
+   - Environment variables: `FW_STEP_ID`, `FW_MONGODB_URL`, `FW_MONGODB_DATABASE`
 
 4. **Step continuation** — After the JVM program exits successfully (exit 0), the runner reads return values from MongoDB and calls `evaluator.continue_step()` + `evaluator.resume()` to advance the workflow.
 
@@ -156,13 +156,13 @@ The MavenArtifactRunner passes step and database information to the JVM subproce
 
 | Variable | Description |
 |---|---|
-| `AFL_STEP_ID` | The step ID — use this to look up step parameters in MongoDB |
-| `AFL_MONGODB_URL` | MongoDB connection string (e.g. `mongodb://localhost:27017`) |
-| `AFL_MONGODB_DATABASE` | Database name (e.g. `afl`) |
+| `FW_STEP_ID` | The step ID — use this to look up step parameters in MongoDB |
+| `FW_MONGODB_URL` | MongoDB connection string (e.g. `mongodb://localhost:27017`) |
+| `FW_MONGODB_DATABASE` | Database name (e.g. `afl`) |
 
 The step ID is also passed as the first command-line argument.
 
-**Reading parameters**: The JVM program connects to MongoDB using `AFL_MONGODB_URL` and `AFL_MONGODB_DATABASE`, looks up the step document by `AFL_STEP_ID`, and reads input parameters from `attributes.params`.
+**Reading parameters**: The JVM program connects to MongoDB using `FW_MONGODB_URL` and `FW_MONGODB_DATABASE`, looks up the step document by `FW_STEP_ID`, and reads input parameters from `attributes.params`.
 
 **Writing returns**: Before exiting, the program writes its return values to `attributes.returns` on the same step document. After the program exits with code 0, the runner reads those returns and uses them to continue the workflow.
 
@@ -170,9 +170,9 @@ The step ID is also passed as the first command-line argument.
 // Minimal Java example
 public class MyHandler {
     public static void main(String[] args) {
-        String stepId = System.getenv("AFL_STEP_ID");
-        String mongoUrl = System.getenv("AFL_MONGODB_URL");
-        String dbName = System.getenv("AFL_MONGODB_DATABASE");
+        String stepId = System.getenv("FW_STEP_ID");
+        String mongoUrl = System.getenv("FW_MONGODB_URL");
+        String dbName = System.getenv("FW_MONGODB_DATABASE");
 
         // Connect to MongoDB, read step params
         MongoClient client = MongoClients.create(mongoUrl);

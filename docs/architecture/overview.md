@@ -234,11 +234,11 @@ Facetwork is configured via `afl.config.json` or environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AFL_MONGODB_URL` | `mongodb://localhost:27017` | MongoDB connection string |
-| `AFL_MONGODB_DATABASE` | `afl` | Database name |
-| `AFL_MONGODB_USERNAME` | | MongoDB username |
-| `AFL_MONGODB_PASSWORD` | | MongoDB password |
-| `AFL_CONFIG` | | Path to config file |
+| `FW_MONGODB_URL` | `mongodb://localhost:27017` | MongoDB connection string |
+| `FW_MONGODB_DATABASE` | `afl` | Database name |
+| `FW_MONGODB_USERNAME` | | MongoDB username |
+| `FW_MONGODB_PASSWORD` | | MongoDB password |
+| `FW_CONFIG` | | Path to config file |
 
 ## Directory Structure
 

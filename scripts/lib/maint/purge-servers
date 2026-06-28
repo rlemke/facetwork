@@ -10,8 +10,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 source "$FW_LIB/_helpers/_env.sh"
 
 PYTHON="$FW_ROOT/.venv/bin/python3"; [ -x "$PYTHON" ] || PYTHON=python3
-MONGO_URL="${AFL_MONGODB_URL:-mongodb://server3.local:27017}"
-DB="${AFL_MONGODB_DATABASE:-facetwork}"
+MONGO_URL="${FW_MONGODB_URL:-mongodb://server3.local:27017}"
+DB="${FW_MONGODB_DATABASE:-facetwork}"
 APPLY=0
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -23,11 +23,11 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-env AFL_PURGE_APPLY="$APPLY" AFL_MONGO_URL="$MONGO_URL" AFL_MONGO_DB="$DB" "$PYTHON" - <<'PY'
+env FW_PURGE_APPLY="$APPLY" FW_MONGO_URL="$MONGO_URL" FW_MONGO_DB="$DB" "$PYTHON" - <<'PY'
 import os
 from pymongo import MongoClient
-apply = os.environ["AFL_PURGE_APPLY"] == "1"
-db = MongoClient(os.environ["AFL_MONGO_URL"], serverSelectionTimeoutMS=5000)[os.environ["AFL_MONGO_DB"]]
+apply = os.environ["FW_PURGE_APPLY"] == "1"
+db = MongoClient(os.environ["FW_MONGO_URL"], serverSelectionTimeoutMS=5000)[os.environ["FW_MONGO_DB"]]
 q = {"state": "shutdown"}
 n = db.servers.count_documents(q)
 if not apply:

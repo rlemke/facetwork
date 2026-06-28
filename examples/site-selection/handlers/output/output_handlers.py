@@ -24,9 +24,9 @@ def _try_output_store_ingest(scored_path: str, state_fips: str, facet_name: str)
         try:
             from pymongo import MongoClient
 
-            url = os.environ.get("AFL_MONGODB_URL")
+            url = os.environ.get("FW_MONGODB_URL")
             if url:
-                db_name = os.environ.get("AFL_EXAMPLES_DATABASE", "facetwork_examples")
+                db_name = os.environ.get("FW_EXAMPLES_DATABASE", "facetwork_examples")
                 db = MongoClient(url)[db_name]
         except Exception:
             pass

@@ -4,9 +4,9 @@
 #
 # Orchestration split (docs/architecture/ffl-runner-orchestration-tier.md):
 # bring up the ffl-runner tier (continuation_mode=shared) FIRST, then start the
-# handler runners with AFL_HANDLER_CONTINUATION_MODE=off so they keep the inline
+# handler runners with FW_HANDLER_CONTINUATION_MODE=off so they keep the inline
 # cascade after their own handler but leave the shared backlog + stuck-step
-# sweep to the ffl tier. (A bare `docker compose up` leaves AFL_CONTINUATION_MODE
+# sweep to the ffl tier. (A bare `docker compose up` leaves FW_CONTINUATION_MODE
 # at its "inline" default, so it still self-orchestrates without the tier.)
 #
 # start-runner --fleet --recreate removes each service's existing containers
@@ -37,19 +37,19 @@ docker compose --env-file .env.fleet --env-file .env.fleet.override \
 #
 #    Two scale tiers, BOTH derived from the catalog (domains.json + overrides):
 #    domains flagged `scaled` (heavy, parallel — the osm runners) get the
-#    throughput knob (AFL_OSM_REPLICAS); every other compose domain is a single
+#    throughput knob (FW_OSM_REPLICAS); every other compose domain is a single
 #    replica. Passing all domains to ONE start-runner call would fan
-#    AFL_OSM_REPLICAS across ALL services (one `--scale N` per selected service),
+#    FW_OSM_REPLICAS across ALL services (one `--scale N` per selected service),
 #    spinning up N copies of anthropic/census/genomics/etc. that nothing needs.
-export AFL_HANDLER_CONTINUATION_MODE=off
+export FW_HANDLER_CONTINUATION_MODE=off
 
-# 2a) scaled runners (osm) — replica count = AFL_OSM_REPLICAS if set in the shell
+# 2a) scaled runners (osm) — replica count = FW_OSM_REPLICAS if set in the shell
 #     env (per-host throughput override), else the catalog default (defaults.
 #     scaled_replicas).
 SCALED=(); while IFS= read -r _d; do [[ -n "$_d" ]] && SCALED+=(--domain "$_d"); done \
     < <(catalog_scaled_domain_suffixes)
 if [[ ${#SCALED[@]} -gt 0 ]]; then
-    SCALED_N="${AFL_OSM_REPLICAS:-$(catalog_scaled_replicas)}"
+    SCALED_N="${FW_OSM_REPLICAS:-$(catalog_scaled_replicas)}"
     "$FW_LIB/runner/start" --fleet --recreate --replicas "$SCALED_N" "${SCALED[@]}"
 fi
 

@@ -469,32 +469,32 @@ class TestGetStorageBackend:
 
 
 class TestLocalizeMounts:
-    """Tests for localize() with AFL_LOCALIZE_MOUNTS."""
+    """Tests for localize() with FW_LOCALIZE_MOUNTS."""
 
     def test_should_localize_mount_unset(self, monkeypatch):
-        monkeypatch.delenv("AFL_LOCALIZE_MOUNTS", raising=False)
+        monkeypatch.delenv("FW_LOCALIZE_MOUNTS", raising=False)
         assert _should_localize_mount("/data/osm-mirror/file.pbf") is False
 
     def test_should_localize_mount_empty(self, monkeypatch):
-        monkeypatch.setenv("AFL_LOCALIZE_MOUNTS", "")
+        monkeypatch.setenv("FW_LOCALIZE_MOUNTS", "")
         assert _should_localize_mount("/data/osm-mirror/file.pbf") is False
 
     def test_should_localize_mount_match(self, monkeypatch):
-        monkeypatch.setenv("AFL_LOCALIZE_MOUNTS", "/data/osm-mirror")
+        monkeypatch.setenv("FW_LOCALIZE_MOUNTS", "/data/osm-mirror")
         assert _should_localize_mount("/data/osm-mirror/file.pbf") is True
 
     def test_should_localize_mount_no_match(self, monkeypatch):
-        monkeypatch.setenv("AFL_LOCALIZE_MOUNTS", "/data/osm-mirror")
+        monkeypatch.setenv("FW_LOCALIZE_MOUNTS", "/data/osm-mirror")
         assert _should_localize_mount("/tmp/local/file.pbf") is False
 
     def test_should_localize_mount_multiple(self, monkeypatch):
-        monkeypatch.setenv("AFL_LOCALIZE_MOUNTS", "/mnt/a,/mnt/b")
+        monkeypatch.setenv("FW_LOCALIZE_MOUNTS", "/mnt/a,/mnt/b")
         assert _should_localize_mount("/mnt/b/file.txt") is True
         assert _should_localize_mount("/mnt/c/file.txt") is False
 
     def test_localize_local_path_no_env(self, monkeypatch):
-        """Local paths returned unchanged when AFL_LOCALIZE_MOUNTS is unset."""
-        monkeypatch.delenv("AFL_LOCALIZE_MOUNTS", raising=False)
+        """Local paths returned unchanged when FW_LOCALIZE_MOUNTS is unset."""
+        monkeypatch.delenv("FW_LOCALIZE_MOUNTS", raising=False)
         assert localize("/data/osm-mirror/file.pbf") == "/data/osm-mirror/file.pbf"
 
     def test_localize_copies_mount_file(self, tmp_path, monkeypatch):
@@ -505,7 +505,7 @@ class TestLocalizeMounts:
         src = mount_dir / "test.pbf"
         src.write_bytes(b"fake pbf data")
 
-        monkeypatch.setenv("AFL_LOCALIZE_MOUNTS", str(mount_dir))
+        monkeypatch.setenv("FW_LOCALIZE_MOUNTS", str(mount_dir))
 
         cache_dir = tmp_path / "cache"
         result = localize(str(src), target_dir=str(cache_dir))
@@ -522,7 +522,7 @@ class TestLocalizeMounts:
         src = mount_dir / "test.pbf"
         src.write_bytes(b"fake pbf data")
 
-        monkeypatch.setenv("AFL_LOCALIZE_MOUNTS", str(mount_dir))
+        monkeypatch.setenv("FW_LOCALIZE_MOUNTS", str(mount_dir))
         cache_dir = tmp_path / "cache"
 
         # First call copies
@@ -541,7 +541,7 @@ class TestLocalizeMounts:
         src = mount_dir / "test.pbf"
         src.write_bytes(b"real data")
 
-        monkeypatch.setenv("AFL_LOCALIZE_MOUNTS", str(mount_dir))
+        monkeypatch.setenv("FW_LOCALIZE_MOUNTS", str(mount_dir))
         cache_dir = tmp_path / "cache"
 
         # Simulate a stale 0-byte file from a previous failed copy

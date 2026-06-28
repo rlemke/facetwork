@@ -28,22 +28,22 @@
 #
 # Env vars (override in .env.full-stack or your shell):
 #   FWH_HANDLERS_ROOT          default $HOME/fw_handlers
-#   AFL_DATA_DIR               default /Volumes/afl_data
+#   FW_DATA_DIR               default /Volumes/afl_data
 #   DASHBOARD_PORT             default 8080
-#   AFL_MONGODB_PORT           default 27017
+#   FW_MONGODB_PORT           default 27017
 #   POSTGRES_PORT              default 5432
 #   JENKINS_UI_PORT            default 9090
 #   ANTHROPIC_API_KEY          pass-through to runner-anthropic
 #   CENSUS_API_KEY             pass-through to runner-census-us
-#   AFL_OSM_REPLICAS           # of osm-geocoder replicas (default 1)
-#   AFL_ANTHROPIC_REPLICAS     # of anthropic replicas (default 1)
-#   AFL_OSM_LZ_REPLICAS        # of osm-lz replicas (default 1)
-#   AFL_WEATHER_REPLICAS       # of noaa-weather replicas (default 1)
-#   AFL_JENKINS_REPLICAS       # of jenkins-example replicas (default 1)
-#   AFL_CENSUS_REPLICAS        # of census-us replicas (default 1)
-#   AFL_GENOMICS_REPLICAS      # of genomics replicas (default 1)
-#   AFL_MONITOR_REPLICAS       # of sensor-monitoring replicas (default 1)
-#   AFL_RUNNER_REPLICAS        # of main 'runner' replicas (default 1)
+#   FW_OSM_REPLICAS           # of osm-geocoder replicas (default 1)
+#   FW_ANTHROPIC_REPLICAS     # of anthropic replicas (default 1)
+#   FW_OSM_LZ_REPLICAS        # of osm-lz replicas (default 1)
+#   FW_WEATHER_REPLICAS       # of noaa-weather replicas (default 1)
+#   FW_JENKINS_REPLICAS       # of jenkins-example replicas (default 1)
+#   FW_CENSUS_REPLICAS        # of census-us replicas (default 1)
+#   FW_GENOMICS_REPLICAS      # of genomics replicas (default 1)
+#   FW_MONITOR_REPLICAS       # of sensor-monitoring replicas (default 1)
+#   FW_RUNNER_REPLICAS        # of main 'runner' replicas (default 1)
 #                              (default in .env.full-stack.example)
 #
 # See docs/operations/full-stack-compose.md for the full reference,
@@ -86,7 +86,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 # Also source the env file into this shell so that build_scale_args (and
-# any other host-side logic) can read AFL_*_REPLICAS etc. Without this,
+# any other host-side logic) can read FW_*_REPLICAS etc. Without this,
 # docker compose's --env-file only injects vars into the YAML's
 # ${VAR:-} interpolation, leaving the script's own env empty.
 set -a
@@ -98,8 +98,8 @@ compose() {
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
-# Build --scale args from AFL_<EXAMPLE>_REPLICAS env vars sourced from
-# .env.full-stack. Set AFL_OSM_REPLICAS=3 (etc.) to bring up multiple
+# Build --scale args from FW_<EXAMPLE>_REPLICAS env vars sourced from
+# .env.full-stack. Set FW_OSM_REPLICAS=3 (etc.) to bring up multiple
 # replicas of a per-example runner. Empty / unset / 1 = no flag emitted.
 # Returns nothing when no replica overrides are set, so existing
 # `fw single full-stack up` invocations keep the same single-replica
@@ -108,15 +108,15 @@ build_scale_args() {
     set +u  # tolerate unset vars during the test below
     # service-name → env-var-name pairs
     local mapping=(
-        "runner:AFL_RUNNER_REPLICAS"
-        "runner-anthropic:AFL_ANTHROPIC_REPLICAS"
-        "runner-osm-geocoder:AFL_OSM_REPLICAS"
-        "runner-osm-lz:AFL_OSM_LZ_REPLICAS"
-        "runner-noaa-weather:AFL_WEATHER_REPLICAS"
-        "runner-jenkins-example:AFL_JENKINS_REPLICAS"
-        "runner-census-us:AFL_CENSUS_REPLICAS"
-        "runner-genomics:AFL_GENOMICS_REPLICAS"
-        "runner-sensor-monitoring:AFL_MONITOR_REPLICAS"
+        "runner:FW_RUNNER_REPLICAS"
+        "runner-anthropic:FW_ANTHROPIC_REPLICAS"
+        "runner-osm-geocoder:FW_OSM_REPLICAS"
+        "runner-osm-lz:FW_OSM_LZ_REPLICAS"
+        "runner-noaa-weather:FW_WEATHER_REPLICAS"
+        "runner-jenkins-example:FW_JENKINS_REPLICAS"
+        "runner-census-us:FW_CENSUS_REPLICAS"
+        "runner-genomics:FW_GENOMICS_REPLICAS"
+        "runner-sensor-monitoring:FW_MONITOR_REPLICAS"
     )
     local out=""
     for entry in "${mapping[@]}"; do

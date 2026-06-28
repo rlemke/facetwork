@@ -35,7 +35,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-VALID_AFL_SOURCE = """
+VALID_FW_SOURCE = """
 facet Compute(input: Long)
 
 workflow SimpleWF(x: Long) => (result: Long) andThen {
@@ -86,7 +86,7 @@ def _seed_namespaced_flow(store):
     flow = FlowDefinition(
         uuid=flow_id,
         name=FlowIdentity(name="demo-flow", path="test", uuid=flow_id),
-        compiled_sources=[SourceText(name="source.ffl", content=VALID_AFL_SOURCE)],
+        compiled_sources=[SourceText(name="source.ffl", content=VALID_FW_SOURCE)],
     )
     store.save_flow(flow)
 

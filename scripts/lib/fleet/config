@@ -45,7 +45,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 import _fleet_lib  # noqa: E402
 from pymongo import MongoClient  # noqa: E402
 
-DB = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
+DB = os.environ.get("FW_MONGODB_DATABASE", "facetwork")
 
 
 def _resolve(a):
@@ -221,15 +221,15 @@ def cmd_status(a):
 def cmd_secret(a):
     if a.action == "gen-key":
         print(_fleet_lib.gen_key())
-        print("# export AFL_FLEET_KEY=<above> on the admin and every host (one bootstrap secret).", file=sys.stderr)
+        print("# export FW_FLEET_KEY=<above> on the admin and every host (one bootstrap secret).", file=sys.stderr)
         return
     d = _db(_resolve(a))
     if a.action == "set":
         if not (a.minio_access and a.minio_secret):
             sys.exit("secret set needs --minio-access and --minio-secret")
         _fleet_lib.set_minio_secret(d, a.minio_access, a.minio_secret)
-        print("MinIO credentials encrypted into fleet_secrets (key = AFL_FLEET_KEY).")
-        print("Each host with AFL_FLEET_KEY now decrypts them at apply — no creds in host env.")
+        print("MinIO credentials encrypted into fleet_secrets (key = FW_FLEET_KEY).")
+        print("Each host with FW_FLEET_KEY now decrypts them at apply — no creds in host env.")
     elif a.action == "show":
         sec = _fleet_lib.get_minio_secret(d)
         if not sec:
@@ -245,7 +245,7 @@ def main():
 
     def add_mongo(sp):
         sp.add_argument("--mongo", default=None,
-                        help="MongoDB URL (auto-discovered if omitted: AFL_MONGODB_URL → mDNS → afl-mongodb)")
+                        help="MongoDB URL (auto-discovered if omitted: FW_MONGODB_URL → mDNS → afl-mongodb)")
 
     ps = sub.add_parser("set", help="update the central fleet config")
     add_mongo(ps)
@@ -264,7 +264,7 @@ def main():
     ps.add_argument("--domain-replicas", type=int, help="replicas per server for the --domain-runner(s) in this call (default 1 when adding)")
     ps.add_argument("--domain-image", help="image override for the --domain-runner(s) in this call (default: the shared runner image, so a --image roll covers them)")
     ps.add_argument("--server-groups", metavar="G1,G2",
-                    help="server-groups for the --domain-runner(s) in THIS call — they then run ONLY on hosts whose AFL_SERVER_GROUP is listed (empty value clears). Convenience for --role-groups NAME:G1,G2.")
+                    help="server-groups for the --domain-runner(s) in THIS call — they then run ONLY on hosts whose FW_SERVER_GROUP is listed (empty value clears). Convenience for --role-groups NAME:G1,G2.")
     ps.add_argument("--role-groups", action="append", metavar="ROLE:G1,G2",
                     help="restrict ANY role to hosts in these server-groups; ROLE is any role key (osm-geocoder, ffl-runner, gh-router, or a domain name), 'ROLE:' clears. A role with no server_groups runs everywhere (the default). Repeatable.")
     ps.add_argument("--rm-domain-runner", action="append", metavar="NAME", help="remove a role (e.g. a domain runner); repeatable")
@@ -279,7 +279,7 @@ def main():
     add_mongo(pst)
     pst.set_defaults(func=cmd_status)
 
-    psec = sub.add_parser("secret", help="manage encrypted MinIO creds (Fernet, key=AFL_FLEET_KEY)")
+    psec = sub.add_parser("secret", help="manage encrypted MinIO creds (Fernet, key=FW_FLEET_KEY)")
     add_mongo(psec)
     psec.add_argument("action", choices=["gen-key", "set", "show"])
     psec.add_argument("--minio-access", help="MinIO access key (for `set`)")

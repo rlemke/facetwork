@@ -20,12 +20,12 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - AFL_MONGODB_URL=mongodb://afl-mongodb:27017
-      - AFL_MONGODB_DATABASE=afl
-      - AFL_EXAMPLES_DATABASE=${AFL_EXAMPLES_DATABASE:-afl_examples}
-      - AFL_LOCAL_OUTPUT_DIR=${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
+      - FW_MONGODB_URL=mongodb://afl-mongodb:27017
+      - FW_MONGODB_DATABASE=afl
+      - FW_EXAMPLES_DATABASE=${FW_EXAMPLES_DATABASE:-afl_examples}
+      - FW_LOCAL_OUTPUT_DIR=${FW_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
     volumes:
-      - ${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:ro
+      - ${FW_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:${FW_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:ro
     extra_hosts:
       - "afl-mongodb:192.168.68.91"
     healthcheck:
@@ -42,21 +42,21 @@ services:
       context: .
       dockerfile: docker/Dockerfile.runner
     environment:
-      - AFL_MONGODB_URL=mongodb://afl-mongodb:27017
-      - AFL_MONGODB_DATABASE=afl
-      - AFL_MAX_CONCURRENT=${AFL_MAX_CONCURRENT:-4}
-      - AFL_POLL_INTERVAL_MS=${AFL_POLL_INTERVAL_MS:-1000}
-      - AFL_REAPER_TIMEOUT_MS=${AFL_REAPER_TIMEOUT_MS:-300000}
-      - AFL_OSM_OUTPUT_BASE=${AFL_OSM_OUTPUT_BASE:-}
-      - AFL_DATA_ROOT=${AFL_DATA_ROOT:-}
-      - AFL_CACHE_ROOT=${AFL_CACHE_ROOT:-}
-      - AFL_GEOFABRIK_MIRROR=/data/osm-mirror
-      - AFL_LOCAL_OUTPUT_DIR=${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
+      - FW_MONGODB_URL=mongodb://afl-mongodb:27017
+      - FW_MONGODB_DATABASE=afl
+      - FW_MAX_CONCURRENT=${FW_MAX_CONCURRENT:-4}
+      - FW_POLL_INTERVAL_MS=${FW_POLL_INTERVAL_MS:-1000}
+      - FW_REAPER_TIMEOUT_MS=${FW_REAPER_TIMEOUT_MS:-300000}
+      - FW_OSM_OUTPUT_BASE=${FW_OSM_OUTPUT_BASE:-}
+      - FW_DATA_ROOT=${FW_DATA_ROOT:-}
+      - FW_CACHE_ROOT=${FW_CACHE_ROOT:-}
+      - FW_GEOFABRIK_MIRROR=/data/osm-mirror
+      - FW_LOCAL_OUTPUT_DIR=${FW_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
       - PYTHONPATH=/app
     volumes:
-      - ${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:${AFL_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
-      - ${AFL_OSM_OUTPUT_BASE:-/Volumes/afl_data/osm-output}:${AFL_OSM_OUTPUT_BASE:-/Volumes/afl_data/osm-output}
-      - ${AFL_GEOFABRIK_MIRROR:-/Volumes/afl_data/osm}:/data/osm-mirror:ro
+      - ${FW_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:${FW_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}
+      - ${FW_OSM_OUTPUT_BASE:-/Volumes/afl_data/osm-output}:${FW_OSM_OUTPUT_BASE:-/Volumes/afl_data/osm-output}
+      - ${FW_GEOFABRIK_MIRROR:-/Volumes/afl_data/osm}:/data/osm-mirror:ro
       - ./examples:/app/examples:ro
     extra_hosts:
       - "afl-mongodb:192.168.68.91"
@@ -71,10 +71,10 @@ services:
       context: .
       dockerfile: docker/Dockerfile.agent
     environment:
-      - AFL_MONGODB_URL=mongodb://afl-mongodb:27017
-      - AFL_MONGODB_DATABASE=afl
-      - AFL_AGENT_NAME=addone-agent
-      - AFL_AGENT_HANDLERS=handlers.AddOne
+      - FW_MONGODB_URL=mongodb://afl-mongodb:27017
+      - FW_MONGODB_DATABASE=afl
+      - FW_AGENT_NAME=addone-agent
+      - FW_AGENT_HANDLERS=handlers.AddOne
     extra_hosts:
       - "afl-mongodb:192.168.68.91"
     restart: unless-stopped
@@ -88,8 +88,8 @@ services:
       dockerfile: docker/Dockerfile.seed
     container_name: facetwork-seed
     environment:
-      - AFL_MONGODB_URL=mongodb://afl-mongodb:27017
-      - AFL_MONGODB_DATABASE=afl
+      - FW_MONGODB_URL=mongodb://afl-mongodb:27017
+      - FW_MONGODB_DATABASE=afl
     extra_hosts:
       - "afl-mongodb:192.168.68.91"
     profiles:
@@ -115,8 +115,8 @@ services:
       dockerfile: docker/Dockerfile.mcp
     container_name: facetwork-mcp
     environment:
-      - AFL_MONGODB_URL=mongodb://afl-mongodb:27017
-      - AFL_MONGODB_DATABASE=afl
+      - FW_MONGODB_URL=mongodb://afl-mongodb:27017
+      - FW_MONGODB_DATABASE=afl
     extra_hosts:
       - "afl-mongodb:192.168.68.91"
     stdin_open: true
@@ -171,8 +171,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.aws-lambda
     environment:
-      - AFL_MONGODB_URL=mongodb://afl-mongodb:27017
-      - AFL_MONGODB_DATABASE=afl
+      - FW_MONGODB_URL=mongodb://afl-mongodb:27017
+      - FW_MONGODB_DATABASE=afl
       - LOCALSTACK_URL=http://localstack:4566
       - PYTHONPATH=/app
     depends_on:

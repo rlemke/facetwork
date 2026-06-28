@@ -31,7 +31,7 @@ def base(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(catalog, "DEFAULT_CATALOG", default)
     monkeypatch.setattr(catalog, "LOCAL_OVERRIDE", local)
-    monkeypatch.delenv("AFL_DOMAINS_FILE", raising=False)
+    monkeypatch.delenv("FW_DOMAINS_FILE", raising=False)
     return tmp_path, default, local
 
 
@@ -102,6 +102,6 @@ def test_env_file_is_full_replace(base, tmp_path, monkeypatch):
     _write(local, {"domains": {"acme": {"repo": "fwh_acme"}}})  # should be IGNORED
     envf = tmp_path / "custom.json"
     _write(envf, {"domains": {"only": {"repo": "fwh_only"}}, "examples": {}})
-    monkeypatch.setenv("AFL_DOMAINS_FILE", str(envf))
+    monkeypatch.setenv("FW_DOMAINS_FILE", str(envf))
     assert catalog.catalog_source() == envf
     assert catalog.domain_names() == ["only"]  # neither base nor local merged in

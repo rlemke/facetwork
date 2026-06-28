@@ -34,13 +34,13 @@ Finished the dashboard's move to the **v3** design and removed everything it sup
 
 Made the multi-server model match the leaderless runtime it already is, and removed the "master/worker" framing entirely.
 
-**Server-role model (`scripts/`, `docs/operations/*`, `CLAUDE.md`):** there is no "master". A fleet has just two participant kinds — **infra services** (MongoDB, MinIO, Dashboard) identified by their **access URL only** (the fleet never enumerates their cluster members; each may be a single node, a cluster, or a managed service), and **homogeneous runner servers** (`AFL_SERVER_GROUP` default flipped `worker` → `runner`). Runners are leaderless and don't contend (atomic `claim_task()` in Mongo), so any runner with Mongo access can also seed workflow definitions. `fleet set` gained `--mongo-url`/`--dashboard-url`, recording the three service URLs in `fleet_config.endpoints`.
+**Server-role model (`scripts/`, `docs/operations/*`, `CLAUDE.md`):** there is no "master". A fleet has just two participant kinds — **infra services** (MongoDB, MinIO, Dashboard) identified by their **access URL only** (the fleet never enumerates their cluster members; each may be a single node, a cluster, or a managed service), and **homogeneous runner servers** (`FW_SERVER_GROUP` default flipped `worker` → `runner`). Runners are leaderless and don't contend (atomic `claim_task()` in Mongo), so any runner with Mongo access can also seed workflow definitions. `fleet set` gained `--mongo-url`/`--dashboard-url`, recording the three service URLs in `fleet_config.endpoints`.
 
 **Converged launcher (`fw runner start`):** the old `fw runner start --fleet` is folded into `start-runner --fleet` (containers joining an external shared Mongo+MinIO; preflights both) and `--docker` (containers on the local bundled infra), with `--replicas`/`--env`/`--recreate`/`--check`. `--example NAME` maps to any per-example `runner-NAME` compose service (validated), so the fleet is no longer OSM-only. `start-worker` remains as a back-compat shim.
 
-**Renames:** `docker-compose.worker.yml` → `docker-compose.fleet.yml`, `.env.worker.example` → `.env.fleet.example`, `.env.worker.fleet` → `.env.fleet.preset` (active `.env.fleet` gitignored); env vars `AFL_WORKER_EXTRA_COMPOSE` → `AFL_FLEET_EXTRA_COMPOSE`, `AFL_WORKER_NAME` → `AFL_RUNNER_NAME`.
+**Renames:** `docker-compose.worker.yml` → `docker-compose.fleet.yml`, `.env.worker.example` → `.env.fleet.example`, `.env.worker.fleet` → `.env.fleet.preset` (active `.env.fleet` gitignored); env vars `FW_WORKER_EXTRA_COMPOSE` → `FW_FLEET_EXTRA_COMPOSE`, `FW_WORKER_NAME` → `FW_RUNNER_NAME`.
 
-**All examples on S3 (`docker-compose.full-stack.yml`):** a generic `x-s3-storage` YAML anchor points every per-example runner's cache + output at the shared MinIO (`AFL_STORAGE=s3`, `s3://<bucket>`), so nothing is siloed on one host's disk — previously only the OSM runners used S3, the rest wrote a local output dir. The `.fleet.yml` override applies the fleet-join env (reset deps, external endpoints, `extra_hosts`) to **all** per-example runners via an anchor, not just the two OSM ones. OSM keeps its PBF-tuned `x-osm-s3-env` anchor.
+**All examples on S3 (`docker-compose.full-stack.yml`):** a generic `x-s3-storage` YAML anchor points every per-example runner's cache + output at the shared MinIO (`FW_STORAGE=s3`, `s3://<bucket>`), so nothing is siloed on one host's disk — previously only the OSM runners used S3, the rest wrote a local output dir. The `.fleet.yml` override applies the fleet-join env (reset deps, external endpoints, `extra_hosts`) to **all** per-example runners via an anchor, not just the two OSM ones. OSM keeps its PBF-tuned `x-osm-s3-env` anchor.
 
 **Dashboard (`routes/v2/dashboard_v2.py`, `routes/execution/flows.py`, templates):** `/v2/fleet` now shows an **Infra services** table (the three URL-addressed services) and a **Runner roles** section ("there is no master"). The flow namespace list (`/flows/{id}/ns/{ns}`) gained a per-workflow **Source** button beside **Run** — `GET /flows/{flow_id}/source/{workflow_id}` reconstructs the focused FFL for that one workflow (via `reconstruct_workflow_source`), the same JSON→FFL reconstruction used for a running instance.
 
@@ -48,9 +48,9 @@ Made the multi-server model match the leaderless runtime it already is, and remo
 
 Made the all-255-region GeoJSON conversion (`osm.convert.ConvertAllRegionsToGeoJson`) survivable on a memory-constrained host by adding a **size gate that skips the extracts too large to convert** there, and pinned the Docker/runner tuning that lets the rest through.
 
-**`max_pbf_mb` size gate (`fwh_osm`):** `osm.Source.PBF.ToGeoJson(cache, format = "geojson", max_pbf_mb: Long = 0)` gained a `max_pbf_mb` parameter (`0` = no limit) and a fourth return field `skipped: Boolean`. The handler `_to_geojson` checks the cached PBF size (the OSMCache `size` field) **before localizing or converting** — if it exceeds `max_pbf_mb`, it returns `{output_path: "", size_bytes: 0, was_cached: false, skipped: true}` without downloading or running osmium on the oversized PBF. When the param is `0`, the handler falls back to the `AFL_OSM_MAX_PBF_MB` env var (MB), so an operator can cap a bulk run already in flight without re-authoring. Both workflows thread the param through: `ConvertAllRegionsToGeoJson(max_pbf_mb = 0)` and `ConvertRegionToGeoJson(region, max_pbf_mb = 0)`.
+**`max_pbf_mb` size gate (`fwh_osm`):** `osm.Source.PBF.ToGeoJson(cache, format = "geojson", max_pbf_mb: Long = 0)` gained a `max_pbf_mb` parameter (`0` = no limit) and a fourth return field `skipped: Boolean`. The handler `_to_geojson` checks the cached PBF size (the OSMCache `size` field) **before localizing or converting** — if it exceeds `max_pbf_mb`, it returns `{output_path: "", size_bytes: 0, was_cached: false, skipped: true}` without downloading or running osmium on the oversized PBF. When the param is `0`, the handler falls back to the `FW_OSM_MAX_PBF_MB` env var (MB), so an operator can cap a bulk run already in flight without re-authoring. Both workflows thread the param through: `ConvertAllRegionsToGeoJson(max_pbf_mb = 0)` and `ConvertRegionToGeoJson(region, max_pbf_mb = 0)`.
 
-**Memory-fit tuning (`docker-compose.full-stack.yml`, `x-osm-s3-env`):** converting all 255 cached regions on a 32GB Mac (Docker Desktop) hit a genuine hardware ceiling — whole-region `osmium export` is dominated by its node-location index, and even the disk-backed `sparse_file_array` index seek-thrashes the external disk to ~KB/s once it spills the page cache. The constraints conflict on a marginal host: a large Docker VM gives page-cache room but drives macOS into heavy memory compression and crashes Docker Desktop; a small VM stays stable but thrashes the big indexes; high osmium concurrency OOM-kills the largest regions; too-low per-runner thread concurrency starves task execution. Settled config: **14GB Docker VM**, **1 runner × `AFL_MAX_CONCURRENT=2`** (~2 concurrent exports, ~5-6GB each), and **`AFL_OSM_MAX_PBF_MB=1024`** to skip regions ≥~1GB PBF (china/india/japan … up to us 10GB, africa 7.4GB) that thrash on this host. Empirically the largest successfully-converted region was ~0.68GB PBF; the achievable ceiling here is **~226/255** (138 already done + ~88 sub-1GB mediums), with the ~25 regions ≥1GB skipped — those need a larger host (more RAM for the VM) to convert. See [docs/architecture/lessons-learned.md](../architecture/lessons-learned.md) → *Converting at the edge of a host's memory* and [docs/operations/deployment.md](../operations/deployment.md).
+**Memory-fit tuning (`docker-compose.full-stack.yml`, `x-osm-s3-env`):** converting all 255 cached regions on a 32GB Mac (Docker Desktop) hit a genuine hardware ceiling — whole-region `osmium export` is dominated by its node-location index, and even the disk-backed `sparse_file_array` index seek-thrashes the external disk to ~KB/s once it spills the page cache. The constraints conflict on a marginal host: a large Docker VM gives page-cache room but drives macOS into heavy memory compression and crashes Docker Desktop; a small VM stays stable but thrashes the big indexes; high osmium concurrency OOM-kills the largest regions; too-low per-runner thread concurrency starves task execution. Settled config: **14GB Docker VM**, **1 runner × `FW_MAX_CONCURRENT=2`** (~2 concurrent exports, ~5-6GB each), and **`FW_OSM_MAX_PBF_MB=1024`** to skip regions ≥~1GB PBF (china/india/japan … up to us 10GB, africa 7.4GB) that thrash on this host. Empirically the largest successfully-converted region was ~0.68GB PBF; the achievable ceiling here is **~226/255** (138 already done + ~88 sub-1GB mediums), with the ~25 regions ≥1GB skipped — those need a larger host (more RAM for the VM) to convert. See [docs/architecture/lessons-learned.md](../architecture/lessons-learned.md) → *Converting at the edge of a host's memory* and [docs/operations/deployment.md](../operations/deployment.md).
 
 ## Completed (v0.47.x) — Foreach fan-out livelock fix (continuation coalescing + bounded sweep) and MinIO-native full-region GeoJSON conversion
 
@@ -62,18 +62,18 @@ Fixed a runtime **livelock on large `foreach` fan-outs** (e.g. converting all 25
 - **Bounded stuck-step sweep**: `_maybe_sweep_stuck_steps()` previously processed *every* stuck step synchronously on the poll thread; on a large fan-out it ran longer than the 5s poll interval and starved `_poll_cycle`'s event-task claiming (the steps it tried to unstick never got dispatched → re-found next sweep → livelock). The sweep now caps work (≤25 steps / ≤1.5s per invocation) and **skips entirely when all worker slots are busy** (`_active_count() >= max_concurrent`), so event handlers always take priority. Remainder is handled by the next sweep.
 - Verified live: the `resume_step` storm dropped from hundreds/sec to ~0 and the bulk GeoJSON conversion resumed finalizing to MinIO steadily. Full runtime+lifecycle suite green (1097 passed).
 
-**MinIO-native full-region PBF→GeoJSON conversion (`fwh_osm`):** new facet `osm.Source.PBF.ToGeoJson` (full-region PBF→GeoJSON via `osmium export`, object-store-native) and workflow `osm.convert.ConvertAllRegionsToGeoJson` (`ListCachedRegions → foreach → Download → ToGeoJson`) to convert all 255 cached regions. Operational hardening it required: osmium's default in-RAM (`flex_mem`) node index OOM-kills on large regions on a small VM, so the conversion uses a **disk-backed node index** on local scratch (`osmium export -i sparse_file_array,<scratch>`, overridable via `AFL_OSMIUM_INDEX_TYPE`); GeoJSON staging and the localize warm cache must sit on the external/scratch disk (`AFL_OUTPUT_BASE` / `AFL_LOCAL_SCRATCH`), never the internal Docker disk shared with mongodb (ENOSPC there crashes mongo). `Storage.localize()` (read side) is the counterpart to `finalize_from_local()` (write side), so S3/MinIO inputs are downloaded locally for the native osmium tool.
+**MinIO-native full-region PBF→GeoJSON conversion (`fwh_osm`):** new facet `osm.Source.PBF.ToGeoJson` (full-region PBF→GeoJSON via `osmium export`, object-store-native) and workflow `osm.convert.ConvertAllRegionsToGeoJson` (`ListCachedRegions → foreach → Download → ToGeoJson`) to convert all 255 cached regions. Operational hardening it required: osmium's default in-RAM (`flex_mem`) node index OOM-kills on large regions on a small VM, so the conversion uses a **disk-backed node index** on local scratch (`osmium export -i sparse_file_array,<scratch>`, overridable via `FW_OSMIUM_INDEX_TYPE`); GeoJSON staging and the localize warm cache must sit on the external/scratch disk (`FW_OUTPUT_BASE` / `FW_LOCAL_SCRATCH`), never the internal Docker disk shared with mongodb (ENOSPC there crashes mongo). `Storage.localize()` (read side) is the counterpart to `finalize_from_local()` (write side), so S3/MinIO inputs are downloaded locally for the native osmium tool.
 
 ## Completed (v0.47.0) — S3 / MinIO storage backend, bundled-MinIO cutover, legacy-cache migration
 
 Made handler **caches and outputs portable across a multi-server fleet** by backing them with an S3-compatible object store, bundled MinIO into the full-stack compose as the default durable store for the OSM runners, and migrated the legacy local cache into it. Step payloads now carry `s3://…` URIs any runner on any host can resolve, so the fleet needs no shared external disk. Details: [docs/operations/deployment.md](../operations/deployment.md) → *S3 / MinIO Integration*.
 
 **Storage backend (`facetwork/` + `_osm_tools/`):**
-- `S3StorageBackend` (resolved by `get_storage_backend()` for `s3://` URIs, backed by soft-imported `boto3`) + `_osm_tools` `S3Storage`: reads localize to a per-runner cache, writes upload on close. Object stores don't do partial writes, so scratch/staging/tmp/locks stay on a local base (`AFL_LOCAL_SCRATCH`); `AFL_OUTPUT_BASE` must stay local (feeds the runtime temp dir).
-- **FileSystem facade** (`get_fs()`): one config-driven file interface over local / HDFS / S3, selected via `AFL_FS_BACKEND` / `AFL_FS_ROOT` (priority Hadoop → MinIO/S3 → local). Routed ~68 stray `open()` sites in `fwh_osm` through it; streaming/osmium/scratch correctly left local (stage-then-finalize).
-- Env contract: `AFL_STORAGE=s3`, `AFL_DATA_ROOT=s3://afl-cache`, `AFL_OSM_OUTPUT_BASE`, `AFL_S3_ENDPOINT` (MinIO; omit for real AWS S3), `AFL_S3_ACCESS_KEY`/`AFL_S3_SECRET_KEY`/`AFL_S3_REGION`. `s3` pip extra. Live round-trip test gated on `AFL_S3_ENDPOINT` (`tests/runtime/test_s3_storage.py`).
+- `S3StorageBackend` (resolved by `get_storage_backend()` for `s3://` URIs, backed by soft-imported `boto3`) + `_osm_tools` `S3Storage`: reads localize to a per-runner cache, writes upload on close. Object stores don't do partial writes, so scratch/staging/tmp/locks stay on a local base (`FW_LOCAL_SCRATCH`); `FW_OUTPUT_BASE` must stay local (feeds the runtime temp dir).
+- **FileSystem facade** (`get_fs()`): one config-driven file interface over local / HDFS / S3, selected via `FW_FS_BACKEND` / `FW_FS_ROOT` (priority Hadoop → MinIO/S3 → local). Routed ~68 stray `open()` sites in `fwh_osm` through it; streaming/osmium/scratch correctly left local (stage-then-finalize).
+- Env contract: `FW_STORAGE=s3`, `FW_DATA_ROOT=s3://afl-cache`, `FW_OSM_OUTPUT_BASE`, `FW_S3_ENDPOINT` (MinIO; omit for real AWS S3), `FW_S3_ACCESS_KEY`/`FW_S3_SECRET_KEY`/`FW_S3_REGION`. `s3` pip extra. Live round-trip test gated on `FW_S3_ENDPOINT` (`tests/runtime/test_s3_storage.py`).
 
-**Bundled MinIO (`docker-compose.full-stack.yml`):** a `minio` service + one-shot `minio-setup` (creates the `afl-cache` bucket); the OSM runners (`osm-geocoder`, `osm-lz`) default to `s3://afl-cache` with **no external disk** (console http://localhost:9001, `minioadmin`/`minioadmin`). The example-runner image bakes in `boto3` so scaled replicas all have it. Overridable via `AFL_S3_BUCKET` / `MINIO_API_PORT` / `MINIO_CONSOLE_PORT` / `AFL_MINIO_DATA_DIR`.
+**Bundled MinIO (`docker-compose.full-stack.yml`):** a `minio` service + one-shot `minio-setup` (creates the `afl-cache` bucket); the OSM runners (`osm-geocoder`, `osm-lz`) default to `s3://afl-cache` with **no external disk** (console http://localhost:9001, `minioadmin`/`minioadmin`). The example-runner image bakes in `boto3` so scaled replicas all have it. Overridable via `FW_S3_BUCKET` / `MINIO_API_PORT` / `MINIO_CONSOLE_PORT` / `FW_MINIO_DATA_DIR`.
 
 **Legacy-cache migration (`scripts/_cache_to_minio_move.py`):** host-driven boto3 migrator that **moves** `/Volumes/afl_data/cache/<X>` → `s3://afl-cache/cache/<X>` — upload, size-verify, then delete the source. Idempotent and restart-safe (skips files already in the bucket at matching size; verify-before-delete → killable any time), smallest-first, with `SKIP_PATH_SUBSTR` / `SKIP_LARGER_THAN_GB` to leave regenerable artifacts (e.g. the ~1.65 TB `osm/geojson/*.geojsonseq`) on disk. Driven from the host because Docker virtiofs mishandles deep recursion over an external USB/APFS disk. Added `XFER_MAX_CONCURRENCY` / `XFER_CHUNK_MB` knobs after large multipart uploads from a USB spinning disk failed `UploadPart` with `IncompleteBody` (concurrent part-reads short-read on head-seek); `XFER_MAX_CONCURRENCY=1` serializes reads and fixes it. Used to move all 183.5 GB of non-geojson cache (PBFs, routable roads) into the bundled MinIO.
 
@@ -100,9 +100,9 @@ A layer (`facetwork/catalog/`) that lets Claude author, store, version, discover
 
 **Repo hygiene**: root `claude.md` → `CLAUDE.md` (lowercase wouldn't load as project instructions on a case-sensitive filesystem).
 
-## Completed (v0.45.0) — Standalone Example Packages, Package-Unique Tool Libs, AFL_CACHE_DIR Retirement
+## Completed (v0.45.0) — Standalone Example Packages, Package-Unique Tool Libs, FW_CACHE_DIR Retirement
 
-Extraction of the save-earth example into a standalone package, an ecosystem-wide fix for a shared-`_lib` import collision across co-installed example packages, the tools-pattern contract rewritten for the standalone-package layout, retirement of the legacy `AFL_CACHE_DIR`, and a full modernization of the osm-geocoder test suite. Changes span the framework repo plus the standalone example repos `fwh_save_earth`, `fwh_osm`, and `fwh_noaa_weather`.
+Extraction of the save-earth example into a standalone package, an ecosystem-wide fix for a shared-`_lib` import collision across co-installed example packages, the tools-pattern contract rewritten for the standalone-package layout, retirement of the legacy `FW_CACHE_DIR`, and a full modernization of the osm-geocoder test suite. Changes span the framework repo plus the standalone example repos `fwh_save_earth`, `fwh_osm`, and `fwh_noaa_weather`.
 
 **save-earth extracted to a standalone package (`fwh_save_earth`):**
 - `examples/save-earth/` removed from the framework repo; it now ships as the pip-installable `fwh_save_earth` package (`src/save_earth/`), discovered via the `facetwork.examples` entry point (`save-earth = "save_earth:example"`) — mirrors the osm-geocoder / noaa-weather extraction.
@@ -119,9 +119,9 @@ Extraction of the save-earth example into a standalone package, an ecosystem-wid
 - `agent-spec/tools-pattern.agent-spec.yaml` bumped to version 2: the layout now describes a standalone `fwh_<domain>` package (`src/<import_pkg>/{ffl,handlers,tools}/` + a `pyproject.toml` `facetwork.examples` entry point + vendored `agent-spec/`) instead of an in-repo `examples/<name>/` dir, with an `in_repo_variant` note for the still-supported `discover_local_examples()` form. New-domain checklist + out-of-scope sections updated. The shell-wrapper `../../..` and shim `parents[2]` path math are layout-invariant and unchanged.
 - Re-vendored the corrected `tools-pattern` + `cache-layout` agent-specs byte-identically into `fwh_save_earth`, `fwh_osm`, `fwh_noaa_weather`.
 
-**`AFL_CACHE_DIR` retired in favor of `AFL_DATA_ROOT` / `AFL_CACHE_ROOT`:**
-- The legacy `AFL_CACHE_DIR` had a single consumer — `fwh_osm`'s `handlers/shared/downloader.py` — which was first migrated to the unified sidecar-cache root (`$AFL_DATA_ROOT/cache/osm`, override `AFL_CACHE_ROOT`, `AFL_STORAGE=hdfs` for HDFS) and then deleted entirely (unused legacy, superseded by `_osm_tools/pbf_download.py`).
-- Removed `AFL_CACHE_DIR` from `.env.example`, `docker-compose.yml` (→ `AFL_DATA_ROOT` + `AFL_CACHE_ROOT` passthrough), `docker-compose.hdfs.yml`, `agent-spec/facetwork.agent-spec.yaml`, `docs/reference/cli.md`, and `docs/operations/deployment.md`. No live consumers remain; the current cache root is `$AFL_DATA_ROOT/cache/<namespace>/`.
+**`FW_CACHE_DIR` retired in favor of `FW_DATA_ROOT` / `FW_CACHE_ROOT`:**
+- The legacy `FW_CACHE_DIR` had a single consumer — `fwh_osm`'s `handlers/shared/downloader.py` — which was first migrated to the unified sidecar-cache root (`$FW_DATA_ROOT/cache/osm`, override `FW_CACHE_ROOT`, `FW_STORAGE=hdfs` for HDFS) and then deleted entirely (unused legacy, superseded by `_osm_tools/pbf_download.py`).
+- Removed `FW_CACHE_DIR` from `.env.example`, `docker-compose.yml` (→ `FW_DATA_ROOT` + `FW_CACHE_ROOT` passthrough), `docker-compose.hdfs.yml`, `agent-spec/facetwork.agent-spec.yaml`, `docs/reference/cli.md`, and `docs/operations/deployment.md`. No live consumers remain; the current cache root is `$FW_DATA_ROOT/cache/<namespace>/`.
 
 **osm-geocoder test suite modernized (`fwh_osm`):**
 - Offline suite: 110 failed → 0 (669 passed). Root cause: post-split, handler modules live at `osm_geocoder.handlers.<subpkg>.<module>`, but mock-patch target strings, a dynamic importer, fixture dirs, and `sys.path` conftest hacks still assumed the old flat in-repo layout (the mocks fell through to real Mongo/OSRM/`/Volumes`).
@@ -158,7 +158,7 @@ Comprehensive resilience improvements for long-running workflows, independent ta
 - Background asyncio task runs orphan reaper + stuck task watchdog every 60s from the dashboard process
 - Independent of runners — cleans up stale tasks even when all runners are at capacity or offline
 - Prevents the deadlock scenario: runner claims task → handler succeeds → `continue_step` skips (old bug) → future stays active → runner permanently at capacity → no runner can run the reaper
-- Configurable via `AFL_DASHBOARD_REAP_INTERVAL_S` (default: 60)
+- Configurable via `FW_DASHBOARD_REAP_INTERVAL_S` (default: 60)
 
 **osm2pgsql-compatible views (`examples/osm-geocoder/handlers/downloads/postgis_importer.py`):**
 - Three zero-storage views: `planet_osm_point`, `planet_osm_line`, `planet_osm_roads` — expose JSONB tags as named columns matching the osm2pgsql schema
@@ -204,7 +204,7 @@ Runner resilience improvements: lease-based task ownership, execution timeout, a
 - Pass 2: tasks without explicit timeout where last activity exceeds default threshold (4h)
 - Heartbeat-aware: handlers calling `update_task_heartbeat()` keep tasks alive
 - Runs every 60s in the existing reaper cycle in both `RunnerService` and `AgentPoller`
-- Configurable via `AFL_STUCK_TIMEOUT_MS` (default: 14,400,000ms = 4 hours)
+- Configurable via `FW_STUCK_TIMEOUT_MS` (default: 14,400,000ms = 4 hours)
 - Step log entries written for each reaped task with reason ("explicit timeout exceeded" vs "no progress for Xh")
 - 6 new tests in `TestReapStuckTasks`
 
@@ -246,7 +246,7 @@ Migrated MongoDB and HDFS from Docker Compose services to external servers, remo
 **Infrastructure:**
 - Removed `mongodb`, `namenode`, `datanode` services from `docker-compose.yml` — MongoDB and HDFS now run on external server `192.168.68.91` via `/etc/hosts` aliases (`afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn`)
 - All services use `extra_hosts` to resolve `afl-mongodb` inside containers
-- Updated `AFL_MONGODB_URL` default from `mongodb://localhost:27018` to `mongodb://afl-mongodb:27017` across all scripts, configs, docs, and 24 OSM test scripts
+- Updated `FW_MONGODB_URL` default from `mongodb://localhost:27018` to `mongodb://afl-mongodb:27017` across all scripts, configs, docs, and 24 OSM test scripts
 - Updated HDFS URI examples from `hdfs://namenode:8020` to `hdfs://afl-hadoop-hdfs:8020`
 
 **Lock removal (v0.39.1):**
@@ -254,11 +254,11 @@ Migrated MongoDB and HDFS from Docker Compose services to external servers, remo
 - Task claiming now uses MongoDB's atomic `find_one_and_update` via `claim_task()` — single `PENDING→RUNNING` transition
 - Updated all documentation to reference `claim_task()` instead of distributed locking
 
-**Mount localization (`AFL_LOCALIZE_MOUNTS`):**
+**Mount localization (`FW_LOCALIZE_MOUNTS`):**
 - `localize()` in `afl/runtime/storage.py` now supports copying mount-backed files to container-local storage before processing
-- `AFL_LOCALIZE_MOUNTS` env var: comma-separated path prefixes (e.g. `/data/osm-mirror`) — files under these mounts are copied to `/tmp/osm-local/` with size-based cache hit detection
+- `FW_LOCALIZE_MOUNTS` env var: comma-separated path prefixes (e.g. `/data/osm-mirror`) — files under these mounts are copied to `/tmp/osm-local/` with size-based cache hit detection
 - Fixes VirtioFS hangs on large PBF files (1.3 GB California) in Docker containers — `open()` blocks indefinitely on VirtioFS even with local APFS-backed bind mounts
-- Added to `agent-osm-geocoder` in `docker-compose.yml`: `AFL_LOCALIZE_MOUNTS=/data/osm-mirror`
+- Added to `agent-osm-geocoder` in `docker-compose.yml`: `FW_LOCALIZE_MOUNTS=/data/osm-mirror`
 
 **Tests:** 10 new tests in `test_storage.py` — mount prefix matching, file copy, cache hit, stale cache detection. Total: 3796 passed, 81 skipped.
 
@@ -419,8 +419,8 @@ batch).  Download caches (ISD-Lite, station inventory, geocode) remain as local
 files.
 
 **New store (`examples/noaa-weather/handlers/shared/weather_utils.py`):**
-- `get_weather_db(db=None)` — MongoDB connection via `AFL_MONGODB_URL` /
-  `AFL_EXAMPLES_DATABASE` (separate database from AFL runtime, default `afl_examples`)
+- `get_weather_db(db=None)` — MongoDB connection via `FW_MONGODB_URL` /
+  `FW_EXAMPLES_DATABASE` (separate database from AFL runtime, default `afl_examples`)
 - `WeatherReportStore` class — wraps `weather_reports` and
   `weather_batch_summaries` collections with unique indexes
   (`(station_id, year)` and `(batch_id)`); provides `upsert_report()`,
@@ -561,11 +561,11 @@ combine real HTTP downloads with OSM integration.
 
 **Files:** 21 new files, 2 modified (CLAUDE.md, spec/99_changelog.md)
 
-## Completed (v0.33.1) - HIV Dashboard Scripts & AFL_LOCAL_OUTPUT_DIR Cleanup
+## Completed (v0.33.1) - HIV Dashboard Scripts & FW_LOCAL_OUTPUT_DIR Cleanup
 
 Convenience scripts for running the HIV drug resistance pipeline through the
 dashboard, plus a sweep of all examples to replace hardcoded `/tmp/` output
-paths with `AFL_LOCAL_OUTPUT_DIR`-based paths.
+paths with `FW_LOCAL_OUTPUT_DIR`-based paths.
 
 **HIV dashboard scripts (`examples/hiv-drug-resistance/scripts/`):**
 - `generate-sample-data` — generates 3 synthetic FASTQ files at `/tmp/hiv-fastq/`
@@ -578,9 +578,9 @@ paths with `AFL_LOCAL_OUTPUT_DIR`-based paths.
   runner + dashboard (`start-runner --example hiv-drug-resistance`). Supports
   `--no-seed` to skip data generation/seeding, `-- args` pass-through to runner.
 
-**`AFL_LOCAL_OUTPUT_DIR` cleanup (7 files across 5 examples):**
+**`FW_LOCAL_OUTPUT_DIR` cleanup (7 files across 5 examples):**
 
-All handler output paths now respect the `AFL_LOCAL_OUTPUT_DIR` environment
+All handler output paths now respect the `FW_LOCAL_OUTPUT_DIR` environment
 variable (default: `/tmp`). Previously, several examples had hardcoded `/tmp/`
 subdirectories that ignored the env var.
 
@@ -628,11 +628,11 @@ keeping local mode unchanged.
 - `_afl_query_running_servers` — inline Python querying MongoDB `servers`
   collection, outputs `server_name http_port uuid` per line
 - `_afl_ssh` — SSH wrapper with `BatchMode=yes`, `ConnectTimeout=5`,
-  `StrictHostKeyChecking=accept-new`, plus `AFL_SSH_OPTS` passthrough
+  `StrictHostKeyChecking=accept-new`, plus `FW_SSH_OPTS` passthrough
 - `_afl_poll_server_state` — polls MongoDB until a server reaches expected state
 - `_afl_poll_new_server` — polls until a new server appears on a hostname
   (excludes old UUIDs for rolling restart detection)
-- `_afl_resolve_hosts` — resolves `--host` flags or `AFL_RUNNER_HOSTS` env var
+- `_afl_resolve_hosts` — resolves `--host` flags or `FW_RUNNER_HOSTS` env var
 
 **`fw runner stop` — remote mode:**
 - `--all` — queries MongoDB for running servers, SSHs SIGTERM to each host
@@ -642,7 +642,7 @@ keeping local mode unchanged.
 - No-flag invocation = unchanged local pgrep/kill behavior
 
 **`fw runner start` — remote mode:**
-- `--all` — starts runners on all `AFL_RUNNER_HOSTS`
+- `--all` — starts runners on all `FW_RUNNER_HOSTS`
 - `--host HOST` (repeatable) — targets specific remote hosts
 - `--start-timeout N` — seconds to wait for registration (default: 30)
 - Registers handlers locally (MongoDB), SSHs `nohup fw runner exec --registry`
@@ -659,9 +659,9 @@ keeping local mode unchanged.
 - HTTP health-check via `curl` when `http_port > 0` (non-fatal on failure)
 
 **Environment (`.env.example`):**
-- `AFL_RUNNER_HOSTS` — space-separated remote hostnames
-- `AFL_REMOTE_PATH` — repo path on remote hosts (default: same as local)
-- `AFL_SSH_OPTS` — extra SSH options
+- `FW_RUNNER_HOSTS` — space-separated remote hostnames
+- `FW_REMOTE_PATH` — repo path on remote hosts (default: same as local)
+- `FW_SSH_OPTS` — extra SSH options
 
 **`fw runner list` (new):**
 - Tree view of the runner fleet: servers → runner instances → handlers
@@ -2059,7 +2059,7 @@ Add B25003 (Housing Tenure), B11001 (Household Type), B01001 (Sex by Age), and B
 Enable the RunnerService to process event tasks from handler registrations stored in MongoDB, and fix `RegistryDispatcher` to support `file://` module URIs with relative imports. Previously, the Docker runner only handled `afl:execute` orchestration — event tasks required a separate agent process.
 
 ### Runner `--registry` mode (`afl/runtime/runner/__main__.py`)
-- New `--registry` CLI flag (or `AFL_USE_REGISTRY=1` env var)
+- New `--registry` CLI flag (or `FW_USE_REGISTRY=1` env var)
 - At startup, loads all handler registrations from MongoDB and registers proxy functions in the `ToolRegistry`
 - Each proxy delegates to `RegistryDispatcher.dispatch()` for dynamic module loading
 - Enables a single runner process to handle both orchestration (`afl:execute`) and event tasks
@@ -2094,7 +2094,7 @@ New ingestion pipeline that reads upstream handler output files (GeoJSON, CSV, J
 - `ingest_csv()`: reads CSV via `DictReader`, bulk upsert rows
 - `ingest_json()`: reads JSON file, single `replace_one(upsert=True)`
 - Indexes: compound unique `(dataset_key, feature_key)` on `handler_output`, `2dsphere` sparse on `geometry`, unique `dataset_key` on `handler_output_meta`
-- `get_mongo_db()` uses `AFL_MONGODB_URL` / `AFL_EXAMPLES_DATABASE` (separate database from AFL runtime, default `afl_examples`)
+- `get_mongo_db()` uses `FW_MONGODB_URL` / `FW_EXAMPLES_DATABASE` (separate database from AFL runtime, default `afl_examples`)
 
 **`ingestion_handlers.py`** — 8 ToDB handler functions:
 - `PopulationToDB`, `IncomeToDB`, `HousingToDB`, `EducationToDB`, `CommutingToDB` — ACS CSV → MongoDB (factory via `_make_acs_db_handler`)
@@ -2261,10 +2261,10 @@ Redesign the `/workflows/new` page from a bare textarea into a workflow browser 
 
 ## Completed (v0.12.87) - Host-mounted output directory and dashboard file browser
 
-Introduce `AFL_LOCAL_OUTPUT_DIR` env var (default `/Volumes/afl_data/output`) to redirect handler output (HTML maps, stats, GeoJSON) to a host-mounted directory instead of ephemeral `/tmp` paths inside containers. Add a dashboard file browser at `/output` with directory tree navigation, breadcrumbs, file metadata display, and inline viewing for HTML/image/text files.
+Introduce `FW_LOCAL_OUTPUT_DIR` env var (default `/Volumes/afl_data/output`) to redirect handler output (HTML maps, stats, GeoJSON) to a host-mounted directory instead of ephemeral `/tmp` paths inside containers. Add a dashboard file browser at `/output` with directory tree navigation, breadcrumbs, file metadata display, and inline viewing for HTML/image/text files.
 
 ### Output directory helpers
-- **`_output.py`**: Added `resolve_local_output_dir(*parts)` — joins parts as subdirectories under `AFL_LOCAL_OUTPUT_DIR`, creating them if needed. Updated `resolve_output_dir()` fallback chain: `default_local` → `AFL_LOCAL_OUTPUT_DIR` → `/tmp`.
+- **`_output.py`**: Added `resolve_local_output_dir(*parts)` — joins parts as subdirectories under `FW_LOCAL_OUTPUT_DIR`, creating them if needed. Updated `resolve_output_dir()` fallback chain: `default_local` → `FW_LOCAL_OUTPUT_DIR` → `/tmp`.
 - **`map_renderer.py`**: `render_map_html()`, `render_map_png()`, `render_layers()` now use `resolve_local_output_dir("maps")` instead of `os.path.dirname(local_geojson)` for default output paths.
 
 ### Dashboard file browser
@@ -2275,8 +2275,8 @@ Introduce `AFL_LOCAL_OUTPUT_DIR` env var (default `/Volumes/afl_data/output`) to
 - **`style.css`**: Output browser styles (breadcrumbs, table, view button).
 
 ### Docker configuration
-- **`docker-compose.yml`**: Added `AFL_LOCAL_OUTPUT_DIR` env var and volume mounts to `dashboard` (read-only), `runner`, `agent-osm-geocoder`, `agent-osm-geocoder-lite`.
-- **`.env.example`**: Documented `AFL_LOCAL_OUTPUT_DIR`.
+- **`docker-compose.yml`**: Added `FW_LOCAL_OUTPUT_DIR` env var and volume mounts to `dashboard` (read-only), `runner`, `agent-osm-geocoder`, `agent-osm-geocoder-lite`.
+- **`.env.example`**: Documented `FW_LOCAL_OUTPUT_DIR`.
 
 ### Details
 - 12 files changed (9 modified, 3 new); 31 new tests; test suite: 2522 passed, 79 skipped; total collected 2601
@@ -2573,12 +2573,12 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
   1. **AgentPoller concurrent resume fix**: `_resume_workflow()` non-blocking lock was silently dropping resumes when contended — added `_resume_pending` set so the lock holder re-runs after its iteration completes, ensuring no step transitions are lost
   2. **`get_actionable_steps_by_workflow()`**: new method on `PersistenceAPI`, `MemoryStore`, and `MongoStore` that filters out terminal (`Complete`/`Error`) and non-transitioning `EventTransmit` steps at the DB level — `MongoStore` uses a `$nor` query; reduces evaluator iteration scope from all steps to only actionable ones
   3. **`Evaluator.resume_step()`**: focused single-step resume that walks the continued step's container+block chain with iterative commit until fixed point — O(depth) instead of O(total_steps); `AgentPoller._do_resume()` now calls `resume_step()` when a `step_id` is available, falls back to full `resume()` for pending re-runs
-- **Docker env var passthrough**: added `AFL_CACHE_DIR` and `AFL_GEOFABRIK_MIRROR` to `docker-compose.yml` for `runner`, `agent-osm-geocoder`, and `agent-osm-geocoder-lite` services — without these, agents couldn't locate PBF files in HDFS and fell back to failed Geofabrik downloads
-- **Added `AFL_CACHE_DIR`** to `.env.example` (commented) and `.env`
+- **Docker env var passthrough**: added `FW_CACHE_DIR` and `FW_GEOFABRIK_MIRROR` to `docker-compose.yml` for `runner`, `agent-osm-geocoder`, and `agent-osm-geocoder-lite` services — without these, agents couldn't locate PBF files in HDFS and fell back to failed Geofabrik downloads
+- **Added `FW_CACHE_DIR`** to `.env.example` (commented) and `.env`
 - Files changed: `afl/runtime/evaluator.py`, `afl/runtime/agent_poller.py`, `afl/runtime/persistence.py`, `afl/runtime/mongo_store.py`, `afl/runtime/memory_store.py`, `docker-compose.yml`, `.env.example`
 
-## Completed (v0.12.63) - Write OSM extractor output to HDFS via AFL_OSM_OUTPUT_BASE
-- **New helper module `examples/osm-geocoder/handlers/_output.py`** with `resolve_output_dir(category)`, `open_output(path)`, and `ensure_dir(path)` — routes extractor output to HDFS when `AFL_OSM_OUTPUT_BASE` is set (e.g. `hdfs://namenode:8020/osm-output`), unchanged local `/tmp/` behavior when unset
+## Completed (v0.12.63) - Write OSM extractor output to HDFS via FW_OSM_OUTPUT_BASE
+- **New helper module `examples/osm-geocoder/handlers/_output.py`** with `resolve_output_dir(category)`, `open_output(path)`, and `ensure_dir(path)` — routes extractor output to HDFS when `FW_OSM_OUTPUT_BASE` is set (e.g. `hdfs://namenode:8020/osm-output`), unchanged local `/tmp/` behavior when unset
 - **Updated 10 extractor handlers** to use the shared output helpers instead of hardcoded local paths and direct `open()` / `_storage.open()` calls:
   - `boundary_extractor.py` → `osm-boundaries/` category
   - `park_extractor.py` → `osm-parks/` category
@@ -2590,8 +2590,8 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
   - `population_filter.py` → `osm-population/` category
   - `osmose_verifier.py` → `osm-osmose/` category
   - `zoom_graph.py` — `RoadGraph.save()` uses `open_output()` + `ensure_dir()`
-- **Added `AFL_OSM_OUTPUT_BASE`** to `.env.example` and `.env` (active, `hdfs://namenode:8020/osm-output`)
-- **Passed `AFL_OSM_OUTPUT_BASE` to Docker containers** in `docker-compose.yml`: added to `runner`, `agent-osm-geocoder`, and `agent-osm-geocoder-lite` services via `${AFL_OSM_OUTPUT_BASE:-}` interpolation — without this, the env var was only on the host and extractors kept writing to local `/tmp/`
+- **Added `FW_OSM_OUTPUT_BASE`** to `.env.example` and `.env` (active, `hdfs://namenode:8020/osm-output`)
+- **Passed `FW_OSM_OUTPUT_BASE` to Docker containers** in `docker-compose.yml`: added to `runner`, `agent-osm-geocoder`, and `agent-osm-geocoder-lite` services via `${FW_OSM_OUTPUT_BASE:-}` interpolation — without this, the env var was only on the host and extractors kept writing to local `/tmp/`
 - HDFS directory creation handled automatically via `ensure_dir()` calling `backend.makedirs()`; local paths use `Path.mkdir(parents=True)`
 - **End-to-end verified**: submitted `StateBoundariesWithStats(region="Delaware")` workflow — Cache found PBF in HDFS, boundary extractor wrote 86 KB GeoJSON to `hdfs://namenode:8020/osm-output/osm-boundaries/delaware-latest.osm_admin4.geojson`, confirmed valid FeatureCollection with Delaware state boundary (admin_level 4)
 
@@ -2599,12 +2599,12 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **Fixed `run_osm_cache_states.sh` and `run_osm_analyze_states.sh`** to use `HDFS_NAMENODE_DIR`, `HDFS_DATANODE_DIR`, and `MONGODB_DATA_DIR` from `.env` (via `_env.sh`) instead of hardcoding `~/data/hdfs/*` and `~/data/mongodb`
 - **MongoDB data dir is now optional**: when `MONGODB_DATA_DIR` is unset/empty, the scripts skip `--mongodb-data-dir` and MongoDB uses a Docker volume — avoids WiredTiger "Operation not permitted" crashes from bind-mounted directories
 
-## Completed (v0.12.61) - Make poll_interval_ms configurable via AFL_POLL_INTERVAL_MS
-- **All runner configs** (`AgentPollerConfig`, `RegistryRunnerConfig`, `RunnerConfig`, `AgentConfig`) now read `AFL_POLL_INTERVAL_MS` env var with a default of **1000 ms** (was hardcoded 2000 ms)
+## Completed (v0.12.61) - Make poll_interval_ms configurable via FW_POLL_INTERVAL_MS
+- **All runner configs** (`AgentPollerConfig`, `RegistryRunnerConfig`, `RunnerConfig`, `AgentConfig`) now read `FW_POLL_INTERVAL_MS` env var with a default of **1000 ms** (was hardcoded 2000 ms)
 - **Runner CLI** `--poll-interval` flag respects the env var as its default
 
 ## Completed (v0.12.60) - Make max_concurrent configurable and add progress logging
-- **`AFL_MAX_CONCURRENT` env var**: all runner configs (`AgentPollerConfig`, `RegistryRunnerConfig`, `RunnerConfig`, `AgentConfig`) now read this env var with a default of **2** (was hardcoded 5); runner CLI `--max-concurrent` flag also respects the env var
+- **`FW_MAX_CONCURRENT` env var**: all runner configs (`AgentPollerConfig`, `RegistryRunnerConfig`, `RunnerConfig`, `AgentConfig`) now read this env var with a default of **2** (was hardcoded 5); runner CLI `--max-concurrent` flag also respects the env var
 - **Progress logging in `downloader.py`**: cache-hit/miss/seed events with human-readable sizes; progress every 100 MB during mirror-to-HDFS copies and HTTP downloads
 - **HDFS upload logging in `storage.py`**: `_WebHDFSWriteStream` logs upload start/complete with size in MB
 
@@ -2731,9 +2731,9 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - Added `.env.example` template with all configurable settings (MongoDB, scaling, overlays, external data dirs)
 - Added `scripts/_env.sh` shared helper: loads `.env` without overriding already-set env vars, exports `_compute_compose_args()` for overlay-aware compose file/profile computation
 - Added `.env` and `.afl-active-config` to `.gitignore`
-- Refactored `fw install setup`: defaults now read from env vars (`AFL_RUNNERS`, `AFL_AGENTS`, `AFL_OSM_AGENTS`, etc.); writes `.afl-active-config` after computing overlay state
+- Refactored `fw install setup`: defaults now read from env vars (`FW_RUNNERS`, `FW_AGENTS`, `FW_OSM_AGENTS`, etc.); writes `.afl-active-config` after computing overlay state
 - Refactored `fw install rebuild`: overlay-aware build and `--up` — reads `.afl-active-config` or `.env` so containers start with correct compose files (mirror, HDFS, PostGIS); fixes bug where `rebuild --up` started containers without overlay mounts
-- Refactored `fw install teardown`: sources `_env.sh` to populate `AFL_GEOFABRIK_MIRROR` from `.env`
+- Refactored `fw install teardown`: sources `_env.sh` to populate `FW_GEOFABRIK_MIRROR` from `.env`
 - Refactored `fw single up`: reads all config from `.env` instead of hardcoding `/Volumes/afl_data/osm`, `3 runners`, `4 osm-agents`
 - Added `source _env.sh` to `seed-examples`, `run-workflow`, `publish`, `db-stats`, `server`, `runner` for consistent MongoDB connection via `.env`
 
@@ -2973,7 +2973,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **HDFSStorageBackend**: wraps `pyarrow.fs.HadoopFileSystem` with `hdfs://` URI parsing and caching per host:port
 - **Factory function**: `get_storage_backend(path)` returns HDFS backend for `hdfs://` URIs, local singleton otherwise
 - **Handler updates**: all OSM geocoder handlers (downloader, graphhopper, 6 extractors) and genomics cache handlers use storage abstraction
-- **Configurable cache paths**: `AFL_CACHE_DIR` for OSM cache, `AFL_GENOMICS_CACHE_DIR` for genomics cache (supports `hdfs://` URIs)
+- **Configurable cache paths**: `FW_CACHE_DIR` for OSM cache, `FW_GENOMICS_CACHE_DIR` for genomics cache (supports `hdfs://` URIs)
 - **Optional dependency**: `pyarrow>=14.0` in `[hdfs]` extra
 - 1049 tests passing
 
@@ -3065,7 +3065,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **`afl/resolver.py`**: new module with `NamespaceIndex` (filesystem scanner mapping namespace names to `.afl` files), `MongoDBNamespaceResolver` (queries `afl_sources` collection), and `DependencyResolver` (iterative fixpoint loop: parse → find missing `use` namespaces → load from filesystem/MongoDB → merge → repeat until stable; max 100 iterations safety bound)
 - **`afl/publisher.py`**: new module with `SourcePublisher` — publishes AFL source files to MongoDB `afl_sources` collection indexed by namespace name; parses source to extract namespace names, creates one `PublishedSource` document per namespace with SHA-256 checksum; supports versioning, force-overwrite, unpublish, and list operations
 - **`AFLParser.parse_and_resolve()`**: new method that calls `parse_sources()` then runs `DependencyResolver`; automatically scans primary file's sibling directory plus configured `source_paths`; optionally queries MongoDB when `mongodb_resolve=True`
-- **`ResolverConfig` dataclass**: added to `AFLConfig` with `source_paths` (colon-separated `AFL_RESOLVER_SOURCE_PATHS`), `auto_resolve` (`AFL_RESOLVER_AUTO_RESOLVE`), `mongodb_resolve` (`AFL_RESOLVER_MONGODB_RESOLVE`)
+- **`ResolverConfig` dataclass**: added to `AFLConfig` with `source_paths` (colon-separated `FW_RESOLVER_SOURCE_PATHS`), `auto_resolve` (`FW_RESOLVER_AUTO_RESOLVE`), `mongodb_resolve` (`FW_RESOLVER_MONGODB_RESOLVE`)
 - **`PublishedSource` entity**: new dataclass in `afl/runtime/entities.py` with `uuid`, `namespace_name`, `source_text`, `namespaces_defined`, `version`, `published_at`, `origin`, `checksum`
 - **MongoStore extensions**: `afl_sources` collection with `(namespace_name, version)` unique compound index and `namespaces_defined` multikey index; new methods `save_published_source()`, `get_source_by_namespace()`, `get_sources_by_namespaces()` (batch `$in`), `delete_published_source()`, `list_published_sources()`
 - **CLI subcommands**: `afl compile` (default, backward-compatible) with new `--auto-resolve`, `--source-path PATH`, `--mongo-resolve` flags; `afl publish` subcommand with `--version`, `--force`, `--list`, `--unpublish` options
@@ -3105,7 +3105,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
   - **Direct dict modules** (region, elevation, routing, osmose, validation, airquality, genomics core, genomics resolve, genomics operations): `_DISPATCH` built as a literal dict
   - **Complex modules** (cache, operations, poi, graphhopper, tiger, boundary, genomics cache, genomics index): custom `_build_dispatch()` over nested registries
 - **`__init__.py` extensions**: both `examples/osm-geocoder/handlers/__init__.py` and `examples/genomics/handlers/__init__.py` gain `register_all_registry_handlers(runner)` — imports and calls each module's `register_handlers(runner)`; existing `register_all_handlers(poller)` unchanged for backward compatibility
-- **Agent entry points**: `examples/osm-geocoder/agent.py` updated with dual-mode support — `AFL_USE_REGISTRY=1` uses `RegistryRunner`, default uses `AgentPoller`; new `examples/genomics/agent.py` with same dual-mode pattern
+- **Agent entry points**: `examples/osm-geocoder/agent.py` updated with dual-mode support — `FW_USE_REGISTRY=1` uses `RegistryRunner`, default uses `AgentPoller`; new `examples/genomics/agent.py` with same dual-mode pattern
 - **New tests**: `test_handler_dispatch_osm.py` (58 tests) and `test_handler_dispatch_genomics.py` (18 tests) verify `_DISPATCH` key counts, `handle()` dispatch, unknown-facet errors, and `register_handlers()` call counts; use `sys.modules` cleanup for cross-file isolation
 - 1264 tests passing
 
@@ -3113,7 +3113,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **`RegistryRunnerConfig.topics`**: new `list[str]` field (default empty) accepting glob patterns to filter which registered facets a runner will handle; when empty, all registrations are polled (backward-compatible default)
 - **`RegistryRunner._matches_topics()`**: new helper using `fnmatch.fnmatch()` to match facet names against configured topic patterns; supports exact names (`ns.A`), glob wildcards (`osm.cache.*`), prefix patterns (`genomics.*`), and `?`/`[seq]` syntax
 - **`_refresh_registry()` filtering**: when `topics` is non-empty, filters `_registered_names` to only include facet names matching at least one pattern; downstream methods (`poll_once`, `_poll_cycle`, `_register_server`, `claim_task`) automatically use the filtered list
-- **`AFL_RUNNER_TOPICS` env var**: both `examples/osm-geocoder/agent.py` and `examples/genomics/agent.py` read comma-separated topic patterns from `AFL_RUNNER_TOPICS` and pass to `RegistryRunnerConfig(topics=...)`; prints active filter when set
+- **`FW_RUNNER_TOPICS` env var**: both `examples/osm-geocoder/agent.py` and `examples/genomics/agent.py` read comma-separated topic patterns from `FW_RUNNER_TOPICS` and pass to `RegistryRunnerConfig(topics=...)`; prints active filter when set
 - **5 new tests** in `TestRegistryRunnerTopics`: exact match filtering, glob pattern filtering, empty-means-all default, poll_once topic-scoped claiming, server definition topics reflection
 - 1269 tests passing
 
@@ -3221,7 +3221,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **Docker stack** (`docker-compose.yml`): 5 services — MongoDB (port 27019), dashboard (port 8081), runner, agent (16 GB memory limit for GraphHopper JVM), seed (profile: seed); isolated database `afl_continental_lz`; 5 named volumes (mongodb_data, osm_data, graphhopper_data, lz_output, gtfs_data)
 - **`Dockerfile.agent`**: python:3.12-slim + libgeos + libproj + Java JRE + GraphHopper 8.0 JAR; copies AFL compiler, OSM geocoder handlers, and agent entry point
 - **`Dockerfile.seed`**: lightweight python:3.12-slim + lark + pymongo; compiles all 12 AFL source files and seeds MongoDB
-- **`agent.py`**: RegistryRunner entry point with `max_concurrent=4`, `service_name="continental-lz"`; dual-mode MongoDB/MemoryStore based on `AFL_MONGODB_URL`
+- **`agent.py`**: RegistryRunner entry point with `max_concurrent=4`, `service_name="continental-lz"`; dual-mode MongoDB/MemoryStore based on `FW_MONGODB_URL`
 - **`scripts/seed.py`**: reads 12 AFL sources in dependency order, parses + validates + emits, stores compiled flow and sample execution tasks in MongoDB; supports both Docker (`/app/osm-afl/`) and local (`../osm-geocoder/ffl/`) layouts
 - **`scripts/run_region.py`**: standalone single-region smoke test using MemoryStore; generates inline AFL for any of 14 regions; `--region Belgium --output-dir /tmp/lz-belgium`
 - **Data scale**: 14 regions totaling ~28 GB PBF downloads, ~44 GB GraphHopper graphs, estimated 12-30 hours for full continental run
@@ -3250,7 +3250,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - 1555 tests passing
 
 ## Completed (v0.12.1) - Docker HDFS Integration for OSM Agents & Tests
-- **Docker Compose override** (`docker-compose.hdfs.yml`): new override file wiring HDFS into OSM agent services; sets `AFL_CACHE_DIR=hdfs://namenode:8020/osm-cache`, `GRAPHHOPPER_GRAPH_DIR=hdfs://namenode:8020/graphhopper`, `AFL_GTFS_CACHE_DIR=hdfs://namenode:8020/gtfs-cache`; adds `depends_on: namenode` so agents wait for HDFS; sets `INSTALL_HDFS=true` build arg for pyarrow installation
+- **Docker Compose override** (`docker-compose.hdfs.yml`): new override file wiring HDFS into OSM agent services; sets `FW_CACHE_DIR=hdfs://namenode:8020/osm-cache`, `GRAPHHOPPER_GRAPH_DIR=hdfs://namenode:8020/graphhopper`, `FW_GTFS_CACHE_DIR=hdfs://namenode:8020/gtfs-cache`; adds `depends_on: namenode` so agents wait for HDFS; sets `INSTALL_HDFS=true` build arg for pyarrow installation
 - **Dockerfile HDFS support**: `docker/Dockerfile.osm-geocoder`, `docker/Dockerfile.osm-geocoder-lite`, and `docker/Dockerfile.runner` gain `ARG INSTALL_HDFS=false` with conditional `pip install pyarrow>=14.0` when set to `true`
 - **Shared WebHDFS test helpers** (`tests/hdfs_helpers.py`): extracted `WebHDFSClient` class (with new `getsize()` method), `hdfs` fixture, and `workdir` fixture from `tests/runtime/test_hdfs_storage.py` into a shared module for reuse across HDFS test files
 - **`tests/runtime/test_hdfs_storage.py` refactored**: imports `WebHDFSClient`, `hdfs`, `workdir` from `tests.hdfs_helpers`; local definitions removed; all 19 existing tests preserved
@@ -3262,14 +3262,14 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 ## Completed (v0.12.2) - Docker Profiles for Jenkins & PostGIS
 - **Jenkins service** (`docker-compose.yml`, profile: `jenkins`): `jenkins/jenkins:lts` image as `afl-jenkins`; ports `9090:8080` (Web UI) and `50000:50000` (agent); `jenkins_home` volume for persistence; Docker socket mount (`/var/run/docker.sock`) for Docker-in-Docker builds; healthcheck on `/login` with 60s `start_period`
 - **PostGIS service** (`docker-compose.yml`, profile: `postgis`): `postgis/postgis:16-3.4` image as `afl-postgis`; port `5432:5432`; environment `POSTGRES_DB=afl_gis`, `POSTGRES_USER=afl`, `POSTGRES_PASSWORD=afl`; `postgis_data` volume; healthcheck via `pg_isready -U afl`
-- **PostGIS compose override** (`docker-compose.postgis.yml`): new override file (same pattern as `docker-compose.hdfs.yml`) wiring PostGIS into OSM agents; sets `AFL_POSTGIS_URL=postgresql://afl:afl@postgis:5432/afl_gis`; adds `depends_on: postgis`; sets `INSTALL_POSTGIS=true` build arg for `psycopg2-binary` installation
+- **PostGIS compose override** (`docker-compose.postgis.yml`): new override file (same pattern as `docker-compose.hdfs.yml`) wiring PostGIS into OSM agents; sets `FW_POSTGIS_URL=postgresql://afl:afl@postgis:5432/afl_gis`; adds `depends_on: postgis`; sets `INSTALL_POSTGIS=true` build arg for `psycopg2-binary` installation
 - **Dockerfile PostGIS support**: `docker/Dockerfile.osm-geocoder` and `docker/Dockerfile.osm-geocoder-lite` gain `ARG INSTALL_POSTGIS=false` with conditional `pip install psycopg2-binary` when set to `true`
 - **Setup script** (`fw install setup`): new `--jenkins` and `--postgis` flags with defaults, arg parsing, profile/compose-file handling, and status output lines
 - **Deployment docs** (`docs/deployment.md`): new "Jenkins CI/CD" section (starting Jenkins, initial admin password retrieval, setup script usage) and "PostGIS Integration" section (starting PostGIS, connection details table, building OSM agents with override file, environment variables table)
 - 1555 passed, 31 skipped
 
 ## Completed (v0.12.3) - Real PostGIS Import Handler
-- **PostGIS import engine** (`examples/osm-geocoder/handlers/postgis_importer.py`): new module parsing PBF files via pyosmium and importing nodes/ways into PostGIS via psycopg2; `HAS_OSMIUM`/`HAS_PSYCOPG2` flags for graceful degradation; `get_postgis_url()` reads `AFL_POSTGIS_URL` env var (default `postgresql://afl:afl@localhost:5432/afl_gis`); `sanitize_url()` strips password for logging; `ensure_schema()` creates PostGIS extension and three tables (`osm_nodes`, `osm_ways`, `osm_import_log`) with spatial GIST and GIN indexes; `NodeCollector` and `WayCollector` osmium handlers flush batches of 10,000 via `psycopg2.extras.execute_values()` with `ON CONFLICT DO UPDATE`; `import_to_postgis()` orchestrates connection, schema, prior-import detection, node+way collection, and import logging; returns `ImportResult` dataclass
+- **PostGIS import engine** (`examples/osm-geocoder/handlers/postgis_importer.py`): new module parsing PBF files via pyosmium and importing nodes/ways into PostGIS via psycopg2; `HAS_OSMIUM`/`HAS_PSYCOPG2` flags for graceful degradation; `get_postgis_url()` reads `FW_POSTGIS_URL` env var (default `postgresql://afl:afl@localhost:5432/afl_gis`); `sanitize_url()` strips password for logging; `ensure_schema()` creates PostGIS extension and three tables (`osm_nodes`, `osm_ways`, `osm_import_log`) with spatial GIST and GIN indexes; `NodeCollector` and `WayCollector` osmium handlers flush batches of 10,000 via `psycopg2.extras.execute_values()` with `ON CONFLICT DO UPDATE`; `import_to_postgis()` orchestrates connection, schema, prior-import detection, node+way collection, and import logging; returns `ImportResult` dataclass
 - **PostGIS handler adapter** (`examples/osm-geocoder/handlers/postgis_handlers.py`): new dispatch adapter following standard pattern; `_postgis_import_handler` extracts cache dict, calls `import_to_postgis()`, returns OSMCache-shaped `stats` with `size` = total features, `path` = sanitized PostGIS URL, `wasInCache` = prior import detected; graceful fallback on missing deps or errors
 - **Operations handler cleanup** (`operations_handlers.py`): removed `"PostGisImport": "stats"` from `OPERATIONS_FACETS` — no longer handled by the generic factory stub
 - **Handler registration** (`handlers/__init__.py`): wired `postgis_handlers` into imports, `__all__`, `register_all_handlers()`, and `register_all_registry_handlers()`
@@ -3335,7 +3335,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 
 ## Completed (v0.12.41) - Copy Mirror Data to Cache Instead of Serving Directly
 
-- **Mirror as seed source** (`handlers/downloader.py`): when `AFL_GEOFABRIK_MIRROR` is set and a mirror file exists, the data is now copied into the configured cache directory (local or HDFS) instead of returning the mirror path directly; downstream handlers always see the real cache location (`AFL_CACHE_DIR`) regardless of whether data came from the mirror
+- **Mirror as seed source** (`handlers/downloader.py`): when `FW_GEOFABRIK_MIRROR` is set and a mirror file exists, the data is now copied into the configured cache directory (local or HDFS) instead of returning the mirror path directly; downstream handlers always see the real cache location (`FW_CACHE_DIR`) regardless of whether data came from the mirror
 - **`_copy_to_cache()` helper** (`handlers/downloader.py`): new function copies a local file to the cache using atomic temp-file + `os.replace` for local paths and `shutil.copyfileobj` streaming for HDFS; follows the same concurrent-safety pattern as the download path (per-path lock, double-check after lock acquisition)
 - **Removed `_local_storage`** (`handlers/downloader.py`): the dedicated local storage backend for mirror paths is no longer needed since mirror hits now go through `_storage` (the configured cache backend)
 - **Updated mirror tests** (`test_downloader.py`): `test_mirror_hit_returns_cached` → `test_mirror_hit_copies_to_cache` (expects `wasInCache=False` and cache path); `test_mirror_path_structure` now asserts cache path instead of mirror path
@@ -3352,9 +3352,9 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 
 ## Completed (v0.12.39) - Geofabrik Mirror Support for Docker OSM Agents
 
-- **Docker Compose override** (`docker-compose.mirror.yml`): new override file mounts a host directory read-only at `/data/osm-mirror` in `agent-osm-geocoder` and `agent-osm-geocoder-lite` containers; sets `AFL_GEOFABRIK_MIRROR=/data/osm-mirror` env var; uses `${AFL_GEOFABRIK_MIRROR:?...}` for clear error on missing var
-- **Setup script** (`fw install setup`): added `--mirror PATH` flag; exports `AFL_GEOFABRIK_MIRROR`, sets `MIRROR=true`, appends `-f docker-compose.mirror.yml` to compose files; prints mirror path and mount point in status output
-- **Run script** (`examples/osm-geocoder/tests/real/scripts/run_30states.sh`): refactored setup invocation to use bash array `SETUP_ARGS`; conditionally appends `--mirror "$GEOFABRIK_MIRROR"` when `AFL_GEOFABRIK_MIRROR` is set; reads env var at script start
+- **Docker Compose override** (`docker-compose.mirror.yml`): new override file mounts a host directory read-only at `/data/osm-mirror` in `agent-osm-geocoder` and `agent-osm-geocoder-lite` containers; sets `FW_GEOFABRIK_MIRROR=/data/osm-mirror` env var; uses `${FW_GEOFABRIK_MIRROR:?...}` for clear error on missing var
+- **Setup script** (`fw install setup`): added `--mirror PATH` flag; exports `FW_GEOFABRIK_MIRROR`, sets `MIRROR=true`, appends `-f docker-compose.mirror.yml` to compose files; prints mirror path and mount point in status output
+- **Run script** (`examples/osm-geocoder/tests/real/scripts/run_30states.sh`): refactored setup invocation to use bash array `SETUP_ARGS`; conditionally appends `--mirror "$GEOFABRIK_MIRROR"` when `FW_GEOFABRIK_MIRROR` is set; reads env var at script start
 - **Dashboard formatting** (`namespaces/detail.html`, `flows/detail.html`, `flows/namespace.html`): bold facet/workflow names with inline documentation below (replaces separate Documentation column)
 - 2277 passed, 68 skipped (without `--hdfs`/`--mongodb`/`--postgis`)
 
@@ -3447,7 +3447,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 ## Completed (v0.12.29) - Geofabrik Mirror Prefetch Script and Local Mirror Mode
 
 - **`scripts/osm-prefetch`** (NEW): Bash shell script that delegates to inline Python to prefetch all ~258 unique Geofabrik region files into a local mirror directory; imports `REGION_REGISTRY` from `cache_handlers.py`, deduplicates paths, and downloads `{path}-latest.osm.pbf` (and/or `.free.shp.zip`) files; writes `manifest.json` with URL-to-relative-path mapping; supports `--mirror-dir`, `--fmt` (pbf/shp/all), `--dry-run`, `--delay`, `--include`/`--exclude` regex filters, and `--resume` (skip existing files); follows existing script conventions (`set -euo pipefail`, `.venv` Python detection, `REPO_ROOT` anchoring)
-- **`AFL_GEOFABRIK_MIRROR` env var** (`handlers/downloader.py`): new `GEOFABRIK_MIRROR` module-level variable read from `AFL_GEOFABRIK_MIRROR`; `download()` checks the mirror directory between the cache check and HTTP download — if `{mirror_dir}/{region_path}-latest.{ext}` exists, returns a cache hit directly (read-only, no lock needed); avoids hammering `download.geofabrik.de` during test runs when a local mirror is available
+- **`FW_GEOFABRIK_MIRROR` env var** (`handlers/downloader.py`): new `GEOFABRIK_MIRROR` module-level variable read from `FW_GEOFABRIK_MIRROR`; `download()` checks the mirror directory between the cache check and HTTP download — if `{mirror_dir}/{region_path}-latest.{ext}` exists, returns a cache hit directly (read-only, no lock needed); avoids hammering `download.geofabrik.de` during test runs when a local mirror is available
 - **4 new tests** (`test_downloader.py`): `TestDownloadMirror` class — mirror hit returns `wasInCache=True` with mirror path and no HTTP request, mirror miss falls through to HTTP download, mirror not set skips `os.path.isfile` check entirely, mirror path structure verified for both pbf and shp formats
 
 ## Completed (v0.12.26) - Descriptive Step Variable Names in Cache Facets
@@ -3507,8 +3507,8 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **Console script**: `afl-submit` entry point added to `pyproject.toml`
 - **`run_30states.sh` updated**: step 5 now passes AFL source files via `--primary`/`--library` instead of pre-compiled JSON
 - **Flat namespace fix**: `_find_workflow_in_program` in both `submit.py` and `RunnerService` now handles flat dotted namespace names (e.g. `osm.UnitedStates.sample`) that the emitter produces for multi-file compilations — tries flat prefix matching before falling back to step-by-step nested navigation
-- **`run_30states.sh` MongoDB port**: sets `AFL_MONGODB_URL` to use `MONGODB_PORT` (default 27018) matching the Docker Compose host-side port mapping
-- **WebHDFS storage backend**: replaced pyarrow's native `HadoopFileSystem` (requires libhdfs.so JNI library) with WebHDFS REST API via `requests` — works on any platform (ARM64/macOS/Linux) without Hadoop native libraries; uses `AFL_WEBHDFS_PORT` env var (default 9870)
+- **`run_30states.sh` MongoDB port**: sets `FW_MONGODB_URL` to use `MONGODB_PORT` (default 27018) matching the Docker Compose host-side port mapping
+- **WebHDFS storage backend**: replaced pyarrow's native `HadoopFileSystem` (requires libhdfs.so JNI library) with WebHDFS REST API via `requests` — works on any platform (ARM64/macOS/Linux) without Hadoop native libraries; uses `FW_WEBHDFS_PORT` env var (default 9870)
 - **Docker simplification**: removed `INSTALL_HDFS` build arg and pyarrow from all Dockerfiles (runner, osm-geocoder, osm-geocoder-lite); HDFS support now only requires `requests`
 - 2127 passed, 80 skipped (without `--hdfs`/`--mongodb`/`--postgis`/`--boto3`)
 
@@ -3549,7 +3549,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 ## Completed (v0.12.15) - Strip Maven Example to MavenArtifactRunner Only
 - **Removed simulated build lifecycle**: deleted 10 AFL files (`maven_build.afl`, `maven_resolve.afl`, `maven_publish.afl`, `maven_quality.afl`, `maven_mixins.afl`, `maven_composed.afl`, `maven_pipelines.afl`, `maven_advanced.afl`, `maven_workflows.afl`, `maven_orchestrator.afl`) and 4 handler modules (`build_handlers.py`, `resolve_handlers.py`, `publish_handlers.py`, `quality_handlers.py`) that contained only simulated/stub implementations
 - **Retained runner-only files**: `maven_runner.afl` (RunMavenArtifact + RunMavenPlugin event facets), `maven_types.afl` (ExecutionResult + PluginExecutionResult schemas), `runner_handlers.py`, `maven_runner.py` (MavenArtifactRunner)
-- **Simplified agent**: removed tri-mode switching (AgentPoller/RegistryRunner/MavenArtifactRunner); `agent.py` now runs MavenArtifactRunner directly — no `AFL_USE_REGISTRY`/`AFL_USE_MAVEN_RUNNER` env vars
+- **Simplified agent**: removed tri-mode switching (AgentPoller/RegistryRunner/MavenArtifactRunner); `agent.py` now runs MavenArtifactRunner directly — no `FW_USE_REGISTRY`/`FW_USE_MAVEN_RUNNER` env vars
 - **Reduced `maven_types.afl`**: 9 schemas → 2 (removed ArtifactInfo, DependencyTree, BuildResult, TestReport, PublishResult, QualityReport, ProjectInfo)
 - **Simplified `handlers/__init__.py`**: removed imports/registrations for resolve, build, publish, quality handlers; kept only runner_handlers
 - **Pruned tests**: removed 6 test classes (`TestMavenMixins`, `TestMavenWorkflows`, `TestMavenComposedFacets`, `TestMavenPipelinesWorkflows`, `TestMavenOrchestratorWorkflows`, `TestMavenAdvancedWorkflows`) and 5 handler test classes; updated schema count (9→2) and handler registration count (14→2)
@@ -3585,7 +3585,7 @@ Added a second `step_log()` call (with `level="success"`) after each successful 
 - **7 AFL files** defining the Maven build lifecycle domain: `maven.types` (7 schemas: ArtifactInfo, DependencyTree, BuildResult, TestReport, PublishResult, QualityReport, ProjectInfo), `maven.mixins` (6 mixin facets + 3 implicits: Retry, Timeout, Repository, Profile, JvmArgs, Settings), `maven.resolve` (3 event facets), `maven.build` (4 event facets), `maven.publish` (3 event facets), `maven.quality` (2 event facets), `maven.workflows` (4 workflows: BuildAndTest, ReleaseArtifact, DependencyAudit, MultiModuleBuild)
 - **4 handler modules** (`examples/maven/handlers/`): simulated handlers with `_DISPATCH` dict pattern, `handle()` entrypoint, dual-mode registration (AgentPoller + RegistryRunner) — resolve_handlers (3), build_handlers (4), publish_handlers (3), quality_handlers (2)
 - **MavenArtifactRunner** (`examples/maven/maven_runner.py`): moved from `afl/runtime/maven_runner.py` to live in the example — runs external JVM programs packaged as Maven artifacts via `mvn:groupId:artifactId:version[:classifier]` URI scheme; thread-safe artifact caching, subprocess dispatch, step continuation
-- **Tri-mode agent** (`examples/maven/agent.py`): supports AgentPoller (default), RegistryRunner (`AFL_USE_REGISTRY=1`), and MavenArtifactRunner (`AFL_USE_MAVEN_RUNNER=1`) — unique to this example
+- **Tri-mode agent** (`examples/maven/agent.py`): supports AgentPoller (default), RegistryRunner (`FW_USE_REGISTRY=1`), and MavenArtifactRunner (`FW_USE_MAVEN_RUNNER=1`) — unique to this example
 - **Documentation**: README.md with pipeline descriptions, ASCII flow diagrams, reference tables; USER_GUIDE.md with step-by-step walkthrough, MavenArtifactRunner execution model concept, facet encapsulation pattern
 - **~70 tests**: `tests/test_maven_compilation.py` (AFL compilation), `tests/test_handler_dispatch_maven.py` (handler dispatch), `tests/test_maven_runner.py` (runner unit tests moved from `tests/runtime/`)
 - **Removed from core runtime**: `MavenArtifactRunner` and `MavenRunnerConfig` no longer exported from `afl.runtime`

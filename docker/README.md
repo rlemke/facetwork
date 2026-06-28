@@ -115,8 +115,8 @@ docker compose ps agent-addone   # Should list 2 instances
 Environment variables can be set in a `.env` file:
 
 ```env
-AFL_MONGODB_URL=mongodb://afl-mongodb:27017
-AFL_MONGODB_DATABASE=afl
+FW_MONGODB_URL=mongodb://afl-mongodb:27017
+FW_MONGODB_DATABASE=afl
 ```
 
 ## Architecture

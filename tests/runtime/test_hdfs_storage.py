@@ -259,9 +259,9 @@ class TestHDFSFileSystemFacade:
         from facetwork.runtime.storage import FileSystem
 
         base = f"{workdir}/auto"
-        monkeypatch.setenv("AFL_STORAGE", "hdfs")
-        monkeypatch.setenv("AFL_HDFS_HOST", "localhost")
-        monkeypatch.setenv("AFL_HDFS_BASE", base)
+        monkeypatch.setenv("FW_STORAGE", "hdfs")
+        monkeypatch.setenv("FW_HDFS_HOST", "localhost")
+        monkeypatch.setenv("FW_HDFS_BASE", base)
 
         fs = FileSystem(backend="auto", root="")
         assert fs.kind == "hdfs"

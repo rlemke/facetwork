@@ -28,7 +28,7 @@ PROJECT_DIR="$FW_ROOT"
 DEFAULT_INSTALL_ROOT="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
 
 # Registry: <short_name>|<repo_name>|<default extras>|<one-line description>.
-# Built from the catalog (domains.json + AFL_DOMAINS_FILE / domains.local.json
+# Built from the catalog (domains.json + FW_DOMAINS_FILE / domains.local.json
 # overrides) — NOT hardcoded here. A deployment adds/removes domains by editing
 # its catalog, no script change. `default extras` are comma-separated pip extras
 # the install adds unless `--no-default-extras` is passed.

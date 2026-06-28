@@ -47,14 +47,14 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$FW_ROOT"
 cd "$PROJECT_DIR"
 
-# Load shared env (populates AFL_GEOFABRIK_MIRROR from .env if set)
+# Load shared env (populates FW_GEOFABRIK_MIRROR from .env if set)
 source "$FW_LIB/_helpers/_env.sh"
 
 # Build the full list of compose files and profiles so that services started
 # with overlay files (HDFS, PostGIS, mirror) are also stopped cleanly.
 # Set dummy values for required env vars so compose can interpolate even when
 # the overlay wasn't used (we're only tearing down, not creating containers).
-export AFL_GEOFABRIK_MIRROR="${AFL_GEOFABRIK_MIRROR:-/dev/null}"
+export FW_GEOFABRIK_MIRROR="${FW_GEOFABRIK_MIRROR:-/dev/null}"
 
 COMPOSE_FILES="-f docker-compose.yml"
 for overlay in docker-compose.hdfs.yml docker-compose.postgis.yml docker-compose.mirror.yml; do

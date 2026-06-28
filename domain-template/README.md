@@ -60,7 +60,7 @@ example = ExamplePackage(
     ffl_dir=Path(__file__).parent / "ffl",
     register_handlers=register_all_registry_handlers,
     runner_env={
-        "AFL_TASK_EXECUTION_TIMEOUT_MS": "14400000",
+        "FW_TASK_EXECUTION_TIMEOUT_MS": "14400000",
     },
 )
 ```

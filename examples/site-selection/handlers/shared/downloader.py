@@ -26,7 +26,7 @@ from facetwork.config import get_output_base
 logger = logging.getLogger(__name__)
 
 _LOCAL_OUTPUT = get_output_base()
-_CACHE_DIR = os.environ.get("AFL_SITESEL_CACHE_DIR", os.path.join(_LOCAL_OUTPUT, "sitesel-cache"))
+_CACHE_DIR = os.environ.get("FW_SITESEL_CACHE_DIR", os.path.join(_LOCAL_OUTPUT, "sitesel-cache"))
 
 # Per-path locks to prevent duplicate concurrent downloads
 _locks: dict[str, threading.Lock] = {}

@@ -22,7 +22,7 @@
     python -m facetwork.catalog.cli import examples/dir/ --tags imported
     python -m facetwork.catalog.cli import-package osm-geocoder --tags osm
 
-Connects to MongoDB via the FFL config (AFL_MONGODB_URL etc.).
+Connects to MongoDB via the FFL config (FW_MONGODB_URL etc.).
 """
 
 from __future__ import annotations

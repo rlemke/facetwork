@@ -50,9 +50,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
         Runs independently of runners so stale tasks are cleaned up even
         when all runners are at capacity or offline.
         """
-        interval = int(os.environ.get("AFL_DASHBOARD_REAP_INTERVAL_S", "60"))
-        reaper_timeout = int(os.environ.get("AFL_REAPER_TIMEOUT_MS", "300000"))
-        stuck_timeout = int(os.environ.get("AFL_STUCK_TIMEOUT_MS", "14400000"))
+        interval = int(os.environ.get("FW_DASHBOARD_REAP_INTERVAL_S", "60"))
+        reaper_timeout = int(os.environ.get("FW_REAPER_TIMEOUT_MS", "300000"))
+        stuck_timeout = int(os.environ.get("FW_STUCK_TIMEOUT_MS", "14400000"))
 
         # Delay import to avoid circular deps / missing optional packages
         await asyncio.sleep(5)

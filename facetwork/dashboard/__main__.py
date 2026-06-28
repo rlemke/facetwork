@@ -68,7 +68,7 @@ def main() -> None:  # pragma: no cover
     import os
 
     if args.config:
-        os.environ["AFL_CONFIG"] = args.config
+        os.environ["FW_CONFIG"] = args.config
 
     uvicorn.run(
         "facetwork.dashboard.app:create_app",

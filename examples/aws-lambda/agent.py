@@ -9,11 +9,11 @@ Usage:
     PYTHONPATH=. python examples/aws-lambda/agent.py
 
 For Docker/MongoDB mode, set environment variables:
-    AFL_MONGODB_URL=mongodb://localhost:27017
-    AFL_MONGODB_DATABASE=facetwork
+    FW_MONGODB_URL=mongodb://localhost:27017
+    FW_MONGODB_DATABASE=facetwork
 
 For RegistryRunner mode:
-    AFL_USE_REGISTRY=1
+    FW_USE_REGISTRY=1
 
 LocalStack endpoint (default: http://localhost:4566):
     LOCALSTACK_URL=http://localhost:4566

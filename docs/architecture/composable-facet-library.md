@@ -291,7 +291,7 @@ model — it just exposed that `Extract(roads)` and the prefix filter had to be 
 4. **The service families** — in progress. **`Geocoding` ✅ shipped**: `osm.geocode.Geocode`
    (forward — the facet was declared but had no handler) and the new `osm.geocode.ReverseGeocode`,
    both backed by a Nominatim HTTP client (`_osm_tools/geocode.py`) with a configurable endpoint
-   (`AFL_NOMINATIM_URL` — point at a self-hosted instance for volume), a required User-Agent, and a
+   (`FW_NOMINATIM_URL` — point at a self-hosted instance for volume), a required User-Agent, and a
    polite ~1 req/s throttle for the public instance; results are the typed `GeoCoordinate`, cached on
    a synthetic key, and an unresolved query fails explicitly. Proven live against public Nominatim:
    "Golden Gate Bridge" → (37.820, −122.479), Google HQ → "Google Building 41", a clean

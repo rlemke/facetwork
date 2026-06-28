@@ -72,7 +72,7 @@ every runner.) See [runtime-impl.md §17.1.1](../reference/runtime-impl.md).
   below.
 
 - **External data dir** — `/Volumes/afl_data` on macOS by default, or
-  any host path with enough space. Override via `AFL_DATA_DIR` in
+  any host path with enough space. Override via `FW_DATA_DIR` in
   `.env.full-stack`. Subdirs the runners use:
 
   | Path | Used by |
@@ -148,28 +148,28 @@ automatically.
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `FWH_HANDLERS_ROOT` | `$HOME/fw_handlers` | Where the fwh_* clones live |
-| `AFL_DATA_DIR` | `/Volumes/afl_data` | External disk mount point |
-| `AFL_MONGODB_DATABASE` | `facetwork` | Mongo DB used by all services |
+| `FW_DATA_DIR` | `/Volumes/afl_data` | External disk mount point |
+| `FW_MONGODB_DATABASE` | `facetwork` | Mongo DB used by all services |
 | `DASHBOARD_PORT` | `8080` | Dashboard UI |
-| `AFL_MONGODB_PORT` | `27017` | MongoDB |
+| `FW_MONGODB_PORT` | `27017` | MongoDB |
 | `POSTGRES_PORT` | `5432` | PostGIS |
 | `JENKINS_UI_PORT` | `9090` | Jenkins web UI |
 | `JENKINS_AGENT_PORT` | `50000` | Jenkins agent port |
 | `POSTGRES_DB / USER / PASSWORD` | `afl_gis` / `afl` / `afl` | PostGIS creds |
-| `AFL_MAX_CONCURRENT` | `4` | Max concurrent tasks per runner |
-| `AFL_POLL_INTERVAL_MS` | `1000` | Runner poll interval |
+| `FW_MAX_CONCURRENT` | `4` | Max concurrent tasks per runner |
+| `FW_POLL_INTERVAL_MS` | `1000` | Runner poll interval |
 | `ANTHROPIC_API_KEY` | _(unset)_ | Required for live Claude calls |
 | `ANTHROPIC_EXTRAS` | `agent_sdk,mcp` | fwh_anthropic pip extras |
 | `CENSUS_API_KEY` | _(unset)_ | Required for fwh_census_us live calls |
-| `AFL_OSM_REPLICAS` | `1` | # of `runner-osm-geocoder` replicas |
-| `AFL_OSM_LZ_REPLICAS` | `1` | # of `runner-osm-lz` replicas |
-| `AFL_ANTHROPIC_REPLICAS` | `1` | # of `runner-anthropic` replicas |
-| `AFL_WEATHER_REPLICAS` | `1` | # of `runner-noaa-weather` replicas |
-| `AFL_JENKINS_REPLICAS` | `1` | # of `runner-jenkins-example` replicas |
-| `AFL_CENSUS_REPLICAS` | `1` | # of `runner-census-us` replicas |
-| `AFL_GENOMICS_REPLICAS` | `1` | # of `runner-genomics` replicas |
-| `AFL_MONITOR_REPLICAS` | `1` | # of `runner-sensor-monitoring` replicas |
-| `AFL_RUNNER_REPLICAS` | `1` | # of main `runner` replicas |
+| `FW_OSM_REPLICAS` | `1` | # of `runner-osm-geocoder` replicas |
+| `FW_OSM_LZ_REPLICAS` | `1` | # of `runner-osm-lz` replicas |
+| `FW_ANTHROPIC_REPLICAS` | `1` | # of `runner-anthropic` replicas |
+| `FW_WEATHER_REPLICAS` | `1` | # of `runner-noaa-weather` replicas |
+| `FW_JENKINS_REPLICAS` | `1` | # of `runner-jenkins-example` replicas |
+| `FW_CENSUS_REPLICAS` | `1` | # of `runner-census-us` replicas |
+| `FW_GENOMICS_REPLICAS` | `1` | # of `runner-genomics` replicas |
+| `FW_MONITOR_REPLICAS` | `1` | # of `runner-sensor-monitoring` replicas |
+| `FW_RUNNER_REPLICAS` | `1` | # of main `runner` replicas |
 
 ### Workload partitioning (task lists)
 
@@ -189,7 +189,7 @@ query never matches the `osm` backlog. See
 
 There is nothing to configure or keep in sync — partitioning follows the
 namespaces in the handler set. (Removed in productionization: the old
-`AFL_WORKFLOW_TASK_LIST_MAP` prefix map and per-runner `--task-list` routing.)
+`FW_WORKFLOW_TASK_LIST_MAP` prefix map and per-runner `--task-list` routing.)
 
 ### Scaling runners
 
@@ -201,7 +201,7 @@ Empirically, throughput is near-uniform: three osm-geocoder replicas on
 10 concurrent `AnalyzeRegion` runs distributed 330 step tasks 112 / 109 /
 109 with no fairness mechanism (thesis §5.4.1).
 
-**Persistent scaling — edit the env file.** `AFL_<EXAMPLE>_REPLICAS`
+**Persistent scaling — edit the env file.** `FW_<EXAMPLE>_REPLICAS`
 checkpoints the topology in `.env.full-stack`. `fw single full-stack up`
 sources the file and emits the matching `--scale runner-<name>=N` flag
 on every invocation. The defaults are all `1`, commented out — uncomment
@@ -209,8 +209,8 @@ and adjust:
 
 ```bash
 # .env.full-stack
-AFL_OSM_REPLICAS=3            # 3 osm-geocoder replicas
-AFL_GENOMICS_REPLICAS=2       # 2 genomics replicas
+FW_OSM_REPLICAS=3            # 3 osm-geocoder replicas
+FW_GENOMICS_REPLICAS=2       # 2 genomics replicas
 ```
 
 Then any `fw single full-stack up` or `rebuild` produces the desired fleet
@@ -230,7 +230,7 @@ fw single full-stack up -d --scale runner-osm-geocoder=5 runner-osm-geocoder
 ```
 
 Caveat: this is *not sticky*. A subsequent plain `fw single full-stack up`
-re-applies the env-file's `AFL_OSM_REPLICAS` (default `1`) and scales
+re-applies the env-file's `FW_OSM_REPLICAS` (default `1`) and scales
 back down. Use the env-file form unless you want a one-shot experiment.
 
 **Why `container_name:` is unset on the runner services.** Docker
@@ -369,7 +369,7 @@ fw install anthropic --mcp             # core + mcp extras only
 │ │     │                                                          │   │
 │ │  dashboard ◄──── HTTP :8080 ─────── host                       │   │
 │ │     │                                                          │   │
-│ │     │ AFL_POSTGIS_URL                                          │   │
+│ │     │ FW_POSTGIS_URL                                          │   │
 │ │     ▼                                                          │   │
 │ │  postgis ─◄── osm-geocoder / osm-lz runners write here         │   │
 │ │     │                                                          │   │
@@ -488,7 +488,7 @@ imported OSM data, and Jenkins job history across restarts. Use
 
 ### runner-osm-geocoder / runner-osm-lz
 
-- Both runners get `AFL_POSTGIS_URL=postgresql://afl:afl@postgis:5432/afl_gis`.
+- Both runners get `FW_POSTGIS_URL=postgresql://afl:afl@postgis:5432/afl_gis`.
 - `runner-osm-lz` is a pure workflow catalog (0 handlers); it
   dispatches to handlers registered by `runner-osm-geocoder`, so the
   compose `depends_on:` orders them correctly.
@@ -582,8 +582,8 @@ Edit `.env.full-stack`:
 
 ```bash
 # Skip the in-stack mongodb/postgis services
-AFL_MONGODB_URL=mongodb://my-mongo-host:27017
-AFL_POSTGIS_URL=postgresql://user:pass@my-postgis-host:5432/afl_gis
+FW_MONGODB_URL=mongodb://my-mongo-host:27017
+FW_POSTGIS_URL=postgresql://user:pass@my-postgis-host:5432/afl_gis
 ```
 
 Then start only the services you need (omit `mongodb` / `postgis`):

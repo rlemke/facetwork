@@ -9,11 +9,11 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 
-REGISTRY="${AFL_FLEET_REGISTRY:-192.168.68.96:5050}"
+REGISTRY="${FW_FLEET_REGISTRY:-192.168.68.96:5050}"
 IMAGE_REPO="$REGISTRY/facetwork-runner"
-BUILDER="${AFL_FLEET_BUILDER:-fleetbuilder}"
-PLATFORM="${AFL_FLEET_PLATFORM:-linux/arm64}"
-MONGO="${AFL_MONGODB_URL:-mongodb://server3.local:27017}"
+BUILDER="${FW_FLEET_BUILDER:-fleetbuilder}"
+PLATFORM="${FW_FLEET_PLATFORM:-linux/arm64}"
+MONGO="${FW_MONGODB_URL:-mongodb://server3.local:27017}"
 DRY=0 TIMEOUT=240
 while [ $# -gt 0 ]; do
     case "$1" in

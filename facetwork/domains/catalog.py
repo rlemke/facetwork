@@ -8,7 +8,7 @@ hardcoded lists that used to live in ``scripts/lib/install/domain``,
 
 Resolution (a deployment overrides the catalog WITHOUT editing any command):
 
-1. ``$AFL_DOMAINS_FILE`` — if set, that file IS the catalog (full replace).
+1. ``$FW_DOMAINS_FILE`` — if set, that file IS the catalog (full replace).
 2. else ``domains.local.json`` next to ``domains.json`` — merged OVER the
    committed defaults: ``domains``/``examples`` entries add or replace by key,
    and a top-level ``"_remove": ["name", ...]`` drops standard entries.
@@ -51,7 +51,7 @@ def _merge(base: dict, overlay: dict) -> dict:
 
 def catalog_source() -> Path:
     """The resolved catalog file actually in effect (for logging/diagnostics)."""
-    env = os.environ.get("AFL_DOMAINS_FILE")
+    env = os.environ.get("FW_DOMAINS_FILE")
     if env:
         return Path(env)
     if LOCAL_OVERRIDE.exists():
@@ -61,7 +61,7 @@ def catalog_source() -> Path:
 
 def load_catalog() -> dict:
     """Return the effective catalog: ``{"domains": {...}, "examples": {...}, ...}``."""
-    env = os.environ.get("AFL_DOMAINS_FILE")
+    env = os.environ.get("FW_DOMAINS_FILE")
     if env:
         cat = _read(Path(env))  # full replace
     elif LOCAL_OVERRIDE.exists():
@@ -118,7 +118,7 @@ def _suffix(service: str) -> str:
 
 def scaled_domain_suffixes() -> list[str]:
     """``--domain`` suffixes for compose domains flagged ``scaled`` — run at the
-    throughput knob (AFL_OSM_REPLICAS) rather than a single replica."""
+    throughput knob (FW_OSM_REPLICAS) rather than a single replica."""
     return [_suffix(s["service"]) for _n, s in sorted(compose_domains().items()) if s.get("scaled")]
 
 
@@ -140,5 +140,5 @@ def default_replicas() -> int:
 
 def scaled_replicas() -> int:
     """Catalog default replica count for the scaled tier (the throughput knob).
-    The runtime env (AFL_OSM_REPLICAS) still overrides this per host."""
+    The runtime env (FW_OSM_REPLICAS) still overrides this per host."""
     return int(_defaults().get("scaled_replicas", default_replicas()))

@@ -44,7 +44,7 @@ def _output_roots() -> list[Path]:
     """Candidate local output roots, in priority order.
 
     Handlers may write under different roots than the dashboard's configured one
-    (AFL_OUTPUT_BASE / AFL_DATA_ROOT vs the config default), so the artifact
+    (FW_OUTPUT_BASE / FW_DATA_ROOT vs the config default), so the artifact
     server checks all of them. Only existing directories are returned.
     """
     roots: list[Path] = []
@@ -60,11 +60,11 @@ def _output_roots() -> list[Path]:
             roots.append(rp)
 
     add(_output_base())
-    add(os.environ.get("AFL_OUTPUT_BASE"))
+    add(os.environ.get("FW_OUTPUT_BASE"))
     # Where the host's output dir is bind-mounted into a containerized dashboard
     # (so it can serve outputs a host-run runner wrote). See docker-compose.
-    add(os.environ.get("AFL_HOST_OUTPUT_DIR"))
-    dr = os.environ.get("AFL_DATA_ROOT")
+    add(os.environ.get("FW_HOST_OUTPUT_DIR"))
+    dr = os.environ.get("FW_DATA_ROOT")
     if dr:
         add(Path(dr) / "output")
     add(Path.home() / "afl_data" / "output")
@@ -87,9 +87,9 @@ def _resolve_under_roots(subpath: str) -> Path | None:
 def _s3_output_bases() -> list[str]:
     """``s3://…`` output prefixes to check when a path isn't on local disk.
 
-    Configure explicitly with ``AFL_S3_OUTPUT_BASE``; otherwise derived from
-    ``AFL_OUTPUT_BASE`` / ``AFL_DATA_ROOT`` (when they are s3 URIs) and
-    ``AFL_S3_BUCKET``.
+    Configure explicitly with ``FW_S3_OUTPUT_BASE``; otherwise derived from
+    ``FW_OUTPUT_BASE`` / ``FW_DATA_ROOT`` (when they are s3 URIs) and
+    ``FW_S3_BUCKET``.
     """
     bases: list[str] = []
 
@@ -101,20 +101,20 @@ def _s3_output_bases() -> list[str]:
             if p.startswith("s3://") and p not in bases:
                 bases.append(p)
 
-    add(os.environ.get("AFL_S3_OUTPUT_BASE"))
-    add(os.environ.get("AFL_OUTPUT_BASE"))
-    dr = os.environ.get("AFL_DATA_ROOT")
+    add(os.environ.get("FW_S3_OUTPUT_BASE"))
+    add(os.environ.get("FW_OUTPUT_BASE"))
+    dr = os.environ.get("FW_DATA_ROOT")
     if dr and dr.startswith("s3://"):
         add(dr.rstrip("/") + "/output")
-    bucket = os.environ.get("AFL_S3_BUCKET")
+    bucket = os.environ.get("FW_S3_BUCKET")
     if bucket:
         add(f"s3://{bucket}/output")
     # Bucket root of every base collected above, so the raw route can reconstruct
     # output keys that are NOT under .../output/ — e.g. the OSM pipeline writes
     # maps under s3://<bucket>/osm-output/osm-transform/…. artifact_url() links
     # those by their bucket-relative key, which only resolves against the root.
-    # Derived from the bases (not AFL_S3_BUCKET) so it works on the dashboard,
-    # which sets AFL_S3_OUTPUT_BASE but not necessarily AFL_S3_BUCKET.
+    # Derived from the bases (not FW_S3_BUCKET) so it works on the dashboard,
+    # which sets FW_S3_OUTPUT_BASE but not necessarily FW_S3_BUCKET.
     for b in list(bases):
         add("s3://" + b[len("s3://") :].split("/", 1)[0])
     return bases

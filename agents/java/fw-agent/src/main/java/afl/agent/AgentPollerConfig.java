@@ -122,8 +122,8 @@ public record AgentPollerConfig(
                 );
             }
 
-            // AFL_ENV overlay
-            String envName = System.getenv("AFL_ENV");
+            // FW_ENV overlay
+            String envName = System.getenv("FW_ENV");
             if (envName != null && !envName.isEmpty()) {
                 File overlayFile = new File(new File(path).getParent(), "afl.config." + envName + ".json");
                 if (overlayFile.exists()) {
@@ -165,7 +165,7 @@ public record AgentPollerConfig(
     /**
      * Resolves configuration using the standard search order:
      * 1. Explicit path argument
-     * 2. AFL_CONFIG environment variable
+     * 2. FW_CONFIG environment variable
      * 3. afl.config.json in current directory
      * 4. ~/.afl/afl.config.json
      * 5. /etc/afl/afl.config.json
@@ -179,7 +179,7 @@ public record AgentPollerConfig(
             }
         }
 
-        String envPath = System.getenv("AFL_CONFIG");
+        String envPath = System.getenv("FW_CONFIG");
         if (envPath != null && !envPath.isEmpty() && Files.exists(Path.of(envPath))) {
             return fromFile(envPath);
         }
@@ -207,25 +207,25 @@ public record AgentPollerConfig(
     }
 
     private static AgentPollerConfig applyEnvOverrides(AgentPollerConfig cfg) {
-        String mongoUrl = Optional.ofNullable(System.getenv("AFL_MONGODB_URL"))
+        String mongoUrl = Optional.ofNullable(System.getenv("FW_MONGODB_URL"))
                 .filter(s -> !s.isEmpty())
                 .orElse(cfg.mongoUrl());
-        String database = Optional.ofNullable(System.getenv("AFL_MONGODB_DATABASE"))
+        String database = Optional.ofNullable(System.getenv("FW_MONGODB_DATABASE"))
                 .filter(s -> !s.isEmpty())
                 .orElse(cfg.database());
         long pollMs = cfg.pollIntervalMs();
         int maxConc = cfg.maxConcurrent();
         long hbMs = cfg.heartbeatIntervalMs();
         try {
-            String v = System.getenv("AFL_POLL_INTERVAL_MS");
+            String v = System.getenv("FW_POLL_INTERVAL_MS");
             if (v != null && !v.isEmpty()) pollMs = Long.parseLong(v);
         } catch (NumberFormatException ignored) {}
         try {
-            String v = System.getenv("AFL_MAX_CONCURRENT");
+            String v = System.getenv("FW_MAX_CONCURRENT");
             if (v != null && !v.isEmpty()) maxConc = Integer.parseInt(v);
         } catch (NumberFormatException ignored) {}
         try {
-            String v = System.getenv("AFL_HEARTBEAT_INTERVAL_MS");
+            String v = System.getenv("FW_HEARTBEAT_INTERVAL_MS");
             if (v != null && !v.isEmpty()) hbMs = Long.parseLong(v);
         } catch (NumberFormatException ignored) {}
 

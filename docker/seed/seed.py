@@ -633,8 +633,8 @@ def seed_database():
     """Seed the database with example workflows."""
     from facetwork.runtime.mongo_store import MongoStore
 
-    mongodb_url = os.environ.get("AFL_MONGODB_URL", "mongodb://localhost:27017")
-    database = os.environ.get("AFL_MONGODB_DATABASE", "facetwork")
+    mongodb_url = os.environ.get("FW_MONGODB_URL", "mongodb://localhost:27017")
+    database = os.environ.get("FW_MONGODB_DATABASE", "facetwork")
 
     logger.info("Connecting to %s/%s", mongodb_url, database)
     store = MongoStore(connection_string=mongodb_url, database_name=database)

@@ -19,7 +19,7 @@ from facetwork.validator import validate
 
 # examples/hiv-drug-resistance/tests/real/ → examples/hiv-drug-resistance/
 _EXAMPLE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-_AFL_DIR = os.path.join(_EXAMPLE_ROOT, "ffl")
+_FW_DIR = os.path.join(_EXAMPLE_ROOT, "ffl")
 
 
 def compile_resistance_afl() -> dict[str, Any]:
@@ -35,7 +35,7 @@ def compile_resistance_afl() -> dict[str, Any]:
     Raises:
         afl.parser.ParseError: On syntax errors.
     """
-    source_path = Path(_AFL_DIR) / "resistance.ffl"
+    source_path = Path(_FW_DIR) / "resistance.ffl"
     source = source_path.read_text()
 
     parser = FFLParser()

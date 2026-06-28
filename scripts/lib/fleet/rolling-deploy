@@ -24,9 +24,9 @@
 #   -h, --help          Show this help message
 #
 # Environment:
-#   AFL_RUNNER_HOSTS    Space-separated hostnames (fallback for host discovery)
-#   AFL_REMOTE_PATH     Repo path on remote hosts (default: same as local)
-#   AFL_SSH_OPTS        Extra SSH options
+#   FW_RUNNER_HOSTS    Space-separated hostnames (fallback for host discovery)
+#   FW_REMOTE_PATH     Repo path on remote hosts (default: same as local)
+#   FW_SSH_OPTS        Extra SSH options
 #
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
@@ -103,7 +103,7 @@ examples = '${EXAMPLES[*]}'.split()
 from facetwork.runtime.mongo_store import MongoStore
 from facetwork.runtime import RegistryRunner, RegistryRunnerConfig, Evaluator, Telemetry
 
-mongo_url = os.environ.get('AFL_MONGODB_URL', 'mongodb://afl-mongodb:27017')
+mongo_url = os.environ.get('FW_MONGODB_URL', 'mongodb://afl-mongodb:27017')
 store = MongoStore(mongo_url)
 telemetry = Telemetry()
 evaluator = Evaluator(store, telemetry)
@@ -251,7 +251,7 @@ while IFS= read -r line; do
     # --- Start new runner ---
     echo "  Starting new runner on $srv_name..."
     _afl_ssh "$srv_name" \
-        "cd $AFL_REMOTE_PATH && nohup ./fw runner exec --registry$RUNNER_ARGS_STR > /tmp/afl-runner-\$\$.log 2>&1 &" || {
+        "cd $FW_REMOTE_PATH && nohup ./fw runner exec --registry$RUNNER_ARGS_STR > /tmp/afl-runner-\$\$.log 2>&1 &" || {
         echo "  ERROR: SSH to $srv_name failed for start"
         FAILED=true
         echo "  ABORTING rolling deploy — $srv_name is DOWN, remaining servers untouched."

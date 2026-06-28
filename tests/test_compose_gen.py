@@ -40,14 +40,14 @@ def test_render_standard_block():
     )
     assert "  runner-noaa-weather:\n" in blk
     assert "      <<: *s3-storage\n" in blk
-    assert "      AFL_DOMAIN_NAME: noaa-weather\n" in blk
-    assert "      AFL_DOMAIN_REPO: fwh_noaa_weather\n" in blk
-    assert '      AFL_REGISTRY_RUNNER_ARGS: "--task-list weather"\n' in blk
+    assert "      FW_DOMAIN_NAME: noaa-weather\n" in blk
+    assert "      FW_DOMAIN_REPO: fwh_noaa_weather\n" in blk
+    assert '      FW_REGISTRY_RUNNER_ARGS: "--task-list weather"\n' in blk
     assert (
         "      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_noaa_weather:/handlers/fwh_noaa_weather\n"
         in blk
     )
-    assert "      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data\n" in blk  # default volume
+    assert "      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data\n" in blk  # default volume
     assert "    restart: unless-stopped\n" in blk
 
 
@@ -64,19 +64,19 @@ def test_render_osm_block_structural_fields():
                 "hostname": True,
                 "postgis": True,
                 "depends": [["postgis", "service_healthy"]],
-                "env": [["AFL_GEOFABRIK_MIRROR", "/geofabrik"]],
+                "env": [["FW_GEOFABRIK_MIRROR", "/geofabrik"]],
                 "volumes": ["afl_output:/data/output"],
                 "notes": ["scratch must stay on the big disk"],
             },
         },
     )
-    assert "    hostname: ${AFL_FLEET_HOST:-}\n" in blk
+    assert "    hostname: ${FW_FLEET_HOST:-}\n" in blk
     assert "      <<: *osm-s3-env\n" in blk
     assert "      postgis:\n        condition: service_healthy\n" in blk
-    assert "      AFL_POSTGIS_URL: postgresql://" in blk
-    assert "      AFL_GEOFABRIK_MIRROR: /geofabrik\n" in blk
+    assert "      FW_POSTGIS_URL: postgresql://" in blk
+    assert "      FW_GEOFABRIK_MIRROR: /geofabrik\n" in blk
     assert (
-        '      AFL_REGISTRY_RUNNER_ARGS: "--task-list osm --server-group ${AFL_SERVER_GROUP:-default}"\n'
+        '      FW_REGISTRY_RUNNER_ARGS: "--task-list osm --server-group ${FW_SERVER_GROUP:-default}"\n'
         in blk
     )
     assert "      - afl_output:/data/output\n" in blk
@@ -97,7 +97,7 @@ def test_extras_with_var():
             "compose": {"env": [["ANTHROPIC_API_KEY", "${ANTHROPIC_API_KEY:-}"]]},
         },
     )
-    assert "      AFL_DOMAIN_EXTRAS: ${ANTHROPIC_EXTRAS:-agent_sdk,mcp}\n" in blk
+    assert "      FW_DOMAIN_EXTRAS: ${ANTHROPIC_EXTRAS:-agent_sdk,mcp}\n" in blk
     assert "      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}\n" in blk
 
 

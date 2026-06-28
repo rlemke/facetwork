@@ -37,7 +37,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-VALID_AFL_SOURCE = """
+VALID_FW_SOURCE = """
 facet Compute(input: Long)
 
 workflow SimpleWF(x: Long) => (result: Long) andThen {
@@ -46,7 +46,7 @@ workflow SimpleWF(x: Long) => (result: Long) andThen {
 }
 """
 
-DEFAULTS_AFL_SOURCE = """
+DEFAULTS_FW_SOURCE = """
 facet Compute(input: Long)
 
 workflow DefaultsWF(x: Long = 42, name: String = "hello") => (result: Long) andThen {
@@ -76,7 +76,7 @@ def client():
     store.close()
 
 
-def _seed_flow(store, source=VALID_AFL_SOURCE, workflow_name="SimpleWF"):
+def _seed_flow(store, source=VALID_FW_SOURCE, workflow_name="SimpleWF"):
     """Seed a flow + workflow into the store. Returns (flow, workflow_def)."""
     from facetwork.runtime.entities import (
         FlowDefinition,
@@ -146,7 +146,7 @@ class TestFlowRunForm:
 
     def test_form_shows_defaults(self, client):
         tc, store = client
-        flow, wf = _seed_flow(store, source=DEFAULTS_AFL_SOURCE, workflow_name="DefaultsWF")
+        flow, wf = _seed_flow(store, source=DEFAULTS_FW_SOURCE, workflow_name="DefaultsWF")
         resp = tc.get(f"/v3/flows/{flow.uuid}/run/{wf.uuid}")
         assert resp.status_code == 200
         assert "42" in resp.text
@@ -236,7 +236,7 @@ class TestFlowRunExecute:
 
     def test_user_inputs_override_defaults(self, client):
         tc, store = client
-        flow, wf = _seed_flow(store, source=DEFAULTS_AFL_SOURCE, workflow_name="DefaultsWF")
+        flow, wf = _seed_flow(store, source=DEFAULTS_FW_SOURCE, workflow_name="DefaultsWF")
         user_inputs = json.dumps({"x": 99, "name": "world"})
         tc.post(
             f"/v3/flows/{flow.uuid}/run/{wf.uuid}",
@@ -250,7 +250,7 @@ class TestFlowRunExecute:
 
     def test_defaults_applied_when_no_user_input(self, client):
         tc, store = client
-        flow, wf = _seed_flow(store, source=DEFAULTS_AFL_SOURCE, workflow_name="DefaultsWF")
+        flow, wf = _seed_flow(store, source=DEFAULTS_FW_SOURCE, workflow_name="DefaultsWF")
         tc.post(
             f"/v3/flows/{flow.uuid}/run/{wf.uuid}",
             data={"inputs_json": "{}"},

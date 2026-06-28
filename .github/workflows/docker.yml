@@ -81,9 +81,9 @@ jobs:
     # dirs avoid the /Volumes/* bind mounts the base compose defaults to.
     env:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
-      AFL_LOCAL_OUTPUT_DIR: /tmp/fw-output
-      AFL_OSM_OUTPUT_BASE: /tmp/fw-osm-output
-      AFL_GEOFABRIK_MIRROR: /tmp/fw-osm-mirror
+      FW_LOCAL_OUTPUT_DIR: /tmp/fw-output
+      FW_OSM_OUTPUT_BASE: /tmp/fw-osm-output
+      FW_GEOFABRIK_MIRROR: /tmp/fw-osm-mirror
 
     steps:
       - name: Checkout repository
@@ -94,7 +94,7 @@ jobs:
 
       - name: Start core services
         run: |
-          mkdir -p "$AFL_LOCAL_OUTPUT_DIR" "$AFL_OSM_OUTPUT_BASE" "$AFL_GEOFABRIK_MIRROR"
+          mkdir -p "$FW_LOCAL_OUTPUT_DIR" "$FW_OSM_OUTPUT_BASE" "$FW_GEOFABRIK_MIRROR"
           # depends_on waits for the mongo healthcheck before the apps start.
           docker compose up -d mongodb dashboard runner agent-addone
 

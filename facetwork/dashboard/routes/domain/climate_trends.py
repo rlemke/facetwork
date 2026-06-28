@@ -69,12 +69,12 @@ _STATE_NAMES: dict[str, str] = {
 def _get_climate_db(store):
     """Return the examples MongoDB database for climate data.
 
-    Climate data lives in ``AFL_EXAMPLES_DATABASE`` (default ``afl_examples``),
+    Climate data lives in ``FW_EXAMPLES_DATABASE`` (default ``afl_examples``),
     separate from the FFL runtime database.
     """
     import os
 
-    db_name = os.environ.get("AFL_EXAMPLES_DATABASE", "facetwork_examples")
+    db_name = os.environ.get("FW_EXAMPLES_DATABASE", "facetwork_examples")
     return store._db.client[db_name]
 
 

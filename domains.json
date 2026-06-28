@@ -1,5 +1,5 @@
 {
-  "_comment": "Catalog of Facetwork DOMAINS (pluggable fwh_* production pipelines) and in-repo EXAMPLES (teaching demos). Single source of truth for fw install/migrate/fleet + compose generation. Override per deployment WITHOUT editing any command: set AFL_DOMAINS_FILE=/path (full replace), or drop a gitignored domains.local.json (merged over this file: entries add/replace by key; a top-level \"_remove\": [\"name\", ...] drops standard ones). The per-domain \"compose\" object drives `fw util gen-compose`, which regenerates the runner-<service> blocks in docker-compose.full-stack.yml between the GENERATED markers. See docs/reference/domain-catalog.md.",
+  "_comment": "Catalog of Facetwork DOMAINS (pluggable fwh_* production pipelines) and in-repo EXAMPLES (teaching demos). Single source of truth for fw install/migrate/fleet + compose generation. Override per deployment WITHOUT editing any command: set FW_DOMAINS_FILE=/path (full replace), or drop a gitignored domains.local.json (merged over this file: entries add/replace by key; a top-level \"_remove\": [\"name\", ...] drops standard ones). The per-domain \"compose\" object drives `fw util gen-compose`, which regenerates the runner-<service> blocks in docker-compose.full-stack.yml between the GENERATED markers. See docs/reference/domain-catalog.md.",
   "version": 1,
   "defaults": {
     "replicas": 1,
@@ -33,16 +33,16 @@
         "postgis": true,
         "depends": [["postgis", "service_healthy"]],
         "env": [
-          ["AFL_GEOFABRIK_MIRROR", "/geofabrik"],
-          ["AFL_OSM_USE_CACHE_IF_PRESENT", "${AFL_OSM_USE_CACHE_IF_PRESENT:-true}"],
-          ["AFL_OSM_TOLERATE_MD5", "${AFL_OSM_TOLERATE_MD5:-true}"],
-          ["AFL_TASK_EXECUTION_TIMEOUT_MS", "14400000"],
-          ["AFL_STUCK_TIMEOUT_MS", "14400000"],
-          ["AFL_LEASE_DURATION_MS", "14400000"]
+          ["FW_GEOFABRIK_MIRROR", "/geofabrik"],
+          ["FW_OSM_USE_CACHE_IF_PRESENT", "${FW_OSM_USE_CACHE_IF_PRESENT:-true}"],
+          ["FW_OSM_TOLERATE_MD5", "${FW_OSM_TOLERATE_MD5:-true}"],
+          ["FW_TASK_EXECUTION_TIMEOUT_MS", "14400000"],
+          ["FW_STUCK_TIMEOUT_MS", "14400000"],
+          ["FW_LEASE_DURATION_MS", "14400000"]
         ],
         "volumes": [
           "afl_output:/data/output",
-          "${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch",
+          "${FW_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch",
           "afl_geofabrik:/geofabrik"
         ],
         "notes": [
@@ -65,14 +65,14 @@
         "postgis": true,
         "depends": [["runner-osm-geocoder", "service_started"]],
         "env": [
-          ["AFL_TASK_EXECUTION_TIMEOUT_MS", "14400000"],
-          ["AFL_STUCK_TIMEOUT_MS", "14400000"],
-          ["AFL_LEASE_DURATION_MS", "14400000"]
+          ["FW_TASK_EXECUTION_TIMEOUT_MS", "14400000"],
+          ["FW_STUCK_TIMEOUT_MS", "14400000"],
+          ["FW_LEASE_DURATION_MS", "14400000"]
         ],
         "volumes": [
           "${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm:ro",
           "afl_output:/data/output",
-          "${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch"
+          "${FW_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch"
         ],
         "notes": [
           "Pure workflow catalog over fwh_osm — its facets dispatch to the osm-geocoder runner's handlers, so start that one first (depends_on) and mount fwh_osm read-only.",

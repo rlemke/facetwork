@@ -67,7 +67,7 @@ Images are tagged by **git short SHA** and pushed to the private registry:
 ```
 
 All per-example runners build from the **same** `docker/Dockerfile.example-runner`
-(the example is chosen at runtime via `AFL_EXAMPLE_NAME`), so one tag serves
+(the example is chosen at runtime via `FW_EXAMPLE_NAME`), so one tag serves
 every example. Build the **same architecture** the fleet runs (the current fleet
 is all Apple Silicon → `linux/arm64`).
 
@@ -193,7 +193,7 @@ The process dies mid-task; the task stays `state=running` in Mongo with
 
 - Every surviving runner runs a reaper every 60s
   (`service.py` `_maybe_reap_orphaned_tasks`).
-- When a server's `ping_time` is stale by more than `AFL_REAPER_TIMEOUT_MS`
+- When a server's `ping_time` is stale by more than `FW_REAPER_TIMEOUT_MS`
   (**default 120s**), the reaper
   (`facetwork/runtime/mongo_store/tasks.py` `reap_orphaned_tasks`) resets that
   server's `running` tasks to `pending`, clears `server_id`, and
@@ -205,7 +205,7 @@ The process dies mid-task; the task stays `state=running` in Mongo with
 stale-detection + next 60s reaper tick + reclaim).
 
 Recovery is driven by **server-heartbeat staleness**, not the per-task lease
-(`AFL_LEASE_DURATION_MS`, default 5min). The lease is the slower fallback that
+(`FW_LEASE_DURATION_MS`, default 5min). The lease is the slower fallback that
 lets another runner reclaim a stale `running` task directly on `claim_task`.
 
 ### 3.3 Retry ceiling & idempotency
@@ -222,10 +222,10 @@ lets another runner reclaim a stale `running` task directly on `claim_task`.
 
 | Mechanism | Triggers on | Default | Recovers a rollout kill? |
 |-----------|-------------|---------|--------------------------|
-| **Reaper** | dead **server** (stale `ping_time`) | `AFL_REAPER_TIMEOUT_MS` = 120s | **Yes** |
-| **Stuck-task watchdog** | stalled **task** on a *live* server | `AFL_STUCK_TIMEOUT_MS` = 30min | no — different failure mode |
-| Per-task execution timeout | task exceeds its own limit | `AFL_TASK_EXECUTION_TIMEOUT_MS` = 15min | safety net |
-| Task lease | stale `running` task reclaim on claim | `AFL_LEASE_DURATION_MS` = 5min | slow fallback |
+| **Reaper** | dead **server** (stale `ping_time`) | `FW_REAPER_TIMEOUT_MS` = 120s | **Yes** |
+| **Stuck-task watchdog** | stalled **task** on a *live* server | `FW_STUCK_TIMEOUT_MS` = 30min | no — different failure mode |
+| Per-task execution timeout | task exceeds its own limit | `FW_TASK_EXECUTION_TIMEOUT_MS` = 15min | safety net |
+| Task lease | stale `running` task reclaim on claim | `FW_LEASE_DURATION_MS` = 5min | slow fallback |
 
 ### 3.5 Zero-interruption rollouts
 
@@ -259,8 +259,8 @@ role or facet name):
 
 | Server state | Prune window | Why |
 |--------------|--------------|-----|
-| `running` / `startup` (live) | `max(10×AFL_REAPER_TIMEOUT_MS, 10min)` ≈ **20 min** | A briefly-quiet live runner (GC pause, slow Mongo) must never be deleted out from under itself. |
-| `shutdown` (terminal) | `AFL_REAPER_TIMEOUT_MS` ≈ **2 min** | Explicitly dead — a graceful deregister or the reaper marked it. Nothing to protect, so it clears fast instead of inflating counts. |
+| `running` / `startup` (live) | `max(10×FW_REAPER_TIMEOUT_MS, 10min)` ≈ **20 min** | A briefly-quiet live runner (GC pause, slow Mongo) must never be deleted out from under itself. |
+| `shutdown` (terminal) | `FW_REAPER_TIMEOUT_MS` ≈ **2 min** | Explicitly dead — a graceful deregister or the reaper marked it. Nothing to protect, so it clears fast instead of inflating counts. |
 
 So any `shutdown` row — post-rollout or otherwise — self-clears within ~2 min;
 no manual cleanup is needed. Until then, **`fw runner list` (no filter)
@@ -314,7 +314,7 @@ fw fleet set --image <registry>/facetwork-runner:<tag>   # rolling image deploy
 fw fleet status                                   # config + per-host drift
 
 # on each runner server (one-time join): a daemon that auto-applies changes
-export AFL_FLEET_KEY=<key>
+export FW_FLEET_KEY=<key>
 fw fleet agent watch                              # poll + reconcile forever
 fw fleet agent apply                              # one-shot reconcile (no daemon)
 fw fleet agent apply --dry-run                    # preview
@@ -326,10 +326,10 @@ from the central config + encrypted secret store. See
 
 ### 4.4 Remote process mode & rolling restart (SSH)
 
-For process-mode runners on remote hosts (requires `AFL_RUNNER_HOSTS` or `--host`):
+For process-mode runners on remote hosts (requires `FW_RUNNER_HOSTS` or `--host`):
 
 ```bash
-fw runner start --all --example osm-geocoder      # all AFL_RUNNER_HOSTS
+fw runner start --all --example osm-geocoder      # all FW_RUNNER_HOSTS
 fw runner start --host h1 --host h2 --example osm-geocoder
 
 # zero-downtime SERIAL restart: drain -> wait SHUTDOWN -> start -> wait RUNNING,

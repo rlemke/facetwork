@@ -14,7 +14,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../_helpers/_bootstrap.sh"
 set -euo pipefail
 source "$FW_LIB/_helpers/_env.sh"
 
-POSTGIS_URL="${AFL_POSTGIS_URL:-postgresql://afl_osm:afl_osm_2024@afl-postgres:5432/osm}"
+POSTGIS_URL="${FW_POSTGIS_URL:-postgresql://afl_osm:afl_osm_2024@afl-postgres:5432/osm}"
 
 # Parse DSN for psql
 DB_HOST=$(echo "$POSTGIS_URL" | sed -n 's|.*@\([^:/]*\).*|\1|p')

@@ -35,7 +35,7 @@ except ImportError:
 # Inline FFL source constants
 # =========================================================================
 
-AFL_HELLO = """\
+FW_HELLO = """\
 namespace hello {
     event facet Greet(name: String) => (greeting: String)
 
@@ -46,7 +46,7 @@ namespace hello {
 }
 """
 
-AFL_MULTI_STEP = """\
+FW_MULTI_STEP = """\
 namespace multi {
     event facet StepA(input: Long) => (output: Long)
     event facet StepB(input: Long) => (output: Long)
@@ -59,7 +59,7 @@ namespace multi {
 }
 """
 
-AFL_FOREACH = """\
+FW_FOREACH = """\
 namespace batch {
     event facet Process(input: Long) => (output: Long)
 
@@ -122,7 +122,7 @@ class TestFullLifecycleSimple:
     """Parse FFL → compile → execute → pause → continue → resume → verify."""
 
     def test_hello_workflow_compiles_and_executes(self, store, evaluator):
-        compiled = _compile(AFL_HELLO)
+        compiled = _compile(FW_HELLO)
         wf_ast = _find_workflow(compiled, "SayHello")
         assert wf_ast is not None
 
@@ -130,7 +130,7 @@ class TestFullLifecycleSimple:
         assert result.status == ExecutionStatus.PAUSED
 
     def test_hello_workflow_continues_and_completes(self, store, evaluator, tmp_path):
-        compiled = _compile(AFL_HELLO)
+        compiled = _compile(FW_HELLO)
         wf_ast = _find_workflow(compiled, "SayHello")
 
         result = evaluator.execute(wf_ast, inputs={"name": "World"}, program_ast=compiled)
@@ -165,7 +165,7 @@ class TestFullLifecycleMultiStep:
     """Two sequential event facets with data flow between steps."""
 
     def test_two_step_data_flows(self, store, evaluator, tmp_path):
-        compiled = _compile(AFL_MULTI_STEP)
+        compiled = _compile(FW_MULTI_STEP)
         wf_ast = _find_workflow(compiled, "TwoStep")
 
         result = evaluator.execute(wf_ast, inputs={"x": 5}, program_ast=compiled)
@@ -196,7 +196,7 @@ class TestFullLifecycleRegistryRunner:
     """From FFL source through RegistryRunner dispatch."""
 
     def test_registry_runner_processes_hello(self, store, evaluator, tmp_path):
-        compiled = _compile(AFL_HELLO)
+        compiled = _compile(FW_HELLO)
         wf_ast = _find_workflow(compiled, "SayHello")
 
         _register_handler(
@@ -227,7 +227,7 @@ class TestCompileAndExecuteEdgeCases:
     """Edge cases in compilation and execution."""
 
     def test_namespaced_workflow_found(self, store, evaluator):
-        compiled = _compile(AFL_HELLO)
+        compiled = _compile(FW_HELLO)
         wf_ast = _find_workflow(compiled, "SayHello")
         assert wf_ast is not None
         assert wf_ast["type"] == "WorkflowDecl"
@@ -251,7 +251,7 @@ class TestCompileAndExecuteEdgeCases:
         assert wf_ast is None
 
 
-AFL_ADD_LONGS = """\
+FW_ADD_LONGS = """\
 namespace afl.test.dependency {
     facet LongValue(value: Long)
     workflow AddLongs(input:Long = 1) => (output:Long = 2) andThen {
@@ -280,7 +280,7 @@ class TestAddLongsDependencyChain:
     """
 
     def test_compiles_with_10_steps(self):
-        compiled = _compile(AFL_ADD_LONGS)
+        compiled = _compile(FW_ADD_LONGS)
         wf = _find_workflow(compiled, "AddLongs")
         assert wf is not None
         assert wf["type"] == "WorkflowDecl"
@@ -288,7 +288,7 @@ class TestAddLongsDependencyChain:
         assert len(steps) == 10
 
     def test_default_input_completes_with_223(self, store, evaluator):
-        compiled = _compile(AFL_ADD_LONGS)
+        compiled = _compile(FW_ADD_LONGS)
         wf = _find_workflow(compiled, "AddLongs")
         result = evaluator.execute(wf, inputs={"input": 1}, program_ast=compiled)
         assert result.success
@@ -296,7 +296,7 @@ class TestAddLongsDependencyChain:
         assert result.outputs["output"] == 223
 
     def test_custom_input_completes_with_331(self, store, evaluator):
-        compiled = _compile(AFL_ADD_LONGS)
+        compiled = _compile(FW_ADD_LONGS)
         wf = _find_workflow(compiled, "AddLongs")
         result = evaluator.execute(wf, inputs={"input": 5}, program_ast=compiled)
         assert result.success
@@ -304,7 +304,7 @@ class TestAddLongsDependencyChain:
         assert result.outputs["output"] == 331
 
 
-AFL_MULTI_ANDTHEN = """\
+FW_MULTI_ANDTHEN = """\
 namespace afl.test.basic.test_runners {
     facet Value(a:Int = 0,b:Int=1) => (value:Int) andThen {
       yield Value(value = $.a + $.b)
@@ -363,7 +363,7 @@ class TestMultiAndThenBlocks:
     """
 
     def test_compiles_with_5_blocks(self):
-        compiled = _compile(AFL_MULTI_ANDTHEN)
+        compiled = _compile(FW_MULTI_ANDTHEN)
         wf = _find_workflow(compiled, "MultiAndThenEventTest")
         assert wf is not None
         body = wf["body"]
@@ -371,13 +371,13 @@ class TestMultiAndThenBlocks:
         assert len(body) == 5
 
     def test_each_block_has_6_steps(self):
-        compiled = _compile(AFL_MULTI_ANDTHEN)
+        compiled = _compile(FW_MULTI_ANDTHEN)
         wf = _find_workflow(compiled, "MultiAndThenEventTest")
         for i, block in enumerate(wf["body"]):
             assert len(block["steps"]) == 6, f"block {i} should have 6 steps"
 
     def test_default_parameter_all_outputs_89(self, store, evaluator):
-        compiled = _compile(AFL_MULTI_ANDTHEN)
+        compiled = _compile(FW_MULTI_ANDTHEN)
         wf = _find_workflow(compiled, "MultiAndThenEventTest")
         result = evaluator.execute(wf, inputs={"parameter": 1}, program_ast=compiled)
         assert result.success
@@ -386,7 +386,7 @@ class TestMultiAndThenBlocks:
             assert result.outputs[f"output{i}"] == 89
 
     def test_parameter_5_all_outputs_149(self, store, evaluator):
-        compiled = _compile(AFL_MULTI_ANDTHEN)
+        compiled = _compile(FW_MULTI_ANDTHEN)
         wf = _find_workflow(compiled, "MultiAndThenEventTest")
         result = evaluator.execute(wf, inputs={"parameter": 5}, program_ast=compiled)
         assert result.success
@@ -395,7 +395,7 @@ class TestMultiAndThenBlocks:
             assert result.outputs[f"output{i}"] == 149
 
 
-AFL_MULTI_ANDTHEN_NESTED = """\
+FW_MULTI_ANDTHEN_NESTED = """\
 namespace afl.test.basic.test_runners {
     facet IntValueAdd(a:Int, b:Int) => (value:Int) andThen {
        yield IntValueAdd(value = $.a + $.b)
@@ -460,7 +460,7 @@ class TestMultiAndThenNestedFacets:
     """
 
     def test_compiles_with_5_blocks(self):
-        compiled = _compile(AFL_MULTI_ANDTHEN_NESTED)
+        compiled = _compile(FW_MULTI_ANDTHEN_NESTED)
         wf = _find_workflow(compiled, "MultiAndThenTest2")
         assert wf is not None
         body = wf["body"]
@@ -468,7 +468,7 @@ class TestMultiAndThenNestedFacets:
         assert len(body) == 5
 
     def test_value_facet_has_3_step_body(self):
-        compiled = _compile(AFL_MULTI_ANDTHEN_NESTED)
+        compiled = _compile(FW_MULTI_ANDTHEN_NESTED)
         # Find the Value facet definition
         for decl in compiled.get("declarations", []):
             if decl.get("type") == "Namespace":
@@ -479,7 +479,7 @@ class TestMultiAndThenNestedFacets:
         pytest.fail("Value facet not found")
 
     def test_default_parameter_all_outputs_3962(self, store, evaluator):
-        compiled = _compile(AFL_MULTI_ANDTHEN_NESTED)
+        compiled = _compile(FW_MULTI_ANDTHEN_NESTED)
         wf = _find_workflow(compiled, "MultiAndThenTest2")
         result = evaluator.execute(wf, inputs={"parameter": 1}, program_ast=compiled)
         assert result.success
@@ -488,7 +488,7 @@ class TestMultiAndThenNestedFacets:
             assert result.outputs[f"output{i}"] == 3962
 
     def test_parameter_5_all_outputs_6266(self, store, evaluator):
-        compiled = _compile(AFL_MULTI_ANDTHEN_NESTED)
+        compiled = _compile(FW_MULTI_ANDTHEN_NESTED)
         wf = _find_workflow(compiled, "MultiAndThenTest2")
         result = evaluator.execute(wf, inputs={"parameter": 5}, program_ast=compiled)
         assert result.success
@@ -497,7 +497,7 @@ class TestMultiAndThenNestedFacets:
             assert result.outputs[f"output{i}"] == 6266
 
 
-AFL_TOP_LEVEL_WORKFLOW = """\
+FW_TOP_LEVEL_WORKFLOW = """\
 event facet AddOne(input: Long) => (output: Long)
 
 workflow TestAddOne(x: Long) => (result: Long) andThen {
@@ -514,7 +514,7 @@ class TestMcpToolIntegration:
     def test_compile_valid_source(self):
         from facetwork.mcp.server import _tool_compile
 
-        result = _tool_compile({"source": AFL_HELLO})
+        result = _tool_compile({"source": FW_HELLO})
         data = json.loads(result[0].text)
         assert data["success"] is True
         assert "json" in data
@@ -523,14 +523,14 @@ class TestMcpToolIntegration:
         from facetwork.mcp.server import _tool_compile, _tool_execute_workflow
 
         # Compile
-        compile_result = _tool_compile({"source": AFL_TOP_LEVEL_WORKFLOW})
+        compile_result = _tool_compile({"source": FW_TOP_LEVEL_WORKFLOW})
         compile_data = json.loads(compile_result[0].text)
         assert compile_data["success"] is True
 
         # Execute — top-level workflow should be found and pause
         exec_result = _tool_execute_workflow(
             {
-                "source": AFL_TOP_LEVEL_WORKFLOW,
+                "source": FW_TOP_LEVEL_WORKFLOW,
                 "workflow_name": "TestAddOne",
                 "inputs": {"x": 5},
             }
@@ -572,7 +572,7 @@ class TestMcpToolIntegration:
 # andThen script blocks with Census-style event facets
 # =========================================================================
 
-AFL_CENSUS_WITH_SCRIPTS = """\
+FW_CENSUS_WITH_SCRIPTS = """\
 namespace census.types {
     schema CensusFile {
         path: String,
@@ -691,7 +691,7 @@ class TestCensusWithAndThenScripts:
 
     def test_compiles_with_pre_script_and_4_blocks(self):
         """Workflow compiles with pre_script and 4 andThen blocks (2 regular + 2 script)."""
-        compiled = _compile(AFL_CENSUS_WITH_SCRIPTS)
+        compiled = _compile(FW_CENSUS_WITH_SCRIPTS)
         wf = _find_workflow(compiled, "AnalyzeStateWithScripts")
         assert wf is not None
         assert wf["type"] == "WorkflowDecl"
@@ -703,7 +703,7 @@ class TestCensusWithAndThenScripts:
 
     def test_body_block_types(self):
         """First and third blocks are regular (steps), second and fourth are scripts."""
-        compiled = _compile(AFL_CENSUS_WITH_SCRIPTS)
+        compiled = _compile(FW_CENSUS_WITH_SCRIPTS)
         wf = _find_workflow(compiled, "AnalyzeStateWithScripts")
         body = wf["body"]
 
@@ -729,7 +729,7 @@ class TestCensusWithAndThenScripts:
 
     def test_pre_script_sets_state_label(self):
         """Pre-script creates state_label param from state_name and state_fips."""
-        compiled = _compile(AFL_CENSUS_WITH_SCRIPTS)
+        compiled = _compile(FW_CENSUS_WITH_SCRIPTS)
         wf = _find_workflow(compiled, "AnalyzeStateWithScripts")
         code = wf["pre_script"]["code"]
         assert "state_label" in code
@@ -737,7 +737,7 @@ class TestCensusWithAndThenScripts:
 
     def test_executes_and_pauses_on_event_facets(self, store, evaluator):
         """Execution pauses when hitting event facet steps, andThen scripts complete immediately."""
-        compiled = _compile(AFL_CENSUS_WITH_SCRIPTS)
+        compiled = _compile(FW_CENSUS_WITH_SCRIPTS)
         wf = _find_workflow(compiled, "AnalyzeStateWithScripts")
 
         result = evaluator.execute(
@@ -755,7 +755,7 @@ class TestCensusWithAndThenScripts:
 
     def test_full_lifecycle_with_event_resolution(self, store, evaluator):
         """Full lifecycle: execute → resolve events → resume → verify outputs."""
-        compiled = _compile(AFL_CENSUS_WITH_SCRIPTS)
+        compiled = _compile(FW_CENSUS_WITH_SCRIPTS)
         wf = _find_workflow(compiled, "AnalyzeStateWithScripts")
 
         result = evaluator.execute(
@@ -858,7 +858,7 @@ class TestCensusWithAndThenScripts:
 
     def test_different_state_uses_correct_label(self, store, evaluator):
         """Pre-script correctly transforms different state inputs."""
-        compiled = _compile(AFL_CENSUS_WITH_SCRIPTS)
+        compiled = _compile(FW_CENSUS_WITH_SCRIPTS)
         wf = _find_workflow(compiled, "AnalyzeStateWithScripts")
 
         result = evaluator.execute(

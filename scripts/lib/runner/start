@@ -18,7 +18,7 @@
 #   fw runner start --example hiv-drug-resistance -- --log-format text --max-concurrent 10
 #
 # Remote mode:
-#   fw runner start --all --example hiv-drug-resistance    # all AFL_RUNNER_HOSTS
+#   fw runner start --all --example hiv-drug-resistance    # all FW_RUNNER_HOSTS
 #   fw runner start --host h1 --host h2 --example hiv-drug-resistance
 #
 # Container modes (replaces the old start-worker):
@@ -38,26 +38,26 @@
 #   --fleet          Containers joining an EXTERNAL shared Mongo+MinIO; preflights
 #                    both and reads --env FILE (default .env.fleet)
 #   --replicas N     --docker/--fleet: containers per selected runner service
-#                    (default: AFL_OSM_REPLICAS or 4 for --fleet, 1 for --docker)
+#                    (default: FW_OSM_REPLICAS or 4 for --fleet, 1 for --docker)
 #   --env FILE       --fleet: shared-endpoints env file (default .env.fleet)
 #   --recreate       --docker/--fleet: force-recreate the containers
-#   --all            Start on all hosts from AFL_RUNNER_HOSTS
+#   --all            Start on all hosts from FW_RUNNER_HOSTS
 #   --host HOST      Start on specific remote host (repeatable)
 #   --start-timeout N  Seconds to wait for remote runner startup (default: 30)
 #   --              Remaining args are passed to the runner service
 #   -h, --help      Show this help message
 #
 # Environment (remote mode):
-#   AFL_RUNNER_HOSTS   Space-separated hostnames
-#   AFL_REMOTE_PATH    Repo path on remote hosts (default: same as local)
-#   AFL_SSH_OPTS       Extra SSH options
+#   FW_RUNNER_HOSTS   Space-separated hostnames
+#   FW_REMOTE_PATH    Repo path on remote hosts (default: same as local)
+#   FW_SSH_OPTS       Extra SSH options
 #
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
 
 REPO_ROOT="$FW_ROOT"
 
-# Load shared env (.env sets AFL_MONGODB_URL etc.)
+# Load shared env (.env sets FW_MONGODB_URL etc.)
 source "$FW_LIB/_helpers/_env.sh"
 source "$FW_LIB/_helpers/_catalog.sh"
 
@@ -156,7 +156,7 @@ if [[ "$MODE" == "docker" || "$MODE" == "fleet" ]]; then
         COMPOSE_ENV=(--env-file "$ENV_FILE")
 
         # Per-server override layer: an optional sibling file holding ONLY this
-        # server's specifics (AFL_DATA_DIR, AFL_OSM_REPLICAS, AFL_INFRA_IP if the
+        # server's specifics (FW_DATA_DIR, FW_OSM_REPLICAS, FW_INFRA_IP if the
         # infra host moved, …). Loaded AFTER the shared base so its values WIN
         # (compose merges multiple --env-file, later wins), and it is gitignored.
         # So when the shared base (.env.fleet, copied from .env.fleet.preset)
@@ -169,7 +169,7 @@ if [[ "$MODE" == "docker" || "$MODE" == "fleet" ]]; then
         fi
 
         # Read the few vars this script needs WITHOUT sourcing (a value may contain
-        # spaces, e.g. AFL_REGISTRY_RUNNER_ARGS=--task-list osm); compose reads the
+        # spaces, e.g. FW_REGISTRY_RUNNER_ARGS=--task-list osm); compose reads the
         # full file safely via --env-file. The override file wins, matching compose.
         _envget() {
             local v=""
@@ -177,61 +177,61 @@ if [[ "$MODE" == "docker" || "$MODE" == "fleet" ]]; then
             [[ -n "$v" ]] && { printf '%s\n' "$v"; return; }
             sed -n "s/^$1=//p" "$ENV_FILE" | tail -1
         }
-        AFL_MONGODB_URL="$(_envget AFL_MONGODB_URL)"
-        AFL_S3_ENDPOINT="$(_envget AFL_S3_ENDPOINT)"
-        AFL_RUNNER_IMAGE="${AFL_RUNNER_IMAGE:-$(_envget AFL_RUNNER_IMAGE)}"
-        : "${AFL_MONGODB_URL:?set AFL_MONGODB_URL (shared MongoDB) in $ENV_FILE}"
-        : "${AFL_S3_ENDPOINT:?set AFL_S3_ENDPOINT (shared MinIO) in $ENV_FILE}"
-        REPLICAS="${REPLICAS:-$(_envget AFL_OSM_REPLICAS)}"; REPLICAS="${REPLICAS:-4}"
+        FW_MONGODB_URL="$(_envget FW_MONGODB_URL)"
+        FW_S3_ENDPOINT="$(_envget FW_S3_ENDPOINT)"
+        FW_RUNNER_IMAGE="${FW_RUNNER_IMAGE:-$(_envget FW_RUNNER_IMAGE)}"
+        : "${FW_MONGODB_URL:?set FW_MONGODB_URL (shared MongoDB) in $ENV_FILE}"
+        : "${FW_S3_ENDPOINT:?set FW_S3_ENDPOINT (shared MinIO) in $ENV_FILE}"
+        REPLICAS="${REPLICAS:-$(_envget FW_OSM_REPLICAS)}"; REPLICAS="${REPLICAS:-4}"
 
         # Name this server's runners (hostname by default) so `fleet status` /
         # the dashboard show it by name and fleet-agent drift records line up.
-        export AFL_FLEET_HOST="${AFL_FLEET_HOST:-$(_envget AFL_RUNNER_NAME)}"
-        export AFL_FLEET_HOST="${AFL_FLEET_HOST:-$(hostname -s 2>/dev/null || hostname)}"
+        export FW_FLEET_HOST="${FW_FLEET_HOST:-$(_envget FW_RUNNER_NAME)}"
+        export FW_FLEET_HOST="${FW_FLEET_HOST:-$(hostname -s 2>/dev/null || hostname)}"
         # Every Facetwork server is a runner — group under "runner" by default.
-        export AFL_SERVER_GROUP="${AFL_SERVER_GROUP:-$(_envget AFL_SERVER_GROUP)}"
-        export AFL_SERVER_GROUP="${AFL_SERVER_GROUP:-runner}"
+        export FW_SERVER_GROUP="${FW_SERVER_GROUP:-$(_envget FW_SERVER_GROUP)}"
+        export FW_SERVER_GROUP="${FW_SERVER_GROUP:-runner}"
 
         echo "Preflight — shared services must be reachable from this host:"
-        if "$PY" - "$AFL_MONGODB_URL" <<'PYEOF' 2>/dev/null
+        if "$PY" - "$FW_MONGODB_URL" <<'PYEOF' 2>/dev/null
 import sys
 from pymongo import MongoClient
 MongoClient(sys.argv[1], serverSelectionTimeoutMS=5000).admin.command("ping")
 PYEOF
-        then echo "  ✓ MongoDB reachable: $AFL_MONGODB_URL"
+        then echo "  ✓ MongoDB reachable: $FW_MONGODB_URL"
         else
-            echo "  ✗ MongoDB NOT reachable: $AFL_MONGODB_URL" >&2
+            echo "  ✗ MongoDB NOT reachable: $FW_MONGODB_URL" >&2
             echo "    Check host/port, /etc/hosts (afl-mongodb -> IP), mongod binds 0.0.0.0, firewall." >&2
             exit 1
         fi
-        if "$PY" - "$AFL_S3_ENDPOINT" <<'PYEOF' 2>/dev/null
+        if "$PY" - "$FW_S3_ENDPOINT" <<'PYEOF' 2>/dev/null
 import socket, sys
 from urllib.parse import urlparse
 u = urlparse(sys.argv[1]); host = u.hostname or sys.argv[1]
 port = u.port or (443 if u.scheme == "https" else 80)
 socket.create_connection((host, port), timeout=5).close()
 PYEOF
-        then echo "  ✓ MinIO/S3 reachable: $AFL_S3_ENDPOINT"
+        then echo "  ✓ MinIO/S3 reachable: $FW_S3_ENDPOINT"
         else
-            echo "  ✗ MinIO/S3 NOT reachable: $AFL_S3_ENDPOINT" >&2
+            echo "  ✗ MinIO/S3 NOT reachable: $FW_S3_ENDPOINT" >&2
             echo "    Check the endpoint URL/port, MinIO binds 0.0.0.0, firewall." >&2
             exit 1
         fi
 
-        # The osm runners bind-mount ${AFL_DATA_DIR}/osm-scratch into the
+        # The osm runners bind-mount ${FW_DATA_DIR}/osm-scratch into the
         # container for local PBF staging. Docker creates a MISSING source dir
         # as root, but it can't mkdir under an unwritable parent (e.g. macOS
         # /Volumes, which only root can write) — that surfaces as a cryptic
         # "mkdir /host_mnt/...: permission denied" at `up` time. Validate it
-        # here so a server whose .env.fleet still points AFL_DATA_DIR at another
+        # here so a server whose .env.fleet still points FW_DATA_DIR at another
         # host's disk fails with an actionable message instead.
-        AFL_DATA_DIR="${AFL_DATA_DIR:-$(_envget AFL_DATA_DIR)}"; AFL_DATA_DIR="${AFL_DATA_DIR:-/Volumes/afl_data}"
-        _SCRATCH="$AFL_DATA_DIR/osm-scratch"
+        FW_DATA_DIR="${FW_DATA_DIR:-$(_envget FW_DATA_DIR)}"; FW_DATA_DIR="${FW_DATA_DIR:-/Volumes/afl_data}"
+        _SCRATCH="$FW_DATA_DIR/osm-scratch"
         if mkdir -p "$_SCRATCH" 2>/dev/null && [[ -w "$_SCRATCH" ]]; then
             echo "  ✓ Local scratch writable: $_SCRATCH"
         else
             echo "  ✗ Local scratch NOT writable: $_SCRATCH" >&2
-            echo "    Set AFL_DATA_DIR in $ENV_FILE to a large LOCAL path this server can write" >&2
+            echo "    Set FW_DATA_DIR in $ENV_FILE to a large LOCAL path this server can write" >&2
             echo "    (the preset's /Volumes/afl_data is this fleet's infra host, not every server)." >&2
             exit 1
         fi
@@ -240,8 +240,8 @@ PYEOF
 
     # Extra compose files (space/colon-separated), e.g. the local multi-server
     # sim's network override. Lets the same path serve real fleets and simulation.
-    if [[ -n "${AFL_FLEET_EXTRA_COMPOSE:-}" ]]; then
-        IFS=': ' read -ra _extra <<< "$AFL_FLEET_EXTRA_COMPOSE"
+    if [[ -n "${FW_FLEET_EXTRA_COMPOSE:-}" ]]; then
+        IFS=': ' read -ra _extra <<< "$FW_FLEET_EXTRA_COMPOSE"
         for _f in "${_extra[@]}"; do [[ -n "$_f" ]] && COMPOSE_F+=(-f "$_f"); done
     fi
 
@@ -278,7 +278,7 @@ PYEOF
     fi
 
     echo "Starting [${SERVICES[*]}] x${REPLICAS} via docker compose (mode=$MODE)"
-    [[ "$MODE" == "fleet" ]] && echo "  joining MongoDB=$AFL_MONGODB_URL  MinIO=$AFL_S3_ENDPOINT"
+    [[ "$MODE" == "fleet" ]] && echo "  joining MongoDB=$FW_MONGODB_URL  MinIO=$FW_S3_ENDPOINT"
     # NB: no --remove-orphans — on the shared full-stack network it makes compose
     # try to remove facetwork_default and fails ("network has active endpoints":
     # infra mongodb/postgis/jenkins are attached). The rm -sf above already
@@ -344,28 +344,28 @@ echo "  Packages:  ${PKGS[*]}"
 echo "  Instances: $INSTANCES"
 echo "  Dashboard: $DASHBOARD"
 echo "  Mode:      $MODE"
-if [[ -n "${AFL_TASK_EXECUTION_TIMEOUT_MS:-}" ]]; then
-    echo "  Exec timeout: ${AFL_TASK_EXECUTION_TIMEOUT_MS}ms"
+if [[ -n "${FW_TASK_EXECUTION_TIMEOUT_MS:-}" ]]; then
+    echo "  Exec timeout: ${FW_TASK_EXECUTION_TIMEOUT_MS}ms"
 fi
-if [[ -n "${AFL_STUCK_TIMEOUT_MS:-}" ]]; then
-    echo "  Stuck timeout: ${AFL_STUCK_TIMEOUT_MS}ms"
+if [[ -n "${FW_STUCK_TIMEOUT_MS:-}" ]]; then
+    echo "  Stuck timeout: ${FW_STUCK_TIMEOUT_MS}ms"
 fi
 
 # Surface the effective output destination so silent fallbacks (.env's
 # /tmp/output, or built-in defaults like /Volumes/afl_data/output that
 # don't exist on this host) aren't surprises. The default was getting picked
 # up across hand-restarts when the caller's shell hadn't re-exported a
-# project-specific AFL_OUTPUT_BASE.
-_OUT_BASE="${AFL_OUTPUT_BASE:-${AFL_LOCAL_OUTPUT_DIR:-}}"
+# project-specific FW_OUTPUT_BASE.
+_OUT_BASE="${FW_OUTPUT_BASE:-${FW_LOCAL_OUTPUT_DIR:-}}"
 if [[ -z "$_OUT_BASE" ]]; then
-    echo "  AFL_OUTPUT_BASE: (unset — handlers will use built-in defaults)"
+    echo "  FW_OUTPUT_BASE: (unset — handlers will use built-in defaults)"
     echo "    WARNING: outputs may land at /Volumes/afl_data/output (sandbox default) and fail." >&2
 else
     _OUT_SOURCE="env"
     if [[ "$_OUT_BASE" == "/tmp/output" ]]; then
         _OUT_SOURCE="default in .env"
     fi
-    echo "  AFL_OUTPUT_BASE: $_OUT_BASE  ($_OUT_SOURCE)"
+    echo "  FW_OUTPUT_BASE: $_OUT_BASE  ($_OUT_SOURCE)"
     if ! mkdir -p "$_OUT_BASE" 2>/dev/null || [[ ! -w "$_OUT_BASE" ]]; then
         echo "    WARNING: $_OUT_BASE is not writable in this shell; outputs will fail or fall back." >&2
     fi
@@ -444,7 +444,7 @@ done < <(_afl_resolve_hosts "${HOST_ARGS[@]}")
 
 echo "=== Starting Remote Runners ==="
 echo "  Hosts: ${HOSTS[*]}"
-echo "  Remote path: $AFL_REMOTE_PATH"
+echo "  Remote path: $FW_REMOTE_PATH"
 echo ""
 
 # Build the runner args string for SSH
@@ -474,7 +474,7 @@ for host in "${HOSTS[@]}"; do
     # Start runner on remote host (detached via nohup)
     for i in $(seq 1 "$INSTANCES"); do
         _afl_ssh "$host" \
-            "cd $AFL_REMOTE_PATH && nohup ./fw runner exec --registry$RUNNER_ARGS_STR > /tmp/afl-runner-\$\$.log 2>&1 &" || {
+            "cd $FW_REMOTE_PATH && nohup ./fw runner exec --registry$RUNNER_ARGS_STR > /tmp/afl-runner-\$\$.log 2>&1 &" || {
             echo "  ERROR: SSH to $host failed"
             ALL_OK=false
             continue 2

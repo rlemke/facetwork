@@ -48,7 +48,7 @@ class BaseRunnerConfig:
     #                        handler, but do NOT poll the shared backlog and do
     #                        NOT run the sweep (a dedicated ffl-runner owns those).
     #   "shared"           — ffl-runner: own the shared backlog + sweep.
-    # Empty resolves to AFL_CONTINUATION_MODE, else "inline".
+    # Empty resolves to FW_CONTINUATION_MODE, else "inline".
     continuation_mode: str = ""
 
     _CONTINUATION_MODES = ("inline", "off", "shared")
@@ -60,7 +60,7 @@ class BaseRunnerConfig:
             import os
 
             self.continuation_mode = (
-                os.environ.get("AFL_CONTINUATION_MODE", "inline").strip() or "inline"
+                os.environ.get("FW_CONTINUATION_MODE", "inline").strip() or "inline"
             )
         if self.continuation_mode not in self._CONTINUATION_MODES:
             raise ValueError(

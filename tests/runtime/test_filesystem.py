@@ -18,13 +18,13 @@ from facetwork.runtime.storage import (
 def _clean_fs_env(monkeypatch):
     """Strip every env var that influences backend selection before each test."""
     for var in (
-        "AFL_FS_BACKEND",
-        "AFL_FS_ROOT",
-        "AFL_STORAGE",
-        "AFL_HDFS_HOST",
-        "AFL_HDFS_BASE",
-        "AFL_S3_BUCKET",
-        "AFL_S3_PREFIX",
+        "FW_FS_BACKEND",
+        "FW_FS_ROOT",
+        "FW_STORAGE",
+        "FW_HDFS_HOST",
+        "FW_HDFS_BASE",
+        "FW_S3_BUCKET",
+        "FW_S3_PREFIX",
     ):
         monkeypatch.delenv(var, raising=False)
     reset_fs()
@@ -58,37 +58,37 @@ class TestBackendSelection:
         assert kind == "local"
 
     def test_explicit_backend_overrides_auto(self, monkeypatch):
-        monkeypatch.setenv("AFL_HDFS_HOST", "namenode")
+        monkeypatch.setenv("FW_HDFS_HOST", "namenode")
         kind, root = _detect_backend_and_root("hdfs", "")
         assert kind == "hdfs"
         assert root == "hdfs://namenode"
 
     def test_hadoop_signal_via_afl_storage(self, monkeypatch):
-        monkeypatch.setenv("AFL_STORAGE", "hdfs")
-        monkeypatch.setenv("AFL_HDFS_HOST", "nn1")
-        monkeypatch.setenv("AFL_HDFS_BASE", "/user/afl")
+        monkeypatch.setenv("FW_STORAGE", "hdfs")
+        monkeypatch.setenv("FW_HDFS_HOST", "nn1")
+        monkeypatch.setenv("FW_HDFS_BASE", "/user/afl")
         kind, root = _detect_backend_and_root("auto", "")
         assert kind == "hdfs"
         assert root == "hdfs://nn1/user/afl"
 
     def test_hadoop_precedence_over_s3(self, monkeypatch):
         # Both signals present — Hadoop must win (stated precedence).
-        monkeypatch.setenv("AFL_STORAGE", "hdfs")
-        monkeypatch.setenv("AFL_HDFS_HOST", "nn1")
-        monkeypatch.setenv("AFL_S3_BUCKET", "b")
+        monkeypatch.setenv("FW_STORAGE", "hdfs")
+        monkeypatch.setenv("FW_HDFS_HOST", "nn1")
+        monkeypatch.setenv("FW_S3_BUCKET", "b")
         kind, _ = _detect_backend_and_root("auto", "")
         assert kind == "hdfs"
 
     def test_s3_signal_via_bucket(self, monkeypatch):
-        monkeypatch.setenv("AFL_S3_BUCKET", "my-bucket")
-        monkeypatch.setenv("AFL_S3_PREFIX", "cache/v1")
+        monkeypatch.setenv("FW_S3_BUCKET", "my-bucket")
+        monkeypatch.setenv("FW_S3_PREFIX", "cache/v1")
         kind, root = _detect_backend_and_root("auto", "")
         assert kind == "s3"
         assert root == "s3://my-bucket/cache/v1"
 
     def test_s3_signal_via_afl_storage(self, monkeypatch):
-        monkeypatch.setenv("AFL_STORAGE", "s3")
-        monkeypatch.setenv("AFL_S3_BUCKET", "b")
+        monkeypatch.setenv("FW_STORAGE", "s3")
+        monkeypatch.setenv("FW_S3_BUCKET", "b")
         kind, root = _detect_backend_and_root("auto", "")
         assert kind == "s3"
         assert root == "s3://b"

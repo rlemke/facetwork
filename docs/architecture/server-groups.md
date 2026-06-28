@@ -57,7 +57,7 @@ each host. The gap was only that the **central** fleet config (`fleet set` →
 ## 3. Proposal: `server_groups` on a role + an agent gate
 
 Add an optional `server_groups: [name, …]` list to any role in the central
-`fleet_config.roles`. A host carries a group label (`AFL_SERVER_GROUP`, default
+`fleet_config.roles`. A host carries a group label (`FW_SERVER_GROUP`, default
 `runner` — already recorded on the heartbeat for dashboard/`fleet status`). The
 per-host `fleet-agent` brings a role up **only when** the host's group is in the
 role's `server_groups`; a role with no list runs everywhere.
@@ -84,9 +84,9 @@ containers — a skip is "don't start", consistent with the rest of reconcile).
 ### 3.2 Config surface
 
 ```bash
-# Tag hosts by editing each host's AFL_SERVER_GROUP (default "runner"):
-#   heavy box  → AFL_SERVER_GROUP=heavy
-#   laptop     → AFL_SERVER_GROUP=light
+# Tag hosts by editing each host's FW_SERVER_GROUP (default "runner"):
+#   heavy box  → FW_SERVER_GROUP=heavy
+#   laptop     → FW_SERVER_GROUP=light
 
 # Pin the heavy domains to the 'heavy' group:
 fw fleet set --role-groups osm-geocoder:heavy --role-groups osm-mapping:heavy

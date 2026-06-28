@@ -35,21 +35,21 @@ class TestMakeStore:
     """Tests for make_store()."""
 
     def test_make_store_memory(self, monkeypatch):
-        """No AFL_MONGODB_URL → returns MemoryStore."""
-        monkeypatch.delenv("AFL_MONGODB_URL", raising=False)
+        """No FW_MONGODB_URL → returns MemoryStore."""
+        monkeypatch.delenv("FW_MONGODB_URL", raising=False)
         store = make_store()
         assert isinstance(store, MemoryStore)
 
     def test_make_store_memory_with_database(self, monkeypatch):
         """Database arg is ignored when no MongoDB URL is set."""
-        monkeypatch.delenv("AFL_MONGODB_URL", raising=False)
+        monkeypatch.delenv("FW_MONGODB_URL", raising=False)
         store = make_store(database="mydb")
         assert isinstance(store, MemoryStore)
 
     def test_make_store_mongodb_url(self, monkeypatch):
-        """With AFL_MONGODB_URL set, creates MongoStore with correct args."""
-        monkeypatch.setenv("AFL_MONGODB_URL", "mongodb://testhost:27017")
-        monkeypatch.delenv("AFL_MONGODB_DATABASE", raising=False)
+        """With FW_MONGODB_URL set, creates MongoStore with correct args."""
+        monkeypatch.setenv("FW_MONGODB_URL", "mongodb://testhost:27017")
+        monkeypatch.delenv("FW_MONGODB_DATABASE", raising=False)
 
         with patch("facetwork.runtime.mongo_store.MongoStore") as MockMongoStore:
             MockMongoStore.return_value = MagicMock()
@@ -60,9 +60,9 @@ class TestMakeStore:
             )
 
     def test_make_store_mongodb_custom_database(self, monkeypatch):
-        """Database arg takes precedence over AFL_MONGODB_DATABASE env."""
-        monkeypatch.setenv("AFL_MONGODB_URL", "mongodb://localhost:27017")
-        monkeypatch.setenv("AFL_MONGODB_DATABASE", "env_db")
+        """Database arg takes precedence over FW_MONGODB_DATABASE env."""
+        monkeypatch.setenv("FW_MONGODB_URL", "mongodb://localhost:27017")
+        monkeypatch.setenv("FW_MONGODB_DATABASE", "env_db")
 
         with patch("facetwork.runtime.mongo_store.MongoStore") as MockMongoStore:
             MockMongoStore.return_value = MagicMock()
@@ -73,9 +73,9 @@ class TestMakeStore:
             )
 
     def test_make_store_mongodb_env_database(self, monkeypatch):
-        """AFL_MONGODB_DATABASE env is used when database arg is empty."""
-        monkeypatch.setenv("AFL_MONGODB_URL", "mongodb://localhost:27017")
-        monkeypatch.setenv("AFL_MONGODB_DATABASE", "env_db")
+        """FW_MONGODB_DATABASE env is used when database arg is empty."""
+        monkeypatch.setenv("FW_MONGODB_URL", "mongodb://localhost:27017")
+        monkeypatch.setenv("FW_MONGODB_DATABASE", "env_db")
 
         with patch("facetwork.runtime.mongo_store.MongoStore") as MockMongoStore:
             MockMongoStore.return_value = MagicMock()
@@ -117,9 +117,9 @@ class TestRunAgent:
 
     def test_run_agent_registry_calls_register(self, monkeypatch):
         """In registry mode, register(runner=...) is called."""
-        monkeypatch.delenv("AFL_MONGODB_URL", raising=False)
-        monkeypatch.setenv("AFL_USE_REGISTRY", "1")
-        monkeypatch.delenv("AFL_RUNNER_TOPICS", raising=False)
+        monkeypatch.delenv("FW_MONGODB_URL", raising=False)
+        monkeypatch.setenv("FW_USE_REGISTRY", "1")
+        monkeypatch.delenv("FW_RUNNER_TOPICS", raising=False)
 
         config = AgentConfig(service_name="test-agent", server_group="test")
         register_mock = MagicMock()
@@ -139,9 +139,9 @@ class TestRunAgent:
 
     def test_run_agent_poller_calls_register(self, monkeypatch):
         """In poller mode, register(poller=...) is called."""
-        monkeypatch.delenv("AFL_MONGODB_URL", raising=False)
-        monkeypatch.delenv("AFL_USE_REGISTRY", raising=False)
-        monkeypatch.delenv("AFL_RUNNER_TOPICS", raising=False)
+        monkeypatch.delenv("FW_MONGODB_URL", raising=False)
+        monkeypatch.delenv("FW_USE_REGISTRY", raising=False)
+        monkeypatch.delenv("FW_RUNNER_TOPICS", raising=False)
 
         config = AgentConfig(service_name="test-agent", server_group="test")
         register_mock = MagicMock()
@@ -160,10 +160,10 @@ class TestRunAgent:
             poller_instance.start.assert_called_once()
 
     def test_run_agent_passes_topics_in_registry_mode(self, monkeypatch):
-        """AFL_RUNNER_TOPICS env is parsed and passed to RegistryRunnerConfig."""
-        monkeypatch.delenv("AFL_MONGODB_URL", raising=False)
-        monkeypatch.setenv("AFL_USE_REGISTRY", "1")
-        monkeypatch.setenv("AFL_RUNNER_TOPICS", "topic.a, topic.b")
+        """FW_RUNNER_TOPICS env is parsed and passed to RegistryRunnerConfig."""
+        monkeypatch.delenv("FW_MONGODB_URL", raising=False)
+        monkeypatch.setenv("FW_USE_REGISTRY", "1")
+        monkeypatch.setenv("FW_RUNNER_TOPICS", "topic.a, topic.b")
 
         config = AgentConfig(service_name="test-agent", server_group="test")
 
@@ -181,9 +181,9 @@ class TestRunAgent:
 
     def test_run_agent_passes_config_fields(self, monkeypatch):
         """AgentConfig fields are forwarded to RegistryRunnerConfig."""
-        monkeypatch.delenv("AFL_MONGODB_URL", raising=False)
-        monkeypatch.setenv("AFL_USE_REGISTRY", "1")
-        monkeypatch.delenv("AFL_RUNNER_TOPICS", raising=False)
+        monkeypatch.delenv("FW_MONGODB_URL", raising=False)
+        monkeypatch.setenv("FW_USE_REGISTRY", "1")
+        monkeypatch.delenv("FW_RUNNER_TOPICS", raising=False)
 
         config = AgentConfig(
             service_name="my-svc",

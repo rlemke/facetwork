@@ -36,13 +36,13 @@ _POSTGIS_URL = (
     "@postgis:5432/${POSTGRES_DB:-afl_gis}"
 )
 _HANDLERS = "${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
-_DATA_DIR = "${AFL_DATA_DIR:-/Volumes/afl_data}"
+_DATA_DIR = "${FW_DATA_DIR:-/Volumes/afl_data}"
 
 
 def _registry_args(spec: dict) -> str:
     args = f"--task-list {spec['task_list']}"
     if spec.get("server_group_arg"):
-        args += " --server-group ${AFL_SERVER_GROUP:-default}"
+        args += " --server-group ${FW_SERVER_GROUP:-default}"
     return args
 
 
@@ -62,7 +62,7 @@ def render_block(name: str, spec: dict) -> str:
     for note in c.get("notes", []):
         L.append(f"    # {note}\n")
     if c.get("hostname"):
-        L.append("    hostname: ${AFL_FLEET_HOST:-}\n")
+        L.append("    hostname: ${FW_FLEET_HOST:-}\n")
     L += [
         "    build:\n",
         "      context: .\n",
@@ -80,18 +80,18 @@ def render_block(name: str, spec: dict) -> str:
     ]
     anchor = "osm-s3-env" if c.get("storage") == "osm" else "s3-storage"
     L.append(f"      <<: *{anchor}\n")
-    L.append("      AFL_MONGODB_URL: mongodb://mongodb:27017\n")
-    L.append("      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}\n")
-    L.append(f"      AFL_DOMAIN_NAME: {name}\n")
-    L.append(f"      AFL_DOMAIN_REPO: {spec['repo']}\n")
+    L.append("      FW_MONGODB_URL: mongodb://mongodb:27017\n")
+    L.append("      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}\n")
+    L.append(f"      FW_DOMAIN_NAME: {name}\n")
+    L.append(f"      FW_DOMAIN_REPO: {spec['repo']}\n")
     if c.get("postgis"):
-        L.append(f"      AFL_POSTGIS_URL: {_POSTGIS_URL}\n")
+        L.append(f"      FW_POSTGIS_URL: {_POSTGIS_URL}\n")
     ev = _extras_value(spec)
     if ev is not None:
-        L.append(f"      AFL_DOMAIN_EXTRAS: {ev}\n")
+        L.append(f"      FW_DOMAIN_EXTRAS: {ev}\n")
     for k, v in c.get("env", []):
         L.append(f"      {k}: {v}\n")
-    L.append(f'      AFL_REGISTRY_RUNNER_ARGS: "{_registry_args(spec)}"\n')
+    L.append(f'      FW_REGISTRY_RUNNER_ARGS: "{_registry_args(spec)}"\n')
     L.append("    volumes:\n")
     L.append(f"      - {_HANDLERS}/{spec['repo']}:/handlers/{spec['repo']}\n")
     vols = c.get("volumes") or [f"{_DATA_DIR}:/Volumes/afl_data"]

@@ -4,7 +4,7 @@
 #   source "$FW_LIB/_helpers/_env.sh"
 #
 # Loads .env (without overriding already-set vars) and exports
-# _compute_compose_args which populates AFL_COMPOSE_FILES and AFL_PROFILE_ARGS.
+# _compute_compose_args which populates FW_COMPOSE_FILES and FW_PROFILE_ARGS.
 
 # Ensure FW_ROOT is set even if a caller sources us directly (idempotent).
 [ -z "${FW_ROOT:-}" ] && source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_bootstrap.sh"
@@ -31,13 +31,13 @@ fi
 _fw_normalize_env() {
     command -v compgen >/dev/null 2>&1 || return 0
     local v base canon canon_set
-    # FW_ wins: push every FW_X down onto AFL_X (skip internal bootstrap vars).
+    # FW_ wins: push every FW_X down onto FW_X (skip internal bootstrap vars).
     for v in $(compgen -v 2>/dev/null | grep '^FW_'); do
         case "$v" in FW_ROOT|FW_LIB) continue;; esac
         base="${v#FW_}"
         export "AFL_${base}=${!v}"
     done
-    # Fill gaps: mirror any lone AFL_X up to FW_X.
+    # Fill gaps: mirror any lone FW_X up to FW_X.
     for v in $(compgen -v 2>/dev/null | grep '^AFL_'); do
         base="${v#AFL_}"
         canon="FW_${base}"
@@ -47,7 +47,7 @@ _fw_normalize_env() {
 }
 _fw_normalize_env
 
-# Auto-fallback: if AFL_MONGODB_URL is unreachable, try localhost.
+# Auto-fallback: if FW_MONGODB_URL is unreachable, try localhost.
 # Only runs the check if a Python interpreter is available.
 _PYTHON="${_ENV_PROJECT_DIR}/.venv/bin/python3"
 [[ -x "$_PYTHON" ]] || _PYTHON=python3
@@ -56,36 +56,36 @@ if command -v "$_PYTHON" &>/dev/null 2>&1 && "$_PYTHON" -c "import pymongo" 2>/d
         "$_PYTHON" -c "
 from pymongo import MongoClient; import sys, os
 try:
-    MongoClient(os.environ.get('AFL_MONGODB_URL','mongodb://localhost:27017'), serverSelectionTimeoutMS=2000).server_info()
+    MongoClient(os.environ.get('FW_MONGODB_URL','mongodb://localhost:27017'), serverSelectionTimeoutMS=2000).server_info()
 except Exception:
     sys.exit(1)
 " 2>/dev/null
     }
     if ! _mongo_ok; then
-        _AFL_ORIG_URL="${AFL_MONGODB_URL:-}"
-        export AFL_MONGODB_URL="mongodb://localhost:27017"
+        _FW_ORIG_URL="${FW_MONGODB_URL:-}"
+        export FW_MONGODB_URL="mongodb://localhost:27017"
         if _mongo_ok; then
-            echo "MongoDB at ${_AFL_ORIG_URL:-<unset>} unreachable, using localhost" >&2
+            echo "MongoDB at ${_FW_ORIG_URL:-<unset>} unreachable, using localhost" >&2
         else
             # Restore original — let downstream scripts handle the error
-            if [ -n "$_AFL_ORIG_URL" ]; then
-                export AFL_MONGODB_URL="$_AFL_ORIG_URL"
+            if [ -n "$_FW_ORIG_URL" ]; then
+                export FW_MONGODB_URL="$_FW_ORIG_URL"
             fi
         fi
     fi
 fi
 
 # Compute compose file args and profile args from active overlay state.
-# Sets: AFL_COMPOSE_FILES, AFL_PROFILE_ARGS
+# Sets: FW_COMPOSE_FILES, FW_PROFILE_ARGS
 _compute_compose_args() {
-    AFL_COMPOSE_FILES="-f docker-compose.yml"
-    AFL_PROFILE_ARGS=""
+    FW_COMPOSE_FILES="-f docker-compose.yml"
+    FW_PROFILE_ARGS=""
 
-    if [ "${AFL_HDFS:-false}" = true ]; then
-        AFL_COMPOSE_FILES="$AFL_COMPOSE_FILES -f docker-compose.hdfs.yml"
-        AFL_PROFILE_ARGS="$AFL_PROFILE_ARGS --profile hdfs"
+    if [ "${FW_HDFS:-false}" = true ]; then
+        FW_COMPOSE_FILES="$FW_COMPOSE_FILES -f docker-compose.hdfs.yml"
+        FW_PROFILE_ARGS="$FW_PROFILE_ARGS --profile hdfs"
     fi
-    if [ "${AFL_JENKINS:-false}" = true ]; then
-        AFL_PROFILE_ARGS="$AFL_PROFILE_ARGS --profile jenkins"
+    if [ "${FW_JENKINS:-false}" = true ]; then
+        FW_PROFILE_ARGS="$FW_PROFILE_ARGS --profile jenkins"
     fi
 }

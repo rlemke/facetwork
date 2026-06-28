@@ -34,5 +34,5 @@ COPY docker/entrypoint-runner.sh /entrypoint-runner.sh
 RUN chmod +x /entrypoint-runner.sh
 
 ENV PYTHONUNBUFFERED=1
-ENV AFL_POLL_INTERVAL_MS=1000
+ENV FW_POLL_INTERVAL_MS=1000
 CMD ["/entrypoint-runner.sh"]

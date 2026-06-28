@@ -14,14 +14,14 @@
 #   fw ffl catalog-import-all --exclude genomics --tags batch1
 #   fw ffl catalog-import-all --dir ~/fw_handlers/fwh_osm/src/osm_geocoder/handlers/graphhopper/ffl
 #
-# Connects to MongoDB via .env (AFL_MONGODB_URL etc.).
+# Connects to MongoDB via .env (FW_MONGODB_URL etc.).
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
 
 REPO_ROOT="$FW_ROOT"
 
-# Load shared env (.env sets AFL_MONGODB_URL etc.)
+# Load shared env (.env sets FW_MONGODB_URL etc.)
 source "$FW_LIB/_helpers/_env.sh"
 
 PYTHON="${REPO_ROOT}/.venv/bin/python3"

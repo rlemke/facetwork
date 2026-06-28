@@ -157,8 +157,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--server-group",
-        default=os.environ.get("AFL_SERVER_GROUP", "default"),
-        help="Server group name (env AFL_SERVER_GROUP; default: default). "
+        default=os.environ.get("FW_SERVER_GROUP", "default"),
+        help="Server group name (env FW_SERVER_GROUP; default: default). "
         "Groups servers by role in fleet status / the dashboard. Every Facetwork "
         "server is a runner (there is no 'master'); infra services (MongoDB, MinIO, "
         "dashboard) are addressed by URL, not run as fleet servers.",
@@ -230,13 +230,13 @@ def main() -> None:
         "--registry",
         action="store_true",
         default=None,
-        help="Load handler registrations from MongoDB (env: AFL_USE_REGISTRY=1)",
+        help="Load handler registrations from MongoDB (env: FW_USE_REGISTRY=1)",
     )
     parser.add_argument(
         "--continuation",
         default=None,
         choices=["inline", "off", "shared"],
-        help="Orchestration role (env AFL_CONTINUATION_MODE; default inline). "
+        help="Orchestration role (env FW_CONTINUATION_MODE; default inline). "
         "inline = poll the shared _fw_continue backlog + run the stuck-step sweep "
         "(today's behaviour); off = handler-only (keep inline cascade after own "
         "handler, but don't poll the backlog or sweep); shared = dedicated "

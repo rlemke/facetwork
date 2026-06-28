@@ -15,8 +15,8 @@
 #   PostGIS:  postgresql://afl:afl@localhost:5432/afl_gis
 #
 # Port overrides (via .env or shell):
-#   AFL_DEV_MONGO_PORT    default 27017
-#   AFL_DEV_POSTGIS_PORT  default 5432
+#   FW_DEV_MONGO_PORT    default 27017
+#   FW_DEV_POSTGIS_PORT  default 5432
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
@@ -58,8 +58,8 @@ case "${1:-up}" in
         docker compose -f "$COMPOSE_FILE" up -d
         echo ""
         echo "Dev stack is up:"
-        echo "  MongoDB:  mongodb://localhost:${AFL_DEV_MONGO_PORT:-27017}"
-        echo "  PostGIS:  postgresql://afl:afl@localhost:${AFL_DEV_POSTGIS_PORT:-5432}/afl_gis"
+        echo "  MongoDB:  mongodb://localhost:${FW_DEV_MONGO_PORT:-27017}"
+        echo "  PostGIS:  postgresql://afl:afl@localhost:${FW_DEV_POSTGIS_PORT:-5432}/afl_gis"
         echo ""
         echo "Stop with:  fw single docker-dev --stop   (data survives)"
         echo "Tear down:  fw single docker-dev --down   (wipes DB data)"

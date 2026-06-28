@@ -186,7 +186,7 @@ the bundled containers, you point everything at the standalone MongoDB + MinIO.
 3. **On each runner machine:** clone, set the Mongo URL, and join:
 
    ```bash
-   export AFL_FLEET_KEY=<shared-key>     # decrypts the central MinIO creds
+   export FW_FLEET_KEY=<shared-key>     # decrypts the central MinIO creds
    fw fleet agent watch             # reads central config, brings runners up, keeps them current
    ```
 
@@ -203,8 +203,8 @@ Reference: [docs/operations/deployment.md](../operations/deployment.md) →
 
 - **MongoDB:** a managed cluster / replica set (e.g. Atlas or self-managed HA) —
   not a single container. Facetwork only needs its **URL**.
-- **MinIO / S3:** a managed S3 bucket or an HA MinIO. Set `AFL_STORAGE=s3` and the
-  `AFL_S3_*` endpoint/credentials so portable `s3://` URIs work fleet-wide (no
+- **MinIO / S3:** a managed S3 bucket or an HA MinIO. Set `FW_STORAGE=s3` and the
+  `FW_S3_*` endpoint/credentials so portable `s3://` URIs work fleet-wide (no
   shared disk needed).
 - **Dashboard:** deployed as a long-running service (its own container/host).
 - **Runners:** a managed **fleet** with **image-based rollouts** — build a runner

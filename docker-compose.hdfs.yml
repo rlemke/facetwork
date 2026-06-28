@@ -7,7 +7,7 @@
 # This override:
 #   - Sets INSTALL_HDFS=true build arg so pyarrow gets installed
 #   - Adds extra_hosts for afl-hadoop-hdfs so agents can reach the HDFS server
-#   - HDFS paths are NOT hardcoded here — set AFL_STORAGE=hdfs (or AFL_CACHE_ROOT to an hdfs:// URI)
+#   - HDFS paths are NOT hardcoded here — set FW_STORAGE=hdfs (or FW_CACHE_ROOT to an hdfs:// URI)
 #     in .env when you want HDFS storage.
 
 services:

@@ -1388,8 +1388,8 @@ def create_registry_runner(
     Args:
         service_name: Logical service name (e.g. "noaa-weather").
         server_group: Server group for clustering (default "default").
-        max_concurrent: Override for AFL_MAX_CONCURRENT env var.
-        poll_interval_ms: Override for AFL_POLL_INTERVAL_MS env var.
+        max_concurrent: Override for FW_MAX_CONCURRENT env var.
+        poll_interval_ms: Override for FW_POLL_INTERVAL_MS env var.
         topics: Optional topic/glob filters for handler selection.
         telemetry_enabled: Whether to enable telemetry (default True).
 

@@ -51,18 +51,18 @@ else
 fi
 
 # Pass HDFS build arg so the Dockerfile installs HDFS dependencies
-if [ "${AFL_HDFS:-false}" = true ]; then
+if [ "${FW_HDFS:-false}" = true ]; then
     export INSTALL_HDFS=true
     echo "  HDFS:  enabled (INSTALL_HDFS=true)"
 fi
 
-docker compose $AFL_COMPOSE_FILES $AFL_PROFILE_ARGS build "${BUILD_ARGS[@]}"
+docker compose $FW_COMPOSE_FILES $FW_PROFILE_ARGS build "${BUILD_ARGS[@]}"
 
 echo ""
 echo "=== All images rebuilt ==="
 
 if [ "$RESTART" = true ]; then
-    if [ -z "${AFL_COMPOSE_FILES:-}" ] && [ ! -f "$PROJECT_DIR/.afl-active-config" ] && [ ! -f "$PROJECT_DIR/.env" ]; then
+    if [ -z "${FW_COMPOSE_FILES:-}" ] && [ ! -f "$PROJECT_DIR/.afl-active-config" ] && [ ! -f "$PROJECT_DIR/.env" ]; then
         echo ""
         echo "WARNING: No .afl-active-config or .env found."
         echo "  Restarting with base docker-compose.yml only."
@@ -70,7 +70,7 @@ if [ "$RESTART" = true ]; then
     fi
     echo ""
     echo "=== Restarting services ==="
-    docker compose $AFL_COMPOSE_FILES $AFL_PROFILE_ARGS up -d
+    docker compose $FW_COMPOSE_FILES $FW_PROFILE_ARGS up -d
     echo ""
     echo "=== Services restarted ==="
 fi

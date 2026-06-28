@@ -41,7 +41,7 @@ import subprocess
 import sys
 
 # Tools the fleet CLIs need. pymongo: read/write fleet_config; cryptography:
-# decrypt the MinIO secret store (AFL_FLEET_KEY). boto3 is NOT needed here (the
+# decrypt the MinIO secret store (FW_FLEET_KEY). boto3 is NOT needed here (the
 # runner containers handle S3); add via the repo extras if you want it.
 REQUIRED = ["pymongo", "cryptography"]
 

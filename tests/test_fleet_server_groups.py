@@ -50,12 +50,12 @@ def test_role_runs_only_on_listed_groups():
 
 
 def test_host_server_group_default_and_override(monkeypatch):
-    monkeypatch.delenv("AFL_SERVER_GROUP", raising=False)
+    monkeypatch.delenv("FW_SERVER_GROUP", raising=False)
     assert fl.host_server_group() == "runner"
-    monkeypatch.setenv("AFL_SERVER_GROUP", "heavy")
+    monkeypatch.setenv("FW_SERVER_GROUP", "heavy")
     assert fl.host_server_group() == "heavy"
     # An empty value falls back to the default rather than gating to "".
-    monkeypatch.setenv("AFL_SERVER_GROUP", "")
+    monkeypatch.setenv("FW_SERVER_GROUP", "")
     assert fl.host_server_group() == "runner"
 
 

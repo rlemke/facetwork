@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # fw-summary: sync per-domain compose ENV from the catalog into docker-compose.full-stack.yml
 #
-# Writes the catalog-derived env keys (AFL_DOMAIN_NAME/REPO/EXTRAS,
-# AFL_REGISTRY_RUNNER_ARGS) into each domain's runner-<service> block; structural
+# Writes the catalog-derived env keys (FW_DOMAIN_NAME/REPO/EXTRAS,
+# FW_REGISTRY_RUNNER_ARGS) into each domain's runner-<service> block; structural
 # bits (build/depends_on/volumes/anchors) are left as-is. Run after editing
 # domains.json (or a domains.local.json override). `--check` writes nothing and
 # exits non-zero if the compose is out of sync (CI guard).

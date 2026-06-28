@@ -397,11 +397,11 @@ class MavenArtifactRunner(RegistryRunner):
 
             # Set environment variables
             env = os.environ.copy()
-            env["AFL_STEP_ID"] = task.step_id
+            env["FW_STEP_ID"] = task.step_id
             if hasattr(self._persistence, "mongodb_url"):
-                env["AFL_MONGODB_URL"] = self._persistence.mongodb_url
+                env["FW_MONGODB_URL"] = self._persistence.mongodb_url
             if hasattr(self._persistence, "mongodb_database"):
-                env["AFL_MONGODB_DATABASE"] = self._persistence.mongodb_database
+                env["FW_MONGODB_DATABASE"] = self._persistence.mongodb_database
 
             # Launch subprocess
             timeout_s = (reg.timeout_ms or self._config.default_timeout_ms) / 1000.0

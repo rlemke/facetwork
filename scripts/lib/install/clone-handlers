@@ -2,7 +2,7 @@
 # fw-summary: git clone every catalog domain repo into ~/fw_handlers (skip existing)
 #
 # Bulk raw clone of the fwh_* domain repos listed in the catalog (domains.json +
-# AFL_DOMAINS_FILE / domains.local.json overrides) — NOT a hardcoded list. For
+# FW_DOMAINS_FILE / domains.local.json overrides) — NOT a hardcoded list. For
 # clone + `pip install -e` in one step prefer `fw install domain --all`; this is
 # just the clones (no pip). Already-cloned repos are skipped.
 #

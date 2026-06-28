@@ -30,7 +30,7 @@ task_claim:
 
   lease_duration:
     default_ms: 300000
-    env_var: "AFL_LEASE_DURATION_MS"
+    env_var: "FW_LEASE_DURATION_MS"
     renewal: "Runner renews while handler runs via heartbeat. A lease that reaches expiry without renewal is eligible for takeover by another runner."
 
   state_transitions:
@@ -51,7 +51,7 @@ heartbeat:
     - "Each renewal extends lease_expires_at to now plus lease_duration."
     - "Runner also updates a per-server heartbeat record (separate collection), used by the reaper for dead-server detection."
   blocking_handlers:
-    description: "Handlers doing blocking I/O (subprocess, long network call) may not issue heartbeats. For those, register with timeout_ms=0 (disable heartbeat-based timeout) and rely on the global AFL_TASK_EXECUTION_TIMEOUT_MS instead."
+    description: "Handlers doing blocking I/O (subprocess, long network call) may not issue heartbeats. For those, register with timeout_ms=0 (disable heartbeat-based timeout) and rely on the global FW_TASK_EXECUTION_TIMEOUT_MS instead."
     authoritative_detail: "stuck_task_watchdog section below"
 
 # ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ reaper:
   purpose: "Detect runners whose heartbeat has stopped and reset their tasks to QUEUED so other runners can claim them."
   scan_interval_ms: "Default approximately 60 seconds."
   timeout:
-    env_var: "AFL_REAPER_TIMEOUT_MS"
+    env_var: "FW_REAPER_TIMEOUT_MS"
     default_ms: 120000
     semantics: "A server whose heartbeat has not updated within this window is considered dead."
   actions_on_dead_server:
@@ -75,11 +75,11 @@ reaper:
 stuck_task_watchdog:
   purpose: "Detect handlers running but not making progress. Distinct from reaper — the server is alive but the task has exceeded its wall-clock budget."
   execution_timeout:
-    env_var: "AFL_TASK_EXECUTION_TIMEOUT_MS"
+    env_var: "FW_TASK_EXECUTION_TIMEOUT_MS"
     default_ms: 900000
     semantics: "A task in state RUNNING whose started_at is older than this window is reset to QUEUED."
   stuck_timeout:
-    env_var: "AFL_STUCK_TIMEOUT_MS"
+    env_var: "FW_STUCK_TIMEOUT_MS"
     default_ms: 1800000
     semantics: "A step stuck at an intermediate runtime state (EventTransmit with no task, blocks.Begin without progress) is re-processed by process_single_step."
   authoritative_detail: "docs/reference/runtime.md section 10.4"
@@ -124,7 +124,7 @@ runner_lifecycle:
     - "Exit cleanly."
 
   hard_kill:
-    - "Reaper eventually detects and resets tasks after AFL_REAPER_TIMEOUT_MS."
+    - "Reaper eventually detects and resets tasks after FW_REAPER_TIMEOUT_MS."
 
 # ---------------------------------------------------------------------------
 # Workflow repair.
@@ -156,7 +156,7 @@ properties:
     checkable_via: "example_suite"
 
   - name: "reaper_is_bounded"
-    statement: "A task claimed by a dead runner is reset to QUEUED within AFL_REAPER_TIMEOUT_MS of the runner last heartbeat."
+    statement: "A task claimed by a dead runner is reset to QUEUED within FW_REAPER_TIMEOUT_MS of the runner last heartbeat."
     checkable_via: "property_test"
 
   - name: "atomic_commit_on_step_progress"
@@ -177,16 +177,16 @@ properties:
 failure_modes:
   - kind: "runner_dead"
     trigger: "Server stops heartbeating (crash, network partition, kill)"
-    behavior: "Reaper detects after AFL_REAPER_TIMEOUT_MS; resets tasks owned by the dead server."
+    behavior: "Reaper detects after FW_REAPER_TIMEOUT_MS; resets tasks owned by the dead server."
     user_visible: "Dashboard shows server as dead; tasks re-queue automatically; step logs record the reset."
 
   - kind: "task_exceeds_execution_timeout"
-    trigger: "Handler runs longer than AFL_TASK_EXECUTION_TIMEOUT_MS"
+    trigger: "Handler runs longer than FW_TASK_EXECUTION_TIMEOUT_MS"
     behavior: "Stuck-task watchdog resets the task to QUEUED. The handler continues (best-effort) but its result will not be accepted."
     user_visible: "Task reappears as QUEUED; another runner picks it up; the first runner late result is rejected by optimistic concurrency."
 
   - kind: "step_stuck_at_intermediate_state"
-    trigger: "Step at EventTransmit with no task, or blocks.Begin without progress, for AFL_STUCK_TIMEOUT_MS"
+    trigger: "Step at EventTransmit with no task, or blocks.Begin without progress, for FW_STUCK_TIMEOUT_MS"
     behavior: "Stuck-step sweep calls process_single_step directly; if the step is at EventTransmit with no task, a fresh task is created."
     user_visible: "Log entry at WARNING; step progresses on next sweep."
 
@@ -206,12 +206,12 @@ dependencies:
   services:
     - "MongoDB or equivalent"
   environment:
-    - "AFL_MONGO_URI"
-    - "AFL_DATABASE"
-    - "AFL_REAPER_TIMEOUT_MS"
-    - "AFL_STUCK_TIMEOUT_MS"
-    - "AFL_TASK_EXECUTION_TIMEOUT_MS"
-    - "AFL_LEASE_DURATION_MS"
+    - "FW_MONGO_URI"
+    - "FW_DATABASE"
+    - "FW_REAPER_TIMEOUT_MS"
+    - "FW_STUCK_TIMEOUT_MS"
+    - "FW_TASK_EXECUTION_TIMEOUT_MS"
+    - "FW_LEASE_DURATION_MS"
 
 implementation_notes: |
   Reference impl: facetwork/runtime/runner/ (RunnerService),

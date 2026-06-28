@@ -21,11 +21,11 @@ from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 
 SRC_ROOT = os.environ.get("SRC_ROOT", "/Volumes/afl_data/cache")
-KEY_PREFIX = "cache"  # AFL_DATA_ROOT/cache/...  (handlers root durable artifacts here)
-BUCKET = os.environ.get("AFL_S3_BUCKET", "afl-cache")
-ENDPOINT = os.environ.get("AFL_S3_ENDPOINT", "http://localhost:9000")
-ACCESS = os.environ.get("AFL_S3_ACCESS_KEY", "minioadmin")
-SECRET = os.environ.get("AFL_S3_SECRET_KEY", "minioadmin")
+KEY_PREFIX = "cache"  # FW_DATA_ROOT/cache/...  (handlers root durable artifacts here)
+BUCKET = os.environ.get("FW_S3_BUCKET", "afl-cache")
+ENDPOINT = os.environ.get("FW_S3_ENDPOINT", "http://localhost:9000")
+ACCESS = os.environ.get("FW_S3_ACCESS_KEY", "minioadmin")
+SECRET = os.environ.get("FW_S3_SECRET_KEY", "minioadmin")
 MAX_RETRIES = 5
 
 s3 = boto3.client(
@@ -33,7 +33,7 @@ s3 = boto3.client(
     endpoint_url=ENDPOINT,
     aws_access_key_id=ACCESS,
     aws_secret_access_key=SECRET,
-    region_name=os.environ.get("AFL_S3_REGION", "us-east-1"),
+    region_name=os.environ.get("FW_S3_REGION", "us-east-1"),
     config=Config(s3={"addressing_style": "path"}, retries={"max_attempts": 3}),
 )
 # On a USB spinning disk, concurrent part reads interleave seeks and can

@@ -664,7 +664,7 @@ class TestProcessEvent:
     def test_environment_variables_passed(
         self, store, evaluator, config, workflow_ast, program_ast
     ):
-        """AFL_STEP_ID is set in subprocess environment."""
+        """FW_STEP_ID is set in subprocess environment."""
         result, step, task = self._setup_paused_workflow(
             store, evaluator, workflow_ast, program_ast
         )
@@ -691,7 +691,7 @@ class TestProcessEvent:
             runner.poll_once()
 
             env = mock_run.call_args[1]["env"]
-            assert env["AFL_STEP_ID"] == task.step_id
+            assert env["FW_STEP_ID"] == task.step_id
 
 
 # =========================================================================

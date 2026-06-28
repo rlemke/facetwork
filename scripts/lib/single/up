@@ -17,11 +17,11 @@ source "$FW_LIB/_helpers/_env.sh"
 # Build setup args from env vars
 SETUP_ARGS=(--build)
 
-RUNNERS="${AFL_RUNNERS:-1}"
-AGENTS="${AFL_AGENTS:-1}"
-OSM_AGENTS="${AFL_OSM_AGENTS:-0}"
-OSM_LITE_AGENTS="${AFL_OSM_LITE_AGENTS:-0}"
-WEATHER_AGENTS="${AFL_WEATHER_AGENTS:-0}"
+RUNNERS="${FW_RUNNERS:-1}"
+AGENTS="${FW_AGENTS:-1}"
+OSM_AGENTS="${FW_OSM_AGENTS:-0}"
+OSM_LITE_AGENTS="${FW_OSM_LITE_AGENTS:-0}"
+WEATHER_AGENTS="${FW_WEATHER_AGENTS:-0}"
 
 SETUP_ARGS+=(--runners "$RUNNERS" --agents "$AGENTS")
 
@@ -34,17 +34,17 @@ fi
 if [ "$WEATHER_AGENTS" -gt 0 ]; then
     SETUP_ARGS+=(--weather-agents "$WEATHER_AGENTS")
 fi
-if [ "${AFL_HDFS:-false}" = true ]; then
+if [ "${FW_HDFS:-false}" = true ]; then
     SETUP_ARGS+=(--hdfs)
 fi
-if [ "${AFL_POSTGIS:-false}" = true ]; then
+if [ "${FW_POSTGIS:-false}" = true ]; then
     SETUP_ARGS+=(--postgis)
 fi
-if [ "${AFL_JENKINS:-false}" = true ]; then
+if [ "${FW_JENKINS:-false}" = true ]; then
     SETUP_ARGS+=(--jenkins)
 fi
-if [ -n "${AFL_GEOFABRIK_MIRROR:-}" ]; then
-    SETUP_ARGS+=(--mirror "$AFL_GEOFABRIK_MIRROR")
+if [ -n "${FW_GEOFABRIK_MIRROR:-}" ]; then
+    SETUP_ARGS+=(--mirror "$FW_GEOFABRIK_MIRROR")
 fi
 if [ -n "${GRAPHHOPPER_DATA_DIR:-}" ]; then
     SETUP_ARGS+=(--graphhopper-data-dir "$GRAPHHOPPER_DATA_DIR")

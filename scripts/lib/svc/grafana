@@ -25,7 +25,7 @@ set -euo pipefail
 
 REPO_ROOT="$FW_ROOT"
 CONTAINER_NAME="afl-grafana"
-PORT="${AFL_GRAFANA_PORT:-3000}"
+PORT="${FW_GRAFANA_PORT:-3000}"
 GRAFANA_DIR="$REPO_ROOT/grafana"
 
 case "${1:-start}" in

@@ -81,19 +81,19 @@ class MongoDBConfig:
         """Create from environment variables.
 
         Recognised variables (all optional – defaults apply for missing vars):
-            AFL_MONGODB_URL
-            AFL_MONGODB_USERNAME
-            AFL_MONGODB_PASSWORD
-            AFL_MONGODB_AUTH_SOURCE
-            AFL_MONGODB_DATABASE
+            FW_MONGODB_URL
+            FW_MONGODB_USERNAME
+            FW_MONGODB_PASSWORD
+            FW_MONGODB_AUTH_SOURCE
+            FW_MONGODB_DATABASE
         """
         defaults = cls()
         return cls(
-            url=os.environ.get("AFL_MONGODB_URL", defaults.url),
-            username=os.environ.get("AFL_MONGODB_USERNAME", defaults.username),
-            password=os.environ.get("AFL_MONGODB_PASSWORD", defaults.password),
-            auth_source=os.environ.get("AFL_MONGODB_AUTH_SOURCE", defaults.auth_source),
-            database=os.environ.get("AFL_MONGODB_DATABASE", defaults.database),
+            url=os.environ.get("FW_MONGODB_URL", defaults.url),
+            username=os.environ.get("FW_MONGODB_USERNAME", defaults.username),
+            password=os.environ.get("FW_MONGODB_PASSWORD", defaults.password),
+            auth_source=os.environ.get("FW_MONGODB_AUTH_SOURCE", defaults.auth_source),
+            database=os.environ.get("FW_MONGODB_DATABASE", defaults.database),
         )
 
 
@@ -159,28 +159,28 @@ class RunnerConfig:
         """Create from environment variables.
 
         Recognised variables (all optional):
-            AFL_POLL_INTERVAL_MS
-            AFL_MAX_CONCURRENT
-            AFL_HEARTBEAT_INTERVAL_MS
-            AFL_SWEEP_INTERVAL_MS
-            AFL_USE_REGISTRY  ("true"/"1" to enable)
-            AFL_RUNNER_TOPICS  (comma-separated)
+            FW_POLL_INTERVAL_MS
+            FW_MAX_CONCURRENT
+            FW_HEARTBEAT_INTERVAL_MS
+            FW_SWEEP_INTERVAL_MS
+            FW_USE_REGISTRY  ("true"/"1" to enable)
+            FW_RUNNER_TOPICS  (comma-separated)
         """
         defaults = cls()
-        topics_str = os.environ.get("AFL_RUNNER_TOPICS", "")
+        topics_str = os.environ.get("FW_RUNNER_TOPICS", "")
         topics = [t.strip() for t in topics_str.split(",") if t.strip()] if topics_str else []
         return cls(
             poll_interval_ms=int(
-                os.environ.get("AFL_POLL_INTERVAL_MS", str(defaults.poll_interval_ms))
+                os.environ.get("FW_POLL_INTERVAL_MS", str(defaults.poll_interval_ms))
             ),
-            max_concurrent=int(os.environ.get("AFL_MAX_CONCURRENT", str(defaults.max_concurrent))),
+            max_concurrent=int(os.environ.get("FW_MAX_CONCURRENT", str(defaults.max_concurrent))),
             heartbeat_interval_ms=int(
-                os.environ.get("AFL_HEARTBEAT_INTERVAL_MS", str(defaults.heartbeat_interval_ms))
+                os.environ.get("FW_HEARTBEAT_INTERVAL_MS", str(defaults.heartbeat_interval_ms))
             ),
             sweep_interval_ms=int(
-                os.environ.get("AFL_SWEEP_INTERVAL_MS", str(defaults.sweep_interval_ms))
+                os.environ.get("FW_SWEEP_INTERVAL_MS", str(defaults.sweep_interval_ms))
             ),
-            use_registry=os.environ.get("AFL_USE_REGISTRY", "").strip().lower() in ("true", "1"),
+            use_registry=os.environ.get("FW_USE_REGISTRY", "").strip().lower() in ("true", "1"),
             topics=topics or defaults.topics,
         )
 
@@ -191,12 +191,12 @@ _OUTPUT_BASE_DEFAULT = "/Volumes/afl_data/output"
 def get_output_base() -> str:
     """Return the base output directory.
 
-    Checks ``AFL_OUTPUT_BASE``, then ``AFL_LOCAL_OUTPUT_DIR`` for backward
+    Checks ``FW_OUTPUT_BASE``, then ``FW_LOCAL_OUTPUT_DIR`` for backward
     compatibility, then falls back to ``/Volumes/afl_data/output``.
     """
     return os.environ.get(
-        "AFL_OUTPUT_BASE",
-        os.environ.get("AFL_LOCAL_OUTPUT_DIR", _OUTPUT_BASE_DEFAULT),
+        "FW_OUTPUT_BASE",
+        os.environ.get("FW_LOCAL_OUTPUT_DIR", _OUTPUT_BASE_DEFAULT),
     )
 
 
@@ -269,29 +269,29 @@ class StorageConfig:
         """Create from environment variables.
 
         Recognised variables (all optional):
-            AFL_LOCAL_OUTPUT_DIR
-            AFL_WEBHDFS_PORT
-            AFL_HDFS_MAX_RETRIES
-            AFL_HDFS_RETRY_DELAY
+            FW_LOCAL_OUTPUT_DIR
+            FW_WEBHDFS_PORT
+            FW_HDFS_MAX_RETRIES
+            FW_HDFS_RETRY_DELAY
             HADOOP_USER_NAME
-            AFL_FS_BACKEND
-            AFL_FS_ROOT
+            FW_FS_BACKEND
+            FW_FS_ROOT
         """
         defaults = cls()
         return cls(
             local_output_dir=get_output_base(),
             hdfs_webhdfs_port=int(
-                os.environ.get("AFL_WEBHDFS_PORT", str(defaults.hdfs_webhdfs_port))
+                os.environ.get("FW_WEBHDFS_PORT", str(defaults.hdfs_webhdfs_port))
             ),
             hdfs_max_retries=int(
-                os.environ.get("AFL_HDFS_MAX_RETRIES", str(defaults.hdfs_max_retries))
+                os.environ.get("FW_HDFS_MAX_RETRIES", str(defaults.hdfs_max_retries))
             ),
             hdfs_retry_delay=float(
-                os.environ.get("AFL_HDFS_RETRY_DELAY", str(defaults.hdfs_retry_delay))
+                os.environ.get("FW_HDFS_RETRY_DELAY", str(defaults.hdfs_retry_delay))
             ),
             hdfs_user=os.environ.get("HADOOP_USER_NAME", defaults.hdfs_user),
-            fs_backend=os.environ.get("AFL_FS_BACKEND", defaults.fs_backend),
-            fs_root=os.environ.get("AFL_FS_ROOT", defaults.fs_root),
+            fs_backend=os.environ.get("FW_FS_BACKEND", defaults.fs_backend),
+            fs_root=os.environ.get("FW_FS_ROOT", defaults.fs_root),
         )
 
 
@@ -327,14 +327,14 @@ class ResolverConfig:
         """Create from environment variables.
 
         Recognised variables (all optional):
-            AFL_RESOLVER_SOURCE_PATHS  (colon-separated list of paths)
-            AFL_RESOLVER_AUTO_RESOLVE  ("true"/"1" to enable)
-            AFL_RESOLVER_MONGODB_RESOLVE  ("true"/"1" to enable)
+            FW_RESOLVER_SOURCE_PATHS  (colon-separated list of paths)
+            FW_RESOLVER_AUTO_RESOLVE  ("true"/"1" to enable)
+            FW_RESOLVER_MONGODB_RESOLVE  ("true"/"1" to enable)
         """
-        paths_str = os.environ.get("AFL_RESOLVER_SOURCE_PATHS", "")
+        paths_str = os.environ.get("FW_RESOLVER_SOURCE_PATHS", "")
         source_paths = [p for p in paths_str.split(":") if p] if paths_str else []
-        auto_resolve = os.environ.get("AFL_RESOLVER_AUTO_RESOLVE", "").lower() in ("true", "1")
-        mongodb_resolve = os.environ.get("AFL_RESOLVER_MONGODB_RESOLVE", "").lower() in (
+        auto_resolve = os.environ.get("FW_RESOLVER_AUTO_RESOLVE", "").lower() in ("true", "1")
+        mongodb_resolve = os.environ.get("FW_RESOLVER_MONGODB_RESOLVE", "").lower() in (
             "true",
             "1",
         )
@@ -406,7 +406,7 @@ def _find_config_file(filename: str = DEFAULT_CONFIG_FILENAME) -> Path | None:
     """Search well-known locations for a config file.
 
     Search order:
-        1. ``$AFL_CONFIG`` environment variable (explicit path)
+        1. ``$FW_CONFIG`` environment variable (explicit path)
         2. Current working directory
         3. ``~/.afl/``
         4. ``/etc/ffl/``
@@ -414,7 +414,7 @@ def _find_config_file(filename: str = DEFAULT_CONFIG_FILENAME) -> Path | None:
     Returns:
         Path to the first config file found, or ``None``.
     """
-    explicit = os.environ.get("AFL_CONFIG")
+    explicit = os.environ.get("FW_CONFIG")
     if explicit:
         path = Path(explicit)
         if path.is_file():
@@ -455,11 +455,11 @@ def _apply_env_overrides(config: FFLConfig) -> FFLConfig:
     # MongoDB env overrides
     mongodb = config.mongodb
     env_map_mongo = {
-        "AFL_MONGODB_URL": "url",
-        "AFL_MONGODB_USERNAME": "username",
-        "AFL_MONGODB_PASSWORD": "password",
-        "AFL_MONGODB_AUTH_SOURCE": "auth_source",
-        "AFL_MONGODB_DATABASE": "database",
+        "FW_MONGODB_URL": "url",
+        "FW_MONGODB_USERNAME": "username",
+        "FW_MONGODB_PASSWORD": "password",
+        "FW_MONGODB_AUTH_SOURCE": "auth_source",
+        "FW_MONGODB_DATABASE": "database",
     }
     mongo_overrides = {}
     for env_var, field_name in env_map_mongo.items():
@@ -483,21 +483,21 @@ def _apply_env_overrides(config: FFLConfig) -> FFLConfig:
         "topics": list(runner.topics),
     }
     env_map_runner: list[tuple[str, str, type]] = [
-        ("AFL_POLL_INTERVAL_MS", "poll_interval_ms", int),
-        ("AFL_MAX_CONCURRENT", "max_concurrent", int),
-        ("AFL_HEARTBEAT_INTERVAL_MS", "heartbeat_interval_ms", int),
-        ("AFL_SWEEP_INTERVAL_MS", "sweep_interval_ms", int),
+        ("FW_POLL_INTERVAL_MS", "poll_interval_ms", int),
+        ("FW_MAX_CONCURRENT", "max_concurrent", int),
+        ("FW_HEARTBEAT_INTERVAL_MS", "heartbeat_interval_ms", int),
+        ("FW_SWEEP_INTERVAL_MS", "sweep_interval_ms", int),
     ]
     for env_var, field_name, conv in env_map_runner:
         val = os.environ.get(env_var)
         if val is not None:
             runner_dict[field_name] = conv(val)
             runner_changed = True
-    use_reg = os.environ.get("AFL_USE_REGISTRY")
+    use_reg = os.environ.get("FW_USE_REGISTRY")
     if use_reg is not None:
         runner_dict["use_registry"] = use_reg.strip().lower() in ("true", "1")
         runner_changed = True
-    topics_env = os.environ.get("AFL_RUNNER_TOPICS")
+    topics_env = os.environ.get("FW_RUNNER_TOPICS")
     if topics_env is not None:
         runner_dict["topics"] = [t.strip() for t in topics_env.split(",") if t.strip()]
         runner_changed = True
@@ -515,10 +515,10 @@ def _apply_env_overrides(config: FFLConfig) -> FFLConfig:
         "hdfs_user": storage.hdfs_user,
     }
     env_map_storage: list[tuple[str, str, type]] = [
-        ("AFL_LOCAL_OUTPUT_DIR", "local_output_dir", str),
-        ("AFL_WEBHDFS_PORT", "hdfs_webhdfs_port", int),
-        ("AFL_HDFS_MAX_RETRIES", "hdfs_max_retries", int),
-        ("AFL_HDFS_RETRY_DELAY", "hdfs_retry_delay", float),
+        ("FW_LOCAL_OUTPUT_DIR", "local_output_dir", str),
+        ("FW_WEBHDFS_PORT", "hdfs_webhdfs_port", int),
+        ("FW_HDFS_MAX_RETRIES", "hdfs_max_retries", int),
+        ("FW_HDFS_RETRY_DELAY", "hdfs_retry_delay", float),
         ("HADOOP_USER_NAME", "hdfs_user", str),
     ]
     for env_var, field_name, conv in env_map_storage:
@@ -533,11 +533,11 @@ def _apply_env_overrides(config: FFLConfig) -> FFLConfig:
     resolver = config.resolver
     resolver_env = ResolverConfig.from_env()
     resolver_changed = False
-    if os.environ.get("AFL_RESOLVER_SOURCE_PATHS"):
+    if os.environ.get("FW_RESOLVER_SOURCE_PATHS"):
         resolver_changed = True
-    if os.environ.get("AFL_RESOLVER_AUTO_RESOLVE"):
+    if os.environ.get("FW_RESOLVER_AUTO_RESOLVE"):
         resolver_changed = True
-    if os.environ.get("AFL_RESOLVER_MONGODB_RESOLVE"):
+    if os.environ.get("FW_RESOLVER_MONGODB_RESOLVE"):
         resolver_changed = True
     if resolver_changed:
         resolver = resolver_env
@@ -564,8 +564,8 @@ def load_config(path: str | Path | None = None) -> FFLConfig:
     """Load FFL configuration.
 
     Resolution order (highest to lowest priority):
-        1. Environment variables (``AFL_*``)
-        2. ``AFL_ENV`` overlay file (``afl.config.{AFL_ENV}.json``)
+        1. Environment variables (``FW_*``, or legacy ``AFL_*`` via the shim)
+        2. ``FW_ENV`` overlay file (``afl.config.{FW_ENV}.json``)
         3. Base config file (explicit *path*, or found via search)
         4. Built-in defaults
 
@@ -578,8 +578,8 @@ def load_config(path: str | Path | None = None) -> FFLConfig:
     config_path: Path | None = Path(path) if path else _find_config_file()
     base_data = _load_json(config_path) or {}
 
-    # Apply AFL_ENV overlay
-    env_name = os.environ.get("AFL_ENV", "")
+    # Apply FW_ENV overlay
+    env_name = os.environ.get("FW_ENV", "")
     if env_name:
         overlay_filename = f"facetwork.config.{env_name}.json"
         # Search relative to the base config file's directory first

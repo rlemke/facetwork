@@ -1138,10 +1138,10 @@ dead-letters the task (when `retry_count >= max_retries`).
 
 The runner monitors task liveness via two mechanisms:
 
-- **Execution timeout** (`AFL_TASK_EXECUTION_TIMEOUT_MS`, default
+- **Execution timeout** (`FW_TASK_EXECUTION_TIMEOUT_MS`, default
   15 min): the runner kills tasks with no heartbeat activity beyond
   this threshold.
-- **Stuck-task watchdog** (`AFL_STUCK_TIMEOUT_MS`, default 30 min):
+- **Stuck-task watchdog** (`FW_STUCK_TIMEOUT_MS`, default 30 min):
   a background sweep resets stuck tasks. If the handler registration
   has `timeout_ms > 0`, that per-handler timeout is used instead.
 
@@ -1184,9 +1184,9 @@ The runner monitors task liveness via two mechanisms:
 | Timeout | Source | Default | Scope |
 |---------|--------|---------|-------|
 | `timeout_ms` on `HandlerRegistration` | Per-handler | 30s | Stuck-task watchdog kills tasks exceeding this |
-| `AFL_TASK_EXECUTION_TIMEOUT_MS` | Global env var | 900s (15min) | Runner kills tasks with no heartbeat beyond this |
-| `AFL_STUCK_TIMEOUT_MS` | Global env var | 1800s (30min) | Background sweep resets orphaned running tasks |
-| `AFL_REAPER_TIMEOUT_MS` | Global env var | 120s (2min) | Dead-server detection threshold |
+| `FW_TASK_EXECUTION_TIMEOUT_MS` | Global env var | 900s (15min) | Runner kills tasks with no heartbeat beyond this |
+| `FW_STUCK_TIMEOUT_MS` | Global env var | 1800s (30min) | Background sweep resets orphaned running tasks |
+| `FW_REAPER_TIMEOUT_MS` | Global env var | 120s (2min) | Dead-server detection threshold |
 
 When a task times out, the runner increments `retry_count` and resets
 the task to pending. After `max_retries` (default 5) timeouts, the
@@ -1208,7 +1208,7 @@ runner.register_handler(
 ```
 
 With `timeout_ms=0`, the handler depends on the global
-`AFL_TASK_EXECUTION_TIMEOUT_MS` and heartbeats. If the handler has
+`FW_TASK_EXECUTION_TIMEOUT_MS` and heartbeats. If the handler has
 phases where no heartbeat can fire (e.g., blocking database calls),
 increase the global timeout.
 
@@ -1219,7 +1219,7 @@ defaults when that example is started via `fw runner start`:
 
 ```bash
 # https://github.com/rlemke/fwh_osm/blob/main/runner.env.example
-AFL_TASK_EXECUTION_TIMEOUT_MS=14400000   # 4 hours for PostGIS imports
+FW_TASK_EXECUTION_TIMEOUT_MS=14400000   # 4 hours for PostGIS imports
 ```
 
 The `start-runner` script sources `runner.env` from each selected

@@ -35,14 +35,15 @@ from facetwork.config import (
 def _isolate_afl_env(monkeypatch):
     """Make every config test hermetic.
 
-    `config.py` reads `AFL_*` env vars with precedence over any config file, so a
-    dev box or CI that exports e.g. `AFL_MONGODB_URL` would otherwise leak into
+    `config.py` reads `FW_*` env vars (and legacy `AFL_*`, mirrored by the
+    compat shim) with precedence over any config file, so a dev box or CI that
+    exports e.g. `FW_MONGODB_URL` would otherwise leak into
     `load_config()`/`get_config()` and break the file/overlay/default assertions.
-    Strip all `AFL_*` vars (a test that needs one sets it explicitly afterward)
-    and clear the config cache around each test.
+    Strip all `FW_*`/`AFL_*` vars (a test that needs one sets it explicitly
+    afterward) and clear the config cache around each test.
     """
     for key in list(os.environ):
-        if key.startswith("AFL_"):
+        if key.startswith(("FW_", "AFL_")):
             monkeypatch.delenv(key, raising=False)
     _reset_config_cache()
     yield
@@ -105,11 +106,11 @@ class TestMongoDBConfig:
         assert cfg.database == "facetwork"
 
     def test_from_env(self, monkeypatch):
-        monkeypatch.setenv("AFL_MONGODB_URL", "mongodb://envhost:9999")
-        monkeypatch.setenv("AFL_MONGODB_USERNAME", "envuser")
-        monkeypatch.setenv("AFL_MONGODB_PASSWORD", "envpass")
-        monkeypatch.setenv("AFL_MONGODB_AUTH_SOURCE", "envdb")
-        monkeypatch.setenv("AFL_MONGODB_DATABASE", "envdbname")
+        monkeypatch.setenv("FW_MONGODB_URL", "mongodb://envhost:9999")
+        monkeypatch.setenv("FW_MONGODB_USERNAME", "envuser")
+        monkeypatch.setenv("FW_MONGODB_PASSWORD", "envpass")
+        monkeypatch.setenv("FW_MONGODB_AUTH_SOURCE", "envdb")
+        monkeypatch.setenv("FW_MONGODB_DATABASE", "envdbname")
         cfg = MongoDBConfig.from_env()
         assert cfg.url == "mongodb://envhost:9999"
         assert cfg.username == "envuser"
@@ -118,11 +119,11 @@ class TestMongoDBConfig:
         assert cfg.database == "envdbname"
 
     def test_from_env_defaults(self, monkeypatch):
-        monkeypatch.delenv("AFL_MONGODB_URL", raising=False)
-        monkeypatch.delenv("AFL_MONGODB_USERNAME", raising=False)
-        monkeypatch.delenv("AFL_MONGODB_PASSWORD", raising=False)
-        monkeypatch.delenv("AFL_MONGODB_AUTH_SOURCE", raising=False)
-        monkeypatch.delenv("AFL_MONGODB_DATABASE", raising=False)
+        monkeypatch.delenv("FW_MONGODB_URL", raising=False)
+        monkeypatch.delenv("FW_MONGODB_USERNAME", raising=False)
+        monkeypatch.delenv("FW_MONGODB_PASSWORD", raising=False)
+        monkeypatch.delenv("FW_MONGODB_AUTH_SOURCE", raising=False)
+        monkeypatch.delenv("FW_MONGODB_DATABASE", raising=False)
         cfg = MongoDBConfig.from_env()
         assert cfg.url == MongoDBConfig.url
         assert cfg.database == "facetwork"
@@ -188,21 +189,21 @@ class TestLoadConfig:
         assert cfg.mongodb.auth_source == "filedb"
 
     def test_load_defaults_when_no_file(self, monkeypatch):
-        monkeypatch.delenv("AFL_CONFIG", raising=False)
-        monkeypatch.delenv("AFL_MONGODB_URL", raising=False)
+        monkeypatch.delenv("FW_CONFIG", raising=False)
+        monkeypatch.delenv("FW_MONGODB_URL", raising=False)
         cfg = load_config()
         assert cfg.mongodb.url == MongoDBConfig.url
 
     def test_load_from_env_variable_path(self, tmp_path, monkeypatch):
         config_file = tmp_path / "env.json"
         config_file.write_text(json.dumps({"mongodb": {"url": "mongodb://envpath:7777"}}))
-        monkeypatch.setenv("AFL_CONFIG", str(config_file))
+        monkeypatch.setenv("FW_CONFIG", str(config_file))
         cfg = load_config()
         assert cfg.mongodb.url == "mongodb://envpath:7777"
 
     def test_load_with_runner_section(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("AFL_POLL_INTERVAL_MS", raising=False)
-        monkeypatch.delenv("AFL_MAX_CONCURRENT", raising=False)
+        monkeypatch.delenv("FW_POLL_INTERVAL_MS", raising=False)
+        monkeypatch.delenv("FW_MAX_CONCURRENT", raising=False)
         config_file = tmp_path / "test.json"
         config_file.write_text(json.dumps({"runner": {"pollIntervalMs": 250, "maxConcurrent": 10}}))
         cfg = load_config(str(config_file))
@@ -210,7 +211,7 @@ class TestLoadConfig:
         assert cfg.runner.max_concurrent == 10
 
     def test_load_with_storage_section(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("AFL_LOCAL_OUTPUT_DIR", raising=False)
+        monkeypatch.delenv("FW_LOCAL_OUTPUT_DIR", raising=False)
         config_file = tmp_path / "test.json"
         config_file.write_text(
             json.dumps({"storage": {"localOutputDir": "/data/output", "hdfsMaxRetries": 5}})
@@ -222,16 +223,16 @@ class TestLoadConfig:
     def test_env_vars_override_file(self, tmp_path, monkeypatch):
         config_file = tmp_path / "test.json"
         config_file.write_text(json.dumps({"runner": {"pollIntervalMs": 500, "maxConcurrent": 4}}))
-        monkeypatch.setenv("AFL_POLL_INTERVAL_MS", "100")
-        monkeypatch.setenv("AFL_MAX_CONCURRENT", "16")
+        monkeypatch.setenv("FW_POLL_INTERVAL_MS", "100")
+        monkeypatch.setenv("FW_MAX_CONCURRENT", "16")
         cfg = load_config(str(config_file))
         assert cfg.runner.poll_interval_ms == 100
         assert cfg.runner.max_concurrent == 16
 
     def test_afl_env_overlay(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("AFL_POLL_INTERVAL_MS", raising=False)
-        monkeypatch.delenv("AFL_MAX_CONCURRENT", raising=False)
-        monkeypatch.delenv("AFL_LOCAL_OUTPUT_DIR", raising=False)
+        monkeypatch.delenv("FW_POLL_INTERVAL_MS", raising=False)
+        monkeypatch.delenv("FW_MAX_CONCURRENT", raising=False)
+        monkeypatch.delenv("FW_LOCAL_OUTPUT_DIR", raising=False)
         base = tmp_path / "facetwork.config.json"
         base.write_text(
             json.dumps(
@@ -250,7 +251,7 @@ class TestLoadConfig:
                 }
             )
         )
-        monkeypatch.setenv("AFL_ENV", "staging")
+        monkeypatch.setenv("FW_ENV", "staging")
         cfg = load_config(str(base))
         assert cfg.mongodb.database == "afl_staging"
         assert cfg.runner.max_concurrent == 8
@@ -258,10 +259,10 @@ class TestLoadConfig:
         assert cfg.runner.poll_interval_ms == 1000
 
     def test_afl_env_missing_overlay(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("AFL_POLL_INTERVAL_MS", raising=False)
+        monkeypatch.delenv("FW_POLL_INTERVAL_MS", raising=False)
         base = tmp_path / "facetwork.config.json"
         base.write_text(json.dumps({"runner": {"pollIntervalMs": 1000}}))
-        monkeypatch.setenv("AFL_ENV", "nonexistent")
+        monkeypatch.setenv("FW_ENV", "nonexistent")
         cfg = load_config(str(base))
         # Falls back to base config
         assert cfg.runner.poll_interval_ms == 1000
@@ -271,8 +272,8 @@ class TestLoadConfig:
         base.write_text(json.dumps({"runner": {"maxConcurrent": 2}}))
         overlay = tmp_path / "facetwork.config.prod.json"
         overlay.write_text(json.dumps({"runner": {"maxConcurrent": 8}}))
-        monkeypatch.setenv("AFL_ENV", "prod")
-        monkeypatch.setenv("AFL_MAX_CONCURRENT", "32")
+        monkeypatch.setenv("FW_ENV", "prod")
+        monkeypatch.setenv("FW_MAX_CONCURRENT", "32")
         cfg = load_config(str(base))
         # Env var wins over overlay
         assert cfg.runner.max_concurrent == 32
@@ -319,10 +320,10 @@ class TestRunnerConfig:
         assert cfg.max_concurrent == 2
 
     def test_from_env(self, monkeypatch):
-        monkeypatch.setenv("AFL_POLL_INTERVAL_MS", "250")
-        monkeypatch.setenv("AFL_MAX_CONCURRENT", "16")
-        monkeypatch.setenv("AFL_USE_REGISTRY", "true")
-        monkeypatch.setenv("AFL_RUNNER_TOPICS", "ns.Foo,ns.Bar")
+        monkeypatch.setenv("FW_POLL_INTERVAL_MS", "250")
+        monkeypatch.setenv("FW_MAX_CONCURRENT", "16")
+        monkeypatch.setenv("FW_USE_REGISTRY", "true")
+        monkeypatch.setenv("FW_RUNNER_TOPICS", "ns.Foo,ns.Bar")
         cfg = RunnerConfig.from_env()
         assert cfg.poll_interval_ms == 250
         assert cfg.max_concurrent == 16
@@ -331,13 +332,13 @@ class TestRunnerConfig:
 
     def test_from_env_defaults(self, monkeypatch):
         for var in (
-            "AFL_POLL_INTERVAL_MS",
-            "AFL_MAX_CONCURRENT",
-            "AFL_USE_REGISTRY",
-            "AFL_RUNNER_TOPICS",
-            "AFL_HEARTBEAT_INTERVAL_MS",
-            "AFL_LOCK_DURATION_MS",
-            "AFL_SWEEP_INTERVAL_MS",
+            "FW_POLL_INTERVAL_MS",
+            "FW_MAX_CONCURRENT",
+            "FW_USE_REGISTRY",
+            "FW_RUNNER_TOPICS",
+            "FW_HEARTBEAT_INTERVAL_MS",
+            "FW_LOCK_DURATION_MS",
+            "FW_SWEEP_INTERVAL_MS",
         ):
             monkeypatch.delenv(var, raising=False)
         cfg = RunnerConfig.from_env()
@@ -393,10 +394,10 @@ class TestStorageConfig:
         assert cfg.hdfs_max_retries == 7
 
     def test_from_env(self, monkeypatch):
-        monkeypatch.setenv("AFL_LOCAL_OUTPUT_DIR", "/env/output")
-        monkeypatch.setenv("AFL_WEBHDFS_PORT", "9999")
-        monkeypatch.setenv("AFL_HDFS_MAX_RETRIES", "10")
-        monkeypatch.setenv("AFL_HDFS_RETRY_DELAY", "3.0")
+        monkeypatch.setenv("FW_LOCAL_OUTPUT_DIR", "/env/output")
+        monkeypatch.setenv("FW_WEBHDFS_PORT", "9999")
+        monkeypatch.setenv("FW_HDFS_MAX_RETRIES", "10")
+        monkeypatch.setenv("FW_HDFS_RETRY_DELAY", "3.0")
         monkeypatch.setenv("HADOOP_USER_NAME", "testuser")
         cfg = StorageConfig.from_env()
         assert cfg.local_output_dir == "/env/output"
@@ -407,14 +408,14 @@ class TestStorageConfig:
 
     def test_from_env_defaults(self, monkeypatch):
         for var in (
-            "AFL_LOCAL_OUTPUT_DIR",
-            "AFL_WEBHDFS_PORT",
-            "AFL_HDFS_MAX_RETRIES",
-            "AFL_HDFS_RETRY_DELAY",
+            "FW_LOCAL_OUTPUT_DIR",
+            "FW_WEBHDFS_PORT",
+            "FW_HDFS_MAX_RETRIES",
+            "FW_HDFS_RETRY_DELAY",
             "HADOOP_USER_NAME",
         ):
             monkeypatch.delenv(var, raising=False)
-        monkeypatch.delenv("AFL_OUTPUT_BASE", raising=False)
+        monkeypatch.delenv("FW_OUTPUT_BASE", raising=False)
         cfg = StorageConfig.from_env()
         assert cfg.local_output_dir == "/Volumes/afl_data/output"
         assert cfg.hdfs_user == "root"
@@ -463,20 +464,20 @@ class TestGetConfig:
     """Tests for get_config() singleton."""
 
     def test_returns_aflconfig(self, monkeypatch):
-        monkeypatch.delenv("AFL_CONFIG", raising=False)
+        monkeypatch.delenv("FW_CONFIG", raising=False)
         _reset_config_cache()
         cfg = get_config()
         assert isinstance(cfg, FFLConfig)
 
     def test_cached(self, monkeypatch):
-        monkeypatch.delenv("AFL_CONFIG", raising=False)
+        monkeypatch.delenv("FW_CONFIG", raising=False)
         _reset_config_cache()
         cfg1 = get_config()
         cfg2 = get_config()
         assert cfg1 is cfg2
 
     def test_reset_clears_cache(self, monkeypatch):
-        monkeypatch.delenv("AFL_CONFIG", raising=False)
+        monkeypatch.delenv("FW_CONFIG", raising=False)
         _reset_config_cache()
         cfg1 = get_config()
         _reset_config_cache()
@@ -487,8 +488,8 @@ class TestGetConfig:
         """Config file with only mongodb section still works."""
         config_file = tmp_path / "old.json"
         config_file.write_text(json.dumps({"mongodb": {"url": "mongodb://old:1234"}}))
-        monkeypatch.delenv("AFL_POLL_INTERVAL_MS", raising=False)
-        monkeypatch.delenv("AFL_MAX_CONCURRENT", raising=False)
+        monkeypatch.delenv("FW_POLL_INTERVAL_MS", raising=False)
+        monkeypatch.delenv("FW_MAX_CONCURRENT", raising=False)
         _reset_config_cache()
         cfg = load_config(str(config_file))
         assert cfg.mongodb.url == "mongodb://old:1234"
@@ -500,10 +501,10 @@ class TestSentinelPattern:
 
     def test_registry_runner_config_defaults(self, monkeypatch):
         """RegistryRunnerConfig resolves defaults from get_config()."""
-        monkeypatch.delenv("AFL_POLL_INTERVAL_MS", raising=False)
-        monkeypatch.delenv("AFL_MAX_CONCURRENT", raising=False)
-        monkeypatch.delenv("AFL_HEARTBEAT_INTERVAL_MS", raising=False)
-        monkeypatch.delenv("AFL_CONFIG", raising=False)
+        monkeypatch.delenv("FW_POLL_INTERVAL_MS", raising=False)
+        monkeypatch.delenv("FW_MAX_CONCURRENT", raising=False)
+        monkeypatch.delenv("FW_HEARTBEAT_INTERVAL_MS", raising=False)
+        monkeypatch.delenv("FW_CONFIG", raising=False)
         _reset_config_cache()
         from facetwork.runtime.registry_runner import RegistryRunnerConfig
 
@@ -514,7 +515,7 @@ class TestSentinelPattern:
 
     def test_registry_runner_config_explicit(self, monkeypatch):
         """Explicit values bypass sentinel resolution."""
-        monkeypatch.delenv("AFL_CONFIG", raising=False)
+        monkeypatch.delenv("FW_CONFIG", raising=False)
         _reset_config_cache()
         from facetwork.runtime.registry_runner import RegistryRunnerConfig
 
@@ -523,10 +524,10 @@ class TestSentinelPattern:
         assert cfg.max_concurrent == 8
 
     def test_agent_poller_config_defaults(self, monkeypatch):
-        monkeypatch.delenv("AFL_POLL_INTERVAL_MS", raising=False)
-        monkeypatch.delenv("AFL_MAX_CONCURRENT", raising=False)
-        monkeypatch.delenv("AFL_HEARTBEAT_INTERVAL_MS", raising=False)
-        monkeypatch.delenv("AFL_CONFIG", raising=False)
+        monkeypatch.delenv("FW_POLL_INTERVAL_MS", raising=False)
+        monkeypatch.delenv("FW_MAX_CONCURRENT", raising=False)
+        monkeypatch.delenv("FW_HEARTBEAT_INTERVAL_MS", raising=False)
+        monkeypatch.delenv("FW_CONFIG", raising=False)
         _reset_config_cache()
         from facetwork.runtime.agent_poller import AgentPollerConfig
 

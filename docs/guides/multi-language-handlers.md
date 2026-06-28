@@ -102,8 +102,8 @@ partial results).
 ## Deploying a polyglot handler
 
 A non-Python handler is its own process (a JVM, a Go binary, a Node process)
-configured with the **same `AFL_*` environment the Python runners use** — at
-minimum `AFL_MONGODB_URL` and, if it touches durable storage, the `AFL_S3_*`
+configured with the **same `FW_*` environment the Python runners use** — at
+minimum `FW_MONGODB_URL` and, if it touches durable storage, the `FW_S3_*`
 endpoint/credentials. Then it joins the fleet by registering its facet(s) and
 polling.
 

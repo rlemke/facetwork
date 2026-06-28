@@ -329,7 +329,7 @@ The composable library had full road routing via five external engines, but that
 
 ### D. Operational footguns (this project)
 
-- **Writable output base.** Handler tests and any facet calling `get_temp_dir` / `derive_output_path` resolve `AFL_OUTPUT_BASE` (default `/Volumes/afl_data/output`). On a host without that mount they fail with `PermissionError`, which looks like a regression but is environmental — set `AFL_OUTPUT_BASE` (+ `AFL_DATA_ROOT`) to a writable dir. New pure facets should also fall back to the system temp for staging (as `BuildNetwork` does) so they are robust to a missing data mount.
+- **Writable output base.** Handler tests and any facet calling `get_temp_dir` / `derive_output_path` resolve `FW_OUTPUT_BASE` (default `/Volumes/afl_data/output`). On a host without that mount they fail with `PermissionError`, which looks like a regression but is environmental — set `FW_OUTPUT_BASE` (+ `FW_DATA_ROOT`) to a writable dir. New pure facets should also fall back to the system temp for staging (as `BuildNetwork` does) so they are robust to a missing data mount.
 - **`foreach` element field-access form.** Inside `andThen foreach p in $.xs { … }`, the documented form accesses the loop element as `$.p` and its fields as `$.p.field` (a `Json` element's fields are permissive). The whole element can also be passed as `p.value`. Match the namespace's existing usage.
 
 ---
@@ -357,20 +357,20 @@ Two startup gotchas burned ~50 minutes of a North-America tiled render this sess
 
 **Implementation**: `facetwork/runtime/runner/__main__.py::_warn_registry_drift` (called after `RegistryDispatcher.preload(verify=True)`). Best-effort: any discovery/import error is debug-logged and swallowed so the diagnostic never blocks startup. Verified in-process against the exact gotcha — the simulation logs the WARNING naming `osm.viz.RenderTiledMap` against the `osm-geocoder` package.
 
-### B. `AFL_OUTPUT_BASE` is configurable per-shell, but the runner is silent about which value it inherited
+### B. `FW_OUTPUT_BASE` is configurable per-shell, but the runner is silent about which value it inherited
 
-**Requirement**: The runner banner must echo the effective `AFL_OUTPUT_BASE` at startup so a silent fall-back to the `.env` default (or worse, the built-in `/Volumes/afl_data/output`) is visible *before* outputs land in the wrong place.
+**Requirement**: The runner banner must echo the effective `FW_OUTPUT_BASE` at startup so a silent fall-back to the `.env` default (or worse, the built-in `/Volumes/afl_data/output`) is visible *before* outputs land in the wrong place.
 
-**What happened**: For ongoing OSM work, outputs are expected under `~/osm-route-cache/output/`. The user achieved this by exporting `AFL_OUTPUT_BASE` in their interactive shell before launching the long-running runner. When I restarted the runner under `nohup` from a different subshell that hadn't re-exported it, `_env.sh` loaded the `.env` default (`/tmp/output`) and the restart proceeded with no message. The render's `RenderTiledMap` step succeeded but emitted its viewer to `/tmp/output/maps/tiled/<stem>/`, breaking the dashboard's "open in browser" link and leaving the index.html one reboot away from being wiped. The same pattern bit the original osm.Network proof — captured at the time as the §D footgun above — and is the longest-standing operational trap in the project.
+**What happened**: For ongoing OSM work, outputs are expected under `~/osm-route-cache/output/`. The user achieved this by exporting `FW_OUTPUT_BASE` in their interactive shell before launching the long-running runner. When I restarted the runner under `nohup` from a different subshell that hadn't re-exported it, `_env.sh` loaded the `.env` default (`/tmp/output`) and the restart proceeded with no message. The render's `RenderTiledMap` step succeeded but emitted its viewer to `/tmp/output/maps/tiled/<stem>/`, breaking the dashboard's "open in browser" link and leaving the index.html one reboot away from being wiped. The same pattern bit the original osm.Network proof — captured at the time as the §D footgun above — and is the longest-standing operational trap in the project.
 
 **Upfront requirement**:
 - **Print the effective value on the banner**, tagged with its source. The shipped form distinguishes `(env)` from `(default in .env)`:
   ```
-  AFL_OUTPUT_BASE: /Users/ralph_lemke/osm-route-cache/output  (env)
-  AFL_OUTPUT_BASE: /tmp/output  (default in .env)
+  FW_OUTPUT_BASE: /Users/ralph_lemke/osm-route-cache/output  (env)
+  FW_OUTPUT_BASE: /tmp/output  (default in .env)
   ```
 - **Probe writability on the spot.** `mkdir -p` + `-w` test; a non-writable target emits a STDERR warning. Catches the original osm.Network case where `/Volumes/afl_data/output` doesn't exist on the host.
-- The fix lives in `fw runner start` because the env resolution lives there (the runner only sees the env it was launched with). Hand-launched runners still get the silent fall-back; the documented happy path is `fw runner start --example <name>` with `AFL_OUTPUT_BASE` either in `.env` or exported before the call.
+- The fix lives in `fw runner start` because the env resolution lives there (the runner only sees the env it was launched with). Hand-launched runners still get the silent fall-back; the documented happy path is `fw runner start --example <name>` with `FW_OUTPUT_BASE` either in `.env` or exported before the call.
 
 ### Why this section, not just code comments
 
@@ -431,8 +431,8 @@ Verified live: the `resume_step` storm dropped from hundreds/sec to ~0 and the b
 
 The facet that surfaced the livelock — `osm.Source.PBF.ToGeoJson` (full-region PBF→GeoJSON via `osmium export`, object-store-native) — carried its own operational lessons, independent of the runtime fix:
 
-- **Disk-backed node index, not in-RAM.** osmium's default `flex_mem` node-location index grows unbounded and **OOM-kills** on large regions (a continent needs GBs just for the index) on a memory-constrained VM. Use a disk-backed index on local scratch (`osmium export -i sparse_file_array,<scratch>`, overridable via `AFL_OSMIUM_INDEX_TYPE` — e.g. `flex_mem` for small regions where RAM is fine and speed matters).
-- **Stage on the external/scratch disk, never the internal Docker disk.** The GeoJSON staging output *and* the `localize()` warm cache for the input PBF must sit on the external/scratch disk (`AFL_OUTPUT_BASE` / `AFL_LOCAL_SCRATCH`). On the internal Docker disk they share space with mongodb, and an ENOSPC there crashes mongo — turning a disk-full into a cluster outage. (Echoes the §A/§B storage-volume lessons of the v0.48 section: keep heavy I/O off the substrate the control plane lives on.)
+- **Disk-backed node index, not in-RAM.** osmium's default `flex_mem` node-location index grows unbounded and **OOM-kills** on large regions (a continent needs GBs just for the index) on a memory-constrained VM. Use a disk-backed index on local scratch (`osmium export -i sparse_file_array,<scratch>`, overridable via `FW_OSMIUM_INDEX_TYPE` — e.g. `flex_mem` for small regions where RAM is fine and speed matters).
+- **Stage on the external/scratch disk, never the internal Docker disk.** The GeoJSON staging output *and* the `localize()` warm cache for the input PBF must sit on the external/scratch disk (`FW_OUTPUT_BASE` / `FW_LOCAL_SCRATCH`). On the internal Docker disk they share space with mongodb, and an ENOSPC there crashes mongo — turning a disk-full into a cluster outage. (Echoes the §A/§B storage-volume lessons of the v0.48 section: keep heavy I/O off the substrate the control plane lives on.)
 - **Storage must be symmetric — `localize()` is the read-side counterpart of `finalize_from_local()`.** A native tool (osmium) only reads local files, so an object-store (S3/MinIO) input must be downloaded locally first. `Storage.localize()` (read side) mirrors `finalize_from_local()` (write side); a backend that has one without the other can write to the object store but can't feed the next native step its input.
 - **Concurrency must match BOTH RAM and disk, not just core count.** Each disk-backed index is multi-GB, so too many concurrent osmium exports blow past the page cache and seek-thrash the single external disk (slower than serial); too few worker threads/runner starve task execution because orchestration shares the pool. Tune concurrency against the binding resource (disk bandwidth + page cache for these conversions), not nominal CPU parallelism.
 
@@ -462,7 +462,7 @@ When the large-VM attempt crashed Docker Desktop, the VM's linuxkit network wedg
 
 ### D. Resolution: a size gate makes the infeasible explicit instead of failing it slowly
 
-The pragmatic fix is the `max_pbf_mb` parameter on `osm.Source.PBF.ToGeoJson` (with the `AFL_OSM_MAX_PBF_MB` env fallback for capping a run already in flight): it checks the cached PBF's `size` **before** localizing or converting and returns `skipped = true` with an empty path for anything over the limit. Paired with a host-sustainable VM (14GB on 32GB) and `AFL_MAX_CONCURRENT=2` (~2 concurrent exports at ~5-6GB each so the mid-size regions fit), the bulk run reaches its **achievable ceiling — ~226/255** here (138 already done + ~88 sub-1GB mediums) — and *cleanly skips* the ~25 regions ≥1GB rather than thrashing or OOM-killing on them. Those need a larger host (more RAM for a bigger VM) to convert; the size gate makes that boundary a deliberate, observable `skipped` result instead of a slow failure. The general principle: when part of a batch exceeds the host's hard limits, encode the limit as a first-class skip so the run completes deterministically and the deferred work is visible, rather than tuning the whole batch down to the lowest common denominator or letting the giants fail late.
+The pragmatic fix is the `max_pbf_mb` parameter on `osm.Source.PBF.ToGeoJson` (with the `FW_OSM_MAX_PBF_MB` env fallback for capping a run already in flight): it checks the cached PBF's `size` **before** localizing or converting and returns `skipped = true` with an empty path for anything over the limit. Paired with a host-sustainable VM (14GB on 32GB) and `FW_MAX_CONCURRENT=2` (~2 concurrent exports at ~5-6GB each so the mid-size regions fit), the bulk run reaches its **achievable ceiling — ~226/255** here (138 already done + ~88 sub-1GB mediums) — and *cleanly skips* the ~25 regions ≥1GB rather than thrashing or OOM-killing on them. Those need a larger host (more RAM for a bigger VM) to convert; the size gate makes that boundary a deliberate, observable `skipped` result instead of a slow failure. The general principle: when part of a batch exceeds the host's hard limits, encode the limit as a first-class skip so the run completes deterministically and the deferred work is visible, rather than tuning the whole batch down to the lowest common denominator or letting the giants fail late.
 
 ---
 
@@ -545,7 +545,7 @@ When a handler partially completes then fails (e.g. 10 of 50 tables imported int
 **Requirement**:
 - MongoDB TTL indexes: `step_logs.time` (30 days default), completed runners/steps/tasks (90 days).
 - Archive job that moves completed workflows older than retention period to `{collection}_archive`.
-- Configuration: `AFL_LOG_RETENTION_DAYS`, `AFL_ARCHIVE_RETENTION_DAYS`.
+- Configuration: `FW_LOG_RETENTION_DAYS`, `FW_ARCHIVE_RETENTION_DAYS`.
 - Dashboard "Storage" page showing collection sizes and last purge time.
 
 **Where**: `_ensure_indexes()` TTL indexes, new `scripts/data-lifecycle` script, config.

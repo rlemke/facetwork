@@ -3,7 +3,7 @@
 #   source "$(dirname "$0")/_remote.sh"
 #
 # Provides:
-#   _afl_resolve_remote_env    — resolve AFL_RUNNER_HOSTS, AFL_REMOTE_PATH, etc.
+#   _afl_resolve_remote_env    — resolve FW_RUNNER_HOSTS, FW_REMOTE_PATH, etc.
 #   _afl_query_running_servers — query MongoDB for running servers
 #   _afl_ssh <host> <cmd>      — SSH wrapper with standard options
 #   _afl_poll_server_state     — poll MongoDB until server reaches expected state
@@ -20,14 +20,14 @@ _REMOTE_PYTHON="${_REMOTE_REPO_ROOT}/.venv/bin/python3"
 # ---------------------------------------------------------------------------
 
 _afl_resolve_remote_env() {
-    # AFL_RUNNER_HOSTS: space-separated list of remote hostnames
-    AFL_RUNNER_HOSTS="${AFL_RUNNER_HOSTS:-}"
+    # FW_RUNNER_HOSTS: space-separated list of remote hostnames
+    FW_RUNNER_HOSTS="${FW_RUNNER_HOSTS:-}"
 
-    # AFL_REMOTE_PATH: repo path on remote hosts (default: same as local)
-    AFL_REMOTE_PATH="${AFL_REMOTE_PATH:-$_REMOTE_REPO_ROOT}"
+    # FW_REMOTE_PATH: repo path on remote hosts (default: same as local)
+    FW_REMOTE_PATH="${FW_REMOTE_PATH:-$_REMOTE_REPO_ROOT}"
 
-    # AFL_SSH_OPTS: extra SSH options
-    AFL_SSH_OPTS="${AFL_SSH_OPTS:-}"
+    # FW_SSH_OPTS: extra SSH options
+    FW_SSH_OPTS="${FW_SSH_OPTS:-}"
 }
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ _afl_ssh() {
     local host="$1"; shift
     # shellcheck disable=SC2086
     ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new \
-        $AFL_SSH_OPTS "$host" "$@"
+        $FW_SSH_OPTS "$host" "$@"
 }
 
 # ---------------------------------------------------------------------------
@@ -51,7 +51,7 @@ _afl_query_running_servers() {
     env PYTHONPATH="$_REMOTE_REPO_ROOT" "$_REMOTE_PYTHON" -c "
 import os
 from facetwork.runtime.mongo_store import MongoStore
-mongo_url = os.environ.get('AFL_MONGODB_URL', 'mongodb://afl-mongodb:27017')
+mongo_url = os.environ.get('FW_MONGODB_URL', 'mongodb://afl-mongodb:27017')
 store = MongoStore(mongo_url)
 for s in store.get_servers_by_state('running'):
     print(f'{s.server_name} {s.http_port} {s.uuid}')
@@ -64,7 +64,7 @@ _afl_get_server_state() {
     env PYTHONPATH="$_REMOTE_REPO_ROOT" "$_REMOTE_PYTHON" -c "
 import os
 from facetwork.runtime.mongo_store import MongoStore
-mongo_url = os.environ.get('AFL_MONGODB_URL', 'mongodb://afl-mongodb:27017')
+mongo_url = os.environ.get('FW_MONGODB_URL', 'mongodb://afl-mongodb:27017')
 store = MongoStore(mongo_url)
 s = store.get_server('$server_uuid')
 if s:
@@ -141,17 +141,17 @@ _afl_poll_new_server() {
 # Host list helpers
 # ---------------------------------------------------------------------------
 
-# Build the list of target hosts from --host flags or AFL_RUNNER_HOSTS.
+# Build the list of target hosts from --host flags or FW_RUNNER_HOSTS.
 # Usage: _afl_resolve_hosts "${HOST_ARGS[@]}"
 # Prints one hostname per line.
 _afl_resolve_hosts() {
     if [[ $# -gt 0 ]]; then
         printf '%s\n' "$@"
-    elif [[ -n "$AFL_RUNNER_HOSTS" ]]; then
+    elif [[ -n "$FW_RUNNER_HOSTS" ]]; then
         # shellcheck disable=SC2086
-        printf '%s\n' $AFL_RUNNER_HOSTS
+        printf '%s\n' $FW_RUNNER_HOSTS
     else
-        echo "Error: no hosts specified. Use --host or set AFL_RUNNER_HOSTS." >&2
+        echo "Error: no hosts specified. Use --host or set FW_RUNNER_HOSTS." >&2
         return 1
     fi
 }

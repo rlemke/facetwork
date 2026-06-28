@@ -13,14 +13,14 @@ from facetwork.parser import FFLParser
 from facetwork.source import CompilerInput, FileOrigin, SourceEntry
 from facetwork.validator import validate
 
-_AFL_DIR = Path(__file__).resolve().parent.parent.parent.parent / "ffl"
+_FW_DIR = Path(__file__).resolve().parent.parent.parent.parent / "ffl"
 
 
 def _compile(*filenames: str) -> dict:
     """Compile one or more FFL files from the AWS Lambda example directory."""
     entries = []
     for i, name in enumerate(filenames):
-        path = _AFL_DIR / name
+        path = _FW_DIR / name
         entries.append(
             SourceEntry(
                 text=path.read_text(),
@@ -235,10 +235,10 @@ class TestAwsLambdaWorkflows:
         """The CLI --check flag succeeds for lambda_workflows.afl."""
         args = [
             "--primary",
-            str(_AFL_DIR / "lambda_workflows.ffl"),
+            str(_FW_DIR / "lambda_workflows.ffl"),
         ]
         for dep in self._DEPS:
-            args.extend(["--library", str(_AFL_DIR / dep)])
+            args.extend(["--library", str(_FW_DIR / dep)])
         args.append("--check")
         result = main(args)
         assert result == 0

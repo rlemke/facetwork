@@ -99,7 +99,7 @@ response:
     shape: "Handler raises an exception, or returns a specially-tagged error result (impl-defined; reference uses exceptions)."
     behavior: "Runtime records the error on the step; step enters state.statement.Error; catch block (if any) activates."
   timeout:
-    behavior: "Handler that does not return within AFL_TASK_EXECUTION_TIMEOUT_MS is reset to QUEUED; a late return is rejected via optimistic concurrency."
+    behavior: "Handler that does not return within FW_TASK_EXECUTION_TIMEOUT_MS is reset to QUEUED; a late return is rejected via optimistic concurrency."
 
 # ---------------------------------------------------------------------------
 # Handler registration.
@@ -162,7 +162,7 @@ properties:
     checkable_via: "example_suite"
 
   - name: "heartbeat_extends_lease"
-    statement: "Calling _task_heartbeat() extends the task lease_expires_at by at least AFL_LEASE_DURATION_MS from the call time."
+    statement: "Calling _task_heartbeat() extends the task lease_expires_at by at least FW_LEASE_DURATION_MS from the call time."
     checkable_via: "property_test"
 
   - name: "step_log_is_append_only"

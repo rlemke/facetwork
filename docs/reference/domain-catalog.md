@@ -34,7 +34,7 @@ the **same** resolved catalog.
 
 The effective catalog is resolved in this order:
 
-1. **`$AFL_DOMAINS_FILE`** — if set, that file *is* the catalog (full replace).
+1. **`$FW_DOMAINS_FILE`** — if set, that file *is* the catalog (full replace).
 2. **`domains.local.json`** (repo root, gitignored) — merged *over* `domains.json`.
 3. **`domains.json`** — the committed standard catalog.
 
@@ -68,7 +68,7 @@ fw install domain --list          # the domains currently in the catalog
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `replicas` | `1` | Replica count for a single-replica (non-`scaled`) domain runner. |
-| `scaled_replicas` | falls back to `replicas` | Replica count for the `scaled` tier. The env `AFL_OSM_REPLICAS` still **overrides** this per host. |
+| `scaled_replicas` | falls back to `replicas` | Replica count for the `scaled` tier. The env `FW_OSM_REPLICAS` still **overrides** this per host. |
 
 ---
 
@@ -84,12 +84,12 @@ capability.
 | `extras` | string[] | no (default `[]`) | install | pip extras added on `fw install domain` unless `--no-default-extras`. |
 | `description` | string | no | install `--list` | One-line blurb. |
 | `service` | string | no | gen-compose, runner/start, rebuild, fleet | The compose service (`runner-<x>`). **Presence makes it a "compose domain"** (it has a runner service). Absent → install-only (e.g. `save-earth`, `sentinel2-landchange`). The `--domain` suffix is `service` minus `runner-` (so `jenkins` → `runner-jenkins-example` → suffix `jenkins-example`). |
-| `task_list` | string | no¹ | gen-compose | Emitted as `AFL_REGISTRY_RUNNER_ARGS: "--task-list <task_list>"`. |
-| `compose_extras` | string | no | gen-compose | Default value for the compose `AFL_DOMAIN_EXTRAS` env (distinct from install `extras`). |
-| `extras_var` | string | no | gen-compose | If set, `AFL_DOMAIN_EXTRAS` becomes `${<extras_var>:-<compose_extras>}` (env-overridable). |
-| `server_group_arg` | bool | no | gen-compose | Append ` --server-group ${AFL_SERVER_GROUP:-default}` to the runner args (used by osm). |
+| `task_list` | string | no¹ | gen-compose | Emitted as `FW_REGISTRY_RUNNER_ARGS: "--task-list <task_list>"`. |
+| `compose_extras` | string | no | gen-compose | Default value for the compose `FW_DOMAIN_EXTRAS` env (distinct from install `extras`). |
+| `extras_var` | string | no | gen-compose | If set, `FW_DOMAIN_EXTRAS` becomes `${<extras_var>:-<compose_extras>}` (env-overridable). |
+| `server_group_arg` | bool | no | gen-compose | Append ` --server-group ${FW_SERVER_GROUP:-default}` to the runner args (used by osm). |
 | `fleet_default` | bool | no | runner/start | In the default set a bare `fw runner start --fleet`/fleet-agent brings up. |
-| `scaled` | bool | no | start-all | Runs at the throughput knob (`scaled_replicas` / `AFL_OSM_REPLICAS`) instead of one replica. |
+| `scaled` | bool | no | start-all | Runs at the throughput knob (`scaled_replicas` / `FW_OSM_REPLICAS`) instead of one replica. |
 
 ¹ Required only for a compose domain (one with a `service`).
 
@@ -104,11 +104,11 @@ from these (all optional; absent → a plain single-replica handler runner on th
 | `compose.` field | Type | Effect on the generated block |
 |------------------|------|-------------------------------|
 | `storage` | `"s3"` (default) / `"osm"` | Which env anchor: `<<: *s3-storage` or `<<: *osm-s3-env`. |
-| `hostname` | bool | Adds `hostname: ${AFL_FLEET_HOST:-}`. |
-| `postgis` | bool | Adds `AFL_POSTGIS_URL` env (the standard postgis URL). Does **not** add a `depends_on` — use `depends` for that. |
+| `hostname` | bool | Adds `hostname: ${FW_FLEET_HOST:-}`. |
+| `postgis` | bool | Adds `FW_POSTGIS_URL` env (the standard postgis URL). Does **not** add a `depends_on` — use `depends` for that. |
 | `depends` | `[[service, condition], …]` | Extra `depends_on` entries beyond `mongodb`+`minio-setup` (e.g. `["postgis","service_healthy"]`, `["runner-osm-geocoder","service_started"]`). |
 | `env` | `[[key, value], …]` | Extra literal env, in order (e.g. `ANTHROPIC_API_KEY`, `JENKINS_URL`, OSM timeouts). |
-| `volumes` | `[string, …]` | Volume mappings **after** the auto-added handler mount. Omit → the default `${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data`. |
+| `volumes` | `[string, …]` | Volume mappings **after** the auto-added handler mount. Omit → the default `${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data`. |
 | `notes` | `[string, …]` | Emitted as `#` comments in the block — operational rationale that used to be inline YAML (kept in the catalog so it survives regeneration). |
 
 ### Example entry (compose domain)
@@ -128,12 +128,12 @@ from these (all optional; absent → a plain single-replica handler runner on th
     "postgis": true,
     "depends": [["postgis", "service_healthy"]],
     "env": [
-      ["AFL_GEOFABRIK_MIRROR", "/geofabrik"],
-      ["AFL_TASK_EXECUTION_TIMEOUT_MS", "14400000"]
+      ["FW_GEOFABRIK_MIRROR", "/geofabrik"],
+      ["FW_TASK_EXECUTION_TIMEOUT_MS", "14400000"]
     ],
     "volumes": [
       "afl_output:/data/output",
-      "${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch",
+      "${FW_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch",
       "afl_geofabrik:/geofabrik"
     ],
     "notes": ["staging → the big external disk, not the small internal volume"]
@@ -229,7 +229,7 @@ A deployment that wants **only** OSM + its own domains, at higher scale, ships a
 ```
 
 Or replace the catalog entirely with an unrelated file: `export
-AFL_DOMAINS_FILE=/etc/facetwork/our-domains.json`. Either way, every `fw`
+FW_DOMAINS_FILE=/etc/facetwork/our-domains.json`. Either way, every `fw`
 command (`install domain`, `gen-compose`, `runner start`, `start-all`, fleet
 validation) follows the deployment's catalog with no source changes.
 

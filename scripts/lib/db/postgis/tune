@@ -12,7 +12,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../_helpers/_bootstrap.sh"
 set -euo pipefail
 source "$FW_LIB/_helpers/_env.sh"
 
-POSTGIS_URL="${AFL_POSTGIS_URL:-postgresql://afl:afl@afl-postgres:5432/afl_gis}"
+POSTGIS_URL="${FW_POSTGIS_URL:-postgresql://afl:afl@afl-postgres:5432/afl_gis}"
 DATA_DIR="/Volumes/afl_data/local_servers/postgis/data"
 
 # Recommended settings for bulk import on 32GB machine

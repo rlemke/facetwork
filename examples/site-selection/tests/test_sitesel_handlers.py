@@ -97,7 +97,7 @@ class TestDownloadPBF:
         cached = os.path.join(pbf_dir, "alabama-latest.osm.pbf")
         Path(cached).write_bytes(b"fake pbf data")
 
-        with patch.dict(os.environ, {"AFL_SITESEL_CACHE_DIR": cache_dir}):
+        with patch.dict(os.environ, {"FW_SITESEL_CACHE_DIR": cache_dir}):
             # Need to reimport to pick up env change
             import importlib
 
@@ -119,7 +119,7 @@ class TestDownloadPBF:
         cached = os.path.join(pbf_dir, "alaska-latest.osm.pbf")
         Path(cached).write_bytes(b"data")
 
-        with patch.dict(os.environ, {"AFL_SITESEL_CACHE_DIR": cache_dir}):
+        with patch.dict(os.environ, {"FW_SITESEL_CACHE_DIR": cache_dir}):
             import importlib
 
             import handlers.shared.downloader as dl
@@ -195,7 +195,7 @@ class TestDemographicsExtractor:
             ],
         )
 
-        with patch.dict(os.environ, {"AFL_SITESEL_OUTPUT_DIR": str(tmp_path)}):
+        with patch.dict(os.environ, {"FW_SITESEL_OUTPUT_DIR": str(tmp_path)}):
             import importlib
 
             import handlers.extract.demographics_extractor as de
@@ -298,7 +298,7 @@ class TestDemographicsExtractor:
             ],
         )
 
-        with patch.dict(os.environ, {"AFL_SITESEL_OUTPUT_DIR": str(tmp_path)}):
+        with patch.dict(os.environ, {"FW_SITESEL_OUTPUT_DIR": str(tmp_path)}):
             import importlib
 
             import handlers.extract.demographics_extractor as de
@@ -356,7 +356,7 @@ class TestRestaurantExtractor:
     def test_empty_result(self, tmp_path):
         """Test empty result when no PBF."""
 
-        with patch.dict(os.environ, {"AFL_SITESEL_OUTPUT_DIR": str(tmp_path)}):
+        with patch.dict(os.environ, {"FW_SITESEL_OUTPUT_DIR": str(tmp_path)}):
             import importlib
 
             import handlers.extract.restaurant_extractor as re_mod
@@ -371,7 +371,7 @@ class TestRestaurantExtractor:
     def test_output_format(self, tmp_path):
         """Test that output GeoJSON has correct structure."""
 
-        with patch.dict(os.environ, {"AFL_SITESEL_OUTPUT_DIR": str(tmp_path)}):
+        with patch.dict(os.environ, {"FW_SITESEL_OUTPUT_DIR": str(tmp_path)}):
             import importlib
 
             import handlers.extract.restaurant_extractor as re_mod
@@ -387,7 +387,7 @@ class TestRestaurantExtractor:
     def test_extract_without_osmium(self, tmp_path):
         """Test extraction when pyosmium is not available."""
 
-        with patch.dict(os.environ, {"AFL_SITESEL_OUTPUT_DIR": str(tmp_path)}):
+        with patch.dict(os.environ, {"FW_SITESEL_OUTPUT_DIR": str(tmp_path)}):
             import importlib
 
             import handlers.extract.restaurant_extractor as re_mod
@@ -499,7 +499,7 @@ class TestScoring:
 
         pytest.importorskip("shapely")
 
-        with patch.dict(os.environ, {"AFL_SITESEL_OUTPUT_DIR": str(out_tmp)}):
+        with patch.dict(os.environ, {"FW_SITESEL_OUTPUT_DIR": str(out_tmp)}):
             import importlib
 
             import handlers.scoring.scoring_builder as sb
@@ -520,7 +520,7 @@ class TestScoring:
 
         pytest.importorskip("shapely")
 
-        with patch.dict(os.environ, {"AFL_SITESEL_OUTPUT_DIR": str(out_tmp)}):
+        with patch.dict(os.environ, {"FW_SITESEL_OUTPUT_DIR": str(out_tmp)}):
             import importlib
 
             import handlers.scoring.scoring_builder as sb
@@ -544,7 +544,7 @@ class TestScoring:
 
         pytest.importorskip("shapely")
 
-        with patch.dict(os.environ, {"AFL_SITESEL_OUTPUT_DIR": str(out_tmp)}):
+        with patch.dict(os.environ, {"FW_SITESEL_OUTPUT_DIR": str(out_tmp)}):
             import importlib
 
             import handlers.scoring.scoring_builder as sb
@@ -578,7 +578,7 @@ class TestScoring:
         demo_path = _make_tiger_geojson(demo_features)
         rest_path = _make_restaurants_geojson([])
 
-        with patch.dict(os.environ, {"AFL_SITESEL_OUTPUT_DIR": str(tmp_path)}):
+        with patch.dict(os.environ, {"FW_SITESEL_OUTPUT_DIR": str(tmp_path)}):
             import importlib
 
             import handlers.scoring.scoring_builder as sb
@@ -607,7 +607,7 @@ class TestScoring:
         demo_path = _make_tiger_geojson(demo_features)
         rest_path = _make_restaurants_geojson([])
 
-        with patch.dict(os.environ, {"AFL_SITESEL_OUTPUT_DIR": str(tmp_path)}):
+        with patch.dict(os.environ, {"FW_SITESEL_OUTPUT_DIR": str(tmp_path)}):
             import importlib
 
             import handlers.scoring.scoring_builder as sb
@@ -630,7 +630,7 @@ class TestScoring:
 
         pytest.importorskip("shapely")
 
-        with patch.dict(os.environ, {"AFL_SITESEL_OUTPUT_DIR": str(out_tmp)}):
+        with patch.dict(os.environ, {"FW_SITESEL_OUTPUT_DIR": str(out_tmp)}):
             import importlib
 
             import handlers.scoring.scoring_builder as sb
@@ -670,7 +670,7 @@ class TestExportScored:
 
         from handlers.output.output_handlers import handle_export_scored
 
-        with patch.dict(os.environ, {"AFL_LOCAL_OUTPUT_DIR": str(tmp_path)}):
+        with patch.dict(os.environ, {"FW_LOCAL_OUTPUT_DIR": str(tmp_path)}):
             result = handle_export_scored(
                 {
                     "scored_path": scored_path,
@@ -692,7 +692,7 @@ class TestExportScored:
 
         from handlers.output.output_handlers import handle_export_scored
 
-        with patch.dict(os.environ, {"AFL_LOCAL_OUTPUT_DIR": str(tmp_path)}):
+        with patch.dict(os.environ, {"FW_LOCAL_OUTPUT_DIR": str(tmp_path)}):
             result = handle_export_scored(
                 {
                     "scored_path": scored_path,

@@ -35,28 +35,28 @@
 #
 # Storage: the OSM runners (osm-geocoder, osm-lz) write their durable
 # cache + output to the bundled MinIO (S3) service. osm-geocoder STAGING is
-# bind-mounted to the external disk (${AFL_DATA_DIR}/osm-scratch): continent
+# bind-mounted to the external disk (${FW_DATA_DIR}/osm-scratch): continent
 # extracts (europe ~30GB, north-america ~15GB) staged concurrently overflow
 # the small internal Docker disk and ENOSPC-crash mongodb (which shares it via
 # mongodb_data). Tradeoff: like MinIO's /data, osm-scratch is now coupled to
 # the attached disk — if it ejects mid-download, restart the OSM runners after
 # reconnect. Smaller runners' output/geofabrik mirror stay on internal-disk
 # named volumes. Point the OSM fleet at a different S3/MinIO by overriding
-# AFL_S3_ENDPOINT / AFL_S3_ACCESS_KEY / AFL_S3_SECRET_KEY / AFL_S3_BUCKET in .env.
+# FW_S3_ENDPOINT / FW_S3_ACCESS_KEY / FW_S3_SECRET_KEY / FW_S3_BUCKET in .env.
 
 # Reusable S3/MinIO env for the OSM runners — durable cache + output go to
 # the object store; staging/tmp/locks stay on a local scratch volume.
 x-osm-s3-env: &osm-s3-env
-  AFL_STORAGE: s3
-  AFL_DATA_ROOT: s3://${AFL_S3_BUCKET:-afl-cache}
+  FW_STORAGE: s3
+  FW_DATA_ROOT: s3://${FW_S3_BUCKET:-afl-cache}
   # Role group for fleet status / dashboard grouping. `start-runner --fleet`
-  # sets AFL_SERVER_GROUP=runner; local full-stack leaves it at "default".
-  AFL_SERVER_GROUP: ${AFL_SERVER_GROUP:-default}
+  # sets FW_SERVER_GROUP=runner; local full-stack leaves it at "default".
+  FW_SERVER_GROUP: ${FW_SERVER_GROUP:-default}
   # Orchestration role (docs/architecture/ffl-runner-orchestration-tier.md).
   # Default "inline" so a bare `docker compose up` (no ffl tier) self-orchestrates.
-  # start-all-workers sets AFL_HANDLER_CONTINUATION_MODE=off after bringing up the
+  # start-all-workers sets FW_HANDLER_CONTINUATION_MODE=off after bringing up the
   # ffl-runner tier, so handler runners stop owning the sweep/backlog.
-  AFL_CONTINUATION_MODE: ${AFL_HANDLER_CONTINUATION_MODE:-inline}
+  FW_CONTINUATION_MODE: ${FW_HANDLER_CONTINUATION_MODE:-inline}
   # 2 worker threads/runner. ToGeoJson's osmium export is long, and the workflow
   # orchestration needs a thread too — with only 1 thread, exports can stall
   # behind resume processing. Cap TOTAL concurrent exports via runner COUNT to
@@ -65,36 +65,36 @@ x-osm-s3-env: &osm-s3-env
   # way-assembly needs ~3-8GB/region for the largest extracts; on the 14GB VM,
   # >~2-3 concurrent OOM-kills india and the continents). 1 runner x 2 threads
   # = ~2 concurrent gives each big export ~5-6GB so india + the giants fit, at
-  # ~3x lower throughput than the 3-runner config. AFL_MAX_CONCURRENT pins it.
-  AFL_MAX_CONCURRENT: "1"
+  # ~3x lower throughput than the 3-runner config. FW_MAX_CONCURRENT pins it.
+  FW_MAX_CONCURRENT: "1"
   # ToGeoJson size gate: skip regions whose cached PBF exceeds this many MB
   # (fallback when the workflow's max_pbf_mb param is 0). On this 14GB VM the
   # node index for extracts >~1GB PBF doesn't fit the page cache and seek-thrashes
   # to ~KB/s (the continents + big countries — us 10GB, africa 7.4GB, …), so cap
   # the bulk run at ~1GB and skip the rest. Raise/remove on a larger host.
-  AFL_OSM_MAX_PBF_MB: "3072"
-  AFL_OSM_OUTPUT_BASE: s3://${AFL_S3_BUCKET:-afl-cache}/osm-output
-  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://afl-minio:9000}
-  AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
-  AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
-  AFL_S3_REGION: ${AFL_S3_REGION:-us-east-1}
-  AFL_LOCAL_SCRATCH: /scratch
+  FW_OSM_MAX_PBF_MB: "3072"
+  FW_OSM_OUTPUT_BASE: s3://${FW_S3_BUCKET:-afl-cache}/osm-output
+  FW_S3_ENDPOINT: ${FW_S3_ENDPOINT:-http://afl-minio:9000}
+  FW_S3_ACCESS_KEY: ${FW_S3_ACCESS_KEY:-minioadmin}
+  FW_S3_SECRET_KEY: ${FW_S3_SECRET_KEY:-minioadmin}
+  FW_S3_REGION: ${FW_S3_REGION:-us-east-1}
+  FW_LOCAL_SCRATCH: /scratch
   # get_output_base()/get_temp_dir() — keep handler temp + local output on the
-  # local scratch/output volumes, never on the object store. AFL_OUTPUT_BASE
+  # local scratch/output volumes, never on the object store. FW_OUTPUT_BASE
   # points at the EXTERNAL scratch disk (not the internal /data/output volume)
   # because get_output_base() also roots the localize cache: reading a cached
   # PBF back from MinIO for osmium (e.g. ToGeoJson) downloads it there, and
   # europe (~30GB) would ENOSPC-crash the internal mongo disk otherwise.
-  AFL_OUTPUT_BASE: /scratch/output
-  AFL_LOCAL_OUTPUT_DIR: /data/output
+  FW_OUTPUT_BASE: /scratch/output
+  FW_LOCAL_OUTPUT_DIR: /data/output
 
 # Read-only S3 access for services that only resolve s3:// step payloads
-# (the dashboard) — no AFL_STORAGE switch, just endpoint + credentials.
+# (the dashboard) — no FW_STORAGE switch, just endpoint + credentials.
 x-s3-creds: &s3-creds
-  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://afl-minio:9000}
-  AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
-  AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
-  AFL_S3_REGION: ${AFL_S3_REGION:-us-east-1}
+  FW_S3_ENDPOINT: ${FW_S3_ENDPOINT:-http://afl-minio:9000}
+  FW_S3_ACCESS_KEY: ${FW_S3_ACCESS_KEY:-minioadmin}
+  FW_S3_SECRET_KEY: ${FW_S3_SECRET_KEY:-minioadmin}
+  FW_S3_REGION: ${FW_S3_REGION:-us-east-1}
 
 # Generic S3 STORAGE for every per-example runner — cache + outputs finalize to
 # the shared MinIO/S3 (s3://<bucket>), so a leaf produced anywhere and the merge
@@ -102,39 +102,39 @@ x-s3-creds: &s3-creds
 # Object stores can't do partial writes, so handlers stage to a LOCAL scratch dir
 # and finalize on close — those local paths live under the already-mounted
 # /Volumes/afl_data (container-absolute, so they're correct regardless of the
-# host's AFL_DATA_DIR). The OSM runners use their own *osm-s3-env anchor instead
+# host's FW_DATA_DIR). The OSM runners use their own *osm-s3-env anchor instead
 # (PBF-specific tuning + external scratch volume).
 x-s3-storage: &s3-storage
-  AFL_STORAGE: s3
-  AFL_DATA_ROOT: s3://${AFL_S3_BUCKET:-afl-cache}
+  FW_STORAGE: s3
+  FW_DATA_ROOT: s3://${FW_S3_BUCKET:-afl-cache}
   # Every RegistryRunner auto-loads the baked osm handlers, so ANY per-example
   # runner can be picked to serve an osm task. Without this, osm output falls
-  # back to AFL_OUTPUT_BASE (local /Volumes scratch) — unreadable by the S3-backed
+  # back to FW_OUTPUT_BASE (local /Volumes scratch) — unreadable by the S3-backed
   # downstream steps (ByScript, MergeLayers) that run on a different runner, which
   # then dead-letter. Point osm output at the shared object store so a non-osm
   # runner that wins an osm claim writes where downstream can read it.
-  AFL_OSM_OUTPUT_BASE: s3://${AFL_S3_BUCKET:-afl-cache}/osm-output
+  FW_OSM_OUTPUT_BASE: s3://${FW_S3_BUCKET:-afl-cache}/osm-output
   # Same reason: an osm Download served on a non-osm runner has no Geofabrik
   # egress, so it must reuse the cached PBF as-is. cache_policy=prefer_cache in
   # the workflow covers current handler code; this env covers the fallback path.
-  AFL_OSM_USE_CACHE_IF_PRESENT: ${AFL_OSM_USE_CACHE_IF_PRESENT:-true}
+  FW_OSM_USE_CACHE_IF_PRESENT: ${FW_OSM_USE_CACHE_IF_PRESENT:-true}
   # Role group, same as the osm runners: `start-runner --fleet` sets
-  # AFL_SERVER_GROUP=runner so every per-example fleet runner groups under
+  # FW_SERVER_GROUP=runner so every per-example fleet runner groups under
   # "runner" (not "default"). The non-osm services don't pass --server-group in
-  # AFL_REGISTRY_RUNNER_ARGS, so the runner falls back to this env value.
-  AFL_SERVER_GROUP: ${AFL_SERVER_GROUP:-default}
+  # FW_REGISTRY_RUNNER_ARGS, so the runner falls back to this env value.
+  FW_SERVER_GROUP: ${FW_SERVER_GROUP:-default}
   # Orchestration role — default "inline" (self-orchestrating) so a bare
   # `docker compose up` works without the ffl tier; start-all-workers sets
-  # AFL_HANDLER_CONTINUATION_MODE=off once the ffl-runner tier is up. See
+  # FW_HANDLER_CONTINUATION_MODE=off once the ffl-runner tier is up. See
   # docs/architecture/ffl-runner-orchestration-tier.md.
-  AFL_CONTINUATION_MODE: ${AFL_HANDLER_CONTINUATION_MODE:-inline}
-  AFL_S3_ENDPOINT: ${AFL_S3_ENDPOINT:-http://afl-minio:9000}
-  AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
-  AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
-  AFL_S3_REGION: ${AFL_S3_REGION:-us-east-1}
-  AFL_LOCAL_SCRATCH: /Volumes/afl_data/scratch
-  AFL_OUTPUT_BASE: /Volumes/afl_data/scratch/output
-  AFL_LOCAL_OUTPUT_DIR: /Volumes/afl_data/output
+  FW_CONTINUATION_MODE: ${FW_HANDLER_CONTINUATION_MODE:-inline}
+  FW_S3_ENDPOINT: ${FW_S3_ENDPOINT:-http://afl-minio:9000}
+  FW_S3_ACCESS_KEY: ${FW_S3_ACCESS_KEY:-minioadmin}
+  FW_S3_SECRET_KEY: ${FW_S3_SECRET_KEY:-minioadmin}
+  FW_S3_REGION: ${FW_S3_REGION:-us-east-1}
+  FW_LOCAL_SCRATCH: /Volumes/afl_data/scratch
+  FW_OUTPUT_BASE: /Volumes/afl_data/scratch/output
+  FW_LOCAL_OUTPUT_DIR: /Volumes/afl_data/output
 
 services:
 
@@ -147,7 +147,7 @@ services:
     container_name: facetwork-mongodb
     command: ["--bind_ip_all", "--port", "27017"]
     ports:
-      - "${AFL_MONGODB_PORT:-27017}:27017"
+      - "${FW_MONGODB_PORT:-27017}:27017"
     volumes:
       - mongodb_data:/data/db
     healthcheck:
@@ -180,7 +180,7 @@ services:
 
   # MinIO — S3-compatible object store backing the OSM cache + output.
   # Object bytes are stored on the attached APFS disk (capacity), bind-mounted
-  # at /data; override with AFL_MINIO_DATA_DIR. MinIO is the *only* service
+  # at /data; override with FW_MINIO_DATA_DIR. MinIO is the *only* service
   # coupled to the attached disk now (single, contained failure boundary) —
   # if the disk ejects mid-run, restart just this container after reconnect.
   # The path must be a case-sensitive POSIX FS (APFS/ext4); MinIO needs atomic
@@ -190,13 +190,13 @@ services:
     container_name: facetwork-minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${AFL_S3_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${AFL_S3_SECRET_KEY:-minioadmin}
+      MINIO_ROOT_USER: ${FW_S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${FW_S3_SECRET_KEY:-minioadmin}
     ports:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
-      - ${AFL_MINIO_DATA_DIR:-/Volumes/afl_data/minio}:/data
+      - ${FW_MINIO_DATA_DIR:-/Volumes/afl_data/minio}:/data
     # Resolve as `afl-minio` on the compose network too, so the unified default
     # endpoint (http://afl-minio:9000) works on the infra host exactly as it does
     # on remote runner hosts (which map afl-minio via extra_hosts). Keeps ONE
@@ -215,16 +215,16 @@ services:
     depends_on:
       - minio
     environment:
-      AFL_S3_ACCESS_KEY: ${AFL_S3_ACCESS_KEY:-minioadmin}
-      AFL_S3_SECRET_KEY: ${AFL_S3_SECRET_KEY:-minioadmin}
-      AFL_S3_BUCKET: ${AFL_S3_BUCKET:-afl-cache}
+      FW_S3_ACCESS_KEY: ${FW_S3_ACCESS_KEY:-minioadmin}
+      FW_S3_SECRET_KEY: ${FW_S3_SECRET_KEY:-minioadmin}
+      FW_S3_BUCKET: ${FW_S3_BUCKET:-afl-cache}
     entrypoint: >
       /bin/sh -c "
-      until mc alias set local http://minio:9000 \"$$AFL_S3_ACCESS_KEY\" \"$$AFL_S3_SECRET_KEY\" >/dev/null 2>&1; do
+      until mc alias set local http://minio:9000 \"$$FW_S3_ACCESS_KEY\" \"$$FW_S3_SECRET_KEY\" >/dev/null 2>&1; do
         echo 'waiting for minio...'; sleep 2;
       done;
-      mc mb --ignore-existing local/\"$$AFL_S3_BUCKET\";
-      echo \"bucket local/$$AFL_S3_BUCKET ready\";
+      mc mb --ignore-existing local/\"$$FW_S3_BUCKET\";
+      echo \"bucket local/$$FW_S3_BUCKET ready\";
       "
     restart: "no"
 
@@ -258,29 +258,29 @@ services:
       mongodb:
         condition: service_healthy
     environment:
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_EXAMPLES_DATABASE: ${AFL_EXAMPLES_DATABASE:-afl_examples}
-      AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_EXAMPLES_DATABASE: ${FW_EXAMPLES_DATABASE:-afl_examples}
+      FW_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
       # Local output volume (non-OSM examples write here). OSM durable output
       # now lives in MinIO — the S3 creds below let the dashboard resolve
       # s3:// step-payload paths; rendered OSM maps are served host-side via
       # fw util serve-map after localizing from S3.
       <<: *s3-creds
-      AFL_LOCAL_OUTPUT_DIR: /data/output
+      FW_LOCAL_OUTPUT_DIR: /data/output
       # Host-run runners write rendered outputs here (bind-mounted below); the
       # /output/raw artifact server checks it so it can serve those maps too.
-      AFL_HOST_OUTPUT_DIR: /host_output
+      FW_HOST_OUTPUT_DIR: /host_output
       # S3/MinIO output prefix(es) the /output/raw server proxies when an output
       # isn't on local disk (fleet runs that render to s3://). Comma-separated;
-      # mirrors AFL_DATA_ROOT=s3://<bucket> + /output. Add osm-output here too if
+      # mirrors FW_DATA_ROOT=s3://<bucket> + /output. Add osm-output here too if
       # you want OSM maps served by the dashboard instead of host-side.
-      AFL_S3_OUTPUT_BASE: ${AFL_S3_OUTPUT_BASE:-s3://${AFL_S3_BUCKET:-afl-cache}/output}
+      FW_S3_OUTPUT_BASE: ${FW_S3_OUTPUT_BASE:-s3://${FW_S3_BUCKET:-afl-cache}/output}
     ports:
       - "${DASHBOARD_PORT:-8080}:8080"
     volumes:
       - afl_output:/data/output:ro
-      - ${AFL_HOST_OUTPUT_DIR:-${HOME}/afl_data/output}:/host_output:ro
+      - ${FW_HOST_OUTPUT_DIR:-${HOME}/afl_data/output}:/host_output:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\""]
       interval: 10s
@@ -300,14 +300,14 @@ services:
       mongodb:
         condition: service_healthy
     environment:
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_MAX_CONCURRENT: ${AFL_MAX_CONCURRENT:-4}
-      AFL_POLL_INTERVAL_MS: ${AFL_POLL_INTERVAL_MS:-1000}
-      AFL_LOCAL_OUTPUT_DIR: ${AFL_DATA_DIR:-/Volumes/afl_data}/output
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_MAX_CONCURRENT: ${FW_MAX_CONCURRENT:-4}
+      FW_POLL_INTERVAL_MS: ${FW_POLL_INTERVAL_MS:-1000}
+      FW_LOCAL_OUTPUT_DIR: ${FW_DATA_DIR:-/Volumes/afl_data}/output
       PYTHONPATH: /app
     volumes:
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
       - ./examples:/app/examples:ro
     restart: unless-stopped
 
@@ -329,16 +329,16 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *s3-storage
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: anthropic
-      AFL_DOMAIN_REPO: fwh_anthropic
-      AFL_DOMAIN_EXTRAS: ${ANTHROPIC_EXTRAS:-agent_sdk,mcp}
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: anthropic
+      FW_DOMAIN_REPO: fwh_anthropic
+      FW_DOMAIN_EXTRAS: ${ANTHROPIC_EXTRAS:-agent_sdk,mcp}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list anthropic"
+      FW_REGISTRY_RUNNER_ARGS: "--task-list anthropic"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_anthropic:/handlers/fwh_anthropic
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
   runner-census-us:
@@ -352,16 +352,16 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *s3-storage
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: census-us
-      AFL_DOMAIN_REPO: fwh_census_us
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: census-us
+      FW_DOMAIN_REPO: fwh_census_us
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list census"
+      FW_REGISTRY_RUNNER_ARGS: "--task-list census"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_census_us:/handlers/fwh_census_us
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
   runner-conflict:
@@ -375,35 +375,14 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *s3-storage
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: conflict
-      AFL_DOMAIN_REPO: fwh_conflict
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list conflict"
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: conflict
+      FW_DOMAIN_REPO: fwh_conflict
+      FW_REGISTRY_RUNNER_ARGS: "--task-list conflict"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_conflict:/handlers/fwh_conflict
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
-    restart: unless-stopped
-
-  runner-health:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.domain-runner
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      minio-setup:
-        condition: service_completed_successfully
-    environment:
-      <<: *s3-storage
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: health
-      AFL_DOMAIN_REPO: fwh_health
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list health"
-    volumes:
-      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_health:/handlers/fwh_health
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
   runner-genomics:
@@ -417,14 +396,14 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *s3-storage
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: genomics
-      AFL_DOMAIN_REPO: fwh_genomics
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list genomics"
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: genomics
+      FW_DOMAIN_REPO: fwh_genomics
+      FW_REGISTRY_RUNNER_ARGS: "--task-list genomics"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_genomics:/handlers/fwh_genomics
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
   runner-h1b:
@@ -438,14 +417,35 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *s3-storage
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: h1b
-      AFL_DOMAIN_REPO: fwh_h1b
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list h1b"
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: h1b
+      FW_DOMAIN_REPO: fwh_h1b
+      FW_REGISTRY_RUNNER_ARGS: "--task-list h1b"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_h1b:/handlers/fwh_h1b
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+
+  runner-health:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: health
+      FW_DOMAIN_REPO: fwh_health
+      FW_REGISTRY_RUNNER_ARGS: "--task-list health"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_health:/handlers/fwh_health
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
   runner-jenkins-example:
@@ -459,15 +459,15 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *s3-storage
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: jenkins
-      AFL_DOMAIN_REPO: fwh_jenkins
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: jenkins
+      FW_DOMAIN_REPO: fwh_jenkins
       JENKINS_URL: http://jenkins:8080
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list jenkins"
+      FW_REGISTRY_RUNNER_ARGS: "--task-list jenkins"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_jenkins:/handlers/fwh_jenkins
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
   runner-noaa-weather:
@@ -481,20 +481,20 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *s3-storage
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: noaa-weather
-      AFL_DOMAIN_REPO: fwh_noaa_weather
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list weather"
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: noaa-weather
+      FW_DOMAIN_REPO: fwh_noaa_weather
+      FW_REGISTRY_RUNNER_ARGS: "--task-list weather"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_noaa_weather:/handlers/fwh_noaa_weather
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
   runner-osm-geocoder:
     # Durable cache + output → MinIO (osm-s3-env); staging/tmp/locks → /scratch (the LARGE external disk, NOT the small internal volume — continent extracts staged on the internal disk ENOSPC-crash the shared mongodb volume).
     # Timeouts raised to 4h: multi-GB Geofabrik downloads + osmium parses run for hours; the 15min/30min/5min defaults would kill long facets or let another runner steal a 30GB download mid-flight. Matches fwh_osm's DomainPackage runner_env.
-    hostname: ${AFL_FLEET_HOST:-}
+    hostname: ${FW_FLEET_HOST:-}
     build:
       context: .
       dockerfile: docker/Dockerfile.domain-runner
@@ -507,29 +507,29 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *osm-s3-env
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: osm-geocoder
-      AFL_DOMAIN_REPO: fwh_osm
-      AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
-      AFL_GEOFABRIK_MIRROR: /geofabrik
-      AFL_OSM_USE_CACHE_IF_PRESENT: ${AFL_OSM_USE_CACHE_IF_PRESENT:-true}
-      AFL_OSM_TOLERATE_MD5: ${AFL_OSM_TOLERATE_MD5:-true}
-      AFL_TASK_EXECUTION_TIMEOUT_MS: 14400000
-      AFL_STUCK_TIMEOUT_MS: 14400000
-      AFL_LEASE_DURATION_MS: 14400000
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list osm --server-group ${AFL_SERVER_GROUP:-default}"
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: osm-geocoder
+      FW_DOMAIN_REPO: fwh_osm
+      FW_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
+      FW_GEOFABRIK_MIRROR: /geofabrik
+      FW_OSM_USE_CACHE_IF_PRESENT: ${FW_OSM_USE_CACHE_IF_PRESENT:-true}
+      FW_OSM_TOLERATE_MD5: ${FW_OSM_TOLERATE_MD5:-true}
+      FW_TASK_EXECUTION_TIMEOUT_MS: 14400000
+      FW_STUCK_TIMEOUT_MS: 14400000
+      FW_LEASE_DURATION_MS: 14400000
+      FW_REGISTRY_RUNNER_ARGS: "--task-list osm --server-group ${FW_SERVER_GROUP:-default}"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm
       - afl_output:/data/output
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch
+      - ${FW_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch
       - afl_geofabrik:/geofabrik
     restart: unless-stopped
 
   runner-osm-lz:
     # Pure workflow catalog over fwh_osm — its facets dispatch to the osm-geocoder runner's handlers, so start that one first (depends_on) and mount fwh_osm read-only.
     # Same 4h timeouts + external scratch as osm-geocoder: it orchestrates continental fan-outs that stage multi-GB PBFs and run for hours.
-    hostname: ${AFL_FLEET_HOST:-}
+    hostname: ${FW_FLEET_HOST:-}
     build:
       context: .
       dockerfile: docker/Dockerfile.domain-runner
@@ -542,20 +542,20 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *osm-s3-env
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: osm-lz
-      AFL_DOMAIN_REPO: fwh_osm_lz
-      AFL_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
-      AFL_TASK_EXECUTION_TIMEOUT_MS: 14400000
-      AFL_STUCK_TIMEOUT_MS: 14400000
-      AFL_LEASE_DURATION_MS: 14400000
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list continental"
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: osm-lz
+      FW_DOMAIN_REPO: fwh_osm_lz
+      FW_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
+      FW_TASK_EXECUTION_TIMEOUT_MS: 14400000
+      FW_STUCK_TIMEOUT_MS: 14400000
+      FW_LEASE_DURATION_MS: 14400000
+      FW_REGISTRY_RUNNER_ARGS: "--task-list continental"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm_lz:/handlers/fwh_osm_lz
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm:ro
       - afl_output:/data/output
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch
+      - ${FW_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch
     restart: unless-stopped
 
   runner-osm-mapping:
@@ -569,14 +569,14 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *s3-storage
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: osm-mapping
-      AFL_DOMAIN_REPO: fwh_osm_mapping
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list osm_mapping"
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: osm-mapping
+      FW_DOMAIN_REPO: fwh_osm_mapping
+      FW_REGISTRY_RUNNER_ARGS: "--task-list osm_mapping"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm_mapping:/handlers/fwh_osm_mapping
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
   runner-save-earth:
@@ -590,14 +590,14 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *s3-storage
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: save-earth
-      AFL_DOMAIN_REPO: fwh_save_earth
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list save_earth"
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: save-earth
+      FW_DOMAIN_REPO: fwh_save_earth
+      FW_REGISTRY_RUNNER_ARGS: "--task-list save_earth"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_save_earth:/handlers/fwh_save_earth
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
   runner-sensor-monitoring:
@@ -611,27 +611,27 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *s3-storage
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_DOMAIN_NAME: sensor-monitoring
-      AFL_DOMAIN_REPO: fwh_sensor_monitoring
-      AFL_REGISTRY_RUNNER_ARGS: "--task-list monitor"
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: sensor-monitoring
+      FW_DOMAIN_REPO: fwh_sensor_monitoring
+      FW_REGISTRY_RUNNER_ARGS: "--task-list monitor"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_sensor_monitoring:/handlers/fwh_sensor_monitoring
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
   # <<< END generated domain runners <<<
 
   # Embedded-GraphHopper Java routing agent (osm.Routing.GraphHopper.RouteBatch).
   # Built from fwh_osm/java/osm-gh-router (its own image, NOT the generic
-  # facetwork-runner), pinned fleet-wide via AFL_GH_ROUTER_IMAGE (fleet_config
+  # facetwork-runner), pinned fleet-wide via FW_GH_ROUTER_IMAGE (fleet_config
   # role `gh-router`). Coexists with the Python osm runners via the name-filtered
   # claim — it advertises only RouteBatch and polls the `osm` task list. Run at a
   # single replica (it loads a whole state graph into JVM heap per region).
   runner-gh-router:
-    image: ${AFL_GH_ROUTER_IMAGE:-osm-gh-router:latest}
-    pull_policy: ${AFL_RUNNER_PULL_POLICY:-missing}
-    hostname: ${AFL_FLEET_HOST:-}
+    image: ${FW_GH_ROUTER_IMAGE:-osm-gh-router:latest}
+    pull_policy: ${FW_RUNNER_PULL_POLICY:-missing}
+    hostname: ${FW_FLEET_HOST:-}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -639,9 +639,9 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *osm-s3-env
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
-      AFL_TASK_LIST: osm
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_TASK_LIST: osm
     restart: unless-stopped
 
   # =====================================================================
@@ -661,7 +661,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.domain-runner
     # Bypass entrypoint-domain-runner.sh (which requires an example to seed);
-    # run the runner core directly. AFL_CONTINUATION_MODE=shared (below) makes
+    # run the runner core directly. FW_CONTINUATION_MODE=shared (below) makes
     # it own the sweep + backlog.
     entrypoint: ["python", "-m", "facetwork.runtime.runner", "--log-format", "text"]
     depends_on:
@@ -670,18 +670,18 @@ services:
       minio-setup:
         condition: service_completed_successfully
     environment:
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
       <<: *s3-storage
-      AFL_CONTINUATION_MODE: shared
+      FW_CONTINUATION_MODE: shared
       # Tag the tier so it groups separately in fleet status / the dashboard.
-      # Use a DEDICATED var, not the shared AFL_SERVER_GROUP: fleet-agent forces
-      # AFL_SERVER_GROUP=runner for all its runners, which would otherwise drag
-      # the ffl tier into the "runner" group. AFL_FFL_SERVER_GROUP is unset by
+      # Use a DEDICATED var, not the shared FW_SERVER_GROUP: fleet-agent forces
+      # FW_SERVER_GROUP=runner for all its runners, which would otherwise drag
+      # the ffl tier into the "runner" group. FW_FFL_SERVER_GROUP is unset by
       # fleet-agent, so this defaults to "ffl-runner" on every host.
-      AFL_SERVER_GROUP: ${AFL_FFL_SERVER_GROUP:-ffl-runner}
+      FW_SERVER_GROUP: ${FW_FFL_SERVER_GROUP:-ffl-runner}
     volumes:
-      - ${AFL_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
   # =====================================================================
@@ -700,13 +700,13 @@ services:
       mongodb:
         condition: service_healthy
     environment:
-      AFL_MONGODB_URL: mongodb://mongodb:27017
-      AFL_MONGODB_DATABASE: ${AFL_MONGODB_DATABASE:-facetwork}
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
     restart: "no"
 
 # Persistent volumes — on Docker's internal disk. Exception: MinIO's object
 # store is bind-mounted to the attached APFS disk (see the minio service /
-# AFL_MINIO_DATA_DIR) for capacity, so afl_minio_data is no longer used.
+# FW_MINIO_DATA_DIR) for capacity, so afl_minio_data is no longer used.
 volumes:
   mongodb_data:
   postgis_data:

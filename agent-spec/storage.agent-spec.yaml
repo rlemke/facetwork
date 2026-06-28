@@ -10,7 +10,7 @@ purpose: |
   Two backends sit behind one interface: local POSIX filesystem and
   HDFS via WebHDFS. Tool libraries (pbf_download, pbf_geojson, etc.)
   use the Storage abstraction for every filesystem operation so
-  backend choice is a single env var (AFL_OSM_STORAGE) and the tool
+  backend choice is a single env var (FW_OSM_STORAGE) and the tool
   code does not branch on backend internally.
 
 # ---------------------------------------------------------------------------
@@ -66,7 +66,7 @@ interface:
 # Backend selection.
 # ---------------------------------------------------------------------------
 backend_selection:
-  env_var: "AFL_OSM_STORAGE"
+  env_var: "FW_OSM_STORAGE"
   valid_values:
     - "local"
     - "hdfs"
@@ -79,11 +79,11 @@ backend_selection:
     behavior: "Returns LocalStorage() or HdfsStorage() depending on backend (or default_backend())."
 
   cache_root:
-    env_var: "AFL_OSM_CACHE_ROOT"
+    env_var: "FW_OSM_CACHE_ROOT"
     defaults:
       local: "/Volumes/afl_data/osm"
       hdfs: "/user/afl/osm"
-    override: "Setting AFL_OSM_CACHE_ROOT overrides both defaults."
+    override: "Setting FW_OSM_CACHE_ROOT overrides both defaults."
 
 # ---------------------------------------------------------------------------
 # LocalStorage behavior — the reference backend.

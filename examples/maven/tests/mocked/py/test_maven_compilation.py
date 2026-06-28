@@ -10,14 +10,14 @@ from facetwork.parser import FFLParser
 from facetwork.source import CompilerInput, FileOrigin, SourceEntry
 from facetwork.validator import validate
 
-_AFL_DIR = Path(__file__).resolve().parent.parent.parent.parent / "ffl"
+_FW_DIR = Path(__file__).resolve().parent.parent.parent.parent / "ffl"
 
 
 def _compile(*filenames: str) -> dict:
     """Compile one or more FFL files from the Maven example directory."""
     entries = []
     for i, name in enumerate(filenames):
-        path = _AFL_DIR / name
+        path = _FW_DIR / name
         entries.append(
             SourceEntry(
                 text=path.read_text(),

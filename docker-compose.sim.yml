@@ -15,6 +15,6 @@ networks:
 # register in MongoDB as fleet-srv1/2/3 instead of a random container id.
 services:
   runner-osm-geocoder:
-    hostname: ${AFL_FLEET_HOST:-sim-server}
+    hostname: ${FW_FLEET_HOST:-sim-server}
   runner-osm-lz:
-    hostname: ${AFL_FLEET_HOST:-sim-server}
+    hostname: ${FW_FLEET_HOST:-sim-server}

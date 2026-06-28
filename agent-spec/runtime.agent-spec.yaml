@@ -214,7 +214,7 @@ failure_policy:
   task_execution_failures:
     - "A handler raising an exception produces a StepError event."
     - "A handler missing (no registered handler for the event facet) produces an operator-visible error."
-    - "A task exceeding AFL_TASK_EXECUTION_TIMEOUT_MS is reset to QUEUED by the stuck-task watchdog."
+    - "A task exceeding FW_TASK_EXECUTION_TIMEOUT_MS is reset to QUEUED by the stuck-task watchdog."
   retry_behavior:
     - "Retries are bounded; beyond the limit the step errors."
     - "Retries are an operator action (dashboard Retry button, MCP fw_retry_step) or a block-level Reset."

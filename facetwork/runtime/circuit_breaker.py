@@ -56,9 +56,9 @@ class CircuitBreakerConfig:
     def from_env(cls) -> CircuitBreakerConfig:
         """Load configuration from environment variables."""
         return cls(
-            failure_threshold=int(os.environ.get("AFL_CIRCUIT_BREAKER_THRESHOLD", "5")),
-            cooldown_ms=int(os.environ.get("AFL_CIRCUIT_BREAKER_COOLDOWN_MS", "60000")),
-            success_threshold=int(os.environ.get("AFL_CIRCUIT_BREAKER_SUCCESS_THRESHOLD", "2")),
+            failure_threshold=int(os.environ.get("FW_CIRCUIT_BREAKER_THRESHOLD", "5")),
+            cooldown_ms=int(os.environ.get("FW_CIRCUIT_BREAKER_COOLDOWN_MS", "60000")),
+            success_threshold=int(os.environ.get("FW_CIRCUIT_BREAKER_SUCCESS_THRESHOLD", "2")),
         )
 
 

@@ -171,15 +171,15 @@ dependencies:
     - "HDFS (optional; for large-file storage via WebHDFS)"
   binaries: []
   environment:
-    - "AFL_MONGO_URI"
-    - "AFL_DATABASE"
-    - "AFL_POSTGIS_URL"
-    - "AFL_DATA_ROOT"
-    - "AFL_CACHE_ROOT"
-    - "AFL_REAPER_TIMEOUT_MS"
-    - "AFL_STUCK_TIMEOUT_MS"
-    - "AFL_TASK_EXECUTION_TIMEOUT_MS"
-    - "AFL_LEASE_DURATION_MS"
+    - "FW_MONGO_URI"
+    - "FW_DATABASE"
+    - "FW_POSTGIS_URL"
+    - "FW_DATA_ROOT"
+    - "FW_CACHE_ROOT"
+    - "FW_REAPER_TIMEOUT_MS"
+    - "FW_STUCK_TIMEOUT_MS"
+    - "FW_TASK_EXECUTION_TIMEOUT_MS"
+    - "FW_LEASE_DURATION_MS"
 
 implementation_notes: |
   Reference implementation is Python 3.11+. Language parsing uses

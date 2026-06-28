@@ -16,14 +16,14 @@
 # default list with no listener.
 #
 # Required env:
-#   AFL_MONGODB_URL      mongodb://mongodb:27017
+#   FW_MONGODB_URL      mongodb://mongodb:27017
 #
 # Optional env:
-#   AFL_REGISTRY_RUNNER_ARGS  extra args forwarded to the runner (e.g. --task-list X)
+#   FW_REGISTRY_RUNNER_ARGS  extra args forwarded to the runner (e.g. --task-list X)
 
 set -euo pipefail
 
-: "${AFL_MONGODB_URL:?must be set}"
+: "${FW_MONGODB_URL:?must be set}"
 
 # Make sure /app/examples is on the import path so register_handlers'
 # `file://` URIs resolve. The runner image's WORKDIR is /app and the
@@ -31,10 +31,10 @@ set -euo pipefail
 export REPO_ROOT="/app"
 
 echo "==> main runner — seeding in-repo examples"
-echo "    mongodb=$AFL_MONGODB_URL"
+echo "    mongodb=$FW_MONGODB_URL"
 echo "    examples=/app/examples"
 
 python -m facetwork.examples --seed
 
 echo "    Starting runner (registry mode)"
-exec python -m facetwork.runtime.runner --registry ${AFL_REGISTRY_RUNNER_ARGS:-}
+exec python -m facetwork.runtime.runner --registry ${FW_REGISTRY_RUNNER_ARGS:-}

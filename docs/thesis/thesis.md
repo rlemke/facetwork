@@ -795,7 +795,7 @@ Notice that this is a state-to-state transition: `running` → `running`. The at
 
 The handler renews its own lease by heartbeating. The heartbeat endpoint on the store writes both `task_heartbeat` and `lease_expires = now + lease_ms`. A handler that keeps heartbeating keeps its lease; a handler that stops — whether because it is stuck or because the process has died — lets its lease expire.
 
-An empirical check confirms the protocol end-to-end. Running three `osm-geocoder` replicas, the author submitted a workflow and `docker kill`ed the replica that had just claimed the first task. The kill landed at *t* = 2 s after submission; the workflow ran to completion at *t* = 129 s, distributed across the two surviving replicas (17 and 16 tasks respectively, with zero tasks credited to the killed replica). The 127-second gap matches the configured reaper timeout (`AFL_REAPER_TIMEOUT_MS = 120 s`) plus a few seconds for the survivor to claim, dispatch, and complete. Recovery requires no operator intervention and no coordination among the survivors — the reaper sweep is a single atomic update against the orphan task, run periodically by every runner.
+An empirical check confirms the protocol end-to-end. Running three `osm-geocoder` replicas, the author submitted a workflow and `docker kill`ed the replica that had just claimed the first task. The kill landed at *t* = 2 s after submission; the workflow ran to completion at *t* = 129 s, distributed across the two surviving replicas (17 and 16 tasks respectively, with zero tasks credited to the killed replica). The 127-second gap matches the configured reaper timeout (`FW_REAPER_TIMEOUT_MS = 120 s`) plus a few seconds for the survivor to claim, dispatch, and complete. Recovery requires no operator intervention and no coordination among the survivors — the reaper sweep is a single atomic update against the orphan task, run periodically by every runner.
 
 ### 5.6 Correctness arguments
 
@@ -1041,7 +1041,7 @@ Four features are worth noticing across these examples.
 
 **Third, the shape is identical across languages.** Go, Java, Scala, and TypeScript use the **AgentPoller** model — a standalone process connected to the same MongoDB instance as the Python runners, claiming tasks whose registered facet name matches those it has registered. Python has the additional **RegistryRunner** model, which shares the process with other Python handlers and avoids an extra hop, but the handler function itself looks the same. The choice between AgentPoller and RegistryRunner is a deployment decision, invisible to handler and workflow authors.
 
-**Fourth, the configuration is uniform.** All five clients resolve their MongoDB connection through the same chain — an explicit config path, the `AFL_CONFIG` environment variable, an `afl.config.json` file in standard locations, direct `AFL_MONGODB_URL` / `AFL_MONGODB_DATABASE` environment variables, and finally built-in defaults. A team running handlers in multiple languages configures them all the same way, which matters more in production than any single one of the language-level details.
+**Fourth, the configuration is uniform.** All five clients resolve their MongoDB connection through the same chain — an explicit config path, the `FW_CONFIG` environment variable, an `afl.config.json` file in standard locations, direct `FW_MONGODB_URL` / `FW_MONGODB_DATABASE` environment variables, and finally built-in defaults. A team running handlers in multiple languages configures them all the same way, which matters more in production than any single one of the language-level details.
 
 A handler in a more sophisticated handler — one that uses the typed context — reaches for the language's equivalent of `ctx.step_log`, `ctx.heartbeat`, and `ctx.stage(...)`. The Python API is the canonical form, with matching idioms in the other four clients. A long-running Scala handler that wants to declare a PBF-scan stage budget writes:
 
@@ -1250,12 +1250,12 @@ This is the distinguishing property of Facetwork's staged-timeout model: it is *
 The OSM importer declares stage budget defaults via environment variables, so that operational tuning does not require handler code changes:
 
 ```
-AFL_OSM_SCAN_MS_PER_MB   = 20000         # 20 s per MB of PBF
-AFL_OSM_SCAN_FLOOR_MS    = 1800000       # 30 min minimum
-AFL_OSM_MERGE_MS_PER_MB  = 4000          # 4 s per MB
-AFL_OSM_MERGE_FLOOR_MS   = 900000        # 15 min minimum
-AFL_OSM_TRANSFER_MS_PER_MB = 2000
-AFL_OSM_TRANSFER_FLOOR_MS  = 1800000
+FW_OSM_SCAN_MS_PER_MB   = 20000         # 20 s per MB of PBF
+FW_OSM_SCAN_FLOOR_MS    = 1800000       # 30 min minimum
+FW_OSM_MERGE_MS_PER_MB  = 4000          # 4 s per MB
+FW_OSM_MERGE_FLOOR_MS   = 900000        # 15 min minimum
+FW_OSM_TRANSFER_MS_PER_MB = 2000
+FW_OSM_TRANSFER_FLOOR_MS  = 1800000
 ```
 
 These defaults can be adjusted per-example through `runner.env` files, per-environment through the deployment configuration, or even per-task through FFL parameters. The flexibility is there; the default values encode what has worked empirically.

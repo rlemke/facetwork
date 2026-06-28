@@ -147,17 +147,17 @@
     "file_name": "afl.config.json",
     "search_order": [
       "explicit --config argument",
-      "AFL_CONFIG environment variable",
+      "FW_CONFIG environment variable",
       "afl.config.json in current directory",
       "~/.afl/afl.config.json",
       "/etc/ffl/afl.config.json"
     ],
     "environment_variables": {
-      "AFL_MONGODB_URL": "mongodb://localhost:27017",
-      "AFL_MONGODB_USERNAME": "",
-      "AFL_MONGODB_PASSWORD": "",
-      "AFL_MONGODB_AUTH_SOURCE": "admin",
-      "AFL_MONGODB_DATABASE": "afl"
+      "FW_MONGODB_URL": "mongodb://localhost:27017",
+      "FW_MONGODB_USERNAME": "",
+      "FW_MONGODB_PASSWORD": "",
+      "FW_MONGODB_AUTH_SOURCE": "admin",
+      "FW_MONGODB_DATABASE": "afl"
     }
   },
 

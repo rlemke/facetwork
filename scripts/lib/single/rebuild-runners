@@ -35,7 +35,7 @@ cd "$REPO_ROOT"
 # `up --no-build` would try to PULL it and fail ("pull access denied"). gh-router
 # ships via its own image build + `fw fleet set --gh-router-image`, not through
 # rebuild-runners. Pass it explicitly only if its image already exists locally /
-# via AFL_GH_ROUTER_IMAGE.
+# via FW_GH_ROUTER_IMAGE.
 WORKER_SERVICES=()
 while IFS= read -r _svc; do [[ -n "$_svc" ]] && WORKER_SERVICES+=("$_svc"); done \
     < <(catalog_compose_services)
@@ -97,5 +97,5 @@ if [[ "$RECREATE" == 1 ]]; then
 
     echo ""
     echo "=== Done. Verify osm output resolves to the object store: ==="
-    echo "    docker exec <a runner> printenv AFL_OSM_OUTPUT_BASE   # -> s3://<bucket>/osm-output"
+    echo "    docker exec <a runner> printenv FW_OSM_OUTPUT_BASE   # -> s3://<bucket>/osm-output"
 fi

@@ -9,7 +9,7 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 
-REGISTRY="${AFL_FLEET_REGISTRY:-192.168.68.96:5050}"
+REGISTRY="${FW_FLEET_REGISTRY:-192.168.68.96:5050}"
 HOST="" DRY=0 DO_RESTART=0
 while [ $# -gt 0 ]; do
     case "$1" in

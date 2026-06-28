@@ -105,8 +105,8 @@ class BaseMixin:
     DEFAULT_LEASE_MS = 300_000
 
     def _lease_ms(self) -> int:
-        """Read the active lease duration, honoring ``AFL_LEASE_DURATION_MS``."""
-        return int(os.environ.get("AFL_LEASE_DURATION_MS", str(self.DEFAULT_LEASE_MS)))
+        """Read the active lease duration, honoring ``FW_LEASE_DURATION_MS``."""
+        return int(os.environ.get("FW_LEASE_DURATION_MS", str(self.DEFAULT_LEASE_MS)))
 
     @staticmethod
     def _find_decoded(collection: Any, query: dict, decoder: Any) -> Any:

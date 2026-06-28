@@ -56,15 +56,15 @@ Runtime.getRuntime().addShutdownHook(new Thread(poller::stop));
 
 ## Configuration
 
-Configuration is resolved in the following order: explicit path, `AFL_CONFIG`
+Configuration is resolved in the following order: explicit path, `FW_CONFIG`
 env var, `afl.config.json` in the working directory, `~/.ffl/afl.config.json`,
 `/etc/ffl/afl.config.json`, environment variables, then built-in defaults.
 
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
-| `AFL_MONGODB_URL` | MongoDB connection string | `mongodb://localhost:27017` |
-| `AFL_MONGODB_DATABASE` | MongoDB database name | `afl` |
-| `AFL_CONFIG` | Path to `afl.config.json` | (none) |
+| `FW_MONGODB_URL` | MongoDB connection string | `mongodb://localhost:27017` |
+| `FW_MONGODB_DATABASE` | MongoDB database name | `afl` |
+| `FW_CONFIG` | Path to `afl.config.json` | (none) |
 
 The `afl.config.json` file format:
 

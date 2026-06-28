@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # fw-summary: render the durable-cache landing-page index.html
-"""Render a top-level landing page for $AFL_CACHE_ROOT.
+"""Render a top-level landing page for $FW_CACHE_ROOT.
 
 Walks every known pipeline namespace under the cache root and emits
-``$AFL_CACHE_ROOT/index.html`` with one card per pipeline linking at
+``$FW_CACHE_ROOT/index.html`` with one card per pipeline linking at
 its master index / primary maps. A single bookmark that gives you
 everything at once.
 
@@ -43,10 +43,10 @@ logger = logging.getLogger("afl.cache-index")
 
 def _default_cache_root() -> Path:
     """Same resolution order as the per-example tool-lib storage modules."""
-    env = os.environ.get("AFL_CACHE_ROOT")
+    env = os.environ.get("FW_CACHE_ROOT")
     if env:
         return Path(env)
-    data_root = os.environ.get("AFL_DATA_ROOT", "/Volumes/afl_data")
+    data_root = os.environ.get("FW_DATA_ROOT", "/Volumes/afl_data")
     return Path(data_root) / "cache"
 
 
@@ -384,7 +384,7 @@ def main() -> int:
         "--cache-root",
         type=Path,
         default=None,
-        help="Override $AFL_CACHE_ROOT (default: env or $AFL_DATA_ROOT/cache).",
+        help="Override $FW_CACHE_ROOT (default: env or $FW_DATA_ROOT/cache).",
     )
     parser.add_argument(
         "--open",
@@ -404,7 +404,7 @@ def main() -> int:
     if not cache_root.is_dir():
         print(
             f"error: cache root does not exist: {cache_root}\n"
-            f"       Set --cache-root or populate $AFL_CACHE_ROOT / $AFL_DATA_ROOT.",
+            f"       Set --cache-root or populate $FW_CACHE_ROOT / $FW_DATA_ROOT.",
             file=sys.stderr,
         )
         return 1

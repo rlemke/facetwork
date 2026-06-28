@@ -60,7 +60,7 @@ Notes for working with `fw`:
   registry-setup`, `fw runner scale`, `fw maint purge-servers`) are the standard
   fleet/runner ops — prefer them over raw `docker`/`pymongo`. Most take `--dry`.
 - Mongo-touching commands default to `localhost:27017`; on a runner host that isn't
-  the DB, pass `--mongo mongodb://server3.local:27017` (or set `AFL_MONGODB_URL`).
+  the DB, pass `--mongo mongodb://server3.local:27017` (or set `FW_MONGODB_URL`).
 - **`fw install check [--install]`** — dependency analyzer. Statically scans
   `tests/` + `examples/` for imported modules (incl. `pytest.importorskip`), reports
   what isn't importable on this host, and lists example packages vs what's installed.
@@ -76,7 +76,7 @@ Notes for working with `fw`:
   `fleet_default` (in the default `--fleet` set), `scaled` (runs at the throughput
   knob vs one replica). A top-level **`defaults` block** sets replica counts:
   `{"replicas": 1, "scaled_replicas": 3}` — `replicas` for single-replica domain
-  runners, `scaled_replicas` for the `scaled` tier (the env `AFL_OSM_REPLICAS` still
+  runners, `scaled_replicas` for the `scaled` tier (the env `FW_OSM_REPLICAS` still
   overrides the scaled tier per host). `fw install domain`, `migrate.py`,
   `runner/start`/`start-all` defaults, `rebuild-runners`, and fleet validation all
   read the catalog via `facetwork/domains/catalog.py`; `fw util gen-compose [--check]`
@@ -84,13 +84,13 @@ Notes for working with `fw`:
   object) into `docker-compose.full-stack.yml` between the GENERATED markers
   (non-domain services — `runner-gh-router`, `runner-ffl` — stay hand-written).
   **Per-deployment
-  override without editing any command:** set `AFL_DOMAINS_FILE=/path` (full replace)
+  override without editing any command:** set `FW_DOMAINS_FILE=/path` (full replace)
   or drop a gitignored `domains.local.json` (merged over the defaults — entries
   add/replace by key; top-level `"_remove": […]` drops standard ones). Run
   `gen-compose` after editing the catalog.
 - **`fw util memory-sync [-m MSG] [--dry]`** — commit + push this project's Claude
   memory directory (`~/.claude/projects/<slug>/memory`, where `<slug>` is the repo
-  path with `/` and `_` replaced by `-`; override with `AFL_MEMORY_DIR`) to its
+  path with `/` and `_` replaced by `-`; override with `FW_MEMORY_DIR`) to its
   `origin` remote. The memory repo is version-controlled separately from this repo
   (private GitHub repo `rlemke/claude-memory-facetwork`). No-op when nothing changed,
   but still pushes any unpushed commits; `-m` sets the commit message, `--dry`
@@ -184,11 +184,11 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Claude workflow catalog (store/version/run FFL with no file; `fw_catalog_*` MCP tools) | [docs/architecture/claude-workflow-catalog.md](docs/architecture/claude-workflow-catalog.md) |
 | `use` resolution: file-based compile vs. the catalog (hermetic pinned-dep model) | [docs/architecture/catalog-use-resolution.md](docs/architecture/catalog-use-resolution.md) |
 | Extending with new handlers (NL needs a capability no facet provides → detect gap → scaffold facet+handler+test) — `fw ffl scaffold` | [docs/architecture/extending-with-new-handlers.md](docs/architecture/extending-with-new-handlers.md) |
-| **Domain/example catalog (`domains.json`)** — single source of truth for the domain set + per-domain attributes (repo/extras/service/task_list/scaled/fleet_default…) + `defaults` replica counts; field reference, file resolution + `domains.local.json`/`AFL_DOMAINS_FILE` override, and add-a-domain / per-deployment walkthroughs. Read by install/migrate/gen-compose/runner-start/fleet | [docs/reference/domain-catalog.md](docs/reference/domain-catalog.md) |
+| **Domain/example catalog (`domains.json`)** — single source of truth for the domain set + per-domain attributes (repo/extras/service/task_list/scaled/fleet_default…) + `defaults` replica counts; field reference, file resolution + `domains.local.json`/`FW_DOMAINS_FILE` override, and add-a-domain / per-deployment walkthroughs. Read by install/migrate/gen-compose/runner-start/fleet | [docs/reference/domain-catalog.md](docs/reference/domain-catalog.md) |
 | Composable facet library (design): orthogonal/complete/discoverable/distributed primitives for LLM-composed workflows + the memory-of-solved-requests moat | [docs/architecture/composable-facet-library.md](docs/architecture/composable-facet-library.md) |
 | Approximate freeway routing (`osm.Network`, design): pure in-process graph search over a tiny noded-freeway artifact — no engine daemon; tiny network → read-once-per-runner, embarrassingly parallel | [docs/architecture/approximate-freeway-routing.md](docs/architecture/approximate-freeway-routing.md) |
 | **`ffl-runner` orchestration tier (design)**: split the step-state-machine/continuation processing into a dedicated leaderless `ffl-runner` role (hybrid: handler runners keep inline dispatch but stop polling the shared `_fw_continue` backlog; the tier owns the backlog + stuck-step sweep + version gate) → shrinks the fleet-wide blast radius of engine changes and bulkheads orchestration from heavy handlers, still decentralized | [docs/architecture/ffl-runner-orchestration-tier.md](docs/architecture/ffl-runner-orchestration-tier.md) |
-| **Capability-tiered server groups (heterogeneous fleet)** — per-role `server_groups` in the central fleet config (`fw fleet set --role-groups ROLE:g1,g2` / `--server-groups`) + a `fleet-agent` gate so a host only *starts* roles whose group includes its `AFL_SERVER_GROUP`; keeps heavy domains (osm PBF/wide fan-outs) off under-provisioned hosts. No-op by default (no groups → every role everywhere); routing already capability-scoped so correctness is unchanged | [docs/architecture/server-groups.md](docs/architecture/server-groups.md) |
+| **Capability-tiered server groups (heterogeneous fleet)** — per-role `server_groups` in the central fleet config (`fw fleet set --role-groups ROLE:g1,g2` / `--server-groups`) + a `fleet-agent` gate so a host only *starts* roles whose group includes its `FW_SERVER_GROUP`; keeps heavy domains (osm PBF/wide fan-outs) off under-provisioned hosts. No-op by default (no groups → every role everywhere); routing already capability-scoped so correctness is unchanged | [docs/architecture/server-groups.md](docs/architecture/server-groups.md) |
 | Deployment guide | [docs/operations/deployment.md](docs/operations/deployment.md) |
 | Full-stack Docker Compose (one runner per fwh_* domain) | [docs/operations/full-stack-compose.md](docs/operations/full-stack-compose.md) |
 | **Multi-server fleet** (`fleet`/`fleet-agent`/`start-runner --fleet`: shared external MinIO+MongoDB, central config, encrypted secrets, discovery) **+ local simulation** (`fw fleet simulate`) | [#multi-server-runner-fleet--local-simulation](#multi-server-runner-fleet--local-simulation) · [docs/operations/deployment.md](docs/operations/deployment.md) |
@@ -271,7 +271,7 @@ surface as `--domain <name>`:
 
 ## Domain pipelines — tools / handlers / cache pattern
 
-Every domain ingestion pipeline (osm-geocoder, noaa-weather, …) follows one contract: a `tools/` dir of Python CLIs + shell wrappers backed by `tools/_<pkg>_tools/`, FFL handlers that call into the same `_<pkg>_tools/` via a `handlers/shared/<domain>_utils.py` shim, and a sidecar-backed cache under `$AFL_CACHE_ROOT/<namespace>/`. Canonical examples:
+Every domain ingestion pipeline (osm-geocoder, noaa-weather, …) follows one contract: a `tools/` dir of Python CLIs + shell wrappers backed by `tools/_<pkg>_tools/`, FFL handlers that call into the same `_<pkg>_tools/` via a `handlers/shared/<domain>_utils.py` shim, and a sidecar-backed cache under `$FW_CACHE_ROOT/<namespace>/`. Canonical examples:
 
 - [github.com/rlemke/fwh_osm](https://github.com/rlemke/fwh_osm) — OSM PBF → GeoJSON → tiles → HTML maps (standalone repo)
 - [github.com/rlemke/fwh_noaa_weather](https://github.com/rlemke/fwh_noaa_weather) — NOAA GHCN → station CSVs → climate trends (standalone repo; `pip install -e ~/fw_handlers/fwh_noaa_weather`)
@@ -362,7 +362,7 @@ A task is claimed only if it's on one of the runner's namespace lists **and**
 the runner has its handler, so work always reaches a runner that can serve it.
 Continuation tasks (`_fw_continue`) stay on a shared internal list every runner
 polls (step-state-machine machinery, not handler work). There is **no**
-`AFL_WORKFLOW_TASK_LIST_MAP` and no `--task-list` plumbing for routing — the
+`FW_WORKFLOW_TASK_LIST_MAP` and no `--task-list` plumbing for routing — the
 namespace is the routing key. See
 [facetwork/runtime/task_list_routing.py](facetwork/runtime/task_list_routing.py).
 
@@ -418,7 +418,7 @@ fw runner list
 fw runner list --state running
 fw runner list --json
 
-# Remote management (requires AFL_RUNNER_HOSTS or --host)
+# Remote management (requires FW_RUNNER_HOSTS or --host)
 fw runner start --all --example hiv-drug-resistance
 fw runner stop --all
 fw fleet rolling-deploy --example hiv-drug-resistance
@@ -452,11 +452,11 @@ fw svc grafana --status         # check if running
 ### Environment configuration
 Copy `.env.example` to `.env` to configure MongoDB, scaling, overlays, and data directories. All `scripts/` commands source `_env.sh` which loads `.env` without overriding already-set vars. See `docs/reference/cli.md` for the full variable reference.
 
-MongoDB, HDFS, PostGIS, and the shared MinIO object store run on external/infra servers (defined in `/etc/hosts`): `afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn`, `afl-postgres`, `afl-minio` — they are **not** managed by Docker Compose. `afl-minio` is the fleet-wide S3 endpoint default (`AFL_S3_ENDPOINT=http://afl-minio:9000`); add an `/etc/hosts` entry on each server pointing it at the infra host (`<infra-host-ip> afl-minio`, where `<infra-host-ip>` is your fleet's infra host — the `AFL_INFRA_IP` from `.env.fleet`). For Docker runner containers (which don't read the host's `/etc/hosts`), `docker-compose.fleet.yml` maps `afl-minio`/`afl-mongodb` to the infra host via `extra_hosts` (defaulting `AFL_INFRA_IP` to the infra IP), and the bundled `docker-compose.full-stack.yml` exposes MinIO under the `afl-minio` network alias.
+MongoDB, HDFS, PostGIS, and the shared MinIO object store run on external/infra servers (defined in `/etc/hosts`): `afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn`, `afl-postgres`, `afl-minio` — they are **not** managed by Docker Compose. `afl-minio` is the fleet-wide S3 endpoint default (`FW_S3_ENDPOINT=http://afl-minio:9000`); add an `/etc/hosts` entry on each server pointing it at the infra host (`<infra-host-ip> afl-minio`, where `<infra-host-ip>` is your fleet's infra host — the `FW_INFRA_IP` from `.env.fleet`). For Docker runner containers (which don't read the host's `/etc/hosts`), `docker-compose.fleet.yml` maps `afl-minio`/`afl-mongodb` to the infra host via `extra_hosts` (defaulting `FW_INFRA_IP` to the infra IP), and the bundled `docker-compose.full-stack.yml` exposes MinIO under the `afl-minio` network alias.
 
 ### Durable storage backend (cache + outputs)
 
-Handler caches and outputs live on a backend selected by `AFL_STORAGE` + `AFL_DATA_ROOT`: `local` (a path such as `/Volumes/afl_data`), `hdfs://`, or `s3://` — AWS S3 or a self-hosted **MinIO**. On `s3`/`hdfs`, step payloads carry portable `s3://`/`hdfs://` URIs that any runner on any host can resolve, so a multi-server fleet needs no shared disk; object stores don't do partial writes, so handlers stage to a local scratch dir and finalize on close (keep `AFL_OUTPUT_BASE`/`AFL_LOCAL_SCRATCH` **local**).
+Handler caches and outputs live on a backend selected by `FW_STORAGE` + `FW_DATA_ROOT`: `local` (a path such as `/Volumes/afl_data`), `hdfs://`, or `s3://` — AWS S3 or a self-hosted **MinIO**. On `s3`/`hdfs`, step payloads carry portable `s3://`/`hdfs://` URIs that any runner on any host can resolve, so a multi-server fleet needs no shared disk; object stores don't do partial writes, so handlers stage to a local scratch dir and finalize on close (keep `FW_OUTPUT_BASE`/`FW_LOCAL_SCRATCH` **local**).
 
 `docker-compose.full-stack.yml` **bundles a MinIO service** and the OSM runners (`osm-geocoder`, `osm-lz`) default to it — durable cache + output go to `s3://afl-cache` (console http://localhost:9001, `minioadmin`/`minioadmin`), **no external disk**. The legacy local cache at `/Volumes/afl_data/cache` was migrated into the bundled MinIO with `scripts/_cache_to_minio_move.py` (host-driven, verify-before-delete, idempotent). Full setup, the env contract, and the cache-migration recipe live in [docs/operations/deployment.md](docs/operations/deployment.md) → **S3 / MinIO Integration**.
 
@@ -481,7 +481,7 @@ fw runner start --domain osm-geocoder -- --log-format text
 
 Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets.
 
-Set `AFL_POSTGIS_URL` (e.g. `postgresql://afl:afl@afl-postgres:5432/afl_gis`) for PostGIS imports. Without this, the importer falls back to a hardcoded default that may not match your setup.
+Set `FW_POSTGIS_URL` (e.g. `postgresql://afl:afl@afl-postgres:5432/afl_gis`) for PostGIS imports. Without this, the importer falls back to a hardcoded default that may not match your setup.
 
 ### Multi-server runner fleet + local simulation
 
@@ -490,7 +490,7 @@ participant: (1) **infra services** — MongoDB, MinIO, and the Dashboard — ea
 identified by its **access URL only**; the fleet never enumerates their cluster
 members, so each may be a single node, a replica set / distributed deployment, or
 a managed service; and (2) **runner servers** — every Facetwork server is a
-homogeneous, stateless runner (`AFL_SERVER_GROUP` role tag, default `runner`),
+homogeneous, stateless runner (`FW_SERVER_GROUP` role tag, default `runner`),
 holding nothing but local scratch. Runners are leaderless and don't contend
 (coordination is the atomic `claim_task()` in Mongo), so any runner with Mongo
 access can also **seed** workflow definitions (`fw ffl seed`) — no box
@@ -505,11 +505,11 @@ controller lives in `scripts/`:
 | Script | Role |
 |--------|------|
 | `fw runner start --fleet` | Bring up runner **containers** on this host against an external Mongo+MinIO (`.env.fleet`); preflight-checks both. `--domain NAME` (or `--example NAME`) runs any per-domain runner (default osm-geocoder + osm-lz); `--docker` is the same but against the local bundled infra. `docker-compose.fleet.yml` is the override that drops the bundled infra (now applied to every per-domain runner via a YAML anchor). `fw runner start --fleet` is a back-compat shim for `start-runner --fleet`. |
-| `fw fleet` | Admin (run anywhere): `set` the central config (MinIO endpoint / replicas / image), `status` (live runners + per-host drift), `secret gen-key\|set\|show` (MinIO creds encrypted in Mongo with `AFL_FLEET_KEY`). |
-| `fw fleet agent` | Per server: `apply` (one-shot) or `watch` (daemon) — reads the central config, **discovers Mongo** (explicit → `AFL_MONGODB_URL` → mDNS → `afl-mongodb`), decrypts creds, brings runners up, records drift. Bootstrap = the Mongo URL only. |
+| `fw fleet` | Admin (run anywhere): `set` the central config (MinIO endpoint / replicas / image), `status` (live runners + per-host drift), `secret gen-key\|set\|show` (MinIO creds encrypted in Mongo with `FW_FLEET_KEY`). |
+| `fw fleet agent` | Per server: `apply` (one-shot) or `watch` (daemon) — reads the central config, **discovers Mongo** (explicit → `FW_MONGODB_URL` → mDNS → `afl-mongodb`), decrypts creds, brings runners up, records drift. Bootstrap = the Mongo URL only. |
 | `fw fleet advertise` | Optional mDNS advertiser for the infra host (needs `zeroconf`). |
 
-A new server joins with one command — `export AFL_FLEET_KEY=<key>; fw fleet agent watch` — and the whole fleet is driven by editing the central config once (`fleet set --osm-replicas N`, `--image …`). Full guide: [docs/operations/deployment.md](docs/operations/deployment.md) → **"Adding a server to the fleet"** / **"Central fleet config"**.
+A new server joins with one command — `export FW_FLEET_KEY=<key>; fw fleet agent watch` — and the whole fleet is driven by editing the central config once (`fleet set --osm-replicas N`, `--image …`). Full guide: [docs/operations/deployment.md](docs/operations/deployment.md) → **"Adding a server to the fleet"** / **"Central fleet config"**.
 
 > **Bringing up an ADDITIONAL runner server that points at this fleet's shared
 > infra (MongoDB + MinIO)? Follow [docs/operations/join-fleet-from-new-server.md](docs/operations/join-fleet-from-new-server.md)** — it
@@ -544,10 +544,10 @@ shows them up-to-date and the fan-out's `ByScript` leaves run on different serve
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AFL_REAPER_TIMEOUT_MS` | `120000` (2min) | Dead-server detection threshold |
-| `AFL_STUCK_TIMEOUT_MS` | `1800000` (30min) | Stuck-task watchdog timeout |
-| `AFL_TASK_EXECUTION_TIMEOUT_MS` | `900000` (15min) | Per-task execution timeout; timed-out tasks reset to pending |
-| `AFL_LEASE_DURATION_MS` | `300000` (5min) | Task lease duration; renewed by handler heartbeat |
+| `FW_REAPER_TIMEOUT_MS` | `120000` (2min) | Dead-server detection threshold |
+| `FW_STUCK_TIMEOUT_MS` | `1800000` (30min) | Stuck-task watchdog timeout |
+| `FW_TASK_EXECUTION_TIMEOUT_MS` | `900000` (15min) | Per-task execution timeout; timed-out tasks reset to pending |
+| `FW_LEASE_DURATION_MS` | `300000` (5min) | Task lease duration; renewed by handler heartbeat |
 
 Examples/domains can override these defaults — local examples via a `runner.env` file in their directory, standalone domain packages via `runner_env={...}` on their `DomainPackage`. The `start-runner` script applies them automatically. Handlers that perform blocking I/O (where heartbeats cannot fire) should register with `timeout_ms=0` and rely on the global execution timeout instead.
 
@@ -606,10 +606,10 @@ fw db import-pg --status       # check if running
 fw db import-pg --stop         # stop and remove
 
 # Enable local-first import (add to .env or runner.env)
-AFL_IMPORT_POSTGIS_URL=postgresql://afl_osm:afl_osm_2024@localhost:5433/osm
+FW_IMPORT_POSTGIS_URL=postgresql://afl_osm:afl_osm_2024@localhost:5433/osm
 ```
 
-When `AFL_IMPORT_POSTGIS_URL` is set, `import_to_postgis()` follows this flow:
+When `FW_IMPORT_POSTGIS_URL` is set, `import_to_postgis()` follows this flow:
 1. Check prior-import log on the **main** server (skip if already imported)
 2. Parse PBF and stage data on the **local** instance (fast — disposable, no WAL)
 3. Merge staging into local main tables (no index contention with readers)

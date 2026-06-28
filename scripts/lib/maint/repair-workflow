@@ -14,7 +14,7 @@
 #   fw maint repair-workflow --dry <runner_id>
 #
 # Environment:
-#   AFL_MONGODB_URL    MongoDB connection string (default from .env)
+#   FW_MONGODB_URL    MongoDB connection string (default from .env)
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail

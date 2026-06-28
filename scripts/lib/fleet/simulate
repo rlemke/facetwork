@@ -57,7 +57,7 @@ trap 'echo; echo "(leaving sim servers up; run: fw fleet simulate --down)"' EXIT
 echo "== 1) central config + encrypted secret (set ONCE) =="
 ""$FW_LIB/fleet/config"" set --mongo "$MONGO" --minio "$MINIO" --osm-replicas 1 --task-list osm >/dev/null
 KEY=$(""$FW_LIB/fleet/config"" secret gen-key 2>/dev/null)
-export AFL_FLEET_KEY="$KEY"
+export FW_FLEET_KEY="$KEY"
 ""$FW_LIB/fleet/config"" secret set --mongo "$MONGO" --minio-access minioadmin --minio-secret minioadmin >/dev/null
 echo "  fleet_config set; MinIO creds encrypted (fleet key generated)"
 
@@ -65,10 +65,10 @@ echo "== 2) bring up $SERVERS servers — each a fleet-agent reading the central
 for i in $(seq 1 "$SERVERS"); do
     echo "  -- server fleet-srv$i --"
     if out=$(COMPOSE_PROJECT_NAME="fleet-srv$i" \
-             AFL_FLEET_HOST="fleet-srv$i" \
-             AFL_FLEET_KEY="$KEY" \
-             AFL_FLEET_EXTRA_COMPOSE="$REPO/docker-compose.sim.yml" \
-             AFL_DATA_DIR="${AFL_DATA_DIR:-/Volumes/afl_data}/sim-srv$i" \
+             FW_FLEET_HOST="fleet-srv$i" \
+             FW_FLEET_KEY="$KEY" \
+             FW_FLEET_EXTRA_COMPOSE="$REPO/docker-compose.sim.yml" \
+             FW_DATA_DIR="${FW_DATA_DIR:-/Volumes/afl_data}/sim-srv$i" \
              ""$FW_LIB/fleet/agent"" apply --mongo "$MONGO" 2>&1); then
         printf '%s\n' "$out" | grep -iE "applying|Started" | head -3 | sed 's/^/    /' || true
     else

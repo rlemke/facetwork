@@ -42,17 +42,17 @@ def test_invalid_mode_rejected():
 
 
 def test_mode_from_env(monkeypatch):
-    monkeypatch.setenv("AFL_CONTINUATION_MODE", "off")
+    monkeypatch.setenv("FW_CONTINUATION_MODE", "off")
     assert BaseRunnerConfig().continuation_mode == "off"
 
 
 def test_explicit_mode_beats_env(monkeypatch):
-    monkeypatch.setenv("AFL_CONTINUATION_MODE", "off")
+    monkeypatch.setenv("FW_CONTINUATION_MODE", "off")
     assert BaseRunnerConfig(continuation_mode="shared").continuation_mode == "shared"
 
 
 def test_blank_env_defaults_to_inline(monkeypatch):
-    monkeypatch.setenv("AFL_CONTINUATION_MODE", "")
+    monkeypatch.setenv("FW_CONTINUATION_MODE", "")
     assert BaseRunnerConfig().continuation_mode == "inline"
 
 

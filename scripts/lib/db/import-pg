@@ -16,9 +16,9 @@
 #   fw db import-pg --url        # print connection URL
 #
 # Environment:
-#   AFL_IMPORT_PG_PORT    Port to bind (default: 5433)
-#   AFL_IMPORT_PG_IMAGE   Docker image (default: postgis/postgis:16-3.4)
-#   AFL_IMPORT_PG_SHM     Shared memory size (default: 2g)
+#   FW_IMPORT_PG_PORT    Port to bind (default: 5433)
+#   FW_IMPORT_PG_IMAGE   Docker image (default: postgis/postgis:16-3.4)
+#   FW_IMPORT_PG_SHM     Shared memory size (default: 2g)
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
@@ -28,9 +28,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$FW_LIB/_helpers/_env.sh"
 
 CONTAINER_NAME="osm-import-pg"
-PG_PORT="${AFL_IMPORT_PG_PORT:-5433}"
-PG_IMAGE="${AFL_IMPORT_PG_IMAGE:-postgis/postgis:16-3.4}"
-PG_SHM="${AFL_IMPORT_PG_SHM:-2g}"
+PG_PORT="${FW_IMPORT_PG_PORT:-5433}"
+PG_IMAGE="${FW_IMPORT_PG_IMAGE:-postgis/postgis:16-3.4}"
+PG_SHM="${FW_IMPORT_PG_SHM:-2g}"
 PG_USER="afl_osm"
 PG_PASSWORD="afl_osm_2024"
 PG_DB="osm"
@@ -130,7 +130,7 @@ cmd_start() {
     echo "  Port:      $PG_PORT"
     echo "  URL:       $(cmd_url)"
     echo ""
-    echo "Set AFL_IMPORT_POSTGIS_URL=$(cmd_url) to use local-first import."
+    echo "Set FW_IMPORT_POSTGIS_URL=$(cmd_url) to use local-first import."
 }
 
 # Parse command

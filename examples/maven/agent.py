@@ -5,8 +5,8 @@ Usage:
     PYTHONPATH=. python examples/maven/agent.py
 
 For Docker/MongoDB mode, set environment variables:
-    AFL_MONGODB_URL=mongodb://localhost:27017
-    AFL_MONGODB_DATABASE=facetwork
+    FW_MONGODB_URL=mongodb://localhost:27017
+    FW_MONGODB_DATABASE=facetwork
 """
 
 import os
@@ -23,7 +23,7 @@ def main() -> None:
 
     from maven_runner import MavenArtifactRunner, MavenRunnerConfig
 
-    topics_env = os.environ.get("AFL_RUNNER_TOPICS", "")
+    topics_env = os.environ.get("FW_RUNNER_TOPICS", "")
     topics = [t.strip() for t in topics_env.split(",") if t.strip()] if topics_env else []
 
     config = MavenRunnerConfig(
@@ -32,9 +32,9 @@ def main() -> None:
         poll_interval_ms=2000,
         max_concurrent=5,
         topics=topics,
-        repository_url=os.environ.get("AFL_MAVEN_REPOSITORY", "https://repo1.maven.org/maven2"),
-        cache_dir=os.environ.get("AFL_MAVEN_CACHE", ""),
-        java_command=os.environ.get("AFL_JAVA_COMMAND", "java"),
+        repository_url=os.environ.get("FW_MAVEN_REPOSITORY", "https://repo1.maven.org/maven2"),
+        cache_dir=os.environ.get("FW_MAVEN_CACHE", ""),
+        java_command=os.environ.get("FW_JAVA_COMMAND", "java"),
     )
 
     runner = MavenArtifactRunner(persistence=store, evaluator=evaluator, config=config)

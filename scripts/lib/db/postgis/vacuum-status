@@ -11,14 +11,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../_helpers/_bootstrap.sh"
 set -euo pipefail
 source "$FW_LIB/_helpers/_env.sh"
 
-POSTGIS_URL="${AFL_POSTGIS_URL:-postgresql://afl_osm:afl_osm_2024@afl-postgres:5432/osm}"
+POSTGIS_URL="${FW_POSTGIS_URL:-postgresql://afl_osm:afl_osm_2024@afl-postgres:5432/osm}"
 
 DB_HOST=$(echo "$POSTGIS_URL" | sed -n 's|.*@\([^:/]*\).*|\1|p')
 DB_PORT=$(echo "$POSTGIS_URL" | sed -n 's|.*:\([0-9]*\)/.*|\1|p')
 DB_NAME=$(echo "$POSTGIS_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
 
 # Use superuser for pg_stat_activity access
-SU_USER="${AFL_POSTGIS_SUPERUSER:-ralph_lemke}"
+SU_USER="${FW_POSTGIS_SUPERUSER:-ralph_lemke}"
 
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"

@@ -64,7 +64,7 @@ Long-running distributed workflows face compounding failure modes that don't app
 - Two-pass detection: (a) tasks with explicit `timeout_ms` exceeded, (b) tasks with no progress beyond default threshold (4h)
 - Heartbeat-aware: handlers calling `update_task_heartbeat()` keep their tasks alive even if the server heartbeat is stale
 - Catches the case where the server is alive and pinging but the handler is blocked (e.g. waiting for a database connection that will never come)
-- Configurable via `AFL_STUCK_TIMEOUT_MS` (default: 4 hours)
+- Configurable via `FW_STUCK_TIMEOUT_MS` (default: 4 hours)
 
 **Layer 3: Lease-based task ownership (v0.43.0)** — prevents dual-claiming and stale ownership.
 - Tasks have a `lease_expires` timestamp set at claim time

@@ -16,7 +16,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --apply|--yes) ARGS+=(--apply); shift ;;
         --dry|--dry-run) shift ;;
-        --mongo) export AFL_MONGODB_URL="$2"; shift 2 ;;
+        --mongo) export FW_MONGODB_URL="$2"; shift 2 ;;
         -h|--help)
             sed -n '3,9p' "$0" | sed 's/^# \{0,1\}//'
             echo; echo "Usage: fw maint migrate-seed-prefix [--apply] [--mongo URL]"

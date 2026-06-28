@@ -30,27 +30,27 @@ class TestSafePath:
     """Test path traversal protection."""
 
     def test_empty_path_returns_base(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("AFL_LOCAL_OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setenv("FW_LOCAL_OUTPUT_DIR", str(tmp_path))
         result = _safe_path("")
         assert result == tmp_path.resolve()
 
     def test_normal_subpath(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("AFL_LOCAL_OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setenv("FW_LOCAL_OUTPUT_DIR", str(tmp_path))
         sub = tmp_path / "maps"
         sub.mkdir()
         result = _safe_path("maps")
         assert result == sub.resolve()
 
     def test_traversal_blocked(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("AFL_LOCAL_OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setenv("FW_LOCAL_OUTPUT_DIR", str(tmp_path))
         assert _safe_path("../../etc/passwd") is None
 
     def test_traversal_dot_dot_slash(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("AFL_LOCAL_OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setenv("FW_LOCAL_OUTPUT_DIR", str(tmp_path))
         assert _safe_path("../..") is None
 
     def test_nested_path(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("AFL_LOCAL_OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setenv("FW_LOCAL_OUTPUT_DIR", str(tmp_path))
         nested = tmp_path / "a" / "b" / "c"
         nested.mkdir(parents=True)
         result = _safe_path("a/b/c")
@@ -65,7 +65,7 @@ class TestBuildTree:
         assert result == []
 
     def test_files_and_dirs_sorted(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("AFL_LOCAL_OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setenv("FW_LOCAL_OUTPUT_DIR", str(tmp_path))
         (tmp_path / "bravo.txt").write_text("hello")
         (tmp_path / "alpha").mkdir()
         (tmp_path / "charlie.html").write_text("<html></html>")
@@ -75,14 +75,14 @@ class TestBuildTree:
         assert names == ["alpha", "bravo.txt", "charlie.html"]
 
     def test_directory_entry_is_dir(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("AFL_LOCAL_OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setenv("FW_LOCAL_OUTPUT_DIR", str(tmp_path))
         (tmp_path / "subdir").mkdir()
         result = _build_tree(tmp_path)
         assert result[0]["is_dir"] is True
         assert result[0]["size"] == 0
 
     def test_file_metadata(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("AFL_LOCAL_OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setenv("FW_LOCAL_OUTPUT_DIR", str(tmp_path))
         f = tmp_path / "data.json"
         f.write_text('{"key": "value"}')
         result = _build_tree(tmp_path)
@@ -173,8 +173,8 @@ class TestFileTimestamp:
 
 @pytest.fixture()
 def output_dir(tmp_path, monkeypatch):
-    """Create a temp output directory and point AFL_LOCAL_OUTPUT_DIR at it."""
-    monkeypatch.setenv("AFL_LOCAL_OUTPUT_DIR", str(tmp_path))
+    """Create a temp output directory and point FW_LOCAL_OUTPUT_DIR at it."""
+    monkeypatch.setenv("FW_LOCAL_OUTPUT_DIR", str(tmp_path))
     (tmp_path / "maps").mkdir()
     (tmp_path / "maps" / "alabama.html").write_text("<html><body>Map</body></html>")
     (tmp_path / "stats").mkdir()

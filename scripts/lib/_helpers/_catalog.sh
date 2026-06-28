@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared helper: read the domain/example catalog (domains.json + overrides) from
 # bash by shelling out to the Python loader (facetwork.domains.catalog), so shell
-# commands and Python consumers see the SAME resolved catalog (incl. AFL_DOMAINS_FILE
+# commands and Python consumers see the SAME resolved catalog (incl. FW_DOMAINS_FILE
 # / domains.local.json overrides). Source AFTER _bootstrap.sh (needs FW_ROOT).
 
 _catalog_python() {
@@ -63,7 +63,7 @@ catalog_default_replicas() {
     _catalog_python -c 'from facetwork.domains.catalog import default_replicas; print(default_replicas())'
 }
 
-# Catalog default replica count for the scaled tier (AFL_OSM_REPLICAS overrides).
+# Catalog default replica count for the scaled tier (FW_OSM_REPLICAS overrides).
 catalog_scaled_replicas() {
     _catalog_python -c 'from facetwork.domains.catalog import scaled_replicas; print(scaled_replicas())'
 }

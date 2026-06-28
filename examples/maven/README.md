@@ -44,22 +44,22 @@ PYTHONPATH=. python examples/maven/agent.py
 With custom Maven repository and JDK:
 
 ```bash
-AFL_MAVEN_REPOSITORY=https://nexus.example.com/repository/maven-public \
-    AFL_JAVA_COMMAND=/usr/lib/jvm/java-17/bin/java \
+FW_MAVEN_REPOSITORY=https://nexus.example.com/repository/maven-public \
+    FW_JAVA_COMMAND=/usr/lib/jvm/java-17/bin/java \
     PYTHONPATH=. python examples/maven/agent.py
 ```
 
 ### With MongoDB persistence
 
 ```bash
-AFL_MONGODB_URL=mongodb://localhost:27017 AFL_MONGODB_DATABASE=afl \
+FW_MONGODB_URL=mongodb://localhost:27017 FW_MONGODB_DATABASE=afl \
     PYTHONPATH=. python examples/maven/agent.py
 ```
 
 ### With topic filtering
 
 ```bash
-AFL_RUNNER_TOPICS=maven.runner \
+FW_RUNNER_TOPICS=maven.runner \
     PYTHONPATH=. python examples/maven/agent.py
 ```
 
@@ -104,7 +104,7 @@ The MavenArtifactRunner bridges FFL workflows with JVM programs:
    - `java -jar artifact.jar <stepId>` (executable JAR)
    - `java -cp artifact.jar MainClass <stepId>` (with entrypoint)
    - JVM args from `metadata["jvm_args"]` are prepended
-   - Environment variables: `AFL_STEP_ID`, `AFL_MONGODB_URL`, `AFL_MONGODB_DATABASE`
+   - Environment variables: `FW_STEP_ID`, `FW_MONGODB_URL`, `FW_MONGODB_DATABASE`
 
 4. **Step continuation** — After the JVM program exits successfully (exit 0), the runner reads return values from MongoDB and calls `evaluator.continue_step()` + `evaluator.resume()` to advance the workflow.
 

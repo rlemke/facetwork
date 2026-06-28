@@ -127,14 +127,14 @@ LOCALSTACK_URL=http://localhost:4566 PYTHONPATH=. python examples/aws-lambda/age
 ### RegistryRunner mode (recommended for production)
 
 ```bash
-AFL_USE_REGISTRY=1 LOCALSTACK_URL=http://localhost:4566 \
+FW_USE_REGISTRY=1 LOCALSTACK_URL=http://localhost:4566 \
     PYTHONPATH=. python examples/aws-lambda/agent.py
 ```
 
 ### With MongoDB persistence
 
 ```bash
-AFL_MONGODB_URL=mongodb://localhost:27017 AFL_MONGODB_DATABASE=afl \
+FW_MONGODB_URL=mongodb://localhost:27017 FW_MONGODB_DATABASE=afl \
     LOCALSTACK_URL=http://localhost:4566 \
     PYTHONPATH=. python examples/aws-lambda/agent.py
 ```
@@ -142,7 +142,7 @@ AFL_MONGODB_URL=mongodb://localhost:27017 AFL_MONGODB_DATABASE=afl \
 ### With topic filtering
 
 ```bash
-AFL_USE_REGISTRY=1 AFL_RUNNER_TOPICS=aws.lambda,aws.stepfunctions \
+FW_USE_REGISTRY=1 FW_RUNNER_TOPICS=aws.lambda,aws.stepfunctions \
     LOCALSTACK_URL=http://localhost:4566 \
     PYTHONPATH=. python examples/aws-lambda/agent.py
 ```

@@ -35,7 +35,7 @@ object AgentPollerConfig:
   /** Load config from an afl.config.json file.
     *
     * Reads the mongodb.url, mongodb.database, and runner section fields.
-    * Applies AFL_ENV overlay if set. Falls back to environment variables
+    * Applies FW_ENV overlay if set. Falls back to environment variables
     * and then built-in defaults.
     */
   def fromConfig(path: String): AgentPollerConfig =
@@ -44,8 +44,8 @@ object AgentPollerConfig:
     )
     val base = fromJsonString(content)
 
-    // AFL_ENV overlay
-    sys.env.get("AFL_ENV").filter(_.nonEmpty) match
+    // FW_ENV overlay
+    sys.env.get("FW_ENV").filter(_.nonEmpty) match
       case Some(envName) =>
         val dir = new java.io.File(path).getParent
         val overlayPath = s"$dir/afl.config.$envName.json"
@@ -69,22 +69,22 @@ object AgentPollerConfig:
   def fromJsonString(json: String): AgentPollerConfig =
     // Minimal JSON parsing — extract mongodb fields without a JSON library dependency.
     val url = extractField(json, "url")
-      .orElse(sys.env.get("AFL_MONGODB_URL"))
+      .orElse(sys.env.get("FW_MONGODB_URL"))
       .getOrElse("mongodb://localhost:27017")
     val database = extractField(json, "database")
-      .orElse(sys.env.get("AFL_MONGODB_DATABASE"))
+      .orElse(sys.env.get("FW_MONGODB_DATABASE"))
       .getOrElse("afl")
 
     // Runner section fields
     val pollMs = extractIntField(json, "pollIntervalMs")
-      .orElse(sys.env.get("AFL_POLL_INTERVAL_MS").flatMap(s => scala.util.Try(s.toLong).toOption))
+      .orElse(sys.env.get("FW_POLL_INTERVAL_MS").flatMap(s => scala.util.Try(s.toLong).toOption))
       .getOrElse(2000L)
     val maxConc = extractIntField(json, "maxConcurrent")
-      .orElse(sys.env.get("AFL_MAX_CONCURRENT").flatMap(s => scala.util.Try(s.toLong).toOption))
+      .orElse(sys.env.get("FW_MAX_CONCURRENT").flatMap(s => scala.util.Try(s.toLong).toOption))
       .map(_.toInt)
       .getOrElse(5)
     val hbMs = extractIntField(json, "heartbeatIntervalMs")
-      .orElse(sys.env.get("AFL_HEARTBEAT_INTERVAL_MS").flatMap(s => scala.util.Try(s.toLong).toOption))
+      .orElse(sys.env.get("FW_HEARTBEAT_INTERVAL_MS").flatMap(s => scala.util.Try(s.toLong).toOption))
       .getOrElse(10000L)
 
     AgentPollerConfig(
@@ -98,7 +98,7 @@ object AgentPollerConfig:
   /** Resolve config using the standard search order from the protocol spec. */
   def resolve(explicitPath: Option[String] = None): AgentPollerConfig =
     val path = explicitPath
-      .orElse(sys.env.get("AFL_CONFIG"))
+      .orElse(sys.env.get("FW_CONFIG"))
       .orElse(findConfigFile())
     path match
       case Some(p) => fromConfig(p)
@@ -108,10 +108,10 @@ object AgentPollerConfig:
   def fromEnvironment(): AgentPollerConfig =
     AgentPollerConfig(
       mongoUrl = sys.env.getOrElse(
-        "AFL_MONGODB_URL",
+        "FW_MONGODB_URL",
         "mongodb://localhost:27017"
       ),
-      database = sys.env.getOrElse("AFL_MONGODB_DATABASE", "afl")
+      database = sys.env.getOrElse("FW_MONGODB_DATABASE", "afl")
     )
 
   private def findConfigFile(): Option[String] =

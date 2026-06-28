@@ -10,8 +10,8 @@ The Facetwork runtime has two watchdog systems that detect and reclaim stuck tas
 
 | Watchdog | Env Variable | Default | What It Checks |
 |----------|-------------|---------|----------------|
-| **Execution timeout** | `AFL_TASK_EXECUTION_TIMEOUT_MS` | 900,000 (15 min) | Time since last heartbeat on the runner's thread pool |
-| **Stuck task reaper** | `AFL_STUCK_TIMEOUT_MS` | 1,800,000 (30 min) | `max(task_heartbeat, updated)` in MongoDB |
+| **Execution timeout** | `FW_TASK_EXECUTION_TIMEOUT_MS` | 900,000 (15 min) | Time since last heartbeat on the runner's thread pool |
+| **Stuck task reaper** | `FW_STUCK_TIMEOUT_MS` | 1,800,000 (30 min) | `max(task_heartbeat, updated)` in MongoDB |
 
 If your handler blocks for longer than these thresholds without signaling
 progress, the runtime will:
@@ -176,20 +176,20 @@ automatically.
 
 ```bash
 # runner.env — placed in the example directory
-AFL_TASK_EXECUTION_TIMEOUT_MS=14400000   # 4 hours
-AFL_STUCK_TIMEOUT_MS=14400000            # 4 hours (must match execution timeout)
+FW_TASK_EXECUTION_TIMEOUT_MS=14400000   # 4 hours
+FW_STUCK_TIMEOUT_MS=14400000            # 4 hours (must match execution timeout)
 ```
 
-**Both variables must be set.** If you only set `AFL_TASK_EXECUTION_TIMEOUT_MS`,
+**Both variables must be set.** If you only set `FW_TASK_EXECUTION_TIMEOUT_MS`,
 the stuck task reaper still uses its default 30-minute threshold and will
 kill tasks that block for longer than that between heartbeats.
 
 | Variable | Controls | Default |
 |----------|----------|---------|
-| `AFL_TASK_EXECUTION_TIMEOUT_MS` | Runner's per-task timeout (thread pool) | 900,000 (15 min) |
-| `AFL_STUCK_TIMEOUT_MS` | Stuck reaper's last-activity threshold | 1,800,000 (30 min) |
-| `AFL_REAPER_TIMEOUT_MS` | Dead-server detection (server heartbeat) | 120,000 (2 min) |
-| `AFL_LEASE_DURATION_MS` | Task lease renewed by heartbeat | 300,000 (5 min) |
+| `FW_TASK_EXECUTION_TIMEOUT_MS` | Runner's per-task timeout (thread pool) | 900,000 (15 min) |
+| `FW_STUCK_TIMEOUT_MS` | Stuck reaper's last-activity threshold | 1,800,000 (30 min) |
+| `FW_REAPER_TIMEOUT_MS` | Dead-server detection (server heartbeat) | 120,000 (2 min) |
+| `FW_LEASE_DURATION_MS` | Task lease renewed by heartbeat | 300,000 (5 min) |
 
 ## Monitoring
 

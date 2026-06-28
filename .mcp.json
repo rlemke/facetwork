@@ -4,8 +4,8 @@
       "command": "${FW_PYTHON:-/Users/ralph_lemke/facetwork/.venv/bin/python}",
       "args": ["-m", "facetwork.mcp", "--log-level", "WARNING"],
       "env": {
-        "AFL_MONGODB_URL": "mongodb://localhost:27017",
-        "AFL_POSTGIS_URL": "postgresql://afl:afl@localhost:5432/afl_gis"
+        "FW_MONGODB_URL": "mongodb://localhost:27017",
+        "FW_POSTGIS_URL": "postgresql://afl:afl@localhost:5432/afl_gis"
       }
     }
   }

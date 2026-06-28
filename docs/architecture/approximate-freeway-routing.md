@@ -14,7 +14,7 @@ edge for continental, multi-server runs (see the "routes between all US cities
   and a blocking subprocess.
 - The **build-graph → running-engine lifecycle is not wired as facets**: the
   build facets emit a `GraphHopperCache`/`ValhallaCache` directory, but the
-  query facets hit a *running* daemon at `AFL_OSRM_URL`. Nothing in the facet
+  query facets hit a *running* daemon at `FW_OSRM_URL`. Nothing in the facet
   chain starts the engine from the built graph and points queries at it.
 - Replicating a multi-GB graph across K routing hosts is real operational work.
 
@@ -99,17 +99,17 @@ The network rides the **sharing models the system already has** (see
 without strain:
 
 1. **HDFS backend (recommended for multi-server).**
-   `AFL_CACHE_ROOT=hdfs://afl-hadoop-hdfs:8020/cache`. `BuildNetwork` writes the
+   `FW_CACHE_ROOT=hdfs://afl-hadoop-hdfs:8020/cache`. `BuildNetwork` writes the
    `network/` directory artifact once via WebHDFS; every routing runner on every
    server reads the same `cache/osm/network/.../graph.json`. No transfer logic to
    write — it is just a path.
-2. **S3 / MinIO object store.** `AFL_STORAGE=s3`, `AFL_DATA_ROOT=s3://afl-cache`
-   (+ `AFL_S3_ENDPOINT` for MinIO). The `network/` artifact and the merged
+2. **S3 / MinIO object store.** `FW_STORAGE=s3`, `FW_DATA_ROOT=s3://afl-cache`
+   (+ `FW_S3_ENDPOINT` for MinIO). The `network/` artifact and the merged
    layers land on the object store; runners localize `graph.json` once and route
    from memory. The tiny read-once artifact is ideal for HTTP/object fan-out;
    step payloads carry portable `s3://` URIs across the fleet. See
    [S3 / MinIO Integration](../operations/deployment.md#s3--minio-integration).
-3. **Shared NFS mount of `AFL_DATA_ROOT`.** Identical absolute path on all
+3. **Shared NFS mount of `FW_DATA_ROOT`.** Identical absolute path on all
    servers; build-once, read-everywhere, lock-free on distinct keys.
 4. **Independent per-server local caches.** On a cache miss a runner re-derives —
    and here the small size pays off: re-noding the interstate extract is seconds,

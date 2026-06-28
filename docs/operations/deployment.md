@@ -38,7 +38,7 @@ Regardless of deployment model, the architecture is the same:
 
 ### Quick Start: Local Mode (Recommended for Development)
 
-Run everything as local Python processes — no Docker required. Only needs MongoDB reachable at `AFL_MONGODB_URL`.
+Run everything as local Python processes — no Docker required. Only needs MongoDB reachable at `FW_MONGODB_URL`.
 
 ```bash
 # One command: stop old runners, verify MongoDB, seed examples, start runners + dashboard
@@ -127,16 +127,16 @@ Both deployment models support horizontal scaling across multiple machines. Mult
 
 **Requirements for multi-node:**
 
-1. **Shared MongoDB**: All machines point to the same `AFL_MONGODB_URL` (use IP or DNS hostname accessible from all nodes)
+1. **Shared MongoDB**: All machines point to the same `FW_MONGODB_URL` (use IP or DNS hostname accessible from all nodes)
 2. **Handler code**: Same repo checkout with `.venv` and dependencies installed on each machine
-3. **Shared data** (optional): NFS/SMB mount for `AFL_GEOFABRIK_MIRROR`, `AFL_DATA_ROOT`, etc. — or let each machine download its own copies (cache misses are handled automatically)
+3. **Shared data** (optional): NFS/SMB mount for `FW_GEOFABRIK_MIRROR`, `FW_DATA_ROOT`, etc. — or let each machine download its own copies (cache misses are handled automatically)
 
 ```bash
 # On each machine: start local runner(s) pointing to shared MongoDB
-AFL_MONGODB_URL=mongodb://db-server:27017 fw single up-local --no-seed --instances 4
+FW_MONGODB_URL=mongodb://db-server:27017 fw single up-local --no-seed --instances 4
 
 # Or with remote runner management (SSH-based)
-fw runner start --all --example osm-geocoder    # start on all AFL_RUNNER_HOSTS
+fw runner start --all --example osm-geocoder    # start on all FW_RUNNER_HOSTS
 fw runner start --host worker1 --host worker2   # specific hosts
 fw runner stop --all                           # stop all remote runners
 fw fleet rolling-deploy --example osm-geocoder        # zero-downtime restart
@@ -163,7 +163,7 @@ Each runner independently polls the shared task queue. When a workflow creates 1
 
 ### Adding a runner server to the fleet (shared external MinIO + MongoDB)
 
-**Server-role model — there is no "master".** A fleet has just two kinds of participant: **infra services** (MongoDB, MinIO, and the Dashboard), each identified by its **access URL only** — the fleet never enumerates their cluster members, so each can be a single node, a replica set / distributed deployment, or a managed service — and **runner servers**, which are homogeneous and stateless (`AFL_SERVER_GROUP` defaults to `runner`). Runners are leaderless and don't contend (coordination is the atomic `claim_task()` in Mongo), so no box is privileged: any runner with Mongo access can also seed workflow definitions.
+**Server-role model — there is no "master".** A fleet has just two kinds of participant: **infra services** (MongoDB, MinIO, and the Dashboard), each identified by its **access URL only** — the fleet never enumerates their cluster members, so each can be a single node, a replica set / distributed deployment, or a managed service — and **runner servers**, which are homogeneous and stateless (`FW_SERVER_GROUP` defaults to `runner`). Runners are leaderless and don't contend (coordination is the atomic `claim_task()` in Mongo), so no box is privileged: any runner with Mongo access can also seed workflow definitions.
 
 The full-stack compose **bundles a MinIO and a MongoDB per host**. That is wrong for a multi-server fleet: if you bring it up independently on N servers, each gets its *own* MinIO, so outputs are siloed and a merge on one server can't see another's. A fleet needs **one shared MinIO and one shared MongoDB**, reachable from every server; each additional server runs *runners only*.
 
@@ -176,8 +176,8 @@ docker compose -f docker-compose.full-stack.yml up -d        # MinIO :9000, Mong
 
 # On each ADDITIONAL runner server:
 cp .env.fleet.example .env.fleet
-#   edit AFL_MONGODB_URL + AFL_S3_ENDPOINT to the shared host, AFL_DATA_DIR to a
-#   large LOCAL disk, AFL_OSM_REPLICAS to this host's runner count
+#   edit FW_MONGODB_URL + FW_S3_ENDPOINT to the shared host, FW_DATA_DIR to a
+#   large LOCAL disk, FW_OSM_REPLICAS to this host's runner count
 fw runner start --fleet                       # preflight both shared services, then start runners (default: osm-geocoder + osm-lz)
 fw runner start --fleet --check               # preflight + validate only
 fw runner start --fleet --replicas 6          # override the runner count
@@ -191,11 +191,11 @@ fw runner start --fleet --example noaa-weather --example census-us   # run ANY p
 
 ```bash
 docker compose -f docker-compose.full-stack.yml -f docker-compose.fleet.yml \
-  --env-file .env.fleet up -d --scale runner-osm-geocoder=$AFL_OSM_REPLICAS \
+  --env-file .env.fleet up -d --scale runner-osm-geocoder=$FW_OSM_REPLICAS \
   runner-osm-geocoder runner-osm-lz
 ```
 
-Because the storage backend is `s3`, every step payload carries a **portable `s3://` URI any runner on any host can resolve**. So a leaf extracted on server B writes its filtered GeoJSON to the shared MinIO, the foreach aggregates the URIs through MongoDB, and the `MergeLayers` step — claimed by *whichever* runner anywhere — localizes every leaf from MinIO and merges. **Scratch stays local per server** (`AFL_DATA_DIR` → a large local disk); only finalized objects cross to MinIO. This is exactly what makes the `ContinentHeatmap` subregion fan-out scale across servers: N servers × M runners each pull leaves from the shared queue in parallel, and the single merge sees them all.
+Because the storage backend is `s3`, every step payload carries a **portable `s3://` URI any runner on any host can resolve**. So a leaf extracted on server B writes its filtered GeoJSON to the shared MinIO, the foreach aggregates the URIs through MongoDB, and the `MergeLayers` step — claimed by *whichever* runner anywhere — localizes every leaf from MinIO and merges. **Scratch stays local per server** (`FW_DATA_DIR` → a large local disk); only finalized objects cross to MinIO. This is exactly what makes the `ContinentHeatmap` subregion fan-out scale across servers: N servers × M runners each pull leaves from the shared queue in parallel, and the single merge sees them all.
 
 #### Viewing the final map from MinIO in a browser
 
@@ -236,13 +236,13 @@ fw fleet get    --mongo mongodb://afl-mongodb:27017   # show the config
 mkdir -p "$HOME/afl_data"                                   # big LOCAL scratch on THIS server
 fw fleet agent apply --mongo mongodb://afl-mongodb:27017 --data-dir "$HOME/afl_data"
 fw fleet agent apply --dry-run                        # show the plan, start nothing
-#   (with a resolvable `afl-mongodb` hostname or AFL_MONGODB_URL set, the --mongo is
+#   (with a resolvable `afl-mongodb` hostname or FW_MONGODB_URL set, the --mongo is
 #    optional, but --data-dir stays — it is REQUIRED, see below.)
 ```
 
 `--data-dir` is **required and per-server** — there is no `/Volumes/afl_data`
 default (that path is the infra host's disk; on macOS only root can `mkdir`
-under `/Volumes`). Prefer the `--data-dir` flag over exporting `AFL_DATA_DIR`:
+under `/Volumes`). Prefer the `--data-dir` flag over exporting `FW_DATA_DIR`:
 an exported env var isn't inherited by an already-running `watch` daemon or
 under `sudo`/`launchd`/`systemd`, so the flag is the reliable knob. If it's
 unset, `fleet-agent` fails fast naming the right knob (rather than crashing
@@ -256,7 +256,7 @@ services and the local scratch dir, then brings the runners up. To
 change the whole fleet — more runners, a different MinIO — run one `fleet set …`
 (it bumps `fleet_config.version`), then reconcile on each server. Secrets stay
 **local** to each host: MinIO credentials come from the host environment
-(`AFL_S3_ACCESS_KEY` / `AFL_S3_SECRET_KEY`); only endpoints/replicas/image live in
+(`FW_S3_ACCESS_KEY` / `FW_S3_SECRET_KEY`); only endpoints/replicas/image live in
 Mongo.
 
 **Auto-reconcile + rolling image updates (Phase 2).** Instead of re-running
@@ -287,14 +287,14 @@ hours exhausts threads/sockets), bounds every Mongo op with `connectTimeoutMS` +
 `socketTimeoutMS` (server-selection timeout alone doesn't cap a wedged socket
 read), bounds each `docker compose` call, and arms a per-poll **watchdog** that
 `os._exit`s if a reconcile blows past a ceiling — so a supervisor restarts a fresh
-process and recovers any hang. Knobs: `AFL_FLEET_AGENT_WATCHDOG_SECONDS` (default
-900), `AFL_FLEET_AGENT_DOCKER_TIMEOUT` (default 600).
+process and recovers any hang. Knobs: `FW_FLEET_AGENT_WATCHDOG_SECONDS` (default
+900), `FW_FLEET_AGENT_DOCKER_TIMEOUT` (default 600).
 
 **Supervised self-heal (macOS / launchd).** The watchdog only helps with a
 supervisor that restarts the process. On macOS, run `fleet agent watch` under a
 **launchd LaunchAgent** (`RunAtLoad` + `KeepAlive`) so it starts at login and
-restarts on exit. A robust wrapper: export `AFL_DATA_DIR` + a pinned
-`AFL_MONGODB_URL` (a host whose `.env` sets `AFL_MONGODB_URL=…localhost` would
+restarts on exit. A robust wrapper: export `FW_DATA_DIR` + a pinned
+`FW_MONGODB_URL` (a host whose `.env` sets `FW_MONGODB_URL=…localhost` would
 otherwise poison discovery under launchd), start Docker Desktop if its daemon is
 down, then `exec fw fleet agent watch --mongo … --data-dir …`. A non-supervised
 manual `watch` (`nohup`/background) is fine too but won't auto-restart. To
@@ -319,7 +319,7 @@ Mongo URL spelled out, and MinIO credentials no longer live in each host's env:
 
 ```bash
 # Discovery: --mongo is now OPTIONAL on every fleet/fleet-agent command. The agent
-# finds Mongo by: explicit --mongo → AFL_MONGODB_URL → mDNS → the conventional
+# finds Mongo by: explicit --mongo → FW_MONGODB_URL → mDNS → the conventional
 # `afl-mongodb` hostname. MinIO is read from the config (afl-minio fallback). So
 # with a resolvable afl-mongodb (DNS/hosts) or mDNS, a server joins with just
 # (--data-dir is still REQUIRED — there is no /Volumes/afl_data default):
@@ -332,18 +332,18 @@ fw fleet advertise
 # Secret store: MinIO creds are encrypted (Fernet) in the `fleet_secrets`
 # collection. Each host needs only the fleet key — ONE bootstrap secret — not the
 # actual creds, which are set once centrally:
-fw fleet secret gen-key                 # generate AFL_FLEET_KEY (export on admin + each host)
+fw fleet secret gen-key                 # generate FW_FLEET_KEY (export on admin + each host)
 fw fleet secret set --minio-access KEY --minio-secret SECRET   # encrypt + store (admin)
 fw fleet secret show                    # decrypt + show (masked)
 ```
 
-When `fleet_secrets` holds a credential and `AFL_FLEET_KEY` is set, the agent
+When `fleet_secrets` holds a credential and `FW_FLEET_KEY` is set, the agent
 **decrypts the creds at apply time** and injects them transiently — they never sit
 in a per-host file or env. The fleet key is one rotatable secret per host instead
-of the actual MinIO credentials; if a secret is stored but `AFL_FLEET_KEY` is
+of the actual MinIO credentials; if a secret is stored but `FW_FLEET_KEY` is
 missing, the agent fails with a clear message rather than starting mis-credentialed
-runners. Hosts without the secret store fall back to `AFL_S3_ACCESS_KEY` /
-`AFL_S3_SECRET_KEY` from the env.
+runners. Hosts without the secret store fall back to `FW_S3_ACCESS_KEY` /
+`FW_S3_SECRET_KEY` from the env.
 
 ### Local Scratch & Multi-Server Semantics
 
@@ -353,9 +353,9 @@ A common question when going multi-server: *each runner has its own local `/tmp`
 
 | Plane | Where it lives | Who shares it |
 |---|---|---|
-| **Coordination** — workflows, runners, tasks, steps | MongoDB (`AFL_MONGODB_URL`) | All runners on all hosts |
-| **Durable data** — caches (`network/`, PBFs), outputs (layers, routes, maps) | `AFL_DATA_ROOT` / `AFL_OSM_OUTPUT_BASE` (local path, `hdfs://`, `s3://`, or a shared mount) | All runners on all hosts |
-| **Local scratch** — staging, in-flight temp files, the `localize()` warm cache | Per-host: `AFL_LOCAL_SCRATCH` (or system temp), `AFL_OUTPUT_BASE/tmp`, `AFL_OUTPUT_BASE/cache/osm-local` | **Only that one host** |
+| **Coordination** — workflows, runners, tasks, steps | MongoDB (`FW_MONGODB_URL`) | All runners on all hosts |
+| **Durable data** — caches (`network/`, PBFs), outputs (layers, routes, maps) | `FW_DATA_ROOT` / `FW_OSM_OUTPUT_BASE` (local path, `hdfs://`, `s3://`, or a shared mount) | All runners on all hosts |
+| **Local scratch** — staging, in-flight temp files, the `localize()` warm cache | Per-host: `FW_LOCAL_SCRATCH` (or system temp), `FW_OUTPUT_BASE/tmp`, `FW_OUTPUT_BASE/cache/osm-local` | **Only that one host** |
 
 The pattern is **stage-locally → finalize-to-durable** (see [`finalize_output_file`](https://github.com/rlemke/fwh_osm/blob/main/handlers/shared/_output.py) and `Storage.finalize_dir_from_local`). Object stores (S3/MinIO, WebHDFS) don't do streaming/partial writes, so handlers always write to a local temp first, then upload the complete object to the durable destination as the last step. The local temp is *workspace*, not state.
 
@@ -399,17 +399,17 @@ Same principle holds within a single runner: an 8-worker runner gives each worke
 
 This whole model only works if the durable references in step payloads are resolvable on *every* host. That's exactly what the storage layer provides:
 
-- `AFL_STORAGE=local` with `AFL_DATA_ROOT=/Volumes/afl_data` is single-host only (unless `/Volumes/afl_data` is the same shared mount on every host).
-- `AFL_STORAGE=hdfs` or `AFL_STORAGE=s3` (with `AFL_DATA_ROOT=hdfs://…` or `s3://…`) yields step payloads with portable URIs — see [HDFS Integration](#hdfs-integration) and [S3 / MinIO Integration](#s3--minio-integration).
+- `FW_STORAGE=local` with `FW_DATA_ROOT=/Volumes/afl_data` is single-host only (unless `/Volumes/afl_data` is the same shared mount on every host).
+- `FW_STORAGE=hdfs` or `FW_STORAGE=s3` (with `FW_DATA_ROOT=hdfs://…` or `s3://…`) yields step payloads with portable URIs — see [HDFS Integration](#hdfs-integration) and [S3 / MinIO Integration](#s3--minio-integration).
 
-If you skip this — e.g. keep `AFL_OSM_OUTPUT_BASE` pointed at a *local* path while running on multiple hosts — host A writes `/var/afl/output/.../merged.geojson` on its own disk, host B can't see it, and the next step fails. The S3/MinIO/HDFS work is what turns those step references into something every runner can resolve.
+If you skip this — e.g. keep `FW_OSM_OUTPUT_BASE` pointed at a *local* path while running on multiple hosts — host A writes `/var/afl/output/.../merged.geojson` on its own disk, host B can't see it, and the next step fails. The S3/MinIO/HDFS work is what turns those step references into something every runner can resolve.
 
 #### Operator notes
 
-- **Localize cache grows over time.** Each runner caches everything it has `localize()`d at `AFL_OUTPUT_BASE/cache/osm-local/…` (or the explicit `target_dir`). It's *just* a cache — safe to prune. Some replication across hosts is the trade-off for not requiring a shared mount.
-- **Stale temps from dead tasks.** A crashed task can leave `tmp*.geojson` (or similar) under `AFL_LOCAL_SCRATCH` / `AFL_OUTPUT_BASE/tmp`. Periodic cleanup is the operator's job.
-- **Workers per host.** `AFL_MAX_CONCURRENT` and `--instances` control concurrency on a host; tune for memory headroom (one routing handler can hold its loaded network in `_GRAPH_CACHE`, ~MBs to ~GBs depending on the artifact).
-- **Skipping oversized regions in bulk GeoJSON conversion (`AFL_OSM_MAX_PBF_MB`).** Whole-region `osm.Source.PBF.ToGeoJson` (`osmium export`) is dominated by its node-location index, which seek-thrashes or OOMs on the largest extracts once it no longer fits memory. Set `AFL_OSM_MAX_PBF_MB` (megabytes) to **skip any region whose cached PBF exceeds that size** — the handler checks the cached size *before* downloading or converting and returns `skipped = true` with an empty path. It's the env fallback for the `max_pbf_mb` workflow parameter (`ConvertAllRegionsToGeoJson(max_pbf_mb = …)` / `ConvertRegionToGeoJson(...)`), so an operator can cap a bulk run already in flight without re-authoring. On a memory-constrained host the gate interacts with two other knobs: keep `AFL_MAX_CONCURRENT` low enough that each concurrent export gets enough RAM for osmium way-assembly (~3-8GB/region for big extracts — e.g. `AFL_MAX_CONCURRENT=2` on a 14GB VM), and size the **Docker Desktop VM** so the host stays stable (a too-large VM crashes Docker Desktop via macOS memory compression; a too-small one thrashes the disk-backed index). In `docker-compose.full-stack.yml` the OSM runners default to `AFL_OSM_MAX_PBF_MB=1024` + `AFL_MAX_CONCURRENT=2` on a 14GB VM, which converts ~226/255 cached regions and skips the ~25 ≥1GB extracts (continents, big countries) that need a larger host. See [docs/architecture/lessons-learned.md](../architecture/lessons-learned.md) → *Converting at the edge of a host's memory*.
+- **Localize cache grows over time.** Each runner caches everything it has `localize()`d at `FW_OUTPUT_BASE/cache/osm-local/…` (or the explicit `target_dir`). It's *just* a cache — safe to prune. Some replication across hosts is the trade-off for not requiring a shared mount.
+- **Stale temps from dead tasks.** A crashed task can leave `tmp*.geojson` (or similar) under `FW_LOCAL_SCRATCH` / `FW_OUTPUT_BASE/tmp`. Periodic cleanup is the operator's job.
+- **Workers per host.** `FW_MAX_CONCURRENT` and `--instances` control concurrency on a host; tune for memory headroom (one routing handler can hold its loaded network in `_GRAPH_CACHE`, ~MBs to ~GBs depending on the artifact).
+- **Skipping oversized regions in bulk GeoJSON conversion (`FW_OSM_MAX_PBF_MB`).** Whole-region `osm.Source.PBF.ToGeoJson` (`osmium export`) is dominated by its node-location index, which seek-thrashes or OOMs on the largest extracts once it no longer fits memory. Set `FW_OSM_MAX_PBF_MB` (megabytes) to **skip any region whose cached PBF exceeds that size** — the handler checks the cached size *before* downloading or converting and returns `skipped = true` with an empty path. It's the env fallback for the `max_pbf_mb` workflow parameter (`ConvertAllRegionsToGeoJson(max_pbf_mb = …)` / `ConvertRegionToGeoJson(...)`), so an operator can cap a bulk run already in flight without re-authoring. On a memory-constrained host the gate interacts with two other knobs: keep `FW_MAX_CONCURRENT` low enough that each concurrent export gets enough RAM for osmium way-assembly (~3-8GB/region for big extracts — e.g. `FW_MAX_CONCURRENT=2` on a 14GB VM), and size the **Docker Desktop VM** so the host stays stable (a too-large VM crashes Docker Desktop via macOS memory compression; a too-small one thrashes the disk-backed index). In `docker-compose.full-stack.yml` the OSM runners default to `FW_OSM_MAX_PBF_MB=1024` + `FW_MAX_CONCURRENT=2` on a 14GB VM, which converts ~226/255 cached regions and skips the ~25 ≥1GB extracts (continents, big countries) that need a larger host. See [docs/architecture/lessons-learned.md](../architecture/lessons-learned.md) → *Converting at the edge of a host's memory*.
 - **Recovering a wedged Docker Desktop VM network.** If an over-large VM crashes Docker Desktop and the linuxkit network wedges (host log under `~/Library/Containers/com.docker.docker/Data/log/host/*.log` shows `no route to host …:2376` / `tx dropped packets`), a simple reopen does **not** fix it — do a full teardown: quit Docker, `pkill com.docker`, `pkill com.docker.backend`, wait ~20s, then `open -a Docker`. (The VM `MemoryMiB` lives in `~/Library/Group Containers/group.com.docker/settings-store.json`, a host file, not a repo file.)
 
 ### Production Recommendations
@@ -418,7 +418,7 @@ If you skip this — e.g. keep `AFL_OSM_OUTPUT_BASE` pointed at a *local* path w
 - **Dashboard**: Single instance behind a reverse proxy (nginx/caddy)
 - **Runners**: Multiple instances per runner server, scaled via `--instances N` and `--max-concurrent M`
 - **Monitoring**: Dashboard at `/v3/workflows` and `/v3/servers`; API at `/api/servers` for health checks
-- **Crash recovery**: Orphan reaper automatically resets tasks from dead runners (configurable via `AFL_REAPER_TIMEOUT_MS`)
+- **Crash recovery**: Orphan reaper automatically resets tasks from dead runners (configurable via `FW_REAPER_TIMEOUT_MS`)
 
 ## Configuration Reference
 
@@ -426,12 +426,12 @@ If you skip this — e.g. keep `AFL_OSM_OUTPUT_BASE` pointed at a *local* path w
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AFL_MONGODB_URL` | `mongodb://localhost:27017` | MongoDB connection string |
-| `AFL_MONGODB_DATABASE` | `afl` | Database name |
-| `AFL_MONGODB_USERNAME` | | MongoDB authentication username |
-| `AFL_MONGODB_PASSWORD` | | MongoDB authentication password |
-| `AFL_MONGODB_AUTH_SOURCE` | `admin` | MongoDB auth database |
-| `AFL_CONFIG` | | Path to `afl.config.json` file |
+| `FW_MONGODB_URL` | `mongodb://localhost:27017` | MongoDB connection string |
+| `FW_MONGODB_DATABASE` | `afl` | Database name |
+| `FW_MONGODB_USERNAME` | | MongoDB authentication username |
+| `FW_MONGODB_PASSWORD` | | MongoDB authentication password |
+| `FW_MONGODB_AUTH_SOURCE` | `admin` | MongoDB auth database |
+| `FW_CONFIG` | | Path to `afl.config.json` file |
 
 ### Config File (`afl.config.json`)
 
@@ -452,7 +452,7 @@ If you skip this — e.g. keep `AFL_OSM_OUTPUT_BASE` pointed at a *local* path w
 }
 ```
 
-The config file is searched in order: `$AFL_CONFIG`, `./afl.config.json`, `~/.ffl/afl.config.json`, `/etc/ffl/afl.config.json`.
+The config file is searched in order: `$FW_CONFIG`, `./afl.config.json`, `~/.ffl/afl.config.json`, `/etc/ffl/afl.config.json`.
 
 ## Service Reference
 
@@ -619,21 +619,21 @@ write_text / write_json / exists / isfile / isdir / listdir / walk / makedirs /
 getsize / localize`. Module-level shims (`read_text`, `write_text`, `fs_open`,
 `fs_exists`, …) delegate to the process-global `get_fs()` for terse call sites.
 
-### Selecting the default backend (`AFL_FS_BACKEND` / `AFL_FS_ROOT`)
+### Selecting the default backend (`FW_FS_BACKEND` / `FW_FS_ROOT`)
 
 The facade picks its default backend in the order **Hadoop → MinIO/S3 → local
 file**:
 
 | Variable | Meaning |
 |----------|---------|
-| `AFL_FS_ROOT` | Base URI/path bare paths resolve under. Its **URI scheme decides the backend** — `hdfs://nn/user/afl`, `s3://my-bucket/cache`, or a local dir. |
-| `AFL_FS_BACKEND` | Explicit override: `auto` (default), `hdfs`, `s3`, or `local`. |
+| `FW_FS_ROOT` | Base URI/path bare paths resolve under. Its **URI scheme decides the backend** — `hdfs://nn/user/afl`, `s3://my-bucket/cache`, or a local dir. |
+| `FW_FS_BACKEND` | Explicit override: `auto` (default), `hdfs`, `s3`, or `local`. |
 
-With `auto` (no `AFL_FS_ROOT`), the facade also honours the existing fleet
-signals so it "just works" alongside the cache config: `AFL_STORAGE=hdfs` +
-`AFL_HDFS_HOST` → HDFS; `AFL_STORAGE=s3` or `AFL_S3_BUCKET` → S3; otherwise
-local. Backend credentials/endpoints are unchanged (`AFL_S3_ENDPOINT`,
-`AFL_WEBHDFS_PORT`, the standard AWS chain, etc.).
+With `auto` (no `FW_FS_ROOT`), the facade also honours the existing fleet
+signals so it "just works" alongside the cache config: `FW_STORAGE=hdfs` +
+`FW_HDFS_HOST` → HDFS; `FW_STORAGE=s3` or `FW_S3_BUCKET` → S3; otherwise
+local. Backend credentials/endpoints are unchanged (`FW_S3_ENDPOINT`,
+`FW_WEBHDFS_PORT`, the standard AWS chain, etc.).
 
 > **Large-file caveat — stage locally, then finalize.** The HDFS/S3 backends
 > buffer a whole object in memory on write, so multi-GB artifacts (streamed
@@ -679,9 +679,9 @@ When using the override file, the following environment variables are set automa
 
 | Variable | Value | Description |
 |----------|-------|-------------|
-| `AFL_CACHE_ROOT` | `hdfs://afl-hadoop-hdfs:8020/cache` | Sidecar cache root (OSM PBF + handler caches under `<root>/<namespace>/`). Or set `AFL_STORAGE=hdfs` to root everything at `/user/afl`. (Replaces the retired `AFL_CACHE_DIR`.) |
+| `FW_CACHE_ROOT` | `hdfs://afl-hadoop-hdfs:8020/cache` | Sidecar cache root (OSM PBF + handler caches under `<root>/<namespace>/`). Or set `FW_STORAGE=hdfs` to root everything at `/user/afl`. (Replaces the retired `FW_CACHE_DIR`.) |
 | `GRAPHHOPPER_GRAPH_DIR` | `hdfs://afl-hadoop-hdfs:8020/graphhopper` | GraphHopper routing graphs |
-| `AFL_GTFS_CACHE_DIR` | `hdfs://afl-hadoop-hdfs:8020/gtfs-cache` | GTFS feed cache |
+| `FW_GTFS_CACHE_DIR` | `hdfs://afl-hadoop-hdfs:8020/gtfs-cache` | GTFS feed cache |
 
 The `get_storage_backend()` factory detects `hdfs://` URIs and returns an `HDFSStorageBackend` (backed by pyarrow) instead of the default `LocalStorageBackend`.
 
@@ -743,15 +743,15 @@ docker compose -f docker-compose.full-stack.yml up -d \
 
 The example-runner image bakes in `boto3` (the `s3` extra), so scaled replicas
 all have it — a replica without it would dead-letter every storage write. To
-point the fleet at a different MinIO/S3, override `AFL_S3_ENDPOINT` /
-`AFL_S3_ACCESS_KEY` / `AFL_S3_SECRET_KEY` / `AFL_S3_BUCKET` in `.env`. The rest
+point the fleet at a different MinIO/S3, override `FW_S3_ENDPOINT` /
+`FW_S3_ACCESS_KEY` / `FW_S3_SECRET_KEY` / `FW_S3_BUCKET` in `.env`. The rest
 of this section covers a standalone MinIO + the env contract in detail.
 
 ### Requirements
 
 - **`boto3`** — install the `s3` extra: `pip install -e ".[s3]"` (boto3 is soft-imported, so it's only needed when an `s3://` path is used). The full-stack example-runner image already includes it.
 - **A bucket** on the object store (the bundled `minio-setup` creates it; standalone instructions below).
-- For MinIO: the **MinIO container** (below, or the bundled compose service). For AWS S3: nothing to run — just set credentials and omit `AFL_S3_ENDPOINT`.
+- For MinIO: the **MinIO container** (below, or the bundled compose service). For AWS S3: nothing to run — just set credentials and omit `FW_S3_ENDPOINT`.
 
 ### Starting MinIO (what the container requires)
 
@@ -781,30 +781,30 @@ Tear down with `docker rm -f afl-minio` (add `-v afl-minio-data` removal to disc
 Set these on every runner (and on submission, for parity). See the env table below for the full list:
 
 ```bash
-AFL_STORAGE=s3
-AFL_DATA_ROOT=s3://afl-cache                       # durable cache root → s3://afl-cache/cache/…
-AFL_OSM_OUTPUT_BASE=s3://afl-cache/osm-output      # handler outputs (layers, networks, routes)
-AFL_S3_ENDPOINT=http://<minio-host>:9000           # OMIT for real AWS S3
-AFL_S3_ACCESS_KEY=minioadmin                        # or the standard AWS_ACCESS_KEY_ID
-AFL_S3_SECRET_KEY=minioadmin                        # or AWS_SECRET_ACCESS_KEY
-# AFL_S3_REGION=us-east-1                            # optional
-AFL_OUTPUT_BASE=/var/afl/local                      # KEEP LOCAL — see gotcha below
+FW_STORAGE=s3
+FW_DATA_ROOT=s3://afl-cache                       # durable cache root → s3://afl-cache/cache/…
+FW_OSM_OUTPUT_BASE=s3://afl-cache/osm-output      # handler outputs (layers, networks, routes)
+FW_S3_ENDPOINT=http://<minio-host>:9000           # OMIT for real AWS S3
+FW_S3_ACCESS_KEY=minioadmin                        # or the standard AWS_ACCESS_KEY_ID
+FW_S3_SECRET_KEY=minioadmin                        # or AWS_SECRET_ACCESS_KEY
+# FW_S3_REGION=us-east-1                            # optional
+FW_OUTPUT_BASE=/var/afl/local                      # KEEP LOCAL — see gotcha below
 ```
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `AFL_STORAGE` | `s3` | Selects the backend (`local` \| `hdfs` \| `s3`). |
-| `AFL_DATA_ROOT` | `s3://afl-cache` | Durable cache root; the sidecar cache lives under `<root>/cache/<namespace>/`. |
-| `AFL_OSM_OUTPUT_BASE` | `s3://afl-cache/osm-output` | Where OSM handler outputs are written (so downstream step payloads carry `s3://`). |
-| `AFL_S3_ENDPOINT` | `http://localhost:9000` | Object-store endpoint. **Unset → real AWS S3.** |
-| `AFL_S3_ACCESS_KEY` / `AFL_S3_SECRET_KEY` | `minioadmin` | Credentials (or the standard `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` chain). |
-| `AFL_S3_REGION` | `us-east-1` | Region (default `us-east-1`). |
+| `FW_STORAGE` | `s3` | Selects the backend (`local` \| `hdfs` \| `s3`). |
+| `FW_DATA_ROOT` | `s3://afl-cache` | Durable cache root; the sidecar cache lives under `<root>/cache/<namespace>/`. |
+| `FW_OSM_OUTPUT_BASE` | `s3://afl-cache/osm-output` | Where OSM handler outputs are written (so downstream step payloads carry `s3://`). |
+| `FW_S3_ENDPOINT` | `http://localhost:9000` | Object-store endpoint. **Unset → real AWS S3.** |
+| `FW_S3_ACCESS_KEY` / `FW_S3_SECRET_KEY` | `minioadmin` | Credentials (or the standard `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` chain). |
+| `FW_S3_REGION` | `us-east-1` | Region (default `us-east-1`). |
 
-> **Gotcha — keep `AFL_OUTPUT_BASE` local.** Scratch/staging/temp must live on a local filesystem (you stage locally, then finalize onto the object store). The cache's `staging`/`tmp`/`locks` roots fall back to a local base automatically when `AFL_DATA_ROOT` is remote (override with `AFL_LOCAL_SCRATCH`), but `AFL_OUTPUT_BASE` also feeds the runtime's temp dir — point it at a **local** path, not an `s3://` URI. Put the durable artifacts on S3 via `AFL_DATA_ROOT` + `AFL_OSM_OUTPUT_BASE`.
+> **Gotcha — keep `FW_OUTPUT_BASE` local.** Scratch/staging/temp must live on a local filesystem (you stage locally, then finalize onto the object store). The cache's `staging`/`tmp`/`locks` roots fall back to a local base automatically when `FW_DATA_ROOT` is remote (override with `FW_LOCAL_SCRATCH`), but `FW_OUTPUT_BASE` also feeds the runtime's temp dir — point it at a **local** path, not an `s3://` URI. Put the durable artifacts on S3 via `FW_DATA_ROOT` + `FW_OSM_OUTPUT_BASE`.
 
 > **Symmetric storage — `localize()` is the read-side counterpart of `finalize_from_local()`.** Native tools (osmium, tippecanoe) only read and write local files, so an S3/MinIO *input* must be downloaded locally before the tool runs. `Storage.localize()` (read side) mirrors `finalize_from_local()` (write side): the input URI is localized into the warm cache, the tool runs against local files, and the complete output is finalized back to the object store. A backend that has one without the other can write to S3 but can't feed the next native step its input.
 
-> **Memory-heavy conversions — disk-backed osmium index + external staging.** A full-region PBF→GeoJSON conversion (`osm.Source.PBF.ToGeoJson`) runs `osmium export`, whose default in-RAM (`flex_mem`) node-location index grows unbounded and **OOM-kills** on large regions (a continent needs GBs just for the index) on a small VM. Use a disk-backed index on local scratch (`osmium export -i sparse_file_array,<scratch>`), overridable via **`AFL_OSMIUM_INDEX_TYPE`** (e.g. `flex_mem` for small regions where RAM is fine and speed matters). The GeoJSON staging *and* the `localize()` warm cache must sit on the external/scratch disk (`AFL_OUTPUT_BASE` / `AFL_LOCAL_SCRATCH`), **never** the internal Docker disk shared with mongodb — an ENOSPC there crashes mongo, turning a disk-full into a cluster outage. Tune concurrency against disk bandwidth + page cache (each disk index is multi-GB), not nominal CPU count: too many concurrent exports seek-thrash the single external disk; too few starve task execution because orchestration shares the pool.
+> **Memory-heavy conversions — disk-backed osmium index + external staging.** A full-region PBF→GeoJSON conversion (`osm.Source.PBF.ToGeoJson`) runs `osmium export`, whose default in-RAM (`flex_mem`) node-location index grows unbounded and **OOM-kills** on large regions (a continent needs GBs just for the index) on a small VM. Use a disk-backed index on local scratch (`osmium export -i sparse_file_array,<scratch>`), overridable via **`FW_OSMIUM_INDEX_TYPE`** (e.g. `flex_mem` for small regions where RAM is fine and speed matters). The GeoJSON staging *and* the `localize()` warm cache must sit on the external/scratch disk (`FW_OUTPUT_BASE` / `FW_LOCAL_SCRATCH`), **never** the internal Docker disk shared with mongodb — an ENOSPC there crashes mongo, turning a disk-full into a cluster outage. Tune concurrency against disk bandwidth + page cache (each disk index is multi-GB), not nominal CPU count: too many concurrent exports seek-thrash the single external disk; too few starve task execution because orchestration shares the pool.
 
 ### Migrating an existing local cache into MinIO
 
@@ -826,13 +826,13 @@ find /Volumes/afl_data/cache -type d -empty -delete
 ### Running S3 tests
 
 ```bash
-# Path-helper/dispatch tests always run; the live round-trip is gated on AFL_S3_ENDPOINT:
-AFL_S3_ENDPOINT=http://localhost:9000 \
-  AFL_S3_ACCESS_KEY=minioadmin AFL_S3_SECRET_KEY=minioadmin \
+# Path-helper/dispatch tests always run; the live round-trip is gated on FW_S3_ENDPOINT:
+FW_S3_ENDPOINT=http://localhost:9000 \
+  FW_S3_ACCESS_KEY=minioadmin FW_S3_SECRET_KEY=minioadmin \
   pytest tests/runtime/test_s3_storage.py -v
 ```
 
-Without `AFL_S3_ENDPOINT`, the live round-trip is skipped automatically.
+Without `FW_S3_ENDPOINT`, the live round-trip is skipped automatically.
 
 ## Jenkins CI/CD
 
@@ -917,7 +917,7 @@ When using the override file, the following environment variable is set automati
 
 | Variable | Value | Description |
 |----------|-------|-------------|
-| `AFL_POSTGIS_URL` | `postgresql://afl:afl@postgis:5432/afl_gis` | PostGIS connection string |
+| `FW_POSTGIS_URL` | `postgresql://afl:afl@postgis:5432/afl_gis` | PostGIS connection string |
 
 ### External Storage for PostGIS
 
@@ -1111,15 +1111,15 @@ Facetwork runners can be managed locally (single machine) or remotely (multi-hos
 ### Prerequisites for remote management
 
 1. **SSH access**: current user must be able to `ssh <hostname>` to every runner host without a password prompt (SSH agent or key-based auth)
-2. **Same repo layout**: the Facetwork repo must be checked out on every remote host at the same path (or set `AFL_REMOTE_PATH`)
-3. **MongoDB reachable**: every runner host must be able to reach the MongoDB instance specified by `AFL_MONGODB_URL`
-4. **Host inventory**: configure `AFL_RUNNER_HOSTS` in `.env` or pass `--host` flags
+2. **Same repo layout**: the Facetwork repo must be checked out on every remote host at the same path (or set `FW_REMOTE_PATH`)
+3. **MongoDB reachable**: every runner host must be able to reach the MongoDB instance specified by `FW_MONGODB_URL`
+4. **Host inventory**: configure `FW_RUNNER_HOSTS` in `.env` or pass `--host` flags
 
 ```bash
 # .env
-AFL_RUNNER_HOSTS=prod-runner-01 prod-runner-02 prod-runner-03
-AFL_REMOTE_PATH=/opt/facetwork    # optional, defaults to local repo root
-AFL_SSH_OPTS=-i ~/.ssh/deploy_key  # optional extra SSH flags
+FW_RUNNER_HOSTS=prod-runner-01 prod-runner-02 prod-runner-03
+FW_REMOTE_PATH=/opt/facetwork    # optional, defaults to local repo root
+FW_SSH_OPTS=-i ~/.ssh/deploy_key  # optional extra SSH flags
 ```
 
 ### Local runner lifecycle
@@ -1222,7 +1222,7 @@ docker exec afl-mongodb mongosh afl --eval "
 **Configuration:**
 - Reap interval: 60 seconds (hardcoded, `_reap_interval_ms`)
 - Down timeout: 5 minutes (`SERVER_DOWN_TIMEOUT_MS` in `afl/dashboard/helpers.py`, reused in `reap_orphaned_tasks()`)
-- Heartbeat interval: 10 seconds (configurable via `AFL_HEARTBEAT_INTERVAL_MS`)
+- Heartbeat interval: 10 seconds (configurable via `FW_HEARTBEAT_INTERVAL_MS`)
 
 ### Verifying runner state
 
@@ -1250,10 +1250,10 @@ The remote management scripts share a common helper library sourced after `_env.
 
 | Function | Purpose |
 |----------|---------|
-| `_afl_resolve_remote_env` | Resolves `AFL_RUNNER_HOSTS`, `AFL_REMOTE_PATH`, `AFL_SSH_OPTS` |
+| `_afl_resolve_remote_env` | Resolves `FW_RUNNER_HOSTS`, `FW_REMOTE_PATH`, `FW_SSH_OPTS` |
 | `_afl_ssh <host> <cmd>` | SSH wrapper with `BatchMode=yes`, `ConnectTimeout=5` |
 | `_afl_query_running_servers` | Queries MongoDB, outputs `server_name http_port uuid` per line |
 | `_afl_get_server_state <uuid>` | Returns current state of a server by UUID |
 | `_afl_poll_server_state <uuid> <state> <timeout>` | Polls until server reaches expected state |
 | `_afl_poll_new_server <host> <state> <timeout> [exclude...]` | Polls until a new server appears on hostname |
-| `_afl_resolve_hosts [hosts...]` | Resolves target hosts from args or `AFL_RUNNER_HOSTS` |
+| `_afl_resolve_hosts [hosts...]` | Resolves target hosts from args or `FW_RUNNER_HOSTS` |
