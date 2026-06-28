@@ -25,8 +25,6 @@ jobs:
             dockerfile: docker/Dockerfile.agent
           - image: seed
             dockerfile: docker/Dockerfile.seed
-          - image: noaa-weather
-            dockerfile: docker/Dockerfile.noaa-weather
           - image: mcp
             dockerfile: docker/Dockerfile.mcp
 
