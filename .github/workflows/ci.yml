@@ -36,7 +36,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest tests/ examples/ --cov=afl --cov-report=xml --cov-report=term-missing --cov-fail-under=85 -v
+          pytest tests/ examples/ --cov=facetwork --cov-report=xml --cov-report=term-missing --cov-fail-under=85 -v
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
@@ -124,7 +124,7 @@ jobs:
           pip install mypy types-requests
 
       - name: Run mypy
-        run: mypy afl/
+        run: mypy facetwork/
 
   test-go:
     runs-on: ubuntu-latest
@@ -138,7 +138,7 @@ jobs:
 
       - name: Run Go tests
         run: go test -v ./...
-        working-directory: agents/go/afl-agent
+        working-directory: agents/go/fw-agent
 
   test-typescript:
     runs-on: ubuntu-latest
@@ -152,11 +152,11 @@ jobs:
 
       - name: Install dependencies
         run: npm install
-        working-directory: agents/typescript/afl-agent
+        working-directory: agents/typescript/fw-agent
 
       - name: Run TypeScript tests
         run: npm test
-        working-directory: agents/typescript/afl-agent
+        working-directory: agents/typescript/fw-agent
 
   test-scala:
     runs-on: ubuntu-latest
@@ -178,7 +178,7 @@ jobs:
 
       - name: Run Scala tests
         run: sbt test
-        working-directory: agents/scala/afl-agent
+        working-directory: agents/scala/fw-agent
 
   test-java:
     runs-on: ubuntu-latest
@@ -193,4 +193,4 @@ jobs:
 
       - name: Run Java tests
         run: mvn test -B
-        working-directory: agents/java/afl-agent
+        working-directory: agents/java/fw-agent
