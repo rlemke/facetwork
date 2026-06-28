@@ -233,9 +233,7 @@ class TestRemoteRouting:
         fs = FileSystem(backend="s3", root="s3://bucket/cache")
         fake = MagicMock()
         fake.open.return_value.__enter__ = lambda s: s
-        with patch(
-            "facetwork.runtime.storage.get_storage_backend", return_value=fake
-        ) as gsb:
+        with patch("facetwork.runtime.storage.get_storage_backend", return_value=fake) as gsb:
             fs.exists("regions/ca.pbf")
         gsb.assert_called_with("s3://bucket/cache/regions/ca.pbf")
         fake.exists.assert_called_once_with("s3://bucket/cache/regions/ca.pbf")
@@ -243,8 +241,6 @@ class TestRemoteRouting:
     def test_uri_override_routes_to_hdfs(self):
         fs = FileSystem(backend="s3", root="s3://bucket/cache")
         fake = MagicMock()
-        with patch(
-            "facetwork.runtime.storage.get_storage_backend", return_value=fake
-        ) as gsb:
+        with patch("facetwork.runtime.storage.get_storage_backend", return_value=fake) as gsb:
             fs.getsize("hdfs://nn/user/afl/x")
         gsb.assert_called_with("hdfs://nn/user/afl/x")

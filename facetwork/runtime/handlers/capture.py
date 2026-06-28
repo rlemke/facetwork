@@ -114,11 +114,7 @@ class MixinCaptureBeginHandler(StateHandler):
         facet_def = self.context.get_facet_definition(self.step.facet_name)
         if not facet_def:
             return set()
-        return {
-            m.get("alias")
-            for m in (facet_def.get("mixins", []) or [])
-            if m.get("alias")
-        }
+        return {m.get("alias") for m in (facet_def.get("mixins", []) or []) if m.get("alias")}
 
     def _sub_steps_by_alias(self, aliases: set[str]) -> dict:
         """Return ``{alias: sub_step}`` for the parent's mixin sub-steps,
@@ -129,16 +125,10 @@ class MixinCaptureBeginHandler(StateHandler):
             if child.statement_name in aliases:
                 result[child.statement_name] = child
         for pending in self.context.changes.created_steps:
-            if (
-                pending.container_id == self.step.id
-                and pending.statement_name in aliases
-            ):
+            if pending.container_id == self.step.id and pending.statement_name in aliases:
                 result[pending.statement_name] = pending
         for pending in self.context.changes.updated_steps:
-            if (
-                pending.container_id == self.step.id
-                and pending.statement_name in aliases
-            ):
+            if pending.container_id == self.step.id and pending.statement_name in aliases:
                 result[pending.statement_name] = pending
         return result
 
@@ -275,9 +265,7 @@ class StatementCaptureBeginHandler(StateHandler):
         """Decide where a yield's params go and merge them there."""
         target = yield_step.facet_name or ""
         short = target.split(".")[-1]
-        parent_short = (
-            self.step.facet_name.split(".")[-1] if self.step.facet_name else None
-        )
+        parent_short = self.step.facet_name.split(".")[-1] if self.step.facet_name else None
 
         # Case 1: yield to the parent facet itself.
         if parent_short is not None and _names_match(target, self.step.facet_name):
@@ -327,9 +315,7 @@ class StatementCaptureBeginHandler(StateHandler):
                     steps[i] = pending_step
 
         yields = [
-            s
-            for s in steps
-            if s.object_type == ObjectType.YIELD_ASSIGNMENT and s.is_complete
+            s for s in steps if s.object_type == ObjectType.YIELD_ASSIGNMENT and s.is_complete
         ]
 
         # Recurse into sub-blocks (andWhen cases, nested andThen blocks)
@@ -374,9 +360,7 @@ class StatementCaptureBeginHandler(StateHandler):
             )
             self.step.attributes.set_return(name, merged_value, attr.type_hint)
 
-    def _merge_yield_into_mixin_substep(
-        self, yield_step: "StepDefinition", alias: str
-    ) -> None:
+    def _merge_yield_into_mixin_substep(self, yield_step: "StepDefinition", alias: str) -> None:
         """Merge a yield into the aliased mixin sub-step's returns.
 
         Looks up (or creates a working copy of) the persisted sub-step

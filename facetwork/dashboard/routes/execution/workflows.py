@@ -84,5 +84,3 @@ def _build_afl_snippet(ns: str, wf: dict) -> str:
         lines = [sig, body, close]
 
     return "\n".join(lines)
-
-

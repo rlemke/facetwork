@@ -2207,9 +2207,7 @@ class Evaluator:
                 # generate a fresh continuation — an O(N^2) storm that floods the
                 # runner pool and starves event execution (the foreach livelock).
                 try:
-                    already = self.persistence.get_pending_continuation_step_ids(
-                        workflow_id_val
-                    )
+                    already = self.persistence.get_pending_continuation_step_ids(workflow_id_val)
                     remaining_dirty -= already
                 except Exception:
                     logger.debug("continuation dedup query failed", exc_info=True)

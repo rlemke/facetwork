@@ -41,9 +41,7 @@ class WorkflowMixin(_MixinBase):
 
     def get_workflow(self, workflow_id: str) -> WorkflowDefinition | None:
         """Get a workflow by ID."""
-        return self._find_decoded(
-            self._db.workflows, {"uuid": workflow_id}, self._doc_to_workflow
-        )
+        return self._find_decoded(self._db.workflows, {"uuid": workflow_id}, self._doc_to_workflow)
 
     def get_workflow_by_name(self, name: str) -> WorkflowDefinition | None:
         """Get a workflow by name."""

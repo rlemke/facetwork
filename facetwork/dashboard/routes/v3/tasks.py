@@ -24,9 +24,13 @@ router = APIRouter(prefix="/v3")
 
 # task state → colour var (dot + pill)
 _DOT = {
-    "pending": "var(--st-warning)", "running": "var(--st-running)",
-    "completed": "var(--st-complete)", "failed": "var(--st-error)",
-    "dead_letter": "var(--st-error)", "canceled": "var(--muted)", "ignored": "var(--muted)",
+    "pending": "var(--st-warning)",
+    "running": "var(--st-running)",
+    "completed": "var(--st-complete)",
+    "failed": "var(--st-error)",
+    "dead_letter": "var(--st-error)",
+    "canceled": "var(--muted)",
+    "ignored": "var(--muted)",
 }
 _CAP = 500  # max rows rendered (these lists can be large)
 
@@ -65,7 +69,12 @@ def tasks_v3(
     if dispatchable:
         for t in shown:
             nm = getattr(t, "name", "") or ""
-            if t.state in ("pending", "running") and nm and not nm.startswith(("fw:execute", "fw:resume")) and nm not in dispatchable:
+            if (
+                t.state in ("pending", "running")
+                and nm
+                and not nm.startswith(("fw:execute", "fw:resume"))
+                and nm not in dispatchable
+            ):
                 unmatched.add(t.uuid)
 
     return request.app.state.templates.TemplateResponse(

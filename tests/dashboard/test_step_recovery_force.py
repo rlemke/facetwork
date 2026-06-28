@@ -173,9 +173,7 @@ class TestRetryBlockForce:
         assert task.state == TaskState.PENDING
 
         logs = store.get_step_logs_by_step(leaf.id)
-        assert any(
-            "Forcibly retried during block retry" in log.message for log in logs
-        )
+        assert any("Forcibly retried during block retry" in log.message for log in logs)
 
 
 # ----------------------------------------------------------------------------

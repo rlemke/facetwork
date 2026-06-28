@@ -318,9 +318,7 @@ class ExpressionEvaluator:
                 # precedence change doesn't reintroduce ambiguity.
                 mixin_step = None
                 if ctx.get_mixin_step_by_alias is not None:
-                    mixin_step = ctx.get_mixin_step_by_alias(
-                        value.step_id, segment
-                    )
+                    mixin_step = ctx.get_mixin_step_by_alias(value.step_id, segment)
                 if mixin_step is not None:
                     mixin_ref = StepReference(
                         step_id=str(mixin_step.id),
@@ -336,8 +334,7 @@ class ExpressionEvaluator:
                 else:
                     raise ReferenceError(
                         f"{base_path}.{segment}",
-                        f"Referenced step has no param, return, or "
-                        f"mixin alias '{segment}'",
+                        f"Referenced step has no param, return, or mixin alias '{segment}'",
                         ctx.step_id,
                     )
             elif isinstance(value, dict):

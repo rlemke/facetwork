@@ -56,9 +56,7 @@ def _fresh_context() -> MagicMock:
     context.get_workflow_root.return_value = None
     context._find_step.return_value = None
     context.changes.created_steps = []
-    context.changes.add_created_step.side_effect = (
-        lambda s: context.changes.created_steps.append(s)
-    )
+    context.changes.add_created_step.side_effect = lambda s: context.changes.created_steps.append(s)
     return context
 
 
@@ -90,16 +88,12 @@ class TestForeachFanOutConvergence:
 
         step_a = _foreach_block_step()
         ctx_a = _fresh_context()
-        BlockExecutionBeginHandler(step_a, ctx_a)._process_foreach(
-            _foreach_block_ast(values)
-        )
+        BlockExecutionBeginHandler(step_a, ctx_a)._process_foreach(_foreach_block_ast(values))
 
         # A second runner working the SAME persisted foreach block step.
         step_b = step_a.clone()
         ctx_b = _fresh_context()
-        BlockExecutionBeginHandler(step_b, ctx_b)._process_foreach(
-            _foreach_block_ast(values)
-        )
+        BlockExecutionBeginHandler(step_b, ctx_b)._process_foreach(_foreach_block_ast(values))
 
         ids_a = [s.id for s in ctx_a.changes.created_steps]
         ids_b = [s.id for s in ctx_b.changes.created_steps]
@@ -111,9 +105,7 @@ class TestForeachFanOutConvergence:
     def test_subblock_ids_match_dedup_index_key(self):
         step = _foreach_block_step()
         ctx = _fresh_context()
-        BlockExecutionBeginHandler(step, ctx)._process_foreach(
-            _foreach_block_ast(["x", "y"])
-        )
+        BlockExecutionBeginHandler(step, ctx)._process_foreach(_foreach_block_ast(["x", "y"]))
 
         created = ctx.changes.created_steps
         for i, sub in enumerate(created):
@@ -154,9 +146,7 @@ class TestStatementBlockConvergence:
         ctx = MagicMock()
         ctx.persistence.block_step_exists.return_value = False
         ctx.changes.created_steps = []
-        ctx.changes.add_created_step.side_effect = (
-            lambda s: ctx.changes.created_steps.append(s)
-        )
+        ctx.changes.add_created_step.side_effect = lambda s: ctx.changes.created_steps.append(s)
         return ctx
 
     def test_two_runners_produce_identical_block_ids(self):

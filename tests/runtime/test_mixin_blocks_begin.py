@@ -43,9 +43,7 @@ def _make_context(facet_def: dict | None) -> MagicMock:
     context.get_facet_definition.return_value = facet_def
     context.persistence.get_steps_by_container.return_value = []
     context.changes.created_steps = []
-    context.changes.add_created_step.side_effect = (
-        lambda s: context.changes.created_steps.append(s)
-    )
+    context.changes.add_created_step.side_effect = lambda s: context.changes.created_steps.append(s)
     return context
 
 

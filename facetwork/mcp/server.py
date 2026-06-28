@@ -432,7 +432,10 @@ def create_server(
                     "properties": {
                         "query": {"type": "string", "description": "Free-text query"},
                         "tags": {"type": "array", "items": {"type": "string"}},
-                        "facet": {"type": "string", "description": "Require this facet in facets_used"},
+                        "facet": {
+                            "type": "string",
+                            "description": "Require this facet in facets_used",
+                        },
                         "kind": {"type": "string", "description": "workflow | library"},
                     },
                 },
@@ -454,8 +457,10 @@ def create_server(
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "request": {"type": "string",
-                                    "description": "The natural-language request to satisfy."},
+                        "request": {
+                            "type": "string",
+                            "description": "The natural-language request to satisfy.",
+                        },
                         "kind": {"type": "string", "description": "workflow | library"},
                         "limit": {"type": "integer", "description": "Max candidates (default 5)."},
                     },
@@ -547,11 +552,20 @@ def create_server(
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "slug": {"type": "string", "description": "Stable id, e.g. 'geo.region-summary'"},
-                        "ffl_source": {"type": "string", "description": "The FFL (this entry's own source)"},
+                        "slug": {
+                            "type": "string",
+                            "description": "Stable id, e.g. 'geo.region-summary'",
+                        },
+                        "ffl_source": {
+                            "type": "string",
+                            "description": "The FFL (this entry's own source)",
+                        },
                         "kind": {"type": "string", "description": "workflow (default) | library"},
                         "title": {"type": "string"},
-                        "description": {"type": "string", "description": "What it does (for discovery)"},
+                        "description": {
+                            "type": "string",
+                            "description": "What it does (for discovery)",
+                        },
                         "tags": {"type": "array", "items": {"type": "string"}},
                         "entry_workflow": {
                             "type": "string",
@@ -562,7 +576,10 @@ def create_server(
                             "description": "Pinned library deps: [{slug, version?}]",
                             "items": {"type": "object"},
                         },
-                        "note": {"type": "string", "description": "Changelog note for this revision"},
+                        "note": {
+                            "type": "string",
+                            "description": "Changelog note for this revision",
+                        },
                         "summary": {
                             "type": "string",
                             "description": (
@@ -609,9 +626,15 @@ def create_server(
                     "type": "object",
                     "properties": {
                         "slug": {"type": "string"},
-                        "version": {"type": "integer", "description": "Defaults to latest published"},
+                        "version": {
+                            "type": "integer",
+                            "description": "Defaults to latest published",
+                        },
                         "inputs": {"type": "object", "description": "Workflow parameter values"},
-                        "allow_unpublished": {"type": "boolean", "description": "Attended run of a draft"},
+                        "allow_unpublished": {
+                            "type": "boolean",
+                            "description": "Attended run of a draft",
+                        },
                     },
                     "required": ["slug"],
                 },
@@ -933,8 +956,7 @@ def _tool_retry_step(
                 "success": False,
                 "error": "step_task_running",
                 "message": (
-                    "Step's task is currently RUNNING. "
-                    "Pass force=true to reset it anyway."
+                    "Step's task is currently RUNNING. Pass force=true to reset it anyway."
                 ),
                 "blockers": [
                     {
@@ -1547,12 +1569,14 @@ def _tool_capabilities(arguments: dict[str, Any], get_store: Any) -> list[TextCo
             effect=arguments.get("effect", ""),
             max_cost=arguments.get("max_cost", ""),
         )
-        return _catalog_text({
-            "corpus": corpus,
-            "indexed": len(caps),
-            "count": len(hits),
-            "capabilities": [c.to_dict() for c in hits],
-        })
+        return _catalog_text(
+            {
+                "corpus": corpus,
+                "indexed": len(caps),
+                "count": len(hits),
+                "capabilities": [c.to_dict() for c in hits],
+            }
+        )
     except Exception as e:
         return _catalog_text({"error": str(e)})
 

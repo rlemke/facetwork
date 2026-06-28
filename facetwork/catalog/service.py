@@ -243,9 +243,7 @@ class CatalogService:
         for entry in self._catalog.list_entries():
             if kind and entry.kind != kind:
                 continue
-            rev = self._resolve_revision(
-                entry.slug, None, prefer_published=not include_drafts
-            )
+            rev = self._resolve_revision(entry.slug, None, prefer_published=not include_drafts)
             if rev is None:
                 continue
             if facet and facet not in rev.facets_used:
@@ -641,8 +639,11 @@ class CatalogService:
             lib_rev = self.rematerialize(lib_rev)
             self._catalog.save_revision(lib_rev)
         wf_id = next(
-            (w.uuid for w in self._flows.get_workflows_by_flow(lib_rev.flow_id)
-             if w.name == rev.entry_workflow),
+            (
+                w.uuid
+                for w in self._flows.get_workflows_by_flow(lib_rev.flow_id)
+                if w.name == rev.entry_workflow
+            ),
             "",
         )
         out = copy.deepcopy(rev)
@@ -650,26 +651,20 @@ class CatalogService:
         out.workflow_id = wf_id
         out.is_valid = lib_rev.is_valid and bool(wf_id)
         if not wf_id:
-            out.warnings = [
-                f"workflow {rev.entry_workflow!r} not found in library {pin.slug}"
-            ]
+            out.warnings = [f"workflow {rev.entry_workflow!r} not found in library {pin.slug}"]
         return out
 
     # =====================================================================
     # internals
     # =====================================================================
 
-    def _resolve_deps(
-        self, depends_on: list[dict]
-    ) -> tuple[list[DependencyPin], list[str]]:
+    def _resolve_deps(self, depends_on: list[dict]) -> tuple[list[DependencyPin], list[str]]:
         """Pin each requested dependency to a concrete revision and gather the
         transitive FFL sources (deepest first, deduped by slug)."""
         direct: list[DependencyPin] = []
         for spec in depends_on:
             dep_slug = spec["slug"]
-            dep_rev = self._resolve_revision(
-                dep_slug, spec.get("version"), prefer_published=True
-            )
+            dep_rev = self._resolve_revision(dep_slug, spec.get("version"), prefer_published=True)
             if dep_rev is None:
                 raise CatalogError(f"dependency not found: {dep_slug} v{spec.get('version')}")
             direct.append(
@@ -708,8 +703,10 @@ class CatalogService:
 
     @staticmethod
     def _content_hash(ffl_source: str, pins: list[DependencyPin]) -> str:
-        key = ffl_source.strip() + "\n--deps--\n" + "\n".join(
-            f"{p.slug}:{p.content_hash}" for p in sorted(pins, key=lambda p: p.slug)
+        key = (
+            ffl_source.strip()
+            + "\n--deps--\n"
+            + "\n".join(f"{p.slug}:{p.content_hash}" for p in sorted(pins, key=lambda p: p.slug))
         )
         return "sha256:" + hashlib.sha256(key.encode("utf-8")).hexdigest()
 
@@ -857,9 +854,16 @@ class CatalogService:
         now = _now_ms()
         if entry is None:
             entry = CatalogEntry(
-                slug=slug, kind=kind, title=title, description=description, tags=tags,
-                teams=teams or [], latest_version=version, author=author,
-                created_at=now, updated_at=now,
+                slug=slug,
+                kind=kind,
+                title=title,
+                description=description,
+                tags=tags,
+                teams=teams or [],
+                latest_version=version,
+                author=author,
+                created_at=now,
+                updated_at=now,
             )
         else:
             if title:
@@ -924,16 +928,52 @@ class CatalogService:
 
 # Generic request words that carry no domain signal (so they don't inflate a
 # match). Domain verbs like "route"/"map"-as-noun stay — only true filler drops.
-_MATCH_STOPWORDS = frozenset({
-    "the", "a", "an", "of", "in", "on", "for", "to", "and", "or", "with", "by",
-    "me", "my", "is", "are", "that", "this", "show", "give", "get", "all", "any",
-    "please", "want", "need", "from", "at", "as", "it", "its",
-})
+_MATCH_STOPWORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "of",
+        "in",
+        "on",
+        "for",
+        "to",
+        "and",
+        "or",
+        "with",
+        "by",
+        "me",
+        "my",
+        "is",
+        "are",
+        "that",
+        "this",
+        "show",
+        "give",
+        "get",
+        "all",
+        "any",
+        "please",
+        "want",
+        "need",
+        "from",
+        "at",
+        "as",
+        "it",
+        "its",
+    }
+)
 
 # Field weights for intent matching — the authoring summary (recorded intent)
 # dominates, then title/tags, then description/slug, then the facets used.
-_MATCH_WEIGHTS = (("summary", 6), ("title", 5), ("tags", 4),
-                  ("description", 3), ("slug", 3), ("facets", 2))
+_MATCH_WEIGHTS = (
+    ("summary", 6),
+    ("title", 5),
+    ("tags", 4),
+    ("description", 3),
+    ("slug", 3),
+    ("facets", 2),
+)
 
 
 def _tokenize_request(text: str) -> list[str]:
@@ -945,7 +985,9 @@ def _tokenize_request(text: str) -> list[str]:
     return seen
 
 
-def _match_score(terms: list[str], entry: CatalogEntry, rev: CatalogRevision) -> tuple[int, set[str]]:
+def _match_score(
+    terms: list[str], entry: CatalogEntry, rev: CatalogRevision
+) -> tuple[int, set[str]]:
     """Weighted intent score + the set of request terms that hit any field."""
     text = {
         "summary": (rev.summary or "").lower(),

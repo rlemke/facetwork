@@ -233,9 +233,7 @@ class AgentPoller:
         """
         from .task_list_routing import namespaces_for
 
-        return sorted(
-            set(namespaces_for(self._handlers.keys())) | {self._config.task_list}
-        )
+        return sorted(set(namespaces_for(self._handlers.keys())) | {self._config.task_list})
 
     def update_step(self, step_id: str, partial_result: dict) -> None:
         """Update a step with partial results (for streaming handlers).

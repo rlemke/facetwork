@@ -40,9 +40,12 @@ router = APIRouter(prefix="/v3")
 
 # state → pill colour var, shared by the list rows and detail header
 _PILL = {
-    "running": "var(--st-running)", "created": "var(--st-running)",
-    "paused": "var(--st-paused)", "completed": "var(--st-complete)",
-    "failed": "var(--st-error)", "cancelled": "var(--st-error)",
+    "running": "var(--st-running)",
+    "created": "var(--st-running)",
+    "paused": "var(--st-paused)",
+    "completed": "var(--st-complete)",
+    "failed": "var(--st-error)",
+    "cancelled": "var(--st-error)",
 }
 
 
@@ -116,7 +119,10 @@ def workflow_new_v3(request: Request, store=Depends(get_store)):
             ns_map.setdefault(item["ns"], []).append(item)
 
     ns_groups = sorted(
-        ({"name": ns, "workflows": sorted(wfs, key=lambda w: w["name"])} for ns, wfs in ns_map.items()),
+        (
+            {"name": ns, "workflows": sorted(wfs, key=lambda w: w["name"])}
+            for ns, wfs in ns_map.items()
+        ),
         key=lambda g: str(g["name"]),
     )
     total = sum(len(g["workflows"]) for g in ns_groups)
@@ -146,9 +152,7 @@ def _build_nodes(dag, step_by_id: dict, server_of: dict, now_ms: int) -> list[di
     for n in dag.nodes:
         step = step_by_id.get(n.step_id)
         cat = categorize_step_state(n.state)
-        display = (
-            getattr(step, "display_name", "") if step else ""
-        ) or n.label
+        display = (getattr(step, "display_name", "") if step else "") or n.label
         facet = getattr(step, "facet_name", "") if step else ""
         start = getattr(step, "start_time", 0) if step else 0
         age_s = ((now_ms - start) / 1000) if start else 0
@@ -159,7 +163,7 @@ def _build_nodes(dag, step_by_id: dict, server_of: dict, now_ms: int) -> list[di
         if cat == "complete":
             sub = "complete"
         elif cat == "error":
-            sub = (str(error)[:24] if error else "error")
+            sub = str(error)[:24] if error else "error"
         elif cat == "running":
             sub = f"{_short_state(n.state)}" + (f" · {server}" if server else "")
         else:
@@ -227,8 +231,12 @@ def _compute_graph(runner, store) -> dict[str, Any]:
         for e in dag.edges:
             edges.append(
                 {
-                    "s": e.source_id, "t": e.target_id,
-                    "x1": e.x1, "y1": e.y1, "x2": e.x2, "y2": e.y2,
+                    "s": e.source_id,
+                    "t": e.target_id,
+                    "x1": e.x1,
+                    "y1": e.y1,
+                    "x2": e.x2,
+                    "y2": e.y2,
                     "live": node_cat.get(e.target_id) == "running",
                 }
             )
@@ -297,9 +305,7 @@ def workflow_detail_v3(
         "artifact_url": run_artifact,
         **graph,
     }
-    return request.app.state.templates.TemplateResponse(
-        request, "v3/workflows/detail.html", ctx
-    )
+    return request.app.state.templates.TemplateResponse(request, "v3/workflows/detail.html", ctx)
 
 
 @router.get("/workflows/{runner_id}/source")

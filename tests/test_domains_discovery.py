@@ -36,7 +36,9 @@ def _patch_entry_points(monkeypatch, by_group: dict):
 class TestEntryPointDiscovery:
     def test_loads_domains_from_new_group(self, tmp_path, monkeypatch):
         target = DomainPackage(
-            name="installed", ffl_dir=tmp_path, register_handlers=lambda r: None,
+            name="installed",
+            ffl_dir=tmp_path,
+            register_handlers=lambda r: None,
             source="entry_point",
         )
         _patch_entry_points(monkeypatch, {"facetwork.domains": [_FakeEP("installed", target)]})
@@ -46,7 +48,9 @@ class TestEntryPointDiscovery:
     def test_ignores_legacy_group(self, tmp_path, monkeypatch):
         """Clean break: a package still on facetwork.examples is NOT a domain."""
         legacy = DomainPackage(
-            name="oldpkg", ffl_dir=tmp_path, register_handlers=lambda r: None,
+            name="oldpkg",
+            ffl_dir=tmp_path,
+            register_handlers=lambda r: None,
             source="entry_point",
         )
         _patch_entry_points(monkeypatch, {"facetwork.examples": [_FakeEP("oldpkg", legacy)]})
@@ -62,7 +66,9 @@ class TestEntryPointDiscovery:
         d.mkdir(parents=True)
         (d / "__init__.py").write_text("def register_all_registry_handlers(r):\n    pass\n")
         installed = DomainPackage(
-            name="shared", ffl_dir=None, register_handlers=lambda r: None,
+            name="shared",
+            ffl_dir=None,
+            register_handlers=lambda r: None,
             source="entry_point",
         )
         _patch_entry_points(monkeypatch, {"facetwork.domains": [_FakeEP("shared", installed)]})

@@ -17,8 +17,7 @@ from pathlib import Path
 import pytest
 
 _FLEET_LIB = (
-    Path(__file__).resolve().parent.parent
-    / "scripts" / "lib" / "_helpers" / "_fleet_lib.py"
+    Path(__file__).resolve().parent.parent / "scripts" / "lib" / "_helpers" / "_fleet_lib.py"
 )
 
 
@@ -33,6 +32,7 @@ fl = _load()
 
 
 # --- role_in_group ---------------------------------------------------------
+
 
 def test_role_with_no_groups_runs_everywhere():
     # The backward-compatible default: a fleet that never sets server_groups
@@ -73,6 +73,7 @@ def test_gate_end_to_end_for_a_host():
 
 
 # --- parse_role_groups -----------------------------------------------------
+
 
 def test_parse_role_groups_basic():
     assert fl.parse_role_groups("osm-geocoder:heavy,gpu") == ("osm-geocoder", ["heavy", "gpu"])

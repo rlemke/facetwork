@@ -256,5 +256,3 @@ class TestTableRendering:
         assert ">Handlers<" in html
         assert ">Active tasks<" in html
         assert ">Last ping<" in html
-
-

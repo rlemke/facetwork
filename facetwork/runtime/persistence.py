@@ -252,9 +252,7 @@ class PersistenceAPI(Protocol):
                 result.add(t.step_id)
         return result
 
-    def delete_pending_continuations_for_step(
-        self, step_id: str, except_task_id: str = ""
-    ) -> int:
+    def delete_pending_continuations_for_step(self, step_id: str, except_task_id: str = "") -> int:
         """Delete PENDING continuation tasks for ``step_id`` other than
         ``except_task_id`` and return how many were removed.
 

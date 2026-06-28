@@ -44,11 +44,11 @@ class FacetParam:
 class FacetCapability:
     """A single facet's capability record."""
 
-    qualified_name: str          # e.g. "osm.Spatial.WithinDistance"
-    name: str                    # e.g. "WithinDistance"
-    namespace: str               # e.g. "osm.Spatial" ("" for top-level)
-    purpose: str                 # first line of the doc comment
-    doc: str                     # full doc-comment description
+    qualified_name: str  # e.g. "osm.Spatial.WithinDistance"
+    name: str  # e.g. "WithinDistance"
+    namespace: str  # e.g. "osm.Spatial" ("" for top-level)
+    purpose: str  # first line of the doc comment
+    doc: str  # full doc-comment description
     is_event: bool
     params: list[FacetParam] = field(default_factory=list)
     returns: list[FacetParam] = field(default_factory=list)
@@ -56,10 +56,10 @@ class FacetCapability:
     # Effect/cost annotations (from `with Effect(kind=…)` / `with Cost(tier=…)`
     # mixins, or inferred from `with Timeout(minutes=…)`); "" when unknown. Let the
     # composer prefer pure/cheap primitives and know which steps hit an engine.
-    effect: str = ""             # "" | "pure" | "external" | "io"
-    cost: str = ""               # "" | "free" | "cheap" | "moderate" | "expensive"
+    effect: str = ""  # "" | "pure" | "external" | "io"
+    cost: str = ""  # "" | "free" | "cheap" | "moderate" | "expensive"
     # Ownership annotations (from `with Author(email=…)` / `with Teams(names=[…])`).
-    author: str = ""             # author email; "" when unknown
+    author: str = ""  # author email; "" when unknown
     teams: list[str] = field(default_factory=list)  # teams this facet/flow belongs to
 
     def to_dict(self) -> dict[str, Any]:
@@ -109,11 +109,13 @@ def _params(raw: list[dict] | None) -> list[FacetParam]:
     for p in raw or []:
         if not isinstance(p, dict):
             continue
-        out.append(FacetParam(
-            name=p.get("name", ""),
-            type=_type_to_str(p.get("type")),
-            has_default="default" in p and p.get("default") is not None,
-        ))
+        out.append(
+            FacetParam(
+                name=p.get("name", ""),
+                type=_type_to_str(p.get("type")),
+                has_default="default" in p and p.get("default") is not None,
+            )
+        )
     return out
 
 
@@ -218,7 +220,9 @@ def _annotations(mixins_raw: list | None) -> tuple[list[str], str, str]:
 def _facet_capability(decl: dict, namespace: str) -> FacetCapability:
     name = decl.get("name", "")
     qualified = f"{namespace}.{name}" if namespace else name
-    doc = (decl.get("doc") or {}).get("description", "") if isinstance(decl.get("doc"), dict) else ""
+    doc = (
+        (decl.get("doc") or {}).get("description", "") if isinstance(decl.get("doc"), dict) else ""
+    )
     mixins, effect, cost = _annotations(decl.get("mixins"))
     author, teams = author_and_teams(decl.get("mixins"))
     return FacetCapability(
@@ -334,7 +338,11 @@ def search(
             continue
         if eff and cap.effect.lower() != eff:
             continue
-        if cost_ceiling is not None and cap.cost and COST_ORDER.get(cap.cost.lower(), 99) > cost_ceiling:
+        if (
+            cost_ceiling is not None
+            and cap.cost
+            and COST_ORDER.get(cap.cost.lower(), 99) > cost_ceiling
+        ):
             continue
         if terms:
             score = _score(cap, terms)

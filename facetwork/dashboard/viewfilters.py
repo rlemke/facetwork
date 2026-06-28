@@ -238,9 +238,7 @@ def runner_matches(runner, f: dict[str, Any]) -> bool:
 
 def build_options(store) -> dict[str, Any]:
     """Gather the selectable values for the filter page from live data."""
-    flows = [
-        f for f in store.get_all_flows() if getattr(f.name, "path", "") != "cli:submit"
-    ]
+    flows = [f for f in store.get_all_flows() if getattr(f.name, "path", "") != "cli:submit"]
     runners = store.get_all_runners(limit=1000)
 
     team_names: set[str] = {t.name for t in store.list_teams()}

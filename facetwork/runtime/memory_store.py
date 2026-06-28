@@ -146,9 +146,7 @@ class MemoryStore(PersistenceAPI):
             self._tasks.pop(tid)
         return len(to_remove)
 
-    def delete_pending_continuations_for_step(
-        self, step_id: str, except_task_id: str = ""
-    ) -> int:
+    def delete_pending_continuations_for_step(self, step_id: str, except_task_id: str = "") -> int:
         """Delete PENDING continuation tasks for ``step_id`` except the given one
         (claim-time continuation coalescing). See the base-class docstring."""
         from .continuation import CONTINUATION_TASK_NAME
@@ -442,11 +440,7 @@ class MemoryStore(PersistenceAPI):
         """Atomically claim a pending task matching one of the given names."""
         with self._claim_lock:
             names_set = set(task_names)
-            tl_set = (
-                set(task_list)
-                if isinstance(task_list, (list, tuple, set))
-                else {task_list}
-            )
+            tl_set = set(task_list) if isinstance(task_list, (list, tuple, set)) else {task_list}
             for task in self._tasks.values():
                 now = _current_time_ms()
                 if (

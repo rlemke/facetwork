@@ -26,6 +26,7 @@ ADDER = """namespace claude.demo {
     }
 }"""
 
+
 @pytest.fixture
 def client():
     from facetwork.dashboard import dependencies as deps
@@ -126,5 +127,3 @@ def test_publish_via_button_then_visible(client):
     _seed(store, publish=True)
     body = tc.get("/v3/catalog/demo.adder").text
     assert "published" in body
-
-

@@ -315,9 +315,7 @@ class RegistryRunner:
         """
         from .task_list_routing import namespaces_for
 
-        return sorted(
-            set(namespaces_for(self._registered_names)) | {self._config.task_list}
-        )
+        return sorted(set(namespaces_for(self._registered_names)) | {self._config.task_list})
 
     def poll_once(self) -> int:
         """Run a single poll cycle (synchronous, for testing).

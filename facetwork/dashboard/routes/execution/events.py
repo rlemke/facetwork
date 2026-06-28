@@ -38,5 +38,3 @@ def _count_events_by_state(store) -> dict[str, int]:
         if s in counts:
             counts[s] += 1
     return counts
-
-

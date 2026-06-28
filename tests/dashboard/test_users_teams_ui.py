@@ -70,8 +70,13 @@ def _seed_flow(store):
     )
     store.save_flow(flow)
     wf = WorkflowDefinition(
-        uuid=wf_id, name="app.OwnedWF", namespace_id="app", facet_id=wf_id,
-        flow_id=flow_id, starting_step="", version="1.0",
+        uuid=wf_id,
+        name="app.OwnedWF",
+        namespace_id="app",
+        facet_id=wf_id,
+        flow_id=flow_id,
+        starting_step="",
+        version="1.0",
     )
     store.save_workflow(wf)
     return flow, wf
@@ -104,8 +109,9 @@ def test_create_and_soft_delete_user(client):
 
 def test_force_delete_user(client):
     tc, store = client
-    tc.post("/v3/users", data={"email": "ada@example.com", "first_name": "Ada"},
-            follow_redirects=False)
+    tc.post(
+        "/v3/users", data={"email": "ada@example.com", "first_name": "Ada"}, follow_redirects=False
+    )
     tc.post("/v3/users/ada@example.com/force-delete", follow_redirects=False)
     assert store.get_user("ada@example.com") is None
 
@@ -115,10 +121,14 @@ def test_force_delete_user(client):
 
 def test_act_as_sets_cookie(client):
     tc, store = client
-    tc.post("/v3/users", data={"email": "ada@example.com", "first_name": "Ada"},
-            follow_redirects=False)
-    r = tc.post("/v3/users/act-as", data={"email": "ada@example.com", "next": "/v3/users"},
-                follow_redirects=False)
+    tc.post(
+        "/v3/users", data={"email": "ada@example.com", "first_name": "Ada"}, follow_redirects=False
+    )
+    r = tc.post(
+        "/v3/users/act-as",
+        data={"email": "ada@example.com", "next": "/v3/users"},
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     # Starlette quotes the "@" in the cookie value; just assert it carries the email.
     assert "ada@example.com" in tc.cookies.get("afl_current_user", "")
@@ -129,8 +139,9 @@ def test_act_as_sets_cookie(client):
 
 def test_create_team_with_members(client):
     tc, store = client
-    tc.post("/v3/users", data={"email": "ada@example.com", "first_name": "Ada"},
-            follow_redirects=False)
+    tc.post(
+        "/v3/users", data={"email": "ada@example.com", "first_name": "Ada"}, follow_redirects=False
+    )
     r = tc.post(
         "/v3/teams",
         data={"name": "geo", "description": "Geospatial", "members": ["ada@example.com"]},
@@ -166,8 +177,9 @@ def test_run_execute_tags_run_with_user_author_purpose_teams(client):
     store.save_user(_user("ada@example.com", "Ada"))
     flow, wf = _seed_flow(store)
     # Act as Ada, then run with purpose=test and team geo
-    tc.post("/v3/users/act-as", data={"email": "ada@example.com", "next": "/"},
-            follow_redirects=False)
+    tc.post(
+        "/v3/users/act-as", data={"email": "ada@example.com", "next": "/"}, follow_redirects=False
+    )
     r = tc.post(
         f"/v3/flows/{flow.uuid}/run/{wf.uuid}",
         data={"inputs_json": json.dumps({"x": 5}), "purpose": "test", "teams": ["geo"]},
@@ -177,8 +189,8 @@ def test_run_execute_tags_run_with_user_author_purpose_teams(client):
     runners = list(store.get_all_runners())
     assert len(runners) == 1
     run = runners[0]
-    assert run.user.email == "ada@example.com"           # started_by = acting user
-    assert run.author.email == "ada@example.com"          # from the Author mixin
+    assert run.user.email == "ada@example.com"  # started_by = acting user
+    assert run.author.email == "ada@example.com"  # from the Author mixin
     assert run.purpose == "test"
     assert run.teams == ["geo"]
 

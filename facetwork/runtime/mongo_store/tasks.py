@@ -75,9 +75,7 @@ class TaskMixin(_MixinBase):
             > 0
         )
 
-    def delete_pending_continuations_for_step(
-        self, step_id: str, except_task_id: str = ""
-    ) -> int:
+    def delete_pending_continuations_for_step(self, step_id: str, except_task_id: str = "") -> int:
         """Delete PENDING continuation tasks for ``step_id`` except the given one
         (claim-time continuation coalescing). See the base-class docstring."""
         from ..continuation import CONTINUATION_TASK_NAME
@@ -148,9 +146,7 @@ class TaskMixin(_MixinBase):
         # A runner may poll several lists at once (the namespaces of its
         # handlers) — match any of them.
         tl_filter: Any = (
-            {"$in": list(task_list)}
-            if isinstance(task_list, (list, tuple, set))
-            else task_list
+            {"$in": list(task_list)} if isinstance(task_list, (list, tuple, set)) else task_list
         )
         update: dict[str, Any] = {
             "state": "running",

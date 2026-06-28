@@ -389,7 +389,7 @@ def _domain_role_task_lists() -> dict[str, str]:
         out[name] = tl
         svc = spec.get("service") or ""
         if svc.startswith("runner-"):
-            out[svc[len("runner-"):]] = tl
+            out[svc[len("runner-") :]] = tl
     return out
 
 
@@ -430,13 +430,15 @@ def _fleet_controller_data(store) -> dict:
             link = "/v3/handlers?ns=osm"
         else:
             link = f"/v3/servers?group={name}"
-        roles.append({
-            "name": name,
-            "replicas": spec.get("replicas", "—"),
-            "image": spec.get("image") or "—",
-            "task_list": tl or "—",
-            "link": link,
-        })
+        roles.append(
+            {
+                "name": name,
+                "replicas": spec.get("replicas", "—"),
+                "image": spec.get("image") or "—",
+                "task_list": tl or "—",
+                "link": link,
+            }
+        )
     agents = []
     for a in db.fleet_agents.find({}):
         av = a.get("applied_version")
@@ -461,5 +463,3 @@ def _fleet_controller_data(store) -> dict:
         },
         "agents": agents,
     }
-
-

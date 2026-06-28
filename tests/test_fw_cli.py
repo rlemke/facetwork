@@ -34,7 +34,15 @@ FW = os.path.join(REPO_ROOT, "fw")
 LIB = os.path.join(REPO_ROOT, "scripts", "lib")
 
 EXPECTED_GROUPS = [
-    "install", "single", "db", "runner", "fleet", "ffl", "maint", "svc", "util",
+    "install",
+    "single",
+    "db",
+    "runner",
+    "fleet",
+    "ffl",
+    "maint",
+    "svc",
+    "util",
 ]
 
 pytestmark = pytest.mark.skipif(
@@ -44,9 +52,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def _run(*args, **kw):
-    return subprocess.run(
-        ["bash", FW, *args], cwd=REPO_ROOT, capture_output=True, text=True, **kw
-    )
+    return subprocess.run(["bash", FW, *args], cwd=REPO_ROOT, capture_output=True, text=True, **kw)
 
 
 def _command_files():
@@ -158,9 +164,7 @@ def test_all_command_files_parse():
 
 def test_every_command_is_executable():
     not_exec = [
-        os.path.relpath(p, REPO_ROOT)
-        for p in _command_files()
-        if not os.access(p, os.X_OK)
+        os.path.relpath(p, REPO_ROOT) for p in _command_files() if not os.access(p, os.X_OK)
     ]
     assert not not_exec, f"command files missing +x: {not_exec}"
 
@@ -169,9 +173,7 @@ def test_every_command_has_shebang():
     """`fw` exec()s each command, so a file without a shebang can't run even with
     +x (this is exactly how the cache-index regression manifested)."""
     no_shebang = [
-        os.path.relpath(p, REPO_ROOT)
-        for p in _command_files()
-        if not _shebang(p).startswith(b"#!")
+        os.path.relpath(p, REPO_ROOT) for p in _command_files() if not _shebang(p).startswith(b"#!")
     ]
     assert not no_shebang, f"command files missing a shebang: {no_shebang}"
 
@@ -181,9 +183,7 @@ def test_python_command_files_compile():
 
     bad = []
     for f in _python_command_files():
-        r = subprocess.run(
-            [sys.executable, "-m", "py_compile", f], capture_output=True, text=True
-        )
+        r = subprocess.run([sys.executable, "-m", "py_compile", f], capture_output=True, text=True)
         if r.returncode != 0:
             bad.append(f"{os.path.relpath(f, REPO_ROOT)}: {r.stderr.strip()}")
     assert not bad, "python command files with syntax errors:\n" + "\n".join(bad)

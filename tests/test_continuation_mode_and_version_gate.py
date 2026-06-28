@@ -17,6 +17,7 @@ from facetwork.runtime.types import (
 
 # --- Step 1: continuation mode -------------------------------------------------
 
+
 def test_default_mode_is_inline_and_matches_today():
     c = BaseRunnerConfig()
     assert c.continuation_mode == "inline"
@@ -57,6 +58,7 @@ def test_blank_env_defaults_to_inline(monkeypatch):
 
 
 # --- Step 2: runtime-version gate ---------------------------------------------
+
 
 def test_versioninfo_default_uses_constant():
     assert VersionInfo().runtime_version == STEP_RUNTIME_VERSION

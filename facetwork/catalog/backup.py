@@ -112,9 +112,7 @@ def restore(data: dict, service: Any, *, rematerialize: bool = True) -> dict:
     # All revisions are now in the store, so pinned deps resolve regardless of
     # order; rebuild dependency-free revisions (libraries) first so thin
     # per-workflow entries reuse the library's freshly-built shared flow.
-    revision_docs = sorted(
-        data.get("revisions", []), key=lambda rd: len(rd.get("depends_on", []))
-    )
+    revision_docs = sorted(data.get("revisions", []), key=lambda rd: len(rd.get("depends_on", [])))
     for rd in revision_docs:
         rev = catalog.get_revision(rd["revision_id"])
         rebuilt = service.rematerialize(rev)
@@ -246,8 +244,10 @@ def import_package(
     program = flow.compiled_ast if flow else {}
     all_names = [w.name for w in wf_defs]
     lib_pin = DependencyPin(
-        slug=lib, revision_id=lib_rev.revision_id,
-        version=lib_rev.version, content_hash=lib_rev.content_hash,
+        slug=lib,
+        revision_id=lib_rev.revision_id,
+        version=lib_rev.version,
+        content_hash=lib_rev.content_hash,
     )
     status = STATUS_PUBLISHED if (publish and lib_rev.is_valid) else STATUS_DRAFT
     now = int(time.time() * 1000)
@@ -257,9 +257,9 @@ def import_package(
         wf_name = w.name
         slug = f"{prefix}{wf_name}" if prefix else wf_name
         wf_ast = service._find_wf(program, wf_name)
-        content_hash = "sha256:" + hashlib.sha256(
-            f"{wf_name}@{lib_rev.content_hash}".encode()
-        ).hexdigest()
+        content_hash = (
+            "sha256:" + hashlib.sha256(f"{wf_name}@{lib_rev.content_hash}".encode()).hexdigest()
+        )
         # Idempotent re-import: reuse the existing v1 revision_id for this slug.
         existing = service._catalog.get_revision_by_version(slug, 1)
         rev = CatalogRevision(

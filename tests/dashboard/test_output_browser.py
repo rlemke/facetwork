@@ -237,7 +237,7 @@ class TestOutputRoutes:
         resp = client.get("/v3/output?path=maps")
         assert resp.status_code == 200
         # The file entry should link to the (kept) /output/view endpoint
-        assert '/output/view?path=maps' in resp.text
+        assert "/output/view?path=maps" in resp.text
         assert "alabama.html" in resp.text
 
     def test_json_file_name_is_link(self, client, output_dir):

@@ -49,10 +49,10 @@ def test_artifact_url_cross_mount(out_root):
 
 def test_artifact_url_rejects_non_html_and_missing(out_root):
     tmp_path, bundle = out_root
-    assert out.artifact_url(str(bundle / "change.tif")) is None      # wrong suffix
-    assert out.artifact_url(str(bundle / "nope.html")) is None       # missing file
-    assert out.artifact_url(12345) is None                           # non-string
-    assert out.artifact_url("relative/x.html") is None               # not under a root
+    assert out.artifact_url(str(bundle / "change.tif")) is None  # wrong suffix
+    assert out.artifact_url(str(bundle / "nope.html")) is None  # missing file
+    assert out.artifact_url(12345) is None  # non-string
+    assert out.artifact_url("relative/x.html") is None  # not under a root
 
 
 def test_raw_serves_html_and_assets(out_root):
@@ -89,8 +89,7 @@ def fake_s3(monkeypatch):
         def open(self, uri, mode="rb"):
             return io.BytesIO(files[uri])
 
-    monkeypatch.setattr("facetwork.runtime.storage.get_storage_backend",
-                        lambda path=None: FakeBE())
+    monkeypatch.setattr("facetwork.runtime.storage.get_storage_backend", lambda path=None: FakeBE())
     return files
 
 

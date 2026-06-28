@@ -198,7 +198,5 @@ def test_corpus_roundtrip(path, wf_name):
     recompiled = _compile(ffl)
 
     # 2. The workflow's structure survives the round-trip.
-    rebuilt = next(
-        w for w in find_all_workflows(recompiled) if w["name"] == wf_name
-    )
+    rebuilt = next(w for w in find_all_workflows(recompiled) if w["name"] == wf_name)
     assert _norm(wf) == _norm(rebuilt)

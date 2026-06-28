@@ -81,9 +81,7 @@ def detect_missing_facets(
 
     needed = _entry_event_facets(program_dict, entry_workflow)
     short = {r.rsplit(".", 1)[-1] for r in registered}
-    return sorted(
-        q for q in needed if q not in registered and q.rsplit(".", 1)[-1] not in short
-    )
+    return sorted(q for q in needed if q not in registered and q.rsplit(".", 1)[-1] not in short)
 
 
 # ---------------------------------------------------------------------------

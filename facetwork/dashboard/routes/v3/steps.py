@@ -24,8 +24,10 @@ from ...helpers import categorize_step_state
 router = APIRouter(prefix="/v3")
 
 _CAT_COLOR = {
-    "complete": "var(--st-complete)", "error": "var(--st-error)",
-    "running": "var(--st-running)", "other": "var(--muted)",
+    "complete": "var(--st-complete)",
+    "error": "var(--st-error)",
+    "running": "var(--st-running)",
+    "other": "var(--muted)",
 }
 
 

@@ -52,9 +52,7 @@ def migrate_seed_prefix(store, *, apply: bool = False, names=None) -> dict:
             db.flows.delete_many({"name.path": old})
         else:
             db.flows.update_many({"name.path": old}, {"$set": {"name.path": new}})
-            db.workflows.update_many(
-                {"namespace_id": old}, {"$set": {"namespace_id": new}}
-            )
+            db.workflows.update_many({"namespace_id": old}, {"$set": {"namespace_id": new}})
     return {"flows": flows, "workflows": workflows, "names": migrated_names}
 
 

@@ -23,9 +23,7 @@ try:
 except ImportError:
     MONGOMOCK_AVAILABLE = False
 
-needs_mongomock = pytest.mark.skipif(
-    not MONGOMOCK_AVAILABLE, reason="mongomock not installed"
-)
+needs_mongomock = pytest.mark.skipif(not MONGOMOCK_AVAILABLE, reason="mongomock not installed")
 
 
 @pytest.fixture
@@ -84,9 +82,7 @@ class TestRepairResetMixinSubStep:
         step_by_id = {parent.id: parent, mixin_sub.id: mixin_sub}
         ancestors_reset: list[str] = []
 
-        store._reset_failed_step_and_ancestors(
-            mixin_sub, step_by_id, ancestors_reset
-        )
+        store._reset_failed_step_and_ancestors(mixin_sub, step_by_id, ancestors_reset)
 
         reloaded = store.get_step(mixin_sub.id)
         assert reloaded.state == StepState.CREATED
@@ -99,9 +95,7 @@ class TestRepairResetMixinSubStep:
         step_by_id = {parent.id: parent, mixin_sub.id: mixin_sub}
         ancestors_reset: list[str] = []
 
-        store._reset_failed_step_and_ancestors(
-            mixin_sub, step_by_id, ancestors_reset
-        )
+        store._reset_failed_step_and_ancestors(mixin_sub, step_by_id, ancestors_reset)
 
         reloaded_parent = store.get_step(parent.id)
         assert reloaded_parent.state == StepState.MIXIN_BLOCKS_CONTINUE, (
@@ -160,8 +154,9 @@ class TestRepairResetContainerStepNotEventTransmit:
         # matches a transient pattern, so the transient-retry loop picks
         # it up.
         wf.mark_error(
-            RuntimeError("Block has 2 errored step(s): [Errno 2] "
-                         "No such file or directory: 'tippecanoe'")
+            RuntimeError(
+                "Block has 2 errored step(s): [Errno 2] No such file or directory: 'tippecanoe'"
+            )
         )
         store.save_step(wf)
 

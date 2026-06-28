@@ -968,9 +968,7 @@ class TestServerOperations:
         # running, 25 min stale -> past live window -> PRUNED (truly dead)
         mongo_store.save_server(_srv("live-dead", ServerState.RUNNING, 25 * min2))
 
-        deleted = mongo_store.prune_stale_servers(
-            older_than_ms=min20, terminal_older_than_ms=min2
-        )
+        deleted = mongo_store.prune_stale_servers(older_than_ms=min20, terminal_older_than_ms=min2)
 
         assert deleted == 2
         remaining = {s.uuid for s in mongo_store.get_all_servers()}

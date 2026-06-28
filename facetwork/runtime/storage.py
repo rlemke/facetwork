@@ -415,7 +415,9 @@ class _S3WriteStream:
         import mimetypes
 
         body = self._buffer.getvalue()
-        logger.info("S3 upload: s3://%s/%s (%.1f MB)", self._bucket, self._key, len(body) / 1_048_576)
+        logger.info(
+            "S3 upload: s3://%s/%s (%.1f MB)", self._bucket, self._key, len(body) / 1_048_576
+        )
         # Set Content-Type from the key's extension so objects are served
         # correctly when fetched over HTTP (e.g. a presigned/public URL): an
         # .html map renders in the browser instead of downloading as
@@ -425,9 +427,7 @@ class _S3WriteStream:
         if self._key.endswith(".geojson"):
             content_type = "application/geo+json"
         extra = {"ContentType": content_type} if content_type else {}
-        self._backend._client.put_object(
-            Bucket=self._bucket, Key=self._key, Body=body, **extra
-        )
+        self._backend._client.put_object(Bucket=self._bucket, Key=self._key, Body=body, **extra)
 
     def __enter__(self):
         return self
@@ -527,9 +527,9 @@ class S3StorageBackend:
             Bucket=bucket, Prefix=prefix, Delimiter="/"
         ):
             for cp in page.get("CommonPrefixes", []):
-                names.add(cp["Prefix"][len(prefix):].rstrip("/"))
+                names.add(cp["Prefix"][len(prefix) :].rstrip("/"))
             for obj in page.get("Contents", []):
-                name = obj["Key"][len(prefix):]
+                name = obj["Key"][len(prefix) :]
                 if name:
                     names.add(name)
         return sorted(names)
@@ -542,9 +542,11 @@ class S3StorageBackend:
 
         dirs: dict[str, set[str]] = defaultdict(set)
         files: dict[str, list[str]] = defaultdict(list)
-        for page in self._client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        for page in self._client.get_paginator("list_objects_v2").paginate(
+            Bucket=bucket, Prefix=prefix
+        ):
             for obj in page.get("Contents", []):
-                rel = obj["Key"][len(prefix):]
+                rel = obj["Key"][len(prefix) :]
                 parts = rel.split("/")
                 cur = root
                 for i, part in enumerate(parts):
@@ -567,7 +569,9 @@ class S3StorageBackend:
         bucket, key = self._split(path)
         prefix = key.rstrip("/") + "/"
         batch: list[dict] = []
-        for page in self._client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        for page in self._client.get_paginator("list_objects_v2").paginate(
+            Bucket=bucket, Prefix=prefix
+        ):
             for obj in page.get("Contents", []):
                 batch.append({"Key": obj["Key"]})
                 if len(batch) == 1000:

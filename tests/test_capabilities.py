@@ -45,8 +45,10 @@ def test_captures_purpose_params_returns_namespace_kind():
     assert wd.is_event is True
     assert wd.purpose == "Keeps subject features within distance of any reference feature."
     assert [(p.name, p.type) for p in wd.params] == [
-        ("subject_path", "String"), ("reference_path", "String"),
-        ("distance", "Double"), ("unit", "String"),
+        ("subject_path", "String"),
+        ("reference_path", "String"),
+        ("distance", "Double"),
+        ("unit", "String"),
     ]
     # the unit param has a default
     assert next(p for p in wd.params if p.name == "unit").has_default is True
@@ -123,20 +125,20 @@ def test_effect_cost_parsed_from_mixins():
 
 def test_cost_inferred_from_timeout():
     scan = next(c for c in _annot() if c.name == "ScanOp")
-    assert scan.cost == "expensive"          # 120 min -> expensive
+    assert scan.cost == "expensive"  # 120 min -> expensive
     assert "Timeout" in scan.mixins
 
 
 def test_search_effect_filter_excludes_unannotated():
     caps = _annot()
     pure = {c.name for c in search(caps, effect="pure")}
-    assert pure == {"PureOp"}                # PlainOp (unknown effect) excluded
+    assert pure == {"PureOp"}  # PlainOp (unknown effect) excluded
     assert {c.name for c in search(caps, effect="external")} == {"ExternalOp"}
 
 
 def test_search_max_cost_keeps_cheap_and_unknown_drops_expensive():
     caps = _annot()
     names = {c.name for c in search(caps, max_cost="cheap")}
-    assert "PureOp" in names                 # cheap <= cheap
-    assert "ScanOp" not in names             # expensive > cheap -> dropped
-    assert "PlainOp" in names                # unknown cost passes the ceiling
+    assert "PureOp" in names  # cheap <= cheap
+    assert "ScanOp" not in names  # expensive > cheap -> dropped
+    assert "PlainOp" in names  # unknown cost passes the ceiling
