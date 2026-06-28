@@ -12,9 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""AFL (Facetwork Flow Language) compiler package."""
+"""Facetwork (FFL — Facetwork Flow Language) compiler + runtime package."""
 
-from .ast import (
+# Normalize the AFL_* -> FW_* env-var prefixes before any submodule reads config,
+# so operators can set either prefix during the migration. FW_ is canonical.
+from .envcompat import install as _install_envcompat
+
+_install_envcompat()
+
+from .ast import (  # noqa: E402
     AndThenBlock,
     ArrayLiteral,
     ArrayType,
