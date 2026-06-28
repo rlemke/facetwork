@@ -45,7 +45,7 @@ try:
     HAS_BOTO3 = True
 except ImportError:
     HAS_BOTO3 = False
-    _BotoClientError = Exception  # type: ignore[assignment,misc]
+    _BotoClientError = Exception
 
 
 @runtime_checkable

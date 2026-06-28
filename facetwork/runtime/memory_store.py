@@ -414,7 +414,7 @@ class MemoryStore(PersistenceAPI):
 
         counts: Counter[str] = Counter()
         for t in self._tasks.values():
-            if t.state == "completed" and getattr(t, "step_id", ""):
+            if t.state == "completed" and t.step_id:
                 counts[t.step_id] += 1
         return sum(1 for v in counts.values() if v > 1)
 

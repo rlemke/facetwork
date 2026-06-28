@@ -1081,8 +1081,8 @@ def _entry_event_facets(program: dict, entry: str) -> set[str]:
     kind: dict[str, str] = {}
     _build_call_graph(program, "", graph, kind)
     short: dict[str, str] = {}
-    for q in graph:  # last-wins; ambiguity is rare and the registry resolves shorts too
-        short[q.rsplit(".", 1)[-1]] = q
+    for qn in graph:  # last-wins; ambiguity is rare and the registry resolves shorts too
+        short[qn.rsplit(".", 1)[-1]] = qn
 
     def resolve(target: str) -> str | None:
         return target if target in graph else short.get(target.rsplit(".", 1)[-1])

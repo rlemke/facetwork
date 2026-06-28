@@ -620,7 +620,7 @@ def _prec(node: object) -> int:
         return _ATOM_PREC
     kind = node.get("type")
     if kind == "BinaryExpr":
-        return _BINOP_PREC.get(node.get("operator"), 3)
+        return _BINOP_PREC.get(str(node.get("operator")), 3)
     if kind == "ConcatExpr":
         return _CONCAT_PREC
     if kind == "UnaryExpr":
@@ -659,7 +659,7 @@ def _expr(node: object) -> str:
     if kind == "ConcatExpr":
         return " ++ ".join(_operand(o, _CONCAT_PREC) for o in node.get("operands", []))
     if kind == "BinaryExpr":
-        prec = _BINOP_PREC.get(node.get("operator"), 3)
+        prec = _BINOP_PREC.get(str(node.get("operator")), 3)
         left = _operand(node["left"], prec)
         # Right operand of a left-associative op needs parens at equal precedence.
         right = _operand(node["right"], prec, force_parens=True)

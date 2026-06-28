@@ -34,7 +34,7 @@ class FacetParam:
     has_default: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        d = {"name": self.name, "type": self.type}
+        d: dict[str, Any] = {"name": self.name, "type": self.type}
         if self.has_default:
             d["has_default"] = True
         return d

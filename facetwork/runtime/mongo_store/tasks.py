@@ -240,7 +240,7 @@ class TaskMixin(_MixinBase):
         this at 0. Bootstrap tasks (which have empty ``step_id``) are
         excluded so they aren't conflated as duplicates.
         """
-        pipeline = [
+        pipeline: list[dict[str, Any]] = [
             {"$match": {"state": "completed", "step_id": {"$ne": ""}}},
             {"$group": {"_id": "$step_id", "n": {"$sum": 1}}},
             {"$match": {"n": {"$gt": 1}}},

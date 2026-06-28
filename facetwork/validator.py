@@ -1909,7 +1909,7 @@ class FFLValidator:
         if ref.is_input:
             # $.attr - must reference a valid input parameter
             if ref.path:
-                attr = ref.path[0]
+                attr: str | None = ref.path[0]
                 # Allow foreach variable
                 if foreach_var and attr == foreach_var:
                     return

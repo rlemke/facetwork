@@ -190,8 +190,10 @@ def import_package(
     from facetwork.examples import get_example
     from facetwork.runtime.types import generate_id
 
+    _repo_root = Path(repo_root) if isinstance(repo_root, str) else repo_root
+
     def _resolve(n):
-        return get_domain(n, repo_root) or get_example(n, repo_root)
+        return get_domain(n, _repo_root) or get_example(n, _repo_root)
 
     from .entities import (
         KIND_LIBRARY,

@@ -97,7 +97,7 @@ def workflow_new_v3(request: Request, store=Depends(get_store)):
     """
     from ..execution.workflows import _build_afl_snippet, _collect_workflows_with_ns
 
-    ns_map: dict[str, list[dict]] = {}
+    ns_map: dict[str, list[dict[str, Any]]] = {}
     for flow in store.get_all_flows():
         if not flow.compiled_ast:
             continue
@@ -118,13 +118,11 @@ def workflow_new_v3(request: Request, store=Depends(get_store)):
             }
             ns_map.setdefault(item["ns"], []).append(item)
 
-    ns_groups = sorted(
-        (
-            {"name": ns, "workflows": sorted(wfs, key=lambda w: w["name"])}
-            for ns, wfs in ns_map.items()
-        ),
-        key=lambda g: str(g["name"]),
-    )
+    ns_groups: list[dict[str, Any]] = [
+        {"name": ns, "workflows": sorted(wfs, key=lambda w: w["name"])}
+        for ns, wfs in ns_map.items()
+    ]
+    ns_groups.sort(key=lambda g: str(g["name"]))
     total = sum(len(g["workflows"]) for g in ns_groups)
 
     return request.app.state.templates.TemplateResponse(

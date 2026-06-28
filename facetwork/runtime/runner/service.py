@@ -870,7 +870,7 @@ class RunnerService:
             level=level,
             message=message,
             time=_current_time_ms(),
-            details=details,
+            details=details or {},
         )
         try:
             self._persistence.save_step_log(entry)
