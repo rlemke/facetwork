@@ -8,8 +8,10 @@ COPY pyproject.toml .
 RUN pip install --no-cache-dir -e ".[mongodb]" || \
     pip install --no-cache-dir lark pymongo
 
-# Copy application code
-COPY facetwork/ ./afl/
+# Copy application code. The package is `facetwork`, not `afl`; copying it to
+# ./facetwork/ matches the editable-install search path (the prior ./afl/ rename
+# was a relic and broke `import facetwork` in addone_agent → crash-loop).
+COPY facetwork/ ./facetwork/
 COPY docker/agents/ ./agents/
 
 ENV PYTHONUNBUFFERED=1

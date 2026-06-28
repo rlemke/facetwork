@@ -404,15 +404,13 @@ def seed_sample_runner(flow_id: str, store) -> tuple[str, list[str]]:
         TaskDefinition,
         WorkflowDefinition,
     )
-    from facetwork.runtime.persistence import EventDefinition
-    from facetwork.runtime.states import EventState, StepState
+    from facetwork.runtime.states import StepState
     from facetwork.runtime.step import StepDefinition
     from facetwork.runtime.types import (
         AttributeValue,
         FacetAttributes,
         ObjectType,
         WorkflowId,
-        event_id,
         generate_id,
         step_id,
     )
@@ -489,19 +487,8 @@ def seed_sample_runner(flow_id: str, store) -> tuple[str, list[str]]:
     )
     store.save_step(yield_step)
 
-    # -- Event --
-    evt_id = event_id()
-    event = EventDefinition(
-        id=evt_id,
-        step_id=added_step_id,
-        workflow_id=WorkflowId(wf_id),
-        state=EventState.COMPLETED,
-        event_type="handlers.AddOne",
-        payload={"value": 5},
-    )
-    store.save_event(event)
-
-    # -- Task --
+    # -- Task -- (the event was merged into TaskDefinition; the task below is the
+    # completed AddOne event for this trace)
     task = TaskDefinition(
         uuid=generate_id(),
         name="handlers.AddOne",
