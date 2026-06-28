@@ -23,8 +23,8 @@ from collections.abc import Sequence
 from dataclasses import asdict, fields
 
 from ..entities import TeamDefinition, User
-from .base import _current_time_ms
 from ._internals import _MixinBase
+from .base import _current_time_ms
 
 _TEAM_FIELDS = {f.name for f in fields(TeamDefinition)}
 

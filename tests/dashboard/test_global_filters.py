@@ -46,15 +46,15 @@ def client():
 
 
 def _runner(**kw):
-    base = dict(
-        teams=[],
-        purpose="none",
-        state="completed",
-        start_time=0,
-        user=None,
-        author=None,
-        workflow=SimpleNamespace(name="osm.Foo"),
-    )
+    base = {
+        "teams": [],
+        "purpose": "none",
+        "state": "completed",
+        "start_time": 0,
+        "user": None,
+        "author": None,
+        "workflow": SimpleNamespace(name="osm.Foo"),
+    }
     base.update(kw)
     return SimpleNamespace(**base)
 

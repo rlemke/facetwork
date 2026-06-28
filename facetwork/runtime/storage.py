@@ -859,7 +859,7 @@ class FileSystem:
         self.kind, self.root = _detect_backend_and_root(backend, root)
 
     @classmethod
-    def from_config(cls) -> "FileSystem":
+    def from_config(cls) -> FileSystem:
         """Build from the centralized ``StorageConfig`` (env-backed)."""
         from facetwork.config import get_config
 

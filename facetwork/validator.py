@@ -49,7 +49,6 @@ from .ast import (
     SchemaDecl,
     ScriptBlock,
     SourceLocation,
-    StepStmt,
     SysAssertStmt,
     SysLogStmt,
     TypeRef,
@@ -497,7 +496,7 @@ class FFLValidator:
         """Reject mixin alias collisions on a facet signature."""
         param_names = {p.name for p in sig.params}
         return_names = {p.name for p in sig.returns.params} if sig.returns else set()
-        seen_aliases: dict[str, "MixinSig"] = {}
+        seen_aliases: dict[str, MixinSig] = {}
         for mixin in sig.mixins:
             alias = mixin.alias
             if not alias:

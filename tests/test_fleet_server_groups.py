@@ -11,7 +11,6 @@ tasks it has a handler for). These tests pin the pure logic:
 """
 
 import importlib.util
-import os
 from pathlib import Path
 
 import pytest

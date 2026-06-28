@@ -254,9 +254,9 @@ class TestHDFSFileSystemFacade:
             reset_fs()
 
     def test_live_facade_autodetect(self, hdfs, workdir, monkeypatch):
-        from facetwork.runtime.storage import FileSystem
-
         import requests as _rq
+
+        from facetwork.runtime.storage import FileSystem
 
         base = f"{workdir}/auto"
         monkeypatch.setenv("AFL_STORAGE", "hdfs")

@@ -471,12 +471,6 @@ class FacetInitializationBeginHandler(StateHandler):
         except Exception:
             hostname = ""
 
-        line = column = None
-        if self.step.transition and self.step.transition.error:
-            # not expected to fire at the sys.log path, but keep
-            # defensive for future routing.
-            pass
-
         extra: dict = {
             "workflow_id": self.step.workflow_id,
             "runner_id": getattr(self.context, "runner_id", "") or "",

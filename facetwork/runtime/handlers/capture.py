@@ -200,7 +200,7 @@ class StatementCaptureBeginHandler(StateHandler):
         # yields targeting the same alias accumulate before we persist
         # the sub-step once via ``add_updated_step``.
         self._seen_yield_ids: set[str] = set()
-        self._mixin_substep_working: dict[str, "StepDefinition"] = {}
+        self._mixin_substep_working: dict[str, StepDefinition] = {}
 
         # Cache parent's mixin metadata once.  ``mixin_aliases`` maps
         # alias → target facet name; ``target_to_aliases`` is the inverse

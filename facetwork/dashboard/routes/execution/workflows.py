@@ -21,7 +21,6 @@ and `_build_afl_snippet`.
 
 from __future__ import annotations
 
-
 # ---------------------------------------------------------------------------
 # Helpers for the workflow browser (v3 new-run)
 # ---------------------------------------------------------------------------

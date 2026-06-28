@@ -17,8 +17,8 @@ import sys
 import time
 
 import boto3
-from botocore.config import Config
 from boto3.s3.transfer import TransferConfig
+from botocore.config import Config
 
 SRC_ROOT = os.environ.get("SRC_ROOT", "/Volumes/afl_data/cache")
 KEY_PREFIX = "cache"  # AFL_DATA_ROOT/cache/...  (handlers root durable artifacts here)
@@ -149,7 +149,7 @@ def main():
             try:
                 s3.upload_file(path, BUCKET, key, Config=xfer)
                 if head_size(key) != size:
-                    raise IOError("post-upload size mismatch")
+                    raise OSError("post-upload size mismatch")
                 ok = True
                 break
             except Exception as e:

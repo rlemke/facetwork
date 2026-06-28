@@ -37,7 +37,6 @@ from .helpers import (
     group_tasks_by_state,
 )
 
-
 # Runner states by tab
 _RUNNING_STATES = {"created", "running", "paused"}
 _COMPLETED_STATES = {"completed"}

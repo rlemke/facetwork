@@ -27,7 +27,6 @@ from facetwork.runtime.types import (
 )
 from facetwork.validator import validate as validate_ast
 
-
 CANONICAL = Path(__file__).resolve().parents[2] / "examples" / "canonical" / "08-step-reference.ffl"
 CANONICAL_MIXIN_ALIAS = (
     Path(__file__).resolve().parents[2] / "examples" / "canonical" / "09-facetref-mixin-alias.ffl"

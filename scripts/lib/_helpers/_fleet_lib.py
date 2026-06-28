@@ -53,7 +53,7 @@ def mdns_lookup(service_type: str, timeout: float = 2.0) -> str | None:
     """Return host:port for the first instance of an mDNS service, or None if
     zeroconf isn't installed or nothing answers."""
     try:
-        from zeroconf import Zeroconf, ServiceBrowser
+        from zeroconf import ServiceBrowser, Zeroconf
     except Exception:
         return None
     found: list[str] = []
@@ -187,7 +187,7 @@ def _fernet():
 
         return Fernet(key.encode() if isinstance(key, str) else key)
     except Exception as exc:
-        raise RuntimeError(f"invalid AFL_FLEET_KEY: {exc}")
+        raise RuntimeError(f"invalid AFL_FLEET_KEY: {exc}") from exc
 
 
 def set_minio_secret(db, access_key: str, secret_key: str) -> None:

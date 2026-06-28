@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import importlib.metadata
 
-import pytest
-
-from facetwork import domains as domains_mod
 from facetwork.domains import (
     DomainPackage,
     discover_all_domains,

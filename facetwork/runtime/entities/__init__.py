@@ -60,17 +60,6 @@ from .logging import (
 # Runner
 from .runner import RunnerDefinition, RunnerState
 
-# Users and teams
-from .user import (
-    DELETED_USER_EMAIL,
-    SPECIAL_KINDS,
-    STATUS_ACTIVE,
-    STATUS_DELETED,
-    TeamDefinition,
-    User,
-    special_users,
-)
-
 # Server and handler registration
 from .server import (
     HandledCount,
@@ -82,6 +71,17 @@ from .server import (
 
 # Task
 from .task import TaskDefinition, TaskState
+
+# Users and teams
+from .user import (
+    DELETED_USER_EMAIL,
+    SPECIAL_KINDS,
+    STATUS_ACTIVE,
+    STATUS_DELETED,
+    TeamDefinition,
+    User,
+    special_users,
+)
 
 __all__ = [
     # Common

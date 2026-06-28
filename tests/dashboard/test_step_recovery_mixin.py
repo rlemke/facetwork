@@ -21,8 +21,6 @@ store.
 
 from __future__ import annotations
 
-import time as _time
-
 import pytest
 
 try:
@@ -42,7 +40,6 @@ except ImportError:
 from facetwork.runtime.states import StepState
 from facetwork.runtime.step import StepDefinition
 from facetwork.runtime.types import AttributeValue, FacetAttributes, ObjectType, step_id
-
 
 needs_fastapi = pytest.mark.skipif(
     not FASTAPI_AVAILABLE or not MONGOMOCK_AVAILABLE,

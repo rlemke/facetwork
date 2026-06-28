@@ -240,7 +240,14 @@ def test_import_package_backup_restore_keeps_one_flow(tmp_path):
 def _import_all_args(**over):
     import argparse
 
-    base = dict(tags="", only=[], exclude=[], dir=[], no_publish=False, list_only=False)
+    base = {
+        "tags": "",
+        "only": [],
+        "exclude": [],
+        "dir": [],
+        "no_publish": False,
+        "list_only": False,
+    }
     base.update(over)
     return argparse.Namespace(**base)
 
