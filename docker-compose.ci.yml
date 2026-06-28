@@ -28,6 +28,11 @@ services:
   runner:
     environment:
       AFL_MONGODB_URL: mongodb://mongodb:27017
+      # The inline addone/chain/parallel examples live in the `handlers`
+      # namespace, so their fw:execute bootstrap tasks land on the `handlers`
+      # task list. Make the main runner poll it so it claims + orchestrates
+      # AddOneWorkflow (it dispatches the AddOne event to agent-addone).
+      AFL_REGISTRY_RUNNER_ARGS: "--task-list handlers"
     depends_on:
       mongodb:
         condition: service_healthy

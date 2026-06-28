@@ -125,6 +125,38 @@ jobs:
           curl -s http://localhost:8080/api/flows | head -c 2000 >&2
           exit 1
 
+      - name: Run AddOneWorkflow end-to-end (agent processes the task)
+        run: |
+          set -e
+          # Real run through the dashboard (anonymous user): AddOne(5) -> 6. The
+          # runner bootstraps the workflow and dispatches the AddOne event to the
+          # agent-addone container; the run can only reach "completed" if the
+          # agent actually processed the task.
+          flow_id=$(curl -s http://localhost:8080/api/flows | jq -r '.[]|select(.name=="inline-examples").uuid')
+          [ -n "$flow_id" ] && [ "$flow_id" != "null" ] || { echo "inline-examples flow not found" >&2; exit 1; }
+          wf_id=$(docker compose exec -T mongodb mongosh afl --quiet --eval \
+            'var w=db.workflows.findOne({name:"handlers.AddOneWorkflow"}); print(w ? w.uuid : "")' | tr -d '\r\n ')
+          [ -n "$wf_id" ] || { echo "handlers.AddOneWorkflow not found in db" >&2; exit 1; }
+          echo "flow=$flow_id wf=$wf_id"
+          redir=$(curl -s -o /dev/null -w '%{redirect_url}' -X POST \
+            "http://localhost:8080/v3/flows/$flow_id/run/$wf_id" \
+            --data-urlencode 'inputs_json={"input": 5}' --data-urlencode 'purpose=none')
+          runner_id="${redir##*/}"
+          [ -n "$runner_id" ] || { echo "submit returned no runner ($redir)" >&2; exit 1; }
+          echo "runner_id=$runner_id"
+          for i in $(seq 1 45); do
+            state=$(curl -s "http://localhost:8080/api/runners/$runner_id" | jq -r '.state // empty')
+            echo "poll $i: state=$state"
+            case "$state" in
+              completed) echo "AddOneWorkflow completed — agent-addone processed AddOne(5)=6"; exit 0 ;;
+              failed|error) echo "run $state" >&2; curl -s "http://localhost:8080/api/runners/$runner_id" >&2; break ;;
+            esac
+            sleep 2
+          done
+          echo "AddOneWorkflow did not complete" >&2
+          docker compose logs --tail 60 runner agent-addone >&2
+          exit 1
+
       - name: Cleanup
         if: always()
         run: docker compose down -v
