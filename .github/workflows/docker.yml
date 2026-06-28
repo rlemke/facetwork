@@ -76,30 +76,54 @@ jobs:
     needs: build
     if: github.event_name == 'pull_request'
 
+    # The base compose targets external infra (afl-mongodb on a LAN IP); the CI
+    # override adds an ephemeral mongo and repoints the apps at it. CI-safe output
+    # dirs avoid the /Volumes/* bind mounts the base compose defaults to.
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      AFL_LOCAL_OUTPUT_DIR: /tmp/fw-output
+      AFL_OSM_OUTPUT_BASE: /tmp/fw-osm-output
+      AFL_GEOFABRIK_MIRROR: /tmp/fw-osm-mirror
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build docker-compose stack
-        run: docker compose build
+      - name: Build the addone-example stack
+        run: docker compose build dashboard runner agent-addone seed
 
       - name: Start core services
         run: |
+          mkdir -p "$AFL_LOCAL_OUTPUT_DIR" "$AFL_OSM_OUTPUT_BASE" "$AFL_GEOFABRIK_MIRROR"
+          # depends_on waits for the mongo healthcheck before the apps start.
           docker compose up -d mongodb dashboard runner agent-addone
-          sleep 10
 
       - name: Check service health
         run: |
           docker compose ps
-          curl -f http://localhost:8080/health || exit 1
+          for i in $(seq 1 30); do
+            curl -fs http://localhost:8080/health && { echo "dashboard healthy"; exit 0; }
+            sleep 2
+          done
+          echo "dashboard did not become healthy" >&2
+          docker compose logs dashboard
+          exit 1
 
       - name: Run seed
         run: docker compose --profile seed run --rm seed
 
       - name: Check seeded data
         run: |
-          # Verify flows were seeded
-          curl -s http://localhost:8080/api/flows | grep -q "seed-addone-example"
+          # Verify seeding populated flows the dashboard serves. The inline
+          # examples (addone/chain/parallel) are seeded as the "inline-examples"
+          # flow (see docker/seed/seed.py main()).
+          for i in $(seq 1 15); do
+            curl -s http://localhost:8080/api/flows | grep -q "inline-examples" && { echo "seeded"; exit 0; }
+            sleep 2
+          done
+          echo "inline-examples flow not found in /api/flows" >&2
+          curl -s http://localhost:8080/api/flows | head -c 2000 >&2
+          exit 1
 
       - name: Cleanup
         if: always()

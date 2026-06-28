@@ -1,0 +1,47 @@
+# CI-only override for the docker.yml `integration` smoke test.
+#
+# The base docker-compose.yml targets EXTERNAL infra (MongoDB at
+# afl-mongodb:192.168.68.91), which is unreachable in CI and has no `mongodb`
+# service to start. This override adds an ephemeral MongoDB and repoints the app
+# services at it (mongodb://mongodb:27017 via compose DNS) so the addone-example
+# stack can come up, seed, and serve /health entirely self-contained.
+#
+# Usage (see .github/workflows/docker.yml):
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d ...
+services:
+  mongodb:
+    image: mongo:7
+    container_name: facetwork-ci-mongodb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  dashboard:
+    environment:
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  runner:
+    environment:
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  agent-addone:
+    environment:
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  seed:
+    environment:
+      AFL_MONGODB_URL: mongodb://mongodb:27017
+    depends_on:
+      mongodb:
+        condition: service_healthy
