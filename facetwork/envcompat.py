@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import MutableMapping
+from collections.abc import MutableMapping
 
 _LEGACY = "AFL_"
 _CANON = "FW_"
@@ -56,10 +56,10 @@ def normalize_environ(env: MutableMapping[str, str] | None = None) -> int:
     legacy_keys = [k for k in list(e) if k.startswith(_LEGACY)]
     # FW_ wins: push every FW_X down onto AFL_X.
     for key in canon_keys:
-        e[_LEGACY + key[len(_CANON):]] = e[key]
+        e[_LEGACY + key[len(_CANON) :]] = e[key]
     # Fill the gaps: any operator-set AFL_X without a FW_X gets mirrored up.
     for key in legacy_keys:
-        e.setdefault(_CANON + key[len(_LEGACY):], e[key])
+        e.setdefault(_CANON + key[len(_LEGACY) :], e[key])
     return len(legacy_keys)
 
 
@@ -83,5 +83,6 @@ def install(warn: bool = True) -> None:
     if warn and n_legacy:
         logging.getLogger("facetwork.env").info(
             "%d legacy AFL_* env var(s) in use. FW_* is the new prefix (both "
-            "work during migration); please migrate AFL_* -> FW_*.", n_legacy,
+            "work during migration); please migrate AFL_* -> FW_*.",
+            n_legacy,
         )

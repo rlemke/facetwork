@@ -70,8 +70,7 @@ class EventTransmitHandler(StateHandler):
         from ..types import ObjectType
 
         has_program_decls = bool(
-            self.context.program_ast
-            and (self.context.program_ast.get("declarations") or [])
+            self.context.program_ast and (self.context.program_ast.get("declarations") or [])
         )
         if (
             facet_def is None

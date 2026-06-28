@@ -13,13 +13,23 @@ router = APIRouter(prefix="/output")
 _DEFAULT_OUTPUT_DIR = "/Volumes/afl_data/output"
 
 _MEDIA_TYPES = {
-    ".html": "text/html", ".htm": "text/html",
-    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-    ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
-    ".json": "application/json", ".geojson": "application/json",
-    ".js": "text/javascript", ".css": "text/css",
-    ".txt": "text/plain", ".csv": "text/csv", ".pbf": "application/x-protobuf",
-    ".tif": "image/tiff", ".tiff": "image/tiff",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".json": "application/json",
+    ".geojson": "application/json",
+    ".js": "text/javascript",
+    ".css": "text/css",
+    ".txt": "text/plain",
+    ".csv": "text/csv",
+    ".pbf": "application/x-protobuf",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
 }
 
 
@@ -106,7 +116,7 @@ def _s3_output_bases() -> list[str]:
     # Derived from the bases (not AFL_S3_BUCKET) so it works on the dashboard,
     # which sets AFL_S3_OUTPUT_BASE but not necessarily AFL_S3_BUCKET.
     for b in list(bases):
-        add("s3://" + b[len("s3://"):].split("/", 1)[0])
+        add("s3://" + b[len("s3://") :].split("/", 1)[0])
     return bases
 
 
@@ -179,10 +189,10 @@ def artifact_url(value) -> str | None:
         marker = "/output/"
         idx = norm.rfind(marker)
         if idx != -1:
-            rel = norm[idx + len(marker):]
+            rel = norm[idx + len(marker) :]
             if rel and _resolve_s3(rel) is not None:
                 return "/output/raw/" + rel
-        rest = value[len("s3://"):]
+        rest = value[len("s3://") :]
         key = rest.split("/", 1)[1] if "/" in rest else ""
         return "/output/raw/" + key if (key and _resolve_s3(key)) else None
 
@@ -204,7 +214,7 @@ def artifact_url(value) -> str | None:
     marker = "/output/"
     idx = norm.rfind(marker)
     if idx != -1:
-        rel = norm[idx + len(marker):]
+        rel = norm[idx + len(marker) :]
         if rel and (_resolve_under_roots(rel) is not None or _resolve_s3(rel) is not None):
             return "/output/raw/" + rel
     return None

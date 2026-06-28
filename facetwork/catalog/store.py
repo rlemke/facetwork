@@ -179,9 +179,7 @@ class MongoCatalogStore:
         return _doc_to_entry(doc) if doc else None
 
     def save_entry(self, entry: CatalogEntry) -> None:
-        self._db[self.ENTRIES].replace_one(
-            {"slug": entry.slug}, _entry_to_doc(entry), upsert=True
-        )
+        self._db[self.ENTRIES].replace_one({"slug": entry.slug}, _entry_to_doc(entry), upsert=True)
 
     def list_entries(self) -> list[CatalogEntry]:
         return [_doc_to_entry(d) for d in self._db[self.ENTRIES].find()]

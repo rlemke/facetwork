@@ -331,9 +331,7 @@ def seed_flows(
         existing_flow = db.flows.find_one({"name.path": seed_path}, {"uuid": 1})
         if existing_flow:
             flow_id = existing_flow["uuid"]
-            for doc in db.workflows.find(
-                {"flow_id": flow_id}, {"uuid": 1, "name": 1, "_id": 0}
-            ):
+            for doc in db.workflows.find({"flow_id": flow_id}, {"uuid": 1, "name": 1, "_id": 0}):
                 n = doc.get("name")
                 if isinstance(n, dict):
                     n = n.get("name", "")

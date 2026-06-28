@@ -352,8 +352,7 @@ class TestSeedExampleFlows:
             seed_example_flows(pkg, store)
             flow_id_before = store._db.flows.find_one({"name.path": "example:seedy"})["uuid"]
             wf_ids_before = {
-                d["name"]: d["uuid"]
-                for d in store._db.workflows.find({"flow_id": flow_id_before})
+                d["name"]: d["uuid"] for d in store._db.workflows.find({"flow_id": flow_id_before})
             }
             assert flow_id_before
             assert wf_ids_before  # at least one workflow
@@ -361,8 +360,7 @@ class TestSeedExampleFlows:
             seed_example_flows(pkg, store)  # re-seed
             flow_id_after = store._db.flows.find_one({"name.path": "example:seedy"})["uuid"]
             wf_ids_after = {
-                d["name"]: d["uuid"]
-                for d in store._db.workflows.find({"flow_id": flow_id_after})
+                d["name"]: d["uuid"] for d in store._db.workflows.find({"flow_id": flow_id_after})
             }
             assert flow_id_after == flow_id_before
             assert wf_ids_after == wf_ids_before

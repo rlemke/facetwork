@@ -23,8 +23,8 @@ from collections.abc import Sequence
 from dataclasses import asdict, fields
 
 from ..entities import TeamDefinition, User
-from .base import _current_time_ms
 from ._internals import _MixinBase
+from .base import _current_time_ms
 
 _TEAM_FIELDS = {f.name for f in fields(TeamDefinition)}
 
@@ -34,9 +34,7 @@ class TeamsMixin(_MixinBase):
 
     def get_team(self, name_or_uuid: str) -> TeamDefinition | None:
         """Get a team by its (unique) name or uuid."""
-        doc = self._db.teams.find_one(
-            {"$or": [{"name": name_or_uuid}, {"uuid": name_or_uuid}]}
-        )
+        doc = self._db.teams.find_one({"$or": [{"name": name_or_uuid}, {"uuid": name_or_uuid}]})
         return self._doc_to_team(doc) if doc else None
 
     def list_teams(self) -> Sequence[TeamDefinition]:

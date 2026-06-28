@@ -30,7 +30,6 @@ from facetwork.runtime.entities import TaskDefinition, TaskState
 from facetwork.runtime.step import StepDefinition
 from facetwork.runtime.types import generate_id, step_id
 
-
 needs_fastapi = pytest.mark.skipif(
     not FASTAPI_AVAILABLE or not MONGOMOCK_AVAILABLE,
     reason="fastapi or mongomock not installed",
@@ -173,9 +172,7 @@ class TestRetryBlockForce:
         assert task.state == TaskState.PENDING
 
         logs = store.get_step_logs_by_step(leaf.id)
-        assert any(
-            "Forcibly retried during block retry" in log.message for log in logs
-        )
+        assert any("Forcibly retried during block retry" in log.message for log in logs)
 
 
 # ----------------------------------------------------------------------------

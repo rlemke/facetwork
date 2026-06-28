@@ -30,8 +30,11 @@ router = APIRouter(prefix="/v3")
 
 # server effective-state → colour var (reused for dot + pill)
 _DOT = {
-    "running": "var(--st-running)", "startup": "var(--st-warning)",
-    "error": "var(--st-error)", "shutdown": "var(--muted)", "down": "var(--st-error)",
+    "running": "var(--st-running)",
+    "startup": "var(--st-warning)",
+    "error": "var(--st-error)",
+    "shutdown": "var(--muted)",
+    "down": "var(--st-error)",
 }
 
 
@@ -41,8 +44,13 @@ def _norm_host(name) -> str:
 
 
 @router.get("/servers")
-def servers_v3(request: Request, tab: str = "running", host: str | None = None,
-               group: str | None = None, store=Depends(get_store)):
+def servers_v3(
+    request: Request,
+    tab: str = "running",
+    host: str | None = None,
+    group: str | None = None,
+    store=Depends(get_store),
+):
     """Redesigned Servers list — runner processes grouped by host.
 
     ``host`` (from the Fleet hosts table) narrows to one host (normalized,
@@ -106,8 +114,11 @@ def server_detail_v3(server_id: str, request: Request, store=Depends(get_store))
     server = store.get_server(server_id)
     if server:
         _apply_effective_state([server])
-    ctx = (_build_server_detail_context(server, store) if server
-           else {"task_groups": [], "task_counts": {}})
+    ctx = (
+        _build_server_detail_context(server, store)
+        if server
+        else {"task_groups": [], "task_counts": {}}
+    )
     last_ping_s = None
     if server and getattr(server, "ping_time", 0):
         last_ping_s = round((int(time.time() * 1000) - server.ping_time) / 1000)

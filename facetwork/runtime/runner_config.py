@@ -59,7 +59,9 @@ class BaseRunnerConfig:
         if not self.continuation_mode:
             import os
 
-            self.continuation_mode = os.environ.get("AFL_CONTINUATION_MODE", "inline").strip() or "inline"
+            self.continuation_mode = (
+                os.environ.get("AFL_CONTINUATION_MODE", "inline").strip() or "inline"
+            )
         if self.continuation_mode not in self._CONTINUATION_MODES:
             raise ValueError(
                 f"continuation_mode must be one of {self._CONTINUATION_MODES}, "

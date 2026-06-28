@@ -105,12 +105,15 @@ def compose_services() -> list[str]:
 def fleet_default_services() -> list[str]:
     """``runner-<service>`` names for domains flagged ``fleet_default`` (the default
     set a bare ``fw runner start --fleet`` / fleet-agent brings up)."""
-    return [s["service"] for n, s in sorted(domains().items())
-            if s.get("fleet_default") and s.get("service")]
+    return [
+        s["service"]
+        for n, s in sorted(domains().items())
+        if s.get("fleet_default") and s.get("service")
+    ]
 
 
 def _suffix(service: str) -> str:
-    return service[len("runner-"):] if service.startswith("runner-") else service
+    return service[len("runner-") :] if service.startswith("runner-") else service
 
 
 def scaled_domain_suffixes() -> list[str]:
@@ -121,7 +124,9 @@ def scaled_domain_suffixes() -> list[str]:
 
 def unscaled_domain_suffixes() -> list[str]:
     """``--domain`` suffixes for compose domains NOT flagged ``scaled`` (one replica each)."""
-    return [_suffix(s["service"]) for _n, s in sorted(compose_domains().items()) if not s.get("scaled")]
+    return [
+        _suffix(s["service"]) for _n, s in sorted(compose_domains().items()) if not s.get("scaled")
+    ]
 
 
 def _defaults() -> dict:

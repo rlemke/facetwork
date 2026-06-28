@@ -49,7 +49,6 @@ from .ast import (
     SchemaDecl,
     ScriptBlock,
     SourceLocation,
-    StepStmt,
     SysAssertStmt,
     SysLogStmt,
     TypeRef,
@@ -162,7 +161,9 @@ class FacetInfo:
     returns_types: dict[str, str] = field(default_factory=dict)  # Return field name → type
     params_types: dict[str, str] = field(default_factory=dict)  # Param name → type
     mixin_aliases: dict[str, str] = field(default_factory=dict)  # Alias → mixin facet target
-    mixin_targets: list[str] = field(default_factory=list)  # All mixin targets (aliased + un-aliased)
+    mixin_targets: list[str] = field(
+        default_factory=list
+    )  # All mixin targets (aliased + un-aliased)
     location: SourceLocation | None = None
 
 
@@ -199,7 +200,9 @@ class FFLValidator:
         self._current_namespace: str = ""
         self._current_imports: set[str] = set()  # Namespaces imported via 'use'
         self._param_scope: dict[str, str] = {}  # Parameter name -> inferred type
-        self._facet_param_types: dict[str, str] = {}  # Param name -> facet type name (step-ref params only)
+        self._facet_param_types: dict[
+            str, str
+        ] = {}  # Param name -> facet type name (step-ref params only)
 
     def validate(self, program: Program) -> ValidationResult:
         """Validate a program AST.
@@ -492,10 +495,8 @@ class FFLValidator:
     def _validate_mixin_aliases(self, sig: FacetSig) -> None:
         """Reject mixin alias collisions on a facet signature."""
         param_names = {p.name for p in sig.params}
-        return_names = (
-            {p.name for p in sig.returns.params} if sig.returns else set()
-        )
-        seen_aliases: dict[str, "MixinSig"] = {}
+        return_names = {p.name for p in sig.returns.params} if sig.returns else set()
+        seen_aliases: dict[str, MixinSig] = {}
         for mixin in sig.mixins:
             alias = mixin.alias
             if not alias:
@@ -1045,8 +1046,13 @@ class FFLValidator:
         for step in body.block.steps:
             if isinstance(step, (SysLogStmt, SysAssertStmt)):
                 self._validate_sys_stmt(
-                    step, input_attrs, steps, step_returns,
-                    foreach_var, step_returns_types, other_block_steps,
+                    step,
+                    input_attrs,
+                    steps,
+                    step_returns,
+                    foreach_var,
+                    step_returns_types,
+                    other_block_steps,
                 )
                 continue
             # Check step name uniqueness
@@ -1713,18 +1719,13 @@ class FFLValidator:
             if len(ref.path) < 3:
                 return (None, base)
             sub = ref.path[2]
-            sub_type = (
-                mixin.returns_types.get(sub)
-                or mixin.params_types.get(sub)
-            )
+            sub_type = mixin.returns_types.get(sub) or mixin.params_types.get(sub)
             if (
                 sub not in mixin.params
                 and sub not in mixin.returns
                 and sub not in mixin.mixin_aliases
             ):
-                valid = sorted(
-                    mixin.params | mixin.returns | set(mixin.mixin_aliases)
-                )
+                valid = sorted(mixin.params | mixin.returns | set(mixin.mixin_aliases))
                 self._result.add_error(
                     f"Invalid mixin attribute '{base}.{sub}': "
                     f"mixin facet '{mixin.name}' has no param, return, or "
@@ -1798,9 +1799,7 @@ class FFLValidator:
             return (None, base)
         # Schema chain — reuse the existing helper.
         if self._is_schema_type(current_type):
-            next_type = self._resolve_nested_field_type(
-                current_type, [segment], ref.location
-            )
+            next_type = self._resolve_nested_field_type(current_type, [segment], ref.location)
             return (next_type, f"{base}.{segment}")
         # Primitive / collection — nothing further to check.
         return ("Unknown", f"{base}.{segment}")
@@ -1910,7 +1909,7 @@ class FFLValidator:
         if ref.is_input:
             # $.attr - must reference a valid input parameter
             if ref.path:
-                attr = ref.path[0]
+                attr: str | None = ref.path[0]
                 # Allow foreach variable
                 if foreach_var and attr == foreach_var:
                     return

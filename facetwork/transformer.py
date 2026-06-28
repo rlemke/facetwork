@@ -351,9 +351,7 @@ class FFLTransformer(Transformer):
         # `op` is either a COMP_OP token (basic comparison) or the
         # string produced by one of the compare_op_* alias rules below.
         op_str = op if isinstance(op, str) else str(op)
-        return BinaryExpr(
-            operator=op_str, left=items[0], right=items[2], location=self._loc(meta)
-        )
+        return BinaryExpr(operator=op_str, left=items[0], right=items[2], location=self._loc(meta))
 
     def COMP_OP(self, token: Token) -> str:
         return str(token)

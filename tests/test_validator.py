@@ -217,9 +217,9 @@ class TestStepReferences:
         result = validator.validate(ast)
         assert not result.is_valid
         scope_errors = [e for e in result.errors if e.rule_id == "REF_INVALID_INPUT"]
-        assert any(
-            "$.workflow_only" in str(e) for e in scope_errors
-        ), f"expected REF_INVALID_INPUT for $.workflow_only, got {result.errors}"
+        assert any("$.workflow_only" in str(e) for e in scope_errors), (
+            f"expected REF_INVALID_INPUT for $.workflow_only, got {result.errors}"
+        )
 
     def test_valid_step_reference(self, validator):
         """Valid step.attr reference should pass."""
@@ -552,9 +552,9 @@ class TestYieldValidation:
         result = validator.validate(ast)
         assert not result.is_valid
         scope_errors = [e for e in result.errors if e.rule_id == "YIELD_INVALID_TARGET"]
-        assert any(
-            "some_outer_alias" in str(e) for e in scope_errors
-        ), f"expected YIELD_INVALID_TARGET for stray alias, got {result.errors}"
+        assert any("some_outer_alias" in str(e) for e in scope_errors), (
+            f"expected YIELD_INVALID_TARGET for stray alias, got {result.errors}"
+        )
 
 
 class TestConvenienceFunction:
@@ -1469,15 +1469,19 @@ class TestFacetRefAttributePath:
     def test_deep_schema_field_via_facet_ref(self, validator):
         """`$.fref.return_field.schema_field` walks into the return's
         schema and validates the schema field."""
-        src = self._DEEP_SETUP + """
+        src = (
+            self._DEEP_SETUP
+            + """
         facet Consumer(p: Producer) => (out: String) andThen {
             yield Consumer(out = $.p.report.title)
         }
     }
     """
+        )
         result = validator.validate(parse(src))
         assert not [
-            e for e in result.errors
+            e
+            for e in result.errors
             if e.rule_id in ("REF_INVALID_FACET_REF_ATTRIBUTE", "SCHEMA_UNKNOWN_FIELD")
         ], f"unexpected: {result.errors}"
 
@@ -1485,19 +1489,23 @@ class TestFacetRefAttributePath:
         """A misspelled schema field on a deep FacetRef path is flagged
         via SCHEMA_UNKNOWN_FIELD (the rule used elsewhere for nested
         schema chains)."""
-        src = self._DEEP_SETUP + """
+        src = (
+            self._DEEP_SETUP
+            + """
         facet Consumer(p: Producer) => (out: String) andThen {
             yield Consumer(out = $.p.report.bogus)
         }
     }
     """
+        )
         result = validator.validate(parse(src))
         warnings = [
-            w for w in (getattr(result, "warnings", None) or [])
+            w
+            for w in (getattr(result, "warnings", None) or [])
             if getattr(w, "rule_id", "") == "SCHEMA_UNKNOWN_FIELD"
         ]
         errs = [e for e in result.errors if e.rule_id == "SCHEMA_UNKNOWN_FIELD"]
-        assert (warnings or errs), (
+        assert warnings or errs, (
             f"expected SCHEMA_UNKNOWN_FIELD diagnostic, got errors={result.errors}"
         )
 

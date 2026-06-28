@@ -184,5 +184,3 @@ def task_retry_all_failed(store=Depends(get_store)):
         },
     )
     return JSONResponse({"success": True, "count": result.modified_count})
-
-

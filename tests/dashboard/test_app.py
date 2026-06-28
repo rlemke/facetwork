@@ -50,8 +50,14 @@ def test_app_has_routes():
     # Legacy page routes were removed in favour of the v3 UI; the kept redirect
     # (`/runners`→/v3/workflows) plus the v3 pages stand in for them.
     expected = [
-        "/", "/runners", "/v3/flows", "/v3/servers", "/v3/tasks",
-        "/api/runners", "/api/flows", "/api/servers",
+        "/",
+        "/runners",
+        "/v3/flows",
+        "/v3/servers",
+        "/v3/tasks",
+        "/api/runners",
+        "/api/flows",
+        "/api/servers",
     ]
     client = TestClient(create_app(), raise_server_exceptions=False)
     for path in expected:

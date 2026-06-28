@@ -471,12 +471,6 @@ class FacetInitializationBeginHandler(StateHandler):
         except Exception:
             hostname = ""
 
-        line = column = None
-        if self.step.transition and self.step.transition.error:
-            # not expected to fire at the sys.log path, but keep
-            # defensive for future routing.
-            pass
-
         extra: dict = {
             "workflow_id": self.step.workflow_id,
             "runner_id": getattr(self.context, "runner_id", "") or "",
@@ -534,10 +528,7 @@ class FacetInitializationBeginHandler(StateHandler):
         # default expressions are evaluated against that, NOT against
         # workflow root (per the mixin-scope-isolation rule).
         try:
-            scope_inputs = {
-                name: attr.value
-                for name, attr in self.step.attributes.params.items()
-            }
+            scope_inputs = {name: attr.value for name, attr in self.step.attributes.params.items()}
             mixin_ctx = EvaluationContext(
                 inputs=scope_inputs,
                 get_step_output=lambda *_: None,
@@ -550,9 +541,7 @@ class FacetInitializationBeginHandler(StateHandler):
                 if not name or name in self.step.attributes.params:
                     continue
                 if "default" in param:
-                    self.step.set_attribute(
-                        name, expr_eval.evaluate(param["default"], mixin_ctx)
-                    )
+                    self.step.set_attribute(name, expr_eval.evaluate(param["default"], mixin_ctx))
 
             for ret in facet_def.get("returns", []):
                 name = ret.get("name", "")

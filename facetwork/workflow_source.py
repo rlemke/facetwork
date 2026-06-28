@@ -148,11 +148,7 @@ def _find_target(index: dict[str, _Entry], workflow_name: str) -> _Entry:
         return entry
 
     # Otherwise match by short name among workflows.
-    matches = [
-        e
-        for e in index.values()
-        if e.kind == "WorkflowDecl" and e.name == workflow_name
-    ]
+    matches = [e for e in index.values() if e.kind == "WorkflowDecl" and e.name == workflow_name]
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
@@ -279,11 +275,7 @@ def _render(program: dict, index: dict[str, _Entry], included: set[str]) -> str:
         kind = decl.get("type")
         if kind == "Namespace":
             ns = decl.get("name", "")
-            kept = [
-                d
-                for d in decl.get("declarations", [])
-                if _qname_for(ns, d) in included
-            ]
+            kept = [d for d in decl.get("declarations", []) if _qname_for(ns, d) in included]
             if not kept:
                 continue
             if not first:
@@ -604,10 +596,22 @@ _ATOM_PREC = 99
 _BINOP_PREC = {
     "||": 1,
     "&&": 2,
-    "==": 3, "!=": 3, ">": 3, "<": 3, ">=": 3, "<=": 3,
-    "in": 3, "not in": 3, "contains": 3, "startsWith": 3, "endsWith": 3,
-    "+": 5, "-": 5,
-    "*": 6, "/": 6, "%": 6,
+    "==": 3,
+    "!=": 3,
+    ">": 3,
+    "<": 3,
+    ">=": 3,
+    "<=": 3,
+    "in": 3,
+    "not in": 3,
+    "contains": 3,
+    "startsWith": 3,
+    "endsWith": 3,
+    "+": 5,
+    "-": 5,
+    "*": 6,
+    "/": 6,
+    "%": 6,
 }
 
 
@@ -616,7 +620,7 @@ def _prec(node: object) -> int:
         return _ATOM_PREC
     kind = node.get("type")
     if kind == "BinaryExpr":
-        return _BINOP_PREC.get(node.get("operator"), 3)
+        return _BINOP_PREC.get(str(node.get("operator")), 3)
     if kind == "ConcatExpr":
         return _CONCAT_PREC
     if kind == "UnaryExpr":
@@ -653,11 +657,9 @@ def _expr(node: object) -> str:
     if kind == "StepRef":
         return ".".join(node.get("path", []))
     if kind == "ConcatExpr":
-        return " ++ ".join(
-            _operand(o, _CONCAT_PREC) for o in node.get("operands", [])
-        )
+        return " ++ ".join(_operand(o, _CONCAT_PREC) for o in node.get("operands", []))
     if kind == "BinaryExpr":
-        prec = _BINOP_PREC.get(node.get("operator"), 3)
+        prec = _BINOP_PREC.get(str(node.get("operator")), 3)
         left = _operand(node["left"], prec)
         # Right operand of a left-associative op needs parens at equal precedence.
         right = _operand(node["right"], prec, force_parens=True)

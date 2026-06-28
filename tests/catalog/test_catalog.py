@@ -197,7 +197,9 @@ def test_library_change_does_not_alter_pinned_dependent():
     svc.save("demo.find", ffl_source=DEP_WF, depends_on=[{"slug": "lib.geo"}])
     pinned = svc._catalog.get_revision_by_version("demo.find", 1).depends_on[0].revision_id
     # Evolve the base library → new library revision.
-    svc.save("lib.geo", kind="library", ffl_source=LIB.replace("lon: Double", "lon: Double, alt: Double"))
+    svc.save(
+        "lib.geo", kind="library", ffl_source=LIB.replace("lon: Double", "lon: Double, alt: Double")
+    )
     # The dependent's pinned dependency is unchanged.
     still = svc._catalog.get_revision_by_version("demo.find", 1).depends_on[0].revision_id
     assert still == pinned
@@ -205,7 +207,9 @@ def test_library_change_does_not_alter_pinned_dependent():
 
 def test_search_ranks_by_query_and_filters_by_tag():
     svc = _svc()
-    svc.save("demo.hello", ffl_source=WF, title="Hello", description="greets a name", tags=["greeting"])
+    svc.save(
+        "demo.hello", ffl_source=WF, title="Hello", description="greets a name", tags=["greeting"]
+    )
     assert any(s["slug"] == "demo.hello" for s in svc.search("greet"))
     assert any(s["slug"] == "demo.hello" for s in svc.search("", tags=["greeting"]))
     assert svc.search("nonexistent-zzz") == []
@@ -267,7 +271,9 @@ def test_run_preflight_catches_unimportable_handler_module(tmp_path):
     from facetwork.runtime.entities.server import HandlerRegistration
 
     h = tmp_path / "brokenmodule.py"
-    h.write_text("import totally_missing_top_level_pkg_xyz\n\ndef handle(payload):\n    return {}\n")
+    h.write_text(
+        "import totally_missing_top_level_pkg_xyz\n\ndef handle(payload):\n    return {}\n"
+    )
     reg = HandlerRegistration(
         facet_name="claude.demo.Greet", module_uri=f"file://{h}", entrypoint="handle"
     )
@@ -305,8 +311,11 @@ def test_run_preflight_passes_handler_with_lazy_sibling_import(tmp_path):
 
 def test_save_records_authoring_summary_and_dedup_refreshes_it():
     svc = _svc()
-    svc.save("demo.hello", ffl_source=WF,
-             summary="Greets a user by name. Built from the 'greeter' request.")
+    svc.save(
+        "demo.hello",
+        ffl_source=WF,
+        summary="Greets a user by name. Built from the 'greeter' request.",
+    )
     assert "greet" in svc.get("demo.hello")["summary"].lower()
     # Re-saving identical FFL de-dupes but updates the (descriptive) summary.
     r2 = svc.save("demo.hello", ffl_source=WF, summary="Refined: greets by name, returns schema R.")

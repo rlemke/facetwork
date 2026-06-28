@@ -67,8 +67,10 @@ def _detect(args: argparse.Namespace) -> int:
         return 0
     print(f"Handler gaps for '{args.entry}' ({len(missing)}):")
     for m in missing:
-        print(f"  - {m}  (needs a handler — scaffold with: "
-              f"python -m facetwork.scaffold {m} --params '...' --returns '...')")
+        print(
+            f"  - {m}  (needs a handler — scaffold with: "
+            f"python -m facetwork.scaffold {m} --params '...' --returns '...')"
+        )
     return 0
 
 
@@ -109,7 +111,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--ffl", default=None, help="(detect) FFL file with the composed workflow")
     p.add_argument("--also-ffl", action="append", help="(detect) extra FFL files to merge (deps)")
     p.add_argument("--entry", default=None, help="(detect) entry workflow name")
-    p.add_argument("--registered", default="", help="(detect) registered facets: comma list or @file")
+    p.add_argument(
+        "--registered", default="", help="(detect) registered facets: comma list or @file"
+    )
     args = p.parse_args(argv)
 
     if args.detect_gaps:

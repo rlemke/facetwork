@@ -11,13 +11,14 @@ local copy is removed without re-uploading.
 
     /Volumes/afl_data/cache/<X>  ->  s3://afl-cache/cache/<X>
 """
+
 import os
 import sys
 import time
 
 import boto3
-from botocore.config import Config
 from boto3.s3.transfer import TransferConfig
+from botocore.config import Config
 
 SRC_ROOT = os.environ.get("SRC_ROOT", "/Volumes/afl_data/cache")
 KEY_PREFIX = "cache"  # AFL_DATA_ROOT/cache/...  (handlers root durable artifacts here)
@@ -110,10 +111,12 @@ def main():
         return True
 
     total_bytes = sum(s for s, f in sized if _kept(s, f))
-    log(f"=== MOVE START: {total} files, {total_bytes/1e9:.1f} GB under {SRC_ROOT} "
+    log(
+        f"=== MOVE START: {total} files, {total_bytes / 1e9:.1f} GB under {SRC_ROOT} "
         f"(smallest-first; deferred={deferred}"
-        f"{', skip_substr='+skip_substr if skip_substr else ''}"
-        f"{', skip>'+str(skip_gb)+'GB' if skip_gb else ''}) ===")
+        f"{', skip_substr=' + skip_substr if skip_substr else ''}"
+        f"{', skip>' + str(skip_gb) + 'GB' if skip_gb else ''}) ==="
+    )
 
     moved = skipped = failed = 0
     moved_bytes = 0
@@ -146,7 +149,7 @@ def main():
             try:
                 s3.upload_file(path, BUCKET, key, Config=xfer)
                 if head_size(key) != size:
-                    raise IOError("post-upload size mismatch")
+                    raise OSError("post-upload size mismatch")
                 ok = True
                 break
             except Exception as e:
@@ -163,10 +166,14 @@ def main():
         moved += 1
         moved_bytes += size
         if moved % 200 == 0 or size > 1 * 1024**3:
-            log(f"  [{i}/{total}] moved {moved_bytes/1e9:.1f}/{total_bytes/1e9:.1f} GB :: {rel}")
+            log(
+                f"  [{i}/{total}] moved {moved_bytes / 1e9:.1f}/{total_bytes / 1e9:.1f} GB :: {rel}"
+            )
 
-    log(f"=== MOVE DONE: moved={moved} skipped_existing={skipped} failed={failed} "
-        f"bytes={moved_bytes/1e9:.1f} GB ===")
+    log(
+        f"=== MOVE DONE: moved={moved} skipped_existing={skipped} failed={failed} "
+        f"bytes={moved_bytes / 1e9:.1f} GB ==="
+    )
     if failures:
         log(f"=== {len(failures)} FAILURES (first 20) ===")
         for p, e in failures[:20]:

@@ -31,8 +31,10 @@ COMPOSE = _REPO_ROOT / "docker-compose.full-stack.yml"
 BEGIN = "  # >>> BEGIN generated domain runners (fw util gen-compose — do not edit) >>>\n"
 END = "  # <<< END generated domain runners <<<\n"
 
-_POSTGIS_URL = ("postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}"
-                "@postgis:5432/${POSTGRES_DB:-afl_gis}")
+_POSTGIS_URL = (
+    "postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}"
+    "@postgis:5432/${POSTGRES_DB:-afl_gis}"
+)
 _HANDLERS = "${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}"
 _DATA_DIR = "${AFL_DATA_DIR:-/Volumes/afl_data}"
 
@@ -127,8 +129,10 @@ def main(argv: list[str] | None = None) -> int:
     changed, msg = sync(write=not check)
     if check:
         if changed:
-            print("docker-compose.full-stack.yml is OUT OF SYNC with the catalog "
-                  "(generated domain-runner region differs). Run `fw util gen-compose`.")
+            print(
+                "docker-compose.full-stack.yml is OUT OF SYNC with the catalog "
+                "(generated domain-runner region differs). Run `fw util gen-compose`."
+            )
             return 1
         print("docker-compose.full-stack.yml generated region is in sync with the catalog.")
         return 0

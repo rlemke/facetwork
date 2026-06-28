@@ -79,7 +79,11 @@ class RunnerMixin(_MixinBase):
             run_clauses.append({"workflow_id": workflow_id})
         run_filter = {"$or": run_clauses} if len(run_clauses) > 1 else run_clauses[0]
 
-        steps = self._db.steps.delete_many({"workflow_id": workflow_id}).deleted_count if workflow_id else 0
+        steps = (
+            self._db.steps.delete_many({"workflow_id": workflow_id}).deleted_count
+            if workflow_id
+            else 0
+        )
         tasks = self._db.tasks.delete_many(run_filter).deleted_count
         step_logs = self._db.step_logs.delete_many(run_filter).deleted_count
         logs = self._db.logs.delete_many({"runner_id": runner_id}).deleted_count

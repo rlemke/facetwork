@@ -29,7 +29,7 @@ def store():
 def test_migrates_only_domains(store):
     # A domain seed and a teaching-example seed, both under example:.
     _seed(store, "example:osm-geocoder", "osm-geocoder")  # domain
-    _seed(store, "example:hello-agent", "hello-agent")    # teaching example (NOT in DOMAIN_NAMES)
+    _seed(store, "example:hello-agent", "hello-agent")  # teaching example (NOT in DOMAIN_NAMES)
 
     res = migrate_seed_prefix(store, apply=True, names=["osm-geocoder", "census-us"])
     assert res["names"] == ["osm-geocoder"]  # census-us had no seed; hello-agent not requested
@@ -74,4 +74,7 @@ def test_supersede_when_domain_already_seeded(store):
     # No duplicate: exactly one domain: flow (the new one), example: gone.
     assert store._db.flows.count_documents({"name.path": "domain:osm-geocoder"}) == 1
     assert store._db.flows.count_documents({"name.path": "example:osm-geocoder"}) == 0
-    assert store._db.flows.find_one({"name.path": "domain:osm-geocoder"})["uuid"] == "f-osm-geocoder-new"
+    assert (
+        store._db.flows.find_one({"name.path": "domain:osm-geocoder"})["uuid"]
+        == "f-osm-geocoder-new"
+    )

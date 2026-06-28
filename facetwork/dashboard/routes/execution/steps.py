@@ -194,8 +194,7 @@ def retry_step(step_id: str, force: bool = False, store=Depends(get_store)):
             content={
                 "error": "step_task_running",
                 "message": (
-                    "This step's task is currently RUNNING. "
-                    "Pass ?force=true to reset it anyway."
+                    "This step's task is currently RUNNING. Pass ?force=true to reset it anyway."
                 ),
                 "blockers": [
                     {
@@ -494,8 +493,7 @@ def reset_block(step_id: str, force: bool = False, store=Depends(get_store)):
                         source=StepLogSource.FRAMEWORK,
                         level=StepLogLevel.WARNING,
                         message=(
-                            f"Forcibly removed by reset of block {step_id} "
-                            f"while task was RUNNING"
+                            f"Forcibly removed by reset of block {step_id} while task was RUNNING"
                         ),
                         time=int(_time.time() * 1000),
                     )

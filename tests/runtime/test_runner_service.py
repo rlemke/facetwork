@@ -2904,9 +2904,7 @@ class TestSweepStuckSteps:
         # from the new persistence-API methods.
         service._sweep_workflow_steps(workflow_id)
 
-    def test_sweep_creates_task_for_stuck_event_transmit_step(
-        self, service, store, runner_def
-    ):
+    def test_sweep_creates_task_for_stuck_event_transmit_step(self, service, store, runner_def):
         """A parked EventTransmit step with no task gets one synthesized."""
         _, workflow_id = runner_def
         step = self._make_event_step(workflow_id, facet_name="MyEventFacet")
@@ -2953,9 +2951,7 @@ class TestSweepStuckSteps:
             f"task.data must not be the nested mongo-doc shape; got: {task.data!r}"
         )
 
-    def test_sweep_does_not_duplicate_existing_active_task(
-        self, service, store, runner_def
-    ):
+    def test_sweep_does_not_duplicate_existing_active_task(self, service, store, runner_def):
         """If a pending or running task already exists, no new one is created."""
         _, workflow_id = runner_def
         step = self._make_event_step(workflow_id)
@@ -2981,9 +2977,7 @@ class TestSweepStuckSteps:
         assert len(all_tasks) == 1
         assert all_tasks[0].uuid == existing.uuid
 
-    def test_sweep_skips_event_transmit_step_without_facet_name(
-        self, service, store, runner_def
-    ):
+    def test_sweep_skips_event_transmit_step_without_facet_name(self, service, store, runner_def):
         """Block-level steps at EventTransmit (no facet_name) aren't task-able."""
         _, workflow_id = runner_def
         step = self._make_event_step(workflow_id, facet_name="")
@@ -2993,9 +2987,7 @@ class TestSweepStuckSteps:
 
         assert store.get_task_for_step(step.id) is None
 
-    def test_sweep_invokes_resume_for_block_steps(
-        self, service, store, runner_def
-    ):
+    def test_sweep_invokes_resume_for_block_steps(self, service, store, runner_def):
         """Non-EventTransmit stuck steps go through ``_resume_workflow_for_step``."""
         from facetwork.runtime.step import StepDefinition
         from facetwork.runtime.types import StepId, WorkflowId
@@ -3113,9 +3105,7 @@ class TestReleaseTimedOutTask:
         This is the explicit pin for the silent-swallow contract — if
         the method ever starts raising, the runner thread crashes.
         """
-        with patch.object(
-            store, "get_task", side_effect=RuntimeError("simulated DB outage")
-        ):
+        with patch.object(store, "get_task", side_effect=RuntimeError("simulated DB outage")):
             # Must not raise — the outer try/except has to catch this.
             service._release_timed_out_task("any-id")
 
@@ -3145,9 +3135,7 @@ class TestReconcileWithDb:
 
     def test_query_failure_is_swallowed(self, service, store):
         """A DB error returns early without raising."""
-        with patch.object(
-            store, "get_tasks_by_server_id", side_effect=RuntimeError("boom")
-        ):
+        with patch.object(store, "get_tasks_by_server_id", side_effect=RuntimeError("boom")):
             service._reconcile_with_db()  # must not raise
 
     def test_releases_orphaned_in_memory_futures(self, service, store):
@@ -3270,9 +3258,7 @@ class TestStuckWatchdogStepLogs:
 
         with (
             patch.object(store, "reap_orphaned_tasks", return_value=[]),
-            patch.object(
-                store, "reap_stuck_tasks", side_effect=RuntimeError("watchdog boom")
-            ),
+            patch.object(store, "reap_stuck_tasks", side_effect=RuntimeError("watchdog boom")),
         ):
             # Must not raise — outer try/except absorbs.
             svc._maybe_reap_orphaned_tasks()
@@ -3318,9 +3304,7 @@ class TestSweepNameResolution:
                 "get_pending_resume_workflow_ids",
                 return_value=["wf-good-1", "wf-bad", "wf-good-2"],
             ),
-            patch.object(
-                service, "_sweep_workflow_steps", side_effect=maybe_fail
-            ) as mock_sweep,
+            patch.object(service, "_sweep_workflow_steps", side_effect=maybe_fail) as mock_sweep,
         ):
             service._maybe_sweep_stuck_steps()  # must not raise
 

@@ -11,6 +11,7 @@ Secret store: MinIO credentials live encrypted in the `fleet_secrets` collection
 (Fernet symmetric encryption). Each host needs only the fleet key (AFL_FLEET_KEY)
 — one bootstrap secret, rotatable — not the actual creds. Set once centrally.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,9 +27,11 @@ CONVENTIONAL_MINIO = "http://afl-minio:9000"
 # Discovery
 # ---------------------------------------------------------------------------
 
+
 def _mongo_ok(url: str, timeout_ms: int = 2000) -> bool:
     try:
         from pymongo import MongoClient
+
         MongoClient(url, serverSelectionTimeoutMS=timeout_ms).admin.command("ping")
         return True
     except Exception:
@@ -50,7 +53,7 @@ def mdns_lookup(service_type: str, timeout: float = 2.0) -> str | None:
     """Return host:port for the first instance of an mDNS service, or None if
     zeroconf isn't installed or nothing answers."""
     try:
-        from zeroconf import Zeroconf, ServiceBrowser
+        from zeroconf import ServiceBrowser, Zeroconf
     except Exception:
         return None
     found: list[str] = []
@@ -72,6 +75,7 @@ def mdns_lookup(service_type: str, timeout: float = 2.0) -> str | None:
     try:
         ServiceBrowser(zc, service_type, _L())
         import time
+
         time.sleep(timeout)
     finally:
         zc.close()
@@ -81,6 +85,7 @@ def mdns_lookup(service_type: str, timeout: float = 2.0) -> str | None:
 def resolve_mongo(explicit: str | None = None, *, log=None) -> str:
     """Discover a reachable MongoDB URL. Order: explicit → AFL_MONGODB_URL →
     mDNS (_afl-mongo._tcp) → conventional afl-mongodb. Raises if none answer."""
+
     def _say(m):
         if log:
             log(m)
@@ -163,8 +168,10 @@ def parse_role_groups(value: str) -> tuple[str, list[str]]:
 # Secret store (Fernet)
 # ---------------------------------------------------------------------------
 
+
 def gen_key() -> str:
     from cryptography.fernet import Fernet
+
     return Fernet.generate_key().decode()
 
 
@@ -177,14 +184,19 @@ def _fernet():
         )
     try:
         from cryptography.fernet import Fernet
+
         return Fernet(key.encode() if isinstance(key, str) else key)
     except Exception as exc:
-        raise RuntimeError(f"invalid AFL_FLEET_KEY: {exc}")
+        raise RuntimeError(f"invalid AFL_FLEET_KEY: {exc}") from exc
 
 
 def set_minio_secret(db, access_key: str, secret_key: str) -> None:
-    token = _fernet().encrypt(json.dumps({"access_key": access_key, "secret_key": secret_key}).encode())
-    db.fleet_secrets.update_one({"_id": "default"}, {"$set": {"minio_enc": token.decode()}}, upsert=True)
+    token = _fernet().encrypt(
+        json.dumps({"access_key": access_key, "secret_key": secret_key}).encode()
+    )
+    db.fleet_secrets.update_one(
+        {"_id": "default"}, {"$set": {"minio_enc": token.decode()}}, upsert=True
+    )
 
 
 def get_minio_secret(db) -> dict | None:

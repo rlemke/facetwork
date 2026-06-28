@@ -77,8 +77,14 @@ def _fleet_data(store) -> dict:
     for h, n in live.items():
         d = hosts.setdefault(
             h,
-            {"host": h, "version": None, "image": "—", "applied_at": "—",
-             "uptodate": False, "has_agent": False},
+            {
+                "host": h,
+                "version": None,
+                "image": "—",
+                "applied_at": "—",
+                "uptodate": False,
+                "has_agent": False,
+            },
         )
         d["live"] = n
         d["last_ping_s"] = round(freshest.get(h, 0))
@@ -120,6 +126,4 @@ def fleet_v3(request: Request, store=Depends(get_store)):
     """Redesigned Fleet page — per-host rollout + health."""
     ctx = _fleet_data(store)
     ctx["active_nav"] = "fleet"
-    return request.app.state.templates.TemplateResponse(
-        request, "v3/fleet/overview.html", ctx
-    )
+    return request.app.state.templates.TemplateResponse(request, "v3/fleet/overview.html", ctx)

@@ -27,8 +27,9 @@ router = APIRouter(prefix="/v3")
 
 
 @router.get("/handlers")
-def handlers_v3(request: Request, tab: str = "all", ns: str | None = None,
-                store=Depends(get_store)):
+def handlers_v3(
+    request: Request, tab: str = "all", ns: str | None = None, store=Depends(get_store)
+):
     """Redesigned Handlers list — All / Active / Working, grouped by namespace.
 
     ``ns`` (set when arriving from a Fleet role) narrows to one top-level
@@ -82,13 +83,15 @@ def handler_detail_v3(facet_name: str, request: Request, store=Depends(get_store
     for s in store.get_all_servers():
         if facet_name in (getattr(s, "handlers", None) or []):
             alive = s.state == "running" and (now - (getattr(s, "ping_time", 0) or 0)) < 60_000
-            servers.append({
-                "uuid": s.uuid,
-                "name": s.server_name or s.uuid[:12],
-                "group": getattr(s, "server_group", "") or "—",
-                "state": s.state,
-                "alive": alive,
-            })
+            servers.append(
+                {
+                    "uuid": s.uuid,
+                    "name": s.server_name or s.uuid[:12],
+                    "group": getattr(s, "server_group", "") or "—",
+                    "state": s.state,
+                    "alive": alive,
+                }
+            )
     servers.sort(key=lambda x: (not x["alive"], x["uuid"]))
 
     tasks = store.get_tasks_by_facet_name(facet_name)[:50]

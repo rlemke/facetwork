@@ -145,7 +145,9 @@ def test_delete_team_scrubs_membership(store):
 def test_soft_delete_keeps_runner_author(store):
     ada = User(email="ada@x.com", first_name="Ada")
     store.save_user(ada)
-    store.save_runner(_runner("r-1", user=ada.to_user_definition(), author=ada.to_user_definition()))
+    store.save_runner(
+        _runner("r-1", user=ada.to_user_definition(), author=ada.to_user_definition())
+    )
 
     store.soft_delete_user("ada@x.com")
     run = store.get_runner("r-1")
@@ -155,7 +157,9 @@ def test_soft_delete_keeps_runner_author(store):
 def test_force_delete_reassigns_references(store):
     ada = User(email="ada@x.com", first_name="Ada")
     store.save_user(ada)
-    store.save_runner(_runner("r-1", user=ada.to_user_definition(), author=ada.to_user_definition()))
+    store.save_runner(
+        _runner("r-1", user=ada.to_user_definition(), author=ada.to_user_definition())
+    )
 
     res = store.force_delete_user("ada@x.com")
     assert res["deleted"]

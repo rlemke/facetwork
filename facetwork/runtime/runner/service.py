@@ -479,9 +479,7 @@ class RunnerService:
         # follows the handler.
         from ..task_list_routing import namespaces_for
 
-        poll_lists = sorted(
-            set(namespaces_for(self._get_event_names())) | {self._config.task_list}
-        )
+        poll_lists = sorted(set(namespaces_for(self._get_event_names())) | {self._config.task_list})
 
         # Claim event tasks from the task queue (filtered by circuit breaker)
         event_names = [n for n in self._get_event_names() if self._circuit_breakers.is_allowed(n)]
@@ -813,21 +811,17 @@ class RunnerService:
                 step_ref = ref
             else:
                 raise TypeError(
-                    f"fetch_step expects StepReference or tagged dict, "
-                    f"got {type(ref).__name__}"
+                    f"fetch_step expects StepReference or tagged dict, got {type(ref).__name__}"
                 )
             step = self._persistence.get_step(step_ref.step_id)
             if step is None:
-                raise LookupError(
-                    f"Referenced step '{step_ref.step_id}' not found"
-                )
+                raise LookupError(f"Referenced step '{step_ref.step_id}' not found")
             return {
                 "step_id": str(step.id),
                 "facet_name": step.facet_name,
                 "workflow_id": str(step.workflow_id),
                 "params": {
-                    k: serialize_attribute_value(v.value)
-                    for k, v in step.attributes.params.items()
+                    k: serialize_attribute_value(v.value) for k, v in step.attributes.params.items()
                 },
                 "returns": {
                     k: serialize_attribute_value(v.value)
@@ -876,7 +870,7 @@ class RunnerService:
             level=level,
             message=message,
             time=_current_time_ms(),
-            details=details,
+            details=details or {},
         )
         try:
             self._persistence.save_step_log(entry)
@@ -1478,9 +1472,7 @@ class RunnerService:
                 flow = self._persistence.get_flow(flow_id)
                 if flow:
                     if attempt > 0:
-                        logger.info(
-                            "Flow %s resolved after %d retry/retries", flow_id, attempt
-                        )
+                        logger.info("Flow %s resolved after %d retry/retries", flow_id, attempt)
                     break
                 import time as _t
 
@@ -1722,9 +1714,7 @@ class RunnerService:
                         workflow_id=task_info["workflow_id"],
                         facet_name=task_info["name"],
                         level=StepLogLevel.WARNING,
-                        message=_reaper_message(
-                            task_info, reclaimer_name=self._config.server_name
-                        ),
+                        message=_reaper_message(task_info, reclaimer_name=self._config.server_name),
                     )
         except Exception:
             logger.debug("Orphan reaper failed", exc_info=True)
@@ -1764,9 +1754,7 @@ class RunnerService:
                         workflow_id=task_info["workflow_id"],
                         facet_name=task_info["name"],
                         level=StepLogLevel.WARNING,
-                        message=_stuck_message(
-                            task_info, reclaimer_name=self._config.server_name
-                        ),
+                        message=_stuck_message(task_info, reclaimer_name=self._config.server_name),
                     )
         except Exception:
             logger.debug("Stuck task watchdog failed", exc_info=True)

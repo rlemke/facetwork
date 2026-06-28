@@ -331,9 +331,7 @@ class RepairMixin(_MixinBase):
                 # the parent container resumes at MIXIN_BLOCKS_CONTINUE
                 # vs STATEMENT_BLOCKS_CONTINUE per the descendant's
                 # mixin status.
-                self._reset_failed_step_and_ancestors(
-                    step, step_by_id, result["ancestors_reset"]
-                )
+                self._reset_failed_step_and_ancestors(step, step_by_id, result["ancestors_reset"])
 
                 self._repair_log(
                     step_id=step.id,

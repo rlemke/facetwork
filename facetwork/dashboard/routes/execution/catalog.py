@@ -92,7 +92,9 @@ def render_summary_md(text: str | None) -> str:
             i += 1
         elif h := re.match(r"^(#{1,6})\s+(.*)", s):
             flush()
-            out.append(f"<h{min(len(h.group(1)) + 3, 6)}>{inline(h.group(2))}</h{min(len(h.group(1)) + 3, 6)}>")
+            out.append(
+                f"<h{min(len(h.group(1)) + 3, 6)}>{inline(h.group(2))}</h{min(len(h.group(1)) + 3, 6)}>"
+            )
             i += 1
         elif re.match(r"^\d+\.\s+", s):
             flush()
@@ -125,9 +127,7 @@ def _parse_version(raw: str | None) -> int | None:
 
 
 @router.post("/{slug}/publish")
-def catalog_publish(
-    request: Request, slug: str, version: str = Form(""), store=Depends(get_store)
-):
+def catalog_publish(request: Request, slug: str, version: str = Form(""), store=Depends(get_store)):
     """Publish (review-approve) a revision so it can run unattended."""
     svc = _service(store)
     if svc is not None:

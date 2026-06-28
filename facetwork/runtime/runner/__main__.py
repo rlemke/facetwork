@@ -124,7 +124,9 @@ def _warn_registry_drift(loaded_facet_names: list[str]) -> None:
     total_missing = sum(len(v) for v in drifted.values())
     parts = []
     for name, missing in drifted.items():
-        preview = ", ".join(missing[:6]) + (f", … (+{len(missing)-6} more)" if len(missing) > 6 else "")
+        preview = ", ".join(missing[:6]) + (
+            f", … (+{len(missing) - 6} more)" if len(missing) > 6 else ""
+        )
         parts.append(f"{name}: {preview}")
     _drift_logger.warning(
         "Registry drift: %d facet(s) declared in installed package code but NOT in "

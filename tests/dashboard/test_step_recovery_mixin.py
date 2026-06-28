@@ -21,8 +21,6 @@ store.
 
 from __future__ import annotations
 
-import time as _time
-
 import pytest
 
 try:
@@ -42,7 +40,6 @@ except ImportError:
 from facetwork.runtime.states import StepState
 from facetwork.runtime.step import StepDefinition
 from facetwork.runtime.types import AttributeValue, FacetAttributes, ObjectType, step_id
-
 
 needs_fastapi = pytest.mark.skipif(
     not FASTAPI_AVAILABLE or not MONGOMOCK_AVAILABLE,
@@ -90,9 +87,7 @@ def client():
     from facetwork.dashboard.app import create_app
     from facetwork.runtime.mongo_store import MongoStore
 
-    store = MongoStore(
-        database_name="afl_test_recovery_mixin", client=mongomock.MongoClient()
-    )
+    store = MongoStore(database_name="afl_test_recovery_mixin", client=mongomock.MongoClient())
     app = create_app()
     app.dependency_overrides[deps.get_store] = lambda: store
     with TestClient(app, follow_redirects=False) as tc:
@@ -135,9 +130,7 @@ class TestRetryMixinSubStep:
         store.save_step(mixin)
         return parent, mixin
 
-    def test_retry_resets_mixin_to_created_and_parent_to_mixin_blocks_continue(
-        self, client
-    ):
+    def test_retry_resets_mixin_to_created_and_parent_to_mixin_blocks_continue(self, client):
         tc, store = client
         parent, mixin = self._seed(store)
 
@@ -345,8 +338,7 @@ class TestRetryBlockMixinSubStep:
 
         mixin_after = store.get_step(mixin.id)
         assert mixin_after.state == StepState.CREATED, (
-            f"errored mixin leaf must reset to CREATED, not EVENT_TRANSMIT; "
-            f"got {mixin_after.state}"
+            f"errored mixin leaf must reset to CREATED, not EVENT_TRANSMIT; got {mixin_after.state}"
         )
         assert mixin_after.attributes.returns == {}
 

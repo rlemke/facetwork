@@ -43,12 +43,7 @@ def is_mixin_sub_step(step: StepDefinition | None) -> bool:
     helpers, repair-workflow, MCP fw_retry_step) share this helper so
     every recovery path agrees on what a mixin sub-step looks like.
     """
-    return bool(
-        step
-        and step.statement_name
-        and step.container_id
-        and not step.block_id
-    )
+    return bool(step and step.statement_name and step.container_id and not step.block_id)
 
 
 def resolve_mixin_step_by_alias(

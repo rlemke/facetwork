@@ -238,7 +238,7 @@ class TestRetryStep:
         CREATED (so it walks the full lifecycle and re-runs its body),
         and its parent ancestor in STATEMENT_ERROR resumes at
         MIXIN_BLOCKS_CONTINUE rather than STATEMENT_BLOCKS_CONTINUE."""
-        from facetwork.runtime.types import FacetAttributes, AttributeValue
+        from facetwork.runtime.types import AttributeValue, FacetAttributes
 
         mem = MemoryStore()
         parent = StepDefinition.create(

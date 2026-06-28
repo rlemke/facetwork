@@ -18,12 +18,17 @@ def base(tmp_path, monkeypatch):
     """Point the loader at a tmp DEFAULT_CATALOG/LOCAL_OVERRIDE, no env file."""
     default = tmp_path / "domains.json"
     local = tmp_path / "domains.local.json"
-    _write(default, {
-        "version": 1,
-        "domains": {"osm-geocoder": {"repo": "fwh_osm", "service": "runner-osm-geocoder"},
-                    "jenkins": {"repo": "fwh_jenkins"}},
-        "examples": {"hello-agent": {"dir": "examples/hello-agent"}},
-    })
+    _write(
+        default,
+        {
+            "version": 1,
+            "domains": {
+                "osm-geocoder": {"repo": "fwh_osm", "service": "runner-osm-geocoder"},
+                "jenkins": {"repo": "fwh_jenkins"},
+            },
+            "examples": {"hello-agent": {"dir": "examples/hello-agent"}},
+        },
+    )
     monkeypatch.setattr(catalog, "DEFAULT_CATALOG", default)
     monkeypatch.setattr(catalog, "LOCAL_OVERRIDE", local)
     monkeypatch.delenv("AFL_DOMAINS_FILE", raising=False)
@@ -54,11 +59,17 @@ def test_local_override_replaces_entry(base):
 
 def test_scaled_split_and_compose_services(base):
     _tmp, default, _local = base
-    _write(default, {"domains": {
-        "osm": {"repo": "fwh_osm", "service": "runner-osm", "scaled": True},
-        "anthropic": {"repo": "fwh_anthropic", "service": "runner-anthropic"},
-        "save": {"repo": "fwh_save"},  # no service -> not a compose domain at all
-    }, "examples": {}})
+    _write(
+        default,
+        {
+            "domains": {
+                "osm": {"repo": "fwh_osm", "service": "runner-osm", "scaled": True},
+                "anthropic": {"repo": "fwh_anthropic", "service": "runner-anthropic"},
+                "save": {"repo": "fwh_save"},  # no service -> not a compose domain at all
+            },
+            "examples": {},
+        },
+    )
     assert catalog.scaled_domain_suffixes() == ["osm"]
     assert catalog.unscaled_domain_suffixes() == ["anthropic"]  # 'save' excluded (no service)
     assert catalog.compose_services() == ["runner-anthropic", "runner-osm"]
@@ -66,7 +77,9 @@ def test_scaled_split_and_compose_services(base):
 
 def test_replica_defaults(base):
     _tmp, default, _local = base
-    _write(default, {"defaults": {"replicas": 2, "scaled_replicas": 5}, "domains": {}, "examples": {}})
+    _write(
+        default, {"defaults": {"replicas": 2, "scaled_replicas": 5}, "domains": {}, "examples": {}}
+    )
     assert catalog.default_replicas() == 2
     assert catalog.scaled_replicas() == 5
 
@@ -74,8 +87,8 @@ def test_replica_defaults(base):
 def test_replica_defaults_fallbacks(base):
     _tmp, default, _local = base
     _write(default, {"domains": {}, "examples": {}})  # no "defaults" block
-    assert catalog.default_replicas() == 1            # fallback
-    assert catalog.scaled_replicas() == 1             # falls back to default_replicas
+    assert catalog.default_replicas() == 1  # fallback
+    assert catalog.scaled_replicas() == 1  # falls back to default_replicas
 
 
 def test_replica_defaults_overridable(base):

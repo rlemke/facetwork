@@ -144,10 +144,7 @@ class MixinBlocksContinueHandler(StateHandler):
         errored = [s for s in sub_steps if s.is_error]
         if errored:
             err = errored[0].transition.error
-            msg = (
-                f"{len(errored)} mixin sub-step(s) errored"
-                + (f": {err}" if err else "")
-            )
+            msg = f"{len(errored)} mixin sub-step(s) errored" + (f": {err}" if err else "")
             self.step.mark_error(RuntimeError(msg))
             return StateChangeResult(step=self.step)
 
@@ -165,11 +162,7 @@ class MixinBlocksContinueHandler(StateHandler):
         facet_def = self.context.get_facet_definition(self.step.facet_name)
         if not facet_def:
             return set()
-        return {
-            m.get("alias")
-            for m in (facet_def.get("mixins", []) or [])
-            if m.get("alias")
-        }
+        return {m.get("alias") for m in (facet_def.get("mixins", []) or []) if m.get("alias")}
 
     def _mixin_sub_steps(self, aliases: set[str]) -> list:
         """Return persisted+pending sub-steps under this parent whose
@@ -191,10 +184,7 @@ class MixinBlocksContinueHandler(StateHandler):
                 result.append(pending)
         # Pending updates supersede prior persisted copies.
         for pending in self.context.changes.updated_steps:
-            if (
-                pending.container_id == self.step.id
-                and pending.statement_name in aliases
-            ):
+            if pending.container_id == self.step.id and pending.statement_name in aliases:
                 for i, s in enumerate(result):
                     if s.id == pending.id:
                         result[i] = pending

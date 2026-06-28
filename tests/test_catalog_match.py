@@ -33,19 +33,35 @@ def _entry(slug, title="", desc="", tags=None):
 
 def _rev(slug, summary="", facets=None, version=1, status=STATUS_PUBLISHED):
     return CatalogRevision(
-        revision_id=f"{slug}-r{version}", slug=slug, version=version, content_hash="h",
-        ffl_source="", flow_id="f", entry_workflow=f"x.{slug}", workflow_id="w",
+        revision_id=f"{slug}-r{version}",
+        slug=slug,
+        version=version,
+        content_hash="h",
+        ffl_source="",
+        flow_id="f",
+        entry_workflow=f"x.{slug}",
+        workflow_id="w",
         param_schema=[{"name": "region", "type": "String", "default": "California"}],
-        facets_used=facets or [], status=status, summary=summary,
+        facets_used=facets or [],
+        status=status,
+        summary=summary,
     )
 
 
 def test_match_score_weights_summary_over_description():
     entry = _entry("x", title="X", desc="supermarket")
     rev_summary = _rev("x", summary="supermarket")
-    rev_desc = CatalogRevision(revision_id="y", slug="x", version=1, content_hash="h",
-                               ffl_source="", flow_id="f", entry_workflow="x", workflow_id="w",
-                               summary="")
+    rev_desc = CatalogRevision(
+        revision_id="y",
+        slug="x",
+        version=1,
+        content_hash="h",
+        ffl_source="",
+        flow_id="f",
+        entry_workflow="x",
+        workflow_id="w",
+        summary="",
+    )
     # term in the authoring summary scores higher than the same term only in description.
     s_summary, _ = _match_score(["supermarket"], _entry("x"), rev_summary)
     s_desc, _ = _match_score(["supermarket"], entry, rev_desc)
@@ -78,14 +94,26 @@ class _FakeCatalog:
 
 def _service():
     pairs = [
-        (_entry("food-deserts", title="Food deserts", tags=["spatial", "health"]),
-         [_rev("food-deserts",
-               summary="Map the populated areas that lie beyond walking distance of a supermarket.",
-               facets=["osm.Spatial.BeyondDistance"])]),
-        (_entry("interstate-freeways", title="Interstate freeways", tags=["roads"]),
-         [_rev("interstate-freeways",
-               summary="Map the California interstate freeway network from the road extracts.",
-               facets=["osm.Filters.FilterGeoJSONByTagPrefix"])]),
+        (
+            _entry("food-deserts", title="Food deserts", tags=["spatial", "health"]),
+            [
+                _rev(
+                    "food-deserts",
+                    summary="Map the populated areas that lie beyond walking distance of a supermarket.",
+                    facets=["osm.Spatial.BeyondDistance"],
+                )
+            ],
+        ),
+        (
+            _entry("interstate-freeways", title="Interstate freeways", tags=["roads"]),
+            [
+                _rev(
+                    "interstate-freeways",
+                    summary="Map the California interstate freeway network from the road extracts.",
+                    facets=["osm.Filters.FilterGeoJSONByTagPrefix"],
+                )
+            ],
+        ),
     ]
     return CatalogService(_FakeCatalog(pairs), flow_store=None)
 

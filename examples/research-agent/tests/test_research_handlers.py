@@ -45,8 +45,18 @@ def _mock_client(reply_text: str):
 
 
 def _patch_anthropic_client(client):
-    """Patch fwh_anthropic's get_client to return *client*."""
-    from anthropic_handlers.tools._lib import messages as msg_lib
+    """Patch fwh_anthropic's get_client to return *client*.
+
+    research-agent depends on the external ``fwh_anthropic`` domain package (see
+    requirements.txt); the handler tests exercise its ``messages`` module, so
+    when it isn't installed (e.g. base CI) they skip rather than error — matching
+    the repo convention (``pytest.importorskip`` for boto3/shapely/etc.). The
+    stdlib-only parser/coercion tests in this module keep running regardless.
+    """
+    msg_lib = pytest.importorskip(
+        "anthropic_handlers.tools._lib.messages",
+        reason="fwh_anthropic not installed; see examples/research-agent/requirements.txt",
+    )
 
     return patch.object(msg_lib, "get_client", return_value=client)
 

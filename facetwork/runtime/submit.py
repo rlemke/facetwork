@@ -334,9 +334,7 @@ def main(args: list[str] | None = None) -> int:
     if author_email:
         author_user = store.get_user(author_email)
         author_def = (
-            author_user.to_user_definition()
-            if author_user
-            else UserDefinition(email=author_email)
+            author_user.to_user_definition() if author_user else UserDefinition(email=author_email)
         )
 
     runner = RunnerDefinition(
@@ -363,9 +361,7 @@ def main(args: list[str] | None = None) -> int:
         # namespace claims it (namespace routing); an explicit
         # --task-list still overrides for back-compat.
         task_list_name=(
-            parsed.task_list
-            if parsed.task_list is not None
-            else namespace_of(parsed.workflow)
+            parsed.task_list if parsed.task_list is not None else namespace_of(parsed.workflow)
         ),
         data={
             "flow_id": flow_id,

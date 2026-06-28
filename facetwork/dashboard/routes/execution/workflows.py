@@ -21,7 +21,6 @@ and `_build_afl_snippet`.
 
 from __future__ import annotations
 
-
 # ---------------------------------------------------------------------------
 # Helpers for the workflow browser (v3 new-run)
 # ---------------------------------------------------------------------------
@@ -84,5 +83,3 @@ def _build_afl_snippet(ns: str, wf: dict) -> str:
         lines = [sig, body, close]
 
     return "\n".join(lines)
-
-

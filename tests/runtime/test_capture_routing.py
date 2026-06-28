@@ -122,10 +122,12 @@ class TestRouteYieldByAlias:
         )
         handler, updated = _setup_handler(
             parent,
-            _facet_def([
-                {"target": "M", "alias": "primary"},
-                {"target": "M", "alias": "fallback"},
-            ]),
+            _facet_def(
+                [
+                    {"target": "M", "alias": "primary"},
+                    {"target": "M", "alias": "fallback"},
+                ]
+            ),
             sub,
         )
 
@@ -159,10 +161,12 @@ class TestRouteYieldByAlias:
         )
         handler, updated = _setup_handler(
             parent,
-            _facet_def([
-                {"target": "M", "alias": "primary"},
-                {"target": "M", "alias": "fallback"},
-            ]),
+            _facet_def(
+                [
+                    {"target": "M", "alias": "primary"},
+                    {"target": "M", "alias": "fallback"},
+                ]
+            ),
             primary_sub,
             fallback_sub,
         )

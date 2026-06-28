@@ -65,10 +65,18 @@ def _build_parser() -> argparse.ArgumentParser:
     pl.add_argument("query", nargs="?", default="", help="Optional keyword filter")
     pl.add_argument("--kind", default=None, help="Filter by kind: workflow | library")
     pl.add_argument("--tag", default=None, help="Filter by tag")
-    pl.add_argument("--package", default=None, help="List workflows belonging to this library/package")
-    pl.add_argument("--published", action="store_true", help="Only entries with a published revision")
-    pl.add_argument("--all", action="store_true", dest="show_all",
-                    help="Flat list of every entry (including package workflows)")
+    pl.add_argument(
+        "--package", default=None, help="List workflows belonging to this library/package"
+    )
+    pl.add_argument(
+        "--published", action="store_true", help="Only entries with a published revision"
+    )
+    pl.add_argument(
+        "--all",
+        action="store_true",
+        dest="show_all",
+        help="Flat list of every entry (including package workflows)",
+    )
     pl.add_argument("--json", action="store_true", help="Machine-readable JSON output")
     pl.add_argument("--limit", type=int, default=0, help="Max rows (0 = no limit)")
 
@@ -91,45 +99,79 @@ def _build_parser() -> argparse.ArgumentParser:
     pi.add_argument("--description", default="")
     pi.add_argument("--tags", default="", help="Comma-separated tags")
     pi.add_argument("--entry-workflow", default=None, help="Entry workflow name if multiple")
-    pi.add_argument("--depends-on", default="", help="Comma-separated lib slugs, e.g. lib.a,lib.b@2")
+    pi.add_argument(
+        "--depends-on", default="", help="Comma-separated lib slugs, e.g. lib.a,lib.b@2"
+    )
     pi.add_argument("--publish", action="store_true", help="Publish each imported revision")
-    pi.add_argument("--summary", default="",
-                    help="Markdown narrative: why the workflow exists (intent / conversation summary)")
-    pi.add_argument("--summary-file", default=None, help="Read --summary from this file (long text)")
+    pi.add_argument(
+        "--summary",
+        default="",
+        help="Markdown narrative: why the workflow exists (intent / conversation summary)",
+    )
+    pi.add_argument(
+        "--summary-file", default=None, help="Read --summary from this file (long text)"
+    )
 
     pp = sub.add_parser(
         "import-package",
         help="Import a whole multi-file FFL package: one shared library + one entry per workflow",
     )
-    pp.add_argument("name", nargs="?", default=None,
-                    help="Registered facetwork example/package name (e.g. osm-geocoder)")
-    pp.add_argument("--dir", default=None,
-                    help="Import every .ffl under this directory instead of a registered package")
-    pp.add_argument("--lib-slug", default=None,
-                    help="Slug for the shared library entry (default: package name)")
-    pp.add_argument("--also", default="",
-                    help="Comma-separated extra package names to merge (cross-package use deps)")
+    pp.add_argument(
+        "name",
+        nargs="?",
+        default=None,
+        help="Registered facetwork example/package name (e.g. osm-geocoder)",
+    )
+    pp.add_argument(
+        "--dir",
+        default=None,
+        help="Import every .ffl under this directory instead of a registered package",
+    )
+    pp.add_argument(
+        "--lib-slug", default=None, help="Slug for the shared library entry (default: package name)"
+    )
+    pp.add_argument(
+        "--also",
+        default="",
+        help="Comma-separated extra package names to merge (cross-package use deps)",
+    )
     pp.add_argument("--prefix", default="", help="Prefix prepended to every workflow slug")
     pp.add_argument("--tags", default="", help="Comma-separated tags")
-    pp.add_argument("--no-publish", action="store_true",
-                    help="Import as drafts (default: publish valid revisions)")
+    pp.add_argument(
+        "--no-publish",
+        action="store_true",
+        help="Import as drafts (default: publish valid revisions)",
+    )
 
     pa = sub.add_parser(
         "import-all",
         help="Import EVERY discoverable example package's FFL into the catalog "
-             "(one shared library + per-workflow entries per package)",
+        "(one shared library + per-workflow entries per package)",
     )
     pa.add_argument("--tags", default="", help="Comma-separated tags applied to every import")
-    pa.add_argument("--only", action="append", default=[],
-                    help="Restrict to these package names (repeatable)")
-    pa.add_argument("--exclude", action="append", default=[],
-                    help="Skip these package names (repeatable)")
-    pa.add_argument("--dir", action="append", default=[],
-                    help="Also import every .ffl under this directory as a package (repeatable)")
-    pa.add_argument("--no-publish", action="store_true",
-                    help="Import as drafts (default: publish valid revisions)")
-    pa.add_argument("--list", action="store_true", dest="list_only",
-                    help="List the packages that would be imported, then exit")
+    pa.add_argument(
+        "--only", action="append", default=[], help="Restrict to these package names (repeatable)"
+    )
+    pa.add_argument(
+        "--exclude", action="append", default=[], help="Skip these package names (repeatable)"
+    )
+    pa.add_argument(
+        "--dir",
+        action="append",
+        default=[],
+        help="Also import every .ffl under this directory as a package (repeatable)",
+    )
+    pa.add_argument(
+        "--no-publish",
+        action="store_true",
+        help="Import as drafts (default: publish valid revisions)",
+    )
+    pa.add_argument(
+        "--list",
+        action="store_true",
+        dest="list_only",
+        help="List the packages that would be imported, then exit",
+    )
     return p
 
 
@@ -155,7 +197,12 @@ def _cmd_list(svc: Any, args: argparse.Namespace) -> int:
             return False
         if args.query:
             hay = " ".join(
-                [s["slug"], s.get("title", ""), s.get("description", ""), " ".join(s.get("tags", []))]
+                [
+                    s["slug"],
+                    s.get("title", ""),
+                    s.get("description", ""),
+                    " ".join(s.get("tags", [])),
+                ]
             ).lower()
             if args.query.lower() not in hay:
                 return False
@@ -208,8 +255,10 @@ def _cmd_list(svc: Any, args: argparse.Namespace) -> int:
         by_pkg: dict[str, int] = {}
         for s in package_wfs:
             by_pkg[s["package"]] = by_pkg.get(s["package"], 0) + 1
-        print(f"\nPackage workflows: {len(package_wfs)} "
-              f"(use 'list --package <slug>' or 'list --all' to list them)")
+        print(
+            f"\nPackage workflows: {len(package_wfs)} "
+            f"(use 'list --package <slug>' or 'list --all' to list them)"
+        )
         for pkg, n in sorted(by_pkg.items()):
             print(f"  {pkg}: {n}")
 
@@ -242,9 +291,7 @@ def _cmd_import_all(svc: Any, args: argparse.Namespace) -> int:
     pkgs = sorted(pkgs, key=lambda p: p.name)
 
     # Work list: registered packages first, then any explicit --dir targets.
-    targets: list[tuple[str, str, dict]] = [
-        ("package", p.name, {"name": p.name}) for p in pkgs
-    ]
+    targets: list[tuple[str, str, dict]] = [("package", p.name, {"name": p.name}) for p in pkgs]
     for d in args.dir:
         targets.append(("dir", Path(d).name, {"ffl_dir": d, "lib_slug": Path(d).name}))
 
@@ -268,8 +315,7 @@ def _cmd_import_all(svc: Any, args: argparse.Namespace) -> int:
             continue
         try:
             results = backup.import_package(
-                svc, tags=(user_tags + [label]) or None, publish=publish,
-                repo_root=repo_root, **kw
+                svc, tags=(user_tags + [label]) or None, publish=publish, repo_root=repo_root, **kw
             )
         except Exception as e:  # keep going — one bad package shouldn't abort the rest
             failed.append((label, str(e)))
@@ -312,18 +358,24 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "backup":
         summary = backup.export_to_file(svc, args.outfile)
-        print(f"Backed up {summary['entries']} entries / {summary['revisions']} revisions "
-              f"-> {summary['path']}")
+        print(
+            f"Backed up {summary['entries']} entries / {summary['revisions']} revisions "
+            f"-> {summary['path']}"
+        )
         return 0
 
     if args.cmd == "restore":
         res = backup.restore_from_file(args.infile, svc, rematerialize=not args.no_recompile)
-        print(f"Restored {res['entries']} entries / {res['revisions']} revisions; "
-              f"made {res['rematerialized']} revision(s) runnable "
-              f"(package workflows share their library's flow).")
+        print(
+            f"Restored {res['entries']} entries / {res['revisions']} revisions; "
+            f"made {res['rematerialized']} revision(s) runnable "
+            f"(package workflows share their library's flow)."
+        )
         for f in res["failed"]:
-            print(f"  WARN {f['slug']} v{f['version']} not runnable: {'; '.join(f['warnings'])}",
-                  file=sys.stderr)
+            print(
+                f"  WARN {f['slug']} v{f['version']} not runnable: {'; '.join(f['warnings'])}",
+                file=sys.stderr,
+            )
         return 0
 
     if args.cmd == "import":
@@ -381,8 +433,10 @@ def main(argv: list[str] | None = None) -> int:
         libname, libres = results[0]
         workflows = results[1:]
         npub = sum(1 for _, r in workflows if getattr(r, "status", "") == STATUS_PUBLISHED)
-        print(f"{libname} v{libres.version} "
-              f"[{'valid' if libres.is_valid else 'INVALID'}] — {len(workflows)} workflows")
+        print(
+            f"{libname} v{libres.version} "
+            f"[{'valid' if libres.is_valid else 'INVALID'}] — {len(workflows)} workflows"
+        )
         for slug, rev in workflows[:12]:
             print(f"  {slug} [{rev.status}]")
         if len(workflows) > 12:

@@ -212,6 +212,7 @@ def build_run_params(flow, workflow_name: str):
                     param_descs[pd.get("name", "")] = pd.get("description", "")
             for p in wf_ast.get("params", []):
                 default_val = evaluate_default(p.get("default"))
+                default_json: str | None
                 if isinstance(default_val, (list, dict)):
                     default_json = json.dumps(default_val)
                 else:
@@ -330,5 +331,3 @@ def create_flow_run(flow, workflow_def, inputs_json, purpose, teams, store, curr
         )
     )
     return runner_id
-
-

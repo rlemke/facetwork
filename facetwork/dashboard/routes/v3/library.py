@@ -59,7 +59,10 @@ def catalog_detail_v3(
 def flow_source_v3(request: Request, flow_id: str, store=Depends(get_store)):
     """Flow FFL source on the v3 code view (one block per compiled source)."""
     flow = store.get_flow(flow_id)
-    blocks = [{"name": s.name or "source.ffl", "content": s.content} for s in (flow.compiled_sources if flow else [])]
+    blocks = [
+        {"name": s.name or "source.ffl", "content": s.content}
+        for s in (flow.compiled_sources if flow else [])
+    ]
     return request.app.state.templates.TemplateResponse(
         request,
         "v3/codeview.html",

@@ -27,13 +27,9 @@ from facetwork.runtime.types import (
 )
 from facetwork.validator import validate as validate_ast
 
-
 CANONICAL = Path(__file__).resolve().parents[2] / "examples" / "canonical" / "08-step-reference.ffl"
 CANONICAL_MIXIN_ALIAS = (
-    Path(__file__).resolve().parents[2]
-    / "examples"
-    / "canonical"
-    / "09-facetref-mixin-alias.ffl"
+    Path(__file__).resolve().parents[2] / "examples" / "canonical" / "09-facetref-mixin-alias.ffl"
 )
 
 
@@ -332,9 +328,7 @@ def test_resolve_path_unknown_field_errors_on_param_or_return():
     evaluator = ExpressionEvaluator()
     from facetwork.runtime.errors import ReferenceError
 
-    with pytest.raises(
-        ReferenceError, match="no param, return, or mixin alias 'nope'"
-    ):
+    with pytest.raises(ReferenceError, match="no param, return, or mixin alias 'nope'"):
         evaluator.evaluate({"type": "InputRef", "path": ["ds", "nope"]}, ctx)
 
 
@@ -356,9 +350,7 @@ def test_resolve_path_reads_bound_input_via_step_ref():
         get_step_by_id=lambda sid: step,
     )
     evaluator = ExpressionEvaluator()
-    val = evaluator.evaluate(
-        {"type": "InputRef", "path": ["facetRef", "input"]}, ctx
-    )
+    val = evaluator.evaluate({"type": "InputRef", "path": ["facetRef", "input"]}, ctx)
     assert val == "hi"
 
 
@@ -366,12 +358,8 @@ def test_resolve_path_follows_mixin_alias_via_callback():
     """`$.fref.alias.field` looks up the mixin sub-step via
     get_mixin_step_by_alias and continues resolution into its
     attributes."""
-    parent = _FakeStep(
-        "parent-1", "wf-1", "F2", returns={"output": "parent-out"}
-    )
-    mixin = _FakeStep(
-        "mixin-1", "wf-1", "M1", returns={"output": "mixin-out"}
-    )
+    parent = _FakeStep("parent-1", "wf-1", "F2", returns={"output": "parent-out"})
+    mixin = _FakeStep("mixin-1", "wf-1", "M1", returns={"output": "mixin-out"})
     ref = StepReference(step_id="parent-1", workflow_id="wf-1", facet_name="F2")
     ctx = EvaluationContext(
         inputs={"f2": ref},
@@ -382,9 +370,7 @@ def test_resolve_path_follows_mixin_alias_via_callback():
         ),
     )
     evaluator = ExpressionEvaluator()
-    val = evaluator.evaluate(
-        {"type": "InputRef", "path": ["f2", "m1", "output"]}, ctx
-    )
+    val = evaluator.evaluate({"type": "InputRef", "path": ["f2", "m1", "output"]}, ctx)
     assert val == "mixin-out"
 
 
@@ -404,9 +390,7 @@ def test_resolve_path_mixin_alias_unfound_errors():
     from facetwork.runtime.errors import ReferenceError
 
     with pytest.raises(ReferenceError, match="no param, return, or mixin alias 'bogus'"):
-        evaluator.evaluate(
-            {"type": "InputRef", "path": ["f2", "bogus"]}, ctx
-        )
+        evaluator.evaluate({"type": "InputRef", "path": ["f2", "bogus"]}, ctx)
 
 
 def test_resolve_path_return_shadows_param_on_name_collision():
@@ -427,9 +411,7 @@ def test_resolve_path_return_shadows_param_on_name_collision():
         get_step_by_id=lambda sid: step,
     )
     evaluator = ExpressionEvaluator()
-    val = evaluator.evaluate(
-        {"type": "InputRef", "path": ["facetRef", "input"]}, ctx
-    )
+    val = evaluator.evaluate({"type": "InputRef", "path": ["facetRef", "input"]}, ctx)
     assert val == "yielded"
 
 
@@ -537,9 +519,7 @@ def test_e2e_two_aliases_to_same_target_route_independently():
     workflow_ast = find_workflow(program, "Demo")
     store = MemoryStore()
     evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
-    result = evaluator.execute(
-        workflow_ast, inputs={"input": "hi"}, program_ast=program
-    )
+    result = evaluator.execute(workflow_ast, inputs={"input": "hi"}, program_ast=program)
 
     assert result.success, f"workflow failed: {result.status}"
     assert result.status == ExecutionStatus.COMPLETED
@@ -557,9 +537,7 @@ def test_e2e_two_aliases_persist_distinct_substeps():
     workflow_ast = find_workflow(program, "Demo")
     store = MemoryStore()
     evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
-    result = evaluator.execute(
-        workflow_ast, inputs={"input": "x"}, program_ast=program
-    )
+    result = evaluator.execute(workflow_ast, inputs={"input": "x"}, program_ast=program)
     assert result.success
 
     # Find the variable-assignment F-step (the call ``f1 = F(...)``).
