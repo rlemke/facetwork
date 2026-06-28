@@ -114,12 +114,14 @@ jobs:
 
       - name: Check seeded data
         run: |
-          # Verify the addone example flow was seeded
+          # Verify seeding populated flows the dashboard serves. The inline
+          # examples (addone/chain/parallel) are seeded as the "inline-examples"
+          # flow (see docker/seed/seed.py main()).
           for i in $(seq 1 15); do
-            curl -s http://localhost:8080/api/flows | grep -q "seed-addone-example" && { echo "seeded"; exit 0; }
+            curl -s http://localhost:8080/api/flows | grep -q "inline-examples" && { echo "seeded"; exit 0; }
             sleep 2
           done
-          echo "seed-addone-example not found in /api/flows" >&2
+          echo "inline-examples flow not found in /api/flows" >&2
           curl -s http://localhost:8080/api/flows | head -c 2000 >&2
           exit 1
 
