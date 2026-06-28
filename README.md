@@ -433,7 +433,7 @@ python -m facetwork.mcp              # stdio transport
 
 **Tools:** `fw_compile`, `fw_validate`, `fw_execute_workflow`, `fw_continue_step`, `fw_resume_workflow`, `fw_manage_runner`
 
-**Resources:** `afl://runners`, `afl://runners/{id}`, `afl://steps/{id}`, `afl://flows`, `afl://servers`, `afl://tasks`
+**Resources:** `fw://runners`, `fw://runners/{id}`, `fw://steps/{id}`, `fw://flows`, `fw://servers`, `fw://tasks`
 
 ### Agent Integration Libraries
 

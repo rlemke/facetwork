@@ -144,7 +144,7 @@ The Model Context Protocol server exposes Facetwork to LLM agents. It provides:
 | `afl_manage_runner` | Cancel/pause/resume a runner |
 | `afl_manage_handlers` | List/get/register/delete handler registrations |
 
-**Resources:** Runners, steps, flows, servers, tasks, handlers (via `afl://` URIs)
+**Resources:** Runners, steps, flows, servers, tasks, handlers (via `fw://` URIs)
 
 ## Dashboard
 

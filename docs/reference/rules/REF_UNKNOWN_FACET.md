@@ -20,7 +20,7 @@ namespace x {
 
 Either declare the facet in the appropriate namespace, register a handler
 for it (so the runtime knows how to dispatch), or — most commonly — fix
-the name. Use `fw_list_handlers` (or read `afl://handlers`) to see what
+the name. Use `fw_list_handlers` (or read `fw://handlers`) to see what
 the runtime knows about.
 
 ```ffl

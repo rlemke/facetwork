@@ -66,7 +66,7 @@ class ValidationError:
     ``rule_id`` is a stable machine-readable identifier (e.g. ``REF_UNDEFINED_STEP``)
     that callers can use to look up paired wrong/right examples and repair guidance
     without parsing the human ``message``. ``docs_uri`` points at the canonical
-    rule doc; the MCP server resolves these via the ``afl://docs/rules/{rule_id}``
+    rule doc; the MCP server resolves these via the ``fw://docs/rules/{rule_id}``
     resource.
     """
 
@@ -89,7 +89,7 @@ class ValidationError:
 
 def _docs_uri_for(rule_id: str) -> str | None:
     if rule_id and rule_id != "UNKNOWN":
-        return f"afl://docs/rules/{rule_id}"
+        return f"fw://docs/rules/{rule_id}"
     return None
 
 

@@ -5,7 +5,7 @@ Use these as templates when authoring new workflows. Each file is short and
 fully self-contained (no `use` statements, no external handlers required to
 parse + validate).
 
-These files are also exposed via the MCP server at `afl://examples/canonical/`.
+These files are also exposed via the MCP server at `fw://examples/canonical/`.
 
 | File | Pattern |
 |------|---------|

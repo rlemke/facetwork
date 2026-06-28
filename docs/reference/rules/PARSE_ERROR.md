@@ -20,9 +20,9 @@ you what the grammar wanted to see next.
 
 ## Where to look next
 
-- Read [`afl://docs/grammar`](afl://docs/grammar) for the canonical FFL
+- Read [`fw://docs/grammar`](fw://docs/grammar) for the canonical FFL
   grammar.
-- Skim [`afl://examples/canonical`](afl://examples/canonical) for short
+- Skim [`fw://examples/canonical`](fw://examples/canonical) for short
   examples covering all the major syntactic forms.
 
 ## Why this is different from other rules

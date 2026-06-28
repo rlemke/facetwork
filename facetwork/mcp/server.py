@@ -104,7 +104,7 @@ def create_server(
                     "Call this before showing FFL to the user. Returns "
                     "{valid, errors, warnings} where each diagnostic has "
                     "{message, rule_id, severity, line, column, docs_uri, "
-                    "suggested_fix}. On error, fetch afl://docs/rules/{rule_id} "
+                    "suggested_fix}. On error, fetch fw://docs/rules/{rule_id} "
                     "for paired wrong/right examples and a suggested fix."
                 ),
                 inputSchema={
@@ -697,68 +697,68 @@ def create_server(
     async def list_resources() -> list[Resource]:
         return [
             Resource(
-                uri=AnyUrl("afl://runners"),
+                uri=AnyUrl("fw://runners"),
                 name="List all runners",
                 description="List all runners (most recent first)",
             ),
             Resource(
-                uri=AnyUrl("afl://runners/{runner_id}"),
+                uri=AnyUrl("fw://runners/{runner_id}"),
                 name="Runner detail",
                 description="Runner detail with workflow info",
             ),
             Resource(
-                uri=AnyUrl("afl://runners/{runner_id}/steps"),
+                uri=AnyUrl("fw://runners/{runner_id}/steps"),
                 name="Runner steps",
                 description="Steps for a runner's workflow",
             ),
             Resource(
-                uri=AnyUrl("afl://runners/{runner_id}/logs"),
+                uri=AnyUrl("fw://runners/{runner_id}/logs"),
                 name="Runner logs",
                 description="Log entries for a runner",
             ),
             Resource(
-                uri=AnyUrl("afl://steps/{step_id}"),
+                uri=AnyUrl("fw://steps/{step_id}"),
                 name="Step detail",
                 description="Step detail with state and attributes",
             ),
             Resource(
-                uri=AnyUrl("afl://flows"),
+                uri=AnyUrl("fw://flows"),
                 name="List all flows",
                 description="List all compiled flows",
             ),
             Resource(
-                uri=AnyUrl("afl://flows/{flow_id}"),
+                uri=AnyUrl("fw://flows/{flow_id}"),
                 name="Flow detail",
                 description="Flow detail with workflows",
             ),
             Resource(
-                uri=AnyUrl("afl://flows/{flow_id}/source"),
+                uri=AnyUrl("fw://flows/{flow_id}/source"),
                 name="Flow source",
                 description="AFL source code for a flow",
             ),
             Resource(
-                uri=AnyUrl("afl://servers"),
+                uri=AnyUrl("fw://servers"),
                 name="List servers",
                 description="List all registered servers",
             ),
             Resource(
-                uri=AnyUrl("afl://tasks"),
+                uri=AnyUrl("fw://tasks"),
                 name="List tasks",
                 description="List pending/active tasks",
             ),
             Resource(
-                uri=AnyUrl("afl://handlers"),
+                uri=AnyUrl("fw://handlers"),
                 name="List handler registrations",
                 description="List all handler registrations",
             ),
             Resource(
-                uri=AnyUrl("afl://handlers/{facet_name}"),
+                uri=AnyUrl("fw://handlers/{facet_name}"),
                 name="Handler registration detail",
                 description="Handler registration detail by facet name",
             ),
             # ---- Static documentation and canonical examples ----
             Resource(
-                uri=AnyUrl("afl://docs/rules"),
+                uri=AnyUrl("fw://docs/rules"),
                 name="Validation rules index",
                 description=(
                     "List of all validator rule IDs with one-line summaries. "
@@ -767,7 +767,7 @@ def create_server(
                 ),
             ),
             Resource(
-                uri=AnyUrl("afl://docs/rules/{rule_id}"),
+                uri=AnyUrl("fw://docs/rules/{rule_id}"),
                 name="Validation rule details",
                 description=(
                     "Paired wrong/right examples and a 'why' for a single "
@@ -776,17 +776,17 @@ def create_server(
                 ),
             ),
             Resource(
-                uri=AnyUrl("afl://docs/grammar"),
+                uri=AnyUrl("fw://docs/grammar"),
                 name="FFL grammar reference",
                 description="Full FFL language grammar reference.",
             ),
             Resource(
-                uri=AnyUrl("afl://docs/execution-model"),
+                uri=AnyUrl("fw://docs/execution-model"),
                 name="Runtime execution model",
                 description="How the runtime executes workflows, steps, and events.",
             ),
             Resource(
-                uri=AnyUrl("afl://examples/canonical"),
+                uri=AnyUrl("fw://examples/canonical"),
                 name="Canonical FFL examples index",
                 description=(
                     "List of small, idiomatic FFL example files. Use these "
@@ -795,7 +795,7 @@ def create_server(
                 ),
             ),
             Resource(
-                uri=AnyUrl("afl://examples/canonical/{name}"),
+                uri=AnyUrl("fw://examples/canonical/{name}"),
                 name="Canonical FFL example",
                 description="A single canonical example file by name.",
             ),
@@ -867,7 +867,7 @@ def _tool_validate(arguments: dict[str, Any]) -> list[TextContent]:
                     "severity": "error",
                     "line": None,
                     "column": None,
-                    "docs_uri": "afl://docs/rules/PARSE_ERROR",
+                    "docs_uri": "fw://docs/rules/PARSE_ERROR",
                     "suggested_fix": None,
                 }
             ],
@@ -1286,8 +1286,13 @@ def _tool_manage_handlers(
 
 
 def _handle_resource(uri: str, get_store: Any) -> str:
-    """Route a resource URI to its handler."""
-    parts = uri.replace("afl://", "").strip("/").split("/")
+    """Route a resource URI to its handler.
+
+    Accepts both the canonical ``fw://`` scheme and the legacy ``afl://`` scheme
+    (pre-Facetwork name) so cached/old client references keep resolving during
+    the migration. ``fw://`` is what the server now advertises.
+    """
+    parts = uri.replace("fw://", "").replace("afl://", "").strip("/").split("/")
 
     # Static resources — served from disk, no store needed.
     if parts[0] == "docs":
@@ -1381,13 +1386,13 @@ def _read_text_file(path: Path) -> str | None:
 
 
 def _handle_docs_resource(parts: list[str]) -> str:
-    """Serve afl://docs/* resources from on-disk files."""
+    """Serve fw://docs/* resources from on-disk files."""
     if not parts:
         return json.dumps({"error": "Empty docs path"})
 
     if parts[0] == "rules":
-        # afl://docs/rules            -> index
-        # afl://docs/rules/{rule_id}  -> specific rule
+        # fw://docs/rules            -> index
+        # fw://docs/rules/{rule_id}  -> specific rule
         if len(parts) == 1:
             if not _RULES_DIR.exists():
                 return json.dumps(
@@ -1414,7 +1419,7 @@ def _handle_docs_resource(parts: list[str]) -> str:
                     {
                         "error": f"Rule '{rule_id}' not documented",
                         "hint": (
-                            "Read afl://docs/rules to see which rules have "
+                            "Read fw://docs/rules to see which rules have "
                             "documentation. Some rule_ids are emitted by the "
                             "validator before their docs file is written."
                         ),
@@ -1437,12 +1442,12 @@ def _handle_docs_resource(parts: list[str]) -> str:
 
 
 def _handle_examples_resource(parts: list[str]) -> str:
-    """Serve afl://examples/* resources from on-disk files."""
+    """Serve fw://examples/* resources from on-disk files."""
     if not parts or parts[0] != "canonical":
         return json.dumps({"error": f"Unknown examples path: {'/'.join(parts)}"})
 
-    # afl://examples/canonical            -> index
-    # afl://examples/canonical/{name}     -> specific example file
+    # fw://examples/canonical            -> index
+    # fw://examples/canonical/{name}     -> specific example file
     if len(parts) == 1:
         if not _CANONICAL_DIR.exists():
             return json.dumps(
@@ -1474,7 +1479,7 @@ def _handle_examples_resource(parts: list[str]) -> str:
                 return json.dumps(
                     {
                         "error": f"Example '{name}' not found",
-                        "hint": "Read afl://examples/canonical for the index.",
+                        "hint": "Read fw://examples/canonical for the index.",
                     }
                 )
         content = _read_text_file(path)

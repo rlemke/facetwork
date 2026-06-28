@@ -176,16 +176,16 @@ Add to your `claude_desktop_config.json`:
 
 | URI Pattern | Description |
 |-------------|-------------|
-| `afl://runners` | List all runners |
-| `afl://runners/{id}` | Get runner details |
-| `afl://runners/{id}/steps` | Get runner steps |
-| `afl://runners/{id}/logs` | Get runner logs |
-| `afl://steps/{id}` | Get step details |
-| `afl://flows` | List all flows |
-| `afl://flows/{id}` | Get flow details |
-| `afl://flows/{id}/source` | Get flow FFL source |
-| `afl://servers` | List all servers |
-| `afl://tasks` | List all tasks |
+| `fw://runners` | List all runners |
+| `fw://runners/{id}` | Get runner details |
+| `fw://runners/{id}/steps` | Get runner steps |
+| `fw://runners/{id}/logs` | Get runner logs |
+| `fw://steps/{id}` | Get step details |
+| `fw://flows` | List all flows |
+| `fw://flows/{id}` | Get flow details |
+| `fw://flows/{id}/source` | Get flow FFL source |
+| `fw://servers` | List all servers |
+| `fw://tasks` | List all tasks |
 
 ## Troubleshooting
 

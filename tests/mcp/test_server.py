@@ -417,25 +417,25 @@ class TestManageHandlersTool:
 @pytest.mark.skipif(not MONGOMOCK_AVAILABLE, reason="mongomock not installed")
 class TestResources:
     def test_runners_list_empty(self, store):
-        data = json.loads(_handle_resource("afl://runners", lambda: store))
+        data = json.loads(_handle_resource("fw://runners", lambda: store))
         assert data == []
 
     def test_runners_list_with_data(self, store):
         runner = _make_runner()
         store.save_runner(runner)
-        data = json.loads(_handle_resource("afl://runners", lambda: store))
+        data = json.loads(_handle_resource("fw://runners", lambda: store))
         assert len(data) == 1
         assert data[0]["uuid"] == "r-1"
 
     def test_runner_detail(self, store):
         runner = _make_runner()
         store.save_runner(runner)
-        data = json.loads(_handle_resource("afl://runners/r-1", lambda: store))
+        data = json.loads(_handle_resource("fw://runners/r-1", lambda: store))
         assert data["uuid"] == "r-1"
         assert data["workflow_name"] == "TestWF"
 
     def test_runner_detail_not_found(self, store):
-        data = json.loads(_handle_resource("afl://runners/missing", lambda: store))
+        data = json.loads(_handle_resource("fw://runners/missing", lambda: store))
         assert data["error"] == "Runner not found"
 
     def test_runner_steps(self, store):
@@ -447,7 +447,7 @@ class TestResources:
             object_type=ObjectType.WORKFLOW,
         )
         store.save_step(step)
-        data = json.loads(_handle_resource("afl://runners/r-1/steps", lambda: store))
+        data = json.loads(_handle_resource("fw://runners/r-1/steps", lambda: store))
         assert len(data) == 1
 
     def test_runner_logs(self, store):
@@ -458,7 +458,7 @@ class TestResources:
             message="hello",
         )
         store.save_log(log)
-        data = json.loads(_handle_resource("afl://runners/r-1/logs", lambda: store))
+        data = json.loads(_handle_resource("fw://runners/r-1/logs", lambda: store))
         assert len(data) == 1
         assert data[0]["message"] == "hello"
 
@@ -468,12 +468,12 @@ class TestResources:
             object_type=ObjectType.FACET,
         )
         store.save_step(step)
-        data = json.loads(_handle_resource(f"afl://steps/{step.id}", lambda: store))
+        data = json.loads(_handle_resource(f"fw://steps/{step.id}", lambda: store))
         assert data["id"] == step.id
         assert data["object_type"] == ObjectType.FACET
 
     def test_step_not_found(self, store):
-        data = json.loads(_handle_resource("afl://steps/missing", lambda: store))
+        data = json.loads(_handle_resource("fw://steps/missing", lambda: store))
         assert data["error"] == "Step not found"
 
     def test_flows_list(self, store):
@@ -482,7 +482,7 @@ class TestResources:
             name=FlowIdentity(name="MyFlow", path="/flows/my", uuid="f-1"),
         )
         store.save_flow(flow)
-        data = json.loads(_handle_resource("afl://flows", lambda: store))
+        data = json.loads(_handle_resource("fw://flows", lambda: store))
         assert len(data) == 1
         assert data[0]["name"] == "MyFlow"
 
@@ -493,11 +493,11 @@ class TestResources:
             workflows=[_make_workflow()],
         )
         store.save_flow(flow)
-        data = json.loads(_handle_resource("afl://flows/f-1", lambda: store))
+        data = json.loads(_handle_resource("fw://flows/f-1", lambda: store))
         assert data["uuid"] == "f-1"
 
     def test_flow_not_found(self, store):
-        data = json.loads(_handle_resource("afl://flows/missing", lambda: store))
+        data = json.loads(_handle_resource("fw://flows/missing", lambda: store))
         assert data["error"] == "Flow not found"
 
     def test_flow_source(self, store):
@@ -507,7 +507,7 @@ class TestResources:
             compiled_sources=[SourceText(name="main.ffl", content="facet Test()")],
         )
         store.save_flow(flow)
-        data = json.loads(_handle_resource("afl://flows/f-1/source", lambda: store))
+        data = json.loads(_handle_resource("fw://flows/f-1/source", lambda: store))
         assert len(data["sources"]) == 1
         assert data["sources"][0]["content"] == "facet Test()"
 
@@ -520,7 +520,7 @@ class TestResources:
             state="running",
         )
         store.save_server(server)
-        data = json.loads(_handle_resource("afl://servers", lambda: store))
+        data = json.loads(_handle_resource("fw://servers", lambda: store))
         assert len(data) == 1
         assert data[0]["uuid"] == "srv-1"
 
@@ -535,34 +535,34 @@ class TestResources:
             state="pending",
         )
         store.save_task(task)
-        data = json.loads(_handle_resource("afl://tasks", lambda: store))
+        data = json.loads(_handle_resource("fw://tasks", lambda: store))
         assert len(data) == 1
         assert data[0]["uuid"] == "t-1"
 
     def test_unknown_resource(self, store):
-        data = json.loads(_handle_resource("afl://unknown", lambda: store))
+        data = json.loads(_handle_resource("fw://unknown", lambda: store))
         assert "error" in data
 
     def test_handlers_list_empty(self, store):
-        data = json.loads(_handle_resource("afl://handlers", lambda: store))
+        data = json.loads(_handle_resource("fw://handlers", lambda: store))
         assert data == []
 
     def test_handlers_list_with_data(self, store):
         reg = _make_handler_registration()
         store.save_handler_registration(reg)
-        data = json.loads(_handle_resource("afl://handlers", lambda: store))
+        data = json.loads(_handle_resource("fw://handlers", lambda: store))
         assert len(data) == 1
         assert data[0]["facet_name"] == "ns.TestFacet"
 
     def test_handler_detail(self, store):
         reg = _make_handler_registration()
         store.save_handler_registration(reg)
-        data = json.loads(_handle_resource("afl://handlers/ns.TestFacet", lambda: store))
+        data = json.loads(_handle_resource("fw://handlers/ns.TestFacet", lambda: store))
         assert data["facet_name"] == "ns.TestFacet"
         assert data["module_uri"] == "my.handlers"
 
     def test_handler_detail_not_found(self, store):
-        data = json.loads(_handle_resource("afl://handlers/ns.Missing", lambda: store))
+        data = json.loads(_handle_resource("fw://handlers/ns.Missing", lambda: store))
         assert "error" in data
         assert "not found" in data["error"]
 

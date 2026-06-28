@@ -349,37 +349,37 @@ class TestResumeWorkflow:
 @pytest.mark.skipif(not MONGOMOCK_AVAILABLE, reason="mongomock not installed")
 class TestResourceEdgeCases:
     def test_runner_steps_not_found(self, store):
-        data = json.loads(_handle_resource("afl://runners/missing/steps", lambda: store))
+        data = json.loads(_handle_resource("fw://runners/missing/steps", lambda: store))
         assert data["error"] == "Runner not found"
 
     def test_runner_logs_empty(self, store):
-        data = json.loads(_handle_resource("afl://runners/r-1/logs", lambda: store))
+        data = json.loads(_handle_resource("fw://runners/r-1/logs", lambda: store))
         assert data == []
 
     def test_flow_source_not_found(self, store):
-        data = json.loads(_handle_resource("afl://flows/missing/source", lambda: store))
+        data = json.loads(_handle_resource("fw://flows/missing/source", lambda: store))
         assert data["error"] == "Flow not found"
 
     def test_step_not_found(self, store):
-        data = json.loads(_handle_resource("afl://steps/missing", lambda: store))
+        data = json.loads(_handle_resource("fw://steps/missing", lambda: store))
         assert data["error"] == "Step not found"
 
     def test_flow_detail_not_found(self, store):
-        data = json.loads(_handle_resource("afl://flows/missing", lambda: store))
+        data = json.loads(_handle_resource("fw://flows/missing", lambda: store))
         assert data["error"] == "Flow not found"
 
     def test_unknown_resource_uri(self, store):
-        data = json.loads(_handle_resource("afl://something/else", lambda: store))
+        data = json.loads(_handle_resource("fw://something/else", lambda: store))
         assert "error" in data
 
     def test_servers_empty(self, store):
-        data = json.loads(_handle_resource("afl://servers", lambda: store))
+        data = json.loads(_handle_resource("fw://servers", lambda: store))
         assert data == []
 
     def test_tasks_empty(self, store):
-        data = json.loads(_handle_resource("afl://tasks", lambda: store))
+        data = json.loads(_handle_resource("fw://tasks", lambda: store))
         assert data == []
 
     def test_flows_empty(self, store):
-        data = json.loads(_handle_resource("afl://flows", lambda: store))
+        data = json.loads(_handle_resource("fw://flows", lambda: store))
         assert data == []

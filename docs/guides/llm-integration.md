@@ -301,7 +301,7 @@ The MCP server uses JSON-RPC 2.0 over stdio. The following protocol messages are
 | `ping` | Bidirectional | SDK auto-handles |
 | `tools/list` | Client → Server | `list_tools()` → returns 6 Tool definitions with JSON Schema |
 | `tools/call` | Client → Server | `call_tool(name, arguments)` → dispatches to `_tool_*` functions |
-| `resources/list` | Client → Server | `list_resources()` → returns 10 Resource definitions with `afl://` URIs |
+| `resources/list` | Client → Server | `list_resources()` → returns 10 Resource definitions with `fw://` URIs |
 | `resources/read` | Client → Server | `read_resource(uri)` → routes to `_handle_resource()` |
 
 Messages **not implemented**: `prompts/*`, `completion`, `resources/subscribe`, `sampling/createMessage`, `logging/setLevel`.
@@ -321,16 +321,16 @@ Messages **not implemented**: `prompts/*`, `completion`, `resources/subscribe`, 
 
 | URI Pattern | Response Shape |
 |-------------|---------------|
-| `afl://runners` | `[{ uuid, workflow_id, workflow_name, state, start_time, end_time, duration, parameters }]` |
-| `afl://runners/{id}` | `{ uuid, workflow_id, workflow_name, state, start_time, end_time, duration, parameters }` |
-| `afl://runners/{id}/steps` | `[{ id, workflow_id, object_type, state, statement_id, container_id, block_id, facet_name?, params?, returns? }]` |
-| `afl://runners/{id}/logs` | `[{ uuid, order, runner_id, step_id, note_type, note_originator, note_importance, message, state, time }]` |
-| `afl://steps/{id}` | `{ id, workflow_id, object_type, state, statement_id, container_id, block_id, facet_name?, params?, returns? }` |
-| `afl://flows` | `[{ uuid, name, path, workflows: [{ uuid, name, version }], sources, facets }]` |
-| `afl://flows/{id}` | `{ uuid, name, path, workflows, sources, facets }` |
-| `afl://flows/{id}/source` | `{ uuid, name, sources: [{ name, content, language }] }` |
-| `afl://servers` | `[{ uuid, server_group, service_name, server_name, state, start_time, ping_time, topics, handlers, handled }]` |
-| `afl://tasks` | `[{ uuid, name, runner_id, workflow_id, flow_id, step_id, state, created, updated, task_list_name, data_type }]` |
+| `fw://runners` | `[{ uuid, workflow_id, workflow_name, state, start_time, end_time, duration, parameters }]` |
+| `fw://runners/{id}` | `{ uuid, workflow_id, workflow_name, state, start_time, end_time, duration, parameters }` |
+| `fw://runners/{id}/steps` | `[{ id, workflow_id, object_type, state, statement_id, container_id, block_id, facet_name?, params?, returns? }]` |
+| `fw://runners/{id}/logs` | `[{ uuid, order, runner_id, step_id, note_type, note_originator, note_importance, message, state, time }]` |
+| `fw://steps/{id}` | `{ id, workflow_id, object_type, state, statement_id, container_id, block_id, facet_name?, params?, returns? }` |
+| `fw://flows` | `[{ uuid, name, path, workflows: [{ uuid, name, version }], sources, facets }]` |
+| `fw://flows/{id}` | `{ uuid, name, path, workflows, sources, facets }` |
+| `fw://flows/{id}/source` | `{ uuid, name, sources: [{ name, content, language }] }` |
+| `fw://servers` | `[{ uuid, server_group, service_name, server_name, state, start_time, ping_time, topics, handlers, handled }]` |
+| `fw://tasks` | `[{ uuid, name, runner_id, workflow_id, flow_id, step_id, state, created, updated, task_list_name, data_type }]` |
 
 ---
 

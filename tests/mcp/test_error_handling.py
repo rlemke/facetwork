@@ -292,14 +292,27 @@ class TestResourceBoundaryConditions:
     """Test resource handler with unusual URIs and data sizes."""
 
     def test_malformed_uri_empty_path(self, store):
-        # "afl://" -> parts becomes [""] after strip("/").split("/")
-        data = json.loads(_handle_resource("afl://", lambda: store))
+        # "fw://" -> parts becomes [""] after strip("/").split("/")
+        data = json.loads(_handle_resource("fw://", lambda: store))
         assert "error" in data
 
     def test_malformed_uri_triple_slash(self, store):
-        # "afl:///" -> parts becomes [""] after strip
-        data = json.loads(_handle_resource("afl:///", lambda: store))
+        # "fw:///" -> parts becomes [""] after strip
+        data = json.loads(_handle_resource("fw:///", lambda: store))
         assert "error" in data
+
+    def test_legacy_afl_scheme_still_resolves(self, store):
+        """The pre-Facetwork ``afl://`` scheme must keep resolving (migration
+        compat) and return the same payload as the canonical ``fw://``."""
+        runner = _make_runner()
+        store.save_runner(runner)
+        legacy = json.loads(_handle_resource("afl://runners", lambda: store))
+        canonical = json.loads(_handle_resource("fw://runners", lambda: store))
+        assert legacy == canonical
+        # static (disk-served) families resolve under the legacy scheme too
+        assert "error" not in json.loads(
+            _handle_resource("afl://docs/rules", lambda: store)
+        )
 
     def test_dotted_facet_name_in_handler_resource(self, store):
         reg = HandlerRegistration(
@@ -313,7 +326,7 @@ class TestResourceBoundaryConditions:
         )
         store.save_handler_registration(reg)
         # The handler resource splits on "/" so "deep.ns.FacetName" is a single segment
-        data = json.loads(_handle_resource("afl://handlers/deep.ns.FacetName", lambda: store))
+        data = json.loads(_handle_resource("fw://handlers/deep.ns.FacetName", lambda: store))
         assert data["facet_name"] == "deep.ns.FacetName"
         assert data["module_uri"] == "deep.module"
 
@@ -321,7 +334,7 @@ class TestResourceBoundaryConditions:
         runner = _make_runner()
         store.save_runner(runner)
         # "invalid" is not a valid sub-resource (not "steps" or "logs")
-        data = json.loads(_handle_resource("afl://runners/r-1/invalid", lambda: store))
+        data = json.loads(_handle_resource("fw://runners/r-1/invalid", lambda: store))
         assert "error" in data
 
     def test_invalid_flow_sub_resource(self, store):
@@ -330,7 +343,7 @@ class TestResourceBoundaryConditions:
             name=FlowIdentity(name="MyFlow", path="/flows/my", uuid="f-1"),
         )
         store.save_flow(flow)
-        data = json.loads(_handle_resource("afl://flows/f-1/invalid", lambda: store))
+        data = json.loads(_handle_resource("fw://flows/f-1/invalid", lambda: store))
         assert "error" in data
 
     def test_large_runners_dataset(self, store):
@@ -338,7 +351,7 @@ class TestResourceBoundaryConditions:
             wf = _make_workflow(uuid=f"wf-{i}", name=f"WF{i}")
             runner = _make_runner(uuid=f"r-{i}", workflow=wf)
             store.save_runner(runner)
-        data = json.loads(_handle_resource("afl://runners", lambda: store))
+        data = json.loads(_handle_resource("fw://runners", lambda: store))
         assert len(data) == 55
 
     def test_large_handlers_dataset(self, store):
@@ -353,15 +366,15 @@ class TestResourceBoundaryConditions:
                 updated=2000,
             )
             store.save_handler_registration(reg)
-        data = json.loads(_handle_resource("afl://handlers", lambda: store))
+        data = json.loads(_handle_resource("fw://handlers", lambda: store))
         assert len(data) == 50
 
     def test_unknown_top_level_resource(self, store):
-        data = json.loads(_handle_resource("afl://widgets", lambda: store))
+        data = json.loads(_handle_resource("fw://widgets", lambda: store))
         assert "error" in data
         assert "Unknown resource" in data["error"]
 
     def test_deeply_nested_unknown_path(self, store):
-        data = json.loads(_handle_resource("afl://runners/r-1/steps/extra/deep", lambda: store))
+        data = json.loads(_handle_resource("fw://runners/r-1/steps/extra/deep", lambda: store))
         # Extra path segments fall through the handler
         assert "error" in data or isinstance(data, list)

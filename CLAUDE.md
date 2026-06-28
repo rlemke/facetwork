@@ -206,10 +206,10 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 The validator emits structured `rule_id`s with `docs_uri` pointers. Use this loop instead of guessing:
 
 1. Run `fw_validate` (MCP) or `afl <file> --check` on the source.
-2. For each error, fetch `afl://docs/rules/{rule_id}` for paired wrong/right examples and a "why".
+2. For each error, fetch `fw://docs/rules/{rule_id}` for paired wrong/right examples and a "why".
 3. Apply the fix and re-validate.
 
-When writing new FFL, start from a canonical example under [`examples/canonical/`](examples/canonical/) — every file there is a small, validator-clean template. The MCP server also exposes them at `afl://examples/canonical/{name}`.
+When writing new FFL, start from a canonical example under [`examples/canonical/`](examples/canonical/) — every file there is a small, validator-clean template. The MCP server also exposes them at `fw://examples/canonical/{name}`.
 
 Key constraints the rule docs cover (and the language enforces):
 

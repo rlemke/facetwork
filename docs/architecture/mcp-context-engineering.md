@@ -30,7 +30,7 @@ A naive MCP only covers layer 3. The most leverage comes from layer 4: a tight v
 
 ### Validator (`facetwork/validator.py`)
 
-`ValidationError` carries `rule_id`, `severity`, `line`, `column`, `docs_uri`, `suggested_fix`. The `add_error` and `add_warning` methods accept `rule_id` as a keyword-only argument with a default of `"UNKNOWN"` — backward-compatible with any caller that doesn't pass one. The `docs_uri` is auto-populated from the `rule_id` as `afl://docs/rules/{rule_id}` when not explicitly provided.
+`ValidationError` carries `rule_id`, `severity`, `line`, `column`, `docs_uri`, `suggested_fix`. The `add_error` and `add_warning` methods accept `rule_id` as a keyword-only argument with a default of `"UNKNOWN"` — backward-compatible with any caller that doesn't pass one. The `docs_uri` is auto-populated from the `rule_id` as `fw://docs/rules/{rule_id}` when not explicitly provided.
 
 The validator emits **47 distinct rule_ids** across these categories:
 
@@ -111,12 +111,12 @@ The static MCP resources are served directly from on-disk files — no Mongo nee
 
 | URI pattern | What it serves |
 |-------------|----------------|
-| `afl://docs/rules` | Index of all documented rule_ids |
-| `afl://docs/rules/{rule_id}` | Paired wrong/right examples for one rule |
-| `afl://docs/grammar` | Full FFL grammar reference (file-backed) |
-| `afl://docs/execution-model` | Runtime execution model (file-backed) |
-| `afl://examples/canonical` | Index of canonical examples |
-| `afl://examples/canonical/{name}` | A single example file (lookup by name or stem) |
+| `fw://docs/rules` | Index of all documented rule_ids |
+| `fw://docs/rules/{rule_id}` | Paired wrong/right examples for one rule |
+| `fw://docs/grammar` | Full FFL grammar reference (file-backed) |
+| `fw://docs/execution-model` | Runtime execution model (file-backed) |
+| `fw://examples/canonical` | Index of canonical examples |
+| `fw://examples/canonical/{name}` | A single example file (lookup by name or stem) |
 
 ## How to extend it
 
@@ -124,7 +124,7 @@ When you add a new validator check:
 
 1. Pass an explicit `rule_id` to `add_error`/`add_warning` (uppercase, snake_case, prefix matches the category — `REF_*`, `WHEN_*`, `TYPE_*`, etc.).
 2. Add `docs/reference/rules/{rule_id}.md` in the same change, following the template above. Use the actual error message from the validator in the "→ ..." line.
-3. The MCP `afl://docs/rules` index picks it up automatically — no code change required there.
+3. The MCP `fw://docs/rules` index picks it up automatically — no code change required there.
 
 When you add a new language feature:
 
