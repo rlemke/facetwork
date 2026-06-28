@@ -310,9 +310,7 @@ class TestResourceBoundaryConditions:
         canonical = json.loads(_handle_resource("fw://runners", lambda: store))
         assert legacy == canonical
         # static (disk-served) families resolve under the legacy scheme too
-        assert "error" not in json.loads(
-            _handle_resource("afl://docs/rules", lambda: store)
-        )
+        assert "error" not in json.loads(_handle_resource("afl://docs/rules", lambda: store))
 
     def test_dotted_facet_name_in_handler_resource(self, store):
         reg = HandlerRegistration(

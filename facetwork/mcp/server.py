@@ -1754,9 +1754,7 @@ def _tool_postgis_query(arguments: dict[str, Any]) -> list[TextContent]:
             )
         ]
 
-    postgis_url = os.environ.get(
-        "FW_POSTGIS_URL", "postgresql://afl:afl@afl-postgres:5432/afl_gis"
-    )
+    postgis_url = os.environ.get("FW_POSTGIS_URL", "postgresql://afl:afl@afl-postgres:5432/afl_gis")
 
     try:
         conn = psycopg2.connect(
