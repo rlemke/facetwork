@@ -147,7 +147,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,test,dashboard,mcp,mongodb]"
 cp .env.example .env     # edit MongoDB connection string
 fw ffl seed
-python -m afl.dashboard --log-format text
+python -m facetwork.dashboard --log-format text
 ```
 
 Open http://localhost:8080.
@@ -311,7 +311,7 @@ pip install -e ".[dev,test,dashboard,mcp,mongodb]"
 
 ```bash
 pytest tests/ -v                                     # all tests
-pytest tests/ --cov=afl --cov-report=term-missing    # with coverage
+pytest tests/ --cov=facetwork --cov-report=term-missing    # with coverage
 pytest tests/test_parser.py::TestWorkflows -v         # specific test
 pytest tests/runtime/test_mongo_store.py --mongodb -v # real MongoDB
 pytest tests/dashboard/ -v                            # dashboard tests
@@ -320,7 +320,7 @@ pytest tests/dashboard/ -v                            # dashboard tests
 ### Using the Parser
 
 ```python
-from afl import parse, AFLParser, ParseError
+from facetwork import parse, FFLParser, ParseError
 
 source = """
 facet User(name: String, email: String)
@@ -343,7 +343,7 @@ for workflow in ast.workflows:
 ### Emitting JSON
 
 ```python
-from afl import parse, emit_json, emit_dict
+from facetwork import parse, emit_json, emit_dict
 
 ast = parse("facet User(name: String)")
 
@@ -357,19 +357,19 @@ json_str = emit_json(ast, include_locations=False, indent=None)
 ### Command-Line Interface
 
 ```bash
-afl input.ffl                        # parse and emit JSON
-afl input.ffl -o output.json         # output to file
-afl input.ffl --check                # syntax check only
-afl input.ffl --compact --no-locations # compact JSON
-echo 'facet Test()' | afl            # parse from stdin
+facetwork input.ffl                        # parse and emit JSON
+facetwork input.ffl -o output.json         # output to file
+facetwork input.ffl --check                # syntax check only
+facetwork input.ffl --compact --no-locations # compact JSON
+echo 'facet Test()' | facetwork            # parse from stdin
 ```
 
 ### Executing Workflows Programmatically
 
 ```python
-from afl import parse, emit_dict
-from afl.runtime import Evaluator, MemoryStore, Telemetry, ExecutionStatus
-from afl.runtime.agent_poller import AgentPoller, AgentPollerConfig
+from facetwork import parse, emit_dict
+from facetwork.runtime import Evaluator, MemoryStore, Telemetry, ExecutionStatus
+from facetwork.runtime.agent_poller import AgentPoller, AgentPollerConfig
 
 # Compile FFL
 source = """
@@ -412,15 +412,15 @@ assert final.outputs["result"] == 42  # 41 + 1
 ### Dashboard
 
 ```bash
-python -m afl.dashboard                          # port 8080
-python -m afl.dashboard --port 9000 --reload     # dev mode
+python -m facetwork.dashboard                          # port 8080
+python -m facetwork.dashboard --port 9000 --reload     # dev mode
 ```
 
 ### Distributed Runner Service
 
 ```bash
-python -m afl.runtime.runner                                    # default
-python -m afl.runtime.runner --topics TopicA --max-concurrent 10 # custom
+python -m facetwork.runtime.runner                                    # default
+python -m facetwork.runtime.runner --topics TopicA --max-concurrent 10 # custom
 ```
 
 ### MCP Server
@@ -428,10 +428,10 @@ python -m afl.runtime.runner --topics TopicA --max-concurrent 10 # custom
 The MCP server exposes FFL compiler and runtime as tools for LLM agents:
 
 ```bash
-python -m afl.mcp              # stdio transport
+python -m facetwork.mcp              # stdio transport
 ```
 
-**Tools:** `afl_compile`, `afl_validate`, `afl_execute_workflow`, `afl_continue_step`, `afl_resume_workflow`, `afl_manage_runner`
+**Tools:** `fw_compile`, `fw_validate`, `fw_execute_workflow`, `fw_continue_step`, `fw_resume_workflow`, `fw_manage_runner`
 
 **Resources:** `afl://runners`, `afl://runners/{id}`, `afl://steps/{id}`, `afl://flows`, `afl://servers`, `afl://tasks`
 
@@ -441,7 +441,7 @@ Facetwork agents can be built in any language. The `agents/` directory has libra
 
 | Language | Directory | Build |
 |----------|-----------|-------|
-| **Python** | Built into `afl.runtime` | `pip install -e .` |
+| **Python** | Built into `facetwork.runtime` | `pip install -e .` |
 | **Scala** | `agents/scala/fw-agent/` | `sbt compile` |
 | **Go** | `agents/go/fw-agent/` | `go build ./...` |
 | **TypeScript** | `agents/typescript/fw-agent/` | `npm install && npm run build` |
