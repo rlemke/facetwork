@@ -80,7 +80,7 @@ object AgentPollerConfig:
       .orElse(sys.env.get("AFL_POLL_INTERVAL_MS").flatMap(s => scala.util.Try(s.toLong).toOption))
       .getOrElse(2000L)
     val maxConc = extractIntField(json, "maxConcurrent")
-      .orElse(sys.env.get("AFL_MAX_CONCURRENT").flatMap(s => scala.util.Try(s.toInt).toOption))
+      .orElse(sys.env.get("AFL_MAX_CONCURRENT").flatMap(s => scala.util.Try(s.toLong).toOption))
       .map(_.toInt)
       .getOrElse(5)
     val hbMs = extractIntField(json, "heartbeatIntervalMs")
