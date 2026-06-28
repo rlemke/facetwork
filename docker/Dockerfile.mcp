@@ -16,7 +16,9 @@ COPY pyproject.toml .
 RUN pip install --no-cache-dir -e ".[mcp,mongodb]" || \
     pip install --no-cache-dir lark pymongo mcp
 
-# Copy application code
-COPY facetwork/ ./afl/
+# Copy application code. The package is `facetwork`, not `afl`; copying it to
+# ./facetwork/ matches the editable-install search path (the prior ./afl/ rename
+# was a relic and broke the module's absolute `from facetwork...` imports).
+COPY facetwork/ ./facetwork/
 
-CMD ["python", "-m", "afl.mcp"]
+CMD ["python", "-m", "facetwork.mcp"]
