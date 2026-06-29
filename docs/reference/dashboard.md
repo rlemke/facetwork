@@ -32,6 +32,7 @@ The sidebar is grouped:
 | Infrastructure | **Fleet** | `/v3/fleet` | Infra services (MongoDB/MinIO/Dashboard, by URL) + runner roles — there is no master |
 | Infrastructure | **Tasks** | `/v3/tasks` | The task queue across runners |
 | Infrastructure | **Events** | `/v3/events` | Event-facet work (tasks dispatched to agents) |
+| Infrastructure | **Infra** | `/v3/infra` | Links out to the MinIO console (:9001) + mongo-express UI (:8081); URLs derive from the request host or `FW_MINIO_CONSOLE_URL`/`FW_MONGO_UI_URL` |
 | Data | **Output** | `/v3/output` | Browse handler output / cached artifacts |
 | Data | **PostGIS** | `/v3/postgis` | PostGIS database summary |
 | Access | **Users** | `/v3/users` | User management + the **acting-as** selector |

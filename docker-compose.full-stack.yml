@@ -150,12 +150,37 @@ services:
       - "${FW_MONGODB_PORT:-27017}:27017"
     volumes:
       - mongodb_data:/data/db
+    # Resolve as `afl-minio`'s sibling `afl-mongodb` on the compose network, so
+    # mongo-express (and anything else) reaches Mongo by the same fleet-wide name
+    # remote runner hosts use (mapped via extra_hosts there). Keeps ONE hostname.
+    networks:
+      default:
+        aliases:
+          - afl-mongodb
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
+    restart: unless-stopped
+
+  # mongo-express — web admin UI for the fleet MongoDB (the `facetwork` DB:
+  # runners, tasks, steps, flows, catalog). Internal LAN tool, so basic-auth is
+  # disabled (ME_CONFIG_BASICAUTH=false) — do NOT expose this port off-LAN.
+  # Surfaced from the dashboard's /v3/infra page.
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: facetwork-mongo-express
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      ME_CONFIG_MONGODB_URL: ${FW_MONGO_EXPRESS_URL:-mongodb://afl-mongodb:27017}
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+      ME_CONFIG_BASICAUTH: "false"
+    ports:
+      - "${FW_MONGO_UI_PORT:-8081}:8081"
     restart: unless-stopped
 
   postgis:
@@ -276,6 +301,11 @@ services:
       # mirrors FW_DATA_ROOT=s3://<bucket> + /output. Add osm-output here too if
       # you want OSM maps served by the dashboard instead of host-side.
       FW_S3_OUTPUT_BASE: ${FW_S3_OUTPUT_BASE:-s3://${FW_S3_BUCKET:-afl-cache}/output}
+      # Infra page (/v3/infra) — explicit URLs for the MinIO console + mongo-express
+      # UI. Left blank by default so the page derives them from the request host
+      # (works on any fleet host); set these to pin a fixed address.
+      FW_MINIO_CONSOLE_URL: ${FW_MINIO_CONSOLE_URL:-}
+      FW_MONGO_UI_URL: ${FW_MONGO_UI_URL:-}
     ports:
       - "${DASHBOARD_PORT:-8080}:8080"
     volumes:
