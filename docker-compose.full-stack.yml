@@ -118,6 +118,15 @@ x-s3-storage: &s3-storage
   # egress, so it must reuse the cached PBF as-is. cache_policy=prefer_cache in
   # the workflow covers current handler code; this env covers the fallback path.
   FW_OSM_USE_CACHE_IF_PRESENT: ${FW_OSM_USE_CACHE_IF_PRESENT:-true}
+  # Same reason again: an osm region scan (AllPopulatedPlaces / ToGeoJson over a
+  # multi-GB PBF) runs far longer than the 15-min default execution timeout, so a
+  # big-region scan that lands on a non-osm runner used to time out → re-claim →
+  # re-download+re-scan → dead-letter. Give every runner the osm-grade long
+  # timeouts (same values the osm runners get via domains.json) so an osm task
+  # completes wherever it's claimed.
+  FW_TASK_EXECUTION_TIMEOUT_MS: ${FW_TASK_EXECUTION_TIMEOUT_MS:-14400000}
+  FW_STUCK_TIMEOUT_MS: ${FW_STUCK_TIMEOUT_MS:-14400000}
+  FW_LEASE_DURATION_MS: ${FW_LEASE_DURATION_MS:-14400000}
   # Role group, same as the osm runners: `start-runner --fleet` sets
   # FW_SERVER_GROUP=runner so every per-example fleet runner groups under
   # "runner" (not "default"). The non-osm services don't pass --server-group in
