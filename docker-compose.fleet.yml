@@ -166,6 +166,12 @@ services:
     environment:
       <<: *fleet-env
 
+  runner-cancer:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+
   # Orchestration tier (continuation_mode=shared, set in the full-stack file).
   # Shares the core runner image by default so `fleet set --image` rolls it
   # along with the handler runners; pin it independently with FW_FFL_IMAGE to
