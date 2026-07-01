@@ -6,22 +6,38 @@
 #   ->  poll `fleet config status` until every host's fleet-agent applies it.
 # Tag = git short SHA of HEAD. Requires the `fleetbuilder` buildx builder and a
 # host daemon configured for the HTTP registry (see `fw fleet registry-setup`).
+#
+# --stagger: BEFORE flipping the config, `docker pull` the new tag on this host
+# and then each fleet host ONE AT A TIME. The fleet's registry is a single HTTP
+# `registry:2`; when the config flips, every host's fleet-agent reconciles within
+# its ~30s poll window and pulls the ~1GB image AT ONCE — on a slow host that pull
+# can exceed the agent's 600s docker bound (exit 124) and trip the 900s watchdog
+# into a reconcile loop that never converges (observed on the Intel minis, v62).
+# Pre-pulling serially serializes registry load so each host's post-flip reconcile
+# only recreates containers from a cached image (no registry hit). Remote hosts
+# come from --host (repeatable) or FW_RUNNER_HOSTS ("user@host …"); set FW_SSH_OPTS
+# (e.g. "-i ~/.ssh/id_rsa") if the default key/user doesn't apply.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_remote.sh"
+_afl_resolve_remote_env
 
 REGISTRY="${FW_FLEET_REGISTRY:-192.168.68.96:5050}"
 IMAGE_REPO="$REGISTRY/facetwork-runner"
 BUILDER="${FW_FLEET_BUILDER:-fleetbuilder}"
 PLATFORM="${FW_FLEET_PLATFORM:-linux/arm64}"
 MONGO="${FW_MONGODB_URL:-mongodb://server3.local:27017}"
-DRY=0 TIMEOUT=240
+DRY=0 TIMEOUT=240 STAGGER=0
+HOST_ARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --dry|--dry-run) DRY=1; shift ;;
         --mongo) MONGO="$2"; shift 2 ;;
         --platform) PLATFORM="$2"; shift 2 ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
-        -h|--help) echo "Usage: fw fleet rollout [--dry] [--mongo URL] [--platform P] [--timeout SEC]"; exit 0 ;;
+        --stagger) STAGGER=1; shift ;;
+        --host) HOST_ARGS+=("$2"); shift 2 ;;
+        -h|--help) echo "Usage: fw fleet rollout [--dry] [--stagger [--host user@host]...] [--mongo URL] [--platform P] [--timeout SEC]"; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
@@ -33,12 +49,24 @@ NEW_IMAGE="$IMAGE_REPO:$TAG"
 # cache-from the image the fleet currently runs (best-effort)
 PREV="$("$FW_LIB/fleet/config" get --mongo "$MONGO" 2>/dev/null | grep -oE "$IMAGE_REPO:[a-f0-9]+" | head -1 || true)"
 
+# Resolve stagger targets up front so --dry can show them (empty is allowed —
+# the local host is always pre-pulled; remotes only if listed).
+STAGGER_HOSTS=""
+if [ "$STAGGER" = 1 ]; then
+    STAGGER_HOSTS="$(_afl_resolve_hosts "${HOST_ARGS[@]+"${HOST_ARGS[@]}"}" 2>/dev/null || true)"
+fi
+
 echo "Rollout plan:"
 echo "  image:     $NEW_IMAGE"
 echo "  cache-from: ${PREV:-<none>}"
 echo "  builder:   $BUILDER   platform: $PLATFORM"
 echo "  registry:  $REGISTRY"
-if [ "$DRY" = 1 ]; then echo "[dry-run] no build, no push, no fleet set."; exit 0; fi
+if [ "$STAGGER" = 1 ]; then
+    echo "  stagger:   pre-pull serially — local ($(hostname -s 2>/dev/null || hostname))$(
+        [ -n "$STAGGER_HOSTS" ] && printf ' + %s' "$(printf '%s ' $STAGGER_HOSTS)")"
+    [ -z "$STAGGER_HOSTS" ] && echo "             (no remote hosts — set FW_RUNNER_HOSTS='user@host …' or --host; remotes would pull concurrently on reconcile)"
+fi
+if [ "$DRY" = 1 ]; then echo "[dry-run] no build, no push, no pre-pull, no fleet set."; exit 0; fi
 
 echo "=== 1/3 buildx build + push ==="
 BUILD=(docker buildx build --builder "$BUILDER" --platform "$PLATFORM"
@@ -46,6 +74,25 @@ BUILD=(docker buildx build --builder "$BUILDER" --platform "$PLATFORM"
 [ -n "$PREV" ] && BUILD+=(--cache-from "type=registry,ref=$PREV")
 BUILD+=(--push .)
 "${BUILD[@]}"
+
+if [ "$STAGGER" = 1 ]; then
+    echo "=== staggered pre-pull of $TAG (serialize registry load before the flip) ==="
+    echo "  local ($(hostname -s 2>/dev/null || hostname)):"
+    docker pull "$NEW_IMAGE" 2>&1 | tail -1 || echo "    WARN: local pull failed — this host will pull on reconcile"
+    if [ -z "$STAGGER_HOSTS" ]; then
+        echo "  WARN: no remote hosts given (FW_RUNNER_HOSTS / --host) — remote hosts will"
+        echo "        pull concurrently on reconcile, which is the contention --stagger avoids."
+    else
+        while IFS= read -r h; do
+            [ -z "$h" ] && continue
+            echo "  $h:"
+            # Remote `docker` needs a LOGIN shell (non-login ssh lacks it on PATH).
+            _afl_ssh "$h" "bash -lc 'docker pull $NEW_IMAGE'" 2>&1 | tail -1 \
+                || echo "    WARN: pull on $h failed (unreachable/auth?) — it will pull on reconcile"
+        done <<< "$STAGGER_HOSTS"
+    fi
+    echo "  pre-pull done — reachable hosts have $TAG cached; their reconcile won't hit the registry."
+fi
 
 echo "=== 2/3 fleet config set --image ==="
 SET_OUT="$("$FW_LIB/fleet/config" set --mongo "$MONGO" --image "$NEW_IMAGE")"
