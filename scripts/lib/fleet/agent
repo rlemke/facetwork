@@ -67,6 +67,12 @@ _WATCHDOG_SECONDS = int(os.environ.get("FW_FLEET_AGENT_WATCHDOG_SECONDS", "900")
 # Bound each docker compose call so one wedged invocation aborts on its own
 # rather than hanging the whole reconcile until the watchdog fires.
 _DOCKER_TIMEOUT = int(os.environ.get("FW_FLEET_AGENT_DOCKER_TIMEOUT", "600"))
+# Cap for the exponential backoff `watch` applies after a FAILED reconcile of a
+# given config version (see cmd_watch). Without it a persistently-failing apply
+# (e.g. a code/env skew) retries every `interval` seconds forever, spamming logs
+# and hammering docker. Backoff resets the moment the config version changes (a
+# new rollout is tried promptly) or a reconcile succeeds.
+_BACKOFF_CAP_S = int(os.environ.get("FW_FLEET_AGENT_BACKOFF_CAP_SECONDS", "600"))
 
 # One reused client per (process, url). Creating a fresh MongoClient every poll
 # leaks its background monitor threads + sockets — over hours that fd/thread
@@ -355,7 +361,14 @@ def cmd_watch(a):
     signal.signal(signal.SIGINT, lambda *_: stop.update(v=True))
     last_version = None
     last_image = None
+    # Backoff state for a persistently-failing reconcile: `fails` counts
+    # consecutive failures of `failing_version`. A failed _apply does NOT advance
+    # last_version (so it retries), which without backoff means retrying every
+    # `interval` forever — so we grow the post-failure wait exponentially, capped.
+    fails = 0
+    failing_version = None
     while not stop["v"]:
+        wait = a.interval  # normal poll cadence unless a failure backs us off
         # Watchdog: a poll that runs longer than _WATCHDOG_SECONDS is wedged on
         # something Mongo/docker timeouts didn't catch — force-exit so the
         # KeepAlive supervisor restarts a fresh process (recovers any hang).
@@ -367,22 +380,38 @@ def cmd_watch(a):
             version = cfg.get("version")
             image = (cfg.get("roles") or {}).get("osm-geocoder", {}).get("image")
             if version != last_version:
+                # A new target version resets any backoff from a prior failing one
+                # — a fresh rollout is always tried promptly, not held back.
+                if version != failing_version:
+                    fails = 0
+                    failing_version = version
                 # Recreate only when the image actually changed (replica-only
                 # changes just rescale, no downtime for existing runners).
                 recreate = last_version is not None and image != last_image
-                _apply(cfg, mongo, a.data_dir, a.replicas, recreate=recreate)
-                last_version, last_image = version, image
+                try:
+                    _apply(cfg, mongo, a.data_dir, a.replicas, recreate=recreate)
+                    last_version, last_image = version, image
+                    fails, failing_version = 0, None
+                except SystemExit as exc:
+                    fails += 1
+                    wait = min(a.interval * (2 ** fails), _BACKOFF_CAP_S)
+                    print(f"fleet-agent[{HOST}]: {exc} — reconcile of v{version} "
+                          f"failed (attempt {fails}); backing off {wait}s", flush=True)
             else:
                 print(f"fleet-agent[{HOST}]: up to date (v{version})", flush=True)
-        except SystemExit as exc:
-            print(f"fleet-agent[{HOST}]: {exc}", flush=True)
+                fails, failing_version = 0, None
         except Exception as exc:  # noqa: BLE001 - keep the daemon alive across transient errors
-            print(f"fleet-agent[{HOST}]: reconcile error: {exc}", flush=True)
+            # Transient (Mongo/read/discovery) error — not tied to a config
+            # version, so back off on a separate counter and rebuild the client.
+            fails += 1
+            wait = min(a.interval * (2 ** fails), _BACKOFF_CAP_S)
+            print(f"fleet-agent[{HOST}]: reconcile error: {exc} "
+                  f"(attempt {fails}); backing off {wait}s", flush=True)
             # Drop a possibly-wedged Mongo client so the next poll rebuilds it.
             _close_client()
         finally:
             wd.cancel()
-        for _ in range(a.interval):
+        for _ in range(wait):
             if stop["v"]:
                 break
             time.sleep(1)
