@@ -171,11 +171,25 @@ if [[ "$MODE" == "docker" || "$MODE" == "fleet" ]]; then
         # Read the few vars this script needs WITHOUT sourcing (a value may contain
         # spaces, e.g. FW_REGISTRY_RUNNER_ARGS=--task-list osm); compose reads the
         # full file safely via --env-file. The override file wins, matching compose.
-        _envget() {
+        #
+        # afl->fw migration compat: a value may be written under the canonical FW_
+        # name OR the legacy AFL_ name. This matters during a rollout window because
+        # `runner/start` is exec'd fresh (new code, FW_ names) while a long-running
+        # fleet-agent daemon may still be the OLD process writing AFL_ names into the
+        # temp --env file (a code pull updates files, not the in-memory daemon). So
+        # for any FW_<X> lookup that comes up empty, fall back to AFL_<X> — this
+        # bridges the skew so the osm start path always finds the shared endpoints.
+        # (Dead code once every host's daemon writes FW_ names; removed in Phase 5.)
+        _envget1() {
             local v=""
             [[ -f "$OVERRIDE_FILE" ]] && v="$(sed -n "s/^$1=//p" "$OVERRIDE_FILE" | tail -1)"
             [[ -n "$v" ]] && { printf '%s\n' "$v"; return; }
             sed -n "s/^$1=//p" "$ENV_FILE" | tail -1
+        }
+        _envget() {
+            local v; v="$(_envget1 "$1")"
+            [[ -z "$v" && "$1" == FW_* ]] && v="$(_envget1 "AFL_${1#FW_}")"
+            printf '%s\n' "$v"
         }
         FW_MONGODB_URL="$(_envget FW_MONGODB_URL)"
         FW_S3_ENDPOINT="$(_envget FW_S3_ENDPOINT)"
