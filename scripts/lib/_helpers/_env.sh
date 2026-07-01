@@ -31,7 +31,9 @@ fi
 _fw_warn_legacy_env() {
     command -v compgen >/dev/null 2>&1 || return 0
     local legacy
-    legacy="$(compgen -v 2>/dev/null | grep '^AFL_' | tr '\n' ' ')"
+    # `|| true`: with no AFL_* set, grep exits 1 — under a caller's `set -o pipefail`
+    # + `set -e` (sourced into their shell) that would abort the whole command.
+    legacy="$(compgen -v 2>/dev/null | grep '^AFL_' | tr '\n' ' ' || true)"
     [ -n "$legacy" ] && echo "WARNING: unsupported legacy AFL_* env var(s) set (rename to FW_*; ignored): $legacy" >&2
     return 0
 }
