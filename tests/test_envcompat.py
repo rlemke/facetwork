@@ -12,64 +12,46 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the AFL_ -> FW_ env-var compatibility shim."""
+"""Tests for the retired AFL_ prefix — FW_ is the only accepted prefix now."""
 
 from __future__ import annotations
 
-import os
+import logging
 
 from facetwork import envcompat as ec
 
 
-def test_fw_wins_collision():
-    e = {"FW_X": "new", "AFL_X": "old"}
-    ec.normalize_environ(e)
-    assert e["FW_X"] == "new"
-    assert e["AFL_X"] == "new"  # FW_ is canonical, pushed down
-
-
-def test_lone_legacy_mirrored_up():
-    e = {"AFL_STORAGE": "s3"}
-    ec.normalize_environ(e)
-    assert e["FW_STORAGE"] == "s3"
-
-
-def test_lone_canonical_mirrored_down():
-    e = {"FW_DATA_ROOT": "s3://fw-cache"}
-    ec.normalize_environ(e)
-    assert e["AFL_DATA_ROOT"] == "s3://fw-cache"
-
-
-def test_legacy_count_reflects_operator_set_only():
-    # The newly-mirrored AFL_DATA_ROOT must NOT inflate the legacy count.
-    e = {"FW_DATA_ROOT": "x", "AFL_STORAGE": "s3"}
-    assert ec.normalize_environ(e) == 1
-
-
-def test_idempotent_values_stable():
-    e = {"FW_X": "new", "AFL_X": "old", "AFL_Y": "y"}
-    ec.normalize_environ(e)
-    snapshot = dict(e)
-    ec.normalize_environ(e)
-    assert e == snapshot
-
-
-def test_fw_getenv_precedence(monkeypatch):
+def test_fw_getenv_reads_fw_only(monkeypatch):
     monkeypatch.delenv("FW_PTEST", raising=False)
     monkeypatch.delenv("AFL_PTEST", raising=False)
+    # A lone legacy AFL_ var is NOT consulted — it is retired.
     monkeypatch.setenv("AFL_PTEST", "legacy")
-    assert ec.fw_getenv("PTEST") == "legacy"
+    assert ec.fw_getenv("PTEST") is None
     monkeypatch.setenv("FW_PTEST", "canon")
     assert ec.fw_getenv("PTEST") == "canon"
     assert ec.fw_getenv("PTEST_MISSING", "dflt") == "dflt"
 
 
-def test_install_mirrors_real_environ_for_legacy_readers(monkeypatch):
-    """A FW_ var set before package import must be visible to code that reads the
-    legacy AFL_ name — the whole point of the shim."""
-    monkeypatch.setenv("FW_INTEGRATION_PROBE", "value")
-    monkeypatch.delenv("AFL_INTEGRATION_PROBE", raising=False)
-    # install() is guarded by a module flag after first import, so exercise the
-    # underlying normalize directly against the real environ.
-    ec.normalize_environ()
-    assert os.environ["AFL_INTEGRATION_PROBE"] == "value"
+def test_legacy_vars_detects_afl_only():
+    e = {"FW_X": "new", "AFL_X": "old", "AFL_Y": "y", "PATH": "/bin"}
+    assert ec.legacy_vars(e) == ["AFL_X", "AFL_Y"]
+
+
+def test_no_mirroring_environ_unchanged():
+    # The mirror is gone: detection must NOT mutate the env (no FW_ created,
+    # no AFL_ promoted).
+    e = {"AFL_STORAGE": "s3", "FW_DATA_ROOT": "x"}
+    before = dict(e)
+    ec.legacy_vars(e)
+    assert e == before
+
+
+def test_install_logs_error_on_legacy(monkeypatch, caplog):
+    monkeypatch.setenv("AFL_SOME_LEGACY", "v")
+    # install() is guarded by a module flag after first import; exercise the
+    # reporting path directly so the guard doesn't swallow it.
+    ec._installed = False
+    with caplog.at_level(logging.ERROR, logger="facetwork.env"):
+        ec.install()
+    assert "AFL_SOME_LEGACY" in caplog.text
+    monkeypatch.delenv("AFL_SOME_LEGACY", raising=False)

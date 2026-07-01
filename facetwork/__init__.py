@@ -14,8 +14,9 @@
 
 """Facetwork (FFL — Facetwork Flow Language) compiler + runtime package."""
 
-# Normalize the AFL_* -> FW_* env-var prefixes before any submodule reads config,
-# so operators can set either prefix during the migration. FW_ is canonical.
+# FW_ is the only accepted env-var prefix. The AFL_ -> FW_ migration is done, so
+# this no longer mirrors prefixes — it just reports any lingering AFL_* var as an
+# error (its value is ignored). Runs before any submodule reads config.
 from .envcompat import install as _install_envcompat
 
 _install_envcompat()

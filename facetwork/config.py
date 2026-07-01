@@ -564,7 +564,7 @@ def load_config(path: str | Path | None = None) -> FFLConfig:
     """Load FFL configuration.
 
     Resolution order (highest to lowest priority):
-        1. Environment variables (``FW_*``, or legacy ``AFL_*`` via the shim)
+        1. Environment variables (``FW_*`` — the only accepted prefix)
         2. ``FW_ENV`` overlay file (``afl.config.{FW_ENV}.json``)
         3. Base config file (explicit *path*, or found via search)
         4. Built-in defaults

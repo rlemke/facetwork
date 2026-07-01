@@ -35,12 +35,11 @@ from facetwork.config import (
 def _isolate_afl_env(monkeypatch):
     """Make every config test hermetic.
 
-    `config.py` reads `FW_*` env vars (and legacy `AFL_*`, mirrored by the
-    compat shim) with precedence over any config file, so a dev box or CI that
-    exports e.g. `FW_MONGODB_URL` would otherwise leak into
+    `config.py` reads `FW_*` env vars with precedence over any config file, so a
+    dev box or CI that exports e.g. `FW_MONGODB_URL` would otherwise leak into
     `load_config()`/`get_config()` and break the file/overlay/default assertions.
-    Strip all `FW_*`/`AFL_*` vars (a test that needs one sets it explicitly
-    afterward) and clear the config cache around each test.
+    Strip all `FW_*` vars (plus any stray legacy `AFL_*`, now retired) and clear
+    the config cache around each test.
     """
     for key in list(os.environ):
         if key.startswith(("FW_", "AFL_")):
