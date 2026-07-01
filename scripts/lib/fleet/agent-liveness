@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# fw-summary: external liveness watchdog — kickstart a FROZEN fleet-agent (its log went stale)
+#
+# The fleet-agent's in-process 900s watchdog (a threading.Timer) CANNOT fire if the
+# whole process FREEZES — App Nap / sleep-wake / a hard hang freezes the watchdog
+# thread too — and launchd KeepAlive only restarts on process EXIT, not on hang. A
+# frozen agent silently stops reconciling, so config changes (e.g. a `fleet set`
+# rollout) never reach it. This external check, run by a launchd StartInterval job,
+# kickstarts the agent when its stdout log has not advanced for longer than
+# FW_FLEET_LIVENESS_THRESHOLD_S (default 1200s). The threshold is deliberately ABOVE
+# the 900s in-process watchdog: a healthy agent writes an "up to date (vN)" line
+# every ~30s when idle, and even a legitimately long reconcile either finishes or
+# trips the 900s watchdog (which writes a line + exits → KeepAlive restart) — so the
+# log mtime can only stay frozen past 1200s if the process is genuinely wedged.
+#
+# Usage:
+#   fw fleet agent-liveness check [--dry]   # the periodic check (run by launchd)
+#   fw fleet agent-liveness install         # write + load the StartInterval LaunchAgent
+#   fw fleet agent-liveness uninstall       # unload + remove it
+#   fw fleet agent-liveness status          # show job state + current log age
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+LABEL="com.facetwork.fleet-agent"
+LIVENESS_LABEL="com.facetwork.fleet-agent-liveness"
+FW_HOME="$HOME/.facetwork"
+AGENT_LOG="${FW_FLEET_AGENT_LOG:-$FW_HOME/fleet-agent.log}"
+THRESHOLD="${FW_FLEET_LIVENESS_THRESHOLD_S:-1200}"
+INTERVAL="${FW_FLEET_LIVENESS_INTERVAL_S:-300}"
+WRAPPER="$FW_HOME/fleet-agent-liveness.sh"
+PLIST="$HOME/Library/LaunchAgents/$LIVENESS_LABEL.plist"
+
+_now() { date +%s; }
+# mtime in epoch seconds — macOS (stat -f) with a Linux (stat -c) fallback.
+_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+
+cmd_check() {
+    local dry=0; [ "${1:-}" = "--dry" ] && dry=1
+    # Only act if the agent is actually loaded — an unloaded/not-installed agent is
+    # not our problem (KeepAlive owns exits; install owns the initial load).
+    # End-anchored so the agent label doesn't also match "$LABEL-liveness".
+    if ! launchctl list 2>/dev/null | grep -qE "[[:space:]]${LABEL}$"; then
+        echo "[liveness] $LABEL not loaded — nothing to watch"; return 0
+    fi
+    if [ ! -f "$AGENT_LOG" ]; then
+        echo "[liveness] no agent log at $AGENT_LOG — skip"; return 0
+    fi
+    local mt age; mt="$(_mtime "$AGENT_LOG")"
+    if [ -z "$mt" ]; then echo "[liveness] cannot stat $AGENT_LOG — skip"; return 0; fi
+    age=$(( $(_now) - mt ))
+    if [ "$age" -le "$THRESHOLD" ]; then
+        echo "[liveness] ok — agent log fresh (${age}s <= ${THRESHOLD}s)"; return 0
+    fi
+    echo "[liveness] FROZEN? agent log stale ${age}s > ${THRESHOLD}s — recovering $LABEL"
+    if [ "$dry" = 1 ]; then echo "[liveness] --dry: would kickstart $LABEL"; return 0; fi
+    launchctl kickstart -k "gui/$(id -u)/$LABEL" && echo "[liveness] kickstarted $LABEL"
+}
+
+cmd_install() {
+    mkdir -p "$FW_HOME" "$(dirname "$PLIST")"
+    cat > "$WRAPPER" <<EOF
+#!/bin/zsh -l
+# Liveness watchdog for $LABEL (installed by 'fw fleet agent-liveness install').
+# Login shell so PATH/profile env is present; runs one bounded check and exits.
+set -u
+cd "$FW_ROOT" || exit 1
+exec ./fw fleet agent-liveness check
+EOF
+    chmod +x "$WRAPPER"
+    cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$LIVENESS_LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$WRAPPER</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>$INTERVAL</integer>
+    <key>WorkingDirectory</key>
+    <string>$FW_ROOT</string>
+    <key>StandardOutPath</key>
+    <string>$FW_HOME/fleet-agent-liveness.log</string>
+    <key>StandardErrorPath</key>
+    <string>$FW_HOME/fleet-agent-liveness.log</string>
+</dict>
+</plist>
+EOF
+    launchctl bootout "gui/$(id -u)/$LIVENESS_LABEL" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$PLIST"
+    echo "installed + loaded $LIVENESS_LABEL (interval=${INTERVAL}s threshold=${THRESHOLD}s)"
+    echo "  wrapper: $WRAPPER"
+    echo "  plist:   $PLIST"
+    echo "  log:     $FW_HOME/fleet-agent-liveness.log"
+}
+
+cmd_uninstall() {
+    launchctl bootout "gui/$(id -u)/$LIVENESS_LABEL" 2>/dev/null || true
+    rm -f "$PLIST" "$WRAPPER"
+    echo "uninstalled $LIVENESS_LABEL"
+}
+
+cmd_status() {
+    if launchctl list 2>/dev/null | grep -q "$LIVENESS_LABEL"; then
+        echo "loaded: $(launchctl list | grep "$LIVENESS_LABEL")"
+    else
+        echo "not loaded (run: fw fleet agent-liveness install)"
+    fi
+    if [ -f "$AGENT_LOG" ]; then
+        local mt; mt="$(_mtime "$AGENT_LOG")"
+        [ -n "$mt" ] && echo "agent log age: $(( $(_now) - mt ))s (threshold ${THRESHOLD}s, check every ${INTERVAL}s)"
+    fi
+}
+
+case "${1:-check}" in
+    check)     shift || true; cmd_check "${1:-}" ;;
+    install)   cmd_install ;;
+    uninstall) cmd_uninstall ;;
+    status)    cmd_status ;;
+    -h|--help) echo "Usage: fw fleet agent-liveness [check [--dry] | install | uninstall | status]" ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+esac
