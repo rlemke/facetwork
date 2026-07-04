@@ -170,6 +170,13 @@
       "service": "runner-conflict",
       "task_list": "conflict"
     },
+    "migration": {
+      "repo": "fwh_migration",
+      "extras": [],
+      "description": "World Bank net-migration world map with a year slider (1960-2025): green=net immigration, red=net emigration per 1,000 pop",
+      "service": "runner-migration",
+      "task_list": "migration"
+    },
     "osm-mapping": {
       "repo": "fwh_osm_mapping",
       "extras": [],
