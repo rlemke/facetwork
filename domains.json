@@ -232,6 +232,16 @@
       "description": "Cancer gene-prioritization evidence graph (TCGA/GDC + GTEx + intOGen) -> ranked evidence table",
       "service": "runner-cancer",
       "task_list": "cancer"
+    },
+    "peloton": {
+      "repo": "fwh_peloton",
+      "extras": ["detect", "enhance", "raw", "domain"],
+      "description": "Group cycling photos -> per-rider enhanced portraits (detect -> crop -> enhance; 16-bit TIFF; nef-to-tif)"
+    },
+    "groupphoto": {
+      "repo": "fwh_groupphoto",
+      "extras": ["detect", "enhance", "matte", "raw", "domain"],
+      "description": "Enhance posed group photos (deblur + glare/highlight correction + optional background replacement)"
     }
   },
   "examples": {
