@@ -56,14 +56,19 @@ x-fleet-runner: &fleet-runner
   # Register under a meaningful name (set by start-runner to this host's hostname
   # / FW_FLEET_HOST) so `fleet status` shows the server by name, not a random id.
   hostname: ${FW_FLEET_HOST:-}
-  # Default to the fleet's infra host (server3 @ 192.168.68.96) so the
-  # afl-mongodb/afl-minio names resolve inside runner containers even when a
-  # joiner hasn't set FW_INFRA_IP — i.e. a plain `git pull` + restart picks up
-  # the shared MinIO/MongoDB with no per-host edit. Override FW_INFRA_IP if the
-  # infra host moves.
+  # FW_INFRA_IP is normally set for you: runner/start resolves FW_INFRA_HOST
+  # (a stable NAME, default server3.local) to the infra host's CURRENT IP via
+  # mDNS/DNS and exports it here, so these mappings track DHCP drift with no
+  # per-host edit — the name is stable even when the address changes. The
+  # literal below is only a last-resort fallback if that resolution is skipped
+  # or fails. To pin a fixed address, set FW_INFRA_HOST="" + FW_INFRA_IP=<ip>.
+  # Fallback is 127.0.0.1 (a VALID address, so `compose config` still enumerates
+  # services) rather than a real infra IP: if resolution was skipped, the runner
+  # fails fast against localhost instead of silently pointing at a stale/foreign
+  # address — the exact class of bug the name-based resolution removes.
   extra_hosts:
-    - "afl-mongodb:${FW_INFRA_IP:-192.168.68.96}"
-    - "afl-minio:${FW_INFRA_IP:-192.168.68.96}"
+    - "afl-mongodb:${FW_INFRA_IP:-127.0.0.1}"
+    - "afl-minio:${FW_INFRA_IP:-127.0.0.1}"
 
 # NOTE: `depends_on: !reset []` must sit DIRECTLY on each service, not in the
 # anchor above — Compose's `!reset` tag is not preserved through a `<<:` alias

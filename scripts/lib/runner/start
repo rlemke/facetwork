@@ -195,6 +195,35 @@ if [[ "$MODE" == "docker" || "$MODE" == "fleet" ]]; then
         export FW_SERVER_GROUP="${FW_SERVER_GROUP:-$(_envget FW_SERVER_GROUP)}"
         export FW_SERVER_GROUP="${FW_SERVER_GROUP:-runner}"
 
+        # Resolve the infra host by NAME to its CURRENT IP, so the container
+        # extra_hosts (afl-mongodb/afl-minio -> FW_INFRA_IP) track DHCP drift
+        # automatically instead of pinning an IP that goes stale when the infra
+        # host's lease changes. FW_INFRA_HOST is a stable name (default
+        # server3.local); the HOST resolves it here (mDNS/DNS) and exports
+        # FW_INFRA_IP for compose interpolation — containers can't resolve
+        # .local/mDNS themselves, which is exactly why the host does it for them.
+        # To pin a fixed address instead, set FW_INFRA_HOST="" and FW_INFRA_IP=<ip>.
+        FW_INFRA_HOST="${FW_INFRA_HOST:-$(_envget FW_INFRA_HOST)}"
+        FW_INFRA_HOST="${FW_INFRA_HOST:-server3.local}"
+        if [[ -n "$FW_INFRA_HOST" ]]; then
+            _infra_ip="$("$PY" - "$FW_INFRA_HOST" <<'PYEOF' 2>/dev/null || true
+import socket, sys
+try:
+    print(socket.gethostbyname(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+PYEOF
+)"
+            if [[ -n "${_infra_ip:-}" ]]; then
+                export FW_INFRA_IP="$_infra_ip"
+                echo "  Infra host: $FW_INFRA_HOST -> $FW_INFRA_IP (resolved; afl-* container names map here)"
+            elif [[ -n "${FW_INFRA_IP:-}" ]]; then
+                echo "  WARNING: could not resolve FW_INFRA_HOST=$FW_INFRA_HOST — falling back to FW_INFRA_IP=$FW_INFRA_IP" >&2
+            else
+                echo "  WARNING: could not resolve FW_INFRA_HOST=$FW_INFRA_HOST and no FW_INFRA_IP set — compose default applies" >&2
+            fi
+        fi
+
         echo "Preflight — shared services must be reachable from this host:"
         if "$PY" - "$FW_MONGODB_URL" <<'PYEOF' 2>/dev/null
 import sys
