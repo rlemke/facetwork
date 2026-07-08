@@ -29,11 +29,15 @@ facetwork-test.log
 # Compiled AFL output
 examples/osm-geocoder/tests/real/*.json
 
-# AgentFlow runtime config
-.env
-.env.fleet
-.env.fleet.override
-.env.fleet.bak
+# AgentFlow runtime config — ignore ALL .env* (may hold secrets, incl. the
+# fleet-agent's decrypted-cred temp files .env.fleet-agent.*), except the
+# committed template/preset files that are meant to be tracked.
+.env*
+!.env.example
+!.env.fleet.example
+!.env.fleet.override.example
+!.env.fleet.preset
+!.env.full-stack.example
 # macOS aliases
 oms-mirror
 
@@ -44,8 +48,6 @@ afl-test.log
 # Build artifacts + runtime locks
 target/
 .claude/scheduled_tasks.lock
-.env.fleet
-.env.fleet.override
 
 # Per-deployment domain/example catalog override (see domains.json)
 domains.local.json

@@ -48,7 +48,28 @@ from pymongo import MongoClient  # noqa: E402
 
 from fwroot import fw_root  # noqa: E402
 REPO = fw_root()
+# Where the agent stages its decrypted-cred env file for `runner start --env`.
+# MUST be OUTSIDE the git worktree: mkstemp'ing it into REPO left live secrets
+# one `git add -A` from being committed, and the finally-cleanup is bypassed by
+# the watchdog's os._exit and by SIGKILL, so files strand. A private per-user
+# dir (0700) keeps stragglers unreachable to git and easy to sweep on startup.
+_RUNDIR = os.path.join(os.path.expanduser("~"), ".facetwork", "run")
+_ENVF_PREFIX = ".env.fleet-agent."
 DB = os.environ.get("FW_MONGODB_DATABASE", "facetwork")
+
+
+def _sweep_stranded_env_files():
+    """Delete any decrypted-cred env files left by a prior agent that exited
+    without running its cleanup (watchdog os._exit / SIGKILL). Covers both the
+    new private run dir and the legacy in-repo location."""
+    import glob
+
+    for d in (_RUNDIR, REPO):
+        for p in glob.glob(os.path.join(d, _ENVF_PREFIX + "*")):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
 # FW_FLEET_HOST names this server in fleet_agents/status (defaults to the
 # machine hostname); lets several agents on one box act as distinct servers.
 HOST = os.environ.get("FW_FLEET_HOST") or socket.gethostname()
@@ -261,7 +282,8 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
             print(f"    - would SKIP (host group '{grp}' not listed): {', '.join(skipped)}")
         return
 
-    fd, envf = tempfile.mkstemp(prefix=".env.fleet-agent.", dir=REPO)
+    os.makedirs(_RUNDIR, mode=0o700, exist_ok=True)
+    fd, envf = tempfile.mkstemp(prefix=_ENVF_PREFIX, dir=_RUNDIR)
     try:
         with os.fdopen(fd, "w") as f:
             for k, v in env.items():
@@ -344,16 +366,21 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
                       "continuing — another host can serve this domain's tasks")
         _record(mongo, cfg.get("version"), image, replicas)
     finally:
-        os.unlink(envf)
+        try:
+            os.unlink(envf)
+        except OSError:
+            pass
 
 
 def cmd_apply(a):
+    _sweep_stranded_env_files()
     mongo = _fleet_lib.resolve_mongo(a.mongo, log=lambda m: print(f"  {m}"))
     cfg = _read_cfg(mongo)
     _apply(cfg, mongo, a.data_dir, a.replicas, recreate=a.recreate, dry_run=a.dry_run)
 
 
 def cmd_watch(a):
+    _sweep_stranded_env_files()
     mongo = _fleet_lib.resolve_mongo(a.mongo, log=lambda m: print(f"  {m}"))
     print(f"fleet-agent[{HOST}]: watching fleet_config on {mongo} every {a.interval}s (Ctrl-C to stop)")
     stop = {"v": False}
