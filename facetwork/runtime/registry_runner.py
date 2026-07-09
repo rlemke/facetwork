@@ -895,24 +895,45 @@ class RegistryRunner(BaseRunner):
                 self._reset_errored_ancestors(step)
 
             if not self._dispatcher.can_dispatch(task.name):
-                error_msg = f"No handler registration for event task '{task.name}'"
-                self._emit_step_log(
-                    step_id=task.step_id,
-                    workflow_id=task.workflow_id,
-                    message=f"Handler error: {error_msg}",
-                    level=StepLogLevel.ERROR,
-                    facet_name=task.name,
-                )
-                self._evaluator.fail_step(task.step_id, error_msg)
-                task.state = TaskState.FAILED
-                task.error = {"message": error_msg}
-                task.updated = _current_time_ms()
-                self._persistence.save_task(task)
-                logger.warning(
-                    "No handler registration for event task '%s' (step=%s)",
-                    task.name,
-                    task.step_id,
-                )
+                # This runner has no handler for the facet (e.g. a registry-
+                # refresh race after claiming). In a fleet another runner may
+                # have it, so release back to pending (with backoff) for retry;
+                # only fail for good once retries are exhausted — i.e. no runner
+                # in the fleet could service it (§17.1.1 defence in depth).
+                if self._transition_for_retry(
+                    task, dead_letter_state=TaskState.FAILED, set_next_retry_after=True
+                ):
+                    error_msg = (
+                        f"No handler for event task '{task.name}' "
+                        f"(no runner could service it after {task.retry_count} attempts)"
+                    )
+                    task.error = {"message": error_msg}
+                    try:
+                        self._evaluator.fail_step(task.step_id, error_msg)
+                    except Exception:
+                        logger.debug("Could not fail step %s", task.step_id, exc_info=True)
+                    self._emit_step_log(
+                        step_id=task.step_id,
+                        workflow_id=task.workflow_id,
+                        message=f"Handler error: {error_msg}",
+                        level=StepLogLevel.ERROR,
+                        facet_name=task.name,
+                    )
+                    logger.warning(
+                        "No handler for event task '%s' anywhere — failing after %d attempts (step=%s)",
+                        task.name,
+                        task.retry_count,
+                        task.step_id,
+                    )
+                else:
+                    logger.info(
+                        "No handler for event task '%s' on this runner — releasing back to "
+                        "pending (attempt %d/%d)",
+                        task.name,
+                        task.retry_count,
+                        task.max_retries,
+                    )
+                self._safe_save_task(task)
                 return
 
             # Inject _step_log callback for handler-level logging
@@ -994,27 +1015,48 @@ class RegistryRunner(BaseRunner):
                                 level=StepLogLevel.ERROR,
                                 facet_name=task.name,
                             )
-                            # Reset task to pending so it can be retried
-                            task.state = TaskState.PENDING
-                            task.error = None
-                            task.server_id = ""
-                            task.updated = _current_time_ms()
-                            self._persistence.save_task(task)
-                            self._emit_step_log(
-                                step_id=task.step_id,
-                                workflow_id=task.workflow_id,
-                                message=f"Step restarted after timeout — task reset to pending: {task.name}",
-                                level=StepLogLevel.WARNING,
-                                facet_name=task.name,
-                            )
-                            logger.warning(
-                                "Handler timed out for '%s' (step=%s, "
-                                "elapsed=%dms, limit=%dms), resetting to pending",
-                                task.name,
-                                task.step_id,
-                                elapsed,
-                                timeout_ms,
-                            )
+                            # Route through the shared retry contract: bump
+                            # retry_count + backoff and dead-letter at max_retries.
+                            # Previously this reset to PENDING with no retry_count
+                            # and no backoff, so a handler that reliably exceeds
+                            # its timeout was re-claimed immediately, forever.
+                            task.error = {"message": error_msg}
+                            if self._transition_for_retry(task, set_next_retry_after=True):
+                                try:
+                                    self._evaluator.fail_step(task.step_id, error_msg)
+                                except Exception:
+                                    logger.debug(
+                                        "Could not fail step %s", task.step_id, exc_info=True
+                                    )
+                                self._safe_save_task(task)
+                                logger.warning(
+                                    "Handler '%s' dead-lettered after %d timeouts (step=%s)",
+                                    task.name,
+                                    task.retry_count,
+                                    task.step_id,
+                                )
+                            else:
+                                self._safe_save_task(task)
+                                self._emit_step_log(
+                                    step_id=task.step_id,
+                                    workflow_id=task.workflow_id,
+                                    message=(
+                                        "Step released to pending after timeout "
+                                        f"(retry {task.retry_count}/{task.max_retries}): {task.name}"
+                                    ),
+                                    level=StepLogLevel.WARNING,
+                                    facet_name=task.name,
+                                )
+                                logger.warning(
+                                    "Handler timed out for '%s' (step=%s, elapsed=%dms, "
+                                    "limit=%dms), releasing to pending (retry %d/%d)",
+                                    task.name,
+                                    task.step_id,
+                                    elapsed,
+                                    timeout_ms,
+                                    task.retry_count,
+                                    task.max_retries,
+                                )
                             return
                 else:
                     result = self._dispatcher.dispatch(task.name, payload)
@@ -1113,7 +1155,13 @@ class RegistryRunner(BaseRunner):
             )
 
         except Exception as exc:
-            # Fail the step and mark task as failed
+            # A handler EXECUTION error. Retry transient failures (connection
+            # resets, throttling, a restarted DB) with backoff; only fail the
+            # step for good — and run catch/error-propagation — once retries are
+            # exhausted. Previously this dead-failed on the FIRST exception, so a
+            # single transient blip permanently failed the step. Now it routes
+            # through the shared _transition_for_retry contract (retry+backoff
+            # then dead-letter at max_retries), matching RunnerService.
             self._emit_step_log(
                 step_id=task.step_id,
                 workflow_id=task.workflow_id,
@@ -1121,36 +1169,54 @@ class RegistryRunner(BaseRunner):
                 level=StepLogLevel.ERROR,
                 facet_name=task.name,
             )
-            try:
-                workflow_ast = self._ast_cache.get(task.workflow_id)
-                program_ast = self._program_ast_cache.get(task.workflow_id)
-                self._evaluator.fail_step(
-                    task.step_id,
-                    str(exc),
-                    workflow_ast=workflow_ast,
-                    program_ast=program_ast,
-                )
-            except Exception:
-                logger.debug("Could not fail step %s", task.step_id, exc_info=True)
-            task.state = TaskState.FAILED
             task.error = {"message": str(exc)}
-            task.updated = _current_time_ms()
-            self._persistence.save_task(task)
-            logger.warning(
-                "Error processing event task %s (name=%s, step=%s)",
-                task.uuid,
-                task.name,
-                task.step_id,
-            )
-
-            # Resume the workflow so catch blocks / error propagation runs
-            try:
-                self._resume_workflow(task.workflow_id, task.runner_id)
-            except Exception:
-                logger.debug(
-                    "Could not resume workflow %s after error",
-                    task.workflow_id,
-                    exc_info=True,
+            if self._transition_for_retry(
+                task, set_next_retry_after=True, clear_error_on_retry=False
+            ):
+                # Dead-lettered: fail the step (with AST so catch blocks / error
+                # propagation resolve) and resume so that error handling runs.
+                try:
+                    workflow_ast = self._ast_cache.get(task.workflow_id)
+                    program_ast = self._program_ast_cache.get(task.workflow_id)
+                    self._evaluator.fail_step(
+                        task.step_id,
+                        str(exc),
+                        workflow_ast=workflow_ast,
+                        program_ast=program_ast,
+                    )
+                except Exception:
+                    logger.debug("Could not fail step %s", task.step_id, exc_info=True)
+                self._safe_save_task(task)
+                logger.warning(
+                    "Event task %s dead-lettered after %d retries (name=%s, step=%s): %s",
+                    task.uuid,
+                    task.retry_count,
+                    task.name,
+                    task.step_id,
+                    exc,
+                )
+                try:
+                    self._resume_workflow(task.workflow_id, task.runner_id)
+                except Exception:
+                    logger.debug(
+                        "Could not resume workflow %s after error",
+                        task.workflow_id,
+                        exc_info=True,
+                    )
+            else:
+                # Retry: released back to pending with backoff. The step stays
+                # at EVENT_TRANSMIT for re-claim, so do NOT fail_step or resume —
+                # the next claim re-dispatches the handler.
+                self._safe_save_task(task)
+                logger.warning(
+                    "Event task %s failed (retry %d/%d) — releasing to pending "
+                    "(name=%s, step=%s): %s",
+                    task.uuid,
+                    task.retry_count,
+                    task.max_retries,
+                    task.name,
+                    task.step_id,
+                    exc,
                 )
 
     # =========================================================================

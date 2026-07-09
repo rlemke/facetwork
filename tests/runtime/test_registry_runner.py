@@ -485,12 +485,48 @@ class TestRegistryRunnerPollOnce:
         dispatched = runner.poll_once()
         assert dispatched == 1
 
+        # A transient handler error must RETRY (not permanently fail on the
+        # first exception): the task is released back to pending with an
+        # incremented retry_count, the error is preserved, and the step stays
+        # at EVENT_TRANSMIT for re-dispatch — it is NOT marked errored yet.
         updated_task = store._tasks[task.uuid]
-        assert updated_task.state == TaskState.FAILED
+        assert updated_task.state == TaskState.PENDING
+        assert updated_task.retry_count == 1
         assert "handler exploded" in updated_task.error["message"]
 
         updated_step = store.get_step(step.id)
-        assert updated_step.state == StepState.STATEMENT_ERROR
+        assert updated_step.state == StepState.EVENT_TRANSMIT
+
+    def test_poll_handler_exception_dead_letters_after_max_retries(
+        self, store, evaluator, workflow_ast, program_ast, tmp_path
+    ):
+        """Once retries are exhausted the task dead-letters and the step errors."""
+        _execute_until_paused(evaluator, workflow_ast, {"x": 1}, program_ast)
+        step = store.get_steps_by_state(StepState.EVENT_TRANSMIT)[0]
+        task = next(
+            t
+            for t in store._tasks.values()
+            if t.state == TaskState.PENDING and t.step_id == step.id
+        )
+        # max_retries=1 → the first failure is already the terminal attempt.
+        task.max_retries = 1
+        store.save_task(task)
+
+        f = tmp_path / "failing_handler.py"
+        f.write_text("def handle(payload):\n    raise ValueError('handler exploded')\n")
+        store.save_handler_registration(
+            HandlerRegistration(
+                facet_name="CountDocuments", module_uri=f"file://{f}", entrypoint="handle"
+            )
+        )
+        runner = RegistryRunner(persistence=store, evaluator=evaluator, config=RegistryRunnerConfig())
+
+        runner.poll_once()
+
+        updated_task = store._tasks[task.uuid]
+        assert updated_task.state == TaskState.DEAD_LETTER
+        assert "handler exploded" in updated_task.error["message"]
+        assert store.get_step(step.id).state == StepState.STATEMENT_ERROR
 
     def test_poll_handler_not_found(self, store, evaluator, workflow_ast, program_ast):
         """No registration for task name -> step error, task failed."""
@@ -527,9 +563,40 @@ class TestRegistryRunnerPollOnce:
         dispatched = runner.poll_once()
         assert dispatched == 1
 
+        # A runner that can't dispatch the facet (registry-refresh race) must
+        # RELEASE the task back to pending for another runner in the fleet —
+        # not fail it permanently. It dead-letters only after retries are
+        # exhausted (no runner could service it).
+        updated_task = store._tasks[task.uuid]
+        assert updated_task.state == TaskState.PENDING
+        assert updated_task.retry_count == 1
+
+    def test_poll_handler_not_found_dead_letters_after_max_retries(
+        self, store, evaluator, workflow_ast, program_ast
+    ):
+        """After retries the un-dispatchable task fails for good and the step errors."""
+        _execute_until_paused(evaluator, workflow_ast, {"x": 1}, program_ast)
+        step = store.get_steps_by_state(StepState.EVENT_TRANSMIT)[0]
+        task = next(
+            t
+            for t in store._tasks.values()
+            if t.state == TaskState.PENDING and t.step_id == step.id
+        )
+        task.max_retries = 1
+        store.save_task(task)
+        store.save_handler_registration(
+            HandlerRegistration(facet_name="SomeOtherFacet", module_uri="dummy")
+        )
+        runner = RegistryRunner(persistence=store, evaluator=evaluator, config=RegistryRunnerConfig())
+        runner._registered_names = [task.name]
+        runner._last_refresh = _current_time_ms()
+
+        runner.poll_once()
+
         updated_task = store._tasks[task.uuid]
         assert updated_task.state == TaskState.FAILED
-        assert "No handler registration" in updated_task.error["message"]
+        assert "No handler" in updated_task.error["message"]
+        assert store.get_step(step.id).state == StepState.STATEMENT_ERROR
 
     def test_poll_handler_load_failure(self, store, evaluator, workflow_ast, program_ast):
         """Handler with bad module_uri -> task released back to pending."""

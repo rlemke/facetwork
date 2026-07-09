@@ -69,6 +69,21 @@ def _make_runner(store, evaluator):
     )
 
 
+def _force_terminal_failure(store):
+    """Set max_retries=1 on all pending tasks so the FIRST handler failure
+    dead-letters (errors the step) instead of retrying.
+
+    RegistryRunner now retries transient handler errors with backoff (the
+    correct resilience contract); error-propagation tests that expect a single
+    handler failure to error the step must opt a task into terminal-on-first-fail.
+    Harmless for tasks whose handler succeeds.
+    """
+    for t in store._tasks.values():
+        if t.state == TaskState.PENDING:
+            t.max_retries = 1
+            store.save_task(t)
+
+
 def _register_file_handler(store, tmp_path, facet_name, code):
     """Write a handler module to a temp file and register it.
 
@@ -289,6 +304,7 @@ class TestRegistryRunnerAddOne:
         blocked = store.get_steps_by_state(StepState.EVENT_TRANSMIT)
         step_id = blocked[0].id
 
+        _force_terminal_failure(store)
         runner.poll_once()
 
         step = store.get_step(step_id)
@@ -526,6 +542,7 @@ class TestRegistryRunnerMultiStep:
         )
         assert result.status == ExecutionStatus.PAUSED
 
+        _force_terminal_failure(store)
         runner.poll_once()
 
         # Double step should be in error state
@@ -694,11 +711,13 @@ class TestRegistryRunnerAsync:
         blocked = store.get_steps_by_state(StepState.EVENT_TRANSMIT)
         step_id = blocked[0].id
 
+        _force_terminal_failure(store)
         runner.poll_once()
 
-        # Task should be failed
+        # Task should be dead-lettered (a handler-execution error dead-letters
+        # via the shared retry contract once retries are exhausted).
         pending = [t for t in store._tasks.values() if t.step_id == step_id]
-        assert any(t.state == TaskState.FAILED for t in pending)
+        assert any(t.state == TaskState.DEAD_LETTER for t in pending)
 
         # Step should be in error state
         step = store.get_step(step_id)
@@ -1252,8 +1271,11 @@ class TestRegistryRunnerForeach:
             result.workflow_id, FOREACH_WORKFLOW_AST, program_ast=FOREACH_PROGRAM_AST
         )
 
-        # Process all available tasks (auto-resume after each)
+        # Process all available tasks (auto-resume after each). Force terminal-
+        # on-first-fail each pass so the item==2 iteration errors its step
+        # rather than retrying (foreach tasks fan out across iterations).
         for _ in range(10):
+            _force_terminal_failure(store)
             d = runner.poll_once()
             if d == 0:
                 break
