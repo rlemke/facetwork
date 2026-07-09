@@ -416,6 +416,37 @@ class TestRegistryRunnerCleanupFutures:
         assert runner._active_futures == []
         assert store.get_task("t-stuck").state == TaskState.PENDING
 
+    def test_timeout_does_not_block_poll_worker(
+        self, store, evaluator, workflow_ast, program_ast, tmp_path
+    ):
+        """Finding 3b: on a per-handler timeout the pool is shut down wait=False,
+        so a wedged handler does NOT block the poll worker. poll_once returns in
+        ~the timeout, not the handler's full sleep."""
+        _execute_until_paused(evaluator, workflow_ast, {"x": 1}, program_ast)
+        step = store.get_steps_by_state(StepState.EVENT_TRANSMIT)[0]
+        task = next(
+            t for t in store._tasks.values()
+            if t.state == TaskState.PENDING and t.step_id == step.id
+        )
+        f = tmp_path / "slow_handler.py"
+        f.write_text("import time\ndef handle(payload):\n    time.sleep(1.0)\n    return {}\n")
+        store.save_handler_registration(
+            HandlerRegistration(
+                facet_name="CountDocuments", module_uri=f"file://{f}",
+                entrypoint="handle", timeout_ms=100,
+            )
+        )
+        runner = RegistryRunner(persistence=store, evaluator=evaluator, config=RegistryRunnerConfig())
+
+        start = time.monotonic()
+        runner.poll_once()
+        elapsed = time.monotonic() - start
+
+        # ~100ms timeout, NOT the handler's 1s sleep (which would mean it blocked
+        # on shutdown(wait=True)).
+        assert elapsed < 0.7, f"poll_once blocked {elapsed:.2f}s on the wedged handler"
+        assert store.get_task(task.uuid).state == TaskState.PENDING  # released for retry
+
     def test_cleanup_keeps_a_live_heartbeating_handler(self, store, evaluator):
         from concurrent.futures import Future
 

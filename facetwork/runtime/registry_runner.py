@@ -998,8 +998,17 @@ class RegistryRunner(BaseRunner):
             # Dispatch via shared dispatcher (handles module loading + async detection)
             try:
                 if timeout_s is not None and timeout_s > 0:
-                    # Run dispatch in a separate thread with timeout
-                    with ThreadPoolExecutor(max_workers=1) as timeout_pool:
+                    # Run dispatch in a bounded thread so a per-handler Timeout
+                    # (FFL Timeout mixin) is enforced. On timeout the pool is
+                    # shut down with wait=False (see finally) so the runaway
+                    # handler does NOT block this poll worker — Future.cancel()
+                    # can't interrupt a thread wedged in a C extension, so we
+                    # abandon it (it finishes in the background) and free the
+                    # slot immediately. Previously the `with` block's implicit
+                    # shutdown(wait=True) blocked the worker for the handler's
+                    # full real duration, defeating the timeout.
+                    timeout_pool = ThreadPoolExecutor(max_workers=1)
+                    try:
                         future = timeout_pool.submit(self._dispatcher.dispatch, task.name, payload)
                         try:
                             result = future.result(timeout=timeout_s)
@@ -1059,6 +1068,11 @@ class RegistryRunner(BaseRunner):
                                     task.max_retries,
                                 )
                             return
+                    finally:
+                        # wait=False: never block this poll worker on a runaway
+                        # handler. On success the future is already done so this
+                        # is a no-op; on timeout it abandons the wedged thread.
+                        timeout_pool.shutdown(wait=False)
                 else:
                     result = self._dispatcher.dispatch(task.name, payload)
             except (ImportError, ModuleNotFoundError) as exc:
