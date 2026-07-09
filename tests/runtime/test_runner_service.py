@@ -2923,6 +2923,54 @@ class TestSweepStuckSteps:
         assert task.state == TaskState.PENDING
         assert task.runner_id == "runner-1"
 
+    def test_maybe_sweep_skips_when_at_capacity(self, service, store, runner_def):
+        """runtime.md §10.4: the sweep must yield to event-task claiming — when
+        every worker slot is busy it must not run at all (it runs synchronously
+        on the poll thread and would starve claiming)."""
+        from unittest.mock import Mock
+
+        _, workflow_id = runner_def
+        # Fill the active-work accounting to capacity (tuples of (future,id,ts)).
+        with service._active_lock:
+            service._active_futures = [
+                (None, f"t{i}", 0) for i in range(service._config.max_concurrent)
+            ]
+        service._last_sweep = 0  # bypass the interval gate
+        spy = Mock(return_value=[workflow_id])
+        service._persistence.get_pending_resume_workflow_ids = spy
+
+        service._maybe_sweep_stuck_steps()
+
+        # Busy-slot skip returns BEFORE fetching any workflows to sweep.
+        spy.assert_not_called()
+
+    def test_maybe_sweep_caps_steps_per_invocation(self, service, store, runner_def):
+        """The sweep must bound work per invocation (SWEEP_MAX_STEPS) so a large
+        fan-out can't out-run the poll interval — the livelock §10.4 warns about.
+        With more than the cap stuck, only the cap is processed this pass."""
+        from unittest.mock import Mock
+
+        from facetwork.runtime.runner.service import _SWEEP_MAX_STEPS
+
+        _, workflow_id = runner_def
+        n = _SWEEP_MAX_STEPS + 5
+        steps = [
+            self._make_event_step(workflow_id, facet_name=f"Facet{i}") for i in range(n)
+        ]
+        for s in steps:
+            store.save_step(s)
+        service._last_sweep = 0
+        with service._active_lock:
+            service._active_futures = []  # not at capacity
+        service._persistence.get_pending_resume_workflow_ids = Mock(return_value=[workflow_id])
+
+        service._maybe_sweep_stuck_steps()
+
+        created = sum(1 for s in steps if store.get_task_for_step(s.id) is not None)
+        assert created == _SWEEP_MAX_STEPS, (
+            f"expected the sweep to cap at {_SWEEP_MAX_STEPS} steps, made {created}"
+        )
+
     def test_sweep_task_data_is_flat_payload_shape(self, service, store, runner_def):
         """Regression for the nested payload bug.
 

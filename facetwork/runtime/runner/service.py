@@ -130,6 +130,30 @@ from ..runner_config import BaseRunnerConfig
 
 _SENTINEL = -1
 
+# Per-invocation caps for the stuck-step sweep (runtime.md §10.4). The sweep runs
+# synchronously on the poll thread; bounding it keeps it from starving event-task
+# claiming on a large foreach fan-out. Matches RegistryRunner's caps.
+_SWEEP_MAX_STEPS = 25
+_SWEEP_MAX_MS = 1500
+
+
+class _SweepBudget:
+    """A shared per-invocation budget for the stuck-step sweep: at most
+    ``max_steps`` steps and until ``deadline_ms`` wall-clock, across all
+    workflows in one sweep pass."""
+
+    __slots__ = ("remaining", "deadline_ms")
+
+    def __init__(self, max_steps: int, deadline_ms: int) -> None:
+        self.remaining = max_steps
+        self.deadline_ms = deadline_ms
+
+    def exhausted(self) -> bool:
+        return self.remaining <= 0 or _current_time_ms() > self.deadline_ms
+
+    def consume(self) -> None:
+        self.remaining -= 1
+
 
 @dataclass
 class RunnerConfig(BaseRunnerConfig):
@@ -1546,6 +1570,20 @@ class RunnerService(BaseRunner):
             return
         self._last_sweep = now
 
+        # Event handlers take priority. If every worker slot is occupied, skip
+        # the sweep so it cannot run ahead of active work on the poll thread.
+        # (runtime.md §10.4 — matches RegistryRunner's bounded sweep.)
+        if self._active_count() >= self._config.max_concurrent:
+            return
+
+        # Bound the work per invocation. The sweep creates tasks + resumes blocks
+        # SYNCHRONOUSLY on the poll thread; an unbounded sweep over a large
+        # foreach fan-out out-runs the poll interval and starves event-task
+        # claiming — the livelock §10.4 warns about (runners busy sweeping, 0
+        # events claimed). Cap the step count and wall-clock; the remainder is
+        # picked up by the next sweep once normal claiming has advanced.
+        budget = _SweepBudget(_SWEEP_MAX_STEPS, now + _SWEEP_MAX_MS)
+
         try:
             workflow_ids = self._persistence.get_pending_resume_workflow_ids()
             if not workflow_ids:
@@ -1566,14 +1604,17 @@ class RunnerService(BaseRunner):
             )
 
             for wf_id in workflow_ids:
+                if budget.exhausted():
+                    logger.debug("Stuck-step sweep hit per-invocation cap; deferring rest")
+                    break
                 try:
-                    self._sweep_workflow_steps(wf_id)
+                    self._sweep_workflow_steps(wf_id, budget)
                 except Exception:
                     logger.debug("Sweep failed for workflow %s", wf_id, exc_info=True)
         except Exception:
             logger.debug("Stuck-step sweep failed", exc_info=True)
 
-    def _sweep_workflow_steps(self, workflow_id: str) -> None:
+    def _sweep_workflow_steps(self, workflow_id: str, budget: _SweepBudget | None = None) -> None:
         """Resume individual stuck steps in a workflow using resume_step().
 
         Processes leaf steps (EventTransmit) first, then block steps,
@@ -1606,11 +1647,15 @@ class RunnerService(BaseRunner):
         from ..task_list_routing import namespace_of
 
         for step in leaf_steps:
+            if budget is not None and budget.exhausted():
+                return
             facet_name = step.facet_name
             if not facet_name:
                 continue  # block-level step, not an event facet
             if self._persistence.has_active_task_for_step(step.id):
                 continue
+            if budget is not None:
+                budget.consume()
 
             runner_id, _ = self._lookup_runner_context(workflow_id)
             task = TaskDefinition(
@@ -1635,6 +1680,10 @@ class RunnerService(BaseRunner):
 
         # Resume block steps to cascade completion
         for step in block_steps:
+            if budget is not None and budget.exhausted():
+                return
+            if budget is not None:
+                budget.consume()
             try:
                 self._resume_workflow_for_step(workflow_id, step.id)
             except Exception:
