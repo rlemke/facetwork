@@ -39,7 +39,6 @@ from ..entities import (
     RunnerState,
     ServerDefinition,
     ServerState,
-    StepLogEntry,
     StepLogLevel,
     StepLogSource,
     TaskDefinition,
@@ -579,43 +578,7 @@ class RunnerService(BaseRunner):
         )
         return payload
 
-    def _emit_step_log(
-        self,
-        step_id: str,
-        workflow_id: str,
-        facet_name: str,
-        level: str,
-        message: str,
-        source: str = StepLogSource.FRAMEWORK,
-        details: dict | None = None,
-    ) -> None:
-        """Persist a ``StepLogEntry`` best-effort.
-
-        Centralizes the entry-construction + ``save_step_log`` + swallow-and-debug
-        pattern that every claim/timeout/reaper site repeats verbatim. Logging
-        failures must not break runner work, so persistence errors are logged
-        at debug and otherwise dropped.
-        """
-        entry = StepLogEntry(
-            uuid=generate_id(),
-            step_id=step_id,
-            workflow_id=workflow_id,
-            runner_id=self._server_id,
-            facet_name=facet_name,
-            source=source,
-            level=level,
-            message=message,
-            time=_current_time_ms(),
-            details=details or {},
-        )
-        try:
-            self._persistence.save_step_log(entry)
-        except Exception:
-            logger.debug(
-                "Could not save step log for step %s",
-                step_id,
-                exc_info=True,
-            )
+    # _emit_step_log: inherited from BaseRunner (harmonized keyword-only contract).
 
     def _lookup_runner_context(self, workflow_id: str) -> tuple[str, str]:
         """Return ``(runner_id, qualified_workflow_name)`` for a workflow.

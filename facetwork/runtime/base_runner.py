@@ -44,8 +44,16 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from .entities import RunnerState, ServerState, StepLogLevel, TaskState
+from .entities import (
+    RunnerState,
+    ServerState,
+    StepLogEntry,
+    StepLogLevel,
+    StepLogSource,
+    TaskState,
+)
 from .evaluator import ExecutionStatus
+from .types import generate_id
 
 if TYPE_CHECKING:
     from concurrent.futures import Future
@@ -168,6 +176,43 @@ class BaseRunner:
             return qualified or facet or task_id[:12]
         except Exception:
             return task_id[:12]
+
+    def _emit_step_log(
+        self,
+        step_id: str,
+        workflow_id: str,
+        message: str,
+        *,
+        level: str = StepLogLevel.INFO,
+        facet_name: str = "",
+        source: str = StepLogSource.FRAMEWORK,
+        details: dict | None = None,
+    ) -> None:
+        """Persist a ``StepLogEntry`` best-effort.
+
+        Centralizes the entry-construction + ``save_step_log`` + swallow-and-debug
+        pattern that every claim/timeout/reaper/handler site repeats verbatim.
+        Logging failures must not break runner work, so persistence errors are
+        logged at debug and otherwise dropped. The keyword-only tail (``level``,
+        ``facet_name``, ``source``, ``details``) is the single harmonized
+        contract shared by every runner subclass.
+        """
+        entry = StepLogEntry(
+            uuid=generate_id(),
+            step_id=step_id,
+            workflow_id=workflow_id,
+            runner_id=self._server_id,
+            facet_name=facet_name,
+            source=source,
+            level=level,
+            message=message,
+            time=_current_time_ms(),
+            details=details or {},
+        )
+        try:
+            self._persistence.save_step_log(entry)
+        except Exception:
+            logger.debug("Could not save step log for step %s", step_id, exc_info=True)
 
     def _cleanup_futures(self) -> None:
         """Remove completed futures and reap execution-timed-out ones.

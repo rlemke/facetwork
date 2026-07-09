@@ -60,7 +60,6 @@ from .entities import (
     RunnerState,
     ServerDefinition,
     ServerState,
-    StepLogEntry,
     StepLogLevel,
     StepLogSource,
     TaskState,
@@ -736,33 +735,7 @@ class RegistryRunner(BaseRunner):
     # Step Log Emission
     # =========================================================================
 
-    def _emit_step_log(
-        self,
-        step_id: str,
-        workflow_id: str,
-        message: str,
-        source: str = StepLogSource.FRAMEWORK,
-        level: str = StepLogLevel.INFO,
-        facet_name: str = "",
-        details: dict | None = None,
-    ) -> None:
-        """Create and save a step log entry."""
-        entry = StepLogEntry(
-            uuid=generate_id(),
-            step_id=step_id,
-            workflow_id=workflow_id,
-            runner_id=self._server_id,
-            facet_name=facet_name,
-            source=source,
-            level=level,
-            message=message,
-            details=details or {},
-            time=_current_time_ms(),
-        )
-        try:
-            self._persistence.save_step_log(entry)
-        except Exception:
-            logger.debug("Could not save step log for step %s", step_id, exc_info=True)
+    # _emit_step_log: inherited from BaseRunner (harmonized keyword-only contract).
 
     def _reset_errored_ancestors(self, step: Any) -> None:
         """Reset errored ancestor blocks/containers to Continue state.
