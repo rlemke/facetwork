@@ -253,8 +253,11 @@ class RunnerService(BaseRunner):
         self._http_thread: threading.Thread | None = None
         self._last_sweep: int = 0
         self._sweep_interval_ms: int = 300_000  # 5 min — safety net only
-        self._workflow_locks: dict[str, threading.Lock] = {}
-        self._workflow_locks_lock = threading.Lock()
+        # Per-workflow resume locks + pending-requeue (BaseRunner._resume_with_lock).
+        self._resume_locks: dict[str, threading.Lock] = {}
+        self._resume_locks_lock = threading.Lock()
+        self._resume_pending: set[str] = set()
+        self._resume_pending_lock = threading.Lock()
         self._last_reap: int = 0
         self._reap_interval_ms: int = 60000  # check for orphans every 60s
         self._execution_timeout_ms: int = int(
@@ -1744,13 +1747,6 @@ class RunnerService(BaseRunner):
         if result.status in (ExecutionStatus.COMPLETED, ExecutionStatus.ERROR):
             self._update_runner_terminal_state(workflow_id, result.status)
 
-    def _get_workflow_lock(self, workflow_id: str) -> threading.Lock:
-        """Get or create a per-workflow lock for serializing resume calls."""
-        with self._workflow_locks_lock:
-            if workflow_id not in self._workflow_locks:
-                self._workflow_locks[workflow_id] = threading.Lock()
-            return self._workflow_locks[workflow_id]
-
     def _resume_workflow_for_step(self, workflow_id: str, step_id: str) -> None:
         """Resume a workflow scoped to a single completed step.
 
@@ -1759,14 +1755,16 @@ class RunnerService(BaseRunner):
         scanning all steps.  Falls back to full ``_resume_workflow()``
         on error.
 
-        A per-workflow lock prevents concurrent resume_step calls from
-        different handler threads for the same workflow.  If the lock is
-        held, the call is skipped — the stuck-step sweep will pick up
-        any steps left at intermediate states on its next cycle.
+        Runs under BaseRunner._resume_with_lock: a NON-BLOCKING per-workflow
+        lock so concurrent handler threads for the same workflow don't
+        serialize (park the worker pool) waiting on the lock — if it's held,
+        the workflow is marked pending and the holder re-runs, with the
+        stuck-step sweep as the ultimate safety net.
         """
-        lock = self._get_workflow_lock(workflow_id)
-        lock.acquire()
+        self._resume_with_lock(workflow_id, lambda: self._do_resume_step(workflow_id, step_id))
 
+    def _do_resume_step(self, workflow_id: str, step_id: str) -> None:
+        """One resume-step cycle (the body run under _resume_with_lock)."""
         try:
             workflow_ast = self._ast_cache.get(workflow_id)
             if workflow_ast is None:
@@ -1814,8 +1812,6 @@ class RunnerService(BaseRunner):
                 self._resume_workflow(workflow_id)
             except Exception:
                 logger.debug("Fallback resume also failed", exc_info=True)
-        finally:
-            lock.release()
 
     def _update_runner_terminal_state(self, workflow_id: str, status: str) -> None:
         """Update runner entity when workflow reaches a terminal state."""

@@ -1224,34 +1224,8 @@ class RegistryRunner(BaseRunner):
     # =========================================================================
 
     def _resume_workflow(self, workflow_id: str, runner_id: str = "") -> None:
-        """Resume a paused workflow after step completion."""
-        # Acquire per-workflow lock to prevent concurrent resumes
-        with self._resume_locks_lock:
-            if workflow_id not in self._resume_locks:
-                self._resume_locks[workflow_id] = threading.Lock()
-            lock = self._resume_locks[workflow_id]
-
-        if not lock.acquire(blocking=False):
-            # Another thread is already resuming — mark pending so
-            # the holder re-runs after its current iteration.
-            with self._resume_pending_lock:
-                self._resume_pending.add(workflow_id)
-            logger.debug("Resume already in progress for workflow %s, marked pending", workflow_id)
-            return
-
-        try:
-            self._do_resume(workflow_id, runner_id)
-
-            # Re-run if other threads flagged a pending resume while
-            # we held the lock.
-            while True:
-                with self._resume_pending_lock:
-                    if workflow_id not in self._resume_pending:
-                        break
-                    self._resume_pending.discard(workflow_id)
-                self._do_resume(workflow_id, runner_id)
-        finally:
-            lock.release()
+        """Resume a paused workflow after step completion (non-blocking)."""
+        self._resume_with_lock(workflow_id, lambda: self._do_resume(workflow_id, runner_id))
 
     def _do_resume(self, workflow_id: str, runner_id: str) -> None:
         """Execute a single resume cycle for a workflow."""

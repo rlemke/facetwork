@@ -1040,6 +1040,22 @@ class TestSubmitWithExecutor:
 class TestResumeWorkflowEdgeCases:
     """Tests for _resume_workflow edge cases."""
 
+    def test_resume_for_step_is_non_blocking_when_lock_held(self, service):
+        """Finding 9: _resume_workflow_for_step must NOT block a worker thread
+        when another thread holds the workflow's resume lock. It marks the
+        workflow pending and returns immediately (the holder re-runs)."""
+        wf_id = "wf-resume-nonblock"
+        with service._resume_locks_lock:
+            lock = service._resume_locks.setdefault(wf_id, threading.Lock())
+        assert lock.acquire(blocking=False)  # simulate another thread holding it
+        try:
+            # If this blocked on lock.acquire(), the test would hang. It must
+            # return promptly and mark the workflow pending.
+            service._resume_workflow_for_step(wf_id, "step-1")
+            assert wf_id in service._resume_pending
+        finally:
+            lock.release()
+
     def test_resume_no_ast_cached_no_persistence(self, store, evaluator, registry):
         """Resume with no cached AST and MemoryStore (no get_workflow) logs warning."""
         config = RunnerConfig()

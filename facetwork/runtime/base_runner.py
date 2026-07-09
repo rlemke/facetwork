@@ -41,6 +41,7 @@ import logging
 import socket
 import threading
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from .entities import ServerState, TaskState
@@ -69,6 +70,11 @@ class BaseRunner:
     _stopping: threading.Event
     _active_lock: threading.Lock
     _active_futures: list
+    # Per-workflow resume locks + pending-requeue set (see _resume_with_lock).
+    _resume_locks: dict[str, threading.Lock]
+    _resume_locks_lock: threading.Lock
+    _resume_pending: set[str]
+    _resume_pending_lock: threading.Lock
 
     @property
     def server_id(self) -> str:
@@ -210,3 +216,39 @@ class BaseRunner:
 
             task.next_retry_after = _compute_next_retry_after(task.retry_count, task.updated)
         return False
+
+    # =========================================================================
+    # Workflow resume (non-blocking, bulkheaded)
+    # =========================================================================
+
+    def _resume_with_lock(self, workflow_id: str, resume_fn: Callable[[], None]) -> None:
+        """Run ``resume_fn()`` under a NON-BLOCKING per-workflow lock.
+
+        If another thread already holds this workflow's resume lock, the
+        workflow is marked pending and the call returns immediately — the
+        holder re-runs ``resume_fn`` for any pending flag after its current
+        iteration. This bulkheads the poll/handler threads: they never BLOCK
+        waiting on a contended per-workflow lock (which under a wide fan-out
+        parks the whole worker pool — the convoy this replaces), and no resume
+        request is lost. The stuck-step sweep remains the ultimate safety net.
+        """
+        with self._resume_locks_lock:
+            lock = self._resume_locks.setdefault(workflow_id, threading.Lock())
+
+        if not lock.acquire(blocking=False):
+            with self._resume_pending_lock:
+                self._resume_pending.add(workflow_id)
+            logger.debug("Resume already in progress for workflow %s, marked pending", workflow_id)
+            return
+
+        try:
+            resume_fn()
+            # Re-run if other threads flagged a pending resume while we held it.
+            while True:
+                with self._resume_pending_lock:
+                    if workflow_id not in self._resume_pending:
+                        break
+                    self._resume_pending.discard(workflow_id)
+                resume_fn()
+        finally:
+            lock.release()
