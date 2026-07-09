@@ -233,10 +233,10 @@ stuck-step sweep, manual `repair_workflow`.
 > e422c49). The two runner classes' shared logic is collapsed into
 > `BaseRunner` (improvement #5, root cause of #6/#8/#9) — extraction 31fed2b,
 > completed through 2b00b9e (`_load_workflow_ast`, `_emit_step_log`
-> harmonized). Still open: **#2** (pre-save `continue_step`/`resume` not
-> ownership-fenced — only terminal writes are, via `_safe_save_task`), **#4**
-> (lease-expiry reclaim still doesn't `$inc retry_count`), **#5** (CAS
-> blind-replace fallback), **#7** (`_fw_continue` drain on a RunnerService-only
+> harmonized). **#5** (CAS blind-replace clobber) fixed 2026-07-09. Still open:
+> **#2** (pre-save `continue_step`/`resume` not ownership-fenced — only terminal
+> writes are, via `_safe_save_task`), **#4** (lease-expiry reclaim still doesn't
+> `$inc retry_count`), **#7** (`_fw_continue` drain on a RunnerService-only
 > fleet), **#10–#14**.
 
 1. **CONFIRMED — Default lease (5 min) < default execution timeout (15 min)
@@ -260,11 +260,17 @@ stuck-step sweep, manual `repair_workflow`.
 4. **CONFIRMED — `claim_task`'s lease-expiry reclaim never increments
    `retry_count`** (`tasks.py:193-203`) — a repeatedly-dying handler can
    ping-pong on lease expiry forever without reaching dead-letter.
-5. **CONFIRMED — Optimistic concurrency on steps is self-defeating.** On a
-   `version.sequence` CAS miss the code falls back to an unconditional
-   `replace_one` (`mongo_store/steps.py:263-274`), clobbering the concurrent
-   writer it just detected; transaction fallback is chosen by string-matching
-   the exception text (`steps.py:226-233`).
+5. ~~**CONFIRMED — Optimistic concurrency on steps is self-defeating.**~~
+   **FIXED 2026-07-09 (updated-step clobber).** On a `version.sequence` CAS
+   miss the code fell back to an unconditional `replace_one`
+   (`mongo_store/steps.py`), clobbering the concurrent writer it just detected.
+   Now a single atomic conditional replace writes ONLY when the DB row is
+   strictly behind our sequence (`$or [version.sequence < seq, not exists]`) —
+   covers normal advance / lost-update recovery / legacy rows, and drops (with
+   a WARNING) a stale write when a concurrent writer already advanced to ≥ our
+   sequence; +3 tests. *(Still open: the transaction fallback in `commit()` is
+   chosen by string-matching the exception text, `steps.py:226-233` — a
+   robustness nit, not data-loss.)*
 6. **CONFIRMED — The two runner classes disagree on failure semantics.**
    `RunnerService` retries generic handler exceptions with backoff and
    dead-letters at `max_retries` (`service.py:1265-1299`); `RegistryRunner`
@@ -314,8 +320,11 @@ stuck-step sweep, manual `repair_workflow`.
 3. **Unify retry semantics in one place** — route RegistryRunner timeout and
    exception paths through `_transition_for_retry`-equivalent; `$inc`
    retry_count on lease reclaim; retry-with-backoff for continuations.
-4. **Fix the CAS fallback** — re-read and re-derive on mismatch, never
-   blind-replace; `$set` partial updates for one-field mutations.
+4. ~~**Fix the CAS fallback**~~ **DONE (2026-07-09)** — the miss path no longer
+   blind-replaces; one atomic conditional replace writes only when the DB row
+   is strictly behind our sequence, else drops the stale write. *(Remaining:
+   `$set` partial updates for one-field mutations; string-matched transaction
+   fallback detection.)*
 5. **Collapse the two runner classes' shared logic into one module** — the
    duplication is the root cause of findings 6/8/9.
 6. Replace the timeout executor pattern with a persistent pool /

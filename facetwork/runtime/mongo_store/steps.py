@@ -255,21 +255,39 @@ class StepMixin(_MixinBase):
 
         for step in changes.updated_steps:
             doc = self._step_to_doc(step)
-            # Optimistic concurrency: if the step has a non-zero sequence,
-            # only update if the DB version matches (previous sequence).
+            # Optimistic concurrency: advance the row ONLY if the DB copy is
+            # strictly behind our sequence. One atomic conditional replace
+            # covers all three legitimate cases:
+            #   * normal lock-step advance   — DB at seq-1  (< seq)
+            #   * lost-update recovery       — DB further behind (< seq)
+            #   * legacy row (pre-versioning)— no version field ($exists:False)
+            # Critically it must NOT overwrite a row a concurrent writer already
+            # advanced to >= our sequence. The old code detected that CAS miss
+            # and then did an UNCONDITIONAL replace — clobbering the very winner
+            # it had just detected, defeating optimistic concurrency entirely.
             seq = step.version.sequence if step.version else 0
             if seq > 0:
-                prev_seq = seq - 1
                 result = self._db.steps.replace_one(
-                    {"uuid": step.id, "version.sequence": prev_seq},
+                    {
+                        "uuid": step.id,
+                        "$or": [
+                            {"version.sequence": {"$lt": seq}},
+                            {"version.sequence": {"$exists": False}},
+                        ],
+                    },
                     doc,
                     **kwargs,
                 )
                 if result.matched_count == 0:
-                    # Fallback: unconditional write (step may have been
-                    # created before version tracking was added, or
-                    # another server already advanced it).
-                    self._db.steps.replace_one({"uuid": step.id}, doc, **kwargs)
+                    # A concurrent writer already advanced this step to >= our
+                    # sequence. Drop our stale write rather than clobber theirs;
+                    # the caller re-derives from the current state on next poll.
+                    logger.warning(
+                        "Optimistic-concurrency conflict: skipped stale write of "
+                        "step %s (our sequence=%d, DB already at >= it)",
+                        step.id,
+                        seq,
+                    )
             else:
                 self._db.steps.replace_one({"uuid": step.id}, doc, **kwargs)
 

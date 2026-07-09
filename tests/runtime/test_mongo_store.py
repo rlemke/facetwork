@@ -48,7 +48,7 @@ from facetwork.runtime.entities import (
 )
 from facetwork.runtime.persistence import IterationChanges
 from facetwork.runtime.step import StepDefinition
-from facetwork.runtime.types import StepId, block_id, step_id, workflow_id
+from facetwork.runtime.types import StepId, VersionInfo, block_id, step_id, workflow_id
 
 
 def _use_real_mongodb(request) -> bool:
@@ -424,6 +424,77 @@ class TestCommitOperations:
 
         retrieved = mongo_store.get_step(step.id)
         assert retrieved.state == "state.facet.completion.Complete"
+
+    def test_commit_updated_step_does_not_clobber_a_newer_writer(self, mongo_store):
+        """Optimistic concurrency: a stale update whose sequence is behind the
+        DB must be DROPPED, not blind-overwritten.
+
+        Regression — the old code detected the CAS miss and then did an
+        unconditional replace, clobbering the concurrent writer it had just
+        detected. A zombie/lease-reclaimed runner could thereby revert a step
+        the new owner had already advanced.
+        """
+        wf_id = workflow_id()
+        sid = step_id()
+
+        # DB already holds this step advanced to sequence 5 by "the winner".
+        winner = StepDefinition(
+            id=sid, workflow_id=wf_id, object_type="VariableAssignment",
+            state="state.facet.completion.Complete", version=VersionInfo(sequence=5),
+        )
+        mongo_store.save_step(winner)
+
+        # A stale writer commits an UPDATE at sequence 3 (behind the DB).
+        stale = StepDefinition(
+            id=sid, workflow_id=wf_id, object_type="VariableAssignment",
+            state="state.facet.initialization.Begin", version=VersionInfo(sequence=3),
+        )
+        changes = IterationChanges()
+        changes.add_updated_step(stale)
+        mongo_store.commit(changes)
+
+        # The winner's state survives; the stale write was skipped.
+        assert mongo_store.get_step(sid).state == "state.facet.completion.Complete"
+
+    def test_commit_updated_step_normal_advance_writes(self, mongo_store):
+        """A lock-step advance (DB at seq-1) is written."""
+        wf_id = workflow_id()
+        sid = step_id()
+        mongo_store.save_step(
+            StepDefinition(
+                id=sid, workflow_id=wf_id, object_type="VariableAssignment",
+                state="old", version=VersionInfo(sequence=1),
+            )
+        )
+        changes = IterationChanges()
+        changes.add_updated_step(
+            StepDefinition(
+                id=sid, workflow_id=wf_id, object_type="VariableAssignment",
+                state="new", version=VersionInfo(sequence=2),
+            )
+        )
+        mongo_store.commit(changes)
+        assert mongo_store.get_step(sid).state == "new"
+
+    def test_commit_updated_step_legacy_no_version_field_writes(self, mongo_store):
+        """A legacy row written before version tracking (no version field) is
+        still upgraded rather than skipped."""
+        wf_id = workflow_id()
+        sid = step_id()
+        # Insert a raw doc WITHOUT a version field to simulate a legacy row.
+        mongo_store._db.steps.insert_one(
+            {"uuid": sid, "workflow_id": wf_id, "object_type": "VariableAssignment",
+             "state": "legacy"}
+        )
+        changes = IterationChanges()
+        changes.add_updated_step(
+            StepDefinition(
+                id=sid, workflow_id=wf_id, object_type="VariableAssignment",
+                state="upgraded", version=VersionInfo(sequence=1),
+            )
+        )
+        mongo_store.commit(changes)
+        assert mongo_store.get_step(sid).state == "upgraded"
 
 
 class TestRunnerOperations:
