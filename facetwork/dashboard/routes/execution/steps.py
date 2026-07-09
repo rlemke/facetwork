@@ -597,13 +597,16 @@ def rerun_step(step_id: str, force: bool = False, store=Depends(get_store)):
             if s.block_id == block_id and s.statement_name:
                 stmt_name_to_id[s.statement_name] = str(s.statement_id)
 
-        # Find steps that reference search_step's statement_name in their params
+        # Find steps that transitively depend on search_step, from the real
+        # reference graph in the compiled AST (not a start_time heuristic).
         target_name = search_step.statement_name or ""
+        compiled_ast = _compiled_ast_for_workflow(step.workflow_id, store)
         downstream_stmts = _find_downstream_by_name(
             target_name,
             all_steps,
             block_id,
             stmt_name_to_id,
+            compiled_ast,
         )
 
         # Collect downstream step IDs and all their descendants
@@ -763,51 +766,103 @@ def rerun_step(step_id: str, force: bool = False, store=Depends(get_store)):
     return RedirectResponse(url=f"/v3/steps/{step_id}", status_code=303)
 
 
+def _compiled_ast_for_workflow(workflow_id: str, store) -> dict | None:
+    """The compiled AST for a workflow run (from its runner), or None."""
+    runner = store.get_runner(workflow_id)
+    if runner is None or not getattr(runner, "compiled_ast", None):
+        runner = next(
+            (
+                r
+                for r in store.get_runners_by_workflow(workflow_id)
+                if getattr(r, "compiled_ast", None)
+            ),
+            None,
+        )
+    return getattr(runner, "compiled_ast", None) if runner else None
+
+
+def _iter_ast_blocks(node):
+    """Yield every andThen-block dict (has a 'steps' list) in the compiled AST."""
+    if isinstance(node, dict):
+        if isinstance(node.get("steps"), list):
+            yield node
+        for v in node.values():
+            yield from _iter_ast_blocks(v)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _iter_ast_blocks(item)
+
+
 def _find_downstream_by_name(
     target_name: str,
     all_steps: list,
     block_id: str,
     stmt_name_to_id: dict[str, str],
+    compiled_ast: dict | None,
 ) -> set[str]:
-    """Find statement IDs that transitively depend on target_name."""
-    # Get all sibling steps in the block
-    siblings = [s for s in all_steps if s.block_id == block_id]
+    """Runtime statement IDs (in this block) that TRANSITIVELY depend on
+    ``target_name``, computed from the compiled AST's real ``step.field``
+    references — not by start_time.
 
-    # Build dependency map: for each step, which step names does it reference?
-    # We check the attributes.params for values that look like step references
-    deps: dict[str, set[str]] = {}
-    for s in siblings:
-        stmt_id = str(s.statement_id)
-        dep_names: set[str] = set()
-        for _, _attr in s.attributes.params.items():
-            # Attribute values that were resolved from step refs contain
-            # data from other steps. We can't easily reverse this, so we
-            # use statement ordering: if step B was created after step A
-            # in the same block and they share the same container, B may
-            # depend on A. For a more precise check, we'd need the AST.
-            pass
-        deps[stmt_id] = dep_names
+    The old timestamp heuristic deleted every sibling that *started* after the
+    target, destroying unrelated parallel-block work. We now build the block's
+    real dependency graph (reusing the runtime's ``DependencyGraph``), reverse
+    it, and BFS out from the target so only true dependents are removed. If the
+    AST is unavailable or the block can't be located we return the empty set —
+    a safe under-delete (only the target itself resets) rather than the previous
+    over-delete.
+    """
+    if not compiled_ast or not target_name:
+        return set()
+    try:
+        from facetwork.runtime.dependency import DependencyGraph
+    except Exception:
+        return set()
 
-    # Since we can't reliably extract deps from resolved attribute values,
-    # use a conservative approach: delete all steps in the block that were
-    # created AFTER the target step (by start_time)
-    target_start = 0
-    target_stmt_id = stmt_name_to_id.get(target_name, "")
-    for s in siblings:
-        if str(s.statement_id) == target_stmt_id:
-            target_start = s.start_time or 0
-            break
-
-    downstream: set[str] = set()
-    for s in siblings:
-        sid = str(s.statement_id)
-        if sid == target_stmt_id:
+    # A statement name is unique within its block but MAY recur across blocks,
+    # so among candidate AST blocks containing the target pick the one whose
+    # statement names best overlap this runtime block's names.
+    block_names = set(stmt_name_to_id.keys())
+    best_graph = None
+    best_overlap = -1
+    for block_ast in _iter_ast_blocks(compiled_ast):
+        try:
+            graph = DependencyGraph.from_ast(block_ast, set(), compiled_ast)
+        except Exception:
             continue
-        # Steps created after the target are likely downstream
-        if s.start_time and s.start_time >= target_start and sid != target_stmt_id:
-            downstream.add(sid)
+        if target_name not in graph.name_to_id:
+            continue
+        overlap = len(block_names & set(graph.name_to_id.keys()))
+        if overlap > best_overlap:
+            best_overlap, best_graph = overlap, graph
 
-    return downstream
+    if best_graph is None:
+        return set()
+
+    # Reverse the dependency edges (id -> dependents) and BFS from the target.
+    reverse: dict[str, set[str]] = {}
+    for sid, dep_ids in best_graph.dependencies.items():
+        for d in dep_ids:
+            reverse.setdefault(d, set()).add(sid)
+
+    downstream_ids: set[str] = set()
+    queue = [best_graph.name_to_id[target_name]]
+    while queue:
+        cur = queue.pop(0)
+        for dependent in reverse.get(cur, set()):
+            if dependent not in downstream_ids:
+                downstream_ids.add(dependent)
+                queue.append(dependent)
+
+    # Map graph ids -> names -> this block's runtime statement IDs.
+    id_to_name = {v: k for k, v in best_graph.name_to_id.items()}
+    result: set[str] = set()
+    for gid in downstream_ids:
+        name = id_to_name.get(gid)
+        rid = stmt_name_to_id.get(name) if name else None
+        if rid:
+            result.add(rid)
+    return result
 
 
 def _reset_ancestors_to_continue(step, store) -> None:

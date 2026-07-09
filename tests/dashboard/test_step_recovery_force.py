@@ -242,6 +242,33 @@ class TestRerunStepForce:
         for s in (block, upstream, downstream):
             store.save_step(s)
         store.save_task(_task(step_id=downstream.id))
+        # Downstream detection now reads the compiled AST's real step refs
+        # (not start_time), so seed a runner whose AST shows dn = Downstream(v = up.…).
+        from facetwork.runtime.entities import RunnerDefinition, WorkflowDefinition
+
+        wf = WorkflowDefinition(
+            uuid="wf-1",
+            name="W",
+            namespace_id="ns",
+            facet_id="f",
+            flow_id="flow-1",
+            starting_step="up",
+            version="0.1.0",
+        )
+        compiled_ast = {
+            "steps": [
+                {"type": "Step", "id": "stmt-up", "name": "up",
+                 "call": {"target": "t.Upstream", "args": [], "mixins": []}},
+                {"type": "Step", "id": "stmt-dn", "name": "dn",
+                 "call": {"target": "t.Downstream",
+                          "args": [{"name": "v", "value": {"type": "StepRef", "path": ["up"]}}],
+                          "mixins": []}},
+            ],
+            "yield": None,
+        }
+        store.save_runner(
+            RunnerDefinition(uuid="wf-1", workflow_id="wf-1", workflow=wf, compiled_ast=compiled_ast)
+        )
         return upstream, downstream
 
     def test_refuses_with_running_dependent(self, client):

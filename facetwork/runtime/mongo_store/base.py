@@ -101,12 +101,36 @@ class BaseMixin:
     along with the other domain-specific mixins.
     """
 
-    # Default lease duration: 5 minutes. Handlers must renew via heartbeat.
+    # Default lease floor: 5 minutes. The effective default is raised to sit
+    # ABOVE the task execution timeout (see _lease_ms) so a slow handler is not
+    # reclaimed mid-run and double-executed.
     DEFAULT_LEASE_MS = 300_000
+    # Task execution-timeout default, mirrored from RunnerConfig / agent_poller
+    # so the lease can be derived from it. Keep in sync with FW_TASK_EXECUTION_TIMEOUT_MS.
+    DEFAULT_EXECUTION_TIMEOUT_MS = 900_000
+    # Grace the lease is held ABOVE the execution timeout, so the owning runner's
+    # own execution-timeout watchdog resets a stuck task (on that runner) BEFORE
+    # any other runner's lease-expiry reclaim can pick it up and run it a 2nd time.
+    LEASE_OVER_EXEC_GRACE_MS = 60_000
 
     def _lease_ms(self) -> int:
-        """Read the active lease duration, honoring ``FW_LEASE_DURATION_MS``."""
-        return int(os.environ.get("FW_LEASE_DURATION_MS", str(self.DEFAULT_LEASE_MS)))
+        """Active task-lease duration.
+
+        Honors an explicit ``FW_LEASE_DURATION_MS`` verbatim. Otherwise defaults
+        to ``max(DEFAULT_LEASE_MS, execution_timeout + grace)`` so a handler that
+        runs for minutes without heartbeating is NOT lease-reclaimed by another
+        runner (and thus double-executed) before its own execution-timeout
+        watchdog fires. This is only the per-task backstop: a genuinely dead
+        SERVER is still recovered promptly by the reaper (FW_REAPER_TIMEOUT_MS,
+        ~2min) via heartbeat staleness, independent of the lease.
+        """
+        explicit = os.environ.get("FW_LEASE_DURATION_MS")
+        if explicit:
+            return int(explicit)
+        exec_timeout = int(
+            os.environ.get("FW_TASK_EXECUTION_TIMEOUT_MS", str(self.DEFAULT_EXECUTION_TIMEOUT_MS))
+        )
+        return max(self.DEFAULT_LEASE_MS, exec_timeout + self.LEASE_OVER_EXEC_GRACE_MS)
 
     @staticmethod
     def _find_decoded(collection: Any, query: dict, decoder: Any) -> Any:

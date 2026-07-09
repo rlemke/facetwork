@@ -98,6 +98,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Opt-in shared-token auth on mutating requests (no-op unless
+    # FW_DASHBOARD_TOKEN is set). Gates the destructive + handler-registration
+    # surface without breaking read-only monitoring.
+    from .auth import DashboardAuthMiddleware
+
+    app.add_middleware(DashboardAuthMiddleware)
+
     # Static files
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 

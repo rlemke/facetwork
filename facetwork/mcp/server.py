@@ -1683,13 +1683,45 @@ def _tool_catalog_run(arguments: dict[str, Any], get_store: Any) -> list[TextCon
 # =============================================================================
 
 # SQL statements that are NOT allowed (anything that modifies data)
+# Keyword/function blocklist. Beyond the obvious write verbs this now covers the
+# known regex bypasses: set_config (a function call — \bSET\b does NOT match it),
+# SELECT ... INTO (creates a table), CALL/MERGE, pg_sleep (DoS), and file/network
+# functions (exfil). This is one LAYER; single-statement + read-query-prefix +
+# a read-only session (below) are the primary guards.
 _FORBIDDEN_SQL = re.compile(
     r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|"
     r"COPY|SET|RESET|VACUUM|ANALYZE|CLUSTER|REINDEX|LOCK|"
     r"BEGIN|COMMIT|ROLLBACK|SAVEPOINT|EXECUTE|PREPARE|DEALLOCATE|"
+    r"INTO|CALL|MERGE|"
+    r"set_config|pg_sleep|pg_read_file|pg_read_binary_file|pg_ls_dir|"
+    r"lo_import|lo_export|dblink|"
     r"DO\s+\$)\b",
     re.IGNORECASE,
 )
+
+# A read query must START with SELECT or WITH (after leading comments/whitespace),
+# which blocks top-level SET/DO/etc. that a bare keyword scan could miss.
+_READ_QUERY_PREFIX = re.compile(
+    r"^(?:\s|--[^\n]*\n|/\*.*?\*/)*\b(?:SELECT|WITH)\b", re.IGNORECASE | re.DOTALL
+)
+
+
+def _reject_reason(sql: str) -> str | None:
+    """Return a rejection reason if ``sql`` is not a single, read-only query,
+    else None. Layers: single-statement, read-query prefix, keyword blocklist.
+    Semicolons/keywords inside string literals are ignored (literals stripped
+    first) so legitimate values like ``WHERE name = 'a;b'`` are not rejected."""
+    # Strip single-quoted string literals (with '' escapes) so ';' and blocklist
+    # words inside data values don't trip the checks.
+    stripped = re.sub(r"'(?:[^']|'')*'", "''", sql)
+    body = stripped.rstrip().rstrip(";").rstrip()
+    if ";" in body:
+        return "Only a single statement is allowed (no ';' separators)"
+    if not _READ_QUERY_PREFIX.match(sql):
+        return "Only SELECT / WITH read queries are allowed"
+    if _FORBIDDEN_SQL.search(stripped):
+        return "Only read-only SELECT queries are allowed (write/DDL/side-effecting keyword found)"
+    return None
 
 
 def _tool_repair_workflow(
@@ -1734,14 +1766,10 @@ def _tool_postgis_query(arguments: dict[str, Any]) -> list[TextContent]:
     if not sql:
         return [TextContent(type="text", text=json.dumps({"error": "No SQL provided"}))]
 
-    # Block write operations
-    if _FORBIDDEN_SQL.search(sql):
-        return [
-            TextContent(
-                type="text",
-                text=json.dumps({"error": "Only SELECT queries are allowed"}),
-            )
-        ]
+    # Block anything that isn't a single read-only query (see _reject_reason).
+    reason = _reject_reason(sql)
+    if reason:
+        return [TextContent(type="text", text=json.dumps({"error": reason}))]
 
     try:
         import psycopg2
@@ -1755,11 +1783,21 @@ def _tool_postgis_query(arguments: dict[str, Any]) -> list[TextContent]:
         ]
 
     postgis_url = os.environ.get("FW_POSTGIS_URL", "postgresql://afl:afl@afl-postgres:5432/afl_gis")
+    # Server-enforced guards independent of the SQL text: read-only transactions,
+    # a hard statement timeout (blocks pg_sleep-style DoS), and an idle-txn timeout.
+    # These hold even if the text checks above are somehow bypassed.
+    stmt_timeout_ms = int(os.environ.get("FW_POSTGIS_STATEMENT_TIMEOUT_MS", "15000"))
+    conn_options = (
+        "-c default_transaction_read_only=on "
+        f"-c statement_timeout={stmt_timeout_ms} "
+        f"-c idle_in_transaction_session_timeout={stmt_timeout_ms}"
+    )
 
     try:
-        conn = psycopg2.connect(
-            postgis_url, options="-c default_transaction_read_only=on", gssencmode="disable"
-        )
+        conn = psycopg2.connect(postgis_url, options=conn_options, gssencmode="disable")
+        # Belt-and-suspenders: mark the whole session read-only at the protocol
+        # level too, not just via the transaction default.
+        conn.set_session(readonly=True, autocommit=False)
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(sql)
