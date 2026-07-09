@@ -22,8 +22,18 @@ source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 source "$FW_LIB/_helpers/_remote.sh"
 _afl_resolve_remote_env
 
-REGISTRY="${FW_FLEET_REGISTRY:-192.168.68.96:5050}"
+# The fleet's runner-image registry, addressed by NAME so it survives the infra
+# host's DHCP drift (the Docker daemon resolves server3.local via mDNS; it's in
+# each host's insecure-registries). REGISTRY is what fleet_config records and
+# what REMOTE hosts pull from. PUSH_REGISTRY is where THIS host (the builder,
+# normally the infra host itself) pushes to — localhost:5050 is trusted by
+# default, so the infra host never needs a daemon restart to push. Both address
+# the SAME registry + repo, so a `localhost:5050` push is pulled fine as
+# `server3.local:5050`.
+REGISTRY="${FW_FLEET_REGISTRY:-server3.local:5050}"
+PUSH_REGISTRY="${FW_FLEET_PUSH_REGISTRY:-localhost:5050}"
 IMAGE_REPO="$REGISTRY/facetwork-runner"
+PUSH_REPO="$PUSH_REGISTRY/facetwork-runner"
 BUILDER="${FW_FLEET_BUILDER:-fleetbuilder}"
 PLATFORM="${FW_FLEET_PLATFORM:-linux/arm64}"
 MONGO="${FW_MONGODB_URL:-mongodb://server3.local:27017}"
@@ -65,9 +75,12 @@ done
 cd "$FW_ROOT"
 [ -n "$(git status --porcelain 2>/dev/null)" ] && echo "WARNING: working tree is dirty — rolling out HEAD, not your uncommitted edits." >&2
 TAG="$(git rev-parse --short HEAD)"
-NEW_IMAGE="$IMAGE_REPO:$TAG"
-# cache-from the image the fleet currently runs (best-effort)
-PREV="$("$FW_LIB/fleet/config" get --mongo "$MONGO" 2>/dev/null | grep -oE "$IMAGE_REPO:[a-f0-9]+" | head -1 || true)"
+NEW_IMAGE="$IMAGE_REPO:$TAG"        # what fleet_config records / remotes pull
+PUSH_IMAGE="$PUSH_REPO:$TAG"       # what the builder host pushes (same registry+repo)
+# cache-from the image the fleet currently runs, addressed via the PUSH registry
+# (the builder trusts localhost:5050; it may not reach REGISTRY by name pre-restart).
+PREV_TAG="$("$FW_LIB/fleet/config" get --mongo "$MONGO" 2>/dev/null | grep -oE "facetwork-runner:[a-f0-9]+" | head -1 | cut -d: -f2 || true)"
+PREV="${PREV_TAG:+$PUSH_REPO:$PREV_TAG}"
 
 # Resolve stagger targets up front so --dry can show them (empty is allowed —
 # the local host is always pre-pulled; remotes only if listed).
@@ -88,9 +101,9 @@ if [ "$STAGGER" = 1 ]; then
 fi
 if [ "$DRY" = 1 ]; then echo "[dry-run] no build, no push, no pre-pull, no fleet set."; exit 0; fi
 
-echo "=== 1/3 buildx build + push ==="
+echo "=== 1/3 buildx build + push (push via $PUSH_REGISTRY, pull/config as $REGISTRY) ==="
 BUILD=(docker buildx build --builder "$BUILDER" --platform "$PLATFORM"
-       -f docker/Dockerfile.domain-runner -t "$NEW_IMAGE" --provenance=false)
+       -f docker/Dockerfile.domain-runner -t "$PUSH_IMAGE" --provenance=false)
 [ -n "$PREV" ] && BUILD+=(--cache-from "type=registry,ref=$PREV")
 BUILD+=(--push .)
 "${BUILD[@]}"
@@ -98,7 +111,7 @@ BUILD+=(--push .)
 if [ "$STAGGER" = 1 ]; then
     echo "=== staggered pre-pull of $TAG (serialize registry load before the flip; ${PULL_TIMEOUT}s/host cap) ==="
     echo "  local ($(hostname -s 2>/dev/null || hostname)):"
-    if _bounded "$PULL_TIMEOUT" docker pull "$NEW_IMAGE" >/dev/null 2>&1; then
+    if _bounded "$PULL_TIMEOUT" docker pull "$PUSH_IMAGE" >/dev/null 2>&1; then
         echo "    cached ✓"
     elif [ $? = 124 ]; then
         echo "    WARN: local pull TIMED OUT after ${PULL_TIMEOUT}s — this host will pull on reconcile"
