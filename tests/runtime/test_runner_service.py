@@ -1056,6 +1056,50 @@ class TestResumeWorkflowEdgeCases:
         finally:
             lock.release()
 
+    def test_full_resume_runs_under_the_resume_lock(self, service):
+        """Reconciliation: the full-resume path (_resume_workflow) now runs its
+        body under the SAME non-blocking per-workflow lock as the scoped path,
+        so the two strategies can't race. When the lock is held elsewhere, a
+        full resume marks the workflow pending instead of running its body."""
+        wf_id = "wf-full-resume-locked"
+        service._do_resume_full = MagicMock()
+        with service._resume_locks_lock:
+            lock = service._resume_locks.setdefault(wf_id, threading.Lock())
+        assert lock.acquire(blocking=False)  # another thread holds it
+        try:
+            service._resume_workflow(wf_id)
+            service._do_resume_full.assert_not_called()  # body deferred
+            assert wf_id in service._resume_pending
+        finally:
+            lock.release()
+        # With the lock free, the body runs.
+        service._resume_pending.discard(wf_id)
+        service._resume_workflow(wf_id)
+        service._do_resume_full.assert_called_once_with(wf_id)
+
+    def test_resume_step_fallback_does_not_relock(self, service):
+        """The in-lock fallback (resume_step failed → full resume) must call the
+        RAW body _do_resume_full, not _resume_workflow — otherwise the
+        non-blocking re-acquire would fail, mark the workflow pending, and
+        livelock the outer _resume_with_lock re-run loop. This test would hang
+        under the old (re-locking) code."""
+        wf_id = "wf-fallback-relock"
+        service.cache_workflow_ast(wf_id, {"type": "Workflow", "name": "W"})
+        service._evaluator = MagicMock()
+        service._evaluator.resume_step.side_effect = RuntimeError("boom")
+        service._do_resume_full = MagicMock()
+        service._lookup_runner_context = MagicMock(return_value=("r-1", "W"))
+
+        service._resume_workflow_for_step(wf_id, "step-1")
+
+        # Fallback ran exactly once via the raw body, and the lock is free again.
+        service._do_resume_full.assert_called_once_with(wf_id)
+        assert wf_id not in service._resume_pending
+        with service._resume_locks_lock:
+            lock = service._resume_locks.get(wf_id)
+        assert lock is not None and lock.acquire(blocking=False)
+        lock.release()
+
     def test_terminal_state_guards_against_non_terminal_tasks(self, service, store):
         """A runner must NOT be marked COMPLETED while the workflow still has a
         non-terminal task (a lease-reclaimed zombie / in-flight retry). Once the

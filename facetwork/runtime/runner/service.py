@@ -1521,7 +1521,19 @@ class RunnerService(BaseRunner):
     # =========================================================================
 
     def _resume_workflow(self, workflow_id: str) -> None:
-        """Resume a paused workflow after step completion.
+        """Resume a paused workflow after step completion (full resume).
+
+        Runs the full ``evaluator.resume`` body under BaseRunner's
+        non-blocking per-workflow lock — the SAME lock the scoped
+        ``_resume_workflow_for_step`` path uses — so the two resume
+        strategies can no longer race or double-run a workflow. If the
+        lock is held, the workflow is marked pending and the holder
+        re-runs; the stuck-step sweep is the ultimate safety net.
+        """
+        self._resume_with_lock(workflow_id, lambda: self._do_resume_full(workflow_id))
+
+    def _do_resume_full(self, workflow_id: str) -> None:
+        """One full-resume cycle (the body run under _resume_with_lock).
 
         Uses a cached AST when available.  When the workflow reaches a
         terminal state (COMPLETED or ERROR), updates the associated
@@ -1590,8 +1602,8 @@ class RunnerService(BaseRunner):
 
         Uses ``evaluator.resume_step()`` which walks the ancestor chain
         (step → block → parent block → root) — O(depth) instead of
-        scanning all steps.  Falls back to full ``_resume_workflow()``
-        on error.
+        scanning all steps.  Falls back to the full-resume body
+        (``_do_resume_full``) on error.
 
         Runs under BaseRunner._resume_with_lock: a NON-BLOCKING per-workflow
         lock so concurrent handler threads for the same workflow don't
@@ -1646,8 +1658,12 @@ class RunnerService(BaseRunner):
                 step_id,
                 exc_info=True,
             )
+            # We already hold this workflow's resume lock here — call the raw
+            # full-resume body directly, NOT _resume_workflow (whose
+            # non-blocking re-acquire would fail, mark the workflow pending,
+            # and livelock the outer _resume_with_lock re-run loop).
             try:
-                self._resume_workflow(workflow_id)
+                self._do_resume_full(workflow_id)
             except Exception:
                 logger.debug("Fallback resume also failed", exc_info=True)
 
