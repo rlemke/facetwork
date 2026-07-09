@@ -44,10 +44,13 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from .entities import RunnerState, ServerState, TaskState
+from .entities import RunnerState, ServerState, StepLogLevel, TaskState
 from .evaluator import ExecutionStatus
 
 if TYPE_CHECKING:
+    from concurrent.futures import Future
+
+    from .evaluator import Evaluator
     from .persistence import PersistenceAPI
     from .runner_config import BaseRunnerConfig
 
@@ -67,10 +70,14 @@ class BaseRunner:
     _server_id: str
     _running: bool
     _persistence: PersistenceAPI
+    _evaluator: Evaluator
     _config: BaseRunnerConfig
     _stopping: threading.Event
     _active_lock: threading.Lock
-    _active_futures: list
+    # active work items: (future, task_id, claimed_at_ms) — the tuple shape lets
+    # the shared _cleanup_futures reap execution-timed-out handlers.
+    _active_futures: list[tuple[Future, str, int]]
+    _execution_timeout_ms: int
     # Per-workflow resume locks + pending-requeue set (see _resume_with_lock).
     _resume_locks: dict[str, threading.Lock]
     _resume_locks_lock: threading.Lock
@@ -116,6 +123,150 @@ class BaseRunner:
         """Get the number of active work items."""
         with self._active_lock:
             return len(self._active_futures)
+
+    def _task_label(self, task_id: str) -> str:
+        """Build a human-readable label for a task including qualified step name.
+
+        Returns a string like ``"Kentucky.imp.imported (osm.ops.PostGisImport)"``
+        or falls back to ``"<task_id[:12]>"`` if resolution fails.
+        """
+        try:
+            task = self._persistence.get_task(task_id)
+            if not task:
+                return task_id[:12]
+            step = self._persistence.get_step(task.step_id) if task.step_id else None
+            if not step:
+                return task.name or task_id[:12]
+            # Build qualified name by walking ancestors.
+            segments: list[str] = []
+            seen: set[str] = set()
+            current_id = step.block_id
+            while current_id and current_id not in seen:
+                seen.add(current_id)
+                ancestor = self._persistence.get_step(current_id)
+                if ancestor is None:
+                    break
+                fv = getattr(ancestor, "foreach_value", None)
+                sn = getattr(ancestor, "statement_name", None)
+                if fv:
+                    segments.append(str(fv))
+                elif sn:
+                    segments.append(str(sn))
+                current_id = getattr(ancestor, "container_id", None) or getattr(
+                    ancestor, "block_id", None
+                )
+            segments.reverse()
+            if step.statement_name:
+                segments.append(step.statement_name)
+            qualified = ".".join(segments) if segments else ""
+            facet = step.facet_name or task.name or ""
+            if qualified and facet:
+                return f"{qualified} ({facet})"
+            return qualified or facet or task_id[:12]
+        except Exception:
+            return task_id[:12]
+
+    def _cleanup_futures(self) -> None:
+        """Remove completed futures and reap execution-timed-out ones.
+
+        If a future has been running longer than ``_execution_timeout_ms`` (and
+        the handler isn't heartbeating or inside a declared stage budget), the
+        task is released for retry and the future is **always dropped** from the
+        active list — ``Future.cancel()`` cannot interrupt a thread blocked in a
+        C extension (e.g. psycopg2), so keeping it would pin the runner at
+        capacity forever. This shared version gives RegistryRunner the same
+        execution-timeout safety net RunnerService always had (it previously
+        only dropped ``done()`` futures — a hung handler held a slot until the
+        process died).
+        """
+        now = _current_time_ms()
+        kept: list = []
+        with self._active_lock:
+            for future, task_id, claimed_at in self._active_futures:
+                if future.done():
+                    continue  # completed — drop from list
+                if self._execution_timeout_ms > 0:
+                    # Prefer the handler heartbeat over claimed_at so a
+                    # long-running task making progress isn't reaped.
+                    last_activity = claimed_at
+                    try:
+                        task = self._persistence.get_task(task_id)
+                        if task and task.task_heartbeat > 0:
+                            last_activity = max(claimed_at, task.task_heartbeat)
+                    except Exception:
+                        logger.debug(
+                            "Could not read heartbeat for task %s, skipping timeout check",
+                            task_id,
+                            exc_info=True,
+                        )
+                        kept.append((future, task_id, claimed_at))
+                        continue
+                    elapsed = now - last_activity
+                    # A declared stage budget overrides the global timeout.
+                    stage_budget = 0
+                    stage_name = ""
+                    if task is not None:
+                        stage_budget = getattr(task, "stage_budget_expires", 0) or 0
+                        stage_name = getattr(task, "stage_name", "") or ""
+                    stage_active = stage_budget > 0 and now < stage_budget
+                    if elapsed > self._execution_timeout_ms and not stage_active:
+                        future.cancel()  # best-effort
+                        stage_note = f" (stage={stage_name})" if stage_name else ""
+                        logger.warning(
+                            "Task %s timed out after %ds, releasing capacity — %s%s",
+                            task_id,
+                            elapsed // 1000,
+                            self._task_label(task_id),
+                            stage_note,
+                        )
+                        self._release_timed_out_task(task_id)
+                        continue  # always drop — no zombie futures
+                kept.append((future, task_id, claimed_at))
+            self._active_futures = kept
+
+    def _release_timed_out_task(self, task_id: str) -> None:
+        """Reset a timed-out task to pending, or dead-letter if retries exhausted."""
+        try:
+            task = self._persistence.get_task(task_id)
+            if not task or task.state != TaskState.RUNNING:
+                return
+            if self._transition_for_retry(task):
+                dead_letter_msg = (
+                    f"Timed out {task.retry_count} times (limit {task.max_retries}), dead-lettered"
+                )
+                task.error = {"message": dead_letter_msg}
+                try:
+                    self._evaluator.fail_step(task.step_id, dead_letter_msg)
+                except Exception:
+                    logger.debug("Could not fail step %s", task.step_id, exc_info=True)
+                logger.warning(
+                    "Task %s dead-lettered after %d timeout retries — %s",
+                    task_id,
+                    task.retry_count,
+                    self._task_label(task_id),
+                )
+                log_msg = (
+                    f"Task dead-lettered: {task.name} — timed out {task.retry_count} times "
+                    f"(limit {task.max_retries})"
+                )
+                log_level = StepLogLevel.ERROR
+            else:
+                log_msg = (
+                    f"Task timed out: {task.name} — execution timeout "
+                    f"({self._execution_timeout_ms / 1000:.0f}s) exceeded, resetting to pending "
+                    f"(retry {task.retry_count}/{task.max_retries})"
+                )
+                log_level = StepLogLevel.WARNING
+            self._safe_save_task(task)
+            self._emit_step_log(
+                step_id=task.step_id,
+                workflow_id=task.workflow_id,
+                facet_name=task.name,
+                level=log_level,
+                message=log_msg,
+            )
+        except Exception:
+            logger.debug("Could not release timed-out task %s", task_id, exc_info=True)
 
     # =========================================================================
     # Retry / dead-letter transitions (shared resilience contract)

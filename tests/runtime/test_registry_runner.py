@@ -390,6 +390,52 @@ class TestModuleCaching:
 # =========================================================================
 
 
+class TestRegistryRunnerCleanupFutures:
+    """RegistryRunner now has an execution-timeout safety net (shared
+    BaseRunner._cleanup_futures): a hung handler is reaped and its slot freed,
+    instead of pinning the runner at capacity until the process dies."""
+
+    def test_cleanup_reaps_timed_out_handler(self, store, evaluator):
+        from concurrent.futures import Future
+
+        runner = RegistryRunner(persistence=store, evaluator=evaluator, config=RegistryRunnerConfig())
+        runner._execution_timeout_ms = 1000  # 1s
+
+        task = TaskDefinition(
+            uuid="t-stuck", name="F", runner_id="r", workflow_id="wf", flow_id="",
+            step_id="st", state=TaskState.RUNNING, created=0, updated=0,
+        )
+        store.save_task(task)
+        # A future that never completes (a wedged handler), claimed 10s ago.
+        stuck = Future()
+        runner._active_futures.append((stuck, "t-stuck", _current_time_ms() - 10_000))
+
+        runner._cleanup_futures()
+
+        # Slot freed (future dropped) and the task released back to pending.
+        assert runner._active_futures == []
+        assert store.get_task("t-stuck").state == TaskState.PENDING
+
+    def test_cleanup_keeps_a_live_heartbeating_handler(self, store, evaluator):
+        from concurrent.futures import Future
+
+        runner = RegistryRunner(persistence=store, evaluator=evaluator, config=RegistryRunnerConfig())
+        runner._execution_timeout_ms = 1000
+        task = TaskDefinition(
+            uuid="t-live", name="F", runner_id="r", workflow_id="wf", flow_id="",
+            step_id="st", state=TaskState.RUNNING, created=0, updated=0,
+            task_heartbeat=_current_time_ms(),  # actively heartbeating now
+        )
+        store.save_task(task)
+        runner._active_futures.append((Future(), "t-live", _current_time_ms() - 10_000))
+
+        runner._cleanup_futures()
+
+        # A recent heartbeat means it is making progress → NOT reaped.
+        assert len(runner._active_futures) == 1
+        assert store.get_task("t-live").state == TaskState.RUNNING
+
+
 class TestRegistryRunnerPollOnce:
     """Tests for the poll_once() synchronous cycle."""
 

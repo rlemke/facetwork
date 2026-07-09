@@ -46,6 +46,7 @@ Example usage::
 
 import fnmatch
 import logging
+import os
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -112,8 +113,13 @@ class RegistryRunner(BaseRunner):
         self._running = False
         self._stopping = threading.Event()
         self._executor: ThreadPoolExecutor | None = None
-        self._active_futures: list[Future] = []
+        # (future, task_id, claimed_at_ms) so the shared _cleanup_futures can
+        # reap execution-timed-out handlers instead of pinning a slot forever.
+        self._active_futures: list[tuple[Future, str, int]] = []
         self._active_lock = threading.Lock()
+        self._execution_timeout_ms: int = int(
+            os.environ.get("FW_TASK_EXECUTION_TIMEOUT_MS", "900000")
+        )  # default 15 minutes
         self._ast_cache: dict[str, dict] = {}
         self._program_ast_cache: dict[str, dict] = {}
         self._resume_locks: dict[str, threading.Lock] = {}
@@ -527,12 +533,7 @@ class RegistryRunner(BaseRunner):
 
         return dispatched
 
-    # _active_count: inherited from BaseRunner.
-
-    def _cleanup_futures(self) -> None:
-        """Remove completed futures from the active list."""
-        with self._active_lock:
-            self._active_futures = [f for f in self._active_futures if not f.done()]
+    # _active_count / _cleanup_futures (now execution-timeout-aware): inherited from BaseRunner.
 
     def _submit_event(self, task: Any) -> None:
         """Submit an event task to the thread pool."""
@@ -542,7 +543,7 @@ class RegistryRunner(BaseRunner):
 
         future = self._executor.submit(self._process_event, task)
         with self._active_lock:
-            self._active_futures.append(future)
+            self._active_futures.append((future, task.uuid, _current_time_ms()))
 
     def _submit_continuation(self, task: Any) -> None:
         """Submit a continuation task to the thread pool."""
@@ -552,7 +553,7 @@ class RegistryRunner(BaseRunner):
 
         future = self._executor.submit(self._process_continuation, task)
         with self._active_lock:
-            self._active_futures.append(future)
+            self._active_futures.append((future, task.uuid, _current_time_ms()))
 
     def _process_continuation(self, task: Any) -> None:
         """Process a continuation task by running process_single_step.
@@ -1311,7 +1312,7 @@ class RegistryRunner(BaseRunner):
         if self._executor:
             self._executor.shutdown(wait=True, cancel_futures=False)
             with self._active_lock:
-                for future in self._active_futures:
+                for future, _task_id, _claimed_at in self._active_futures:
                     try:
                         future.result(timeout=30)
                     except Exception:
