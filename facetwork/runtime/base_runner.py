@@ -83,6 +83,9 @@ class BaseRunner:
     _resume_locks_lock: threading.Lock
     _resume_pending: set[str]
     _resume_pending_lock: threading.Lock
+    # Workflow/program AST caches (see _load_workflow_ast).
+    _ast_cache: dict[str, dict]
+    _program_ast_cache: dict[str, dict]
 
     @property
     def server_id(self) -> str:
@@ -457,3 +460,67 @@ class BaseRunner:
                     )
         except Exception:
             logger.debug("Could not update runners for workflow %s", workflow_id, exc_info=True)
+
+    # =========================================================================
+    # Workflow AST loading
+    # =========================================================================
+
+    def _load_workflow_ast(self, workflow_id: str) -> dict | None:
+        """Load a workflow's AST from persistence.
+
+        Prefers the runner-SNAPSHOTTED AST (self-contained, immune to later flow
+        edits/re-seeds) and falls back to the flow lookup — then to recompiling
+        legacy flows that have no stored compiled_ast. Caches the program AST for
+        facet-definition lookups during resume.
+        """
+        try:
+            # Prefer runner-snapshotted AST.
+            if hasattr(self._persistence, "get_runners_by_workflow"):
+                for r in self._persistence.get_runners_by_workflow(workflow_id):
+                    if r.compiled_ast and r.workflow_ast:
+                        self._program_ast_cache[workflow_id] = r.compiled_ast
+                        return r.workflow_ast
+
+            # Fall back to flow lookup.
+            if not hasattr(self._persistence, "get_workflow"):
+                return None
+            wf = self._persistence.get_workflow(workflow_id)
+            if not wf:
+                return None
+            if not hasattr(self._persistence, "get_flow"):
+                return None
+            flow = self._persistence.get_flow(wf.flow_id)
+            if not flow:
+                return None
+
+            program_dict = flow.compiled_ast
+            if not program_dict:
+                if not flow.compiled_sources:
+                    return None
+                import json
+
+                from ..emitter import JSONEmitter
+                from ..parser import FFLParser
+
+                parser = FFLParser()
+                ast = parser.parse(flow.compiled_sources[0].content)
+                emitter = JSONEmitter(include_locations=False)
+                program_dict = json.loads(emitter.emit(ast))
+                logger.warning(
+                    "Flow '%s' has no compiled_ast, fell back to recompilation", wf.flow_id
+                )
+            if program_dict is None:
+                return None
+
+            self._program_ast_cache[workflow_id] = program_dict
+            return self._find_workflow_in_program(program_dict, wf.name)
+        except Exception:
+            logger.debug("Could not load AST for workflow %s", workflow_id, exc_info=True)
+            return None
+
+    @staticmethod
+    def _find_workflow_in_program(program_dict: dict, workflow_name: str) -> dict | None:
+        """Find a workflow in the program AST by name."""
+        from facetwork.ast_utils import find_workflow
+
+        return find_workflow(program_dict, workflow_name)

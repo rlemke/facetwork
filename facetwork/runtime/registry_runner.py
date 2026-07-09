@@ -388,59 +388,8 @@ class RegistryRunner(BaseRunner):
         if program_ast is not None:
             self._program_ast_cache[workflow_id] = program_ast
 
-    def _load_workflow_ast(self, workflow_id: str) -> dict | None:
-        """Load a workflow AST from persistence if available."""
-        try:
-            if not hasattr(self._persistence, "get_workflow"):
-                return None
-
-            wf = self._persistence.get_workflow(workflow_id)
-            if not wf:
-                return None
-
-            if not hasattr(self._persistence, "get_flow"):
-                return None
-
-            flow = self._persistence.get_flow(wf.flow_id)
-            if not flow:
-                return None
-
-            # Use stored compiled AST; fall back to recompilation for legacy flows
-            program_dict = flow.compiled_ast
-            if not program_dict:
-                if not flow.compiled_sources:
-                    return None
-                import json
-
-                from ..emitter import JSONEmitter
-                from ..parser import FFLParser
-
-                parser = FFLParser()
-                ast = parser.parse(flow.compiled_sources[0].content)
-                emitter = JSONEmitter(include_locations=False)
-                program_dict = json.loads(emitter.emit(ast))
-                logger.warning(
-                    "Flow '%s' has no compiled_ast, fell back to recompilation", wf.flow_id
-                )
-
-            # At this point program_dict is guaranteed non-None (guarded above)
-            if program_dict is None:
-                return None
-
-            # Cache program AST for facet definition lookups during resume
-            self._program_ast_cache[workflow_id] = program_dict
-
-            return self._find_workflow_in_program(program_dict, wf.name)
-        except Exception:
-            logger.debug("Could not load AST for workflow %s", workflow_id, exc_info=True)
-            return None
-
-    @staticmethod
-    def _find_workflow_in_program(program_dict: dict, workflow_name: str) -> dict | None:
-        """Find a workflow in the program AST by name."""
-        from facetwork.ast_utils import find_workflow
-
-        return find_workflow(program_dict, workflow_name)
+    # _load_workflow_ast / _find_workflow_in_program: inherited from BaseRunner
+    # (snapshot-preferring — reads runner.compiled_ast before the flow lookup).
 
     # =========================================================================
     # Server Registration
