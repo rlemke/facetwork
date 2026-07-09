@@ -295,6 +295,12 @@ services:
       FW_MONGODB_URL: mongodb://mongodb:27017
       FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
       FW_EXAMPLES_DATABASE: ${FW_EXAMPLES_DATABASE:-afl_examples}
+      # Opt-in shared-token auth (DashboardAuthMiddleware). When set, every
+      # mutating request (POST/PUT/PATCH/DELETE — the destructive + handler-
+      # registration/RCE surface) must present the token; reads stay open.
+      # Supply the real value via the gitignored repo-root .env on the dashboard
+      # host — never hardcode it here. Empty default = auth disabled (no-op).
+      FW_DASHBOARD_TOKEN: ${FW_DASHBOARD_TOKEN:-}
       FW_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
       # Local output volume (non-OSM examples write here). OSM durable output
       # now lives in MinIO — the S3 creds below let the dashboard resolve
