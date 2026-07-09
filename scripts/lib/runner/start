@@ -348,7 +348,7 @@ for pkg in chosen:
 for pkg in chosen:
     for k, v in pkg.runner_env.items():
         print(f'ENV\t{k}\t{v}')
-" ${DOMAINS[@]+\"${DOMAINS[@]}\"} ${EXAMPLES[@]+\"${EXAMPLES[@]}\"})
+" ${DOMAINS[@]+"${DOMAINS[@]}"} ${EXAMPLES[@]+"${EXAMPLES[@]}"})
 
 PKGS=()
 HANDLER_PATHS=()

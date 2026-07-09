@@ -70,8 +70,10 @@ The most important problems cluster into four themes:
 2. **DONE (034a06d, opt-in)** — Shared bearer-token middleware (`DashboardAuthMiddleware`)
    for mutating routes + the handler registry; active when `FW_DASHBOARD_TOKEN`
    is set.
-3. **NEXT** — Fix `scripts/lib/runner/start` (literal escaped quotes break
-   `--domain` resolution in process mode).
+3. **DONE (2026-07-09)** — Fixed `scripts/lib/runner/start`: literal escaped
+   quotes (`\"${DOMAINS[@]}\"`) wrapped each domain name in real quote chars
+   so `filter_packages` matched nothing → "No domains/examples found" exit 1.
+   Changed to the standard `set -u`-safe `${DOMAINS[@]+"${DOMAINS[@]}"}` idiom.
 4. **DONE (034a06d)** — Default lease now `max(5min, exec_timeout+60s)` via
    `_lease_ms`; P1 also unified retry/timeout paths.
 5. **DONE (034a06d)** — PostGIS guard `_reject_reason()`: single-statement +
