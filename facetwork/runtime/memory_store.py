@@ -363,6 +363,10 @@ class MemoryStore(PersistenceAPI):
         """Get all tasks associated with a step."""
         return [t for t in self._tasks.values() if t.step_id == step_id]
 
+    def get_tasks_by_workflow(self, workflow_id: str) -> list["TaskDefinition"]:
+        """Get all tasks for a workflow (used by the terminal-state guard)."""
+        return [t for t in self._tasks.values() if t.workflow_id == workflow_id]
+
     def get_task(self, task_id: str) -> Optional["TaskDefinition"]:
         """Get a task by ID."""
         return self._tasks.get(task_id)

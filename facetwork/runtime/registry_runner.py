@@ -644,7 +644,7 @@ class RegistryRunner(BaseRunner):
             self._persistence.save_task(task)
 
             if result.status in (ExecutionStatus.COMPLETED, ExecutionStatus.ERROR):
-                self._update_runner_terminal_state(workflow_id, result)
+                self._update_runner_terminal_state(workflow_id, result.status)
 
         except Exception as exc:
             logger.warning(
@@ -1137,15 +1137,18 @@ class RegistryRunner(BaseRunner):
             # Continue the step with the result
             self._evaluator.continue_step(task.step_id, result)
 
+            # Mark the task COMPLETED *before* resuming: the resume cascades to
+            # the terminal-state check (_has_non_terminal_tasks), which must see
+            # this event's own task as terminal — otherwise the runner can't be
+            # completed on this cycle and only finishes on a later sweep.
+            task.state = TaskState.COMPLETED
+            task.updated = _current_time_ms()
+            self._safe_save_task(task)
+
             # Resume the workflow — process_single_step handles the
             # continued step and cascades up to parent blocks.
             # Falls back to full resume() for complex inline dispatch.
             self._resume_workflow(task.workflow_id, task.runner_id)
-
-            # Mark task completed
-            task.state = TaskState.COMPLETED
-            task.updated = _current_time_ms()
-            self._persistence.save_task(task)
 
             logger.info(
                 "Processed event task %s (name=%s, step=%s)",
@@ -1263,15 +1266,9 @@ class RegistryRunner(BaseRunner):
             if runner_id:
                 self._update_runner_state(runner_id, result)
             else:
-                self._update_runner_terminal_state(workflow_id, result)
+                self._update_runner_terminal_state(workflow_id, result.status)
 
-    def _has_non_terminal_tasks(self, workflow_id: str) -> bool:
-        """Check if a workflow has any tasks not in a terminal state."""
-        terminal = {TaskState.COMPLETED, TaskState.FAILED, TaskState.IGNORED, TaskState.CANCELED}
-        if not hasattr(self._persistence, "get_tasks_by_workflow"):
-            return False
-        tasks = self._persistence.get_tasks_by_workflow(workflow_id)
-        return any(t.state not in terminal for t in tasks)
+    # _has_non_terminal_tasks: inherited from BaseRunner.
 
     def _update_runner_state(self, runner_id: str, result: ExecutionResult) -> None:
         """Update runner state based on execution result."""
@@ -1300,43 +1297,7 @@ class RegistryRunner(BaseRunner):
         except Exception:
             logger.debug("Could not update runner %s", runner_id, exc_info=True)
 
-    def _update_runner_terminal_state(self, workflow_id: str, result: ExecutionResult) -> None:
-        """Update runner entity when workflow reaches a terminal state.
-
-        Used when runner_id is not available (e.g. stuck-step sweep).
-        Looks up runners by workflow_id instead.
-        """
-        if not hasattr(self._persistence, "get_runners_by_workflow"):
-            return
-        try:
-            now = _current_time_ms()
-            target_state = (
-                RunnerState.COMPLETED
-                if result.status == ExecutionStatus.COMPLETED
-                else RunnerState.FAILED
-            )
-            if target_state == RunnerState.COMPLETED:
-                if self._has_non_terminal_tasks(workflow_id):
-                    logger.warning(
-                        "Workflow %s: evaluator says COMPLETED but non-terminal "
-                        "tasks remain; keeping runners in RUNNING state",
-                        workflow_id,
-                    )
-                    return
-            for runner in self._persistence.get_runners_by_workflow(workflow_id):
-                if runner.state not in (RunnerState.COMPLETED, RunnerState.FAILED):
-                    runner.state = target_state
-                    runner.end_time = now
-                    runner.duration = now - runner.start_time if runner.start_time else 0
-                    self._persistence.save_runner(runner)
-                    logger.info(
-                        "Runner %s updated to %s for workflow %s",
-                        runner.uuid,
-                        target_state,
-                        workflow_id,
-                    )
-        except Exception:
-            logger.debug("Could not update runners for workflow %s", workflow_id, exc_info=True)
+    # _update_runner_terminal_state: inherited from BaseRunner (takes status).
 
     # =========================================================================
     # Shutdown

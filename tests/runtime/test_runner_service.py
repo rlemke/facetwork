@@ -1056,6 +1056,42 @@ class TestResumeWorkflowEdgeCases:
         finally:
             lock.release()
 
+    def test_terminal_state_guards_against_non_terminal_tasks(self, service, store):
+        """A runner must NOT be marked COMPLETED while the workflow still has a
+        non-terminal task (a lease-reclaimed zombie / in-flight retry). Once the
+        task is terminal, completion proceeds. RunnerService previously had no
+        such guard (unlike RegistryRunner); the shared BaseRunner one fixes it."""
+        from facetwork.runtime.entities import RunnerDefinition, RunnerState, WorkflowDefinition
+
+        wf_id = "wf-terminal-guard"
+        wf = WorkflowDefinition(
+            uuid=wf_id, name="W", namespace_id="ns", facet_id="f",
+            flow_id="flow", starting_step="s", version="1.0",
+        )
+        store.save_runner(
+            RunnerDefinition(
+                uuid="r-1", workflow_id=wf_id, workflow=wf,
+                state=RunnerState.RUNNING, start_time=1,
+            )
+        )
+        store.save_task(
+            TaskDefinition(
+                uuid="t-1", name="F", runner_id="r-1", workflow_id=wf_id, flow_id="flow",
+                step_id="st-1", state=TaskState.RUNNING, created=1, updated=1,
+            )
+        )
+
+        # Evaluator says COMPLETED, but a task is still RUNNING → runner stays RUNNING.
+        service._update_runner_terminal_state(wf_id, ExecutionStatus.COMPLETED)
+        assert store.get_runner("r-1").state == RunnerState.RUNNING
+
+        # Task reaches a terminal state → completion now proceeds.
+        t = store.get_task("t-1")
+        t.state = TaskState.COMPLETED
+        store.save_task(t)
+        service._update_runner_terminal_state(wf_id, ExecutionStatus.COMPLETED)
+        assert store.get_runner("r-1").state == RunnerState.COMPLETED
+
     def test_resume_no_ast_cached_no_persistence(self, store, evaluator, registry):
         """Resume with no cached AST and MemoryStore (no get_workflow) logs warning."""
         config = RunnerConfig()

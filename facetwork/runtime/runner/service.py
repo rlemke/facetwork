@@ -1064,11 +1064,18 @@ class RunnerService(BaseRunner):
                 self._safe_save_task(task)
                 return
 
+            # Mark the task COMPLETED *before* continue/resume. The resume
+            # cascades to the terminal-state check (_has_non_terminal_tasks),
+            # which must see THIS event's task as terminal — else the runner
+            # can't be completed on this cycle and only finishes on a later
+            # sweep. The handler produced a result, so the task IS done; if the
+            # resume then fails, the sweep re-drives the workflow.
+            task.state = TaskState.COMPLETED
+            task.updated = _current_time_ms()
+            self._safe_save_task(task)
+
             # Continue the step and resume the workflow.
             # Uses resume_step (O(depth)) instead of resume (O(all steps)).
-            # These can fail but the handler already succeeded — always mark
-            # the task completed so the future finishes and capacity is freed.
-            #
             # Built-in bootstrap tasks (``fw:execute[:Workflow]``) have no
             # step — the handler itself starts the workflow — so there's
             # nothing to continue/resume here.
@@ -1081,19 +1088,12 @@ class RunnerService(BaseRunner):
                     resume_error = resume_exc
                     logger.warning(
                         "Post-handler resume failed for %s (step=%s): %s — "
-                        "task will be marked completed (handler succeeded) — %s",
+                        "task already marked completed (handler succeeded) — %s",
                         task.uuid,
                         task.step_id,
                         resume_exc,
                         self._task_label(task.uuid),
                     )
-
-            # Always mark task completed — the handler produced a result.
-            # If resume failed, the workflow will be retried on the next
-            # resume cycle or manual retry.
-            task.state = TaskState.COMPLETED
-            task.updated = _current_time_ms()
-            self._safe_save_task(task)
 
             # Update stats and circuit breaker
             self._update_handled_stats(task.name, handled=True)
@@ -1813,26 +1813,8 @@ class RunnerService(BaseRunner):
             except Exception:
                 logger.debug("Fallback resume also failed", exc_info=True)
 
-    def _update_runner_terminal_state(self, workflow_id: str, status: str) -> None:
-        """Update runner entity when workflow reaches a terminal state."""
-        if not hasattr(self._persistence, "get_runners_by_workflow"):
-            return
-        now = _current_time_ms()
-        target_state = (
-            RunnerState.COMPLETED if status == ExecutionStatus.COMPLETED else RunnerState.FAILED
-        )
-        for runner in self._persistence.get_runners_by_workflow(workflow_id):
-            if runner.state not in (RunnerState.COMPLETED, RunnerState.FAILED):
-                runner.state = target_state
-                runner.end_time = now
-                runner.duration = now - runner.start_time if runner.start_time else 0
-                self._persistence.save_runner(runner)
-                logger.info(
-                    "Runner %s updated to %s for workflow %s",
-                    runner.uuid,
-                    target_state,
-                    workflow_id,
-                )
+    # _update_runner_terminal_state / _has_non_terminal_tasks: inherited from BaseRunner
+    # (now guarded — won't COMPLETE a runner while non-terminal tasks remain).
 
     def _load_workflow_ast(self, workflow_id: str) -> dict | None:
         """Attempt to load the workflow AST from persistence.

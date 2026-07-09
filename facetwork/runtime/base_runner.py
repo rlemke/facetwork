@@ -44,7 +44,8 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from .entities import ServerState, TaskState
+from .entities import RunnerState, ServerState, TaskState
+from .evaluator import ExecutionStatus
 
 if TYPE_CHECKING:
     from .persistence import PersistenceAPI
@@ -252,3 +253,56 @@ class BaseRunner:
                 resume_fn()
         finally:
             lock.release()
+
+    # =========================================================================
+    # Runner terminal-state transition (guarded)
+    # =========================================================================
+
+    def _has_non_terminal_tasks(self, workflow_id: str) -> bool:
+        """Whether a workflow has any task not in a terminal state."""
+        terminal = {TaskState.COMPLETED, TaskState.FAILED, TaskState.IGNORED, TaskState.CANCELED}
+        if not hasattr(self._persistence, "get_tasks_by_workflow"):
+            return False
+        tasks = self._persistence.get_tasks_by_workflow(workflow_id)
+        return any(t.state not in terminal for t in tasks)
+
+    def _update_runner_terminal_state(self, workflow_id: str, status: str) -> None:
+        """Move the workflow's runner entities to a terminal state.
+
+        Guards COMPLETED with ``_has_non_terminal_tasks``: if the evaluator
+        reports COMPLETED but tasks are still non-terminal (a lease-reclaimed
+        zombie, an in-flight dead-letter, a step being retried), the runners are
+        LEFT in RUNNING rather than prematurely completed — matching the
+        preventative "verify all tasks terminal before COMPLETED" contract.
+        Previously RunnerService completed purely on status, with no such guard.
+        """
+        if not hasattr(self._persistence, "get_runners_by_workflow"):
+            return
+        try:
+            now = _current_time_ms()
+            target_state = (
+                RunnerState.COMPLETED
+                if status == ExecutionStatus.COMPLETED
+                else RunnerState.FAILED
+            )
+            if target_state == RunnerState.COMPLETED and self._has_non_terminal_tasks(workflow_id):
+                logger.warning(
+                    "Workflow %s: evaluator says COMPLETED but non-terminal tasks remain; "
+                    "keeping runners in RUNNING state",
+                    workflow_id,
+                )
+                return
+            for runner in self._persistence.get_runners_by_workflow(workflow_id):
+                if runner.state not in (RunnerState.COMPLETED, RunnerState.FAILED):
+                    runner.state = target_state
+                    runner.end_time = now
+                    runner.duration = now - runner.start_time if runner.start_time else 0
+                    self._persistence.save_runner(runner)
+                    logger.info(
+                        "Runner %s updated to %s for workflow %s",
+                        runner.uuid,
+                        target_state,
+                        workflow_id,
+                    )
+        except Exception:
+            logger.debug("Could not update runners for workflow %s", workflow_id, exc_info=True)
