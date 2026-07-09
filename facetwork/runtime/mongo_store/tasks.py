@@ -189,15 +189,37 @@ class TaskMixin(_MixinBase):
         if doc:
             return self._doc_to_task(doc)
 
-        # Then try to reclaim a running task whose lease has expired.
+        # Then try to reclaim a running task whose lease has expired. This is a
+        # RETRY (the previous holder died without renewing its lease), so bump
+        # retry_count — otherwise a handler that keeps dying ping-pongs on lease
+        # expiry forever and never reaches dead-letter. Only reclaim while the
+        # task still has budget (max_retries <= 0 means unlimited); an exhausted
+        # task is left running-with-expired-lease for the orphan reaper /
+        # stuck-watchdog, which reset it to pending -> _dead_letter_overdue.
+        # The lease duration itself (>= 5 min) paces this failover.
         doc = self._db.tasks.find_one_and_update(
             {
                 "state": "running",
                 "task_list_name": tl_filter,
                 "lease_expires": {"$lt": now, "$gt": 0},
-                "$and": [name_filter],
+                "$and": [
+                    name_filter,
+                    {
+                        "$or": [
+                            {"max_retries": {"$lte": 0}},
+                            {
+                                "$expr": {
+                                    "$lt": [
+                                        {"$ifNull": ["$retry_count", 0]},
+                                        {"$ifNull": ["$max_retries", 5]},
+                                    ]
+                                }
+                            },
+                        ]
+                    },
+                ],
             },
-            {"$set": update},
+            {"$set": update, "$inc": {"retry_count": 1}},
             return_document=ReturnDocument.AFTER,
         )
         return self._doc_to_task(doc) if doc else None

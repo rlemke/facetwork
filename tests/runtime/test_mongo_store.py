@@ -1224,6 +1224,50 @@ class TestReapOrphanedTasks:
         # The osm task is still pending — nobody who didn't ask for it claimed it.
         assert mongo_store._db.tasks.find_one({"uuid": "t-0"})["state"] == "pending"
 
+    def _expired_running_task(self, mongo_store, uuid, retry_count, max_retries):
+        """Insert a running task whose lease has already expired."""
+        mongo_store.save_task(
+            TaskDefinition(
+                uuid=uuid, name="MyEvent", runner_id="r1", workflow_id="w1",
+                flow_id="f1", step_id=uuid, state=TaskState.RUNNING,
+                task_list_name="default", retry_count=retry_count, max_retries=max_retries,
+            )
+        )
+        # Force the lease into the past so the reclaim branch is eligible.
+        mongo_store._db.tasks.update_one({"uuid": uuid}, {"$set": {"lease_expires": 1}})
+
+    def test_lease_reclaim_increments_retry_count(self, mongo_store):
+        """Reclaiming an expired-lease running task is a RETRY and must bump
+        retry_count.
+
+        Regression (finding #4): the reclaim path only `$set` the new lease and
+        never `$inc retry_count`, so a handler that keeps dying ping-ponged on
+        lease expiry forever and never reached dead-letter.
+        """
+        self._expired_running_task(mongo_store, "reclaim-1", retry_count=2, max_retries=5)
+
+        claimed = mongo_store.claim_task(["MyEvent"], server_id="new-server")
+        assert claimed is not None
+        assert claimed.state == TaskState.RUNNING
+        assert claimed.retry_count == 3  # 2 -> 3
+        assert claimed.server_id == "new-server"
+
+    def test_lease_reclaim_stops_at_max_retries(self, mongo_store):
+        """An exhausted task (retry_count >= max_retries) must NOT be reclaimed —
+        it is left for the reaper/stuck-watchdog to route to dead-letter, rather
+        than being re-run forever by claim_task."""
+        self._expired_running_task(mongo_store, "reclaim-exhausted", retry_count=5, max_retries=5)
+        assert mongo_store.claim_task(["MyEvent"], server_id="new-server") is None
+        # Untouched — still running at its exhausted count.
+        doc = mongo_store._db.tasks.find_one({"uuid": "reclaim-exhausted"})
+        assert doc["retry_count"] == 5 and doc["state"] == "running"
+
+    def test_lease_reclaim_unlimited_when_max_retries_zero(self, mongo_store):
+        """max_retries == 0 means unlimited retries — always reclaimable."""
+        self._expired_running_task(mongo_store, "reclaim-inf", retry_count=99, max_retries=0)
+        claimed = mongo_store.claim_task(["MyEvent"], server_id="new-server")
+        assert claimed is not None and claimed.retry_count == 100
+
     def test_mixed_dead_and_healthy_servers(self, mongo_store):
         """Only tasks from dead servers are reaped, not healthy ones."""
         import time

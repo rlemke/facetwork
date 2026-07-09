@@ -233,11 +233,10 @@ stuck-step sweep, manual `repair_workflow`.
 > e422c49). The two runner classes' shared logic is collapsed into
 > `BaseRunner` (improvement #5, root cause of #6/#8/#9) — extraction 31fed2b,
 > completed through 2b00b9e (`_load_workflow_ast`, `_emit_step_log`
-> harmonized). **#5** (CAS blind-replace clobber) fixed 2026-07-09. Still open:
-> **#2** (pre-save `continue_step`/`resume` not ownership-fenced — only terminal
-> writes are, via `_safe_save_task`), **#4** (lease-expiry reclaim still doesn't
-> `$inc retry_count`), **#7** (`_fw_continue` drain on a RunnerService-only
-> fleet), **#10–#14**.
+> harmonized). **#4** (lease-reclaim retry_count) and **#5** (CAS blind-replace clobber)
+> fixed 2026-07-09. Still open: **#2** (pre-save `continue_step`/`resume` not
+> ownership-fenced — only terminal writes are, via `_safe_save_task`), **#7**
+> (`_fw_continue` drain on a RunnerService-only fleet), **#10–#14**.
 
 1. **CONFIRMED — Default lease (5 min) < default execution timeout (15 min)
    with opt-in heartbeats ⇒ routine duplicate execution of slow handlers.**
@@ -257,9 +256,14 @@ stuck-step sweep, manual `repair_workflow`.
    `next_retry_after` (`registry_runner.py:1036-1040`); the
    `ThreadPoolExecutor` context manager then blocks until the hung handler
    actually returns (`registry_runner.py:1018-1056`).
-4. **CONFIRMED — `claim_task`'s lease-expiry reclaim never increments
-   `retry_count`** (`tasks.py:193-203`) — a repeatedly-dying handler can
-   ping-pong on lease expiry forever without reaching dead-letter.
+4. ~~**CONFIRMED — `claim_task`'s lease-expiry reclaim never increments
+   `retry_count`**~~ **FIXED 2026-07-09.** A repeatedly-dying handler ping-ponged
+   on lease expiry forever without reaching dead-letter. The reclaim branch now
+   `$inc`s `retry_count` (it IS a retry) and only reclaims while the task has
+   budget (`max_retries <= 0` = unlimited, else `retry_count < max_retries`, via
+   `$ifNull`-guarded `$expr`). An exhausted task is left running-with-expired-
+   lease for the reaper/stuck-watchdog → pending → `_dead_letter_overdue`; the
+   ≥5min lease paces the failover. +3 tests.
 5. ~~**CONFIRMED — Optimistic concurrency on steps is self-defeating.**~~
    **FIXED 2026-07-09 (updated-step clobber).** On a `version.sequence` CAS
    miss the code fell back to an unconditional `replace_one`
