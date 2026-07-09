@@ -26,7 +26,6 @@ registration.
 import json as _json
 import logging
 import os
-import socket
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -126,6 +125,7 @@ def _stuck_message(task_info: dict[str, str], reclaimer_name: str = "") -> str:
     return ", ".join(parts)
 
 
+from ..base_runner import BaseRunner
 from ..runner_config import BaseRunnerConfig
 
 _SENTINEL = -1
@@ -194,7 +194,7 @@ class _StatusHandler(BaseHTTPRequestHandler):
         """Suppress default stderr logging."""
 
 
-class RunnerService:
+class RunnerService(BaseRunner):
     """Distributed runner service for processing event steps and tasks.
 
     Polls the persistence store for pending tasks, claims them atomically
@@ -290,15 +290,7 @@ class RunnerService:
         except Exception:
             return task_id[:12]
 
-    @property
-    def server_id(self) -> str:
-        """Get the server's unique ID."""
-        return self._server_id
-
-    @property
-    def is_running(self) -> bool:
-        """Check if the service is currently running."""
-        return self._running
+    # server_id / is_running: inherited from BaseRunner.
 
     # =========================================================================
     # Lifecycle
@@ -378,34 +370,7 @@ class RunnerService:
         )
         self._persistence.save_server(server)
 
-    def _deregister_server(self) -> None:
-        """Mark this server as shut down."""
-        server = self._persistence.get_server(self._server_id)
-        if server:
-            server.state = ServerState.SHUTDOWN
-            server.ping_time = _current_time_ms()
-            self._persistence.save_server(server)
-
-    def _get_server_ips(self) -> list[str]:
-        """Get local IP addresses."""
-        try:
-            hostname = socket.gethostname()
-            return [socket.gethostbyname(hostname)]
-        except Exception:
-            return []
-
-    # =========================================================================
-    # Heartbeat
-    # =========================================================================
-
-    def _heartbeat_loop(self) -> None:
-        """Periodically update the server's ping_time."""
-        interval_s = self._config.heartbeat_interval_ms / 1000.0
-        while not self._stopping.wait(interval_s):
-            try:
-                self._persistence.update_server_ping(self._server_id, _current_time_ms())
-            except Exception:
-                logger.exception("Heartbeat failed")
+    # _deregister_server / _get_server_ips / _heartbeat_loop: inherited from BaseRunner.
 
     # =========================================================================
     # Poll Loop
@@ -526,10 +491,7 @@ class RunnerService:
 
         return dispatched
 
-    def _active_count(self) -> int:
-        """Get the number of active work items."""
-        with self._active_lock:
-            return len(self._active_futures)
+    # _active_count: inherited from BaseRunner.
 
     def _cleanup_futures(self) -> None:
         """Remove completed futures and kill timed-out ones.

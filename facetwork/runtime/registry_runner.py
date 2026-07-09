@@ -46,13 +46,13 @@ Example usage::
 
 import fnmatch
 import logging
-import socket
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
+from .base_runner import BaseRunner
 from .dispatcher import RegistryDispatcher
 from .entities import (
     HandlerRegistration,
@@ -89,7 +89,7 @@ class RegistryRunnerConfig(BaseRunnerConfig):
     registry_refresh_interval_ms: int = 30000
 
 
-class RegistryRunner:
+class RegistryRunner(BaseRunner):
     """Universal runner that dynamically loads handlers from persistence.
 
     Instead of requiring developers to write standalone microservices,
@@ -134,15 +134,7 @@ class RegistryRunner:
         self._last_sweep: int = 0
         self._sweep_interval_ms: int = 5000
 
-    @property
-    def server_id(self) -> str:
-        """Get the server's unique ID."""
-        return self._server_id
-
-    @property
-    def is_running(self) -> bool:
-        """Check if the runner is currently running."""
-        return self._running
+    # server_id / is_running: inherited from BaseRunner.
 
     # =========================================================================
     # Handler Registration (convenience API)
@@ -467,34 +459,7 @@ class RegistryRunner:
         )
         self._persistence.save_server(server)
 
-    def _deregister_server(self) -> None:
-        """Mark this server as shut down."""
-        server = self._persistence.get_server(self._server_id)
-        if server:
-            server.state = ServerState.SHUTDOWN
-            server.ping_time = _current_time_ms()
-            self._persistence.save_server(server)
-
-    def _get_server_ips(self) -> list[str]:
-        """Get local IP addresses."""
-        try:
-            hostname = socket.gethostname()
-            return [socket.gethostbyname(hostname)]
-        except Exception:
-            return []
-
-    # =========================================================================
-    # Heartbeat
-    # =========================================================================
-
-    def _heartbeat_loop(self) -> None:
-        """Periodically update the server's ping_time."""
-        interval_s = self._config.heartbeat_interval_ms / 1000.0
-        while not self._stopping.wait(interval_s):
-            try:
-                self._persistence.update_server_ping(self._server_id, _current_time_ms())
-            except Exception:
-                logger.exception("Heartbeat failed")
+    # _deregister_server / _get_server_ips / _heartbeat_loop: inherited from BaseRunner.
 
     # =========================================================================
     # Poll Loop
@@ -562,10 +527,7 @@ class RegistryRunner:
 
         return dispatched
 
-    def _active_count(self) -> int:
-        """Get the number of active work items."""
-        with self._active_lock:
-            return len(self._active_futures)
+    # _active_count: inherited from BaseRunner.
 
     def _cleanup_futures(self) -> None:
         """Remove completed futures from the active list."""
