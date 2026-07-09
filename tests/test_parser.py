@@ -589,6 +589,31 @@ class TestLiterals:
         assert arg.value.kind == "string"
         assert arg.value.value == "hello world"
 
+    def test_string_literal_non_ascii_preserved(self, parser):
+        """Non-ASCII characters in string literals must not be mangled.
+
+        Regression: the STRING transformer used a latin-1-based
+        `encode().decode("unicode_escape")` that turned "—" into "â\x80\x94"
+        (and corrupted accents/emoji/CJK). Any value built from such a literal
+        (chart titles, labels, narratives) shipped mojibake.
+        """
+        for text in ("Data quality — MN", "café", "smile 😀", "日本語"):
+            source = f'implicit msg = Message(text = "{text}")'
+            ast = parser.parse(source)
+            assert ast.implicits[0].call.args[0].value.value == text
+
+    def test_string_literal_escapes_still_processed(self, parser):
+        """Backslash escapes keep working alongside the non-ASCII fix."""
+        source = r'implicit msg = Message(text = "a\tb\nc\"d\\e")'
+        ast = parser.parse(source)
+        assert ast.implicits[0].call.args[0].value.value == 'a\tb\nc"d\\e'
+
+    def test_string_literal_escapes_and_unicode_together(self, parser):
+        """A literal mixing a real escape and a non-ASCII char round-trips."""
+        source = r'implicit msg = Message(text = "line — end\n")'
+        ast = parser.parse(source)
+        assert ast.implicits[0].call.args[0].value.value == "line — end\n"
+
     def test_integer_literal(self, parser):
         """Parse integer literal."""
         source = "implicit count = Counter(value = 42)"

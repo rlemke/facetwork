@@ -217,9 +217,19 @@ class FFLTransformer(Transformer):
         return str(token)
 
     def STRING(self, token: Token) -> str:
-        # Remove quotes and process escapes
+        # Remove quotes and process backslash escapes (\n, \t, \", \\, \uXXXX).
+        #
+        # The `unicode_escape` codec is latin-1-based, so a naive
+        # `s.encode().decode("unicode_escape")` first UTF-8-encodes non-ASCII
+        # characters and then decodes those bytes as latin-1 — mangling every
+        # non-ASCII literal (em-dash "—" -> "â\x80\x94", "café" -> "cafÃ©",
+        # emoji/CJK -> mojibake). Round-trip through latin-1 with
+        # `backslashreplace` instead: characters outside latin-1 become their
+        # own `\uXXXX`/`\UXXXXXXXX` escapes, which `unicode_escape` then decodes
+        # back to the original character, while genuine ASCII escapes still
+        # process normally.
         s = str(token)[1:-1]
-        return s.encode().decode("unicode_escape")
+        return s.encode("latin-1", "backslashreplace").decode("unicode_escape")
 
     def INTEGER(self, token: Token) -> int:
         return int(token)
