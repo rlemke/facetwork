@@ -60,16 +60,18 @@ fi
 
 # Register handler routing in MongoDB AND seed the domain's FFL workflows so they
 # appear in the dashboard's Flows tab. `--seed` is idempotent across restarts.
-echo "    Registering handlers + seeding workflows for $FW_DOMAIN_NAME"
-python -m facetwork.domains --seed "$FW_DOMAIN_NAME"
-
-# Scope the runner to THIS domain's own facet namespaces. The image bakes every
+# Register handlers + seed workflows AND emit this domain's topic globs in ONE
+# process (one interpreter startup vs a separate --namespaces call). The runner
+# is then scoped to its OWN facet namespaces via --topics: the image bakes every
 # domain's deps, so an unscoped --registry runner loads ALL importable handlers
 # and claims every namespace's work on any host (incl. heavy osm PBF on the
-# emulated minis). --topics <ns.*> makes it load only its own handlers, so heavy
-# osm work stays on the (heavy-gated → MaxPro) osm runners. Empty = no FFL facets
-# (e.g. a workflow-only catalog) → don't scope, preserve load-all behavior.
-DOMAIN_TOPICS="$(python -m facetwork.domains --namespaces "$FW_DOMAIN_NAME" 2>/dev/null || true)"
+# emulated minis). --topics keeps osm work on the (heavy-gated → MaxPro) osm
+# runners AND makes preload import-verify only its own handlers (fast startup).
+# Empty topics = no FFL facets (workflow-only catalog) → don't scope (load-all).
+echo "    Registering handlers + seeding workflows for $FW_DOMAIN_NAME"
+SEED_OUT="$(python -m facetwork.domains --seed --emit-topics "$FW_DOMAIN_NAME" 2>&1)"
+echo "$SEED_OUT" | grep -v '^FW_TOPICS='
+DOMAIN_TOPICS="$(printf '%s\n' "$SEED_OUT" | sed -n 's/^FW_TOPICS=//p' | head -1)"
 TOPIC_ARGS=""
 if [ -n "$DOMAIN_TOPICS" ]; then
     TOPIC_ARGS="--topics $DOMAIN_TOPICS"

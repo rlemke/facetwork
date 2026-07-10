@@ -292,7 +292,9 @@ def main() -> None:
 
             return _proxy
 
-        dispatcher = RegistryDispatcher(persistence=store)
+        # Pass --topics so preload() only import-verifies THIS runner's own
+        # handlers (not the whole 500+-registration universe) — big startup win.
+        dispatcher = RegistryDispatcher(persistence=store, topics=args.topics or None)
         loadable = dispatcher.preload(verify=True)
         # Scope to --topics: register (and therefore advertise + CLAIM) only the
         # facets matching the topic globs. Without this the registry preload

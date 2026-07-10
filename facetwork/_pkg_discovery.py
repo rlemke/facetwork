@@ -296,22 +296,24 @@ def package_topic_globs(pkg: Package) -> list[str]:
     files = [f for f in collect_ffl_files(pkg) if "/tests/" not in str(f).replace("\\", "/")]
     if not files:
         return []
-    program_dict, _, _ = _compile_ffl_files(files)
+    program_dict, _, _ = _compile_ffl_files(files, validate_program=False)
     tops = sorted({n.split(".", 1)[0] for n in _event_facet_namespaces(program_dict)})
     return [f"{t}.*" for t in tops]
 
 
-def _compile_ffl_files(files: list[Path]) -> tuple[dict, str, list[str]]:
+def _compile_ffl_files(
+    files: list[Path], *, validate_program: bool = True
+) -> tuple[dict, str, list[str]]:
     """Parse + merge + emit a list of ``.ffl`` files.
 
     Returns ``(program_dict, combined_source, warnings)``. Parse errors raise;
     validation problems become warnings (a package may legitimately reference
-    facets defined by another).
+    facets defined by another). ``validate_program=False`` skips the validator
+    (used by ``package_topic_globs``, which only needs the namespace structure).
     """
     from facetwork.ast import Program
     from facetwork.emitter import JSONEmitter
     from facetwork.parser import FFLParser
-    from facetwork.validator import validate
 
     parser = FFLParser()
     programs = []
@@ -323,9 +325,12 @@ def _compile_ffl_files(files: list[Path]) -> tuple[dict, str, list[str]]:
     merged = Program.merge(programs)
 
     warnings: list[str] = []
-    result = validate(merged)
-    if not result.is_valid:
-        warnings.append(f"{len(result.errors)} validation warning(s)")
+    if validate_program:
+        from facetwork.validator import validate
+
+        result = validate(merged)
+        if not result.is_valid:
+            warnings.append(f"{len(result.errors)} validation warning(s)")
 
     program_dict = json.loads(JSONEmitter(include_locations=False).emit(merged))
     return program_dict, "\n".join(parts), warnings

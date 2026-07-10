@@ -123,10 +123,20 @@ class RegistryDispatcher:
         Returns the number of registrations kept.  Subsequent ``can_dispatch``
         / ``dispatch`` calls use the in-memory cache and never hit the database.
         """
+        import fnmatch
+
         registrations = self._persistence.list_handler_registrations()
         self._reg_cache.clear()
         skipped: list[str] = []
         for reg in registrations:
+            # Scope to --topics BEFORE the import-check: a topic-scoped runner
+            # must not pay to `find_spec` (and, for cross-domain deps, import)
+            # the whole 500+-registration handler universe just to keep its own
+            # ~few dozen. Non-matching registrations are simply not ours.
+            if self._topics and not any(
+                fnmatch.fnmatch(reg.facet_name, t) for t in self._topics
+            ):
+                continue
             if verify and not registration_module_available(reg.module_uri):
                 skipped.append(reg.facet_name)
                 continue
