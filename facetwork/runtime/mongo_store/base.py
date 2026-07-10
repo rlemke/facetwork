@@ -246,11 +246,37 @@ class BaseMixin:
             partialFilterExpression={"state": "running"},
             name="task_step_id_running_unique_index",
         )
-        # Compound index for efficient claim queries
+        # Compound indexes for the two claim_task queries. Equality fields
+        # first, the single range field last, so each query is fully served by
+        # an index instead of a collection scan on the hot tasks collection:
+        #   pending claim:  state=pending, task_list_name in, name in/prefix,
+        #                   next_retry_after <= now  (the backoff-cooldown range)
+        #   lease reclaim:  state=running, task_list_name in, lease_expires range
+        # Previously neither next_retry_after nor lease_expires was indexed.
         tasks.create_index(
-            [("state", ASCENDING), ("name", ASCENDING), ("task_list_name", ASCENDING)],
-            name="task_claim_index",
+            [
+                ("state", ASCENDING),
+                ("task_list_name", ASCENDING),
+                ("name", ASCENDING),
+                ("next_retry_after", ASCENDING),
+            ],
+            name="task_claim_pending_index",
         )
+        tasks.create_index(
+            [
+                ("state", ASCENDING),
+                ("task_list_name", ASCENDING),
+                ("lease_expires", ASCENDING),
+            ],
+            name="task_reclaim_index",
+        )
+        # Shed the older (state, name, task_list_name) claim index on upgraded
+        # deployments — superseded by task_claim_pending_index. Absent on a
+        # fresh DB, so the drop is best-effort.
+        try:
+            tasks.drop_index("task_claim_index")
+        except Exception:
+            pass
 
         # Logs collection
         logs = self._db.logs

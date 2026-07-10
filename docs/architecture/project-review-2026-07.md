@@ -306,7 +306,11 @@ stuck-step sweep, manual `repair_workflow`.
     (`service.py:1646-1672`).
 12. **CONFIRMED — Idle-fleet Mongo load** ~6-8 `find_one_and_update`s + a
     `get_server` per runner per 2 s; no jitter/adaptive backoff; no index on
-    `lease_expires`/`next_retry_after`.
+    `lease_expires`/`next_retry_after`. **PARTIALLY FIXED 2026-07-09** — added
+    `task_claim_pending_index` (state, task_list_name, name, next_retry_after)
+    and `task_reclaim_index` (state, task_list_name, lease_expires) so both
+    `claim_task` queries are index-covered incl. the range fields; dropped the
+    superseded `task_claim_index`. Still open: poll jitter / adaptive backoff.
 13. ~~**CONFIRMED — Storage streams finalize partial data and mask errors.**~~
     **FIXED 2026-07-09.** `_S3WriteStream.__exit__`/`_WebHDFSWriteStream.__exit__`
     unconditionally `close()`d — uploading the partial buffer even when the body

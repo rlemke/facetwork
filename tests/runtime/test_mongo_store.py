@@ -1259,6 +1259,16 @@ class TestReapOrphanedTasks:
         claimed = mongo_store.claim_task(["ns.Weird(name)+$"])
         assert claimed is not None and claimed.name == "ns.Weird(name)+$"
 
+    def test_claim_query_fields_are_indexed(self, mongo_store):
+        """The two claim_task queries must be index-covered, including the range
+        fields (finding #12): `next_retry_after` (pending backoff) and
+        `lease_expires` (reclaim). The superseded (state,name,task_list_name)
+        index is dropped."""
+        names = set(mongo_store._db.tasks.index_information().keys())
+        assert "task_claim_pending_index" in names
+        assert "task_reclaim_index" in names
+        assert "task_claim_index" not in names
+
     def _expired_running_task(self, mongo_store, uuid, retry_count, max_retries):
         """Insert a running task whose lease has already expired."""
         mongo_store.save_task(
