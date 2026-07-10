@@ -49,7 +49,7 @@ if [[ "${FW_DOMAIN_FORCE_MOUNT:-0}" == "1" && -d "$DOMAIN_DIR" ]]; then
     install_mount
 elif is_baked; then
     echo "    using baked-in $FW_DOMAIN_NAME (image is source of truth; bind-mount ignored)"
-    [[ -f /opt/fwh_osm.commit ]] && echo "    fwh_osm @ $(cat /opt/fwh_osm.commit)"
+    [[ -f "/opt/$FW_DOMAIN_REPO.commit" ]] && echo "    $FW_DOMAIN_REPO @ $(cat "/opt/$FW_DOMAIN_REPO.commit")"
 elif [[ -d "$DOMAIN_DIR" ]]; then
     install_mount
 else
