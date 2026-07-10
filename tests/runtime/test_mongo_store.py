@@ -1224,6 +1224,41 @@ class TestReapOrphanedTasks:
         # The osm task is still pending — nobody who didn't ask for it claimed it.
         assert mongo_store._db.tasks.find_one({"uuid": "t-0"})["state"] == "pending"
 
+    def test_claim_task_prefix_is_literal_not_regex(self, mongo_store):
+        """The prefix match must treat the qualified name literally.
+
+        Regression: the prefix was interpolated into a `$regex` unescaped, so the
+        "." in a qualified name acted as a wildcard — a runner for
+        `osm.cache.Download` could claim an unrelated `osmXcacheXDownload:…` task.
+        """
+        for i, name in enumerate(["osmXcacheXDownload:1", "osm.cache.Download:1"]):
+            mongo_store.save_task(
+                TaskDefinition(
+                    uuid=f"lit-{i}", name=name, runner_id="r1", workflow_id="w1",
+                    flow_id="f1", step_id=f"s{i}", state=TaskState.PENDING,
+                    task_list_name="default",
+                )
+            )
+
+        # Polling for the exact qualified name: only the genuine prefix matches;
+        # the wildcard look-alike is NOT claimed.
+        claimed = mongo_store.claim_task(["osm.cache.Download"])
+        assert claimed is not None and claimed.name == "osm.cache.Download:1"
+        assert mongo_store._db.tasks.find_one({"uuid": "lit-0"})["state"] == "pending"
+
+    def test_claim_task_regex_metachar_name_does_not_error(self, mongo_store):
+        """A task name with regex-special chars must not break the claim query."""
+        mongo_store.save_task(
+            TaskDefinition(
+                uuid="meta-1", name="ns.Weird(name)+$", runner_id="r1", workflow_id="w1",
+                flow_id="f1", step_id="s1", state=TaskState.PENDING, task_list_name="default",
+            )
+        )
+        # Exact-name claim still works; the unbalanced "(" would have thrown a
+        # regex-compile error in the prefix branch before the escape fix.
+        claimed = mongo_store.claim_task(["ns.Weird(name)+$"])
+        assert claimed is not None and claimed.name == "ns.Weird(name)+$"
+
     def _expired_running_task(self, mongo_store, uuid, retry_count, max_retries):
         """Insert a running task whose lease has already expired."""
         mongo_store.save_task(

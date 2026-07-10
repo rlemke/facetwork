@@ -309,10 +309,13 @@ stuck-step sweep, manual `repair_workflow`.
     (`storage.py:432-436`, `379-383`); `exists()`/`isfile()` swallow every
     `ClientError` (auth failure/throttling ⇒ "not found",
     `storage.py:480-486`, `508-514`).
-14. **Minor, CONFIRMED** — task names interpolated unescaped into the claim
-    regex (`tasks.py:163`); unbounded `_ast_cache`/`_workflow_locks`
-    (`service.py:225-232`); `_reconcile_with_db` snapshot-order race
-    (`service.py:911-935`); circuit breakers only in `RunnerService`.
+14. **Minor, CONFIRMED** — ~~task names interpolated unescaped into the claim
+    regex (`tasks.py:163`)~~ **FIXED 2026-07-09** (`re.escape` the literal prefix
+    — a "." in a qualified name was a wildcard, and a "("/"$"/"+" could make
+    Mongo's regex engine throw and fail the claim; +2 tests); unbounded
+    `_ast_cache`/`_workflow_locks` (`service.py:225-232`); `_reconcile_with_db`
+    snapshot-order race (`service.py:911-935`); circuit breakers only in
+    `RunnerService`.
 
 ### Improvements (prioritized)
 

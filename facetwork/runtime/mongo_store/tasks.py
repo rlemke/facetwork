@@ -15,6 +15,7 @@
 """Task CRUD operations mixin for MongoStore."""
 
 import logging
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -158,9 +159,13 @@ class TaskMixin(_MixinBase):
 
         # Build a query that matches exact names or names that start with
         # one of the given prefixes (e.g. "fw:execute" matches "fw:execute:MyWorkflow").
+        # The prefix is a LITERAL, so re.escape it: qualified names contain "."
+        # (a regex wildcard — "osm.cache.Download:" would else also match
+        # "osmXcacheXDownload:…"), and a name with an unbalanced "(" or a "$"/"+"
+        # would make MongoDB's regex engine throw and fail the whole claim.
         name_conditions: list[dict] = [{"name": {"$in": task_names}}]
         for tn in task_names:
-            name_conditions.append({"name": {"$regex": f"^{tn}:"}})
+            name_conditions.append({"name": {"$regex": f"^{re.escape(tn)}:"}})
         name_filter = {"$or": name_conditions} if len(name_conditions) > 1 else name_conditions[0]
 
         # Backoff filter: skip tasks still in their retry cooldown window.
