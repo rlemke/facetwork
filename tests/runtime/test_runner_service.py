@@ -3373,6 +3373,7 @@ class TestReconcileWithDb:
             state=TaskState.RUNNING,
             server_id=service._server_id,
         )
+        store.save_task(ghost_task)  # genuinely running for us in the DB
         with (
             patch.object(store, "get_tasks_by_server_id", return_value=[ghost_task]),
             patch.object(service, "_release_timed_out_task") as mock_release,
@@ -3381,6 +3382,30 @@ class TestReconcileWithDb:
             service._reconcile_with_db()
 
         mock_release.assert_called_once_with("ghost-task-uuid")
+
+    def test_does_not_reset_task_completed_between_snapshots(self, service, store):
+        """Snapshot-order race guard: a task the DB query saw as RUNNING but that
+        has since completed (state no longer RUNNING) must NOT be reset — that
+        would re-run finished work. The re-verify catches it."""
+        # get_tasks_by_server_id (the point-in-time snapshot) reports it RUNNING…
+        snapshot_view = TaskDefinition(
+            uuid="raced-task", name="X", runner_id="r", workflow_id="wf", flow_id="",
+            step_id="s", state=TaskState.RUNNING, server_id=service._server_id,
+        )
+        # …but by re-verify time the stored task is COMPLETED.
+        store.save_task(
+            TaskDefinition(
+                uuid="raced-task", name="X", runner_id="r", workflow_id="wf", flow_id="",
+                step_id="s", state=TaskState.COMPLETED, server_id=service._server_id,
+            )
+        )
+        with (
+            patch.object(store, "get_tasks_by_server_id", return_value=[snapshot_view]),
+            patch.object(service, "_release_timed_out_task") as mock_release,
+        ):
+            service._reconcile_with_db()
+
+        mock_release.assert_not_called()
 
     def test_noop_when_memory_and_db_in_sync(self, service, store):
         """When everything matches, nothing is released or reset."""

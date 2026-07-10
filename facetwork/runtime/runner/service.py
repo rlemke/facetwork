@@ -610,6 +610,13 @@ class RunnerService(BaseRunner):
         slot. Also detects tasks in DB that have no corresponding future
         and resets them.
         """
+        # Snapshot in-memory futures FIRST, then query the DB. A task claimed +
+        # submitted concurrently then appears in memory before we compare (rather
+        # than looking like a DB-running orphan we "lost"), and the DB read
+        # reflects state at-least-as-new as the memory snapshot.
+        with self._active_lock:
+            memory_task_ids = {task_id for _, task_id, _ in self._active_futures}
+
         try:
             db_tasks = {
                 t.uuid
@@ -619,9 +626,6 @@ class RunnerService(BaseRunner):
         except Exception:
             logger.debug("Reconciliation: could not query DB", exc_info=True)
             return
-
-        with self._active_lock:
-            memory_task_ids = {task_id for _, task_id, _ in self._active_futures}
 
         # Tasks in memory but not in DB → someone else reaped them, release slot
         orphaned_memory = memory_task_ids - db_tasks
@@ -635,15 +639,32 @@ class RunnerService(BaseRunner):
                     entry for entry in self._active_futures if entry[1] not in orphaned_memory
                 ]
 
-        # Tasks in DB but not in memory → we lost track, reset to pending
+        # Tasks in DB but not in memory → we may have lost track. RE-VERIFY each
+        # before resetting: the two snapshots straddle concurrent
+        # completion/claim, so a task that completed (or was just claimed and
+        # added to a future) between them must NOT be reset — that would
+        # re-run finished work. Reset only if it is STILL running for us and
+        # still has no future.
         orphaned_db = db_tasks - memory_task_ids
         if orphaned_db:
-            logger.warning(
-                "Reconciliation: %d DB task(s) not in memory, resetting to pending",
-                len(orphaned_db),
-            )
+            reset = 0
             for task_id in orphaned_db:
+                task = self._persistence.get_task(task_id)
+                if (
+                    task is None
+                    or task.state != TaskState.RUNNING
+                    or getattr(task, "server_id", "") != self._server_id
+                ):
+                    continue  # completed / reclaimed since the snapshot
+                with self._active_lock:
+                    if any(tid == task_id for _, tid, _ in self._active_futures):
+                        continue  # a future exists now — not actually orphaned
                 self._release_timed_out_task(task_id)
+                reset += 1
+            if reset:
+                logger.warning(
+                    "Reconciliation: reset %d orphaned DB task(s) to pending", reset
+                )
 
     # =========================================================================
     # Polling

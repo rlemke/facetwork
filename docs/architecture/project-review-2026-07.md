@@ -344,9 +344,13 @@ stuck-step sweep, manual `repair_workflow`.
     `_ast_cache`/`_resume_locks`~~ **FIXED 2026-07-09** (`BaseRunner._prune_workflow_caches`,
     called after each resume: bounds the AST caches by oldest-first eviction —
     re-derivable — and the resume-lock/pending maps to `_MAX_WORKFLOW_CACHE`
-    (512), skipping any HELD lock; +2 tests); `_reconcile_with_db`
-    snapshot-order race (`service.py:911-935`); circuit breakers only in
-    `RunnerService`.
+    (512), skipping any HELD lock; +2 tests); ~~`_reconcile_with_db`
+    snapshot-order race~~ **FIXED 2026-07-09** (snapshot memory BEFORE the DB
+    query, and re-verify each orphaned-DB task is still RUNNING-for-us with no
+    future before resetting — so a task completed/claimed between the two
+    snapshots isn't spuriously reset and re-run; +1 test); circuit breakers only
+    in `RunnerService` (feature parity — RegistryRunner lacks the feature; not a
+    bug).
 
 ### Improvements (prioritized)
 
