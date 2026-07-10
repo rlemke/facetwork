@@ -1878,6 +1878,60 @@ class TestMultipleBlockValidation:
         result = validator.validate(ast)
         assert result.is_valid, [str(e) for e in result.errors]
 
+    def test_cross_block_foreach_collection_error(self, validator):
+        """A `foreach` whose collection names a step from a sibling andThen
+        block is cross-block and must error (the collection ref is checked, not
+        just block-body statement refs)."""
+        ast = parse(
+            _ns("""
+        facet Make(seed: Long) => (items: [Long])
+        facet Pick(item: Long) => (out: Long)
+        workflow Test(seed: Long) => (r: [Long]) andThen {
+                m = Make(seed = $.seed)
+                yield Test(r = m.items)
+            } andThen foreach item in m.items {
+                p = Pick(item = $.item)
+                yield Test(r = [p.out])
+            }
+        """)
+        )
+        result = validator.validate(ast)
+        assert not result.is_valid
+        assert any("Cross-block step reference" in str(e) for e in result.errors)
+        assert any("m" in str(e) for e in result.errors)
+
+    def test_foreach_over_input_ok(self, validator):
+        """`foreach v in $.attr` over a container attribute is always fine."""
+        ast = parse(
+            _ns("""
+        facet Pick(item: Long) => (out: Long)
+        workflow Test(items: [Long]) => (r: [Long]) andThen foreach item in $.items {
+            p = Pick(item = $.item)
+            yield Test(r = [p.out])
+        }
+        """)
+        )
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_foreach_step_body_collection_ok(self, validator):
+        """A `foreach` in a step body may name its containing step's return —
+        that is in scope, not cross-block."""
+        ast = parse(
+            _ns("""
+        facet Make(seed: Long) => (items: [Long])
+        facet Pick(item: Long) => (out: Long)
+        workflow Test(seed: Long) => (r: [Long]) andThen {
+            m = Make(seed = $.seed) andThen foreach item in m.items {
+                p = Pick(item = $.item)
+                yield Test(r = [p.out])
+            }
+        }
+        """)
+        )
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
     def test_same_step_name_different_blocks_ok(self, validator):
         """Same step name in different blocks is allowed (no cross-ref)."""
         ast = parse(

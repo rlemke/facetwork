@@ -1031,6 +1031,34 @@ class FFLValidator:
             for name, types in parent_step_returns_types.items():
                 step_returns_types[name] = types
 
+        # Validate a foreach STEP-collection reference (`foreach v in step.field`).
+        # The collection is evaluated at block entry — before the loop var binds
+        # and before any same-block step runs — so a step reference here may only
+        # name a step visible in THIS block's scope (or an enclosing one), never a
+        # sibling andThen block's step. Routing it through _validate_reference with
+        # `parent_foreach_var` (not this block's new var) and this block's
+        # `steps`/`other_block_steps` gives the same REF_CROSS_BLOCK_STEP /
+        # REF_UNDEFINED_STEP checks statement refs get. Without this the collection
+        # ref bypassed cross-block checking entirely, so
+        # `andThen { s = F() } andThen foreach v in s.items { … }` compiled even
+        # though `s` is out of scope here.
+        #
+        # Only STEP references are checked, not `$.` input refs: a `$.attr`
+        # collection may name a pre-script-produced attribute (added to the `$.`
+        # scope at runtime, grammar.md pre-script rule) that isn't a declared
+        # param, and pre-script result keys aren't statically known — validating
+        # them here would false-positive on legitimate `foreach x in $.derived`.
+        if body.foreach and not body.foreach.iterable.is_input:
+            self._validate_reference(
+                body.foreach.iterable,
+                input_attrs,
+                steps,
+                step_returns,
+                parent_foreach_var,
+                current_step=None,
+                other_block_steps=other_block_steps,
+            )
+
         # If foreach, add the iteration variable; inherit from parent if not set
         foreach_var: str | None = None
         if body.foreach:
