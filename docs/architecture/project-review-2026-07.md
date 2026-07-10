@@ -337,8 +337,11 @@ stuck-step sweep, manual `repair_workflow`.
 14. **Minor, CONFIRMED** — ~~task names interpolated unescaped into the claim
     regex (`tasks.py:163`)~~ **FIXED 2026-07-09** (`re.escape` the literal prefix
     — a "." in a qualified name was a wildcard, and a "("/"$"/"+" could make
-    Mongo's regex engine throw and fail the claim; +2 tests); unbounded
-    `_ast_cache`/`_workflow_locks` (`service.py:225-232`); `_reconcile_with_db`
+    Mongo's regex engine throw and fail the claim; +2 tests); ~~unbounded
+    `_ast_cache`/`_resume_locks`~~ **FIXED 2026-07-09** (`BaseRunner._prune_workflow_caches`,
+    called after each resume: bounds the AST caches by oldest-first eviction —
+    re-derivable — and the resume-lock/pending maps to `_MAX_WORKFLOW_CACHE`
+    (512), skipping any HELD lock; +2 tests); `_reconcile_with_db`
     snapshot-order race (`service.py:911-935`); circuit breakers only in
     `RunnerService`.
 

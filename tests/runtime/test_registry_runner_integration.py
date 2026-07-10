@@ -1562,3 +1562,44 @@ class TestOwnershipFence:
         after = store.get_task(in_mem.uuid)
         assert after.server_id == "other-server"
         assert after.state != TaskState.COMPLETED
+
+
+class TestBoundedWorkflowCaches:
+    """Finding #14: the per-workflow caches/locks must be bounded so a
+    long-lived runner processing an unbounded number of workflows doesn't leak."""
+
+    def test_prune_bounds_ast_caches_and_locks(self, store, evaluator):
+        runner = _make_runner(store, evaluator)
+        runner._MAX_WORKFLOW_CACHE = 3
+        for i in range(10):
+            runner._ast_cache[f"wf{i}"] = {"x": i}
+            runner._program_ast_cache[f"wf{i}"] = {"y": i}
+            with runner._resume_locks_lock:
+                runner._resume_locks[f"wf{i}"] = threading.Lock()
+
+        runner._prune_workflow_caches()
+
+        assert len(runner._ast_cache) == 3
+        assert len(runner._program_ast_cache) == 3
+        assert len(runner._resume_locks) == 3
+        # Oldest (insertion order) evicted, newest retained.
+        assert "wf0" not in runner._ast_cache
+        assert "wf9" in runner._ast_cache
+
+    def test_prune_never_evicts_a_held_resume_lock(self, store, evaluator):
+        """A held lock is an in-flight resume — evicting it would let a
+        concurrent resume of the same workflow run unserialized."""
+        runner = _make_runner(store, evaluator)
+        runner._MAX_WORKFLOW_CACHE = 1
+        held = threading.Lock()
+        held.acquire()
+        with runner._resume_locks_lock:
+            runner._resume_locks["busy"] = held
+            for i in range(5):
+                runner._resume_locks[f"free{i}"] = threading.Lock()
+
+        runner._prune_workflow_caches()
+
+        assert "busy" in runner._resume_locks  # held → survived pruning
+        assert len(runner._resume_locks) == 1  # every free lock evicted
+        held.release()

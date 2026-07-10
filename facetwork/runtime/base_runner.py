@@ -95,6 +95,12 @@ class BaseRunner:
     _ast_cache: dict[str, dict]
     _program_ast_cache: dict[str, dict]
 
+    # Per-runner cap on the workflow-keyed caches/locks. A long-lived runner
+    # processes an unbounded number of workflows, so these must be bounded or
+    # they leak (the AST dicts especially). Re-derivable, so oldest-first
+    # eviction is safe. Class attribute so tests can lower it.
+    _MAX_WORKFLOW_CACHE: int = 512
+
     @property
     def server_id(self) -> str:
         """Get the server's unique ID."""
@@ -459,6 +465,38 @@ class BaseRunner:
                 resume_fn()
         finally:
             lock.release()
+        # Opportunistically bound the workflow-keyed caches/locks (cheap no-op
+        # while under the cap) so a long-lived runner doesn't leak them.
+        self._prune_workflow_caches()
+
+    def _prune_workflow_caches(self) -> None:
+        """Bound the per-workflow caches so a long-lived runner doesn't leak
+        memory as it processes an unbounded number of workflows.
+
+        The AST caches are re-derivable via ``_load_workflow_ast``, so
+        oldest-first (insertion order) eviction is safe. Resume locks are only
+        evicted when FREE — a held lock is an in-flight resume and must survive
+        (evicting it would let a concurrent resume of the same workflow create a
+        second lock and run unserialized).
+        """
+        cap = self._MAX_WORKFLOW_CACHE
+        for cache in (self._ast_cache, self._program_ast_cache):
+            while len(cache) > cap:
+                try:
+                    cache.pop(next(iter(cache)), None)
+                except StopIteration:
+                    break
+        with self._resume_locks_lock:
+            if len(self._resume_locks) > cap:
+                for wid in list(self._resume_locks):
+                    if len(self._resume_locks) <= cap:
+                        break
+                    lock = self._resume_locks[wid]
+                    if lock.acquire(blocking=False):  # free → safe to drop
+                        lock.release()
+                        del self._resume_locks[wid]
+                        with self._resume_pending_lock:
+                            self._resume_pending.discard(wid)
 
     # =========================================================================
     # Runner terminal-state transition (guarded)
