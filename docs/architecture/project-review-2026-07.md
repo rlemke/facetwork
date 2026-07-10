@@ -240,7 +240,8 @@ stuck-step sweep, manual `repair_workflow`.
 > ownership fence (continue_step/resume skipped when dropped), and
 > `update_task_heartbeat` is now `expected_server_id`-gated so a zombie can't
 > renew the new owner's lease. Still open: **#7** (`_fw_continue` drain on a
-> RunnerService-only fleet), **#11**, **#12 poll jitter**, **#14 (rest)**.
+> RunnerService-only fleet), **#12 poll jitter**, **#14 (rest)**. **#11** (dead-letter
+> resurrection) confirmed + fixed 2026-07-09.
 
 1. **CONFIRMED — Default lease (5 min) < default execution timeout (15 min)
    with opt-in heartbeats ⇒ routine duplicate execution of slow handlers.**
@@ -308,11 +309,15 @@ stuck-step sweep, manual `repair_workflow`.
     `update_server_handled` (persistence protocol + Mongo `$set` + MemoryStore)
     that writes ONLY the `handled` field; the runner now calls it. +1 regression
     test (concurrent QUARANTINE survives).
-11. **SUSPECTED — Mongo-side dead-lettering can be resurrected by the sweep**:
-    `_dead_letter_overdue` flips the task without failing the owning step
-    (`tasks.py:524-540`); the sweep re-creates a fresh task with
-    `retry_count=0` for EventTransmit steps with no pending/running task
-    (`service.py:1646-1672`).
+11. ~~**SUSPECTED — Mongo-side dead-lettering can be resurrected by the sweep**~~
+    **CONFIRMED + FIXED 2026-07-09.** Verified: `_dead_letter_overdue` flips the
+    task to `dead_letter` without failing the owning step (it has no evaluator),
+    and `has_active_task_for_step` counts only pending/running — so the sweep saw
+    "no active task" for the still-EventTransmit step and re-created a fresh
+    `retry_count=0` task, looping forever. Added `has_dead_letter_task_for_step`
+    (protocol + Mongo count + MemoryStore default); the sweep now `fail_step`s
+    such a step (with AST → catch/error-propagation) and cascades, instead of
+    resurrecting it. +1 test.
 12. **CONFIRMED — Idle-fleet Mongo load** ~6-8 `find_one_and_update`s + a
     `get_server` per runner per 2 s; no jitter/adaptive backoff; no index on
     `lease_expires`/`next_retry_after`. **PARTIALLY FIXED 2026-07-09** — added

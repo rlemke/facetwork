@@ -3046,6 +3046,44 @@ class TestSweepStuckSteps:
         assert task.state == TaskState.PENDING
         assert task.runner_id == "runner-1"
 
+    def test_sweep_fails_dead_lettered_step_instead_of_resurrecting(
+        self, service, store, runner_def
+    ):
+        """Finding #11: a step whose task was dead-lettered (retries exhausted)
+        must NOT get a fresh retry_count=0 task. `_dead_letter_overdue` leaves
+        the step at EventTransmit, so the sweep used to see "no active task" and
+        resurrect it — an infinite loop. It now fails the step instead."""
+        from unittest.mock import patch
+
+        _, workflow_id = runner_def
+        step = self._make_event_step(workflow_id, facet_name="MyEventFacet")
+        store.save_step(step)
+        # The step's ONLY task is dead-lettered.
+        store.save_task(
+            TaskDefinition(
+                uuid=generate_id(), name="MyEventFacet", runner_id="runner-1",
+                workflow_id=workflow_id, flow_id="", step_id=step.id,
+                state=TaskState.DEAD_LETTER, task_list_name="default",
+            )
+        )
+
+        with (
+            patch.object(service._evaluator, "fail_step") as fail_step,
+            patch.object(service, "_resume_workflow_for_step") as resume,
+        ):
+            service._sweep_workflow_steps(workflow_id)
+
+        # The step was failed (with error propagation), not resurrected.
+        fail_step.assert_called_once()
+        assert fail_step.call_args.args[0] == step.id
+        resume.assert_called_once()
+        # No fresh PENDING task was created.
+        pending = [
+            t for t in store._tasks.values()
+            if t.step_id == step.id and t.state == TaskState.PENDING
+        ]
+        assert pending == []
+
     def test_maybe_sweep_skips_when_at_capacity(self, service, store, runner_def):
         """runtime.md §10.4: the sweep must yield to event-task claiming — when
         every worker slot is busy it must not run at all (it runs synchronously

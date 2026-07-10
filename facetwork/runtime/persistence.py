@@ -538,6 +538,19 @@ class PersistenceAPI(Protocol):
                 return True
         return False
 
+    def has_dead_letter_task_for_step(self, step_id: str) -> bool:
+        """Return True if ``step_id`` has a DEAD_LETTER task.
+
+        A dead-lettered task means the step's work was permanently abandoned
+        (retries exhausted). The stuck-step sweep uses this so it FAILS such a
+        step instead of resurrecting it with a fresh ``retry_count=0`` task —
+        which would otherwise loop forever, since ``_dead_letter_overdue`` flips
+        the task terminal but leaves the step at ``EventTransmit``.
+        """
+        from .entities import TaskState
+
+        return any(t.state == TaskState.DEAD_LETTER for t in self.get_tasks_by_step(step_id))
+
     def get_tasks_by_step(self, step_id: str) -> "Sequence[TaskDefinition]":
         """Get all tasks associated with a step. Default returns empty."""
         return []

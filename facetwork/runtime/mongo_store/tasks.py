@@ -76,6 +76,20 @@ class TaskMixin(_MixinBase):
             > 0
         )
 
+    def has_dead_letter_task_for_step(self, step_id: str) -> bool:
+        """Return True if ``step_id`` has a dead-lettered task (see base docstring).
+
+        Lets the sweep fail a permanently-abandoned step instead of resurrecting
+        it with a fresh retry_count=0 task.
+        """
+        return (
+            self._db.tasks.count_documents(
+                {"step_id": step_id, "state": "dead_letter"},
+                limit=1,
+            )
+            > 0
+        )
+
     def delete_pending_continuations_for_step(self, step_id: str, except_task_id: str = "") -> int:
         """Delete PENDING continuation tasks for ``step_id`` except the given one
         (claim-time continuation coalescing). See the base-class docstring."""

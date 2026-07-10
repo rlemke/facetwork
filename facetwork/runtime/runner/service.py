@@ -1376,6 +1376,38 @@ class RunnerService(BaseRunner):
                 continue  # block-level step, not an event facet
             if self._persistence.has_active_task_for_step(step.id):
                 continue
+
+            # A dead-lettered task means this step's work was permanently
+            # abandoned (retries exhausted). Do NOT recreate a fresh
+            # retry_count=0 task — _dead_letter_overdue leaves the step at
+            # EventTransmit, so resurrecting it here loops forever. Fail the step
+            # instead (with AST so catch/error-propagation runs) and cascade, so
+            # the workflow finishes in error rather than retrying endlessly.
+            if self._persistence.has_dead_letter_task_for_step(step.id):
+                if budget is not None:
+                    budget.consume()
+                try:
+                    self._evaluator.fail_step(
+                        step.id,
+                        "task dead-lettered (retries exhausted)",
+                        workflow_ast=self._ast_cache.get(workflow_id),
+                        program_ast=self._program_ast_cache.get(workflow_id),
+                    )
+                    self._resume_workflow_for_step(workflow_id, step.id)
+                    logger.warning(
+                        "Sweep failed dead-lettered step %s (%s) instead of resurrecting it",
+                        step.id[:12],
+                        facet_name,
+                    )
+                except Exception:
+                    logger.debug(
+                        "Sweep fail_step failed: workflow=%s step=%s",
+                        workflow_id[:12],
+                        step.id[:12],
+                        exc_info=True,
+                    )
+                continue
+
             if budget is not None:
                 budget.consume()
 
