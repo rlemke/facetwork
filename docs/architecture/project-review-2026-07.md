@@ -233,10 +233,16 @@ stuck-step sweep, manual `repair_workflow`.
 > e422c49). The two runner classes' shared logic is collapsed into
 > `BaseRunner` (improvement #5, root cause of #6/#8/#9) — extraction 31fed2b,
 > completed through 2b00b9e (`_load_workflow_ast`, `_emit_step_log`
-> harmonized). **#4** (lease-reclaim retry_count) and **#5** (CAS blind-replace clobber)
-> fixed 2026-07-09. Still open: **#2** (pre-save `continue_step`/`resume` not
-> ownership-fenced — only terminal writes are, via `_safe_save_task`), **#7**
-> (`_fw_continue` drain on a RunnerService-only fleet), **#10–#14**.
+> harmonized). **#4** (lease-reclaim retry_count), **#5** (CAS blind-replace
+> clobber), **#10** (handled-stats RMW), **#12** (claim-query indexes), **#13**
+> (storage partial-upload/error-masking), **#14a** (claim-regex escape) fixed
+> 2026-07-09. **#2 PARTIALLY FIXED** — the state-advancement fence: the terminal
+> COMPLETED write is now the ownership gate and `continue_step`/resume are
+> skipped when it's dropped (a reclaimed zombie no longer advances workflow
+> state). Still open in #2: `update_task_heartbeat` matches `{uuid, running}`
+> without server_id (a zombie can renew the new owner's lease). Still open:
+> **#7** (`_fw_continue` drain on a RunnerService-only fleet), **#11**, **#14
+> (rest)**.
 
 1. **CONFIRMED — Default lease (5 min) < default execution timeout (15 min)
    with opt-in heartbeats ⇒ routine duplicate execution of slow handlers.**
@@ -244,12 +250,15 @@ stuck-step sweep, manual `repair_workflow`.
    (`runner/service.py:781-790`); nothing auto-renews for an active future.
    Any non-heartbeating handler running 5–15 min is reclaimed while still
    running (`base.py:105`, `service.py:236-238`).
-2. **CONFIRMED — Post-handler step writes are not ownership-fenced.** Only the
-   terminal task write is gated; a zombie's `continue_step` +
-   `resume_workflow` run before the fenced save (`service.py:1184-1202`,
-   `registry_runner.py:1134-1144`), advancing blocks concurrently with the new
-   claimer. `update_task_heartbeat` matches `{uuid, state:"running"}` — a
-   zombie renews the new owner's lease (`mongo_store/servers.py:171-174`).
+2. **PARTIALLY FIXED 2026-07-09 — Post-handler step writes are not
+   ownership-fenced.** A zombie's `continue_step` + `resume_workflow` ran before
+   the fenced save, advancing blocks concurrently with the new claimer.
+   **FIXED:** the terminal COMPLETED write (via `save_task_if_owned`) is now the
+   FENCE — `_safe_save_task` returns whether it was accepted, and BOTH runners
+   skip `continue_step`/resume when it's dropped, so a reclaimed handler drops
+   its result instead of advancing workflow state. +2 tests. **STILL OPEN:**
+   `update_task_heartbeat` matches `{uuid, state:"running"}` with no server_id
+   (`mongo_store/servers.py`) — a zombie can still renew the new owner's lease.
 3. **CONFIRMED — RegistryRunner's handler-timeout path is an infinite,
    backoff-free retry loop that also leaks the capacity slot.** Timeout resets
    the task to pending with no `retry_count` increment and no

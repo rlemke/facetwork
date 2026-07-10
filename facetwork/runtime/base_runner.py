@@ -320,7 +320,7 @@ class BaseRunner:
     # Retry / dead-letter transitions (shared resilience contract)
     # =========================================================================
 
-    def _safe_save_task(self, task: Any, retries: int = 3) -> None:
+    def _safe_save_task(self, task: Any, retries: int = 3) -> bool:
         """Save task state with retries to survive transient DB failures.
 
         Terminal writes (``completed``/``failed``/``canceled``/``dead_letter``)
@@ -331,6 +331,12 @@ class BaseRunner:
         (heartbeat fields, retry resets that explicitly clear server_id) keep
         going through the unconditional path because they're orchestration
         and not the lease-reclaim race.
+
+        Returns ``True`` when the write was durably applied (or accepted by the
+        ownership gate), ``False`` when a gated terminal write was DROPPED
+        because the lease had been reclaimed, or when the write failed after all
+        retries. Callers finalizing a handler result use this to fence workflow
+        state advancement: a reclaimed zombie must not ``continue_step``/resume.
         """
         terminal_states = (
             TaskState.COMPLETED,
@@ -352,9 +358,9 @@ class BaseRunner:
                             task.name,
                             task.state,
                         )
-                else:
-                    self._persistence.save_task(task)
-                return
+                    return accepted
+                self._persistence.save_task(task)
+                return True
             except Exception:
                 if attempt < retries - 1:
                     logger.warning(
@@ -373,6 +379,7 @@ class BaseRunner:
                         label,
                         exc_info=True,
                     )
+        return False
 
     def _transition_for_retry(
         self,

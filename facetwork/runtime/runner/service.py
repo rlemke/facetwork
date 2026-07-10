@@ -869,15 +869,25 @@ class RunnerService(BaseRunner):
                 self._safe_save_task(task)
                 return
 
-            # Mark the task COMPLETED *before* continue/resume. The resume
-            # cascades to the terminal-state check (_has_non_terminal_tasks),
-            # which must see THIS event's task as terminal — else the runner
-            # can't be completed on this cycle and only finishes on a later
-            # sweep. The handler produced a result, so the task IS done; if the
-            # resume then fails, the sweep re-drives the workflow.
+            # Mark the task COMPLETED *before* continue/resume. This terminal
+            # write is the OWNERSHIP FENCE: it goes through save_task_if_owned,
+            # which succeeds only if this runner still owns the task. If the
+            # lease was reclaimed under a slow handler, the write is dropped and
+            # we must NOT continue_step/resume — the new owner will (re)produce
+            # the result. Advancing workflow state here would race the reclaimer.
+            # (It also lands before resume so the terminal-state check sees THIS
+            # task terminal and can complete the runner on this cycle.)
             task.state = TaskState.COMPLETED
             task.updated = _current_time_ms()
-            self._safe_save_task(task)
+            if not self._safe_save_task(task):
+                logger.warning(
+                    "Not advancing workflow for task %s (step=%s): lease was reclaimed "
+                    "or the completion write failed — dropping this runner's result — %s",
+                    task.uuid,
+                    task.step_id,
+                    self._task_label(task.uuid),
+                )
+                return
 
             # Continue the step and resume the workflow.
             # Uses resume_step (O(depth)) instead of resume (O(all steps)).

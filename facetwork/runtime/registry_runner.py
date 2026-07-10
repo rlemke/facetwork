@@ -1071,20 +1071,28 @@ class RegistryRunner(BaseRunner):
                 facet_name=task.name,
             )
 
-            # Continue the step with the result
-            self._evaluator.continue_step(task.step_id, result)
-
-            # Mark the task COMPLETED *before* resuming: the resume cascades to
-            # the terminal-state check (_has_non_terminal_tasks), which must see
-            # this event's own task as terminal — otherwise the runner can't be
-            # completed on this cycle and only finishes on a later sweep.
+            # Mark the task COMPLETED *first* — this ownership-gated terminal
+            # write (save_task_if_owned) is the FENCE. It succeeds only if this
+            # runner still owns the task; if the lease was reclaimed under a slow
+            # handler, the write is dropped and we must NOT continue_step/resume,
+            # or we would advance workflow state concurrently with the reclaimer.
+            # (It also lands before resume so the terminal-state check sees THIS
+            # task terminal and can complete the runner on this cycle.)
             task.state = TaskState.COMPLETED
             task.updated = _current_time_ms()
-            self._safe_save_task(task)
+            if not self._safe_save_task(task):
+                logger.warning(
+                    "Not advancing workflow for task %s (step=%s): lease was reclaimed "
+                    "or the completion write failed — dropping this runner's result",
+                    task.uuid,
+                    task.step_id,
+                )
+                return
 
-            # Resume the workflow — process_single_step handles the
-            # continued step and cascades up to parent blocks.
-            # Falls back to full resume() for complex inline dispatch.
+            # We own the completion → apply the result and resume.
+            # process_single_step handles the continued step and cascades up to
+            # parent blocks; falls back to full resume() for complex dispatch.
+            self._evaluator.continue_step(task.step_id, result)
             self._resume_workflow(task.workflow_id, task.runner_id)
 
             logger.info(

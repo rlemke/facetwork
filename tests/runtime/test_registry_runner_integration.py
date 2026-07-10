@@ -37,6 +37,7 @@ from facetwork.runtime import (
 from facetwork.runtime.entities import (
     RunnerDefinition,
     RunnerState,
+    TaskDefinition,
     TaskState,
     WorkflowDefinition,
 )
@@ -1501,3 +1502,63 @@ class TestRegistryRunnerConcurrentResumeLock:
         if lock:
             assert lock.acquire(blocking=False), "Lock should be available after resume"
             lock.release()
+
+
+class TestOwnershipFence:
+    """Finding #2: a handler whose lease was reclaimed must NOT advance workflow
+    state. The ownership-gated terminal write (save_task_if_owned) is the fence;
+    when it's dropped, continue_step/resume are skipped."""
+
+    def test_safe_save_task_returns_false_when_reclaimed(self, store, evaluator):
+        """The fence primitive: a gated terminal write returns False (dropped)
+        when the DB shows the task owned by a different server, True when owned."""
+        import dataclasses
+
+        runner = _make_runner(store, evaluator)
+        owned = TaskDefinition(
+            uuid=generate_id(), name="ns.AddOne", runner_id="r1", workflow_id="w1",
+            flow_id="f1", step_id="s1", state=TaskState.RUNNING,
+            task_list_name="default", server_id=runner.server_id,
+        )
+        store.save_task(owned)
+        # Still owned by us → terminal write accepted.
+        completed = dataclasses.replace(owned, state=TaskState.COMPLETED)
+        assert runner._safe_save_task(completed) is True
+
+        # Another server reclaims the lease; our terminal write is dropped.
+        store.save_task(dataclasses.replace(owned, server_id="other-server"))
+        completed2 = dataclasses.replace(owned, state=TaskState.COMPLETED)
+        assert runner._safe_save_task(completed2) is False
+        assert store.get_task(owned.uuid).server_id == "other-server"
+
+    def test_reclaimed_event_does_not_advance_workflow(self, store, evaluator):
+        """End-to-end: finalizing a handler result on a reclaimed task skips
+        continue_step + resume, and does not overwrite the reclaimer's task."""
+        import dataclasses
+        from unittest.mock import MagicMock, patch
+
+        runner = _make_runner(store, evaluator)
+        runner._dispatcher = MagicMock()
+        runner._dispatcher.can_dispatch.return_value = True
+        runner._dispatcher.get_timeout_ms.return_value = 0
+        runner._dispatcher.dispatch.return_value = {"output": 2}
+
+        # Task claimed by THIS runner in memory, but the DB shows it reclaimed.
+        in_mem = TaskDefinition(
+            uuid=generate_id(), name="ns.AddOne", runner_id="r1", workflow_id="w1",
+            flow_id="f1", step_id="s1", state=TaskState.RUNNING,
+            task_list_name="default", server_id=runner.server_id,
+        )
+        store.save_task(dataclasses.replace(in_mem, server_id="other-server"))
+
+        with (
+            patch.object(runner._evaluator, "continue_step") as cs,
+            patch.object(runner, "_resume_workflow") as rw,
+        ):
+            runner._process_event(in_mem)
+
+        cs.assert_not_called()
+        rw.assert_not_called()
+        after = store.get_task(in_mem.uuid)
+        assert after.server_id == "other-server"
+        assert after.state != TaskState.COMPLETED
