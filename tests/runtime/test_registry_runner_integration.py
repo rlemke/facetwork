@@ -1620,3 +1620,63 @@ class TestPollJitter:
         runner = _make_runner(store, evaluator)
         runner._POLL_JITTER = 0
         assert runner._poll_wait_seconds(2.0) == 2.0
+
+
+class TestCircuitBreaker:
+    """RegistryRunner now has per-handler circuit breakers (parity with
+    RunnerService): a persistently-failing facet trips OPEN and stops being
+    claimed until its half-open probe window."""
+
+    def test_open_circuit_excludes_facet_from_claims(self, store, evaluator):
+        from unittest.mock import patch
+
+        runner = _make_runner(store, evaluator)
+        runner._registered_names = ["ns.A", "ns.B"]
+        for _ in range(5):  # default failure_threshold
+            runner._circuit_breakers.record_failure("ns.A")
+        assert runner._circuit_breakers.is_allowed("ns.A") is False
+        assert runner._circuit_breakers.is_allowed("ns.B") is True
+
+        calls = []
+
+        def fake_claim(task_names, task_list, server_id):
+            calls.append(list(task_names))
+            return None
+
+        with (
+            patch.object(runner, "_maybe_refresh_registry"),
+            patch.object(store, "claim_task", side_effect=fake_claim),
+        ):
+            runner.poll_once()
+
+        assert all("ns.A" not in c for c in calls)  # tripped facet never claimed
+        assert any("ns.B" in c for c in calls)  # healthy facet still claimed
+
+    def test_successful_event_records_circuit_success(self, store, evaluator, tmp_path):
+        from unittest.mock import patch
+
+        _register_file_handler(store, tmp_path, "handlers.AddOne", ADDONE_HANDLER_CODE)
+        runner = _make_runner(store, evaluator)
+        result = evaluator.execute(
+            ADDONE_WORKFLOW_AST, inputs={"x": 1}, program_ast=ADDONE_PROGRAM_AST
+        )
+        runner.cache_workflow_ast(
+            result.workflow_id, ADDONE_WORKFLOW_AST, program_ast=ADDONE_PROGRAM_AST
+        )
+        with patch.object(runner._circuit_breakers, "record_success") as rec:
+            runner.poll_once()
+        rec.assert_called_once()
+
+    def test_failing_event_records_circuit_failure(self, store, evaluator, tmp_path):
+        from unittest.mock import patch
+
+        _register_file_handler(
+            store, tmp_path, "handlers.AddOne",
+            "def handle(payload):\n    raise ValueError('boom')\n",
+        )
+        runner = _make_runner(store, evaluator)
+        evaluator.execute(ADDONE_WORKFLOW_AST, inputs={"x": 1}, program_ast=ADDONE_PROGRAM_AST)
+        _force_terminal_failure(store)
+        with patch.object(runner._circuit_breakers, "record_failure") as rec:
+            runner.poll_once()
+        rec.assert_called_once()

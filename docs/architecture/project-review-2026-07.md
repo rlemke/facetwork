@@ -348,9 +348,11 @@ stuck-step sweep, manual `repair_workflow`.
     snapshot-order race~~ **FIXED 2026-07-09** (snapshot memory BEFORE the DB
     query, and re-verify each orphaned-DB task is still RUNNING-for-us with no
     future before resetting — so a task completed/claimed between the two
-    snapshots isn't spuriously reset and re-run; +1 test); circuit breakers only
-    in `RunnerService` (feature parity — RegistryRunner lacks the feature; not a
-    bug).
+    snapshots isn't spuriously reset and re-run; +1 test); ~~circuit breakers only
+    in `RunnerService`~~ **PORTED to RegistryRunner 2026-07-09** (per-handler
+    `CircuitBreakerRegistry`: claim loops skip OPEN facets via `is_allowed`,
+    `record_success`/`record_failure` on the event success / handler-exception /
+    timeout paths; +3 tests). **All of #14 resolved.**
 
 ### Improvements (prioritized)
 

@@ -139,6 +139,13 @@ class RegistryRunner(BaseRunner):
         self._last_sweep: int = 0
         self._sweep_interval_ms: int = 5000
 
+        # Per-handler circuit breakers (parity with RunnerService): stop claiming
+        # a facet whose handler keeps failing so a broken handler can't burn the
+        # poll loop re-claiming + re-failing; a half-open probe lets it recover.
+        from .circuit_breaker import CircuitBreakerRegistry
+
+        self._circuit_breakers = CircuitBreakerRegistry()
+
     # server_id / is_running: inherited from BaseRunner.
 
     # =========================================================================
@@ -331,10 +338,12 @@ class RegistryRunner(BaseRunner):
 
         dispatched = 0
 
-        # Claim handler tasks
+        # Claim handler tasks — skip facets whose circuit breaker is OPEN so a
+        # persistently-failing handler stops being re-claimed (and re-failed)
+        # until its half-open probe window.
         if self._registered_names:
-            task_names = list(self._registered_names)
-            while capacity > 0:
+            task_names = [n for n in self._registered_names if self._circuit_breakers.is_allowed(n)]
+            while task_names and capacity > 0:
                 task = self._persistence.claim_task(
                     task_names=task_names,
                     task_list=self._poll_task_lists(),
@@ -445,10 +454,12 @@ class RegistryRunner(BaseRunner):
 
         dispatched = 0
 
-        # Claim handler tasks
+        # Claim handler tasks — skip facets whose circuit breaker is OPEN so a
+        # persistently-failing handler stops being re-claimed (and re-failed)
+        # until its half-open probe window.
         if self._registered_names:
-            task_names = list(self._registered_names)
-            while capacity > 0:
+            task_names = [n for n in self._registered_names if self._circuit_breakers.is_allowed(n)]
+            while task_names and capacity > 0:
                 task = self._persistence.claim_task(
                     task_names=task_names,
                     task_list=self._poll_task_lists(),
@@ -992,6 +1003,8 @@ class RegistryRunner(BaseRunner):
                                     task.retry_count,
                                     task.max_retries,
                                 )
+                            # A timeout is a handler-health failure too.
+                            self._circuit_breakers.record_failure(task.name)
                             return
                     finally:
                         # wait=False: never block this poll worker on a runaway
@@ -1097,6 +1110,7 @@ class RegistryRunner(BaseRunner):
             # parent blocks; falls back to full resume() for complex dispatch.
             self._evaluator.continue_step(task.step_id, result)
             self._resume_workflow(task.workflow_id, task.runner_id)
+            self._circuit_breakers.record_success(task.name)
 
             logger.info(
                 "Processed event task %s (name=%s, step=%s)",
@@ -1169,6 +1183,10 @@ class RegistryRunner(BaseRunner):
                     task.step_id,
                     exc,
                 )
+            # A handler-execution failure (retry or dead-letter) counts toward
+            # the facet's circuit breaker — enough of them OPEN it so this runner
+            # stops re-claiming the facet until the half-open probe.
+            self._circuit_breakers.record_failure(task.name)
 
     # =========================================================================
     # Workflow Resume
