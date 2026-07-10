@@ -379,14 +379,43 @@ class _WebHDFSWriteStream:
     def __enter__(self):
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            # The writer body raised — discard the buffer instead of finalizing
+            # a partial/truncated object as if it were complete. Object stores
+            # have no partial-write semantics, so close() would upload whatever
+            # was buffered so far and a consumer would see a "complete" object.
+            self._buffer.close()
+            logger.warning(
+                "HDFS upload ABORTED for %s — writer raised %s; partial object not uploaded",
+                self._hdfs_path,
+                exc_type.__name__,
+            )
+            return False  # propagate the original exception
         self.close()
+        return False
 
 
 def _s3_split(path: str) -> tuple[str, str]:
     """Split an ``s3://bucket/key/...`` URI into ``(bucket, key)``."""
     parsed = urlparse(path)
     return parsed.netloc, parsed.path.lstrip("/")
+
+
+def _s3_is_not_found(err: Exception) -> bool:
+    """Whether a botocore error means the object genuinely does not exist.
+
+    Only a real 404 / NoSuchKey should be read as "absent". An auth failure
+    (403/AccessDenied) or throttling (503/SlowDown) must NOT be masked as
+    "not found" — a caller checking ``exists()`` before writing could then
+    overwrite, or before reading could assume data is gone.
+    """
+    response = getattr(err, "response", None)
+    if not isinstance(response, dict):
+        return False
+    code = response.get("Error", {}).get("Code", "")
+    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    return code in ("404", "NoSuchKey", "NotFound") or status == 404
 
 
 class _S3WriteStream:
@@ -432,8 +461,22 @@ class _S3WriteStream:
     def __enter__(self):
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            # The writer body raised — discard the buffer instead of finalizing
+            # a partial/truncated object as if it were complete (S3 has no
+            # partial-write semantics: close() PUTs whatever is buffered and a
+            # consumer would see a "complete" object).
+            self._buffer.close()
+            logger.warning(
+                "S3 upload ABORTED for s3://%s/%s — writer raised %s; partial object not uploaded",
+                self._bucket,
+                self._key,
+                exc_type.__name__,
+            )
+            return False  # propagate the original exception
         self.close()
+        return False
 
 
 class S3StorageBackend:
@@ -482,8 +525,10 @@ class S3StorageBackend:
         try:
             self._client.head_object(Bucket=bucket, Key=key)
             return True
-        except _BotoClientError:
-            return self.isdir(path)
+        except _BotoClientError as e:
+            if _s3_is_not_found(e):
+                return self.isdir(path)
+            raise  # auth/throttle/other — do not mask a real error as "absent"
 
     def open(self, path: str, mode: str = "r") -> IO:
         bucket, key = self._split(path)
@@ -510,8 +555,10 @@ class S3StorageBackend:
         try:
             self._client.head_object(Bucket=bucket, Key=key)
             return True
-        except _BotoClientError:
-            return False
+        except _BotoClientError as e:
+            if _s3_is_not_found(e):
+                return False
+            raise  # auth/throttle/other — do not mask a real error as "absent"
 
     def isdir(self, path: str) -> bool:
         bucket, key = self._split(path)

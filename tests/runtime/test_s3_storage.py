@@ -23,11 +23,29 @@ import pytest
 
 boto3 = pytest.importorskip("boto3")
 
+from unittest.mock import MagicMock  # noqa: E402
+
 from facetwork.runtime.storage import (  # noqa: E402
     S3StorageBackend,
+    _BotoClientError,
+    _s3_is_not_found,
+    _S3WriteStream,
+    _WebHDFSWriteStream,
     get_storage_backend,
     localize,
 )
+
+
+def _client_error(code: str, status: int) -> Exception:
+    """Build a botocore-compatible ClientError with the given code/status."""
+    resp = {"Error": {"Code": code}, "ResponseMetadata": {"HTTPStatusCode": status}}
+    try:
+        err = _BotoClientError(resp, "HeadObject")
+    except TypeError:  # fallback when botocore is absent (_BotoClientError is Exception)
+        err = _BotoClientError(resp)
+    if not getattr(err, "response", None):
+        err.response = resp
+    return err
 
 _LIVE = bool(os.environ.get("FW_S3_ENDPOINT"))
 _live_only = pytest.mark.skipif(not _LIVE, reason="set FW_S3_ENDPOINT to run live S3/MinIO tests")
@@ -49,6 +67,63 @@ def test_path_helpers():
     assert b.dirname("s3://bkt/a/b/c.json") == "s3://bkt/a/b"
     assert b.dirname("s3://bkt/top") == "s3://bkt"
     assert b.basename("s3://bkt/a/b/c.json") == "c.json"
+
+
+# --- write-stream abort + error classification (no network) -------------------
+
+
+def test_s3_write_stream_aborts_partial_object_on_exception():
+    """Finding #13: if the writer body raises, the stream must NOT finalize a
+    partial object — object stores have no partial-write semantics, so
+    close()'ing would PUT a truncated object that consumers see as complete."""
+    backend = MagicMock()
+    with pytest.raises(RuntimeError):
+        with _S3WriteStream(backend, "bkt", "key") as w:
+            w.write(b"partial data")
+            raise RuntimeError("handler died mid-write")
+    backend._client.put_object.assert_not_called()
+
+
+def test_s3_write_stream_finalizes_on_clean_exit():
+    """A clean exit still uploads the buffered object exactly once."""
+    backend = MagicMock()
+    with _S3WriteStream(backend, "bkt", "key") as w:
+        w.write(b"complete data")
+    backend._client.put_object.assert_called_once()
+
+
+def test_hdfs_write_stream_aborts_partial_object_on_exception(monkeypatch):
+    """Same abort-on-exception contract for the WebHDFS write stream."""
+    import facetwork.runtime.storage as storage_mod
+
+    put = MagicMock()
+    monkeypatch.setattr(storage_mod, "_requests", MagicMock(put=put))
+    with pytest.raises(RuntimeError):
+        with _WebHDFSWriteStream(MagicMock(), "/tmp/out.bin") as w:
+            w.write(b"partial")
+            raise RuntimeError("boom")
+    put.assert_not_called()
+
+
+def test_s3_is_not_found_only_true_for_404():
+    assert _s3_is_not_found(_client_error("404", 404)) is True
+    assert _s3_is_not_found(_client_error("NoSuchKey", 404)) is True
+    # Auth / throttle / unrelated errors must NOT read as "absent".
+    assert _s3_is_not_found(_client_error("403", 403)) is False
+    assert _s3_is_not_found(_client_error("SlowDown", 503)) is False
+    assert _s3_is_not_found(ValueError("not a client error")) is False
+
+
+def test_isfile_reraises_non_404_error():
+    """An auth/throttle error must not be masked as 'file absent'."""
+    backend = S3StorageBackend.__new__(S3StorageBackend)
+    backend._client = MagicMock()
+    backend._client.head_object.side_effect = _client_error("403", 403)
+    with pytest.raises(_BotoClientError):
+        backend.isfile("s3://bkt/key")
+    # A genuine 404 is still reported as absent.
+    backend._client.head_object.side_effect = _client_error("404", 404)
+    assert backend.isfile("s3://bkt/key") is False
 
 
 # --- live round-trip (MinIO) --------------------------------------------------

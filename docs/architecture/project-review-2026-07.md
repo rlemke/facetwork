@@ -307,12 +307,15 @@ stuck-step sweep, manual `repair_workflow`.
 12. **CONFIRMED — Idle-fleet Mongo load** ~6-8 `find_one_and_update`s + a
     `get_server` per runner per 2 s; no jitter/adaptive backoff; no index on
     `lease_expires`/`next_retry_after`.
-13. **CONFIRMED — Storage streams finalize partial data and mask errors.**
-    `_S3WriteStream.__exit__`/`_WebHDFSWriteStream.__exit__` unconditionally
-    `close()` — uploading the partial buffer even when the body raised
-    (`storage.py:432-436`, `379-383`); `exists()`/`isfile()` swallow every
-    `ClientError` (auth failure/throttling ⇒ "not found",
-    `storage.py:480-486`, `508-514`).
+13. ~~**CONFIRMED — Storage streams finalize partial data and mask errors.**~~
+    **FIXED 2026-07-09.** `_S3WriteStream.__exit__`/`_WebHDFSWriteStream.__exit__`
+    unconditionally `close()`d — uploading the partial buffer even when the body
+    raised (object stores have no partial-write semantics, so a consumer saw a
+    "complete" truncated object). Both now take `(exc_type, …)` and ABORT
+    (discard buffer + warn + propagate) when an exception is in flight, only
+    finalizing on clean exit. `exists()`/`isfile()` swallowed every
+    `ClientError` (auth/throttle ⇒ "not found"); they now re-raise unless
+    `_s3_is_not_found` confirms a real 404/NoSuchKey. +5 tests.
 14. **Minor, CONFIRMED** — ~~task names interpolated unescaped into the claim
     regex (`tasks.py:163`)~~ **FIXED 2026-07-09** (`re.escape` the literal prefix
     — a "." in a qualified name was a wildcard, and a "("/"$"/"+" could make
