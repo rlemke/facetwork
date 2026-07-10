@@ -239,9 +239,10 @@ stuck-step sweep, manual `repair_workflow`.
 > 2026-07-09. **#2 FIXED** (both parts) — the terminal COMPLETED write is the
 > ownership fence (continue_step/resume skipped when dropped), and
 > `update_task_heartbeat` is now `expected_server_id`-gated so a zombie can't
-> renew the new owner's lease. Still open: **#7** (`_fw_continue` drain on a
-> RunnerService-only fleet), **#14 (rest)**. **#11** (dead-letter resurrection)
-> confirmed + fixed and **#12** (indexes + poll jitter) fixed 2026-07-09.
+> renew the new owner's lease. **#7** (`_fw_continue` drain on a
+> RunnerService-only fleet), **#11** (dead-letter resurrection), **#12**
+> (indexes + poll jitter) and **#14** all fixed 2026-07-09 — every review
+> finding is now resolved.
 
 1. **CONFIRMED — Default lease (5 min) < default execution timeout (15 min)
    with opt-in heartbeats ⇒ routine duplicate execution of slow handlers.**
@@ -291,10 +292,15 @@ stuck-step sweep, manual `repair_workflow`.
    marks the task FAILED permanently on first exception
    (`registry_runner.py:1153-1176`). Continuations: any exception permanently
    fails the `_fw_continue` task (`registry_runner.py:659-697`).
-7. **CONFIRMED — On a `RunnerService`-only fleet, nobody drains `_fw_continue`
-   at all** (`service.py:459-527` claims event names + `fw:*` only, while the
-   evaluator still enqueues continuations) — cross-server cascades ride the
-   5-minute sweep, and pending continuation rows accumulate unboundedly.
+7. ~~**CONFIRMED — On a `RunnerService`-only fleet, nobody drains `_fw_continue`
+   at all**~~ **FIXED 2026-07-09.** RunnerService only claimed event + `fw:*`
+   while the evaluator kept enqueuing continuations, so on a RunnerService-only
+   fleet cross-server cascades rode the 5-min sweep and `_fw_continue` rows piled
+   up. Lifted `_process_continuation` to `BaseRunner` (dispatch via a new
+   `_continuation_dispatcher` attr — RegistryRunner uses its RegistryDispatcher,
+   RunnerService a ToolRegistry→HandlerDispatcher adapter) and added the
+   continuation-drain loop to `RunnerService._poll_cycle`, gated by
+   `polls_shared_continuations()` (same as RegistryRunner). +6 tests.
 8. **CONFIRMED — `RunnerService`'s stuck-step sweep violates the spec's
    MUSTs** (`docs/reference/runtime.md` §10.4): no capacity check, no
    step/wall-clock cap, runs synchronously on the poll thread

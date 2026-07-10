@@ -1868,8 +1868,9 @@ workflow TaskWF(x: Long) => (result: Long) andThen {
         mock_store.save_task.return_value = None
         mock_store.get_pending_tasks.return_value = [task]
         mock_store.get_steps_by_state.return_value = []
-        # claim_task called: 1) resume (None), 2) builtin (task), 3) builtin (None)
-        mock_store.claim_task.side_effect = [None, task, None]
+        # claim_task called: 1) resume (None), 2) builtin (task), 3) builtin
+        # (None), 4) continuation drain (None).
+        mock_store.claim_task.side_effect = [None, task, None, None]
         real_store = MemoryStore()
         real_evaluator = Evaluator(persistence=real_store, telemetry=Telemetry(enabled=False))
 
@@ -1933,8 +1934,9 @@ workflow TaskWF(x: Long) => (result: Long) andThen {
         )
         mock_store.get_pending_tasks.return_value = [task]
         mock_store.get_steps_by_state.return_value = []
-        # claim order: resume (None), builtin (task), builtin (None)
-        mock_store.claim_task.side_effect = [None, task, None]
+        # claim order: resume (None), builtin (task), builtin (None),
+        # continuation drain (None)
+        mock_store.claim_task.side_effect = [None, task, None, None]
 
         real_evaluator = Evaluator(persistence=MemoryStore(), telemetry=Telemetry(enabled=False))
         svc = RunnerService(mock_store, real_evaluator, config, ToolRegistry())
@@ -3556,3 +3558,52 @@ class TestSweepNameResolution:
         ):
             # Must not raise — outer try/except absorbs.
             service._maybe_sweep_stuck_steps()
+
+
+class TestContinuationDrain:
+    """Finding #7: RunnerService must also drain the shared _fw_continue
+    backlog, so a RunnerService-only fleet doesn't leave continuations
+    unprocessed (cross-server cascades stalling on the sweep + rows piling up)."""
+
+    def _continuation_task(self):
+        from facetwork.runtime.continuation import (
+            CONTINUATION_TASK_LIST,
+            CONTINUATION_TASK_NAME,
+        )
+
+        return TaskDefinition(
+            uuid=generate_id(), name=CONTINUATION_TASK_NAME, runner_id="r",
+            workflow_id="wf", flow_id="", step_id="s", state=TaskState.PENDING,
+            task_list_name=CONTINUATION_TASK_LIST,
+        )
+
+    def test_poll_cycle_drains_continuations(self, store, evaluator, registry):
+        """A pending _fw_continue task is claimed and processed by _poll_cycle."""
+        svc = RunnerService(store, evaluator, RunnerConfig(), registry)
+        cont = self._continuation_task()
+        store.save_task(cont)
+        with patch.object(svc, "_process_continuation") as proc:
+            svc._poll_cycle()
+        proc.assert_called_once()
+        assert proc.call_args.args[0].uuid == cont.uuid
+
+    def test_poll_cycle_skips_continuations_when_mode_off(self, store, evaluator, registry):
+        """continuation_mode='off' (handler-only runner) leaves the backlog to
+        the ffl-runner tier — RunnerService must not claim continuations."""
+        svc = RunnerService(store, evaluator, RunnerConfig(continuation_mode="off"), registry)
+        store.save_task(self._continuation_task())
+        with patch.object(svc, "_process_continuation") as proc:
+            svc._poll_cycle()
+        proc.assert_not_called()
+
+    def test_tool_registry_dispatcher_adapts_can_dispatch_and_dispatch(self):
+        """The ToolRegistry→HandlerDispatcher adapter used for inline continuation
+        dispatch resolves qualified then short names."""
+        from facetwork.runtime.runner.service import _ToolRegistryDispatcher
+
+        reg = ToolRegistry()
+        reg.register("Compute", lambda p: {"out": p["x"] * 2})
+        d = _ToolRegistryDispatcher(reg)
+        assert d.can_dispatch("ns.Compute") is True   # short-name fallback
+        assert d.can_dispatch("ns.Missing") is False
+        assert d.dispatch("ns.Compute", {"x": 3}) == {"out": 6}

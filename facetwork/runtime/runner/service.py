@@ -154,6 +154,28 @@ class _SweepBudget:
         self.remaining -= 1
 
 
+class _ToolRegistryDispatcher:
+    """Adapts a ``ToolRegistry`` to the ``HandlerDispatcher`` protocol so
+    ``BaseRunner._process_continuation`` can dispatch inline on a RunnerService
+    (which uses a ToolRegistry, not a RegistryDispatcher). Mirrors the
+    qualified-then-short-name lookup RunnerService uses elsewhere.
+    """
+
+    def __init__(self, registry: ToolRegistry) -> None:
+        self._registry = registry
+
+    def can_dispatch(self, facet_name: str) -> bool:
+        return self._registry.has_handler(facet_name) or self._registry.has_handler(
+            facet_name.rsplit(".", 1)[-1]
+        )
+
+    def dispatch(self, facet_name: str, payload: dict) -> dict | None:
+        result = self._registry.handle(facet_name, payload)
+        if result is None and "." in facet_name:
+            result = self._registry.handle(facet_name.rsplit(".", 1)[-1], payload)
+        return result
+
+
 @dataclass
 class RunnerConfig(BaseRunnerConfig):
     """Configuration for the RunnerService.
@@ -267,6 +289,11 @@ class RunnerService(BaseRunner):
         from facetwork.runtime.circuit_breaker import CircuitBreakerRegistry
 
         self._circuit_breakers = CircuitBreakerRegistry()
+
+        # Inline dispatcher used by BaseRunner._process_continuation while
+        # draining the shared _fw_continue backlog (adapts the ToolRegistry to
+        # the HandlerDispatcher protocol).
+        self._continuation_dispatcher = _ToolRegistryDispatcher(self._tool_registry)
 
         # Register built-in task handler
         self._tool_registry.register("fw:execute", self._handle_execute_workflow)
@@ -467,6 +494,26 @@ class RunnerService(BaseRunner):
                 if task is None:
                     break
                 self._submit_task(task)
+                capacity -= 1
+                dispatched += 1
+
+        # Drain the shared _fw_continue backlog. RegistryRunner does this too;
+        # without it a RunnerService-only fleet never processes continuations, so
+        # cross-server cascades stall until the 5-min sweep and pending
+        # continuation rows accumulate unboundedly. Skipped for handler-only
+        # runners (continuation_mode off) — the ffl-runner tier owns the backlog.
+        if self._config.polls_shared_continuations():
+            from ..continuation import CONTINUATION_TASK_LIST, CONTINUATION_TASK_NAME
+
+            while capacity > 0:
+                task = self._persistence.claim_task(
+                    task_names=[CONTINUATION_TASK_NAME],
+                    task_list=CONTINUATION_TASK_LIST,
+                    server_id=self._server_id,
+                )
+                if task is None:
+                    break
+                self._submit_continuation_task(task)
                 capacity -= 1
                 dispatched += 1
 
@@ -752,6 +799,10 @@ class RunnerService(BaseRunner):
     def _submit_task(self, task: Any) -> None:
         """Submit a task for processing in the thread pool."""
         self._submit(self._process_task, task, task.uuid)
+
+    def _submit_continuation_task(self, task: Any) -> None:
+        """Submit a continuation task (_fw_continue) for processing."""
+        self._submit(self._process_continuation, task, task.uuid)
 
     def _submit_resume_task(self, task: Any) -> None:
         """Submit a resume task for processing in the thread pool."""

@@ -131,6 +131,8 @@ class RegistryRunner(BaseRunner):
             persistence=persistence,
             topics=self._config.topics if self._config.topics else None,
         )
+        # BaseRunner._process_continuation dispatches inline through this.
+        self._continuation_dispatcher = self._dispatcher
 
         # Registry-specific state (delegate module cache to dispatcher)
         self._module_cache = self._dispatcher.module_cache
@@ -514,109 +516,8 @@ class RegistryRunner(BaseRunner):
         with self._active_lock:
             self._active_futures.append((future, task.uuid, _current_time_ms()))
 
-    def _process_continuation(self, task: Any) -> None:
-        """Process a continuation task by running process_single_step.
-
-        Continuation tasks notify a step that one of its children has
-        progressed.  The step is re-evaluated, which may complete a
-        foreach block, advance a dependency graph, or generate further
-        continuation events.
-        """
-        step_id = task.data.get("step_id") if task.data else task.step_id
-        workflow_id = task.workflow_id
-
-        # Runtime-version gate: if the target step was stamped with a runtime
-        # version this build can't safely process, RELEASE the continuation
-        # (back to pending, with a short backoff) so a compatible runner claims
-        # it — rather than consuming it to a no-op and stranding the step. No-op
-        # today (every step is STEP_RUNTIME_VERSION). See
-        # docs/architecture/ffl-runner-orchestration-tier.md §3.3.
-        if step_id:
-            from .types import STEP_RUNTIME_VERSION, is_runtime_compatible
-
-            _gate_step = self._persistence.get_step(step_id)
-            _runtime_ver = getattr(getattr(_gate_step, "version", None), "runtime_version", None)
-            if _gate_step is not None and not is_runtime_compatible(_runtime_ver):
-                task.state = TaskState.PENDING
-                task.server_id = ""
-                task.next_retry_after = _current_time_ms() + 5000
-                task.updated = _current_time_ms()
-                self._persistence.save_task(task)
-                logger.warning(
-                    "Continuation for step %s has incompatible runtime_version "
-                    "%r (this build: %s) — released for a compatible runner",
-                    step_id,
-                    _runtime_ver,
-                    STEP_RUNTIME_VERSION,
-                )
-                return
-
-        # Claim-time coalescing: this continuation re-evaluates the step against
-        # the current state of all its children, which satisfies every other
-        # continuation already queued for it. Drop those redundant siblings so
-        # they aren't each claimed and processed to a no-op (the fan-out storm).
-        # Continuations enqueued AFTER this point reflect genuinely newer child
-        # events and are left untouched, so nothing is lost.
-        if step_id:
-            try:
-                coalesced = self._persistence.delete_pending_continuations_for_step(
-                    step_id, except_task_id=task.uuid
-                )
-                if coalesced:
-                    logger.debug(
-                        "Coalesced %d redundant continuation(s) for step %s",
-                        coalesced,
-                        step_id,
-                    )
-            except Exception:
-                logger.debug("continuation sibling-delete failed", exc_info=True)
-
-        try:
-            workflow_ast = self._ast_cache.get(workflow_id)
-            if workflow_ast is None:
-                workflow_ast = self._load_workflow_ast(workflow_id)
-                if workflow_ast:
-                    self._ast_cache[workflow_id] = workflow_ast
-
-            if workflow_ast is None:
-                logger.warning(
-                    "No AST for continuation task (workflow=%s step=%s), skipping",
-                    workflow_id,
-                    step_id,
-                )
-                task.state = TaskState.FAILED
-                task.error = {"message": "No workflow AST available"}
-                task.updated = _current_time_ms()
-                self._persistence.save_task(task)
-                return
-
-            program_ast = self._program_ast_cache.get(workflow_id)
-            result = self._evaluator.process_single_step(
-                step_id=step_id,
-                workflow_ast=workflow_ast,
-                program_ast=program_ast,
-                runner_id=task.runner_id,
-                dispatcher=self._dispatcher,
-            )
-
-            task.state = TaskState.COMPLETED
-            task.updated = _current_time_ms()
-            self._persistence.save_task(task)
-
-            if result.status in (ExecutionStatus.COMPLETED, ExecutionStatus.ERROR):
-                self._update_runner_terminal_state(workflow_id, result.status)
-
-        except Exception as exc:
-            logger.warning(
-                "Continuation task failed: step=%s workflow=%s error=%s",
-                step_id,
-                workflow_id,
-                exc,
-            )
-            task.state = TaskState.FAILED
-            task.error = {"message": str(exc)}
-            task.updated = _current_time_ms()
-            self._persistence.save_task(task)
+    # _process_continuation: inherited from BaseRunner (uses
+    # self._continuation_dispatcher, set to this runner's RegistryDispatcher).
 
     # =========================================================================
     # Stuck-Step Recovery Sweep
