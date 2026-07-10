@@ -806,6 +806,9 @@ class AgentPoller:
                     now,
                     progress_pct=progress_pct,
                     progress_message=progress_message,
+                    # Only renew while we still own the task — a reclaimed
+                    # zombie must not extend the new owner's lease.
+                    expected_server_id=self._server_id,
                 )
 
             payload["_task_heartbeat"] = _task_heartbeat_callback

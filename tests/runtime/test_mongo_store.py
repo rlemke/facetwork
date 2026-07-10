@@ -1313,6 +1313,32 @@ class TestReapOrphanedTasks:
         claimed = mongo_store.claim_task(["MyEvent"], server_id="new-server")
         assert claimed is not None and claimed.retry_count == 100
 
+    def test_heartbeat_is_ownership_gated(self, mongo_store):
+        """Finding #2 part B: a zombie heartbeat (wrong server_id) must not renew
+        the current owner's lease; the owner's heartbeat does; and an unspecified
+        server_id preserves the old ungated behavior."""
+        mongo_store.save_task(
+            TaskDefinition(
+                uuid="hb-1", name="F", runner_id="r", workflow_id="w", flow_id="f",
+                step_id="s", state=TaskState.RUNNING, task_list_name="default",
+                server_id="owner",
+            )
+        )
+        mongo_store._db.tasks.update_one({"uuid": "hb-1"}, {"$set": {"lease_expires": 1000}})
+
+        # Zombie (reclaimed handler, stale server_id): no renewal.
+        mongo_store.update_task_heartbeat("hb-1", 5000, expected_server_id="zombie")
+        assert mongo_store._db.tasks.find_one({"uuid": "hb-1"})["lease_expires"] == 1000
+
+        # The real owner: lease renewed.
+        mongo_store.update_task_heartbeat("hb-1", 5000, expected_server_id="owner")
+        assert mongo_store._db.tasks.find_one({"uuid": "hb-1"})["lease_expires"] > 1000
+
+        # No expected_server_id → ungated (backward compatible).
+        mongo_store._db.tasks.update_one({"uuid": "hb-1"}, {"$set": {"lease_expires": 1000}})
+        mongo_store.update_task_heartbeat("hb-1", 6000)
+        assert mongo_store._db.tasks.find_one({"uuid": "hb-1"})["lease_expires"] > 1000
+
     def test_mixed_dead_and_healthy_servers(self, mongo_store):
         """Only tasks from dead servers are reaped, not healthy ones."""
         import time

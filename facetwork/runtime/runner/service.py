@@ -522,6 +522,9 @@ class RunnerService(BaseRunner):
                 _current_time_ms(),
                 progress_pct=progress_pct,
                 progress_message=progress_message,
+                # Only renew while we still own the task — a reclaimed zombie
+                # must not extend the new owner's lease.
+                expected_server_id=self._server_id,
             )
 
         def _set_stage_budget_callback(

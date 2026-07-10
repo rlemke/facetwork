@@ -614,6 +614,7 @@ class PersistenceAPI(Protocol):
         heartbeat_time: int,
         progress_pct: int | None = None,
         progress_message: str | None = None,
+        expected_server_id: str = "",
     ) -> None:
         """Update a running task's heartbeat timestamp and renew lease.
 
@@ -622,7 +623,9 @@ class PersistenceAPI(Protocol):
         server's heartbeat is stale (e.g. due to I/O contention).
 
         Optionally records ``progress_pct`` (0-100) and ``progress_message``
-        for the stuck-task watchdog.
+        for the stuck-task watchdog. When ``expected_server_id`` is given the
+        renewal is ownership-gated so a lease-reclaimed zombie can't renew the
+        new owner's lease.
         """
         return None
 

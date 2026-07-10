@@ -161,12 +161,19 @@ class ServerMixin(_MixinBase):
         heartbeat_time: int,
         progress_pct: int | None = None,
         progress_message: str | None = None,
+        expected_server_id: str = "",
     ) -> None:
         """Update a running task's heartbeat timestamp and renew lease.
 
         Optionally records ``progress_pct`` (0-100) and ``progress_message``
         so the stuck-task watchdog can distinguish truly stuck handlers from
         those making slow but real progress.
+
+        When ``expected_server_id`` is given, the renewal is OWNERSHIP-GATED:
+        it only applies while the task doc still carries that server_id. Without
+        it, a handler whose lease was reclaimed (a zombie) would keep renewing
+        the *new* owner's lease off its stale view — preventing a legitimate
+        reclaim if the new owner also dies. Empty preserves the old behavior.
         """
         lease_ms = self._lease_ms()
         update: dict[str, Any] = {
@@ -177,10 +184,10 @@ class ServerMixin(_MixinBase):
             update["progress_pct"] = max(0, min(100, progress_pct))
         if progress_message is not None:
             update["progress_message"] = progress_message
-        self._db.tasks.update_one(
-            {"uuid": task_id, "state": "running"},
-            {"$set": update},
-        )
+        query: dict[str, Any] = {"uuid": task_id, "state": "running"}
+        if expected_server_id:
+            query["server_id"] = expected_server_id
+        self._db.tasks.update_one(query, {"$set": update})
 
     def update_task_stage_budget(
         self,

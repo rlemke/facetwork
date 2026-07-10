@@ -116,6 +116,9 @@ class TaskProcessor:
                 now,
                 progress_pct=progress_pct,
                 progress_message=progress_message,
+                # Ownership-gate the renewal so a reclaimed zombie can't renew
+                # the new owner's lease (task.server_id is this runner's claim).
+                expected_server_id=getattr(task, "server_id", ""),
             )
 
         payload["_task_heartbeat"] = _task_heartbeat_callback
