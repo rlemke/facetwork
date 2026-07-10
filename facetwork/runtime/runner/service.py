@@ -387,7 +387,7 @@ class RunnerService(BaseRunner):
                         reconcile_counter = 0
             except Exception:
                 logger.exception("Poll cycle error")
-            self._stopping.wait(interval_s)
+            self._stopping.wait(self._poll_wait_seconds(interval_s))
 
     def _is_quarantined(self) -> bool:
         """Return True if the server has been marked quarantined in the DB.

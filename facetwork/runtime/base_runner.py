@@ -38,6 +38,7 @@ construction; the base only reads them.)
 from __future__ import annotations
 
 import logging
+import random
 import socket
 import threading
 import time
@@ -100,6 +101,23 @@ class BaseRunner:
     # they leak (the AST dicts especially). Re-derivable, so oldest-first
     # eviction is safe. Class attribute so tests can lower it.
     _MAX_WORKFLOW_CACHE: int = 512
+
+    # Fractional +/- jitter applied to the poll interval so a fleet of runners
+    # doesn't hit Mongo in lockstep (thundering herd). 0 disables it.
+    _POLL_JITTER: float = 0.15
+
+    def _poll_wait_seconds(self, interval_s: float) -> float:
+        """The poll interval with +/- ``_POLL_JITTER`` applied.
+
+        Decorrelates the poll phase across runners (and drifts it over time,
+        since a fresh value is drawn each cycle) without changing the mean poll
+        rate — so N runners started in sync stop hammering Mongo on the same
+        tick. Not used for correctness, so plain ``random`` is fine.
+        """
+        jitter = self._POLL_JITTER
+        if jitter <= 0:
+            return interval_s
+        return interval_s * random.uniform(1.0 - jitter, 1.0 + jitter)
 
     @property
     def server_id(self) -> str:

@@ -429,7 +429,7 @@ class RegistryRunner(BaseRunner):
                 self._maybe_sweep_stuck_steps()
             except Exception:
                 logger.exception("Poll cycle error")
-            self._stopping.wait(interval_s)
+            self._stopping.wait(self._poll_wait_seconds(interval_s))
 
     def _poll_cycle(self) -> int:
         """Single poll cycle: claim and dispatch handler + continuation tasks.

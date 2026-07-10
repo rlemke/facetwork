@@ -1603,3 +1603,20 @@ class TestBoundedWorkflowCaches:
         assert "busy" in runner._resume_locks  # held → survived pruning
         assert len(runner._resume_locks) == 1  # every free lock evicted
         held.release()
+
+
+class TestPollJitter:
+    """Finding #12: the poll interval is jittered so a fleet of runners doesn't
+    hit Mongo in lockstep."""
+
+    def test_poll_wait_applies_bounded_jitter(self, store, evaluator):
+        runner = _make_runner(store, evaluator)
+        runner._POLL_JITTER = 0.15
+        vals = [runner._poll_wait_seconds(2.0) for _ in range(200)]
+        assert all(1.7 <= v <= 2.3 for v in vals)  # within +/- 15%
+        assert len(set(vals)) > 1  # actually varies → phase decorrelated
+
+    def test_poll_wait_zero_jitter_is_exact(self, store, evaluator):
+        runner = _make_runner(store, evaluator)
+        runner._POLL_JITTER = 0
+        assert runner._poll_wait_seconds(2.0) == 2.0

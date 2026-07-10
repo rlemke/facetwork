@@ -240,8 +240,8 @@ stuck-step sweep, manual `repair_workflow`.
 > ownership fence (continue_step/resume skipped when dropped), and
 > `update_task_heartbeat` is now `expected_server_id`-gated so a zombie can't
 > renew the new owner's lease. Still open: **#7** (`_fw_continue` drain on a
-> RunnerService-only fleet), **#12 poll jitter**, **#14 (rest)**. **#11** (dead-letter
-> resurrection) confirmed + fixed 2026-07-09.
+> RunnerService-only fleet), **#14 (rest)**. **#11** (dead-letter resurrection)
+> confirmed + fixed and **#12** (indexes + poll jitter) fixed 2026-07-09.
 
 1. **CONFIRMED — Default lease (5 min) < default execution timeout (15 min)
    with opt-in heartbeats ⇒ routine duplicate execution of slow handlers.**
@@ -324,7 +324,10 @@ stuck-step sweep, manual `repair_workflow`.
     `task_claim_pending_index` (state, task_list_name, name, next_retry_after)
     and `task_reclaim_index` (state, task_list_name, lease_expires) so both
     `claim_task` queries are index-covered incl. the range fields; dropped the
-    superseded `task_claim_index`. Still open: poll jitter / adaptive backoff.
+    superseded `task_claim_index`. **Poll jitter FIXED 2026-07-09** —
+    `BaseRunner._poll_wait_seconds` applies +/-15% jitter to the poll interval in
+    both runner loops so a fleet doesn't hit Mongo in lockstep (mean rate
+    unchanged, phase decorrelated + drifting); +2 tests.
 13. ~~**CONFIRMED — Storage streams finalize partial data and mask errors.**~~
     **FIXED 2026-07-09.** `_S3WriteStream.__exit__`/`_WebHDFSWriteStream.__exit__`
     unconditionally `close()`d — uploading the partial buffer even when the body
