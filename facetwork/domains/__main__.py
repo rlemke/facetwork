@@ -16,7 +16,27 @@ from facetwork._pkg_discovery import run_pkg_cli
 from facetwork.domains import discover_all_domains, seed_domain_flows
 
 
+def _print_namespaces(argv: list[str]) -> int:
+    """``--namespaces [NAME ...]``: print the space-separated ``--topics`` globs
+    scoping the named domain(s) to their OWN facet namespaces (for the domain
+    runner entrypoint). No names → every discovered domain."""
+    import os
+    from pathlib import Path
+
+    from facetwork._pkg_discovery import filter_packages, package_topic_globs
+
+    names = [a for a in argv if a != "--namespaces"] or None
+    repo = Path(os.environ.get("REPO_ROOT", os.getcwd()))
+    pkgs = list(filter_packages(discover_all_domains(repo), include=names))
+    globs = sorted({g for p in pkgs for g in package_topic_globs(p)})
+    print(" ".join(globs))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if "--namespaces" in args:
+        return _print_namespaces(args)
     return run_pkg_cli(
         argv,
         family="domain",

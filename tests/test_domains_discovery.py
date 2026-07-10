@@ -111,3 +111,52 @@ class TestSeedDomainFlows:
         assert (n_flows, n_workflows) == (1, 1)
         assert store.flows[0].name.path == "domain:seedy"
         assert store.workflows[0].namespace_id == "domain:seedy"
+
+
+class TestPackageTopicGlobs:
+    """package_topic_globs scopes a domain runner to its OWN facet namespaces
+    (the fix for domain runners over-claiming every namespace's work, incl. heavy
+    osm PBF, on any host)."""
+
+    def _pkg(self, ffl_dir):
+        return DomainPackage(
+            name="d", ffl_dir=ffl_dir, register_handlers=lambda r: None, source="local"
+        )
+
+    def test_globs_are_event_facet_namespaces_only(self, tmp_path):
+        from facetwork._pkg_discovery import package_topic_globs
+
+        # Own event facet in `mydom`; a workflow-only `demo` ns and a `use`d
+        # `other` ns must NOT widen the scope.
+        (tmp_path / "prod.ffl").write_text(
+            "namespace other { event facet Ext(a: Long) => (b: Long) }\n"
+            "namespace mydom {\n"
+            "    use other\n"
+            "    event facet Work(x: Long) => (y: Long)\n"
+            "    workflow Flow(x: Long) => (r: Long) andThen { s = Work(x = $.x) "
+            "yield Flow(r = s.y) }\n"
+            "}\n"
+            "namespace demo {\n"
+            "    workflow Only(x: Long) => (r: Long) andThen { yield Only(r = $.x) }\n"
+            "}\n"
+        )
+        # a test fixture must be ignored
+        (tmp_path / "tests" / "real" / "ffl").mkdir(parents=True)
+        (tmp_path / "tests" / "real" / "ffl" / "t.ffl").write_text(
+            "namespace throwaway { event facet T(x: Long) => (y: Long) }\n"
+        )
+        globs = package_topic_globs(self._pkg(tmp_path))
+        # `mydom` + `other` (both declare event facets); NOT `demo` (workflow-only)
+        # and NOT `throwaway` (test fixture).
+        assert "mydom.*" in globs
+        assert "demo.*" not in globs
+        assert "throwaway.*" not in globs
+
+    def test_no_ffl_returns_empty(self, tmp_path):
+        from facetwork._pkg_discovery import package_topic_globs
+
+        # Nested empty ffl dir so collect_ffl_files' parent-walk can't pick up
+        # sibling pytest tmp dirs.
+        ffl = tmp_path / "pkg" / "ffl"
+        ffl.mkdir(parents=True)
+        assert package_topic_globs(self._pkg(ffl)) == []

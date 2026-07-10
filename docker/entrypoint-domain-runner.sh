@@ -63,6 +63,21 @@ fi
 echo "    Registering handlers + seeding workflows for $FW_DOMAIN_NAME"
 python -m facetwork.domains --seed "$FW_DOMAIN_NAME"
 
-# Hand off to the runner service in registry mode.
+# Scope the runner to THIS domain's own facet namespaces. The image bakes every
+# domain's deps, so an unscoped --registry runner loads ALL importable handlers
+# and claims every namespace's work on any host (incl. heavy osm PBF on the
+# emulated minis). --topics <ns.*> makes it load only its own handlers, so heavy
+# osm work stays on the (heavy-gated → MaxPro) osm runners. Empty = no FFL facets
+# (e.g. a workflow-only catalog) → don't scope, preserve load-all behavior.
+DOMAIN_TOPICS="$(python -m facetwork.domains --namespaces "$FW_DOMAIN_NAME" 2>/dev/null || true)"
+TOPIC_ARGS=""
+if [ -n "$DOMAIN_TOPICS" ]; then
+    TOPIC_ARGS="--topics $DOMAIN_TOPICS"
+    echo "    Scoping runner to topics: $DOMAIN_TOPICS"
+fi
+
+# Hand off to the runner service in registry mode. `set -f` so the topic globs
+# (e.g. osm.*) are word-split into argv but NOT filename-expanded by the shell.
 echo "    Starting runner (registry mode)"
-exec python -m facetwork.runtime.runner --registry ${FW_REGISTRY_RUNNER_ARGS:-}
+set -f
+exec python -m facetwork.runtime.runner --registry $TOPIC_ARGS ${FW_REGISTRY_RUNNER_ARGS:-}

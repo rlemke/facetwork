@@ -261,6 +261,46 @@ def _collect_workflow_names(node: dict, prefix: str = "") -> list[str]:
     return names
 
 
+def _event_facet_namespaces(node: dict, prefix: str = "") -> set[str]:
+    """Fully-qualified namespaces that DECLARE an event facet in a compiled
+    program dict. Only event facets become registered handlers, so these are the
+    namespaces a runner actually serves — unlike ``use``-reference or
+    workflow-only demo namespaces, which must not widen a runner's topic scope."""
+    out: set[str] = set()
+    here = prefix.rstrip(".")
+    for decl in node.get("declarations", []):
+        t = decl.get("type", "")
+        if t in ("EventFacetDecl", "EventFacet") or (t.startswith("Facet") and decl.get("is_event")):
+            if here:
+                out.add(here)
+        elif t in ("Namespace", "NamespaceDecl"):
+            out |= _event_facet_namespaces(decl, f"{prefix}{decl['name']}.")
+    for ns in node.get("namespaces", []):
+        out |= _event_facet_namespaces(ns, f"{prefix}{ns['name']}.")
+    return out
+
+
+def package_topic_globs(pkg: Package) -> list[str]:
+    """Return ``--topics`` globs (e.g. ``osm.*``) scoping a runner to the package's
+    OWN facet namespaces — the TOP-LEVEL namespaces declared in its FFL.
+
+    Used by the domain-runner entrypoint so a domain runner loads only its own
+    handlers instead of every importable facet in the shared image (which made
+    every runner claim every namespace's work, incl. heavy osm PBF, on any host).
+    Returns ``[]`` when the package has no FFL — the caller should then NOT scope
+    (load everything), preserving the old behavior for FFL-less packages.
+    """
+    # Production FFL only — test/example fixtures (``tests/real/ffl/*`` etc.)
+    # declare throwaway namespaces (e.g. ``handlers``/``test`` in addone.ffl)
+    # that would wrongly widen the scope.
+    files = [f for f in collect_ffl_files(pkg) if "/tests/" not in str(f).replace("\\", "/")]
+    if not files:
+        return []
+    program_dict, _, _ = _compile_ffl_files(files)
+    tops = sorted({n.split(".", 1)[0] for n in _event_facet_namespaces(program_dict)})
+    return [f"{t}.*" for t in tops]
+
+
 def _compile_ffl_files(files: list[Path]) -> tuple[dict, str, list[str]]:
     """Parse + merge + emit a list of ``.ffl`` files.
 
