@@ -294,10 +294,24 @@ def main() -> None:
 
         dispatcher = RegistryDispatcher(persistence=store)
         loadable = dispatcher.preload(verify=True)
+        # Scope to --topics: register (and therefore advertise + CLAIM) only the
+        # facets matching the topic globs. Without this the registry preload
+        # loads EVERY importable facet in the shared image, so a domain runner
+        # claims every namespace's work on any host (incl. heavy osm PBF on the
+        # emulated minis). preload()/dispatchable_facets() don't honor topics —
+        # they only drop non-importable modules — so filter here.
+        import fnmatch
+
+        topic_globs = args.topics or []
+        registered = 0
         for facet_name in dispatcher.dispatchable_facets():
+            if topic_globs and not any(fnmatch.fnmatch(facet_name, g) for g in topic_globs):
+                continue
             tool_registry.register(facet_name, _make_proxy(dispatcher, facet_name))
+            registered += 1
         if loadable:
-            print(f"  Registry handlers: {loadable} loadable (cached)")
+            scoped = f", {registered} match --topics {topic_globs}" if topic_globs else ""
+            print(f"  Registry handlers: {loadable} loadable (cached){scoped}")
 
         # Registry-drift detection: a facet declared in installed example code
         # but missing from handler_registrations means tasks for that facet
