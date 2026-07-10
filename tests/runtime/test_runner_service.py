@@ -1423,7 +1423,7 @@ class TestHandledStatsEdgeCases:
     def test_stats_persistence_exception_swallowed(self, evaluator, registry):
         """Exception from persistence during stats update is swallowed."""
         mock_store = MagicMock()
-        mock_store.get_server.side_effect = RuntimeError("db down")
+        mock_store.update_server_handled.side_effect = RuntimeError("db down")
 
         config = RunnerConfig()
         svc = RunnerService(mock_store, evaluator, config, registry)
@@ -1431,6 +1431,33 @@ class TestHandledStatsEdgeCases:
         # Should not raise
         svc._update_handled_stats("FacetX", handled=False)
         assert svc._handled_counts["FacetX"].not_handled == 1
+
+    def test_stats_update_does_not_clobber_concurrent_state(self, store, evaluator, registry):
+        """Finding #10: the stats write is a targeted field update, so a
+        concurrent state change (e.g. a dashboard QUARANTINE) made between a
+        runner's read and write is NOT reverted.
+
+        The old code did get_server → set .handled → save_server (whole-doc RMW),
+        which would overwrite a state set on the DB doc in the meantime.
+        """
+        from facetwork.runtime.entities import ServerState
+
+        config = RunnerConfig()
+        svc = RunnerService(store, evaluator, config, registry)
+        svc._register_server()
+
+        # Simulate the dashboard quarantining this server AFTER it registered.
+        server = store.get_server(svc._server_id)
+        server.state = ServerState.QUARANTINE
+        store.save_server(server)
+
+        # A task completes and the runner records a handled stat.
+        svc._update_handled_stats("SomeFacet", handled=True)
+
+        # The quarantine survives, and the stat was still persisted.
+        persisted = store.get_server(svc._server_id)
+        assert persisted.state == ServerState.QUARANTINE
+        assert any(h.handler == "SomeFacet" and h.handled == 1 for h in persisted.handled)
 
 
 # =========================================================================

@@ -1659,12 +1659,14 @@ class RunnerService(BaseRunner):
         else:
             counts.not_handled += 1
 
-        # Update server definition
+        # Persist ONLY the handled stats with a targeted field write. A full
+        # get_server → mutate → save_server would read-modify-write the whole
+        # server doc and could silently revert a concurrent state change made
+        # between the read and write — e.g. a dashboard QUARANTINE (finding #10).
         try:
-            server = self._persistence.get_server(self._server_id)
-            if server:
-                server.handled = list(self._handled_counts.values())
-                self._persistence.save_server(server)
+            self._persistence.update_server_handled(
+                self._server_id, list(self._handled_counts.values())
+            )
         except Exception:
             logger.debug("Failed to update handled stats", exc_info=True)
 

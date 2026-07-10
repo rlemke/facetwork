@@ -29,6 +29,7 @@ from .types import BlockId, StepId
 if TYPE_CHECKING:
     from .entities import (
         FlowDefinition,
+        HandledCount,
         HandlerRegistration,
         LogDefinition,
         RunnerDefinition,
@@ -831,4 +832,18 @@ class PersistenceAPI(Protocol):
         Args:
             server_id: The server's unique identifier
             ping_time: The new ping time in milliseconds
+        """
+
+    def update_server_handled(
+        self, server_id: str, handled: "list[HandledCount]"
+    ) -> None:
+        """Replace ONLY a server's ``handled`` stats (a targeted field write).
+
+        Unlike ``save_server`` this must not read-modify-write the whole server
+        document, so a concurrent state change (e.g. a dashboard QUARANTINE)
+        made between a runner's read and write is not silently reverted.
+
+        Args:
+            server_id: The server's unique identifier
+            handled: The current per-handler counts to persist
         """

@@ -292,9 +292,13 @@ stuck-step sweep, manual `repair_workflow`.
 9. **CONFIRMED — Blocking resume lock convoy.** `_resume_workflow_for_step`
    docstring says "skipped if held" but does a blocking `lock.acquire()`
    (`service.py:1848-1852`) — a hot workflow queues every handler thread.
-10. **CONFIRMED — `_update_handled_stats` does an unguarded read-modify-write
-    of the whole server doc per task** (`service.py:2008-2015`) — races with
-    dashboard writes (e.g. silently reverting a QUARANTINE set in between).
+10. ~~**CONFIRMED — `_update_handled_stats` does an unguarded read-modify-write
+    of the whole server doc per task**~~ **FIXED 2026-07-09.** It did
+    get_server → set `.handled` → save_server, racing dashboard writes (silently
+    reverting a QUARANTINE set in between). Added a targeted
+    `update_server_handled` (persistence protocol + Mongo `$set` + MemoryStore)
+    that writes ONLY the `handled` field; the runner now calls it. +1 regression
+    test (concurrent QUARANTINE survives).
 11. **SUSPECTED — Mongo-side dead-lettering can be resurrected by the sweep**:
     `_dead_letter_overdue` flips the task without failing the owning step
     (`tasks.py:524-540`); the sweep re-creates a fresh task with

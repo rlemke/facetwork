@@ -146,6 +146,15 @@ class ServerMixin(_MixinBase):
         """Update server ping time."""
         self._db.servers.update_one({"uuid": server_id}, {"$set": {"ping_time": ping_time}})
 
+    def update_server_handled(self, server_id: str, handled: "list[HandledCount]") -> None:
+        """Replace ONLY the server's ``handled`` stats — a targeted ``$set`` so a
+        concurrent state write (e.g. a dashboard QUARANTINE) between a runner's
+        read and write isn't clobbered (unlike a full ``save_server`` RMW)."""
+        self._db.servers.update_one(
+            {"uuid": server_id},
+            {"$set": {"handled": [asdict(h) for h in handled]}},
+        )
+
     def update_task_heartbeat(
         self,
         task_id: str,

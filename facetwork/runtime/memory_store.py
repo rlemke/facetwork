@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from typing import Optional
 
 from .entities import (
+    HandledCount,
     HandlerRegistration,
     LogDefinition,
     RunnerDefinition,
@@ -599,6 +600,11 @@ class MemoryStore(PersistenceAPI):
         """Update server ping time."""
         if server_id in self._servers:
             self._servers[server_id].ping_time = ping_time
+
+    def update_server_handled(self, server_id: str, handled: "list[HandledCount]") -> None:
+        """Replace ONLY the server's ``handled`` stats (targeted field write)."""
+        if server_id in self._servers:
+            self._servers[server_id].handled = list(handled)
 
     def get_all_servers(self) -> list["ServerDefinition"]:
         """Get all servers."""
