@@ -59,15 +59,26 @@ DB = os.environ.get("FW_MONGODB_DATABASE", "facetwork")
 
 
 def _sweep_stranded_env_files():
-    """Delete any decrypted-cred env files left by a prior agent that exited
-    without running its cleanup (watchdog os._exit / SIGKILL). Covers both the
-    new private run dir and the legacy in-repo location."""
-    import glob
+    """Delete decrypted-cred env files left by a prior agent that exited without
+    running its cleanup (watchdog os._exit / SIGKILL). Covers both the new private
+    run dir and the legacy in-repo location.
 
+    ONLY sweep files OLDER than the watchdog window. A fresher env file may belong
+    to a concurrently-running apply — the launchd `watch` loop overlapping its own
+    slow reconcile, or a manual `fleet agent apply` run alongside it — and deleting
+    it mid-run makes that apply's `runner/start` children fail with 'env file not
+    found', silently dropping the tail of its domain-runner list. The watchdog
+    guarantees no live apply outlives _WATCHDOG_SECONDS, so anything older is
+    genuinely stranded and safe to remove."""
+    import glob
+    import time
+
+    cutoff = time.time() - _WATCHDOG_SECONDS
     for d in (_RUNDIR, REPO):
         for p in glob.glob(os.path.join(d, _ENVF_PREFIX + "*")):
             try:
-                os.unlink(p)
+                if os.path.getmtime(p) < cutoff:
+                    os.unlink(p)
             except OSError:
                 pass
 # FW_FLEET_HOST names this server in fleet_agents/status (defaults to the
