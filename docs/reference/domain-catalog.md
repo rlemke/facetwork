@@ -28,6 +28,15 @@ Everything goes through `facetwork/domains/catalog.py` (Python) and
 `scripts/lib/_helpers/_catalog.sh` (bash shim), so shell and Python consumers see
 the **same** resolved catalog.
 
+> **Placing a domain on the right servers by capacity.** A domain's per-entry
+> attributes here (`compose` env/volumes/notes — e.g. osm's raised 4h timeouts and
+> LARGE-scratch requirement, `[geo]` extras, PostGIS `depends`, API-key env) are
+> the *demand* signals for capacity-aware placement. The **resource matrix** that
+> turns them into a server-group assignment (which handler runs on which host,
+> matched to CPU / memory / scratch-disk / arch-emulation / binaries / credentials)
+> lives in [architecture/server-groups.md §6](../architecture/server-groups.md).
+> Set the assignment with `fw fleet set --role-groups ROLE:group`.
+
 ---
 
 ## 2. File resolution & per-deployment override

@@ -140,7 +140,102 @@ any role can declare *which* hosts run it. The ffl-runner tier and a heavy-domai
 tier are now expressible as ordinary group assignments
 (`--role-groups ffl-runner:orchestrators`, `--role-groups osm-geocoder:heavy`).
 
-## 6. Thesis note
+## 6. Assigning handlers to servers by capability (capacity-aware placement)
+
+§3 gives the *mechanism* (a role → group gate). This section is the *policy*: how
+to decide **which handler roles a given server should run**, so a role's resource
+demand never exceeds the host's CPU, memory, disk, and special abilities. The
+assignment is operator intent expressed once in the central config; it is not a
+dynamic scheduler (§4). Do it in three steps.
+
+### 6.1 Profile each server (its capacity envelope)
+
+Record, per host, the axes a handler can exhaust:
+
+| Axis | How to read it | Why a handler cares |
+|------|----------------|---------------------|
+| **CPU cores** | `sysctl -n hw.ncpu` / `nproc` | osmium PBF parse, tippecanoe tiling, scipy/lifelines are CPU-bound; a wide `foreach` fans `min(16, cores-2)` concurrent tasks. |
+| **RAM** | `sysctl -n hw.memsize` / `free -g` | osmium node-location index and the GraphHopper in-memory graph are multi-GB; pandas frames scale with input. |
+| **Local scratch disk** | free space on `FW_DATA_DIR`/`FW_LOCAL_SCRATCH` | osm stages multi-GB PBF/continent extracts to scratch **before** finalizing to MinIO. Under-provisioned scratch is what crashed a host's Mongo (§1). Keep scratch on a LARGE disk, never the small internal volume. |
+| **Architecture / emulation** | `uname -m` vs the image arch | The fleet image is **arm64**; an **x86 host runs it under qemu** (~5–10× slower). Emulation multiplies every heavy CPU/RAM cost — reason enough to keep heavy roles off emulated hosts. This is an *ability*, not just speed. |
+| **Installed binaries** | in-image vs host | osm needs `osmium`/`tippecanoe`/`pmtiles`/a JRE+GraphHopper and a reachable **PostGIS**; sentinel2 needs GDAL/rasterio. All are baked into the image, but PostGIS is an external dependency the host must reach. |
+| **Credentials** | per-host `~/.facetwork/fleet-secrets.env` | census needs `CENSUS_API_KEY`, anthropic needs `ANTHROPIC_API_KEY`. A host without the key can't serve that domain even if it has the CPU — a credential is a capability. |
+
+### 6.2 Handler resource matrix (demand per role)
+
+Each domain's demand, drawn from its `domains.json` entry (`compose` env/volumes/
+notes) and handler behavior. **Tier** is the recommended placement class.
+
+| Role (task_list) | CPU | RAM | Scratch disk | Special abilities needed | Tier |
+|------------------|-----|-----|--------------|--------------------------|------|
+| **osm-geocoder** (`osm`) | high (osmium parse, tippecanoe) | **high** (multi-GB node index) | **very high** (multi-GB PBF staging; 4h timeouts) | osmium, tippecanoe, pmtiles, JRE+GraphHopper, **PostGIS**, LARGE scratch | **heavy** |
+| **osm-lz** (`osm`) | — (pure-FFL over osm facets) | — | — | rides osm-geocoder | **heavy** |
+| **gh-router** (`osm` RouteBatch) | high (JVM routing) | **high** (in-memory graph) | low | JRE + GraphHopper jar | **heavy** |
+| **osm-mapping** (`osm_mapping`) | medium (shapely joins) | medium | medium | Overpass egress (rate-limited → do NOT fan out) | medium |
+| **sentinel2-landchange** (`s2`) | medium-high (raster) | high (COG/rasterio) | medium | GDAL/rasterio (`[geo]` extra) | medium |
+| **cancer** (`cancer`) | high (scipy/lifelines) | high (pandas/parquet) | low | MinIO parquet; open genomics APIs | medium |
+| **census-us** (`census`) | medium (TIGER geometry) | medium | low | **CENSUS_API_KEY** | medium |
+| **genomics** (`genomics`) | medium (foreach) | medium | medium | — | medium |
+| **h1b** (`h1b`) / **health** (`health`) | low-medium (CSV+join) | medium (pandas) | low | open gov APIs | light |
+| **noaa-weather, conflict, migration, jenkins, sensor-monitoring** | low | low | low | open APIs / zips | light |
+| **anthropic** (`anthropic`) | low | low | low | **ANTHROPIC_API_KEY** | light |
+
+### 6.3 Placement procedure
+
+1. **Tier the servers** by 6.1 into groups (`FW_SERVER_GROUP`): e.g. `heavy` for a
+   big, native-arch box with large scratch + PostGIS reach; `runner` (default) for
+   everything else; add more tiers (`light`, `orchestrators`) as the fleet grows.
+2. **Gate each heavy/medium role** to the group(s) that satisfy its 6.2 demand,
+   via `fw fleet set --role-groups ROLE:group[,group]`. Light roles get **no**
+   group — they run everywhere (§3's empty-means-everywhere).
+3. **Ensure every gated role has a live host in its group** (§4 liveness) and that
+   host carries the role's credentials (6.1). Otherwise its tasks sit pending.
+
+The invariant to preserve: **for every role, `role.server_groups` ⊆ {groups whose
+hosts meet 6.2's demand}**. Routing (§2) still guarantees correctness if you get
+it wrong — a mis-placed heavy task just won't be claimed by a host that can't
+serve it — but honoring the invariant is what keeps heavy work off the boxes that
+would thrash or crash on it.
+
+### 6.4 Current fleet assignment (worked example, 2026-07-10)
+
+The live fleet has one native-arm64 heavy box and two emulated x86 minis:
+
+| Host | Group | Why | Runs |
+|------|-------|-----|------|
+| **MaxPro** | `heavy` | native arm64 (no emulation), large scratch, reaches PostGIS | osm-geocoder + osm-lz + gh-router (all `heavy`-gated) **plus** all light/medium domains |
+| **server1, server2** | `runner` | x86 running the arm64 image under **qemu** (heavy work is doubly slow here); modest scratch | the light/medium data domains only — **no osm** |
+| **server3** | — | infra host (Mongo/MinIO/registry/dashboard) | no runners |
+
+Set with:
+```bash
+fw fleet set --role-groups osm-geocoder:heavy   # implies osm-lz (rides osm)
+fw fleet set --role-groups gh-router:heavy       # GraphHopper routing follows osm
+# light/medium domains: no --role-groups → run on every host
+```
+
+Verified end-to-end 2026-07-10: an `osm.heatmap.ContinentHeatmap` fan-out over 3
+leaves ran **all 13 osm tasks on MaxPro** and **zero on the emulated minis** — the
+gate kept the heavy PBF/tiling work on the only box provisioned for it, while the
+minis kept serving their light domains. Emulation lesson worth carrying: baking
+every domain into the image (so containers skip the per-start `pip install`)
+removed the dominant cold-start cost, but qemu still penalizes heavy library
+imports on the x86 minis — an independent capability reason to keep the heavy
+tier off them.
+
+### 6.5 Auditing the assignment
+
+- `fw fleet get` / `fw fleet status` — the `groups=` shown per role is the live
+  assignment; `status` lists hosts by group so you can check each gated role has a
+  member.
+- `fw fleet agent apply --dry-run` on a host — prints exactly which roles it would
+  **start** and which it would **skip ("not in group")**, so placement is
+  auditable before it takes effect.
+- Confirm at runtime by which host actually ran a role's tasks (the osm-on-MaxPro
+  check above): a mis-tier shows up as tasks pending (no capable host) or as heavy
+  work landing on a host that thrashes.
+
+## 7. Thesis note
 
 The thesis (§14.3, §15.3) describes a homogeneous fleet ("every Facetwork server
 is a homogeneous, stateless runner"). Server groups sharpen that into an honest,
