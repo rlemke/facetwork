@@ -73,9 +73,42 @@ workflow W(seeds: [String]) => (r: [String]) andThen {
 result — is always fine; only a **step** reference to a sibling block is
 rejected.)
 
+## Exception: `andThen when` blocks *may* reference prior blocks
+
+A **`andThen when`** block is the deliberate exception — its case conditions and
+case bodies **can** name steps from prior regular `andThen` blocks. A `when` block
+is a conditional gate on what already happened, so referencing an earlier block's
+result is the whole point.
+
+```ffl
+// OK — the when block reads `s1` from the prior andThen block
+namespace x {
+    event facet GetRisk(id: Int) => (score: Int)
+    facet HandleHigh(x: Int)
+    workflow W(id: Int) andThen {
+        s1 = GetRisk(id = $.id)
+    } andThen when {
+        case s1.score == 10 => { h = HandleHigh(x = s1.score) }   // ← 's1' from the sibling block
+        case _ => {}
+    }
+}
+```
+
+The runtime makes this safe: when the `when` block initializes and a referenced
+step isn't complete yet, it **defers** (raises `_StepNotReady` and re-queues)
+rather than erroring, so the case is evaluated only once `s1` is ready. This is
+the one place the cross-block deferral machinery is reachable from valid FFL — so
+it is **not** dead code, even though regular blocks and `foreach` collections
+reject the same references.
+
+The distinction: a **regular block** or a **`foreach` collection** naming a
+sibling step is rejected (this rule); a **`when` case/body** naming a prior
+block's step is allowed.
+
 ## Why
 
 The runtime executes top-level `andThen` siblings in parallel. Allowing
-cross-block references would force serialisation and make the parallelism
-silent — instead the language requires you to be explicit about
-ordering with a step body or `andThen when`.
+cross-block references from a *regular* block would force serialisation and make
+the parallelism silent — instead the language requires you to be explicit about
+ordering with a step body. `andThen when` is exempt because it is by definition a
+gate that runs after, and on the results of, prior blocks.
