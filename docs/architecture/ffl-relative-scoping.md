@@ -244,10 +244,22 @@ flag day given the `fwh_*` repos are separate and baked into the fleet image.
   reference each other (`REF_CROSS_BLOCK_STEP` across co-clauses). Emitter +
   workflow-source round-trip them. **The author's full canonical example now
   parses + validates clean under the flag and round-trips emit→source→reparse.**
-- **Not yet done:** the runtime side (`$$`/step-return resolution in
-  `expression.py`/`initialization.py` — currently `$$` never executes because no
-  shipping FFL uses it), the migration transformer, the default flip, the
-  `_StepNotReady` prune, and the reference-doc rewrite.
+- **Runtime resolution + `extra_bodies` execution landed (`61c1b20`), flag-gated.**
+  `facetwork/runtime/relative_scope.py` builds a container scope stack from a
+  step's ancestry; `$.`/`$$.` resolve against it (params static; returns defer via
+  `get_step_output`; loop var on the immediate frame; overflow raises). Wired at
+  the 4 non-mixin `EvaluationContext` sites. `extra_bodies` expand as sibling
+  co-clause blocks (`_find_statement_body` → list, `get_block_ast` →
+  `_select_block_body`). Verified end-to-end (MemoryStore/Evaluator): `$$` +
+  immediate-container params resolve and are deadlock-free where the flat
+  `step.field` form deadlocks; chained co-clauses both run. Flag-off byte-identical.
+- **Not yet done:** the migration transformer (rewrite existing FFL to the new
+  spellings), the default flip, the `_StepNotReady` prune, and the reference-doc
+  rewrite.
+- **Known pre-existing limitation (not introduced here):** a step that calls a
+  facet-with-a-body *and* has its own `andThen` body does not produce the facet's
+  return (the statement body shadows the facet body) — deadlocks/None in **both**
+  models. Relevant when migrating; orthogonal to relative scoping.
 
 ## 6. What already shipped in this direction (context, not to redo)
 
