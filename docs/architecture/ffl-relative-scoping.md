@@ -253,9 +253,18 @@ flag day given the `fwh_*` repos are separate and baked into the fleet image.
   `_select_block_body`). Verified end-to-end (MemoryStore/Evaluator): `$$` +
   immediate-container params resolve and are deadlock-free where the flat
   `step.field` form deadlocks; chained co-clauses both run. Flag-off byte-identical.
-- **Not yet done:** the migration transformer (rewrite existing FFL to the new
-  spellings), the default flip, the `_StepNotReady` prune, and the reference-doc
-  rewrite.
+- **Migration transformer landed (`c6b8ab3`).** `facetwork/migration/` +
+  `fw ffl migrate-scoping PATH [--write]` — a scope-aware source migrator that
+  rewrites containing/enclosing-step-by-name → `$`/`$$` and flat `$.x` reaching an
+  outer container → `$$.x`, via location-based edits (comments/formatting
+  preserved). It walks a container stack mirroring the validator, so rewrites are
+  meaning-preserving re-targetings; the sibling-block `andThen when` idiom is
+  reported for **manual** handling (structural). 6/8 affected in-repo examples
+  auto-migrate to validator-clean-under-flag; the 2 with nested sibling-`when` are
+  flagged manual. **Not applied to any file yet** — migration runs at the flip.
+- **Not yet done:** the default flip, applying the migration (in-repo + `fwh_*`)
+  incl. the manual sibling-`when` restructures, the `_StepNotReady` prune, and the
+  reference-doc rewrite.
 - **Known pre-existing limitation (not introduced here):** a step that calls a
   facet-with-a-body *and* has its own `andThen` body does not produce the facet's
   return (the statement body shadows the facet body) — deadlocks/None in **both**
