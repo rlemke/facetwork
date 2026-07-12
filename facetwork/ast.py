@@ -78,10 +78,16 @@ class Literal(ASTNode):
 
 @dataclass
 class Reference(ASTNode):
-    """Reference to input ($.field) or step output (step.field)."""
+    """Reference to input ($.field) or step output (step.field).
+
+    ``up_levels`` counts extra ``$`` in a dollar reference: ``$.f`` -> 0,
+    ``$$.f`` -> 1, ``$$$.f`` -> 2. Only meaningful when ``is_input`` is True.
+    Under the flatter (pre-relative-scoping) resolver it is always 0.
+    """
 
     path: list[str]
-    is_input: bool  # True for $.field, False for step.field
+    is_input: bool  # True for $.field / $$.field, False for step.field
+    up_levels: int = 0  # 0 for $, 1 for $$, 2 for $$$, ... (dollar refs only)
 
 
 @dataclass

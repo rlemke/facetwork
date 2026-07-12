@@ -590,7 +590,11 @@ class JSONEmitter:
     def _reference(self, node: Reference) -> dict:
         """Convert Reference node."""
         if node.is_input:
-            return {"type": "InputRef", "path": node.path}
+            data: dict = {"type": "InputRef", "path": node.path}
+            # Only emit up_levels when non-zero so existing $. JSON is unchanged.
+            if node.up_levels:
+                data["up_levels"] = node.up_levels
+            return data
         else:
             return {"type": "StepRef", "path": node.path}
 

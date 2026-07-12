@@ -22,6 +22,7 @@ Validates AST for semantic correctness:
 - Unambiguous facet references (qualified names when needed)
 """
 
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -186,10 +187,41 @@ class StepInfo:
     location: SourceLocation | None = None
 
 
+@dataclass
+class _ContainerFrame:
+    """One lexical container in the relative-``$``-scoping stack.
+
+    A frame is pushed for the enclosing facet/workflow (base frame) and for
+    each step whose body/clauses we descend into. ``$`` resolves against the
+    top frame, ``$$`` one down, ``$$$`` two down, ... (see
+    ``docs/architecture/ffl-relative-scoping.md``). Only used when the
+    relative-scoping flag is on; the legacy resolver never builds the stack.
+    """
+
+    name: str
+    kind: str  # 'facet' | 'workflow' | 'step'
+    attrs: set[str]  # attribute surface: params ∪ returns
+    open: bool = False  # True when unknown extra attrs may exist (pre-script keys)
+
+
 class FFLValidator:
     """Validates FFL AST for semantic correctness."""
 
-    def __init__(self):
+    def __init__(self, relative_scoping: bool | None = None):
+        # Relative ``$``-scoping (docs/architecture/ffl-relative-scoping.md).
+        # Flag-gated: off = the legacy flat-inputs resolver (current behavior);
+        # on = container-relative $/$$ resolution. Default from the environment
+        # so the whole toolchain can opt in without code changes.
+        if relative_scoping is None:
+            relative_scoping = os.environ.get(
+                "FW_FFL_RELATIVE_SCOPING", ""
+            ).strip().lower() in ("1", "true", "yes", "on")
+        self._relative_scoping: bool = relative_scoping
+        self._container_stack: list[_ContainerFrame] = []
+        # Steps visible from an ENCLOSING block (relative-scoping only): under
+        # the new model these may NOT be named directly — reach them via $/$$.
+        # Same-block steps stay nameable.
+        self._enclosing_step_names: set[str] = set()
         self._result: ValidationResult = ValidationResult()
         self._facets: dict[str, FacetInfo] = {}  # All known facets by full name
         self._facets_by_short_name: dict[str, list[str]] = {}  # Short name -> list of full names
@@ -224,6 +256,8 @@ class FFLValidator:
         self._current_imports = set()
         self._param_scope = {}
         self._facet_param_types = {}
+        self._container_stack = []
+        self._enclosing_step_names = set()
 
         # First pass: collect all namespace names and facet definitions
         self._collect_namespaces(program)
@@ -771,8 +805,36 @@ class FFLValidator:
                 scope[param.name] = name
         return scope
 
-    def _validate_body(self, body, sig: FacetSig) -> None:
+    @staticmethod
+    def _sig_attr_names(sig: FacetSig) -> set[str]:
+        """A signature's attribute surface: param names ∪ return names."""
+        names = {p.name for p in sig.params}
+        if sig.returns:
+            names |= {p.name for p in sig.returns.params}
+        return names
+
+    def _validate_body(self, body, sig: FacetSig, has_pre_script: bool = False) -> None:
         """Validate a body, handling single or list of AndThenBlocks."""
+        if self._relative_scoping:
+            # Base frame: the enclosing facet/workflow. Its top-level andThen
+            # blocks all resolve $ against this frame. `open` when a pre-script
+            # may inject extra $. keys we can't enumerate statically.
+            self._container_stack.append(
+                _ContainerFrame(
+                    name=sig.name,
+                    kind="facet",
+                    attrs=self._sig_attr_names(sig),
+                    open=has_pre_script,
+                )
+            )
+            try:
+                self._validate_body_inner(body, sig)
+            finally:
+                self._container_stack.pop()
+            return
+        self._validate_body_inner(body, sig)
+
+    def _validate_body_inner(self, body, sig: FacetSig) -> None:
         if isinstance(body, list):
             # First pass: collect step names from each block
             all_block_steps: list[set[str]] = []
@@ -860,7 +922,7 @@ class FFLValidator:
         if decl.pre_script:
             self._validate_script_block(decl.pre_script, decl.sig)
         if decl.body:
-            self._validate_body(decl.body, decl.sig)
+            self._validate_body(decl.body, decl.sig, has_pre_script=bool(decl.pre_script))
         if decl.catch:
             self._validate_catch_clause(decl.catch, decl.sig)
         self._param_scope = {}
@@ -881,7 +943,7 @@ class FFLValidator:
             if isinstance(decl.body, PromptBlock):
                 self._validate_prompt_block(decl.body, decl.sig)
             else:
-                self._validate_body(decl.body, decl.sig)
+                self._validate_body(decl.body, decl.sig, has_pre_script=bool(decl.pre_script))
         if decl.catch:
             self._validate_catch_clause(decl.catch, decl.sig)
         self._param_scope = {}
@@ -958,7 +1020,7 @@ class FFLValidator:
         if decl.pre_script:
             self._validate_script_block(decl.pre_script, decl.sig)
         if decl.body:
-            self._validate_body(decl.body, decl.sig)
+            self._validate_body(decl.body, decl.sig, has_pre_script=bool(decl.pre_script))
         if decl.catch:
             self._validate_catch_clause(decl.catch, decl.sig)
         self._param_scope = {}
@@ -976,6 +1038,46 @@ class FFLValidator:
         parent_foreach_var: str | None = None,
     ) -> None:
         """Validate an andThen block."""
+        if not self._relative_scoping:
+            return self._validate_and_then_block_impl(
+                body,
+                containing_sig,
+                extra_yield_targets,
+                other_block_steps,
+                parent_steps,
+                parent_step_returns,
+                parent_step_returns_types,
+                parent_foreach_var,
+            )
+        # Relative scoping: steps reachable only from an enclosing block become
+        # non-nameable here (reach them via $/$$). Same-block steps stay named.
+        prev_enclosing = self._enclosing_step_names
+        self._enclosing_step_names = set(parent_steps or {})
+        try:
+            return self._validate_and_then_block_impl(
+                body,
+                containing_sig,
+                extra_yield_targets,
+                other_block_steps,
+                parent_steps,
+                parent_step_returns,
+                parent_step_returns_types,
+                parent_foreach_var,
+            )
+        finally:
+            self._enclosing_step_names = prev_enclosing
+
+    def _validate_and_then_block_impl(
+        self,
+        body: AndThenBlock,
+        containing_sig: FacetSig,
+        extra_yield_targets: set[str] | None = None,
+        other_block_steps: set[str] | None = None,
+        parent_steps: dict[str, "StepInfo"] | None = None,
+        parent_step_returns: dict[str, set[str]] | None = None,
+        parent_step_returns_types: dict[str, dict[str, str]] | None = None,
+        parent_foreach_var: str | None = None,
+    ) -> None:
         # andThen script variant
         if body.script:
             self._validate_script_block(body.script, containing_sig)
@@ -990,6 +1092,7 @@ class FFLValidator:
                 step_returns_types=parent_step_returns_types,
                 steps=parent_steps,
                 step_returns=parent_step_returns,
+                other_block_steps=other_block_steps,
             )
             return
 
@@ -1048,7 +1151,12 @@ class FFLValidator:
         # scope at runtime, grammar.md pre-script rule) that isn't a declared
         # param, and pre-script result keys aren't statically known — validating
         # them here would false-positive on legitimate `foreach x in $.derived`.
-        if body.foreach and not body.foreach.iterable.is_input:
+        # (Under relative scoping the resolver checks `$.` collections too — the
+        # step frame's surface is fully known, and an `open` base frame stays
+        # lenient about pre-script keys, so no false-positive.)
+        if body.foreach and (
+            self._relative_scoping or not body.foreach.iterable.is_input
+        ):
             self._validate_reference(
                 body.foreach.iterable,
                 input_attrs,
@@ -1135,55 +1243,78 @@ class FFLValidator:
                 other_block_steps=other_block_steps,
             )
 
-            # Validate inline step body if present
-            if step.body:
-                step_target = step.call.name.split(".")[-1]
-                self._validate_and_then_block(
-                    step.body,
-                    containing_sig,
-                    extra_yield_targets={step_target},
-                    parent_steps=steps,
-                    parent_step_returns=step_returns,
-                    parent_step_returns_types=step_returns_types,
-                    # A nested step body sits inside the enclosing block's scope,
-                    # so an enclosing `foreach` loop variable stays visible here
-                    # (loop vars share the workflow-input scope, which nested
-                    # bodies inherit). Without this the loop var is flagged as an
-                    # unknown parameter one level into an `andThen { }` body.
-                    parent_foreach_var=foreach_var,
+            # Relative scoping: a step body / catch descends into the step's
+            # own container frame — inside it, $ = this step (its params ∪
+            # returns), $$ = this block's container. Push once, covering both
+            # the body and the catch clause.
+            step_frame_pushed = False
+            if self._relative_scoping and (step.body or step.catch):
+                finfo = self._resolve_facet_name(step.call.name)
+                step_attrs = (
+                    (finfo.params | finfo.returns)
+                    if finfo
+                    else set(step_returns.get(step.name, set()))
                 )
+                self._container_stack.append(
+                    _ContainerFrame(
+                        name=step.name, kind="step", attrs=step_attrs, open=False
+                    )
+                )
+                step_frame_pushed = True
+            try:
+                # Validate inline step body if present
+                if step.body:
+                    step_target = step.call.name.split(".")[-1]
+                    self._validate_and_then_block(
+                        step.body,
+                        containing_sig,
+                        extra_yield_targets={step_target},
+                        parent_steps=steps,
+                        parent_step_returns=step_returns,
+                        parent_step_returns_types=step_returns_types,
+                        # A nested step body sits inside the enclosing block's
+                        # scope, so an enclosing `foreach` loop variable stays
+                        # visible here (loop vars share the workflow-input scope,
+                        # which nested bodies inherit). Without this the loop var
+                        # is flagged as an unknown parameter one level into an
+                        # `andThen { }` body.
+                        parent_foreach_var=foreach_var,
+                    )
 
-            # Validate inline catch clause if present
-            if step.catch:
-                # In catch blocks, the caught step's .error and .error_type are accessible
-                catch_step_returns = dict(step_returns)
-                catch_step_returns_types = dict(step_returns_types)
-                if step.name in catch_step_returns:
-                    catch_step_returns[step.name] = catch_step_returns[step.name] | {
-                        "error",
-                        "error_type",
-                    }
-                else:
-                    catch_step_returns[step.name] = {"error", "error_type"}
-                if step.name in catch_step_returns_types:
-                    catch_step_returns_types[step.name] = {
-                        **catch_step_returns_types[step.name],
-                        "error": "String",
-                        "error_type": "String",
-                    }
-                else:
-                    catch_step_returns_types[step.name] = {
-                        "error": "String",
-                        "error_type": "String",
-                    }
-                self._validate_catch_clause(
-                    step.catch,
-                    containing_sig,
-                    parent_steps=steps,
-                    parent_step_returns=catch_step_returns,
-                    parent_step_returns_types=catch_step_returns_types,
-                    parent_foreach_var=foreach_var,
-                )
+                # Validate inline catch clause if present
+                if step.catch:
+                    # In catch blocks, the caught step's .error and .error_type are accessible
+                    catch_step_returns = dict(step_returns)
+                    catch_step_returns_types = dict(step_returns_types)
+                    if step.name in catch_step_returns:
+                        catch_step_returns[step.name] = catch_step_returns[step.name] | {
+                            "error",
+                            "error_type",
+                        }
+                    else:
+                        catch_step_returns[step.name] = {"error", "error_type"}
+                    if step.name in catch_step_returns_types:
+                        catch_step_returns_types[step.name] = {
+                            **catch_step_returns_types[step.name],
+                            "error": "String",
+                            "error_type": "String",
+                        }
+                    else:
+                        catch_step_returns_types[step.name] = {
+                            "error": "String",
+                            "error_type": "String",
+                        }
+                    self._validate_catch_clause(
+                        step.catch,
+                        containing_sig,
+                        parent_steps=steps,
+                        parent_step_returns=catch_step_returns,
+                        parent_step_returns_types=catch_step_returns_types,
+                        parent_foreach_var=foreach_var,
+                    )
+            finally:
+                if step_frame_pushed:
+                    self._container_stack.pop()
 
         # Validate yield statements and check for duplicate targets
         yield_targets_used: set[str] = set()
@@ -1218,6 +1349,7 @@ class FFLValidator:
         step_returns_types: dict[str, dict[str, str]] | None = None,
         steps: dict[str, "StepInfo"] | None = None,
         step_returns: dict[str, set[str]] | None = None,
+        other_block_steps: set[str] | None = None,
     ) -> None:
         """Validate a when block.
 
@@ -1278,7 +1410,19 @@ class FFLValidator:
                     )
                 # Validate references in condition
                 for ref in self._extract_references(case.condition):
-                    if ref.is_input:
+                    if self._relative_scoping:
+                        # $ = the container the when is attached to; step refs
+                        # obey the universal no-outside-block rule (a top-level
+                        # when's sibling refs surface as REF_CROSS_BLOCK_STEP).
+                        self._validate_reference(
+                            ref,
+                            input_attrs,
+                            steps or {},
+                            step_returns or {},
+                            foreach_var=None,
+                            other_block_steps=other_block_steps,
+                        )
+                    elif ref.is_input:
                         if ref.path and ref.path[0] not in input_attrs:
                             self._result.add_error(
                                 f"Invalid input reference '$.{ref.path[0]}': "
@@ -1303,6 +1447,7 @@ class FFLValidator:
                     synthetic,
                     containing_sig,
                     extra_yield_targets,
+                    other_block_steps=other_block_steps,
                     parent_steps=steps,
                     parent_step_returns=step_returns,
                     parent_step_returns_types=step_returns_types,
@@ -1923,6 +2068,123 @@ class FFLValidator:
                 return True
         return False
 
+    def _resolve_relative_reference(
+        self,
+        ref: Reference,
+        steps: dict[str, StepInfo],
+        step_returns: dict[str, set[str]],
+        foreach_var: str | None,
+        current_step: str | None,
+        other_block_steps: set[str] | None,
+    ) -> None:
+        """Resolve a reference under container-relative ``$``-scoping.
+
+        ``$`` = the immediate container frame, ``$$`` one down, ...; a step is
+        nameable only if declared in the SAME block. See
+        ``docs/architecture/ffl-relative-scoping.md``.
+        """
+        if ref.is_input:
+            if not ref.path:
+                return
+            attr = ref.path[0]
+            # Loop var lives on the immediate frame (accessed $.r); stay lenient
+            # about the exact depth to match inherited-loop-var behavior.
+            if foreach_var and attr == foreach_var:
+                return
+            depth = ref.up_levels
+            idx = len(self._container_stack) - 1 - depth
+            if idx < 0:
+                dollars = "$" * (depth + 1)
+                levels = max(len(self._container_stack) - 1, 0)
+                self._result.add_error(
+                    f"'{dollars}.{attr}' walks up {depth} container level(s), "
+                    f"past the outermost container ({levels} enclosing level(s) "
+                    f"available)",
+                    ref.location,
+                    rule_id="REF_DOLLAR_OVERFLOW",
+                )
+                return
+            frame = self._container_stack[idx]
+            if attr in frame.attrs:
+                return
+            if frame.open:
+                # A pre-script may inject extra $. keys we can't enumerate.
+                return
+            dollars = "$" * (depth + 1)
+            self._result.add_error(
+                f"Invalid reference '{dollars}.{attr}': container '{frame.name}' "
+                f"has no attribute '{attr}'",
+                ref.location,
+                rule_id="REF_INVALID_INPUT",
+            )
+            return
+
+        # Step reference (step.attr or bare step).
+        if not ref.path:
+            self._result.add_error(
+                "Empty step reference", ref.location, rule_id="REF_INVALID_STEP_FORMAT"
+            )
+            return
+        step_name = ref.path[0]
+        same_block = step_name in steps and step_name not in self._enclosing_step_names
+
+        if same_block:
+            # Forward reference within the block (same rule as the flat model).
+            if current_step:
+                names = list(steps.keys())
+                if step_name in names and current_step in names:
+                    if names.index(step_name) > names.index(current_step) or (
+                        step_name != current_step
+                        and names.index(step_name) == names.index(current_step)
+                    ):
+                        self._result.add_error(
+                            f"Step '{current_step}' cannot reference step "
+                            f"'{step_name}' which is not defined before it",
+                            ref.location,
+                            rule_id="REF_FORWARD_STEP",
+                        )
+                        return
+            if len(ref.path) == 1:
+                return  # bare pass-by-reference
+            attr = ref.path[1]
+            returns = step_returns.get(step_name, set())
+            if returns and attr not in returns:
+                self._result.add_error(
+                    f"Invalid attribute '{attr}' for step '{step_name}': "
+                    f"valid attributes are {sorted(returns)}",
+                    ref.location,
+                    rule_id="REF_INVALID_STEP_ATTRIBUTE",
+                )
+            return
+
+        if other_block_steps and step_name in other_block_steps:
+            self._result.add_error(
+                f"Cross-block step reference: '{step_name}' is defined in a "
+                f"sibling andThen block and cannot be referenced here. Use a step "
+                f"body (e.g. step = Call(...) andThen {{ ... }}) to compose steps "
+                f"that depend on each other.",
+                ref.location,
+                rule_id="REF_CROSS_BLOCK_STEP",
+            )
+            return
+        if step_name in self._enclosing_step_names:
+            self._result.add_error(
+                f"Cannot name the enclosing step '{step_name}' directly: its name "
+                f"is not defined in this block. Reach its attributes via "
+                f"'$.{ref.path[1] if len(ref.path) > 1 else '<field>'}' (or '$$…' "
+                f"for an outer container).",
+                ref.location,
+                rule_id="REF_CONTAINING_STEP_BY_NAME",
+            )
+            return
+        if foreach_var and step_name == foreach_var:
+            return
+        self._result.add_error(
+            f"Reference to undefined step '{step_name}'",
+            ref.location,
+            rule_id="REF_UNDEFINED_STEP",
+        )
+
     def _validate_reference(
         self,
         ref: Reference,
@@ -1934,6 +2196,11 @@ class FFLValidator:
         other_block_steps: set[str] | None = None,
     ) -> None:
         """Validate a single reference."""
+        if self._relative_scoping:
+            self._resolve_relative_reference(
+                ref, steps, step_returns, foreach_var, current_step, other_block_steps
+            )
+            return
         if ref.is_input:
             # $.attr - must reference a valid input parameter
             if ref.path:
@@ -2195,14 +2462,17 @@ class FFLValidator:
                 )
 
 
-def validate(program: Program) -> ValidationResult:
+def validate(program: Program, relative_scoping: bool | None = None) -> ValidationResult:
     """Validate a program AST.
 
     Args:
         program: The Program AST to validate
+        relative_scoping: opt into container-relative ``$``-scoping
+            (see ``docs/architecture/ffl-relative-scoping.md``). ``None`` reads
+            ``FW_FFL_RELATIVE_SCOPING`` from the environment (default off).
 
     Returns:
         ValidationResult containing any errors found
     """
-    validator = FFLValidator()
+    validator = FFLValidator(relative_scoping=relative_scoping)
     return validator.validate(program)

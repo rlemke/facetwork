@@ -246,9 +246,14 @@ class FFLTransformer(Transformer):
     def CATCH_KW(self, token: Token) -> str:
         return str(token)
 
-    def INPUT_REF(self, token: Token) -> list[str]:
-        # $.field.subfield -> ["field", "subfield"]
-        return str(token)[2:].split(".")
+    def INPUT_REF(self, token: Token) -> tuple[int, list[str]]:
+        # $.field.subfield     -> (0, ["field", "subfield"])
+        # $$.field             -> (1, ["field"])   (up one container)
+        # $$$.field            -> (2, ["field"])
+        s = str(token)
+        n_dollars = len(s) - len(s.lstrip("$"))
+        path = s[n_dollars + 1 :].split(".")  # skip the dollars and the "."
+        return (n_dollars - 1, path)
 
     # Types
     @v_args(inline=True)
@@ -294,9 +299,15 @@ class FFLTransformer(Transformer):
     @v_args(meta=True)
     def reference(self, meta, items: list) -> Reference:
         item = items[0]
-        if isinstance(item, list):
-            # INPUT_REF already parsed to list
-            return Reference(path=item, is_input=True, location=self._loc(meta))
+        if isinstance(item, tuple):
+            # INPUT_REF parsed to (up_levels, path)
+            up_levels, path = item
+            return Reference(
+                path=path,
+                is_input=True,
+                up_levels=up_levels,
+                location=self._loc(meta),
+            )
         else:
             # step_ref
             return item

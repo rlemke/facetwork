@@ -26,6 +26,12 @@ def validator():
     return FFLValidator()
 
 
+@pytest.fixture
+def rel_validator():
+    """Validator with container-relative $-scoping enabled (flag-on)."""
+    return FFLValidator(relative_scoping=True)
+
+
 def _ns(source: str) -> str:
     """Wrap FFL source in a namespace if it contains a top-level workflow."""
     import textwrap
@@ -3683,3 +3689,149 @@ class TestNestedSchemaFieldAccess:
         result = validator.validate(ast)
         # Reference validation catches invalid first-level attribute
         assert any("nonexistent" in str(e) and "Invalid attribute" in str(e) for e in result.errors)
+
+
+class TestRelativeScoping:
+    """Container-relative $-scoping (FW_FFL_RELATIVE_SCOPING / relative_scoping=True).
+
+    Model: $ = immediate container (params ∪ returns), $$ walks up one, a block
+    names only $/$$ + same-block steps; the containing step is NOT nameable;
+    andThen when obeys the same no-outside-block rule. Legacy resolver (flag-off)
+    is unchanged. See docs/architecture/ffl-relative-scoping.md.
+    """
+
+    _HEAD = (
+        "namespace test {\n"
+        " event facet sf1(input: String) => (output: String, refs: [String])\n"
+        " facet f1(input: String) => (output: String) andThen {\n"
+    )
+    _TAIL = "\n }\n}"
+
+    def _rules(self, rel_validator, body):
+        ast = parse(self._HEAD + body + self._TAIL)
+        return sorted({e.rule_id for e in rel_validator.validate(ast).errors})
+
+    # --- $ resolves the containing step's attribute surface (params ∪ returns) ---
+
+    def test_dollar_param_of_containing_step_ok(self, rel_validator):
+        assert self._rules(
+            rel_validator,
+            "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$.input) }",
+        ) == []
+
+    def test_dollar_return_of_containing_step_ok(self, rel_validator):
+        # $.output / $.refs are the containing step's RETURNS — legal under the
+        # new model (an error under the flat resolver).
+        assert self._rules(
+            rel_validator,
+            's3 = sf1(input=$.input) andThen when { '
+            'case $.output == "one" => { w = sf1(input=$.output) } case _ => {} }',
+        ) == []
+
+    def test_dollar_return_foreach_collection_ok(self, rel_validator):
+        assert self._rules(
+            rel_validator,
+            "s3 = sf1(input=$.input) andThen foreach r in $.refs "
+            "{ r1 = sf1(input=$.r) }",
+        ) == []
+
+    # --- $$ up-level + overflow ---
+
+    def test_up_level_ok(self, rel_validator):
+        assert self._rules(
+            rel_validator,
+            "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$$.input) }",
+        ) == []
+
+    def test_up_level_overflow_errors(self, rel_validator):
+        # Inside s3's body only two containers exist (s3, f1); $$$ is one too far.
+        assert self._rules(
+            rel_validator,
+            "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$$$.input) }",
+        ) == ["REF_DOLLAR_OVERFLOW"]
+
+    # --- containing step not nameable; same-block sibling is ---
+
+    def test_containing_step_by_name_errors(self, rel_validator):
+        assert self._rules(
+            rel_validator,
+            "s3 = sf1(input=$.input) andThen { s4 = sf1(input=s3.output) }",
+        ) == ["REF_CONTAINING_STEP_BY_NAME"]
+
+    def test_same_block_sibling_ok(self, rel_validator):
+        assert self._rules(
+            rel_validator,
+            "a = sf1(input=$.input)\n b = sf1(input=a.output)",
+        ) == []
+
+    # --- andThen when obeys the no-outside-block rule (Gap-2 removed) ---
+
+    def test_top_level_when_sibling_ref_errors(self, rel_validator):
+        # A top-level when reading a prior sibling block's step is now cross-block.
+        src = """namespace t {
+          event facet GetRisk(id: Int) => (score: Int)
+          facet HandleHigh(x: Int)
+          workflow W(id: Int) andThen {
+             s1 = GetRisk(id = $.id)
+          } andThen when {
+             case s1.score == 10 => { h = HandleHigh(x = s1.score) }
+             case _ => {}
+          }
+        }"""
+        rules = sorted({e.rule_id for e in rel_validator.validate(parse(src)).errors})
+        assert rules == ["REF_CROSS_BLOCK_STEP"]
+
+    def test_step_body_when_reads_dollar_ok(self, rel_validator):
+        # The migrated clean form: attach the when to the step, read $.score.
+        src = """namespace t {
+          event facet GetRisk(id: Int) => (score: Int)
+          facet HandleHigh(x: Int)
+          workflow W(id: Int) andThen {
+             s1 = GetRisk(id = $.id) andThen when {
+                case $.score == 10 => { h = HandleHigh(x = $.score) }
+                case _ => {}
+             }
+          }
+        }"""
+        result = rel_validator.validate(parse(src))
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    # --- regular sibling-block ref stays cross-block in BOTH modes ---
+
+    def test_regular_sibling_block_ref_errors(self, rel_validator, validator):
+        src = """namespace t {
+          facet A() => (out: String)
+          facet B(in: String) => (r: String)
+          workflow W() => (r: String) andThen {
+             a = A()
+          } andThen {
+             b = B(in = a.out)
+             yield W(r = b.r)
+          }
+        }"""
+        for v in (rel_validator, validator):
+            rules = sorted({e.rule_id for e in v.validate(parse(src)).errors})
+            assert rules == ["REF_CROSS_BLOCK_STEP"]
+
+    # --- flag-off leaves the legacy (flat) behavior intact ---
+
+    def test_flag_off_containing_step_by_name_ok(self, validator):
+        # Under the legacy resolver the containing step IS nameable.
+        src = self._HEAD + "s3 = sf1(input=$.input) andThen { s4 = sf1(input=s3.output) }" + self._TAIL
+        result = validator.validate(parse(src))
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_flag_off_top_level_when_sibling_ok(self, validator):
+        # Legacy Gap-2: a top-level when may read a prior block's step.
+        src = """namespace t {
+          event facet GetRisk(id: Int) => (score: Int)
+          facet HandleHigh(x: Int)
+          workflow W(id: Int) andThen {
+             s1 = GetRisk(id = $.id)
+          } andThen when {
+             case s1.score == 10 => { h = HandleHigh(x = s1.score) }
+             case _ => {}
+          }
+        }"""
+        result = validator.validate(parse(src))
+        assert result.is_valid, [str(e) for e in result.errors]

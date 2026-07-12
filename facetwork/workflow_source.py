@@ -653,7 +653,8 @@ def _expr(node: object) -> str:
     if kind == "Null":
         return "null"
     if kind == "InputRef":
-        return "$." + ".".join(node.get("path", []))
+        dollars = "$" * (int(node.get("up_levels", 0)) + 1)
+        return dollars + "." + ".".join(node.get("path", []))
     if kind == "StepRef":
         return ".".join(node.get("path", []))
     if kind == "ConcatExpr":

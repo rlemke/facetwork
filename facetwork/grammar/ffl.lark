@@ -149,7 +149,8 @@ MUL_OP: "*" | "/" | "%"
 
 reference: INPUT_REF | step_ref
 step_ref: IDENT ("." IDENT)*
-INPUT_REF: "$." IDENT ("." IDENT)*
+// One-or-more leading "$": $ = immediate container, $$ = up one, $$$ = up two, ...
+INPUT_REF: /\$+/ "." IDENT ("." IDENT)*
 
 literal: STRING | FLOAT | INTEGER | BOOLEAN | NULL
 
