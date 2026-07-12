@@ -238,12 +238,12 @@ flag day given the `fwh_*` repos are separate and baked into the fleet image.
   `REF_DOLLAR_OVERFLOW`, `REF_CONTAINING_STEP_BY_NAME`, and the Gap-2 removal are
   all flag-gated. **Flag-off is byte-identical** (full suite unchanged). 12
   flag-on/flag-off tests + two rule docs.
-- **Discovered gap — step-body clause chaining.** The author's canonical example
-  chains clauses on one step (`s = F() andThen {} andThen foreach andThen when`);
-  the current grammar accepts only ONE step-body clause, so the example does not
-  parse yet. This is separable from the `$`-resolver (each clause's container is
-  still the step) and is tracked as its own grammar task. It must land before the
-  model can be fully migrated to.
+- **Step-body clause chaining landed (`0d27151`).** `step_body*` (no LALR
+  conflict) + a new `StepStmt.extra_bodies` list (body stays the first clause →
+  single-clause steps byte-identical). Co-clauses share `$` = the step and cannot
+  reference each other (`REF_CROSS_BLOCK_STEP` across co-clauses). Emitter +
+  workflow-source round-trip them. **The author's full canonical example now
+  parses + validates clean under the flag and round-trips emit→source→reparse.**
 - **Not yet done:** the runtime side (`$$`/step-return resolution in
   `expression.py`/`initialization.py` — currently `$$` never executes because no
   shipping FFL uses it), the migration transformer, the default flip, the
