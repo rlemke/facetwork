@@ -237,10 +237,12 @@ class ExecutionContext:
                 return self._select_block_body(body, block_step)
             return None
 
-        # Check for statement-level inline body on the container
+        # Check for statement-level inline body on the container. This may be a
+        # list (chained co-clauses) — route through _select_block_body so the
+        # block-N index picks the right clause (a lone dict passes through).
         inline_body = self._find_statement_body(container)
         if inline_body:
-            return inline_body
+            return self._select_block_body(inline_body, block_step)
 
         # Check for facet-level body on the container's facet
         if container.facet_name:
@@ -325,7 +327,15 @@ class ExecutionContext:
             if stmt_ast.get("id") == str(step.statement_id) or stmt_ast.get("name") == str(
                 step.statement_id
             ):
-                return stmt_ast.get("body")
+                body = stmt_ast.get("body")
+                # Chained co-clauses (s = F() andThen {…} andThen foreach …):
+                # return the full clause list so each expands as its own sibling
+                # block. Single-clause steps keep returning the lone dict, so the
+                # expansion path stays byte-identical.
+                extra = stmt_ast.get("extra_bodies")
+                if extra:
+                    return ([body] if body is not None else []) + list(extra)
+                return body
 
         return None
 

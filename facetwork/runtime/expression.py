@@ -73,6 +73,12 @@ class EvaluationContext:
     # Current step ID for error reporting
     step_id: StepId | None = None
 
+    # Relative-scoping container stack (docs/architecture/ffl-relative-scoping.md).
+    # When set (flag-on), $. resolves against this stack instead of `inputs`:
+    # index 0 = the immediate container's attribute surface (params ∪ returns),
+    # index 1 = one container up ($$), etc. None = legacy flat `inputs` resolution.
+    scope_stack: list[dict[str, Any]] | None = None
+
 
 class ExpressionEvaluator:
     """Evaluates FFL expressions from compiled AST."""
@@ -164,6 +170,9 @@ class ExpressionEvaluator:
 
         field = path[0]
 
+        if ctx.scope_stack is not None:
+            return self._eval_input_ref_relative(expr, path, field, ctx)
+
         # Check foreach variable first
         if ctx.foreach_var and field == ctx.foreach_var:
             value = ctx.foreach_value
@@ -179,6 +188,45 @@ class ExpressionEvaluator:
 
         # Handle nested path
         return self._resolve_path(value, path[1:], f"$.{field}", ctx)
+
+    def _eval_input_ref_relative(
+        self, expr: dict, path: list, field: str, ctx: EvaluationContext
+    ) -> Any:
+        """Resolve $. / $$. under relative scoping using ``ctx.scope_stack``.
+
+        ``up_levels`` picks the frame (0 = immediate container, 1 = one up, …).
+        A frame's params are static (bound at init); its returns are resolved
+        lazily through ``get_step_output`` so a body that reads its containing
+        step's return defers until the step completes (same mechanism a
+        ``step.field`` ref uses). The foreach loop var lives on the immediate
+        frame ($.r). An attribute that is neither a param, a return, nor the loop
+        var evaluates to None (docs/architecture/ffl-relative-scoping.md §5.2).
+        """
+        up = int(expr.get("up_levels", 0))
+        stack = ctx.scope_stack or []
+        dollars = "$" * (up + 1)
+        if up >= len(stack):
+            raise ReferenceError(
+                f"{dollars}.{field}",
+                f"Reference walks up {up} container level(s), past the outermost "
+                f"container ({max(len(stack) - 1, 0)} available)",
+                ctx.step_id,
+            )
+        # Loop var is bound on the immediate frame only.
+        if up == 0 and ctx.foreach_var and field == ctx.foreach_var:
+            value = ctx.foreach_value
+        else:
+            frame = stack[up]
+            if field in frame["params"]:
+                value = frame["params"][field]
+            elif field in frame["returns"] and frame.get("name"):
+                # A container return — resolve via the step-output getter, which
+                # defers (raises _StepNotReady) until the container completes.
+                value = ctx.get_step_output(frame["name"], field)
+            else:
+                # Unknown / not-yet-assigned attribute → None.
+                value = None
+        return self._resolve_path(value, path[1:], f"{dollars}.{field}", ctx)
 
     def _eval_step_ref(self, expr: dict, ctx: EvaluationContext) -> Any:
         """Evaluate a step reference.

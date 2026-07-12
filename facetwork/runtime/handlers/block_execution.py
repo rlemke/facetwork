@@ -96,6 +96,7 @@ class BlockExecutionBeginHandler(StateHandler):
             StateChangeResult
         """
         from ..expression import EvaluationContext, ExpressionEvaluator
+        from ..relative_scope import build_scope_stack, relative_scoping_enabled
         from ..step import StepDefinition
         from ..types import ObjectType, deterministic_step_id
 
@@ -151,6 +152,11 @@ class BlockExecutionBeginHandler(StateHandler):
                 self.context.get_facet_definition,
             )
 
+        scope_stack = (
+            build_scope_stack(self.context, self.step)
+            if relative_scoping_enabled()
+            else None
+        )
         eval_ctx = EvaluationContext(
             inputs=inputs,
             get_step_output=get_step_output,
@@ -158,6 +164,7 @@ class BlockExecutionBeginHandler(StateHandler):
             get_step_by_id=get_step_by_id,
             get_mixin_step_by_alias=get_mixin_step_by_alias,
             step_id=self.step.id,
+            scope_stack=scope_stack,
         )
         evaluator = ExpressionEvaluator()
         try:
@@ -244,6 +251,7 @@ class BlockExecutionBeginHandler(StateHandler):
             StateChangeResult
         """
         from ..expression import EvaluationContext, ExpressionEvaluator
+        from ..relative_scope import build_scope_stack, relative_scoping_enabled
         from ..step import StepDefinition
         from ..types import ObjectType, deterministic_step_id
 
@@ -295,6 +303,11 @@ class BlockExecutionBeginHandler(StateHandler):
                 self.context.get_facet_definition,
             )
 
+        scope_stack = (
+            build_scope_stack(self.context, self.step)
+            if relative_scoping_enabled()
+            else None
+        )
         eval_ctx = EvaluationContext(
             inputs=inputs,
             get_step_output=get_step_output,
@@ -302,6 +315,7 @@ class BlockExecutionBeginHandler(StateHandler):
             get_step_by_id=get_step_by_id,
             get_mixin_step_by_alias=get_mixin_step_by_alias,
             step_id=self.step.id,
+            scope_stack=scope_stack,
         )
         evaluator = ExpressionEvaluator()
 

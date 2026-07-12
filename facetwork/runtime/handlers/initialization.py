@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 from ..changers.base import StateChangeResult
 from ..errors import EvaluationError
 from ..expression import EvaluationContext, ExpressionEvaluator, evaluate_args
+from ..relative_scope import build_scope_stack, relative_scoping_enabled
 from ..types import ObjectType
 from .base import StateHandler
 
@@ -266,6 +267,13 @@ class FacetInitializationBeginHandler(StateHandler):
                 self.context.get_facet_definition,
             )
 
+        # Relative scoping (flag-on): resolve $. / $$. against the container
+        # stack instead of the flat overlaid inputs. `inputs` is still passed
+        # for the legacy path and as a harmless fallback.
+        scope_stack = None
+        if relative_scoping_enabled():
+            scope_stack = build_scope_stack(self.context, self.step)
+
         return EvaluationContext(
             inputs=inputs,
             get_step_output=get_step_output,
@@ -275,6 +283,7 @@ class FacetInitializationBeginHandler(StateHandler):
             step_id=self.step.id,
             foreach_var=foreach_var,
             foreach_value=foreach_value,
+            scope_stack=scope_stack,
         )
 
     def _resolve_inputs(self) -> dict:
