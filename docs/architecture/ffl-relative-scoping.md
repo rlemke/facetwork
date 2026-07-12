@@ -229,6 +229,26 @@ flag day given the `fwh_*` repos are separate and baked into the fleet image.
 
 ---
 
+## 5a. Implementation status
+
+- **Phase 1 landed (`b5b7777`), behind `FW_FFL_RELATIVE_SCOPING` (default off).**
+  Grammar/AST/transformer/emitter carry the `$$…` up-level operator
+  unconditionally (additive — no existing FFL uses `$$`); the validator's
+  container-frame stack, `$`/`$$` resolution over params ∪ returns,
+  `REF_DOLLAR_OVERFLOW`, `REF_CONTAINING_STEP_BY_NAME`, and the Gap-2 removal are
+  all flag-gated. **Flag-off is byte-identical** (full suite unchanged). 12
+  flag-on/flag-off tests + two rule docs.
+- **Discovered gap — step-body clause chaining.** The author's canonical example
+  chains clauses on one step (`s = F() andThen {} andThen foreach andThen when`);
+  the current grammar accepts only ONE step-body clause, so the example does not
+  parse yet. This is separable from the `$`-resolver (each clause's container is
+  still the step) and is tracked as its own grammar task. It must land before the
+  model can be fully migrated to.
+- **Not yet done:** the runtime side (`$$`/step-return resolution in
+  `expression.py`/`initialization.py` — currently `$$` never executes because no
+  shipping FFL uses it), the migration transformer, the default flip, the
+  `_StepNotReady` prune, and the reference-doc rewrite.
+
 ## 6. What already shipped in this direction (context, not to redo)
 
 - Cross-block **foreach collection** now enforces `REF_CROSS_BLOCK_STEP`
