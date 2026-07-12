@@ -243,15 +243,15 @@ class _Migrator:
                 continue
             self._walk_call(call, block_steps, loop_vars)
             clauses = ([step.body] if step.body else []) + list(getattr(step, "extra_bodies", []))
-            if clauses:
+            # A step body / catch descends into the step's own frame — inside it,
+            # $ = this step (incl. its .error in a catch). Push once for both.
+            if clauses or step.catch:
                 self._stack.append(_Frame(name=step.name, attrs=self._step_attrs(call)))
                 for clause in clauses:
                     self._walk_and_then_block(clause, loop_vars)
                 if step.catch:
                     self._walk_catch(step.catch, loop_vars)
                 self._stack.pop()
-            elif step.catch:
-                self._walk_catch(step.catch, loop_vars)
         for y in block.yield_stmts:
             self._walk_call(y.call, block_steps, loop_vars)
 

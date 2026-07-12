@@ -223,6 +223,10 @@ class ExpressionEvaluator:
                 # A container return — resolve via the step-output getter, which
                 # defers (raises _StepNotReady) until the container completes.
                 value = ctx.get_step_output(frame["name"], field)
+            elif up == 0 and field in ctx.inputs:
+                # Values injected into the immediate scope that aren't declared
+                # params/returns — e.g. a catch clause's error / error_type.
+                value = ctx.inputs[field]
             else:
                 # Unknown / not-yet-assigned attribute → None.
                 value = None

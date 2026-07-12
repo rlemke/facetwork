@@ -1255,6 +1255,11 @@ class FFLValidator:
                     if finfo
                     else set(step_returns.get(step.name, set()))
                 )
+                # A catch clause exposes the caught step's synthetic error
+                # attributes on $ (the step). Harmless for a plain body (which
+                # never references them).
+                if step.catch:
+                    step_attrs = step_attrs | {"error", "error_type"}
                 self._container_stack.append(
                     _ContainerFrame(
                         name=step.name, kind="step", attrs=step_attrs, open=False
