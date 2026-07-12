@@ -500,9 +500,20 @@ class FFLTransformer(Transformer):
     def step_stmt(self, meta, items: list) -> StepStmt:
         name = items[0]
         call = items[1]
-        body = self._find_one(items[2:], AndThenBlock)
+        # A step may chain multiple andThen clauses (step_body*): the first is
+        # `body`, the rest are `extra_bodies` (co-clauses sharing $ = the step).
+        bodies = self._find_all(items[2:], AndThenBlock)
+        body = bodies[0] if bodies else None
+        extra_bodies = bodies[1:]
         catch = self._find_one(items[2:], CatchClause)
-        return StepStmt(name=name, call=call, body=body, catch=catch, location=self._loc(meta))
+        return StepStmt(
+            name=name,
+            call=call,
+            body=body,
+            catch=catch,
+            extra_bodies=extra_bodies,
+            location=self._loc(meta),
+        )
 
     @v_args(meta=True)
     def step_body(self, meta, items: list) -> AndThenBlock:

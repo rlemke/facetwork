@@ -3835,3 +3835,75 @@ class TestRelativeScoping:
         }"""
         result = validator.validate(parse(src))
         assert result.is_valid, [str(e) for e in result.errors]
+
+    # --- step-body clause chaining ---
+
+    def test_clause_chain_canonical_ok(self, rel_validator):
+        # The author's canonical example: {} andThen foreach andThen when on one
+        # step, with $$ up-level, $.refs/$.output step returns, $.r loop var.
+        src = """namespace test {
+            event facet sf1(input: String) => (output: String, refs: [String])
+            workflow W(input: String) => (output: String) andThen {
+                s3 = sf1(input = $.input) andThen {
+                    s4 = sf1(input = $.input ++ $$.input)
+                } andThen foreach r in $.refs {
+                    r1 = sf1(input = $.r)
+                } andThen when {
+                    case $.output == "one" => { w1 = sf1(input = $.output) }
+                    case _ => { w1 = sf1(input = "default") }
+                }
+            }
+        }"""
+        result = rel_validator.validate(parse(src))
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_co_clause_cross_ref_errors(self, rel_validator):
+        # A when co-clause naming a step from a sibling {} co-clause is cross-block.
+        src = self._HEAD + (
+            "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$.input) } "
+            'andThen when { case s4.output == "x" => { w = sf1(input=$.input) } '
+            "case _ => {} }"
+        ) + self._TAIL
+        rules = sorted({e.rule_id for e in rel_validator.validate(parse(src)).errors})
+        assert rules == ["REF_CROSS_BLOCK_STEP"]
+
+    def test_clause_chain_roundtrips(self, rel_validator):
+        # Chained clauses survive emit -> source reconstruction -> reparse.
+        from facetwork.emitter import emit_dict
+        from facetwork.workflow_source import reconstruct_workflow_source
+
+        src = """namespace test {
+            event facet sf1(input: String) => (output: String, refs: [String])
+            workflow W(input: String) => (output: String) andThen {
+                s3 = sf1(input = $.input) andThen {
+                    s4 = sf1(input = $$.input)
+                } andThen foreach r in $.refs {
+                    r1 = sf1(input = $.r)
+                }
+            }
+        }"""
+        prog = parse(src)
+        recon = reconstruct_workflow_source(emit_dict(prog, include_locations=False), "W")
+        assert "andThen foreach r in $.refs" in recon
+        assert "$$.input" in recon
+        result = rel_validator.validate(parse(recon))
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_single_clause_step_still_one_body(self):
+        # Regression: a single-clause step body keeps extra_bodies empty.
+        prog = parse(self._HEAD + "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$.input) }" + self._TAIL)
+        from facetwork.ast import StepStmt
+
+        found = []
+
+        def walk(n):
+            if isinstance(n, StepStmt) and n.name == "s3":
+                found.append(n)
+            for f in getattr(n, "__dataclass_fields__", {}):
+                v = getattr(n, f)
+                for x in (v if isinstance(v, list) else [v]):
+                    walk(x)
+
+        walk(prog)
+        assert found and found[0].body is not None
+        assert found[0].extra_bodies == []

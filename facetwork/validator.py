@@ -1248,7 +1248,7 @@ class FFLValidator:
             # returns), $$ = this block's container. Push once, covering both
             # the body and the catch clause.
             step_frame_pushed = False
-            if self._relative_scoping and (step.body or step.catch):
+            if self._relative_scoping and (step.body or step.catch or step.extra_bodies):
                 finfo = self._resolve_facet_name(step.call.name)
                 step_attrs = (
                     (finfo.params | finfo.returns)
@@ -1262,24 +1262,40 @@ class FFLValidator:
                 )
                 step_frame_pushed = True
             try:
-                # Validate inline step body if present
-                if step.body:
+                # Validate the step's andThen clauses. A step may chain several
+                # (`s = F() andThen {…} andThen foreach … andThen when …`); each
+                # is a co-clause sharing $ = the step, and — like sibling andThen
+                # blocks — a co-clause may not name another co-clause's steps.
+                step_clauses = ([step.body] if step.body else []) + list(step.extra_bodies)
+                if step_clauses:
                     step_target = step.call.name.split(".")[-1]
-                    self._validate_and_then_block(
-                        step.body,
-                        containing_sig,
-                        extra_yield_targets={step_target},
-                        parent_steps=steps,
-                        parent_step_returns=step_returns,
-                        parent_step_returns_types=step_returns_types,
-                        # A nested step body sits inside the enclosing block's
-                        # scope, so an enclosing `foreach` loop variable stays
-                        # visible here (loop vars share the workflow-input scope,
-                        # which nested bodies inherit). Without this the loop var
-                        # is flagged as an unknown parameter one level into an
-                        # `andThen { }` body.
-                        parent_foreach_var=foreach_var,
-                    )
+                    clause_step_names = [
+                        self._collect_block_step_names(c) for c in step_clauses
+                    ]
+                    for i, clause in enumerate(step_clauses):
+                        co_clause_steps: set[str] = set()
+                        for j, names in enumerate(clause_step_names):
+                            if j != i:
+                                co_clause_steps |= names
+                        self._validate_and_then_block(
+                            clause,
+                            containing_sig,
+                            extra_yield_targets={step_target},
+                            # Co-clauses of the same step are siblings to each
+                            # other (cross-clause refs are rejected), mirroring
+                            # sibling andThen blocks.
+                            other_block_steps=co_clause_steps or None,
+                            parent_steps=steps,
+                            parent_step_returns=step_returns,
+                            parent_step_returns_types=step_returns_types,
+                            # A nested step body sits inside the enclosing block's
+                            # scope, so an enclosing `foreach` loop variable stays
+                            # visible here (loop vars share the workflow-input
+                            # scope, which nested bodies inherit). Without this the
+                            # loop var is flagged as an unknown parameter one level
+                            # into an `andThen { }` body.
+                            parent_foreach_var=foreach_var,
+                        )
 
                 # Validate inline catch clause if present
                 if step.catch:

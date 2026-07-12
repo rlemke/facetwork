@@ -184,12 +184,20 @@ class CallExpr(ASTNode):
 # Statements
 @dataclass
 class StepStmt(ASTNode):
-    """Step statement: name = CallExpr [andThen block] [catch block]"""
+    """Step statement: name = CallExpr [andThen block]... [catch block]
+
+    ``body`` is the first ``andThen`` clause attached to the step; ``extra_bodies``
+    holds any further chained clauses (``s = F() andThen {…} andThen foreach …
+    andThen when …``). All clauses are co-clauses of the step — they share
+    ``$`` = the step and cannot reference each other (relative scoping). Kept as
+    a separate list so single-clause steps stay byte-identical.
+    """
 
     name: str
     call: CallExpr
     body: "AndThenBlock | None" = None
     catch: "CatchClause | None" = None
+    extra_bodies: "list[AndThenBlock]" = field(default_factory=list)
 
 
 @dataclass

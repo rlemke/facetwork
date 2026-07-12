@@ -519,6 +519,9 @@ def _render_stmt(w: _Writer, stmt: dict, depth: int) -> None:
     w.line(f"{ind}{stmt['name']} = {_call(stmt['call'])}")
     if stmt.get("body"):
         _render_andthen(w, stmt["body"], depth, keyword="andThen", attach=True)
+    # Chained co-clauses (andThen {…} andThen foreach … andThen when …).
+    for extra in stmt.get("extra_bodies", []):
+        _render_andthen(w, extra, depth, keyword="andThen", attach=True)
     if stmt.get("catch"):
         _render_catch(w, stmt["catch"], depth, attach=True)
 

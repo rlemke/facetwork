@@ -505,6 +505,10 @@ class JSONEmitter:
         }
         if node.body:
             data["body"] = self._convert(node.body)
+        # Chained co-clauses (s = F() andThen {…} andThen foreach …). Emitted
+        # only when present so single-clause steps are unchanged.
+        if node.extra_bodies:
+            data["extra_bodies"] = [self._convert(b) for b in node.extra_bodies]
         if node.catch:
             data["catch"] = self._convert(node.catch)
         return self._add_metadata(data, node)
