@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# fw-summary: migrate legacy FFL to the relative $-scoping model (dry-run/--write)
+# Migrate FFL source to relative $-scoping (docs/architecture/ffl-relative-scoping.md).
+#
+# Usage:
+#   fw ffl migrate-scoping FILE.ffl              # dry run: show diff + manual sites
+#   fw ffl migrate-scoping examples/             # scan a dir for *.ffl (dry run)
+#   fw ffl migrate-scoping examples/ --write     # apply edits in place
+#
+# Rewrites containing/enclosing-step-by-name -> $/$$ and flat $.x that reaches an
+# outer container -> $$.x. Sibling-block `andThen when` sites are reported for
+# manual restructuring, not rewritten.
+
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+REPO_ROOT="$FW_ROOT"
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.migration "$@"
