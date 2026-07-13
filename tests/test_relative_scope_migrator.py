@@ -72,10 +72,7 @@ class TestMigrateReferences:
         assert "input = $.r" in res.source  # loop var stays $.r
 
     def test_same_block_sibling_untouched(self):
-        src = _ns(
-            "        a = sf1(input = $.input)\n"
-            "        b = sf1(input = a.output)"
-        )
+        src = _ns("        a = sf1(input = $.input)\n        b = sf1(input = a.output)")
         res = migrate_source(src)
         assert not res.changed
         assert "input = a.output" in res.source
@@ -140,6 +137,6 @@ class TestMigrateRealFiles:
         assert "foreach chunk in $.chunks" in res.source  # containing step → $
         assert "file_path = $$.file_path" in res.source  # workflow input → $$
         # migrated file is clean under the relative flag
-        errs = [e for e in validate(parse(res.source), relative_scoping=True).errors]
-        base = [e for e in validate(parse(open(matches[0]).read()), relative_scoping=False).errors]
+        errs = list(validate(parse(res.source), relative_scoping=True).errors)
+        base = list(validate(parse(open(matches[0]).read()), relative_scoping=False).errors)
         assert len(errs) <= len(base)

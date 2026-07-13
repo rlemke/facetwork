@@ -205,8 +205,7 @@ class TestStepReferences:
         result = validator.validate(ast)
         assert not result.is_valid
         assert any(
-            e.rule_id == "REF_INVALID_INPUT" and "nonexistent" in str(e)
-            for e in result.errors
+            e.rule_id == "REF_INVALID_INPUT" and "nonexistent" in str(e) for e in result.errors
         )
 
     def test_mixin_body_scope_isolation_via_ref_invalid_input(self, validator):
@@ -1308,8 +1307,7 @@ class TestMixinCallValidation:
         result = validator.validate(ast)
         assert not result.is_valid
         assert any(
-            e.rule_id == "REF_INVALID_INPUT" and "nonexistent" in str(e)
-            for e in result.errors
+            e.rule_id == "REF_INVALID_INPUT" and "nonexistent" in str(e) for e in result.errors
         )
 
 
@@ -3726,34 +3724,45 @@ class TestRelativeScoping:
     # --- $ resolves the containing step's attribute surface (params ∪ returns) ---
 
     def test_dollar_param_of_containing_step_ok(self, rel_validator):
-        assert self._rules(
-            rel_validator,
-            "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$.input) }",
-        ) == []
+        assert (
+            self._rules(
+                rel_validator,
+                "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$.input) }",
+            )
+            == []
+        )
 
     def test_dollar_return_of_containing_step_ok(self, rel_validator):
         # $.output / $.refs are the containing step's RETURNS — legal under the
         # new model (an error under the flat resolver).
-        assert self._rules(
-            rel_validator,
-            's3 = sf1(input=$.input) andThen when { '
-            'case $.output == "one" => { w = sf1(input=$.output) } case _ => {} }',
-        ) == []
+        assert (
+            self._rules(
+                rel_validator,
+                "s3 = sf1(input=$.input) andThen when { "
+                'case $.output == "one" => { w = sf1(input=$.output) } case _ => {} }',
+            )
+            == []
+        )
 
     def test_dollar_return_foreach_collection_ok(self, rel_validator):
-        assert self._rules(
-            rel_validator,
-            "s3 = sf1(input=$.input) andThen foreach r in $.refs "
-            "{ r1 = sf1(input=$.r) }",
-        ) == []
+        assert (
+            self._rules(
+                rel_validator,
+                "s3 = sf1(input=$.input) andThen foreach r in $.refs { r1 = sf1(input=$.r) }",
+            )
+            == []
+        )
 
     # --- $$ up-level + overflow ---
 
     def test_up_level_ok(self, rel_validator):
-        assert self._rules(
-            rel_validator,
-            "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$$.input) }",
-        ) == []
+        assert (
+            self._rules(
+                rel_validator,
+                "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$$.input) }",
+            )
+            == []
+        )
 
     def test_deep_up_levels_reach_distinct_same_named_attrs(self, rel_validator):
         # Nested step bodies where every level has a same-named `input`: the only
@@ -3794,10 +3803,13 @@ class TestRelativeScoping:
         ) == ["REF_CONTAINING_STEP_BY_NAME"]
 
     def test_same_block_sibling_ok(self, rel_validator):
-        assert self._rules(
-            rel_validator,
-            "a = sf1(input=$.input)\n b = sf1(input=a.output)",
-        ) == []
+        assert (
+            self._rules(
+                rel_validator,
+                "a = sf1(input=$.input)\n b = sf1(input=a.output)",
+            )
+            == []
+        )
 
     # --- andThen when obeys the no-outside-block rule (Gap-2 removed) ---
 
@@ -3852,7 +3864,11 @@ class TestRelativeScoping:
 
     def test_flag_off_containing_step_by_name_ok(self, legacy_validator):
         # Under the legacy resolver the containing step IS nameable.
-        src = self._HEAD + "s3 = sf1(input=$.input) andThen { s4 = sf1(input=s3.output) }" + self._TAIL
+        src = (
+            self._HEAD
+            + "s3 = sf1(input=$.input) andThen { s4 = sf1(input=s3.output) }"
+            + self._TAIL
+        )
         result = legacy_validator.validate(parse(src))
         assert result.is_valid, [str(e) for e in result.errors]
 
@@ -3894,11 +3910,15 @@ class TestRelativeScoping:
 
     def test_co_clause_cross_ref_errors(self, rel_validator):
         # A when co-clause naming a step from a sibling {} co-clause is cross-block.
-        src = self._HEAD + (
-            "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$.input) } "
-            'andThen when { case s4.output == "x" => { w = sf1(input=$.input) } '
-            "case _ => {} }"
-        ) + self._TAIL
+        src = (
+            self._HEAD
+            + (
+                "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$.input) } "
+                'andThen when { case s4.output == "x" => { w = sf1(input=$.input) } '
+                "case _ => {} }"
+            )
+            + self._TAIL
+        )
         rules = sorted({e.rule_id for e in rel_validator.validate(parse(src)).errors})
         assert rules == ["REF_CROSS_BLOCK_STEP"]
 
@@ -3926,7 +3946,9 @@ class TestRelativeScoping:
 
     def test_single_clause_step_still_one_body(self):
         # Regression: a single-clause step body keeps extra_bodies empty.
-        prog = parse(self._HEAD + "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$.input) }" + self._TAIL)
+        prog = parse(
+            self._HEAD + "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$.input) }" + self._TAIL
+        )
         from facetwork.ast import StepStmt
 
         found = []
@@ -3936,7 +3958,7 @@ class TestRelativeScoping:
                 found.append(n)
             for f in getattr(n, "__dataclass_fields__", {}):
                 v = getattr(n, f)
-                for x in (v if isinstance(v, list) else [v]):
+                for x in v if isinstance(v, list) else [v]:
                     walk(x)
 
         walk(prog)

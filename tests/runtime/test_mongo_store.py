@@ -439,15 +439,21 @@ class TestCommitOperations:
 
         # DB already holds this step advanced to sequence 5 by "the winner".
         winner = StepDefinition(
-            id=sid, workflow_id=wf_id, object_type="VariableAssignment",
-            state="state.facet.completion.Complete", version=VersionInfo(sequence=5),
+            id=sid,
+            workflow_id=wf_id,
+            object_type="VariableAssignment",
+            state="state.facet.completion.Complete",
+            version=VersionInfo(sequence=5),
         )
         mongo_store.save_step(winner)
 
         # A stale writer commits an UPDATE at sequence 3 (behind the DB).
         stale = StepDefinition(
-            id=sid, workflow_id=wf_id, object_type="VariableAssignment",
-            state="state.facet.initialization.Begin", version=VersionInfo(sequence=3),
+            id=sid,
+            workflow_id=wf_id,
+            object_type="VariableAssignment",
+            state="state.facet.initialization.Begin",
+            version=VersionInfo(sequence=3),
         )
         changes = IterationChanges()
         changes.add_updated_step(stale)
@@ -462,15 +468,21 @@ class TestCommitOperations:
         sid = step_id()
         mongo_store.save_step(
             StepDefinition(
-                id=sid, workflow_id=wf_id, object_type="VariableAssignment",
-                state="old", version=VersionInfo(sequence=1),
+                id=sid,
+                workflow_id=wf_id,
+                object_type="VariableAssignment",
+                state="old",
+                version=VersionInfo(sequence=1),
             )
         )
         changes = IterationChanges()
         changes.add_updated_step(
             StepDefinition(
-                id=sid, workflow_id=wf_id, object_type="VariableAssignment",
-                state="new", version=VersionInfo(sequence=2),
+                id=sid,
+                workflow_id=wf_id,
+                object_type="VariableAssignment",
+                state="new",
+                version=VersionInfo(sequence=2),
             )
         )
         mongo_store.commit(changes)
@@ -483,14 +495,21 @@ class TestCommitOperations:
         sid = step_id()
         # Insert a raw doc WITHOUT a version field to simulate a legacy row.
         mongo_store._db.steps.insert_one(
-            {"uuid": sid, "workflow_id": wf_id, "object_type": "VariableAssignment",
-             "state": "legacy"}
+            {
+                "uuid": sid,
+                "workflow_id": wf_id,
+                "object_type": "VariableAssignment",
+                "state": "legacy",
+            }
         )
         changes = IterationChanges()
         changes.add_updated_step(
             StepDefinition(
-                id=sid, workflow_id=wf_id, object_type="VariableAssignment",
-                state="upgraded", version=VersionInfo(sequence=1),
+                id=sid,
+                workflow_id=wf_id,
+                object_type="VariableAssignment",
+                state="upgraded",
+                version=VersionInfo(sequence=1),
             )
         )
         mongo_store.commit(changes)
@@ -1234,8 +1253,13 @@ class TestReapOrphanedTasks:
         for i, name in enumerate(["osmXcacheXDownload:1", "osm.cache.Download:1"]):
             mongo_store.save_task(
                 TaskDefinition(
-                    uuid=f"lit-{i}", name=name, runner_id="r1", workflow_id="w1",
-                    flow_id="f1", step_id=f"s{i}", state=TaskState.PENDING,
+                    uuid=f"lit-{i}",
+                    name=name,
+                    runner_id="r1",
+                    workflow_id="w1",
+                    flow_id="f1",
+                    step_id=f"s{i}",
+                    state=TaskState.PENDING,
                     task_list_name="default",
                 )
             )
@@ -1250,8 +1274,14 @@ class TestReapOrphanedTasks:
         """A task name with regex-special chars must not break the claim query."""
         mongo_store.save_task(
             TaskDefinition(
-                uuid="meta-1", name="ns.Weird(name)+$", runner_id="r1", workflow_id="w1",
-                flow_id="f1", step_id="s1", state=TaskState.PENDING, task_list_name="default",
+                uuid="meta-1",
+                name="ns.Weird(name)+$",
+                runner_id="r1",
+                workflow_id="w1",
+                flow_id="f1",
+                step_id="s1",
+                state=TaskState.PENDING,
+                task_list_name="default",
             )
         )
         # Exact-name claim still works; the unbalanced "(" would have thrown a
@@ -1273,9 +1303,16 @@ class TestReapOrphanedTasks:
         """Insert a running task whose lease has already expired."""
         mongo_store.save_task(
             TaskDefinition(
-                uuid=uuid, name="MyEvent", runner_id="r1", workflow_id="w1",
-                flow_id="f1", step_id=uuid, state=TaskState.RUNNING,
-                task_list_name="default", retry_count=retry_count, max_retries=max_retries,
+                uuid=uuid,
+                name="MyEvent",
+                runner_id="r1",
+                workflow_id="w1",
+                flow_id="f1",
+                step_id=uuid,
+                state=TaskState.RUNNING,
+                task_list_name="default",
+                retry_count=retry_count,
+                max_retries=max_retries,
             )
         )
         # Force the lease into the past so the reclaim branch is eligible.
@@ -1319,8 +1356,14 @@ class TestReapOrphanedTasks:
         server_id preserves the old ungated behavior."""
         mongo_store.save_task(
             TaskDefinition(
-                uuid="hb-1", name="F", runner_id="r", workflow_id="w", flow_id="f",
-                step_id="s", state=TaskState.RUNNING, task_list_name="default",
+                uuid="hb-1",
+                name="F",
+                runner_id="r",
+                workflow_id="w",
+                flow_id="f",
+                step_id="s",
+                state=TaskState.RUNNING,
+                task_list_name="default",
                 server_id="owner",
             )
         )

@@ -52,9 +52,7 @@ def infra_page(request: Request):
     minio_url = os.environ.get("FW_MINIO_CONSOLE_URL", "").strip() or _host_url(
         request, _MINIO_CONSOLE_PORT
     )
-    mongo_url = os.environ.get("FW_MONGO_UI_URL", "").strip() or _host_url(
-        request, _MONGO_UI_PORT
-    )
+    mongo_url = os.environ.get("FW_MONGO_UI_URL", "").strip() or _host_url(request, _MONGO_UI_PORT)
 
     services = [
         {

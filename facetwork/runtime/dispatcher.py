@@ -133,9 +133,7 @@ class RegistryDispatcher:
             # must not pay to `find_spec` (and, for cross-domain deps, import)
             # the whole 500+-registration handler universe just to keep its own
             # ~few dozen. Non-matching registrations are simply not ours.
-            if self._topics and not any(
-                fnmatch.fnmatch(reg.facet_name, t) for t in self._topics
-            ):
+            if self._topics and not any(fnmatch.fnmatch(reg.facet_name, t) for t in self._topics):
                 continue
             if verify and not registration_module_available(reg.module_uri):
                 skipped.append(reg.facet_name)

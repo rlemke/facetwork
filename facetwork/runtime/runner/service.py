@@ -247,6 +247,10 @@ class RunnerService(BaseRunner):
     and resumes workflows via the Evaluator.
     """
 
+    # Narrow the inherited BaseRunner._config to this runner's config subtype
+    # so its HTTP-server / shutdown fields are visible to the type checker.
+    _config: RunnerConfig
+
     def __init__(
         self,
         persistence: PersistenceAPI,
@@ -709,9 +713,7 @@ class RunnerService(BaseRunner):
                 self._release_timed_out_task(task_id)
                 reset += 1
             if reset:
-                logger.warning(
-                    "Reconciliation: reset %d orphaned DB task(s) to pending", reset
-                )
+                logger.warning("Reconciliation: reset %d orphaned DB task(s) to pending", reset)
 
     # =========================================================================
     # Polling

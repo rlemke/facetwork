@@ -257,17 +257,29 @@ class TestRerunStepForce:
         )
         compiled_ast = {
             "steps": [
-                {"type": "Step", "id": "stmt-up", "name": "up",
-                 "call": {"target": "t.Upstream", "args": [], "mixins": []}},
-                {"type": "Step", "id": "stmt-dn", "name": "dn",
-                 "call": {"target": "t.Downstream",
-                          "args": [{"name": "v", "value": {"type": "StepRef", "path": ["up"]}}],
-                          "mixins": []}},
+                {
+                    "type": "Step",
+                    "id": "stmt-up",
+                    "name": "up",
+                    "call": {"target": "t.Upstream", "args": [], "mixins": []},
+                },
+                {
+                    "type": "Step",
+                    "id": "stmt-dn",
+                    "name": "dn",
+                    "call": {
+                        "target": "t.Downstream",
+                        "args": [{"name": "v", "value": {"type": "StepRef", "path": ["up"]}}],
+                        "mixins": [],
+                    },
+                },
             ],
             "yield": None,
         }
         store.save_runner(
-            RunnerDefinition(uuid="wf-1", workflow_id="wf-1", workflow=wf, compiled_ast=compiled_ast)
+            RunnerDefinition(
+                uuid="wf-1", workflow_id="wf-1", workflow=wf, compiled_ast=compiled_ast
+            )
         )
         return upstream, downstream
 

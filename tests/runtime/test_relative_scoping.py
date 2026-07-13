@@ -25,8 +25,8 @@ from facetwork.ast_utils import find_workflow
 from facetwork.emitter import emit_dict
 from facetwork.parser import parse
 from facetwork.runtime import Evaluator, ExecutionStatus, MemoryStore, Telemetry
-from facetwork.runtime.expression import EvaluationContext, ExpressionEvaluator
 from facetwork.runtime.errors import ReferenceError as FwReferenceError
+from facetwork.runtime.expression import EvaluationContext, ExpressionEvaluator
 
 
 def _ref(field, up=0):

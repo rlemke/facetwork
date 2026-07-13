@@ -302,7 +302,7 @@ class ExecutionContext:
         # Check persistence
         return self.persistence.get_step(step_id)
 
-    def _find_statement_body(self, step: StepDefinition) -> dict | None:
+    def _find_statement_body(self, step: StepDefinition) -> dict | list | None:
         """Find the inline andThen body for a step's statement.
 
         Looks up the step's statement AST node in the containing block's

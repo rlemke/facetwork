@@ -170,9 +170,7 @@ class CatchBeginHandler(StateHandler):
             )
 
         scope_stack = (
-            build_scope_stack(self.context, self.step)
-            if relative_scoping_enabled()
-            else None
+            build_scope_stack(self.context, self.step) if relative_scoping_enabled() else None
         )
         eval_ctx = EvaluationContext(
             inputs=inputs,

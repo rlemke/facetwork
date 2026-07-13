@@ -270,7 +270,9 @@ def _event_facet_namespaces(node: dict, prefix: str = "") -> set[str]:
     here = prefix.rstrip(".")
     for decl in node.get("declarations", []):
         t = decl.get("type", "")
-        if t in ("EventFacetDecl", "EventFacet") or (t.startswith("Facet") and decl.get("is_event")):
+        if t in ("EventFacetDecl", "EventFacet") or (
+            t.startswith("Facet") and decl.get("is_event")
+        ):
             if here:
                 out.add(here)
         elif t in ("Namespace", "NamespaceDecl"):

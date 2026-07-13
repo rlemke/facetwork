@@ -76,7 +76,7 @@ class DashboardAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)  # auth disabled — unchanged behavior
 
         presented = self._presented_token(request)
-        valid = bool(presented) and hmac.compare_digest(presented, token)
+        valid = presented is not None and hmac.compare_digest(presented, token)
 
         if request.method.upper() in _MUTATING_METHODS and not valid:
             return JSONResponse(

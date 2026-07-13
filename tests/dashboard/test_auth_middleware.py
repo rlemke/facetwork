@@ -4,6 +4,7 @@ Default (no token): everything is open, as before. With the token set: mutating
 requests (POST/PUT/PATCH/DELETE) require it; reads stay open; a query-param token
 is persisted as a cookie for the browser UI.
 """
+
 from __future__ import annotations
 
 import pytest
