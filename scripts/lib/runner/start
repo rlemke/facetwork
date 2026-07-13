@@ -225,10 +225,19 @@ PYEOF
         fi
 
         echo "Preflight — shared services must be reachable from this host:"
-        if "$PY" - "$FW_MONGODB_URL" <<'PYEOF' 2>/dev/null
+        if "$PY" - "$FW_MONGODB_URL" "${FW_INFRA_IP:-}" <<'PYEOF' 2>/dev/null
 import sys
 from pymongo import MongoClient
-MongoClient(sys.argv[1], serverSelectionTimeoutMS=5000).admin.command("ping")
+from urllib.parse import urlparse, urlunparse
+url = sys.argv[1]; infra_ip = sys.argv[2] if len(sys.argv) > 2 else ""
+u = urlparse(url)
+# afl-mongodb is a container alias (stale in the host's /etc/hosts on DHCP
+# drift); the container reaches it via extra_hosts -> FW_INFRA_IP, so the
+# host-side preflight substitutes that resolved IP too.
+if infra_ip and u.hostname and u.hostname.startswith("afl-"):
+    netloc = f"{infra_ip}:{u.port or 27017}"
+    url = urlunparse((u.scheme, netloc, u.path, u.params, u.query, u.fragment))
+MongoClient(url, serverSelectionTimeoutMS=5000).admin.command("ping")
 PYEOF
         then echo "  ✓ MongoDB reachable: $FW_MONGODB_URL"
         else
@@ -236,14 +245,21 @@ PYEOF
             echo "    Check host/port, /etc/hosts (afl-mongodb -> IP), mongod binds 0.0.0.0, firewall." >&2
             exit 1
         fi
-        if "$PY" - "$FW_S3_ENDPOINT" <<'PYEOF' 2>/dev/null
+        if "$PY" - "$FW_S3_ENDPOINT" "${FW_INFRA_IP:-}" <<'PYEOF' 2>/dev/null
 import socket, sys
 from urllib.parse import urlparse
 u = urlparse(sys.argv[1]); host = u.hostname or sys.argv[1]
+infra_ip = sys.argv[2] if len(sys.argv) > 2 else ""
+# afl-* are container aliases resolved via the host's /etc/hosts, which goes
+# stale on infra-host DHCP drift. The container maps them to FW_INFRA_IP (the
+# name-resolved current infra IP) via extra_hosts, so the host-side reachability
+# check must use that same resolved IP rather than the stale /etc/hosts entry.
+if infra_ip and host.startswith("afl-"):
+    host = infra_ip
 port = u.port or (443 if u.scheme == "https" else 80)
 socket.create_connection((host, port), timeout=5).close()
 PYEOF
-        then echo "  ✓ MinIO/S3 reachable: $FW_S3_ENDPOINT"
+        then echo "  ✓ MinIO/S3 reachable: $FW_S3_ENDPOINT${FW_INFRA_IP:+ (via FW_INFRA_IP=$FW_INFRA_IP)}"
         else
             echo "  ✗ MinIO/S3 NOT reachable: $FW_S3_ENDPOINT" >&2
             echo "    Check the endpoint URL/port, MinIO binds 0.0.0.0, firewall." >&2
