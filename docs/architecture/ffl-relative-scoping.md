@@ -226,6 +226,23 @@ flag day given the `fwh_*` repos are separate and baked into the fleet image.
 5. **`$$…` is arbitrary depth** (`$`, `$$`, `$$$`, `$$$$`, …). Walking up past the
    outermost visible container is a **compile error** (`REF_DOLLAR_OVERFLOW`). No
    fixed ceiling below that.
+6. **`$$` stays a shallow *lexical* convenience; the `$$`-as-context-contract
+   feature is DEFERRED (2026-07-12).** A facet using `$$.x` to reach whatever
+   *instantiates* it (a requirement checked at every use site — `UseAddOne` ok,
+   `UseAddOneVer2` error) was considered and **parked**: rarely needed, and every
+   motivating case so far is better expressed by **passing the dependency as a
+   parameter**. Do not implement it until a real requirement appears that a
+   parameter can't satisfy. (The current impl only does the lexical walk; a
+   facet-body `$$` that exceeds its own nesting is simply rejected.)
+7. **Multi-step gating idiom — factor into facets with *typed* params, don't deep-
+   nest.** The way to gate on several prior steps (or reference a step across a
+   `when`-case boundary) is to pass those steps as **facet-typed parameters** to a
+   gating facet, so dependencies are named in the signature (self-documenting,
+   reusable) and every reference is `$.param.field` (depth 1) — no `$$$$$` tower,
+   and independent steps stay parallel. Worked reference (both validate clean):
+   `docs/architecture/deploy-scoping-example.ffl` (the deep-nesting anti-pattern)
+   vs `docs/architecture/deploy-scoping-reorg.ffl` (the recommended decomposition,
+   clean under **both** flags — so it doesn't even depend on relative scoping).
 
 ---
 

@@ -1,0 +1,58 @@
+// Reorganized deploy — Ralph's design: pass whole steps as FACET-TYPED params
+// into gating facets (Deploy, HealthStatus). Dependencies are named in the
+// signature (self-documenting + reusable), the workflow stays FLAT/parallel,
+// and every reference is $.param.field (depth 1) — no deep $$$ tower.
+
+namespace deploy.svc {
+
+    event facet BuildImage(service: String, version: String) => (image_tag: String, digest: String, size_mb: Int)
+    event facet RunTests(service: String, version: String) => (passed: Boolean, total_tests: Int, failed_count: Int)
+    event facet AnalyzeDeployRisk(service: String, version: String, environment: String, change_size: Int) => (risk_level: String, risk_score: Int, risk_factors: Json)
+    event facet NormalizeConfig(service: String, environment: String, replicas: Int = 2) => (config: Json)
+    event facet ApplyDeployment(service: String, image_tag: String, config: Json) => (deployment_id: String, status: String)
+    event facet WaitForRollout(deployment_id: String) => (ready: Boolean, ready_replicas: Int, message: String)
+    event facet CheckHealth(service: String, deployment_id: String) => (healthy: Boolean, results: Json)
+    event facet TriageIncident(service: String, health_results: Json, deployment_id: String) => (severity: String, recommendation: String)
+    event facet RollbackDeployment(service: String, deployment_id: String, reason: String) => (rollback_id: String, report: Json)
+    event facet VerifyRollback(service: String, rollback_id: String) => (verified: Boolean, message: String)
+
+    // Gate on build/tests/risk — all received as typed params. Body is a when.
+    facet Deploy(service: String, build: BuildImage, risk: AnalyzeDeployRisk, test: RunTests, environment: String = "staging", replicas: Int = 2) => (status: String, detail: String) andThen when {
+        case $.risk.risk_level == "critical" => {
+            yield Deploy(status = "blocked", detail = "Critical risk: " ++ $.risk.risk_level)
+        }
+        case $.test.passed == false => {
+            yield Deploy(status = "failed", detail = "Tests failed")
+        }
+        case _ => {
+            cfg    = NormalizeConfig(service = $.service, environment = $.environment, replicas = $.replicas)
+            dep    = ApplyDeployment(service = $.service, image_tag = $.build.image_tag, config = cfg.config)
+            wait   = WaitForRollout(deployment_id = dep.deployment_id)
+            health = CheckHealth(service = $.service, deployment_id = dep.deployment_id)
+            healthStatus = HealthStatus(service = $.service, build = $.build, health = health, dep = dep)
+            yield Deploy(status = healthStatus.status, detail = healthStatus.detail)
+        }
+    }
+
+    // Post-rollout health decision — receives health + dep as typed params.
+    facet HealthStatus(service: String, build: BuildImage, health: CheckHealth, dep: ApplyDeployment) => (status: String, detail: String) andThen when {
+        case $.health.healthy == true => {
+            yield HealthStatus(status = "success", detail = "Deployed " ++ $.build.image_tag)
+        }
+        case _ => {
+            triage = TriageIncident(service = $.service, health_results = $.health.results, deployment_id = $.dep.deployment_id)
+            rb     = RollbackDeployment(service = $.service, deployment_id = $.dep.deployment_id, reason = triage.recommendation)
+            vrfy   = VerifyRollback(service = $.service, rollback_id = rb.rollback_id)
+            yield HealthStatus(status = "rolled_back", detail = "Rolled back: " ++ triage.recommendation)
+        }
+    }
+
+    // Flat workflow: build/tests/risk run concurrently, then Deploy gates.
+    workflow DeployService(service: String, version: String, environment: String = "staging", replicas: Int = 2, change_size: Int = 50) => (status: String, detail: String) andThen {
+        build = BuildImage(service = $.service, version = $.version)
+        tests = RunTests(service = $.service, version = $.version)
+        risk  = AnalyzeDeployRisk(service = $.service, version = $.version, environment = $.environment, change_size = $.change_size)
+        deploy = Deploy(service = $.service, build = build, risk = risk, test = tests, environment = $.environment, replicas = $.replicas)
+        yield DeployService(status = deploy.status, detail = deploy.detail)
+    }
+}

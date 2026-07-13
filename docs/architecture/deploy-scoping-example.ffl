@@ -1,0 +1,113 @@
+// Relative-$-scoping design example — the deploy.ffl migration problem.
+//
+// Self-contained + runnable. Two workflows model the SAME pipeline:
+//   DeployService     — the current (legacy, flat) form. Valid flag-OFF.
+//   DeployServiceRel   — the forced relative-scoping form. Valid flag-ON.
+// (The file as a whole is not clean under either single flag — that's the point;
+//  validate each workflow under the flag it targets.)
+//
+// Try:
+//   fw ffl migrate-scoping docs/architecture/deploy-scoping-example.ffl
+//   FW_FFL_RELATIVE_SCOPING=1  (validate DeployServiceRel flag-on)
+//
+// Facets are plain event-facet stubs so the file parses without handlers.
+// NOTE: in real deploy.ffl, NormalizeConfig is a `script python` facet — see
+// "Issue 3" below.
+
+namespace deploy.svc {
+
+    event facet BuildImage(service: String, version: String) => (image_tag: String, digest: String, size_mb: Int)
+    event facet RunTests(service: String, version: String) => (passed: Boolean, total_tests: Int, failed_count: Int)
+    event facet AnalyzeDeployRisk(service: String, version: String, environment: String, change_size: Int) => (risk_level: String, risk_score: Int, risk_factors: Json)
+    // Real signature is `... script python "..."` — a script facet (Issue 3).
+    event facet NormalizeConfig(service: String, environment: String, replicas: Int = 2) => (config: Json)
+    event facet ApplyDeployment(service: String, image_tag: String, config: Json) => (deployment_id: String, status: String)
+    event facet WaitForRollout(deployment_id: String) => (ready: Boolean, ready_replicas: Int, message: String)
+    event facet CheckHealth(service: String, deployment_id: String) => (healthy: Boolean, results: Json)
+    event facet TriageIncident(service: String, health_results: Json, deployment_id: String) => (severity: String, recommendation: String)
+    event facet RollbackDeployment(service: String, deployment_id: String, reason: String) => (rollback_id: String, report: Json)
+    event facet VerifyRollback(service: String, rollback_id: String) => (verified: Boolean, message: String)
+
+
+    // =====================================================================
+    // LEGACY (flat) — readable, and build/tests/risk run CONCURRENTLY.
+    // The sibling `andThen when` gates on TWO prior steps (risk AND tests).
+    // Valid flag-OFF; flag-ON rejects it (sibling-block references).
+    // =====================================================================
+    workflow DeployService(service: String, version: String, environment: String = "staging", replicas: Int = 2, change_size: Int = 50) => (status: String, detail: String) andThen {
+        build = BuildImage(service = $.service, version = $.version)
+        tests = RunTests(service = $.service, version = $.version)
+        risk  = AnalyzeDeployRisk(service = $.service, version = $.version, environment = $.environment, change_size = $.change_size)
+    } andThen when {
+        case risk.risk_level == "critical" => {
+            yield DeployService(status = "blocked", detail = "Critical risk: " ++ risk.risk_level)
+        }
+        case tests.passed == false => {
+            yield DeployService(status = "failed", detail = "Tests failed")
+        }
+        case _ => {
+            cfg    = NormalizeConfig(service = $.service, environment = $.environment, replicas = $.replicas)
+            dep    = ApplyDeployment(service = $.service, image_tag = build.image_tag, config = cfg.config)
+            wait   = WaitForRollout(deployment_id = dep.deployment_id)
+            health = CheckHealth(service = $.service, deployment_id = dep.deployment_id) andThen when {
+                case health.healthy == true => {
+                    yield DeployService(status = "success", detail = "Deployed " ++ build.image_tag)
+                }
+                case _ => {
+                    triage = TriageIncident(service = $.service, health_results = health.results, deployment_id = dep.deployment_id)
+                    rb     = RollbackDeployment(service = $.service, deployment_id = dep.deployment_id, reason = triage.recommendation)
+                    vrfy   = VerifyRollback(service = $.service, rollback_id = rb.rollback_id)
+                    yield DeployService(status = "rolled_back", detail = "Rolled back: " ++ triage.recommendation)
+                }
+            }
+        }
+    }
+
+
+    // =====================================================================
+    // FORCED RELATIVE FORM — the ONLY legal shape under the relative model.
+    //
+    // Issue 1  build/tests/risk must NEST so the `when` (on risk) can reach
+    //          tests ($$) and build ($$$). This SERIALIZES three steps that
+    //          were independent/parallel in the legacy form.
+    // Issue 2  `dep` is used inside the nested `health` when, so `health`
+    //          must nest under `dep` → the innermost refs climb to $$$$$+.
+    // Issue 3  `cfg` is a script facet: nothing may nest inside it (a step
+    //          body shadows the facet's script body, so `cfg.config` would
+    //          never be produced) — so `cfg` is forced to stay a leaf.
+    //
+    // (The $-depths below are filled in by `fw ffl migrate-scoping`; run it to
+    //  regenerate if you edit the structure.)
+    // =====================================================================
+    workflow DeployServiceRel(service: String, version: String, environment: String = "staging", replicas: Int = 2, change_size: Int = 50) => (status: String, detail: String) andThen {
+        build = BuildImage(service = $.service, version = $.version) andThen {
+            tests = RunTests(service = $.service, version = $.version) andThen {
+                risk = AnalyzeDeployRisk(service = $.service, version = $.version, environment = $$$.environment, change_size = $$$.change_size) andThen when {
+                    case $.risk_level == "critical" => {
+                        yield DeployServiceRel(status = "blocked", detail = "Critical risk: " ++ $.risk_level)
+                    }
+                    case $$.passed == false => {
+                        yield DeployServiceRel(status = "failed", detail = "Tests failed")
+                    }
+                    case _ => {
+                        cfg = NormalizeConfig(service = $.service, environment = $.environment, replicas = $$$$.replicas)
+                        dep = ApplyDeployment(service = $.service, image_tag = $$$.image_tag, config = cfg.config) andThen {
+                            wait = WaitForRollout(deployment_id = $.deployment_id)
+                            health = CheckHealth(service = $.service, deployment_id = $.deployment_id) andThen when {
+                                case $.healthy == true => {
+                                    yield DeployServiceRel(status = "success", detail = "Deployed " ++ $$$$$.image_tag)
+                                }
+                                case _ => {
+                                    triage = TriageIncident(service = $.service, health_results = $.results, deployment_id = $$.deployment_id)
+                                    rb     = RollbackDeployment(service = $.service, deployment_id = $$.deployment_id, reason = triage.recommendation)
+                                    vrfy   = VerifyRollback(service = $.service, rollback_id = rb.rollback_id)
+                                    yield DeployServiceRel(status = "rolled_back", detail = "Rolled back: " ++ triage.recommendation)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
