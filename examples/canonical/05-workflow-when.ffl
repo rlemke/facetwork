@@ -2,6 +2,9 @@
 //
 // A when block must have at least one case AND a default (`case _ =>`)
 // that comes last. Conditions must evaluate to Boolean.
+//
+// Attach the when to the step it gates: inside the cases, $ is that step, so
+// $.score is the step's return and $$.text reaches the workflow input.
 
 namespace classify {
     event facet Score(text: String) => (score: Long)
@@ -9,15 +12,15 @@ namespace classify {
     event facet RouteLow(text: String) => (label: String)
 
     workflow Classify(text: String) => (label: String) andThen {
-        scored = Score(text = $.text)
-    } andThen when {
-        case scored.score > 50 => {
-            high = RouteHigh(text = $.text)
-            yield Classify(label = high.label)
-        }
-        case _ => {
-            low = RouteLow(text = $.text)
-            yield Classify(label = low.label)
+        scored = Score(text = $.text) andThen when {
+            case $.score > 50 => {
+                high = RouteHigh(text = $$.text)
+                yield Classify(label = high.label)
+            }
+            case _ => {
+                low = RouteLow(text = $$.text)
+                yield Classify(label = low.label)
+            }
         }
     }
 }

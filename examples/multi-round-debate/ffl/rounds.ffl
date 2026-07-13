@@ -291,7 +291,7 @@ namespace multidebate.workflows {
         yield AgentFocusedDebate(synthesis = summ.synthesis ++ " [agent-focused]", key_shifts = summ.key_shifts, summary = "Agent-focused debate on: " ++ $.topic)
     } andThen foreach agent in $.agent_ids {
         ref = RefineArgument(agent = $.agent, topic = $.topic, stance = "for", round_num = 2) andThen {
-            ch = ChallengeArgument(agent = $.agent, target_agent = "agent_0", target_argument = ref.refined, round_num = 2)
+            ch = ChallengeArgument(agent = $.agent, target_agent = "agent_0", target_argument = $.refined, round_num = 2)
         }
         yield AgentFocusedDebate(summary = $.agent ++ " processed")
     }

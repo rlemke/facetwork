@@ -346,14 +346,13 @@ class TestCompilation:
         assert len(parsed_ast.namespaces) == 7
 
     def test_when_block_present(self, parsed_ast):
-        """Verify andThen when block appears in DeployService workflow."""
+        """Verify the deployment gate's when block (now on the Deploy facet)."""
         from facetwork.ast import WhenBlock
 
         wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "deploy.workflows"]
-        deploy_wf = [w for w in wf_ns[0].workflows if w.sig.name == "DeployService"][0]
-        body = deploy_wf.body
-        assert isinstance(body, list)
-        when_body = body[1]
+        deploy_facet = [f for f in wf_ns[0].facets if f.sig.name == "Deploy"][0]
+        body = deploy_facet.body
+        when_body = body[0] if isinstance(body, list) else body
         assert when_body.when is not None
         assert isinstance(when_body.when, WhenBlock)
         assert len(when_body.when.cases) == 3

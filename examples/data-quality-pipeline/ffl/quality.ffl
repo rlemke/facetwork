@@ -272,7 +272,7 @@ namespace dataquality.workflows {
         yield BatchAssessment(grade = gr.grade, summary = "Batch: " ++ gr.grade ++ " across datasets")
     } andThen foreach ds in $.datasets {
         per = ProfileDataset(dataset = $.ds, columns = $.columns) andThen {
-            per_anom = DetectAnomalies(profiles = per.profiles, row_count = per.row_count)
+            per_anom = DetectAnomalies(profiles = $.profiles, row_count = $.row_count)
         }
         yield BatchAssessment(summary = "Profiled: " ++ $.ds)
     }

@@ -252,7 +252,7 @@ namespace tools.workflows {
         yield ResearchAndCompute(answer = fmt.answer, synthesis = synth.synthesis ++ " [researched]", summary = "Research on: " ++ $.query)
     } andThen foreach sq in $.subtopics {
         search = WebSearch(query = $.query ++ " " ++ $.sq, max_results = 3) andThen {
-            deep = DeepSearch(query = $.query ++ " " ++ $.sq, initial_results = [search.search_result])
+            deep = DeepSearch(query = $.query ++ " " ++ $.sq, initial_results = [$.search_result])
         }
         yield ResearchAndCompute(summary = "Searched: " ++ $.sq)
     }

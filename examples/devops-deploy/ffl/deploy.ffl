@@ -141,34 +141,48 @@ namespace deploy.Rollback {
 namespace deploy.workflows {
     use deploy.types
 
-    /** Deploy a single service: build, test, risk-check, conditional deploy+monitor. */
+    /** Post-deploy health decision: success, or triage + rollback. Receives the
+      * health check and deployment as typed params (no cross-scope references). */
+    facet HealthStatus(service: String, build: BuildImage, health: CheckHealth, dep: ApplyDeployment) => (status: String, detail: String) andThen when {
+        case $.health.result.healthy == true => {
+            yield HealthStatus(status = "success", detail = "Deployed " ++ $.build.image_tag ++ " successfully")
+        }
+        case _ => {
+            triage = TriageIncident(service = $.service, health_results = $.health.result.results, deployment_id = $.dep.deployment_id)
+            rb = RollbackDeployment(service = $.service, deployment_id = $.dep.deployment_id, reason = triage.recommendation)
+            vrfy = VerifyRollback(service = $.service, rollback_id = rb.report.rollback_id)
+            yield HealthStatus(status = "rolled_back", detail = "Rolled back: " ++ triage.recommendation)
+        }
+    }
+
+    /** Gate a deployment on build/tests/risk (passed as typed params), then apply
+      * and monitor. Keeps the multi-step gate flat — build/tests/risk stay
+      * parallel in the workflow — and every reference is $.param.field. */
+    facet Deploy(service: String, build: BuildImage, risk: AnalyzeDeployRisk, test: RunTests, environment: String = "staging", replicas: Int = 2) => (status: String, detail: String) andThen when {
+        case $.risk.risk_level == "critical" => {
+            yield Deploy(status = "blocked", detail = "Deployment blocked: critical risk score " ++ $.risk.risk_level)
+        }
+        case $.test.passed == false => {
+            yield Deploy(status = "failed", detail = "Tests failed: " ++ $.test.failed_count ++ " failures")
+        }
+        case _ => {
+            cfg = NormalizeConfig(service = $.service, environment = $.environment, replicas = $.replicas)
+            dep = ApplyDeployment(service = $.service, image_tag = $.build.image_tag, config = cfg.config)
+            wait = WaitForRollout(deployment_id = dep.deployment_id)
+            health = CheckHealth(service = $.service, deployment_id = dep.deployment_id)
+            healthStatus = HealthStatus(service = $.service, build = $.build, health = health, dep = dep)
+            yield Deploy(status = healthStatus.status, detail = healthStatus.detail)
+        }
+    }
+
+    /** Deploy a single service: build, test, and risk-check run in parallel, then
+      * the Deploy facet gates and applies. */
     workflow DeployService(service: String, version: String, environment: String = "staging", replicas: Int = 2, change_size: Int = 50) => (status: String, detail: String) andThen {
         build = BuildImage(service = $.service, version = $.version)
         tests = RunTests(service = $.service, version = $.version)
         risk = AnalyzeDeployRisk(service = $.service, version = $.version, environment = $.environment, change_size = $.change_size)
-    } andThen when {
-        case risk.risk_level == "critical" => {
-            yield DeployService(status = "blocked", detail = "Deployment blocked: critical risk score " ++ risk.risk_level)
-        }
-        case tests.passed == false => {
-            yield DeployService(status = "failed", detail = "Tests failed: " ++ tests.failed_count ++ " failures")
-        }
-        case _ => {
-            cfg = NormalizeConfig(service = $.service, environment = $.environment, replicas = $.replicas)
-            dep = ApplyDeployment(service = $.service, image_tag = build.image_tag, config = cfg.config)
-            wait = WaitForRollout(deployment_id = dep.deployment_id)
-            health = CheckHealth(service = $.service, deployment_id = dep.deployment_id) andThen when {
-                case health.result.healthy == true => {
-                    yield DeployService(status = "success", detail = "Deployed " ++ build.image_tag ++ " successfully")
-                }
-                case _ => {
-                    triage = TriageIncident(service = $.service, health_results = health.result.results, deployment_id = dep.deployment_id)
-                    rb = RollbackDeployment(service = $.service, deployment_id = dep.deployment_id, reason = triage.recommendation)
-                    vrfy = VerifyRollback(service = $.service, rollback_id = rb.report.rollback_id)
-                    yield DeployService(status = "rolled_back", detail = "Rolled back: " ++ triage.recommendation)
-                }
-            }
-        }
+        deploy = Deploy(service = $.service, build = build, risk = risk, test = tests, environment = $.environment, replicas = $.replicas)
+        yield DeployService(status = deploy.status, detail = deploy.detail)
     }
 
     /** Deploy multiple services in parallel using foreach. */

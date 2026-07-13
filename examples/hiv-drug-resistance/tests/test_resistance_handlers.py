@@ -420,15 +420,18 @@ class TestCompilation:
         assert script_count >= 1, "Expected at least 1 script block"
 
     def test_when_block_present(self, parsed_ast):
-        """Verify andThen when block appears in AnalyzeSample workflow."""
+        """Verify the QC when block appears as a step body on `qc`."""
         from facetwork.ast import WhenBlock
 
         wf_ns = [ns for ns in parsed_ast.namespaces if ns.name == "hiv.workflows"]
         analyze_wf = [w for w in wf_ns[0].workflows if w.sig.name == "AnalyzeSample"][0]
         body = analyze_wf.body
-        assert isinstance(body, list)
-        when_body = body[1]
-        assert when_body.when is not None
+        block = body[0] if isinstance(body, list) else body
+        qc = block.block.steps[0]
+        assert qc.name == "qc"
+        # The when is a step-body clause on qc (relative-scoping form).
+        when_body = qc.body
+        assert when_body is not None and when_body.when is not None
         assert isinstance(when_body.when, WhenBlock)
         assert len(when_body.when.cases) == 2
 

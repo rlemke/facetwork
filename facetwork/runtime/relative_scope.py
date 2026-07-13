@@ -84,9 +84,24 @@ def build_scope_stack(context: Any, step: Any) -> list[dict[str, Any]]:
     root. Each entry carries the container's static params, its return-name set,
     and the container's step name (for deferring return lookups).
     """
+    from .types import ObjectType
+
     frames: list[dict[str, Any]] = []
     seen: set[str] = set()
-    block_id = step.block_id
+    # A block step (a when/foreach/andThen clause being evaluated, e.g. a
+    # when-condition) has its immediate container on `container_id` — that step
+    # IS frame 0. Seed it directly (the block step itself isn't reliably
+    # findable by id mid-processing) and continue up from its container. A leaf
+    # step starts from its enclosing block.
+    if ObjectType.is_block(step.object_type):
+        container = context._find_step(step.container_id) if step.container_id else None
+        if container is None:
+            return frames
+        seen.add(container.id)
+        frames.append(_frame_for(context, container))
+        block_id = container.block_id
+    else:
+        block_id = step.block_id
     while block_id:
         block_step = context._find_step(block_id)
         if block_step is None or block_step.container_id is None:

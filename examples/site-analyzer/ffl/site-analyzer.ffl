@@ -141,12 +141,12 @@ namespace site.workflows {
       * PrepareCrawl -> foreach url -> (FetchPage, ExtractMetadata, ClassifyPageType,
       * SummarizePage, DetectBrokenLinks) -> GenerateSiteReport. */
     workflow AnalyzeSite(urls: String) => (status: String, report_path: String) andThen {
-        crawl = PrepareCrawl(urls = $.urls) andThen foreach url in crawl.plan.urls {
-            page = FetchPage(url = $.url, site_id = crawl.plan.site_id)
-            meta = ExtractMetadata(url = $.url, html = page.page.html, site_id = crawl.plan.site_id)
-            classify = ClassifyPageType(url = $.url, html = page.page.html, site_id = crawl.plan.site_id)
-            summary = SummarizePage(url = $.url, html = page.page.html, site_id = crawl.plan.site_id)
-            broken = DetectBrokenLinks(url = $.url, html = page.page.html, site_id = crawl.plan.site_id)
+        crawl = PrepareCrawl(urls = $.urls) andThen foreach url in $.plan.urls {
+            page = FetchPage(url = $.url, site_id = $.plan.site_id)
+            meta = ExtractMetadata(url = $.url, html = page.page.html, site_id = $.plan.site_id)
+            classify = ClassifyPageType(url = $.url, html = page.page.html, site_id = $.plan.site_id)
+            summary = SummarizePage(url = $.url, html = page.page.html, site_id = $.plan.site_id)
+            broken = DetectBrokenLinks(url = $.url, html = page.page.html, site_id = $.plan.site_id)
         }
         report = GenerateSiteReport(site_id = crawl.plan.site_id, page_count = crawl.plan.page_count)
         yield AnalyzeSite(status = "completed", report_path = report.report.report_path)

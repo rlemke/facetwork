@@ -166,27 +166,27 @@ namespace hiv.workflows {
 
     /** Analyze a single HIV sample: QC, align, call variants, classify, score, interpret, report. */
     workflow AnalyzeSample(sample_id: String, fastq_path: String, reference: String = "HXB2", clinical_context: String = "") => (status: String, detail: String) andThen {
-        qc = AssessQuality(sample_id = $.sample_id, fastq_path = $.fastq_path)
-    } andThen when {
-        case qc.passed == false => {
-            yield AnalyzeSample(status = "qc_failed", detail = "QC failed: " ++ qc.message)
-        }
-        case _ => {
-            align = AlignReads(sample_id = $.sample_id, fastq_path = $.fastq_path, reference = $.reference)
-            variants = CallVariants(sample_id = $.sample_id, bam_path = align.alignment.bam_path)
-            consensus = GenerateConsensus(sample_id = $.sample_id, bam_path = align.alignment.bam_path)
-            classify = ClassifyMutations(sample_id = $.sample_id, variants = variants.variants)
-            score = ScoreResistance(sample_id = $.sample_id, mutations = classify.mutations)
-            interpret = InterpretResults(sample_id = $.sample_id, drug_scores = score.drug_scores, subtype = consensus.subtype, clinical_context = $.clinical_context)
-            report = GenerateSampleReport(sample_id = $.sample_id, qc_passed = true, alignment = align.alignment, variants = variants.variants, resistance = #{"sample_id": $.sample_id, "subtype": consensus.subtype, "mutations": classify.mutations, "drug_scores": score.drug_scores})
-            yield AnalyzeSample(status = "completed", detail = "Resistance level: " ++ score.highest_level)
+        qc = AssessQuality(sample_id = $.sample_id, fastq_path = $.fastq_path) andThen when {
+            case $.passed == false => {
+                yield AnalyzeSample(status = "qc_failed", detail = "QC failed: " ++ $.message)
+            }
+            case _ => {
+                align = AlignReads(sample_id = $.sample_id, fastq_path = $.fastq_path, reference = $$.reference)
+                variants = CallVariants(sample_id = $.sample_id, bam_path = align.alignment.bam_path)
+                consensus = GenerateConsensus(sample_id = $.sample_id, bam_path = align.alignment.bam_path)
+                classify = ClassifyMutations(sample_id = $.sample_id, variants = variants.variants)
+                score = ScoreResistance(sample_id = $.sample_id, mutations = classify.mutations)
+                interpret = InterpretResults(sample_id = $.sample_id, drug_scores = score.drug_scores, subtype = consensus.subtype, clinical_context = $$.clinical_context)
+                report = GenerateSampleReport(sample_id = $.sample_id, qc_passed = true, alignment = align.alignment, variants = variants.variants, resistance = #{"sample_id": $.sample_id, "subtype": consensus.subtype, "mutations": classify.mutations, "drug_scores": score.drug_scores})
+                yield AnalyzeSample(status = "completed", detail = "Resistance level: " ++ score.highest_level)
+            }
         }
     }
 
     /** Analyze a batch of HIV samples with per-sample error recovery. */
     workflow BatchAnalysis(batch_id: String, sample_ids: [String], fastq_dir: String, reference: String = "HXB2") => (status: String) andThen foreach sample in $.sample_ids {
         analysis = AnalyzeSample(sample_id = $.sample, fastq_path = $.fastq_dir ++ "/" ++ $.sample ++ ".fastq.gz", reference = $.reference) catch {
-            err_report = GenerateBatchReport(batch_id = $.batch_id, sample_count = 1, results = [#{"sample_id": $.sample, "status": "error", "error": analysis.error}])
+            err_report = GenerateBatchReport(batch_id = $$.batch_id, sample_count = 1, results = [#{"sample_id": $.sample, "status": "error", "error": $.error}])
         }
     }
 }

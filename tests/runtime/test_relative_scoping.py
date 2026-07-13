@@ -133,6 +133,25 @@ class TestRelativeExecution:
         assert steps["x"].attributes.returns["out"].value == "hi-x"
         assert steps["y"].attributes.returns["out"].value == "hi-y"
 
+    def test_step_body_when_condition_reads_containing_step_return(self, monkeypatch):
+        # Regression: a step-body `when` condition ($.field) must resolve against
+        # the step the when is attached to — the AndWhen block-step's container —
+        # not the enclosing workflow. (Bug: build_scope_stack walked past qc.)
+        monkeypatch.setenv("FW_FFL_RELATIVE_SCOPING", "1")
+        tmpl = """
+        namespace t {{
+            schema QC {{ passed: Boolean, msg: String }}
+            workflow W(x: String) => (status: String) andThen {{
+                qc = QC(passed = {v}, msg = "m") andThen when {{
+                    case $.passed == false => {{ yield W(status = "failed") }}
+                    case _ => {{ yield W(status = "ok") }}
+                }}
+            }}
+        }}
+        """
+        assert _run(tmpl.format(v="false"), {"x": "s"}, "W")[0].outputs == {"status": "failed"}
+        assert _run(tmpl.format(v="true"), {"x": "s"}, "W")[0].outputs == {"status": "ok"}
+
     def test_flag_off_does_not_build_stack(self, monkeypatch):
         # With the flag off the same nested body resolves $. via the legacy flat
         # scope; $$ has no meaning there. Assert the flag gates the behavior:

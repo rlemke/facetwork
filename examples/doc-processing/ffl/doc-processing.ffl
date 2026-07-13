@@ -123,8 +123,8 @@ namespace doc.workflows {
         detect = DetectFileType(file_path = $.file_path)
         extract = ExtractText(file_path = $.file_path, file_type = detect.info.file_type, encoding = detect.info.encoding)
         classify = ClassifyDocument(text = extract.extracted.text, file_path = $.file_path)
-        splitting = SplitIntoChunks(text = extract.extracted.text, chunk_size = $.chunk_size) andThen foreach chunk in splitting.chunks {
-            chunk_summary = SummarizeChunk(chunk_id = $.chunk.chunk_id, text = $.chunk.text, file_path = $.file_path) catch {
+        splitting = SplitIntoChunks(text = extract.extracted.text, chunk_size = $.chunk_size) andThen foreach chunk in $.chunks {
+            chunk_summary = SummarizeChunk(chunk_id = $.chunk.chunk_id, text = $.chunk.text, file_path = $$.file_path) catch {
                 yield ProcessDocument(status = "partial_failure", detail = "Chunk summarization failed for " ++ $.chunk.chunk_id)
             }
         }
