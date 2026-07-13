@@ -3755,6 +3755,29 @@ class TestRelativeScoping:
             "s3 = sf1(input=$.input) andThen { s4 = sf1(input=$$.input) }",
         ) == []
 
+    def test_deep_up_levels_reach_distinct_same_named_attrs(self, rel_validator):
+        # Nested step bodies where every level has a same-named `input`: the only
+        # way for the innermost step to reach each enclosing container's input is
+        # $ / $$ / $$$ (the containing step isn't nameable). Proves the up-level
+        # operator is required, not just convenient.
+        src = """namespace t {
+            event facet One(input: Int) => (output: Int)
+            workflow w1(input: Int) => (output: Int) andThen {
+                o1 = One(input = $.input) andThen {
+                    o2 = One(input = $.input + $$.input) andThen {
+                        o3 = One(input = $.input + $$.input + $$$.input)
+                        yield w1(output = o3.output)
+                    }
+                }
+            }
+        }"""
+        result = rel_validator.validate(parse(src))
+        assert result.is_valid, [str(e) for e in result.errors]
+        # one level too far (only o2/o1/w1 exist above o3) → overflow
+        bad = src.replace("$$$.input", "$$$$.input")
+        rules = sorted({e.rule_id for e in rel_validator.validate(parse(bad)).errors})
+        assert rules == ["REF_DOLLAR_OVERFLOW"]
+
     def test_up_level_overflow_errors(self, rel_validator):
         # Inside s3's body only two containers exist (s3, f1); $$$ is one too far.
         assert self._rules(
