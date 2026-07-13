@@ -398,12 +398,21 @@ class TestRegistryRunnerCleanupFutures:
     def test_cleanup_reaps_timed_out_handler(self, store, evaluator):
         from concurrent.futures import Future
 
-        runner = RegistryRunner(persistence=store, evaluator=evaluator, config=RegistryRunnerConfig())
+        runner = RegistryRunner(
+            persistence=store, evaluator=evaluator, config=RegistryRunnerConfig()
+        )
         runner._execution_timeout_ms = 1000  # 1s
 
         task = TaskDefinition(
-            uuid="t-stuck", name="F", runner_id="r", workflow_id="wf", flow_id="",
-            step_id="st", state=TaskState.RUNNING, created=0, updated=0,
+            uuid="t-stuck",
+            name="F",
+            runner_id="r",
+            workflow_id="wf",
+            flow_id="",
+            step_id="st",
+            state=TaskState.RUNNING,
+            created=0,
+            updated=0,
         )
         store.save_task(task)
         # A future that never completes (a wedged handler), claimed 10s ago.
@@ -425,18 +434,23 @@ class TestRegistryRunnerCleanupFutures:
         _execute_until_paused(evaluator, workflow_ast, {"x": 1}, program_ast)
         step = store.get_steps_by_state(StepState.EVENT_TRANSMIT)[0]
         task = next(
-            t for t in store._tasks.values()
+            t
+            for t in store._tasks.values()
             if t.state == TaskState.PENDING and t.step_id == step.id
         )
         f = tmp_path / "slow_handler.py"
         f.write_text("import time\ndef handle(payload):\n    time.sleep(1.0)\n    return {}\n")
         store.save_handler_registration(
             HandlerRegistration(
-                facet_name="CountDocuments", module_uri=f"file://{f}",
-                entrypoint="handle", timeout_ms=100,
+                facet_name="CountDocuments",
+                module_uri=f"file://{f}",
+                entrypoint="handle",
+                timeout_ms=100,
             )
         )
-        runner = RegistryRunner(persistence=store, evaluator=evaluator, config=RegistryRunnerConfig())
+        runner = RegistryRunner(
+            persistence=store, evaluator=evaluator, config=RegistryRunnerConfig()
+        )
 
         start = time.monotonic()
         runner.poll_once()
@@ -450,11 +464,20 @@ class TestRegistryRunnerCleanupFutures:
     def test_cleanup_keeps_a_live_heartbeating_handler(self, store, evaluator):
         from concurrent.futures import Future
 
-        runner = RegistryRunner(persistence=store, evaluator=evaluator, config=RegistryRunnerConfig())
+        runner = RegistryRunner(
+            persistence=store, evaluator=evaluator, config=RegistryRunnerConfig()
+        )
         runner._execution_timeout_ms = 1000
         task = TaskDefinition(
-            uuid="t-live", name="F", runner_id="r", workflow_id="wf", flow_id="",
-            step_id="st", state=TaskState.RUNNING, created=0, updated=0,
+            uuid="t-live",
+            name="F",
+            runner_id="r",
+            workflow_id="wf",
+            flow_id="",
+            step_id="st",
+            state=TaskState.RUNNING,
+            created=0,
+            updated=0,
             task_heartbeat=_current_time_ms(),  # actively heartbeating now
         )
         store.save_task(task)
@@ -596,7 +619,9 @@ class TestRegistryRunnerPollOnce:
                 facet_name="CountDocuments", module_uri=f"file://{f}", entrypoint="handle"
             )
         )
-        runner = RegistryRunner(persistence=store, evaluator=evaluator, config=RegistryRunnerConfig())
+        runner = RegistryRunner(
+            persistence=store, evaluator=evaluator, config=RegistryRunnerConfig()
+        )
 
         runner.poll_once()
 
@@ -664,7 +689,9 @@ class TestRegistryRunnerPollOnce:
         store.save_handler_registration(
             HandlerRegistration(facet_name="SomeOtherFacet", module_uri="dummy")
         )
-        runner = RegistryRunner(persistence=store, evaluator=evaluator, config=RegistryRunnerConfig())
+        runner = RegistryRunner(
+            persistence=store, evaluator=evaluator, config=RegistryRunnerConfig()
+        )
         runner._registered_names = [task.name]
         runner._last_refresh = _current_time_ms()
 

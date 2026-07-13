@@ -5,6 +5,7 @@ through: `set_config(...)`, multi-statement payloads, `SELECT ... INTO`,
 writable CTEs, and `pg_sleep` DoS — while keeping legitimate SELECTs (incl.
 semicolons/keywords inside string literals) allowed.
 """
+
 import pytest
 
 from facetwork.mcp.server import _reject_reason
@@ -31,18 +32,18 @@ def test_allows_read_queries(sql):
 @pytest.mark.parametrize(
     "sql",
     [
-        "SELECT set_config('transaction_read_only','off',false)",          # setting escape
-        "SELECT 1; DROP TABLE osm_nodes",                                   # multi-statement
-        "SELECT 1 INTO public.pwned",                                       # SELECT INTO create
+        "SELECT set_config('transaction_read_only','off',false)",  # setting escape
+        "SELECT 1; DROP TABLE osm_nodes",  # multi-statement
+        "SELECT 1 INTO public.pwned",  # SELECT INTO create
         "SELECT * INTO pwned FROM osm_nodes",
-        "WITH x AS (DELETE FROM osm_nodes RETURNING *) SELECT * FROM x",    # writable CTE
-        "DELETE FROM osm_nodes",                                            # not SELECT/WITH
+        "WITH x AS (DELETE FROM osm_nodes RETURNING *) SELECT * FROM x",  # writable CTE
+        "DELETE FROM osm_nodes",  # not SELECT/WITH
         "UPDATE osm_nodes SET tags = '{}'",
-        "SET default_transaction_read_only = off",                         # top-level SET
-        "SELECT pg_sleep(60)",                                             # DoS
-        "SELECT pg_read_file('/etc/passwd')",                              # file read
+        "SET default_transaction_read_only = off",  # top-level SET
+        "SELECT pg_sleep(60)",  # DoS
+        "SELECT pg_read_file('/etc/passwd')",  # file read
         "COPY osm_nodes TO '/tmp/x'",
-        "  ",                                                              # empty-ish → not a read query
+        "  ",  # empty-ish → not a read query
     ],
 )
 def test_rejects_writes_and_bypasses(sql):

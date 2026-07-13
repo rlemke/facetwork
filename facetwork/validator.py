@@ -1156,9 +1156,7 @@ class FFLValidator:
         # (Under relative scoping the resolver checks `$.` collections too — the
         # step frame's surface is fully known, and an `open` base frame stays
         # lenient about pre-script keys, so no false-positive.)
-        if body.foreach and (
-            self._relative_scoping or not body.foreach.iterable.is_input
-        ):
+        if body.foreach and (self._relative_scoping or not body.foreach.iterable.is_input):
             self._validate_reference(
                 body.foreach.iterable,
                 input_attrs,
@@ -1263,9 +1261,7 @@ class FFLValidator:
                 if step.catch:
                     step_attrs = step_attrs | {"error", "error_type"}
                 self._container_stack.append(
-                    _ContainerFrame(
-                        name=step.name, kind="step", attrs=step_attrs, open=False
-                    )
+                    _ContainerFrame(name=step.name, kind="step", attrs=step_attrs, open=False)
                 )
                 step_frame_pushed = True
             try:
@@ -1276,9 +1272,7 @@ class FFLValidator:
                 step_clauses = ([step.body] if step.body else []) + list(step.extra_bodies)
                 if step_clauses:
                     step_target = step.call.name.split(".")[-1]
-                    clause_step_names = [
-                        self._collect_block_step_names(c) for c in step_clauses
-                    ]
+                    clause_step_names = [self._collect_block_step_names(c) for c in step_clauses]
                     for i, clause in enumerate(step_clauses):
                         co_clause_steps: set[str] = set()
                         for j, names in enumerate(clause_step_names):

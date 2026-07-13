@@ -1516,9 +1516,15 @@ class TestOwnershipFence:
 
         runner = _make_runner(store, evaluator)
         owned = TaskDefinition(
-            uuid=generate_id(), name="ns.AddOne", runner_id="r1", workflow_id="w1",
-            flow_id="f1", step_id="s1", state=TaskState.RUNNING,
-            task_list_name="default", server_id=runner.server_id,
+            uuid=generate_id(),
+            name="ns.AddOne",
+            runner_id="r1",
+            workflow_id="w1",
+            flow_id="f1",
+            step_id="s1",
+            state=TaskState.RUNNING,
+            task_list_name="default",
+            server_id=runner.server_id,
         )
         store.save_task(owned)
         # Still owned by us → terminal write accepted.
@@ -1545,9 +1551,15 @@ class TestOwnershipFence:
 
         # Task claimed by THIS runner in memory, but the DB shows it reclaimed.
         in_mem = TaskDefinition(
-            uuid=generate_id(), name="ns.AddOne", runner_id="r1", workflow_id="w1",
-            flow_id="f1", step_id="s1", state=TaskState.RUNNING,
-            task_list_name="default", server_id=runner.server_id,
+            uuid=generate_id(),
+            name="ns.AddOne",
+            runner_id="r1",
+            workflow_id="w1",
+            flow_id="f1",
+            step_id="s1",
+            state=TaskState.RUNNING,
+            task_list_name="default",
+            server_id=runner.server_id,
         )
         store.save_task(dataclasses.replace(in_mem, server_id="other-server"))
 
@@ -1671,7 +1683,9 @@ class TestCircuitBreaker:
         from unittest.mock import patch
 
         _register_file_handler(
-            store, tmp_path, "handlers.AddOne",
+            store,
+            tmp_path,
+            "handlers.AddOne",
             "def handle(payload):\n    raise ValueError('boom')\n",
         )
         runner = _make_runner(store, evaluator)

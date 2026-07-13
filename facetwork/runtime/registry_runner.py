@@ -98,6 +98,10 @@ class RegistryRunner(BaseRunner):
     ``(module_uri, checksum)`` for efficiency.
     """
 
+    # Narrow the inherited BaseRunner._config to this runner's config subtype
+    # so its registry-refresh field is visible to the type checker.
+    _config: RegistryRunnerConfig
+
     def __init__(
         self,
         persistence: PersistenceAPI,

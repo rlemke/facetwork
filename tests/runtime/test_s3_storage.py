@@ -47,6 +47,7 @@ def _client_error(code: str, status: int) -> Exception:
         err.response = resp
     return err
 
+
 _LIVE = bool(os.environ.get("FW_S3_ENDPOINT"))
 _live_only = pytest.mark.skipif(not _LIVE, reason="set FW_S3_ENDPOINT to run live S3/MinIO tests")
 _BUCKET = os.environ.get("FW_S3_TEST_BUCKET", "afl-cache")

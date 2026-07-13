@@ -547,9 +547,7 @@ class BaseRunner:
         try:
             now = _current_time_ms()
             target_state = (
-                RunnerState.COMPLETED
-                if status == ExecutionStatus.COMPLETED
-                else RunnerState.FAILED
+                RunnerState.COMPLETED if status == ExecutionStatus.COMPLETED else RunnerState.FAILED
             )
             if target_state == RunnerState.COMPLETED and self._has_non_terminal_tasks(workflow_id):
                 logger.warning(

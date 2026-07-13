@@ -1109,19 +1109,34 @@ class TestResumeWorkflowEdgeCases:
 
         wf_id = "wf-terminal-guard"
         wf = WorkflowDefinition(
-            uuid=wf_id, name="W", namespace_id="ns", facet_id="f",
-            flow_id="flow", starting_step="s", version="1.0",
+            uuid=wf_id,
+            name="W",
+            namespace_id="ns",
+            facet_id="f",
+            flow_id="flow",
+            starting_step="s",
+            version="1.0",
         )
         store.save_runner(
             RunnerDefinition(
-                uuid="r-1", workflow_id=wf_id, workflow=wf,
-                state=RunnerState.RUNNING, start_time=1,
+                uuid="r-1",
+                workflow_id=wf_id,
+                workflow=wf,
+                state=RunnerState.RUNNING,
+                start_time=1,
             )
         )
         store.save_task(
             TaskDefinition(
-                uuid="t-1", name="F", runner_id="r-1", workflow_id=wf_id, flow_id="flow",
-                step_id="st-1", state=TaskState.RUNNING, created=1, updated=1,
+                uuid="t-1",
+                name="F",
+                runner_id="r-1",
+                workflow_id=wf_id,
+                flow_id="flow",
+                step_id="st-1",
+                state=TaskState.RUNNING,
+                created=1,
+                updated=1,
             )
         )
 
@@ -3063,9 +3078,14 @@ class TestSweepStuckSteps:
         # The step's ONLY task is dead-lettered.
         store.save_task(
             TaskDefinition(
-                uuid=generate_id(), name="MyEventFacet", runner_id="runner-1",
-                workflow_id=workflow_id, flow_id="", step_id=step.id,
-                state=TaskState.DEAD_LETTER, task_list_name="default",
+                uuid=generate_id(),
+                name="MyEventFacet",
+                runner_id="runner-1",
+                workflow_id=workflow_id,
+                flow_id="",
+                step_id=step.id,
+                state=TaskState.DEAD_LETTER,
+                task_list_name="default",
             )
         )
 
@@ -3081,7 +3101,8 @@ class TestSweepStuckSteps:
         resume.assert_called_once()
         # No fresh PENDING task was created.
         pending = [
-            t for t in store._tasks.values()
+            t
+            for t in store._tasks.values()
             if t.step_id == step.id and t.state == TaskState.PENDING
         ]
         assert pending == []
@@ -3117,9 +3138,7 @@ class TestSweepStuckSteps:
 
         _, workflow_id = runner_def
         n = _SWEEP_MAX_STEPS + 5
-        steps = [
-            self._make_event_step(workflow_id, facet_name=f"Facet{i}") for i in range(n)
-        ]
+        steps = [self._make_event_step(workflow_id, facet_name=f"Facet{i}") for i in range(n)]
         for s in steps:
             store.save_step(s)
         service._last_sweep = 0
@@ -3391,14 +3410,26 @@ class TestReconcileWithDb:
         would re-run finished work. The re-verify catches it."""
         # get_tasks_by_server_id (the point-in-time snapshot) reports it RUNNING…
         snapshot_view = TaskDefinition(
-            uuid="raced-task", name="X", runner_id="r", workflow_id="wf", flow_id="",
-            step_id="s", state=TaskState.RUNNING, server_id=service._server_id,
+            uuid="raced-task",
+            name="X",
+            runner_id="r",
+            workflow_id="wf",
+            flow_id="",
+            step_id="s",
+            state=TaskState.RUNNING,
+            server_id=service._server_id,
         )
         # …but by re-verify time the stored task is COMPLETED.
         store.save_task(
             TaskDefinition(
-                uuid="raced-task", name="X", runner_id="r", workflow_id="wf", flow_id="",
-                step_id="s", state=TaskState.COMPLETED, server_id=service._server_id,
+                uuid="raced-task",
+                name="X",
+                runner_id="r",
+                workflow_id="wf",
+                flow_id="",
+                step_id="s",
+                state=TaskState.COMPLETED,
+                server_id=service._server_id,
             )
         )
         with (
@@ -3572,8 +3603,13 @@ class TestContinuationDrain:
         )
 
         return TaskDefinition(
-            uuid=generate_id(), name=CONTINUATION_TASK_NAME, runner_id="r",
-            workflow_id="wf", flow_id="", step_id="s", state=TaskState.PENDING,
+            uuid=generate_id(),
+            name=CONTINUATION_TASK_NAME,
+            runner_id="r",
+            workflow_id="wf",
+            flow_id="",
+            step_id="s",
+            state=TaskState.PENDING,
             task_list_name=CONTINUATION_TASK_LIST,
         )
 
@@ -3604,6 +3640,6 @@ class TestContinuationDrain:
         reg = ToolRegistry()
         reg.register("Compute", lambda p: {"out": p["x"] * 2})
         d = _ToolRegistryDispatcher(reg)
-        assert d.can_dispatch("ns.Compute") is True   # short-name fallback
+        assert d.can_dispatch("ns.Compute") is True  # short-name fallback
         assert d.can_dispatch("ns.Missing") is False
         assert d.dispatch("ns.Compute", {"x": 3}) == {"out": 6}

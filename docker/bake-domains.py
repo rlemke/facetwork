@@ -16,7 +16,6 @@ back to the entrypoint's bind-mount path), so one bad repo can't fail the build.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -55,11 +54,16 @@ def main() -> int:
                 check=True,
             )
             baked.append(name)
-            print(f"  baked {name} ({repo}) @ {Path(dest + '.commit').read_text().strip()[:12]}",
-                  flush=True)
+            print(
+                f"  baked {name} ({repo}) @ {Path(dest + '.commit').read_text().strip()[:12]}",
+                flush=True,
+            )
         except subprocess.CalledProcessError as e:
-            print(f"  WARN: could not bake {name} ({repo}): {e} — falls back to bind-mount",
-                  file=sys.stderr, flush=True)
+            print(
+                f"  WARN: could not bake {name} ({repo}): {e} — falls back to bind-mount",
+                file=sys.stderr,
+                flush=True,
+            )
 
     existing = BAKED_LIST.read_text().split() if BAKED_LIST.exists() else []
     all_baked = sorted(set(existing) | set(baked))

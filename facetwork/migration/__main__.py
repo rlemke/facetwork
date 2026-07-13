@@ -70,8 +70,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  L{ln}: {note}")
             if not args.write:
                 for line in difflib.unified_diff(
-                    src.splitlines(), res.source.splitlines(), lineterm="", n=1,
-                    fromfile=f, tofile=f + " (migrated)",
+                    src.splitlines(),
+                    res.source.splitlines(),
+                    lineterm="",
+                    n=1,
+                    fromfile=f,
+                    tofile=f + " (migrated)",
                 ):
                     print("  " + line)
             else:
@@ -86,8 +90,10 @@ def main(argv: list[str] | None = None) -> int:
     verb = "wrote" if args.write else "would change"
     print(f"\n{verb} {changed} file(s); {manual_total} manual site(s) across {len(files)} scanned.")
     if manual_total and not args.write:
-        print("Manual sites are sibling-block `andThen when` — reattach the when to the "
-              "step it gates and rewrite its refs to $.")
+        print(
+            "Manual sites are sibling-block `andThen when` — reattach the when to the "
+            "step it gates and rewrite its refs to $."
+        )
     return 0
 
 

@@ -850,9 +850,7 @@ class PersistenceAPI(Protocol):
             ping_time: The new ping time in milliseconds
         """
 
-    def update_server_handled(
-        self, server_id: str, handled: "list[HandledCount]"
-    ) -> None:
+    def update_server_handled(self, server_id: str, handled: "list[HandledCount]") -> None:
         """Replace ONLY a server's ``handled`` stats (a targeted field write).
 
         Unlike ``save_server`` this must not read-modify-write the whole server

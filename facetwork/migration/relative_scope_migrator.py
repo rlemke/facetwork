@@ -126,9 +126,7 @@ class _Migrator:
                 return depth
         return None
 
-    def _rewrite_ref(
-        self, ref: Reference, block_steps: set[str], loop_vars: set[str]
-    ) -> None:
+    def _rewrite_ref(self, ref: Reference, block_steps: set[str], loop_vars: set[str]) -> None:
         loc = ref.location
         if loc is None or loc.end_line is None or loc.end_column is None:
             return
@@ -144,8 +142,14 @@ class _Migrator:
                 return  # already correct, or unknown → leave for manual review
             new = "$" * (depth + 1) + "." + ".".join(ref.path)
             self.edits.append(
-                _Edit(loc.line, loc.column, loc.end_line, loc.end_column, new,
-                      f"$.{head} → {'$' * (depth + 1)}.{head} (outer container)")
+                _Edit(
+                    loc.line,
+                    loc.column,
+                    loc.end_line,
+                    loc.end_column,
+                    new,
+                    f"$.{head} → {'$' * (depth + 1)}.{head} (outer container)",
+                )
             )
         else:
             if not ref.path:
@@ -159,15 +163,27 @@ class _Migrator:
                 # (REF_CROSS_BLOCK_STEP, e.g. sibling `andThen when`). Structural;
                 # report for manual handling.
                 self.manual.append(
-                    _Edit(loc.line, loc.column, loc.end_line, loc.end_column, "",
-                          f"'{step_name}.…' references a sibling block — reattach "
-                          f"the when/clause to the step (manual)")
+                    _Edit(
+                        loc.line,
+                        loc.column,
+                        loc.end_line,
+                        loc.end_column,
+                        "",
+                        f"'{step_name}.…' references a sibling block — reattach "
+                        f"the when/clause to the step (manual)",
+                    )
                 )
                 return
             new = "$" * (depth + 1) + ("." + ".".join(ref.path[1:]) if len(ref.path) > 1 else "")
             self.edits.append(
-                _Edit(loc.line, loc.column, loc.end_line, loc.end_column, new,
-                      f"{step_name}.… → {'$' * (depth + 1)}.… (enclosing step by name)")
+                _Edit(
+                    loc.line,
+                    loc.column,
+                    loc.end_line,
+                    loc.end_column,
+                    new,
+                    f"{step_name}.… → {'$' * (depth + 1)}.… (enclosing step by name)",
+                )
             )
 
     # -- expression / node traversal ----------------------------------------
@@ -206,9 +222,7 @@ class _Migrator:
         name = call.name
         return self._attrs.get(name) or self._attrs.get(name.split(".")[-1]) or set()
 
-    def _walk_and_then_block(
-        self, body: AndThenBlock, loop_vars: set[str]
-    ) -> None:
+    def _walk_and_then_block(self, body: AndThenBlock, loop_vars: set[str]) -> None:
         if not isinstance(body, AndThenBlock):
             return  # PromptBlock / ScriptBlock facet bodies carry no step refs
         if body.script:
@@ -270,7 +284,7 @@ class _Migrator:
         if body is None:
             return
         self._stack = [_Frame(name=decl.sig.name, attrs=_sig_attrs(decl.sig))]
-        self._current_block_steps = set()
+        self._current_block_steps: set[str] = set()
         blocks = body if isinstance(body, list) else [body]
         for blk in blocks:
             self._walk_and_then_block(blk, set())
