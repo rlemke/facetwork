@@ -32,6 +32,12 @@ def rel_validator():
     return FFLValidator(relative_scoping=True)
 
 
+@pytest.fixture
+def legacy_validator():
+    """Validator with the legacy flat resolver (relative scoping off)."""
+    return FFLValidator(relative_scoping=False)
+
+
 def _ns(source: str) -> str:
     """Wrap FFL source in a namespace if it contains a top-level workflow."""
     import textwrap
@@ -198,7 +204,10 @@ class TestStepReferences:
         )
         result = validator.validate(ast)
         assert not result.is_valid
-        assert any("Invalid input reference '$.nonexistent'" in str(e) for e in result.errors)
+        assert any(
+            e.rule_id == "REF_INVALID_INPUT" and "nonexistent" in str(e)
+            for e in result.errors
+        )
 
     def test_mixin_body_scope_isolation_via_ref_invalid_input(self, validator):
         """When a facet is used as an aliased mixin, the runtime
@@ -1298,7 +1307,10 @@ class TestMixinCallValidation:
         )
         result = validator.validate(ast)
         assert not result.is_valid
-        assert any("Invalid input reference '$.nonexistent'" in str(e) for e in result.errors)
+        assert any(
+            e.rule_id == "REF_INVALID_INPUT" and "nonexistent" in str(e)
+            for e in result.errors
+        )
 
 
 class TestMixinAliasNameConflict:
@@ -1875,7 +1887,7 @@ class TestMultipleBlockValidation:
         facet V(input: Long) => (output: Long)
         workflow Test(input: Long) => (result: Long) andThen {
             s1 = V(input = $.input) andThen {
-                s2 = V(input = s1.output)
+                s2 = V(input = $.output)
                 yield Test(result = s2.output)
             }
         }
@@ -1928,7 +1940,7 @@ class TestMultipleBlockValidation:
         facet Make(seed: Long) => (items: [Long])
         facet Pick(item: Long) => (out: Long)
         workflow Test(seed: Long) => (r: [Long]) andThen {
-            m = Make(seed = $.seed) andThen foreach item in m.items {
+            m = Make(seed = $.seed) andThen foreach item in $.items {
                 p = Pick(item = $.item)
                 yield Test(r = [p.out])
             }
@@ -2307,7 +2319,7 @@ class TestStepBodyValidation:
 
             workflow Main(x: String) => (result: String) andThen {
                 s = Outer(a = $.x) andThen {
-                    i = Inner(x = $.x)
+                    i = Inner(x = $$.x)
                     yield Outer(b = i.y)
                 }
                 yield Main(result = s.b)
@@ -2672,7 +2684,7 @@ class TestCatchBlockValidation:
         facet Transform(data: String) => (output: String)
         facet SafeDefault(reason: String) => (output: String)
         workflow Test(input: String) => (output: String) andThen {
-            s = Transform(data = $.input) catch { fallback = SafeDefault(reason = $.input) }
+            s = Transform(data = $.input) catch { fallback = SafeDefault(reason = $$.input) }
         }
         """)
         )
@@ -3277,12 +3289,12 @@ class TestWhenBlockStepReturnTypes:
         event facet GetRisk(id: Int) => (risk_level: String, score: Int)
         facet HandleHigh(x: Int)
         workflow Test(id: Int) andThen {
-            s1 = GetRisk(id = $.id)
-        } andThen when {
-            case s1.score == 10 => {
-                h = HandleHigh(x = s1.score)
+            s1 = GetRisk(id = $.id) andThen when {
+                case $.score == 10 => {
+                    h = HandleHigh(x = $.score)
+                }
+                case _ => {}
             }
-            case _ => {}
         }
         """)
         )
@@ -3296,12 +3308,12 @@ class TestWhenBlockStepReturnTypes:
         event facet GetRisk(id: Int) => (risk_level: String, score: Int)
         facet HandleCritical(x: Int)
         workflow Test(id: Int) andThen {
-            s1 = GetRisk(id = $.id)
-        } andThen when {
-            case s1.risk_level == "critical" => {
-                h = HandleCritical(x = 1)
+            s1 = GetRisk(id = $.id) andThen when {
+                case $.risk_level == "critical" => {
+                    h = HandleCritical(x = 1)
+                }
+                case _ => {}
             }
-            case _ => {}
         }
         """)
         )
@@ -3336,13 +3348,13 @@ class TestWhenBlockStepReturnTypes:
         facet HandleCritical(level: String)
         facet HandleNormal(level: String)
         workflow Test(id: Int) andThen {
-            s1 = GetRisk(id = $.id)
-        } andThen when {
-            case s1.risk_level == "critical" => {
-                h = HandleCritical(level = s1.risk_level)
-            }
-            case _ => {
-                n = HandleNormal(level = s1.risk_level)
+            s1 = GetRisk(id = $.id) andThen when {
+                case $.risk_level == "critical" => {
+                    h = HandleCritical(level = $.risk_level)
+                }
+                case _ => {
+                    n = HandleNormal(level = $.risk_level)
+                }
             }
         }
         """)
@@ -3394,18 +3406,18 @@ class TestWhenBlockStepReturnTypes:
         event facet GetRisk(id: Int) => (risk_level: String, score: Int)
         facet Handle(x: Int)
         workflow Test(id: Int) andThen {
-            s1 = GetRisk(id = $.id)
-        } andThen when {
-            case s1.nonexistent == "x" => {
-                h = Handle(x = 1)
+            s1 = GetRisk(id = $.id) andThen when {
+                case $.nonexistent == "x" => {
+                    h = Handle(x = 1)
+                }
+                case _ => {}
             }
-            case _ => {}
         }
         """)
         )
         result = validator.validate(ast)
         assert not result.is_valid
-        assert any("Invalid attribute 'nonexistent'" in str(e) for e in result.errors)
+        assert any("nonexistent" in str(e) for e in result.errors)
 
     def test_when_condition_step_and_input_mixed(self, validator):
         """Conditions can mix step refs and input refs."""
@@ -3414,12 +3426,12 @@ class TestWhenBlockStepReturnTypes:
         event facet GetRisk(id: Int) => (score: Int)
         facet Handle(x: Int)
         workflow Test(id: Int, threshold: Int) andThen {
-            s1 = GetRisk(id = $.id)
-        } andThen when {
-            case s1.score > $.threshold => {
-                h = Handle(x = s1.score)
+            s1 = GetRisk(id = $.id) andThen when {
+                case $.score > $$.threshold => {
+                    h = Handle(x = $.score)
+                }
+                case _ => {}
             }
-            case _ => {}
         }
         """)
         )
@@ -3815,13 +3827,13 @@ class TestRelativeScoping:
 
     # --- flag-off leaves the legacy (flat) behavior intact ---
 
-    def test_flag_off_containing_step_by_name_ok(self, validator):
+    def test_flag_off_containing_step_by_name_ok(self, legacy_validator):
         # Under the legacy resolver the containing step IS nameable.
         src = self._HEAD + "s3 = sf1(input=$.input) andThen { s4 = sf1(input=s3.output) }" + self._TAIL
-        result = validator.validate(parse(src))
+        result = legacy_validator.validate(parse(src))
         assert result.is_valid, [str(e) for e in result.errors]
 
-    def test_flag_off_top_level_when_sibling_ok(self, validator):
+    def test_flag_off_top_level_when_sibling_ok(self, legacy_validator):
         # Legacy Gap-2: a top-level when may read a prior block's step.
         src = """namespace t {
           event facet GetRisk(id: Int) => (score: Int)
@@ -3833,7 +3845,7 @@ class TestRelativeScoping:
              case _ => {}
           }
         }"""
-        result = validator.validate(parse(src))
+        result = legacy_validator.validate(parse(src))
         assert result.is_valid, [str(e) for e in result.errors]
 
     # --- step-body clause chaining ---

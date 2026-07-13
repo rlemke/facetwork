@@ -31,12 +31,15 @@ from typing import Any
 
 
 def relative_scoping_enabled() -> bool:
-    """True when relative ``$``-scoping is enabled via the environment."""
-    return os.environ.get("FW_FFL_RELATIVE_SCOPING", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
+    """True when relative ``$``-scoping is enabled (default on).
+
+    Disable with ``FW_FFL_RELATIVE_SCOPING=0``/``off`` for the legacy resolver.
+    """
+    return os.environ.get("FW_FFL_RELATIVE_SCOPING", "on").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
     )
 
 

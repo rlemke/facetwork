@@ -213,9 +213,11 @@ class FFLValidator:
         # on = container-relative $/$$ resolution. Default from the environment
         # so the whole toolchain can opt in without code changes.
         if relative_scoping is None:
+            # Default ON (relative scoping is the model); explicitly disable with
+            # FW_FFL_RELATIVE_SCOPING=0/off for the legacy flat resolver.
             relative_scoping = os.environ.get(
-                "FW_FFL_RELATIVE_SCOPING", ""
-            ).strip().lower() in ("1", "true", "yes", "on")
+                "FW_FFL_RELATIVE_SCOPING", "on"
+            ).strip().lower() not in ("0", "false", "no", "off")
         self._relative_scoping: bool = relative_scoping
         self._container_stack: list[_ContainerFrame] = []
         # Steps visible from an ENCLOSING block (relative-scoping only): under
@@ -1489,6 +1491,52 @@ class FFLValidator:
         For catch when: delegates to _validate_when_block (default required, Boolean conditions).
         For catch block: validates block contents using synthetic AndThenBlock.
         """
+        # A facet/workflow-level catch is validated outside _validate_body, so
+        # under relative scoping the base container frame isn't on the stack yet.
+        # Push it so $ resolves to the containing facet/workflow. (Step-level
+        # catches already run with the step frame pushed → stack non-empty.)
+        if self._relative_scoping and not self._container_stack:
+            self._container_stack.append(
+                _ContainerFrame(
+                    name=containing_sig.name,
+                    kind="facet",
+                    attrs=self._sig_attr_names(containing_sig),
+                    open=False,
+                )
+            )
+            try:
+                self._validate_catch_clause_impl(
+                    catch,
+                    containing_sig,
+                    extra_yield_targets,
+                    parent_steps,
+                    parent_step_returns,
+                    parent_step_returns_types,
+                    parent_foreach_var,
+                )
+            finally:
+                self._container_stack.pop()
+            return
+        self._validate_catch_clause_impl(
+            catch,
+            containing_sig,
+            extra_yield_targets,
+            parent_steps,
+            parent_step_returns,
+            parent_step_returns_types,
+            parent_foreach_var,
+        )
+
+    def _validate_catch_clause_impl(
+        self,
+        catch: CatchClause,
+        containing_sig: FacetSig,
+        extra_yield_targets: set[str] | None = None,
+        parent_steps: dict[str, "StepInfo"] | None = None,
+        parent_step_returns: dict[str, set[str]] | None = None,
+        parent_step_returns_types: dict[str, dict[str, str]] | None = None,
+        parent_foreach_var: str | None = None,
+    ) -> None:
         if catch.when:
             self._validate_when_block(
                 catch.when,
@@ -2127,6 +2175,12 @@ class FFLValidator:
                 return
             frame = self._container_stack[idx]
             if attr in frame.attrs:
+                # Deep facet-ref path ($.param.field…): validate the sub-path
+                # against the param's facet type. Only meaningful at the base
+                # facet frame (idx 0), whose params drive _facet_param_types;
+                # for step frames it is a safe no-op (unknown param → skip).
+                if len(ref.path) >= 2 and idx == 0:
+                    self._validate_facet_ref_attr_path(ref, attr)
                 return
             if frame.open:
                 # A pre-script may inject extra $. keys we can't enumerate.
