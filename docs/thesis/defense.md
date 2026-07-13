@@ -127,9 +127,43 @@ It is visually noisy and I dislike it as much as you do. I will say what it buys
 
 Without `$.`, the alternative is to give outer-container attributes the same namespace as block-local bindings. This creates shadowing: an inner `region = ...` would shadow the outer `region: String` parameter. Shadowing is the source of an enormous number of bugs in imperative languages and I did not want to pay for that in FFL. The alternatives are (a) prohibit shadowing, which is restrictive and unnatural, or (b) use explicit syntactic distinction between "my scope" and "my container's scope," which is what `$.` does.
 
-Better-known languages make similar choices. Scala's `this.` disambiguates class attributes from locals. JavaScript's explicit `this.` does the same. Python's `self.` is the same pattern. `$.` is Facetwork's version, and I picked `$` because it is visually distinct from identifier characters and cannot appear as a bare word in any reasonable surface syntax. A future version of FFL might use `outer.` or `container.` instead; the semantics would be unchanged.
+Better-known languages make similar choices. Scala's `this.` disambiguates class attributes from locals. JavaScript's explicit `this.` does the same. Python's `self.` is the same pattern. `$.` is Facetwork's version, and I picked `$` because it is visually distinct from identifier characters and cannot appear as a bare word in any reasonable surface syntax. Since this defense the sigil has stayed but its meaning has sharpened: what was a single flat container level is now a *relative* scope, in which `$` names the immediate container and `$$`, `$$$` walk outward. I had expected any change here to be cosmetic — swap `$.` for `outer.`, semantics untouched. The opposite happened: the syntax survived and the semantics moved. I take that redesign up in Q8a.
 
 I accept that `$` carries Perl baggage for readers of a certain age. The syntax is stable now and, on the evidence of the examples I have shown, authors acclimate to it quickly.
+
+### Q8a (Prof. Pike)
+
+> *You have just told us the scoping model changed after the defense. That is unusual — a language's scope rules are its spine. Walk us through what changed, and then justify the up-level operators `$$` and `$$$`. They look like exactly the Perl-noise you apologised for a moment ago.*
+
+The old model was flat. Every block resolved names against one implicit container — the workflow's inputs — plus its own local bindings, and `$.` reached that single container level. It worked for shallow workflows and it was easy to explain. It was also a lie about the structure of the programs authors were actually writing, because facets and steps nest, and a flat model hands every nesting level the same one outer scope.
+
+The relative model tells the truth about nesting. `$` names the *immediate* lexical container — the enclosing step, facet, or workflow — and `$.attr` reads that container's parameters *and* its return fields. `$$` names the container one level out, `$$$` the one beyond that, and walking past the outermost container is a compile error, not a silent `null`. A block sees exactly two things: the `$…` attributes of its enclosing containers, and the steps declared in its *own* block. It cannot see a sibling block's steps, and — this is the part that surprised me — it cannot name the step that contains it. The containing step is reached only through `$`. `andThen when` obeys the same rule: you attach the guard to the step it gates and resolve names from there.
+
+Now, the up-level operators, which you are right to be suspicious of. I resisted them. I wanted `$` and nothing else. The example that forced my hand is nested step bodies that each declare a same-named parameter:
+
+```
+o1 = One(input = $.input) andThen {
+  o2 = One(input = $.input + $$.input) andThen {
+    o3 = One(input = $.input + $$.input + $$$.input) andThen { … }
+  }
+}
+```
+
+Here `o3` legitimately needs three different `input`s: its own container's, `o2`'s, and the workflow's. Under the flat model those three names collided and only the outermost was reachable. Under the relative model each is spelled unambiguously — `$.input`, `$$.input`, `$$$.input` — and there is *no other spelling available*, because, as I said, the containing step is not nameable. So the up-level operator is not noise I added for symmetry; it is the minimum mechanism that makes a legitimate program expressible at all. I would rather have a slightly Perl-ish sigil that can say the thing than a clean syntax that cannot.
+
+There is a deeper version of this idea that I considered and deliberately parked, and I want it on the record because it is a road I chose not to take. The relative operators walk *lexical* containers. One could imagine `$$` in a facet body reaching not its lexical parent but its *caller* — the container that instantiates the facet, as though the facet's body were inlined at each call site, with the compiler checking at every use-site that the instantiating container actually provides the named field. That would make a facet a kind of open term parameterised by its context. It is expressible and it is checkable. I parked it for one reason: every concrete case I found where I wanted it was better served by an explicit parameter. A facet that reaches into its caller's scope is a facet whose contract is invisible at the call site, and invisible contracts are precisely what the DSL exists to prevent. So the up-level operators are lexical only, and the caller-reaching version stays in the drawer with a note explaining why.
+
+### Q8b (Dr. Yegge)
+
+> *Two practical things. First: relative nesting sounds like it pushes authors toward deep pyramids — if I have to gate one step on five earlier ones, do I end up five `$` deep? Second: you changed the scope rules of a language that already had live workflows running against it. How did you do that without a flag day?*
+
+On the first: yes, naive nesting pushes you toward pyramids, and I hit exactly the failure you are describing. I had a workflow where a final step needed to see five prior results, and the obvious relative-scoping transcription nested them five deep — a `$$$$$` tower — which was unreadable, and worse, it *serialised* five steps that had no data dependency on each other simply to stack them in one another's scope. The nesting bought visibility at the cost of parallelism, which is a bad trade.
+
+The idiom that fixes it is decomposition, not deeper nesting: pass the prior steps as *facet-typed parameters* to a small gating facet. The five steps stay siblings in one block — parallel, no artificial ordering — and the gating facet receives them as typed inputs and refers to each as `$.param.field`. Every reference is one level deep. The facet is reusable, and its signature documents exactly what it gates on, which the pyramid never did. The nicest property is that this idiom is model-agnostic: it validates identically under the old flat scoping and the new relative scoping, because it never reaches across scopes at all — it passes data explicitly. When I found a construction that was clean under *both* models, that was a strong signal it was the right one, and it is now the pattern I steer authors toward the moment a pyramid starts to grow.
+
+On the second — the live migration — this is the part I am most pleased with operationally, because we did it without a flag day. The relative runtime was built to still run legacy flat FFL unchanged: at top level `$.x` still means a workflow input, step references still resolve the same way, and there is an injected-inputs fallback for the constructs that relied on the flat container. So the two models are not a hard fork; the new runtime is a strict superset of the old behaviour on old programs. That let us ship it flag-gated — dual-model behind `FW_FFL_RELATIVE_SCOPING` — run both interpretations side by side, provide a scope-aware migration tool that rewrote workflows into the relative idiom, flip the default once the corpus was migrated and green, and only then remove the old path. A live language migration on a running system, staged rather than switched.
+
+One implementation note the committee touched on earlier. The cross-block deferral mechanism — the `_StepNotReady` signal I raise when a block references a step that has not produced its value yet — was not deleted in the rework. It was *repurposed*: it is now what resolves `$.field` references to a container's *return* fields, which are not available until the container's body has run. The same machinery that used to paper over cross-block ordering now does honest work resolving relative container-return references. I mention it because it is a case where a mechanism I might have been tempted to rip out during a scope-model change turned out to be exactly the primitive the new model needed.
 
 ### Q9 (Prof. Pike)
 

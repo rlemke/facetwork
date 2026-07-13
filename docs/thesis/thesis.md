@@ -265,14 +265,14 @@ namespace osm.ops {
 }
 ```
 
-A workflow's signature is `=> (name: Type, ...)` declaring its typed return fields, followed by an `andThen { ... }` block that is the workflow's body. Inside that body, parameters of the enclosing workflow are reached through the **container-attribute syntax** `$.name`; locally-defined assignments (`c`, `s`) are reached by bare name. The `$` distinguishes *reaching out of the current block into its container* from *reaching across statements within the current block*, and the distinction is enforced by the compiler. This is the simple case. The power of FFL comes in composition.
+A workflow's signature is `=> (name: Type, ...)` declaring its typed return fields, followed by an `andThen { ... }` block that is the workflow's body. Inside a block, the `$` sigil denotes the block's **immediate container** — the step, facet, or workflow whose body or clause the block is — and `$.name` reads one of that container's attributes: its parameters and, once produced, its declared return fields alike, treated uniformly as fields on the container's record. In this top-level body the container is the workflow itself, so `$.region` and `$.force` are the workflow's parameters; locally-defined assignments (`c`, `s`) are reached by bare name. The `$` thus distinguishes *reaching out of the current block into its container* from *reaching across statements within the current block*, and the distinction is enforced by the compiler. A block may also reach further out: `$$` denotes the container's container, `$$$` one beyond that, and so on, one lexical hop per extra `$` — a generalisation that only becomes visible once blocks nest inside one another (§4.3.2). This is the simple case; the power of FFL comes in composition.
 
 ### 4.3 Composition: `andThen`, `foreach`, and `when`
 
 `andThen { ... }` introduces a **block** — a lexical scope containing a set of assignments. Two rules govern blocks:
 
 1. **Statements within a block share a scope.** Any assignment in the block may reference any other assignment in the *same* block by name, and the runtime orders execution according to the resulting data-dependency partial order.
-2. **Statements cannot reach across block boundaries.** An assignment in one block cannot name an assignment in a sibling block or an outer block. To reference values from the enclosing workflow or facet — its parameters, its declared return fields — the block uses the container-attribute syntax `$.name`.
+2. **Statements cannot reach across block boundaries.** An assignment in one block cannot name an assignment in a sibling block or an outer block. To reference values from the block's immediate container — its parameters, its declared return fields — the block uses the container-attribute syntax `$.name`, and to reach a container further out it adds one `$` per level (`$$`, `$$$`, …; §4.3.2). What it cannot do is name a *step* in another block by that step's binding.
 
 Sibling blocks — two `andThen { ... }` blocks attached to the same container, or two `andThen foreach` expansions in the same scope — execute concurrently with each other. Consequently, a workflow that wants analysis to happen *after* extraction cannot place the two in separate sibling blocks; it must either place them in the *same* block (letting data flow order the work) or chain the blocks so that the later block sees the earlier block's outputs through the container scope.
 
@@ -402,6 +402,74 @@ result = s andThen when {
 
 The `andThen when` expression evaluates exactly one branch. Together, `andThen`, `andThen foreach`, and `andThen when` provide enough control flow for all the workflows we have encountered without needing general-purpose loops. The absence of unbounded loops is not an accident; it is a deliberate restriction that makes topology statically tractable. Bounded iteration (foreach) is sufficient because the collections it iterates over are themselves either the result of upstream facets (and thus have known size at the iteration point) or parameters to the workflow.
 
+#### 4.3.2 Nested blocks and the up-level operators
+
+Everything so far has needed only `$` (the immediate container) and bare names (same-block siblings). Both suffice as long as blocks do not nest. But FFL blocks *do* nest: a step may carry its own body — `s = F(...) andThen { ... }`, `andThen foreach`, or `andThen when` attached to a step — and those bodies can themselves contain steps that carry bodies. Each level of nesting introduces a new immediate container, and `$` always binds to the *nearest* one. To reach an enclosing container from inside a nested block, FFL adds one `$` per level: `$$` is the container's container, `$$$` one beyond that, and so on. Each extra `$` is exactly one lexical hop outward; there is no operator for hopping *down* into an inner block or *sideways* into a sibling one, because neither is ever in scope.
+
+A real workflow makes the mechanism concrete. This facet resolves a list of region names and then, for each resolved subregion in parallel, downloads its data and extracts populated places:
+
+```ffl
+facet ExtractPlacesAcrossSubregions(
+  region_names: [String], min_population: Long, cache_policy: String
+) => (place_paths: [String]) andThen {
+  resolved = osm.Region.ResolveRegions(names = $.region_names, expand = "subregions")
+    andThen foreach r in $.regions {
+      cache  = osm.cache.Download(region = $.r, cache_policy = $$.cache_policy)
+      places = osm.Population.AllPopulatedPlaces(cache = cache.cache,
+                                                 min_population = $$.min_population)
+      yield ExtractPlacesAcrossSubregions(place_paths = [places.result.output_path])
+    }
+}
+```
+
+Read the sigils level by level:
+
+- In the outer block, `$` is the facet, so `$.region_names` reads the facet's parameter.
+- The `foreach` is attached to the step `resolved`, so *inside the loop body the immediate container is `resolved`*. There, `$.regions` reads `resolved`'s own output field (`ResolveRegions` returns `regions`), and `$.r` reads the loop variable — the iteration variable lives on the loop's immediate frame alongside the container step's attributes.
+- `$$.cache_policy` and `$$.min_population` walk one level out, past `resolved`, to the enclosing facet's parameters — which is where those names actually live. `resolved` has no `cache_policy`, so `$` would not find it; the up-level is not stylistic, it is the only spelling that resolves.
+
+That last point is the crux: **the up-level operators are load-bearing, not sugar.** They earn their place when a name is shadowed — when an inner container and an outer one both declare an attribute of the same name and a step genuinely needs the outer one. The following minimal program is the case that forces them:
+
+```ffl
+event facet One(input: Int) => (output: Int)
+
+workflow w1(input: Int) => (output: Int) andThen {
+  o1 = One(input = $.input) andThen {
+    o2 = One(input = $.input) andThen {
+      o3 = One(input = $$$.input)
+    }
+  }
+  yield w1(output = o1.output)
+}
+```
+
+Three containers each expose an attribute named `input`: the workflow `w1`, the step `o1`, and the step `o2`. Inside `o2`'s body, `o3` can name all three, and only the up-level count distinguishes them: `$.input` is `o2`'s, `$$.input` is `o1`'s, `$$$.input` is the workflow's. Without the operators the three would collide and only one would be reachable; with them, each is spelled unambiguously and there is *no other spelling available*, precisely because the containing step is not nameable. Walking past the outermost container is a compile-time error (`REF_DOLLAR_OVERFLOW`): `$$$$.input` here has nowhere to resolve and is rejected by the validator.
+
+**The pyramid is a smell, and the fix is decomposition, not deeper nesting.** Nesting steps merely to stack them in one another's scope is almost always the wrong reason to nest. It buys visibility at the cost of parallelism: five steps stacked five deep so the innermost can see all four outer results are thereby *serialised*, even when they share no data dependency. When a step needs to see several prior results, the idiom is to pass those priors as **facet-typed parameters** (§4.4.2) to a small gating facet, keeping the producers as flat siblings:
+
+```ffl
+event facet BuildImage(ref: String)  => (image: String)
+event facet RunTests(ref: String)    => (passed: Boolean)
+event facet AnalyzeRisk(ref: String) => (level: String)
+event facet Ship(image: String, passed: Boolean, level: String) => (result: String)
+
+facet Deploy(build: BuildImage, tests: RunTests, risk: AnalyzeRisk)
+  => (status: String) andThen {
+    s = Ship(image = $.build.image, passed = $.tests.passed, level = $.risk.level)
+    yield Deploy(status = s.result)
+}
+
+workflow Release(ref: String) => (status: String) andThen {
+  b = BuildImage(ref = $.ref)
+  t = RunTests(ref = $.ref)
+  r = AnalyzeRisk(ref = $.ref)
+  d = Deploy(build = b, tests = t, risk = r)
+  yield Release(status = d.status)
+}
+```
+
+`b`, `t`, and `r` stay siblings in one block — the runtime runs them concurrently — and `Deploy` gates on all three by *naming them in its signature*, reading each as `$.build.image`, `$.tests.passed`, `$.risk.level`, every reference exactly one level deep. The dependency is documented in the type rather than buried in the shape of the nesting; the gating facet is reusable; and, tellingly, this construction validates identically under flat and relative scoping because it never reaches across scopes at all. The up-level operators exist for the genuine shadowing case above; the decomposition idiom is what keeps them rare.
+
 ### 4.4 Data-dependency semantics: concurrency by default
 
 A defining property of FFL, and one that distinguishes it sharply from imperative workflow-as-code, is that **the textual order of statements in an `andThen` block does not determine execution order**. Execution order is determined solely by data dependencies inferred from the expressions.
@@ -455,7 +523,7 @@ The practical effect of these rules is that `yield`, viewed from inside the lang
 
 #### 4.4.2 Pass-by-step: parameters typed as facets
 
-The reference forms presented so far carry a single value — `s1.field` selects one attribute, `$.field` reads one of the enclosing facet's bound inputs. FFL admits a third form: when a parameter's declared type is itself a facet name, the argument bound to that parameter is **a reference to a whole step** rather than a copy of one of its fields.
+The reference forms presented so far carry a single value — `s1.field` selects one attribute, `$.field` reads one of the immediate container's attributes (and `$$.field` one of an outer container's). FFL admits a third form: when a parameter's declared type is itself a facet name, the argument bound to that parameter is **a reference to a whole step** rather than a copy of one of its fields.
 
 ```ffl
 facet Value(input: String) => (output: String)
@@ -547,8 +615,8 @@ facet Gather(key: String)
 // step-level andThen attached to the call site.
 workflow Report(key: String) => (message: String) andThen {
   g = Gather(key = $.key) andThen {
-    c = LoadC(key = $.key)
-    f = Format(a = g.a, b = g.b, c = c.c, doubled = g.doubled, tagged = g.tagged)
+    c = LoadC(key = $$.key)
+    f = Format(a = $.a, b = $.b, c = c.c, doubled = $.doubled, tagged = $.tagged)
     yield Report(message = f.result)
   }
 }
@@ -560,13 +628,13 @@ When `g = Gather(...)` is evaluated, the runtime proceeds in three distinct phas
 
 **Phase 2 — Primary facet phase.** The primary facet's `andThen` blocks are now eligible to run. Crucially, at this point `$.a` and `$.b` *are* readable from inside Phase 2, because the mixin phase has committed them to the container. The two primary `andThen` blocks execute concurrently with each other (they are sibling blocks per §4.3), each reading `$.a` and `$.b` and contributing a different output field (`doubled` and `tagged`). Neither primary block can read the other's yields — scalar outputs yielded in sibling blocks do not become visible to each other mid-phase — but both can freely read mixin outputs. When both primary blocks complete, their yields are atomically applied to the container, so that by the end of Phase 2, `Gather`'s four output fields (`a`, `b`, `doubled`, `tagged`) are all populated.
 
-**Phase 3 — Step-level block (at the caller's site).** The `andThen { ... }` appended to the call `g = Gather(key = $.key)` is the *step-level* block. It executes after Phases 1 and 2 have fully completed, which means it sees the fully-assembled step output through the step binding `g`: `g.a`, `g.b`, `g.doubled`, `g.tagged`. In this example it also performs a fresh `LoadC` call and then calls `Format` using all of the step's outputs plus the newly-loaded `c`. The step-level block belongs lexically to the *caller* (`Report`), not to `Gather`, so it can read the caller's own container attributes (`$.key`) and any earlier bindings in the caller's block.
+**Phase 3 — Step-level block (attached to the step).** The `andThen { ... }` appended to the call `g = Gather(key = $.key)` is the *step-level* block. (The call's own argument, `key = $.key`, is evaluated in the workflow's top-level block, where `$` is `Report`.) It executes after Phases 1 and 2 have fully completed. Under relative scoping the block's **immediate container is the step `g` itself**: `$` denotes `g`, so the fully-assembled step output is read as `$.a`, `$.b`, `$.doubled`, `$.tagged` — the container step is not nameable from inside its own body, so one writes `$.a`, never `g.a`. The enclosing workflow `Report` is one hop further out, reached with `$$`; that is why `LoadC(key = $$.key)` walks up past `g` (a `Gather`, whose own `key` `$.key` would also name, but the intent here is the workflow's input) to `Report`'s parameter. In this example the block performs a fresh `LoadC` call — its own sibling, read by bare name `c.c` — and then calls `Format` using all of the container step's outputs plus the newly-loaded `c`.
 
 Three visibility rules follow, which taken together capture the whole model:
 
 1. **Phase 1 sees only inputs.** Mixins cannot see the primary facet's yields or other mixins' yields. They are pure functions of the container's inputs.
 2. **Phase 2 sees inputs plus Phase-1 yields.** Primary `andThen` blocks can read every attribute yielded by any mixin, because Phase 1 has already committed. They cannot read sibling primary-block yields — those are still accumulating — and they cannot read attributes that will only be produced by the step-level block.
-3. **Phase 3 sees the completed step.** The step-level block at the caller's site reads the step's attributes as `stepName.fieldName`, and only runs after every field has been assigned by Phase 1 or Phase 2.
+3. **Phase 3 sees the completed step.** The step-level block's immediate container is the step it is attached to, so it reads that step's assembled attributes as `$.fieldName` (the step is not nameable from inside its own body) and reaches the enclosing workflow's attributes with `$$`. It only runs after every field has been assigned by Phase 1 or Phase 2.
 
 The model composes cleanly with everything said earlier. The atomicity described in §4.4.1 — "yields are collected and applied atomically at block completion" — now has a richer story: it applies at every phase boundary, not just at the end of a single block. Phase 1's aggregated yields are committed atomically to the container; Phase 2's aggregated yields are committed atomically; Phase 3 sees the committed total. No phase ever observes a half-populated step, and no concurrent writers within a phase can race because the phase's yields are accumulated and applied only at its boundary.
 
@@ -601,18 +669,18 @@ FFL makes error handling part of the flow language rather than relegating it to 
 
 ```ffl
 s = DownloadPBF(region = $.region) catch when {
-  case err.type == "NetworkError" => {
-    retried = DownloadPBF(region = $.region, mirror = "backup")
+  case $.error_type == "NetworkError" => {
+    retried = DownloadPBF(region = $$.region, mirror = "backup")
   }
-  case err.type == "DiskFullError" => {
+  case $.error_type == "DiskFullError" => {
     cleared = CleanCache()
-    retried = DownloadPBF(region = $.region)
+    retried = DownloadPBF(region = $$.region)
   }
-  case _ => { FailWorkflow(reason = err.message) }
+  case _ => { failed = FailWorkflow(reason = $.error) }
 }
 ```
 
-`catch when` cases are statically matched against a typed error schema; the compiler verifies that every case is reachable and that the final catch-all is present if the cases are not exhaustive. This lifts error handling from a handler-internal `try/except` — invisible to the orchestrator — into a topology-visible construct that the dashboard renders and that the compiler can type-check.
+A `catch when` clause is itself a block, and under relative scoping (§4.3.2) its immediate container is the **caught step** — here `s` — so `$` denotes that step. On top of the step's ordinary attributes the runtime exposes two synthetic fields inside a catch clause: `$.error_type` (the error's type) and `$.error` (its message). The enclosing workflow is one hop further out, so its own inputs are reached with `$$` — that is why the retries call `DownloadPBF(region = $$.region)`. `catch when` cases are statically matched against a typed error schema; the compiler verifies that every case is reachable and that the final catch-all is present if the cases are not exhaustive. This lifts error handling from a handler-internal `try/except` — invisible to the orchestrator — into a topology-visible construct that the dashboard renders and that the compiler can type-check.
 
 ### 4.7 Prompt blocks: first-class LLM integration
 
