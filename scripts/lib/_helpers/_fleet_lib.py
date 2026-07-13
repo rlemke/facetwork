@@ -28,7 +28,7 @@ CONVENTIONAL_MINIO = "http://afl-minio:9000"
 # ---------------------------------------------------------------------------
 
 
-def _mongo_ok(url: str, timeout_ms: int = 2000) -> bool:
+def _mongo_ok(url: str, timeout_ms: int = 5000) -> bool:
     try:
         from pymongo import MongoClient
 
