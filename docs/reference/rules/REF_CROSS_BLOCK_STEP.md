@@ -73,42 +73,56 @@ workflow W(seeds: [String]) => (r: [String]) andThen {
 result — is always fine; only a **step** reference to a sibling block is
 rejected.)
 
-## Exception: `andThen when` blocks *may* reference prior blocks
+## `andThen when` obeys the same rule — attach it to the step it gates
 
-A **`andThen when`** block is the deliberate exception — its case conditions and
-case bodies **can** name steps from prior regular `andThen` blocks. A `when` block
-is a conditional gate on what already happened, so referencing an earlier block's
-result is the whole point.
+Under relative scoping (the default), an **`andThen when`** may reference only
+`$` (the step/container it is attached to) and its own same-block steps — it is
+**not** exempt. A `when` that reads a *prior sibling block's* step is rejected
+just like any other cross-block reference.
 
 ```ffl
-// OK — the when block reads `s1` from the prior andThen block
+// WRONG — the top-level when reads `s1` from a sibling andThen block
 namespace x {
     event facet GetRisk(id: Int) => (score: Int)
     facet HandleHigh(x: Int)
     workflow W(id: Int) andThen {
         s1 = GetRisk(id = $.id)
     } andThen when {
-        case s1.score == 10 => { h = HandleHigh(x = s1.score) }   // ← 's1' from the sibling block
+        case s1.score == 10 => { h = HandleHigh(x = s1.score) }   // ← cross-block
         case _ => {}
     }
 }
 ```
 
-The runtime makes this safe: when the `when` block initializes and a referenced
-step isn't complete yet, it **defers** (raises `_StepNotReady` and re-queues)
-rather than erroring, so the case is evaluated only once `s1` is ready. This is
-the one place the cross-block deferral machinery is reachable from valid FFL — so
-it is **not** dead code, even though regular blocks and `foreach` collections
-reject the same references.
+Attach the `when` to the step it gates. Inside the cases, `$` is that step, so
+its returns are `$.field` (and `$$.field` reaches the workflow input):
 
-The distinction: a **regular block** or a **`foreach` collection** naming a
-sibling step is rejected (this rule); a **`when` case/body** naming a prior
-block's step is allowed.
+```ffl
+// CORRECT — the when is a step body on `s1`; $ = s1
+namespace x {
+    event facet GetRisk(id: Int) => (score: Int)
+    facet HandleHigh(x: Int)
+    workflow W(id: Int) andThen {
+        s1 = GetRisk(id = $.id) andThen when {
+            case $.score == 10 => { h = HandleHigh(x = $.score) }
+            case _ => {}
+        }
+    }
+}
+```
+
+To gate on **several** prior steps, pass them as facet-typed parameters to a
+gating facet rather than nesting (see
+[ffl-relative-scoping.md](../../architecture/ffl-relative-scoping.md) §5.7).
 
 ## Why
 
 The runtime executes top-level `andThen` siblings in parallel. Allowing
-cross-block references from a *regular* block would force serialisation and make
-the parallelism silent — instead the language requires you to be explicit about
-ordering with a step body. `andThen when` is exempt because it is by definition a
-gate that runs after, and on the results of, prior blocks.
+cross-block references would force serialisation and make the parallelism silent
+— instead the language requires you to be explicit about ordering with a step
+body. The same reasoning applies to `andThen when`: gate on a step's result by
+attaching the `when` to that step, where the result is in scope as `$`.
+
+(The runtime's `_StepNotReady` deferral is still live — it now resolves `$.field`
+references to a containing step's return that is produced just before the body
+runs, rather than the old cross-block-sibling case.)

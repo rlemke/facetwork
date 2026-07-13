@@ -215,12 +215,13 @@ Key constraints the rule docs cover (and the language enforces):
 
 - **Workflows and schemas must live inside a namespace** (`WORKFLOW_AT_TOP_LEVEL`, `SCHEMA_AT_TOP_LEVEL`).
 - **References are always `step.field` form** — bare step names are not valid expressions (`REF_INVALID_STEP_FORMAT`).
-- **`foreach` loop variables are accessed via `$.<varname>`** inside the block (same scope as workflow inputs).
+- **Relative `$`-scoping** — `$` is a block's immediate container; `$.attr` reads its params/returns, `$$`/`$$$`… walk up (past the outermost = `REF_DOLLAR_OVERFLOW`). A block sees only `$…` container attributes + **same-block** steps; it may not name the containing step (`REF_CONTAINING_STEP_BY_NAME` — use `$`) or a sibling block's step (`REF_CROSS_BLOCK_STEP`, incl. `andThen when`). Gate on several prior steps by passing them as facet-typed params, not by nesting. Default on; `FW_FFL_RELATIVE_SCOPING=0` for the legacy flat model. See [ffl-relative-scoping.md](docs/architecture/ffl-relative-scoping.md).
+- **`foreach` loop variables are accessed via `$.<varname>`** inside the block (bound on the loop body's `$` surface).
 - **Yield targets** must be the containing facet OR one of its declared mixins (`YIELD_INVALID_TARGET`).
-- **`when` blocks need a default case, last** (`WHEN_MISSING_DEFAULT`, `WHEN_DEFAULT_NOT_LAST`).
+- **`when` blocks need a default case, last** (`WHEN_MISSING_DEFAULT`, `WHEN_DEFAULT_NOT_LAST`); attach a `when` to the step it gates.
 - **No truthy/falsy coercion** — comparisons return Boolean, and `&&`/`||`/`!` only accept Boolean operands.
 
-When adding a new validator check, give it a `rule_id` AND write the matching `docs/reference/rules/{rule_id}.md` in the same change. Coverage is currently exact (41/41 emitted rule_ids documented); the script that diffs them lives in [docs/architecture/mcp-context-engineering.md](docs/architecture/mcp-context-engineering.md).
+When adding a new validator check, give it a `rule_id` AND write the matching `docs/reference/rules/{rule_id}.md` in the same change. Coverage is currently exact (all 49 emitted rule_ids documented); the script that diffs them lives in [docs/architecture/mcp-context-engineering.md](docs/architecture/mcp-context-engineering.md).
 
 ## Standalone domain packages
 

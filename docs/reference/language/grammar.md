@@ -189,7 +189,7 @@ COMP_OP             := "==" | "!=" | ">=" | "<=" | ">" | "<" ;
 ADD_OP              := "+" | "-" ;
 MUL_OP              := "*" | "/" | "%" ;
 
-reference           := "$." ident ( "." ident )*
+reference           := "$"+ "." ident ( "." ident )*
                     | ident "." ident ( "." ident )* ;
 
 literal             := string | float | integer | boolean | "null" ;
@@ -443,42 +443,35 @@ s6 = Check(result = s1.x > 5 && s2.x < 10 || s1.done)
 
 ### andThen when blocks
 
-Conditional branching based on step outputs or workflow inputs. Multiple matching cases execute concurrently (non-exclusive). A default case (`case _`) is **required** and executes only if no other case matched.
+Conditional branching on a step's outputs. **Attach the `when` to the step it
+gates**: inside the cases `$` is that step, so its returns are `$.field` (and
+`$$.field` reaches the workflow input). A default case (`case _`) is **required**
+and executes only if no other case matched. Multiple matching cases execute
+concurrently (non-exclusive). A `when` may reference only `$` (the step) and its
+own same-block steps — not a sibling `andThen` block's step.
 
 ```afl
-workflow ProcessOrder(amount: Long) => (result: String)
-andThen {
-    order = CreateOrder(amount = $.amount)
-}
-andThen when {
-    case order.status == "success" => {
-        a = NotifySuccess(id = order.id)
-        yield ProcessOrder(result = a.message)
-    }
-    case order.amount > 1000 => {
-        b = FlagForReview(id = order.id)
-    }
-    case _ => {
-        c = HandleDefault(id = order.id)
-        yield ProcessOrder(result = c.message)
+workflow ProcessOrder(amount: Long) => (result: String) andThen {
+    order = CreateOrder(amount = $.amount) andThen when {
+        case $.status == "success" => {
+            a = NotifySuccess(id = $.id)
+            yield ProcessOrder(result = a.message)
+        }
+        case $.amount > 1000 => {
+            b = FlagForReview(id = $.id)
+        }
+        case _ => {
+            c = HandleDefault(id = $.id)
+            yield ProcessOrder(result = c.message)
+        }
     }
 }
 ```
 
-Statement-level when (on step outputs):
-```afl
-s1 = Classify(input = $.data) andThen when {
-    case s1.category == "A" => {
-        a = ProcessA(data = s1.output)
-    }
-    case s1.category == "B" => {
-        b = ProcessB(data = s1.output)
-    }
-    case _ => {
-        c = ProcessDefault(data = s1.output)
-    }
-}
-```
+To gate on **several** prior steps at once, pass them as facet-typed parameters
+to a gating facet (see [ffl-relative-scoping.md](../../architecture/ffl-relative-scoping.md))
+rather than referencing sibling blocks — that keeps the steps flat/parallel and
+every reference at `$.param.field`.
 
 ### catch blocks
 
@@ -552,8 +545,14 @@ Within a namespace all facet, workflow, and event names must be unique.
 within a block all step names must be unique.
 No step can reference a step outside its block.
 
-###step references
-A step may reference attributes of the step containing the block using the "$". For example:
+###step references — relative `$`-scoping
+`$` is the **immediate container** of a block — the step/facet/workflow whose
+body or clause the block is. `$.attr` reads one of its attributes (params and
+returns alike). `$$` walks up one container, `$$$` two, … (walking past the
+outermost is a compile error). A block may reference only `$`/`$$`… container
+attributes and steps declared in the **same** block; it cannot name the
+containing step by its own name (reach it via `$`), nor a sibling block's step.
+Full model: [ffl-relative-scoping.md](../../architecture/ffl-relative-scoping.md).
 
     s1 = SomeFacet(input = "this") andThen {
        s2 = AnotherFacet(input = $.input)

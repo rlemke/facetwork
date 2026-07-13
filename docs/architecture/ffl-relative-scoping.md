@@ -1,13 +1,12 @@
 # FFL Relative `$`-Scoping — Design Proposal
 
-**STATUS: DESIGN RATIFIED 2026-07-12 — NOT YET IMPLEMENTED.** The five decisions
-in [§5](#5-decisions-ratified-by-the-author-2026-07-12) are settled by the
-language author; the semantics are frozen. No code has changed yet. This document
-specifies a language-design change to how blocks reference their surroundings in
-FFL. The *current* compiler implements a different (flatter) model; every shipping
-`.ffl` file depends on the current behavior. Rollout is **flag-gated** (§5.3): do
-not "correct" reference docs (`docs/reference/language/grammar.md`, the rule docs)
-to this model until the new form is the default and the migration below has run.
+**STATUS: IMPLEMENTED AND DEFAULT (2026-07-12).** Relative scoping is the default
+model for the compiler and runtime; `FW_FFL_RELATIVE_SCOPING=0` selects the legacy
+flat resolver. All in-repo FFL is migrated, the reference docs
+(`grammar.md`, the rule docs) describe this model, and the full suite is green.
+Still held for a separate sign-off: the **fleet rebake/rollout** (the runner hosts
+run their existing image until then) and migration of the external `fwh_*` domain
+repos. The five ratified decisions are in [§5](#5-decisions-ratified-by-the-author-2026-07-12).
 
 Authoritative source: the language author's worked example (see
 [§1](#1-the-model-authors-worked-example)). This doc formalizes that example,
