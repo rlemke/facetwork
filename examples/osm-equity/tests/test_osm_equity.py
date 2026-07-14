@@ -14,6 +14,8 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 _EXAMPLE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _REPO_ROOT = os.path.abspath(os.path.join(_EXAMPLE_ROOT, "..", ".."))
 _FFL = os.path.join(_EXAMPLE_ROOT, "ffl", "osm_equity.ffl")
@@ -217,3 +219,26 @@ class TestEndToEnd:
         records, _, _ = self._run(tmp_path, monkeypatch, benchmark="no_such_source")
         assert all(r["extrinsic"]["has_reference"] is False for r in records)
         assert all(r["extrinsic"]["footprint_completeness"] == -1.0 for r in records)
+
+
+# ---------------------------------------------------------------------------
+# 4. Live real sources (opt-in; skipped unless FW_EQUITY_LIVE_TEST=1 + key)
+# ---------------------------------------------------------------------------
+@pytest.mark.skipif(
+    os.environ.get("FW_EQUITY_LIVE_TEST") != "1" or not os.environ.get("CENSUS_API_KEY"),
+    reason="live test needs FW_EQUITY_LIVE_TEST=1 and CENSUS_API_KEY (network)",
+)
+class TestRealSources:
+    def test_tiger_and_acs_and_overpass(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("FW_CACHE_ROOT", str(tmp_path))
+        monkeypatch.setenv("FW_EQUITY_SOURCE", "real")
+        from handlers.shared import equity_utils as U
+
+        tracts = U.make_tracts("San Francisco, CA")  # TIGERweb
+        assert len(tracts) > 50 and all(len(t["geoid"]) == 11 for t in tracts)
+        eq = U.fetch_census_equity(tracts[0]["geoid"], 2022)  # ACS
+        assert eq["median_income"] >= 0 and 0 <= eq["pct_bipoc"] <= 1
+        path, snap, cached = U.fetch_region_osm("San Francisco, CA", False, tracts)  # Overpass
+        feats = U._read_geojson(path)
+        kinds = {f["properties"]["osm_kind"] for f in feats}
+        assert {"building", "road", "poi"} & kinds and len(feats) > 1000

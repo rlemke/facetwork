@@ -1,21 +1,20 @@
 """Shared computation for the osm.equity mapping-equity study.
 
 Everything here is real geometry (shapely) + real statistics (scipy +
-pure-numpy Moran's I and locally-weighted regression). The *data source*
-has two paths:
+pure-numpy Moran's I and locally-weighted regression). The *data source* is
+selected by :func:`equity_mode` (env ``FW_EQUITY_SOURCE``):
 
-  * a deterministic offline generator (default) that tiles the study
-    region into a grid of synthetic census tracts whose income gradient
-    is spatially smooth AND drives OSM feature density/recency/diversity
-    (the "digital divide" signal) - so the downstream correlation,
-    spatial-autocorrelation and GWR steps find a real relationship and
-    the whole workflow runs with no network; and
-  * hooks where a real deployment would swap in TIGER tracts, an Overpass
-    /ohsome OSM pull, an ACS API call, and an authoritative footprint
-    layer (Microsoft/Google Open Buildings). Those are marked TODO(real).
-
-Determinism: all randomness is seeded from the geoid, so a re-run with the
-same inputs is byte-identical (no os.urandom / unseeded RNG).
+  * ``real`` -> live sources in :mod:`sources_real`: Census TIGERweb tract
+    polygons, the Census ACS 5-year API (needs ``CENSUS_API_KEY``), and OSM
+    from Overpass. Realistic at city/metro scale. The extrinsic footprint
+    benchmark is not yet wired, so real mode honestly reports has_reference=
+    false (gated) rather than synthesising it.
+  * ``offline`` (default) -> a deterministic generator that tiles the region
+    into a grid of synthetic tracts whose income gradient is spatially smooth
+    AND drives OSM density/recency/diversity (the "digital divide" signal), so
+    the whole workflow runs with no network and the analysis recovers a known
+    relationship. Used by the test-suite; seeded from the geoid, so re-runs are
+    byte-identical (no os.urandom / unseeded RNG).
 """
 
 from __future__ import annotations
@@ -105,6 +104,13 @@ def grid_size() -> int:
         return 6
 
 
+def equity_mode() -> str:
+    """'real' -> live TIGER/ACS/Overpass sources; 'offline' (default) -> the
+    deterministic generator. Opt in with FW_EQUITY_SOURCE=real (needs network +
+    CENSUS_API_KEY; realistic at city/metro scale)."""
+    return os.environ.get("FW_EQUITY_SOURCE", "offline").strip().lower()
+
+
 # ---------------------------------------------------------------------------
 # Phase 1 / 2 - study area, tracts, region OSM, footprints
 # ---------------------------------------------------------------------------
@@ -145,10 +151,12 @@ def tract_ij(geoid: str) -> tuple[int, int]:
 
 
 def make_tracts(region: str) -> list[dict[str, Any]]:
-    """Tile the region bbox into a grid of tract polygons (Phase 2 units).
+    """Phase 2 analysis units. Real mode -> Census TIGERweb tract polygons for
+    the region bbox; offline -> a synthetic grid tiling the bbox."""
+    if equity_mode() == "real":
+        from . import sources_real as R
 
-    TODO(real): replace with a Census TIGER/Line tract fetch for the region.
-    """
+        return R.real_resolve_tracts(region_bbox(region))
     n = grid_size()
     lon0, lat0, lon1, lat1 = region_bbox(region)
     dlon = (lon1 - lon0) / n
@@ -266,10 +274,16 @@ def fetch_region_osm(region: str, update: bool, tracts: list[dict]) -> tuple[str
     snap_path = out_dir() / f"osm_{_slug(region)}.snapshot"
     if path.exists() and snap_path.exists() and not update:
         return str(path), snap_path.read_text().strip(), True
-    features = generate_region_osm(region, tracts)
-    _write_geojson(path, features)
-    # snapshot stamp is derived from content, not wall-clock (determinism)
-    snapshot = "osm-" + hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    if equity_mode() == "real":
+        from . import sources_real as R
+
+        features, snapshot = R.real_fetch_region_osm(region_bbox(region))
+        _write_geojson(path, features)
+    else:
+        features = generate_region_osm(region, tracts)
+        _write_geojson(path, features)
+        # snapshot stamp is derived from content, not wall-clock (determinism)
+        snapshot = "osm-" + hashlib.sha256(path.read_bytes()).hexdigest()[:12]
     snap_path.write_text(snapshot)
     return str(path), snapshot, False
 
@@ -284,9 +298,13 @@ def fetch_region_footprints(
     tract rather than fabricating an extrinsic score.
 
     TODO(real): pull Microsoft/Google Open Buildings (or municipal open data)
-    for the region bbox.
+    for the region bbox. Not yet wired, so in real mode the extrinsic benchmark
+    is honestly reported as unavailable (has_reference=false) rather than
+    synthesised - the gating is the whole point of improvement #4.
     """
-    # A deployment might have no benchmark for some regions/sources.
+    if equity_mode() == "real":
+        return "", False
+    # Offline: a deployment might have no benchmark for some regions/sources.
     available = source.strip().lower() in {
         "microsoft_open_buildings",
         "google_open_buildings",
@@ -328,11 +346,16 @@ def fetch_region_footprints(
 def fetch_census_equity(geoid: str, acs_year: int, region: str | None = None) -> dict[str, Any]:
     """Per-tract ACS equity variables (Phase 2 key variables).
 
-    TODO(real): call the Census ACS API (needs CENSUS_API_KEY) for the given
-    year and tract, pulling B19013 (income), B25070 (rent burden), B03002
-    (race), B15003 (education), B16004 (English), B08201 (vehicles),
-    B28002 (internet).
+    Real mode -> Census ACS 5-year API (B19013 income, B25070 rent burden,
+    B03002 race, B06009 education, C16002 English, B08201 vehicles, B28002
+    internet), fetched per county and cached. Offline -> synthetic profile.
     """
+    if equity_mode() == "real":
+        from . import sources_real as R
+
+        return R.real_fetch_census_equity(
+            geoid, int(acs_year), os.environ.get("CENSUS_API_KEY", "")
+        )
     prof = tract_profile(geoid, region)
     wealth = prof["wealth"]
     rng = _rng(geoid, "acs", acs_year)
@@ -353,15 +376,38 @@ def fetch_census_equity(geoid: str, acs_year: int, region: str | None = None) ->
     }
 
 
+# region-extract STRtree cache: {region_osm_path: (features, rep_points, STRtree)}
+# built once, reused across all per-tract clips (so a 254k-feature real extract
+# is indexed a single time rather than rescanned per tract).
+_clip_index: dict[str, tuple[list[dict], list, Any]] = {}
+
+
+def _region_index(region_osm_path: str):
+    cached = _clip_index.get(region_osm_path)
+    if cached is not None:
+        return cached
+    from shapely.strtree import STRtree
+
+    feats = _read_geojson(region_osm_path)
+    reps = []
+    for f in feats:
+        g = shape(f["geometry"])
+        reps.append(g if g.geom_type == "Point" else g.representative_point())
+    tree = STRtree(reps)
+    entry = (feats, reps, tree)
+    _clip_index[region_osm_path] = entry
+    return entry
+
+
 def clip_tract_osm(region_osm_path: str, geometry_wkt: str) -> str:
-    """Clip the shared region extract to a tract polygon - LOCAL, no network."""
+    """Clip the shared region extract to a tract polygon - LOCAL, no network.
+    Uses a cached STRtree over the region so each tract is a fast index query."""
     poly = shapely_wkt.loads(geometry_wkt)
+    feats, reps, tree = _region_index(region_osm_path)
     kept = []
-    for f in _read_geojson(region_osm_path):
-        geom = shape(f["geometry"])
-        rep = geom if geom.geom_type == "Point" else geom.representative_point()
-        if poly.covers(rep):
-            kept.append(f)
+    for i in tree.query(poly):  # bbox candidates
+        if poly.covers(reps[i]):
+            kept.append(feats[i])
     tag = hashlib.sha256((region_osm_path + geometry_wkt).encode()).hexdigest()[:10]
     path = out_dir() / f"tract_{tag}.geojson"
     _write_geojson(path, kept)
@@ -659,13 +705,15 @@ def render_maplibre_map(
     inline GeoJSON, CARTO Voyager raster basemap, click popups, a legend,
     and a findings banner. Data-desert tracts get a red outline."""
     fc = json.dumps({"type": "FeatureCollection", "features": feats})
-    xs, ys = [], []
+    # total bounds via shapely (handles Polygon + MultiPolygon uniformly)
+    xmin = ymin = float("inf")
+    xmax = ymax = float("-inf")
     for f in feats:
-        for ring in f["geometry"]["coordinates"]:
-            for x, y in ring:
-                xs.append(x)
-                ys.append(y)
-    bounds = [[min(xs), min(ys)], [max(xs), max(ys)]] if xs else [[-124.4, 32.5], [-114.1, 42.0]]
+        a, b, c, d = shape(f["geometry"]).bounds
+        xmin, ymin, xmax, ymax = min(xmin, a), min(ymin, b), max(xmax, c), max(ymax, d)
+    bounds = (
+        [[xmin, ymin], [xmax, ymax]] if xmin != float("inf") else [[-124.4, 32.5], [-114.1, 42.0]]
+    )
     rho = stats_res.get("spearman_rho", 0.0)
     moran = stats_res.get("morans_i", 0.0)
     trend = stats_res.get("temporal_trend", "n/a")
@@ -780,7 +828,9 @@ def build_report(records: list[dict], stats_res: dict, title: str) -> tuple[str,
 
     # the interactive heat map (this is the returned map_path)
     map_path = out_dir() / "equity_map.html"
-    map_path.write_text(render_maplibre_map(feats, title, stats_res, deserts))
+    map_path.write_text(
+        render_maplibre_map(feats, title, stats_res, deserts, synthetic=equity_mode() != "real")
+    )
 
     rho = stats_res.get("spearman_rho", 0.0)
     moran = stats_res.get("morans_i", 0.0)

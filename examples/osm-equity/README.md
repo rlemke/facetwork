@@ -42,12 +42,22 @@ tests/test_osm_equity.py  FFL-compile + unit + end-to-end signal recovery
 
 Handlers do **real** geometry (shapely) and statistics (scipy Spearman, a
 pure-numpy permutation Moran's I, a Gaussian-kernel local GWR). The data source
-defaults to a deterministic offline generator that tiles the region into a grid
-of synthetic tracts whose income gradient is spatially smooth and drives OSM
-richness — so the whole pipeline runs with **no network** and the analysis
-recovers a real signal. Points marked `TODO(real)` in `equity_utils.py` are
-where a deployment swaps in Census TIGER, the ACS API (`CENSUS_API_KEY`), an
-Overpass/ohsome pull, and Microsoft/Google Open Buildings.
+is selected by `FW_EQUITY_SOURCE`:
+
+- **`offline`** (default) — a deterministic generator tiles the region into a
+  grid of synthetic tracts whose income gradient drives OSM richness, so the
+  pipeline runs with **no network** and the analysis recovers a known signal
+  (used by the test suite).
+- **`real`** — live sources (`handlers/shared/sources_real.py`): Census
+  **TIGERweb** tract polygons, the Census **ACS 5-year API** (`CENSUS_API_KEY`),
+  and **OSM via Overpass** (buildings/highways/amenities + edit metadata).
+  Realistic at **city/metro scale**. The extrinsic footprint benchmark isn't
+  wired, so real mode honestly reports `has_reference=false` (gated).
+
+```bash
+# real run (needs network + CENSUS_API_KEY):
+FW_EQUITY_SOURCE=real python -c "..."   # or a runner with the env set
+```
 
 ## Run the tests
 
