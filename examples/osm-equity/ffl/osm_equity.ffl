@@ -1,0 +1,197 @@
+namespace osm.equity {
+
+  // ===================================================================
+  // Digital Divide & OSM Mapping Equity
+  //
+  // A 5-phase, census-tract-level study of how socioeconomic disparity
+  // shapes the completeness/quality of volunteered geographic
+  // information (OSM). The data flow *is* the methodology.
+  //
+  // Improvements folded in vs. the first sketch:
+  //   1. Region OSM is fetched ONCE (update-gated cache) and clipped
+  //      per tract LOCALLY - no per-tract remote calls (rate limits).
+  //   2. Tract geometry (WKT) is carried into Phase 4 so Moran's I / GWR
+  //      can build a real spatial-weights matrix.
+  //   3. POI diversity is measured (Phase 4.1 correlates it with income).
+  //   4. The extrinsic benchmark is a pluggable source and is GATED:
+  //      ExtrinsicQuality.has_reference is false where no authoritative
+  //      footprint layer exists (no silent zeroing).
+  //   5. Provenance (acs_year, osm snapshot) is carried for reproducibility.
+  // ===================================================================
+
+  // ---- Analysis unit + data layers ----
+  schema StudyArea {
+    region: String,
+    scale: String,
+    hypothesis: String,
+    acs_year: Long
+  }
+
+  schema TractGeo {
+    geoid: String,
+    name: String,
+    // tract boundary as WKT (kept so spatial stats can build weights)
+    geometry_wkt: String,
+    area_km2: Double
+  }
+
+  // Phase 2 "Key Equity Variables" - census/ACS + digital-access layers.
+  schema EquityVars {
+    geoid: String,
+    median_income: Double,
+    pct_rent_burdened: Double,
+    pct_bipoc: Double,
+    pct_no_hs_diploma: Double,
+    pct_limited_english: Double,
+    pct_zero_vehicle: Double,
+    pct_internet_subscription: Double
+  }
+
+  // Phase 3.1 Intrinsic quality (self-referential OSM attributes).
+  schema AttributeQuality {
+    geoid: String,
+    building_density: Double,
+    road_km_per_km2: Double,
+    attr_completeness: Double,
+    // Shannon diversity of amenity/shop types (POI diversity)
+    poi_diversity: Double,
+    median_recency_days: Double
+  }
+
+  // Phase 3.2 Extrinsic quality (OSM vs authoritative references).
+  schema ExtrinsicQuality {
+    geoid: String,
+    footprint_completeness: Double,
+    positional_accuracy_m: Double,
+    // false => no authoritative reference for this tract (metrics are N/A)
+    has_reference: Boolean
+  }
+
+  // Joined per-tract record. Carries geometry for the spatial analysis.
+  schema TractQuality {
+    geoid: String,
+    geometry_wkt: String,
+    equity: EquityVars,
+    intrinsic: AttributeQuality,
+    extrinsic: ExtrinsicQuality
+  }
+
+  schema StatResults {
+    spearman_rho: Double,
+    spearman_pvalue: Double,
+    morans_i: Double,
+    morans_pvalue: Double,
+    gwr_summary_path: String,
+    gwr_mean_r2: Double,
+    temporal_trend: String,
+    temporal_gap_change: Double
+  }
+
+  // ===================================================================
+  // Phase 1 - Study design.
+  // ===================================================================
+  event facet DefineStudyArea(region: String, scale: String, hypothesis: String, acs_year: Long) => (area: StudyArea)
+
+  // ===================================================================
+  // Phase 2 - Data acquisition. Region-level fetches happen ONCE and are
+  // update-gated: if the extract already exists it is reused unless
+  // `update` is set. Per-tract OSM is obtained by LOCAL clipping.
+  // ===================================================================
+  event facet ResolveStudyTracts(area: StudyArea) => (tracts: [TractGeo])
+  event facet FetchRegionOSM(region: String, update: Boolean) => (osm_path: String, snapshot: String)
+  event facet FetchRegionFootprints(region: String, benchmark_source: String, update: Boolean) => (footprints_path: String, available: Boolean)
+
+  // ===================================================================
+  // Phase 3 - Per-tract metric calculation (local clip + compute).
+  // ===================================================================
+  event facet ClipTractOSM(region_osm_path: String, geometry_wkt: String) => (osm_path: String)
+  event facet FetchCensusEquity(geoid: String, acs_year: Long) => (vars: EquityVars)
+  event facet ComputeAttributeQuality(osm_path: String, area_km2: Double, geoid: String) => (quality: AttributeQuality)
+  event facet ComputeExtrinsicQuality(osm_path: String, geometry_wkt: String, footprints_path: String, reference_available: Boolean) => (quality: ExtrinsicQuality)
+  event facet AssembleTractQuality(geoid: String, geometry_wkt: String, equity: EquityVars, intrinsic: AttributeQuality, extrinsic: ExtrinsicQuality) => (record: TractQuality)
+
+  // Fan-out: one parallel branch per census tract. Each branch clips the
+  // shared region extract locally, pulls census equity, computes intrinsic
+  // + extrinsic quality, and appends one joined TractQuality row.
+  facet CollectTractQuality(tracts: [TractGeo], region_osm_path: String, footprints_path: String, reference_available: Boolean, acs_year: Long) => (records: [TractQuality]) andThen foreach t in $.tracts {
+    clip = ClipTractOSM(region_osm_path = $.region_osm_path, geometry_wkt = $.t.geometry_wkt)
+    eq   = FetchCensusEquity(geoid = $.t.geoid, acs_year = $.acs_year)
+    intr = ComputeAttributeQuality(osm_path = clip.osm_path, area_km2 = $.t.area_km2, geoid = $.t.geoid)
+    extr = ComputeExtrinsicQuality(osm_path = clip.osm_path, geometry_wkt = $.t.geometry_wkt, footprints_path = $.footprints_path, reference_available = $.reference_available)
+    rec  = AssembleTractQuality(geoid = $.t.geoid, geometry_wkt = $.t.geometry_wkt, equity = eq.vars, intrinsic = intr.quality, extrinsic = extr.quality)
+    yield CollectTractQuality(records = [rec.record])
+  }
+
+  // ===================================================================
+  // Phase 4 - Statistical & spatial analysis across all tracts.
+  // The four methods are independent, so they run concurrently.
+  // ===================================================================
+  event facet SpearmanCorrelation(records: [TractQuality]) => (rho: Double, pvalue: Double)
+  event facet MoransI(records: [TractQuality]) => (i: Double, pvalue: Double)
+  event facet GeographicallyWeightedRegression(records: [TractQuality]) => (summary_path: String, mean_r2: Double)
+  event facet TemporalEvolution(records: [TractQuality], snapshot: String) => (trend: String, gap_change: Double)
+  event facet CombineStats(spearman_rho: Double, spearman_p: Double, moran_i: Double, moran_p: Double, gwr_summary: String, gwr_r2: Double, temporal_trend: String, temporal_gap_change: Double) => (results: StatResults)
+
+  facet AnalyzeEquity(records: [TractQuality], snapshot: String) => (results: StatResults) andThen {
+    corr     = SpearmanCorrelation(records = $.records)
+    moran    = MoransI(records = $.records)
+    gwr      = GeographicallyWeightedRegression(records = $.records)
+    temporal = TemporalEvolution(records = $.records, snapshot = $.snapshot)
+    combined = CombineStats(
+      spearman_rho = corr.rho, spearman_p = corr.pvalue,
+      moran_i = moran.i, moran_p = moran.pvalue,
+      gwr_summary = gwr.summary_path, gwr_r2 = gwr.mean_r2,
+      temporal_trend = temporal.trend, temporal_gap_change = temporal.gap_change
+    )
+    yield AnalyzeEquity(results = combined.results)
+  }
+
+  // ===================================================================
+  // Phase 5 - Actionable reporting: data deserts + map + HTML report.
+  // ===================================================================
+  event facet BuildEquityReport(records: [TractQuality], stats: StatResults, title: String) => (report_html: String, map_path: String, data_deserts: [String])
+
+  // ===================================================================
+  // Entry point - chains the five phases end to end.
+  // ===================================================================
+  workflow DigitalDivideMappingEquity(
+      region: String = "Oakland, CA",
+      scale: String = "census_tract",
+      hypothesis: String = "Lower-income, lower-connectivity tracts show lower OSM building completeness and road density.",
+      acs_year: Long = 2022,
+      update: Boolean = false,
+      benchmark_source: String = "microsoft_open_buildings",
+      title: String = "Digital Divide and OSM Mapping Equity"
+  ) => (report_html: String, map_path: String, data_deserts: [String]) andThen {
+
+    // Phase 1
+    area  = DefineStudyArea(region = $.region, scale = $.scale, hypothesis = $.hypothesis, acs_year = $.acs_year)
+
+    // Phase 2 - region-level acquisition (update-gated), run concurrently
+    units = ResolveStudyTracts(area = area.area)
+    osm   = FetchRegionOSM(region = $.region, update = $.update)
+    foot  = FetchRegionFootprints(region = $.region, benchmark_source = $.benchmark_source, update = $.update)
+
+    // Phases 2 + 3 - per-tract clip + metrics (fanned out)
+    perTract = CollectTractQuality(
+      tracts = units.tracts,
+      region_osm_path = osm.osm_path,
+      footprints_path = foot.footprints_path,
+      reference_available = foot.available,
+      acs_year = $.acs_year
+    )
+
+    // Phase 4
+    stats = AnalyzeEquity(records = perTract.records, snapshot = osm.snapshot)
+
+    // Phase 5
+    report = BuildEquityReport(records = perTract.records, stats = stats.results, title = $.title)
+
+    yield DigitalDivideMappingEquity(
+      report_html = report.report_html,
+      map_path = report.map_path,
+      data_deserts = report.data_deserts
+    )
+  }
+
+}
