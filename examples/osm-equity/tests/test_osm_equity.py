@@ -188,6 +188,7 @@ class TestEndToEnd:
         assert len(records) >= 9
         assert os.path.exists(report["report_html"])
         assert os.path.exists(report["map_path"])
+        assert "maplibre" in open(report["map_path"]).read().lower()  # interactive heat map
         html = open(report["report_html"]).read()
         assert "Mapping Equity" in html or "Digital Divide" in html or "data desert" in html.lower()
         assert isinstance(report["data_deserts"], list) and len(report["data_deserts"]) >= 1

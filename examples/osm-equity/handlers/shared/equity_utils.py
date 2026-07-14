@@ -649,14 +649,114 @@ def data_deserts(records: list[dict]) -> list[str]:
     return [g for g, _ in scored[:cut]]
 
 
+def render_maplibre_map(
+    feats: list[dict], title: str, stats_res: dict, deserts: list[str], synthetic: bool = True
+) -> str:
+    """Self-contained MapLibre GL choropleth ("heat map") of tract OSM
+    attribute completeness, styled to match the facetwork-maps gallery:
+    inline GeoJSON, CARTO Voyager raster basemap, click popups, a legend,
+    and a findings banner. Data-desert tracts get a red outline."""
+    fc = json.dumps({"type": "FeatureCollection", "features": feats})
+    xs, ys = [], []
+    for f in feats:
+        for ring in f["geometry"]["coordinates"]:
+            for x, y in ring:
+                xs.append(x)
+                ys.append(y)
+    bounds = [[min(xs), min(ys)], [max(xs), max(ys)]] if xs else [[-124.4, 32.5], [-114.1, 42.0]]
+    rho = stats_res.get("spearman_rho", 0.0)
+    moran = stats_res.get("morans_i", 0.0)
+    trend = stats_res.get("temporal_trend", "n/a")
+    synth = (
+        '<div class="synth">&#9888; SYNTHETIC DEMONSTRATION DATA - methodology demo, '
+        "not real OSM/Census values</div>"
+        if synthetic
+        else ""
+    )
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+  html,body{{margin:0;height:100%;font-family:system-ui,sans-serif}}
+  #map{{position:absolute;inset:0}}
+  .panel{{position:absolute;top:12px;left:12px;z-index:2;background:rgba(255,255,255,.94);
+    padding:12px 14px;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.3);max-width:320px;font-size:13px}}
+  .panel h1{{font-size:15px;margin:0 0 6px}}
+  .synth{{color:#b00;font-weight:600;font-size:11px;margin-bottom:6px}}
+  .legend{{position:absolute;bottom:20px;left:12px;z-index:2;background:rgba(255,255,255,.94);
+    padding:8px 10px;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.3);font-size:12px}}
+  .bar{{height:10px;width:180px;background:linear-gradient(90deg,#d73027,#fc8d59,#fee08b,#91cf60,#1a9850);
+    border-radius:2px;margin:4px 0}}
+  .lab{{display:flex;justify-content:space-between;width:180px}}
+  .maplibregl-popup-content{{font-size:12px}}
+</style></head><body>
+<div id="map"></div>
+<div class="panel">
+  {synth}
+  <h1>{title}</h1>
+  <div>Tract OSM <b>attribute completeness</b> (green = well-mapped, red = under-mapped).
+  Red-outlined tracts are <b>data deserts</b> (bottom quartile).</div>
+  <div style="margin-top:6px;color:#333">
+    Spearman income~POI diversity <b>&rho;={rho:.2f}</b> &middot;
+    Moran's I <b>{moran:.2f}</b> &middot; divide <b>{trend}</b>
+  </div>
+</div>
+<div class="legend">
+  <div>Attribute completeness</div>
+  <div class="bar"></div>
+  <div class="lab"><span>0.0</span><span>0.5</span><span>1.0</span></div>
+</div>
+<script>
+  const data = {fc};
+  const map = new maplibregl.Map({{
+    container:'map',
+    style:{{version:8,sources:{{carto:{{type:'raster',
+      tiles:['https://a.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}.png',
+             'https://b.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}.png'],
+      tileSize:256,attribution:'&copy; OpenStreetMap &copy; CARTO'}}}},
+      layers:[{{id:'carto',type:'raster',source:'carto'}}]}},
+    bounds:{json.dumps(bounds)}, fitBoundsOptions:{{padding:30}}
+  }});
+  map.addControl(new maplibregl.NavigationControl());
+  map.on('load',()=>{{
+    map.addSource('tracts',{{type:'geojson',data}});
+    map.addLayer({{id:'fill',type:'fill',source:'tracts',paint:{{
+      'fill-color':['interpolate',['linear'],['get','attr_completeness'],
+        0.0,'#d73027',0.25,'#fc8d59',0.5,'#fee08b',0.75,'#91cf60',1.0,'#1a9850'],
+      'fill-opacity':0.72}}}});
+    map.addLayer({{id:'outline',type:'line',source:'tracts',paint:{{
+      'line-color':'#333','line-width':0.4}}}});
+    map.addLayer({{id:'desert',type:'line',source:'tracts',
+      filter:['==',['get','data_desert'],true],
+      paint:{{'line-color':'#b00','line-width':2.2}}}});
+    map.on('click','fill',(e)=>{{
+      const p=e.features[0].properties;
+      const fc = p.has_reference==='true'||p.has_reference===true
+        ? Number(p.footprint_completeness).toFixed(2) : 'N/A';
+      new maplibregl.Popup().setLngLat(e.lngLat).setHTML(
+        `<b>Tract ${{p.geoid}}</b><br>Median income: $${{Number(p.median_income).toLocaleString()}}<br>`+
+        `Attr completeness: ${{Number(p.attr_completeness).toFixed(2)}}<br>`+
+        `POI diversity: ${{Number(p.poi_diversity).toFixed(2)}}<br>`+
+        `Footprint completeness: ${{fc}}<br>`+
+        `Data desert: ${{p.data_desert==='true'||p.data_desert===true?'YES':'no'}}`).addTo(map);
+    }});
+    map.on('mouseenter','fill',()=>map.getCanvas().style.cursor='pointer');
+    map.on('mouseleave','fill',()=>map.getCanvas().style.cursor='');
+  }});
+</script></body></html>"""
+
+
 def build_report(records: list[dict], stats_res: dict, title: str) -> tuple[str, str, list[str]]:
-    """Phase 5 - HTML report + a simple GeoJSON choropleth artifact +
-    the ranked data-desert list, with intervention recommendations."""
+    """Phase 5 - interactive MapLibre heat map + an HTML findings report +
+    the ranked data-desert list, with intervention recommendations.
+    Returns (report_html_path, map_html_path, deserts)."""
     recs = _as_list(records)
     deserts = data_deserts(recs)
     n_ref = sum(1 for r in recs if r["extrinsic"].get("has_reference"))
 
-    # choropleth artifact: tract polygons coloured by completeness
+    # choropleth features: tract polygons + per-tract properties
     feats = []
     for r in recs:
         feats.append(
@@ -674,8 +774,11 @@ def build_report(records: list[dict], stats_res: dict, title: str) -> tuple[str,
                 "geometry": mapping(shapely_wkt.loads(r["geometry_wkt"])),
             }
         )
-    map_path = out_dir() / "equity_choropleth.geojson"
-    _write_geojson(map_path, feats)
+    _write_geojson(out_dir() / "equity_choropleth.geojson", feats)
+
+    # the interactive heat map (this is the returned map_path)
+    map_path = out_dir() / "equity_map.html"
+    map_path.write_text(render_maplibre_map(feats, title, stats_res, deserts))
 
     rho = stats_res.get("spearman_rho", 0.0)
     moran = stats_res.get("morans_i", 0.0)

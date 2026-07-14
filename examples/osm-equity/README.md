@@ -20,7 +20,7 @@ tests/test_osm_equity.py  FFL-compile + unit + end-to-end signal recovery
 | 2 | Data acquisition | `ResolveStudyTracts`, `FetchRegionOSM`, `FetchRegionFootprints` (region-level, **update-gated**) |
 | 3 | Metric calculation | per-tract `foreach`: `ClipTractOSM` (local), `FetchCensusEquity`, `ComputeAttributeQuality` (intrinsic), `ComputeExtrinsicQuality` (extrinsic, gated) |
 | 4 | Statistical & spatial | `SpearmanCorrelation`, `MoransI`, `GeographicallyWeightedRegression`, `TemporalEvolution` — run concurrently over the full tract set |
-| 5 | Actionable reporting | `BuildEquityReport` → HTML + choropleth GeoJSON + ranked data deserts |
+| 5 | Actionable reporting | `BuildEquityReport` → interactive MapLibre heat map + HTML findings report + ranked data deserts |
 
 ## Design choices (folded-in improvements)
 
