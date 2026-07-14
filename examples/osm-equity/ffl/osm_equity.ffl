@@ -194,4 +194,77 @@ namespace osm.equity {
     )
   }
 
+  // ===================================================================
+  // ATLAS - fan out over cities (subregions), tile each, combine to ONE map.
+  //
+  // Parameters let the caller choose the region sequence, the "city size"
+  // (min population), the tile size, and how the OSM/quality layers are
+  // built; the workflow resolves the region(s) into cities, runs each city
+  // in parallel (andThen foreach), and merges every tile into a single map.
+  // ===================================================================
+  schema CityRef {
+    name: String,
+    lon: Double,
+    lat: Double,
+    half_deg: Double,
+    population: Long
+  }
+
+  // Expand a sequence of regions + a population floor into cities to map.
+  event facet ResolveCities(regions: [String], min_population: Long, half_deg: Double) => (cities: [CityRef])
+
+  // Per-city tiled analysis (the fan-out unit): TIGER tracts + ACS equity
+  // areal-interpolated onto a `tile_sqmi` grid, OSM (kinds) clipped per tile,
+  // optional Microsoft-footprint extrinsic check. Returns the city's tiles.
+  event facet CityTiles(city: CityRef, tile_sqmi: Double, acs_year: Long, osm_kinds: String, with_footprints: Boolean, update: Boolean) => (records: [TractQuality])
+
+  // Render ONE combined MapLibre map of every tile, coloured by `metric`.
+  event facet BuildAtlasMap(records: [TractQuality], stats: StatResults, metric: String, title: String) => (map_html: String, tile_count: Long, city_count: Long)
+
+  // Fan-out: one parallel branch per city; every city's tiles aggregate into
+  // the shared `records` collection.
+  facet CollectCityTiles(cities: [CityRef], tile_sqmi: Double, acs_year: Long, osm_kinds: String, with_footprints: Boolean, update: Boolean) => (records: [TractQuality]) andThen foreach c in $.cities {
+    ct = CityTiles(city = $.c, tile_sqmi = $.tile_sqmi, acs_year = $.acs_year, osm_kinds = $.osm_kinds, with_footprints = $.with_footprints, update = $.update)
+    yield CollectCityTiles(records = ct.records)
+  }
+
+  workflow MappingEquityAtlas(
+      regions: [String] = ["north-america"],
+      min_population: Long = 500000,
+      tile_sqmi: Double = 2.0,
+      acs_year: Long = 2022,
+      osm_kinds: String = "poi",
+      with_footprints: Boolean = false,
+      metric: String = "attr_completeness",
+      half_deg: Double = 0.12,
+      update: Boolean = false,
+      title: String = "OSM Mapping Equity Atlas - North America"
+  ) => (map_html: String, tile_count: Long, city_count: Long) andThen {
+
+    // resolve the region sequence + city-size floor into cities
+    cities = ResolveCities(regions = $.regions, min_population = $.min_population, half_deg = $.half_deg)
+
+    // fan out: tile every city in parallel, aggregate all tiles
+    tiles = CollectCityTiles(
+      cities = cities.cities,
+      tile_sqmi = $.tile_sqmi,
+      acs_year = $.acs_year,
+      osm_kinds = $.osm_kinds,
+      with_footprints = $.with_footprints,
+      update = $.update
+    )
+
+    // national analysis over the combined tiles
+    stats = AnalyzeEquity(records = tiles.records, snapshot = "atlas")
+
+    // ONE combined map
+    atlas = BuildAtlasMap(records = tiles.records, stats = stats.results, metric = $.metric, title = $.title)
+
+    yield MappingEquityAtlas(
+      map_html = atlas.map_html,
+      tile_count = atlas.tile_count,
+      city_count = atlas.city_count
+    )
+  }
+
 }
