@@ -106,6 +106,55 @@ class TestUtils:
 
 
 # ---------------------------------------------------------------------------
+# 2b. Tile analysis units (offline-pure: no network)
+# ---------------------------------------------------------------------------
+class TestTiling:
+    def test_build_tiles_are_two_sqmi(self):
+        from handlers.shared import sources_real as R
+
+        tiles = R.build_tiles((-122.52, 37.70, -122.36, 37.83), sqmi=2.0)
+        assert len(tiles) > 20
+        full = [t["area_km2"] for t in tiles if t["area_km2"] > 5.0]
+        assert full and all(abs(a - 2 * 2.589988) < 0.05 for a in full)  # ~5.18 km2
+        assert len({t["geoid"] for t in tiles}) == len(tiles)  # unique ids
+
+    def test_areal_interpolation_area_weights(self):
+        from handlers.shared import sources_real as R
+
+        # two side-by-side tracts, a tile straddling both 50/50 -> mean income
+        tracts = [
+            {"geometry_wkt": "POLYGON ((0 0, 1 0, 1 1, 0 1, 0 0))", "equity": _equity(100000)},
+            {"geometry_wkt": "POLYGON ((1 0, 2 0, 2 1, 1 1, 1 0))", "equity": _equity(50000)},
+        ]
+        tile = {
+            "geoid": "TILE_000_000",
+            "geometry_wkt": "POLYGON ((0.5 0, 1.5 0, 1.5 1, 0.5 1, 0.5 0))",
+        }
+        out = R.areal_interpolate_equity([tile], tracts)
+        assert abs(out["TILE_000_000"]["median_income"] - 75000) < 1  # 50/50 area weight
+
+    def test_areal_interpolation_skips_no_income(self):
+        from handlers.shared import sources_real as R
+
+        tracts = [{"geometry_wkt": "POLYGON ((0 0, 1 0, 1 1, 0 1, 0 0))", "equity": _equity(0)}]
+        tile = {"geoid": "T", "geometry_wkt": "POLYGON ((0 0, 1 0, 1 1, 0 1, 0 0))"}
+        assert R.areal_interpolate_equity([tile], tracts) == {}  # no populated tract -> omitted
+
+
+def _equity(income):
+    return {
+        "geoid": "x",
+        "median_income": float(income),
+        "pct_rent_burdened": 0.3,
+        "pct_bipoc": 0.5,
+        "pct_no_hs_diploma": 0.1,
+        "pct_limited_english": 0.1,
+        "pct_zero_vehicle": 0.2,
+        "pct_internet_subscription": 0.8,
+    }
+
+
+# ---------------------------------------------------------------------------
 # 3. End-to-end: drive every handler in the workflow's data order
 # ---------------------------------------------------------------------------
 class TestEndToEnd:

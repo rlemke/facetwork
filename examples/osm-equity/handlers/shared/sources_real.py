@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import requests
+from shapely import wkt as shapely_wkt
 from shapely.geometry import shape
 
 _UA = {"User-Agent": "facetwork-osm-equity/1.0 (research; github.com/rlemke/facetwork)"}
@@ -313,6 +314,86 @@ def bbox_area_km2(bbox: tuple[float, float, float, float]) -> float:
     xmin, ymin, xmax, ymax = bbox
     kpl, kpo = _km_per_deg((ymin + ymax) / 2)
     return abs((xmax - xmin) * kpo) * abs((ymax - ymin) * kpl)
+
+
+# ---------------------------------------------------------------------------
+# Regular square-tile analysis units (alternative to irregular census tracts)
+# ---------------------------------------------------------------------------
+
+_SQMI_TO_KM2 = 2.589988
+
+
+def build_tiles(bbox: tuple[float, float, float, float], sqmi: float = 2.0) -> list[dict[str, Any]]:
+    """Break a bbox into a regular grid of ~`sqmi`-square-mile tiles, as
+    tract-shaped analysis units (uniform size makes cross-area OSM-quality
+    comparison cleaner than variable census tracts)."""
+    xmin, ymin, xmax, ymax = bbox
+    side_km = math.sqrt(sqmi * _SQMI_TO_KM2)
+    kpl, kpo = _km_per_deg((ymin + ymax) / 2)
+    dlat, dlon = side_km / kpl, side_km / kpo
+    nx = max(1, math.ceil((xmax - xmin) / dlon))
+    ny = max(1, math.ceil((ymax - ymin) / dlat))
+    tiles: list[dict[str, Any]] = []
+    for i in range(nx):
+        for j in range(ny):
+            x0, y0 = xmin + i * dlon, ymin + j * dlat
+            x1, y1 = min(x0 + dlon, xmax), min(y0 + dlat, ymax)
+            kpl2, kpo2 = _km_per_deg((y0 + y1) / 2)
+            area = abs((x1 - x0) * kpo2) * abs((y1 - y0) * kpl2)
+            tiles.append(
+                {
+                    "geoid": f"TILE_{i:03d}_{j:03d}",
+                    "name": f"Tile {i}.{j}",
+                    "geometry_wkt": f"POLYGON (({x0} {y0}, {x1} {y0}, {x1} {y1}, {x0} {y1}, {x0} {y0}))",
+                    "area_km2": round(area, 4),
+                }
+            )
+    return tiles
+
+
+_EQ_FIELDS = [
+    "median_income",
+    "pct_rent_burdened",
+    "pct_bipoc",
+    "pct_no_hs_diploma",
+    "pct_limited_english",
+    "pct_zero_vehicle",
+    "pct_internet_subscription",
+]
+
+
+def areal_interpolate_equity(tiles: list[dict], tract_records: list[dict]) -> dict[str, dict]:
+    """Assign each tile an equity profile by intersection-area-weighting the
+    ACS values of the census tracts it overlaps (dasymetric-style areal
+    interpolation). Tracts with no income data are excluded. Returns
+    {tile_geoid: equity_dict}; tiles covering no populated tract are omitted."""
+    from shapely.strtree import STRtree
+
+    geoms = [shapely_wkt.loads(t["geometry_wkt"]) for t in tract_records]
+    tree = STRtree(geoms)
+    out: dict[str, dict] = {}
+    for tile in tiles:
+        poly = shapely_wkt.loads(tile["geometry_wkt"])
+        acc = dict.fromkeys(_EQ_FIELDS, 0.0)
+        wsum = 0.0
+        for idx in tree.query(poly):
+            eq = tract_records[idx]["equity"]
+            if eq["median_income"] <= 0:
+                continue
+            inter = poly.intersection(geoms[idx])
+            w = inter.area
+            if w <= 0:
+                continue
+            for f in _EQ_FIELDS:
+                acc[f] += eq[f] * w
+            wsum += w
+        if wsum <= 0:
+            continue
+        ev = {"geoid": tile["geoid"]}
+        for f in _EQ_FIELDS:
+            ev[f] = round(acc[f] / wsum, 1 if f == "median_income" else 4)
+        out[tile["geoid"]] = ev
+    return out
 
 
 # ---------------------------------------------------------------------------
