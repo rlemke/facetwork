@@ -5,10 +5,10 @@ pure-numpy Moran's I and locally-weighted regression). The *data source* is
 selected by :func:`equity_mode` (env ``FW_EQUITY_SOURCE``):
 
   * ``real`` -> live sources in :mod:`sources_real`: Census TIGERweb tract
-    polygons, the Census ACS 5-year API (needs ``CENSUS_API_KEY``), and OSM
-    from Overpass. Realistic at city/metro scale. The extrinsic footprint
-    benchmark is not yet wired, so real mode honestly reports has_reference=
-    false (gated) rather than synthesising it.
+    polygons, the Census ACS 5-year API (needs ``CENSUS_API_KEY``), OSM from
+    Overpass, and Microsoft Global ML Building Footprints as the extrinsic
+    benchmark. Realistic at city/metro scale; where the region is out of
+    footprint coverage, has_reference stays false (gated).
   * ``offline`` (default) -> a deterministic generator that tiles the region
     into a grid of synthetic tracts whose income gradient is spatially smooth
     AND drives OSM density/recency/diversity (the "digital divide" signal), so
@@ -297,13 +297,21 @@ def fetch_region_footprints(
     covers the region - the workflow then records has_reference=false per
     tract rather than fabricating an extrinsic score.
 
-    TODO(real): pull Microsoft/Google Open Buildings (or municipal open data)
-    for the region bbox. Not yet wired, so in real mode the extrinsic benchmark
-    is honestly reported as unavailable (has_reference=false) rather than
-    synthesised - the gating is the whole point of improvement #4.
+    Real mode -> Microsoft Global ML Building Footprints for the region bbox
+    (city/metro scale). If no tiles cover the region, has_reference stays false.
+    Offline -> a synthetic reference layer.
     """
     if equity_mode() == "real":
-        return "", False
+        path = out_dir() / f"footprints_{_slug(region)}.geojson"
+        if path.exists() and not update:
+            return str(path), True
+        from . import sources_real as R
+
+        feats = R.real_fetch_footprints(region_bbox(region), str(out_dir()))
+        if not feats:
+            return "", False
+        _write_geojson(path, feats)
+        return str(path), True
     # Offline: a deployment might have no benchmark for some regions/sources.
     available = source.strip().lower() in {
         "microsoft_open_buildings",
@@ -493,23 +501,25 @@ def compute_extrinsic_quality(
         }
     poly = shapely_wkt.loads(geometry_wkt)
     osm_buildings = [
-        f for f in _read_geojson(osm_path) if f["properties"].get("osm_kind") == "building"
+        shape(f["geometry"])
+        for f in _read_geojson(osm_path)
+        if f["properties"].get("osm_kind") == "building"
     ]
-    ref_buildings = [
-        f
-        for f in _read_geojson(footprints_path)
-        if f["properties"].get("geoid") == geoid or poly.covers(shape(f["geometry"]))
-    ]
-    ref_n = len(ref_buildings)
+    # reference buildings inside this tract, via the cached STRtree over the
+    # whole footprint layer (fast even at ~300k Microsoft footprints)
+    ref_feats, ref_reps, ref_tree = _region_index(footprints_path)
+    ref_idx = [i for i in ref_tree.query(poly) if poly.covers(ref_reps[i])]
+    ref_pts = [ref_reps[i] for i in ref_idx]
+    ref_n = len(ref_pts)
     completeness = (len(osm_buildings) / ref_n) if ref_n else 0.0
-    # positional accuracy: mean nearest-neighbour distance OSM->reference (m)
-    if osm_buildings and ref_buildings:
-        ref_pts = [shape(f["geometry"]) for f in ref_buildings]
+    # positional accuracy: mean nearest-neighbour distance OSM->reference (m),
+    # nearest looked up through the footprint STRtree
+    if osm_buildings and ref_n:
         dists = []
-        for b in osm_buildings[:80]:  # cap for speed
-            p = shape(b["geometry"])
-            nn = min(_haversine_km((p.x, p.y), (r.x, r.y)) for r in ref_pts[:120])
-            dists.append(nn * 1000.0)
+        for p in osm_buildings[:120]:  # cap for speed
+            nearest = ref_tree.nearest(p)
+            r = ref_reps[nearest]
+            dists.append(_haversine_km((p.x, p.y), (r.x, r.y)) * 1000.0)
         positional = float(np.mean(dists))
     else:
         positional = -1.0
