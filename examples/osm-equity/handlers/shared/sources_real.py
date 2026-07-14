@@ -5,6 +5,10 @@ Replaces the deterministic offline generator with real APIs:
   * census tract geometry  -> Census TIGERweb ArcGIS REST (keyless)
   * equity variables       -> Census ACS 5-year API  (needs CENSUS_API_KEY)
   * OSM features           -> Overpass API (buildings/highways/amenities+meta)
+  * extrinsic footprints   -> Microsoft Global ML Building Footprints (keyless,
+                              quadkey-tiled GeoJSONL) as the authoritative
+                              reference. NB: where OSM out-maps the ML layer
+                              (e.g. well-mapped cities), OSM/reference caps at 1.
 
 Scope: real mode targets a CITY / METRO bounding box. Overpass and TIGERweb
 will not return a whole continent in one request, and ACS is fetched per county
@@ -298,3 +302,110 @@ def bbox_area_km2(bbox: tuple[float, float, float, float]) -> float:
     xmin, ymin, xmax, ymax = bbox
     kpl, kpo = _km_per_deg((ymin + ymax) / 2)
     return abs((xmax - xmin) * kpo) * abs((ymax - ymin) * kpl)
+
+
+# ---------------------------------------------------------------------------
+# Microsoft Global ML Building Footprints — authoritative extrinsic benchmark
+# ---------------------------------------------------------------------------
+
+_MS_INDEX_URL = "https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv"
+_MS_ZOOM = 9
+_MS_MAX_TILES = 16  # cap: real footprints are a city/metro benchmark
+_ms_index: dict[str, list[str]] | None = None
+
+
+def _tile_xy(lon: float, lat: float, z: int) -> tuple[int, int]:
+    sinlat = math.sin(math.radians(lat))
+    n = 1 << z
+    x = int((lon + 180.0) / 360.0 * n)
+    y = int((0.5 - math.log((1 + sinlat) / (1 - sinlat)) / (4 * math.pi)) * n)
+    return max(0, min(n - 1, x)), max(0, min(n - 1, y))
+
+
+def _xy_to_quadkey(x: int, y: int, z: int) -> str:
+    qk = ""
+    for i in range(z, 0, -1):
+        d, mask = 0, 1 << (i - 1)
+        if x & mask:
+            d += 1
+        if y & mask:
+            d += 2
+        qk += str(d)
+    return qk
+
+
+def _bbox_quadkeys(bbox: tuple[float, float, float, float], z: int = _MS_ZOOM) -> set[str]:
+    xmin, ymin, xmax, ymax = bbox
+    x0, y0 = _tile_xy(xmin, ymax, z)
+    x1, y1 = _tile_xy(xmax, ymin, z)
+    return {
+        _xy_to_quadkey(x, y, z)
+        for x in range(min(x0, x1), max(x0, x1) + 1)
+        for y in range(min(y0, y1), max(y0, y1) + 1)
+    }
+
+
+def _load_ms_index() -> dict[str, list[str]]:
+    global _ms_index
+    if _ms_index is not None:
+        return _ms_index
+    import csv
+    import io
+
+    txt = requests.get(_MS_INDEX_URL, headers=_UA, timeout=90).text
+    idx: dict[str, list[str]] = {}
+    for row in csv.DictReader(io.StringIO(txt)):
+        idx.setdefault(row["QuadKey"], []).append(row["Url"])
+    _ms_index = idx
+    return idx
+
+
+def _poly_centroid(coords: list) -> tuple[float, float]:
+    ring = coords[0]
+    return sum(p[0] for p in ring) / len(ring), sum(p[1] for p in ring) / len(ring)
+
+
+def real_fetch_footprints(bbox: tuple[float, float, float, float], cache_dir: str) -> list[dict]:
+    """Microsoft Global ML Building Footprints within the bbox, as centroid
+    Point features. Returns [] when no tiles cover the region or the region is
+    too large (the caller then reports has_reference=false)."""
+    import gzip
+    import json as _json
+    from pathlib import Path
+
+    qks = _bbox_quadkeys(bbox)
+    if len(qks) > _MS_MAX_TILES:
+        return []  # region too large for the footprint benchmark
+    index = _load_ms_index()
+    urls: list[str] = []
+    for qk in qks:
+        urls.extend(index.get(qk, []))
+    if not urls:
+        return []
+    xmin, ymin, xmax, ymax = bbox
+    tdir = Path(cache_dir) / "ms_tiles"
+    tdir.mkdir(parents=True, exist_ok=True)
+    feats: list[dict] = []
+    for url in urls:
+        name = url.rsplit("/", 1)[-1]
+        local = tdir / name
+        if not local.exists():
+            r = requests.get(url, headers=_UA, timeout=240)
+            r.raise_for_status()
+            local.write_bytes(r.content)
+        for line in gzip.decompress(local.read_bytes()).decode().splitlines():
+            if not line.strip():
+                continue
+            g = _json.loads(line).get("geometry")
+            if not g or g.get("type") != "Polygon":
+                continue
+            cx, cy = _poly_centroid(g["coordinates"])
+            if xmin <= cx <= xmax and ymin <= cy <= ymax:
+                feats.append(
+                    {
+                        "type": "Feature",
+                        "properties": {"ref": "building"},
+                        "geometry": {"type": "Point", "coordinates": [cx, cy]},
+                    }
+                )
+    return feats

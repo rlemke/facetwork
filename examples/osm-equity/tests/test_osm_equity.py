@@ -242,3 +242,13 @@ class TestRealSources:
         feats = U._read_geojson(path)
         kinds = {f["properties"]["osm_kind"] for f in feats}
         assert {"building", "road", "poi"} & kinds and len(feats) > 1000
+
+    def test_microsoft_open_buildings(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("FW_CACHE_ROOT", str(tmp_path))
+        monkeypatch.setenv("FW_EQUITY_SOURCE", "real")
+        from handlers.shared import equity_utils as U
+
+        path, available = U.fetch_region_footprints("San Francisco, CA", "microsoft", False, [])
+        assert available and path
+        refs = U._read_geojson(path)
+        assert len(refs) > 1000 and all(r["properties"]["ref"] == "building" for r in refs[:5])
