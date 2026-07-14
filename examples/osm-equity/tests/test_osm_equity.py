@@ -155,6 +155,49 @@ def _equity(income):
 
 
 # ---------------------------------------------------------------------------
+# 2c. Atlas: fan out over cities, combine to ONE map (offline)
+# ---------------------------------------------------------------------------
+class TestAtlas:
+    def test_atlas_fanout_and_combine(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("FW_CACHE_ROOT", str(tmp_path))
+        from handlers.atlas import atlas_handlers as A
+
+        cities = A.handle_resolve_cities(
+            {"regions": ["north-america"], "min_population": 500000, "half_deg": 0.05}
+        )["cities"]
+        assert len(cities) >= 30 and all(c["population"] >= 500000 for c in cities)
+
+        # fan-out (offline synthetic tiles) over the first 3 cities, aggregate
+        records = []
+        for c in cities[:3]:
+            recs = A.handle_city_tiles({"city": c, "tile_sqmi": 2.0, "acs_year": 2022})["records"]
+            assert recs and all(r["geoid"].startswith(A.U._slug(c["name"])) for r in recs)
+            records.extend(recs)
+
+        # combine to ONE map
+        out = A.handle_build_atlas_map(
+            {
+                "records": records,
+                "stats": {"spearman_rho": 0.5},
+                "metric": "attr_completeness",
+                "title": "Atlas test",
+            }
+        )
+        assert out["city_count"] == 3
+        assert out["tile_count"] == len(records)
+        assert os.path.exists(out["map_html"])
+        assert "maplibre" in open(out["map_html"]).read().lower()
+
+    def test_resolve_cities_population_floor(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("FW_CACHE_ROOT", str(tmp_path))
+        from handlers.atlas import atlas_handlers as A
+
+        big = A.handle_resolve_cities({"regions": ["us"], "min_population": 1000000})["cities"]
+        assert all(c["population"] >= 1000000 for c in big)
+        assert len(big) < 15  # only the largest
+
+
+# ---------------------------------------------------------------------------
 # 3. End-to-end: drive every handler in the workflow's data order
 # ---------------------------------------------------------------------------
 class TestEndToEnd:

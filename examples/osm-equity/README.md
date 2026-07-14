@@ -71,3 +71,17 @@ The end-to-end test drives every handler in the workflow's data order and
 asserts the built-in digital-divide signal is recovered (Spearman ρ > 0.3,
 p < 0.05; Moran's I > 0) and that data deserts are the low-income tracts.
 Set `FW_EQUITY_GRID` to change the grid resolution (default 6 → 36 tracts).
+
+## Atlas workflow — fan out over cities, one map
+
+`MappingEquityAtlas` (in `ffl/osm_equity.ffl`) turns the whole study into a
+single parameterised workflow: it resolves a **sequence of regions** + a
+**city-size** floor (min population) into cities, runs each city in parallel
+(`andThen foreach` — the fan-out is by subregion/city), tiles each at a chosen
+**tile size**, and merges every tile into **one** combined map.
+
+Parameters: `regions` (e.g. `["north-america"]`), `min_population`, `tile_sqmi`,
+`acs_year`, `osm_kinds` (`poi` for large sweeps, `building,road,poi` for detail),
+`with_footprints`, `metric` (which per-tile metric colours the map), `half_deg`,
+`update`, `title`. Handlers: `ResolveCities` / `CityTiles` (fan-out unit) /
+`BuildAtlasMap`, in `handlers/atlas/`.
