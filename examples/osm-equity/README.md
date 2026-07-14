@@ -48,6 +48,8 @@ is selected by `FW_EQUITY_SOURCE`:
   grid of synthetic tracts whose income gradient drives OSM richness, so the
   pipeline runs with **no network** and the analysis recovers a known signal
   (used by the test suite).
+> **Analysis units.** The default unit is the census tract. `sources_real.build_tiles(bbox, sqmi=2.0)` produces an alternative **uniform square-tile grid** (e.g. 2 sq mi), and `areal_interpolate_equity` dasymetrically area-weights ACS tract values onto the tiles — uniform units give a cleaner heat map and reduce modifiable-areal-unit noise (SF Moran's I 0.33 tract → 0.48 tile).
+
 - **`real`** — live sources (`handlers/shared/sources_real.py`): Census
   **TIGERweb** tract polygons, the Census **ACS 5-year API** (`CENSUS_API_KEY`),
   and **OSM via Overpass** (buildings/highways/amenities + edit metadata).
