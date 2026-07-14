@@ -20,6 +20,7 @@ explicitly rather than silently degrading (the caller decides mode).
 from __future__ import annotations
 
 import math
+import os
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -233,22 +234,32 @@ def _recency_days(ts: str | None, now: datetime) -> int:
         return 0
 
 
+def osm_kinds() -> set[str]:
+    """Which OSM feature classes to fetch (env FW_EQUITY_OSM_KINDS, default all).
+    Set e.g. ``poi`` for a lightweight, Overpass-friendly large-scale run (POI
+    attribute completeness + diversity only; building/road metrics omitted)."""
+    raw = os.environ.get("FW_EQUITY_OSM_KINDS", "building,road,poi")
+    return {k.strip() for k in raw.split(",") if k.strip()}
+
+
 def real_fetch_region_osm(bbox: tuple[float, float, float, float]) -> tuple[list[dict], str]:
     xmin, ymin, xmax, ymax = bbox
     b = f"{ymin},{xmin},{ymax},{xmax}"  # Overpass order: S,W,N,E
     now = datetime.now(UTC)
+    kinds = osm_kinds()
 
     # buildings + amenities: centroids are enough (count/density/tags)
-    q_bp = (
-        f"[out:json][timeout:180];("
-        f'way["building"]({b});node["amenity"]({b});way["amenity"]({b});'
-        f");out center meta tags;"
-    )
+    parts = []
+    if "building" in kinds:
+        parts.append(f'way["building"]({b});')
+    if "poi" in kinds:
+        parts.append(f'node["amenity"]({b});way["amenity"]({b});')
+    q_bp = f"[out:json][timeout:180];({''.join(parts)});out center meta tags;" if parts else ""
     # highways need geometry for length
     q_hw = f'[out:json][timeout:180];(way["highway"]({b}););out geom meta tags;'
 
     feats: list[dict] = []
-    for el in _overpass(q_bp):
+    for el in _overpass(q_bp) if q_bp else []:
         tags = el.get("tags", {}) or {}
         rec = _recency_days(el.get("timestamp"), now)
         if el["type"] == "node":
@@ -277,7 +288,7 @@ def real_fetch_region_osm(bbox: tuple[float, float, float, float]) -> tuple[list
             }
         )
 
-    for el in _overpass(q_hw):
+    for el in _overpass(q_hw) if "road" in kinds else []:
         geom = el.get("geometry") or []
         if len(geom) < 2:
             continue
