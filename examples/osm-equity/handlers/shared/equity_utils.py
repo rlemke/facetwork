@@ -708,12 +708,20 @@ def data_deserts(records: list[dict]) -> list[str]:
 
 
 def render_maplibre_map(
-    feats: list[dict], title: str, stats_res: dict, deserts: list[str], synthetic: bool = True
+    feats: list[dict],
+    title: str,
+    stats_res: dict,
+    deserts: list[str],
+    synthetic: bool = True,
+    metric: str = "attr_completeness",
+    metric_label: str = "Attribute completeness",
 ) -> str:
-    """Self-contained MapLibre GL choropleth ("heat map") of tract OSM
-    attribute completeness, styled to match the facetwork-maps gallery:
-    inline GeoJSON, CARTO Voyager raster basemap, click popups, a legend,
-    and a findings banner. Data-desert tracts get a red outline."""
+    """Self-contained MapLibre GL choropleth ("heat map") of a per-unit OSM
+    metric (default attribute completeness), styled to match the facetwork-maps
+    gallery: inline GeoJSON, CARTO Voyager raster basemap, click popups, a
+    legend, and a findings banner. Data-desert units get a red outline.
+    Negative metric values (N/A sentinels, e.g. no footprint reference) render
+    grey rather than as the worst colour."""
     fc = json.dumps({"type": "FeatureCollection", "features": feats})
     # total bounds via shapely (handles Polygon + MultiPolygon uniformly)
     xmin = ymin = float("inf")
@@ -764,7 +772,7 @@ def render_maplibre_map(
   </div>
 </div>
 <div class="legend">
-  <div>Attribute completeness</div>
+  <div>{metric_label}</div>
   <div class="bar"></div>
   <div class="lab"><span>0.0</span><span>0.5</span><span>1.0</span></div>
 </div>
@@ -783,8 +791,9 @@ def render_maplibre_map(
   map.on('load',()=>{{
     map.addSource('tracts',{{type:'geojson',data}});
     map.addLayer({{id:'fill',type:'fill',source:'tracts',paint:{{
-      'fill-color':['interpolate',['linear'],['get','attr_completeness'],
-        0.0,'#d73027',0.25,'#fc8d59',0.5,'#fee08b',0.75,'#91cf60',1.0,'#1a9850'],
+      'fill-color':['case',['<',['to-number',['get','{metric}']],0],'#999999',
+        ['interpolate',['linear'],['to-number',['get','{metric}']],
+         0.0,'#d73027',0.25,'#fc8d59',0.5,'#fee08b',0.75,'#91cf60',1.0,'#1a9850']],
       'fill-opacity':0.72}}}});
     map.addLayer({{id:'outline',type:'line',source:'tracts',paint:{{
       'line-color':'#333','line-width':0.4}}}});
