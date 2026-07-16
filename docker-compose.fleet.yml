@@ -147,6 +147,12 @@ services:
     environment:
       <<: *fleet-env
 
+  runner-congress:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+
   runner-health:
     <<: *fleet-runner
     depends_on: !reset []

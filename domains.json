@@ -191,6 +191,13 @@
       "service": "runner-h1b",
       "task_list": "h1b"
     },
+    "congress": {
+      "repo": "fwh_congress",
+      "extras": [],
+      "description": "US congressional (voting) districts colored by sitting-rep party (Census CD119 + congress-legislators)",
+      "service": "runner-congress",
+      "task_list": "congress"
+    },
     "health": {
       "repo": "fwh_health",
       "extras": [],

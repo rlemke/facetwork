@@ -451,6 +451,27 @@ services:
       - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
+  runner-congress:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: congress
+      FW_DOMAIN_REPO: fwh_congress
+      FW_REGISTRY_RUNNER_ARGS: "--task-list congress"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_congress:/handlers/fwh_congress
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+
   runner-genomics:
     build:
       context: .
