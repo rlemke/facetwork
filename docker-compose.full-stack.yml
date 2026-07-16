@@ -557,6 +557,28 @@ services:
       - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
+  runner-livability:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: livability
+      FW_DOMAIN_REPO: fwh_livability
+      CENSUS_API_KEY: ${CENSUS_API_KEY:-}
+      FW_REGISTRY_RUNNER_ARGS: "--task-list livability"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_livability:/handlers/fwh_livability
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+
   runner-migration:
     build:
       context: .

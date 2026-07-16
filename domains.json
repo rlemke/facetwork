@@ -198,6 +198,21 @@
       "service": "runner-congress",
       "task_list": "congress"
     },
+    "livability": {
+      "repo": "fwh_livability",
+      "extras": [],
+      "description": "Equal-weight US county livability composite (ACS + CDC PLACES + FEMA NRI + EPA AQI) -> choropleth + top-50 rankings",
+      "service": "runner-livability",
+      "task_list": "livability",
+      "compose": {
+        "env": [
+          [
+            "CENSUS_API_KEY",
+            "${CENSUS_API_KEY:-}"
+          ]
+        ]
+      }
+    },
     "health": {
       "repo": "fwh_health",
       "extras": [],
