@@ -1,0 +1,38 @@
+{
+  "_comment": "TEMPLATE — copy the shape into servers.json (or a servers.local.json override) for YOUR deployment. One entry per machine. Rules of thumb: (1) 'name' is a STABLE resolvable name — mDNS .local on a single LAN, or a real DNS name; consumers resolve it to the current IP at startup/reconcile, which is what makes DHCP drift a non-event. (2) 'aliases' are the conventional service names other config refers to (afl-mongodb, afl-minio, ...) — they map to this machine without /etc/hosts entries. (3) exactly one entry should have 'infra': true — the machine running MongoDB/MinIO/dashboard; tools use it as the default infra target. (4) 'ip_pin' is a LAST RESORT for hosts that name resolution cannot reach (cross-subnet, no mDNS): a pinned IP goes stale when the lease changes, which is the failure this catalog removes — leave it null if you can. 'group' is the FW_SERVER_GROUP role tag used by server-groups gating (docs/architecture/server-groups.md).",
+  "version": 1,
+  "servers": [
+    {
+      "name": "infra-host.local",
+      "aliases": ["afl-mongodb", "afl-minio", "afl-postgres"],
+      "purpose": "infra: MongoDB, MinIO, dashboard, image registry",
+      "group": "runner",
+      "infra": true,
+      "ip_pin": null
+    },
+    {
+      "name": "big-workstation.local",
+      "aliases": [],
+      "purpose": "heavy runner tier (large imports, wide fan-outs)",
+      "group": "heavy",
+      "infra": false,
+      "ip_pin": null
+    },
+    {
+      "name": "laptop-or-mini.local",
+      "aliases": [],
+      "purpose": "runner (light domains)",
+      "group": "runner",
+      "infra": false,
+      "ip_pin": null
+    },
+    {
+      "name": "10.20.30.40-cross-subnet-box",
+      "aliases": [],
+      "purpose": "example of a host mDNS cannot reach — pin its address",
+      "group": "runner",
+      "infra": false,
+      "ip_pin": "10.20.30.40"
+    }
+  ]
+}

@@ -96,6 +96,19 @@ def resolve_mongo(explicit: str | None = None, *, log=None) -> str:
     env = os.environ.get("FW_MONGODB_URL")
     if env and env != explicit:
         candidates.append(("FW_MONGODB_URL", env))
+    # Server catalog (servers.json): resolve the infra entry's stable NAME to
+    # its current IP — survives DHCP drift without /etc/hosts edits. Sits
+    # before the conventional alias, which depends on a hand-maintained (and
+    # historically stale) /etc/hosts mapping.
+    try:
+        from facetwork.servers import catalog as _srv_catalog
+
+        _infra = _srv_catalog.infra()
+        _ip = _srv_catalog.resolve_ip(_infra) if _infra else None
+        if _ip:
+            candidates.append(("server catalog (infra)", f"mongodb://{_ip}:27017"))
+    except Exception:
+        pass
     hp = mdns_lookup("_afl-mongo._tcp.local.")
     if hp:
         candidates.append(("mDNS", f"mongodb://{hp}"))

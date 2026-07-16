@@ -11,22 +11,6 @@ Facetwork is a platform for defining and executing distributed workflows. You wr
 | **[README](README.md)** | Developers | Installation, Docker setup, parser/emitter API, CLI usage |
 | **[Full Technical Reference](#full-technical-reference)** | Contributors | Compiler internals, runtime architecture, all commands, code conventions |
 
-## Quick Start (Local)
-
-```bash
-# Docker: start everything
-docker compose up
-docker compose run seed
-# Open http://localhost:8080
-
-# Or without Docker:
-pip install -e ".[dev,test,dashboard,mcp,mongodb]"
-cp .env.example .env              # edit MongoDB connection
-fw ffl seed             # seed example workflows
-python -m facetwork.dashboard --log-format text
-# Open http://localhost:8080
-```
-
 ## The `fw` CLI — single front-door for every operation
 
 **All operational tooling lives behind one command: `fw <group> <command>`** (the
@@ -100,37 +84,7 @@ Notes for working with `fw`:
 
 ## Running Workflows from the Dashboard
 
-The dashboard UI is **v3** and is the default — `/` redirects to `/v3/workflows`.
-
-1. Open http://localhost:8080 (lands on **Runs**) and click **New run**
-2. Pick a workflow, fill in parameters, click **Run**
-3. Watch execution on the detail page — live execution graph, step logs, progress
-
-Use the **Running / Completed / Failed** tabs and the name filter on the Runs
-page; set persistent cross-page filters on the **Filters** page. Full UI
-reference (navigation, pages, global filters, Users/Teams): [docs/reference/dashboard.md](docs/reference/dashboard.md).
-
-## Common Operations
-
-```bash
-# Start/stop runners
-fw runner start --domain osm-geocoder -- --log-format text
-fw runner stop
-fw runner drain              # stop + reset running tasks to pending
-
-# Monitor
-fw runner list               # show runner fleet
-fw db stats                   # database document counts
-
-# PostGIS maintenance (after large imports)
-fw db postgis vacuum             # reclaim space + update statistics
-fw db postgis vacuum-status      # check vacuum progress and table sizes
-fw db postgis kill-vacuum        # kill autovacuum blocking imports
-
-# Local-first import (reduces I/O on main PG during large imports)
-fw db import-pg            # start disposable Docker PG on port 5433
-fw db import-pg --stop     # stop and remove
-```
+Open http://localhost:8080 → **New run** → pick a workflow, fill parameters, watch the live execution graph. Full UI reference: [docs/reference/dashboard.md](docs/reference/dashboard.md).
 
 ## Key Concepts
 
@@ -148,19 +102,6 @@ fw db import-pg --stop     # stop and remove
 The osm-geocoder example demonstrates a **source adapter pattern** that decouples data extraction (PBF / PostGIS / GeoJSON inputs) from analysis (statistics, filtering, rendering). The detailed contract — namespace layout, schema unification, and composed workflows — lives in the [osm-geocoder repo's CLAUDE.md](https://github.com/rlemke/fwh_osm/blob/main/CLAUDE.md).
 
 When building a new domain pipeline that ingests from multiple data sources, mirror this pattern: one source namespace per input format, all producing the same category-specific output schemas so downstream analysis is source-agnostic.
-
-## Project Layout
-
-| Directory | What's There |
-|-----------|-------------|
-| `facetwork/` | Compiler + runtime engine |
-| `facetwork/dashboard/` | Web monitoring UI (FastAPI) |
-| `examples/` | 15+ example workflows with FFL, handlers, and tests |
-| `docs/` | All documentation: getting-started, guides, reference, operations, architecture, contributing |
-| `spec/` | Redirect stubs (documentation moved to `docs/`) |
-| `fw` + `scripts/lib/` | Operations CLI — `fw <group> <command>` dispatches to `scripts/lib/<group>/<command>` (see [The `fw` CLI](#the-fw-cli--single-front-door-for-every-operation)). No flat scripts. |
-| `agents/` | Multi-language agent libraries (Python, Scala, Go, TypeScript, Java) |
-| `grafana/` | Grafana provisioning: data sources, dashboards (OSM overview, spatial explorer) |
 
 ## Documentation Map
 
@@ -184,6 +125,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Claude workflow catalog (store/version/run FFL with no file; `fw_catalog_*` MCP tools) | [docs/architecture/claude-workflow-catalog.md](docs/architecture/claude-workflow-catalog.md) |
 | `use` resolution: file-based compile vs. the catalog (hermetic pinned-dep model) | [docs/architecture/catalog-use-resolution.md](docs/architecture/catalog-use-resolution.md) |
 | Extending with new handlers (NL needs a capability no facet provides → detect gap → scaffold facet+handler+test) — `fw ffl scaffold` | [docs/architecture/extending-with-new-handlers.md](docs/architecture/extending-with-new-handlers.md) |
+| **Server catalog (`servers.json`)** — machines by STABLE NAME (mDNS/DNS) + aliases (`afl-mongodb`…) + infra flag; consumers resolve to the current IP at startup/reconcile so DHCP drift self-heals (no `/etc/hosts` edits). `fw fleet servers`; override via `servers.local.json`/`FW_SERVERS_FILE` | [docs/reference/server-catalog.md](docs/reference/server-catalog.md) |
 | **Domain/example catalog (`domains.json`)** — single source of truth for the domain set + per-domain attributes (repo/extras/service/task_list/scaled/fleet_default…) + `defaults` replica counts; field reference, file resolution + `domains.local.json`/`FW_DOMAINS_FILE` override, and add-a-domain / per-deployment walkthroughs. Read by install/migrate/gen-compose/runner-start/fleet | [docs/reference/domain-catalog.md](docs/reference/domain-catalog.md) |
 | Composable facet library (design): orthogonal/complete/discoverable/distributed primitives for LLM-composed workflows + the memory-of-solved-requests moat | [docs/architecture/composable-facet-library.md](docs/architecture/composable-facet-library.md) |
 | Approximate freeway routing (`osm.Network`, design): pure in-process graph search over a tiny noded-freeway artifact — no engine daemon; tiny network → read-once-per-runner, embarrassingly parallel | [docs/architecture/approximate-freeway-routing.md](docs/architecture/approximate-freeway-routing.md) |
@@ -262,15 +204,17 @@ surface as `--domain <name>`:
 - [census-us](https://github.com/rlemke/fwh_census_us) — US Census ACS + TIGER
 - [genomics](https://github.com/rlemke/fwh_genomics) — foreach fan-out, joint genotyping
 - [sensor-monitoring](https://github.com/rlemke/fwh_sensor_monitoring) — sensor pipelines, RegistryRunner-first
-- [anthropic](https://github.com/rlemke/fwh_anthropic) — multi-area wrappers for surfaces at github.com/anthropics (16 facets across Messages / Batch / Files / Agent SDK / Claude Code / Computer Use + `DocumentQA` composition workflow + opt-in live tests)
-- [save-earth](https://github.com/rlemke/fwh_save_earth) — open environmental + infrastructure datasets → cached GeoJSON → MapLibre HTML maps: OpenLitterMap, EPA Superfund/Brownfields/TRI, OSM nuclear/volcanoes/telescopes/Tesla/LGBTQ, USGS seismic (quakes + faults), ethnic/cultural enclaves (heritage-named neighbourhoods), and world **power infrastructure** (plants by source from WRI + ≥500 kV transmission from OSM, fetched bounded/cache-aware — a documented "when *not* to fan out" example given Overpass's per-IP rate limit); source-adapter + tools/`_<pkg>_tools`/shim pattern, per-category toggleable layers + full-tag popups
-- [sentinel2-landchange](https://github.com/rlemke/fwh_sentinel2) — Sentinel-2 land-cover change: STAC + Cloud-Optimized GeoTIFF → NDVI/composite → `difference`/`classify` change → MapLibre XYZ-tiled map; per-scene `foreach` fan-out, content-addressed cache, real (rio-tiler) + offline-mock paths (`pip install -e ".[geo]"`)
-- [conflict](https://github.com/rlemke/fwh_conflict) — UCDP armed-conflict world choropleth (events/deaths/civilian/intensity/actors + UNHCR/IDMC/IPC); Natural Earth geometry + metric dropdown → GitHub Pages
-- [osm-mapping](https://github.com/rlemke/fwh_osm_mapping) — OSM mapping-equity maps: health facilities per capita, WORLD (per-country Overpass count) + US state/county (Overpass fetch + shapely spatial-join onto census county geometry); "under-mapping vs population"
-- [h1b](https://github.com/rlemke/fwh_h1b) — US H-1B visa approvals by state & county, multi-year (USCIS H-1B Employer Data Hub CSVs, FY2009-2023; ZIP→county spatial-join; year dropdown + state/county toggle)
-- [health](https://github.com/rlemke/fwh_health) — disease-burden choropleths from open public-health data: US state mortality (CDC NCHS) + COVID/flu, US county prevalence (CDC PLACES), world NCD + COVID/HIV/measles (WHO/World Bank), **plus a 5-map NHSN respiratory-virus family** (CDC Hospital Respiratory Data `mpgq-jmmr`) — COVID/flu/RSV admissions, bed strain, ICU severity, children-vs-adults, and "tripledemic" combined burden — each a US state choropleth with a **month slider + play** over ~5 years (`choropleth_time.py`, a fixed-per-series time renderer); reuses census TIGER / Natural Earth geometry
-- [migration](https://github.com/rlemke/fwh_migration) — world **net-migration** choropleth with a **year slider + play (1960-2025)**: green = net immigration (a country gains people), red = net emigration (loses), shaded by net migration per 1,000 population (World Bank `SM.POP.NETM` + `SP.POP.TOTL`, one open API call each, ISO3→Natural Earth join; diverging fixed ±25 scale). Click → net count + rate that year + per-decade history. Honest scope: ~65 yrs is the longest openly-available *global* migration series (no authoritative 100-yr data); modeled on the conflict domain
-- [cancer](https://github.com/rlemke/fwh_cancer) — cancer gene-prioritization **EVIDENCE GRAPH** (not a map): given cancer type(s), a `foreach` FFL graph (`cancer.workflows.PrioritizeGenes`) fans out over open public genomics — TCGA/GDC tumor-vs-matched-normal STAR-Counts expression (log2FC + Welch p), GTEx healthy-tissue specificity, GDC `/analysis/survival` (lifelines log-rank) + open SSM mutation frequency, intOGen CC0 drivers — into a weighted composite rank → **one ranked, explainable evidence table per type where every score links back to its public dataset + the FFL facet** that produced it (HTML table, gallery "About this data" popup w/ the TCGA-vs-GTEx batch-effect disclosure). Scoped to the 9 TCGA cancers with usable matched normals (BRCA/KIRC/LUAD/THCA/PRAD/LUSC/LIHC/HNSC/COAD); facets pass MinIO parquet paths; deps pandas/scipy/lifelines/pyarrow
+- [anthropic](https://github.com/rlemke/fwh_anthropic) — wrappers for Anthropic surfaces (16 facets + `DocumentQA` composition workflow)
+- [save-earth](https://github.com/rlemke/fwh_save_earth) — open environmental + infrastructure datasets → cached GeoJSON → MapLibre HTML maps
+- [sentinel2-landchange](https://github.com/rlemke/fwh_sentinel2) — Sentinel-2 land-cover change → NDVI/classify → XYZ-tiled MapLibre map
+- [conflict](https://github.com/rlemke/fwh_conflict) — UCDP armed-conflict world choropleth (5 metrics + displacement overlays)
+- [osm-mapping](https://github.com/rlemke/fwh_osm_mapping) — OSM mapping-equity maps: "under-mapping vs population"
+- [h1b](https://github.com/rlemke/fwh_h1b) — US H-1B visa approvals by state & county, FY2009-2023
+- [health](https://github.com/rlemke/fwh_health) — disease-burden choropleths (US + world) incl. a 5-map NHSN respiratory time-slider family
+- [migration](https://github.com/rlemke/fwh_migration) — world net-migration choropleth with year slider + play, 1960-2025
+- [cancer](https://github.com/rlemke/fwh_cancer) — cancer gene-prioritization evidence graph (not a map): ranked, explainable per-type gene table from open genomics (TCGA/GDC, GTEx, intOGen)
+
+Full per-domain descriptions live in `domains.json` and each repo's README/CLAUDE.md.
 
 ## Domain pipelines — tools / handlers / cache pattern
 
@@ -375,82 +319,13 @@ namespace is the routing key. See
 - **RunnerService**: distributed orchestration with thread pool and heartbeat
 - **ClaudeAgentRunner**: LLM-driven in-process execution via Claude API
 
-### Composition features
-- **Mixins**: `with FacetA() with FacetB()`
-- **Implicit facets**: `implicit name = Call()`
-- **andThen / yield**: multi-step logic with concurrent `andThen` blocks
-- **andThen foreach**: iterate over collections with parallel execution
-- **Statement-level andThen**: `s = F(x = 1) andThen { ... }`
-- **catch blocks**: `catch { ... }` or `catch when { ... }` for error recovery
-- **prompt blocks**: `prompt { system "..." template "..." model "..." }`
-- **script blocks**: `script python "code..."` — sandboxed Python
+### Language feature reference
 
-### Expression features
-- Arithmetic: `+`, `-`, `*`, `/`, `%`; concatenation: `++`
-- Comparison: `==`, `!=`, `>`, `<`, `>=`, `<=`
-- Boolean: `&&`, `||`, `!`
-- Collections: `[1, 2, 3]`, `#{"key": "value"}`, `arr[0]`
-- Conditional: `andThen when { case condition => { ... } case _ => { ... } }`
+Composition (mixins, implicit facets, andThen/yield/foreach, catch, prompt/script blocks) and expression syntax are specified in [docs/reference/language/grammar.md](docs/reference/language/grammar.md); start new FFL from [examples/canonical/](examples/canonical/).
 
 ### All commands
 
-```bash
-# Tests
-pytest tests/ examples/ -v
-pytest tests/ examples/ -v -x
-pytest tests/ examples/ --cov=afl --cov-report=term-missing
-
-# CLI
-afl input.ffl -o output.json
-afl input.ffl --check
-
-# Services
-python -m facetwork.dashboard --log-format text   # web UI (port 8080)
-python -m facetwork.runtime.runner                # runner service
-python -m facetwork.mcp                           # MCP server (stdio)
-
-# Runner management
-fw runner start --example hiv-drug-resistance -- --log-format text
-fw runner stop
-fw runner drain                  # stop + reset running tasks
-fw runner drain --tasks-only     # reset tasks without stopping
-fw runner drain --dry            # preview
-
-# Fleet inspection
-fw runner list
-fw runner list --state running
-fw runner list --json
-
-# Remote management (requires FW_RUNNER_HOSTS or --host)
-fw runner start --all --example hiv-drug-resistance
-fw runner stop --all
-fw fleet rolling-deploy --example hiv-drug-resistance
-
-# PostGIS management
-fw db pg-start                 # start local PostgreSQL/PostGIS server
-fw db postgis tune                   # tune PostgreSQL for bulk imports (32GB)
-fw db postgis tune --show            # show current vs recommended settings
-fw db postgis drop-tables            # drop osm_nodes, osm_ways, osm_import_log
-fw db postgis drop-tables --yes      # skip confirmation
-fw db postgis vacuum                 # VACUUM ANALYZE osm_nodes + osm_ways
-fw db postgis vacuum --nodes         # nodes only
-fw db postgis vacuum --ways          # ways only
-fw db postgis vacuum --full          # VACUUM FULL (rewrites tables)
-fw db postgis vacuum-status          # active vacuums, last times, table sizes
-fw db postgis kill-vacuum            # kill autovacuum blocking imports
-fw db postgis kill-vacuum --dry      # preview
-
-# Local-first PostGIS import (Docker-based disposable instance)
-fw db import-pg                # start import PG on port 5433
-fw db import-pg --stop         # stop and remove container
-fw db import-pg --status       # check if running
-fw db import-pg --url          # print connection URL
-
-# Grafana (operational monitoring — independent of dashboard)
-fw svc grafana                  # start Grafana on port 3000
-fw svc grafana --stop           # stop Grafana
-fw svc grafana --status         # check if running
-```
+`fw help` / `fw <group>` are self-listing; the full build & run reference is [docs/reference/cli.md](docs/reference/cli.md).
 
 ### Environment configuration
 Copy `.env.example` to `.env` to configure MongoDB, scaling, overlays, and data directories. All `scripts/` commands source `_env.sh` which loads `.env` without overriding already-set vars. See `docs/reference/cli.md` for the full variable reference.
@@ -463,85 +338,11 @@ Handler caches and outputs live on a backend selected by `FW_STORAGE` + `FW_DATA
 
 `docker-compose.full-stack.yml` **bundles a MinIO service** and the OSM runners (`osm-geocoder`, `osm-lz`) default to it — durable cache + output go to `s3://afl-cache` (console http://localhost:9001, `minioadmin`/`minioadmin`), **no external disk**. The legacy local cache at `/Volumes/afl_data/cache` was migrated into the bundled MinIO with `scripts/_cache_to_minio_move.py` (host-driven, verify-before-delete, idempotent). Full setup, the env contract, and the cache-migration recipe live in [docs/operations/deployment.md](docs/operations/deployment.md) → **S3 / MinIO Integration**.
 
-### Multi-server database access
+### Multi-server operation + fleet
 
-By default, the database start scripts bind to `127.0.0.1` (localhost only). To allow other machines to connect (e.g. runners on a second server), the databases must bind to `0.0.0.0`:
+There is no "master": infra services (MongoDB, MinIO, Dashboard) are URL-addressed only, and every Facetwork server is a homogeneous, stateless, leaderless runner — any runner with Mongo access can seed (`fw ffl seed`). Remote DB access (bind `0.0.0.0`, `/etc/hosts` entries for `afl-mongodb`/`afl-postgres`), the fleet controller (`fw runner start --fleet`, `fw fleet set/status/secret`, `fw fleet agent apply|watch`), joining a new server, and the one-box simulation (`fw fleet simulate`) are all in [docs/operations/deployment.md](docs/operations/deployment.md) and [docs/operations/join-fleet-from-new-server.md](docs/operations/join-fleet-from-new-server.md).
 
-- **MongoDB** — `fw db mongo-start` uses `--bind_ip 0.0.0.0`. If you see `Connection refused` from remote hosts, verify the script has `0.0.0.0` (not `127.0.0.1`).
-- **PostgreSQL** — edit `postgresql.conf` and set `listen_addresses = '*'`, then ensure `pg_hba.conf` allows connections from the remote subnet (e.g. `host all all 0.0.0.0/0 md5`).
-
-On each remote server, add `/etc/hosts` entries pointing `afl-mongodb` and `afl-postgres` to the database server's IP address. Then start runners normally — they connect via the hostnames.
-
-```bash
-# On the database server:
-fw db mongo-start                    # binds 0.0.0.0
-fw db pg-start                 # check listen_addresses in postgresql.conf
-
-# On each runner server:
-# /etc/hosts: 192.168.x.x afl-mongodb afl-postgres
-fw runner start --domain osm-geocoder -- --log-format text
-```
-
-Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets.
-
-Set `FW_POSTGIS_URL` (e.g. `postgresql://afl:afl@afl-postgres:5432/afl_gis`) for PostGIS imports. Without this, the importer falls back to a hardcoded default that may not match your setup.
-
-### Multi-server runner fleet + local simulation
-
-**Server-role model — there is no "master".** The fleet has exactly two kinds of
-participant: (1) **infra services** — MongoDB, MinIO, and the Dashboard — each
-identified by its **access URL only**; the fleet never enumerates their cluster
-members, so each may be a single node, a replica set / distributed deployment, or
-a managed service; and (2) **runner servers** — every Facetwork server is a
-homogeneous, stateless runner (`FW_SERVER_GROUP` role tag, default `runner`),
-holding nothing but local scratch. Runners are leaderless and don't contend
-(coordination is the atomic `claim_task()` in Mongo), so any runner with Mongo
-access can also **seed** workflow definitions (`fw ffl seed`) — no box
-is privileged. The central `fleet set --mongo-url … --minio … --dashboard-url …`
-records those three service URLs; the dashboard's Fleet page shows them as
-URL-addressed services, not as fleet servers.
-
-A fleet of runner servers shares **one** MongoDB + **one** MinIO; each extra
-server runs *runners only* and self-configures from a central config. The
-controller lives in `scripts/`:
-
-| Script | Role |
-|--------|------|
-| `fw runner start --fleet` | Bring up runner **containers** on this host against an external Mongo+MinIO (`.env.fleet`); preflight-checks both. `--domain NAME` (or `--example NAME`) runs any per-domain runner (default osm-geocoder + osm-lz); `--docker` is the same but against the local bundled infra. `docker-compose.fleet.yml` is the override that drops the bundled infra (now applied to every per-domain runner via a YAML anchor). `fw runner start --fleet` is a back-compat shim for `start-runner --fleet`. |
-| `fw fleet` | Admin (run anywhere): `set` the central config (MinIO endpoint / replicas / image), `status` (live runners + per-host drift), `secret gen-key\|set\|show` (MinIO creds encrypted in Mongo with `FW_FLEET_KEY`). |
-| `fw fleet agent` | Per server: `apply` (one-shot) or `watch` (daemon) — reads the central config, **discovers Mongo** (explicit → `FW_MONGODB_URL` → mDNS → `afl-mongodb`), decrypts creds, brings runners up, records drift. Bootstrap = the Mongo URL only. |
-| `fw fleet advertise` | Optional mDNS advertiser for the infra host (needs `zeroconf`). |
-
-A new server joins with one command — `export FW_FLEET_KEY=<key>; fw fleet agent watch` — and the whole fleet is driven by editing the central config once (`fleet set --osm-replicas N`, `--image …`). Full guide: [docs/operations/deployment.md](docs/operations/deployment.md) → **"Adding a server to the fleet"** / **"Central fleet config"**.
-
-> **Bringing up an ADDITIONAL runner server that points at this fleet's shared
-> infra (MongoDB + MinIO)? Follow [docs/operations/join-fleet-from-new-server.md](docs/operations/join-fleet-from-new-server.md)** — it
-> has the infra host's coordinates, the clone/venv/config steps, and `cp
-> .env.fleet.preset .env.fleet && fw runner start --fleet`. The pre-filled
-> [`.env.fleet.preset`](.env.fleet.preset) points at the shared infra URLs.
-
-**Local simulation — verify the whole thing on one box.** `fw fleet simulate`
-spins up N "servers" as separate compose projects on the running full-stack's
-shared network, each brought up by `fleet-agent` from the central config +
-encrypted secret store, then runs a fan-out heat map across them and confirms the
-leaves distributed across servers and the merge pulled every server's MinIO output.
-
-```bash
-# Prereqs: the full stack must be up (shared MinIO+MongoDB), and the venv must have
-# pymongo + cryptography (for the secret store; zeroconf only for mDNS):
-docker compose -f docker-compose.full-stack.yml up -d        # shared infra
-pip install -e ".[mongodb,s3]" && pip install cryptography   # if not already
-
-fw fleet simulate --servers 3                           # bring up 3 servers + fleet status
-#   then submit a fan-out:  fw ffl run --primary .../osmheatmap.ffl --library … \
-#     --workflow osm.heatmap.ContinentHeatmap \
-#     --inputs '{"region_names":["California","Nevada","Arizona"]}' --task-list osm
-fw fleet simulate --down                                # tear it all down
-```
-
-It addresses the shared MinIO/Mongo by the host's LAN IP (reachable from both the
-host and the sim containers). Each sim "server" is `fleet-srv1/2/3`; `fleet status`
-shows them up-to-date and the fan-out's `ByScript` leaves run on different servers.
+Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets. Set `FW_POSTGIS_URL` (e.g. `postgresql://afl:afl@afl-postgres:5432/afl_gis`) for PostGIS imports — without it the importer falls back to a hardcoded default that may not match your setup.
 
 ### Runner resilience tuning
 
@@ -574,53 +375,13 @@ osm2pgsql-compatible views (zero-storage, auto-created by `ensure_schema`):
 - `planet_osm_line` — ways with flattened tag columns (highway, railway, waterway, surface, lanes, etc.)
 - `planet_osm_roads` — filtered ways where `highway` or `railway` is present
 
-### Grafana monitoring
-
-Grafana runs independently of the dashboard for operational monitoring. Start with `fw svc grafana` (Docker, port 3000). Pre-provisioned dashboards:
-- **OSM Import Overview** — region counts, total nodes/ways, database size, import timeline, top amenities
-- **OSM Spatial Explorer** — geomap of amenities (hospitals, schools), road density, highway types, city/town/village map
-
-Data sources connect to PostGIS (`afl_gis`) and OSM (`osm`) databases via `host.docker.internal`.
-
 ### Step recovery actions
 
-The dashboard step detail page provides four recovery actions for failed or completed steps:
+The dashboard step detail page has four recovery actions (Retry / Retry All Errors / Reset Block / Re-run From Here) — see [docs/reference/dashboard.md](docs/reference/dashboard.md). **Re-run From Here** is the primary tool after changing data or handler code: downstream steps are deleted and cleanly re-created.
 
-| Action | When | What it does |
-|--------|------|-------------|
-| **Retry** | Errored steps | Resets the step to EventTransmit; resets errored ancestor blocks |
-| **Retry All Errors** | Errored blocks | Recursively finds and retries all errored leaf steps under a block |
-| **Reset Block** | Errored blocks | Deletes all descendant steps/tasks/logs and restarts the block from scratch |
-| **Re-run From Here** | Completed or errored | Resets the step, clears its results, deletes all downstream dependent steps, and re-executes the block from that point |
+### PostGIS data management + local-first import
 
-"Re-run From Here" is the primary tool for re-running a step after changing data or handler code — downstream steps are deleted and will be cleanly re-created with the new results.
-
-### PostGIS data management
-PostGIS data directory: `/Volumes/afl_data/local_servers/postgis/data`. Start with `fw db pg-start`, tune with `fw db postgis tune`. After large import batches, run `fw db postgis vacuum` to reclaim space and update statistics. During bulk imports, autovacuum may compete for I/O — kill it with `fw db postgis kill-vacuum`. Tables have `autovacuum_analyze_threshold = 1,000,000` to reduce frequency during imports.
-
-### Local-first PostGIS import
-
-For large imports, a disposable Docker-based PostgreSQL instance can absorb the hours of PBF parsing I/O, then bulk-transfer the finished data to the main server. This isolates the main server from sustained write pressure during imports.
-
-```bash
-# Start the local import instance (Docker, port 5433)
-fw db import-pg
-fw db import-pg --status       # check if running
-fw db import-pg --stop         # stop and remove
-
-# Enable local-first import (add to .env or runner.env)
-FW_IMPORT_POSTGIS_URL=postgresql://afl_osm:afl_osm_2024@localhost:5433/osm
-```
-
-When `FW_IMPORT_POSTGIS_URL` is set, `import_to_postgis()` follows this flow:
-1. Check prior-import log on the **main** server (skip if already imported)
-2. Parse PBF and stage data on the **local** instance (fast — disposable, no WAL)
-3. Merge staging into local main tables (no index contention with readers)
-4. Transfer via `COPY` binary stream from local to main server staging tables
-5. Batched merge into main server tables (upsert or plain insert)
-6. Write audit log on the **main** server
-
-The local instance is tuned with `fsync=off`, `synchronous_commit=off`, and `autovacuum=off` — it's disposable, so crash recovery is simply re-importing from PBF. Works on the same host as the main PostgreSQL (different port) or on a separate machine.
+Moved to the `postgis-import` skill (`.claude/skills/postgis-import/SKILL.md`) — vacuum/tune/kill-vacuum and the disposable local import instance (`FW_IMPORT_POSTGIS_URL`).
 
 ### Workflow repair
 

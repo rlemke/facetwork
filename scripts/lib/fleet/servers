@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# fw-summary: server catalog (servers.json) — list machines + live-resolved IPs; --env/--infra-name/--resolve
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+PY="${FW_ROOT}/.venv/bin/python3"; [ -x "$PY" ] || PY=python3
+exec "$PY" -m facetwork.servers "$@"

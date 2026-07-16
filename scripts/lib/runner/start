@@ -204,6 +204,10 @@ if [[ "$MODE" == "docker" || "$MODE" == "fleet" ]]; then
         # .local/mDNS themselves, which is exactly why the host does it for them.
         # To pin a fixed address instead, set FW_INFRA_HOST="" and FW_INFRA_IP=<ip>.
         FW_INFRA_HOST="${FW_INFRA_HOST:-$(_envget FW_INFRA_HOST)}"
+        # Default from the server catalog (servers.json 'infra' entry) so the
+        # infra host's stable name lives in ONE place; hardcoded fallback only
+        # if the catalog is absent/empty.
+        FW_INFRA_HOST="${FW_INFRA_HOST:-$("$PY" -m facetwork.servers --infra-name 2>/dev/null || true)}"
         FW_INFRA_HOST="${FW_INFRA_HOST:-server3.local}"
         if [[ -n "$FW_INFRA_HOST" ]]; then
             _infra_ip="$("$PY" - "$FW_INFRA_HOST" <<'PYEOF' 2>/dev/null || true

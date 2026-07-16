@@ -51,3 +51,6 @@ target/
 
 # Per-deployment domain/example catalog override (see domains.json)
 domains.local.json
+
+# Per-deployment server catalog override (see servers.json)
+servers.local.json

@@ -1,0 +1,38 @@
+{
+  "_comment": "Server catalog — the fleet's machines by STABLE NAME (mDNS/DNS), not IP. Anything that needs a fleet machine resolves it from here at startup/reconcile time (facetwork/servers/catalog.py), so a DHCP-drifted address heals on the next resolution instead of requiring /etc/hosts edits on every host. Per-deployment override: servers.local.json (merged over this file, matched by name; top-level \"_remove\": [names] drops entries) or FW_SERVERS_FILE=<path> (full replace). Set ip_pin ONLY for hosts that mDNS/DNS cannot resolve (e.g. across subnets) — a pinned IP reintroduces the drift problem this file exists to remove. See servers.example.json and docs/reference/server-catalog.md.",
+  "version": 1,
+  "servers": [
+    {
+      "name": "server3.local",
+      "aliases": ["afl-mongodb", "afl-minio", "afl-postgres", "server3"],
+      "purpose": "infra: MongoDB, MinIO, PostGIS, dashboard, image registry (+ heavy runner tier, 14 TB disk)",
+      "group": "heavy",
+      "infra": true,
+      "ip_pin": null
+    },
+    {
+      "name": "MaxPro.local",
+      "aliases": ["maxpro"],
+      "purpose": "heavy runner tier (osm PBF imports, wide fan-outs)",
+      "group": "heavy",
+      "infra": false,
+      "ip_pin": null
+    },
+    {
+      "name": "server1.local",
+      "aliases": [],
+      "purpose": "runner (light domains; x86-emulated docker)",
+      "group": "runner",
+      "infra": false,
+      "ip_pin": null
+    },
+    {
+      "name": "server2.local",
+      "aliases": [],
+      "purpose": "runner (light domains; x86-emulated docker)",
+      "group": "runner",
+      "infra": false,
+      "ip_pin": null
+    }
+  ]
+}
