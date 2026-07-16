@@ -213,6 +213,7 @@ surface as `--domain <name>`:
 - [health](https://github.com/rlemke/fwh_health) — disease-burden choropleths (US + world) incl. a 5-map NHSN respiratory time-slider family
 - [migration](https://github.com/rlemke/fwh_migration) — world net-migration choropleth with year slider + play, 1960-2025
 - [cancer](https://github.com/rlemke/fwh_cancer) — cancer gene-prioritization evidence graph (not a map): ranked, explainable per-type gene table from open genomics (TCGA/GDC, GTEx, intOGen)
+- [congress](https://github.com/rlemke/fwh_congress) — US congressional (voting) districts colored by sitting-rep party (Census CD119 + congress-legislators)
 
 Full per-domain descriptions live in `domains.json` and each repo's README/CLAUDE.md.
 

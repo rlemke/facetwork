@@ -264,8 +264,10 @@ Mongo.
 `fleet_config.version` and reconciles whenever it changes:
 
 ```bash
-fw fleet agent watch --mongo mongodb://afl-mongodb:27017 \
-    --data-dir "$HOME/afl_data" --interval 30                 # daemon (systemd/nohup); --data-dir REQUIRED
+fw fleet agent watch --data-dir "$HOME/afl_data" --interval 30   # daemon (systemd/nohup); --data-dir REQUIRED
+# Mongo is discovered: FW_MONGODB_URL (if valid) → server catalog (servers.json
+# infra entry, resolved live — see docs/reference/server-catalog.md) → mDNS →
+# the afl-mongodb /etc/hosts convention. Pass --mongo URL only to force one.
 
 # Then drive the WHOLE fleet from one place:
 fw fleet set --osm-replicas 8                       # every host rescales to 8
@@ -293,11 +295,15 @@ process and recovers any hang. Knobs: `FW_FLEET_AGENT_WATCHDOG_SECONDS` (default
 **Supervised self-heal (macOS / launchd).** The watchdog only helps with a
 supervisor that restarts the process. On macOS, run `fleet agent watch` under a
 **launchd LaunchAgent** (`RunAtLoad` + `KeepAlive`) so it starts at login and
-restarts on exit. A robust wrapper: export `FW_DATA_DIR` + a pinned
-`FW_MONGODB_URL` (a host whose `.env` sets `FW_MONGODB_URL=…localhost` would
-otherwise poison discovery under launchd), start Docker Desktop if its daemon is
-down, then `exec fw fleet agent watch --mongo … --data-dir …`. A non-supervised
-manual `watch` (`nohup`/background) is fine too but won't auto-restart. To
+restarts on exit. A robust wrapper: export `FW_DATA_DIR` (+ `FW_SERVER_GROUP` if
+this host isn't the default tier), start Docker Desktop if its daemon is down,
+then `exec fw fleet agent watch --data-dir …`. Do NOT pin `--mongo`/
+`FW_MONGODB_URL` in the wrapper: discovery falls through to the **server
+catalog** (the infra entry's stable name, resolved live), so a stale address —
+including a `.env` `…localhost` value on a non-infra host — simply loses the
+reachability check instead of wedging the agent; a pinned URL is a break-glass
+override only. A non-supervised manual `watch` (`nohup`/background) is fine too
+but won't auto-restart. To
 non-disruptively prove every host's daemon is live, re-set the **current** image
 (`fleet set --image <current>`) — it bumps `fleet_config.version` with no container
 churn and every healthy daemon advances its `applied vN` in `fleet status`.
