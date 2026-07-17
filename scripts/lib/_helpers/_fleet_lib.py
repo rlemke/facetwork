@@ -38,6 +38,21 @@ def _mongo_ok(url: str, timeout_ms: int = 5000) -> bool:
         return False
 
 
+def lan_ip() -> str | None:
+    """This host's primary LAN IPv4 (UDP-connect trick — no packet is sent).
+    Used to replace a loopback self-resolution with an address that is valid
+    fleet-wide and reachable from containers."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("192.0.2.1", 9))  # TEST-NET; routing lookup only
+            return s.getsockname()[0]
+        finally:
+            s.close()
+    except OSError:
+        return None
+
+
 def _tcp_ok(endpoint: str, timeout: float = 2.0) -> bool:
     try:
         u = urlparse(endpoint)
@@ -100,11 +115,18 @@ def resolve_mongo(explicit: str | None = None, *, log=None) -> str:
     # its current IP — survives DHCP drift without /etc/hosts edits. Sits
     # before the conventional alias, which depends on a hand-maintained (and
     # historically stale) /etc/hosts mapping.
+    # LOOPBACK GUARD: on the infra host itself the name resolves to 127.0.0.1,
+    # which is host-reachable but POISON for anything that hands the URL to a
+    # container (loopback inside a container is the container). A loopback
+    # resolution means WE ARE the infra host, so substitute this host's LAN IP
+    # — valid fleet-wide and reachable from containers.
     try:
         from facetwork.servers import catalog as _srv_catalog
 
         _infra = _srv_catalog.infra()
         _ip = _srv_catalog.resolve_ip(_infra) if _infra else None
+        if _ip and (_ip.startswith("127.") or _ip == "::1"):
+            _ip = lan_ip() or _ip
         if _ip:
             candidates.append(("server catalog (infra)", f"mongodb://{_ip}:27017"))
     except Exception:
