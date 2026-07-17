@@ -177,7 +177,30 @@ class BlockExecutionBeginHandler(StateHandler):
             raise
 
         if not iterable:
-            # Empty iterable — no sub-blocks to create, complete immediately
+            # Empty iterable — no sub-blocks to create, complete immediately.
+            # But the containing facet's declared ARRAY returns must still
+            # materialize (as []): with zero iterations no yield ever fires
+            # to seed the aggregate, and a downstream `step.attr` reference
+            # would otherwise fail with "Attribute not found" far from the
+            # cause (found live: a city with zero facilities of a category
+            # in the emergency-access pilot).
+            container = (
+                self.context.persistence.get_step(self.step.container_id)
+                if self.step.container_id
+                else None
+            )
+            if container is not None and container.facet_name:
+                fdef = self.context.get_facet_definition(container.facet_name) or {}
+                changed = False
+                for ret in fdef.get("returns", []):
+                    name = ret.get("name", "")
+                    rtype = ret.get("type") or {}
+                    is_array = isinstance(rtype, dict) and rtype.get("type") == "ArrayType"
+                    if name and is_array and name not in container.attributes.returns:
+                        container.attributes.set_return(name, [], "List")
+                        changed = True
+                if changed:
+                    self.context.changes.add_updated_step(container)
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
 

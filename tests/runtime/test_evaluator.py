@@ -2671,6 +2671,74 @@ class TestForeachExecution:
         value_steps = [s for s in all_steps if s.object_type == ObjectType.VARIABLE_ASSIGNMENT]
         assert len(value_steps) == 0
 
+    def test_foreach_empty_array_materializes_array_returns(self, store, evaluator):
+        """Zero-iteration foreach: declared ARRAY returns become [] (not unset).
+
+        With zero iterations no yield ever fires to seed the aggregate, so
+        without materialization a downstream `step.attr` reference fails with
+        "Attribute not found" far from the cause (found live in the
+        emergency-access pilot: a city with zero facilities of a category).
+        """
+        ast = {
+            "type": "WorkflowDecl",
+            "name": "CollectAll",
+            "params": [{"name": "items", "type": "Json"}],
+            "returns": [
+                {"name": "values", "type": {"type": "ArrayType", "elementType": "Long"}},
+                {"name": "count", "type": "Long"},  # scalar: must NOT be touched
+            ],
+            "body": {
+                "type": "AndThenBlock",
+                "foreach": {
+                    "variable": "r",
+                    "iterable": {"type": "InputRef", "path": ["items"]},
+                },
+                "steps": [
+                    {
+                        "type": "StepStmt",
+                        "id": "step-v",
+                        "name": "v",
+                        "call": {
+                            "type": "CallExpr",
+                            "target": "Value",
+                            "args": [
+                                {"name": "input", "value": {"type": "InputRef", "path": ["r"]}}
+                            ],
+                        },
+                    },
+                ],
+                "yield": {
+                    "type": "YieldStmt",
+                    "id": "yield-1",
+                    "call": {
+                        "type": "CallExpr",
+                        "target": "CollectAll",
+                        "args": [
+                            {
+                                "name": "values",
+                                "value": {
+                                    "type": "ArrayLiteral",
+                                    "elements": [{"type": "StepRef", "path": ["v", "input"]}],
+                                },
+                            }
+                        ],
+                    },
+                },
+            },
+        }
+        result = evaluator.execute(
+            ast, inputs={"items": []}, program_ast={"declarations": [ast]}
+        )
+        assert result.success is True
+        assert result.status == ExecutionStatus.COMPLETED
+
+        roots = [s for s in store.get_all_steps() if s.facet_name == "CollectAll"]
+        assert roots, "workflow root step missing"
+        returns = roots[0].attributes.returns
+        assert "values" in returns, "array return not materialized on empty foreach"
+        assert returns["values"].value == []
+        assert "count" not in returns  # scalar returns stay unset
+
 
 # =========================================================================
 # Step Deduplication Tests
