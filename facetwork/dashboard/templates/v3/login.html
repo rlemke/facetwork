@@ -1,0 +1,40 @@
+{% extends "v3/base.html" %}
+{% block title %}Sign in · Facetwork{% endblock %}
+
+{% block head_extra %}
+<style>
+.login-wrap{display:flex;justify-content:center;padding-top:8vh}
+.login-card{width:340px;background:var(--panel,#fff);border:1px solid var(--border);border-radius:10px;padding:22px 24px}
+.login-card h2{margin:0 0 4px;font-size:17px}
+.login-card .sub{font-size:12px;color:var(--muted);margin-bottom:14px}
+.login-card label{display:block;font:600 12px var(--sans);margin:10px 0 4px}
+.login-card input{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:transparent;color:inherit}
+.login-card .err{color:#c62828;font-size:12px;margin-top:10px}
+.login-card .btn.primary{width:100%;margin-top:14px;justify-content:center}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="login-wrap">
+  <form class="login-card" method="post" action="/login">
+    {% if setup_mode %}
+    <h2>Set your password</h2>
+    <div class="sub">First sign-in for <b>{{ email }}</b> — choose a password (8+ characters).</div>
+    <input type="hidden" name="email" value="{{ email }}">
+    <label>New password</label>
+    <input type="password" name="new_password" autofocus autocomplete="new-password">
+    <label>Confirm password</label>
+    <input type="password" name="confirm_password" autocomplete="new-password">
+    {% else %}
+    <h2>Sign in</h2>
+    <div class="sub">Use your Facetwork user email. First sign-in sets your password.</div>
+    <label>Email</label>
+    <input type="email" name="email" value="{{ email }}" autofocus autocomplete="username">
+    <label>Password</label>
+    <input type="password" name="password" autocomplete="current-password">
+    {% endif %}
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <button type="submit" class="btn primary">{{ "Set password &amp; sign in"|safe if setup_mode else "Sign in" }}</button>
+  </form>
+</div>
+{% endblock %}

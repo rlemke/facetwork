@@ -49,18 +49,35 @@ def get_store(request: Request) -> MongoStore:
 
 
 def get_current_user(request: Request, store: MongoStore = Depends(get_store)) -> User:
-    """FastAPI dependency — the "acting as" user from the cookie.
+    """FastAPI dependency — the acting user.
 
-    Falls back to the seeded ``anonymous`` principal when no (or an unknown)
-    user is selected. There is no authentication; this just attributes runs.
+    Identity resolution:
+
+    1. A valid **login session** (``/login``, signed ``fw_session`` cookie)
+       always wins.
+    2. With no session: if ANY user has a password set, authentication is
+       considered active and the caller is **anonymous** — the legacy
+       acting-as cookie no longer confers identity (it would let anyone
+       impersonate a rights holder from a dropdown).
+    3. Legacy deployments with no passwords anywhere keep the original
+       acting-as-cookie behavior (attribution only, no access control).
     """
     from facetwork.runtime.entities import User
-    from facetwork.runtime.entities.user import KIND_ANONYMOUS
+    from facetwork.runtime.entities.user import STATUS_ACTIVE, KIND_ANONYMOUS
 
-    email = request.cookies.get(CURRENT_USER_COOKIE, "")
-    if email:
-        user = store.get_user(email)
-        if user is not None:
+    from .auth import read_session
+
+    session_email = read_session(request)
+    if session_email:
+        user = store.get_user(session_email)
+        if user is not None and user.status == STATUS_ACTIVE:
             return user
+
+    if not store.any_user_has_password():
+        email = request.cookies.get(CURRENT_USER_COOKIE, "")
+        if email:
+            user = store.get_user(email)
+            if user is not None:
+                return user
     anon = store.get_user(ANONYMOUS_EMAIL)
     return anon or User(email=ANONYMOUS_EMAIL, first_name="Anonymous", kind=KIND_ANONYMOUS)

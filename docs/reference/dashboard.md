@@ -109,11 +109,26 @@ Filters are evaluated server-side in
 ## Users, teams, and "acting as"
 
 The **Access** group manages identities. Each user has an email, name, teams,
-and a default team; teams have a leader and members. The acting-as footer link
-(and the **Act as** button on the Users list) sets the current user cookie —
-runs you submit are attributed to that user. These are the same identities used
-by the run form's team tagging and by the global filters' author/runner-user
-selects.
+a default team, and optional **rights** (per-user capability grants — e.g.
+`delete_runs` gates run deletion; granted via a checkbox on the user form).
+Teams have a leader and members. These are the same identities used by the run
+form's team tagging and by the global filters' author/runner-user selects.
+
+**Signing in.** Browsers authenticate at `/login` (email + password; the first
+sign-in for a user sets their password — stdlib scrypt hash on the user
+document). A successful login sets a signed `fw_session` cookie which (a)
+resolves the acting identity for attribution and rights checks and (b)
+satisfies the mutation guard, so logged-in humans never handle
+`FW_DASHBOARD_TOKEN` (that bearer token remains the machine path for
+CLI/scripts). Sessions are signed with `FW_DASHBOARD_SECRET` (falls back to
+`FW_DASHBOARD_TOKEN`; with neither set, sessions reset on dashboard restart).
+
+**Auth activation & the legacy acting-as selector.** Until the FIRST password
+exists anywhere, the dashboard keeps the historical no-auth behavior: the
+acting-as footer link / **Act as** button set a plain identity cookie
+(attribution only, no access control). The moment any user sets a password,
+identity comes from login sessions only — the acting-as cookie no longer
+confers identity, closing dropdown impersonation of rights holders.
 
 ## Implementation notes
 

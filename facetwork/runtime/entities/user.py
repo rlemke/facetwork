@@ -14,6 +14,9 @@ so there is a single source of truth; a team's members are queried, not stored
 on the team.
 """
 
+import hashlib
+import hmac
+import secrets
 from dataclasses import dataclass, field
 
 from .common import UserDefinition
@@ -67,12 +70,36 @@ class User:
     status: str = STATUS_ACTIVE
     avatar: str = ""
     rights: list[str] = field(default_factory=list)
+    password_hash: str = ""  # "scrypt$<salt-hex>$<hash-hex>"; "" = no password set
     created_at: int = 0  # ms since epoch
     updated_at: int = 0  # ms since epoch
 
     def has_right(self, right: str) -> bool:
         """True when this user holds the given right (explicit grants only)."""
         return right in (self.rights or [])
+
+    @property
+    def has_password(self) -> bool:
+        return bool(self.password_hash)
+
+    def set_password(self, password: str) -> None:
+        """Hash and store ``password`` (stdlib scrypt, per-user random salt)."""
+        salt = secrets.token_bytes(16)
+        digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1)
+        self.password_hash = f"scrypt${salt.hex()}${digest.hex()}"
+
+    def verify_password(self, password: str) -> bool:
+        """Constant-time check of ``password`` against the stored hash."""
+        try:
+            scheme, salt_hex, hash_hex = self.password_hash.split("$", 2)
+            if scheme != "scrypt":
+                return False
+            digest = hashlib.scrypt(
+                password.encode("utf-8"), salt=bytes.fromhex(salt_hex), n=2**14, r=8, p=1
+            )
+            return hmac.compare_digest(digest.hex(), hash_hex)
+        except (ValueError, AttributeError):
+            return False
 
     @property
     def display_name(self) -> str:

@@ -44,6 +44,58 @@ from starlette.responses import JSONResponse, Response
 _MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _COOKIE = "fw_token"
 
+# ── Login sessions ───────────────────────────────────────────────────────────
+# A logged-in browser carries a signed session cookie: "email|expires_ms|sig"
+# where sig = HMAC-SHA256 over "email|expires_ms" with the server session key.
+# The key is FW_DASHBOARD_SECRET, else FW_DASHBOARD_TOKEN, else an ephemeral
+# per-process secret (sessions then reset on dashboard restart — fine for a
+# LAN deployment; set one of the env vars for durable sessions).
+SESSION_COOKIE = "fw_session"
+SESSION_TTL_MS = 30 * 24 * 3600 * 1000  # 30 days
+
+_EPHEMERAL_KEY = os.urandom(32)
+
+
+def _session_key() -> bytes:
+    key = os.environ.get("FW_DASHBOARD_SECRET") or os.environ.get("FW_DASHBOARD_TOKEN") or ""
+    return key.encode("utf-8") if key else _EPHEMERAL_KEY
+
+
+def _sign(payload: str) -> str:
+    return hmac.new(_session_key(), payload.encode("utf-8"), "sha256").hexdigest()
+
+
+def make_session(email: str, *, now_ms: int | None = None) -> str:
+    """Signed session cookie value for ``email`` (rejects emails with '|')."""
+    if "|" in email:
+        raise ValueError("email may not contain '|'")
+    import time
+
+    expires = (now_ms if now_ms is not None else int(time.time() * 1000)) + SESSION_TTL_MS
+    payload = f"{email}|{expires}"
+    return f"{payload}|{_sign(payload)}"
+
+
+def read_session(request: "Request") -> str | None:
+    """The session's email when the cookie is present, validly signed, and
+    unexpired — else None."""
+    import time
+
+    raw = request.cookies.get(SESSION_COOKIE, "")
+    parts = raw.rsplit("|", 1)
+    if len(parts) != 2:
+        return None
+    payload, sig = parts
+    if not hmac.compare_digest(_sign(payload), sig):
+        return None
+    try:
+        email, expires_s = payload.rsplit("|", 1)
+        if int(expires_s) < int(time.time() * 1000):
+            return None
+    except ValueError:
+        return None
+    return email or None
+
 
 class DashboardAuthMiddleware(BaseHTTPMiddleware):
     """Require FW_DASHBOARD_TOKEN on mutating requests, when it is configured."""
@@ -75,8 +127,17 @@ class DashboardAuthMiddleware(BaseHTTPMiddleware):
         if not token:
             return await call_next(request)  # auth disabled — unchanged behavior
 
+        # The login/logout endpoints must be reachable WITHOUT credentials —
+        # they are how a browser obtains its session in the first place.
+        if request.url.path in ("/login", "/logout"):
+            return await call_next(request)
+
         presented = self._presented_token(request)
         valid = presented is not None and hmac.compare_digest(presented, token)
+        # A logged-in browser session is as good as the machine token: humans
+        # authenticate via /login; the bearer token remains for CLI/scripts.
+        if not valid and read_session(request) is not None:
+            valid = True
 
         if request.method.upper() in _MUTATING_METHODS and not valid:
             return JSONResponse(

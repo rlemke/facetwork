@@ -67,6 +67,20 @@ class UsersMixin(_MixinBase):
         docs = self._db.users.find(query).sort("email", 1)
         return [self._doc_to_user(doc) for doc in docs]
 
+    def any_user_has_password(self) -> bool:
+        """True once at least one user has a login password set.
+
+        The dashboard uses this as the auth activation switch: with no
+        passwords anywhere it keeps the legacy acting-as behavior; after the
+        first password is set, identity comes from login sessions only.
+        """
+        return (
+            self._db.users.count_documents(
+                {"password_hash": {"$exists": True, "$nin": ["", None]}}, limit=1
+            )
+            > 0
+        )
+
     def save_user(self, user: User) -> None:
         """Create or update a user (upsert by email); stamps timestamps."""
         now = _current_time_ms()

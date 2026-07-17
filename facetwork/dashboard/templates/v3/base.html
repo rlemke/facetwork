@@ -63,10 +63,21 @@
       <a href="/v3/teams" class="{% if active_nav=='teams' %}active{% endif %}"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8"/></svg> Teams</a>
     </nav>
     <div class="v3-foot-wrap">
-      <a class="v3-foot" href="/v3/users" title="Acting as — click to change">
-        {% set _u = (request.cookies.get('afl_current_user') or 'anonymous').split('@')[0] %}
+      {% set _sess = request.cookies.get('fw_session', '') %}
+      {% if _sess %}
+      {% set _u = _sess.split('|')[0].split('@')[0] %}
+      <a class="v3-foot" href="/v3/users" title="Signed in">
         <span class="av">{{ _u[:2]|upper }}</span> {{ _u }}
       </a>
+      <form method="post" action="/logout" style="margin:0 0 0 .4rem;display:inline">
+        <button class="iconbtn" type="submit" title="Sign out"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></button>
+      </form>
+      {% else %}
+      {% set _u = (request.cookies.get('afl_current_user') or 'anonymous').split('@')[0] %}
+      <a class="v3-foot" href="/login" title="Sign in">
+        <span class="av">{{ _u[:2]|upper }}</span> {{ _u }} · sign in
+      </a>
+      {% endif %}
     </div>
   </aside>
 
