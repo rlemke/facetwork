@@ -34,6 +34,16 @@ SPECIAL_KINDS = frozenset({KIND_SYSTEM, KIND_CLAUDE, KIND_DELETED, KIND_ANONYMOU
 STATUS_ACTIVE = "active"
 STATUS_DELETED = "deleted"
 
+# ── Rights ───────────────────────────────────────────────────────────────────
+# Per-user capability grants, stored as a list of right strings on the user.
+# The dashboard has no authentication (acting-as attributes runs), so rights
+# gate DESTRUCTIVE actions only — they are guard rails, not a security
+# boundary. Grant via the Users admin page or by setting ``rights`` on the
+# user document.
+RIGHT_DELETE_RUNS = "delete_runs"
+
+KNOWN_RIGHTS: tuple[str, ...] = (RIGHT_DELETE_RUNS,)
+
 # Stable email of the special "deleted" principal that dangling references are
 # reassigned to on force-delete.
 DELETED_USER_EMAIL = "deleted@facetwork.local"
@@ -56,8 +66,13 @@ class User:
     kind: str = KIND_HUMAN
     status: str = STATUS_ACTIVE
     avatar: str = ""
+    rights: list[str] = field(default_factory=list)
     created_at: int = 0  # ms since epoch
     updated_at: int = 0  # ms since epoch
+
+    def has_right(self, right: str) -> bool:
+        """True when this user holds the given right (explicit grants only)."""
+        return right in (self.rights or [])
 
     @property
     def display_name(self) -> str:

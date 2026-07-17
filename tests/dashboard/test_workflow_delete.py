@@ -165,12 +165,35 @@ class TestDeleteRunnerRoutes:
         mock_client = mongomock.MongoClient()
         store = MongoStore(database_name="afl_test_delete", client=mock_client)
 
+        # Run deletion is gated on the ``delete_runs`` right — act as a
+        # user that holds it (the anonymous fallback does not).
+        from facetwork.dashboard.dependencies import CURRENT_USER_COOKIE
+        from facetwork.runtime.entities import User
+        from facetwork.runtime.entities.user import RIGHT_DELETE_RUNS
+
+        store.save_user(User(email="deleter@test.local", rights=[RIGHT_DELETE_RUNS]))
+
         app = create_app()
         app.dependency_overrides[deps.get_store] = lambda: store
         with TestClient(app) as tc:
+            tc.cookies.set(CURRENT_USER_COOKIE, "deleter@test.local")
             yield tc, store
         store.drop_database()
         store.close()
+
+    def test_delete_requires_right(self, client):
+        tc, store = client
+        _seed_run(store, "r-1", "wf-1")
+        tc.cookies.delete("afl_current_user")  # anonymous: no rights
+
+        resp = tc.post("/api/runners/r-1/delete")
+        assert resp.status_code == 403
+        assert resp.json()["success"] is False
+        assert store.get_runner("r-1") is not None  # nothing deleted
+
+        resp = tc.post("/api/runners/bulk-delete", json={"runner_ids": ["r-1"]})
+        assert resp.status_code == 403
+        assert store.get_runner("r-1") is not None
 
     def test_delete_single(self, client):
         tc, store = client

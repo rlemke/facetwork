@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 # Runner states in which the graph is still changing and worth polling.
 _ACTIVE_STATES = {"created", "running", "paused"}
 
-from ...dependencies import get_store
+from ...dependencies import get_current_user, get_store
 from ...graph import compute_dag_layout
 from ...helpers import (
     categorize_step_state,
@@ -54,6 +54,7 @@ def workflow_list_v3(
     request: Request,
     tab: str = "running",
     store=Depends(get_store),
+    current_user=Depends(get_current_user),
 ):
     """Redesigned Runs list — same data pipeline as ``/v2/workflows``."""
     # Reuse the v2 helpers so the two lists never diverge on filtering/counting.
@@ -73,10 +74,13 @@ def workflow_list_v3(
     groups = group_runners_by_namespace(filtered)
     progress = _enrich_runners_with_progress(filtered, store)
 
+    from facetwork.runtime.entities.user import RIGHT_DELETE_RUNS
+
     return request.app.state.templates.TemplateResponse(
         request,
         "v3/workflows/list.html",
         {
+            "can_delete_run": current_user.has_right(RIGHT_DELETE_RUNS),
             "groups": groups,
             "tab": tab,
             "tab_counts": tab_counts,
@@ -260,6 +264,7 @@ def workflow_detail_v3(
     runner_id: str,
     request: Request,
     store=Depends(get_store),
+    current_user=Depends(get_current_user),
 ):
     """Redesigned workflow detail — same data as ``/v2/workflows/{id}``."""
     runner = store.get_runner(runner_id)
@@ -295,12 +300,15 @@ def workflow_detail_v3(
         if run_artifact:
             break
 
+    from facetwork.runtime.entities.user import RIGHT_DELETE_RUNS
+
     ctx: dict[str, Any] = {
         "runner": runner,
         "selected": selected,
         "active": runner.state in _ACTIVE_STATES,
         "active_nav": "runs",
         "artifact_url": run_artifact,
+        "can_delete_run": current_user.has_right(RIGHT_DELETE_RUNS),
         **graph,
     }
     return request.app.state.templates.TemplateResponse(request, "v3/workflows/detail.html", ctx)

@@ -101,9 +101,12 @@ def user_save_v3(
     title: str = Form(""),
     teams: list[str] = Form(default=[]),
     default_team: str = Form(""),
+    rights: list[str] = Form(default=[]),
     store=Depends(get_store),
 ):
     """Create or update a user (upsert by email). Preserves kind/status."""
+    from facetwork.runtime.entities.user import KNOWN_RIGHTS
+
     existing = store.get_user(email)
     user = User(
         email=email.strip(),
@@ -116,6 +119,7 @@ def user_save_v3(
         kind=existing.kind if existing else "human",
         status=existing.status if existing else "active",
         avatar=existing.avatar if existing else "",
+        rights=[r for r in rights if r in KNOWN_RIGHTS],
         created_at=existing.created_at if existing else 0,
     )
     store.save_user(user)

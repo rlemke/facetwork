@@ -22,8 +22,33 @@ import json
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
-from ...dependencies import get_store
+from ...dependencies import get_current_user, get_store
 from ...tree import build_step_tree
+
+
+def _deny_without_delete_right(user) -> JSONResponse | None:
+    """403 unless the acting user holds the ``delete_runs`` right.
+
+    Run deletion is destructive (steps, tasks, and logs go with it), so it is
+    gated on a per-user right — the dashboard's acting-as model has no
+    authentication, making this a guard rail against accidental deletion, not
+    a security boundary. Grant rights on the Users admin page.
+    """
+    from facetwork.runtime.entities.user import RIGHT_DELETE_RUNS
+
+    if user is not None and user.has_right(RIGHT_DELETE_RUNS):
+        return None
+    email = getattr(user, "email", "") or "anonymous"
+    return JSONResponse(
+        {
+            "success": False,
+            "error": (
+                f"user '{email}' does not hold the '{RIGHT_DELETE_RUNS}' right — "
+                "grant it on the Users page (select the user, tick Delete runs)"
+            ),
+        },
+        status_code=403,
+    )
 
 router = APIRouter(prefix="/api")
 
@@ -78,11 +103,17 @@ def api_repair_workflow(runner_id: str, store=Depends(get_store)):
 
 
 @router.post("/runners/bulk-delete")
-async def api_bulk_delete_runners(request: Request, store=Depends(get_store)):
+async def api_bulk_delete_runners(
+    request: Request, store=Depends(get_store), user=Depends(get_current_user)
+):
     """Delete multiple workflow runs and all of their execution data.
 
-    Body: ``{"runner_ids": ["<uuid>", ...]}``.
+    Body: ``{"runner_ids": ["<uuid>", ...]}``. Requires the ``delete_runs``
+    right on the acting user.
     """
+    denied = _deny_without_delete_right(user)
+    if denied is not None:
+        return denied
     try:
         body = await request.json()
     except Exception:
@@ -101,8 +132,14 @@ async def api_bulk_delete_runners(request: Request, store=Depends(get_store)):
 
 
 @router.post("/runners/{runner_id}/delete")
-def api_delete_runner(runner_id: str, store=Depends(get_store)):
-    """Delete a workflow run and all of its steps, tasks, and logs."""
+def api_delete_runner(runner_id: str, store=Depends(get_store), user=Depends(get_current_user)):
+    """Delete a workflow run and all of its steps, tasks, and logs.
+
+    Requires the ``delete_runs`` right on the acting user.
+    """
+    denied = _deny_without_delete_right(user)
+    if denied is not None:
+        return denied
     try:
         result = store.delete_runner(runner_id)
         if not result.get("found"):

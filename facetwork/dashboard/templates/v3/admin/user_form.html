@@ -52,6 +52,12 @@
       {% else %}<span class="hint">No teams yet. <a href="/v3/teams/new">Create one</a>.</span>{% endif %}
     </div>
     <div class="ffield">
+      <label class="lbl">Rights</label>
+      <div class="teamchecks">
+        <label><input type="checkbox" name="rights" value="delete_runs"{% if user and 'delete_runs' in (user.rights or []) %} checked{% endif %}> Delete runs <span class="hint">(remove a run and all its steps/tasks/logs)</span></label>
+      </div>
+    </div>
+    <div class="ffield">
       <label class="lbl">Default team</label>
       <select name="default_team">
         <option value="">— none —</option>

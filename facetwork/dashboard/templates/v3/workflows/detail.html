@@ -115,7 +115,9 @@
         </form>
         {% endif %}
         <a class="btn" href="/v3/workflows/{{ runner.uuid }}/source"><svg viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg> Source</a>
+        {% if can_delete_run %}
         <button class="btn danger" onclick="delRun()"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg> Delete</button>
+        {% endif %}
       </div>
     </div>
 

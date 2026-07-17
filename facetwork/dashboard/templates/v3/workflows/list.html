@@ -58,7 +58,9 @@ body.selmode .rsel{display:flex}
   </div>
   <input class="runs-search" id="runs-search" type="search" placeholder="Filter runs by name…" autocomplete="off">
   <div class="selctl">
+    {% if can_delete_run %}
     <button type="button" id="selbtn" class="btn">Select</button>
+    {% endif %}
     <span id="delbar">
       <label style="font-size:12px;color:var(--text-2);display:inline-flex;gap:.3rem;align-items:center"><input type="checkbox" id="selall"> All</label>
       <button type="button" id="delbtn" class="btn danger" disabled>Delete (0)</button>
