@@ -601,6 +601,20 @@ class MemoryStore(PersistenceAPI):
         if server_id in self._servers:
             self._servers[server_id].ping_time = ping_time
 
+    def heartbeat_server(self, server_id: str, ping_time: int) -> bool:
+        """Update ping time iff the record is live; report whether it was.
+
+        Mirrors ``MongoStore.heartbeat_server``: False means the record is
+        missing or terminal and the runner should re-register.
+        """
+        from .entities import ServerState
+
+        server = self._servers.get(server_id)
+        if server is None or getattr(server, "state", None) == ServerState.SHUTDOWN:
+            return False
+        server.ping_time = ping_time
+        return True
+
     def update_server_handled(self, server_id: str, handled: "list[HandledCount]") -> None:
         """Replace ONLY the server's ``handled`` stats (targeted field write)."""
         if server_id in self._servers:

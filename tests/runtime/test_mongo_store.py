@@ -1064,6 +1064,59 @@ class TestServerOperations:
         remaining = {s.uuid for s in mongo_store.get_all_servers()}
         assert remaining == {"dead-fresh", "live-slow"}
 
+    def test_heartbeat_server_live_record(self, mongo_store):
+        """heartbeat_server updates ping on a live record and reports True."""
+        server = ServerDefinition(
+            uuid="hb-1",
+            server_group="workers",
+            service_name="facetwork",
+            server_name="hb-1",
+            state=ServerState.RUNNING,
+            ping_time=1000,
+        )
+        mongo_store.save_server(server)
+
+        assert mongo_store.heartbeat_server("hb-1", 2000) is True
+        assert mongo_store.get_server("hb-1").ping_time == 2000
+
+    def test_heartbeat_server_shutdown_record_reports_dead(self, mongo_store):
+        """A reaper-marked shutdown record is NOT pinged — caller must
+        re-register (the zombie-runner self-heal signal)."""
+        server = ServerDefinition(
+            uuid="hb-2",
+            server_group="workers",
+            service_name="facetwork",
+            server_name="hb-2",
+            state=ServerState.SHUTDOWN,
+            ping_time=1000,
+        )
+        mongo_store.save_server(server)
+
+        assert mongo_store.heartbeat_server("hb-2", 2000) is False
+        # ping untouched, so the short terminal prune window still applies
+        assert mongo_store.get_server("hb-2").ping_time == 1000
+
+    def test_heartbeat_server_missing_record_reports_dead(self, mongo_store):
+        """A pruned (missing) record reports False instead of silently no-oping."""
+        assert mongo_store.heartbeat_server("hb-gone", 2000) is False
+
+    def test_heartbeat_server_quarantined_record_pings_without_resurrect(self, mongo_store):
+        """Quarantine is live-but-paused: keep pinging, keep the state."""
+        server = ServerDefinition(
+            uuid="hb-3",
+            server_group="workers",
+            service_name="facetwork",
+            server_name="hb-3",
+            state=ServerState.QUARANTINE,
+            ping_time=1000,
+        )
+        mongo_store.save_server(server)
+
+        assert mongo_store.heartbeat_server("hb-3", 2000) is True
+        updated = mongo_store.get_server("hb-3")
+        assert updated.ping_time == 2000
+        assert updated.state == ServerState.QUARANTINE
+
 
 # =============================================================================
 # Orphaned Task Reaper Tests (MongoStore-specific)

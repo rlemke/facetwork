@@ -146,6 +146,23 @@ class ServerMixin(_MixinBase):
         """Update server ping time."""
         self._db.servers.update_one({"uuid": server_id}, {"$set": {"ping_time": ping_time}})
 
+    def heartbeat_server(self, server_id: str, ping_time: int) -> bool:
+        """Update ping time iff the record is live; report whether it was.
+
+        A single filtered ``update_one`` so the check-and-ping is atomic: it
+        matches only a non-terminal record. Returns False when the record is
+        missing (pruned after a reaper false positive) or marked ``shutdown``
+        — the runner is a "zombie" in the roster and must re-register.
+        Non-terminal states other than running (e.g. ``quarantine``) still
+        match, so a quarantined runner keeps pinging without resurrecting
+        itself as ``running``.
+        """
+        result = self._db.servers.update_one(
+            {"uuid": server_id, "state": {"$nin": list(_TERMINAL_SERVER_STATES)}},
+            {"$set": {"ping_time": ping_time}},
+        )
+        return result.matched_count > 0
+
     def update_server_handled(self, server_id: str, handled: "list[HandledCount]") -> None:
         """Replace ONLY the server's ``handled`` stats — a targeted ``$set`` so a
         concurrent state write (e.g. a dashboard QUARANTINE) between a runner's

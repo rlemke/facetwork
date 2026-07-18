@@ -133,6 +133,15 @@ class BaseRunner:
         """Check if the runner is currently running."""
         return self._running
 
+    def _register_server(self) -> None:
+        """Write this runner's full ServerDefinition to the store.
+
+        Provided by each subclass (handler sets and config shapes differ).
+        The heartbeat loop calls it to self-heal a reaped/pruned record, so
+        implementations must be safe to call repeatedly on a live runner.
+        """
+        raise NotImplementedError
+
     def _deregister_server(self) -> None:
         """Mark this server as shut down."""
         server = self._persistence.get_server(self._server_id)
@@ -150,11 +159,29 @@ class BaseRunner:
             return []
 
     def _heartbeat_loop(self) -> None:
-        """Periodically update the server's ping_time."""
+        """Periodically update the server's ping_time, self-healing the record.
+
+        A transiently-quiet runner (host sleep, emulation stall, Mongo blip)
+        can be marked ``shutdown`` by another runner's reaper and then pruned
+        entirely; a bare ping update would silently no-op forever after that,
+        leaving a working-but-invisible "zombie" runner. When the heartbeat
+        finds its record dead or gone it re-registers, restoring the runner to
+        the live roster. Guarded on ``_stopping`` so a heartbeat racing a
+        graceful shutdown can't resurrect the record ``_deregister_server``
+        just wrote.
+        """
         interval_s = self._config.heartbeat_interval_ms / 1000.0
         while not self._stopping.wait(interval_s):
             try:
-                self._persistence.update_server_ping(self._server_id, _current_time_ms())
+                alive = self._persistence.heartbeat_server(self._server_id, _current_time_ms())
+                if not alive and not self._stopping.is_set():
+                    logger.warning(
+                        "Server record for %s (%s) missing or marked shutdown — "
+                        "re-registering (reaper false positive / pruned record)",
+                        self._config.server_name,
+                        self._server_id[:8],
+                    )
+                    self._register_server()
             except Exception:
                 logger.exception("Heartbeat failed")
 

@@ -656,6 +656,48 @@ class TestRunnerServiceHeartbeat:
         updated_ping = store.get_server(svc.server_id).ping_time
         assert updated_ping > initial_ping
 
+    def test_heartbeat_self_heals_reaper_marked_shutdown(self, store, evaluator, registry):
+        """A record marked shutdown by another runner's reaper (false positive
+        after a transient stall) is re-registered as running by the heartbeat,
+        not left as a working-but-invisible zombie."""
+        config = RunnerConfig(heartbeat_interval_ms=50)
+        svc = RunnerService(store, evaluator, config, registry)
+        svc._register_server()
+
+        # Simulate the reaper: mark shutdown behind the runner's back.
+        server = store.get_server(svc.server_id)
+        server.state = ServerState.SHUTDOWN
+        store.save_server(server)
+
+        heartbeat = threading.Thread(target=svc._heartbeat_loop, daemon=True)
+        heartbeat.start()
+        time.sleep(0.15)
+        svc._stopping.set()
+        heartbeat.join(timeout=1)
+
+        healed = store.get_server(svc.server_id)
+        assert healed is not None
+        assert healed.state == ServerState.RUNNING
+
+    def test_heartbeat_self_heals_pruned_record(self, store, evaluator, registry):
+        """A record deleted by prune_stale_servers is re-created by the
+        heartbeat instead of the ping silently no-oping forever."""
+        config = RunnerConfig(heartbeat_interval_ms=50)
+        svc = RunnerService(store, evaluator, config, registry)
+        svc._register_server()
+
+        del store._servers[svc.server_id]
+
+        heartbeat = threading.Thread(target=svc._heartbeat_loop, daemon=True)
+        heartbeat.start()
+        time.sleep(0.15)
+        svc._stopping.set()
+        heartbeat.join(timeout=1)
+
+        healed = store.get_server(svc.server_id)
+        assert healed is not None
+        assert healed.state == ServerState.RUNNING
+
 
 # =========================================================================
 # TestRunnerServiceShutdown
@@ -1565,7 +1607,7 @@ class TestHeartbeatException:
     """Tests for heartbeat exception handling."""
 
     def test_heartbeat_exception_continues(self, evaluator, registry):
-        """Heartbeat loop continues after an exception from update_server_ping."""
+        """Heartbeat loop continues after an exception from heartbeat_server."""
         mock_store = MagicMock()
         call_count = 0
 
@@ -1574,9 +1616,9 @@ class TestHeartbeatException:
             call_count += 1
             if call_count == 1:
                 raise RuntimeError("transient db error")
-            # Otherwise succeed
+            return True  # live record updated
 
-        mock_store.update_server_ping = counting_ping
+        mock_store.heartbeat_server = counting_ping
 
         config = RunnerConfig(heartbeat_interval_ms=20)
         svc = RunnerService(mock_store, evaluator, config, registry)

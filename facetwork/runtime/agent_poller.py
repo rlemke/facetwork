@@ -489,11 +489,24 @@ class AgentPoller:
     # =========================================================================
 
     def _heartbeat_loop(self) -> None:
-        """Periodically update the server's ping_time."""
+        """Periodically update the server's ping_time, self-healing the record.
+
+        Mirrors ``BaseRunner._heartbeat_loop``: if the record was reaper-marked
+        ``shutdown`` (or pruned) while this poller was transiently quiet,
+        re-register instead of silently pinging a dead/missing record.
+        """
         interval_s = self._config.heartbeat_interval_ms / 1000.0
         while not self._stopping.wait(interval_s):
             try:
-                self._persistence.update_server_ping(self._server_id, _current_time_ms())
+                alive = self._persistence.heartbeat_server(self._server_id, _current_time_ms())
+                if not alive and not self._stopping.is_set():
+                    logger.warning(
+                        "Server record for %s (%s) missing or marked shutdown — "
+                        "re-registering (reaper false positive / pruned record)",
+                        self._config.server_name,
+                        self._server_id[:8],
+                    )
+                    self._register_server()
             except Exception:
                 logger.exception("Heartbeat failed")
 

@@ -850,6 +850,30 @@ class PersistenceAPI(Protocol):
             ping_time: The new ping time in milliseconds
         """
 
+    def heartbeat_server(self, server_id: str, ping_time: int) -> bool:
+        """Update a server's ping time iff its record is live.
+
+        Unlike ``update_server_ping`` this reports whether a live (non-
+        ``shutdown``) record was actually updated. A transiently-quiet runner
+        can be marked ``shutdown`` by another runner's reaper and then pruned;
+        after that a bare ping update silently no-ops and the runner works on
+        invisible ("zombie") forever. Callers should re-register when this
+        returns False.
+
+        Args:
+            server_id: The server's unique identifier
+            ping_time: The new ping time in milliseconds
+
+        Returns:
+            True if a live record was updated; False if the record is
+            missing or in a terminal state (caller should re-register).
+        """
+        server = self.get_server(server_id)
+        if server is None or server.state == "shutdown":
+            return False
+        self.update_server_ping(server_id, ping_time)
+        return True
+
     def update_server_handled(self, server_id: str, handled: "list[HandledCount]") -> None:
         """Replace ONLY a server's ``handled`` stats (a targeted field write).
 
