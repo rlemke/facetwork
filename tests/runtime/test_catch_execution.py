@@ -119,6 +119,33 @@ class TestCatchBeginHandler:
         assert step.get_attribute("error") == "something went wrong"
         assert step.get_attribute("error_type") == "ValueError"
 
+    def test_error_info_persisted_eagerly(self):
+        """The error pseudo-returns are save_step'd BEFORE the sub-block can
+        run: the catch block's $.error resolves against the PERSISTED
+        container step (possibly on another runner), so leaving the update
+        to the batched commit races the sub-block's evaluation. Regression
+        for the live 'Attribute error not found on step one' failure."""
+        error = RuntimeError("no routable network")
+        step = _make_step(error=error)
+        catch_ast = {
+            "steps": [
+                {
+                    "type": "StepStmt",
+                    "name": "r",
+                    "call": {"type": "CallExpr", "target": "Recover"},
+                },
+            ],
+        }
+        context = _make_context(catch_ast=catch_ast)
+
+        handler = CatchBeginHandler(step, context)
+        handler.process_state()
+
+        context.persistence.save_step.assert_called_once()
+        saved = context.persistence.save_step.call_args[0][0]
+        assert saved.get_attribute("error") == "no routable network"
+        assert saved.get_attribute("error_type") == "RuntimeError"
+
     def test_simple_catch_creates_sub_block(self):
         """Simple catch creates a single AND_CATCH sub-block step."""
         error = RuntimeError("fail")

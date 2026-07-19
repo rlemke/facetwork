@@ -55,6 +55,15 @@ class CatchBeginHandler(StateHandler):
         error_type = type(error).__name__ if error else "RuntimeError"
         self.step.set_attribute("error", error_msg, is_return=True)
         self.step.set_attribute("error_type", error_type, is_return=True)
+        # Persist the pseudo-returns EAGERLY: the catch sub-block's steps
+        # resolve $.error against the PERSISTED container step — possibly on
+        # another runner, or in this same iteration before the batched step
+        # update commits. MemoryStore aliases objects so tests never see the
+        # gap; MongoDB serializes and does.
+        try:
+            self.context.persistence.save_step(self.step)
+        except Exception:
+            logger.debug("Could not eagerly persist catch error attrs", exc_info=True)
 
         if "when" in catch_ast:
             # Conditional catch — evaluate conditions using same pattern as when blocks
