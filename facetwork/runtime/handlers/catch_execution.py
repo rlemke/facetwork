@@ -310,7 +310,17 @@ class CatchContinueHandler(StateHandler):
         all_blocks = blocks + [s for s in sub_blocks if s not in blocks]
 
         if not all_blocks:
-            # No catch blocks to wait for
+            # A catch clause exists but its sub-block isn't visible yet: the
+            # AND_CATCH step may have been created on another runner in an
+            # iteration whose commit hasn't landed (or is in this iteration's
+            # pending changes). Advancing here would run STATEMENT_CAPTURE
+            # with no yield and complete the step with only the error
+            # pseudo-returns while the real catch block finishes into the
+            # void. Wait — CATCH_BEGIN's deterministic step id guarantees the
+            # block appears exactly once.
+            if self.context._find_statement_catch(self.step) is not None:
+                return self.stay(push=True)
+            # No catch clause at all — nothing to wait for.
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
 

@@ -674,7 +674,7 @@ class TestCatchContinueHandler:
         return block
 
     def test_no_blocks_transitions(self):
-        """No catch blocks to wait for — transitions immediately."""
+        """No catch blocks AND no catch clause — transitions immediately."""
         step = _make_step()
         context = _make_context()
 
@@ -683,6 +683,21 @@ class TestCatchContinueHandler:
 
         assert isinstance(result, StateChangeResult)
         assert step.transition.request_transition is True
+
+    def test_no_blocks_but_clause_present_waits(self):
+        """Catch clause exists but its sub-block isn't visible yet (created
+        on another runner, commit not landed) — must WAIT, not advance.
+        Advancing would run capture with no yield and complete the step with
+        only the error pseudo-returns while the catch finishes into the void
+        (observed live: Greenland completed without layer_path)."""
+        step = _make_step()
+        context = _make_context(catch_ast={"steps": []})
+
+        handler = CatchContinueHandler(step, context)
+        result = handler.process_state()
+
+        assert step.transition.request_transition is False
+        assert result.continue_processing is True  # stay + push
 
     def test_all_blocks_complete(self):
         """All sub-blocks complete — transitions to CATCH_END."""
