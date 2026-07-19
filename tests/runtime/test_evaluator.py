@@ -6092,6 +6092,174 @@ class TestCatchBlockExecution:
             },
         }
 
+    def test_facet_level_catch_recovers_errored_body(self, store, evaluator):
+        """A facet whose andThen body errors recovers via its declaration-level
+        catch: CATCH_BEGIN must actually execute (creating the AND_CATCH
+        sub-block), and CatchContinue must not count the errored body block as
+        a failed catch sub-block. Regression for the osm.emergency finding #7
+        verification run: the catch fired but the step still errored with
+        'Catch block has N errored sub-block(s)'."""
+        class _Dispatcher:
+            def can_dispatch(self, facet_name: str) -> bool:
+                return facet_name in ("Risky", "Marker")
+
+            def dispatch(self, facet_name: str, payload: dict) -> dict | None:
+                if facet_name == "Risky":
+                    raise RuntimeError("no routable network")
+                return {"blob": payload.get("region")}
+
+        program_ast = {
+            "type": "Program",
+            "declarations": [
+                {
+                    "type": "EventFacetDecl",
+                    "name": "Risky",
+                    "params": [{"name": "name", "type": "String"}],
+                    "returns": [{"name": "out", "type": "String"}],
+                },
+                {
+                    "type": "EventFacetDecl",
+                    "name": "Marker",
+                    "params": [{"name": "region", "type": "String"}],
+                    "returns": [{"name": "blob", "type": "String"}],
+                },
+                {
+                    "type": "FacetDecl",
+                    "name": "Wrapper",
+                    "params": [{"name": "name", "type": "String"}],
+                    "returns": [{"name": "out", "type": "String"}],
+                    "body": {
+                        "type": "AndThenBlock",
+                        "steps": [
+                            {
+                                "type": "StepStmt",
+                                "id": "step-bad",
+                                "name": "bad",
+                                "call": {
+                                    "type": "CallExpr",
+                                    "target": "Risky",
+                                    "args": [
+                                        {
+                                            "name": "name",
+                                            "value": {"type": "InputRef", "path": ["name"]},
+                                        }
+                                    ],
+                                },
+                            },
+                        ],
+                        "yield": {
+                            "type": "YieldStmt",
+                            "id": "yield-wrapper",
+                            "call": {
+                                "type": "CallExpr",
+                                "target": "Wrapper",
+                                "args": [
+                                    {
+                                        "name": "out",
+                                        "value": {"type": "StepRef", "path": ["bad", "out"]},
+                                    }
+                                ],
+                            },
+                        },
+                    },
+                    "catch": {
+                        "type": "CatchClause",
+                        "steps": [
+                            {
+                                "type": "StepStmt",
+                                "id": "step-fallback",
+                                "name": "fallback",
+                                "call": {
+                                    "type": "CallExpr",
+                                    "target": "Marker",
+                                    "args": [
+                                        {
+                                            "name": "region",
+                                            "value": {"type": "InputRef", "path": ["name"]},
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                        "yield": {
+                            "type": "YieldStmt",
+                            "id": "yield-catch",
+                            "call": {
+                                "type": "CallExpr",
+                                "target": "Wrapper",
+                                "args": [
+                                    {
+                                        "name": "out",
+                                        "value": {
+                                            "type": "StepRef",
+                                            "path": ["fallback", "blob"],
+                                        },
+                                    }
+                                ],
+                            },
+                        },
+                    },
+                },
+            ],
+        }
+        workflow_ast = {
+            "type": "WorkflowDecl",
+            "name": "CatchRecovery",
+            "params": [{"name": "region", "type": "String"}],
+            "returns": [{"name": "result", "type": "String"}],
+            "body": {
+                "type": "AndThenBlock",
+                "steps": [
+                    {
+                        "type": "StepStmt",
+                        "id": "step-one",
+                        "name": "one",
+                        "call": {
+                            "type": "CallExpr",
+                            "target": "Wrapper",
+                            "args": [
+                                {
+                                    "name": "name",
+                                    "value": {"type": "InputRef", "path": ["region"]},
+                                }
+                            ],
+                        },
+                    },
+                ],
+                "yield": {
+                    "type": "YieldStmt",
+                    "id": "yield-CR",
+                    "call": {
+                        "type": "CallExpr",
+                        "target": "CatchRecovery",
+                        "args": [
+                            {
+                                "name": "result",
+                                "value": {"type": "StepRef", "path": ["one", "out"]},
+                            }
+                        ],
+                    },
+                },
+            },
+        }
+
+        result = evaluator.execute(
+            workflow_ast,
+            inputs={"region": "Greenland"},
+            program_ast=program_ast,
+            dispatcher=_Dispatcher(),
+        )
+
+        assert result.success is True, f"workflow errored: {result.error}"
+        # The catch's fallback yield fills the facet returns from the
+        # fallback step (Marker echoes its 'region' param).
+        assert result.outputs.get("result") == "Greenland"
+        # The AND_CATCH sub-block was actually created (CatchBeginHandler ran).
+        all_steps = list(store.get_all_steps())
+        catch_blocks = [s for s in all_steps if s.object_type == ObjectType.AND_CATCH]
+        assert len(catch_blocks) == 1
+        assert catch_blocks[0].is_complete
+
     def test_catch_not_triggered_on_success(self, store, evaluator):
         """When step succeeds, catch block is dormant."""
         workflow_ast = self._simple_catch_workflow_ast()

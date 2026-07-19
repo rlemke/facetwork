@@ -110,8 +110,11 @@ class StateChanger(ABC):
 
                         self.step.transition.error = result.error
                         self.step.change_state(StepState.CATCH_BEGIN)
-                        self.step.request_state_change(True)
-                        self.step = result.step
+                        # The loop advances BEFORE executing when a change is
+                        # requested — a pending request would skip the
+                        # CATCH_BEGIN handler. Clear it so the re-entered loop
+                        # executes CatchBeginHandler at the current state.
+                        self.step.request_state_change(False)
                         continue  # Re-enter the loop to process CATCH_BEGIN
                     self.step.mark_error(result.error)
                     return StateChangeResult(

@@ -262,20 +262,40 @@ class CatchContinueHandler(StateHandler):
 
     def process_state(self) -> StateChangeResult:
         """Continue catch execution."""
+        from ..types import ObjectType
+
         # Get all catch sub-blocks (container_id=self.step.id for simple,
-        # block_id=self.step.id for when cases)
-        blocks = list(self.context.persistence.get_blocks_by_step(self.step.id))
+        # block_id=self.step.id for when cases). Only AND_CATCH blocks count:
+        # a declaration-level catch fires precisely BECAUSE a sibling andThen
+        # body block errored — counting that block here would make every such
+        # catch report itself failed.
+        blocks = [
+            b
+            for b in self.context.persistence.get_blocks_by_step(self.step.id)
+            if b.object_type == ObjectType.AND_CATCH
+        ]
 
         # Also check for newly created blocks in current iteration
         for pending_step in self.context.changes.created_steps:
-            if pending_step.container_id == self.step.id and pending_step.is_block:
+            if (
+                pending_step.container_id == self.step.id
+                and pending_step.object_type == ObjectType.AND_CATCH
+            ):
                 if pending_step not in blocks:
                     blocks.append(pending_step)
 
         # Also check blocks by block_id (for catch when sub-blocks)
-        sub_blocks = list(self.context.persistence.get_steps_by_block(self.step.id))
+        sub_blocks = [
+            s
+            for s in self.context.persistence.get_steps_by_block(self.step.id)
+            if s.object_type == ObjectType.AND_CATCH
+        ]
         for pending_step in self.context.changes.created_steps:
-            if pending_step.block_id == self.step.id and pending_step not in sub_blocks:
+            if (
+                pending_step.block_id == self.step.id
+                and pending_step.object_type == ObjectType.AND_CATCH
+                and pending_step not in sub_blocks
+            ):
                 sub_blocks.append(pending_step)
 
         all_blocks = blocks + [s for s in sub_blocks if s not in blocks]

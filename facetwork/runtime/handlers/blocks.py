@@ -337,8 +337,12 @@ class StatementBlocksContinueHandler(StateHandler):
                     )
                     self.step.transition.error = error
                     self.step.change_state(StepState.CATCH_BEGIN)
-                    self.step.request_state_change(True)
-                    return StateChangeResult(step=self.step)
+                    # Do NOT request a state change: the changer loop advances
+                    # BEFORE executing, so a pending request would skip
+                    # CatchBeginHandler (which creates the catch sub-block) and
+                    # land in CATCH_CONTINUE with only the errored body block
+                    # in sight. Stay + push so CATCH_BEGIN executes next.
+                    return self.stay(push=True)
                 errors = [b.transition.error for b in analysis.errored if b.transition.error]
                 msg = f"{len(analysis.errored)} block(s) errored"
                 if errors:
