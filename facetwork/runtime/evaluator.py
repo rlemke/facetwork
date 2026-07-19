@@ -217,6 +217,42 @@ class ExecutionContext:
                     except (ValueError, IndexError):
                         pass
 
+        # Catch sub-blocks: re-derive from the caught step's catch clause.
+        # CatchBeginHandler caches the body AST in-memory when it creates the
+        # sub-block, but the block's continuation may be claimed by ANOTHER
+        # runner whose cache is cold — without this, the generic fallbacks
+        # below would resolve the container's normal facet/statement body and
+        # re-execute the whole errored body inside the catch block.
+        if stmt_id.startswith("catch-block-") and block_step.container_id:
+            container = self._find_step(block_step.container_id)
+            if container:
+                catch_ast = self._find_statement_catch(container)
+                if catch_ast and "when" not in catch_ast:
+                    body_ast: dict = {"type": "AndThenBlock"}
+                    for key in ("steps", "yield", "yields"):
+                        if key in catch_ast:
+                            body_ast[key] = catch_ast[key]
+                    self._block_ast_cache[block_step.id] = body_ast
+                    return body_ast
+        if stmt_id.startswith("catch-case-") and block_step.block_id:
+            caught = self._find_step(block_step.block_id)
+            if caught:
+                catch_ast = self._find_statement_catch(caught)
+                if catch_ast and "when" in catch_ast:
+                    try:
+                        case_index = int(stmt_id.split("-")[-1])
+                        cases = catch_ast["when"].get("cases", [])
+                        if 0 <= case_index < len(cases):
+                            case = cases[case_index]
+                            case_body = {"type": "AndThenBlock"}
+                            for key in ("steps", "yield", "yields"):
+                                if key in case:
+                                    case_body[key] = case[key]
+                            self._block_ast_cache[block_step.id] = case_body
+                            return case_body
+                    except (ValueError, IndexError):
+                        pass
+
         if not block_step.container_id:
             # Block has no container — shouldn't normally happen
             if self.workflow_ast:

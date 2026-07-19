@@ -67,6 +67,45 @@ class TestRelativeResolver:
     def test_unknown_attr_is_none(self):
         assert ExpressionEvaluator().evaluate(_ref("nope"), self._ctx()) is None
 
+    def test_container_return_resolves_by_id_first(self):
+        """When the frame carries the container's step id and the attribute is
+        already present on that step, resolution uses the ID — a name lookup is
+        ambiguous under foreach (a completed sibling iteration's same-named
+        step would shadow this block's actual container). Regression for the
+        live catch failure: $.error found a sibling 'one' without the attr."""
+
+        class _Step:
+            def get_attribute(self, name):
+                return "boom" if name == "error" else None
+
+        ctx = EvaluationContext(
+            inputs={},
+            get_step_output=lambda n, a: (_ for _ in ()).throw(AssertionError("name lookup used")),
+            get_step_by_id=lambda sid: _Step() if sid == "step-123" else None,
+            scope_stack=[
+                {"params": {}, "returns": {"error"}, "name": "one", "id": "step-123"},
+            ],
+        )
+        assert ExpressionEvaluator().evaluate(_ref("error"), ctx) == "boom"
+
+    def test_container_return_falls_back_to_name_when_id_misses(self):
+        """If the by-id step lacks the attribute (not produced yet), the
+        name-based getter still provides the deferral semantics."""
+
+        class _Step:
+            def get_attribute(self, name):
+                return None
+
+        ctx = EvaluationContext(
+            inputs={},
+            get_step_output=lambda n, a: f"RET:{n}.{a}",
+            get_step_by_id=lambda sid: _Step(),
+            scope_stack=[
+                {"params": {}, "returns": {"output"}, "name": "s3", "id": "step-9"},
+            ],
+        )
+        assert ExpressionEvaluator().evaluate(_ref("output"), ctx) == "RET:s3.output"
+
     def test_overflow_raises(self):
         with pytest.raises(FwReferenceError):
             ExpressionEvaluator().evaluate(_ref("input", up=2), self._ctx())

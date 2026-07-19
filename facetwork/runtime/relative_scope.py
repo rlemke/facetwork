@@ -69,10 +69,18 @@ def _frame_for(context: Any, step: Any) -> dict[str, Any]:
     (with deferral) via the step's name rather than snapshotted here.
     """
     params: dict[str, Any] = {name: attr.value for name, attr in step.attributes.params.items()}
+    # Include produced (possibly pseudo) returns alongside the declared set —
+    # a catch clause's error/error_type are set as returns without being
+    # declared, and must still be visible on the container's $ surface.
+    produced = set(step.attributes.returns.keys())
     return {
         "params": params,
-        "returns": _declared_return_names(context, step),
+        "returns": _declared_return_names(context, step) | produced,
         "name": step.statement_name,
+        # The container's step id — return lookups resolve by ID first: a
+        # name-based lookup is ambiguous under foreach (every iteration has a
+        # step with the same statement name).
+        "id": step.id,
     }
 
 

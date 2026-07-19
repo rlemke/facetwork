@@ -219,10 +219,28 @@ class ExpressionEvaluator:
             frame = stack[up]
             if field in frame["params"]:
                 value = frame["params"][field]
-            elif field in frame["returns"] and frame.get("name"):
-                # A container return — resolve via the step-output getter, which
-                # defers (raises _StepNotReady) until the container completes.
-                value = ctx.get_step_output(frame["name"], field)
+            elif field in frame["returns"]:
+                # A container return. Resolve by the container's step ID first:
+                # a name lookup is ambiguous under foreach (every iteration has
+                # a step with the same statement name, and a completed sibling
+                # iteration would shadow THIS block's container). Falls back to
+                # the name-based getter, which defers (raises _StepNotReady)
+                # until the container completes.
+                value = None
+                resolved = False
+                cid = frame.get("id")
+                if cid and ctx.get_step_by_id is not None:
+                    try:
+                        cstep = ctx.get_step_by_id(cid)
+                    except Exception:
+                        cstep = None
+                    if cstep is not None:
+                        v = cstep.get_attribute(field)
+                        if v is not None:
+                            value = v
+                            resolved = True
+                if not resolved and frame.get("name"):
+                    value = ctx.get_step_output(frame["name"], field)
             elif up == 0 and field in ctx.inputs:
                 # Values injected into the immediate scope that aren't declared
                 # params/returns — e.g. a catch clause's error / error_type.

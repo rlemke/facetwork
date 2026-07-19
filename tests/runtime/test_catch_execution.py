@@ -146,6 +146,78 @@ class TestCatchBeginHandler:
         assert saved.get_attribute("error") == "no routable network"
         assert saved.get_attribute("error_type") == "RuntimeError"
 
+    def test_catch_block_ast_rederivable_on_cold_cache(self):
+        """A catch sub-block's AST must be re-derivable from the caught step's
+        catch clause when the in-memory block-AST cache is cold — the block's
+        continuation may be claimed by a DIFFERENT runner than the one that
+        created it. Without this, the generic fallback resolves the container's
+        normal body and re-executes the errored body inside the catch block
+        (observed live: reg/cache/body steps expanding inside AND_CATCH)."""
+        from facetwork.runtime.evaluator import ExecutionContext
+        from facetwork.runtime.memory_store import MemoryStore
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.telemetry import Telemetry
+        from facetwork.runtime.types import ObjectType
+
+        store = MemoryStore()
+        catch_steps = [
+            {
+                "type": "StepStmt",
+                "name": "fallback",
+                "call": {"type": "CallExpr", "target": "Marker"},
+            }
+        ]
+        program_ast = {
+            "type": "Program",
+            "declarations": [
+                {
+                    "type": "FacetDecl",
+                    "name": "Wrapper",
+                    "params": [{"name": "name", "type": "String"}],
+                    "body": {"type": "AndThenBlock", "steps": []},
+                    "catch": {"type": "CatchClause", "steps": catch_steps},
+                }
+            ],
+        }
+        root = StepDefinition.create(
+            workflow_id="wf-cold",
+            object_type=ObjectType.WORKFLOW,
+            facet_name="W",
+            statement_id="root",
+        )
+        store.save_step(root)
+        caught = StepDefinition.create(
+            workflow_id="wf-cold",
+            object_type=ObjectType.VARIABLE_ASSIGNMENT,
+            facet_name="Wrapper",
+            statement_id="step-one",
+            statement_name="one",
+            container_id=root.id,
+        )
+        store.save_step(caught)
+        catch_block = StepDefinition.create(
+            workflow_id="wf-cold",
+            object_type=ObjectType.AND_CATCH,
+            facet_name="",
+            statement_id="catch-block-0",
+            container_id=caught.id,
+        )
+        store.save_step(catch_block)
+
+        context = ExecutionContext(
+            persistence=store,
+            telemetry=Telemetry(enabled=False),
+            changes=IterationChanges(),
+            workflow_id="wf-cold",
+            workflow_ast={"type": "WorkflowDecl", "name": "W", "params": []},
+            program_ast=program_ast,
+        )
+        # Cold cache — the creating runner's set_block_ast_cache never ran here.
+        body = context.get_block_ast(catch_block)
+        assert body is not None
+        assert body.get("steps") == catch_steps
+
     def test_simple_catch_creates_sub_block(self):
         """Simple catch creates a single AND_CATCH sub-block step."""
         error = RuntimeError("fail")
