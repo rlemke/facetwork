@@ -2689,6 +2689,44 @@ class TestCatchBlockValidation:
         result = validator.validate(ast)
         assert result.is_valid, [str(e) for e in result.errors]
 
+    def test_facet_level_catch_sees_error_attrs(self, validator):
+        """A declaration-level catch may reference $.error / $.error_type —
+        the runtime stores them as returns on the caught step."""
+        ast = parse(
+            _ns("""
+        facet Risky(x: String) => (out: String)
+        facet Marker(region: String, error: String) => (blob: String)
+        facet Wrapper(name: String) => (blob: String) andThen {
+            s = Risky(x = $.name)
+            yield Wrapper(blob = s.out)
+        } catch {
+            failed = Marker(region = $.name, error = $.error)
+            yield Wrapper(blob = failed.blob)
+        }
+        """)
+        )
+        result = validator.validate(ast)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_facet_level_catch_unknown_attr_still_fails(self, validator):
+        """The synthetic-attr allowance is exactly error/error_type — other
+        unknown container attrs in a declaration-level catch still fail."""
+        ast = parse(
+            _ns("""
+        facet Risky(x: String) => (out: String)
+        facet Marker(region: String, error: String) => (blob: String)
+        facet Wrapper(name: String) => (blob: String) andThen {
+            s = Risky(x = $.name)
+            yield Wrapper(blob = s.out)
+        } catch {
+            failed = Marker(region = $.name, error = $.bogus)
+            yield Wrapper(blob = failed.blob)
+        }
+        """)
+        )
+        result = validator.validate(ast)
+        assert not result.is_valid
+
     def test_catch_when_missing_default(self, validator):
         """Catch when without default case should fail."""
         ast = parse(

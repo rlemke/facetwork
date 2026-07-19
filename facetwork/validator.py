@@ -1494,7 +1494,10 @@ class FFLValidator:
                 _ContainerFrame(
                     name=containing_sig.name,
                     kind="facet",
-                    attrs=self._sig_attr_names(containing_sig),
+                    # A declaration-level catch also sees the synthetic error
+                    # attributes ($.error / $.error_type) — the runtime stores
+                    # them as returns on the caught step (CatchBeginHandler).
+                    attrs=self._sig_attr_names(containing_sig) | {"error", "error_type"},
                     open=False,
                 )
             )
