@@ -23,6 +23,7 @@ through MongoDB atomic ``find_one_and_update`` task claiming and server
 registration.
 """
 
+import fnmatch
 import json as _json
 import logging
 import os
@@ -723,14 +724,22 @@ class RunnerService(BaseRunner):
         """Find steps blocked at EVENT_TRANSMIT."""
         steps = list(self._persistence.get_steps_by_state(StepState.EVENT_TRANSMIT))
 
-        # Filter by topics if configured (supports both qualified and short names)
+        # Filter by topics if configured (supports qualified names, short
+        # names, and globs like ``census.*`` — matching _get_event_names).
         if self._config.topics:
             topics_set = set(self._config.topics)
-            steps = [
-                s
-                for s in steps
-                if s.facet_name in topics_set or s.facet_name.rsplit(".", 1)[-1] in topics_set
-            ]
+
+            def _topic_match(facet_name: str) -> bool:
+                short = facet_name.rsplit(".", 1)[-1]
+                if facet_name in topics_set or short in topics_set:
+                    return True
+                return any(
+                    fnmatch.fnmatch(facet_name, t)
+                    for t in topics_set
+                    if any(ch in t for ch in "*?[")
+                )
+
+            steps = [s for s in steps if _topic_match(s.facet_name)]
 
         # Filter by handler availability (check both qualified and short name)
         steps = [
@@ -747,13 +756,24 @@ class RunnerService(BaseRunner):
     def _get_event_names(self) -> list[str]:
         """Get the list of event facet names this runner can handle.
 
-        If topics are configured, uses those (qualified names).
-        Otherwise, uses all handler names from the tool registry.
+        If topics are configured, glob topics (e.g. ``census.*``) are expanded
+        against the tool registry's handler names — ``claim_task`` matches
+        names exactly (or as ``name:`` prefixes), so an unexpanded glob is a
+        dead literal that never claims anything. Non-glob topics pass through
+        verbatim. Without topics, all non-builtin handler names are used.
         """
+        handler_names = [
+            name for name in self._tool_registry._handlers.keys() if not name.startswith("fw:")
+        ]
         if self._config.topics:
-            return list(self._config.topics)
-        # Return handler names that are not built-in task handlers
-        return [name for name in self._tool_registry._handlers.keys() if not name.startswith("fw:")]
+            names: list[str] = []
+            for topic in self._config.topics:
+                if any(ch in topic for ch in "*?["):
+                    names.extend(n for n in handler_names if fnmatch.fnmatch(n, topic))
+                else:
+                    names.append(topic)
+            return sorted(set(names))
+        return handler_names
 
     def _get_builtin_task_names(self) -> list[str]:
         """Get task name prefixes for built-in handlers (e.g. fw:execute).

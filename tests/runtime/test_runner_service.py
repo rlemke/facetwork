@@ -334,6 +334,47 @@ class TestRunnerServicePolling:
         steps = svc._poll_event_steps()
         assert len(steps) == 0
 
+    def test_poll_event_steps_glob_topic_matches(
+        self, store, evaluator, workflow_ast, program_ast
+    ):
+        """A glob topic (census.*-style) matches qualified facet names."""
+        registry = ToolRegistry()
+        registry.register("CountDocuments", lambda p: {"output": 42})
+        config = RunnerConfig(topics=["Count*"])
+        svc = RunnerService(store, evaluator, config, registry)
+
+        result = _execute_until_paused(evaluator, workflow_ast, {"x": 1}, program_ast)
+        assert result.status == ExecutionStatus.PAUSED
+
+        steps = svc._poll_event_steps()
+        assert len(steps) >= 1
+
+    def test_get_event_names_expands_glob_topics(self, store, evaluator):
+        """Glob topics expand to matching registry handler names — claim_task
+        matches literally, so an unexpanded 'ns.*' never claims anything."""
+        registry = ToolRegistry()
+        registry.register("census.Publish.PublishWebBundle", lambda p: {})
+        registry.register("census.ACS.ExtractPopulation", lambda p: {})
+        registry.register("osm.cache.Download", lambda p: {})
+        config = RunnerConfig(topics=["census.*"])
+        svc = RunnerService(store, evaluator, config, registry)
+
+        names = svc._get_event_names()
+        assert names == [
+            "census.ACS.ExtractPopulation",
+            "census.Publish.PublishWebBundle",
+        ]
+
+    def test_get_event_names_exact_topics_pass_through(self, store, evaluator):
+        """Non-glob topics pass through verbatim (existing behavior)."""
+        registry = ToolRegistry()
+        registry.register("census.ACS.ExtractPopulation", lambda p: {})
+        config = RunnerConfig(topics=["census.ACS.ExtractPopulation", "other.Exact"])
+        svc = RunnerService(store, evaluator, config, registry)
+
+        names = svc._get_event_names()
+        assert names == ["census.ACS.ExtractPopulation", "other.Exact"]
+
     def test_poll_event_steps_filters_by_handler(self, store, evaluator, workflow_ast, program_ast):
         """Steps are skipped if no handler is registered."""
         registry = ToolRegistry()  # No handlers
