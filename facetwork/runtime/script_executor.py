@@ -134,7 +134,11 @@ _SAFE_IMPORT_MODULES: list[str] = [
 ]
 
 
-def _build_worker_script(code: str, params_json: str | None = None) -> str:
+def _build_worker_script(
+    code: str,
+    params_json: str | None = None,
+    extra_import_modules: list[str] | None = None,
+) -> str:
     """Build the Python source for the subprocess worker.
 
     The worker reconstructs the safe-builtins sandbox, deserializes params,
@@ -154,7 +158,7 @@ def _build_worker_script(code: str, params_json: str | None = None) -> str:
     """
     code_b64 = base64.b64encode(code.encode()).decode()
     names_repr = repr(_SAFE_BUILTIN_NAMES)
-    allowed_repr = repr(_SAFE_IMPORT_MODULES)
+    allowed_repr = repr(_SAFE_IMPORT_MODULES + list(extra_import_modules or []))
     code_repr = repr(code_b64)
     if params_json is not None:
         params_line = f"_params = _json.loads({repr(params_json)})"
@@ -254,6 +258,7 @@ class ScriptExecutor:
         params: dict[str, Any] | None = None,
         language: str = "python",
         python_executable: str | None = None,
+        extra_import_modules: list[str] | None = None,
     ) -> ScriptResult:
         """Execute a script with the given parameters.
 
@@ -279,13 +284,14 @@ class ScriptExecutor:
                 error=f"Unsupported script language: {language}",
             )
 
-        return self._execute_python(code, params or {}, python_executable)
+        return self._execute_python(code, params or {}, python_executable, extra_import_modules)
 
     def _execute_python(
         self,
         code: str,
         params: dict[str, Any],
         python_executable: str | None = None,
+        extra_import_modules: list[str] | None = None,
     ) -> ScriptResult:
         """Execute Python code in a sandboxed subprocess.
 
@@ -307,7 +313,7 @@ class ScriptExecutor:
             )
 
         # Pass params via stdin to avoid OS ARG_MAX limits for large payloads
-        worker_code = _build_worker_script(code)
+        worker_code = _build_worker_script(code, extra_import_modules=extra_import_modules)
 
         try:
             proc = subprocess.run(

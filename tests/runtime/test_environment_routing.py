@@ -239,3 +239,22 @@ class TestEnvScriptExecution:
         # The script task stays pending — this runner cannot claim it.
         task = next(t for t in store._tasks.values() if t.kind == "script")
         assert task.state == TaskState.PENDING
+
+
+class TestEnvImportSurface:
+    def test_env_script_imports_manifest_package(self, tmp_path, monkeypatch):
+        """A script in a non-default environment may import the environment's
+        declared packages — the declaration is the review gate. Verified with
+        a stdlib stand-in on the allow-extension path (extra_import_modules)."""
+        from facetwork.runtime.script_executor import ScriptExecutor
+
+        # 'uuid' is NOT in the base allowlist — blocked by default…
+        base = ScriptExecutor().execute("import uuid\nresult['ok'] = 1", {})
+        assert not base.success
+        # …but allowed when the environment's manifest brings it.
+        extended = ScriptExecutor().execute(
+            "import uuid\nresult['ok'] = len(str(uuid.uuid4())) > 0",
+            {},
+            extra_import_modules=["uuid"],
+        )
+        assert extended.success and extended.result == {"ok": True}

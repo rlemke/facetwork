@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 import socket
 import threading
 import time
@@ -188,12 +189,31 @@ class BaseRunner:
             return None
         from .script_executor import ScriptExecutor
 
+        # The environment's declared packages are its import surface — the
+        # declaration is the review gate, so its manifest joins the script
+        # sandbox's import allowlist (both spec-name and module-name forms;
+        # os/subprocess etc. stay blocked).
+        extra_modules: list[str] = []
+        env_ref = facet_def.get("environment")
+        if env_ref:
+            from ..environments import environment_for_decl
+
+            ns = task.name.rsplit(".", 1)[0] if "." in task.name else ""
+            env_decl = environment_for_decl(program_ast, env_ref, ns) or {}
+            pins = (env_decl.get("manifest") or {}).get("pins") or []
+            for pin in pins:
+                pkg = re.split(r"[=<>\[!~]", pin, 1)[0].strip().lower()
+                if pkg:
+                    extra_modules.append(pkg)
+                    extra_modules.append(pkg.replace("-", "_"))
+
         timeout_s = (task.timeout_ms or 0) / 1000.0 or 30.0
         result = ScriptExecutor(timeout=timeout_s).execute(
             script_def.get("code", ""),
             dict(task.data or {}),
             script_def.get("language", "python"),
             python_executable=interpreter,
+            extra_import_modules=sorted(set(extra_modules)),
         )
         if not result.success:
             raise RuntimeError(result.error or f"Script failed for {task.name}")
