@@ -1,7 +1,12 @@
 # Script Environments (`environment` / `in environment`)
 
-**Status:** design — no code yet. This doc is the contract to review before
-grammar or runtime work.
+**Status:** implemented (phases 1–4, 2026-07-20: b0342d7 language layer,
+3ccfd0c resolve-and-freeze, a44fde7 claim routing + execution). Still open
+from §8: image-bake materialization of declared environments, the
+lazy-materialization poll hook (the `materialize_environment` helper exists;
+wiring is operator/bake-driven for now), `fw install check` coverage,
+dashboard surfacing — and the distributed fleet pilot before the feature is
+documented as generally available.
 **Problem owner:** scripts and the libraries they need. Handlers already have
 an environment story (domain packages + the baked image); FFL `script` blocks
 do not — they run in whatever interpreter the claiming runner happens to have.
