@@ -5,8 +5,15 @@
 from §8: image-bake materialization of declared environments, the
 lazy-materialization poll hook (the `materialize_environment` helper exists;
 wiring is operator/bake-driven for now), `fw install check` coverage,
-dashboard surfacing — and the distributed fleet pilot before the feature is
-documented as generally available.
+dashboard surfacing **Fleet pilot PASSED 2026-07-20** (fleet v90): a
+`humanize`-pinned environment (`envpilot.PyHuman@0aabcaef`) was materialized
+in exactly one of 69 runners; the publish froze the identical hash computed
+locally; the script task carried the hash, was claimed ONLY by the providing
+runner, imported the package from the venv (present nowhere else in the
+image), and completed the workflow. One wrinkle for follow-up: the
+`fw:execute` bootstrap of a namespace with no handlers anywhere routes to a
+task list no runner polls — submit such flows with `--task-list default`
+(or teach submit to detect and default it).
 **Problem owner:** scripts and the libraries they need. Handlers already have
 an environment story (domain packages + the baked image); FFL `script` blocks
 do not — they run in whatever interpreter the claiming runner happens to have.
