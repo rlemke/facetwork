@@ -1525,3 +1525,35 @@ class TestCatchBlockEmitter:
         assert catch["type"] == "CatchClause"
         assert "steps" in catch
         assert len(catch["steps"]) == 1
+
+
+class TestEnvironmentEmission:
+    """Test environment declaration JSON emission."""
+
+    def test_environment_decl_emission(self, emitter):
+        ast = parse("""
+        namespace geo {
+            environment PyGeo {
+                language = "python",
+                requires = ["shapely>=2.0", "networkx"],
+                python = "3.12"
+            }
+            event facet B(x: String) => (y: String) in environment PyGeo script { "result['y']=1" }
+        }
+        """)
+        data = emitter.emit_dict(ast)
+        ns = _first_decl(data, "Namespace")
+        envs = _decls_by_type(ns, "EnvironmentDecl")
+        assert len(envs) == 1
+        assert envs[0]["name"] == "PyGeo"
+        assert envs[0]["language"] == "python"
+        assert envs[0]["requires"] == ["shapely>=2.0", "networkx"]
+        assert envs[0]["extra"] == {"python": "3.12"}
+        facet = _decls_by_type(ns, "EventFacetDecl")[0]
+        assert facet["environment"] == "PyGeo"
+
+    def test_no_environment_key_when_absent(self, emitter):
+        ast = parse("facet A(x: String) => (y: String)")
+        data = emitter.emit_dict(ast)
+        facet = _first_decl(data, "FacetDecl")
+        assert "environment" not in facet

@@ -373,6 +373,7 @@ class FacetDecl(ASTNode):
     sig: FacetSig
     pre_script: ScriptBlock | None = None
     body: "list[AndThenBlock] | AndThenBlock | None" = None
+    environment: str | None = field(default=None, kw_only=True)
     catch: "CatchClause | None" = field(default=None, kw_only=True)
     doc: "DocComment | None" = field(default=None, kw_only=True)
 
@@ -384,6 +385,7 @@ class EventFacetDecl(ASTNode):
     sig: FacetSig
     pre_script: ScriptBlock | None = None
     body: "list[AndThenBlock] | AndThenBlock | PromptBlock | None" = None
+    environment: str | None = field(default=None, kw_only=True)
     catch: "CatchClause | None" = field(default=None, kw_only=True)
     doc: "DocComment | None" = field(default=None, kw_only=True)
 
@@ -395,6 +397,7 @@ class WorkflowDecl(ASTNode):
     sig: FacetSig
     pre_script: ScriptBlock | None = None
     body: "list[AndThenBlock] | AndThenBlock | None" = None
+    environment: str | None = field(default=None, kw_only=True)
     catch: "CatchClause | None" = field(default=None, kw_only=True)
     doc: "DocComment | None" = field(default=None, kw_only=True)
 
@@ -432,6 +435,30 @@ class SchemaDecl(ASTNode):
     doc: "DocComment | None" = field(default=None, kw_only=True)
 
 
+# Environments
+@dataclass
+class EnvironmentDecl(ASTNode):
+    """Environment declaration: environment Name { language = "...", requires = [...] }
+
+    A named execution environment for script blocks — a language plus the
+    library manifest scripts depend on (docs/architecture/script-environments.md).
+    Unknown fields are preserved in ``extra`` for forward compatibility.
+    """
+
+    name: str
+    language: str | None = None
+    requires: list[str] = field(default_factory=list)
+    extra: dict[str, object] = field(default_factory=dict)
+    doc: "DocComment | None" = field(default=None, kw_only=True)
+
+
+@dataclass
+class EnvironmentRef(ASTNode):
+    """``in environment NAME`` clause on a script-bearing declaration."""
+
+    name: str
+
+
 # Namespace
 @dataclass
 class Namespace(ASTNode):
@@ -444,6 +471,7 @@ class Namespace(ASTNode):
     workflows: list[WorkflowDecl] = field(default_factory=list)
     implicits: list[ImplicitDecl] = field(default_factory=list)
     schemas: list[SchemaDecl] = field(default_factory=list)
+    environments: list[EnvironmentDecl] = field(default_factory=list)
     doc: "DocComment | None" = field(default=None, kw_only=True)
 
 
@@ -458,6 +486,7 @@ class Program(ASTNode):
     workflows: list[WorkflowDecl] = field(default_factory=list)
     implicits: list[ImplicitDecl] = field(default_factory=list)
     schemas: list[SchemaDecl] = field(default_factory=list)
+    environments: list[EnvironmentDecl] = field(default_factory=list)
 
     @classmethod
     def merge(cls, programs: list["Program"]) -> "Program":
@@ -477,4 +506,5 @@ class Program(ASTNode):
             merged.workflows.extend(prog.workflows)
             merged.implicits.extend(prog.implicits)
             merged.schemas.extend(prog.schemas)
+            merged.environments.extend(prog.environments)
         return merged

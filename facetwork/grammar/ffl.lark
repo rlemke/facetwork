@@ -18,16 +18,20 @@ start: _NL* (namespace_block | top_level_decl)*
 
 // Namespace
 namespace_block: DOC_COMMENT? "namespace" QNAME "{" _NL* namespace_body "}" _NL*
-namespace_body: (uses_decl | facet_decl | event_facet_decl | workflow_decl | implicit_decl | schema_decl)*
+namespace_body: (uses_decl | facet_decl | event_facet_decl | workflow_decl | implicit_decl | schema_decl | environment_decl)*
 
 uses_decl: ("uses" | "use") QNAME _stmt_end
 
 // Top-level declarations
 top_level_decl: facet_decl | event_facet_decl | workflow_decl | implicit_decl
 
-facet_decl: DOC_COMMENT? "facet" facet_sig facet_def_tail? catch_clause? _stmt_end
-event_facet_decl: DOC_COMMENT? "event" "facet" facet_sig facet_def_tail? catch_clause? _stmt_end
-workflow_decl: DOC_COMMENT? "workflow" facet_sig facet_def_tail? catch_clause? _stmt_end
+facet_decl: DOC_COMMENT? "facet" facet_sig in_env_clause? facet_def_tail? catch_clause? _stmt_end
+event_facet_decl: DOC_COMMENT? "event" "facet" facet_sig in_env_clause? facet_def_tail? catch_clause? _stmt_end
+workflow_decl: DOC_COMMENT? "workflow" facet_sig in_env_clause? facet_def_tail? catch_clause? _stmt_end
+
+// `in environment NAME` — binds a script-bearing declaration to a named
+// execution environment (docs/architecture/script-environments.md).
+in_env_clause: "in" "environment" QNAME _NL*
 
 // Facet signature.  Mixin sigs may appear on the same line as the
 // return clause or on separate lines.
@@ -158,6 +162,15 @@ literal: STRING | FLOAT | INTEGER | BOOLEAN | NULL
 schema_decl: DOC_COMMENT? "schema" IDENT "{" _NL* [schema_fields] "}" _stmt_end
 schema_fields: schema_field (_NL* "," _NL* schema_field)* _NL*
 schema_field: IDENT ":" type
+
+// Environment declarations (docs/architecture/script-environments.md)
+environment_decl: DOC_COMMENT? "environment" IDENT "{" _NL* [env_fields] "}" _stmt_end
+env_fields: env_field (_NL* "," _NL* env_field)* _NL*
+env_field: IDENT "=" env_value
+?env_value: STRING
+          | env_value_list
+env_value_list: "[" _NL* [env_strings] "]"
+env_strings: STRING (_NL* "," _NL* STRING)* _NL*
 
 // Implicit declarations
 implicit_decl: "implicit" IDENT "=" call_expr _stmt_end

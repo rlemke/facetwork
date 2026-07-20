@@ -4002,3 +4002,91 @@ class TestRelativeScoping:
         walk(prog)
         assert found and found[0].body is not None
         assert found[0].extra_bodies == []
+
+
+class TestEnvironmentValidation:
+    """Environment declarations + `in environment` references (ENV_* rules)."""
+
+    def _ids(self, validator, src):
+        result = validator.validate(parse(src))
+        return result, sorted({e.rule_id for e in result.errors if e.rule_id})
+
+    def test_valid_environment_and_reference(self, validator):
+        result, ids = self._ids(validator, """
+        namespace geo {
+            environment PyGeo { language = "python", requires = ["shapely>=2.0"] }
+            event facet B(x: String) => (y: String) in environment PyGeo script { "result['y']=1" }
+        }
+        """)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_env_unknown(self, validator):
+        _, ids = self._ids(validator, """
+        namespace geo {
+            event facet B(x: String) => (y: String) in environment Nope script { "result['y']=1" }
+        }
+        """)
+        assert "ENV_UNKNOWN" in ids
+
+    def test_env_missing_language(self, validator):
+        _, ids = self._ids(validator, """
+        namespace geo {
+            environment Bad { requires = ["x"] }
+        }
+        """)
+        assert "ENV_MISSING_LANGUAGE" in ids
+
+    def test_env_language_script_mismatch(self, validator):
+        _, ids = self._ids(validator, """
+        namespace geo {
+            environment Jvm { language = "scala" }
+            event facet B(x: String) => (y: String) in environment Jvm script { "result['y']=1" }
+        }
+        """)
+        assert "ENV_LANGUAGE_SCRIPT_MISMATCH" in ids
+
+    def test_env_resolves_through_use(self, validator):
+        result, ids = self._ids(validator, """
+        namespace lib {
+            environment PyGeo { language = "python" }
+        }
+        namespace app {
+            use lib
+            event facet B(x: String) => (y: String) in environment PyGeo script { "result['y']=1" }
+        }
+        """)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_env_qualified_reference(self, validator):
+        result, ids = self._ids(validator, """
+        namespace lib {
+            environment PyGeo { language = "python" }
+        }
+        namespace app {
+            event facet B(x: String) => (y: String) in environment lib.PyGeo script { "result['y']=1" }
+        }
+        """)
+        assert result.is_valid, [str(e) for e in result.errors]
+
+    def test_env_at_top_level_via_merged_ast(self, validator):
+        """The grammar rejects top-level environments; the rule guards merged ASTs."""
+        from facetwork.ast import EnvironmentDecl, Program
+
+        program = Program(environments=[EnvironmentDecl(name="Loose", language="python")])
+        result = validator.validate(program)
+        assert any(e.rule_id == "ENV_AT_TOP_LEVEL" for e in result.errors)
+
+    def test_env_workflow_without_script_ok(self, validator):
+        """A workflow bound to an environment with no script blocks is fine —
+        the binding covers future script additions and task tagging."""
+        result, ids = self._ids(validator, """
+        namespace geo {
+            environment PyGeo { language = "python" }
+            event facet B(x: String) => (y: String)
+            workflow W(x: String) => (y: String) in environment PyGeo andThen {
+                s = B(x = $.x)
+                yield W(y = s.y)
+            }
+        }
+        """)
+        assert result.is_valid, [str(e) for e in result.errors]

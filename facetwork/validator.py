@@ -27,6 +27,7 @@ import re
 from dataclasses import dataclass, field
 
 from .ast import (
+    EnvironmentDecl,
     AndThenBlock,
     ArrayLiteral,
     ArrayType,
@@ -229,6 +230,7 @@ class FFLValidator:
         self._facets_by_short_name: dict[str, list[str]] = {}  # Short name -> list of full names
         self._namespaces: set[str] = set()  # All namespace names
         self._schemas: dict[str, SourceLocation] = {}  # Schema names by full name (for uniqueness)
+        self._environments: dict[str, "EnvironmentDecl"] = {}  # Environment decls by full name
         self._schema_info: dict[str, SchemaInfo] = {}  # Full name -> SchemaInfo
         self._schemas_by_short_name: dict[str, list[str]] = {}  # Short name -> [full names]
         self._current_namespace: str = ""
@@ -252,6 +254,7 @@ class FFLValidator:
         self._facets_by_short_name = {}
         self._namespaces = set()
         self._schemas = {}
+        self._environments = {}
         self._schema_info = {}
         self._schemas_by_short_name = {}
         self._current_namespace = ""
@@ -284,6 +287,14 @@ class FFLValidator:
             self._register_facet(event_facet.sig)
         for workflow in program.workflows:
             self._register_facet(workflow.sig)
+        # Top-level environments are not allowed - emit error
+        for env in program.environments:
+            self._result.add_error(
+                f"Environment '{env.name}' must be defined inside a namespace. "
+                f"Top-level environments are not allowed.",
+                env.location,
+                rule_id="ENV_AT_TOP_LEVEL",
+            )
         # Top-level schemas are not allowed - emit error
         for schema in program.schemas:
             self._result.add_error(
@@ -303,6 +314,8 @@ class FFLValidator:
                 self._register_facet(workflow.sig, namespace.name)
             for schema in namespace.schemas:
                 self._register_schema(schema, namespace.name)
+            for env in namespace.environments:
+                self._environments[f"{namespace.name}.{env.name}"] = env
 
     _PRIMITIVE_TYPES = {"String", "Int", "Long", "Double", "Boolean"}
 
@@ -702,6 +715,72 @@ class FFLValidator:
             self._check_name_unique(schema.name, schema.location, names, "schema")
             self._validate_schema_decl(schema)
 
+    def _validate_environment_decl(self, env: "EnvironmentDecl") -> None:
+        """Validate an environment declaration."""
+        if not env.language:
+            self._result.add_error(
+                f"Environment '{env.name}' must declare a language "
+                f'(e.g. language = "python")',
+                env.location,
+                rule_id="ENV_MISSING_LANGUAGE",
+            )
+
+    def _resolve_environment(self, name: str) -> "EnvironmentDecl | None":
+        """Resolve an environment reference (local, imported, or qualified)."""
+        if "." in name:
+            return self._environments.get(name)
+        if self._current_namespace:
+            local = self._environments.get(f"{self._current_namespace}.{name}")
+            if local is not None:
+                return local
+        for ns in self._current_imports:
+            imported = self._environments.get(f"{ns}.{name}")
+            if imported is not None:
+                return imported
+        return None
+
+    def _check_declaration_environment(self, decl) -> None:
+        """Validate an ``in environment`` reference on a declaration.
+
+        Checks the environment exists (ENV_UNKNOWN) and that every script
+        block on the declaration agrees with its language
+        (ENV_LANGUAGE_SCRIPT_MISMATCH). A bare ``script { … }`` block is
+        implicitly python, so binding it to a non-python environment is a
+        real mismatch, not a technicality.
+        """
+        env_name = getattr(decl, "environment", None)
+        if not env_name:
+            return
+        env = self._resolve_environment(env_name)
+        if env is None:
+            self._result.add_error(
+                f"Unknown environment '{env_name}' — no environment declaration "
+                f"with this name is visible from namespace "
+                f"'{self._current_namespace}'",
+                decl.location,
+                rule_id="ENV_UNKNOWN",
+            )
+            return
+        if not env.language:
+            return  # ENV_MISSING_LANGUAGE already reported on the declaration
+        scripts = []
+        if getattr(decl, "pre_script", None) is not None:
+            scripts.append(decl.pre_script)
+        body = getattr(decl, "body", None)
+        bodies = body if isinstance(body, list) else ([body] if body else [])
+        for blk in bodies:
+            script = getattr(blk, "script", None)
+            if script is not None:
+                scripts.append(script)
+        for script in scripts:
+            if script.language and script.language.lower() != env.language.lower():
+                self._result.add_error(
+                    f"Script language '{script.language}' does not match "
+                    f"environment '{env_name}' (language '{env.language}')",
+                    script.location or decl.location,
+                    rule_id="ENV_LANGUAGE_SCRIPT_MISMATCH",
+                )
+
     def _validate_namespace(self, namespace: Namespace) -> None:
         """Validate a namespace."""
         self._current_namespace = namespace.name
@@ -731,6 +810,9 @@ class FFLValidator:
         for schema in namespace.schemas:
             self._check_name_unique(schema.name, schema.location, names, "schema")
             self._validate_schema_decl(schema)
+        for env in namespace.environments:
+            self._check_name_unique(env.name, env.location, names, "environment")
+            self._validate_environment_decl(env)
 
         # Validate declarations
         for facet in namespace.facets:
@@ -914,6 +996,7 @@ class FFLValidator:
 
     def _validate_facet_decl(self, decl: FacetDecl) -> None:
         """Validate a facet declaration."""
+        self._check_declaration_environment(decl)
         # Validate type references in signature
         self._validate_signature_types(decl.sig)
         # Validate mixin references in signature
@@ -932,6 +1015,7 @@ class FFLValidator:
 
     def _validate_event_facet_decl(self, decl: EventFacetDecl) -> None:
         """Validate an event facet declaration."""
+        self._check_declaration_environment(decl)
         # Validate type references in signature
         self._validate_signature_types(decl.sig)
         # Validate mixin references in signature
@@ -1012,6 +1096,7 @@ class FFLValidator:
 
     def _validate_workflow_decl(self, decl: WorkflowDecl) -> None:
         """Validate a workflow declaration."""
+        self._check_declaration_environment(decl)
         # Validate type references in signature
         self._validate_signature_types(decl.sig)
         # Validate mixin references in signature

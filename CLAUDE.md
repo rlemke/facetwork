@@ -165,7 +165,7 @@ Key constraints the rule docs cover (and the language enforces):
 - **`when` blocks need a default case, last** (`WHEN_MISSING_DEFAULT`, `WHEN_DEFAULT_NOT_LAST`); attach a `when` to the step it gates.
 - **No truthy/falsy coercion** — comparisons return Boolean, and `&&`/`||`/`!` only accept Boolean operands.
 
-When adding a new validator check, give it a `rule_id` AND write the matching `docs/reference/rules/{rule_id}.md` in the same change. Coverage is currently exact (all 49 emitted rule_ids documented); the script that diffs them lives in [docs/architecture/mcp-context-engineering.md](docs/architecture/mcp-context-engineering.md).
+When adding a new validator check, give it a `rule_id` AND write the matching `docs/reference/rules/{rule_id}.md` in the same change. Coverage is currently exact (all 53 emitted rule_ids documented); the script that diffs them lives in [docs/architecture/mcp-context-engineering.md](docs/architecture/mcp-context-engineering.md).
 
 ## Standalone domain packages
 

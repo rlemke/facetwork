@@ -22,6 +22,8 @@ from lark import Token, Transformer, v_args
 _T = TypeVar("_T")
 
 from .ast import (
+    EnvironmentDecl,
+    EnvironmentRef,
     AndThenBlock,
     ArrayLiteral,
     ArrayType,
@@ -172,6 +174,7 @@ class FFLTransformer(Transformer):
         WorkflowDecl: "workflows",
         ImplicitDecl: "implicits",
         SchemaDecl: "schemas",
+        EnvironmentDecl: "environments",
     }
 
     @classmethod
@@ -189,8 +192,9 @@ class FFLTransformer(Transformer):
         """Extract common declaration fields: doc, sig, pre_script, body, catch."""
         doc = _extract_doc_comment(items)
         sig = items[0]
+        env_ref = self._find_one(items[1:], EnvironmentRef)
         catch = self._find_one(items[1:], CatchClause)
-        rest = self._find_rest(items[1:], CatchClause)
+        rest = [i for i in self._find_rest(items[1:], CatchClause) if not isinstance(i, EnvironmentRef)]
         tail = rest[0] if rest else None
         pre_script, body = None, None
         if isinstance(tail, tuple):
@@ -202,6 +206,7 @@ class FFLTransformer(Transformer):
             "pre_script": pre_script,
             "body": body,
             "catch": catch,
+            "environment": env_ref.name if env_ref else None,
             "doc": doc,
             "location": self._loc(meta),
         }
@@ -832,6 +837,50 @@ class FFLTransformer(Transformer):
         fields = items[1] if len(items) > 1 else []
         return SchemaDecl(name=name, fields=fields, doc=doc, location=self._loc(meta))
 
+    # Environment declarations
+    @v_args(inline=True)
+    def env_value_string(self, value: str) -> str:
+        return value
+
+    def env_value_list(self, items: list) -> list[str]:
+        strings = items[0] if items and isinstance(items[0], list) else []
+        return strings
+
+    def env_strings(self, items: list) -> list[str]:
+        return [i for i in items if isinstance(i, str)]
+
+    @v_args(meta=True)
+    def env_field(self, meta, items: list) -> tuple:
+        return (items[0], items[1])
+
+    def env_fields(self, items: list) -> list[tuple]:
+        return [i for i in items if isinstance(i, tuple)]
+
+    @v_args(meta=True)
+    def environment_decl(self, meta, items: list) -> EnvironmentDecl:
+        doc = _extract_doc_comment(items)
+        rest = [i for i in items if not isinstance(i, DocComment)]
+        name = rest[0]
+        fields = rest[1] if len(rest) > 1 and isinstance(rest[1], list) else []
+        language: str | None = None
+        requires: list[str] = []
+        extra: dict[str, object] = {}
+        for key, value in fields:
+            if key == "language":
+                language = value if isinstance(value, str) else str(value)
+            elif key == "requires":
+                requires = list(value) if isinstance(value, list) else [str(value)]
+            else:
+                extra[key] = value
+        return EnvironmentDecl(
+            name=name, language=language, requires=requires, extra=extra,
+            doc=doc, location=self._loc(meta),
+        )
+
+    @v_args(meta=True)
+    def in_env_clause(self, meta, items: list) -> EnvironmentRef:
+        return EnvironmentRef(name=items[-1], location=self._loc(meta))
+
     # Namespace
     @v_args(meta=True)
     def namespace_body(self, meta, items: list) -> dict:
@@ -850,6 +899,7 @@ class FFLTransformer(Transformer):
             workflows=body.get("workflows", []),
             implicits=body.get("implicits", []),
             schemas=body.get("schemas", []),
+            environments=body.get("environments", []),
             doc=doc,
             location=self._loc(meta),
         )
@@ -869,5 +919,6 @@ class FFLTransformer(Transformer):
             workflows=seg["workflows"],
             implicits=seg["implicits"],
             schemas=seg["schemas"],
+            environments=seg["environments"],
             location=self._loc(meta),
         )

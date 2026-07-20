@@ -2461,3 +2461,69 @@ class TestCatchBlocks:
         cond = catch.when.cases[0].condition
         assert isinstance(cond, BinaryExpr)
         assert cond.operator == "&&"
+
+
+class TestEnvironmentDecls:
+    """Test environment declaration and `in environment` parsing."""
+
+    def test_environment_decl(self, parser):
+        """Parse an environment with language + requires."""
+        ast = parser.parse("""
+        namespace geo {
+            /** Geo scripting deps. */
+            environment PyGeo {
+                language = "python",
+                requires = ["shapely>=2.0", "networkx"]
+            }
+        }
+        """)
+        env = ast.namespaces[0].environments[0]
+        assert env.name == "PyGeo"
+        assert env.language == "python"
+        assert env.requires == ["shapely>=2.0", "networkx"]
+        assert env.doc is not None
+
+    def test_environment_extra_fields_preserved(self, parser):
+        """Unknown fields land in extra for forward compatibility."""
+        ast = parser.parse("""
+        namespace geo {
+            environment PyGeo {
+                language = "python",
+                python = "3.12"
+            }
+        }
+        """)
+        env = ast.namespaces[0].environments[0]
+        assert env.extra == {"python": "3.12"}
+
+    def test_in_environment_on_decls(self, parser):
+        """`in environment` binds facet/event facet/workflow declarations."""
+        ast = parser.parse("""
+        namespace geo {
+            environment PyGeo { language = "python" }
+            facet A(x: String) => (y: String) in environment PyGeo script { "result['y']=1" }
+            event facet B(x: String) => (y: String) in environment PyGeo script { "result['y']=1" }
+            workflow W(x: String) => (y: String) in environment PyGeo andThen {
+                s = B(x = $.x)
+                yield W(y = s.y)
+            }
+        }
+        """)
+        ns = ast.namespaces[0]
+        assert ns.facets[0].environment == "PyGeo"
+        assert ns.event_facets[0].environment == "PyGeo"
+        assert ns.workflows[0].environment == "PyGeo"
+
+    def test_no_environment_is_none(self, parser):
+        """Absent clause → environment is None (default environment)."""
+        ast = parser.parse("facet A(x: String) => (y: String)")
+        assert ast.facets[0].environment is None
+
+    def test_qualified_environment_reference(self, parser):
+        """`in environment` accepts a qualified name."""
+        ast = parser.parse("""
+        namespace app {
+            event facet B(x: String) => (y: String) in environment geo.PyGeo script { "result['y']=1" }
+        }
+        """)
+        assert ast.namespaces[0].event_facets[0].environment == "geo.PyGeo"

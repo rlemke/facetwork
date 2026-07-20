@@ -18,6 +18,7 @@ import json
 from typing import Any
 
 from .ast import (
+    EnvironmentDecl,
     AndThenBlock,
     ArrayLiteral,
     ArrayType,
@@ -193,6 +194,8 @@ class JSONEmitter:
             return self._location(node)
         if isinstance(node, SchemaDecl):
             return self._schema_decl(node)
+        if isinstance(node, EnvironmentDecl):
+            return self._environment_decl(node)
         if isinstance(node, SchemaField):
             return self._schema_field(node)
         if isinstance(node, ArrayType):
@@ -275,6 +278,8 @@ class JSONEmitter:
             declarations.extend(self._convert(node.implicits))
         if node.schemas:
             declarations.extend(self._convert(node.schemas))
+        if node.environments:
+            declarations.extend(self._convert(node.environments))
         if declarations:
             data["declarations"] = declarations
 
@@ -311,6 +316,8 @@ class JSONEmitter:
             declarations.extend(self._convert(node.implicits))
         if node.schemas:
             declarations.extend(self._convert(node.schemas))
+        if node.environments:
+            declarations.extend(self._convert(node.environments))
         if declarations:
             data["declarations"] = declarations
 
@@ -353,6 +360,8 @@ class JSONEmitter:
             data["body"] = self._emit_body(node.body)
         if node.catch:
             data["catch"] = self._convert(node.catch)
+        if node.environment:
+            data["environment"] = node.environment
 
         return self._add_metadata(data, node)
 
@@ -377,6 +386,8 @@ class JSONEmitter:
             data["body"] = self._emit_body(node.body)
         if node.catch:
             data["catch"] = self._convert(node.catch)
+        if node.environment:
+            data["environment"] = node.environment
 
         return self._add_metadata(data, node)
 
@@ -401,6 +412,8 @@ class JSONEmitter:
             data["body"] = self._emit_body(node.body)
         if node.catch:
             data["catch"] = self._convert(node.catch)
+        if node.environment:
+            data["environment"] = node.environment
 
         return self._add_metadata(data, node)
 
@@ -601,6 +614,22 @@ class JSONEmitter:
             return data
         else:
             return {"type": "StepRef", "path": node.path}
+
+    def _environment_decl(self, node: EnvironmentDecl) -> dict[str, Any]:
+        """Convert EnvironmentDecl node."""
+        data: dict[str, Any] = {
+            "type": "EnvironmentDecl",
+            "name": node.name,
+        }
+        if node.language is not None:
+            data["language"] = node.language
+        if node.requires:
+            data["requires"] = list(node.requires)
+        if node.extra:
+            data["extra"] = dict(node.extra)
+        if node.doc is not None:
+            data["doc"] = self._doc_comment(node.doc)
+        return self._add_metadata(data, node)
 
     def _schema_decl(self, node: SchemaDecl) -> dict[str, Any]:
         """Convert SchemaDecl node."""
