@@ -160,7 +160,31 @@ facilities and networks are per-region sidecar-backed artifacts under
 `$FW_CACHE_ROOT/osm/emergency/<region>/…`, so a re-run re-fans only what
 changed.
 
-## 9. Open questions (decide at pilot review)
+## 9. Post-pilot hardening (shipped 2026-07)
+
+Two failure modes surfaced by the continental runs are now handled by design:
+
+- **Failed regions degrade to disclosed exclusions** (finding #7).
+  `AnalyzeRegion` carries a declaration-level `catch`: on any failure it
+  yields a `RegionFailure` marker instead of erroring the foreach.
+  `RankRegions` excludes marked regions from ranking (`region_count` counts
+  ranked regions only) and appends them as `failed` rows; `RenderAtlas`
+  renders them greyed with a classified reason. One bad region can no longer
+  hard-fail the atlas. (Verifying this live took five runtime fixes to the
+  distributed catch path — see lessons-learned §23.)
+
+- **An empty road network is a world-fact, not an error.** A region with no
+  motorway..secondary tier in OSM (Haiti) gets a validly-built 0-node network
+  artifact; `ApproxRoute` over it returns valid unreachable results
+  (`distance_km = -1.0` sentinel, no retries, no dead-letters);
+  `CategoryMetrics` excludes the sentinel and discloses `network_unroutable`.
+  Such regions RANK — network component 0, crow-flies buckets and facility
+  counts intact — rather than being excluded: "facilities unreachable via any
+  mapped major road" is itself the emergency-access story. Corruption
+  (missing/invalid artifact) still fails loudly in the network loader.
+  (lessons-learned §24.)
+
+## 10. Open questions (decide at pilot review)
 
 - Clinics in the hospital category, or a fifth category? (OSM tagging splits
   them; `healthcare=*` adds coverage but noise.)

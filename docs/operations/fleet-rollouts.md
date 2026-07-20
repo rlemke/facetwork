@@ -57,6 +57,17 @@ every server can pull from, then point the central config at the new tag.
 > `--dry` to preview. The manual steps below are the underlying procedure (useful
 > when you need a custom tag, a different builder/arch, or to debug a step).
 
+> **Image garbage collection**: every rollout pulls a fresh ~2GB tag, and old
+> tags used to accumulate until a host filled its disk (server1 hit 100% after
+> six generations, wedging its reconcile with ENOSPC). The fleet-agent now
+> prunes superseded runner-image tags after each successful reconcile — it
+> keeps the just-applied tag plus the newest other tag (one-step rollback) and
+> removes the rest, then prunes dangling layers. In-use tags are skipped by
+> docker itself; the GC is best-effort and never fails the reconcile. If a host
+> does fill up anyway, the recovery is: quit Docker, delete `Docker.raw`,
+> restart — the fresh VM re-pulls the current image and the agent recreates all
+> runners from the registry (everything inside the VM is rebuildable).
+
 ### 2.1 Tag convention
 
 Images are tagged by **git short SHA** and pushed to the private registry:

@@ -879,6 +879,13 @@ A runner only ever claims a task it can actually run. Concretely:
   `"fw:execute:MyWorkflow"`). A runner passes three name sets per poll cycle —
   the facet names it has handlers for, `["fw:resume"]`, and `["fw:execute"]` —
   so it never picks up a task outside that set.
+- **Glob `--topics` are expanded before claiming.** The name filter matches
+  literally, so a topic like `census.*` used to be passed through as a dead
+  literal — a topics-scoped runner claimed *nothing*, silently, while
+  catch-all registry runners did its work (the fleet's dedicated census
+  containers ran this way for weeks). `_get_event_names` now fnmatch-expands
+  glob topics against the registry's handler names; exact topics still pass
+  through verbatim.
 - **Registry-mode runners advertise only loadable handlers.** A runner started
   with `--registry` loads handler registrations from the DB, but registers a
   proxy (and therefore claims tasks) for a facet *only if its handler module is
@@ -933,6 +940,17 @@ clock (`FW_POLL_INTERVAL_MS`, default 1s). RunnerA polling once per second has
 no effect on RunnerB's poll timing. A runner that's busy on a long task is the
 only thread blocked — other runners keep polling normally.
 
+**The inter-cycle pause is adaptive.** A cycle *drains* — it claims task after
+task until the queue is empty or `max_concurrent` is reached — and then pauses
+before the next cycle. The pause is skipped entirely when the cycle dispatched
+work (freed slots refill immediately, and a handler's continuations may have
+created follow-on tasks); an idle cycle waits the jittered interval
+(±15%, anti-thundering-herd) on an event that task-completion done-callbacks
+set, so a finishing handler wakes its runner's poller instantly instead of on
+the next tick. The payoff is in deep cascades: a chain hop costs handler time,
+not up-to-an-interval of poll latency, while idle runners keep exactly the
+fixed-interval Mongo load.
+
 **Claiming is atomic, not coordinated.** `claim_task()` is a single Mongo
 `find_one_and_update({state: pending, …}, {$set: {state: running, …}})`
 operation. Mongo's per-document atomicity guarantees that exactly one runner
@@ -984,6 +1002,18 @@ structures to contend on.
 **Files:** `mongo_store.py:reap_orphaned_tasks()`, `runner/service.py:_maybe_reap_orphaned_tasks()`
 
 **Safety:** Servers in `shutdown` state (graceful drain) are not reaped. The 5-minute threshold avoids false positives from temporary network hiccups.
+
+**Self-healing heartbeat (the zombie-runner fix).** The reaper marks a
+stale-heartbeat server `shutdown`, and the pruner then deletes the row on a
+short window. A runner that was only *transiently* quiet (host sleep, qemu
+stall, Mongo blip) used to come back and ping into the void forever — a
+working-but-invisible "zombie" whose running tasks repair-workflow would treat
+as orphaned. The heartbeat now goes through `heartbeat_server()`, which
+updates `ping_time` only on a live record and reports whether one was matched;
+on a miss the runner re-registers its full `ServerDefinition`. Quarantined
+runners keep pinging without resurrecting themselves to `running`, and the
+re-register is gated on the stopping flag so a graceful shutdown is never
+undone.
 
 ### 17.3 Layer 2: Stuck Task Watchdog (v0.42.0)
 

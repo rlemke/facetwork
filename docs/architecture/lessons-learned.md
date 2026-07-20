@@ -604,6 +604,77 @@ Dashboard searches by workflow name and state but cannot search by input paramet
 
 **Effort**: Small. **Priority**: Medium.
 
+### 23. Distributed Catch Execution — the 2026-07 Verification Campaign
+
+The FFL `catch` clause passed every in-process test yet had **never worked on
+the fleet**. Verifying one workflow feature live (the osm.emergency region
+catch) took four fix-and-rerun rounds and surfaced five independent runtime
+bugs, every one invisible to MemoryStore-backed tests:
+
+1. **Pre-execute advance skipped CatchBeginHandler** — the changer loop
+   advances the state *before* executing when a change is requested, so
+   requesting a transition right after `change_state(CATCH_BEGIN)` jumped
+   straight to CATCH_CONTINUE and the AND_CATCH sub-block was never created
+   (6750740).
+2. **CatchContinue counted the errored body as its own sub-block** — a
+   declaration-level catch fires *because* a sibling andThen block errored;
+   counting it made every such catch report itself failed (6750740).
+3. **`$.error` pseudo-returns weren't persisted before the sub-block ran** —
+   the catch block resolves `$.error` against the *persisted* container step,
+   possibly on another runner, before the batched update commits (d9225fa).
+4. **Container-return `$`-refs resolved by statement *name*** — under a
+   foreach every iteration has a same-named step, so the lookup found a
+   completed *sibling* iteration's step; frames now carry the container's
+   step id (37b3083). The same commit made AND_CATCH body ASTs re-derivable
+   cross-runner (they existed only in the creating runner's memory — another
+   runner re-executed the whole errored body inside the catch block).
+5. **`get_blocks_by_step` never returned AndCatch blocks** — its hardcoded
+   `object_type` filter predated the catch feature, so CatchContinue could
+   not see a completed catch block on MongoDB at all (9409256). Combined
+   with the wait-for-sub-block guard (21208c0) this parked steps forever.
+
+**The lessons**:
+
+- **MemoryStore parity gaps hide distributed bugs by construction.** It
+  aliases live objects (mutations are visible before any "commit") and
+  indexes blocks by `is_block` with no type filter (Mongo filters by a
+  hardcoded type list). Three of the five bugs were exactly these two
+  differences. When a store method has semantics ("returns blocks"), the
+  memory and Mongo implementations must be behavior-tested against the SAME
+  assertions, and Mongo-level regression tests are mandatory for anything a
+  Continue handler polls.
+- **A feature is not done until it has run distributed.** In-process
+  execution collapses claim races, commit visibility, AST cache locality,
+  and instance ambiguity into a single address space. The catch clause was
+  "fully tested" and completely broken.
+- **Verification runs are cheap bug finders.** Each of the four live rounds
+  cost ~1h of cached re-execution and pinpointed its bug precisely from the
+  step/task state it left behind.
+
+**Status**: all five fixed with regression tests; verified end-to-end
+2026-07-20 (25-region atlas: failed region degrades to a disclosed excluded
+row, run completes).
+
+### 24. Empty Results Are Data, Not Errors — Classify at the Source
+
+`ApproxRoute` raised on an empty road network. For Haiti — which genuinely
+has no motorway..secondary tier in OSM — that raise dead-lettered 150 route
+tasks (×5 retries each), hard-failed the whole atlas through the fan-in, and
+conflated two situations only the *producer* can distinguish: "the world is
+empty here" (valid, measurable) vs "the pipeline broke" (must fail loud).
+
+**Requirement**: classify emptiness where the source data is visible.
+`BuildNetwork` publishes a validly-built 0-node artifact (world-fact,
+sidecar-validated); `ApproxRoute` over it returns a *valid unreachable*
+result; corruption (missing/invalid artifact) still fails loudly in the
+loader. Downstream metrics disclose `network_unroutable` instead of erroring.
+The region-level catch remains as the backstop for genuine failures.
+
+**Corollary — retries need an escape hatch**: deterministic failures ride the
+full retry budget today (there is no non-retryable error contract in the
+handler SDK). A `PermanentError` that dead-letters immediately is still open
+work — the routable-flag fix removed this instance's need for it.
+
 ---
 
 ## Implementation Roadmap
