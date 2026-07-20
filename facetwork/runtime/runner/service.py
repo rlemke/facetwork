@@ -379,6 +379,7 @@ class RunnerService(BaseRunner):
             handlers=handlers,
             handled=[],
             state=ServerState.RUNNING,
+            provided_environments=self._provided_environments(),
             http_port=self.http_port or 0,
             version=getattr(self, "_version", ""),
             task_list=self._config.task_list,
@@ -470,6 +471,19 @@ class RunnerService(BaseRunner):
                     task_names=event_names,
                     task_list=poll_lists,
                     server_id=self._server_id,
+                )
+                if task is None:
+                    break
+                self._submit_event_task(task)
+                capacity -= 1
+                dispatched += 1
+
+        # Claim env-routed script tasks this runner's environments can serve
+        provided_envs = self._provided_environments()
+        if provided_envs:
+            while capacity > 0:
+                task = self._persistence.claim_script_task(
+                    provided_envs, server_id=self._server_id
                 )
                 if task is None:
                     break
@@ -927,6 +941,13 @@ class RunnerService(BaseRunner):
             if result is None and "." in task.name:
                 short_name = task.name.rsplit(".", 1)[-1]
                 result = self._tool_registry.handle(short_name, payload)
+
+            # Env-routed script task: the facet's script IS the implementation;
+            # execute it under the environment's interpreter
+            # (script-environments.md §3/§4). None (script or env unresolvable
+            # here) falls through to the release-with-backoff path below.
+            if result is None and getattr(task, "kind", "") == "script":
+                result = self._execute_script_for_task(task)
 
             if result is None:
                 # This runner has no handler for the task. In a multi-runner

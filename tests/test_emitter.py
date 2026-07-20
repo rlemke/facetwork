@@ -1538,7 +1538,7 @@ class TestEnvironmentEmission:
                 requires = ["shapely>=2.0", "networkx"],
                 python = "3.12"
             }
-            event facet B(x: String) => (y: String) in environment PyGeo script { "result['y']=1" }
+            event facet B(x: String) => (y: String) in environment PyGeo script { result['y'] = 1 }
         }
         """)
         data = emitter.emit_dict(ast)

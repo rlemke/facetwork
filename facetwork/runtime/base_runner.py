@@ -112,6 +112,93 @@ class BaseRunner:
     # doesn't hit Mongo in lockstep (thundering herd). 0 disables it.
     _POLL_JITTER: float = 0.15
 
+    def _provided_environments(self) -> list[str]:
+        """Environment manifest hashes this runner can execute scripts in.
+
+        Union of the config's explicit list, FW_PROVIDED_ENVS, and the venvs
+        materialized under FW_ENV_ROOT (pre-baked at image build). Cached —
+        the set changes only via materialization, which refreshes it.
+        """
+        cached = getattr(self, "_provided_envs_cache", None)
+        if cached is not None:
+            return cached
+        import os
+
+        from ..environments import discover_provided_environments
+
+        envs = set(getattr(self._config, "provided_environments", None) or [])
+        envs.update(
+            e.strip()
+            for e in os.environ.get("FW_PROVIDED_ENVS", "").split(",")
+            if e.strip()
+        )
+        envs.update(discover_provided_environments())
+        self._provided_envs_cache = sorted(envs)
+        return self._provided_envs_cache
+
+    def _execute_script_for_task(self, task) -> dict | None:
+        """Execute an env-routed script task's facet script; return its result.
+
+        The claiming runner is the placement authority's choice — it provides
+        the task's environment. Loads the workflow's program AST (runner
+        snapshot), finds the facet's script block, and runs it under the
+        materialized environment's interpreter. Returns the script's result
+        dict, or None when the script/interpreter cannot be resolved here
+        (caller releases the task on its no-handler path).
+        """
+        from ..environments import interpreter_for_hash
+
+        workflow_ast = self._load_workflow_ast(task.workflow_id)
+        program_ast = self._program_ast_cache.get(task.workflow_id)
+        if not program_ast:
+            logger.warning("Script task %s: no program AST for workflow %s",
+                           task.uuid, task.workflow_id)
+            return None
+        from .evaluator import ExecutionContext
+        from .persistence import IterationChanges
+        from .telemetry import Telemetry
+
+        ctx = ExecutionContext(
+            persistence=self._persistence,
+            telemetry=Telemetry(enabled=False),
+            changes=IterationChanges(),
+            workflow_id=task.workflow_id,
+            workflow_ast=workflow_ast,
+            program_ast=program_ast,
+            runner_id=task.runner_id,
+        )
+        facet_def = ctx.get_facet_definition(task.name) or {}
+        script_def = facet_def.get("pre_script")
+        if script_def is None:
+            body = facet_def.get("body")
+            if isinstance(body, dict) and body.get("type") == "ScriptBlock":
+                script_def = body
+        if script_def is None:
+            logger.warning("Script task %s: facet %s has no script block",
+                           task.uuid, task.name)
+            return None
+        interpreter = interpreter_for_hash(task.environment_hash)
+        if interpreter is None:
+            logger.warning(
+                "Script task %s: environment %s not materialized on this host "
+                "despite being advertised — releasing",
+                task.uuid, task.environment_hash,
+            )
+            self._provided_envs_cache = None  # re-discover on next poll
+            return None
+        from .script_executor import ScriptExecutor
+
+        timeout_s = (task.timeout_ms or 0) / 1000.0 or 30.0
+        result = ScriptExecutor(timeout=timeout_s).execute(
+            script_def.get("code", ""),
+            dict(task.data or {}),
+            script_def.get("language", "python"),
+            python_executable=interpreter,
+        )
+        if not result.success:
+            raise RuntimeError(result.error or f"Script failed for {task.name}")
+        return result.result
+
     def _poll_pause(self, interval_s: float, dispatched: int) -> None:
         """Adaptive inter-cycle pause.
 

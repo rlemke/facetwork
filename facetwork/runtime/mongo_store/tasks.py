@@ -145,6 +145,7 @@ class TaskMixin(_MixinBase):
         task_names: list[str],
         task_list: str | list[str] = "default",
         server_id: str = "",
+        provided_environments: list[str] | None = None,
     ) -> TaskDefinition | None:
         """Atomically claim a pending task matching one of the given names.
 
@@ -182,6 +183,19 @@ class TaskMixin(_MixinBase):
             name_conditions.append({"name": {"$regex": f"^{re.escape(tn)}:"}})
         name_filter = {"$or": name_conditions} if len(name_conditions) > 1 else name_conditions[0]
 
+        # Environment routing (script-environments.md §3): tasks tagged with a
+        # non-default environment_hash are claimable only by runners providing
+        # that manifest; untagged tasks by everyone. Keep in behavioral
+        # lockstep with MemoryStore.claim_task.
+        env_ok: dict[str, Any] = {
+            "$or": [
+                {"environment_hash": {"$exists": False}},
+                {"environment_hash": ""},
+            ]
+        }
+        if provided_environments:
+            env_ok["$or"].append({"environment_hash": {"$in": list(provided_environments)}})
+
         # Backoff filter: skip tasks still in their retry cooldown window.
         retry_eligible = {
             "$or": [
@@ -200,7 +214,7 @@ class TaskMixin(_MixinBase):
             {
                 "state": "pending",
                 "task_list_name": tl_filter,
-                "$and": [name_filter, retry_eligible],
+                "$and": [name_filter, retry_eligible, env_ok],
             },
             {"$set": update},
             return_document=ReturnDocument.AFTER,
@@ -223,6 +237,7 @@ class TaskMixin(_MixinBase):
                 "lease_expires": {"$lt": now, "$gt": 0},
                 "$and": [
                     name_filter,
+                    env_ok,
                     {
                         "$or": [
                             {"max_retries": {"$lte": 0}},
@@ -452,6 +467,41 @@ class TaskMixin(_MixinBase):
 
         return reaped
 
+    def claim_script_task(
+        self,
+        provided_environments,
+        server_id: str = "",
+    ) -> TaskDefinition | None:
+        """Atomically claim a pending env-routed script task (see base class).
+
+        Keep in behavioral lockstep with MemoryStore.claim_script_task.
+        """
+        if not provided_environments:
+            return None
+        now = _current_time_ms()
+        update: dict[str, Any] = {
+            "state": "running",
+            "updated": now,
+            "lease_expires": now + self._lease_ms(),
+        }
+        if server_id:
+            update["server_id"] = server_id
+        doc = self._db.tasks.find_one_and_update(
+            {
+                "state": "pending",
+                "kind": "script",
+                "environment_hash": {"$in": list(provided_environments)},
+                "$or": [
+                    {"next_retry_after": {"$exists": False}},
+                    {"next_retry_after": 0},
+                    {"next_retry_after": {"$lte": now}},
+                ],
+            },
+            {"$set": update},
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._doc_to_task(doc) if doc else None
+
     def reap_stuck_tasks(self, default_stuck_ms: int = 14_400_000) -> list[dict[str, str]]:
         """Reset tasks stuck in RUNNING state beyond their timeout.
 
@@ -607,6 +657,8 @@ class TaskMixin(_MixinBase):
             "next_retry_after": task.next_retry_after,
             "stage_budget_expires": task.stage_budget_expires,
             "stage_name": task.stage_name,
+            "environment_hash": task.environment_hash,
+            "kind": task.kind,
         }
 
     def _doc_to_task(self, doc: dict) -> TaskDefinition:
@@ -632,4 +684,6 @@ class TaskMixin(_MixinBase):
             next_retry_after=doc.get("next_retry_after", 0),
             stage_budget_expires=doc.get("stage_budget_expires", 0),
             stage_name=doc.get("stage_name", ""),
+            environment_hash=doc.get("environment_hash", ""),
+            kind=doc.get("kind", ""),
         )

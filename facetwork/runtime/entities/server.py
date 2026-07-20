@@ -48,6 +48,7 @@ class ServerDefinition:
     # Operators query by this to see how their workload is partitioned, and the
     # dashboard surfaces it on /tasks to flag under/over-provisioning.
     task_list: str = "default"
+    provided_environments: list = field(default_factory=list)  # manifest hashes this runner can run
 
 
 @dataclass

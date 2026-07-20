@@ -441,21 +441,59 @@ class MemoryStore(PersistenceAPI):
         task_names: list[str],
         task_list: str | list[str] = "default",
         server_id: str = "",
+        provided_environments: list[str] | None = None,
     ) -> Optional["TaskDefinition"]:
-        """Atomically claim a pending task matching one of the given names."""
+        """Atomically claim a pending task matching one of the given names.
+
+        Environment routing (script-environments.md §3): a task tagged with a
+        non-default ``environment_hash`` is claimable only when the hash is in
+        ``provided_environments``; untagged tasks are claimable by everyone.
+        Mirrors MongoStore.claim_task — keep the two in behavioral lockstep.
+        """
+        provided = set(provided_environments or [])
         with self._claim_lock:
             names_set = set(task_names)
             tl_set = set(task_list) if isinstance(task_list, (list, tuple, set)) else {task_list}
             for task in self._tasks.values():
                 now = _current_time_ms()
+                env = getattr(task, "environment_hash", "") or ""
                 if (
                     task.state == "pending"
                     and task.name in names_set
                     and task.task_list_name in tl_set
+                    and (env == "" or env in provided)
                     and (task.next_retry_after == 0 or task.next_retry_after <= now)
                 ):
                     task.state = "running"
                     task.updated = _current_time_ms()
+                    if server_id:
+                        task.server_id = server_id
+                    return task
+            return None
+
+    def claim_script_task(
+        self,
+        provided_environments,
+        server_id: str = "",
+    ) -> Optional["TaskDefinition"]:
+        """Atomically claim a pending env-routed script task (see base class).
+
+        Mirrors MongoStore.claim_script_task — keep in behavioral lockstep.
+        """
+        provided = set(provided_environments or [])
+        if not provided:
+            return None
+        with self._claim_lock:
+            now = _current_time_ms()
+            for task in self._tasks.values():
+                if (
+                    task.state == "pending"
+                    and getattr(task, "kind", "") == "script"
+                    and getattr(task, "environment_hash", "") in provided
+                    and (task.next_retry_after == 0 or task.next_retry_after <= now)
+                ):
+                    task.state = "running"
+                    task.updated = now
                     if server_id:
                         task.server_id = server_id
                     return task

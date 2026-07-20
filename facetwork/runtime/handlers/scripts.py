@@ -68,6 +68,14 @@ class FacetScriptsBeginHandler(StateHandler):
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
 
+        # A facet bound to a non-default environment DEFERS its script: this
+        # runner may not provide the environment, so the script executes on
+        # the runner that claims the env-routed task instead (EventTransmit
+        # creates it; script-environments.md §3). Pass through here.
+        if facet_def.get("environment"):
+            self.step.request_state_change(True)
+            return StateChangeResult(step=self.step)
+
         # Build params dict from step attributes
         params: dict = {}
         for name, attr in self.step.attributes.params.items():

@@ -2501,8 +2501,8 @@ class TestEnvironmentDecls:
         ast = parser.parse("""
         namespace geo {
             environment PyGeo { language = "python" }
-            facet A(x: String) => (y: String) in environment PyGeo script { "result['y']=1" }
-            event facet B(x: String) => (y: String) in environment PyGeo script { "result['y']=1" }
+            facet A(x: String) => (y: String) in environment PyGeo script { result['y'] = 1 }
+            event facet B(x: String) => (y: String) in environment PyGeo script { result['y'] = 1 }
             workflow W(x: String) => (y: String) in environment PyGeo andThen {
                 s = B(x = $.x)
                 yield W(y = s.y)
@@ -2523,7 +2523,7 @@ class TestEnvironmentDecls:
         """`in environment` accepts a qualified name."""
         ast = parser.parse("""
         namespace app {
-            event facet B(x: String) => (y: String) in environment geo.PyGeo script { "result['y']=1" }
+            event facet B(x: String) => (y: String) in environment geo.PyGeo script { result['y'] = 1 }
         }
         """)
         assert ast.namespaces[0].event_facets[0].environment == "geo.PyGeo"

@@ -17,12 +17,15 @@
 Handles statement end, completion, and event transmission.
 """
 
+import logging
 import time
 from typing import TYPE_CHECKING
 
 from ..changers.base import StateChangeResult
 from ..types import generate_id
 from .base import StateHandler
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     pass
@@ -89,9 +92,12 @@ class EventTransmitHandler(StateHandler):
             )
 
         if facet_def and facet_def.get("type") == "EventFacetDecl":
-            # Try inline dispatch if a dispatcher is available
+            # Try inline dispatch if a dispatcher is available. Env-bound
+            # facets never dispatch inline — THIS runner may not provide the
+            # environment; the claim filter is the placement authority.
+            env_gated = bool(facet_def.get("environment"))
             dispatcher = self.context.dispatcher
-            if dispatcher and dispatcher.can_dispatch(self.step.facet_name):
+            if not env_gated and dispatcher and dispatcher.can_dispatch(self.step.facet_name):
                 try:
                     payload = self._build_payload()
                     payload["_step_log"] = self._make_step_log_callback()
@@ -126,9 +132,47 @@ class EventTransmitHandler(StateHandler):
             # BLOCK: stay at EventTransmit, do not re-queue
             return self.stay(push=False)
 
+        # Non-event facet bound to a non-default environment with a script:
+        # the script was DEFERRED at the FacetScripts phase (this runner may
+        # not provide the environment) — dispatch it as an env-routed script
+        # task and block, exactly like an event facet. The claiming runner
+        # executes the script and continues the step.
+        env_hash, has_script = self._environment_hash()
+        if env_hash and has_script:
+            if not self._has_outstanding_task():
+                self._create_event_task()
+            return self.stay(push=False)
+
+        # A non-event step with an in-flight task is a deferred env script
+        # being re-processed in a context where the environment could not be
+        # resolved (e.g. a sweep without program_ast) — advancing would
+        # complete it with EMPTY returns while the claiming runner's result
+        # is still coming. Stay blocked; continue_step will advance it.
+        if self._has_outstanding_task():
+            return self.stay(push=False)
+
         # Non-event facet: pass through to next state
         self.step.request_state_change(True)
         return StateChangeResult(step=self.step)
+
+    def _has_outstanding_task(self) -> bool:
+        """True when a task already covers this step's deferred work.
+
+        Pending/running: in flight. Completed with the step still at
+        EventTransmit: the claiming runner's continue_step is imminent —
+        re-creating would double-execute the script. Failed/dead-letter
+        tasks do NOT count, preserving retry-by-recreation semantics.
+        """
+        try:
+            from ..entities import TaskState
+
+            tasks = self.context.persistence.get_tasks_by_step(self.step.id) or []
+            return any(
+                t.state in (TaskState.PENDING, TaskState.RUNNING, TaskState.COMPLETED)
+                for t in tasks
+            )
+        except Exception:
+            return False
 
     def _build_payload(self) -> dict:
         """Build event payload from step attributes.
@@ -247,6 +291,47 @@ class EventTransmitHandler(StateHandler):
 
         return timeout_ms
 
+    def _environment_hash(self) -> tuple[str, bool]:
+        """Resolve the facet's ``in environment`` binding to a manifest hash.
+
+        Returns ``(hash, has_script)`` — ``("", …)`` for the default
+        environment. An env decl without a frozen manifest (pre-freeze flow)
+        degrades to the default environment with a warning rather than
+        creating a task no runner could ever claim.
+        """
+        try:
+            facet_def = self.context.get_facet_definition(self.step.facet_name) or {}
+            env_ref = facet_def.get("environment")
+            has_script = bool(
+                facet_def.get("pre_script")
+                or (
+                    isinstance(facet_def.get("body"), dict)
+                    and facet_def["body"].get("type") == "ScriptBlock"
+                )
+            )
+            if not env_ref:
+                return "", has_script
+            from ...environments import environment_for_decl
+
+            ns = self.step.facet_name.rsplit(".", 1)[0] if "." in self.step.facet_name else ""
+            env = environment_for_decl(self.context.program_ast or {}, env_ref, ns)
+            env_hash = (env or {}).get("manifest_hash") or ""
+            if env is not None and not env_hash:
+                logger.warning(
+                    "Environment '%s' for %s has no frozen manifest — "
+                    "running in the default environment (re-publish to freeze)",
+                    env_ref,
+                    self.step.facet_name,
+                )
+            return env_hash, has_script
+        except Exception:
+            logger.warning(
+                "Environment resolution failed for %s — using default",
+                self.step.facet_name,
+                exc_info=True,
+            )
+            return "", False
+
     def _create_event_task(self) -> None:
         """Create a TaskDefinition for the event and add to iteration changes."""
         from ..entities import TaskDefinition, TaskState
@@ -258,6 +343,7 @@ class EventTransmitHandler(StateHandler):
         # runners that have this facet's handler poll that namespace's list, so the
         # queue label follows the handler and can't desync.
         task_list = namespace_of(self.step.facet_name)
+        env_hash, has_script = self._environment_hash()
         task = TaskDefinition(
             uuid=generate_id(),
             name=self.step.facet_name,
@@ -271,6 +357,8 @@ class EventTransmitHandler(StateHandler):
             task_list_name=task_list,
             data=self._build_payload(),
             timeout_ms=timeout_ms,
+            environment_hash=env_hash,
+            kind="script" if (env_hash and has_script) else "",
         )
         self.context.changes.add_created_task(task)
 

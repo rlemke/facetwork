@@ -40,6 +40,10 @@ class BaseRunnerConfig:
     max_concurrent: int = _SENTINEL
     heartbeat_interval_ms: int = _SENTINEL
     topics: list[str] = field(default_factory=list)
+    # Environment manifest hashes this runner can execute scripts in
+    # (script-environments.md §3). Defaults from FW_PROVIDED_ENVS (comma-
+    # separated) plus discovery of materialized venvs under FW_ENV_ROOT.
+    provided_environments: list[str] = field(default_factory=list)
     # Continuation/orchestration role (see docs/architecture/ffl-runner-orchestration-tier.md):
     #   "inline" (default) — today's behaviour: poll the shared _fw_continue
     #                        backlog AND run the stuck-step sweep, in addition to

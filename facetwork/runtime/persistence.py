@@ -842,6 +842,20 @@ class PersistenceAPI(Protocol):
         """
         return None
 
+    def claim_script_task(
+        self,
+        provided_environments: "Sequence[str]",
+        server_id: str = "",
+    ) -> Optional["TaskDefinition"]:
+        """Atomically claim a pending env-routed script task.
+
+        Script tasks (``kind == "script"``) are named by their facet, which is
+        in no runner's handler set — the environment IS the capability, so the
+        claim filters only on ``kind`` + ``environment_hash`` (plus the retry
+        cooldown). Returns None when the store does not support script tasks.
+        """
+        return None
+
     def update_server_ping(self, server_id: str, ping_time: int) -> None:
         """Update a server's ping time.
 

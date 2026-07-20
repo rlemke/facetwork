@@ -253,6 +253,7 @@ class ScriptExecutor:
         code: str,
         params: dict[str, Any] | None = None,
         language: str = "python",
+        python_executable: str | None = None,
     ) -> ScriptResult:
         """Execute a script with the given parameters.
 
@@ -260,6 +261,10 @@ class ScriptExecutor:
             code: The script source code
             params: Input parameters (available as ``params`` in script)
             language: Script language (only "python" supported)
+            python_executable: Interpreter to run the script under — a
+                materialized environment venv's python
+                (script-environments.md §4). Defaults to this process's
+                interpreter (the default environment).
 
         Returns:
             ScriptResult with success status and result dict
@@ -274,12 +279,13 @@ class ScriptExecutor:
                 error=f"Unsupported script language: {language}",
             )
 
-        return self._execute_python(code, params or {})
+        return self._execute_python(code, params or {}, python_executable)
 
     def _execute_python(
         self,
         code: str,
         params: dict[str, Any],
+        python_executable: str | None = None,
     ) -> ScriptResult:
         """Execute Python code in a sandboxed subprocess.
 
@@ -305,7 +311,7 @@ class ScriptExecutor:
 
         try:
             proc = subprocess.run(
-                [sys.executable, "-c", worker_code],
+                [python_executable or sys.executable, "-c", worker_code],
                 input=params_json,
                 capture_output=True,
                 text=True,

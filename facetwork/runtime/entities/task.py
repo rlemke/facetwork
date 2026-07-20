@@ -43,3 +43,5 @@ class TaskDefinition:
     next_retry_after: int = 0  # Epoch ms; task not claimable until this time
     stage_budget_expires: int = 0  # Epoch ms; extends watchdog deadline for the current stage
     stage_name: str = ""  # Human-readable name of the stage that owns the current budget
+    environment_hash: str = ""  # Manifest hash of the facet's environment ("" = default env)
+    kind: str = ""  # "" = handler task; "script" = env-routed script task

@@ -4015,7 +4015,7 @@ class TestEnvironmentValidation:
         result, ids = self._ids(validator, """
         namespace geo {
             environment PyGeo { language = "python", requires = ["shapely>=2.0"] }
-            event facet B(x: String) => (y: String) in environment PyGeo script { "result['y']=1" }
+            event facet B(x: String) => (y: String) in environment PyGeo script { result['y'] = 1 }
         }
         """)
         assert result.is_valid, [str(e) for e in result.errors]
@@ -4023,7 +4023,7 @@ class TestEnvironmentValidation:
     def test_env_unknown(self, validator):
         _, ids = self._ids(validator, """
         namespace geo {
-            event facet B(x: String) => (y: String) in environment Nope script { "result['y']=1" }
+            event facet B(x: String) => (y: String) in environment Nope script { result['y'] = 1 }
         }
         """)
         assert "ENV_UNKNOWN" in ids
@@ -4040,7 +4040,7 @@ class TestEnvironmentValidation:
         _, ids = self._ids(validator, """
         namespace geo {
             environment Jvm { language = "scala" }
-            event facet B(x: String) => (y: String) in environment Jvm script { "result['y']=1" }
+            event facet B(x: String) => (y: String) in environment Jvm script { result['y'] = 1 }
         }
         """)
         assert "ENV_LANGUAGE_SCRIPT_MISMATCH" in ids
@@ -4052,7 +4052,7 @@ class TestEnvironmentValidation:
         }
         namespace app {
             use lib
-            event facet B(x: String) => (y: String) in environment PyGeo script { "result['y']=1" }
+            event facet B(x: String) => (y: String) in environment PyGeo script { result['y'] = 1 }
         }
         """)
         assert result.is_valid, [str(e) for e in result.errors]
@@ -4063,7 +4063,7 @@ class TestEnvironmentValidation:
             environment PyGeo { language = "python" }
         }
         namespace app {
-            event facet B(x: String) => (y: String) in environment lib.PyGeo script { "result['y']=1" }
+            event facet B(x: String) => (y: String) in environment lib.PyGeo script { result['y'] = 1 }
         }
         """)
         assert result.is_valid, [str(e) for e in result.errors]

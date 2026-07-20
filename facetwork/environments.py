@@ -156,6 +156,70 @@ def annotate_program(program_dict: dict) -> dict[str, str]:
     return hashes
 
 
+def env_root() -> str:
+    """Directory of materialized environment venvs (FW_ENV_ROOT)."""
+    return os.environ.get("FW_ENV_ROOT", "/opt/fw_envs")
+
+
+def interpreter_for_hash(manifest_hash_: str) -> str | None:
+    """Path to the interpreter of a materialized environment, or None.
+
+    A python environment is *provided* on this host when
+    ``$FW_ENV_ROOT/<hash>/bin/python`` exists (pre-baked at image build or
+    lazily materialized).
+    """
+    path = os.path.join(env_root(), manifest_hash_, "bin", "python")
+    return path if os.path.exists(path) else None
+
+
+def discover_provided_environments() -> list[str]:
+    """Manifest hashes materialized under FW_ENV_ROOT on this host."""
+    root = env_root()
+    try:
+        return sorted(
+            d for d in os.listdir(root)
+            if os.path.exists(os.path.join(root, d, "bin", "python"))
+        )
+    except OSError:
+        return []
+
+
+def materialize_environment(manifest: dict, hash_: str) -> str:
+    """Create the venv for a frozen python manifest; return its interpreter.
+
+    Idempotent: an existing venv is returned as-is. Installation uses the
+    manifest's exact pins. A wheelhouse (FW_ENV_WHEELHOUSE, e.g. a synced
+    MinIO bucket path) is preferred when set so fleet hosts don't hammer the
+    index. Raises on failure — callers advertise the environment only after
+    this returns.
+    """
+    interpreter = interpreter_for_hash(hash_)
+    if interpreter:
+        return interpreter
+    if (manifest.get("language") or "").lower() != "python":
+        raise ValueError(f"Cannot materialize non-python environment ({manifest.get('language')})")
+    root = env_root()
+    target = os.path.join(root, hash_)
+    os.makedirs(root, exist_ok=True)
+    import venv
+
+    venv.create(target, with_pip=True, clear=True)
+    interpreter = os.path.join(target, "bin", "python")
+    pins = list(manifest.get("pins") or [])
+    if pins:
+        cmd = [interpreter, "-m", "pip", "install", "--quiet"]
+        wheelhouse = os.environ.get("FW_ENV_WHEELHOUSE", "")
+        if wheelhouse:
+            cmd += ["--no-index", "--find-links", wheelhouse]
+        cmd += pins
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Environment {hash_} materialization failed: {proc.stderr.strip()[:500]}"
+            )
+    return interpreter
+
+
 def environment_for_decl(program_dict: dict, env_ref: str, ns: str) -> dict | None:
     """Resolve an ``in environment`` reference to its (annotated) decl dict.
 

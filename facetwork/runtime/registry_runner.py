@@ -427,6 +427,7 @@ class RegistryRunner(BaseRunner):
             handled=[],
             state=ServerState.RUNNING,
             task_list=self._config.task_list,
+            provided_environments=self._provided_environments(),
         )
         self._persistence.save_server(server)
 
@@ -457,6 +458,8 @@ class RegistryRunner(BaseRunner):
         """
         self._cleanup_futures()
 
+        provided_envs = self._provided_environments()
+
         capacity = self._config.max_concurrent - self._active_count()
         if capacity <= 0:
             return 0
@@ -473,6 +476,19 @@ class RegistryRunner(BaseRunner):
                     task_names=task_names,
                     task_list=self._poll_task_lists(),
                     server_id=self._server_id,
+                )
+                if task is None:
+                    break
+                self._submit_event(task)
+                capacity -= 1
+                dispatched += 1
+
+        # Claim env-routed script tasks this runner's environments can serve
+        # (script-environments.md §3 — the environment IS the capability).
+        if provided_envs:
+            while capacity > 0:
+                task = self._persistence.claim_script_task(
+                    provided_envs, server_id=self._server_id
                 )
                 if task is None:
                     break
@@ -737,6 +753,34 @@ class RegistryRunner(BaseRunner):
                 )
                 # Walk up the ancestor chain and reset errored blocks
                 self._reset_errored_ancestors(step)
+
+            # Env-routed script task: the facet's script IS the implementation
+            # (script-environments.md §3/§4) — no registered handler exists.
+            if getattr(task, "kind", "") == "script":
+                result = self._execute_script_for_task(task)
+                if result is None:
+                    if self._transition_for_retry(
+                        task, dead_letter_state=TaskState.FAILED, set_next_retry_after=True
+                    ):
+                        error_msg = (
+                            f"Script task '{task.name}' unservable "
+                            f"after {task.retry_count} attempts"
+                        )
+                        task.error = {"message": error_msg}
+                        try:
+                            self._evaluator.fail_step(task.step_id, error_msg)
+                        except Exception:
+                            logger.debug("Could not fail step %s", task.step_id, exc_info=True)
+                    self._safe_save_task(task)
+                    return
+                task.state = TaskState.COMPLETED
+                task.updated = _current_time_ms()
+                if not self._safe_save_task(task):
+                    return  # lease reclaimed — the new owner produces the result
+                self._evaluator.continue_step(task.step_id, result)
+                self._resume_workflow(task.workflow_id, task.runner_id)
+                self._update_handled_stats(task.name, handled=True)
+                return
 
             if not self._dispatcher.can_dispatch(task.name):
                 # This runner has no handler for the facet (e.g. a registry-
