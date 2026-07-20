@@ -115,6 +115,27 @@ class TestStepOperations:
         assert retrieved.workflow_id == wf_id
         assert retrieved.object_type == "VariableAssignment"
 
+    def test_get_blocks_by_step_returns_every_block_type(self, mongo_store):
+        """get_blocks_by_step must return ALL block object types. AndCatch was
+        missing from its object_type filter, so CatchContinue could never see
+        a completed catch sub-block on MongoDB (MemoryStore indexes by
+        is_block and returned it — masking the gap in every in-proc test)."""
+        wf_id = workflow_id()
+        parent = StepDefinition(
+            id=step_id(), workflow_id=wf_id,
+            object_type="VariableAssignment", state="state.statement.catch.Continue",
+        )
+        mongo_store.save_step(parent)
+        for ot in ("AndThen", "AndCatch", "AndWhen", "AndMap"):
+            blk = StepDefinition(
+                id=step_id(), workflow_id=wf_id, object_type=ot,
+                container_id=parent.id, state="state.statement.Complete",
+            )
+            mongo_store.save_step(blk)
+
+        got = {b.object_type for b in mongo_store.get_blocks_by_step(parent.id)}
+        assert got == {"AndThen", "AndCatch", "AndWhen", "AndMap"}
+
     def test_get_nonexistent_step(self, mongo_store):
         """Test getting a step that doesn't exist."""
         result = mongo_store.get_step(StepId("nonexistent"))

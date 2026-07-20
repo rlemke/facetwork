@@ -169,7 +169,12 @@ class StepMixin(_MixinBase):
         docs = self._db.steps.find(
             {
                 "container_id": step_id,
-                "object_type": {"$in": ["AndThen", "AndMap", "AndMatch", "Block"]},
+                # Every block object type — omitting one silently hides its
+                # sub-blocks from Continue handlers (AndCatch was missing here,
+                # so CatchContinue could never see a completed catch block).
+                "object_type": {
+                    "$in": ["AndThen", "AndMap", "AndMatch", "AndWhen", "AndCatch", "Block"]
+                },
             }
         )
         return [self._doc_to_step(doc) for doc in docs]
