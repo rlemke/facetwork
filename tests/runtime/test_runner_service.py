@@ -697,6 +697,31 @@ class TestRunnerServiceHeartbeat:
         updated_ping = store.get_server(svc.server_id).ping_time
         assert updated_ping > initial_ping
 
+    def test_poll_pause_skipped_when_dispatched(self, store, evaluator, registry):
+        """A cycle that dispatched work re-polls immediately (no sleep)."""
+        svc = RunnerService(store, evaluator, RunnerConfig(poll_interval_ms=5000), registry)
+        start = time.monotonic()
+        svc._poll_pause(5.0, dispatched=3)
+        assert time.monotonic() - start < 0.1
+
+    def test_poll_pause_woken_by_completion(self, store, evaluator, registry):
+        """An idle pause is cut short when a task-completion callback fires."""
+        svc = RunnerService(store, evaluator, RunnerConfig(poll_interval_ms=5000), registry)
+        threading.Timer(0.05, svc._on_future_done).start()
+        start = time.monotonic()
+        svc._poll_pause(5.0, dispatched=0)
+        elapsed = time.monotonic() - start
+        assert elapsed < 1.0  # woke well before the 5s interval
+        assert not svc._work_ready.is_set()  # consumed
+
+    def test_poll_pause_woken_by_stop(self, store, evaluator, registry):
+        """stop() wakes a parked pause immediately."""
+        svc = RunnerService(store, evaluator, RunnerConfig(poll_interval_ms=5000), registry)
+        threading.Timer(0.05, svc.stop).start()
+        start = time.monotonic()
+        svc._poll_pause(5.0, dispatched=0)
+        assert time.monotonic() - start < 1.0
+
     def test_heartbeat_self_heals_reaper_marked_shutdown(self, store, evaluator, registry):
         """A record marked shutdown by another runner's reaper (false positive
         after a transient stall) is re-registered as running by the heartbeat,

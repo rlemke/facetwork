@@ -83,6 +83,8 @@ class BaseRunner:
     _evaluator: Evaluator
     _config: BaseRunnerConfig
     _stopping: threading.Event
+    # Wakes the poll loop early (task completion, stop()) — see _poll_pause.
+    _work_ready: threading.Event
     _active_lock: threading.Lock
     # active work items: (future, task_id, claimed_at_ms) — the tuple shape lets
     # the shared _cleanup_futures reap execution-timed-out handlers.
@@ -109,6 +111,25 @@ class BaseRunner:
     # Fractional +/- jitter applied to the poll interval so a fleet of runners
     # doesn't hit Mongo in lockstep (thundering herd). 0 disables it.
     _POLL_JITTER: float = 0.15
+
+    def _poll_pause(self, interval_s: float, dispatched: int) -> None:
+        """Adaptive inter-cycle pause.
+
+        A cycle that dispatched work re-polls immediately (its handlers'
+        continuations may create follow-on tasks, and freed slots should
+        refill without waiting). An idle cycle waits the jittered interval
+        but is woken early by ``_work_ready`` — set on task completion and
+        on ``stop()`` — so cascade hops cost handler time, not poll latency.
+        """
+        if dispatched > 0 or self._stopping.is_set():
+            return
+        self._work_ready.wait(self._poll_wait_seconds(interval_s))
+        self._work_ready.clear()
+
+    def _on_future_done(self, _future: object = None) -> None:
+        """Future done-callback: wake the poll loop — a slot freed and the
+        finished handler's continuations may have created follow-on work."""
+        self._work_ready.set()
 
     def _poll_wait_seconds(self, interval_s: float) -> float:
         """The poll interval with +/- ``_POLL_JITTER`` applied.

@@ -115,6 +115,7 @@ class RegistryRunner(BaseRunner):
         self._server_id = generate_id()
         self._running = False
         self._stopping = threading.Event()
+        self._work_ready = threading.Event()
         self._executor: ThreadPoolExecutor | None = None
         # (future, task_id, claimed_at_ms) so the shared _cleanup_futures can
         # reap execution-timed-out handlers instead of pinning a slot forever.
@@ -316,6 +317,7 @@ class RegistryRunner(BaseRunner):
         """Signal the runner to stop gracefully."""
         logger.info("RegistryRunner stopping: server_id=%s", self._server_id)
         self._stopping.set()
+        self._work_ready.set()  # wake a poll loop parked in _poll_pause
 
     def _poll_task_lists(self) -> list[str]:
         """Lists this runner polls: the namespaces of its loaded handlers plus
@@ -438,13 +440,14 @@ class RegistryRunner(BaseRunner):
         """Main loop: poll for work until stopped."""
         interval_s = self._config.poll_interval_ms / 1000.0
         while not self._stopping.is_set():
+            dispatched = 0
             try:
                 self._maybe_refresh_registry()
-                self._poll_cycle()
+                dispatched = self._poll_cycle()
                 self._maybe_sweep_stuck_steps()
             except Exception:
                 logger.exception("Poll cycle error")
-            self._stopping.wait(self._poll_wait_seconds(interval_s))
+            self._poll_pause(interval_s, dispatched)
 
     def _poll_cycle(self) -> int:
         """Single poll cycle: claim and dispatch handler + continuation tasks.
@@ -507,6 +510,7 @@ class RegistryRunner(BaseRunner):
             return
 
         future = self._executor.submit(self._process_event, task)
+        future.add_done_callback(self._on_future_done)
         with self._active_lock:
             self._active_futures.append((future, task.uuid, _current_time_ms()))
 
@@ -517,6 +521,7 @@ class RegistryRunner(BaseRunner):
             return
 
         future = self._executor.submit(self._process_continuation, task)
+        future.add_done_callback(self._on_future_done)
         with self._active_lock:
             self._active_futures.append((future, task.uuid, _current_time_ms()))
 

@@ -267,6 +267,7 @@ class RunnerService(BaseRunner):
         self._server_id = generate_id()
         self._running = False
         self._stopping = threading.Event()
+        self._work_ready = threading.Event()
         self._executor: ThreadPoolExecutor | None = None
         # Each entry: (future, task_id, claimed_at_ms)
         self._active_futures: list[tuple[Future, str, int]] = []
@@ -348,6 +349,7 @@ class RunnerService(BaseRunner):
         """Signal the service to stop gracefully."""
         logger.info("Runner stopping: server_id=%s", self._server_id)
         self._stopping.set()
+        self._work_ready.set()  # wake a poll loop parked in _poll_pause
 
     def run_once(self) -> int:
         """Run a single poll cycle (for testing).
@@ -395,6 +397,7 @@ class RunnerService(BaseRunner):
         reconcile_counter = 0
         was_quarantined = False
         while not self._stopping.is_set():
+            dispatched = 0
             try:
                 if self._is_quarantined():
                     if not was_quarantined:
@@ -410,7 +413,7 @@ class RunnerService(BaseRunner):
                             self._server_id,
                         )
                         was_quarantined = False
-                    self._poll_cycle()
+                    dispatched = self._poll_cycle()
                     self._maybe_sweep_stuck_steps()
                     self._maybe_reap_orphaned_tasks()
                     reconcile_counter += 1
@@ -419,7 +422,7 @@ class RunnerService(BaseRunner):
                         reconcile_counter = 0
             except Exception:
                 logger.exception("Poll cycle error")
-            self._stopping.wait(self._poll_wait_seconds(interval_s))
+            self._poll_pause(interval_s, dispatched)
 
     def _is_quarantined(self) -> bool:
         """Return True if the server has been marked quarantined in the DB.
@@ -807,6 +810,7 @@ class RunnerService(BaseRunner):
             process_fn(item)
             return
         future = self._executor.submit(process_fn, item)
+        future.add_done_callback(self._on_future_done)
         with self._active_lock:
             self._active_futures.append((future, item_id, _current_time_ms()))
 
