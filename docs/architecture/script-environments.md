@@ -1,11 +1,14 @@
 # Script Environments (`environment` / `in environment`)
 
-**Status:** implemented (phases 1–4, 2026-07-20: b0342d7 language layer,
-3ccfd0c resolve-and-freeze, a44fde7 claim routing + execution). Still open
-from §8: image-bake materialization of declared environments, the
-lazy-materialization poll hook (the `materialize_environment` helper exists;
-wiring is operator/bake-driven for now), `fw install check` coverage, and
-dashboard surfacing.
+**Status:** implemented and fleet-verified (2026-07-20: b0342d7 language
+layer, 3ccfd0c resolve-and-freeze, a44fde7 claim routing + execution,
+54bc205 bake-time materialization — `python -m facetwork.envbake` in the
+image build, `fw ffl bake-envs` on hosts). v91 hands-off verification: 38/39
+live runners advertised the canonical environment straight from the image
+and a cold pilot submit completed with zero manual steps. Still open from
+§8: the lazy-materialization poll hook (the `materialize_environment` helper
+exists; wiring is bake-driven), `fw install check` coverage, and dashboard
+surfacing.
 
 **Fleet pilot PASSED 2026-07-20** (fleet v90): a
 `humanize`-pinned environment (`envpilot.PyHuman@0aabcaef`) was materialized
