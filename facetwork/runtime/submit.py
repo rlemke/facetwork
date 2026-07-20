@@ -235,6 +235,17 @@ def main(args: list[str] | None = None) -> int:
     program_json = emitter.emit(ast)
     program_dict = json.loads(program_json)
 
+    # Freeze environment manifests into the compiled program (resolve-and-
+    # freeze at publish — docs/architecture/script-environments.md §5). The
+    # annotated dict is what persists as compiled_ast, so the pinned versions
+    # ride the runner snapshot hermetically.
+    from ..environments import annotate_program
+
+    env_hashes = annotate_program(program_dict)
+    if env_hashes:
+        print(f"Froze {len(env_hashes)} environment manifest(s): "
+              + ", ".join(f"{n}@{h[:8]}" for n, h in sorted(env_hashes.items())))
+
     # -------------------------------------------------------------------------
     # 4. Find workflow and extract default inputs
     # -------------------------------------------------------------------------
