@@ -417,6 +417,7 @@ class RunnerService(BaseRunner):
                     dispatched = self._poll_cycle()
                     self._maybe_sweep_stuck_steps()
                     self._maybe_reap_orphaned_tasks()
+                    self._maybe_materialize_environments()
                     reconcile_counter += 1
                     if reconcile_counter >= 10:
                         self._reconcile_with_db()

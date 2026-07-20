@@ -258,3 +258,119 @@ class TestEnvImportSurface:
             extra_import_modules=["uuid"],
         )
         assert extended.success and extended.result == {"ok": True}
+
+
+class TestEnvironmentDemandQuery:
+    """Parity: pending-script-demand scan against BOTH stores."""
+
+    def test_demand_lists_unclaimed_env_hashes(self, store):
+        store.save_task(_task("d1", env="hashA", kind="script"))
+        store.save_task(_task("d2", env="hashA", kind="script"))
+        store.save_task(_task("d3", env="hashB", kind="script"))
+        store.save_task(_task("d4", env="hashC", kind=""))       # handler task: no
+        store.save_task(_task("d5", env="", kind="script"))      # untagged: no
+        t = _task("d6", env="hashD", kind="script")
+        t.state = "running"                                       # claimed: no
+        store.save_task(t)
+        demand = store.get_pending_script_environment_demand()
+        assert [h for h, _ in demand] == ["hashA", "hashB"]
+        assert all(wf == "wf1" for _, wf in demand)
+
+    def test_demand_empty(self, store):
+        assert store.get_pending_script_environment_demand() == []
+
+
+class TestLazyMaterialization:
+    """End-to-end §4.2: a runner that lacks a demanded environment builds the
+    venv from the workflow's frozen manifest, advertises it, and completes the
+    waiting workflow — no bake, no operator."""
+
+    def _setup(self, tmp_path, monkeypatch, requires='requires = []'):
+        import json
+
+        from facetwork import parse
+        from facetwork.ast_utils import find_workflow
+        from facetwork.emitter import JSONEmitter
+        from facetwork.environments import annotate_program
+        from facetwork.runtime import Evaluator, Telemetry
+        from facetwork.runtime.entities import RunnerDefinition, WorkflowDefinition
+
+        monkeypatch.setenv("FW_ENV_ROOT", str(tmp_path / "envs"))
+        src = """
+        namespace lazy {
+            environment PyBare { language = "python" }
+            facet Tag(x: Long) => (y: Long)
+                in environment PyBare
+                script { result['y'] = params['x'] + 1 }
+            workflow W(x: Long) => (y: Long) andThen {
+                s = Tag(x = $.x)
+                yield W(y = s.y)
+            }
+        }
+        """
+        program = json.loads(JSONEmitter(include_locations=False).emit(parse(src)))
+        env_hash = annotate_program(program)["lazy.PyBare"]
+        store = MemoryStore()
+        ev = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
+        wf = find_workflow(program, "lazy.W")
+        res = ev.execute(wf, inputs={"x": 41}, program_ast=program, runner_id="run-1")
+        store.save_runner(RunnerDefinition(
+            uuid="run-1", workflow_id=res.workflow_id,
+            workflow=WorkflowDefinition(uuid="w1", name="lazy.W", namespace_id="",
+                                        facet_id="", flow_id="", starting_step="", version="1"),
+            compiled_ast=program, workflow_ast=wf,
+        ))
+        return store, ev, env_hash
+
+    def test_hook_materializes_advertises_and_completes(self, tmp_path, monkeypatch):
+        from facetwork.runtime.agent import ToolRegistry
+        from facetwork.runtime.runner import RunnerConfig, RunnerService
+
+        store, ev, env_hash = self._setup(tmp_path, monkeypatch)
+        svc = RunnerService(store, ev, RunnerConfig(), ToolRegistry())
+        svc._register_server()
+        assert svc._provided_environments() == []  # nothing baked
+
+        svc._maybe_materialize_environments()
+        assert env_hash in svc._provided_environments()
+        server = store.get_server(svc.server_id)
+        assert env_hash in server.provided_environments  # re-registered
+
+        for _ in range(20):
+            svc.run_once()
+            root = next(s for s in store._steps.values() if s.object_type == "Workflow")
+            if root.state.endswith("Complete"):
+                break
+        assert root.state.endswith("Complete"), root.state
+        assert root.get_attribute("y") == 42
+
+    def test_hook_respects_kill_switch(self, tmp_path, monkeypatch):
+        from facetwork.runtime.agent import ToolRegistry
+        from facetwork.runtime.runner import RunnerConfig, RunnerService
+
+        store, ev, env_hash = self._setup(tmp_path, monkeypatch)
+        monkeypatch.setenv("FW_ENV_LAZY", "off")
+        svc = RunnerService(store, ev, RunnerConfig(), ToolRegistry())
+        svc._maybe_materialize_environments()
+        assert svc._provided_environments() == []
+
+    def test_failure_negative_caches(self, tmp_path, monkeypatch):
+        from facetwork.runtime.agent import ToolRegistry
+        from facetwork.runtime.runner import RunnerConfig, RunnerService
+
+        store, ev, env_hash = self._setup(tmp_path, monkeypatch)
+        svc = RunnerService(store, ev, RunnerConfig(), ToolRegistry())
+        calls = []
+
+        def boom(manifest, h):
+            calls.append(h)
+            raise RuntimeError("no network")
+
+        import facetwork.environments as fe
+
+        monkeypatch.setattr(fe, "materialize_environment", boom)
+        svc._maybe_materialize_environments()
+        svc._env_matz_last_scan = 0  # force a fresh scan window
+        svc._maybe_materialize_environments()
+        assert calls == [env_hash]  # second scan skipped via negative cache
+        assert svc._provided_environments() == []

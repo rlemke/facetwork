@@ -137,6 +137,102 @@ class BaseRunner:
         self._provided_envs_cache = sorted(envs)
         return self._provided_envs_cache
 
+    # Lazy materialization (script-environments.md §4.2): per-hash negative
+    # cache so a failing build isn't retried in a tight loop.
+    _env_matz_retry_after: dict[str, int]
+    _ENV_MATZ_BACKOFF_MS: int = 600_000  # 10 min between attempts per hash
+    _ENV_MATZ_INTERVAL_MS: int = 60_000  # demand-scan cadence
+
+    def _maybe_materialize_environments(self) -> None:
+        """Materialize environments with pending demand this runner lacks.
+
+        Scans pending env-tagged script tasks (WITHOUT claiming), and for any
+        manifest hash not yet provided here, extracts the frozen manifest from
+        the demanding workflow's compiled snapshot and builds the venv — then
+        re-registers so the environment is advertised and the very next poll
+        can claim. The bake path (§4.1) remains primary; this is the fallback
+        that makes environments published AFTER the image bake work without
+        waiting for the next rollout. Disable with ``FW_ENV_LAZY=off``.
+        Failures are negative-cached per hash (10 min) and never disturb the
+        poll loop. At most one materialization per scan — installs can take
+        a while and the loop must keep claiming.
+        """
+        import os
+
+        if os.environ.get("FW_ENV_LAZY", "on").strip().lower() in ("0", "false", "no", "off"):
+            return
+        now = _current_time_ms()
+        last = getattr(self, "_env_matz_last_scan", 0)
+        if now - last < self._ENV_MATZ_INTERVAL_MS:
+            return
+        self._env_matz_last_scan = now
+        try:
+            demand = self._persistence.get_pending_script_environment_demand()
+        except Exception:
+            logger.debug("Environment demand scan failed", exc_info=True)
+            return
+        if not demand:
+            return
+        provided = set(self._provided_environments())
+        retry_after = getattr(self, "_env_matz_retry_after", None)
+        if retry_after is None:
+            retry_after = self._env_matz_retry_after = {}
+        for env_hash, workflow_id in demand:
+            if env_hash in provided or retry_after.get(env_hash, 0) > now:
+                continue
+            manifest = self._manifest_for_hash(env_hash, workflow_id)
+            if manifest is None or (manifest.get("language") or "") != "python" or not manifest.get(
+                "resolved", True
+            ):
+                retry_after[env_hash] = now + self._ENV_MATZ_BACKOFF_MS
+                continue
+            from ..environments import materialize_environment
+
+            try:
+                logger.info(
+                    "Lazy-materializing environment %s (%d pin(s)) — demanded by "
+                    "pending script tasks",
+                    env_hash,
+                    len(manifest.get("pins") or []),
+                )
+                materialize_environment(manifest, env_hash)
+            except Exception as exc:  # noqa: BLE001 - negative-cache and move on
+                logger.warning(
+                    "Environment %s materialization failed (retry in %ds): %s",
+                    env_hash,
+                    self._ENV_MATZ_BACKOFF_MS // 1000,
+                    exc,
+                )
+                retry_after[env_hash] = now + self._ENV_MATZ_BACKOFF_MS
+                continue
+            self._provided_envs_cache = None  # re-discover, now includes env_hash
+            try:
+                self._register_server()  # advertise immediately
+            except Exception:
+                logger.debug("Re-register after materialization failed", exc_info=True)
+            self._work_ready.set()  # claim the waiting tasks now
+            logger.info("Environment %s materialized and advertised", env_hash)
+            return  # one per scan
+
+    def _manifest_for_hash(self, env_hash: str, workflow_id: str) -> dict | None:
+        """Frozen manifest for ``env_hash`` from a demanding workflow's snapshot."""
+        try:
+            self._load_workflow_ast(workflow_id)
+            program = self._program_ast_cache.get(workflow_id) or {}
+            for decl in program.get("declarations") or []:
+                if not isinstance(decl, dict) or decl.get("type") != "Namespace":
+                    continue
+                for inner in decl.get("declarations") or []:
+                    if (
+                        isinstance(inner, dict)
+                        and inner.get("type") == "EnvironmentDecl"
+                        and inner.get("manifest_hash") == env_hash
+                    ):
+                        return inner.get("manifest")
+        except Exception:
+            logger.debug("Manifest lookup failed for %s", env_hash, exc_info=True)
+        return None
+
     def _execute_script_for_task(self, task) -> dict | None:
         """Execute an env-routed script task's facet script; return its result.
 

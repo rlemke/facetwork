@@ -467,6 +467,20 @@ class TaskMixin(_MixinBase):
 
         return reaped
 
+    def get_pending_script_environment_demand(self) -> list[tuple[str, str]]:
+        """Distinct (environment_hash, workflow_id) of pending script tasks.
+
+        Keep in behavioral lockstep with MemoryStore."""
+        out: list[tuple[str, str]] = []
+        for doc in self._db.tasks.aggregate([
+            {"$match": {"state": "pending", "kind": "script",
+                        "environment_hash": {"$nin": ["", None]}}},
+            {"$group": {"_id": "$environment_hash",
+                        "workflow_id": {"$first": "$workflow_id"}}},
+        ]):
+            out.append((doc["_id"], doc.get("workflow_id") or ""))
+        return sorted(out)
+
     def claim_script_task(
         self,
         provided_environments,

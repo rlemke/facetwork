@@ -471,6 +471,17 @@ class MemoryStore(PersistenceAPI):
                     return task
             return None
 
+    def get_pending_script_environment_demand(self) -> list[tuple[str, str]]:
+        """Distinct (environment_hash, workflow_id) of pending script tasks.
+
+        Mirrors MongoStore — keep in behavioral lockstep."""
+        seen: dict[str, str] = {}
+        for task in self._tasks.values():
+            env = getattr(task, "environment_hash", "") or ""
+            if task.state == "pending" and getattr(task, "kind", "") == "script" and env:
+                seen.setdefault(env, task.workflow_id)
+        return sorted(seen.items())
+
     def claim_script_task(
         self,
         provided_environments,

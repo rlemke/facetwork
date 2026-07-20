@@ -446,6 +446,7 @@ class RegistryRunner(BaseRunner):
                 self._maybe_refresh_registry()
                 dispatched = self._poll_cycle()
                 self._maybe_sweep_stuck_steps()
+                self._maybe_materialize_environments()
             except Exception:
                 logger.exception("Poll cycle error")
             self._poll_pause(interval_s, dispatched)

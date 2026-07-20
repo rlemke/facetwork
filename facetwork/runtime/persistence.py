@@ -842,6 +842,17 @@ class PersistenceAPI(Protocol):
         """
         return None
 
+    def get_pending_script_environment_demand(self) -> "list[tuple[str, str]]":
+        """Distinct ``(environment_hash, workflow_id)`` of pending script tasks.
+
+        The lazy-materialization hook scans this — WITHOUT claiming — to see
+        which environments have demand this runner could serve by building
+        the venv (script-environments.md §4.2). One exemplar workflow_id per
+        hash is enough: the frozen manifest rides that workflow's compiled
+        program snapshot.
+        """
+        return []
+
     def claim_script_task(
         self,
         provided_environments: "Sequence[str]",
