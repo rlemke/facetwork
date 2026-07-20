@@ -132,6 +132,40 @@ def _connect_store(config):
     return MongoStore.from_config(config.mongodb)
 
 
+def _resolve_bootstrap_list(store, workflow_name: str) -> str:
+    """Task list for the ``fw:execute`` bootstrap of *workflow_name*.
+
+    Namespace routing is the default — but a namespace no live runner polls
+    (a runner polls its configured list plus the namespaces of its loaded
+    handlers) leaves the bootstrap unclaimed forever. Detect that at submit
+    time and fall back to ``"default"``, which every runner polls. The
+    workflow's OWN event/script tasks still route by their facets' namespaces
+    (and script tasks claim by environment regardless of list), so this only
+    moves the bootstrap. Best-effort: any store/query problem keeps the
+    namespace-routed default.
+    """
+    target = namespace_of(workflow_name)
+    if target == "default":
+        return target
+    try:
+        from .task_list_routing import namespaces_for
+
+        cutoff = int(time.time() * 1000) - 120_000
+        for server in store.get_all_servers():
+            if (server.ping_time or 0) < cutoff:
+                continue
+            polled = set(namespaces_for(server.handlers or [])) | {server.task_list}
+            if target in polled:
+                return target
+        print(
+            f"No live runner polls task list '{target}' — routing the "
+            f"bootstrap to 'default' (any runner can start the workflow)."
+        )
+        return "default"
+    except Exception:
+        return target
+
+
 def main(args: list[str] | None = None) -> int:
     """Main entry point for the submit CLI.
 
@@ -370,9 +404,14 @@ def main(args: list[str] | None = None) -> int:
         updated=now_ms,
         # Bootstrap routes by the workflow's namespace so a runner serving that
         # namespace claims it (namespace routing); an explicit
-        # --task-list still overrides for back-compat.
+        # --task-list still overrides for back-compat. A namespace NO live
+        # runner polls (brand-new, handler-less — e.g. a pure-script flow)
+        # falls back to "default", which every runner polls; otherwise the
+        # bootstrap would sit unclaimed forever.
         task_list_name=(
-            parsed.task_list if parsed.task_list is not None else namespace_of(parsed.workflow)
+            parsed.task_list
+            if parsed.task_list is not None
+            else _resolve_bootstrap_list(store, parsed.workflow)
         ),
         data={
             "flow_id": flow_id,

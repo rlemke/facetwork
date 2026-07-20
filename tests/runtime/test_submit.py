@@ -404,3 +404,75 @@ class TestMongoConnectionError:
         assert result == 1
         captured = capsys.readouterr()
         assert "Error connecting to MongoDB" in captured.err
+
+
+class TestBootstrapListResolution:
+    """Bootstrap of a namespace no live runner polls falls back to default."""
+
+    @pytest.fixture
+    def mock_store(self):
+        from facetwork.runtime.mongo_store import MongoStore
+
+        client = mongomock.MongoClient()
+        store = MongoStore(database_name="afl_test_bootstrap", client=client)
+        yield store
+        store.drop_database()
+        store.close()
+
+    def _server(self, store, handlers, task_list="default"):
+        import time
+
+        from facetwork.runtime.entities import ServerDefinition, ServerState
+
+        store.save_server(
+            ServerDefinition(
+                uuid=f"srv-{task_list}-{len(handlers)}",
+                server_group="g",
+                service_name="afl-runner",
+                server_name="host",
+                state=ServerState.RUNNING,
+                ping_time=int(time.time() * 1000),
+                handlers=handlers,
+                task_list=task_list,
+            )
+        )
+
+    def test_unpolled_namespace_falls_back_to_default(self, mock_store):
+        from facetwork.runtime.submit import _resolve_bootstrap_list
+
+        self._server(mock_store, ["osm.cache.Download"], task_list="default")
+        assert _resolve_bootstrap_list(mock_store, "envpilot.PilotRun") == "default"
+
+    def test_polled_namespace_keeps_namespace_routing(self, mock_store):
+        from facetwork.runtime.submit import _resolve_bootstrap_list
+
+        # Polled via handler namespaces…
+        self._server(mock_store, ["envpilot.Humanize"], task_list="default")
+        assert _resolve_bootstrap_list(mock_store, "envpilot.PilotRun") == "envpilot"
+
+    def test_polled_via_configured_list(self, mock_store):
+        from facetwork.runtime.submit import _resolve_bootstrap_list
+
+        # …or via a runner's configured task list.
+        self._server(mock_store, [], task_list="envpilot")
+        assert _resolve_bootstrap_list(mock_store, "envpilot.PilotRun") == "envpilot"
+
+    def test_stale_runner_does_not_count(self, mock_store):
+        import time
+
+        from facetwork.runtime.entities import ServerDefinition, ServerState
+        from facetwork.runtime.submit import _resolve_bootstrap_list
+
+        mock_store.save_server(
+            ServerDefinition(
+                uuid="srv-stale",
+                server_group="g",
+                service_name="afl-runner",
+                server_name="host",
+                state=ServerState.RUNNING,
+                ping_time=int(time.time() * 1000) - 600_000,  # 10 min stale
+                handlers=["envpilot.Humanize"],
+                task_list="default",
+            )
+        )
+        assert _resolve_bootstrap_list(mock_store, "envpilot.PilotRun") == "default"
