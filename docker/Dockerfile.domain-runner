@@ -145,6 +145,17 @@ COPY domains.json ./domains.json
 COPY docker/bake-domains.py /tmp/bake-domains.py
 RUN FWH_DOMAINS_REF=${FWH_DOMAINS_REF} python /tmp/bake-domains.py
 
+# Bake declared script environments (script-environments.md §4.1): sweep the
+# baked domain repos + canonical examples for `environment` declarations,
+# freeze their manifests, and materialize each as a venv under /opt/fw_envs —
+# every runner from this image PROVIDES the fleet's declared environments
+# from second one (no per-task/per-start pip installs). Env conflicts or
+# materialization failures fail the build: a half-provided image would
+# silently strand env-tagged tasks.
+COPY examples/canonical/ ./examples/canonical/
+RUN python -m facetwork.envbake --root /opt --root /app/examples \
+    && ls /opt/fw_envs 2>/dev/null || true
+
 # Entrypoint installs the named example then starts the runner.
 COPY docker/entrypoint-domain-runner.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

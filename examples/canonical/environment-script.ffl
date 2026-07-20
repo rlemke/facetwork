@@ -1,0 +1,28 @@
+/** Canonical: a named execution environment + an env-bound script facet.
+  *
+  * The environment declares the language and the exact libraries its
+  * scripts depend on; publish freezes them into a content-addressed
+  * manifest, and only runners providing that manifest claim the script's
+  * tasks (docs/architecture/script-environments.md). A bare `script { }`
+  * block is implicitly python; the braces take RAW code — not a quoted
+  * string. */
+namespace canonical.envscript {
+    environment PyHuman {
+        language = "python",
+        requires = ["humanize==4.12.3"]
+    }
+
+    /** Render a number as human-friendly words. The humanize import works
+      * because the environment's manifest is the script's import surface. */
+    facet Humanize(n: Long) => (text: String)
+        in environment PyHuman
+        script {
+import humanize
+result['text'] = humanize.intword(params['n'])
+        }
+
+    workflow Demo(n: Long = 12500000) => (text: String) andThen {
+        h = Humanize(n = $.n)
+        yield Demo(text = h.text)
+    }
+}

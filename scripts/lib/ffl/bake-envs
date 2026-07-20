@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# fw-summary: sweep FFL for `environment` decls and materialize their venvs (FW_ENV_ROOT)
+#
+# Host-side counterpart of the image-build envbake step: freezes every
+# environment declared under the given roots (default: examples/ + the domain
+# checkouts in $FWH_HANDLERS_ROOT or ~/fw_handlers) and materializes the
+# python ones as venvs under $FW_ENV_ROOT (default /opt/fw_envs). Use --check
+# to list without building. See docs/architecture/script-environments.md §4.
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+
+PYTHON="$FW_ROOT/.venv/bin/python3"; [ -x "$PYTHON" ] || PYTHON=python3
+ARGS=()
+if [[ "$*" != *"--root"* ]]; then
+    ARGS+=(--root "$FW_ROOT/examples" --root "${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}")
+fi
+exec "$PYTHON" -m facetwork.envbake "${ARGS[@]}" "$@"
