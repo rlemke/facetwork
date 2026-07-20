@@ -5,9 +5,11 @@ layer, 3ccfd0c resolve-and-freeze, a44fde7 claim routing + execution,
 54bc205 bake-time materialization — `python -m facetwork.envbake` in the
 image build, `fw ffl bake-envs` on hosts). v91 hands-off verification: 38/39
 live runners advertised the canonical environment straight from the image
-and a cold pilot submit completed with zero manual steps. Still open from
-§8: the lazy-materialization poll hook (the `materialize_environment` helper
-exists; wiring is bake-driven), `fw install check` coverage, and dashboard
+and a cold pilot submit completed with zero manual steps. Lazy materialization (§4.2) shipped and
+live-verified on v92: a workflow pinning a never-baked manifest
+(`PyHumanOld@39133371`) completed hands-off — a MaxPro runner's demand scan
+built the venv, re-registered advertising both the baked and the new hash,
+and claimed. Still open from §8: `fw install check` coverage and dashboard
 surfacing.
 
 **Fleet pilot PASSED 2026-07-20** (fleet v90): a
