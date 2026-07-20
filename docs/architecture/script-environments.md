@@ -12,10 +12,11 @@ dashboard surfacing.
 in exactly one of 69 runners; the publish froze the identical hash computed
 locally; the script task carried the hash, was claimed ONLY by the providing
 runner, imported the package from the venv (present nowhere else in the
-image), and completed the workflow. One wrinkle for follow-up: the
-`fw:execute` bootstrap of a namespace with no handlers anywhere routes to a
-task list no runner polls — submit such flows with `--task-list default`
-(or teach submit to detect and default it).
+image), and completed the workflow. One wrinkle surfaced and FIXED
+(837ce32): the `fw:execute` bootstrap of a namespace no live runner polls now
+falls back to the `default` list at submit time (with a printed note);
+explicit `--task-list` still overrides. Verified live: a no-flags resubmit of
+the pilot completed with zero manual intervention.
 **Problem owner:** scripts and the libraries they need. Handlers already have
 an environment story (domain packages + the baked image); FFL `script` blocks
 do not — they run in whatever interpreter the claiming runner happens to have.
