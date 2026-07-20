@@ -879,6 +879,15 @@ A runner only ever claims a task it can actually run. Concretely:
   `"fw:execute:MyWorkflow"`). A runner passes three name sets per poll cycle —
   the facet names it has handlers for, `["fw:resume"]`, and `["fw:execute"]` —
   so it never picks up a task outside that set.
+- **Environments are a claim dimension.** A task carrying a non-default
+  `environment_hash` matches only runners whose `provided_environments`
+  include that manifest hash; untagged tasks match everyone. Env-routed
+  *script* tasks (`kind: "script"` — named by their facet, which is in no
+  handler set) claim through the dedicated `claim_script_task`, which filters
+  on environment alone: the environment IS the capability. Runners come to
+  provide an environment via the image bake or the lazy-materialization
+  demand scan (see
+  [script-environments.md](../architecture/script-environments.md) §4).
 - **Glob `--topics` are expanded before claiming.** The name filter matches
   literally, so a topic like `census.*` used to be passed through as a dead
   literal — a topics-scoped runner claimed *nothing*, silently, while

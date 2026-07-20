@@ -45,6 +45,8 @@ fw ffl compile input.ffl -o output.json       # compile FFL
 fw ffl publish input.ffl                      # compile + publish to MongoDB
 fw ffl publish input.ffl --auto-resolve       # with dependency resolution
 fw ffl run-workflow                           # interactive workflow execution
+fw ffl bake-envs --check                      # list declared script environments
+fw ffl bake-envs                              # materialize their venvs (FW_ENV_ROOT)
 fw ffl run-workflow --workflow Name            # run specific workflow
 fw runner server --workflow MyWorkflow           # execute workflow (server mode)
 fw runner exec                                 # start runner

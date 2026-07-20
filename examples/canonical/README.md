@@ -19,6 +19,7 @@ These files are also exposed via the MCP server at `fw://examples/canonical/`.
 | [`08-step-reference.ffl`](08-step-reference.ffl) | Pass a whole step by reference (FacetRef): `$.<fref>.field` reads the upstream step's attributes. |
 | [`09-facetref-mixin-alias.ffl`](09-facetref-mixin-alias.ffl) | Mixin aliases on FacetRef consumers: `with M() as m1` enables `$.<fref>.m1.field`. |
 | [`10-sys-log-assert.ffl`](10-sys-log-assert.ffl) | Inline diagnostic statements: `sys.log(...)` writes Splunk JSON, `sys.assert(...)` enforces runtime invariants. Demonstrates new operators `in`, `not in`, `contains`, `startsWith`, `endsWith`. |
+| [`11-environment-script.ffl`](11-environment-script.ffl) | Named execution environment (`environment` + `in environment`): a script bound to a frozen dependency manifest, executed only on runners providing it. Braces take raw code. |
 | [`11-author-teams.ffl`](11-author-teams.ffl) | Ownership annotation mixins: `with Author(email = …)` / `with Teams(names = […])` tag a workflow's author and teams (read by the runtime to attribute and team-filter runs). |
 
 ## Conventions worth noticing

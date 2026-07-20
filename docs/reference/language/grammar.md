@@ -409,6 +409,56 @@ Scripts execute in a sandboxed Python environment with two pre-defined variables
 
 Scripts may use Python standard library imports. Execution errors are captured and reported as step failures.
 
+### Environment declarations (`environment` / `in environment`)
+
+A named execution environment binds scripts to a language plus the exact
+libraries they depend on ([full design](../../architecture/script-environments.md)):
+
+```afl
+namespace geo {
+    environment PyGeo {
+        language = "python",
+        requires = ["shapely==2.0.4", "networkx==3.3"]
+    }
+
+    facet Cluster(path: String) => (out: String)
+        in environment PyGeo
+        script {
+import shapely
+result['out'] = params['path']
+        }
+}
+```
+
+Grammar:
+
+```
+environment_decl  := "environment" IDENT "{" env_field ("," env_field)* "}"
+env_field         := IDENT "=" (string | "[" string ("," string)* "]")
+in_env_clause     := "in" "environment" qualified_name    // after the signature
+```
+
+Semantics:
+
+- **Declared inside a namespace** (like schemas — `ENV_AT_TOP_LEVEL`);
+  resolves local → `use`d namespaces → fully qualified (`ENV_UNKNOWN`).
+- **`language` is required** (`ENV_MISSING_LANGUAGE`). A bare `script { }`
+  block is implicitly python, so it may only bind to a python environment
+  (`ENV_LANGUAGE_SCRIPT_MISMATCH`). Unknown fields (e.g. `python = "3.12"`)
+  are preserved for forward compatibility.
+- **Absent `in environment` = the default environment** — the runner's own
+  interpreter, exactly the historical behavior.
+- At publish, `requires` is **resolved and frozen** into a pinned manifest;
+  its content hash is what tasks carry and runners advertise, so re-runs use
+  the versions the flow was published with. At runtime the script executes
+  **on a runner providing that manifest** (baked venv or lazily
+  materialized), under the environment's interpreter, and may import the
+  environment's declared packages in addition to the stdlib allowlist.
+- Environment-bound scripts **defer** — they run on the claiming runner as an
+  env-routed task, not inline on whichever runner processes the step.
+
+Canonical example: [`examples/canonical/11-environment-script.ffl`](../../../examples/canonical/11-environment-script.ffl).
+
 ### Expression operators
 
 FFL supports arithmetic, concatenation, comparison, and boolean operators with the following precedence (lowest to highest):

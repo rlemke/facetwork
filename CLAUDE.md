@@ -32,7 +32,7 @@ Groups: **`install`** (toolchain/venv/examples/**check**) · **`single`** (local
 up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgroup) ·
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
-(compile/run/publish/seed/scaffold/catalog) · **`maint`** (disk-guard/repair-workflow/
+(compile/run/publish/seed/scaffold/catalog/**bake-envs**) · **`maint`** (disk-guard/repair-workflow/
 terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**).
 
@@ -128,7 +128,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | **Server catalog (`servers.json`)** — machines by STABLE NAME + aliases (`afl-mongodb`…); resolved to the current IP at startup/reconcile so DHCP drift self-heals (no `/etc/hosts` edits). `fw fleet servers` | [docs/reference/server-catalog.md](docs/reference/server-catalog.md) |
 | **Domain/example catalog (`domains.json`)** — single source of truth for the domain set + per-domain attributes (repo/extras/service/task_list/scaled/fleet_default…) + `defaults` replica counts; field reference, file resolution + `domains.local.json`/`FW_DOMAINS_FILE` override, and add-a-domain / per-deployment walkthroughs. Read by install/migrate/gen-compose/runner-start/fleet | [docs/reference/domain-catalog.md](docs/reference/domain-catalog.md) |
 | Composable facet library (design): orthogonal/complete/discoverable/distributed primitives for LLM-composed workflows + the memory-of-solved-requests moat | [docs/architecture/composable-facet-library.md](docs/architecture/composable-facet-library.md) |
-| **Script environments (design)**: named `environment` decls (language + frozen dep manifest) + `in environment` on script blocks; environment = claim-routing dimension (tasks carry the manifest hash, runners advertise provided envs); python venvs pre-baked or lazily materialized from a MinIO wheelhouse; foreign languages ride the polyglot agent protocol | [docs/architecture/script-environments.md](docs/architecture/script-environments.md) |
+| **Script environments (SHIPPED + fleet-verified)**: named `environment` decls (language + frozen dep manifest) + `in environment` on script-bearing decls; environment = claim-routing dimension (tasks carry the manifest hash, runners advertise provided envs); venvs baked at image build (`facetwork.envbake`) or lazily materialized on demand; foreign languages ride the polyglot agent protocol; canonical example `11-environment-script.ffl` | [docs/architecture/script-environments.md](docs/architecture/script-environments.md) |
 | Approximate freeway routing (`osm.Network`, design): in-process graph search over a tiny noded-freeway artifact — no engine daemon, read-once-per-runner | [docs/architecture/approximate-freeway-routing.md](docs/architecture/approximate-freeway-routing.md) |
 | Emergency-Access Atlas (`osm.emergency`, design): 4-level fan-out/fan-in showcase; key decisions locked in the doc | [docs/architecture/emergency-access-atlas.md](docs/architecture/emergency-access-atlas.md) |
 | **`ffl-runner` orchestration tier (design)**: split the step-state-machine/continuation processing into a dedicated leaderless `ffl-runner` role (hybrid: handler runners keep inline dispatch but stop polling the shared `_fw_continue` backlog; the tier owns the backlog + stuck-step sweep + version gate) → shrinks the fleet-wide blast radius of engine changes and bulkheads orchestration from heavy handlers, still decentralized | [docs/architecture/ffl-runner-orchestration-tier.md](docs/architecture/ffl-runner-orchestration-tier.md) |
@@ -164,6 +164,7 @@ Key constraints the rule docs cover (and the language enforces):
 - **Yield targets** must be the containing facet OR one of its declared mixins (`YIELD_INVALID_TARGET`).
 - **`when` blocks need a default case, last** (`WHEN_MISSING_DEFAULT`, `WHEN_DEFAULT_NOT_LAST`); attach a `when` to the step it gates.
 - **No truthy/falsy coercion** — comparisons return Boolean, and `&&`/`||`/`!` only accept Boolean operands.
+- **Script environments** — `environment Name { language, requires }` (inside a namespace) + `in environment Name` on script-bearing declarations; absent = default env. `script { … }` braces take RAW code (a quoted string inside braces is a silent no-op). Rules: `ENV_UNKNOWN`, `ENV_MISSING_LANGUAGE`, `ENV_LANGUAGE_SCRIPT_MISMATCH`, `ENV_AT_TOP_LEVEL`. See [script-environments.md](docs/architecture/script-environments.md).
 
 When adding a new validator check, give it a `rule_id` AND write the matching `docs/reference/rules/{rule_id}.md` in the same change. Coverage is currently exact (all 53 emitted rule_ids documented); the script that diffs them lives in [docs/architecture/mcp-context-engineering.md](docs/architecture/mcp-context-engineering.md).
 
