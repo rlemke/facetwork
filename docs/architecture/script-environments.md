@@ -4,8 +4,10 @@
 3ccfd0c resolve-and-freeze, a44fde7 claim routing + execution). Still open
 from §8: image-bake materialization of declared environments, the
 lazy-materialization poll hook (the `materialize_environment` helper exists;
-wiring is operator/bake-driven for now), `fw install check` coverage,
-dashboard surfacing **Fleet pilot PASSED 2026-07-20** (fleet v90): a
+wiring is operator/bake-driven for now), `fw install check` coverage, and
+dashboard surfacing.
+
+**Fleet pilot PASSED 2026-07-20** (fleet v90): a
 `humanize`-pinned environment (`envpilot.PyHuman@0aabcaef`) was materialized
 in exactly one of 69 runners; the publish froze the identical hash computed
 locally; the script task carried the hash, was claimed ONLY by the providing
