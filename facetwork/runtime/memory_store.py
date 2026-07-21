@@ -112,25 +112,11 @@ class MemoryStore(PersistenceAPI):
         return [self._steps[sid].clone() for sid in step_ids if sid in self._steps]
 
     def save_step(self, step: StepDefinition) -> None:
-        """Save a step with a store-authoritative version bump.
-
-        Mirrors MongoStore.save_step's server-side ``$inc``: the persisted
-        sequence advances monotonically from the STORED value on every save,
-        regardless of what the caller's in-memory copy carries — a stale
-        caller can never regress the counter. Keep in behavioral lockstep
-        with the Mongo store (lessons-learned §23).
-        """
+        """Save a step to the store."""
         now = _current_time_ms()
         if not step.start_time:
             step.start_time = now
         step.last_modified = now
-        existing = self._steps.get(step.id)
-        stored_seq = existing.version.sequence if existing and existing.version else 0
-        if step.version is None:
-            from .types import VersionInfo
-
-            step.version = VersionInfo()
-        step.version.sequence = stored_seq + 1
         # Remove from old indexes if updating
         if step.id in self._steps:
             old_step = self._steps[step.id]

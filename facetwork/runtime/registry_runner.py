@@ -563,15 +563,7 @@ class RegistryRunner(BaseRunner):
         if not self._config.runs_stuck_step_sweep():
             return
         now = _current_time_ms()
-        # Jittered cadence: after a fleet-wide recreate every runner's sweep
-        # timer starts in phase, so dozens of runners re-derive the SAME
-        # stuck steps at the SAME instant — maximizing CAS contention on
-        # exactly the steps that need a clean write to recover (the
-        # liveness-stall amplifier). +/-25% decorrelates the fleet.
-        import random as _random
-
-        jittered = self._sweep_interval_ms * _random.uniform(0.75, 1.25)
-        if now - self._last_sweep < jittered:
+        if now - self._last_sweep < self._sweep_interval_ms:
             return
         self._last_sweep = now
 

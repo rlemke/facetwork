@@ -459,18 +459,14 @@ class TestCommitOperations:
         sid = step_id()
 
         # DB already holds this step advanced to sequence 5 by "the winner".
-        # (save_step now $inc's server-side and ignores the caller's sequence
-        # — the counter can only be advanced by saving, never dictated.)
         winner = StepDefinition(
             id=sid,
             workflow_id=wf_id,
             object_type="VariableAssignment",
             state="state.facet.completion.Complete",
-            version=VersionInfo(sequence=0),
+            version=VersionInfo(sequence=5),
         )
-        for _ in range(5):
-            mongo_store.save_step(winner)
-        assert mongo_store.get_step(sid).version.sequence == 5
+        mongo_store.save_step(winner)
 
         # A stale writer commits an UPDATE at sequence 3 (behind the DB).
         stale = StepDefinition(
