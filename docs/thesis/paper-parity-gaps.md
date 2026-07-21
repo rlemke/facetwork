@@ -11,15 +11,18 @@ repository and its fleet's execution records.*
 
 We report on a language feature — the FFL `catch` clause, error recovery for
 distributed workflow steps — that passed 100% of its unit and end-to-end
-tests across two release cycles while having **never once worked** in
-distributed execution. Verifying it live took four fix-and-rerun rounds on a
-production fleet and surfaced five independent runtime bugs. Post-hoc
-analysis shows that every one of the five maps to a specific *semantic gap*
-between the in-memory persistence fake used by the test suite and the
-production database: object aliasing, index semantics, commit visibility,
-name-versus-identity resolution, and cache locality. We argue these gaps are
-not accidents of a lazily written fake but *structural properties of any
-single-address-space test double*, present a taxonomy for auditing them,
+tests while having **never once worked** in distributed execution. Verifying
+it live took four fix-and-rerun rounds on a production fleet and surfaced
+seven independent defects, closed by five fixes. **Five** of the seven map to
+a specific *semantic gap* between the in-memory persistence fake used by the
+test suite and the production database — object aliasing, index semantics,
+commit visibility, name-versus-identity resolution, and cache locality — and
+are the paper's focus; the remaining two are control-flow path-coverage
+artifacts that distributed execution exposed by selecting different code
+paths, which we include because they co-travel with the store-semantics
+gaps. We argue the five store-semantics gaps are not accidents of a lazily
+written fake but *structural properties of any single-address-space test
+double*, present a taxonomy for auditing them,
 and evaluate two mitigations adopted mid-campaign — same-assertion
 dual-store parity suites, and cheap live verification runs as first-class
 bug finders — which together caught the next feature's coordination
@@ -46,22 +49,23 @@ is complete, and the suite is disciplined about exercising real state
 machines rather than mocks of them.
 
 It was therefore instructive to discover that the `catch` clause — error
-recovery, a feature with 29 dedicated unit tests and end-to-end coverage,
-shipped and documented — **had never successfully executed on the fleet**.
-Every distributed invocation either silently skipped recovery, reported the
-recovery itself as failed, executed the wrong code inside the recovery
-block, completed the step with empty results while recovery ran into the
-void, or parked forever awaiting a sub-block the database query could not
-return. Five distinct bugs; zero test failures.
+recovery, a feature with dozens of dedicated unit tests plus end-to-end
+coverage, shipped and documented — **had never successfully executed on the
+fleet**. Every distributed invocation either silently skipped recovery,
+reported the recovery itself as failed, executed the wrong code inside the
+recovery block, completed the step with empty results while recovery ran
+into the void, or parked forever awaiting a sub-block the database query
+could not return. Seven distinct defects across four rounds; zero test
+failures throughout.
 
 This paper makes four contributions:
 
 1. A **case narrative** (§3) of the four-round live verification campaign
-   that surfaced and fixed the five bugs, with per-round costs — evidence
-   that live verification is cheap relative to its yield.
+   that surfaced and fixed the seven defects, with per-round costs —
+   evidence that live verification is cheap relative to its yield.
 2. A **taxonomy of semantic gaps** (§4) between single-address-space fakes
-   and real coordination substrates, with each bug mapped to its gap class
-   and an analysis of why the test suite was structurally blind to it.
+   and real coordination substrates, with each defect mapped to its gap
+   class and an analysis of why the test suite was structurally blind to it.
 3. Two **mitigations with results** (§5): dual-store parity suites that run
    identical assertions against the fake and the real store, and
    verification runs as a methodology; both were applied to the next
@@ -94,11 +98,12 @@ The test double: `MemoryStore` keeps steps, tasks, and servers in Python
 dictionaries guarded by a claim lock. It is a *fake* in Fowler's sense — a
 working implementation with real behavior — not a stub.
 
-## 3. The campaign: four rounds, five bugs
+## 3. The campaign: four rounds, seven defects
 
 The verification target was a production workflow (a 25-region continental
-atlas) containing one region designed to fail, with a region-level catch
-expected to degrade the failure to a disclosed exclusion. Success criteria:
+atlas) including a region expected to fail (Greenland: no population-tagged
+cities qualify), with a region-level catch expected to degrade the failure
+to a disclosed exclusion. Success criteria:
 workflow completes; failed region appears as an excluded row; all other
 regions unaffected. Each round: run on the live fleet (~69 runners, 4
 hosts), diagnose from persisted step/task state, fix with a regression
@@ -164,23 +169,31 @@ the void: the step had already completed, empty.
   parked steps forever; before it, it was the silent enabler of B2's
   miscount.
 
-After the fifth fix the workflow completed with the designed outcome, and
-every subsequent run (including two later full reruns under other changes)
-completed without manual intervention.
+After the fifth fix the workflow completed with the designed outcome —
+Greenland disclosed as excluded, all other regions ranked. The catch
+recovery required no further fixes in any subsequent run, including two later
+full reruns of the same workflow under unrelated changes. We are careful not
+to overclaim here: those reruns still required operator babysitting at the
+fan-in tail — but for a *separate, unrelated* defect (a continuation-chain
+liveness stall, at the time of writing an open problem) that has nothing to
+do with catch recovery. What the campaign fixed stayed fixed; what it did not
+touch remained broken, which is the correct outcome to report.
 
-**Cost accounting.** Five bugs, four reruns: roughly six hours of
-wall-clock verification (mostly unattended), four image rollouts, and
-diagnosis performed entirely from persisted step/task state — no debugger,
-no log archaeology beyond `docker logs`. Per-bug find-and-fix cost was
-under a working day. Set against two release cycles of a shipped,
-documented, fully-tested feature that did not work at all, the economics
-are not close.
+**Cost accounting.** Seven defects, four reruns: roughly six hours of
+wall-clock verification (mostly unattended), five fixes across four image
+rollouts, and diagnosis performed entirely from persisted step/task state —
+no debugger, no log archaeology beyond `docker logs`. Per-defect
+find-and-fix cost was well under a working day. Set against a shipped,
+documented, fully-tested feature that did not work at all, the economics are
+not close.
 
 ## 4. The taxonomy: why the tests were blind
 
-Each bug maps to a semantic property in which a single-address-space fake
-*cannot* faithfully represent a coordination substrate. We state each gap
-generally, then the mapping.
+Five of the seven defects map to a semantic property in which a
+single-address-space fake *cannot* faithfully represent a coordination
+substrate (G1–G5); the remaining two are a control-flow path-coverage class
+(G6) that we treat separately. We state each gap generally, then the
+mapping.
 
 **G1 — Object aliasing vs serialization.** A fake returns live references;
 mutations are visible to every reader instantly, before any "save." A real
@@ -246,9 +259,10 @@ Continue handler or claim path depends on, one parametrized test runs
 mongomock). The G2 class becomes a test failure: the `get_blocks_by_step`
 regression pins that every block type round-trips through both stores, and
 the suite for the subsequent *environments* feature (claim filtering,
-script-task claiming, demand scans) was written parity-first — 30
-assertions × 2 stores. During that feature's development the parity suite
-caught filter-shape divergence between the stores before any deployment;
+script-task claiming, demand scans) was written parity-first: ~18 test
+functions, the store-facing ones parametrized across both backends. During
+that feature's development the parity suite caught a filter-shape divergence
+between the stores before any deployment;
 the feature's live pilot then passed on the first attempt for the
 claim-routing layer. The discipline is cheap: the parametrized fixture is
 ~10 lines, and the suites run in under a second.
@@ -318,8 +332,9 @@ coordination code as a statement about the fake, not the system.
 Single system, single campaign, one team's testing culture. The fake was
 written by the same project that wrote the production store, so gap
 correlation with *this* codebase's habits is possible — though G1/G3/G5
-are properties of address spaces, not habits. Bug count (five) is small;
-we claim taxonomy coverage, not frequency statistics. The cost figures
+are properties of address spaces, not habits. Defect count (seven, five of
+them store-semantics) is small; we claim taxonomy coverage, not frequency
+statistics. The cost figures
 benefit from unusually cheap reruns (cached inputs); systems without
 replayable workloads will pay more per round, which strengthens rather
 than weakens the case for building replayability.
@@ -328,9 +343,9 @@ than weakens the case for building replayability.
 
 The catch clause worked perfectly in a world with one address space, one
 step named `one`, no commit windows, shared caches, and a generous index —
-a world that exists only inside the test suite. Four afternoons of live
-verification bought what two release cycles of green tests could not: a
-feature that works where it runs. The taxonomy in §4 is offered as the
+a world that exists only inside the test suite. Roughly six hours of live
+verification bought what a green test suite could not: a feature that works
+where it runs. The taxonomy in §4 is offered as the
 audit checklist we wish we had had; the mitigations in §5, as evidence
 that the fix is procedural, cheap, and durable.
 
