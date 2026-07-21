@@ -113,6 +113,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Distributed step processing | [docs/reference/runtime.md §10.3.1](docs/reference/runtime.md) |
 | Runtime implementation details | [docs/reference/runtime-impl.md](docs/reference/runtime-impl.md) |
 | Building handlers | [docs/reference/agent-sdk.md](docs/reference/agent-sdk.md) |
+| **Python scripts & environments — when to use them vs handlers** — the capability/logic tier decision rule, script contract + sandbox, environment declaration/freeze/bake/lazy lifecycle, the osm.emergency migration numbers, gotchas | [docs/guides/scripts-and-environments.md](docs/guides/scripts-and-environments.md) |
 | **Multi-language (polyglot) handlers** — Java/Go/Scala/TS handlers alongside Python via the Mongo-coordinated agent protocol (name-filtered claim → coexistence); worked example: the embedded-GraphHopper Java agent (`fwh_osm/java/osm-gh-router`) | [docs/guides/multi-language-handlers.md](docs/guides/multi-language-handlers.md) |
 | LLM integration | [docs/guides/llm-integration.md](docs/guides/llm-integration.md) |
 | Long-running handlers | [docs/guides/long-running-handlers.md](docs/guides/long-running-handlers.md) |
