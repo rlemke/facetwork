@@ -9,7 +9,13 @@ and a cold pilot submit completed with zero manual steps. Lazy materialization (
 live-verified on v92: a workflow pinning a never-baked manifest
 (`PyHumanOld@39133371`) completed hands-off — a MaxPro runner's demand scan
 built the venv, re-registered advertising both the baked and the new hash,
-and claimed. Still open from §8: `fw install check` coverage and dashboard
+and claimed. First production migration verified (fwh_osm
+c841719, fleet v93): osm.emergency's four param-only facets moved from
+handlers to inline scripts — identical atlas rankings, ~23% fewer tasks per
+run, and their logic now ships by publishing the flow. The capability/logic
+tier split it validates: handlers keep I/O, external binaries, heartbeats,
+and SDK access; pure+cheap facets (per the effect/cost mixins) are script
+candidates. Still open from §8: `fw install check` coverage and dashboard
 surfacing.
 
 **Fleet pilot PASSED 2026-07-20** (fleet v90): a
