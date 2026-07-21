@@ -136,12 +136,33 @@ class StepMixin(_MixinBase):
         return [self._doc_to_step(doc) for doc in docs]
 
     def save_step(self, step: StepDefinition) -> None:
-        """Save a step to the store."""
+        """Save a step with a server-authoritative version bump.
+
+        The optimistic-concurrency sequence is maintained by ``$inc`` on the
+        SERVER, never taken from the in-memory copy: a direct save used to
+        replace the whole document with whatever (possibly stale, possibly
+        zero) sequence the caller held, silently REGRESSING the counter and
+        making every subsequent CAS-guarded batch write race from scratch —
+        the root mechanism of the continuation-chain liveness stalls (see
+        the liveness investigation in lessons-learned). With ``$inc``, every
+        save advances the counter monotonically regardless of what the
+        caller loaded, and fresh loads always observe the true ordering.
+        """
         now = _current_time_ms()
         if not step.start_time:
             step.start_time = now
         step.last_modified = now
-        self._upsert_by_uuid(self._db.steps, self._step_to_doc(step))
+        doc = self._step_to_doc(step)
+        version = dict(doc.pop("version", {}) or {})
+        version.pop("sequence", None)
+        set_doc = {k: v for k, v in doc.items() if k != "uuid"}
+        for vk, vv in version.items():
+            set_doc[f"version.{vk}"] = vv
+        self._db.steps.update_one(
+            {"uuid": doc["uuid"]},
+            {"$set": set_doc, "$inc": {"version.sequence": 1}},
+            upsert=True,
+        )
 
     def delete_steps(self, step_ids: Sequence[str]) -> int:
         """Delete steps by their UUIDs."""
@@ -285,14 +306,23 @@ class StepMixin(_MixinBase):
                 )
                 if result.matched_count == 0:
                     # A concurrent writer already advanced this step to >= our
-                    # sequence. Drop our stale write rather than clobber theirs;
-                    # the caller re-derives from the current state on next poll.
+                    # sequence. Drop our stale write rather than clobber theirs
+                    # — but DO NOT trust "the caller re-derives on next poll":
+                    # for one-shot processors (continuation tasks, post-handler
+                    # continues) there IS no next poll, and a dropped terminal
+                    # transition strands the step's parents forever (the
+                    # continuation-chain liveness stall). Enqueue a
+                    # continuation for the step so SOME runner re-derives the
+                    # transition from the winning state promptly. Claim-time
+                    # coalescing dedupes if one is already pending.
                     logger.warning(
                         "Optimistic-concurrency conflict: skipped stale write of "
-                        "step %s (our sequence=%d, DB already at >= it)",
+                        "step %s (our sequence=%d, DB already at >= it) — "
+                        "enqueuing self-wake continuation",
                         step.id,
                         seq,
                     )
+                    self._enqueue_conflict_wakeup(step, **kwargs)
             else:
                 self._db.steps.replace_one({"uuid": step.id}, doc, **kwargs)
 
@@ -335,6 +365,59 @@ class StepMixin(_MixinBase):
     # =========================================================================
     # Step Log Operations
     # =========================================================================
+
+    def _enqueue_conflict_wakeup(self, step: StepDefinition, **kwargs: Any) -> None:
+        """Insert a ``_fw_continue`` for a step whose batch write lost CAS.
+
+        Guarantees the re-derivation the drop policy assumes: whoever claims
+        the continuation loads the WINNING state and re-runs the transition.
+        Skipped when a pending continuation for the step already exists.
+        Best-effort — a failure here reduces to the old (drop-only) behavior.
+        """
+        try:
+            from ..continuation import CONTINUATION_TASK_LIST, CONTINUATION_TASK_NAME
+            from ..types import generate_id
+
+            existing = self._db.tasks.find_one(
+                {
+                    "step_id": step.id,
+                    "name": CONTINUATION_TASK_NAME,
+                    "state": "pending",
+                },
+                {"_id": 1},
+            )
+            if existing:
+                return
+            now = _current_time_ms()
+            self._db.tasks.insert_one(
+                {
+                    "uuid": generate_id(),
+                    "name": CONTINUATION_TASK_NAME,
+                    "runner_id": "",
+                    "workflow_id": step.workflow_id,
+                    "flow_id": "",
+                    "step_id": step.id,
+                    "state": "pending",
+                    "created": now,
+                    "updated": now,
+                    "task_list_name": CONTINUATION_TASK_LIST,
+                    "data": {"step_id": step.id, "reason": "cas_conflict_rederive"},
+                    "data_type": "dict",
+                    "error": None,
+                    "max_retries": 3,
+                    "retry_count": 0,
+                    "next_retry_after": 0,
+                    "server_id": "",
+                    "stage_budget_expires": 0,
+                    "stage_name": "",
+                    "timeout_ms": 0,
+                    "environment_hash": "",
+                    "kind": "",
+                },
+                **kwargs,
+            )
+        except Exception:
+            logger.debug("Conflict-wakeup enqueue failed for %s", step.id, exc_info=True)
 
     def save_step_log(self, entry: StepLogEntry) -> None:
         """Save a step log entry."""
