@@ -714,12 +714,24 @@ change, no task-creation feedback loop.
 
 **Verified:** the full 25-region atlas (which exercises catch via a failed
 region) completed **hands-off, zero reseed-driver tasks**, identical
-rankings — the first deep atlas run ever to do so. Residual: each catch
-frontier waits up to one jittered sweep cycle (~5 min) before recovery — a
-latency cost, not a stall; a future refinement could enqueue a continuation
-on catch-entry to remove the wait. Scope: this closes the *catch-frontier*
-variant, which is the atlas's stall; non-catch deep fan-outs are not known
-to stall but are untested.
+rankings — the first deep atlas run ever to do so. Scope: this closes the
+*catch-frontier* variant, which is the atlas's stall; non-catch deep
+fan-outs are not known to stall but are untested.
+
+**Residual (deferred, not fixed).** Each catch frontier waits up to one
+jittered sweep cycle (~5 min) before recovery — a latency cost, not a stall.
+Two attempts to remove it by seeding a continuation at catch-entry both
+failed and were reverted: the first targeted `generate_continuation_events`'
+`updated_steps`, which is empty on the only path that generator runs
+(dirty-blocks mode with a reset changes object); the second marked the
+catch-entering step self-dirty in `_process_step`, but the iteration
+boundary computes continuation targets as `_dirty_blocks MINUS
+processed_ids`, and the just-processed catch step is in `processed_ids`, so
+its own id is filtered out. The genuine fix must route self-reprocess states
+(`CATCH_BEGIN`/`CATCH_CONTINUE`) into `remaining_dirty` *despite* being
+processed — surgery on the core iteration loop whose
+processed_ids/remaining_dirty/stay+push interplay caused the catch bugs in
+§23. Deferred deliberately: cosmetic latency payoff, high blast radius.
 
 ---
 
