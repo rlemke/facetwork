@@ -84,21 +84,20 @@ class StepMixin(_MixinBase):
         return [self._doc_to_step(doc) for doc in docs]
 
     def get_stuck_steps_for_workflow(self, workflow_id: str) -> Sequence[StepDefinition]:
-        """Fetch steps needing an external nudge — server-side filtered."""
-        from ..states import StepState
+        """Fetch steps needing an external nudge — server-side filtered.
+
+        Queries the canonical ``STUCK_STEP_STATES`` (which includes the CATCH_*
+        states): a step stranded at CATCH_BEGIN used to be invisible here even
+        though the workflow was selected via its Continue-state ancestors, so
+        the sweep resumed the ancestors forever without ever touching the real
+        blocker — the continuation-chain liveness stall.
+        """
+        from ..states import STUCK_STEP_STATES
 
         docs = self._db.steps.find(
             {
                 "workflow_id": workflow_id,
-                "state": {
-                    "$in": [
-                        StepState.EVENT_TRANSMIT,
-                        StepState.STATEMENT_BLOCKS_BEGIN,
-                        StepState.STATEMENT_BLOCKS_CONTINUE,
-                        StepState.BLOCK_EXECUTION_BEGIN,
-                        StepState.BLOCK_EXECUTION_CONTINUE,
-                    ]
-                },
+                "state": {"$in": list(STUCK_STEP_STATES)},
             }
         )
         return [self._doc_to_step(doc) for doc in docs]
@@ -110,19 +109,11 @@ class StepMixin(_MixinBase):
         at intermediate states like StatementBlocksBegin/Continue that
         need the evaluator to advance them to completion.
         """
+        from ..states import STUCK_STEP_STATES
+
         return self._db.steps.distinct(
             "workflow_id",
-            {
-                "state": {
-                    "$in": [
-                        StepState.EVENT_TRANSMIT,
-                        StepState.STATEMENT_BLOCKS_BEGIN,
-                        StepState.STATEMENT_BLOCKS_CONTINUE,
-                        StepState.BLOCK_EXECUTION_BEGIN,
-                        StepState.BLOCK_EXECUTION_CONTINUE,
-                    ]
-                },
-            },
+            {"state": {"$in": list(STUCK_STEP_STATES)}},
         )
 
     def get_steps_by_state(self, state: str) -> Sequence[StepDefinition]:

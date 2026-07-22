@@ -92,6 +92,29 @@ class StepState:
         return state == cls.STATEMENT_ERROR
 
 
+# Canonical set of non-terminal states at which a step can STRAND — i.e. it
+# is waiting for the step machine to advance it but nothing is guaranteed to.
+# The stuck-step sweep (and pending-resume detection) query for exactly these.
+#
+# This set MUST cover every state where a step blocks on external progress
+# rather than auto-advancing within one changer-loop pass. Historically the
+# CATCH_* states were missing here while being genuinely-blocking, so a step
+# that entered CATCH_BEGIN (via block-error propagation) stranded until a
+# parent happened to re-notify it — the continuation-chain liveness stall,
+# root-caused by the read-only probe in the liveness investigation. Defining
+# the set ONCE prevents that drift from recurring: add a new blocking state
+# to the machine, add it here, and every sweep site follows.
+STUCK_STEP_STATES: tuple[str, ...] = (
+    StepState.EVENT_TRANSMIT,
+    StepState.STATEMENT_BLOCKS_BEGIN,
+    StepState.STATEMENT_BLOCKS_CONTINUE,
+    StepState.BLOCK_EXECUTION_BEGIN,
+    StepState.BLOCK_EXECUTION_CONTINUE,
+    StepState.CATCH_BEGIN,
+    StepState.CATCH_CONTINUE,
+)
+
+
 # Full state machine transitions for VariableAssignment steps
 STEP_TRANSITIONS: dict[str, str] = {
     StepState.CREATED: StepState.FACET_INIT_BEGIN,

@@ -188,15 +188,9 @@ class PersistenceAPI(Protocol):
         view from inside the evaluator). Subclasses with a database
         backend should override to push filtering server-side.
         """
-        from .states import StepState
+        from .states import STUCK_STEP_STATES
 
-        stuck_states = {
-            StepState.EVENT_TRANSMIT,
-            StepState.STATEMENT_BLOCKS_BEGIN,
-            StepState.STATEMENT_BLOCKS_CONTINUE,
-            StepState.BLOCK_EXECUTION_BEGIN,
-            StepState.BLOCK_EXECUTION_CONTINUE,
-        }
+        stuck_states = set(STUCK_STEP_STATES)
         return [s for s in self.get_steps_by_workflow(workflow_id) if s.state in stuck_states]
 
     def get_pending_resume_workflow_ids(self) -> list[str]:
@@ -212,11 +206,17 @@ class PersistenceAPI(Protocol):
         """
         from .states import StepState
 
-        # Begin states indicate a step that was advanced by continue_step
-        # but not yet processed by the evaluator.
+        # Begin states indicate a step advanced by continue_step but not yet
+        # processed; the CATCH_* states indicate a step that entered catch
+        # recovery but was never re-triggered (the liveness-stall frontier).
+        # Block *Continue* states are deliberately NOT here: a workflow whose
+        # only activity is a parked EventTransmit (with its blocks.Continue
+        # ancestors) is correctly waiting on an external agent, not stuck.
         intermediate_states = {
             StepState.STATEMENT_BLOCKS_BEGIN,
             StepState.BLOCK_EXECUTION_BEGIN,
+            StepState.CATCH_BEGIN,
+            StepState.CATCH_CONTINUE,
         }
         seen: set[str] = set()
         for step in self.get_steps_by_state(StepState.EVENT_TRANSMIT):
