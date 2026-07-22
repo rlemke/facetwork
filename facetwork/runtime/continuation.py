@@ -23,12 +23,6 @@ logger = logging.getLogger(__name__)
 CONTINUATION_TASK_LIST = "_fw_continue"
 CONTINUATION_TASK_NAME = "_fw_continue"
 
-# States a step transitions INTO in place whose next action is the step's own
-# handler (not a parent's re-evaluation), so the step needs a self-continuation
-# to be re-processed. Today these are the catch-recovery states; a new such
-# state in the machine should be registered here. See generate_continuation_events.
-_SELF_REPROCESS_STATES = frozenset({StepState.CATCH_BEGIN, StepState.CATCH_CONTINUE})
-
 
 def generate_continuation_events(
     changes: IterationChanges,
@@ -76,24 +70,6 @@ def generate_continuation_events(
         if not StepState.is_terminal(step.state):
             target_ids.add(str(step.id))
 
-    # And for steps that transitioned IN PLACE into a self-blocking state
-    # whose next action is the STEP'S OWN handler — today the CATCH_* states.
-    # Ordinary updated steps only seed continuations for their PARENTS (to
-    # re-check children); a step that enters CATCH_BEGIN needs *itself*
-    # re-processed (to create/observe its recovery sub-block), which no
-    # parent re-evaluation performs. Without a self-continuation it stranded
-    # until the stuck-step sweep's ~5-min cycle reached it (the liveness-stall
-    # residual). This closes that latency at the source. Bounded: one per such
-    # step per iteration, deduped below and by add_continuation_task; the
-    # continuation drives the step FORWARD (no failure feedback), so unlike a
-    # per-conflict retrigger it cannot loop.
-    self_reprocess_ids: set[str] = set()
-    for step in changes.updated_steps:
-        if step.state in _SELF_REPROCESS_STATES:
-            sid = str(step.id)
-            target_ids.add(sid)
-            self_reprocess_ids.add(sid)
-
     if not target_ids:
         return
 
@@ -120,11 +96,7 @@ def generate_continuation_events(
             created=now,
             updated=now,
             task_list_name=CONTINUATION_TASK_LIST,
-            data={
-                "step_id": target_id,
-                "reason": "catch_reprocess" if target_id in self_reprocess_ids
-                else "child_progress",
-            },
+            data={"step_id": target_id, "reason": "child_progress"},
         )
         changes.add_continuation_task(task)
 

@@ -115,14 +115,6 @@ STUCK_STEP_STATES: tuple[str, ...] = (
 )
 
 
-# States a step transitions INTO in place whose NEXT action is the step's own
-# handler (not a parent's re-evaluation) — so the step needs a continuation
-# targeting ITSELF to be re-processed. Today the catch-recovery states; a new
-# such state should be registered here. Used by the evaluator to mark a step
-# self-dirty so a continuation is seeded promptly (removing the sweep-latency
-# residual of the liveness fix). See lessons-learned "liveness".
-SELF_REPROCESS_STATES: frozenset = frozenset({StepState.CATCH_BEGIN, StepState.CATCH_CONTINUE})
-
 
 # Full state machine transitions for VariableAssignment steps
 STEP_TRANSITIONS: dict[str, str] = {

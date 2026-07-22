@@ -37,7 +37,7 @@ from .dependency import DependencyGraph
 from .entities import StepLogEntry, StepLogLevel, StepLogSource
 from .expression import evaluate_default
 from .persistence import IterationChanges, PersistenceAPI
-from .states import SELF_REPROCESS_STATES, StepState
+from .states import StepState
 from .step import StepDefinition
 from .telemetry import Telemetry
 from .types import BlockId, ObjectType, StepId, WorkflowId, generate_id, workflow_id
@@ -1087,16 +1087,6 @@ class Evaluator:
             # Mark parent blocks as needing re-evaluation
             context.mark_block_dirty(result.step.block_id)
             context.mark_block_dirty(result.step.container_id)
-            # A step that transitioned IN PLACE into a self-reprocess state
-            # (CATCH_BEGIN/CATCH_CONTINUE) needs its OWN handler run next — no
-            # parent re-evaluation performs that. Mark the step's OWN id dirty
-            # so the iteration-boundary continuation generator seeds a
-            # continuation for it (via the same deduped dirty-blocks path),
-            # instead of it stranding until the ~5-min stuck-step sweep. This
-            # is the latency source the sweep fix (STUCK_STEP_STATES) safety-
-            # nets; marking self-dirty removes the wait on the happy path.
-            if result.step.state in SELF_REPROCESS_STATES:
-                context.mark_block_dirty(result.step.id)
             context.changes.add_updated_step(result.step)
             return True
 
