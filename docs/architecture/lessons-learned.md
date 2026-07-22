@@ -675,6 +675,52 @@ full retry budget today (there is no non-retryable error contract in the
 handler SDK). A `PermanentError` that dead-letters immediately is still open
 work — the routable-flag fix removed this instance's need for it.
 
+### 25. The Continuation-Chain Liveness Stall — Root-Caused and Closed
+
+Deep fan-out workflows (the continental emergency atlas) stalled at their
+fan-in tail from the earliest pilots, requiring a "reseed driver" to
+manually re-enqueue continuations one generation at a time. It resisted
+diagnosis for months because the signature was maddening: non-terminal
+steps, zero in-flight tasks, zero pending continuations, runner "running,"
+no progress — and it self-resolved on small runs but not large ones.
+
+**A wrong fix first (the discipline lesson).** An initial attempt guessed
+the cause was optimistic-concurrency sequence regression in `save_step` and
+"fixed" it with a server-side `$inc` plus a self-wake continuation on CAS
+conflict. This made it *worse*: the `$inc` created a second sequence
+authority fighting the batch-commit CAS (more conflicts), and the self-wake
+turned each conflict into a re-derivation that conflicted again — a
+**livelock** (13,870 wakeup continuations in one run). Reverted. The lesson,
+now doctrine: **do not change write semantics on a hypothesis; observe the
+failure first.**
+
+**The disciplined redo — read-only forensics.** A read-only probe froze a
+live stall and dumped its structure: the frontier was a single step at
+`state.statement.catch.Begin`, seq 0, no continuation, no live task, all
+children terminal. The code confirmed `CATCH_BEGIN`/`CATCH_CONTINUE` were
+**absent from the stuck-step sweep's rescue set**. A step that enters catch
+recovery relies on `stay+push` re-processing that is not durable across a
+commit/runner boundary; with the catch states missing from the sweep, such
+a step stranded until a *parent* happened to re-notify it — indirect,
+sweep-cadence-paced, and scale-fragile (small runs recovered; large ones
+outran the recovery). Seeding **one** continuation for the frozen step
+advanced it in 6 seconds, proving it was processable all along.
+
+**The fix (read-query only, low-risk).** A canonical `STUCK_STEP_STATES` in
+`states.py` — including the catch states — referenced by every sweep site in
+both stores, so the sweep directly resumes catch-stranded steps. Defining
+the set *once* prevents the drift that caused the bug. No write-semantics
+change, no task-creation feedback loop.
+
+**Verified:** the full 25-region atlas (which exercises catch via a failed
+region) completed **hands-off, zero reseed-driver tasks**, identical
+rankings — the first deep atlas run ever to do so. Residual: each catch
+frontier waits up to one jittered sweep cycle (~5 min) before recovery — a
+latency cost, not a stall; a future refinement could enqueue a continuation
+on catch-entry to remove the wait. Scope: this closes the *catch-frontier*
+variant, which is the atlas's stall; non-catch deep fan-outs are not known
+to stall but are untested.
+
 ---
 
 ## Implementation Roadmap
