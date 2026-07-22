@@ -289,10 +289,25 @@ generations plus operator endgame nudges, every deep run), the difference is
 categorical: from never-unattended to unattended.
 
 The residual is honest and small: a catch frontier waits up to one sweep
-cycle (~5 min) before recovery — latency, not a stall. Eliminating it is a
-follow-up (enqueue a continuation at catch-entry so the frontier never
-depends on the sweep at all), and it does not affect correctness or the
-hands-off property, only tail latency.
+cycle (~5 min) before recovery — latency, not a stall. Eliminating it turned
+out to be non-trivial, which is itself instructive. The obvious follow-up —
+seed a continuation for the catch step at catch-entry, so it never depends on
+the sweep — was attempted twice and reverted twice, each attempt landing on a
+different property of the same iteration model. Seeding it where updated
+steps are enumerated failed because the continuation generator, on the path
+that actually runs, receives a reset change set and derives targets only from
+a dirty-block set. Marking the catch step's own id into that dirty set failed
+because the iteration boundary subtracts already-processed steps from its
+target set, and the step was just processed *into* the catch state. The
+genuine fix must carry self-reprocess states across the processed-steps
+subtraction — a change to the core loop whose exact processed/dirty/push
+interplay produced the catch defects of the sibling parity-gap paper. We
+deferred it: the payoff is tail latency on an already-correct, hands-off
+system, and the blast radius is the most delicate loop in the engine. The
+episode reprises the paper's own lesson at smaller scale — the iteration
+model, like the coordination substrate, does not reveal its behavior to
+local reading; both times the fix "obviously" belonged somewhere it did
+nothing, and only running the system showed it.
 
 ## 8. Related work and discussion
 
