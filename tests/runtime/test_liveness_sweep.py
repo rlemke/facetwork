@@ -86,66 +86,72 @@ class TestCatchStatesAreSwept:
         assert "wf-done" not in store.get_pending_resume_workflow_ids()
 
 
+
 class TestCatchSelfContinuation:
     """Latency follow-up: a step that transitions IN PLACE into a catch state
-    needs its OWN handler re-run, but ordinary continuations only target a
-    step's parents. generate_continuation_events now seeds a self-continuation
-    for catch-state updates, so recovery no longer waits for the sweep cycle.
+    needs its OWN handler re-run next, but _process_step marks only a step's
+    PARENTS dirty (which seed the parents' continuations). It now also marks
+    the step's OWN id dirty for self-reprocess states, so the iteration
+    boundary seeds a self-continuation instead of waiting for the ~5-min sweep.
     """
 
-    def _changes_with_updated_step(self, state):
+    def _ctx_and_step(self, state):
+        from unittest.mock import MagicMock
+        from facetwork.runtime.evaluator import ExecutionContext
         from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.telemetry import Telemetry
 
-        changes = IterationChanges()
-        s = StepDefinition.create(
+        ctx = ExecutionContext(
+            persistence=MagicMock(),
+            telemetry=Telemetry(enabled=False),
+            changes=IterationChanges(),
             workflow_id="wf",
-            object_type=ObjectType.VARIABLE_ASSIGNMENT,
-            facet_name="ns.F",
-            statement_id="s1",
-            step_uuid="step-1",
+            _dirty_blocks=set(),
+        )
+        s = StepDefinition.create(
+            workflow_id="wf", object_type=ObjectType.VARIABLE_ASSIGNMENT,
+            facet_name="ns.F", statement_id="s1", step_uuid="step-1",
             container_id="parent-1",
         )
-        s.state = state
-        changes.add_updated_step(s)
-        return changes, s
+        s.block_id = "block-1"
+        s.state = "state.statement.blocks.Continue"  # state_before
+        return ctx, s, state
 
-    def test_catch_begin_gets_self_continuation(self):
-        from facetwork.runtime.continuation import generate_continuation_events
-        from facetwork.runtime.states import StepState
+    def _run(self, monkeypatch, target_state):
+        import facetwork.runtime.evaluator as ev_mod
+        from facetwork.runtime.changers.base import StateChangeResult
 
-        changes, s = self._changes_with_updated_step(StepState.CATCH_BEGIN)
-        generate_continuation_events(changes)
-        targets = {t.step_id: t.data["reason"] for t in changes.continuation_tasks}
-        # self-continuation for the catch step itself...
-        assert targets.get("step-1") == "catch_reprocess"
-        # ...and still a normal parent continuation (to re-check the child)
-        assert targets.get("parent-1") == "child_progress"
+        ctx, s, _ = self._ctx_and_step(target_state)
 
-    def test_catch_continue_gets_self_continuation(self):
-        from facetwork.runtime.continuation import generate_continuation_events
-        from facetwork.runtime.states import StepState
+        def fake_changer(step, context):
+            class _C:
+                def process(_self):
+                    step.state = target_state  # transition happened
+                    return StateChangeResult(step=step)
+            return _C()
 
-        changes, s = self._changes_with_updated_step(StepState.CATCH_CONTINUE)
-        generate_continuation_events(changes)
-        assert any(t.step_id == "step-1" and t.data["reason"] == "catch_reprocess"
-                   for t in changes.continuation_tasks)
+        monkeypatch.setattr(ev_mod, "get_state_changer", fake_changer)
+        evaluator = ev_mod.Evaluator(persistence=ctx.persistence, telemetry=ctx.telemetry)
+        progressed = evaluator._process_step(s, ctx)
+        assert progressed
+        return ctx
 
-    def test_non_catch_update_gets_no_self_continuation(self):
-        from facetwork.runtime.continuation import generate_continuation_events
-        from facetwork.runtime.states import StepState
+    def test_catch_begin_marks_self_dirty(self, monkeypatch):
+        ctx = self._run(monkeypatch, "state.statement.catch.Begin")
+        assert "step-1" in ctx._dirty_blocks   # self-dirty -> gets a continuation
+        assert "parent-1" in ctx._dirty_blocks  # parents still dirtied
+        assert "block-1" in ctx._dirty_blocks
 
-        changes, s = self._changes_with_updated_step(StepState.STATEMENT_BLOCKS_CONTINUE)
-        generate_continuation_events(changes)
-        # only the parent, never a self-continuation for a normal update
-        assert not any(t.step_id == "step-1" for t in changes.continuation_tasks)
-        assert any(t.step_id == "parent-1" for t in changes.continuation_tasks)
+    def test_catch_continue_marks_self_dirty(self, monkeypatch):
+        ctx = self._run(monkeypatch, "state.statement.catch.Continue")
+        assert "step-1" in ctx._dirty_blocks
 
-    def test_self_continuation_deduped(self):
-        from facetwork.runtime.continuation import generate_continuation_events
-        from facetwork.runtime.states import StepState
+    def test_normal_transition_does_not_self_dirty(self, monkeypatch):
+        ctx = self._run(monkeypatch, "state.statement.blocks.End")
+        assert "step-1" not in ctx._dirty_blocks   # only parents
+        assert "parent-1" in ctx._dirty_blocks
 
-        changes, s = self._changes_with_updated_step(StepState.CATCH_BEGIN)
-        generate_continuation_events(changes)
-        generate_continuation_events(changes)  # idempotent
-        self_conts = [t for t in changes.continuation_tasks if t.step_id == "step-1"]
-        assert len(self_conts) == 1
+    def test_self_reprocess_states_are_the_catch_states(self):
+        from facetwork.runtime.states import SELF_REPROCESS_STATES, StepState
+        assert SELF_REPROCESS_STATES == frozenset({
+            StepState.CATCH_BEGIN, StepState.CATCH_CONTINUE})
