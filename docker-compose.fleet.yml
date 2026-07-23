@@ -95,12 +95,19 @@ services:
     depends_on: !reset []
     environment:
       <<: *fleet-env
+      # Self-hosted OSM extract source — our own "Geofabrik" served from MinIO
+      # (s3://osm-extracts). CONTINENTS-ONLY today: the 8 continent extracts
+      # resolve; finer regions on the geofabrik path 404 (extract more osmfr
+      # .poly regions to widen coverage). Replaces the IP-banned Geofabrik host
+      # so continent downloads work again. Override per-host in .env.fleet.
+      FW_GEOFABRIK_BASE_URL: ${FW_GEOFABRIK_BASE_URL:-http://afl-minio:9000/osm-extracts}
 
   runner-osm-lz:
     <<: *fleet-runner
     depends_on: !reset []
     environment:
       <<: *fleet-env
+      FW_GEOFABRIK_BASE_URL: ${FW_GEOFABRIK_BASE_URL:-http://afl-minio:9000/osm-extracts}
 
   # Java routing agent — its own image (FW_GH_ROUTER_IMAGE), not the shared
   # FW_RUNNER_IMAGE; the explicit `image:` overrides the anchor's default.
