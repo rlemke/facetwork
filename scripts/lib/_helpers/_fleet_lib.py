@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import subprocess
 from urllib.parse import urlparse
 
 CONVENTIONAL_MONGO = "mongodb://afl-mongodb:27017"
@@ -155,6 +156,94 @@ def resolve_minio(from_config: str | None) -> str | None:
     if _tcp_ok(CONVENTIONAL_MINIO):
         return CONVENTIONAL_MINIO
     return from_config
+
+
+# ---------------------------------------------------------------------------
+# Infra-IP drift self-heal — keep runner containers' afl-* /etc/hosts current
+# ---------------------------------------------------------------------------
+#
+# Runner containers reach Mongo/MinIO by the stable names afl-mongodb / afl-minio,
+# mapped to the infra host's IP by docker `extra_hosts` — baked into /etc/hosts at
+# container creation and NEVER refreshed. When the infra host's DHCP lease drifts,
+# that entry goes stale and every runner loses Mongo (can't claim tasks) and MinIO.
+# pymongo/boto3 already re-resolve the NAME on each reconnect, so the only stale
+# thing is /etc/hosts. The fleet-agent runs on the HOST (it can resolve the server
+# catalog / mDNS even while the container is DB-blind), so it patches the entry and
+# the existing clients auto-reconnect — no runner code change, no recreation.
+
+INFRA_HOST_NAMES = ("afl-mongodb", "afl-minio", "afl-postgres")
+
+
+def resolve_infra_ip(*, log=None) -> str | None:
+    """Current IP of the infra host from the server catalog, with the loopback→LAN
+    guard (on the infra host the stable name resolves to 127.0.0.1, which is poison
+    inside a container). This is the same address `extra_hosts` should carry."""
+    try:
+        from facetwork.servers import catalog as _srv
+        infra = _srv.infra()
+        ip = _srv.resolve_ip(infra) if infra else None
+        if ip and (ip.startswith("127.") or ip == "::1"):
+            ip = lan_ip() or ip
+        return ip
+    except Exception as exc:  # noqa: BLE001
+        if log:
+            log(f"infra-IP resolve failed: {exc}")
+        return None
+
+
+def _rewrite_hosts(content: str, ip: str, names=INFRA_HOST_NAMES) -> str:
+    """Return /etc/hosts content with every ``names`` entry pointed at ``ip``
+    (adding any that are missing). Order preserved; other lines untouched."""
+    nameset = set(names)
+    seen: set[str] = set()
+    out: list[str] = []
+    for ln in content.splitlines():
+        parts = ln.split()
+        if len(parts) >= 2 and parts[1] in nameset:
+            out.append(f"{ip}\t{parts[1]}")
+            seen.add(parts[1])
+        else:
+            out.append(ln)
+    for n in nameset - seen:
+        out.append(f"{ip}\t{n}")
+    return "\n".join(out) + "\n"
+
+
+def _runner_containers() -> list[str]:
+    try:
+        out = subprocess.run(["docker", "ps", "--format", "{{.Names}}",
+                              "--filter", "name=facetwork-runner-"],
+                             capture_output=True, text=True, timeout=15)
+        return [n for n in out.stdout.split() if n]
+    except Exception:
+        return []
+
+
+def refresh_container_hosts(ip: str, *, log=None) -> list[str]:
+    """Patch each running runner container whose afl-mongodb entry ≠ ``ip`` so the
+    afl-* names resolve to the current infra IP. Rewrites /etc/hosts in place via
+    ``cat > /etc/hosts`` (truncate-in-place works on docker's bind-mounted file;
+    ``sed -i`` / rename does not). Returns the names of containers actually patched.
+    A no-op when nothing drifted, so it's cheap to call every poll."""
+    say = log or (lambda _m: None)
+    patched: list[str] = []
+    for c in _runner_containers():
+        try:
+            cur = subprocess.run(["docker", "exec", c, "getent", "hosts", "afl-mongodb"],
+                                 capture_output=True, text=True, timeout=10).stdout.split()
+            cur_ip = cur[0] if cur else None
+            if cur_ip == ip:
+                continue
+            content = subprocess.run(["docker", "exec", c, "cat", "/etc/hosts"],
+                                     capture_output=True, text=True, timeout=10).stdout
+            subprocess.run(["docker", "exec", "-i", c, "sh", "-c", "cat > /etc/hosts"],
+                           input=_rewrite_hosts(content, ip), text=True,
+                           check=True, timeout=15, capture_output=True)
+            patched.append(c)
+            say(f"drift: {c} afl-* {cur_ip} → {ip} (runner auto-reconnects)")
+        except Exception as exc:  # noqa: BLE001 - one bad container shouldn't stop the rest
+            say(f"could not refresh {c}: {exc}")
+    return patched
 
 
 # ---------------------------------------------------------------------------

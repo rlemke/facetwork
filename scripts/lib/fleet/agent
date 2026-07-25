@@ -433,6 +433,21 @@ def cmd_apply(a):
     _apply(cfg, mongo, a.data_dir, a.replicas, recreate=a.recreate, dry_run=a.dry_run)
 
 
+def cmd_refresh_hosts(a):
+    """One-shot: point every runner container's afl-* names at the current infra IP."""
+    ip = _fleet_lib.resolve_infra_ip(log=lambda m: print(f"  {m}"))
+    if not ip:
+        print(f"fleet-agent[{HOST}]: could not resolve the infra IP — nothing to do")
+        return
+    patched = _fleet_lib.refresh_container_hosts(
+        ip, log=lambda m: print(f"fleet-agent[{HOST}]: {m}"))
+    if patched:
+        print(f"fleet-agent[{HOST}]: refreshed afl-* → {ip} on {len(patched)} container(s): "
+              f"{', '.join(patched)}")
+    else:
+        print(f"fleet-agent[{HOST}]: all runner containers already point at {ip} (no drift)")
+
+
 def cmd_watch(a):
     _sweep_stranded_env_files()
     mongo = _fleet_lib.resolve_mongo(a.mongo, log=lambda m: print(f"  {m}"))
@@ -488,10 +503,28 @@ def cmd_watch(a):
             wait = min(a.interval * (2 ** fails), _BACKOFF_CAP_S)
             print(f"fleet-agent[{HOST}]: reconcile error: {exc} "
                   f"(attempt {fails}); backing off {wait}s", flush=True)
-            # Drop a possibly-wedged Mongo client so the next poll rebuilds it.
+            # Drop a possibly-wedged Mongo client so the next poll rebuilds it, and
+            # RE-RESOLVE the Mongo URL from the catalog — the agent's own address may
+            # have drifted too (same DHCP event), so a fresh resolve picks up the new IP.
             _close_client()
+            try:
+                mongo = _fleet_lib.resolve_mongo(a.mongo)
+            except Exception:  # noqa: BLE001 - keep the last-known URL if re-resolve fails
+                pass
         finally:
             wd.cancel()
+            # Infra-IP drift self-heal — ALWAYS run, even when the config read above
+            # failed (that failure is often the drift itself). The agent resolves the
+            # infra IP from the catalog on the HOST (not DB-blind like a container) and
+            # patches each runner's afl-* /etc/hosts, so runners auto-reconnect to
+            # Mongo/MinIO without waiting for a rollout/recreate.
+            try:
+                ip = _fleet_lib.resolve_infra_ip()
+                if ip:
+                    _fleet_lib.refresh_container_hosts(
+                        ip, log=lambda m: print(f"fleet-agent[{HOST}]: {m}", flush=True))
+            except Exception as exc:  # noqa: BLE001 - never let host-refresh kill the daemon
+                print(f"fleet-agent[{HOST}]: host-refresh error: {exc}", flush=True)
         for _ in range(wait):
             if stop["v"]:
                 break
@@ -519,6 +552,11 @@ def main():
     common(pw)
     pw.add_argument("--interval", type=int, default=30, help="poll seconds (default 30)")
     pw.set_defaults(func=cmd_watch)
+
+    pr = sub.add_parser("refresh-hosts",
+                        help="patch runner containers' afl-* /etc/hosts to the current "
+                             "infra IP (DHCP-drift self-heal; also run each watch poll)")
+    pr.set_defaults(func=cmd_refresh_hosts)
 
     a = p.parse_args()
     a.func(a)
