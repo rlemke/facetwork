@@ -109,6 +109,21 @@ exercised the fleet far beyond normal duty:
   registrations, zero dead-lettered production tasks attributable to
   fleet operations.
 
+A later campaign stresses the *claim path* specifically and shows the model
+degrading gracefully **down to a single box**. A 3,167-way `foreach` — one
+map per US county — was executed not by the containerized fleet but by
+**seven native runner processes, 14 workers, on one host**, with no fleet
+config and no containers, handlers loaded from the shared Mongo registry.
+All 3,167 fan-out tasks were claimed and completed, **zero failed**, at
+~23 s/county. The same atomic single-document claim that spreads work across
+four hosts also arbitrates an ad-hoc same-host swarm: the seven processes
+raced on the Mongo claim exactly as fleet runners do — no leader, no queue
+lock — and the only contention (per-state source files each county needed)
+was resolved by a fetch-once shared cache, not by coordination. The property
+that makes the fleet disposable is the same one that lets it collapse to a
+laptop: no runner is special, so *how many* and *where* are deployment
+knobs, not architecture.
+
 The headline is not that nothing went wrong — §4 is long — but that the
 *blast radius of each incident was one host or less*, and production work
 routed around every one of them, because no runner is special.
