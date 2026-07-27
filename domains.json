@@ -257,13 +257,57 @@
     },
     "peloton": {
       "repo": "fwh_peloton",
-      "extras": ["detect", "enhance", "raw", "domain"],
+      "extras": [
+        "detect",
+        "enhance",
+        "raw",
+        "domain"
+      ],
       "description": "Group cycling photos -> per-rider enhanced portraits (detect -> crop -> enhance; 16-bit TIFF; nef-to-tif)"
     },
     "groupphoto": {
       "repo": "fwh_groupphoto",
-      "extras": ["detect", "enhance", "matte", "raw", "domain"],
+      "extras": [
+        "detect",
+        "enhance",
+        "matte",
+        "raw",
+        "domain"
+      ],
       "description": "Enhance posed group photos (deblur + glare/highlight correction + optional background replacement)"
+    },
+    "county-atlas": {
+      "repo": "fwh_county_atlas",
+      "extras": [],
+      "description": "Per-county information maps (OSM + census/CDC/EPA/USGS/NOAA/FEMA/HUD) + US\u2192state\u2192county index",
+      "service": "runner-county-atlas",
+      "task_list": "county",
+      "fleet_default": true,
+      "scaled": true,
+      "compose": {
+        "env": [
+          [
+            "CENSUS_API_KEY",
+            "${CENSUS_API_KEY:-}"
+          ],
+          [
+            "GITHUB_TOKEN",
+            "${GITHUB_TOKEN:-}"
+          ],
+          [
+            "FW_ATLAS_BUCKET",
+            "${FW_ATLAS_BUCKET:-osm-extracts}"
+          ],
+          [
+            "FW_TASK_EXECUTION_TIMEOUT_MS",
+            "1800000"
+          ],
+          [
+            "FW_STUCK_TIMEOUT_MS",
+            "1800000"
+          ]
+        ]
+      }
     }
   },
   "examples": {
