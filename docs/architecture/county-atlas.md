@@ -1,4 +1,9 @@
-# County Atlas — a per-county map platform (design)
+# County Atlas — a per-county map platform (design + as-built)
+
+> **Status:** the design in §1–§8 is **shipped** as the standalone domain `fwh_county_atlas`,
+> run to national scale (3,167 counties), and deployed on the fleet. **[§9 "As built"](#9-as-built-shipped-2026-07)**
+> records what was actually implemented, where reality diverged from the design, the fan-out
+> results, deployment, publishing/curation, and the operational lessons.
 
 A **map per US county** (~3,143) plus a **master index** (US → state → county) that lets
 a viewer toggle a large set of information layers by checkbox, read a panel of
@@ -205,3 +210,127 @@ as rates where a county source exists).
 Each stays a **known gap** in the catalog (`coverage: excluded`), so the map shows
 "not available" rather than inventing data — and can be promoted later if an open national
 source appears.
+
+---
+
+# Part II — As built
+
+## 9. As built (shipped 2026-07)
+
+Everything in §1–§8 is implemented as the standalone domain **`fwh_county_atlas`**
+(github.com/rlemke/fwh_county_atlas), run to national scale, and deployed on the fleet.
+This section is the record of what was actually built and where it diverged from the design.
+
+### 9.1 Design → as-built
+
+| Design (§1–§8) | As built | Why the divergence |
+|---|---|---|
+| MapLibre GL + PMTiles renderer | **Self-contained inline SVG** "plate" (one file/county, zero external requests) | Servable from any static host — MinIO with **no tile provider**, GitHub Pages, or an artifact. Cost: the size wall (§9.6). PMTiles stays the production path for the heavy layers. |
+| 99-layer catalog | **87/99 layers wired** | The 12 unwired need a raster/tile renderer (NLCD/CDL/3DEP land cover, NFHL floodplains) SVG can't draw, or the 500 MB national ZCTA set. |
+| 6 calc operators (§5) | **3 wired**: `ratio`, `nearest_distance` (straight-line, honestly labelled), `per_capita` | `isochrone_coverage` needs `osm.Network`; `density`/`change_over_time` deferred. |
+| `source.kind` handful | **8 source-adapter modules, 7 fetch patterns** (§9.2) | Same idea (catalog is the integration surface); more source shapes than the design's 4 kinds. |
+
+### 9.2 Source adapters — the integration surface as built
+
+One module per source under `src/county_atlas/tools/_county_atlas_tools/`:
+
+| Module | Source & pattern |
+|---|---|
+| `census.py` | ACS via **reuse** of `census_us._lib.metrics` registry + `census_var` direct-column choropleths; TIGER tracts (shared cache) |
+| `health.py` | CDC **PLACES** Socrata `cwsq-ngmh` by `countyfips`, reuses census tract geometry |
+| `epa.py` | **TRI** per-county (Envirofacts `STATE_ABBR`+`COUNTY_NAME`+`ROWS/JSON`) + **Superfund/Brownfields** via EMEF national → shared cache → bbox clip |
+| `usgs.py` | earthquakes (FDSN), aquifers, faults — all **bbox envelope** on ArcGIS FeatureServers |
+| `fema.py` | **National Risk Index** tract choropleth (FeatureServer by `STCOFIPS`) |
+| `noaa.py` | **GHCN** `ghcnd-stations.txt` (10 MB, shared cache), reuses `noaa_weather.parse_stations` |
+| `hud.py` | Public/subsidized **housing** points (bbox FeatureServer) |
+| `tiger.py` | block-group + school-district overlays (per-state shapefile, shared cache) |
+| `calc.py` | tier-3 derived indicators |
+
+Two patterns made a 3,167-county fan-out tractable without re-downloading the internet:
+
+1. **Resolve FIPS + tract geometry once per county**, then share that geometry across
+   census / health / FEMA (they all join to the same tracts).
+2. **Shared national cache** (`s3://…/county-atlas/_shared/`) for datasets with **no
+   county-level filter** (EPA EMEF, NOAA GHCN, per-state TIGER shapefiles): the first
+   county to need it fetches the whole national/state file once; every other county in the
+   fan-out reads the cache and bbox-filters. Without this, ~9,400 redundant census.gov
+   shapefile pulls.
+
+**Cross-domain reuse** (the "lookup-then-compose" moat, made concrete): `census_us._lib.metrics`,
+`save_earth` EPA endpoints, `noaa_weather.parse_stations`, `livability` NRI FeatureServer.
+
+### 9.3 Renderer as built
+
+Self-contained SVG + category checkbox tree + a mutually-exclusive choropleth legend +
+a calculated-indicator panel. Size/quality techniques (rural county **6.5 MB → 1.7 MB**):
+
+- **`<defs>`/`<use>` geometry dedup** — each tract shape is defined once and referenced by
+  every choropleth that colours it.
+- **Collinearity line-simplification** (tol² = 0.8) on boundary/road geometry.
+- **Point gate** — only `geometry:"point"` layers draw markers. Fixed the "red dots with
+  nothing selected" bug: polygon/line layers carried stray OSM Point nodes that rendered as
+  default circles.
+- **viewBox zoom/pan** — wheel + pointer-drag + buttons, with a live scalebar.
+- **Click popups** on point layers (per-feature name/attributes).
+
+### 9.4 Fan-out — run to national scale
+
+`county.atlas.workflows.BuildAtlasFanout(prefix="north-america/us", tier=3)` over the
+per-county OSM PBF tree (`north-america/us/<state>/<county>-latest.osm.pbf`, produced by
+`osm.planet.BuildAdminFanout`) → **3,167 county atlases, 0 failed**, ~7.0 GB in MinIO
+(avg 2.5 MB), then `BuildMasterIndex` → 51-state index. Run by **7 native detached runners
+(14 workers) on server3**, ~23 s/county warm.
+
+**Why native runners, not the Docker fleet:** the seeded FFL handlers carry `file://`
+handler paths that a native runner reads as host paths directly; containerized fleet
+runners can't. Validated on Oregon (36/36) before the national run. Recipe:
+
+```bash
+FW_MONGODB_URL=mongodb://localhost:27017 FW_S3_ENDPOINT=http://localhost:9000 \
+FW_ATLAS_BUCKET=osm-extracts CENSUS_API_KEY=<fleet-secret> \
+.venv/bin/python -m facetwork.runtime.runner --registry --topics "county.atlas.*" --log-format text
+```
+
+Gotchas: `--mongo`/`--max-workers` are **ENV**, not CLI flags (only `--topics` is a flag);
+handlers persist in Mongo **`handler_registrations`**, not `db.handlers` (which is empty for
+every domain — a red herring).
+
+### 9.5 Deployment & publishing
+
+- **Fleet config**: in `domains.json` (`task_list=county`, `fleet_default`, `scaled`),
+  `gen-compose`'d, FFL seeded, repo made public. **Baked into the fleet image**
+  (`server3.local:5050/facetwork-runner:46de3bc`, 1 of 19 baked domains) for permanence.
+  **Not** a standing runner role — it's a batch domain, so bake = on-demand availability;
+  no `runner-county-atlas` container auto-starts (fine; add a role only if continuous
+  serving is wanted).
+- **Full set (local)**: the `osm-extracts` MinIO bucket is whole-bucket public (the
+  self-hosted-Geofabrik PBF serving) → the 3,167-county archive browses at
+  `http://server3.local:9000/osm-extracts/county-atlas/index.html`.
+- **GitHub Pages (curated, 2026-07-28)**: **4 small examples** (Coos OR, San Juan CO,
+  Loving TX, Petroleum MT) + a custom `county-atlas/index.html` linking the full local
+  archive. The **2 large examples** (Santa Clara CA, Harris TX) are **local-only** — 404 on
+  Pages, still served from MinIO — a deliberate "a few examples, don't overload the repo"
+  split, live at https://rlemke.github.io/facetwork-maps/county-atlas/.
+
+### 9.6 Scale constraint (the wall) & the production path
+
+Self-contained SVG **duplicates tract geometry per choropleth** → ~7 MB/rural county,
+20–50 MB dense-urban → 3,167 counties ≈ **30–50 GB**. Feasible in MinIO; **not publishable
+wholesale to GitHub Pages** (~1 GB Pages limit). A national GitHub publish would need the
+**MapLibre GL + PMTiles** renderer from the original design (shared tract geometry, tiles
+fetched on toggle) — the deferred production path. Until then: full set on MinIO, curated
+subset on Pages.
+
+### 9.7 Operational lessons (reusable)
+
+- **`publish_bundles` clobbers a staged custom index.** It auto-generates a plain section
+  landing at `<dest>/index.html`. To keep a custom index, overwrite it *afterward* via the
+  GitHub contents API (PUT with the file's current `sha`) — no re-clone of the big repo.
+- **Big HTML gzips ~30× in git.** Dropping the two large examples barely shrank the repo
+  (97 → 98 MB): repeated inline-SVG structure compresses away, so the repo weight is the
+  accumulated *history of all map families*, not any one big file. Real reclaim is
+  `git filter-repo --path <dir> --invert-paths` + force-push (git-filter-repo via
+  `pip install git-filter-repo`, run `python -m git_filter_repo`).
+- **Version-skew in an informal fleet is a correctness hazard.** Old-image runners on other
+  hosts silently re-contaminated the county extraction (claimed `BuildAdminSet`, wrote
+  suffixed duplicate keys); it converged only after `docker rm -f` on the stale containers.
