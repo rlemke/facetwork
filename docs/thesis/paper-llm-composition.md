@@ -125,6 +125,46 @@ discoverable primitive the next request can find instead of reinvent. The catalo
 grew by exactly the solved request. This is the mechanism the paper claims makes
 request *N+1* cheaper than request *N*; the atlas is one measured step of it.
 
+### 3.6 A second step: the moat compounds, at a different grade of reuse
+
+A follow-on request — *map antibiotic-resistance gene spread across country, year,
+and species* — was answered by the `fwh_amr` domain, and it is the second measured
+point on the curve §4 asks for. Its reuse is real but of a **different grade** than
+§3.3, and the distinction is itself a finding:
+
+- **Framework primitives, imported literally:** the backend-aware object-store layer
+  (`facetwork.runtime.storage`, `facetwork.config`), the `DomainPackage` entry-point
+  contract, and the name-filtered handler-registration protocol — the same surface
+  the catalog exposes to every domain.
+- **Sibling *templates*, copied and adapted (not imported):** the storage wrapper is
+  `migration`'s, extended by two functions; the MapLibre year-slider world choropleth
+  (basemap, play control, name search, provenance modal) is `migration`'s renderer
+  restructured; the fan-out workflow (`ListOrganisms → foreach DownloadOrganism`) is
+  the county atlas's `ListCounties → foreach BuildCountyAtlas` shape; the fetch-once
+  shared-cache discipline is the county atlas's `_shared/` pattern. Crucially, the
+  last two are **this corpus's own earlier solved requests** — and specifically two
+  of the primitives §3.5 recorded the atlas *contributing back*. Request *N* (the
+  atlas) measurably became substrate for request *N+1* (`amr`): the bidirectional
+  loop closes on itself, once.
+- **Cross-domain tooling:** the gallery publish reused `census_us`'s `publish_bundles`
+  verbatim.
+
+Genuinely **new code** was again confined to the source-specific core — the NCBI
+Pathogen Detection streaming ingest, the gene→drug-class classifier, and the
+`geo_loc_name`→ISO3 join — the same collapse the atlas showed, where new code shrinks
+to the adapter and the glue while scaffolding, storage, rendering, and orchestration
+are lookup. And it *ran*: 2.35 M isolates across 14 datasets → a world map + a
+23,270-row gene × species table, in 85 s on one host.
+
+The honest caveat is that most of this reuse is **template** reuse (copy-and-adapt)
+rather than the **literal-import** reuse of §3.3 — a weaker grade, because copied code
+is still maintained per-domain. But the *shape* replicated exactly across two
+independent requests: new code concentrated in the data adapter and the domain
+vocabulary; everything structural came from the substrate. Two points are not a
+curve — but they establish that the first was not a fluke, that reuse is **graded**
+(literal import ▸ template ▸ vetted-endpoint), and that the grade is what §4.3 must
+measure across a longer sequence.
+
 ## 4. What the full paper still needs (the honest gap)
 
 This worked example *instantiates* the thesis; it does not yet *isolate* it. To be
@@ -137,10 +177,12 @@ a research contribution rather than an experience report, the paper needs:
 2. **An effect/cost ablation.** We *assert* the annotations steered the composer
    toward pure/cheap primitives; we have not shown a composer *without* them making
    worse plans. Needed: composition with and without the mixins visible.
-3. **A moat curve, not a moat anecdote.** §3.5 is one enrichment step. The claim is
-   a *trend* — marginal cost falling across a sequence of related requests — which
-   requires composing a family of domains in order and plotting lookup-vs-generation
-   share per step.
+3. **A moat curve, not a moat anecdote.** §3.5–§3.6 give *two* steps — and §3.6 is the
+   stronger kind, a request that reused a *prior request's* contributed primitives, so
+   the N→N+1 loop is observed rather than only asserted. But two points are not a trend.
+   The claim — marginal cost falling across a sequence of related requests — still needs
+   a family of domains composed in order, plotting the lookup-vs-generation share (and
+   its *grade*: literal-import vs template vs endpoint reuse) per step.
 4. **Autonomy scoping, stated plainly.** Here "the LLM composed it" means Claude,
    in an agent loop, with a human gating design and reviewing every step. The paper
    must not overclaim autonomy; the interesting result holds even under supervision
