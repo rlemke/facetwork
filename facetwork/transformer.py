@@ -860,6 +860,19 @@ class FFLTransformer(Transformer):
     def environment_decl(self, meta, items: list) -> EnvironmentDecl:
         doc = _extract_doc_comment(items)
         rest = [i for i in items if not isinstance(i, DocComment)]
+        # `environment` is a contextual keyword matched as IDENT (see the
+        # grammar comment on environment_decl) — validate it here.
+        introducer = str(rest[0])
+        if introducer != "environment":
+            from .parser import ParseError
+
+            raise ParseError(
+                f"Expected `environment` to introduce an environment declaration, "
+                f"got `{introducer}`",
+                line=meta.line,
+                column=meta.column,
+            )
+        rest = rest[1:]
         name = rest[0]
         fields = rest[1] if len(rest) > 1 and isinstance(rest[1], list) else []
         language: str | None = None
@@ -879,6 +892,18 @@ class FFLTransformer(Transformer):
 
     @v_args(meta=True)
     def in_env_clause(self, meta, items: list) -> EnvironmentRef:
+        # `in environment NAME` — the `environment` introducer is matched as a
+        # plain IDENT (contextual keyword), so validate it here.
+        if len(items) >= 2:
+            introducer = str(items[-2])
+            if introducer != "environment":
+                from .parser import ParseError
+
+                raise ParseError(
+                    f"Expected `in environment <Name>`, got `in {introducer} …`",
+                    line=meta.line,
+                    column=meta.column,
+                )
         return EnvironmentRef(name=items[-1], location=self._loc(meta))
 
     # Namespace

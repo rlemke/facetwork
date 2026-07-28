@@ -2519,6 +2519,53 @@ class TestEnvironmentDecls:
         ast = parser.parse("facet A(x: String) => (y: String)")
         assert ast.facets[0].environment is None
 
+    def test_environment_is_a_contextual_keyword(self, parser):
+        """`environment` stays usable as an ordinary identifier.
+
+        It introduces a declaration (`environment Name { … }`) and the
+        `in environment Name` clause, but must NOT be reserved: real domains
+        declare parameters/fields/arguments called `environment` (e.g.
+        jenkins.deploy.DeployToEnvironment(environment: String)).
+        """
+        ast = parser.parse("""
+        namespace deploy {
+            schema DeployResult {
+                environment: String,
+                url: String
+            }
+
+            event facet DeployToEnvironment(artifact_path: String,
+                environment: String = "staging",
+                strategy: String = "rolling") => (result: DeployResult)
+
+            workflow Ship(artifact_path: String, environment: String = "prod") => (url: String) andThen {
+                d = DeployToEnvironment(artifact_path = $.artifact_path,
+                    environment = $.environment)
+                yield Ship(url = d.result.url)
+            }
+        }
+        """)
+        ns = ast.namespaces[0]
+        assert [p.name for p in ns.event_facets[0].sig.params][:2] == [
+            "artifact_path",
+            "environment",
+        ]
+        assert ns.schemas[0].fields[0].name == "environment"
+        assert ns.workflows[0].sig.params[1].name == "environment"
+
+    def test_environment_keyword_still_declares(self, parser):
+        """The contextual keyword still introduces a real declaration."""
+        ast = parser.parse("""
+        namespace geo {
+            environment PyGeo { language = "python" }
+            facet A(environment: String) => (y: String) in environment PyGeo script { result['y'] = 1 }
+        }
+        """)
+        ns = ast.namespaces[0]
+        assert ns.environments[0].name == "PyGeo"
+        assert ns.facets[0].environment == "PyGeo"
+        assert ns.facets[0].sig.params[0].name == "environment"
+
     def test_qualified_environment_reference(self, parser):
         """`in environment` accepts a qualified name."""
         ast = parser.parse("""

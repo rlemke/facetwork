@@ -31,7 +31,12 @@ workflow_decl: DOC_COMMENT? "workflow" facet_sig in_env_clause? facet_def_tail? 
 
 // `in environment NAME` — binds a script-bearing declaration to a named
 // execution environment (docs/architecture/script-environments.md).
-in_env_clause: "in" "environment" QNAME _NL*
+//
+// `environment` is matched as a plain IDENT (and validated in the
+// transformer) so it stays a CONTEXTUAL keyword: `environment` remains
+// usable as a parameter/field/argument name, which real domains rely on
+// (e.g. jenkins.deploy.DeployToEnvironment(environment: String)).
+in_env_clause: "in" IDENT QNAME _NL*
 
 // Facet signature.  Mixin sigs may appear on the same line as the
 // return clause or on separate lines.
@@ -164,7 +169,9 @@ schema_fields: schema_field (_NL* "," _NL* schema_field)* _NL*
 schema_field: IDENT ":" type
 
 // Environment declarations (docs/architecture/script-environments.md)
-environment_decl: DOC_COMMENT? "environment" IDENT "{" _NL* [env_fields] "}" _stmt_end
+// The `environment` introducer is matched as a plain IDENT and validated
+// in the transformer, keeping it a contextual keyword (see in_env_clause).
+environment_decl: DOC_COMMENT? IDENT IDENT "{" _NL* [env_fields] "}" _stmt_end
 env_fields: env_field (_NL* "," _NL* env_field)* _NL*
 env_field: IDENT "=" env_value
 ?env_value: STRING
