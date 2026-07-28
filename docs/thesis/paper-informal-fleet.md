@@ -124,6 +124,20 @@ that makes the fleet disposable is the same one that lets it collapse to a
 laptop: no runner is special, so *how many* and *where* are deployment
 knobs, not architecture.
 
+A second single-box datapoint stresses *ingest volume* rather than claim
+cardinality. The antibiotic-resistance domain (`fwh_amr`) pulled **2.35
+million bacterial isolates from 14 heterogeneous public datasets** (NCBI
+Pathogen Detection) — streaming each organism's metadata file, the largest
+840 MB, with bounded memory — and aggregated them into a world resistance
+map plus a 23,270-row gene × species table **in 85 seconds on one host**.
+Each organism's aggregate was written side-by-side into a single shared
+object-store prefix that the fan-in read together: the same fetch-once
+shared-cache discipline, no fleet and no containers involved. The domain's
+`BuildAmrFanout` workflow spreads those 14 ingests across the fleet by the
+identical per-organism claim, but a laptop-class box did not need it — a
+multi-million-record national ingest is, once more, a *how-many-runners*
+knob, not a scaling wall.
+
 The headline is not that nothing went wrong — §4 is long — but that the
 *blast radius of each incident was one host or less*, and production work
 routed around every one of them, because no runner is special.
