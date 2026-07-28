@@ -219,6 +219,7 @@ surface as `--domain <name>`:
 - [migration](https://github.com/rlemke/fwh_migration) — world net-migration choropleth with year slider + play, 1960-2025
 - [cancer](https://github.com/rlemke/fwh_cancer) — cancer gene-prioritization evidence graph (not a map): ranked, explainable per-type gene table from open genomics (TCGA/GDC, GTEx, intOGen)
 - [congress](https://github.com/rlemke/fwh_congress) — US congressional (voting) districts colored by sitting-rep party (Census CD119 + congress-legislators)
+- [amr](https://github.com/rlemke/fwh_amr) — antibiotic-resistance gene spread (country × year × species) from NCBI Pathogen Detection: world resistance-prevalence map (year slider + drug-class dropdown) + ranked gene × species table; ingests precomputed AMRFinderPlus calls (no assemblies)
 
 Full per-domain descriptions live in `domains.json` and each repo's README/CLAUDE.md.
 
