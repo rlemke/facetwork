@@ -223,6 +223,17 @@ surface as `--domain <name>`:
 
 Full per-domain descriptions live in `domains.json` and each repo's README/CLAUDE.md.
 
+**Every `fwh_*` repo carries an FFL example gallery.** Its README opens with an
+"FFL at a glance" section (one short, runnable snippet against that domain's own
+facets) linking to **`docs/ffl-examples.md`** — 6–9 complete, compile-checked
+scenarios per domain: the minimal workflow, `$`-scoping, `foreach` fan-out,
+`dependency_signal` sequencing, call-time mixins, `catch`, `when`, cross-domain
+composition, plus a syntax cheat sheet. Point people there for "show me the
+language" before the grammar reference. Keep the convention when adding a domain,
+and re-check the blocks after changing a facet signature — every fenced ```ffl
+block is meant to compile against the repo's own FFL (`fw ffl compile --check
+--primary <block> --library <domain .ffl>`).
+
 ## Domain pipelines — tools / handlers / cache pattern
 
 Every domain ingestion pipeline (osm-geocoder, noaa-weather, …) follows one contract: a `tools/` dir of Python CLIs + shell wrappers backed by `tools/_<pkg>_tools/`, FFL handlers that call into the same `_<pkg>_tools/` via a `handlers/shared/<domain>_utils.py` shim, and a sidecar-backed cache under `$FW_CACHE_ROOT/<namespace>/`. Canonical examples:
