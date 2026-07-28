@@ -177,6 +177,13 @@
       "service": "runner-migration",
       "task_list": "migration"
     },
+    "amr": {
+      "repo": "fwh_amr",
+      "extras": [],
+      "description": "Antibiotic-resistance gene spread (country x year x species) from NCBI Pathogen Detection: world resistance-prevalence map (year slider + drug-class dropdown) + gene x species table",
+      "service": "runner-amr",
+      "task_list": "amr"
+    },
     "osm-mapping": {
       "repo": "fwh_osm_mapping",
       "extras": [],
