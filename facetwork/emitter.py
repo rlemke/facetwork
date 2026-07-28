@@ -283,6 +283,16 @@ class JSONEmitter:
         if declarations:
             data["declarations"] = declarations
 
+        # Forward-compat marker: name any construct whose semantics an older
+        # runtime would SILENTLY DROP rather than merely ignore, so that runtime
+        # can refuse the work instead of mis-executing it. Derived from the tree
+        # itself, so it can't drift. See facetwork/ast_features.py.
+        from .ast_features import collect_features_from_ast
+
+        features = collect_features_from_ast(declarations)
+        if features:
+            data["features"] = sorted(features)
+
         return self._add_metadata(data, node)
 
     def _doc_comment(self, doc: DocComment) -> dict:

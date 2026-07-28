@@ -1312,6 +1312,19 @@ class FFLValidator:
                         step_returns[step.name] = set()  # Unknown facet or schema
                         step_returns_types[step.name] = {}
 
+            # Validate the `after A, B` ordering clause (if any).
+            if step.after:
+                self._validate_after_clause(
+                    step,
+                    steps,
+                    [
+                        s.name
+                        for s in body.block.steps
+                        if not isinstance(s, (SysLogStmt, SysAssertStmt))
+                    ],
+                    other_block_steps,
+                )
+
             # Validate mixin references in step call (only for non-schema instantiations)
             for mixin_call in step.call.mixins:
                 self._resolve_facet_name(mixin_call.name, step.call.location)
@@ -1638,6 +1651,112 @@ class FFLValidator:
                 parent_step_returns=parent_step_returns,
                 parent_step_returns_types=parent_step_returns_types,
                 parent_foreach_var=parent_foreach_var,
+            )
+
+    def _validate_after_clause(
+        self,
+        step: "StepStmt",
+        steps: dict[str, StepInfo],
+        block_step_names: list[str],
+        other_block_steps: set[str] | None = None,
+    ) -> None:
+        """Validate `after A, B` — explicit ordering for invisible dependencies.
+
+        `after` names steps whose ordering the compiler cannot infer because no
+        value flows between them (the producer wrote a shared cache / object
+        store / scratch dir). Scoping matches step references exactly: same
+        block, backward only. See docs/architecture/ffl-after-clause.md.
+        """
+        other_block_steps = other_block_steps or set()
+        seen: set[str] = set()
+
+        # Step names a data reference in this call already depends on — those
+        # edges exist without `after`, so naming them again is redundant.
+        referenced: set[str] = set()
+        for arg in step.call.args:
+            for ref in self._extract_references(arg.value):
+                if not ref.is_input and ref.path:
+                    referenced.add(ref.path[0])
+
+        for target in step.after:
+            location = step.location
+
+            if "." in target:
+                head = target.split(".")[0]
+                self._result.add_error(
+                    f"'after {target}': 'after' takes step names, not attributes",
+                    location,
+                    rule_id="AFTER_NOT_A_STEP",
+                    suggested_fix=f"after {head}",
+                )
+                continue
+
+            if target == step.name:
+                self._result.add_error(
+                    f"Step '{step.name}' cannot follow itself",
+                    location,
+                    rule_id="AFTER_SELF",
+                )
+                continue
+
+            if target in seen:
+                self._result.add_warning(
+                    f"'after {target}' is listed more than once by step '{step.name}'",
+                    location,
+                    rule_id="AFTER_REDUNDANT",
+                )
+                continue
+            seen.add(target)
+
+            # Defined earlier in THIS block → the only valid case.
+            if target in steps and target not in self._enclosing_step_names:
+                if target in referenced:
+                    self._result.add_warning(
+                        f"'after {target}' is redundant: step '{step.name}' already "
+                        f"references '{target}', which orders it",
+                        location,
+                        rule_id="AFTER_REDUNDANT",
+                        suggested_fix=f"drop 'after {target}'",
+                    )
+                continue
+
+            # Declared later in this block → forward ordering.
+            if target in block_step_names:
+                self._result.add_error(
+                    f"Step '{step.name}' cannot follow step '{target}', "
+                    f"which is not defined before it",
+                    location,
+                    rule_id="AFTER_FORWARD_STEP",
+                )
+                continue
+
+            # A step of an ENCLOSING block (the containing step itself, or one of
+            # its siblings). Not nameable here — same rule as references — and
+            # already ordered, since this block only runs once its container does.
+            if target in self._enclosing_step_names:
+                self._result.add_error(
+                    f"'after {target}': '{target}' is not defined in this block "
+                    f"(it belongs to an enclosing block, which already runs first)",
+                    location,
+                    rule_id="AFTER_CROSS_BLOCK",
+                    suggested_fix=f"drop 'after {target}'",
+                )
+                continue
+
+            # A sibling block's step: out of scope, same as a reference would be.
+            if target in other_block_steps:
+                self._result.add_error(
+                    f"'after {target}': '{target}' belongs to a sibling block and is "
+                    f"not visible here",
+                    location,
+                    rule_id="AFTER_CROSS_BLOCK",
+                )
+                continue
+
+            self._result.add_error(
+                f"'after {target}': no step named '{target}' in this block",
+                location,
+                rule_id="AFTER_UNKNOWN_STEP",
             )
 
     def _extract_references(self, expr) -> list[Reference]:

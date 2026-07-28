@@ -383,3 +383,103 @@ class TestCollectionDependencyExtraction:
         }
         graph = DependencyGraph.from_ast(block_ast, {"x"})
         assert graph.dependencies["a"] == set()
+
+
+class TestAfterClause:
+    """`after A, B` — ordering edges for dependencies that carry no value.
+
+    See docs/architecture/ffl-after-clause.md. The point of these tests is that
+    an `after` edge is INDISTINGUISHABLE from a data edge once it reaches the
+    graph: same readiness gating, same fan-in behavior.
+    """
+
+    @staticmethod
+    def _block(after_targets: list[str] | None = None) -> dict:
+        """download -> build, where build shares NO data with download."""
+        build: dict = {
+            "id": "step-2",
+            "name": "build",
+            "call": {"target": "BuildMap", "args": []},
+        }
+        if after_targets is not None:
+            build["after"] = after_targets
+        return {
+            "steps": [
+                {"id": "step-1", "name": "download", "call": {"target": "Download", "args": []}},
+                build,
+            ]
+        }
+
+    def test_without_after_the_steps_are_independent(self):
+        """Baseline: no value flows, so nothing orders them — the bug `after` fixes."""
+        graph = DependencyGraph.from_ast(self._block(), set())
+        assert graph.dependencies["step-2"] == set()
+        ready = {s.name for s in graph.get_ready_statements(completed=set())}
+        assert ready == {"download", "build"}  # both eligible immediately
+
+    def test_after_creates_the_edge(self):
+        graph = DependencyGraph.from_ast(self._block(["download"]), set())
+        assert "step-1" in graph.dependencies["step-2"]
+
+    def test_after_gates_readiness(self):
+        graph = DependencyGraph.from_ast(self._block(["download"]), set())
+        ready = {s.name for s in graph.get_ready_statements(completed=set())}
+        assert ready == {"download"}  # build is held back
+        ready = {s.name for s in graph.get_ready_statements(completed={"step-1"})}
+        assert "build" in ready
+
+    def test_multiple_targets_are_conjunctive(self):
+        """Fan-in: one consumer after several independent producers.
+
+        A total-order construct could not express this — the producers must stay
+        parallel with each other while all preceding the consumer.
+        """
+        block = {
+            "steps": [
+                {"id": "s-a", "name": "a", "call": {"target": "DownloadA", "args": []}},
+                {"id": "s-b", "name": "b", "call": {"target": "DownloadB", "args": []}},
+                {
+                    "id": "s-map",
+                    "name": "map",
+                    "call": {"target": "BuildMap", "args": []},
+                    "after": ["a", "b"],
+                },
+            ]
+        }
+        graph = DependencyGraph.from_ast(block, set())
+        assert graph.dependencies["s-map"] == {"s-a", "s-b"}
+        # producers stay concurrent
+        assert graph.dependencies["s-a"] == set() and graph.dependencies["s-b"] == set()
+        assert {s.name for s in graph.get_ready_statements(completed=set())} == {"a", "b"}
+        assert "map" not in {s.name for s in graph.get_ready_statements(completed={"s-a"})}
+        assert "map" in {s.name for s in graph.get_ready_statements(completed={"s-a", "s-b"})}
+
+    def test_after_unions_with_data_edges(self):
+        """A data edge and an `after` edge to different steps both apply."""
+        block = {
+            "steps": [
+                {"id": "s-a", "name": "a", "call": {"target": "A", "args": []}},
+                {"id": "s-b", "name": "b", "call": {"target": "B", "args": []}},
+                {
+                    "id": "s-c",
+                    "name": "c",
+                    "call": {
+                        "target": "C",
+                        "args": [{"name": "v", "value": {"type": "StepRef", "path": ["a", "x"]}}],
+                    },
+                    "after": ["b"],
+                },
+            ]
+        }
+        graph = DependencyGraph.from_ast(block, set())
+        assert graph.dependencies["s-c"] == {"s-a", "s-b"}
+
+    def test_unknown_target_is_skipped_not_fatal(self):
+        """A newer compiler's AST must not crash this runtime mid-run.
+
+        The validator rejects unknown targets at compile time; reaching one here
+        means the AST came from elsewhere. The feature gate
+        (facetwork/ast_features.py) is what refuses such work up front.
+        """
+        graph = DependencyGraph.from_ast(self._block(["nosuch"]), set())
+        assert graph.dependencies["step-2"] == set()

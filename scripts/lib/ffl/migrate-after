@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# fw-summary: rewrite the dependency_signal idiom to the `after` ordering clause
+# Migrate `F(dependency_signal = s.x)` call sites to `F() after s`
+# (docs/architecture/ffl-after-clause.md).
+#
+# `after` states an ordering edge for a dependency that carries NO value — the
+# producer wrote a shared cache/object store/scratch dir. `dependency_signal`
+# faked that edge by passing a value nobody reads.
+#
+# Usage:
+#   fw ffl migrate-after FILE.ffl                # dry run: diff + manual sites
+#   fw ffl migrate-after src/mydomain/ffl/       # scan a directory (dry run)
+#   fw ffl migrate-after src/mydomain/ffl/ --write
+#
+# Rewrites step-reference and literal values; anything else is REPORTED, not
+# guessed at. Removing the now-unused `dependency_signal` PARAMETER from facet
+# declarations is a separate, breaking step — see the doc's migration section.
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+REPO_ROOT="$FW_ROOT"
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.migration.after_cli "$@"

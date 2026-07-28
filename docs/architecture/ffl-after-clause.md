@@ -1,8 +1,9 @@
 # `after` — explicit ordering for invisible dependencies
 
-**Status:** grammar + AST + emitter + source-reconstruction prototyped on branch
-`ffl-after-clause`. Validator rules, runtime edge, and the `dependency_signal`
-codemod are specified here but **not yet implemented**.
+**Status:** implemented on branch `ffl-after-clause` — grammar, AST, emitter,
+source reconstruction, six validator rules, the runtime edge, a forward-compat
+feature gate, and the `fw ffl migrate-after` codemod. Not merged; the
+`dependency_signal` parameter removal (§7 phase 3) is deliberately not done.
 
 ## 1. The problem
 
@@ -154,10 +155,18 @@ Everything downstream — readiness, the `_StepNotReady` deferral, the continuat
 cascade — is untouched, because once an `after` edge is in the set it is
 indistinguishable from a data edge.
 
-**Open question to settle during implementation:** whether a parent step's terminal
-state already implies all its sub-blocks are terminal, or whether `after` on a
-fan-out step must wait on block reconciliation explicitly. This determines whether
-fan-in works for free or needs a few lines in `block_execution.py`.
+**Fan-in works for free.** The open question — whether a fan-out step's terminal
+state already implies its sub-blocks are terminal — is answered by
+`block_execution.py`: a foreach parent transitions only when
+`terminal == total` over its sub-blocks, and marks itself errored if any child
+errored. So `after <fan-out step>` is a true join, and a failed iteration
+propagates to the dependent exactly like a failed data producer. No change was
+needed there.
+
+An `after` target that doesn't resolve is skipped rather than fatal: the
+validator rejects those at compile time, so reaching one at runtime means an AST
+from elsewhere — and §8's gate is the right place to refuse that, not a crash
+mid-run.
 
 ## 6. Validator rules
 
@@ -198,10 +207,25 @@ same location-based rewriting so comments and formatting survive, same dry-run-d
 | `F(dependency_signal = step.field)` | `F() after step` |
 | `F(dependency_signal = 0)` (amr, osm-mapping) | drop the arg — a literal never created an edge |
 | `F(a = 1, dependency_signal = s.x)` | `F(a = 1) after s` |
-| value is a workflow input or a compound expression | **report, do not rewrite** — can't prove it's inert |
+| `F(dependency_signal = a.n + b.n + c.n)` (save-earth) | `F() after a, b, c` |
+| value reads a workflow input (`$.x`) | **report, do not rewrite** — can't prove it's inert |
 
 Keying on the parameter *name* is what makes this safe: `dependency_signal` is a
 convention meaning "this value is never read."
+
+The compound case earns its keep: save-earth's `BuildGlobalMap` passes
+`olm.feature_count + superfund.feature_count + brownfields.feature_count` — a sum
+whose value is discarded and whose only purpose is the three edges. `after olm,
+superfund, brownfields` says that directly, and it is the fan-in shape a
+total-order construct could not express.
+
+**Verified against the real fleet:** all 7 affected domains migrate with zero
+manual sites, produce 48 `after` clauses, leave no `dependency_signal` call
+sites, and compile clean. Three source shapes broke a naive line-rewrite and are
+now regression-tested: a sole argument on its own line (`F(\n)` is invalid FFL —
+the parens must collapse), a closing paren sharing a line with `catch` (the
+clause must be inserted at the `)`, not appended after `catch {`), and a
+preceding argument's now-dangling comma.
 
 ### Phase 3 — remove the parameter (breaking; deliberately deferred)
 
@@ -215,27 +239,50 @@ versions for weeks. Sequence:
 3. Only after a rollout where every live host is current, delete the parameter and
    the handler kwarg.
 
-## 8. Deployment hazard
+## 8. Deployment hazard and the feature gate
 
 The catalog stores `compiled_ast`. A new-compiler AST carrying `after` executed by
 an **old runner** would have the field silently ignored — the ordering vanishes and
 the result is a race that looks exactly like the bug `after` exists to prevent.
 Silent wrong-order is worse than a hard failure.
 
-Mitigation: stamp a minimum-runtime marker on any flow whose AST uses `after`, and
-have the submit path refuse rather than run it degraded. Cheap now, impossible to
-retrofit after the first silent corruption.
+`facetwork/ast_features.py` implements the guard. The emitter stamps
+`"features": ["after"]` on any program that uses such a construct — derived by
+walking the emitted tree, so the marker cannot drift from the code — and
+`check_supported()` refuses a program declaring features this runtime doesn't
+implement. `fw ffl run` calls it before submitting and exits with a message
+telling the operator to roll the runner rather than execute degraded.
 
-## 9. Prototype status
+**Be clear about what this cannot do.** It protects every runtime that *has* the
+guard. It cannot protect runtimes older than the guard itself — they predate the
+check and ignore both the feature list and the field it describes. For those the
+operational rule is unchanged and unavoidable: **roll the fleet before using a new
+construct.** That is not hypothetical here — two hosts sat on a months-old image
+while the others moved on. The guard's value is that from now on, every *future*
+construct gets refusal instead of silent misbehavior.
 
-On branch `ffl-after-clause`:
+The `KNOWN_AST_FEATURES` set is the contract: add a name there in the same change
+that teaches the runtime to honor it, never earlier.
 
-- ✅ Grammar — LALR-clean; the `_NL`-before-comma ambiguity found and fixed
+## 9. Status
+
+On branch `ffl-after-clause` (not merged):
+
+- ✅ Grammar — LALR-clean; the `_NL`-before-comma ambiguity found by prototyping
 - ✅ Contextual keyword — `after` still usable as an identifier (test-pinned)
-- ✅ AST field, transformer, emitter (omitted when empty)
-- ✅ `workflow_source` reconstruction + verified source→compile→reconstruct→reparse round-trip
-- ✅ 7 parser tests; full suite green (2939 passed)
-- ⬜ Validator rules + rule docs (§6)
-- ⬜ Runtime edge union (§5) and the fan-out join question
-- ⬜ `fw ffl migrate-after` (§7)
-- ⬜ Min-runtime marker (§8)
+- ✅ AST field, transformer, emitter (omitted when empty, so old ASTs are unchanged)
+- ✅ `workflow_source` reconstruction + source→compile→reconstruct→reparse round-trip
+- ✅ Six validator rules + six rule docs; rule-doc coverage still exact
+- ✅ Runtime edge; fan-in confirmed to work without touching `block_execution.py`
+- ✅ Feature gate (`facetwork/ast_features.py`) + submit-time refusal
+- ✅ `fw ffl migrate-after` — all 7 domains migrate clean, compile, 0 manual sites
+- ✅ 33 new tests (7 parser, 10 validator, 6 runtime, 10 migrator); suite green (2965)
+- ⬜ **Phase 3 not done on purpose:** removing the `dependency_signal` parameter
+  from the 15 facet declarations and their handlers. That is the breaking half and
+  must wait for a fleet where every live host runs an image that no longer passes
+  it (§7).
+
+### Deliberately left undone
+
+`after` on a `yield`, and any cross-block form. Both would need new scope rules;
+neither has a motivating call site in the current domains.

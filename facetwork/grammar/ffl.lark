@@ -119,7 +119,11 @@ step_stmt: IDENT "=" call_expr after_clause? step_body* catch_clause?
 // list ambiguous with the next statement under LALR(1): after `after a\n` the
 // parser cannot tell a continued list from a new statement.
 after_clause: IDENT after_targets
-after_targets: IDENT ("," _NL* IDENT)*
+after_targets: after_target ("," _NL* after_target)*
+// A dotted path parses so the VALIDATOR can reject it with a precise message
+// (AFTER_NOT_A_STEP: "write 'after data', not 'after data.count'") instead of a
+// bare syntax error. `after` takes step names, never attributes.
+after_target: IDENT ("." IDENT)*
 step_body: "andThen" foreach_clause? block
          | "andThen" _NL* "when" when_block             -> step_body_when
 

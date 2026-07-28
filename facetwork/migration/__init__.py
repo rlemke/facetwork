@@ -14,6 +14,13 @@
 
 """FFL source migrations."""
 
+from .after_migrator import AfterMigrationResult
+from .after_migrator import migrate_source as migrate_after_source
 from .relative_scope_migrator import MigrationResult, migrate_source
 
-__all__ = ["MigrationResult", "migrate_source"]
+__all__ = [
+    "AfterMigrationResult",
+    "MigrationResult",
+    "migrate_after_source",
+    "migrate_source",
+]

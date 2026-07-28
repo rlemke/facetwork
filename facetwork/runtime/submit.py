@@ -269,6 +269,18 @@ def main(args: list[str] | None = None) -> int:
     program_json = emitter.emit(ast)
     program_dict = json.loads(program_json)
 
+    # Refuse to submit work this runtime cannot execute faithfully. This is the
+    # loud, human-facing half of the forward-compat guard (facetwork/
+    # ast_features.py): submitting a program that needs a construct we don't
+    # implement would run it with those semantics silently missing.
+    from ..ast_features import UnsupportedASTFeatureError, check_supported
+
+    try:
+        check_supported(program_dict)
+    except UnsupportedASTFeatureError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
     # Freeze environment manifests into the compiled program (resolve-and-
     # freeze at publish — docs/architecture/script-environments.md §5). The
     # annotated dict is what persists as compiled_ast, so the pinned versions

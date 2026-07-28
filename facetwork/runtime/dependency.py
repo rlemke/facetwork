@@ -103,6 +103,14 @@ class DependencyGraph:
             # Also scan mixin args for dependencies
             for mixin in stmt.mixins:
                 deps |= graph._extract_dependencies(mixin.get("args", []), workflow_inputs)
+            # Explicit `after A, B` ordering edges. The validator has already
+            # rejected unknown/forward/cross-block targets, so an unresolved name
+            # here means a compiled AST from a newer compiler — skip rather than
+            # crash (the feature gate in the loader is what catches that case).
+            for target in stmt.after:
+                target_id = graph.name_to_id.get(target)
+                if target_id:
+                    deps.add(target_id)
             graph.dependencies[stmt_id] = deps
             stmt.dependencies = deps
 
@@ -133,6 +141,7 @@ class DependencyGraph:
             args=args,
             mixins=mixins,
             is_yield=False,
+            after=list(step_ast.get("after", [])),
         )
 
     def _parse_sys_stmt(self, stmt_ast: dict) -> StatementDefinition:

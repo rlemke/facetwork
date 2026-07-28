@@ -515,6 +515,11 @@ class FFLTransformer(Transformer):
         return CallExpr(name=name, args=args, mixins=mixins, location=self._loc(meta))
 
     # Statements
+    def after_target(self, items: list) -> str:
+        # Dotted paths parse (see the grammar) so the validator can reject them
+        # with AFTER_NOT_A_STEP; join them back for the message.
+        return ".".join(str(i) for i in items)
+
     def after_targets(self, items: list) -> "_AfterTargets":
         return _AfterTargets([str(i) for i in items])
 

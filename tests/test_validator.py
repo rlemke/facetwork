@@ -4090,3 +4090,138 @@ class TestEnvironmentValidation:
         }
         """)
         assert result.is_valid, [str(e) for e in result.errors]
+
+
+class TestAfterClause:
+    """`after A, B` — ordering edges for dependencies that carry no value.
+
+    Scoping deliberately mirrors step references: same block, backward only.
+    See docs/architecture/ffl-after-clause.md.
+    """
+
+    SRC = """
+        event facet Download() => (count: Int)
+        event facet BuildMap() => (html_path: String)
+        event facet BuildIndex() => (index_path: String)
+        workflow W() => (p: String) andThen {
+            %s
+        }
+        """
+
+    def _validate(self, validator, body: str):
+        return validator.validate(parse(_ns(self.SRC % body)))
+
+    def _rules(self, result) -> list[str]:
+        return [e.rule_id for e in result.errors] + [w.rule_id for w in result.warnings]
+
+    def test_valid_after_passes(self, validator):
+        result = self._validate(
+            validator,
+            "data = Download()\n            map = BuildMap() after data\n"
+            "            yield W(p = map.html_path)",
+        )
+        assert result.is_valid, [e.message for e in result.errors]
+
+    def test_valid_multiple_targets(self, validator):
+        result = self._validate(
+            validator,
+            "data = Download()\n            idx = BuildIndex()\n"
+            "            map = BuildMap() after data, idx\n"
+            "            yield W(p = map.html_path)",
+        )
+        assert result.is_valid, [e.message for e in result.errors]
+
+    def test_unknown_step(self, validator):
+        result = self._validate(
+            validator,
+            "map = BuildMap() after nosuch\n            yield W(p = map.html_path)",
+        )
+        assert "AFTER_UNKNOWN_STEP" in self._rules(result)
+
+    def test_forward_step(self, validator):
+        result = self._validate(
+            validator,
+            "map = BuildMap() after data\n            data = Download()\n"
+            "            yield W(p = map.html_path)",
+        )
+        assert "AFTER_FORWARD_STEP" in self._rules(result)
+
+    def test_self_reference(self, validator):
+        result = self._validate(
+            validator, "map = BuildMap() after map\n            yield W(p = map.html_path)"
+        )
+        assert "AFTER_SELF" in self._rules(result)
+
+    def test_attribute_instead_of_step(self, validator):
+        result = self._validate(
+            validator,
+            "data = Download()\n            map = BuildMap() after data.count\n"
+            "            yield W(p = map.html_path)",
+        )
+        errors = [e for e in result.errors if e.rule_id == "AFTER_NOT_A_STEP"]
+        assert errors and errors[0].suggested_fix == "after data"
+
+    def test_redundant_when_already_referenced(self, validator):
+        """A data edge already orders them — warn, don't fail."""
+        ast = parse(
+            _ns("""
+        event facet Download() => (count: Int)
+        event facet BuildMap(count: Int) => (html_path: String)
+        workflow W() => (p: String) andThen {
+            data = Download()
+            map = BuildMap(count = data.count) after data
+            yield W(p = map.html_path)
+        }
+        """)
+        )
+        result = validator.validate(ast)
+        assert result.is_valid  # warning only
+        assert "AFTER_REDUNDANT" in [w.rule_id for w in result.warnings]
+
+    def test_duplicate_target_warns(self, validator):
+        result = self._validate(
+            validator,
+            "data = Download()\n            map = BuildMap() after data, data\n"
+            "            yield W(p = map.html_path)",
+        )
+        assert result.is_valid
+        assert "AFTER_REDUNDANT" in [w.rule_id for w in result.warnings]
+
+    def test_enclosing_block_step_is_rejected(self, validator):
+        """An enclosing block's step is out of scope — and already ordered."""
+        ast = parse(
+            _ns("""
+        event facet Download() => (count: Int)
+        event facet Fetch() => (items: Json)
+        event facet Render(v: String) => (p: String)
+        workflow W() => (p: String) andThen {
+            data = Download()
+            outer = Fetch() andThen foreach i in $.items {
+                r = Render(v = $.i) after data
+                yield W(p = r.p)
+            }
+        }
+        """)
+        )
+        result = validator.validate(ast)
+        assert "AFTER_CROSS_BLOCK" in [e.rule_id for e in result.errors]
+
+    def test_after_on_fanout_step_is_valid(self, validator):
+        """Fan-in: order a step after a foreach-bearing step."""
+        ast = parse(
+            _ns("""
+        event facet ListItems() => (items: Json)
+        event facet Work(v: String) => (out: String)
+        event facet Summarize() => (p: String)
+        workflow W() => (p: String) andThen {
+            scan = ListItems() andThen foreach i in $.items {
+                w = Work(v = $.i)
+                yield W(p = w.out)
+            }
+            total = Summarize() after scan
+            yield W(p = total.p)
+        }
+        """)
+        )
+        result = validator.validate(ast)
+        assert result.is_valid, [e.message for e in result.errors]

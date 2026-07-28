@@ -44,6 +44,11 @@ class StatementDefinition:
     args: list[dict] = field(default_factory=list)  # Named arguments
     mixins: list[dict] = field(default_factory=list)  # Call-site mixin calls
     is_yield: bool = False
+    # Step names from an `after A, B` clause — ordering edges for dependencies
+    # that pass through a side channel (shared cache / object store / scratch
+    # dir) rather than a value. Folded into `dependencies` by DependencyGraph
+    # so they are indistinguishable from data edges downstream.
+    after: list[str] = field(default_factory=list)
     # For SysAssertStmt the condition expression is stashed here so the
     # runtime evaluator can read it without rerouting through the AST.
     sys_condition: dict | None = None
