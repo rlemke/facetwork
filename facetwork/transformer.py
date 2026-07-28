@@ -126,6 +126,20 @@ def _get_location(meta, source_id: str | None = None) -> SourceLocation | None:
     return None
 
 
+class _AfterTargets:
+    """Carrier for an `after A, B` target list between transformer rules.
+
+    Not an AST node — `StepStmt.after` is a plain ``list[str]``. This exists
+    only so ``step_stmt`` can pick the target list out of its items by type,
+    the way it already does for AndThenBlock/CatchClause.
+    """
+
+    __slots__ = ("names",)
+
+    def __init__(self, names: list[str]):
+        self.names = names
+
+
 class FFLTransformer(Transformer):
     """Transform Lark parse tree to FFL AST."""
 
@@ -501,10 +515,30 @@ class FFLTransformer(Transformer):
         return CallExpr(name=name, args=args, mixins=mixins, location=self._loc(meta))
 
     # Statements
+    def after_targets(self, items: list) -> "_AfterTargets":
+        return _AfterTargets([str(i) for i in items])
+
+    @v_args(meta=True)
+    def after_clause(self, meta, items: list) -> "_AfterTargets":
+        # `after` is a contextual keyword matched as IDENT (see the grammar
+        # comment on after_clause) — validate the introducer here.
+        introducer = str(items[0])
+        if introducer != "after":
+            from .parser import ParseError
+
+            raise ParseError(
+                f"Expected `after <step>` ordering clause, got `{introducer} …`",
+                line=meta.line,
+                column=meta.column,
+            )
+        targets = self._find_one(items[1:], _AfterTargets)
+        return targets or _AfterTargets([])
+
     @v_args(meta=True)
     def step_stmt(self, meta, items: list) -> StepStmt:
         name = items[0]
         call = items[1]
+        after_targets = self._find_one(items[2:], _AfterTargets)
         # A step may chain multiple andThen clauses (step_body*): the first is
         # `body`, the rest are `extra_bodies` (co-clauses sharing $ = the step).
         bodies = self._find_all(items[2:], AndThenBlock)
@@ -517,6 +551,7 @@ class FFLTransformer(Transformer):
             body=body,
             catch=catch,
             extra_bodies=extra_bodies,
+            after=after_targets.names if after_targets else [],
             location=self._loc(meta),
         )
 

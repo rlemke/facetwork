@@ -100,7 +100,26 @@ when_block: "{" _NL* when_case+ "}" _NL*
 when_case: "case" when_condition "=>" block        -> when_case_expr
          | "case" "_" "=>" block                   -> when_case_default
 when_condition: expr
-step_stmt: IDENT "=" call_expr step_body* catch_clause?
+step_stmt: IDENT "=" call_expr after_clause? step_body* catch_clause?
+
+// `after A, B` — an explicit ordering edge for an INVISIBLE dependency (one
+// that flows through a side channel the compiler can't see: a shared cache
+// prefix, an object-store path, a scratch dir). Data references already create
+// edges, so `after` is never needed when a value flows between the steps.
+//
+// `after` is a CONTEXTUAL keyword: matched as IDENT and validated in the
+// transformer, so it stays usable as a parameter/field/step name. (Matching it
+// as a literal would reserve the word FFL-wide — the bug that made
+// jenkins.deploy's `environment` parameter unparseable.)
+//
+// Targets are BARE STEP NAMES, not expressions: `after data`, never
+// `after data.count`.
+// The comma must sit on the SAME line as the target before it (a newline may
+// follow it, for wrapping). Allowing `_NL*` BEFORE the comma makes the target
+// list ambiguous with the next statement under LALR(1): after `after a\n` the
+// parser cannot tell a continued list from a new statement.
+after_clause: IDENT after_targets
+after_targets: IDENT ("," _NL* IDENT)*
 step_body: "andThen" foreach_clause? block
          | "andThen" _NL* "when" when_block             -> step_body_when
 

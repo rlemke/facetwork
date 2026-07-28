@@ -198,6 +198,11 @@ class StepStmt(ASTNode):
     body: "AndThenBlock | None" = None
     catch: "CatchClause | None" = None
     extra_bodies: "list[AndThenBlock]" = field(default_factory=list)
+    # `after A, B` — explicit ordering edges for INVISIBLE dependencies (state
+    # passed through a shared cache/object store/scratch dir rather than a
+    # value). Data references already create edges, so this stays empty for
+    # every ordinary step. See docs/architecture/ffl-after-clause.md.
+    after: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -515,8 +515,12 @@ def _render_stmt(w: _Writer, stmt: dict, depth: int) -> None:
         w.line(f"{ind}sys.assert({_expr(stmt['condition'])})")
         return
 
-    # StepStmt — any andThen/catch must stay on the step's own line.
-    w.line(f"{ind}{stmt['name']} = {_call(stmt['call'])}")
+    # StepStmt — any after/andThen/catch must stay on the step's own line.
+    # `after` renders BEFORE the clauses, matching the grammar. Dropping it here
+    # would render FFL that looks right but has silently lost its ordering edge.
+    after = stmt.get("after") or []
+    after_src = f" after {', '.join(after)}" if after else ""
+    w.line(f"{ind}{stmt['name']} = {_call(stmt['call'])}{after_src}")
     if stmt.get("body"):
         _render_andthen(w, stmt["body"], depth, keyword="andThen", attach=True)
     # Chained co-clauses (andThen {…} andThen foreach … andThen when …).

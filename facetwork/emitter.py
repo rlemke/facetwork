@@ -516,6 +516,10 @@ class JSONEmitter:
             "name": node.name,
             "call": self._convert(node.call),
         }
+        # Explicit ordering edges (`after A, B`). Emitted only when present so
+        # every existing compiled AST stays byte-identical.
+        if node.after:
+            data["after"] = list(node.after)
         if node.body:
             data["body"] = self._convert(node.body)
         # Chained co-clauses (s = F() andThen {…} andThen foreach …). Emitted

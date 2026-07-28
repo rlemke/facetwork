@@ -2463,6 +2463,98 @@ class TestCatchBlocks:
         assert cond.operator == "&&"
 
 
+class TestAfterClause:
+    """`after A, B` — explicit ordering edges for invisible dependencies."""
+
+    def _wf(self, body: str) -> str:
+        return (
+            "namespace t {\n"
+            "  event facet A() => (x: Long)\n"
+            "  event facet B() => (y: Long)\n"
+            "  event facet C() => (w: Long)\n"
+            "  workflow W() => (z: Long) andThen {\n" + body + "\n  }\n}"
+        )
+
+    def test_single_target(self, parser):
+        ast = parser.parse(
+            self._wf("    a = A()\n    b = B() after a\n    yield W(z = b.y)")
+        )
+        steps = ast.namespaces[0].workflows[0].body.block.steps
+        assert steps[0].after == []
+        assert steps[1].after == ["a"]
+
+    def test_multiple_targets(self, parser):
+        ast = parser.parse(
+            self._wf("    a = A()\n    b = B()\n    c = C() after a, b\n    yield W(z = c.w)")
+        )
+        assert ast.namespaces[0].workflows[0].body.block.steps[2].after == ["a", "b"]
+
+    def test_target_list_may_wrap_after_the_comma(self, parser):
+        """A newline is allowed AFTER a comma, never before it.
+
+        `_NL*` before the comma would make the target list ambiguous with the
+        next statement under LALR(1) — `after a\\n` could continue the list or
+        start a new step.
+        """
+        ast = parser.parse(
+            self._wf("    a = A()\n    b = B()\n    c = C() after a,\n      b\n    yield W(z = c.w)")
+        )
+        assert ast.namespaces[0].workflows[0].body.block.steps[2].after == ["a", "b"]
+
+    def test_after_composes_with_catch(self, parser):
+        ast = parser.parse(
+            self._wf(
+                "    a = A()\n"
+                "    b = B() after a catch { yield W(z = 0) }\n"
+                "    yield W(z = b.y)"
+            )
+        )
+        step = ast.namespaces[0].workflows[0].body.block.steps[1]
+        assert step.after == ["a"] and step.catch is not None
+
+    def test_after_composes_with_foreach_body(self, parser):
+        ast = parser.parse("""
+        namespace t {
+            event facet A() => (items: Json)
+            event facet B() => (y: Long)
+            event facet C(v: Long) => (w: Long)
+            workflow W() => (z: Long) andThen {
+                a = A()
+                b = B() after a andThen foreach i in $.items {
+                    c = C(v = 1)
+                    yield W(z = c.w)
+                }
+            }
+        }
+        """)
+        step = ast.namespaces[0].workflows[0].body.block.steps[1]
+        assert step.after == ["a"] and step.body is not None
+
+    def test_absent_clause_is_empty(self, parser):
+        ast = parser.parse(self._wf("    a = A()\n    yield W(z = a.x)"))
+        assert ast.namespaces[0].workflows[0].body.block.steps[0].after == []
+
+    def test_after_is_a_contextual_keyword(self, parser):
+        """`after` must stay usable as a param/return/step name.
+
+        Matching it as a grammar literal would reserve it FFL-wide — the bug
+        that made jenkins.deploy's `environment` parameter unparseable.
+        """
+        ast = parser.parse("""
+        namespace t {
+            event facet A(after: String) => (after: Long)
+            workflow W(after: String) => (z: Long) andThen {
+                after = A(after = $.after)
+                yield W(z = after.after)
+            }
+        }
+        """)
+        ns = ast.namespaces[0]
+        assert ns.event_facets[0].sig.params[0].name == "after"
+        step = ns.workflows[0].body.block.steps[0]
+        assert step.name == "after" and step.after == []
+
+
 class TestEnvironmentDecls:
     """Test environment declaration and `in environment` parsing."""
 
