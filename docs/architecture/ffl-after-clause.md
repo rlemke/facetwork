@@ -255,12 +255,27 @@ compile standalone), and handlers take a single `params: dict` read with `.get()
 so a stray key from an older stored AST is inert. The "33 flows" figure counted
 flows that merely *embed* the domain's declarations without calling with it.
 
-**Known residue:** ~39 Markdown files across 12 `fwh_*` repos still *document*
-`dependency_signal` (signature tables and example blocks). They are outdated
-rather than broken — the validator does not reject an unknown named argument, and
-`dependency_signal = step.field` is still a real `StepRef` so the edge is still
-created — but the signature tables are now factually wrong and the examples teach
-a removed idiom. Rewrite them to `after` when touching those docs.
+**Docs migrated too (2026-07-29).** 39 Markdown files across **9** `fwh_*` repos
+still documented `dependency_signal` after the code was clean — signature tables
+listed it, examples taught it. All rewritten and pushed (amr, conflict,
+county_atlas, migration, noaa_weather, osm_mapping, save_earth, sentinel2,
+uspanel); the only surviving mention is one deliberate "this replaces the old
+idiom" note in `fwh_conflict`.
+
+Method worth reusing: run the **verified migrator** over the fenced ```ffl blocks
+(39 blocks, 0 unparseable, 34 auto-migrated) rather than fresh regexes, a
+paren-scoped regex for signature tables, and hand-rewrite prose. Gate: all 83
+blocks in those repos compile against their own FFL.
+
+Severity was worth checking before claiming breakage — the stale docs still
+*parsed and validated clean* (the validator does not reject an unknown named
+argument) and `dependency_signal = step.field` was a real `StepRef`, so the edge
+still formed. They were outdated, not broken.
+
+The highest-value rewrites were `county_atlas` and `uspanel`, whose docs
+prescribed **workarounds** for ordering (`run the index as a separate
+submission`, `gate it with a when`) that `after` makes unnecessary. When a
+feature ships, grep the docs for the workarounds it retires.
 
 ## 8. Deployment hazard and the feature gate
 
@@ -337,9 +352,12 @@ Merged to `main` and live on the fleet (v125 / `601ffe1`, all 4 hosts up-to-date
   facet declaration and handler across all 7 domains — 0 `.ffl` / 0 `.py`
   references remain — with dependency-graph edge sets diffed identical across 82
   blocks, rolled to all 4 hosts, and confirmed by a live cross-host run
-- ⬜ **Doc residue:** ~39 `.md` files in 12 `fwh_*` repos still show
-  `dependency_signal` in signature tables and examples. Outdated, not broken (see
-  §7); convert to `after` when next touching those repos
+- ✅ **Docs migrated** (§7): 39 `.md` files across 9 `fwh_*` repos converted from
+  `dependency_signal` to `after` — blocks rewritten with the migrator, all 83
+  compile-checked; one deliberate historical mention remains
+- ✅ **Canonical example**: `examples/canonical/12-step-after.ffl` — `after` was the
+  only shipped construct without one, and `tests/test_canonical_examples.py` now
+  pins every canonical file as validator-clean
 
 ### Deliberately left undone
 
