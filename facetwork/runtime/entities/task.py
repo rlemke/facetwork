@@ -1,6 +1,6 @@
 """Task (async queue entry) entity definitions."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class TaskState:
@@ -45,3 +45,10 @@ class TaskDefinition:
     stage_name: str = ""  # Human-readable name of the stage that owns the current budget
     environment_hash: str = ""  # Manifest hash of the facet's environment ("" = default env)
     kind: str = ""  # "" = handler task; "script" = env-routed script task
+    # AST features this task's workflow needs its executor to understand
+    # (facetwork/ast_features.py). Empty = any runner. A runner claims a task
+    # only when it knows EVERY listed feature, so a runner too old to honor a
+    # construct waits instead of executing it with the construct silently
+    # dropped. Same shape as environment routing: a capability the claim
+    # filters on, not something the handler reads.
+    required_features: list[str] = field(default_factory=list)

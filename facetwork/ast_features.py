@@ -58,6 +58,17 @@ class UnsupportedASTFeatureError(RuntimeError):
         )
 
 
+def known_features() -> list[str]:
+    """Features this runtime can execute faithfully — the claim-side capability.
+
+    Module-level (not a runner method) because every runner class must report
+    the same answer: RegistryRunner, AgentPoller and RunnerService all claim
+    tasks, and a class that silently lacked the capability would claim work it
+    cannot honor.
+    """
+    return sorted(KNOWN_AST_FEATURES)
+
+
 def features_of(program_dict: dict[str, Any] | None) -> set[str]:
     """Return the feature markers a compiled program declares."""
     if not program_dict:

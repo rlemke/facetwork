@@ -1651,7 +1651,10 @@ class TestCircuitBreaker:
 
         calls = []
 
-        def fake_claim(task_names, task_list, server_id):
+        def fake_claim(task_names, task_list, server_id, **kwargs):
+            # **kwargs absorbs the capability filters the runner passes
+            # (provided_environments, known_features) — this test only cares
+            # which task NAMES the circuit breaker allows through.
             calls.append(list(task_names))
             return None
 

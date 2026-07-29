@@ -570,6 +570,8 @@ class PersistenceAPI(Protocol):
         task_names: list[str],
         task_list: str | list[str] = "default",
         server_id: str = "",
+        provided_environments: list[str] | None = None,
+        known_features: list[str] | None = None,
     ) -> Optional["TaskDefinition"]:
         """Atomically claim a pending task matching one of the given names.
 
@@ -579,10 +581,22 @@ class PersistenceAPI(Protocol):
         Transitions a single task from PENDING to RUNNING atomically.
         Returns the claimed task, or None if no matching task is available.
 
+        Two capability filters narrow the pool, both fail-closed on the task
+        side (an untagged task stays claimable by everyone):
+
+        * ``provided_environments`` — script-environment routing
+          (script-environments.md §3).
+        * ``known_features`` — AST-feature routing (ffl-after-clause.md §8).
+          A task whose workflow needs a construct the runner doesn't implement
+          is left for a capable runner instead of being executed with that
+          construct silently ignored.
+
         Args:
             task_names: List of task names to match
             task_list: The task list to search (default: "default")
             server_id: The claiming server's ID (for orphan detection)
+            provided_environments: Environment manifest hashes this runner provides
+            known_features: AST features this runner understands
 
         Returns:
             The claimed task, or None

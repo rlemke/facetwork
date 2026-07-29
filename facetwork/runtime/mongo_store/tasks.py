@@ -146,6 +146,7 @@ class TaskMixin(_MixinBase):
         task_list: str | list[str] = "default",
         server_id: str = "",
         provided_environments: list[str] | None = None,
+        known_features: list[str] | None = None,
     ) -> TaskDefinition | None:
         """Atomically claim a pending task matching one of the given names.
 
@@ -196,6 +197,25 @@ class TaskMixin(_MixinBase):
         if provided_environments:
             env_ok["$or"].append({"environment_hash": {"$in": list(provided_environments)}})
 
+        # Feature routing (ffl-after-clause.md §8): a task whose workflow uses AST
+        # constructs carries them in `required_features`; a runner may claim it
+        # only if it understands EVERY one. Otherwise an executor that doesn't
+        # know a construct runs the workflow with those semantics SILENTLY
+        # DROPPED — e.g. missing `after` edges become a race. Untagged tasks are
+        # claimable by everyone, so this is inert for existing work.
+        # `$not: {$elemMatch: {$nin: known}}` == "no element outside known" == subset.
+        # Keep in behavioral lockstep with MemoryStore.claim_task.
+        feat_ok: dict[str, Any] = {
+            "$or": [
+                {"required_features": {"$exists": False}},
+                {"required_features": []},
+            ]
+        }
+        if known_features:
+            feat_ok["$or"].append(
+                {"required_features": {"$not": {"$elemMatch": {"$nin": list(known_features)}}}}
+            )
+
         # Backoff filter: skip tasks still in their retry cooldown window.
         retry_eligible = {
             "$or": [
@@ -214,7 +234,7 @@ class TaskMixin(_MixinBase):
             {
                 "state": "pending",
                 "task_list_name": tl_filter,
-                "$and": [name_filter, retry_eligible, env_ok],
+                "$and": [name_filter, retry_eligible, env_ok, feat_ok],
             },
             {"$set": update},
             return_document=ReturnDocument.AFTER,

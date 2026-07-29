@@ -380,6 +380,7 @@ class RunnerService(BaseRunner):
             handled=[],
             state=ServerState.RUNNING,
             provided_environments=self._provided_environments(),
+            ast_features=self._known_ast_features(),
             http_port=self.http_port or 0,
             version=getattr(self, "_version", ""),
             task_list=self._config.task_list,

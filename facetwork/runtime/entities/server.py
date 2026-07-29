@@ -49,6 +49,10 @@ class ServerDefinition:
     # dashboard surfaces it on /tasks to flag under/over-provisioning.
     task_list: str = "default"
     provided_environments: list = field(default_factory=list)  # manifest hashes this runner can run
+    # AST features this runner can execute faithfully (ast_features.py). Makes
+    # version skew VISIBLE: `fw fleet status` can show which runners would
+    # decline a workflow instead of silently mis-running it.
+    ast_features: list = field(default_factory=list)
 
 
 @dataclass

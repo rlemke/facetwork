@@ -442,26 +442,36 @@ class MemoryStore(PersistenceAPI):
         task_list: str | list[str] = "default",
         server_id: str = "",
         provided_environments: list[str] | None = None,
+        known_features: list[str] | None = None,
     ) -> Optional["TaskDefinition"]:
         """Atomically claim a pending task matching one of the given names.
 
         Environment routing (script-environments.md §3): a task tagged with a
         non-default ``environment_hash`` is claimable only when the hash is in
         ``provided_environments``; untagged tasks are claimable by everyone.
+
+        Feature routing (ffl-after-clause.md §8): a task listing
+        ``required_features`` is claimable only by a runner that knows EVERY one
+        of them, so an executor too old to honor a construct waits rather than
+        running the workflow with that construct silently dropped.
+
         Mirrors MongoStore.claim_task — keep the two in behavioral lockstep.
         """
         provided = set(provided_environments or [])
+        known = set(known_features or [])
         with self._claim_lock:
             names_set = set(task_names)
             tl_set = set(task_list) if isinstance(task_list, (list, tuple, set)) else {task_list}
             for task in self._tasks.values():
                 now = _current_time_ms()
                 env = getattr(task, "environment_hash", "") or ""
+                needed = set(getattr(task, "required_features", None) or [])
                 if (
                     task.state == "pending"
                     and task.name in names_set
                     and task.task_list_name in tl_set
                     and (env == "" or env in provided)
+                    and needed <= known
                     and (task.next_retry_after == 0 or task.next_retry_after <= now)
                 ):
                     task.state = "running"

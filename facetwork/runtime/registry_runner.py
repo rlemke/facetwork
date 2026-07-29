@@ -69,6 +69,7 @@ from .persistence import PersistenceAPI
 from .runner_config import BaseRunnerConfig
 from .states import StepState
 from .types import AttributeValue, generate_id
+from ..ast_features import known_features as _known_ast_features
 
 logger = logging.getLogger(__name__)
 
@@ -356,6 +357,7 @@ class RegistryRunner(BaseRunner):
                     task_names=task_names,
                     task_list=self._poll_task_lists(),
                     server_id=self._server_id,
+                    known_features=_known_ast_features(),
                 )
                 if task is None:
                     break
@@ -377,6 +379,7 @@ class RegistryRunner(BaseRunner):
                     task_names=[CONTINUATION_TASK_NAME],
                     task_list=CONTINUATION_TASK_LIST,
                     server_id=self._server_id,
+                    known_features=_known_ast_features(),
                 )
                 if task is None:
                     break
@@ -428,6 +431,7 @@ class RegistryRunner(BaseRunner):
             state=ServerState.RUNNING,
             task_list=self._config.task_list,
             provided_environments=self._provided_environments(),
+            ast_features=self._known_ast_features(),
         )
         self._persistence.save_server(server)
 
@@ -477,6 +481,7 @@ class RegistryRunner(BaseRunner):
                     task_names=task_names,
                     task_list=self._poll_task_lists(),
                     server_id=self._server_id,
+                    known_features=_known_ast_features(),
                 )
                 if task is None:
                     break
@@ -509,6 +514,7 @@ class RegistryRunner(BaseRunner):
                     task_names=[CONTINUATION_TASK_NAME],
                     task_list=CONTINUATION_TASK_LIST,
                     server_id=self._server_id,
+                    known_features=_known_ast_features(),
                 )
                 if task is None:
                     break

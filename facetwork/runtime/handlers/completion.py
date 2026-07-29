@@ -359,8 +359,23 @@ class EventTransmitHandler(StateHandler):
             timeout_ms=timeout_ms,
             environment_hash=env_hash,
             kind="script" if (env_hash and has_script) else "",
+            required_features=self._required_features(),
         )
         self.context.changes.add_created_task(task)
+
+    def _required_features(self) -> list[str]:
+        """AST features an executor must understand to run this workflow faithfully.
+
+        Read off the compiled program's ``features`` marker (stamped by the
+        emitter). Claim-side routing then keeps the task away from runners that
+        would drop those semantics — see facetwork/ast_features.py.
+        """
+        try:
+            from ...ast_features import features_of
+
+            return sorted(features_of(self.context.program_ast))
+        except Exception:  # never block task creation on this
+            return []
 
 
 class StatementEndHandler(StateHandler):

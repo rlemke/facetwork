@@ -113,6 +113,27 @@ class BaseRunner:
     # doesn't hit Mongo in lockstep (thundering herd). 0 disables it.
     _POLL_JITTER: float = 0.15
 
+    def _known_ast_features(self) -> list[str]:
+        """AST features this runner can execute faithfully.
+
+        The claim-side half of the forward-compat guard (ast_features.py). A
+        task whose workflow needs a construct absent from this list is left
+        alone, so the workflow waits for a capable runner instead of running
+        with those semantics silently dropped.
+
+        Note what this can and cannot do. It protects a MIXED fleet going
+        forward: once every runner reports its features, a runner lacking one
+        declines the work. It cannot constrain a runner built BEFORE this
+        mechanism — that code neither reports features nor filters on them, and
+        no amount of new-side logic reaches it. For those the operational rule
+        is unchanged: roll the fleet, and don't leave hand-built runners behind
+        (a stale locally-built county-atlas image is exactly how an `after`
+        workflow lost its ordering edge in practice).
+        """
+        from ..ast_features import known_features
+
+        return known_features()
+
     def _provided_environments(self) -> list[str]:
         """Environment manifest hashes this runner can execute scripts in.
 

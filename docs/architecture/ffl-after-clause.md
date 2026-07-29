@@ -261,6 +261,37 @@ construct.** That is not hypothetical here — two hosts sat on a months-old ima
 while the others moved on. The guard's value is that from now on, every *future*
 construct gets refusal instead of silent misbehavior.
 
+### 8.1 Claim-side routing (the enforcement half)
+
+Submit-time refusal only constrains the process doing the submitting. The
+executor is a different process, so the capability check has to live at the
+**claim**, exactly where environment routing already lives:
+
+| piece | where |
+|---|---|
+| Task carries `required_features` | stamped at creation from the program's `features` marker |
+| Runner reports `known_features` | `ast_features.known_features()`, a module-level accessor |
+| Claim filters on it | `claim_task(..., known_features=…)` in **both** stores |
+| Server advertises `ast_features` | so skew is visible in the server record, not just implied |
+
+Semantics are subset: a runner claims a task only if it knows **every** listed
+feature. An untagged task stays claimable by anyone, so existing work is
+unaffected. The result is that a runner too old for a construct **leaves the task
+pending for a capable runner** instead of running it with the construct dropped —
+the same guarantee capability-scoped handler routing already gives.
+
+`known_features()` is deliberately module-level rather than a `BaseRunner`
+method: `AgentPoller` does not inherit from `BaseRunner`, and a runner class that
+silently lacked the capability would claim work it cannot honor. One accessor,
+every claim path.
+
+**This still does not reach pre-guard runners** — they neither report features nor
+filter on them. The live incident that motivated it was exactly that: a
+hand-built `facetwork-runner-county-atlas` image from before the feature, running
+outside fleet management, which rebuilt the dependency graph without `after`, saw
+no dependency, and created a step early. The lasting rule: **don't leave
+hand-built runners outside the rollout.**
+
 The `KNOWN_AST_FEATURES` set is the contract: add a name there in the same change
 that teaches the runtime to honor it, never earlier.
 
@@ -274,7 +305,9 @@ On branch `ffl-after-clause` (not merged):
 - ✅ `workflow_source` reconstruction + source→compile→reconstruct→reparse round-trip
 - ✅ Six validator rules + six rule docs; rule-doc coverage still exact
 - ✅ Runtime edge; fan-in confirmed to work without touching `block_execution.py`
-- ✅ Feature gate (`facetwork/ast_features.py`) + submit-time refusal
+- ✅ Feature gate (`facetwork/ast_features.py`): submit-time refusal **and**
+  claim-side routing (task `required_features` × runner `known_features`), so an
+  incapable runner declines instead of mis-executing
 - ✅ `fw ffl migrate-after` — all 7 domains migrate clean, compile, 0 manual sites
 - ✅ 33 new tests (7 parser, 10 validator, 6 runtime, 10 migrator); suite green (2965)
 - ⬜ **Phase 3 not done on purpose:** removing the `dependency_signal` parameter
