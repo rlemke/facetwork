@@ -181,7 +181,14 @@ BUILD+=(--push .)
 if [ "$STAGGER" = 1 ]; then
     echo "=== staggered pre-pull of $TAG (serialize registry load before the flip; ${PULL_TIMEOUT}s/host cap) ==="
     echo "  local ($(hostname -s 2>/dev/null || hostname)):"
-    if _bounded "$PULL_TIMEOUT" docker pull "$PUSH_IMAGE" >/dev/null 2>&1; then
+    # NEW_IMAGE, not PUSH_IMAGE. Two different clients reach the same registry by
+    # different names: BUILDKIT (a container) pushes via host.docker.internal,
+    # while the HOST DAEMON that runs this pull only trusts the registry under
+    # its catalog name (server3.local:5050 is in insecure-registries;
+    # host.docker.internal:5050 is not, so the pull tries HTTPS and dies with
+    # "server gave HTTP response to HTTPS client"). Pulling the same name the
+    # remote hosts use also means this pre-pull exercises exactly their path.
+    if _bounded "$PULL_TIMEOUT" docker pull "$NEW_IMAGE" >/dev/null 2>&1; then
         echo "    cached ✓"
     elif [ $? = 124 ]; then
         _stagger_fail "local pull TIMED OUT after ${PULL_TIMEOUT}s" \
@@ -230,13 +237,18 @@ echo "=== 3/3 waiting for hosts to converge to v${NEWVER:-?} (timeout ${TIMEOUT}
 elapsed=0
 while [ "$elapsed" -lt "$TIMEOUT" ]; do
     STATUS="$("$FW_LIB/fleet/config" status --mongo "$MONGO" 2>/dev/null || true)"
-    total="$(printf '%s' "$STATUS" | grep -c 'applied v' || true)"
-    onnew="$(printf '%s' "$STATUS" | grep -c "applied v${NEWVER}" || true)"
+    # Parse the CURRENT `fleet config status` format, which prints one line per
+    # host ending in either "[up-to-date]" or "[LAGGING (applied vNNN)]". The old
+    # parser counted 'applied v' — a string that now appears ONLY on LAGGING
+    # hosts, so a fully converged fleet scored 0/0 and this loop reported failure
+    # for a rollout that had actually succeeded.
+    total="$(printf '%s' "$STATUS" | grep -c 'runner(s)' || true)"
+    onnew="$(printf '%s' "$STATUS" | grep -c 'up-to-date' || true)"
     echo "  ${onnew}/${total} host(s) on v${NEWVER} (${elapsed}s)"
     [ -n "$NEWVER" ] && [ "$onnew" -ge "$total" ] && [ "$total" -gt 0 ] && { echo "All hosts converged."; break; }
     sleep 12; elapsed=$((elapsed+12))
 done
-"$FW_LIB/fleet/config" status --mongo "$MONGO" | grep -E 'applied v' || true
+"$FW_LIB/fleet/config" status --mongo "$MONGO" | grep -E 'runner\(s\)' || true
 # `break` above means converged; falling out of the loop means the timeout won.
 # Printing "Rollout complete" either way is how a 0/4-converged rollout read as a
 # success on 2026-07-29 — say which one happened, and exit non-zero if unfinished.
