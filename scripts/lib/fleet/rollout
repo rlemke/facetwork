@@ -25,16 +25,52 @@ _afl_resolve_remote_env
 # The fleet's runner-image registry, addressed by NAME so it survives the infra
 # host's DHCP drift (the Docker daemon resolves server3.local via mDNS; it's in
 # each host's insecure-registries). REGISTRY is what fleet_config records and
-# what REMOTE hosts pull from. PUSH_REGISTRY is where THIS host (the builder,
-# normally the infra host itself) pushes to — localhost:5050 is trusted by
-# default, so the infra host never needs a daemon restart to push. Both address
-# the SAME registry + repo, so a `localhost:5050` push is pulled fine as
+# what REMOTE hosts pull from. PUSH_REGISTRY is where the BUILDER pushes to. Both
+# address the SAME registry + repo, so a push under either name is pulled fine as
 # `server3.local:5050`.
 REGISTRY="${FW_FLEET_REGISTRY:-server3.local:5050}"
-PUSH_REGISTRY="${FW_FLEET_PUSH_REGISTRY:-localhost:5050}"
 IMAGE_REPO="$REGISTRY/facetwork-runner"
-PUSH_REPO="$PUSH_REGISTRY/facetwork-runner"
 BUILDER="${FW_FLEET_BUILDER:-fleetbuilder}"
+
+# The push address depends on WHERE BUILDKIT RUNS, so derive it from the builder's
+# driver instead of hardcoding one:
+#
+#   driver=docker            buildkit is the host daemon      -> localhost:5050 ✓
+#   driver=docker-container  buildkit is a CONTAINER on a
+#                            bridge network, so `localhost`
+#                            is the BUILDER's own loopback,
+#                            where nothing listens           -> host.docker.internal:5050
+#
+# Getting this wrong does not fail fast: the push retries `dial tcp [::1]:5050:
+# i/o timeout` in a loop long after the image built fine, which reads like an
+# IPv6 problem on the host even though the host answers on both stacks. That cost
+# a full rollout on 2026-07-29. The builder's own buildkitd.toml already trusts
+# host.docker.internal:5050 for exactly this reason.
+#
+# Any non-`docker` driver (docker-container, kubernetes, remote) is off-host, so
+# localhost is wrong for all of them; only the host-daemon driver gets localhost.
+# An explicit FW_FLEET_PUSH_REGISTRY always wins.
+_builder_driver() {
+    docker buildx inspect "$BUILDER" 2>/dev/null \
+        | awk -F': *' '/^Driver:/ {print $2; exit}' \
+        | tr -d '[:space:]'
+}
+if [ -n "${FW_FLEET_PUSH_REGISTRY:-}" ]; then
+    PUSH_REGISTRY="$FW_FLEET_PUSH_REGISTRY"
+    _push_why="FW_FLEET_PUSH_REGISTRY"
+else
+    # `|| true`: under `set -e` an assignment whose command substitution fails
+    # aborts the script, which would make the "not inspectable" case below
+    # unreachable — it exited 1 with NO output at all instead of falling back.
+    _driver="$(_builder_driver || true)"
+    case "$_driver" in
+        docker) PUSH_REGISTRY="localhost:5050"; _push_why="builder driver=docker (host daemon)" ;;
+        "")     PUSH_REGISTRY="host.docker.internal:5050"; _push_why="builder '$BUILDER' not inspectable — assuming off-host buildkit" ;;
+        *)      PUSH_REGISTRY="host.docker.internal:5050"; _push_why="builder driver=$_driver (buildkit off-host)" ;;
+    esac
+fi
+PUSH_REPO="$PUSH_REGISTRY/facetwork-runner"
+echo "push registry: $PUSH_REGISTRY  ($_push_why)"
 PLATFORM="${FW_FLEET_PLATFORM:-linux/arm64}"
 MONGO="${FW_MONGODB_URL:-mongodb://server3.local:27017}"
 DRY=0 TIMEOUT=240 STAGGER=0
