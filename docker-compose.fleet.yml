@@ -142,6 +142,20 @@ services:
     environment:
       <<: *fleet-env
 
+  # county-atlas MUST be here even though it isn't a fleet_config role: it is
+  # `fleet_default: true` in domains.json, so agents start it, and its
+  # full-stack block only has `build:` — with no override it runs a LOCALLY
+  # BUILT image that no `fw fleet rollout` can ever update. That is not
+  # hypothetical: its stale image sat 29h behind, didn't understand the `after`
+  # clause, rebuilt a dependency graph without the ordering edge, and created a
+  # step while its producer was still running. Every runner the fleet starts
+  # must run the rolled image.
+  runner-county-atlas:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+
   runner-osm-mapping:
     <<: *fleet-runner
     depends_on: !reset []
