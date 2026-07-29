@@ -1,0 +1,50 @@
+/** Canonical: `after` — explicit ordering for an INVISIBLE dependency.
+  *
+  * Ordering in FFL normally comes from references: a step that reads
+  * another step's field is already sequenced behind it, and writing
+  * `after` for that case is redundant (rule AFTER_REDUNDANT).
+  *
+  * `after` is for the dependency the compiler CANNOT see — the producer
+  * wrote a shared cache, object store or scratch dir, and no value flows
+  * between the two steps. Without the clause they are independent and may
+  * run in either order, or at once.
+  *
+  * Scoping mirrors step references: same block, backward only. Targets are
+  * bare step names, never `step.field`. Naming a `foreach` step waits for
+  * EVERY iteration, which is how fan-in is expressed.
+  * See docs/architecture/ffl-after-clause.md. */
+namespace canonical.after {
+
+    /** Fetch a source and CACHE it. Returns a count only — the payload
+      * itself goes to the shared cache, not into the step's result, which
+      * is exactly why downstream ordering is invisible to the compiler. */
+    event facet FetchSource(name: String) => (feature_count: Long)
+
+    /** Render whatever the fetches cached. Takes no value from them, so
+      * callers must order it with `after`. */
+    event facet BuildReport(title: String) => (path: String)
+
+    /** Summarise a report — this one DOES consume a value. */
+    facet Summarise(path: String) => (text: String) andThen {
+        yield Summarise(text = "report at " ++ $.path)
+    }
+
+    workflow Demo(title: String = "atlas") => (text: String) andThen {
+
+        // No reference between them, so these two run in parallel.
+        roads = FetchSource(name = "roads")
+        rivers = FetchSource(name = "rivers")
+
+        // INVISIBLE dependency: the report reads what the fetches cached and
+        // takes no value from either. `after roads, rivers` waits for BOTH —
+        // the fan-in shape a single-target clause could not express.
+        report = BuildReport(title = $.title) after roads, rivers
+
+        // VISIBLE dependency: `report.path` is a reference, so this step is
+        // ALREADY ordered behind `report`. Adding `after report` here would be
+        // flagged AFTER_REDUNDANT — the edge exists either way.
+        summary = Summarise(path = report.path)
+
+        yield Demo(text = summary.text)
+    }
+}
