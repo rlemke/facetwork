@@ -20,8 +20,21 @@ _REMOTE_PYTHON="${_REMOTE_REPO_ROOT}/.venv/bin/python3"
 # ---------------------------------------------------------------------------
 
 _afl_resolve_remote_env() {
-    # FW_RUNNER_HOSTS: space-separated list of remote hostnames
+    # FW_RUNNER_HOSTS: space-separated list of remote hostnames.
+    #
+    # Fall back to .env when it isn't already exported. The header above tells
+    # callers to source _env.sh first, but not all do (fleet/rollout sources only
+    # _bootstrap.sh + this file), and the failure is SILENT: the host list comes
+    # back empty and the caller quietly skips every remote. That is how a
+    # `fw fleet rollout --stagger` pre-pulled nothing on 2026-07-29 while
+    # reporting success. Read the file directly rather than sourcing _env.sh,
+    # which would also apply its localhost MongoDB fallback as a side effect.
     FW_RUNNER_HOSTS="${FW_RUNNER_HOSTS:-}"
+    if [ -z "$FW_RUNNER_HOSTS" ] && [ -f "$_REMOTE_REPO_ROOT/.env" ]; then
+        FW_RUNNER_HOSTS="$(sed -n 's/^[[:space:]]*FW_RUNNER_HOSTS[[:space:]]*=[[:space:]]*//p' \
+            "$_REMOTE_REPO_ROOT/.env" | tail -1 | sed 's/^["'\'']//; s/["'\'']$//')"
+    fi
+    export FW_RUNNER_HOSTS
 
     # FW_REMOTE_PATH: repo path on remote hosts (default: same as local)
     FW_REMOTE_PATH="${FW_REMOTE_PATH:-$_REMOTE_REPO_ROOT}"

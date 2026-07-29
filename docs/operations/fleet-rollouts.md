@@ -57,6 +57,23 @@ every server can pull from, then point the central config at the new tag.
 > `--dry` to preview. The manual steps below are the underlying procedure (useful
 > when you need a custom tag, a different builder/arch, or to debug a step).
 
+> **`--stagger` pre-pulls the new tag on every host, one at a time, BEFORE the
+> config flip** — otherwise all hosts pull ~1GB from the single HTTP registry at
+> once when they reconcile, and a slow host can exceed its agent's 600s docker
+> bound. It **aborts the rollout** (leaving `fleet_config` untouched, so the fleet
+> keeps running its current image) if it cannot actually do that: no remote hosts
+> resolved, the build host has no copy of the tag, or a listed host's pull failed.
+> Those were warnings until 2026-07-29, when a rollout that pre-pulled *nothing*
+> flipped the config anyway, wedged a host's compose for 20+ minutes, and still
+> printed "Rollout complete". Pass `--stagger-best-effort` to accept a known-offline
+> host and continue. A converge timeout now also exits non-zero — the default wait
+> is 900s because agents recreate services serially, so converge time scales with a
+> host's runner count.
+>
+> Remote hosts come from `--host` (repeatable) or `FW_RUNNER_HOSTS`, which is read
+> from the environment **or `.env`**. `buildx --push` does not load the image into
+> the local store, so the build host is pre-pulled too.
+
 > **Image garbage collection**: every rollout pulls a fresh ~2GB tag, and old
 > tags used to accumulate until a host filled its disk (server1 hit 100% after
 > six generations, wedging its reconcile with ENOSPC). The fleet-agent now

@@ -73,9 +73,37 @@ PUSH_REPO="$PUSH_REGISTRY/facetwork-runner"
 echo "push registry: $PUSH_REGISTRY  ($_push_why)"
 PLATFORM="${FW_FLEET_PLATFORM:-linux/arm64}"
 MONGO="${FW_MONGODB_URL:-mongodb://server3.local:27017}"
-DRY=0 TIMEOUT=240 STAGGER=0
+# 900s, not 240s: agents recreate their services SERIALLY, so a host's converge
+# time scales with its runner count — server3's 22 containers take well over
+# 240s even when everything is healthy. The old default expired on a normal
+# rollout, which is precisely why its "Rollout complete" line got ignored. Now
+# that a timeout exits non-zero, the default has to be long enough that hitting
+# it means something is actually wrong.
+DRY=0 TIMEOUT=900 STAGGER=0 STAGGER_BEST_EFFORT=0
 PULL_TIMEOUT="${FW_FLEET_STAGGER_PULL_TIMEOUT:-300}"
 HOST_ARGS=()
+_STAGGER_REMOTE_FAILED=""
+
+# --stagger exists to guarantee every host has the image BEFORE the config flip.
+# When it pre-pulls nothing it has silently removed the protection it was asked
+# for, and flipping anyway is worse than not staggering: all hosts hit the
+# registry at once, and a wedged pull holds a fleet-agent past its 600s docker
+# bound (observed 2026-07-29 — a host sat half-recreated for 20+ minutes while
+# the rollout reported success). So abort BEFORE `fleet config set`, leaving the
+# fleet on its current, working image. --stagger-best-effort restores the old
+# warn-and-continue behaviour when a host is knowingly offline.
+_stagger_fail() {
+    if [ "$STAGGER_BEST_EFFORT" = 1 ]; then
+        echo "  WARN: $1 — $2 (continuing: --stagger-best-effort)" >&2
+        return 0
+    fi
+    echo "" >&2
+    echo "ERROR: --stagger cannot do its job: $1" >&2
+    echo "       $2" >&2
+    echo "       fleet_config NOT changed — the fleet stays on its current image." >&2
+    echo "       Fix the cause, or re-run with --stagger-best-effort to accept it." >&2
+    exit 1
+}
 
 # Portable per-pull timeout (macOS has no `timeout`): run "$@" in the background
 # and TERM/KILL it if it outlives $1 seconds. Returns 124 on timeout. Without this
@@ -102,8 +130,9 @@ while [ $# -gt 0 ]; do
         --platform) PLATFORM="$2"; shift 2 ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         --stagger) STAGGER=1; shift ;;
+        --stagger-best-effort) STAGGER=1; STAGGER_BEST_EFFORT=1; shift ;;
         --host) HOST_ARGS+=("$2"); shift 2 ;;
-        -h|--help) echo "Usage: fw fleet rollout [--dry] [--stagger [--host user@host]...] [--mongo URL] [--platform P] [--timeout SEC]"; exit 0 ;;
+        -h|--help) echo "Usage: fw fleet rollout [--dry] [--stagger|--stagger-best-effort [--host user@host]...] [--mongo URL] [--platform P] [--timeout SEC]"; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
@@ -113,8 +142,8 @@ cd "$FW_ROOT"
 TAG="$(git rev-parse --short HEAD)"
 NEW_IMAGE="$IMAGE_REPO:$TAG"        # what fleet_config records / remotes pull
 PUSH_IMAGE="$PUSH_REPO:$TAG"       # what the builder host pushes (same registry+repo)
-# cache-from the image the fleet currently runs, addressed via the PUSH registry
-# (the builder trusts localhost:5050; it may not reach REGISTRY by name pre-restart).
+# cache-from the image the fleet currently runs, addressed via the PUSH registry —
+# the address the BUILDER can actually reach (it may not resolve REGISTRY by name).
 PREV_TAG="$("$FW_LIB/fleet/config" get --mongo "$MONGO" 2>/dev/null | grep -oE "facetwork-runner:[a-f0-9]+" | head -1 | cut -d: -f2 || true)"
 PREV="${PREV_TAG:+$PUSH_REPO:$PREV_TAG}"
 
@@ -155,13 +184,15 @@ if [ "$STAGGER" = 1 ]; then
     if _bounded "$PULL_TIMEOUT" docker pull "$PUSH_IMAGE" >/dev/null 2>&1; then
         echo "    cached ✓"
     elif [ $? = 124 ]; then
-        echo "    WARN: local pull TIMED OUT after ${PULL_TIMEOUT}s — this host will pull on reconcile"
+        _stagger_fail "local pull TIMED OUT after ${PULL_TIMEOUT}s" \
+            "the BUILD host has no copy of $TAG — buildx --push does not load into the local store"
     else
-        echo "    WARN: local pull failed — this host will pull on reconcile"
+        _stagger_fail "local pull failed" \
+            "the BUILD host has no copy of $TAG (registry unreachable? wrong push address?)"
     fi
     if [ -z "$STAGGER_HOSTS" ]; then
-        echo "  WARN: no remote hosts given (FW_RUNNER_HOSTS / --host) — remote hosts will"
-        echo "        pull concurrently on reconcile, which is the contention --stagger avoids."
+        _stagger_fail "no remote hosts resolved (FW_RUNNER_HOSTS / --host)" \
+            "every host would pull concurrently on reconcile — the exact contention --stagger avoids"
     else
         # Drive the loop off FD 3 (not stdin) AND give each ssh </dev/null: a
         # backgrounded `ssh` inherits the loop's stdin and would otherwise READ the
@@ -172,16 +203,22 @@ if [ "$STAGGER" = 1 ]; then
             echo "  $h:"
             # Remote `docker` needs a LOGIN shell (non-login ssh lacks it on PATH);
             # bounded so a wedged host can't hang the serial pre-pull.
-            if _bounded "$PULL_TIMEOUT" _afl_ssh "$h" "bash -lc 'docker pull $NEW_IMAGE >/dev/null 2>&1'" </dev/null; then
+            if _bounded "$PULL_TIMEOUT" _afl_ssh "$h" "bash -lc 'export PATH=/usr/local/bin:/opt/homebrew/bin:\$PATH; docker pull $NEW_IMAGE >/dev/null 2>&1'" </dev/null; then
                 echo "    cached ✓"
             elif [ $? = 124 ]; then
                 echo "    WARN: pull on $h TIMED OUT after ${PULL_TIMEOUT}s — it will pull on reconcile"
+                _STAGGER_REMOTE_FAILED="$_STAGGER_REMOTE_FAILED $h"
             else
                 echo "    WARN: pull on $h failed (unreachable/auth?) — it will pull on reconcile"
+                _STAGGER_REMOTE_FAILED="$_STAGGER_REMOTE_FAILED $h"
             fi
         done 3<<< "$STAGGER_HOSTS"
     fi
-    echo "  pre-pull done — reachable hosts have $TAG cached; their reconcile won't hit the registry."
+    if [ -n "${_STAGGER_REMOTE_FAILED// /}" ]; then
+        _stagger_fail "pre-pull failed on:${_STAGGER_REMOTE_FAILED}" \
+            "those hosts will pull ~1GB concurrently on reconcile and can exceed the agent's 600s docker bound"
+    fi
+    echo "  pre-pull done — every host has $TAG cached; no reconcile will hit the registry."
 fi
 
 echo "=== 2/3 fleet config set --image ==="
@@ -200,4 +237,16 @@ while [ "$elapsed" -lt "$TIMEOUT" ]; do
     sleep 12; elapsed=$((elapsed+12))
 done
 "$FW_LIB/fleet/config" status --mongo "$MONGO" | grep -E 'applied v' || true
-echo "Rollout complete: $NEW_IMAGE"
+# `break` above means converged; falling out of the loop means the timeout won.
+# Printing "Rollout complete" either way is how a 0/4-converged rollout read as a
+# success on 2026-07-29 — say which one happened, and exit non-zero if unfinished.
+if [ -n "$NEWVER" ] && [ "${onnew:-0}" -ge "${total:-0}" ] && [ "${total:-0}" -gt 0 ]; then
+    echo "Rollout complete: $NEW_IMAGE (all $total host(s) on v$NEWVER)"
+else
+    echo "" >&2
+    echo "ERROR: rollout NOT converged after ${TIMEOUT}s — ${onnew:-0}/${total:-0} host(s) on v${NEWVER:-?}." >&2
+    echo "       The image is pushed and fleet_config points at it, so agents keep retrying." >&2
+    echo "       Check: fw fleet status; per-host \`docker ps\` image tags; a wedged" >&2
+    echo "       \`docker compose\` (its fleet-agent log goes stale while it hangs)." >&2
+    exit 1
+fi
