@@ -98,6 +98,64 @@ def mdns_lookup(service_type: str, timeout: float = 2.0) -> str | None:
     return found[0] if found else None
 
 
+#: Hosts that mean "this machine" — correct for the process doing the lookup,
+#: and WRONG for every container it launches (loopback inside a container is the
+#: container). A literal one of these must never reach a runner's environment.
+_LOOPBACK_HOSTS = ("127.", "localhost", "::1", "[::1]")
+
+
+def _is_loopback_host(host: str) -> bool:
+    h = host.strip().lower()
+    return h == "localhost" or h == "::1" or h == "[::1]" or h.startswith("127.")
+
+
+def _deloop(url: str, *, say=None) -> str:
+    """Rewrite a LITERAL loopback host in *url* to this host's LAN IP.
+
+    Why this is unconditional rather than a caller's job: the discovered URL is
+    handed to runner containers, where loopback resolves to the container
+    itself. A runner then starts, fails to reach Mongo, exits 0, and restarts —
+    forever, while the host's own checks all pass because loopback IS correct
+    for the host. That failure took 21 of 22 runners off an infra host for 17
+    hours, invisible to `fleet status`, because the agent resolved once at
+    startup and cached the poisoned value for its lifetime.
+
+    Only *literal* loopback is rewritten. A stable NAME (``afl-mongodb``) is
+    left alone on purpose: containers map those via ``extra_hosts`` to the infra
+    IP, so the name is the more drift-proof form.
+
+    If the LAN address can't be determined or isn't reachable, the original URL
+    is returned — a working host-local URL beats a broken guess, and the caller
+    still logs what it chose.
+    """
+    try:
+        from urllib.parse import urlsplit, urlunsplit
+
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        if not _is_loopback_host(host):
+            return url
+        lan = lan_ip()
+        if not lan or _is_loopback_host(lan):
+            if say:
+                say(f"  (loopback {host} in {url} but no LAN IP to substitute — leaving as-is)")
+            return url
+        netloc = f"{lan}:{parts.port}" if parts.port else lan
+        if parts.username:
+            cred = parts.username + (f":{parts.password}" if parts.password else "")
+            netloc = f"{cred}@{netloc}"
+        rewritten = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+        if not _mongo_ok(rewritten):
+            if say:
+                say(f"  (loopback→{lan} rewrite of {url} not reachable — leaving as-is)")
+            return url
+        if say:
+            say(f"  loopback {host} → {lan} (a container cannot reach loopback)")
+        return rewritten
+    except Exception:  # never let the guard break discovery
+        return url
+
+
 def resolve_mongo(explicit: str | None = None, *, log=None) -> str:
     """Discover a reachable MongoDB URL. Order: explicit → FW_MONGODB_URL →
     mDNS (_afl-mongo._tcp) → conventional afl-mongodb. Raises if none answer."""
@@ -139,6 +197,7 @@ def resolve_mongo(explicit: str | None = None, *, log=None) -> str:
 
     for how, url in candidates:
         if _mongo_ok(url):
+            url = _deloop(url, say=_say)
             _say(f"discovered MongoDB via {how}: {url}")
             return url
         _say(f"  (no MongoDB via {how}: {url})")

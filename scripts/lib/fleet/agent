@@ -162,15 +162,25 @@ def _read_cfg(mongo):
     return cfg
 
 
-def _record(mongo, version, image, replicas):
-    """Record this host's applied state so `fleet status` can show drift."""
+def _record(mongo, version, image, replicas, expected_runners=None):
+    """Record this host's applied state so `fleet status` can show drift.
+
+    ``expected_runners`` is how many runner services this host was asked to
+    start. Without it, status can only report the config version a host applied
+    — which says nothing about whether the containers it launched are ALIVE. A
+    host can apply every config faithfully while every runner it starts
+    crash-loops; that state read as "healthy" for 17 hours once.
+    """
     try:
+        doc = {
+            "host": HOST, "applied_version": version, "applied_image": image,
+            "replicas": replicas, "applied_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if expected_runners is not None:
+            doc["expected_runners"] = int(expected_runners)
         _db(mongo).fleet_agents.update_one(
             {"_id": HOST},
-            {"$set": {
-                "host": HOST, "applied_version": version, "applied_image": image,
-                "replicas": replicas, "applied_at": datetime.now(timezone.utc).isoformat(),
-            }},
+            {"$set": doc},
             upsert=True,
         )
     except Exception as exc:  # noqa: BLE001 - reporting is best-effort
@@ -417,7 +427,10 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
                 sys.stderr.write(dr.stderr)
                 print(f"fleet-agent[{HOST}]: WARNING domain-runner {name} start failed (exit {dr.returncode}); "
                       "continuing — another host can serve this domain's tasks")
-        _record(mongo, cfg.get("version"), image, replicas)
+        # What this host was ASKED to run: one server per domain runner, plus
+        # the osm tier's replicas and the ffl tier's, when this host serves them.
+        _expected = len(domain_roles) + (replicas if osm_here else 0) + (ffl_replicas if ffl_here else 0)
+        _record(mongo, cfg.get("version"), image, replicas, expected_runners=_expected)
         _prune_superseded_images(image)
     finally:
         try:

@@ -37,6 +37,7 @@ except ModuleNotFoundError:
     import pymongo  # noqa: F401
 
 import argparse
+import time
 import json
 from collections import Counter
 from datetime import datetime, timezone
@@ -188,34 +189,68 @@ def cmd_get(a):
         _print_cfg(cfg)
 
 
+def _host_key(name) -> str:
+    """Normalize a host name for matching.
+
+    The agent records itself as ``server3.local`` while runners register as
+    ``server3``, so the two collections never joined — every host displayed
+    "no fleet-agent record" and the drift column was meaningless.
+    """
+    s = str(name or "?").strip()
+    return s[:-6] if s.endswith(".local") else s
+
+
 def cmd_status(a):
     d = _db(_resolve(a))
     cfg = d.fleet_config.find_one({"_id": "default"}) or {}
     desired = cfg.get("version", "-")
     print(f"fleet_config v{desired}  minio={cfg.get('minio', {}).get('endpoint', '-')}")
 
-    # Desired vs applied per host (fleet-agent records into fleet_agents).
-    agents = {a_["_id"]: a_ for a_ in d.fleet_agents.find({})}
-    servers = list(d.servers.find({"state": "running"}))
-    by_host = Counter(s.get("server_name", "?") for s in servers)
-    print(f"\nlive runners: {len(servers)} across {len(by_host)} host(s)")
-    for host, n in sorted(by_host.items()):
-        ips = next((s.get("server_ips") for s in servers if s.get("server_name") == host), None)
+    # Desired vs applied per host (fleet-agent records into fleet_agents), and
+    # — the part that actually indicates health — how many runners each host has
+    # ALIVE versus how many it was asked to start. Applying a config says
+    # nothing about whether the containers survived: a host can report
+    # "up-to-date" while every runner it launched crash-loops on startup.
+    agents = {_host_key(a_["_id"]): a_ for a_ in d.fleet_agents.find({})}
+
+    # Only count runners with a FRESH heartbeat. `state == "running"` alone is a
+    # stale-record trap: a killed runner keeps that state until the reaper gets
+    # to it, so counting it inflates "live" with runners that are long gone.
+    now_ms = int(time.time() * 1000)
+    fresh_ms = int(os.environ.get("FW_FLEET_STATUS_FRESH_MS", 180_000))
+    all_running = list(d.servers.find({"state": "running"}))
+    servers = [s for s in all_running if now_ms - int(s.get("ping_time") or 0) <= fresh_ms]
+    stale = len(all_running) - len(servers)
+
+    by_host = Counter(_host_key(s.get("server_name", "?")) for s in servers)
+    hosts = sorted(set(by_host) | set(agents))
+    print(f"\nlive runners: {len(servers)} across {len(by_host)} host(s)"
+          + (f"   ({stale} stale record(s) ignored)" if stale else ""))
+    degraded = []
+    for host in hosts:
+        n = by_host.get(host, 0)
+        ips = next((s.get("server_ips") for s in servers
+                    if _host_key(s.get("server_name", "?")) == host), None)
         ag = agents.get(host)
         if ag is not None:
             av = ag.get("applied_version")
-            drift = "up-to-date" if av == desired else f"LAGGING (applied v{av})"
+            drift = "up-to-date" if str(av) == str(desired) else f"LAGGING (applied v{av})"
+            exp = ag.get("expected_runners")
         else:
-            drift = "no fleet-agent record"
-        print(f"  {host:<24} {n:>2} runner(s)  [{drift}]  {ips or ''}")
-    # Agents that have applied but whose runners aren't in `servers` (e.g. by a
-    # different server_name) still show their reconcile state:
-    extra = [h for h in agents if h not in by_host]
-    if extra:
-        print("\nagents (reconcile records):")
-        for h in sorted(extra):
-            ag = agents[h]
-            print(f"  {h:<24} applied v{ag.get('applied_version')} image={ag.get('applied_image', '-')} at {ag.get('applied_at', '-')}")
+            drift, exp = "no fleet-agent record", None
+        count = f"{n:>2}/{exp} runner(s)" if exp else f"{n:>2} runner(s)"
+        health = ""
+        if exp:
+            if n == 0:
+                health = "  ** NO RUNNERS ALIVE **"
+            elif n < int(exp):
+                health = f"  ** {int(exp) - n} MISSING **"
+        if health:
+            degraded.append(host)
+        print(f"  {host:<24} {count:<18} [{drift}]{health}  {ips or ''}")
+    if degraded:
+        print("\n  A host can apply the config and still have its runners die on startup —")
+        print("  check `docker ps` restart counts and the runner logs on: " + ", ".join(degraded))
 
 
 def cmd_secret(a):
