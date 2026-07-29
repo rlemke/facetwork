@@ -324,6 +324,26 @@ def migrate_source(source: str) -> AfterMigrationResult:
 
         if rewritten.strip():
             lines[idx] = rewritten.rstrip() + eol
+            # The removed argument was the LAST one and shared its line with the
+            # call's ')' — so all that survives here is the closing paren (plus
+            # any `after` clause). The preceding argument's trailing comma now
+            # dangles: `only_layers = "x",\n) after volc` does not parse. This is
+            # the multi-line twin of the alone-on-its-line case handled below;
+            # missing it produced invalid FFL that only a compile check caught.
+            if lines[idx].lstrip().startswith(")"):
+                prev = idx - 1
+                while prev >= 0 and not lines[prev].strip():
+                    prev -= 1
+                if prev >= 0:
+                    prev_eol = "\n" if lines[prev].endswith("\n") else ""
+                    stripped = lines[prev].rstrip()
+                    if stripped.endswith("("):
+                        # It was the only argument: `F(\n)` is invalid FFL, so
+                        # pull the parens back together.
+                        lines[prev] = stripped + lines[idx].lstrip().rstrip() + prev_eol
+                        del lines[idx]
+                    elif stripped.endswith(","):
+                        lines[prev] = stripped.rstrip(",") + prev_eol
         else:
             # The argument was alone on its line: drop the line entirely rather
             # than leave a blank inside the call, then clean up the comma the

@@ -115,6 +115,38 @@ class TestAfterMigrator:
         assert ") after data" in res.source
         assert _compiles(res.source)
 
+    def test_trailing_comma_cleaned_when_close_paren_shares_the_arg_line(self):
+        """`… , \\n dependency_signal = x)` — the ')' rides the removed arg's line.
+
+        The alone-on-its-line case (above) deletes the line and cleans the comma;
+        this one leaves a bare `)` behind and took the other branch, so the
+        preceding comma survived and produced `"volcanoes",\\n) after volc` —
+        invalid FFL. Found in save_earth's docs by a compile check, not by review.
+        """
+        src = _wf(
+            "        data = Download()\n"
+            "        map = BuildMap(\n"
+            '            region = "us",\n'
+            "            dependency_signal = data.count)\n"
+            "        yield W(p = map.html_path)"
+        )
+        res = migrate_source(src)
+        assert '"us",' not in res.source
+        assert ") after data" in res.source
+        assert _compiles(res.source)
+
+    def test_sole_arg_with_close_paren_on_its_line_collapses_parens(self):
+        """Same branch, but the removed arg was the ONLY one: `F(\\n x = y)`."""
+        src = _wf(
+            "        data = Download()\n"
+            "        map = BuildMap(\n"
+            "            dependency_signal = data.count)\n"
+            "        yield W(p = map.html_path)"
+        )
+        res = migrate_source(src)
+        assert "BuildMap() after data" in res.source
+        assert _compiles(res.source)
+
     def test_clause_is_inserted_before_catch_not_after_it(self):
         """`) catch {` must become `) after x catch {` — order matters."""
         src = _wf(
