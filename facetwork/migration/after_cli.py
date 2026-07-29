@@ -29,7 +29,7 @@ import glob
 import os
 import sys
 
-from .after_migrator import migrate_source
+from .after_migrator import drop_param_declarations, migrate_source
 
 
 def _collect(paths: list[str]) -> list[str]:
@@ -46,6 +46,13 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="fw ffl migrate-after", description=__doc__)
     ap.add_argument("paths", nargs="+", help="FFL files or directories")
     ap.add_argument("--write", action="store_true", help="apply edits in place (default: dry run)")
+    ap.add_argument(
+        "--drop-param",
+        action="store_true",
+        help="BREAKING final step: remove the now-unused dependency_signal PARAMETER "
+        "from facet declarations. Run only after every call site is migrated AND no "
+        "stored AST (run snapshot, catalog revision) still passes it.",
+    )
     args = ap.parse_args(argv)
 
     files = _collect(args.paths)
@@ -58,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     for f in files:
         src = open(f).read()
         try:
-            res = migrate_source(src)
+            res = drop_param_declarations(src) if args.drop_param else migrate_source(src)
         except Exception as e:  # parse errors etc. — report, don't abort the run
             print(f"!! {f}: could not migrate ({type(e).__name__}: {e})", file=sys.stderr)
             continue
@@ -88,12 +95,19 @@ def main(argv: list[str] | None = None) -> int:
 
     verb = "wrote" if args.write else "would change"
     print(f"\n{verb} {changed} file(s); {manual_total} manual site(s) across {len(files)} scanned.")
-    print(
-        "\nNOTE: this rewrites CALL SITES only. The now-unused `dependency_signal`\n"
-        "parameter stays on the facet declarations on purpose — removing it changes\n"
-        "handler kwargs, so it must wait until every live runner is on an image that\n"
-        "no longer passes it (docs/architecture/ffl-after-clause.md §7)."
-    )
+    if args.drop_param:
+        print(
+            "\nNOTE: --drop-param is BREAKING. Any compiled AST stored elsewhere that\n"
+            "still passes the argument (a run snapshot, a catalog revision) will fail\n"
+            "against these declarations. Re-bake and roll the fleet before running the\n"
+            "affected workflows (docs/architecture/ffl-after-clause.md §7)."
+        )
+    else:
+        print(
+            "\nNOTE: this rewrites CALL SITES only. Removing the now-unused\n"
+            "`dependency_signal` PARAMETER is the separate, breaking `--drop-param`\n"
+            "step (docs/architecture/ffl-after-clause.md §7)."
+        )
     return 0
 
 

@@ -157,3 +157,61 @@ class TestAfterMigrator:
         res = migrate_source(src)
         assert "// keep me" in res.source and "// and me" in res.source
         assert _compiles(res.source)
+
+    def test_paren_inside_a_string_argument_does_not_capture_the_clause(self):
+        """A ')' inside a later string argument must not be mistaken for the call's.
+
+        Scanning for the first ')' put `after` INSIDE the description string:
+        the file still compiled, the text was corrupted, and the ordering edge
+        vanished — the exact silent-race class `after` exists to prevent.
+        Found on save_earth's BuildEnclaveMap ("(Chinatown, …)").
+        """
+        src = HEADER.replace(
+            'event facet BuildMap(dependency_signal: Int = 0, region: String = "g") => (html_path: String)',
+            'event facet BuildMap(dependency_signal: Int = 0, region: String = "g", '
+            'description: String = "") => (html_path: String)',
+        ) + (
+            "    workflow W() => (p: String) andThen {\n"
+            "        data = Download()\n"
+            "        map = BuildMap(\n"
+            "            dependency_signal = data.count,\n"
+            '            description = "Enclaves (Chinatown, Little Italy) worldwide."\n'
+            "        )\n"
+            "        yield W(p = map.html_path)\n"
+            "    }\n}\n"
+        )
+        res = migrate_source(src)
+        assert ") after data" in res.source, res.source
+        # the string is untouched
+        assert '"Enclaves (Chinatown, Little Italy) worldwide."' in res.source
+        assert "worldwide. after" not in res.source
+        assert _compiles(res.source)
+
+    def test_ordering_edges_are_preserved_end_to_end(self):
+        """The migration must not change the dependency graph — only how it's stated."""
+        from facetwork.runtime import DependencyGraph
+
+        def edges(text):
+            import json, subprocess, sys, tempfile, os
+            fh = tempfile.NamedTemporaryFile("w", suffix=".ffl", delete=False)
+            fh.write(text); fh.close()
+            out = subprocess.run(
+                [sys.executable, "-m", "facetwork.cli", "compile", "--compact",
+                 "--no-locations", "--primary", fh.name],
+                capture_output=True, text=True, env={"PYTHONPATH": "."})
+            os.unlink(fh.name)
+            ast = json.loads(out.stdout)
+            wf = [d for d in ast["declarations"][0]["declarations"]
+                  if d.get("type") == "WorkflowDecl"][0]
+            g = DependencyGraph.from_ast(wf["body"], set())
+            nm = {v: k for k, v in g.name_to_id.items()}
+            return {nm[i]: sorted(nm[x] for x in deps if x in nm)
+                    for i, deps in g.dependencies.items() if i in nm}
+
+        src = _wf(
+            "        a = Download()\n"
+            "        b = Other()\n"
+            "        map = BuildMap(dependency_signal = a.count + b.count)\n"
+            "        yield W(p = map.html_path)"
+        )
+        assert edges(src) == edges(migrate_source(src).source)

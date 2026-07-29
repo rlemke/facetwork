@@ -143,6 +143,68 @@ def _arg_source(text: str, line: int) -> str:
     return lines[line - 1] if 0 < line <= len(lines) else ""
 
 
+def drop_param_declarations(source: str) -> AfterMigrationResult:
+    """Remove the now-unused ``dependency_signal`` PARAMETER from declarations.
+
+    The final step of the migration, and the breaking one: once no call site
+    passes the argument, the parameter is dead weight on the facet — an input it
+    advertises and never reads. Removing it also removes the trap that made the
+    idiom dangerous, where ``dependency_signal = 0`` type-checks, reads as
+    ordering, and creates no edge at all.
+
+    Run this ONLY after :func:`migrate_source` has cleared every call site, and
+    only when no consumer can still pass the argument — a compiled AST stored
+    elsewhere (a run snapshot, a catalog revision) that still passes it will
+    fail against the new declaration.
+
+    Refuses to touch a parameter that is still referenced in the same source, so
+    a half-migrated file can't be broken silently.
+    """
+    ast: Program = FFLParser().parse(source)
+    result = AfterMigrationResult(source=source)
+
+    steps: list[StepStmt] = []
+    _iter_steps(ast, steps)
+    still_passed = [s for s in steps if any(a.name == PARAM_NAME for a in s.call.args)]
+    if still_passed:
+        result.manual.append(
+            (
+                still_passed[0].location.line if still_passed[0].location else 0,
+                f"{len(still_passed)} call site(s) still pass {PARAM_NAME} — run the "
+                f"call-site migration first, or removing the parameter will break them",
+            )
+        )
+        return result
+
+    lines = source.splitlines(keepends=True)
+    decl_re = re.compile(rf"^\s*{PARAM_NAME}\s*:\s*\w+(\s*=\s*[^,)]+)?\s*,?\s*$")
+    for idx in range(len(lines) - 1, -1, -1):
+        if not decl_re.match(lines[idx].rstrip("\n")):
+            continue
+        result.edits.append((idx + 1, f"drop unused parameter {PARAM_NAME}"))
+        del lines[idx]
+        prev = idx - 1
+        while prev >= 0 and not lines[prev].strip():
+            prev -= 1
+        nxt = idx
+        while nxt < len(lines) and not lines[nxt].strip():
+            nxt += 1
+        if prev >= 0 and nxt < len(lines):
+            prev_eol = "\n" if lines[prev].endswith("\n") else ""
+            if lines[prev].rstrip().endswith("(") and lines[nxt].lstrip().startswith(")"):
+                # It was the only parameter — `F(\n)` cannot span lines.
+                lines[prev] = lines[prev].rstrip() + lines[nxt].lstrip().rstrip() + prev_eol
+                del lines[nxt]
+            elif lines[prev].rstrip().endswith(",") and lines[nxt].lstrip().startswith(")"):
+                lines[prev] = lines[prev].rstrip().rstrip(",") + prev_eol
+
+    if result.edits:
+        result.source = "".join(lines)
+        result.changed = True
+        result.edits.sort()
+    return result
+
+
 def migrate_source(source: str) -> AfterMigrationResult:
     """Rewrite ``dependency_signal`` call sites in *source* to ``after``."""
     ast: Program = FFLParser().parse(source)
@@ -209,13 +271,28 @@ def migrate_source(source: str) -> AfterMigrationResult:
             if drop_only
             else f"step '{step.name}': {PARAM_NAME} → after {target}"
         )
-        rewrites.append((line, note, old_line, new_line if drop_only else (new_line, target)))  # type: ignore[arg-type]
+        # Where the `after` clause goes: the END of the call expression, taken
+        # from the PARSER, not by scanning for a ')'. Scanning is wrong whenever
+        # a later argument contains a ')' inside a string literal — it silently
+        # lands the clause inside that string, which still compiles and quietly
+        # drops the ordering edge. (Observed on save_earth's BuildEnclaveMap,
+        # whose `description` contains "(Chinatown, …)".)
+        loc = step.call.location
+        end = (loc.end_line, loc.end_column) if loc and loc.end_line else None
+        if target and end is None:
+            result.manual.append(
+                (line, f"step '{step.name}': no end location for the call — rewrite by hand")
+            )
+            continue
+        rewrites.append(
+            (line, note, old_line, new_line if drop_only else (new_line, target), end)  # type: ignore[arg-type]
+        )
 
     if not rewrites:
         return result
 
     lines = source.splitlines(keepends=True)
-    for line_no, note, old_line, new in sorted(rewrites, key=lambda r: -r[0]):
+    for line_no, note, old_line, new, end in sorted(rewrites, key=lambda r: -r[0]):
         idx = line_no - 1
         if idx < 0 or idx >= len(lines):
             continue
@@ -227,18 +304,23 @@ def migrate_source(source: str) -> AfterMigrationResult:
         eol = "\n" if lines[idx].endswith("\n") else ""
         rewritten = new_line
         if target:
-            # Append `after <target>` to the step's closing line. The closing
-            # paren may be on a later line than the argument.
-            close_idx = idx
-            while close_idx < len(lines) and ")" not in lines[close_idx]:
-                close_idx += 1
-            if close_idx >= len(lines):
-                result.manual.append((line_no, f"could not find the call's ')' for {note}"))
-                continue
-            if close_idx == idx:
-                rewritten = _insert_after_close(new_line, target)
+            # Insert at the call expression's exact end (parser-supplied), so a
+            # ')' inside a string literal can never be mistaken for the call's.
+            end_idx, end_col = end[0] - 1, end[1] - 1
+            if end_idx == idx:
+                # Same line: dropping the argument shortened it, so shift the
+                # parser's column by exactly what the removal took out.
+                end_col -= len(old_line) - len(new_line)
+                rewritten = f"{new_line[:end_col]} after {target}{new_line[end_col:].rstrip()}"
+            elif 0 <= end_idx < len(lines):
+                tail = lines[end_idx]
+                tail_eol = "\n" if tail.endswith("\n") else ""
+                lines[end_idx] = (
+                    f"{tail[:end_col]} after {target}{tail[end_col:].rstrip()}{tail_eol}"
+                )
             else:
-                lines[close_idx] = _insert_after_close(lines[close_idx], target)
+                result.manual.append((line_no, f"call end out of range for {note}"))
+                continue
 
         if rewritten.strip():
             lines[idx] = rewritten.rstrip() + eol
