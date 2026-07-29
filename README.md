@@ -87,6 +87,21 @@ If you are new to Facetwork, **start with the thesis documents in [`docs/thesis/
 | [`future-thoughts-ai-native.md`](docs/thesis/future-thoughts-ai-native.md) / [`.pdf`](docs/thesis/future-thoughts-ai-native.pdf) | A forward-looking exploration of an AI-native workflow system |
 | [`future-thoughts-positioning-dissent.md`](docs/thesis/future-thoughts-positioning-dissent.md) / [`.pdf`](docs/thesis/future-thoughts-positioning-dissent.pdf) | Dissenting companion on Facetwork's positioning in the AI-agent era |
 
+### Research papers
+
+Narrower write-ups drawn from running the system, each built on a specific
+production incident or measured result rather than on the design in the
+abstract. They also live in [`docs/thesis/`](docs/thesis/).
+
+| Paper | What it argues |
+|-------|----------------|
+| [`paper-parity-gaps.md`](docs/thesis/paper-parity-gaps.md) / [`.pdf`](docs/thesis/paper-parity-gaps.pdf) | *Passing Every Test While Completely Broken* — how single-address-space test doubles structurally hide distributed coordination bugs; a parity-gap taxonomy from the FFL `catch` clause, which passed its whole suite while broken on the fleet |
+| [`paper-informal-fleet.md`](docs/thesis/paper-informal-fleet.md) / [`.pdf`](docs/thesis/paper-informal-fleet.pdf) | *An Informal Fleet* — experience report on running a leaderless workflow runtime across commodity desktops and laptops, where hosts come and go and only the database and object store are stable |
+| [`paper-liveness-coverage-drift.md`](docs/thesis/paper-liveness-coverage-drift.md) / [`.pdf`](docs/thesis/paper-liveness-coverage-drift.pdf) | *The Safety Net With a Hole* — coverage drift between the failure states a runtime can enter and the ones its recovery sweep actually looks for; the states a self-healing loop silently stops covering |
+| [`paper-intrinsic-routing.md`](docs/thesis/paper-intrinsic-routing.md) / [`.pdf`](docs/thesis/paper-intrinsic-routing.pdf) | *Intrinsic Facts as Routing Keys* — derive routing from facts the program already carries instead of configuring it, plus two production bugs found at the boundary where derivation stops |
+| [`paper-geofabrik-replacement.md`](docs/thesis/paper-geofabrik-replacement.md) / [`.pdf`](docs/thesis/paper-geofabrik-replacement.pdf) | *Become Your Own Geofabrik* — self-hosting OSM regional extracts as a fan-out-native, cost-bearing data substrate |
+| [`paper-llm-composition.md`](docs/thesis/paper-llm-composition.md) / [`.pdf`](docs/thesis/paper-llm-composition.pdf) | *Lookup, Don't Generate* (**seed draft**) — a capability catalog as the substrate for LLM workflow composition: reuse a catalogued workflow rather than emitting bespoke code per task |
+
 Once you've read enough to understand the shape of the system, continue with the Quick Start and the developer-facing guides below.
 
 ---

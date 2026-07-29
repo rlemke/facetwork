@@ -229,17 +229,38 @@ the parens must collapse), a closing paren sharing a line with `catch` (the
 clause must be inserted at the `)`, not appended after `catch {`), and a
 preceding argument's now-dangling comma.
 
-### Phase 3 — remove the parameter (breaking; deliberately deferred)
+### Phase 3 — remove the parameter (breaking; DONE)
 
-Deleting it from 15 facet declarations changes handler kwargs, and domains are
+Deleting it from the facet declarations changes handler kwargs, and domains are
 **baked into the runner image** — so old image + new FFL is exactly the
 `unexpected kwarg` skew this fleet has hit before, and hosts do get stranded on old
-versions for weeks. Sequence:
+versions for weeks. That is why it was sequenced last:
 
 1. Keep the parameter declared with its default; mark it deprecated in the docstring.
 2. Migrate call sites (Phase 2) — old and new FFL both compile against it.
 3. Only after a rollout where every live host is current, delete the parameter and
    the handler kwarg.
+
+**Completed 2026-07-29 (fleet v125 / image `601ffe1`).** `dependency_signal` is
+gone from all 7 domains — parameter declarations, call sites and docstrings — and
+`grep` finds it in **zero** `.ffl` and **zero** `.py` files across every `fwh_*`
+repo. Verified not by "it still compiles" but by diffing `DependencyGraph` edge
+sets per block between the pre- and post-migration FFL: **82 blocks, identical**
+(see §10 for why that distinction mattered).
+
+The feared breakage was near-zero, and the original estimate was wrong: only
+**2** catalog revisions (`s2.landchange-lib` v1/v2) actually passed the argument,
+both are hermetic (their `ffl_source` embeds its own declarations, so they still
+compile standalone), and handlers take a single `params: dict` read with `.get()`,
+so a stray key from an older stored AST is inert. The "33 flows" figure counted
+flows that merely *embed* the domain's declarations without calling with it.
+
+**Known residue:** ~39 Markdown files across 12 `fwh_*` repos still *document*
+`dependency_signal` (signature tables and example blocks). They are outdated
+rather than broken — the validator does not reject an unknown named argument, and
+`dependency_signal = step.field` is still a real `StepRef` so the edge is still
+created — but the signature tables are now factually wrong and the examples teach
+a removed idiom. Rewrite them to `after` when touching those docs.
 
 ## 8. Deployment hazard and the feature gate
 
@@ -299,7 +320,7 @@ that teaches the runtime to honor it, never earlier.
 
 ## 9. Status
 
-On branch `ffl-after-clause` (not merged):
+Merged to `main` and live on the fleet (v125 / `601ffe1`, all 4 hosts up-to-date):
 
 - ✅ Grammar — LALR-clean; the `_NL`-before-comma ambiguity found by prototyping
 - ✅ Contextual keyword — `after` still usable as an identifier (test-pinned)
@@ -312,10 +333,13 @@ On branch `ffl-after-clause` (not merged):
   incapable runner declines instead of mis-executing
 - ✅ `fw ffl migrate-after` — all 7 domains migrate clean, compile, 0 manual sites
 - ✅ 33 new tests (7 parser, 10 validator, 6 runtime, 10 migrator); suite green (2965)
-- ⬜ **Phase 3 not done on purpose:** removing the `dependency_signal` parameter
-  from the 15 facet declarations and their handlers. That is the breaking half and
-  must wait for a fleet where every live host runs an image that no longer passes
-  it (§7).
+- ✅ **Phase 3 done** (§7): the `dependency_signal` parameter is removed from every
+  facet declaration and handler across all 7 domains — 0 `.ffl` / 0 `.py`
+  references remain — with dependency-graph edge sets diffed identical across 82
+  blocks, rolled to all 4 hosts, and confirmed by a live cross-host run
+- ⬜ **Doc residue:** ~39 `.md` files in 12 `fwh_*` repos still show
+  `dependency_signal` in signature tables and examples. Outdated, not broken (see
+  §7); convert to `after` when next touching those repos
 
 ### Deliberately left undone
 
