@@ -429,7 +429,14 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
                       "continuing — another host can serve this domain's tasks")
         # What this host was ASKED to run: one server per domain runner, plus
         # the osm tier's replicas and the ffl tier's, when this host serves them.
-        _expected = len(domain_roles) + (replicas if osm_here else 0) + (ffl_replicas if ffl_here else 0)
+        # SUM each domain role's replicas — several domains run more than one
+        # (`scaled` in domains.json), so counting roles understates the target
+        # and would hide a genuine shortfall behind a passing count.
+        _expected = (
+            sum(int(spec.get("replicas", 1) or 1) for spec in domain_roles.values())
+            + (replicas if osm_here else 0)
+            + (ffl_replicas if ffl_here else 0)
+        )
         _record(mongo, cfg.get("version"), image, replicas, expected_runners=_expected)
         _prune_superseded_images(image)
     finally:
