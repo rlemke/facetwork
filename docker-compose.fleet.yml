@@ -156,6 +156,26 @@ services:
     environment:
       <<: *fleet-env
 
+  # amr and migration are NOT `fleet_default` today, so no agent starts them —
+  # but their full-stack blocks are `build:`-only, so the day either is flagged
+  # fleet_default (or someone names it via --example) it silently runs a LOCALLY
+  # BUILT image that no `fw fleet rollout` can update. That is the county-atlas
+  # bug above, which sat 29h behind, did not understand the `after` clause, and
+  # created a step while its producer was still running. Cheaper to carry two
+  # inert stanzas than to rediscover that. Every runner the fleet can start must
+  # be pinned to the rolled image.
+  runner-amr:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+
+  runner-migration:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+
   runner-osm-mapping:
     <<: *fleet-runner
     depends_on: !reset []
