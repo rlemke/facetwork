@@ -1,9 +1,11 @@
 # `after` — explicit ordering for invisible dependencies
 
-**Status:** implemented on branch `ffl-after-clause` — grammar, AST, emitter,
-source reconstruction, six validator rules, the runtime edge, a forward-compat
-feature gate, and the `fw ffl migrate-after` codemod. Not merged; the
-`dependency_signal` parameter removal (§7 phase 3) is deliberately not done.
+**Status: SHIPPED.** Merged to `main` and running on the fleet — grammar, AST,
+emitter, source reconstruction, six validator rules, the runtime edge, the
+forward-compat gate (submit-time *and* claim-side), and the
+`fw ffl migrate-after` codemod. §7 phase 3 is **done**: `dependency_signal` is
+removed from all 7 domains (parameter, call sites and docstrings), verified by
+diffing dependency graphs across all 82 blocks.
 
 ## 1. The problem
 
