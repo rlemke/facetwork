@@ -83,6 +83,41 @@ Sub-blocks are always created as a contiguous prefix (`foreach-0 … foreach-N`)
 so the count of existing ones is the next index — no cursor to persist and no
 way for a crash mid-refill to skip an element.
 
+### Liveness: a stalled slot must not wedge the window
+
+A sub-block whose work finished but whose block never cascaded to `Complete`
+stays non-terminal indefinitely. Uncapped this is a slow tail — the other
+iterations still run, and the national atlas run stranded ~10% this way. **Capped
+it is fatal**: N stalled sub-blocks *are* the entire window, so nothing further
+is ever admitted.
+
+That happened on the first capped 3,167-county run, which stopped dead at 628
+with 31 of 32 slots held by sub-blocks that had no live task. The cap converted
+a latency bug into a liveness bug.
+
+Nothing else rescues it in time:
+
+* **repair check 7** requires *every* task terminal before it reports anything —
+  one task was still running, so it correctly said "Stranded block steps: 0";
+* **the stuck-step sweep** runs every 5 min, capped at 25 steps / 1.5 s per pass,
+  and `get_pending_resume_workflow_ids` deliberately excludes block-`Continue`
+  states, so the workflow may not even be selected.
+
+So the window heals itself. When every slot is occupied,
+`_nudge_stalled_sub_blocks` re-notifies any sub-block that has sat non-terminal
+with no progress for longer than `_FOREACH_STALL_GRACE_MS` (60 s — far below the
+5-minute sweep, far above a sub-second live cascade). The nudge is an ordinary
+continuation task, the same signal a completing child sends, so the step
+re-enters the normal state machine on whichever runner claims it. No direct
+state surgery, any runner can service it, and continuations dedupe by target
+step id so re-nudging cannot pile up.
+
+The same nudge runs once every element is admitted, where a stalled straggler
+blocks *completion* rather than admission — otherwise a fan-out sits at
+3166/3167 forever.
+
+It is only reached when the window is full, so a healthy run pays nothing.
+
 ### Failure handling
 
 A limit that cannot be resolved to a positive integer **fails the run**. It does

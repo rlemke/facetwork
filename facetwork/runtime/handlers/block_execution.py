@@ -38,6 +38,17 @@ if TYPE_CHECKING:
 _FOREACH_VALUES_ATTR = "_foreach_values"
 _FOREACH_LIMIT_ATTR = "_foreach_limit"
 
+# How long a capped foreach's sub-block may sit non-terminal with no progress
+# before the window nudges it with a continuation.
+#
+# Sized against what it competes with, not picked for feel: the stuck-step sweep
+# is the only other rescue, and it runs every 5 min, capped at 25 steps and
+# 1.5 s per pass — and `get_pending_resume_workflow_ids` deliberately excludes
+# block-Continue states, so a wedged fan-out may not even be selected. A window
+# needs its slots back in seconds, so this must be far below that. 60 s is long
+# enough that a live cascade (sub-second) is never nudged.
+_FOREACH_STALL_GRACE_MS = 60_000
+
 
 class BlockExecutionBeginHandler(StateHandler):
     """Handler for state.block.execution.Begin.
@@ -778,11 +789,21 @@ class BlockExecutionContinueHandler(StateHandler):
         created = len(sub_blocks)
         total = len(values)
         if created >= total:
+            # Everything is admitted; the block is now just waiting for the last
+            # iterations. A stalled straggler here blocks COMPLETION rather than
+            # admission, so it needs the same nudge — otherwise the fan-out sits
+            # at 3166/3167 forever.
+            self._nudge_stalled_sub_blocks(sub_blocks)
             return 0
 
         in_flight = sum(1 for s in sub_blocks if not s.is_terminal)
         slots = int(limit) - in_flight
         if slots <= 0:
+            # Every slot is occupied. If some occupants are stalled rather than
+            # working, the fan-out is wedged: a sub-block that finished its work
+            # but never cascaded holds its slot forever, and N of those stop the
+            # whole run. Nudge them instead of waiting on the 5-minute sweep.
+            self._nudge_stalled_sub_blocks(sub_blocks)
             return total - created
 
         block_ast = self.context.get_block_ast(self.step) or {}
@@ -836,6 +857,68 @@ class BlockExecutionContinueHandler(StateHandler):
             total,
         )
         return total - newly_created
+
+    def _nudge_stalled_sub_blocks(self, sub_blocks: list) -> int:
+        """Re-notify capped-foreach sub-blocks that are holding a slot doing nothing.
+
+        A sub-block whose work finished but whose block never cascaded to
+        Complete stays non-terminal forever. Uncapped that is a slow tail — the
+        other iterations still run. Capped it is fatal: N stalled sub-blocks
+        occupy the entire window and no further element is ever admitted.
+        Observed live on the 3,167-county atlas fan-out, which stopped at 628
+        with 31 of 32 slots held by sub-blocks that had no live task.
+
+        The nudge is a continuation task, the same signal a completing child
+        sends, so the step re-enters the normal state machine on whichever
+        runner claims it — no direct state surgery, and any runner can service
+        it. Continuations dedupe by target step id, so re-nudging on a later
+        poll cannot pile up.
+
+        Only reached when the window is already full, so the happy path pays
+        nothing. Returns how many were nudged.
+        """
+        import time as _time
+
+        from ..continuation import CONTINUATION_TASK_LIST, CONTINUATION_TASK_NAME
+        from ..entities import TaskDefinition, TaskState
+        from ..types import generate_id
+
+        now = int(_time.time() * 1000)
+        stalled = [
+            s
+            for s in sub_blocks
+            if not s.is_terminal
+            and s.last_modified
+            and (now - s.last_modified) > _FOREACH_STALL_GRACE_MS
+        ]
+        if not stalled:
+            return 0
+
+        for s in stalled:
+            self.context.changes.add_continuation_task(
+                TaskDefinition(
+                    uuid=generate_id(),
+                    name=CONTINUATION_TASK_NAME,
+                    runner_id="",
+                    workflow_id=self.step.workflow_id,
+                    flow_id="",
+                    step_id=str(s.id),
+                    state=TaskState.PENDING,
+                    created=now,
+                    updated=now,
+                    task_list_name=CONTINUATION_TASK_LIST,
+                    data={"step_id": str(s.id), "reason": "foreach_window_stalled"},
+                )
+            )
+
+        logger.warning(
+            "Foreach window stalled: block_id=%s nudged %d sub-block(s) idle > %ds "
+            "(they hold slots but have no progress)",
+            self.step.id,
+            len(stalled),
+            _FOREACH_STALL_GRACE_MS // 1000,
+        )
+        return len(stalled)
 
     def _continue_when(self) -> StateChangeResult:
         """Continue a when block by checking sub-block completion.

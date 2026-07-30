@@ -35,6 +35,7 @@ directly rather than inferred from the final step count.
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 
@@ -249,6 +250,153 @@ class TestForeachLimitFromAReference:
         )
         assert result.success is True
         assert _value_inputs(store) == list(range(10))
+
+
+class TestForeachWindowCannotWedge:
+    """A stalled sub-block must not hold a window slot forever.
+
+    The failure this pins down was observed live, not imagined. The
+    3,167-county atlas fan-out stopped dead at 628: 31 of its 32 slots were
+    held by sub-blocks that had finished their work but never cascaded to
+    Complete, so no further county was ever admitted.
+
+    Uncapped, that stranding is a slow tail — the other iterations still run.
+    Capped, it is fatal, because N stalled sub-blocks ARE the whole window.
+    The cap turned a latency bug into a liveness bug.
+
+    Nothing else rescues it in time: repair check 7 requires every task
+    terminal (one was still running), and the stuck-step sweep runs every
+    5 min, capped at 25 steps, on a workflow set that deliberately excludes
+    block-Continue states.
+    """
+
+    def _block_handler(self, sub_states, ages_ms, limit=4, values=None):
+        """Build a Continue handler over synthetic sub-blocks."""
+        from unittest.mock import MagicMock
+
+        from facetwork.runtime.handlers.block_execution import (
+            BlockExecutionContinueHandler,
+        )
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
+
+        now = int(time.time() * 1000)
+        values = values if values is not None else list(range(20))
+
+        block = StepDefinition.create(
+            workflow_id="wf", object_type=ObjectType.AND_THEN, facet_name="",
+            statement_id="fe", container_id="c", block_id="", root_id="c",
+        )
+        block.set_attribute("_foreach_values", values)
+        block.set_attribute("_foreach_limit", limit)
+
+        subs = []
+        for i, (st, age) in enumerate(zip(sub_states, ages_ms)):
+            s = StepDefinition.create(
+                workflow_id="wf", object_type=ObjectType.AND_THEN, facet_name="",
+                statement_id=f"foreach-{i}", container_id="c", block_id=block.id,
+                root_id="c",
+            )
+            s.state = st
+            s.last_modified = now - age
+            subs.append(s)
+
+        ctx = MagicMock()
+        ctx.changes = IterationChanges()
+        ctx.persistence.step_exists.return_value = False
+        ctx.get_block_ast.return_value = {"foreach": {"variable": "v"}, "steps": []}
+
+        h = BlockExecutionContinueHandler.__new__(BlockExecutionContinueHandler)
+        h.step = block
+        h.context = ctx
+        return h, subs, ctx
+
+    def test_stalled_slots_are_nudged_so_the_window_can_recover(self):
+        """The production shape: every slot held, nothing progressing."""
+        stalled = "state.block.execution.Continue"
+        h, subs, ctx = self._block_handler(
+            [stalled] * 4, [5 * 60_000] * 4, limit=4
+        )
+        remaining = h._refill_foreach_window(subs)
+
+        assert remaining > 0, "elements remain unadmitted — the window IS blocked"
+        nudged = ctx.changes.continuation_tasks
+        assert len(nudged) == 4, f"all 4 stalled slots must be nudged, got {len(nudged)}"
+        assert all(t.step_id in {s.id for s in subs} for t in nudged)
+        assert all(
+            t.data.get("reason") == "foreach_window_stalled" for t in nudged
+        ), "nudges must be identifiable in the task stream"
+
+    def test_a_live_cascade_is_never_nudged(self):
+        """Sub-blocks that just changed are working, not stalled.
+
+        Nudging those would generate churn proportional to fan-out width on
+        every poll of a perfectly healthy run.
+        """
+        h, subs, ctx = self._block_handler(
+            ["state.block.execution.Continue"] * 4, [500] * 4, limit=4
+        )
+        h._refill_foreach_window(subs)
+        assert ctx.changes.continuation_tasks == []
+
+    def test_healthy_window_with_free_slots_does_not_nudge(self):
+        """With room to admit, the refill takes the normal path and pays nothing."""
+        h, subs, ctx = self._block_handler(
+            ["state.statement.Complete"] * 2, [5 * 60_000] * 2, limit=4
+        )
+        h._refill_foreach_window(subs)
+        assert ctx.changes.continuation_tasks == []
+
+    def test_stalled_straggler_after_full_admission_is_nudged(self):
+        """The other wedge: all elements admitted, last one stalls.
+
+        Blocks COMPLETION rather than admission — the refill returns early on
+        `created >= total`, so this needs its own path or the fan-out sits at
+        N-1/N forever.
+        """
+        vals = list(range(4))
+        h, subs, ctx = self._block_handler(
+            ["state.statement.Complete"] * 3 + ["state.block.execution.Continue"],
+            [5 * 60_000] * 4,
+            limit=4,
+            values=vals,
+        )
+        remaining = h._refill_foreach_window(subs)
+        assert remaining == 0, "everything is admitted"
+        assert len(ctx.changes.continuation_tasks) == 1, "the straggler must be nudged"
+
+    def test_nudges_dedupe_by_step(self):
+        """Re-nudging across polls must not pile up duplicate continuations."""
+        h, subs, ctx = self._block_handler(
+            ["state.block.execution.Continue"] * 4, [5 * 60_000] * 4, limit=4
+        )
+        h._refill_foreach_window(subs)
+        h._refill_foreach_window(subs)
+        assert len(ctx.changes.continuation_tasks) == 4, "deduped by target step"
+
+    def test_uncapped_foreach_is_untouched(self):
+        """No limit → no window, no nudging, original behaviour."""
+        from unittest.mock import MagicMock
+
+        from facetwork.runtime.handlers.block_execution import (
+            BlockExecutionContinueHandler,
+        )
+        from facetwork.runtime.persistence import IterationChanges
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
+
+        block = StepDefinition.create(
+            workflow_id="wf", object_type=ObjectType.AND_THEN, facet_name="",
+            statement_id="fe", container_id="c", block_id="", root_id="c",
+        )
+        ctx = MagicMock()
+        ctx.changes = IterationChanges()
+        h = BlockExecutionContinueHandler.__new__(BlockExecutionContinueHandler)
+        h.step = block
+        h.context = ctx
+        assert h._refill_foreach_window([]) == 0
+        assert ctx.changes.continuation_tasks == []
 
 
 class TestForeachLimitUpLevelScope:
