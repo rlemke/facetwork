@@ -198,21 +198,27 @@ class RepairMixin(_MixinBase):
                 ancestors_reset,
             )
 
-    def repair_workflow(self, runner_id: str, dry_run: bool = False) -> dict:
+    def repair_workflow(
+        self, runner_id: str, dry_run: bool = False, stranded_min_age_ms: int = 900_000
+    ) -> dict:
         """Diagnose and repair a stuck workflow.
 
-        Performs six checks:
+        Performs seven checks:
         1. Runner state — if completed/failed but has non-terminal work, reset to running
         2. Orphaned tasks — running tasks on dead/shutdown servers -> pending
         3. Transient step errors — connection/timeout errors -> retry (EventTransmit)
         4. Ancestor blocks — reset errored ancestors so execution resumes
         5. Dead-lettered tasks — re-enqueue with retry count reset, fix steps and ancestors
         6. Inconsistent steps — steps marked Complete but with failed tasks -> reset
+        7. Stranded block steps — block-level steps left non-terminal although every
+           task in the workflow is terminal. DETECTION ONLY here; advancing them
+           needs the evaluator, which this layer must not import, so the caller
+           resumes the returned steps (see scripts/lib/maint/repair-workflow).
 
         Returns a dict describing all repairs made.
         """
         from ..entities import RunnerState, TaskState
-        from ..states import StepState
+        from ..states import STUCK_STEP_STATES, StepState
 
         now = _current_time_ms()
         runner = self.get_runner(runner_id)
@@ -437,5 +443,44 @@ class RepairMixin(_MixinBase):
                                 {"uuid": t.uuid},
                                 {"$set": _reset_task_to_pending(now, clear_error=True)},
                             )
+
+        # -- 7. Stranded block steps --------------------------------------
+        # The failure mode none of checks 1-6 intersect: every task is terminal
+        # and no step errored, yet block-level steps never cascaded to terminal,
+        # so the runner stays `running` forever. Observed on the national
+        # county-atlas fan-out: 3,290/3,290 tasks completed, 9,036 steps
+        # Complete, and 314 steps stuck at blocks.Begin / block.execution.Continue
+        # for 49 hours. `repair-workflow` reported "No issues found" because the
+        # runner was legitimately running, nothing had errored, and no task was
+        # orphaned or dead-lettered.
+        #
+        # Detection is deliberately conservative:
+        #   * EVERY task terminal — so we never touch a workflow still waiting on
+        #     handler work (that is checks 3/5's job).
+        #   * EventTransmit is EXCLUDED — that state means "awaiting a task", not
+        #     "block failed to cascade".
+        #   * the step must be older than `stranded_min_age_ms` so a live
+        #     cascade mid-flight is never mistaken for a stall.
+        result["stranded_block_steps"] = []
+        block_stuck_states = tuple(
+            st for st in STUCK_STEP_STATES if st != StepState.EVENT_TRANSMIT
+        )
+        if not has_nonterminal_tasks and tasks:
+            cutoff = now - stranded_min_age_ms
+            for step in steps:
+                if step.state not in block_stuck_states:
+                    continue
+                last = step.last_modified or step.start_time or 0
+                if last and last > cutoff:
+                    continue  # too recent — could be an in-flight cascade
+                result["stranded_block_steps"].append(
+                    {
+                        "step_id": step.id,
+                        "statement_name": step.statement_name or "",
+                        "facet_name": step.facet_name or "",
+                        "state": step.state,
+                        "age_ms": (now - last) if last else None,
+                    }
+                )
 
         return result

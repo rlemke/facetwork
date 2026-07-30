@@ -414,12 +414,24 @@ fw maint repair-workflow --dry <runner_id>   # preview without changes
 
 Also available as a dashboard button ("Repair Workflow" on workflow detail page) and MCP tool (`afl_repair_workflow`).
 
-The repair performs five checks:
+The repair performs seven checks:
 1. **Runner state** — if completed/failed but has non-terminal work, resets to running
 2. **Orphaned tasks** — running tasks on dead/shutdown servers → pending
 3. **Transient step errors** — connection/timeout errors → retry (EventTransmit)
 4. **Ancestor blocks** — resets errored ancestors so execution resumes
-5. **Inconsistent steps** — steps marked Complete but with failed tasks → reset to EventTransmit
+5. **Dead-lettered tasks** — re-enqueued with the retry count reset, steps + ancestors fixed
+6. **Inconsistent steps** — steps marked Complete but with failed tasks → reset to EventTransmit
+7. **Stranded block steps** — every task terminal, nothing errored, yet block-level steps
+   never cascaded, so the runner stays `running` indefinitely. Checks 1–6 all look
+   elsewhere, so this state used to report *"No issues found"*: the national
+   county-atlas fan-out sat like that for **49 hours** with 3,290/3,290 tasks complete
+   and 314 steps at `blocks.Begin`/`block.execution.Continue`. Detection is
+   conservative — it requires EVERY task terminal, excludes `EventTransmit` (that means
+   "awaiting a task"), and ignores steps younger than 15 min so a live cascade is never
+   mistaken for a stall. ⚠️ **Only `fw maint repair-workflow` resumes them**: advancing a
+   step needs the evaluator, which the store layer must not import, so the dashboard
+   button and `afl_repair_workflow` MCP tool currently *report* stranded steps without
+   fixing them. It exits non-zero if it detects stranded steps it could not resume.
 
 **Preventative**: Runners now verify all tasks are terminal before marking a workflow as completed.
 
