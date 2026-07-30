@@ -94,7 +94,11 @@ def api_runner_detail(runner_id: str, store=Depends(get_store)):
 def api_repair_workflow(runner_id: str, store=Depends(get_store)):
     """Diagnose and repair a stuck workflow."""
     try:
-        result = store.repair_workflow(runner_id)
+        # Shared helper so the button actually RESUMES stranded block steps
+        # (check 7); store.repair_workflow only detects them.
+        from facetwork.runtime.workflow_repair import repair_workflow
+
+        result = repair_workflow(store, runner_id)
         return JSONResponse({"success": True, **result})
     except ValueError as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=404)

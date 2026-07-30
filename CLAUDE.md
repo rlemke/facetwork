@@ -428,10 +428,15 @@ The repair performs seven checks:
    and 314 steps at `blocks.Begin`/`block.execution.Continue`. Detection is
    conservative — it requires EVERY task terminal, excludes `EventTransmit` (that means
    "awaiting a task"), and ignores steps younger than 15 min so a live cascade is never
-   mistaken for a stall. ⚠️ **Only `fw maint repair-workflow` resumes them**: advancing a
-   step needs the evaluator, which the store layer must not import, so the dashboard
-   button and `afl_repair_workflow` MCP tool currently *report* stranded steps without
-   fixing them. It exits non-zero if it detects stranded steps it could not resume.
+   mistaken for a stall. It also terminalises the runner once every step and task is
+   terminal, so a repaired run stops showing as active. The CLI exits non-zero if it
+   detects stranded steps it could not resume.
+
+All three surfaces — CLI, dashboard button, `fw_repair_workflow` MCP tool — go through
+`facetwork.runtime.workflow_repair.repair_workflow`, which is where the resume lives
+(the store only *detects* check 7; advancing a step needs the evaluator, which the
+persistence layer must not import). Call that helper, never `store.repair_workflow`
+directly, or the surface will report stranded steps without fixing them.
 
 **Preventative**: Runners now verify all tasks are terminal before marking a workflow as completed.
 

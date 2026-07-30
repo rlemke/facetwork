@@ -1733,7 +1733,13 @@ def _tool_repair_workflow(
     dry_run = arguments.get("dry_run", False)
     try:
         store = get_store()
-        result = store.repair_workflow(runner_id, dry_run=dry_run)
+        # Shared helper, not store.repair_workflow directly: the store only
+        # DETECTS stranded block steps (check 7) — resuming them needs the
+        # evaluator. Calling the store here made this tool report the problem
+        # without fixing it, unlike the CLI.
+        from facetwork.runtime.workflow_repair import repair_workflow
+
+        result = repair_workflow(store, runner_id, dry_run=dry_run)
         output = {
             "success": True,
             "dry_run": dry_run,
@@ -1745,10 +1751,15 @@ def _tool_repair_workflow(
             "transient_steps_retried": len(result["transient_steps_retried"]),
             "ancestors_reset": len(result["ancestors_reset"]),
             "inconsistent_steps_reset": len(result.get("inconsistent_steps_reset", [])),
+            "stranded_block_steps": len(result.get("stranded_block_steps", [])),
+            "stranded_resumed": result.get("stranded_resumed", 0),
+            "stranded_unresolved": result.get("stranded_unresolved", 0),
+            "stranded_error": result.get("stranded_error", ""),
             "details": {
                 "orphaned_tasks": result["orphaned_tasks_reset"],
                 "retried_steps": result["transient_steps_retried"],
                 "inconsistent_steps": result.get("inconsistent_steps_reset", []),
+                "stranded_steps": result.get("stranded_block_steps", []),
             },
         }
     except Exception as e:
