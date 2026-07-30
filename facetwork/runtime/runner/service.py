@@ -134,6 +134,15 @@ _SENTINEL = -1
 # synchronously on the poll thread; bounding it keeps it from starving event-task
 # claiming on a large foreach fan-out. Matches RegistryRunner's caps.
 _SWEEP_MAX_STEPS = 25
+# A workflow whose tasks are ALL terminal has no event work left to claim, so
+# sweeping it cannot starve its own claiming — the §10.4 livelock the small budget
+# guards against does not apply. Such a workflow gets a bigger budget so it
+# actually drains: at 0.45 s per resume (measured on a 9,505-step workflow) the
+# 25-step/1500 ms budget clears ~3 steps per 5-minute sweep, i.e. ~9 HOURS for a
+# 314-step backlog. The runner still only sweeps when it has spare worker slots,
+# and this cap keeps one workflow from monopolising the poll thread.
+_SWEEP_DRAIN_MAX_STEPS = 400
+_SWEEP_DRAIN_MAX_MS = 20_000
 _SWEEP_MAX_MS = 1500
 
 
@@ -1455,7 +1464,29 @@ class RunnerService(BaseRunner):
                     logger.debug("Stuck-step sweep hit per-invocation cap; deferring rest")
                     break
                 try:
-                    self._sweep_workflow_steps(wf_id, budget)
+                    # Drainable = no non-terminal tasks, so there is nothing for
+                    # this workflow to claim and sweeping it starves nothing.
+                    # Give it its OWN larger budget rather than spending the
+                    # shared one, so a big backlog converges in minutes instead
+                    # of hours without eating the budget of workflows that are
+                    # still doing real work.
+                    if not self._has_non_terminal_tasks(wf_id):
+                        drain = _SweepBudget(
+                            _SWEEP_DRAIN_MAX_STEPS,
+                            _current_time_ms() + _SWEEP_DRAIN_MAX_MS,
+                        )
+                        before = drain.remaining
+                        self._sweep_workflow_steps(wf_id, drain)
+                        used = before - drain.remaining
+                        if used > _SWEEP_MAX_STEPS:
+                            logger.info(
+                                "Stuck-step sweep drained %d step(s) from %s "
+                                "(all tasks terminal — nothing to starve)",
+                                used,
+                                wf_names.get(wf_id, wf_id[:12]),
+                            )
+                    else:
+                        self._sweep_workflow_steps(wf_id, budget)
                 except Exception:
                     logger.debug("Sweep failed for workflow %s", wf_id, exc_info=True)
         except Exception:
