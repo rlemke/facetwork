@@ -1752,8 +1752,14 @@ class RunnerService(BaseRunner):
                     self._ast_cache[workflow_id] = workflow_ast
 
             if workflow_ast is None:
+                # NOT a fallback — this returns without resuming anything. The
+                # old message said "falling back to full resume", which described
+                # behaviour that does not happen here and would send anyone
+                # debugging a stall looking for a fallback that never ran.
                 logger.warning(
-                    "No AST for workflow %s, falling back to full resume",
+                    "No AST for workflow %s — cannot resume it; the step stays "
+                    "stuck until the AST is available (runner snapshot or flow). "
+                    "Use `fw maint repair-workflow` to recover it.",
                     workflow_id,
                 )
                 return
