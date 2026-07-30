@@ -1550,7 +1550,7 @@ class RunnerService(BaseRunner):
                         step.id,
                         "task dead-lettered (retries exhausted)",
                         workflow_ast=self._ast_cache.get(workflow_id),
-                        program_ast=self._program_ast_cache.get(workflow_id),
+                        program_ast=self._get_program_ast(workflow_id),
                     )
                     self._resume_workflow_for_step(workflow_id, step.id)
                     logger.warning(
@@ -1757,7 +1757,7 @@ class RunnerService(BaseRunner):
             )
             return
 
-        program_ast = self._program_ast_cache.get(workflow_id)
+        program_ast = self._get_program_ast(workflow_id)
 
         # Look up the runner_id so resumed tasks inherit the workflow's runner
         runner_id, qualified_workflow_name = self._lookup_runner_context(workflow_id)
@@ -1838,7 +1838,7 @@ class RunnerService(BaseRunner):
                 )
                 return
 
-            program_ast = self._program_ast_cache.get(workflow_id)
+            program_ast = self._get_program_ast(workflow_id)
 
             runner_id, qualified_workflow_name = self._lookup_runner_context(workflow_id)
 
@@ -1889,6 +1889,37 @@ class RunnerService(BaseRunner):
             ast: The compiled workflow AST dict
         """
         self._ast_cache[workflow_id] = ast
+
+    def _get_program_ast(self, workflow_id: str) -> dict | None:
+        """Program AST for a workflow, loading it from persistence on a miss.
+
+        ``_program_ast_cache`` is populated only by the runner process that
+        STARTED the workflow, and by ``_load_workflow_ast`` — which is itself
+        only reached when ``_ast_cache`` misses. ``cache_workflow_ast()`` sets
+        the workflow AST alone, so the two caches routinely desync: workflow AST
+        present, program AST absent.
+
+        That asymmetry is silently fatal to a foreach. A sub-block derives its
+        body from the PROGRAM ast; without it ``resume_step`` advances nothing
+        and returns ``iterations=0``, so the sub-block is stranded permanently
+        with no error anywhere. Every runner restart — a rollout, a crash, or
+        just another host picking the workflow up — re-creates the condition.
+
+        Seen live twice: the 3,167-county fan-out stopped dead after a rollout
+        while its sweep logged `iterations=0` every 5 minutes, and this is the
+        most likely explanation for the earlier 49-hour stall that was never
+        root-caused. An out-of-process script that passed the runner document's
+        `compiled_ast` explicitly resumed the same steps immediately.
+
+        The runner document carries `compiled_ast`, so the fix is simply to go
+        and get it.
+        """
+        program_ast = self._program_ast_cache.get(workflow_id)
+        if program_ast is not None:
+            return program_ast
+        # Populates _program_ast_cache from the runner snapshot as a side effect.
+        self._load_workflow_ast(workflow_id)
+        return self._program_ast_cache.get(workflow_id)
 
     # =========================================================================
     # Stats
