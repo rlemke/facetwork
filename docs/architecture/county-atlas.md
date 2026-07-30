@@ -157,8 +157,9 @@ county.atlas.BuildCountyAtlas(state, county, tier) =>
         materialize -> GeoJSON (small) or PMTiles (heavy: roads)
     write manifest.json + render index.html
 
-county.atlas.BuildAtlasFanout(tier) =>
+county.atlas.BuildAtlasFanout(tier, concurrency=32) =>
     foreach child in ListExtracts("north-america/us/*/*")   # the ~3,143 county PBFs
+        limit concurrency                                   # bounded width, see §9.7
         BuildCountyAtlas(child)
 
 county.atlas.BuildMasterIndex =>   US + per-state index pages from the coverage matrix
@@ -321,7 +322,36 @@ wholesale to GitHub Pages** (~1 GB Pages limit). A national GitHub publish would
 fetched on toggle) — the deferred production path. Until then: full set on MinIO, curated
 subset on Pages.
 
-### 9.7 Operational lessons (reusable)
+### 9.7 Bounded fan-out width (retrofit 2026-07-30)
+
+`BuildAtlasFanout` gained a `concurrency` parameter (default 32), applied as
+`foreach cty in $.counties limit $$.concurrency`
+([`foreach … limit N`](ffl-foreach-limit.md)). Every county still runs; only the number
+in flight at once is bounded.
+
+**Why, measured on the national run itself:** it created **3,290 tasks / 9,505 steps**,
+but the work was executed by **7 native runners (14 workers) on server3** (§9.4) — so
+~3,150 sub-blocks existed only to sit pending. Width beyond the number of workers
+serving `BuildCountyAtlas` buys no throughput; it costs step and task records, block
+cascade work on every sweep, and scratch disk for each county PBF in flight.
+
+The default of **32** is ~2.3× the 14 workers that actually ran it — enough headroom that
+no worker idles waiting for a slot to refill, while the in-flight set is ~100× smaller
+than the collection. It is a headroom heuristic, not a measured optimum; raise it when
+running against a larger fleet, and use `limit 1` to serialise for debugging.
+
+**Not claimed:** that this would have prevented the 49-hour stall that motivated repair
+check 7. That run's root cause was never established (a controlled retry showed the sweep
+*can* recover stranded blocks in under a minute), so this is a reduction in cascade
+surface, not a fix for it.
+
+⚠️ **Rollout ordering.** The `limit` clause needs a compiler that understands it. This
+domain is baked into the fleet image, so the FFL change and the runtime change must land
+in the **same bake** — a runner whose image predates `7c45ad9` fails to *parse* the FFL,
+which surfaces as the domain failing to seed rather than as a fan-out that merely ignores
+the cap.
+
+### 9.8 Operational lessons (reusable)
 
 - **`publish_bundles` clobbers a staged custom index.** It auto-generates a plain section
   landing at `<dest>/index.html`. To keep a custom index, overwrite it *afterward* via the
