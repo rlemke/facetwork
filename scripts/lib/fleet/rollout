@@ -139,12 +139,29 @@ done
 
 cd "$FW_ROOT"
 [ -n "$(git status --porcelain 2>/dev/null)" ] && echo "WARNING: working tree is dirty — rolling out HEAD, not your uncommitted edits." >&2
+# The tag identifies the CONTENT, not just the facetwork commit. Baked fwh_*
+# domain code is versioned independently, so a domain-only rebake at an unchanged
+# facetwork HEAD used to OVERWRITE the existing tag — a mutable tag. That was
+# done three times at `20c1d6b` on 2026-07-29 with different save-earth content
+# each time. It only worked because --stagger does an explicit `docker pull`,
+# which fetches the new digest; without that, hosts with `pull_policy: missing`
+# keep stale content under a tag they already have AND THE ROLLOUT REPORTS
+# CONVERGED. Appending the domain ref makes every distinct bake a distinct,
+# immutable tag, so correctness no longer depends on the pre-pull.
 TAG="$(git rev-parse --short HEAD)"
+if [ -n "${FW_FLEET_DOMAINS_REF:-}" ]; then
+    # Keep it short and tag-safe ([a-zA-Z0-9._-]); the ref is usually a sha.
+    _dref="$(printf '%s' "$FW_FLEET_DOMAINS_REF" | tr -c 'a-zA-Z0-9._-' '-' | cut -c1-12)"
+    TAG="${TAG}-d${_dref}"
+fi
 NEW_IMAGE="$IMAGE_REPO:$TAG"        # what fleet_config records / remotes pull
 PUSH_IMAGE="$PUSH_REPO:$TAG"       # what the builder host pushes (same registry+repo)
 # cache-from the image the fleet currently runs, addressed via the PUSH registry —
 # the address the BUILDER can actually reach (it may not resolve REGISTRY by name).
-PREV_TAG="$("$FW_LIB/fleet/config" get --mongo "$MONGO" 2>/dev/null | grep -oE "facetwork-runner:[a-f0-9]+" | head -1 | cut -d: -f2 || true)"
+# The character class must allow `-` and `.`: with the domain-ref suffix above a
+# `[a-f0-9]+` match would truncate `20c1d6b-d85fd713` to `20c1d6b` and cache-from
+# a tag that may not exist.
+PREV_TAG="$("$FW_LIB/fleet/config" get --mongo "$MONGO" 2>/dev/null | grep -oE "facetwork-runner:[a-zA-Z0-9._-]+" | head -1 | cut -d: -f2 || true)"
 PREV="${PREV_TAG:+$PUSH_REPO:$PREV_TAG}"
 
 # Resolve stagger targets up front so --dry can show them (empty is allowed —

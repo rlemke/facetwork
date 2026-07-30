@@ -74,6 +74,17 @@ every server can pull from, then point the central config at the new tag.
 > from the environment **or `.env`**. `buildx --push` does not load the image into
 > the local store, so the build host is pre-pulled too.
 
+> **The tag identifies the content, not the commit.** It is the facetwork short
+> SHA, plus `-d<domain-ref>` when `FW_FLEET_DOMAINS_REF` is set. Baked `fwh_*`
+> domain code is versioned independently of facetwork, so without that suffix a
+> domain-only rebake at an unchanged HEAD **overwrites the existing tag** — a
+> mutable tag. That happened three times at `20c1d6b` (2026-07-29) with different
+> save-earth content each time. It worked only because `--stagger` does an explicit
+> `docker pull`, which fetches the new digest; without it, hosts with
+> `pull_policy: missing` keep stale content under a tag they already have *and the
+> rollout reports converged*. With the suffix every distinct bake is a distinct,
+> immutable tag, so correctness no longer depends on the pre-pull.
+
 > **Image garbage collection**: every rollout pulls a fresh ~2GB tag, and old
 > tags used to accumulate until a host filled its disk (server1 hit 100% after
 > six generations, wedging its reconcile with ENOSPC). The fleet-agent now
