@@ -198,6 +198,103 @@ class RepairMixin(_MixinBase):
                 ancestors_reset,
             )
 
+
+    def finalize_terminal_runners(
+        self, *, limit: int = 50, min_age_ms: int = 900_000
+    ) -> list[dict]:
+        """Terminalise runners whose work is finished but which still say `running`.
+
+        A workflow can finish without anything observing it. The clearest case is
+        the declaration-level `catch`: the catch runs, its yield completes, the
+        Workflow step reaches Complete — and nothing calls ``resume_step`` again,
+        so ``_update_runner_terminal_state`` never fires. Worse, once every step is
+        Complete/Error the workflow no longer matches ``STUCK_STEP_STATES``, so the
+        stuck-step sweep stops selecting it. The runner then reads `running`
+        forever, inflating the dashboard's active count and every "is the fleet
+        busy?" answer. Measured: a catch-handled workflow sat `running` 15+ minutes
+        with every step terminal and nothing left to do.
+
+        Deliberately conservative — a runner is only finalised when:
+          * it is older than ``min_age_ms`` (never race an in-flight workflow),
+          * it has NO non-terminal steps,
+          * it has NO non-terminal tasks (the same guard BaseRunner applies before
+            completing on status: a lease-reclaimed zombie or in-flight
+            dead-letter must not be papered over),
+          * it has at least one step (a runner that never started tells us nothing).
+
+        The target state follows the workflow root: Error -> failed, else completed.
+
+        Returns one dict per finalised runner. Store-level on purpose: this is a
+        pure data reconciliation, no evaluator involved.
+        """
+        from ..entities import TaskState
+        from ..states import StepState
+
+        now = _current_time_ms()
+        cutoff = now - min_age_ms
+        finalized: list[dict] = []
+
+        cursor = self._db.runners.find(
+            {"state": {"$in": ["running", "startup"]}},
+            {"uuid": 1, "workflow_id": 1, "start_time": 1, "workflow": 1},
+        ).limit(max(limit * 4, limit))
+
+        for doc in cursor:
+            if len(finalized) >= limit:
+                break
+            if (doc.get("start_time") or 0) > cutoff:
+                continue
+            workflow_id = doc.get("workflow_id")
+            if not workflow_id:
+                continue
+
+            steps = list(self._db.steps.find({"workflow_id": workflow_id}, {"state": 1, "object_type": 1}))
+            if not steps:
+                continue
+            if any(not StepState.is_terminal(s.get("state", "")) for s in steps):
+                continue
+            # dead_letter IS terminal here: retries are exhausted and the task
+            # will never run again unless someone re-enqueues it. Omitting it made
+            # this useless for the very case that motivated it — a catch-handled
+            # failure almost always leaves a dead-lettered task behind, so the
+            # runner would never be finalised. (Note check 1's
+            # `has_nonterminal_tasks` deliberately excludes it for a different
+            # reason: check 5 may re-enqueue it.)
+            nonterminal_tasks = self._db.tasks.count_documents({
+                "workflow_id": workflow_id,
+                "state": {
+                    "$nin": [
+                        TaskState.COMPLETED,
+                        TaskState.FAILED,
+                        TaskState.IGNORED,
+                        TaskState.CANCELED,
+                        TaskState.DEAD_LETTER,
+                    ]
+                },
+            })
+            if nonterminal_tasks:
+                continue
+
+            root = self._db.steps.find_one(
+                {"workflow_id": workflow_id, "object_type": "Workflow"}, {"state": 1}
+            )
+            root_state = (root or {}).get("state", "")
+            target = "failed" if root_state == StepState.STATEMENT_ERROR else "completed"
+
+            self._db.runners.update_one(
+                {"uuid": doc["uuid"], "state": {"$in": ["running", "startup"]}},
+                {"$set": {"state": target, "end_time": now}},
+            )
+            finalized.append({
+                "runner_id": doc["uuid"],
+                "workflow_id": workflow_id,
+                "workflow_name": (doc.get("workflow") or {}).get("name", ""),
+                "state": target,
+                "age_ms": now - (doc.get("start_time") or now),
+            })
+
+        return finalized
+
     def repair_workflow(
         self, runner_id: str, dry_run: bool = False, stranded_min_age_ms: int = 900_000
     ) -> dict:

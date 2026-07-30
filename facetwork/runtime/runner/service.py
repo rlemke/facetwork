@@ -280,6 +280,9 @@ class RunnerService(BaseRunner):
         self._http_thread: threading.Thread | None = None
         self._last_sweep: int = 0
         self._sweep_interval_ms: int = 300_000  # 5 min — safety net only
+        # Finalization is a cheap bounded query; run it on the same cadence.
+        self._last_finalize: int = 0
+        self._finalize_interval_ms: int = 300_000
         # Per-workflow resume locks + pending-requeue (BaseRunner._resume_with_lock).
         self._resume_locks: dict[str, threading.Lock] = {}
         self._resume_locks_lock = threading.Lock()
@@ -417,6 +420,7 @@ class RunnerService(BaseRunner):
                         was_quarantined = False
                     dispatched = self._poll_cycle()
                     self._maybe_sweep_stuck_steps()
+                    self._maybe_finalize_runners()
                     self._maybe_reap_orphaned_tasks()
                     self._maybe_materialize_environments()
                     reconcile_counter += 1
@@ -1572,6 +1576,42 @@ class RunnerService(BaseRunner):
     # =========================================================================
     # Orphaned Task Reaper
     # =========================================================================
+
+    def _maybe_finalize_runners(self) -> None:
+        """Terminalise runners whose work is finished but which still say running.
+
+        The stuck-step sweep cannot cover this: once every step is Complete/Error
+        the workflow no longer matches ``STUCK_STEP_STATES``, so the sweep stops
+        selecting it entirely. A workflow that finishes via a declaration-level
+        `catch` lands exactly there — the catch runs, its yield completes, the
+        Workflow step reaches Complete, and nothing calls resume_step again, so
+        the runner reads `running` forever.
+
+        Same orchestration gate as the sweep, and the store-side query is
+        conservative (all steps terminal, all tasks terminal, older than the
+        window), so this is a cheap reconciliation rather than a second sweep.
+        """
+        if not self._config.runs_stuck_step_sweep():
+            return
+        now = _current_time_ms()
+        if now - self._last_finalize < self._finalize_interval_ms:
+            return
+        self._last_finalize = now
+        if not hasattr(self._persistence, "finalize_terminal_runners"):
+            return
+        try:
+            done = self._persistence.finalize_terminal_runners(limit=25)
+            for d in done:
+                logger.info(
+                    "Finalized runner %s (%s): all steps and tasks terminal after "
+                    "%.0f min -> %s",
+                    d["runner_id"][:12],
+                    d.get("workflow_name") or d["workflow_id"][:12],
+                    (d.get("age_ms") or 0) / 60000.0,
+                    d["state"],
+                )
+        except Exception:
+            logger.debug("Runner finalization pass failed", exc_info=True)
 
     def _maybe_reap_orphaned_tasks(self) -> None:
         """Periodically reset tasks orphaned by crashed servers.
