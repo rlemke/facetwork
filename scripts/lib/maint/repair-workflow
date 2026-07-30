@@ -15,9 +15,14 @@
 # Usage:
 #   fw maint repair-workflow <runner_id>
 #   fw maint repair-workflow --dry <runner_id>
+#   fw maint repair-workflow --mongo mongodb://server3.local:27017 <runner_id>
 #
 # Environment:
 #   FW_MONGODB_URL    MongoDB connection string (default from .env)
+#
+# --mongo overrides FW_MONGODB_URL. Needed on any host that is not the DB: those
+# .env files resolve to localhost:27017, so without it the command dies on a raw
+# pymongo connection error (matches `fw fleet --mongo` / `fw runner --mongo`).
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
@@ -27,10 +32,14 @@ source "$FW_LIB/_helpers/_env.sh"
 
 DRY_RUN=false
 RUNNER_ID=""
+MONGO_URL=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --dry)  DRY_RUN=true; shift ;;
+        --mongo)
+            [[ $# -ge 2 ]] || { echo "--mongo needs a URL" >&2; exit 1; }
+            MONGO_URL="$2"; shift 2 ;;
         -h|--help)
             awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
             exit 0
@@ -44,6 +53,10 @@ if [[ -z "$RUNNER_ID" ]]; then
     echo "Usage: fw maint repair-workflow [--dry] <runner_id>" >&2
     exit 1
 fi
+
+# Export so `load_config()` sees it — same precedence as every other fw command,
+# rather than threading a second connection path through the Python below.
+[[ -n "$MONGO_URL" ]] && export FW_MONGODB_URL="$MONGO_URL"
 
 PYTHON="${REPO_ROOT}/.venv/bin/python3"
 [[ -x "$PYTHON" ]] || PYTHON=python3
@@ -59,13 +72,37 @@ from facetwork.config import load_config
 from facetwork.runtime.mongo_store import MongoStore
 
 config = load_config()
-store = MongoStore(config.mongodb.connection_string(), config.mongodb.database)
+mongo_url = config.mongodb.connection_string()
+
+def _unreachable(exc):
+    # A bare pymongo ServerSelectionTimeoutError is almost always 'ran this on a
+    # host whose .env says localhost' — say that instead of 40 lines of traceback.
+    return 'ServerSelectionTimeout' in type(exc).__name__ or 'Connection refused' in str(exc)
+
+def _die_unreachable():
+    print(f'Error: cannot reach MongoDB at {mongo_url}', file=sys.stderr)
+    print('       Pass --mongo mongodb://<db-host>:27017 (or set FW_MONGODB_URL).', file=sys.stderr)
+    print('       Hosts that are not the DB have localhost in their .env.', file=sys.stderr)
+    sys.exit(1)
+
+# The connection is established lazily, so the timeout can surface either at
+# construction or on the first operation — guard both.
+try:
+    store = MongoStore(mongo_url, config.mongodb.database)
+except Exception as e:
+    if _unreachable(e):
+        _die_unreachable()
+    raise
 
 try:
     result = store.repair_workflow(runner_id, dry_run=dry_run)
 except ValueError as e:
     print(f'Error: {e}', file=sys.stderr)
     sys.exit(1)
+except Exception as e:
+    if _unreachable(e):
+        _die_unreachable()
+    raise
 
 prefix = '(dry run) ' if dry_run else ''
 
