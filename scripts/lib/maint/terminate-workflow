@@ -25,7 +25,24 @@ from typing import Any
 try:
     from pymongo import MongoClient
 except ImportError:
-    print("ERROR: pymongo not installed. pip install pymongo", file=sys.stderr)
+    # `fw` execs this file directly, so the shebang picks the SYSTEM python3 —
+    # which has no pymongo on a normal host (Homebrew python is PEP 668-locked,
+    # so the deps live in the repo venv). The sibling bash commands dodge this
+    # by selecting `.venv/bin/python3` explicitly; a python-shebang command has
+    # to re-exec itself. Without this, `fw maint terminate-workflow` fails with
+    # "pymongo not installed" on every host that can actually run the fleet.
+    _repo = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    )
+    _venv = os.path.join(_repo, ".venv", "bin", "python3")
+    if os.path.exists(_venv) and not os.environ.get("_FW_VENV_REEXEC"):
+        os.environ["_FW_VENV_REEXEC"] = "1"
+        os.execv(_venv, [_venv, os.path.abspath(__file__), *sys.argv[1:]])
+    print(
+        "ERROR: pymongo not installed and no repo .venv found. "
+        "Run `fw install repo`, or pip install pymongo.",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 
