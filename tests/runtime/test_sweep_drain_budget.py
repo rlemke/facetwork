@@ -38,3 +38,20 @@ def test_budget_exhausts_on_step_count():
 def test_budget_exhausts_on_deadline():
     b = svc._SweepBudget(1000, svc._current_time_ms() - 1)
     assert b.exhausted(), "a passed deadline must exhaust the budget regardless of steps"
+
+
+def test_drain_requires_no_event_transmit_steps():
+    """The condition must be 'creates no tasks', not merely 'no live tasks'.
+
+    Keyed only on `_has_non_terminal_tasks`, a workflow with EventTransmit steps
+    and NO TASKS YET looks drainable — and the sweep then created 30 tasks in one
+    invocation, exactly the flood the §10.4 budget exists to prevent. Those steps
+    exist to BECOME tasks, so draining them manufactures the work that starves
+    claiming. Caught by an existing cap test, not by the new ones.
+    """
+    import inspect
+
+    src = inspect.getsource(svc.RunnerService._sweep_workflow_steps)
+    # The upgrade must be gated on there being no leaf (EventTransmit) steps.
+    assert "if not leaf_steps" in src, "drain must require zero EventTransmit steps"
+    assert "_has_non_terminal_tasks" in src, "drain must also require no live tasks"

@@ -1464,35 +1464,17 @@ class RunnerService(BaseRunner):
                     logger.debug("Stuck-step sweep hit per-invocation cap; deferring rest")
                     break
                 try:
-                    # Drainable = no non-terminal tasks, so there is nothing for
-                    # this workflow to claim and sweeping it starves nothing.
-                    # Give it its OWN larger budget rather than spending the
-                    # shared one, so a big backlog converges in minutes instead
-                    # of hours without eating the budget of workflows that are
-                    # still doing real work.
-                    if not self._has_non_terminal_tasks(wf_id):
-                        drain = _SweepBudget(
-                            _SWEEP_DRAIN_MAX_STEPS,
-                            _current_time_ms() + _SWEEP_DRAIN_MAX_MS,
-                        )
-                        before = drain.remaining
-                        self._sweep_workflow_steps(wf_id, drain)
-                        used = before - drain.remaining
-                        if used > _SWEEP_MAX_STEPS:
-                            logger.info(
-                                "Stuck-step sweep drained %d step(s) from %s "
-                                "(all tasks terminal — nothing to starve)",
-                                used,
-                                wf_names.get(wf_id, wf_id[:12]),
-                            )
-                    else:
-                        self._sweep_workflow_steps(wf_id, budget)
+                    self._sweep_workflow_steps(
+                        wf_id, budget, name=wf_names.get(wf_id, wf_id[:12])
+                    )
                 except Exception:
                     logger.debug("Sweep failed for workflow %s", wf_id, exc_info=True)
         except Exception:
             logger.debug("Stuck-step sweep failed", exc_info=True)
 
-    def _sweep_workflow_steps(self, workflow_id: str, budget: _SweepBudget | None = None) -> None:
+    def _sweep_workflow_steps(
+        self, workflow_id: str, budget: _SweepBudget | None = None, name: str = ""
+    ) -> None:
         """Resume individual stuck steps in a workflow using resume_step().
 
         Processes leaf steps (EventTransmit) first, then block steps,
@@ -1507,6 +1489,27 @@ class RunnerService(BaseRunner):
         # Process leaf steps (EventTransmit) first, then blocks
         leaf_steps = [s for s in stuck_steps if s.state == StepState.EVENT_TRANSMIT]
         block_steps = [s for s in stuck_steps if s.state != StepState.EVENT_TRANSMIT]
+
+        # Drainable: this pass will CREATE no tasks (no EventTransmit steps) and
+        # nothing is in flight (no non-terminal tasks) — so sweeping it cannot
+        # starve event claiming and the §10.4 budget does not need to apply.
+        #
+        # The leaf-step condition is load-bearing and was missing at first: keyed
+        # only on "no non-terminal tasks", a workflow with EventTransmit steps and
+        # no tasks YET looked drainable, and the sweep created 30 tasks in one
+        # invocation — exactly the flood the budget exists to prevent. Those steps
+        # exist to BECOME tasks, so draining them manufactures the starving work.
+        if not leaf_steps and block_steps and not self._has_non_terminal_tasks(workflow_id):
+            budget = _SweepBudget(
+                _SWEEP_DRAIN_MAX_STEPS, _current_time_ms() + _SWEEP_DRAIN_MAX_MS
+            )
+            if len(block_steps) > _SWEEP_MAX_STEPS:
+                logger.info(
+                    "Stuck-step sweep draining %d block step(s) from %s "
+                    "(no tasks to create, none in flight — nothing to starve)",
+                    len(block_steps),
+                    name or workflow_id[:12],
+                )
 
         step_details = [
             f"{(s.statement_name or s.facet_name or s.object_type or '?')} ({s.state})"
