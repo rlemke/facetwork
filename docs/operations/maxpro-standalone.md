@@ -52,9 +52,37 @@ piece of work, called out in §6.
 | MinIO `osm-extracts/north-america` | **49 GB** | Per-county PBF tree |
 | MinIO `osm-extracts` (all continents) | **217 GB** | 8 continents + `-updates` dirs |
 | **`osm-selfhost/` (planet + split tree)** | **182 GB** | Plain files, NOT MinIO — see below |
+| `cache/` (noaa-weather, osm) | **16 GB** | Plain files — legacy/local domain caches |
+| `output/` (published outputs, census-output, maps, osm) | **96 GB** | Plain files — `output/cache` is 87 GB of it |
 
-**Total to move: ~762 GB** (363 GB cache + 217 GB osm-extracts + 182 GB osm-selfhost + 1.3 GB Mongo) — **21% of the 3.6 TB disk.** Large headroom. The 11 TB on `afl_data` is mostly
-non-Facetwork content (photos etc.) and does **not** need to come along.
+**Total to move: ~874 GB** — **24% of the 3.6 TB disk.** Nothing needs re-downloading:
+every byte already exists on server3.
+
+| Tree | Size | How |
+|---|---:|---|
+| MinIO `afl-cache` | 363 GB | `mc mirror` (S3) |
+| MinIO `osm-extracts` | 217 GB | `mc mirror` (S3) |
+| `osm-selfhost/` (planet + continents) | 182 GB | `rsync` |
+| `output/` | 96 GB | `rsync` |
+| `cache/` | 16 GB | `rsync` |
+| MongoDB | 1.3 GB | `mongodump`/`mongorestore` |
+
+**Optional — regenerable or not Facetwork data** (copy only if you want them;
+all of it still fits, ~1.2 TB total / 34% of the disk):
+
+| Tree | Size | Verdict |
+|---|---:|---|
+| `local_servers/` | 249 GB | Identify before copying — not part of the runtime path |
+| `osm-scratch/` | 96 GB | **Skip** — transient scratch, regenerated on demand |
+| `hadoop/` | 3.1 GB | **Skip** — HDFS is not deployed (`reference_hdfs_not_deployed`) |
+| `sim-srv1…6/`, `sim-dbg/` | small | **Skip** — fleet-simulation artifacts |
+| `photos*/` | the bulk of the 11 TB | **Skip** — not Facetwork data |
+
+So the answer to "can we just copy rather than re-download": **yes, entirely.**
+The weather (`cache/noaa-weather`), census (`output/census-output`), map outputs
+(`output/maps`) and every domain cache in MinIO `afl-cache` all come across as
+data. No domain has to re-fetch from its upstream API, and no OSM data has to be
+re-downloaded.
 
 ✅ **The planet already exists — do NOT re-download it.** It is not in the MinIO
 bucket, which is why a first pass missed it. It lives on the plain filesystem at
@@ -141,7 +169,7 @@ Mongo is 1.3 GB, so this is minutes, not hours.
    `mc mirror` is resumable and idempotent — safe to re-run after an interruption.
 3. Verify with `mc ls --recursive --summarize` object counts per bucket, not just sizes.
 
-Over gigabit this is roughly **1.5–2 hours for the 580 GB of MinIO buckets**, plus ~30–45 min for the 182 GB `osm-selfhost` rsync; run it before you leave.
+Over gigabit this is roughly **1.5–2 hours for the 580 GB of MinIO buckets**, plus ~1 hour for the 294 GB of rsync trees (`osm-selfhost` + `output` + `cache`); run it before you leave.
 
 ### Phase 3 — cut the cord
 
@@ -171,10 +199,16 @@ Two separate trees, moved two different ways.
 MinIO buckets). This is the planet plus the continent extracts split from it:
 
 ```
-rsync -aP --info=progress2 \
-  /Volumes/afl_data/osm-selfhost/ \
-  /Volumes/afl_data_local/osm-selfhost/
+for tree in osm-selfhost output cache; do
+  rsync -aP --info=progress2 \
+    /Volumes/afl_data/$tree/ \
+    /Volumes/afl_data_local/$tree/
+done
 ```
+
+`output/` and `cache/` carry the plain-filesystem side of the domain data —
+`cache/noaa-weather`, `output/census-output`, `output/maps`, `output/osm`. The
+MinIO `afl-cache` bucket carries the rest. Copy both; nothing is re-fetched.
 
 `rsync` is resumable — re-run after any interruption. Verify the planet afterwards against
 its checksum: `osm-selfhost/planet-latest.osm.pbf.md5` is already there, and
