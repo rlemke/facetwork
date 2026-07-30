@@ -479,6 +479,8 @@ def _render_andthen(
     if block.get("foreach"):
         fe = block["foreach"]
         header += f" foreach {fe['variable']} in {_expr(fe['iterable'])}"
+        if fe.get("limit") is not None:
+            header += f" limit {_expr(fe['limit'])}"
     if block.get("when"):
         _open(w, depth, f"{header} when {{", attach)
         _render_when_cases(w, block["when"], depth + 1)

@@ -58,7 +58,7 @@ The following tokens are reserved:
 - `facet`, `event`, `workflow`, `implicit`, `schema`
 - `with`, `as`
 - `andThen`, `yield`
-- `foreach`, `in`
+- `foreach`, `in`, `limit` (contextual — still usable as an identifier)
 - `when`, `case`
 - `prompt`, `script`, `python`
 - `true`, `false`, `null`
@@ -134,7 +134,8 @@ when_block          := "{" when_case+ "}" ;
 when_case           := "case" expr "=>" block
                     | "case" "_" "=>" block ;
 
-foreach_clause     := "foreach" ident "in" reference ;
+foreach_clause     := "foreach" ident "in" reference foreach_limit? ;
+foreach_limit      := "limit" ( literal | reference ) ;
 
 prompt_block       := "{" prompt_directive* "}" ;
 prompt_directive   := "system" string
@@ -245,6 +246,19 @@ workflow ProcessAllRegions(regions: Json) => (results: Json) andThen foreach r i
     processed = ProcessRegion(region = r.name)
     yield ProcessAllRegions(results = processed.result)
 }
+
+Add `limit N` to cap how many iterations run at once — a bulkhead for fan-outs
+whose iterations contend for a shared resource (scratch disk, an API rate limit,
+PostGIS connections). The same elements always run; only the width changes.
+
+workflow ProcessAllRegions(regions: Json) => (results: Json) andThen foreach r in $.regions limit 8 {
+    processed = ProcessRegion(region = r.name)
+    yield ProcessAllRegions(results = processed.result)
+}
+
+The cap may also be a reference (`limit $.width`) so it is tunable per run.
+`limit 1` serialises; omitting the clause is unbounded (the default).
+See [ffl-foreach-limit.md](../../architecture/ffl-foreach-limit.md).
 
 ### Prompt block (LLM-driven event facet)
 event facet Summarize(text: String) => (summary: String) prompt {

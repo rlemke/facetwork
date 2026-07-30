@@ -244,11 +244,23 @@ class SysAssertStmt(ASTNode):
 
 # Blocks
 @dataclass
+class ForeachLimit(ASTNode):
+    """Concurrency cap on a foreach fan-out: ``limit N``.
+
+    ``value`` is an integer Literal or a Reference resolving to one, so the
+    cap can come from a workflow parameter as well as a constant.
+    """
+
+    value: "Literal | Reference"
+
+
+@dataclass
 class ForeachClause(ASTNode):
-    """Foreach clause: foreach var in reference"""
+    """Foreach clause: foreach var in reference [limit N]"""
 
     variable: str
     iterable: Reference
+    limit: ForeachLimit | None = None
 
 
 @dataclass

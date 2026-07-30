@@ -40,6 +40,7 @@ from .ast import (
     FacetSig,
     ImplicitDecl,
     IndexExpr,
+    ForeachLimit,
     Literal,
     MapLiteral,
     MixinSig,
@@ -1252,6 +1253,19 @@ class FFLValidator:
                 other_block_steps=other_block_steps,
             )
 
+        # `foreach … limit N` — catch an unusable cap at compile time. At
+        # runtime a bad limit is a hard error (never a silent fallback to
+        # unbounded), so surfacing it here saves a failed fan-out.
+        if body.foreach and body.foreach.limit is not None:
+            self._validate_foreach_limit(
+                body.foreach.limit,
+                input_attrs,
+                steps,
+                step_returns,
+                parent_foreach_var,
+                other_block_steps,
+            )
+
         # If foreach, add the iteration variable; inherit from parent if not set
         foreach_var: str | None = None
         if body.foreach:
@@ -2460,6 +2474,48 @@ class FFLValidator:
             ref.location,
             rule_id="REF_UNDEFINED_STEP",
         )
+
+    def _validate_foreach_limit(
+        self,
+        limit: "ForeachLimit",
+        input_attrs: set[str],
+        steps: dict[str, StepInfo],
+        step_returns: dict[str, set[str]],
+        parent_foreach_var: str | None,
+        other_block_steps: set[str] | None,
+    ) -> None:
+        """Validate the cap in `foreach v in xs limit N`.
+
+        A literal must be a positive integer. A reference is checked for
+        resolvability like any other; its runtime value is verified when the
+        fan-out starts, since only then is it known.
+        """
+        value = limit.value
+        if isinstance(value, Literal):
+            if value.kind != "integer":
+                self._result.add_error(
+                    f"foreach limit must be an integer literal, got {value.kind}",
+                    limit.location,
+                    rule_id="FOREACH_LIMIT_NOT_INTEGER",
+                )
+            elif int(value.value) < 1:
+                self._result.add_error(
+                    f"foreach limit must be at least 1, got {value.value}. "
+                    f"Use `limit 1` to serialise the fan-out, or omit the "
+                    f"clause for unbounded width.",
+                    limit.location,
+                    rule_id="FOREACH_LIMIT_NOT_POSITIVE",
+                )
+        elif isinstance(value, Reference):
+            self._validate_reference(
+                value,
+                input_attrs,
+                steps,
+                step_returns,
+                parent_foreach_var,
+                current_step=None,
+                other_block_steps=other_block_steps,
+            )
 
     def _validate_reference(
         self,

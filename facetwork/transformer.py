@@ -38,6 +38,7 @@ from .ast import (
     FacetDecl,
     FacetSig,
     ForeachClause,
+    ForeachLimit,
     ImplicitDecl,
     IndexExpr,
     Literal,
@@ -649,10 +650,35 @@ class FFLTransformer(Transformer):
         return Block(steps=steps, yield_stmts=yield_stmts, location=self._loc(meta))
 
     @v_args(meta=True)
+    def foreach_limit(self, meta, items: list) -> ForeachLimit:
+        # `limit N` — the introducer is matched as a plain IDENT (contextual
+        # keyword, see in_env_clause), so validate it here.
+        introducer = str(items[0])
+        if introducer != "limit":
+            from .parser import ParseError
+
+            raise ParseError(
+                f"Expected `limit <N>` after the foreach iterable, got `{introducer} …`",
+                line=meta.line,
+                column=meta.column,
+            )
+        # The INTEGER callback already yields a plain int; a reference arrives
+        # as a Reference node.
+        value = items[1]
+        if isinstance(value, int):
+            value = Literal(value=value, kind="integer", location=self._loc(meta))
+        return ForeachLimit(value=value, location=self._loc(meta))
+
+    @v_args(meta=True)
     def foreach_clause(self, meta, items: list) -> ForeachClause:
         var = items[0]
         ref = items[1]
-        return ForeachClause(variable=var, iterable=ref, location=self._loc(meta))
+        return ForeachClause(
+            variable=var,
+            iterable=ref,
+            limit=self._find_one(items, ForeachLimit),
+            location=self._loc(meta),
+        )
 
     @v_args(meta=True)
     def andthen_clause(self, meta, items: list) -> AndThenBlock:

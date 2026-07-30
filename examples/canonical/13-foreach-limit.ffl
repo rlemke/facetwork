@@ -1,0 +1,40 @@
+// foreach … limit N — cap how wide a fan-out runs at once.
+//
+// `limit N` is a bulkhead: at most N iterations are in flight at a time,
+// and a slot is refilled as each one finishes. The SAME elements always
+// run and the result is identical to an uncapped foreach — only the
+// concurrency changes.
+//
+// Reach for it when each iteration is expensive in a shared resource
+// (scratch disk, an external API's rate limit, PostGIS connections)
+// rather than in CPU on one runner. A 3,000-county fan-out that writes
+// a raster per iteration can exhaust a runner's disk long before it
+// exhausts the fleet's capacity to claim tasks.
+//
+// The cap may be a literal, or a parameter so it can be tuned per run.
+// Omit the clause entirely for unbounded width — the default.
+
+namespace atlas {
+    event facet BuildCounty(fips: String) => (path: String)
+
+    // Eight at a time, whatever the collection size.
+    workflow BuildAll(counties: Json) => (paths: Json)
+        andThen foreach c in $.counties limit 8 {
+            built = BuildCounty(fips = $.c)
+            yield BuildAll(paths = built.path)
+        }
+
+    // Same fan-out, but the caller picks the width.
+    workflow BuildAllTunable(counties: Json, width: Int) => (paths: Json)
+        andThen foreach c in $.counties limit $.width {
+            built = BuildCounty(fips = $.c)
+            yield BuildAllTunable(paths = built.path)
+        }
+
+    // `limit 1` serialises — the explicit spelling for "one at a time".
+    workflow BuildAllSerial(counties: Json) => (paths: Json)
+        andThen foreach c in $.counties limit 1 {
+            built = BuildCounty(fips = $.c)
+            yield BuildAllSerial(paths = built.path)
+        }
+}

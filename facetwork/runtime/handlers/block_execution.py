@@ -33,6 +33,11 @@ from .base import StateHandler
 if TYPE_CHECKING:
     pass
 
+# Window state for a `foreach … limit N` fan-out, persisted on the block step.
+# Underscore-prefixed so it cannot collide with a user-declared attribute.
+_FOREACH_VALUES_ATTR = "_foreach_values"
+_FOREACH_LIMIT_ATTR = "_foreach_limit"
+
 
 class BlockExecutionBeginHandler(StateHandler):
     """Handler for state.block.execution.Begin.
@@ -204,6 +209,26 @@ class BlockExecutionBeginHandler(StateHandler):
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
 
+        # `limit N` — cap how many iterations are in flight at once. The same
+        # elements always run; only the width changes. Without a limit nothing
+        # below alters the historical behaviour (create every sub-block now).
+        limit = self._resolve_foreach_limit(foreach, evaluator, eval_ctx)
+        if limit is not None:
+            iterable = list(iterable)
+            # The refill in _continue_foreach needs the elements again. Re-deriving
+            # them there would re-scan every step in the workflow on each poll —
+            # ruinous on exactly the wide fan-outs this feature exists for — so
+            # stash them on the block step. Only paid when a limit is used.
+            self.step.set_attribute(_FOREACH_VALUES_ATTR, iterable)
+            self.step.set_attribute(_FOREACH_LIMIT_ATTR, limit)
+            logger.info(
+                "Foreach fan-out capped: block_id=%s total=%d limit=%d",
+                self.step.id,
+                len(iterable),
+                limit,
+            )
+            iterable = list(iterable)[:limit]
+
         # Create a sub-block for each element
         for i, element in enumerate(iterable):
             foreach_stmt_id = f"foreach-{i}"
@@ -252,6 +277,30 @@ class BlockExecutionBeginHandler(StateHandler):
 
         self.step.request_state_change(True)
         return StateChangeResult(step=self.step)
+
+    def _resolve_foreach_limit(self, foreach: dict, evaluator, eval_ctx) -> int | None:
+        """Resolve `foreach … limit N` to a positive int, or None if uncapped.
+
+        The cap may be a literal or a reference (so it can come from a workflow
+        parameter), hence the full expression evaluation.
+
+        A limit that cannot be resolved to a positive integer is a hard error,
+        not a silent fallback to unlimited: the whole point of the clause is to
+        keep a 3,000-wide fan-out from stampeding, and quietly ignoring it would
+        reintroduce exactly the failure it prevents.
+        """
+        if "limit" not in foreach:
+            return None
+        raw = evaluator.evaluate(foreach["limit"], eval_ctx)
+        try:
+            limit = int(raw)
+        except (TypeError, ValueError):
+            raise RuntimeError(
+                f"foreach limit must be an integer, got {raw!r}"
+            ) from None
+        if limit < 1:
+            raise RuntimeError(f"foreach limit must be >= 1, got {limit}")
+        return limit
 
     def _process_when(self, block_ast: dict) -> StateChangeResult:
         """Process a when block by evaluating conditions and creating sub-blocks.
@@ -676,20 +725,27 @@ class BlockExecutionContinueHandler(StateHandler):
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
 
+        # `limit N`: refill the window as iterations finish. Absent a limit,
+        # `remaining` is 0 and every branch below behaves exactly as before.
+        remaining = self._refill_foreach_window(sub_blocks)
+
         completed = [s for s in sub_blocks if s.is_complete]
         errored = [s for s in sub_blocks if s.is_error]
         terminal = len(completed) + len(errored)
         total = len(sub_blocks)
 
         logger.debug(
-            "Foreach block continue: block_id=%s progress=%d/%d errored=%d",
+            "Foreach block continue: block_id=%s progress=%d/%d errored=%d unstarted=%d",
             self.step.id,
             terminal,
             total,
             len(errored),
+            remaining,
         )
 
-        if terminal == total:
+        # Not done until every element has had its turn, not just the ones
+        # currently materialized.
+        if terminal == total and remaining == 0:
             if errored:
                 errors = [s.transition.error for s in errored if s.transition.error]
                 msg = f"Foreach block has {len(errored)} errored sub-block(s)"
@@ -701,6 +757,85 @@ class BlockExecutionContinueHandler(StateHandler):
             return StateChangeResult(step=self.step)
 
         return self.stay(push=True)
+
+    def _refill_foreach_window(self, sub_blocks: list) -> int:
+        """Top the `foreach … limit N` window back up to N in-flight iterations.
+
+        Returns how many elements still have no sub-block after this pass, so
+        the caller knows the fan-out is not finished merely because everything
+        materialized so far is terminal. Returns 0 for an uncapped foreach,
+        which leaves the historical behaviour untouched.
+
+        Errored iterations still free their slot and refilling continues, so a
+        capped foreach runs the same set of elements — and reports the same
+        aggregate error — as an uncapped one. Only the width differs.
+        """
+        limit = self.step.attributes.get_param(_FOREACH_LIMIT_ATTR)
+        values = self.step.attributes.get_param(_FOREACH_VALUES_ATTR)
+        if not limit or values is None:
+            return 0
+
+        created = len(sub_blocks)
+        total = len(values)
+        if created >= total:
+            return 0
+
+        in_flight = sum(1 for s in sub_blocks if not s.is_terminal)
+        slots = int(limit) - in_flight
+        if slots <= 0:
+            return total - created
+
+        block_ast = self.context.get_block_ast(self.step) or {}
+        foreach = block_ast.get("foreach") or {}
+        variable = foreach.get("variable", "")
+        body_ast = {k: v for k, v in block_ast.items() if k != "foreach"}
+
+        from ..step import StepDefinition
+        from ..types import ObjectType, deterministic_step_id
+
+        # Sub-blocks are always created as a contiguous prefix (foreach-0..N-1),
+        # so the count of existing ones is the next index.
+        for i in range(created, min(created + slots, total)):
+            foreach_stmt_id = f"foreach-{i}"
+            if self.context.persistence.step_exists(foreach_stmt_id, self.step.id):
+                continue
+            if any(
+                str(p.statement_id) == foreach_stmt_id and p.block_id == self.step.id
+                for p in self.context.changes.created_steps
+            ):
+                continue
+
+            sub_block = StepDefinition.create(
+                workflow_id=self.step.workflow_id,
+                object_type=ObjectType.AND_THEN,
+                facet_name="",
+                statement_id=foreach_stmt_id,
+                container_id=self.step.container_id,
+                block_id=self.step.id,
+                root_id=self.step.root_id or self.step.container_id,
+                step_uuid=deterministic_step_id(
+                    self.step.workflow_id,
+                    self.step.id,
+                    foreach_stmt_id,
+                    self.step.container_id,
+                ),
+            )
+            sub_block.foreach_var = variable
+            sub_block.foreach_value = values[i]
+            self.context.set_block_ast_cache(sub_block.id, body_ast)
+            self.context.changes.add_created_step(sub_block)
+            sub_blocks.append(sub_block)
+
+        newly_created = len(sub_blocks)
+        logger.info(
+            "Foreach window refilled: block_id=%s in_flight=%d limit=%d created=%d/%d",
+            self.step.id,
+            in_flight,
+            int(limit),
+            newly_created,
+            total,
+        )
+        return total - newly_created
 
     def _continue_when(self) -> StateChangeResult:
         """Continue a when block by checking sub-block completion.

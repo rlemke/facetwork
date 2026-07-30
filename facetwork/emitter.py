@@ -33,6 +33,7 @@ from .ast import (
     FacetDecl,
     FacetSig,
     ForeachClause,
+    ForeachLimit,
     ImplicitDecl,
     IndexExpr,
     Literal,
@@ -597,11 +598,16 @@ class JSONEmitter:
 
     def _foreach_clause(self, node: ForeachClause) -> dict:
         """Convert ForeachClause node."""
-        return {
+        data = {
             "type": "ForeachClause",
             "variable": node.variable,
             "iterable": self._convert(node.iterable),
         }
+        # Omitted entirely when absent, so an unlimited foreach emits exactly
+        # the dict it always has — no existing consumer sees a new key.
+        if node.limit is not None:
+            data["limit"] = self._convert(node.limit.value)
+        return data
 
     def _literal(self, node: Literal) -> dict:
         """Convert Literal node."""

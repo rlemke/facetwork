@@ -69,7 +69,18 @@ andthen_clause: "andThen" foreach_clause? block
               | "andThen" _NL* "script" script_block _NL*  -> andthen_script
               | "andThen" _NL* "when" when_block             -> andthen_when
 
-foreach_clause: "foreach" IDENT "in" reference
+// `foreach v in xs limit N` — N caps how many iterations may be in
+// flight at once (a bulkhead on fan-out width). The same set of
+// iterations always runs; only the concurrency changes.
+//
+// `limit` is matched as a plain IDENT and validated in the transformer,
+// keeping it a CONTEXTUAL keyword — six existing domain .ffl files use
+// `limit` as an ordinary parameter name, which reserving it would break.
+foreach_clause: "foreach" IDENT "in" reference foreach_limit?
+// Accepts any literal, not just INTEGER, so `limit "8"` reaches the
+// validator as FOREACH_LIMIT_NOT_INTEGER (with a docs_uri) instead of
+// dying as an opaque parse error.
+foreach_limit: IDENT (literal | reference)
 
 // Prompt blocks for LLM-based event facets.
 // `prompt_directive` accepts `IDENT STRING` and the transformer
