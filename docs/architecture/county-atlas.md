@@ -157,10 +157,9 @@ county.atlas.BuildCountyAtlas(state, county, tier) =>
         materialize -> GeoJSON (small) or PMTiles (heavy: roads)
     write manifest.json + render index.html
 
-county.atlas.BuildAtlasFanout(tier, concurrency=32) =>
+county.atlas.BuildAtlasFanout(tier) =>
     foreach child in ListExtracts("north-america/us/*/*")   # the ~3,143 county PBFs
-        limit concurrency                                   # bounded width, see §9.7
-        BuildCountyAtlas(child)
+        BuildCountyAtlas(child)                             # unbounded — see §9.7
 
 county.atlas.BuildMasterIndex =>   US + per-state index pages from the coverage matrix
 ```
@@ -322,12 +321,13 @@ wholesale to GitHub Pages** (~1 GB Pages limit). A national GitHub publish would
 fetched on toggle) — the deferred production path. Until then: full set on MinIO, curated
 subset on Pages.
 
-### 9.7 Bounded fan-out width (retrofit 2026-07-30)
+### 9.7 Bounded fan-out width — tried and REVERTED (2026-07-30)
 
-`BuildAtlasFanout` gained a `concurrency` parameter (default 32), applied as
+`BuildAtlasFanout` briefly gained a `concurrency` parameter (default 32), applied as
 `foreach cty in $.counties limit $$.concurrency`
-([`foreach … limit N`](ffl-foreach-limit.md)). Every county still runs; only the number
-in flight at once is bounded.
+([`foreach … limit N`](ffl-foreach-limit.md)). **It has been reverted; the workflow is
+unbounded again.** The reasoning below still holds and the cap should return — but only
+after the liveness defect at the end of this section is fixed.
 
 **Why, measured on the national run itself:** it created **3,290 tasks / 9,505 steps**,
 but the work was executed by **7 native runners (14 workers) on server3** (§9.4) — so
@@ -345,11 +345,43 @@ check 7. That run's root cause was never established (a controlled retry showed 
 *can* recover stranded blocks in under a minute), so this is a reduction in cascade
 surface, not a fix for it.
 
-⚠️ **Rollout ordering.** The `limit` clause needs a compiler that understands it. This
-domain is baked into the fleet image, so the FFL change and the runtime change must land
-in the **same bake** — a runner whose image predates `7c45ad9` fails to *parse* the FFL,
-which surfaces as the domain failing to seed rather than as a fan-out that merely ignores
-the cap.
+#### Why it was reverted — a capped fan-out cannot survive the stranding bug
+
+The cap worked exactly as designed: width held at 32 and every county still ran. What
+makes it unsafe is a **pre-existing** defect it amplifies.
+
+Leaf steps park at `state.statement.blocks.Begin` after their task completes and are
+never cascaded onward. The work is finished — resuming such a leaf returns
+`iterations=4` and completes it instantly — only the state transition is missing.
+
+* **Unbounded, this is survivable.** The 2026-07 national run stranded ~10% and still
+  finished 3,167/3,167.
+* **Capped, it is fatal.** Stranded sub-blocks hold every window slot, so admission
+  stops. The live run froze at 628/3,167, and again at 1,368 after a rollout. Only an
+  external watchdog kept it moving.
+
+The stuck-step sweep does not rescue it. Its own log reads `0 leaf + 68 block steps`: it
+classifies these as block steps and spends its budget resuming the **parent** sub-blocks,
+which correctly return `iterations=0 / PAUSED` because they are waiting on those very
+children. The steps that would actually move are the leaves.
+
+Two fixes were attempted and **neither addressed it**, both now recorded as such:
+
+1. a **window nudge** (`_nudge_stalled_sub_blocks`, v138) — unreachable, because it sits
+   behind a handler the failing resume never reaches;
+2. a **program-AST fallback** (`_get_program_ast`, v139) — the AST was never missing; no
+   "No AST available" warning was ever logged.
+
+Both remain in the codebase as harmless hardening. The real fix is in the sweep's
+leaf/block classification and resume ordering, and must be validated against a live
+capped fan-out surviving a runner restart unattended — not inferred from reading the
+code, which is how both failed attempts were produced.
+
+⚠️ **Rollout ordering (when the cap returns).** The `limit` clause needs a compiler that
+understands it. This domain is baked into the fleet image, so the FFL change and the
+runtime change must land in the **same bake** — a runner whose image predates `7c45ad9`
+fails to *parse* the FFL, which surfaces as the domain failing to seed rather than as a
+fan-out that merely ignores the cap.
 
 ### 9.8 Operational lessons (reusable)
 

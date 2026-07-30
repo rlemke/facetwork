@@ -22,6 +22,20 @@ belongs in the workflow, next to the fan-out it governs — and CLAUDE.md alread
 asks for exactly this: *"for every shared resource (thread pool, connection,
 queue): consider isolation/bulkheads."*
 
+## ⚠️ Status: do not use on long fan-outs yet
+
+The clause is implemented, tested, and shipped, but it is **not yet safe on a wide,
+long-running fan-out**. It amplifies a pre-existing defect: leaf steps park at
+`state.statement.blocks.Begin` after their task completes and are never cascaded onward.
+
+Unbounded, that stranding is survivable — the 3,167-county national run stranded ~10% and
+still finished. Capped, it is fatal: stranded sub-blocks hold every window slot, so
+admission stops and the run freezes (observed at 628/3,167, then again at 1,368).
+
+`fwh_county_atlas.BuildAtlasFanout` was retrofitted with a cap and **reverted** for this
+reason. Safe uses today are short or narrow fan-outs where a runner restart is unlikely
+mid-run. See the liveness section below and county-atlas §9.7.
+
 ## The clause
 
 ```ffl
@@ -103,7 +117,7 @@ Nothing else rescues it in time:
   and `get_pending_resume_workflow_ids` deliberately excludes block-`Continue`
   states, so the workflow may not even be selected.
 
-So the window heals itself. When every slot is occupied,
+The intended self-heal — **which does not currently work.** When every slot is occupied,
 `_nudge_stalled_sub_blocks` re-notifies any sub-block that has sat non-terminal
 with no progress for longer than `_FOREACH_STALL_GRACE_MS` (60 s — far below the
 5-minute sweep, far above a sub-second live cascade). The nudge is an ordinary
@@ -117,6 +131,23 @@ blocks *completion* rather than admission — otherwise a fan-out sits at
 3166/3167 forever.
 
 It is only reached when the window is full, so a healthy run pays nothing.
+
+**Verified ineffective in production.** The nudge never fires on the real stall: it sits
+behind the foreach block's Continue handler, and the resume that would invoke that handler
+returns `iterations=0` before reaching it. A second attempt (`_get_program_ast`, a
+persistence fallback for the program AST) also failed — the AST was never missing.
+
+What the evidence actually shows, from testing rather than reading the code:
+
+| Resume target | Result |
+|---|---|
+| Sub-block (`block.execution.Continue`) | `iterations=0`, `PAUSED` — correct, it waits on its child |
+| **Leaf (`statement.blocks.Begin`)** | **`iterations=4` → `Complete` immediately** |
+
+The sweep classifies all of these as block steps (`0 leaf + 68 block steps` in its own
+log) and resumes the parents, which cannot move. The real fix belongs in that
+classification and ordering, and must be validated against a capped fan-out surviving a
+runner restart unattended.
 
 ### Failure handling
 
