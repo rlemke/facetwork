@@ -1,0 +1,209 @@
+# MaxPro standalone — running the whole stack on one machine
+
+**Goal:** MaxPro runs Facetwork end to end with **zero dependency on server3** — its own
+MongoDB, its own MinIO, and OSM data on the locally attached `afl_data_local`. server3 can
+then be powered off, rebooted, or left alone without affecting development.
+
+**Status:** plan only. Nothing here has been executed.
+
+---
+
+## 1. Where things stand (measured 2026-07-30, not assumed)
+
+### MaxPro already has most of the pieces
+
+| | |
+|---|---|
+| Hardware | Mac15,9 · 16 CPU · 64 GB RAM · macOS 26.4.1 |
+| Internal disk | 1.8 TB, **only 237 GB free** (Data volume 87% full) |
+| `/Volumes/afl_data_local` | `/dev/disk5s1` · 3.6 TB · **3.6 TB free** · already mounted ✅ |
+| Docker | 29.4.1, 18 containers running |
+| `facetwork-mongodb` | **already running** (`mongo:7`) |
+| `facetwork-minio` | container **exists but is stopped** |
+| `facetwork-dashboard` | already running |
+| Runner containers | 15, all on v137 (`6168c9f-dd8aff42f4015`) |
+| Buildx builder | `buildx_buildkit_fleetbuilder0` present — can build images locally |
+
+The internal disk having only 237 GB free is the reason everything below targets
+`afl_data_local`, not `~`.
+
+### What ties MaxPro to server3 today
+
+1. **`/etc/hosts`** — `192.168.68.114  afl-mongodb afl-minio server3`
+   Every Mongo and S3 call resolves to server3.
+2. **SMB mounts** — `/Volumes/afl_data` (15 TB, 11 TB used) and `/Volumes/bigdata`
+   (3.6 TB) are network mounts **served by server3**. These vanish when server3 does.
+3. **Fleet config** — `mongodb://afl-mongodb:27017`, `http://afl-minio:9000`,
+   dashboard `http://afl-mongodb:8080`.
+4. **Image registry** — roles pull `server3.local:5050/facetwork-runner:…`.
+5. `.env` / `.env.fleet` — `FW_MONGODB_URL`, `FW_S3_ENDPOINT`, `FW_INFRA_HOST=server3.local`.
+
+Note `afl-postgres` is **192.168.68.76 — a different machine**, not server3. PostGIS is
+only needed for the OSM PostGIS import path; if you want that offline too it is a separate
+piece of work, called out in §6.
+
+### Data that must move
+
+| What | Size | Notes |
+|---|---:|---|
+| MongoDB `facetwork` | **1.3 GB** on disk (0.33 GB logical, 89,639 docs) | Trivial |
+| MongoDB `facetwork_examples` | ~0 | 478 docs |
+| MinIO `afl-cache` | **363 GB** | All domain caches + published outputs |
+| MinIO `osm-extracts/north-america` | **49 GB** | Per-county PBF tree |
+| MinIO `osm-extracts` (all continents) | **217 GB** | 8 continents + `-updates` dirs |
+
+**Total to move: ~580 GB** (363 GB cache + 217 GB osm-extracts + 1.3 GB Mongo) — **16% of the 3.6 TB disk.** Large headroom. The 11 TB on `afl_data` is mostly
+non-Facetwork content (photos etc.) and does **not** need to come along.
+
+⚠️ **There is no planet PBF.** `osm-extracts` holds per-continent extracts only
+(`north-america-latest.osm.pbf` etc.), no `planet-latest.osm.pbf`. If you want the planet
+on MaxPro it must be **downloaded (~80 GB)**, not copied. See §5.
+
+⚠️ **MinIO objects are erasure-coded directories**, not files — `north-america-latest.osm.pbf`
+is a *directory* containing `xl.meta` and part files. **Never `cp`/`rsync` them between
+MinIO instances.** Use `mc mirror` (S3 to S3), which is what §3 does.
+
+---
+
+## 2. Target architecture
+
+```
+MaxPro (standalone)
+  ├── facetwork-mongodb   :27017   → docker volume (1.3 GB, keep on internal disk)
+  ├── facetwork-minio     :9000    → /Volumes/afl_data_local/minio
+  ├── facetwork-dashboard :8080
+  └── 15 runner containers         → FW_S3_ENDPOINT=http://localhost:9000
+                                     FW_MONGODB_URL=mongodb://localhost:27017
+  /Volumes/afl_data_local/
+      minio/           ← afl-cache + osm-extracts  (~580 GB + planet if downloaded)
+      scratch/         ← FW_LOCAL_SCRATCH, FW_OUTPUT_BASE (must stay local, never S3)
+```
+
+`afl-mongodb` / `afl-minio` are **re-pointed at MaxPro itself**, so no config that
+references those names has to change — only what they resolve to.
+
+---
+
+## 3. Migration steps
+
+### Phase 0 — make server3 safe first (do this before touching anything)
+
+The instruction was "make sure everything is safe." Concretely:
+
+1. **Let the county-atlas fan-out finish** (in progress; watchdog running). Do not migrate
+   mid-run — the runner state lives in server3's Mongo.
+2. **Verify no other workflow is mid-flight:**
+   `fw fleet status` and check for runners in `running` state.
+3. **Take a Mongo dump on server3** and keep it *on server3* as the rollback copy:
+   `docker exec facetwork-mongodb mongodump --archive=/data/db/pre-maxpro.gz --gzip`
+   then copy it off the container.
+4. **Do not delete anything on server3.** This migration is a *copy*, so server3 stays a
+   complete, working fallback. Rollback = revert `/etc/hosts` on MaxPro.
+
+### Phase 1 — MongoDB onto MaxPro
+
+Mongo is 1.3 GB, so this is minutes, not hours.
+
+1. On server3: `mongodump --gzip --archive=/tmp/fw.gz` for `facetwork` + `facetwork_examples`.
+2. `scp` to MaxPro.
+3. On MaxPro, restore into the **already-running** `facetwork-mongodb`:
+   `mongorestore --gzip --archive=/tmp/fw.gz --drop`
+4. Verify counts match: `servers`, `runners`, `steps`, `tasks`, `handler_registrations`,
+   `flows`, `fleet_config`.
+
+### Phase 2 — MinIO onto `afl_data_local`
+
+1. Point MaxPro's MinIO at the local disk — `/Volumes/afl_data_local/minio:/data` — and
+   start the (currently stopped) `facetwork-minio` container.
+2. Mirror **bucket by bucket, over S3**, from server3's MinIO to MaxPro's:
+   ```
+   mc alias set src http://192.168.68.114:9000 minioadmin minioadmin
+   mc alias set dst http://localhost:9000     minioadmin minioadmin
+   mc mb dst/afl-cache dst/osm-extracts
+   mc mirror --watch=false src/afl-cache    dst/afl-cache
+   mc mirror --watch=false src/osm-extracts dst/osm-extracts
+   ```
+   `mc mirror` is resumable and idempotent — safe to re-run after an interruption.
+3. Verify with `mc ls --recursive --summarize` object counts per bucket, not just sizes.
+
+Over gigabit this is roughly **1.5–2 hours for ~580 GB**; run it before you leave.
+
+### Phase 3 — cut the cord
+
+1. **`/etc/hosts` on MaxPro** — the single highest-leverage change:
+   ```
+   127.0.0.1   afl-mongodb afl-minio
+   ```
+   (remove the `192.168.68.114` line). Everything that names `afl-*` now stays local.
+2. **Unmount the SMB shares** so nothing silently reads server3:
+   `umount /Volumes/afl_data /Volumes/bigdata` — and remove any auto-mount/login item.
+3. **Fleet config** → point at MaxPro and drop the remote roles:
+   `fw fleet set --mongo mongodb://localhost:27017 --minio http://localhost:9000`
+4. **Fleet hosts** — set `FW_RUNNER_HOSTS` to MaxPro only, so `fw fleet rollout --stagger`
+   does not try to SSH to server1/2/3.
+5. **Images** — MaxPro already has `6168c9f-dd8aff42f4015` cached. For *new* builds while
+   away, either run a local registry on MaxPro (`fw fleet registry-setup`) or build and
+   `docker tag` locally. **Test one rebuild before you leave** (§4).
+
+### Phase 4 — OSM data
+
+`north-america` (49 GB) comes across in Phase 2 with the rest of `osm-extracts`.
+
+For **planet**, which does not exist anywhere today:
+- `FW_OSM_EXTRACT_PROVIDER=osmfr` (Geofabrik has IP-banned the fleet — see
+  `reference_osm_france_provider`).
+- Download `planet-latest.osm.pbf` (~80 GB) directly to `afl_data_local`, then `mc cp` it
+  into the local `osm-extracts` bucket.
+- `fwh_osm`'s `planet_bootstrap` tool can then split planet → regional extracts
+  (Phase 1 of that work is shipped; see `project_selfhosted_planet_split`).
+
+Budget: 580 GB (existing) + 80 GB (planet) + split output ≈ **well under 1 TB of 3.6 TB**.
+
+---
+
+## 4. Pre-departure verification checklist
+
+Run each of these **with server3 powered off** — that is the only honest test:
+
+- [ ] `fw fleet status` — MaxPro reports its runners, no attempt to reach server3
+- [ ] Dashboard loads at `http://localhost:8080`
+- [ ] `fw ffl run` a one-county county-atlas build → completes
+- [ ] A map-publishing workflow writes to local MinIO (`mc ls dst/afl-cache/...`)
+- [ ] `fw fleet rollout --dry` resolves to a MaxPro-local registry, not `server3.local:5050`
+- [ ] One **real** rebuild + rollout end to end (this is the step most likely to surprise)
+- [ ] `mongodump` on MaxPro succeeds — you have a local backup path while away
+
+---
+
+## 5. Risks and things that will bite
+
+| Risk | Why | Mitigation |
+|---|---|---|
+| **`mc mirror` interrupted** | 580 GB over the network | Resumable — just re-run; verify with object counts |
+| **Copying MinIO dirs with `cp`** | Objects are erasure-coded dirs | Always `mc mirror`; never filesystem copy between instances |
+| **SMB mounts silently reappear** | macOS remembers shares | Remove login items; verify after a reboot |
+| **Registry unreachable** | Roles reference `server3.local:5050` | Local registry, tested *before* departure |
+| **PostGIS** is on .76, not server3 | Survives server3 going down, but not a full-offline setup | Only matters for PostGIS import; run a local PostGIS if needed |
+| **`foreach … limit` can stall a fan-out** | Stranded sub-blocks hold window slots (§6) | Fix before departure, or don't use `limit` on long runs |
+| **Internal disk 87% full** | 237 GB free | Keep all data on `afl_data_local`; watch Docker VM growth |
+
+---
+
+## 6. Must-fix before vacation
+
+**`foreach … limit N` can wedge a fan-out.** Observed live on the 3,167-county run: 31 of
+32 window slots were held by sub-blocks that had finished their work but never cascaded to
+`Complete`, so no new counties were admitted and the run stalled at 628/3,167.
+
+This is the pre-existing stranded-block defect (same as the 49-hour stall), but the cap
+converts it from a slow tail into a **hard stop**. Repair check 7 does not catch it — it
+requires *every* task terminal, and here one was still running.
+
+Current mitigation is a watchdog script that resumes stranded sub-blocks every 45 s. That
+must not be the state of things while you are away. The fix belongs in
+`_refill_foreach_window`: a sub-block that is non-terminal, has no live task, and has not
+progressed within a grace period should be resumed inline rather than holding a slot
+forever — which also helps uncapped runs.
+
+**Recommendation:** land that fix, rebake, and re-run the fan-out clean *before* the
+migration, so MaxPro starts from a known-good image.

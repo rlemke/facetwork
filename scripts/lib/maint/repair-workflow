@@ -132,12 +132,15 @@ print(f'  Ancestor blocks reset: {len(ancestors)}')
 dead_letter = result.get('dead_letter_tasks_reset', [])
 print(f'  Dead-lettered tasks re-enqueued: {len(dead_letter)}')
 for t in dead_letter:
-    print(f'    {t["name"]}  step={t["step_id"][:12]}  error={t["error"][:80]}')
+    _n, _s, _e = t.get('name'), str(t.get('step_id'))[:12], str(t.get('error'))[:80]
+    print(f'    {_n}  step={_s}  error={_e}')
 
 inconsistent = result.get('inconsistent_steps_reset', [])
 print(f'  Inconsistent steps reset: {len(inconsistent)}')
 for s in inconsistent:
-    print(f'    {s["facet_name"] or s["step_id"][:12]}  (step=Complete, task={s["task_state"]})')
+    _f = s.get('facet_name') or str(s.get('step_id'))[:12]
+    _t = s.get('task_state')
+    print(f'    {_f}  (step=Complete, task={_t})')
 
 stranded = result.get('stranded_block_steps', [])
 resumed = result.get('stranded_resumed', 0)
