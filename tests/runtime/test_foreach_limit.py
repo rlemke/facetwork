@@ -34,6 +34,8 @@ directly rather than inferred from the final step count.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from facetwork.runtime.evaluator import Evaluator
@@ -179,9 +181,6 @@ class TestForeachLimitBoundsWidth:
         items = list(range(25))
         high_water = []
 
-        original = Evaluator._process_state_change if hasattr(Evaluator, "_process_state_change") else None
-        del original  # not needed; sample via the store instead
-
         # Sample after every persisted step write.
         real_save = store.save_step
 
@@ -250,6 +249,93 @@ class TestForeachLimitFromAReference:
         )
         assert result.success is True
         assert _value_inputs(store) == list(range(10))
+
+
+class TestForeachLimitUpLevelScope:
+    """A `$$`-scoped cap must resolve on the CLAUSE's context.
+
+    `fwh_county_atlas.BuildAtlasFanout` writes `limit $$.concurrency` — the cap
+    walks up to the workflow params while the iterable resolves one level down.
+    The limit is evaluated on the foreach clause's context, not the body's, so
+    up-level resolution there does not follow from the literal-cap tests above
+    and is proved here directly.
+
+    (The atlas additionally sources its iterable from the containing step's
+    return. That exact shape is not executable in this in-process harness — a
+    plain facet's array return never becomes ready, with or without a limit, and
+    no runtime test in the suite covers it — so the iterable here comes from a
+    workflow input while the cap keeps the `$$` scope under test.)
+    """
+
+    SRC = """
+    namespace demo {
+        facet Echo(v: String) => (out: String) andThen { yield Echo(out = $.v) }
+        workflow Demo(items: Json, cap: Long) => (out: String) andThen {
+            s = Echo(v = "seed") andThen foreach i in $$.items limit $$.cap {
+                leaf = Echo(v = $.i)
+                yield Demo(out = leaf.out)
+            }
+        }
+    }
+    """
+
+    def _run(self, inputs):
+        from facetwork.emitter import emit_dict
+        from facetwork.parser import parse
+
+        program = emit_dict(parse(self.SRC))
+        workflow = next(
+            w
+            for ns in program["declarations"]
+            for w in ns.get("declarations", ns.get("workflows", []))
+            if w.get("name") == "Demo"
+        )
+        store = MemoryStore()
+        ev = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
+        return ev.execute(workflow, inputs=inputs, program_ast=program), store
+
+    def test_up_level_cap_resolves_and_runs_every_element(self, monkeypatch):
+        monkeypatch.setenv("FW_FFL_RELATIVE_SCOPING", "1")
+        items = ["a", "b", "c", "d", "e", "f"]
+        result, store = self._run({"items": items, "cap": 2})
+        assert result.success, f"failed: {getattr(result, 'error', None)}"
+
+        echoed = sorted(
+            s.attributes.returns["out"].value
+            for s in store.get_all_steps()
+            if s.statement_name == "leaf" and "out" in s.attributes.returns
+        )
+        assert echoed == items, "a $$-scoped cap must still run every element"
+
+    def test_compiles_in_the_atlas_shape(self):
+        """The literal county-atlas clause must compile and emit an up-level cap.
+
+        Execution of that shape is not reachable here, so pin the compile-side
+        contract at least: `$$` on the cap emits `up_levels: 1`.
+        """
+        from facetwork.emitter import emit_dict
+        from facetwork.parser import parse
+        from facetwork.validator import validate
+
+        src = """
+        namespace demo {
+            facet ListIt(prefix: String) => (items: Json, count: Long)
+            facet Work(key: String, tier: Long) => (out: String)
+            workflow Fan(prefix: String = "p", tier: Long = 1, concurrency: Long = 32) => (built: [String]) andThen {
+                children = ListIt(prefix = $.prefix) andThen foreach it in $.items limit $$.concurrency {
+                    leaf = Work(key = $.it, tier = $$.tier)
+                    yield Fan(built = [leaf.out])
+                }
+            }
+        }
+        """
+        program = parse(src)
+        assert validate(program).is_valid
+        blob = json.dumps(emit_dict(program))
+        i = blob.find('"ForeachClause"')
+        clause = blob[i : i + 220]
+        assert '"limit"' in clause, clause
+        assert '"up_levels": 1' in clause, clause
 
 
 class TestForeachLimitRejectsNonsense:
