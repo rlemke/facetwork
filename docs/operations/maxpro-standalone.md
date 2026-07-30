@@ -51,13 +51,27 @@ piece of work, called out in §6.
 | MinIO `afl-cache` | **363 GB** | All domain caches + published outputs |
 | MinIO `osm-extracts/north-america` | **49 GB** | Per-county PBF tree |
 | MinIO `osm-extracts` (all continents) | **217 GB** | 8 continents + `-updates` dirs |
+| **`osm-selfhost/` (planet + split tree)** | **182 GB** | Plain files, NOT MinIO — see below |
 
-**Total to move: ~580 GB** (363 GB cache + 217 GB osm-extracts + 1.3 GB Mongo) — **16% of the 3.6 TB disk.** Large headroom. The 11 TB on `afl_data` is mostly
+**Total to move: ~762 GB** (363 GB cache + 217 GB osm-extracts + 182 GB osm-selfhost + 1.3 GB Mongo) — **21% of the 3.6 TB disk.** Large headroom. The 11 TB on `afl_data` is mostly
 non-Facetwork content (photos etc.) and does **not** need to come along.
 
-⚠️ **There is no planet PBF.** `osm-extracts` holds per-continent extracts only
-(`north-america-latest.osm.pbf` etc.), no `planet-latest.osm.pbf`. If you want the planet
-on MaxPro it must be **downloaded (~80 GB)**, not copied. See §5.
+✅ **The planet already exists — do NOT re-download it.** It is not in the MinIO
+bucket, which is why a first pass missed it. It lives on the plain filesystem at
+`/Volumes/afl_data/osm-selfhost/` — the self-hosted Geofabrik replacement
+(`project_selfhosted_planet_split`):
+
+| Path | Size |
+|---|---:|
+| `osm-selfhost/planet-latest.osm.pbf` | **87 GB** |
+| `osm-selfhost/www/` (8 continent extracts split from planet) | **~93 GB** |
+| `osm-selfhost/` total (incl. `polys/`, `regions.json`, `*-updates/`) | **182 GB** |
+
+`www/` is the served tree that replaces Geofabrik — `north-america-latest.osm.pbf` (20 GB),
+`europe` (37 GB), `asia` (17 GB), and so on, plus `_poly`, `extract-config.json` and the
+per-continent `-updates` dirs for the delta path. `process_continent.py` and `extract.log`
+are the split machinery. Copy this tree; it is the whole point of not depending on
+Geofabrik.
 
 ⚠️ **MinIO objects are erasure-coded directories**, not files — `north-america-latest.osm.pbf`
 is a *directory* containing `xl.meta` and part files. **Never `cp`/`rsync` them between
@@ -75,7 +89,8 @@ MaxPro (standalone)
   └── 15 runner containers         → FW_S3_ENDPOINT=http://localhost:9000
                                      FW_MONGODB_URL=mongodb://localhost:27017
   /Volumes/afl_data_local/
-      minio/           ← afl-cache + osm-extracts  (~580 GB + planet if downloaded)
+      minio/           ← afl-cache + osm-extracts        (~580 GB)
+      osm-selfhost/    ← planet 87 GB + split www/ tree  (182 GB, plain files)
       scratch/         ← FW_LOCAL_SCRATCH, FW_OUTPUT_BASE (must stay local, never S3)
 ```
 
@@ -126,7 +141,7 @@ Mongo is 1.3 GB, so this is minutes, not hours.
    `mc mirror` is resumable and idempotent — safe to re-run after an interruption.
 3. Verify with `mc ls --recursive --summarize` object counts per bucket, not just sizes.
 
-Over gigabit this is roughly **1.5–2 hours for ~580 GB**; run it before you leave.
+Over gigabit this is roughly **1.5–2 hours for the 580 GB of MinIO buckets**, plus ~30–45 min for the 182 GB `osm-selfhost` rsync; run it before you leave.
 
 ### Phase 3 — cut the cord
 
@@ -147,17 +162,34 @@ Over gigabit this is roughly **1.5–2 hours for ~580 GB**; run it before you le
 
 ### Phase 4 — OSM data
 
-`north-america` (49 GB) comes across in Phase 2 with the rest of `osm-extracts`.
+Two separate trees, moved two different ways.
 
-For **planet**, which does not exist anywhere today:
-- `FW_OSM_EXTRACT_PROVIDER=osmfr` (Geofabrik has IP-banned the fleet — see
-  `reference_osm_france_provider`).
-- Download `planet-latest.osm.pbf` (~80 GB) directly to `afl_data_local`, then `mc cp` it
-  into the local `osm-extracts` bucket.
-- `fwh_osm`'s `planet_bootstrap` tool can then split planet → regional extracts
-  (Phase 1 of that work is shipped; see `project_selfhosted_planet_split`).
+**a) MinIO `osm-extracts` (217 GB)** — includes the per-county `north-america` tree
+(49 GB). Comes across in Phase 2 via `mc mirror`, because these are MinIO objects.
 
-Budget: 580 GB (existing) + 80 GB (planet) + split output ≈ **well under 1 TB of 3.6 TB**.
+**b) `osm-selfhost/` (182 GB) — plain files, so `rsync` is correct here** (unlike the
+MinIO buckets). This is the planet plus the continent extracts split from it:
+
+```
+rsync -aP --info=progress2 \
+  /Volumes/afl_data/osm-selfhost/ \
+  /Volumes/afl_data_local/osm-selfhost/
+```
+
+`rsync` is resumable — re-run after any interruption. Verify the planet afterwards against
+its checksum: `osm-selfhost/planet-latest.osm.pbf.md5` is already there, and
+`planet.md5.actual` records the last verification.
+
+**Do not re-download the planet.** It is 87 GB already on disk, and Geofabrik has IP-banned
+the fleet anyway (`reference_osm_france_provider`) — the self-host tree exists precisely so
+that ban does not matter.
+
+Once copied, point the extract path at the local tree (`FW_GEOFABRIK_BASE_URL` /
+`FW_OSM_EXTRACT_PROVIDER`) so nothing reaches for the network. If you want the `www/` tree
+served over HTTP on MaxPro the way it was on server3, `server.nohup.log` in that directory
+shows how it was run.
+
+Budget: 762 GB total ≈ **21% of the 3.6 TB disk.** No download needed.
 
 ---
 
@@ -179,7 +211,8 @@ Run each of these **with server3 powered off** — that is the only honest test:
 
 | Risk | Why | Mitigation |
 |---|---|---|
-| **`mc mirror` interrupted** | 580 GB over the network | Resumable — just re-run; verify with object counts |
+| **`mc mirror` interrupted** | 580 GB over the network |
+| **Re-downloading the planet** | Easy to assume it is missing — it is not in MinIO | It is at `osm-selfhost/planet-latest.osm.pbf` (87 GB); rsync it | Resumable — just re-run; verify with object counts |
 | **Copying MinIO dirs with `cp`** | Objects are erasure-coded dirs | Always `mc mirror`; never filesystem copy between instances |
 | **SMB mounts silently reappear** | macOS remembers shares | Remove login items; verify after a reboot |
 | **Registry unreachable** | Roles reference `server3.local:5050` | Local registry, tested *before* departure |
