@@ -4,7 +4,7 @@
 MongoDB, its own MinIO, and OSM data on the locally attached `afl_data_local`. server3 can
 then be powered off, rebooted, or left alone without affecting development.
 
-**Status:** plan only. Nothing here has been executed.
+**Status: EXECUTED 2026-07-30.** Data copied and verified, MongoDB restored, and MaxPro cut over to standalone (15/15 runners live against its own Mongo+MinIO). Phases 1-3 below are corrected to as-built — **the original Phase 3 was wrong** and would not have produced a working machine. Remaining: the §4 checklist with server3 powered off, and one full rebuild test.
 
 ---
 
@@ -147,12 +147,26 @@ The instruction was "make sure everything is safe." Concretely:
 
 Mongo is 1.3 GB, so this is minutes, not hours.
 
-1. On server3: `mongodump --gzip --archive=/tmp/fw.gz` for `facetwork` + `facetwork_examples`.
+1. On server3, dump **all databases** — pass NO `--db`:
+   `mongodump --gzip --archive=/tmp/fw.gz`
+
+   ⚠️ **`mongodump` silently keeps only the LAST `--db`.** Writing
+   `--db facetwork --db facetwork_examples` dumps *only* the examples DB, skips
+   everything that matters, and **exits 0**. That produced a 20 KB archive that
+   looked fine; the correct all-databases dump was 56 MB.
 2. `scp` to MaxPro.
-3. On MaxPro, restore into the **already-running** `facetwork-mongodb`:
+3. On MaxPro, restore into the running `facetwork-mongodb`:
    `mongorestore --gzip --archive=/tmp/fw.gz --drop`
-4. Verify counts match: `servers`, `runners`, `steps`, `tasks`, `handler_registrations`,
-   `flows`, `fleet_config`.
+   (`--drop` is required — MaxPro's local Mongo had its own stale data,
+   1,752 steps vs server3's 24,575.)
+4. Verify counts match per collection: `servers`, `runners`, `steps`, `tasks`,
+   `handler_registrations`, `flows`, `fleet_config`. As-built: 124,521 documents,
+   0 failures, every collection equal.
+
+⚠️ **MaxPro's Mongo may not publish its port.** Its container had a malformed
+binding (`map[27017/tcp:[{invalid IP 27017}]]`) so nothing listened on 27017 and
+`fw` could not reach it. Recreate with an explicit `-p 27017:27017`, reusing the
+named volume `facetwork_mongodb_data` so the restored data survives.
 
 ### Phase 2 — MinIO onto `afl_data_local`
 
@@ -173,20 +187,67 @@ Over gigabit this is roughly **1.5–2 hours for the 580 GB of MinIO buckets**, 
 
 ### Phase 3 — cut the cord
 
-1. **`/etc/hosts` on MaxPro** — the single highest-leverage change:
-   ```
-   127.0.0.1   afl-mongodb afl-minio
-   ```
-   (remove the `192.168.68.114` line). Everything that names `afl-*` now stays local.
-2. **Unmount the SMB shares** so nothing silently reads server3:
-   `umount /Volumes/afl_data /Volumes/bigdata` — and remove any auto-mount/login item.
-3. **Fleet config** → point at MaxPro and drop the remote roles:
-   `fw fleet set --mongo mongodb://localhost:27017 --minio http://localhost:9000`
-4. **Fleet hosts** — set `FW_RUNNER_HOSTS` to MaxPro only, so `fw fleet rollout --stagger`
-   does not try to SSH to server1/2/3.
-5. **Images** — MaxPro already has `6168c9f-dd8aff42f4015` cached. For *new* builds while
-   away, either run a local registry on MaxPro (`fw fleet registry-setup`) or build and
-   `docker tag` locally. **Test one rebuild before you leave** (§4).
+⚠️ **The original version of this phase was WRONG and would not have produced a
+working standalone machine.** It listed `/etc/hosts` as "the single
+highest-leverage change". In reality there are **five** places pointing at
+server3, and `/etc/hosts` is the least important of them — containers do not
+even read it. All five are corrected below, as-built.
+
+1. **`servers.local.json` — the one that actually matters.** `fw` resolves the
+   infra host from the **server catalog**, not from `/etc/hosts` or
+   `FW_MONGODB_URL`. Until this is changed the CLI keeps reading server3's
+   database (`discovered MongoDB via server catalog (infra):
+   mongodb://192.168.68.59:27017`) while the containers read MaxPro's — a
+   split-brain that is confusing to debug remotely.
+
+   Create `servers.local.json` (gitignored, merged over `servers.json`; the
+   schema is an **array** under `"servers"`, with `name`/`aliases`/`infra`):
+   move `afl-mongodb` + `afl-minio` and `"infra": true` onto `MaxPro.local`, and
+   leave `afl-postgres` on server3.local (PostGIS is on a *different* machine).
+
+2. **`FW_INFRA_IP` → MaxPro's LAN IP (`192.168.68.55`), NOT `127.0.0.1`.**
+   Containers get `afl-*` from compose `extra_hosts`, driven by this variable.
+   Inside a container `127.0.0.1` is the container itself, so loopback here
+   silently breaks every runner. As found, it was pinned at server3
+   (`afl-minio:192.168.68.59`).
+
+3. **`FW_MONGODB_URL`** named `server3.local` *directly*
+   (`mongodb://server3.local:27017`), so no hosts-file change could redirect it.
+   Set it to `mongodb://afl-mongodb:27017` so it follows the catalog.
+
+4. **`FW_DATA_DIR`** pointed at the SMB share and breaks the moment it is
+   unmounted — `fleet-agent` refuses to start without it. Set it to a **local**
+   path on the attached disk: `/Volumes/afl_data_local/scratch`. The env files
+   were not picked up in practice; pass `--data-dir` explicitly to
+   `fw fleet agent apply`.
+
+5. **MinIO's bind mount** on MaxPro was `/Volumes/afl_data/minio` — the SMB share
+   *from server3*, not the local disk. Recreate the container against
+   `/Volumes/afl_data_local/minio`.
+
+6. **`/etc/hosts`** — host-side only (the `fw` CLI, `mc`), *after* the above:
+   `127.0.0.1  afl-mongodb afl-minio`. Needs `sudo`; `sudo -n` was not available.
+   ⚠️ Do **not** redirect `afl-postgres` — PostGIS is on **192.168.68.76**, an
+   unrelated machine, and pointing it at loopback breaks the PostGIS import path.
+   ⚠️ Write the edit in Python, not `sed`: a `sed` using `\+` (a GNU extension
+   BSD `sed` does not support) matched nothing and **exited 0**, so the change
+   silently did not apply.
+
+7. **Unmount the SMB shares** — `umount /Volumes/afl_data /Volumes/bigdata` — and
+   remove any auto-mount/login item. Stop MinIO first if it still binds them.
+
+8. **`FW_RUNNER_HOSTS=`** (empty) so `fw fleet rollout --stagger` stops trying to
+   SSH to server1/2/3.
+
+9. **Recreate the runners** so they pick up the new `extra_hosts`:
+   `FW_DATA_DIR=... fw fleet agent apply --data-dir /Volumes/afl_data_local/scratch`.
+   Preflight should print all three ✓ against MaxPro. As-built result: 15/15
+   runners live, containers resolving `afl-mongodb`/`afl-minio` to
+   192.168.68.55, and server1/2/3 correctly showing as stale records.
+
+**Images**: MaxPro already has `facetwork-runner:4c37bc7-d3456ea5` cached. The
+registry still points at `server3.local:5050`, so **test one full rebuild before
+relying on it** (§4).
 
 ### Phase 4 — OSM data
 
@@ -253,6 +314,8 @@ Run each of these **with server3 powered off** — that is the only honest test:
 | **PostGIS** is on .76, not server3 | Survives server3 going down, but not a full-offline setup | Only matters for PostGIS import; run a local PostGIS if needed |
 | **`foreach … limit` can stall a fan-out** | Stranded sub-blocks hold window slots (§6) | Fix before departure, or don't use `limit` on long runs |
 | **Internal disk 87% full** | 237 GB free | Keep all data on `afl_data_local`; watch Docker VM growth |
+| **Commands that exit 0 having done nothing** | `mongodump` keeping only the last `--db`; BSD `sed` ignoring `\+`; a trailing `echo` masking a failed mirror | Verify the *effect* (counts, file contents), never the exit code |
+| **`afl-postgres` redirected to loopback** | PostGIS is on 192.168.68.76, unrelated to server3 | Leave that hosts line alone; restore `192.168.68.76` if the import path is needed |
 
 ---
 
