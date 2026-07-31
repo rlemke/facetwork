@@ -118,6 +118,11 @@ x-s3-storage: &s3-storage
   # egress, so it must reuse the cached PBF as-is. cache_policy=prefer_cache in
   # the workflow covers current handler code; this env covers the fallback path.
   FW_OSM_USE_CACHE_IF_PRESENT: ${FW_OSM_USE_CACHE_IF_PRESENT:-true}
+  # Local-only enforcement: FW_OSM_OFFLINE=1 forbids ALL mirror fetches — an osm
+  # region Download is a cache-read only, a miss fails loudly (generate it locally
+  # by clipping the planet). Pass-through (empty default) so it's opt-in via
+  # .env.fleet per deployment; it does NOT force offline on mirror-capable hosts.
+  FW_OSM_OFFLINE: ${FW_OSM_OFFLINE:-}
   # Same reason again: an osm region scan (AllPopulatedPlaces / ToGeoJson over a
   # multi-GB PBF) runs far longer than the 15-min default execution timeout, so a
   # big-region scan that lands on a non-osm runner used to time out → re-claim →
