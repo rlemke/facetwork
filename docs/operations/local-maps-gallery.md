@@ -18,13 +18,29 @@ Every domain already writes its maps to the durable store under
 `cache/save-earth/maps/seismic/index.html` in the `afl-cache` bucket. `fw svc maps`:
 
 1. **Lists** those objects and reads each sidecar for title/size/date/layers.
-2. **Renders** a gallery at `/`, grouped by domain, one card per map.
+2. **Renders** a gallery at `/`, grouped by domain. Each card has a **View map ↗**
+   button (opens the map locally) and, when a token is available, a **Publish**
+   button (below).
 3. **Streams** each map from MinIO on request at `/m/<domain>/maps/<name>/…` — a
    read-only proxy, so **no bucket policy change, no anonymous access, and
    sibling assets/tiles resolve** (relative links keep working). Nothing is
    written to disk or to git.
 
 It always reflects the current bucket contents — run a map workflow and refresh.
+
+## Keep it always up (launchd, macOS)
+
+```bash
+fw svc maps-install                 # write + load a LaunchAgent (port 8090)
+fw svc maps-install --port 9095     # custom port
+fw svc maps-install --uninstall     # unload + remove
+```
+
+Installs `com.facetwork.maps` (RunAtLoad + KeepAlive) via a login-shell wrapper at
+`~/.facetwork/maps-gallery.sh`. It waits for Docker + local MinIO before starting
+(so it doesn't crash-loop on boot) and is restarted automatically if it dies —
+surviving logout/reboot. Logs: `~/.facetwork/maps-gallery.log`. On Linux, run
+`fw svc maps` from a systemd user unit instead.
 
 ## Config
 

@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# fw-summary: install/uninstall a launchd unit that keeps `fw svc maps` always up
+#
+# Writes a login-shell wrapper (~/.facetwork/maps-gallery.sh) + a LaunchAgent
+# (com.facetwork.maps) that runs the local maps gallery, RunAtLoad + KeepAlive, so
+# it survives logout/reboot and restarts if it dies. macOS only (launchd).
+#
+# Usage:
+#   fw svc maps-install                 # write + load (port 8090)
+#   fw svc maps-install --port 9095
+#   fw svc maps-install --no-load       # write files only
+#   fw svc maps-install --uninstall     # unload + remove
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+LABEL="com.facetwork.maps"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+WRAPPER="$HOME/.facetwork/maps-gallery.sh"
+LOGDIR="$HOME/.facetwork"
+PORT=8090 LOAD=1 UNINSTALL=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --port) PORT="$2"; shift 2 ;;
+        --no-load) LOAD=0; shift ;;
+        --uninstall|--remove) UNINSTALL=1; shift ;;
+        -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+if [ "$(uname)" != "Darwin" ]; then
+    echo "launchd is macOS-only. On Linux use a systemd user unit running 'fw svc maps'." >&2
+    exit 1
+fi
+
+if [ "$UNINSTALL" = 1 ]; then
+    launchctl unload "$PLIST" 2>/dev/null || true
+    rm -f "$PLIST" "$WRAPPER"
+    echo "uninstalled $LABEL (removed $PLIST + $WRAPPER)."
+    exit 0
+fi
+
+mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
+
+# --- wrapper: login shell so PATH/venv/docker/gh resolve; wait for MinIO -------
+cat > "$WRAPPER" <<WRAP
+#!/bin/bash -l
+# Facetwork maps gallery — launched by $LABEL. Regenerate via 'fw svc maps-install'.
+set -u
+export PYTHONUNBUFFERED=1
+PORT="\${FW_MAPS_PORT:-$PORT}"
+# The gallery reads maps from the local MinIO. Bring Docker + MinIO up first so it
+# doesn't crash-restart on boot (KeepAlive retries regardless).
+if ! docker info >/dev/null 2>&1; then
+  open -a Docker >/dev/null 2>&1 || true
+  for i in \$(seq 1 80); do docker info >/dev/null 2>&1 && break; sleep 3; done
+fi
+for i in \$(seq 1 60); do
+  curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1 && break
+  sleep 3
+done
+cd "$FW_ROOT" || exit 1
+exec ./fw svc maps --port "\$PORT"
+WRAP
+chmod +x "$WRAPPER"
+
+# --- plist --------------------------------------------------------------------
+cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$LABEL</string>
+    <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>ThrottleInterval</key><integer>15</integer>
+    <key>WorkingDirectory</key><string>$FW_ROOT</string>
+    <key>StandardOutPath</key><string>$LOGDIR/maps-gallery.log</string>
+    <key>StandardErrorPath</key><string>$LOGDIR/maps-gallery.err.log</string>
+</dict>
+</plist>
+PLISTEOF
+
+echo "wrote:"
+echo "  $WRAPPER"
+echo "  $PLIST   (port $PORT)"
+
+if [ "$LOAD" = 1 ]; then
+    launchctl unload "$PLIST" 2>/dev/null || true
+    launchctl load "$PLIST"
+    echo "loaded $LABEL — gallery will stay up at http://localhost:$PORT/"
+    echo "  logs: $LOGDIR/maps-gallery.log  ·  stop: launchctl unload $PLIST"
+else
+    echo "not loaded (--no-load). Activate with: launchctl load $PLIST"
+fi

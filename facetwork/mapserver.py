@@ -189,14 +189,16 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
  .card{{background:#171a22;border:1px solid #262a33;border-radius:10px;
         padding:14px 16px;color:inherit;transition:border-color .15s}}
  .card:hover{{border-color:#3d6be5}}
- .card .t{{font-weight:600;font-size:15px;color:#cfe0ff;text-decoration:none;display:inline-block}}
- .card .t:hover{{text-decoration:underline}}
+ .card .t{{font-weight:600;font-size:15px;color:#e6e6e6}}
  .card .d{{color:#8a93a6;font-size:12.5px;margin-top:6px}}
  .meta{{color:#6f7788;font-size:11.5px;margin-top:8px}}
- .pub{{margin-top:10px;border-top:1px solid #262a33;padding-top:8px}}
- button{{font:inherit;font-size:12px;background:#222836;color:#cbd5e8;border:1px solid #333b4d;
-         border-radius:6px;padding:4px 10px;cursor:pointer}}
- button:hover{{border-color:#3d6be5}} button:disabled{{opacity:.5;cursor:default}}
+ .actions{{margin-top:12px;border-top:1px solid #262a33;padding-top:10px;
+           display:flex;gap:8px;align-items:center;flex-wrap:wrap}}
+ button,.btn{{font:inherit;font-size:12px;background:#222836;color:#cbd5e8;border:1px solid #333b4d;
+         border-radius:6px;padding:5px 11px;cursor:pointer;text-decoration:none;display:inline-block}}
+ button:hover,.btn:hover{{border-color:#3d6be5}} button:disabled{{opacity:.5;cursor:default}}
+ .btn.view{{background:#1c3a63;border-color:#2f5691;color:#dce9ff;font-weight:600}}
+ .btn.view:hover{{background:#22467a}}
  .pubform{{margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}}
  .pubform input{{font:inherit;font-size:12px;background:#0f1115;color:#e6e6e6;
                  border:1px solid #333b4d;border-radius:6px;padding:4px 8px;flex:1;min-width:120px}}
@@ -210,7 +212,7 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
 </header><main>{body}</main>
 <script>
 function togglePub(btn){{
-  const f = btn.parentElement.querySelector('.pubform');
+  const f = btn.closest('.card').querySelector('.pubform');
   f.hidden = !f.hidden; if(!f.hidden) f.querySelector('input').focus();
 }}
 async function doPublish(btn, mapRel){{
@@ -233,18 +235,23 @@ async function doPublish(btn, mapRel){{
 </body></html>"""
 
 
-def _pub_control(m: dict, can_publish: bool) -> str:
+def _actions(m: dict, can_publish: bool) -> str:
+    """Actions row for a card: always a prominent View button; Publish when a token
+    is available. The publish form (hidden) sits below the row, inside the card."""
+    view = (f'<a class="btn view" href="{escape(m["url"])}" target="_blank" '
+            f'rel="noopener">View map ↗</a>')
     if not can_publish:
-        return ('<div class="pub"><span class="status">Publishing disabled — no GitHub '
-                'token (set <code>GITHUB_TOKEN</code> or run <code>gh auth login</code>)</span></div>')
+        note = ('<span class="status" style="width:auto">publishing disabled — no '
+                'GitHub token (<code>gh auth login</code>)</span>')
+        return f'<div class="actions">{view}{note}</div>'
     default_dest = f'{m["domain"]}/{m["name"]}'
-    return (
-        '<div class="pub">'
-        f'<button onclick="togglePub(this)">Publish to {escape(PUBLISH_REPO.split("/")[-1])} →</button>'
-        '<div class="pubform" hidden>'
-        f'<input value="{escape(default_dest)}" spellcheck="false" aria-label="destination path">'
-        f'<button onclick="doPublish(this,{json.dumps(m["map_rel"])})">Publish</button>'
-        '<span class="status"></span></div></div>')
+    toggle = (f'<button onclick="togglePub(this)">Publish to '
+              f'{escape(PUBLISH_REPO.split("/")[-1])} →</button>')
+    form = ('<div class="pubform" hidden>'
+            f'<input value="{escape(default_dest)}" spellcheck="false" aria-label="destination path">'
+            f'<button onclick="doPublish(this,{json.dumps(m["map_rel"])})">Publish</button>'
+            '<span class="status"></span></div>')
+    return f'<div class="actions">{view}{toggle}</div>{form}'
 
 
 def render_gallery(maps: list[dict], can_publish: bool = False) -> str:
@@ -265,10 +272,10 @@ def render_gallery(maps: list[dict], can_publish: bool = False) -> str:
             meta = f'{layer_bit}{_human_size(int(m["size"] or 0))} · {escape(m["generated_at"][:10])}'
             cards.append(
                 '<div class="card">'
-                f'<a class="t" href="{escape(m["url"])}" target="_blank" rel="noopener">{escape(_pretty(m["name"]))}</a>'
+                f'<div class="t">{escape(_pretty(m["name"]))}</div>'
                 f'<div class="d">{escape(domain)}</div>'
                 f'<div class="meta">{meta}</div>'
-                f'{_pub_control(m, can_publish)}</div>')
+                f'{_actions(m, can_publish)}</div>')
         blocks.append(f'<h2>{escape(_pretty(domain))}</h2><div class="grid">{"".join(cards)}</div>')
     return _PAGE.format(bucket=escape(BUCKET), count=len(maps), body="".join(blocks))
 
