@@ -40,6 +40,7 @@ _fw_group_blurb() {  # static one-liners per group
         db)      echo "mongo / postgres / import-pg / checks / postgis" ;;
         runner)  echo "runner lifecycle: start/stop/drain/list/scale" ;;
         fleet)   echo "multi-machine fleet: status/rollout/scale/agent" ;;
+        mode)    echo "day-cluster / night-local switch: status/local/cluster/join/leave" ;;
         ffl)     echo "FFL workflows: compile/run/publish/seed/catalog" ;;
         maint)   echo "ops & maintenance: disk-guard/repair/purge/vacuum" ;;
         svc)     echo "services: dashboard / mcp / grafana" ;;

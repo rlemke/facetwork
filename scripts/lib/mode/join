@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# fw-summary: (re)start THIS host as a cluster runner after a `leave` (Model A; no infra change)
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/mode/_lib.sh"
+
+DRY=0; [ "${1:-}" = "--dry" ] && DRY=1
+
+# Model A inverse of `leave`: start this host's runner containers so they
+# re-register and start claiming tasks again. Uses the CURRENT infra config
+# (whatever `fw mode local|cluster` last set) — join does not change where infra
+# lives. If containers were never created, fall through to the fleet agent.
+# NB: bash 3.2 (macOS) has no `mapfile`, so avoid arrays — names have no spaces.
+runners="$(_mode_runner_containers)"
+n="$(printf '%s\n' "$runners" | grep -c . || true)"
+
+if [ "$n" -eq 0 ]; then
+    echo "No runner containers exist yet — reconciling from fleet config instead."
+    [ "$DRY" = 1 ] && { echo "[dry-run] would: fw fleet agent apply"; exit 0; }
+    exec "$FW_LIB/fleet/agent" apply
+fi
+
+echo "Rejoining as a runner: starting $n container(s)."
+if [ "$DRY" = 1 ]; then echo "[dry-run] would: docker start <$n runner(s)>"; exit 0; fi
+
+# shellcheck disable=SC2086
+docker start $runners >/dev/null && echo "  started $n runner(s)."
+echo
+echo "They will re-register and begin claiming. Check: fw fleet status"

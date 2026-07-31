@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# fw-summary: rejoin the shared fleet — infra lives on the infra host; recreate runners (Model B)
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/mode/_lib.sh"
+
+DRY=0; [ "${1:-}" = "--dry" ] && DRY=1
+# This host becomes a plain runner against the shared infra host. REFUSES if that
+# host is unreachable (see _mode_apply) so you can't strand the box on a dead cluster.
+_mode_apply cluster "$DRY"

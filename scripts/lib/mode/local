@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# fw-summary: run the WHOLE stack on this machine (own Mongo/MinIO/registry); recreate runners (Model B)
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/mode/_lib.sh"
+
+DRY=0; [ "${1:-}" = "--dry" ] && DRY=1
+# Standalone: infra + runners all on this host. Idempotent — safe to re-run.
+_mode_apply local "$DRY"

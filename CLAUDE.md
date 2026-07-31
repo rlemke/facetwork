@@ -34,7 +34,8 @@ up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgrou
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog/**bake-envs**) · **`maint`** (disk-guard/repair-workflow/
 terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana) ·
-**`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**).
+**`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**) ·
+**`mode`** (day-cluster/night-local switch: status/local/cluster/join/leave).
 
 Notes for working with `fw`:
 - It's just a thin dispatcher: each command is a file under `scripts/lib/<group>/`,
@@ -142,6 +143,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | **Multi-server fleet** (`fleet`/`fleet-agent`/`start-runner --fleet`: shared external MinIO+MongoDB, central config, encrypted secrets, discovery) **+ local simulation** (`fw fleet simulate`) | [#multi-server-runner-fleet--local-simulation](#multi-server-runner-fleet--local-simulation) · [docs/operations/deployment.md](docs/operations/deployment.md) |
 | **Fleet rollouts & runner lifecycle** — image-based change deployment (buildx→registry→`fleet set --image`), what happens to running tasks during a rollout (graceful drain → reaper recovery → retry/dead-letter), start/stop/drain runners from the CLI, and how this auto-deploy compares to Kubernetes/Temporal-grade pipelines | [docs/operations/fleet-rollouts.md](docs/operations/fleet-rollouts.md) |
 | **Informal fleet — your team's own machines as the cluster** — only central MongoDB+MinIO must be stable; runner machines (desktops/laptops) are stateless & disposable and can come/go (reaper → re-claim); who this model is for (small/research teams); large-scale data-center operation is architecturally **possible but untested** — treat it as a real engineering investment (hardening/scheduling/observability), not a config change | [docs/operations/informal-fleet.md](docs/operations/informal-fleet.md) |
+| **`fw mode` — day-cluster / night-local switch** — two SEPARATE models: **join/leave** (Model A — stop/start lending this machine to the cluster as a runner; near-free, reaper re-claims; the common "night" case) and **local/cluster** (Model B — flip WHERE infra lives via gitignored `mode.{local,cluster}.json` profiles + recreate runners; `cluster` REFUSES if the target infra is unreachable so it can't strand the box). ⚠️ Model B does NOT merge state — local and cluster are separate Mongo+object-store worlds. Built on the MaxPro standalone setup | [docs/operations/fw-mode.md](docs/operations/fw-mode.md) |
 | Tutorial | [docs/getting-started/tutorial.md](docs/getting-started/tutorial.md) |
 | Tools + handlers pattern (per-domain CLI + `_<pkg>_tools/` + shim) | [agent-spec/tools-pattern.agent-spec.yaml](agent-spec/tools-pattern.agent-spec.yaml) |
 | Cache layout (sidecars, namespaces, cache types) | [agent-spec/cache-layout.agent-spec.yaml](agent-spec/cache-layout.agent-spec.yaml) |

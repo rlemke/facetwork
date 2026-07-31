@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# fw-summary: stop THIS host contributing to the cluster as a runner (Model A; no infra change)
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/mode/_lib.sh"
+
+DRY=0; [ "${1:-}" = "--dry" ] && DRY=1
+
+# Model A: reset this host's in-flight tasks to pending (so the reaper / other
+# hosts re-claim them) and stop its runner containers. Infra (Mongo/MinIO/registry/
+# dashboard) is LEFT RUNNING — you are still pointed at the same cluster, just not
+# lending compute. `fw mode join` brings the runners back. No state moves.
+# NB: bash 3.2 (macOS) has no `mapfile`, so avoid arrays — names have no spaces.
+runners="$(_mode_runner_containers)"
+n="$(printf '%s\n' "$runners" | grep -c . || true)"
+if [ "$n" -eq 0 ]; then echo "No runner containers on this host."; exit 0; fi
+
+echo "Leaving as a runner: $n container(s) will be drained + stopped (infra stays up)."
+if [ "$DRY" = 1 ]; then
+    echo "[dry-run] would: fw runner drain --tasks-only; docker stop <$n runner(s)>"
+    exit 0
+fi
+
+echo "=== draining in-flight tasks back to pending ==="
+"$FW_LIB/runner/drain" --tasks-only || echo "  (drain reported an issue — continuing to stop containers)"
+
+echo "=== stopping runner containers ==="
+# shellcheck disable=SC2086
+docker stop $runners >/dev/null && echo "  stopped $n runner(s)."
+echo
+echo "Done. This host no longer serves the cluster. Bring it back with: fw mode join"

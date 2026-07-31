@@ -54,3 +54,7 @@ domains.local.json
 
 # Per-deployment server catalog override (see servers.json)
 servers.local.json
+mode.local.json
+mode.cluster.json
+.fw-mode
+servers.local.json.disabled

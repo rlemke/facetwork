@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# fw-summary: show the active mode (local/cluster) + where infra resolves + runner state
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/mode/_lib.sh"
+
+active="$(_mode_active)"
+echo "Active mode: $active"
+echo
+
+# What the live config points at (env + server catalog), and what it resolves to.
+reg="$(grep -m1 -E '^FW_FLEET_REGISTRY=' "$FW_ROOT/.env" 2>/dev/null | cut -d= -f2-)"
+[ -z "$reg" ] && reg="$(grep -m1 -E '^FW_FLEET_REGISTRY=' "$FW_ROOT/.env.fleet" 2>/dev/null | cut -d= -f2-)"
+infra_ip="$(grep -m1 -E '^FW_INFRA_IP=' "$FW_ROOT/.env.fleet" 2>/dev/null | cut -d= -f2-)"
+infra_host="$(grep -m1 -E '^FW_INFRA_HOST=' "$FW_ROOT/.env.fleet" 2>/dev/null | cut -d= -f2-)"
+
+echo "Config (what runners + CLI use):"
+printf '  %-18s %s\n' "infra host"     "${infra_host:-<unset>}"
+printf '  %-18s %s\n' "infra IP"       "${infra_ip:-<unset>}  (containers reach afl-mongodb/afl-minio here)"
+printf '  %-18s %s\n' "image registry" "${reg:-server3.local:5050 (default)}"
+if [ -f "$FW_ROOT/servers.local.json" ]; then
+    printf '  %-18s %s\n' "server catalog" "servers.local.json present (overrides infra resolution)"
+else
+    printf '  %-18s %s\n' "server catalog" "servers.json only (committed defaults)"
+fi
+
+echo
+echo "Reachability:"
+if [ -n "$infra_ip" ]; then
+    if _mode_mongo_reachable "$infra_ip"; then s="reachable ✓"; else s="UNREACHABLE ✗"; fi
+    printf '  %-18s %s\n' "Mongo :27017"  "$infra_ip → $s"
+fi
+
+echo
+n_up="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cE '^facetwork-runner-' || true)"
+n_all="$(_mode_runner_containers | wc -l | tr -d ' ')"
+printf 'Runners on this host: %s up / %s defined\n' "$n_up" "$n_all"
+
+echo
+echo "Switch:  fw mode local | fw mode cluster        (Model B — flip infra, recreate runners)"
+echo "         fw mode leave | fw mode join           (Model A — stop/start THIS host as a cluster runner)"
