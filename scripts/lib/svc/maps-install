@@ -60,6 +60,12 @@ for i in \$(seq 1 60); do
   curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1 && break
   sleep 3
 done
+# Publish token (OPT-IN): a LaunchAgent can't read gh's token from the macOS
+# keychain, so publish is disabled here by default. To enable it, deliberately
+# create ~/.facetwork/maps.env (0600) with 'GITHUB_TOKEN=...' — ideally a
+# fine-grained PAT scoped to the Pages repo (contents:write). Nothing implicit is
+# sourced. Without it the gallery still runs; Publish just shows "disabled".
+[ -f "\$HOME/.facetwork/maps.env" ] && . "\$HOME/.facetwork/maps.env"
 cd "$FW_ROOT" || exit 1
 exec ./fw svc maps --port "\$PORT"
 WRAP

@@ -42,6 +42,25 @@ Installs `com.facetwork.maps` (RunAtLoad + KeepAlive) via a login-shell wrapper 
 surviving logout/reboot. Logs: `~/.facetwork/maps-gallery.log`. On Linux, run
 `fw svc maps` from a systemd user unit instead.
 
+### ⚠️ Publishing under launchd — the keychain gotcha
+
+A LaunchAgent runs as a background process that **cannot read `gh`'s token from the
+macOS keychain** (`gh auth status` shows `(keyring)`, and there's no plaintext token
+in `~/.config/gh/hosts.yml`). So the always-up gallery starts with **publish
+disabled** — its log says `publish → …: disabled (no GITHUB_TOKEN / gh auth)` — even
+though `gh auth token` works fine in your Terminal. Browsing/viewing is unaffected.
+
+Two ways to publish:
+
+- **Interactive (no token on disk):** run `fw svc maps --port 8091` in a terminal
+  (a login shell *can* read the keychain, so publish is enabled there) and use that
+  instance's Publish buttons. The launchd one keeps serving :8090 for browsing.
+- **Enable publish under launchd:** drop `GITHUB_TOKEN=<token>` into
+  `~/.facetwork/maps.env` (mode 0600) — the wrapper sources it. Use a **fine-grained
+  PAT scoped to only the Pages repo with Contents: read-write** (least privilege),
+  not your full gh token. Then `launchctl kickstart -k gui/$(id -u)/com.facetwork.maps`
+  (or `fw svc maps-install`) to restart.
+
 ## Config
 
 All optional; defaults suit the MaxPro standalone box (local MinIO). Read from the
