@@ -36,6 +36,18 @@ _afl_resolve_remote_env() {
     fi
     export FW_RUNNER_HOSTS
 
+    # FW_FLEET_REGISTRY: the runner-image registry rollout pushes to / points the
+    # fleet at. Same .env fallback as FW_RUNNER_HOSTS above and for the same reason
+    # — rollout sources only _bootstrap.sh + this file, not _env.sh, so a value set
+    # only in .env (e.g. a standalone host's local registry, host.docker.internal:5050)
+    # was silently ignored and the rollout defaulted back to the shared server3
+    # registry. Read the file directly rather than sourcing _env.sh.
+    if [ -z "${FW_FLEET_REGISTRY:-}" ] && [ -f "$_REMOTE_REPO_ROOT/.env" ]; then
+        FW_FLEET_REGISTRY="$(sed -n 's/^[[:space:]]*FW_FLEET_REGISTRY[[:space:]]*=[[:space:]]*//p' \
+            "$_REMOTE_REPO_ROOT/.env" | tail -1 | sed 's/^["'\'']//; s/["'\'']$//')"
+        [ -n "$FW_FLEET_REGISTRY" ] && export FW_FLEET_REGISTRY
+    fi
+
     # FW_REMOTE_PATH: repo path on remote hosts (default: same as local)
     FW_REMOTE_PATH="${FW_REMOTE_PATH:-$_REMOTE_REPO_ROOT}"
 
