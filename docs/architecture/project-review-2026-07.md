@@ -711,7 +711,7 @@ gate role starts.
    "converged" means compose returned 0, not that runners claim/complete
    tasks (honestly conceded in `docs/operations/fleet-rollouts.md:420-473`).
 8. **CONFIRMED — One home fleet's IPs baked in as repo defaults** (registry
-   `192.168.68.96:5050` in `fleet/rollout:25`, `fleet/registry-setup:12`;
+   `<infra-host-ip>:5050` in `fleet/rollout:25`, `fleet/registry-setup:12`;
    `server3.local`); single plain-HTTP unauthenticated registry as rollout
    SPOF.
 9. **CONFIRMED — `_env.sh` silently retargets Mongo to localhost** on a 2 s

@@ -1,7 +1,7 @@
 # CI-only override for the docker.yml `integration` smoke test.
 #
 # The base docker-compose.yml targets EXTERNAL infra (MongoDB at
-# afl-mongodb:192.168.68.91), which is unreachable in CI and has no `mongodb`
+# afl-mongodb:<infra-host-ip>), which is unreachable in CI and has no `mongodb`
 # service to start. This override adds an ephemeral MongoDB and repoints the app
 # services at it (mongodb://mongodb:27017 via compose DNS) so the addone-example
 # stack can come up, seed, and serve /health entirely self-contained.

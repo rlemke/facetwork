@@ -102,7 +102,7 @@ Images are tagged by **git short SHA** and pushed to the private registry:
 
 ```
 <registry>/facetwork-runner:<git-short-sha>
-# e.g. 192.168.68.96:5050/facetwork-runner:65b54e0
+# e.g. <infra-host-ip>:5050/facetwork-runner:65b54e0
 ```
 
 All per-example runners build from the **same** `docker/Dockerfile.example-runner`
@@ -125,7 +125,7 @@ git rev-parse --short HEAD              # -> the new tag, e.g. 65b54e0
 
 # 1. one-time: a builder that may speak HTTP to the registry
 cat > /tmp/buildkitd-fleet.toml <<'EOF'
-[registry."192.168.68.96:5050"]
+[registry."<infra-host-ip>:5050"]
   http = true
   insecure = true
 EOF
@@ -138,13 +138,13 @@ docker buildx build \
   --builder fleetbuilder \
   --platform linux/arm64 \
   -f docker/Dockerfile.example-runner \
-  -t 192.168.68.96:5050/facetwork-runner:$(git rev-parse --short HEAD) \
-  --cache-from type=registry,ref=192.168.68.96:5050/facetwork-runner:<previous-tag> \
+  -t <infra-host-ip>:5050/facetwork-runner:$(git rev-parse --short HEAD) \
+  --cache-from type=registry,ref=<infra-host-ip>:5050/facetwork-runner:<previous-tag> \
   --provenance=false \
   --push .
 
 # 3. (optional) verify the tag landed
-curl -s http://192.168.68.96:5050/v2/facetwork-runner/tags/list
+curl -s http://<infra-host-ip>:5050/v2/facetwork-runner/tags/list
 
 # 4. tidy up the temporary builder
 docker buildx rm fleetbuilder
@@ -153,7 +153,7 @@ docker buildx rm fleetbuilder
 ### 2.3 Trigger the rollout
 
 ```bash
-fw fleet set --image 192.168.68.96:5050/facetwork-runner:<new-tag>
+fw fleet set --image <infra-host-ip>:5050/facetwork-runner:<new-tag>
 ```
 
 This bumps `fleet_config.version` and changes the image. Within one ~30s poll
@@ -181,7 +181,7 @@ docker ps --filter name=runner-osm-geocoder \
 Both tags remain in the registry, so rollback is just another `fleet set`:
 
 ```bash
-fw fleet set --image 192.168.68.96:5050/facetwork-runner:<previous-tag>
+fw fleet set --image <infra-host-ip>:5050/facetwork-runner:<previous-tag>
 ```
 
 ### 2.6 What `fleet set` cannot deploy

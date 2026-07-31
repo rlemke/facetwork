@@ -9,9 +9,9 @@ starts a database or object store locally.
 
 | What | Value (as of 2026-06-11) | How to re-derive |
 |------|--------------------------|------------------|
-| Infra host | `server3` @ **`192.168.68.75`** | on the infra host: `ipconfig getifaddr en0` (macOS) / `hostname -I` (Linux) |
-| MongoDB | `mongodb://192.168.68.75:27017` | bundled, `--bind_ip_all`, published `0.0.0.0:27017` |
-| MinIO | `http://192.168.68.75:9000` | bundled, published `0.0.0.0:9000`; bucket `afl-cache` |
+| Infra host | `server3` @ **`<infra-host-ip>`** | on the infra host: `ipconfig getifaddr en0` (macOS) / `hostname -I` (Linux) |
+| MongoDB | `mongodb://<infra-host-ip>:27017` | bundled, `--bind_ip_all`, published `0.0.0.0:27017` |
+| MinIO | `http://<infra-host-ip>:9000` | bundled, published `0.0.0.0:9000`; bucket `afl-cache` |
 | MinIO creds | `minioadmin` / `minioadmin` | bundled dev default (use the secret store for prod — see below) |
 
 > **Use the infra host's IP in `.env.fleet`, not a `.local`/mDNS name.** The runners
@@ -134,7 +134,7 @@ count, image) from the central `fleet_config` in Mongo, and auto-reconcile:
 
 ```bash
 mkdir -p "$HOME/afl_data"                                     # big LOCAL scratch on THIS server
-fw fleet agent watch --mongo mongodb://192.168.68.75:27017 --data-dir "$HOME/afl_data"
+fw fleet agent watch --mongo mongodb://<infra-host-ip>:27017 --data-dir "$HOME/afl_data"
 #   (with the /etc/hosts entry above, just: fw fleet agent watch --data-dir "$HOME/afl_data")
 ```
 
@@ -152,7 +152,7 @@ Then drive the whole fleet from one place (run on any machine):
 ## Verify (from the infra host, or anywhere with Mongo access)
 
 ```bash
-fw fleet status --mongo mongodb://192.168.68.75:27017
+fw fleet status --mongo mongodb://<infra-host-ip>:27017
 #   the new server appears in "live runners … across N host(s)"
 ```
 

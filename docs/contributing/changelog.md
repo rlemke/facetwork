@@ -244,7 +244,7 @@ Split the runtime specification, completed validator step return type inference,
 Migrated MongoDB and HDFS from Docker Compose services to external servers, removed the distributed lock subsystem, and added VirtioFS mount localization.
 
 **Infrastructure:**
-- Removed `mongodb`, `namenode`, `datanode` services from `docker-compose.yml` — MongoDB and HDFS now run on external server `192.168.68.91` via `/etc/hosts` aliases (`afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn`)
+- Removed `mongodb`, `namenode`, `datanode` services from `docker-compose.yml` — MongoDB and HDFS now run on external server `<infra-host-ip>` via `/etc/hosts` aliases (`afl-mongodb`, `afl-hadoop-hdfs`, `afl-hadoop-yarn`)
 - All services use `extra_hosts` to resolve `afl-mongodb` inside containers
 - Updated `FW_MONGODB_URL` default from `mongodb://localhost:27018` to `mongodb://afl-mongodb:27017` across all scripts, configs, docs, and 24 OSM test scripts
 - Updated HDFS URI examples from `hdfs://namenode:8020` to `hdfs://afl-hadoop-hdfs:8020`

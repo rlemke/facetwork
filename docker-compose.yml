@@ -27,7 +27,7 @@ services:
     volumes:
       - ${FW_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:${FW_LOCAL_OUTPUT_DIR:-/Volumes/afl_data/output}:ro
     extra_hosts:
-      - "afl-mongodb:192.168.68.91"
+      - "afl-mongodb:${FW_INFRA_IP:-127.0.0.1}"
     healthcheck:
       test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
       interval: 10s
@@ -59,7 +59,7 @@ services:
       - ${FW_GEOFABRIK_MIRROR:-/Volumes/afl_data/osm}:/data/osm-mirror:ro
       - ./examples:/app/examples:ro
     extra_hosts:
-      - "afl-mongodb:192.168.68.91"
+      - "afl-mongodb:${FW_INFRA_IP:-127.0.0.1}"
     restart: unless-stopped
     profiles:
       - agents
@@ -76,7 +76,7 @@ services:
       - FW_AGENT_NAME=addone-agent
       - FW_AGENT_HANDLERS=handlers.AddOne
     extra_hosts:
-      - "afl-mongodb:192.168.68.91"
+      - "afl-mongodb:${FW_INFRA_IP:-127.0.0.1}"
     restart: unless-stopped
     profiles:
       - agents
@@ -91,7 +91,7 @@ services:
       - FW_MONGODB_URL=mongodb://afl-mongodb:27017
       - FW_MONGODB_DATABASE=afl
     extra_hosts:
-      - "afl-mongodb:192.168.68.91"
+      - "afl-mongodb:${FW_INFRA_IP:-127.0.0.1}"
     profiles:
       - seed
 
@@ -118,7 +118,7 @@ services:
       - FW_MONGODB_URL=mongodb://afl-mongodb:27017
       - FW_MONGODB_DATABASE=afl
     extra_hosts:
-      - "afl-mongodb:192.168.68.91"
+      - "afl-mongodb:${FW_INFRA_IP:-127.0.0.1}"
     stdin_open: true
     tty: true
     profiles:
@@ -179,7 +179,7 @@ services:
       localstack:
         condition: service_healthy
     extra_hosts:
-      - "afl-mongodb:192.168.68.91"
+      - "afl-mongodb:${FW_INFRA_IP:-127.0.0.1}"
     restart: unless-stopped
     profiles:
       - localstack

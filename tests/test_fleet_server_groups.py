@@ -102,17 +102,17 @@ def test_rewrite_hosts_repoints_afl_names():
     """Every afl-* entry moves to the new IP; unrelated lines are preserved and
     a missing afl-* name is added (so a stale/IPv6 mapping can't survive)."""
     before = ("127.0.0.1\tlocalhost\n"
-              "192.168.68.114\tafl-mongodb\n"
+              "192.0.2.10\tafl-mongodb\n"
               "fd00::2\tafl-minio\n"
               "10.0.0.5\tsome-other-host\n")
-    after = fl._rewrite_hosts(before, "192.168.68.115")
+    after = fl._rewrite_hosts(before, "192.0.2.20")
     lines = after.splitlines()
-    assert "192.168.68.115\tafl-mongodb" in lines
-    assert "192.168.68.115\tafl-minio" in lines
-    assert "192.168.68.115\tafl-postgres" in lines          # missing one added
+    assert "192.0.2.20\tafl-mongodb" in lines
+    assert "192.0.2.20\tafl-minio" in lines
+    assert "192.0.2.20\tafl-postgres" in lines          # missing one added
     assert "10.0.0.5\tsome-other-host" in lines             # unrelated untouched
     assert "127.0.0.1\tlocalhost" in lines
-    assert "192.168.68.114" not in after and "fd00::2" not in after   # stale gone
+    assert "192.0.2.10" not in after and "fd00::2" not in after   # stale gone
 
 
 def test_rewrite_hosts_idempotent():

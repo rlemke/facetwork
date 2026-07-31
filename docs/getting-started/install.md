@@ -143,7 +143,7 @@ docker compose -f docker-compose.full-stack.yml up -d
 docker compose --profile seed run --rm seed
 ```
 
-Find your machine's LAN IP (e.g. `192.168.1.50`) — teammates will point at it.
+Find your machine's LAN IP (`ipconfig getifaddr en0` on macOS / `hostname -I` on Linux) — teammates will point at it.
 Make sure MongoDB (27017) and MinIO (9000) are reachable on your network.
 
 **On each teammate's machine:** install Docker + git (Step 0), clone the repo
