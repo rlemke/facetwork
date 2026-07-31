@@ -274,3 +274,65 @@ forever — which also helps uncapped runs.
 
 **Recommendation:** land that fix, rebake, and re-run the fan-out clean *before* the
 migration, so MaxPro starts from a known-good image.
+
+---
+
+## 7. Post-vacation experiment: OrbStack (or colima) vs Docker Desktop
+
+**Not a recommendation yet — a benchmark to run.** Do this *after* the migration
+settles, on MaxPro alone, never mid-trip.
+
+### Why it is worth measuring
+
+Docker Desktop on macOS runs a Linux VM and bridges host directories through
+**virtiofs**, so every bind-mounted file operation crosses that boundary. This
+fleet is almost entirely bind-mount-driven — MinIO's backend, the county PBFs,
+the baked domain trees — and the migration surfaced the cost directly:
+
+* the temp MinIO's `df /data` reported **1.9 T / 902 G used**, which is the
+  host's `/Volumes` mount point, not the 3.6 T USB volume — misleading enough
+  that the bind had to be verified by comparing file contents;
+* `iostat` showed **~17,500 tps of 4 KB I/O** during the copies, the exact
+  small-file pattern virtiofs handles worst — and MinIO stores every object as
+  a directory of small files;
+* a filesystem copy of the MinIO backend managed **~1 file/sec** (60 files in
+  61 s), while `mc` over HTTP against the same data ran at 39–58 MiB/s.
+
+With 15–22 containers per host all reading through bind mounts, a faster
+file-sharing path compounds.
+
+### What is NOT established
+
+OrbStack's reputation is "several times faster on bind-mount-heavy small-file
+workloads", **but that figure has not been measured on this hardware.** Treat it
+as a hypothesis. (This document already carries one cautionary example: a local
+disk-to-disk copy was predicted at ~200 MB/s and actually ran at 38.)
+
+### Benchmark procedure
+
+Run each under Docker Desktop, then under OrbStack, on the same host and data:
+
+1. **Small-file bind-mount read** — `time` a recursive checksum of a fixed
+   MinIO prefix (e.g. `osm-extracts/county-atlas`, ~6.8 GB across thousands of
+   object dirs) from inside a container with the backend bind-mounted.
+2. **Large-file bind-mount write** — `time` copying one continent PBF
+   (`europe-latest.osm.pbf`, 37 GB) into a bind-mounted volume.
+3. **Container start-up** — `time` `fw fleet rollout` reconcile on one host, or
+   simply `docker compose up` for the 15 runner services.
+4. **Idle overhead** — CPU and RSS of the VM with the fleet running but idle.
+5. **Correctness gate** — `fw ffl run` a one-county county-atlas build end to
+   end, and confirm `fw fleet status` reports the expected runner count.
+
+Record the numbers in this section. Switch only if (1) or (3) improves
+materially **and** (5) passes.
+
+### Caveats before switching
+
+* It is a **different runtime**, not a Docker Desktop setting. Test on one host
+  first; never roll it across the fleet in one step.
+* `colima` is the free/open alternative; OrbStack is free for personal use and
+  paid commercially.
+* The registry, buildx builder, and `extra_hosts` mappings in
+  `docker-compose.fleet.yml` all need re-verification under a new runtime —
+  they are the parts most likely to differ quietly.
+
