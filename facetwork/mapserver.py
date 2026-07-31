@@ -22,6 +22,8 @@ import json
 import mimetypes
 import os
 import re
+import subprocess
+import threading
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
@@ -41,6 +43,12 @@ SECRET = os.environ.get("FW_S3_SECRET_KEY", "minioadmin")
 BUCKET = os.environ.get("FW_MAPS_BUCKET") or os.environ.get("FW_S3_BUCKET", "afl-cache")
 PREFIX = os.environ.get("FW_MAPS_PREFIX", "cache/").lstrip("/")
 
+# Selected-map publishing → the public GitHub Pages site. Off unless a token is
+# obtainable (env GITHUB_TOKEN/GH_TOKEN, else `gh auth token`).
+PUBLISH_REPO = os.environ.get("FW_MAPS_PUBLISH_REPO", "rlemke/facetwork-maps")
+PUBLISH_BRANCH = os.environ.get("FW_MAPS_PUBLISH_BRANCH", "main")
+_publish_lock = threading.Lock()  # serialize pushes to the one Pages repo
+
 # A map = a key ".../maps/<name…>/index.html" under PREFIX. The domain is the first
 # segment after PREFIX; the name is everything between "maps/" and "/index.html".
 _MAP_RE = re.compile(r"^" + re.escape(PREFIX) + r"(?P<domain>[^/]+)/maps/(?P<name>.+)/index\.html$")
@@ -52,6 +60,61 @@ def _client():
         aws_secret_access_key=SECRET,
         config=_BotoConfig(signature_version="s3v4", retries={"max_attempts": 2}),
     )
+
+
+# --- publish (opt-in) ------------------------------------------------------
+
+def _github_token() -> str | None:
+    """Token for pushing to the Pages repo: env first, else the gh CLI session."""
+    tok = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if tok:
+        return tok
+    try:
+        out = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, timeout=8)
+        tok = out.stdout.strip()
+        return tok or None
+    except Exception:
+        return None
+
+
+def publish_available() -> bool:
+    return _github_token() is not None
+
+
+def publish_map(map_rel: str, dest: str, label: str = "") -> dict:
+    """Publish ONE map (its self-contained index.html) to the public Pages site.
+
+    map_rel: the map's key path minus PREFIX, e.g. 'save-earth/maps/seismic'.
+    dest:    path within the repo, e.g. 'world/seismic' (first segment = section).
+    Reuses census_us.publish_bundles, which is INCREMENTAL — it harvests the maps
+    already on the site and merges, so this never wipes the rest of the gallery.
+    include=[".html"] keeps the public site to the self-contained HTML (the big
+    GeoJSON/data stays local in MinIO). Serialized against concurrent publishes.
+    """
+    token = _github_token()
+    if not token:
+        return {"ok": False, "error": "no GitHub token (set GITHUB_TOKEN or run `gh auth login`)"}
+    dest = (dest or "").strip().strip("/")
+    if not dest or ".." in dest.split("/"):
+        return {"ok": False, "error": f"invalid destination {dest!r}"}
+    # Import lazily so the gallery works even without the domain package installed.
+    try:
+        from census_us.tools._lib.publish import publish_bundles
+    except Exception as e:
+        return {"ok": False, "error": f"publisher unavailable: {e}"}
+    prefix = f"s3://{BUCKET}/{PREFIX}{map_rel}/"
+    try:
+        with _publish_lock:
+            res = publish_bundles(
+                PUBLISH_REPO, [prefix], [dest],
+                branch=PUBLISH_BRANCH, include=[".html"],
+                labels=[label or None], token=token,
+            )
+        pages = getattr(res, "pages_url", None) or f"https://{PUBLISH_REPO.split('/')[0]}.github.io/{PUBLISH_REPO.split('/')[1]}/{dest}/"
+        return {"ok": True, "pages_url": pages, "dest": dest,
+                "files": getattr(res, "files", None), "sha": getattr(res, "sha", None)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:400]}
 
 
 # --- harvest --------------------------------------------------------------
@@ -86,6 +149,7 @@ def list_maps(s3) -> list[dict]:
             "domain": domain,
             "name": name,
             "url": "/m/" + key[len(PREFIX):],                      # key sans PREFIX
+            "map_rel": f"{domain}/maps/{name}",                     # for publish
             "size": meta.get("size_bytes", size),
             "generated_at": meta.get("generated_at", mtime),
             "layers": extra.get("layers", []),
@@ -122,20 +186,68 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
  h2{{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:#8a93a6;
      border-bottom:1px solid #262a33;padding-bottom:6px;margin:28px 0 14px}}
  .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}}
- .card{{display:block;background:#171a22;border:1px solid #262a33;border-radius:10px;
-        padding:14px 16px;text-decoration:none;color:inherit;transition:border-color .15s}}
+ .card{{background:#171a22;border:1px solid #262a33;border-radius:10px;
+        padding:14px 16px;color:inherit;transition:border-color .15s}}
  .card:hover{{border-color:#3d6be5}}
- .card .t{{font-weight:600;font-size:15px}} .card .d{{color:#8a93a6;font-size:12.5px;margin-top:6px}}
+ .card .t{{font-weight:600;font-size:15px;color:#cfe0ff;text-decoration:none;display:inline-block}}
+ .card .t:hover{{text-decoration:underline}}
+ .card .d{{color:#8a93a6;font-size:12.5px;margin-top:6px}}
  .meta{{color:#6f7788;font-size:11.5px;margin-top:8px}}
+ .pub{{margin-top:10px;border-top:1px solid #262a33;padding-top:8px}}
+ button{{font:inherit;font-size:12px;background:#222836;color:#cbd5e8;border:1px solid #333b4d;
+         border-radius:6px;padding:4px 10px;cursor:pointer}}
+ button:hover{{border-color:#3d6be5}} button:disabled{{opacity:.5;cursor:default}}
+ .pubform{{margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}}
+ .pubform input{{font:inherit;font-size:12px;background:#0f1115;color:#e6e6e6;
+                 border:1px solid #333b4d;border-radius:6px;padding:4px 8px;flex:1;min-width:120px}}
+ .status{{font-size:11.5px;color:#8a93a6;width:100%}}
+ .status a{{color:#6ea8ff}} .status.err{{color:#ff8a8a}} .status.ok{{color:#6ee7a8}}
  .empty{{color:#8a93a6;padding:40px 0}}
  code{{background:#1e222b;padding:1px 5px;border-radius:4px}}
 </style></head><body>
 <header><h1>Facetwork maps — local gallery</h1>
 <div class="sub">Served from MinIO <code>{bucket}</code> · {count} map(s) · nothing here is on the public site until you publish it</div>
-</header><main>{body}</main></body></html>"""
+</header><main>{body}</main>
+<script>
+function togglePub(btn){{
+  const f = btn.parentElement.querySelector('.pubform');
+  f.hidden = !f.hidden; if(!f.hidden) f.querySelector('input').focus();
+}}
+async function doPublish(btn, mapRel){{
+  const form = btn.parentElement, dest = form.querySelector('input').value.trim();
+  const status = form.querySelector('.status');
+  if(!dest){{ status.className='status err'; status.textContent='enter a destination path'; return; }}
+  if(!confirm('Publish this map to the PUBLIC site at "'+dest+'"?')) return;
+  btn.disabled = true; status.className='status'; status.textContent='publishing…';
+  try{{
+    const r = await fetch('/publish', {{method:'POST', headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{map: mapRel, dest: dest}})}});
+    const j = await r.json();
+    if(j.ok){{ status.className='status ok';
+      status.innerHTML='published → <a href="'+j.pages_url+'" target="_blank" rel="noopener">'+j.pages_url+'</a> (Pages may lag ~1 min)'; }}
+    else{{ status.className='status err'; status.textContent='failed: '+j.error; }}
+  }}catch(e){{ status.className='status err'; status.textContent='error: '+e; }}
+  btn.disabled = false;
+}}
+</script>
+</body></html>"""
 
 
-def render_gallery(maps: list[dict]) -> str:
+def _pub_control(m: dict, can_publish: bool) -> str:
+    if not can_publish:
+        return ('<div class="pub"><span class="status">Publishing disabled — no GitHub '
+                'token (set <code>GITHUB_TOKEN</code> or run <code>gh auth login</code>)</span></div>')
+    default_dest = f'{m["domain"]}/{m["name"]}'
+    return (
+        '<div class="pub">'
+        f'<button onclick="togglePub(this)">Publish to {escape(PUBLISH_REPO.split("/")[-1])} →</button>'
+        '<div class="pubform" hidden>'
+        f'<input value="{escape(default_dest)}" spellcheck="false" aria-label="destination path">'
+        f'<button onclick="doPublish(this,{json.dumps(m["map_rel"])})">Publish</button>'
+        '<span class="status"></span></div></div>')
+
+
+def render_gallery(maps: list[dict], can_publish: bool = False) -> str:
     if not maps:
         body = ('<div class="empty">No maps in the store yet. Run a map workflow '
                 '(its output lands in MinIO under <code>%s&lt;domain&gt;/maps/…</code>) '
@@ -152,10 +264,11 @@ def render_gallery(maps: list[dict]) -> str:
             layer_bit = f'{nlayers} layer(s) · ' if nlayers else ""
             meta = f'{layer_bit}{_human_size(int(m["size"] or 0))} · {escape(m["generated_at"][:10])}'
             cards.append(
-                f'<a class="card" href="{escape(m["url"])}" target="_blank" rel="noopener">'
-                f'<div class="t">{escape(_pretty(m["name"]))}</div>'
+                '<div class="card">'
+                f'<a class="t" href="{escape(m["url"])}" target="_blank" rel="noopener">{escape(_pretty(m["name"]))}</a>'
                 f'<div class="d">{escape(domain)}</div>'
-                f'<div class="meta">{meta}</div></a>')
+                f'<div class="meta">{meta}</div>'
+                f'{_pub_control(m, can_publish)}</div>')
         blocks.append(f'<h2>{escape(_pretty(domain))}</h2><div class="grid">{"".join(cards)}</div>')
     return _PAGE.format(bucket=escape(BUCKET), count=len(maps), body="".join(blocks))
 
@@ -182,7 +295,7 @@ class _Handler(BaseHTTPRequestHandler):
         s3 = self.server.s3  # type: ignore[attr-defined]
         if path in ("/", "/index.html"):
             try:
-                self._send(200, render_gallery(list_maps(s3)))
+                self._send(200, render_gallery(list_maps(s3), can_publish=self.server.can_publish))
             except Exception as e:  # pragma: no cover - surfaced to the browser
                 self._send(500, f"<h1>gallery error</h1><pre>{escape(str(e))}</pre>")
             return
@@ -206,6 +319,27 @@ class _Handler(BaseHTTPRequestHandler):
 
     do_HEAD = do_GET
 
+    def do_POST(self):  # noqa: N802
+        if self.path.split("?", 1)[0] != "/publish":
+            self._send(404, json.dumps({"ok": False, "error": "not found"}), "application/json")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            data = json.loads(self.rfile.read(length) or b"{}")
+        except Exception:
+            self._send(400, json.dumps({"ok": False, "error": "bad request body"}), "application/json")
+            return
+        map_rel = (data.get("map") or "").strip().strip("/")
+        dest = (data.get("dest") or "").strip()
+        label = (data.get("label") or "").strip()
+        # Only allow publishing a map that actually exists in the store (never an
+        # arbitrary prefix — the server may be reachable on the LAN).
+        if not map_rel or not any(m["map_rel"] == map_rel for m in list_maps(self.server.s3)):
+            self._send(400, json.dumps({"ok": False, "error": f"unknown map {map_rel!r}"}), "application/json")
+            return
+        result = publish_map(map_rel, dest, label)
+        self._send(200 if result.get("ok") else 400, json.dumps(result), "application/json")
+
     def log_message(self, fmt, *args):  # quieter logs
         pass
 
@@ -219,8 +353,13 @@ def serve(port: int, host: str = "0.0.0.0") -> None:
     except Exception as e:
         raise SystemExit(f"cannot reach bucket '{BUCKET}' at {ENDPOINT}: {e}\n"
                          f"  set FW_S3_ENDPOINT / FW_MAPS_BUCKET, or start MinIO.")
+    httpd.can_publish = publish_available()  # type: ignore[attr-defined]
     print(f"Facetwork maps gallery → http://localhost:{port}/   "
           f"(bucket {BUCKET} @ {ENDPOINT}, prefix {PREFIX!r})")
+    print("  publish → %s: %s" % (
+        PUBLISH_REPO,
+        "enabled (GitHub token found)" if httpd.can_publish
+        else "disabled (no GITHUB_TOKEN / gh auth)"))
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
