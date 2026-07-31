@@ -1,11 +1,13 @@
 """Local maps gallery — browse the map outputs sitting in MinIO/S3 without ever
 copying them to a git repo.
 
-Every domain writes its maps to the durable object store under
-``<prefix>/<domain>/maps/<name…>/index.html`` (+ a ``.meta.json`` sidecar). This
-service lists those objects, renders a gallery grouped by domain, and STREAMS each
-map straight from the bucket on request — so big maps/tiles/data live only in
-MinIO, and you publish just the ones you pick to the public site separately.
+Domains write their maps to the durable object store under either
+``<prefix>/<domain>/maps/<name…>/index.html`` (save-earth, health) or
+``<prefix>/<domain>/output/…/index.html`` (h1b, census-us) — both with a
+``.meta.json`` sidecar. This service lists those objects, renders a gallery grouped
+by domain, and STREAMS each map straight from the bucket on request — so big
+maps/tiles/data live only in MinIO, and you publish just the ones you pick to the
+public site separately.
 
 Run it via ``fw svc maps`` (see scripts/lib/svc/maps). Read-only; no bucket policy
 change, no anonymous access, nothing written back to the store.
@@ -21,7 +23,6 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
-import re
 import subprocess
 import threading
 from html import escape
@@ -51,7 +52,25 @@ _publish_lock = threading.Lock()  # serialize pushes to the one Pages repo
 
 # A map = a key ".../maps/<name…>/index.html" under PREFIX. The domain is the first
 # segment after PREFIX; the name is everything between "maps/" and "/index.html".
-_MAP_RE = re.compile(r"^" + re.escape(PREFIX) + r"(?P<domain>[^/]+)/maps/(?P<name>.+)/index\.html$")
+# Domains write map HTML under two conventions: <domain>/maps/<name>/index.html
+# (save-earth, health) and <domain>/output/…/index.html (h1b, census-us). Match both.
+def _classify(key: str):
+    """(domain, name, map_rel) for a map index.html, else None. map_rel is the key
+    minus PREFIX and the trailing /index.html (used for the view URL + publish)."""
+    if not key.startswith(PREFIX) or not key.endswith("/index.html"):
+        return None
+    segs = key[len(PREFIX):-len("/index.html")].split("/")
+    if len(segs) < 2:
+        return None
+    domain, sub = segs[0], segs[1:]
+    if sub[0] == "maps" and len(sub) >= 2:
+        name = "/".join(sub[1:])
+    elif sub[0] == "output":
+        tail = [s for s in sub[1:] if s != "metrics"]  # 'metrics' is a noise segment
+        name = "/".join(tail) if tail else domain
+    else:
+        return None
+    return domain, name, "/".join(segs)
 
 
 def _client():
@@ -130,12 +149,11 @@ def list_maps(s3) -> list[dict]:
             key = obj["Key"]
             if key.endswith("/index.html.meta.json"):
                 metas[key] = obj  # fetched lazily below
-            elif _MAP_RE.match(key):
+            elif _classify(key):
                 index_keys.append((key, obj.get("Size", 0),
                                    obj.get("LastModified").isoformat() if obj.get("LastModified") else ""))
     for key, size, mtime in index_keys:
-        m = _MAP_RE.match(key)
-        domain, name = m.group("domain"), m.group("name")
+        domain, name, map_rel = _classify(key)
         meta = {}
         meta_key = key + ".meta.json"
         if meta_key in metas:
@@ -149,7 +167,7 @@ def list_maps(s3) -> list[dict]:
             "domain": domain,
             "name": name,
             "url": "/m/" + key[len(PREFIX):],                      # key sans PREFIX
-            "map_rel": f"{domain}/maps/{name}",                     # for publish
+            "map_rel": map_rel,                                     # for view/publish
             "size": meta.get("size_bytes", size),
             "generated_at": meta.get("generated_at", mtime),
             "layers": extra.get("layers", []),

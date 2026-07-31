@@ -174,6 +174,15 @@ _mode_apply() {
 
     _mode_set_hosts "$hosts_ip"
 
+    # Source per-host API-key secrets so recreated runners keep them. The launchd
+    # fleet-agent wrapper sources this before applying; a `fw mode` switch must too,
+    # or the reconcile silently strips CENSUS_API_KEY / ANTHROPIC_API_KEY etc. from
+    # every runner (which broke census/h1b maps until re-applied).
+    if [ -f "$HOME/.facetwork/fleet-secrets.env" ]; then
+        set -a; . "$HOME/.facetwork/fleet-secrets.env"; set +a
+        echo "  sourced fleet-secrets.env (API keys → runners)"
+    fi
+
     echo "=== reconciling runners against '$target' infra (fleet agent apply) ==="
     FW_DATA_DIR="$data_dir" "$FW_LIB/fleet/agent" apply --data-dir "$data_dir" || {
         echo "ERROR: fleet agent apply failed — env is set but runners were not recreated." >&2
