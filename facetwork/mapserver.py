@@ -26,6 +26,7 @@ import os
 import socket
 import subprocess
 import threading
+import time
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
@@ -78,8 +79,34 @@ def _client():
     return boto3.client(
         "s3", endpoint_url=ENDPOINT, aws_access_key_id=ACCESS,
         aws_secret_access_key=SECRET,
-        config=_BotoConfig(signature_version="s3v4", retries={"max_attempts": 2}),
+        # Fail fast rather than hang: under heavy MinIO load (e.g. a big concurrent
+        # upload) an un-bounded list/get would block the request thread for minutes.
+        config=_BotoConfig(signature_version="s3v4", retries={"max_attempts": 2},
+                           connect_timeout=4, read_timeout=12),
     )
+
+
+# Cache the map listing so the gallery stays responsive when MinIO is busy: serve
+# the last good list (stale) rather than re-listing on every request / hanging.
+_maps_cache: dict = {"maps": None, "ts": 0.0}
+_maps_lock = threading.Lock()
+
+
+def cached_maps(s3, ttl: float = 20.0) -> list[dict]:
+    now = time.time()
+    with _maps_lock:
+        if _maps_cache["maps"] is not None and now - _maps_cache["ts"] < ttl:
+            return _maps_cache["maps"]
+    try:
+        m = list_maps(s3)
+    except Exception:
+        with _maps_lock:
+            if _maps_cache["maps"] is not None:
+                return _maps_cache["maps"]  # serve stale rather than error
+        raise
+    with _maps_lock:
+        _maps_cache["maps"], _maps_cache["ts"] = m, now
+    return m
 
 
 # --- publish (opt-in) ------------------------------------------------------
@@ -153,26 +180,22 @@ def list_maps(s3) -> list[dict]:
             elif _classify(key):
                 index_keys.append((key, obj.get("Size", 0),
                                    obj.get("LastModified").isoformat() if obj.get("LastModified") else ""))
+    # Render straight from the LIST results — size + last-modified are already
+    # there. We deliberately do NOT fetch each map's meta.json: that was an N+1 of
+    # sequential S3 GETs that made the page crawl (and hang under heavy MinIO load,
+    # e.g. a big concurrent upload). Layer counts came from meta.json; dropping them
+    # keeps the gallery instant. `metas` is unused now but the listing pass is free.
     for key, size, mtime in index_keys:
         domain, name, map_rel = _classify(key)
-        meta = {}
-        meta_key = key + ".meta.json"
-        if meta_key in metas:
-            try:
-                body = s3.get_object(Bucket=BUCKET, Key=meta_key)["Body"].read()
-                meta = json.loads(body)
-            except Exception:
-                meta = {}
-        extra = meta.get("extra", {}) or {}
         maps.append({
             "domain": domain,
             "name": name,
             "url": "/m/" + key[len(PREFIX):],                      # key sans PREFIX
             "map_rel": map_rel,                                     # for view/publish
-            "size": meta.get("size_bytes", size),
-            "generated_at": meta.get("generated_at", mtime),
-            "layers": extra.get("layers", []),
-            "layer_counts": extra.get("layer_counts", {}),
+            "size": size,
+            "generated_at": mtime,
+            "layers": [],
+            "layer_counts": {},
         })
     maps.sort(key=lambda x: x["generated_at"], reverse=True)
     return maps
@@ -321,9 +344,11 @@ class _Handler(BaseHTTPRequestHandler):
         s3 = self.server.s3  # type: ignore[attr-defined]
         if path in ("/", "/index.html"):
             try:
-                self._send(200, render_gallery(list_maps(s3), can_publish=self.server.can_publish))
+                self._send(200, render_gallery(cached_maps(s3), can_publish=self.server.can_publish))
             except Exception as e:  # pragma: no cover - surfaced to the browser
-                self._send(500, f"<h1>gallery error</h1><pre>{escape(str(e))}</pre>")
+                self._send(503, f"<h1>maps store busy</h1><p>Could not list the object "
+                                f"store (it may be under heavy load): <code>{escape(str(e))}</code>."
+                                f"<br>Retry in a moment.</p>")
             return
         if path == "/healthz":
             self._send(200, "ok", "text/plain")
