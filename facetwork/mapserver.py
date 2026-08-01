@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import socket
 import subprocess
 import threading
 from html import escape
@@ -369,6 +370,21 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
+def _lan_ip() -> str | None:
+    """This host's primary LAN IP (so the gallery URL works from other machines).
+    Uses a UDP socket with no data sent; returns None if only loopback resolves."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+        return ip if ip and not ip.startswith("127.") else None
+    except Exception:
+        return None
+
+
 def serve(port: int, host: str = "0.0.0.0") -> None:
     httpd = ThreadingHTTPServer((host, port), _Handler)
     httpd.s3 = _client()  # type: ignore[attr-defined]
@@ -379,8 +395,12 @@ def serve(port: int, host: str = "0.0.0.0") -> None:
         raise SystemExit(f"cannot reach bucket '{BUCKET}' at {ENDPOINT}: {e}\n"
                          f"  set FW_S3_ENDPOINT / FW_MAPS_BUCKET, or start MinIO.")
     httpd.can_publish = publish_available()  # type: ignore[attr-defined]
-    print(f"Facetwork maps gallery → http://localhost:{port}/   "
-          f"(bucket {BUCKET} @ {ENDPOINT}, prefix {PREFIX!r})")
+    lan = _lan_ip()
+    print("Facetwork maps gallery is up — view it at:")
+    print(f"    http://localhost:{port}/")
+    if lan:
+        print(f"    http://{lan}:{port}/   (from other machines on your network)")
+    print(f"  serving {BUCKET} @ {ENDPOINT} (prefix {PREFIX!r})")
     print("  publish → %s: %s" % (
         PUBLISH_REPO,
         "enabled (GitHub token found)" if httpd.can_publish
