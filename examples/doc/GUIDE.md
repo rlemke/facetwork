@@ -303,6 +303,7 @@ _DISPATCH = {
     f"{NAMESPACE}.FacetB": _handler_b,
 }
 
+
 def handle(payload: dict) -> dict:
     handler = _DISPATCH[payload["_facet_name"]]
     return handler(payload)
@@ -332,11 +333,15 @@ def register_my_handlers(poller):
     for fqn, func in _DISPATCH.items():
         poller.register(fqn, func)
 
+
 # RegistryRunner (database-driven)
 def register_handlers(runner):
     for facet_name in _DISPATCH:
-        runner.register_handler(facet_name=facet_name,
-            module_uri=f"file://{os.path.abspath(__file__)}", entrypoint="handle")
+        runner.register_handler(
+            facet_name=facet_name,
+            module_uri=f"file://{os.path.abspath(__file__)}",
+            entrypoint="handle",
+        )
 ```
 
 ## Running Any Example

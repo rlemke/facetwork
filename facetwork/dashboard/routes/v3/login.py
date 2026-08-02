@@ -67,12 +67,17 @@ def login_submit(
             return _render(request, setup_mode=True, email=email)
         if len(new_password) < _MIN_PASSWORD_LEN:
             return _render(
-                request, setup_mode=True, email=email,
+                request,
+                setup_mode=True,
+                email=email,
                 error=f"Password must be at least {_MIN_PASSWORD_LEN} characters.",
             )
         if new_password != confirm_password:
             return _render(
-                request, setup_mode=True, email=email, error="Passwords do not match.",
+                request,
+                setup_mode=True,
+                email=email,
+                error="Passwords do not match.",
             )
         user.set_password(new_password)
         store.save_user(user)
@@ -81,8 +86,11 @@ def login_submit(
 
     resp = RedirectResponse(url="/v3/workflows", status_code=303)
     resp.set_cookie(
-        SESSION_COOKIE, make_session(user.email),
-        max_age=SESSION_TTL_MS // 1000, httponly=True, samesite="lax",
+        SESSION_COOKIE,
+        make_session(user.email),
+        max_age=SESSION_TTL_MS // 1000,
+        httponly=True,
+        samesite="lax",
     )
     # Keep the legacy attribution cookie aligned with the logged-in identity.
     resp.set_cookie(CURRENT_USER_COOKIE, user.email, max_age=SESSION_TTL_MS // 1000)

@@ -53,6 +53,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
+from ..ast_features import known_features as _known_ast_features
 from .base_runner import BaseRunner
 from .dispatcher import RegistryDispatcher
 from .entities import (
@@ -69,7 +70,6 @@ from .persistence import PersistenceAPI
 from .runner_config import BaseRunnerConfig
 from .states import StepState
 from .types import AttributeValue, generate_id
-from ..ast_features import known_features as _known_ast_features
 
 logger = logging.getLogger(__name__)
 
@@ -493,9 +493,7 @@ class RegistryRunner(BaseRunner):
         # (script-environments.md §3 — the environment IS the capability).
         if provided_envs:
             while capacity > 0:
-                task = self._persistence.claim_script_task(
-                    provided_envs, server_id=self._server_id
-                )
+                task = self._persistence.claim_script_task(provided_envs, server_id=self._server_id)
                 if task is None:
                     break
                 self._submit_event(task)
@@ -786,7 +784,10 @@ class RegistryRunner(BaseRunner):
                     return  # lease reclaimed — the new owner produces the result
                 self._evaluator.continue_step(task.step_id, result)
                 self._resume_workflow(task.workflow_id, task.runner_id)
-                self._update_handled_stats(task.name, handled=True)
+                # NB: handled-stats tracking is a RunnerService feature
+                # (_handled_counts / _update_handled_stats); RegistryRunner has
+                # no such state, so calling it here would AttributeError. The
+                # lighter RegistryRunner simply doesn't record handled stats.
                 return
 
             if not self._dispatcher.can_dispatch(task.name):

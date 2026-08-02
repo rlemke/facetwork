@@ -130,7 +130,7 @@ class StepStmt(ASTNode):
     body: "AndThenBlock | None" = None
     catch: "CatchClause | None" = None
     extra_bodies: "list[AndThenBlock]" = field(default_factory=list)
-    after: list[str] = field(default_factory=list)      # NEW
+    after: list[str] = field(default_factory=list)  # NEW
 ```
 
 The emitter writes `"after": ["counties"]` **only when non-empty**, so every
@@ -150,7 +150,7 @@ One change, in `DependencyGraph.build`'s second pass:
 deps = graph._extract_dependencies(stmt.args, workflow_inputs)
 for mixin in stmt.mixins:
     deps |= graph._extract_dependencies(mixin.get("args", []), workflow_inputs)
-deps |= {graph.name_to_id[n] for n in stmt.after}        # NEW
+deps |= {graph.name_to_id[n] for n in stmt.after}  # NEW
 ```
 
 Everything downstream — readiness, the `_StepNotReady` deferral, the continuation

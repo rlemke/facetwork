@@ -410,12 +410,15 @@ evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
 result = evaluator.execute(workflow_ast, inputs={"x": 41}, program_ast=program_ast)
 # result.status == PAUSED (blocked at AddOne)
 
+
 # Agent processes the event
 def addone_handler(payload: dict) -> dict:
     return {"output": payload["input"] + 1}
 
+
 poller = AgentPoller(
-    persistence=store, evaluator=evaluator,
+    persistence=store,
+    evaluator=evaluator,
     config=AgentPollerConfig(service_name="demo-agent"),
 )
 poller.register("demo.AddOne", addone_handler)

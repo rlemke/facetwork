@@ -6,7 +6,6 @@ import pytest
 
 from facetwork.envbake import collect_environments, main
 
-
 GOOD = """
 namespace geo {
     environment PyGeo {

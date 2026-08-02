@@ -67,7 +67,10 @@ class TestSessionCookie:
 
         def req(cookie):
             scope = {
-                "type": "http", "method": "GET", "path": "/", "query_string": b"",
+                "type": "http",
+                "method": "GET",
+                "path": "/",
+                "query_string": b"",
                 "headers": [(b"cookie", f"{SESSION_COOKIE}={cookie}".encode())],
             }
             return Request(scope)
@@ -108,10 +111,15 @@ class TestLoginRoutes:
         r = tc.post("/login", data={"email": "ralph@test.local"})
         assert r.status_code == 200 and "Set your password" in r.text
         # Setting it logs in and stores the hash.
-        r = tc.post("/login", data={
-            "email": "ralph@test.local",
-            "new_password": "correct-horse", "confirm_password": "correct-horse",
-        }, follow_redirects=False)
+        r = tc.post(
+            "/login",
+            data={
+                "email": "ralph@test.local",
+                "new_password": "correct-horse",
+                "confirm_password": "correct-horse",
+            },
+            follow_redirects=False,
+        )
         assert r.status_code == 303
         assert "fw_session" in r.cookies
         assert store.get_user("ralph@test.local").has_password
@@ -150,8 +158,11 @@ class TestLoginRoutes:
         store.save_user(u)
 
         # login POST itself is exempt from the token guard
-        r = tc.post("/login", data={"email": "ralph@test.local", "password": "correct-horse"},
-                    follow_redirects=False)
+        r = tc.post(
+            "/login",
+            data={"email": "ralph@test.local", "password": "correct-horse"},
+            follow_redirects=False,
+        )
         assert r.status_code == 303
         # a mutating call with session but WITHOUT the bearer token is accepted
         r = tc.post("/api/runners/ghost/delete")

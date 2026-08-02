@@ -492,12 +492,18 @@ class TaskMixin(_MixinBase):
 
         Keep in behavioral lockstep with MemoryStore."""
         out: list[tuple[str, str]] = []
-        for doc in self._db.tasks.aggregate([
-            {"$match": {"state": "pending", "kind": "script",
-                        "environment_hash": {"$nin": ["", None]}}},
-            {"$group": {"_id": "$environment_hash",
-                        "workflow_id": {"$first": "$workflow_id"}}},
-        ]):
+        for doc in self._db.tasks.aggregate(
+            [
+                {
+                    "$match": {
+                        "state": "pending",
+                        "kind": "script",
+                        "environment_hash": {"$nin": ["", None]},
+                    }
+                },
+                {"$group": {"_id": "$environment_hash", "workflow_id": {"$first": "$workflow_id"}}},
+            ]
+        ):
             out.append((doc["_id"], doc.get("workflow_id") or ""))
         return sorted(out)
 

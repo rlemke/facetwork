@@ -614,10 +614,10 @@ local disk, HDFS, or S3/MinIO. There are two complementary entry points in
 ```python
 from facetwork.runtime.storage import get_fs
 
-fs = get_fs()                                  # backend chosen from config (below)
+fs = get_fs()  # backend chosen from config (below)
 data = fs.read_bytes("regions/california.osm.pbf")
 fs.write_json("out/summary.json", {"count": 42})
-text = fs.read_text("s3://other-bucket/notes.txt")   # explicit URI overrides default
+text = fs.read_text("s3://other-bucket/notes.txt")  # explicit URI overrides default
 ```
 
 Convenience methods: `open / read_bytes / read_text / read_json / write_bytes /

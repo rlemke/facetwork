@@ -35,6 +35,7 @@ Stores compiled FFL flow definitions including facets, workflows, blocks, and ge
 @dataclass
 class FlowIdentity:
     """Flow identification."""
+
     name: str
     path: str
     uuid: str
@@ -43,6 +44,7 @@ class FlowIdentity:
 @dataclass
 class FlowDefinition:
     """Compiled FFL flow definition."""
+
     uuid: str
     name: FlowIdentity
     namespaces: list[NamespaceDefinition] = field(default_factory=list)
@@ -114,6 +116,7 @@ Stores workflow entry point definitions that reference flows and starting steps.
 @dataclass
 class WorkflowDefinition:
     """Named workflow entry point."""
+
     uuid: str
     name: str
     namespace_id: str
@@ -164,6 +167,7 @@ Stores workflow execution instances with runtime state and parameters.
 @dataclass
 class RunnerDefinition:
     """Workflow execution instance."""
+
     uuid: str
     workflow_id: str
     workflow: WorkflowDefinition
@@ -171,9 +175,9 @@ class RunnerDefinition:
     step_id: str | None = None
     user: UserDefinition | None = None
     start_time: int = 0  # Execution start timestamp (ms)
-    end_time: int = 0    # Execution end timestamp (ms)
-    duration: int = 0    # Total execution duration (ms)
-    retain: int = 0      # Retention period (ms)
+    end_time: int = 0  # Execution end timestamp (ms)
+    duration: int = 0  # Total execution duration (ms)
+    retain: int = 0  # Retention period (ms)
     state: str = RunnerState.CREATED
     compiled_ast: dict | None = None  # Snapshotted program AST at workflow start
     workflow_ast: dict | None = None  # Snapshotted workflow node AST at workflow start
@@ -231,6 +235,7 @@ Stores step execution records tracking individual workflow step states.
 @dataclass
 class StepDefinition:
     """Step execution record."""
+
     uuid: str
     object_type: str
     runner_id: str
@@ -308,6 +313,7 @@ Task queue for asynchronous workflow operations.
 @dataclass
 class TaskDefinition:
     """Async task queue entry."""
+
     uuid: str
     name: str
     runner_id: str
@@ -315,8 +321,8 @@ class TaskDefinition:
     flow_id: str
     step_id: str
     state: str = "pending"
-    created: int = 0   # Creation timestamp (ms)
-    updated: int = 0   # Last updated timestamp (ms)
+    created: int = 0  # Creation timestamp (ms)
+    updated: int = 0  # Last updated timestamp (ms)
     error: Optional[dict] = None
     task_list_name: str = "default"
     data_type: str = ""
@@ -378,6 +384,7 @@ Audit and execution logging.
 @dataclass
 class LogDefinition:
     """Audit and execution log entry."""
+
     uuid: str
     order: int
     runner_id: str
@@ -385,8 +392,8 @@ class LogDefinition:
     object_id: str = ""
     object_type: str = ""
     note_originator: str = "workflow"  # workflow, agent
-    note_type: str = "info"           # error, info, warning
-    note_importance: int = 5          # 1=high, 5=normal, 10=low
+    note_type: str = "info"  # error, info, warning
+    note_importance: int = 5  # 1=high, 5=normal, 10=low
     message: str = ""
     state: str = ""
     line: int = 0
@@ -455,13 +462,14 @@ Agent and server registration for distributed processing.
 @dataclass
 class ServerDefinition:
     """Agent/server registration."""
+
     uuid: str
     server_group: str
     service_name: str
     server_name: str
     server_ips: list[str] = field(default_factory=list)
-    start_time: int = 0   # Server start timestamp (ms)
-    ping_time: int = 0    # Last ping timestamp (ms)
+    start_time: int = 0  # Server start timestamp (ms)
+    ping_time: int = 0  # Last ping timestamp (ms)
     topics: list[str] = field(default_factory=list)
     handlers: list[str] = field(default_factory=list)
     handled: list[HandledCount] = field(default_factory=list)
@@ -473,6 +481,7 @@ class ServerDefinition:
 @dataclass
 class HandledCount:
     """Event handling statistics."""
+
     handler: str
     handled: int = 0
     not_handled: int = 0
@@ -600,7 +609,6 @@ class DataServices(Protocol):
     def server(self) -> ServerDefinitionDAO:
         """Server registration."""
         ...
-
 ```
 
 ### DAO Protocol Definitions
@@ -730,8 +738,6 @@ class ServerDefinitionDAO(Protocol):
     def update_ping(self, uuid: str, ping_time: int) -> None:
         """Update server ping time."""
         ...
-
-
 ```
 
 ---

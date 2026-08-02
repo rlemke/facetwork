@@ -38,9 +38,7 @@ def _compiles(src: str) -> bool:
 
 
 def _wf(body: str) -> str:
-    return HEADER + (
-        "    workflow W() => (p: String) andThen {\n" + body + "\n    }\n}\n"
-    )
+    return HEADER + ("    workflow W() => (p: String) andThen {\n" + body + "\n    }\n}\n")
 
 
 class TestAfterMigrator:
@@ -224,21 +222,42 @@ class TestAfterMigrator:
         from facetwork.runtime import DependencyGraph
 
         def edges(text):
-            import json, subprocess, sys, tempfile, os
+            import json
+            import os
+            import subprocess
+            import sys
+            import tempfile
+
             fh = tempfile.NamedTemporaryFile("w", suffix=".ffl", delete=False)
-            fh.write(text); fh.close()
+            fh.write(text)
+            fh.close()
             out = subprocess.run(
-                [sys.executable, "-m", "facetwork.cli", "compile", "--compact",
-                 "--no-locations", "--primary", fh.name],
-                capture_output=True, text=True, env={"PYTHONPATH": "."})
+                [
+                    sys.executable,
+                    "-m",
+                    "facetwork.cli",
+                    "compile",
+                    "--compact",
+                    "--no-locations",
+                    "--primary",
+                    fh.name,
+                ],
+                capture_output=True,
+                text=True,
+                env={"PYTHONPATH": "."},
+            )
             os.unlink(fh.name)
             ast = json.loads(out.stdout)
-            wf = [d for d in ast["declarations"][0]["declarations"]
-                  if d.get("type") == "WorkflowDecl"][0]
+            wf = [
+                d for d in ast["declarations"][0]["declarations"] if d.get("type") == "WorkflowDecl"
+            ][0]
             g = DependencyGraph.from_ast(wf["body"], set())
             nm = {v: k for k, v in g.name_to_id.items()}
-            return {nm[i]: sorted(nm[x] for x in deps if x in nm)
-                    for i, deps in g.dependencies.items() if i in nm}
+            return {
+                nm[i]: sorted(nm[x] for x in deps if x in nm)
+                for i, deps in g.dependencies.items()
+                if i in nm
+            }
 
         src = _wf(
             "        a = Download()\n"

@@ -130,7 +130,7 @@ The `PlanToolUse` facet analyzes the query and produces a strategy:
     "search_queries": ["quantum computing aspect_0", ...],
     "calculation": "relevance(quantum computing)",
     "code_snippet": "analyze('quantum computing')",
-    "tool_order": ["search", "calculate", "execute"]
+    "tool_order": ["search", "calculate", "execute"],
 }
 ```
 
@@ -191,7 +191,9 @@ Replace stubs with API clients:
 
 ```python
 def web_search(query, max_results=5):
-    response = requests.get("https://api.search.com/search", params={"q": query, "limit": max_results})
+    response = requests.get(
+        "https://api.search.com/search", params={"q": query, "limit": max_results}
+    )
     return response.json()
 ```
 

@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 from ..ast import Program, StepStmt
 from ..parser import FFLParser
@@ -213,13 +214,15 @@ def migrate_source(source: str) -> AfterMigrationResult:
 
     result = AfterMigrationResult(source=source)
     # Line-based edits, applied bottom-up so earlier locations stay valid.
-    rewrites: list[tuple[int, str, str, str]] = []  # (line, note, old_line, new_line)
+    # (line, note, old_line, new_line-or-(new_line,target), end=(line,col)|None)
+    rewrites: list[tuple[int, str, str, Any, Any]] = []
 
     for step in steps:
         arg = next((a for a in step.call.args if a.name == PARAM_NAME), None)
         if arg is None:
             continue
-        line = (arg.location or step.location).line if (arg.location or step.location) else 0
+        _loc = arg.location or step.location
+        line = _loc.line if _loc else 0
         value = arg.value
 
         target: str | None = None
@@ -284,9 +287,7 @@ def migrate_source(source: str) -> AfterMigrationResult:
                 (line, f"step '{step.name}': no end location for the call — rewrite by hand")
             )
             continue
-        rewrites.append(
-            (line, note, old_line, new_line if drop_only else (new_line, target), end)  # type: ignore[arg-type]
-        )
+        rewrites.append((line, note, old_line, new_line if drop_only else (new_line, target), end))
 
     if not rewrites:
         return result

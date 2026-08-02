@@ -777,23 +777,25 @@ A runner claims work by issuing a `find_one_and_update`:
 
 ```python
 doc = tasks.find_one_and_update(
-  {
-    "state": "pending",
-    "name": {"$in": eligible_task_names},
-    "task_list_name": self.task_list,
-    "$or": [
-      {"next_retry_after": {"$exists": False}},
-      {"next_retry_after": 0},
-      {"next_retry_after": {"$lte": now}},
-    ],
-  },
-  {"$set": {
-    "state": "running",
-    "updated": now,
-    "lease_expires": now + lease_ms,
-    "server_id": self.server_id,
-  }},
-  return_document=ReturnDocument.AFTER,
+    {
+        "state": "pending",
+        "name": {"$in": eligible_task_names},
+        "task_list_name": self.task_list,
+        "$or": [
+            {"next_retry_after": {"$exists": False}},
+            {"next_retry_after": 0},
+            {"next_retry_after": {"$lte": now}},
+        ],
+    },
+    {
+        "$set": {
+            "state": "running",
+            "updated": now,
+            "lease_expires": now + lease_ms,
+            "server_id": self.server_id,
+        }
+    },
+    return_document=ReturnDocument.AFTER,
 )
 ```
 
@@ -843,19 +845,21 @@ If a runner claims a task and then dies — kernel panic, OOM, power failure, a 
 
 ```python
 doc = tasks.find_one_and_update(
-  {
-    "state": "running",
-    "name": {"$in": eligible_task_names},
-    "task_list_name": self.task_list,
-    "lease_expires": {"$lt": now, "$gt": 0},
-  },
-  {"$set": {
-    "state": "running",
-    "updated": now,
-    "lease_expires": now + lease_ms,
-    "server_id": self.server_id,
-  }},
-  return_document=ReturnDocument.AFTER,
+    {
+        "state": "running",
+        "name": {"$in": eligible_task_names},
+        "task_list_name": self.task_list,
+        "lease_expires": {"$lt": now, "$gt": 0},
+    },
+    {
+        "$set": {
+            "state": "running",
+            "updated": now,
+            "lease_expires": now + lease_ms,
+            "server_id": self.server_id,
+        }
+    },
+    return_document=ReturnDocument.AFTER,
 )
 ```
 
@@ -1015,9 +1019,11 @@ from facetwork.runtime import RegistryRunner
 
 runner = RegistryRunner.from_environment()
 
+
 @runner.handler("ns.MyFacet")
 def my_facet(payload: dict) -> dict:
     return {"result": payload["input"] + " processed"}
+
 
 runner.run()
 ```

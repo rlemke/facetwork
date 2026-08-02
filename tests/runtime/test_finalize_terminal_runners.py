@@ -45,37 +45,61 @@ def store():
     s.close()
 
 
-def _seed(store, *, step_states, task_states, age_ms=3_600_000, root_state=None,
-          runner_state="running"):
+def _seed(
+    store, *, step_states, task_states, age_ms=3_600_000, root_state=None, runner_state="running"
+):
     now = int(time.time() * 1000)
-    store._db.runners.insert_one({
-        "uuid": RUNNER,
-        "workflow_id": WF,
-        "state": runner_state,
-        "start_time": now - age_ms,
-        "workflow": {"name": "test.Workflow"},
-    })
+    store._db.runners.insert_one(
+        {
+            "uuid": RUNNER,
+            "workflow_id": WF,
+            "state": runner_state,
+            "start_time": now - age_ms,
+            "workflow": {"name": "test.Workflow"},
+        }
+    )
     if root_state:
-        store._db.steps.insert_one({
-            "uuid": "root", "workflow_id": WF, "state": root_state,
-            "object_type": "Workflow", "statement_name": "Workflow",
-        })
+        store._db.steps.insert_one(
+            {
+                "uuid": "root",
+                "workflow_id": WF,
+                "state": root_state,
+                "object_type": "Workflow",
+                "statement_name": "Workflow",
+            }
+        )
     for i, st in enumerate(step_states):
-        store._db.steps.insert_one({
-            "uuid": f"s{i}", "workflow_id": WF, "state": st,
-            "object_type": "VariableAssignment", "statement_name": f"s{i}",
-        })
+        store._db.steps.insert_one(
+            {
+                "uuid": f"s{i}",
+                "workflow_id": WF,
+                "state": st,
+                "object_type": "VariableAssignment",
+                "statement_name": f"s{i}",
+            }
+        )
     for i, st in enumerate(task_states):
-        store._db.tasks.insert_one({
-            "uuid": f"t{i}", "workflow_id": WF, "step_id": f"s{i}",
-            "runner_id": RUNNER, "flow_id": "f", "name": "T", "state": st,
-        })
+        store._db.tasks.insert_one(
+            {
+                "uuid": f"t{i}",
+                "workflow_id": WF,
+                "step_id": f"s{i}",
+                "runner_id": RUNNER,
+                "flow_id": "f",
+                "name": "T",
+                "state": st,
+            }
+        )
 
 
 @needs_mongomock
 def test_finalizes_a_runner_whose_work_is_done(store):
-    _seed(store, step_states=["state.statement.Complete"], task_states=["completed"],
-          root_state="state.statement.Complete")
+    _seed(
+        store,
+        step_states=["state.statement.Complete"],
+        task_states=["completed"],
+        root_state="state.statement.Complete",
+    )
     out = store.finalize_terminal_runners()
     assert len(out) == 1
     assert out[0]["state"] == "completed"
@@ -90,17 +114,24 @@ def test_dead_lettered_tasks_count_as_terminal(store):
     exactly the workflows it exists to finalise — caught only by running it
     against the real stuck workflow.
     """
-    _seed(store, step_states=["state.statement.Complete", "state.statement.Error"],
-          task_states=["completed", "dead_letter"],
-          root_state="state.statement.Complete")
+    _seed(
+        store,
+        step_states=["state.statement.Complete", "state.statement.Error"],
+        task_states=["completed", "dead_letter"],
+        root_state="state.statement.Complete",
+    )
     out = store.finalize_terminal_runners()
     assert len(out) == 1, "a dead-lettered task must not block finalization"
 
 
 @needs_mongomock
 def test_root_error_finalizes_as_failed(store):
-    _seed(store, step_states=["state.statement.Error"], task_states=["failed"],
-          root_state="state.statement.Error")
+    _seed(
+        store,
+        step_states=["state.statement.Error"],
+        task_states=["failed"],
+        root_state="state.statement.Error",
+    )
     out = store.finalize_terminal_runners()
     assert out and out[0]["state"] == "failed"
     assert store._db.runners.find_one({"uuid": RUNNER})["state"] == "failed"
@@ -108,24 +139,37 @@ def test_root_error_finalizes_as_failed(store):
 
 @needs_mongomock
 def test_never_touches_a_workflow_with_a_running_task(store):
-    _seed(store, step_states=["state.statement.Complete"], task_states=["running"],
-          root_state="state.statement.Complete")
+    _seed(
+        store,
+        step_states=["state.statement.Complete"],
+        task_states=["running"],
+        root_state="state.statement.Complete",
+    )
     assert store.finalize_terminal_runners() == []
     assert store._db.runners.find_one({"uuid": RUNNER})["state"] == "running"
 
 
 @needs_mongomock
 def test_never_touches_a_workflow_with_a_non_terminal_step(store):
-    _seed(store, step_states=["state.statement.blocks.Begin"], task_states=["completed"],
-          root_state="state.statement.Complete")
+    _seed(
+        store,
+        step_states=["state.statement.blocks.Begin"],
+        task_states=["completed"],
+        root_state="state.statement.Complete",
+    )
     assert store.finalize_terminal_runners() == []
 
 
 @needs_mongomock
 def test_respects_the_age_window(store):
     """Never race a workflow that just finished a moment ago."""
-    _seed(store, step_states=["state.statement.Complete"], task_states=["completed"],
-          root_state="state.statement.Complete", age_ms=5_000)
+    _seed(
+        store,
+        step_states=["state.statement.Complete"],
+        task_states=["completed"],
+        root_state="state.statement.Complete",
+        age_ms=5_000,
+    )
     assert store.finalize_terminal_runners() == []
     assert len(store.finalize_terminal_runners(min_age_ms=1_000)) == 1
 
@@ -139,6 +183,11 @@ def test_ignores_a_runner_with_no_steps(store):
 
 @needs_mongomock
 def test_already_terminal_runners_are_left_alone(store):
-    _seed(store, step_states=["state.statement.Complete"], task_states=["completed"],
-          root_state="state.statement.Complete", runner_state="completed")
+    _seed(
+        store,
+        step_states=["state.statement.Complete"],
+        task_states=["completed"],
+        root_state="state.statement.Complete",
+        runner_state="completed",
+    )
     assert store.finalize_terminal_runners() == []

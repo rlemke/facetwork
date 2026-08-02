@@ -26,6 +26,7 @@ def _now_ms() -> int:
 
     return int(time.time() * 1000)
 
+
 # How many passes over the remaining stranded steps to attempt. resume_step() is
 # O(depth) and cascades to parents, so one pass usually clears the set; a few
 # extra rounds cover a parent that only becomes resumable once its children have
@@ -103,9 +104,7 @@ def repair_workflow(
                 result["stranded_resumed"] += 1
             except Exception:
                 failed.append(step_id)
-                logger.debug(
-                    "Repair: resume failed for step %s", step_id[:12], exc_info=True
-                )
+                logger.debug("Repair: resume failed for step %s", step_id[:12], exc_info=True)
         todo = failed
 
     result["stranded_unresolved"] = len(todo)
@@ -118,10 +117,12 @@ def repair_workflow(
     # non-terminal tasks or steps).
     result["runner_completed"] = False
     if not todo and hasattr(store, "_db"):
-        nonterminal_tasks = store._db.tasks.count_documents({
-            "workflow_id": workflow_id,
-            "state": {"$nin": ["completed", "failed", "ignored", "canceled", "cancelled"]},
-        })
+        nonterminal_tasks = store._db.tasks.count_documents(
+            {
+                "workflow_id": workflow_id,
+                "state": {"$nin": ["completed", "failed", "ignored", "canceled", "cancelled"]},
+            }
+        )
         from .states import StepState
 
         nonterminal_steps = sum(
@@ -142,8 +143,7 @@ def repair_workflow(
 
     if todo:
         result["stranded_error"] = (
-            f"{len(todo)} stranded step(s) could not be resumed after "
-            f"{_MAX_RESUME_ROUNDS} rounds"
+            f"{len(todo)} stranded step(s) could not be resumed after {_MAX_RESUME_ROUNDS} rounds"
         )
     logger.info(
         "Repair: resumed %d/%d stranded step(s) in workflow %s",

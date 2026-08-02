@@ -239,6 +239,7 @@ def resolve_infra_ip(*, log=None) -> str | None:
     inside a container). This is the same address `extra_hosts` should carry."""
     try:
         from facetwork.servers import catalog as _srv
+
         infra = _srv.infra()
         ip = _srv.resolve_ip(infra) if infra else None
         if ip and (ip.startswith("127.") or ip == "::1"):
@@ -270,9 +271,12 @@ def _rewrite_hosts(content: str, ip: str, names=INFRA_HOST_NAMES) -> str:
 
 def _runner_containers() -> list[str]:
     try:
-        out = subprocess.run(["docker", "ps", "--format", "{{.Names}}",
-                              "--filter", "name=facetwork-runner-"],
-                             capture_output=True, text=True, timeout=15)
+        out = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}", "--filter", "name=facetwork-runner-"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
         return [n for n in out.stdout.split() if n]
     except Exception:
         return []
@@ -288,16 +292,29 @@ def refresh_container_hosts(ip: str, *, log=None) -> list[str]:
     patched: list[str] = []
     for c in _runner_containers():
         try:
-            cur = subprocess.run(["docker", "exec", c, "getent", "hosts", "afl-mongodb"],
-                                 capture_output=True, text=True, timeout=10).stdout.split()
+            cur = subprocess.run(
+                ["docker", "exec", c, "getent", "hosts", "afl-mongodb"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            ).stdout.split()
             cur_ip = cur[0] if cur else None
             if cur_ip == ip:
                 continue
-            content = subprocess.run(["docker", "exec", c, "cat", "/etc/hosts"],
-                                     capture_output=True, text=True, timeout=10).stdout
-            subprocess.run(["docker", "exec", "-i", c, "sh", "-c", "cat > /etc/hosts"],
-                           input=_rewrite_hosts(content, ip), text=True,
-                           check=True, timeout=15, capture_output=True)
+            content = subprocess.run(
+                ["docker", "exec", c, "cat", "/etc/hosts"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            ).stdout
+            subprocess.run(
+                ["docker", "exec", "-i", c, "sh", "-c", "cat > /etc/hosts"],
+                input=_rewrite_hosts(content, ip),
+                text=True,
+                check=True,
+                timeout=15,
+                capture_output=True,
+            )
             patched.append(c)
             say(f"drift: {c} afl-* {cur_ip} → {ip} (runner auto-reconnects)")
         except Exception as exc:  # noqa: BLE001 - one bad container shouldn't stop the rest

@@ -150,7 +150,7 @@ Implicit defaults (`defaultRetry`, `defaultTimeout`, `defaultGPU`) provide fallb
 The training stub derives loss and accuracy from hyperparameters:
 
 ```python
-raw_loss = lr * 10.0 + 1/(epochs+1) + abs(dropout - 0.25) * 0.5
+raw_loss = lr * 10.0 + 1 / (epochs + 1) + abs(dropout - 0.25) * 0.5
 accuracy = sigmoid(1 / raw_loss)  # higher lr → higher loss → lower accuracy
 ```
 
@@ -174,6 +174,7 @@ Replace `train_model_stub` with actual training:
 ```python
 def train_model(dataset, hyperparams, model_config):
     import torch
+
     model = build_model(model_config)
     optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams["learning_rate"])
     # ... training loop ...

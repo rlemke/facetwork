@@ -68,11 +68,13 @@ class TestCatchStatesAreSwept:
 
     def test_prior_blocking_states_still_swept(self, store):
         # No regression: the pre-existing stuck states remain covered.
-        for i, st in enumerate((
-            StepState.EVENT_TRANSMIT,
-            StepState.STATEMENT_BLOCKS_CONTINUE,
-            StepState.BLOCK_EXECUTION_CONTINUE,
-        )):
+        for i, st in enumerate(
+            (
+                StepState.EVENT_TRANSMIT,
+                StepState.STATEMENT_BLOCKS_CONTINUE,
+                StepState.BLOCK_EXECUTION_CONTINUE,
+            )
+        ):
             s = _step("wf-prior", f"p{i}", st)
             if st == StepState.EVENT_TRANSMIT:
                 s.transition.request_transition = True  # only "requesting" ET is stuck
@@ -84,5 +86,3 @@ class TestCatchStatesAreSwept:
         store.save_step(_step("wf-done", "done-1", StepState.STATEMENT_COMPLETE))
         assert store.get_stuck_steps_for_workflow("wf-done") == []
         assert "wf-done" not in store.get_pending_resume_workflow_ids()
-
-

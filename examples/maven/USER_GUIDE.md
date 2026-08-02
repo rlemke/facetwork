@@ -143,6 +143,7 @@ _DISPATCH = {
     f"{NAMESPACE}.RunMavenPlugin": _run_maven_plugin_handler,
 }
 
+
 def handle(payload: dict) -> dict:
     handler = _DISPATCH[payload["_facet_name"]]
     return handler(payload)

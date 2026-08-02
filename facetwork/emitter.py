@@ -18,7 +18,6 @@ import json
 from typing import Any
 
 from .ast import (
-    EnvironmentDecl,
     AndThenBlock,
     ArrayLiteral,
     ArrayType,
@@ -29,11 +28,11 @@ from .ast import (
     CatchClause,
     ConcatExpr,
     DocComment,
+    EnvironmentDecl,
     EventFacetDecl,
     FacetDecl,
     FacetSig,
     ForeachClause,
-    ForeachLimit,
     ImplicitDecl,
     IndexExpr,
     Literal,

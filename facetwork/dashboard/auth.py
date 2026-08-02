@@ -76,7 +76,7 @@ def make_session(email: str, *, now_ms: int | None = None) -> str:
     return f"{payload}|{_sign(payload)}"
 
 
-def read_session(request: "Request") -> str | None:
+def read_session(request: Request) -> str | None:
     """The session's email when the cookie is present, validly signed, and
     unexpired — else None."""
     import time

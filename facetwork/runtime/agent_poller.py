@@ -60,6 +60,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
+from ..ast_features import known_features as _known_ast_features
 from .entities import (
     RunnerState,
     ServerDefinition,
@@ -73,7 +74,6 @@ from .evaluator import Evaluator, ExecutionResult, ExecutionStatus
 from .persistence import PersistenceAPI
 from .runner_config import BaseRunnerConfig
 from .types import AttributeValue, generate_id
-from ..ast_features import known_features as _known_ast_features
 
 logger = logging.getLogger(__name__)
 
@@ -354,7 +354,7 @@ class AgentPoller:
                 task_names=task_names,
                 task_list=self._poll_task_lists(),
                 server_id=self._server_id,
-                    known_features=_known_ast_features(),
+                known_features=_known_ast_features(),
             )
             if task is None:
                 break
@@ -550,7 +550,7 @@ class AgentPoller:
                 task_names=task_names,
                 task_list=self._poll_task_lists(),
                 server_id=self._server_id,
-                    known_features=_known_ast_features(),
+                known_features=_known_ast_features(),
             )
             if task is None:
                 break

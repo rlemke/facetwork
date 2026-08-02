@@ -228,7 +228,7 @@ class ExecutionContext:
             if container:
                 catch_ast = self._find_statement_catch(container)
                 if catch_ast and "when" not in catch_ast:
-                    body_ast: dict = {"type": "AndThenBlock"}
+                    body_ast = {"type": "AndThenBlock"}
                     for key in ("steps", "yield", "yields"):
                         if key in catch_ast:
                             body_ast[key] = catch_ast[key]

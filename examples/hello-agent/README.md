@@ -90,9 +90,7 @@ SUCCESS: Hello, World!
 To handle different events, register additional handlers:
 
 ```python
-poller.register("my.namespace.MyEvent", lambda payload: {
-    "output": do_something(payload["input"])
-})
+poller.register("my.namespace.MyEvent", lambda payload: {"output": do_something(payload["input"])})
 ```
 
 For production with MongoDB:

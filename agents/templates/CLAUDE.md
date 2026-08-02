@@ -279,9 +279,7 @@ store = MongoStore(config.mongodb)
 evaluator = Evaluator(persistence=store, telemetry=Telemetry())
 
 poller = AgentPoller(
-    persistence=store,
-    evaluator=evaluator,
-    config=AgentPollerConfig(service_name="my-agent")
+    persistence=store, evaluator=evaluator, config=AgentPollerConfig(service_name="my-agent")
 )
 
 poller.register("ns.MyEvent", lambda data: {"output": process(data)})

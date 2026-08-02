@@ -96,6 +96,7 @@ This example uses `MemoryStore` (in-process). For distributed execution, swap to
 
 ```python
 from afl.runtime.mongo_store import MongoStore
+
 store = MongoStore(connection_string="mongodb://localhost:27017", database_name="afl")
 ```
 
@@ -119,9 +120,7 @@ workflow GreetAndFarewell(name: String) => (hello: String, goodbye: String) andT
 ### Register a handler for the new facet
 
 ```python
-poller.register("hello.Farewell", lambda payload: {
-    "message": f"Goodbye, {payload['name']}!"
-})
+poller.register("hello.Farewell", lambda payload: {"message": f"Goodbye, {payload['name']}!"})
 ```
 
 ## Next Steps

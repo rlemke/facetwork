@@ -72,15 +72,27 @@ def _resolve_python_requires(requires: list[str]) -> tuple[list[str], bool]:
         return [s.strip() for s in requires], True
     try:
         proc = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--dry-run", "--quiet",
-             "--report", "-", *requires],
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--dry-run",
+                "--quiet",
+                "--report",
+                "-",
+                *requires,
+            ],
             capture_output=True,
             text=True,
             timeout=300,
         )
         if proc.returncode != 0:
-            logger.warning("Environment resolution failed (pip exit %d): %s",
-                           proc.returncode, proc.stderr.strip()[:400])
+            logger.warning(
+                "Environment resolution failed (pip exit %d): %s",
+                proc.returncode,
+                proc.stderr.strip()[:400],
+            )
             return [s.strip() for s in requires], False
         report = json.loads(proc.stdout)
         pins = sorted(
@@ -119,8 +131,10 @@ def manifest_hash(manifest: dict) -> str:
     Only fields that change what actually runs participate (language + pins);
     the loose ``requires`` are provenance, not identity.
     """
-    identity = {"language": manifest.get("language", ""),
-                "pins": sorted(manifest.get("pins") or [])}
+    identity = {
+        "language": manifest.get("language", ""),
+        "pins": sorted(manifest.get("pins") or []),
+    }
     return hashlib.sha256(
         json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()[:16]
@@ -177,8 +191,7 @@ def discover_provided_environments() -> list[str]:
     root = env_root()
     try:
         return sorted(
-            d for d in os.listdir(root)
-            if os.path.exists(os.path.join(root, d, "bin", "python"))
+            d for d in os.listdir(root) if os.path.exists(os.path.join(root, d, "bin", "python"))
         )
     except OSError:
         return []

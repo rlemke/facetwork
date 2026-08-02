@@ -16,6 +16,12 @@ import sys
 
 import pytest
 
+# osm-equity's analysis handlers depend on scipy/numpy (an optional example dep
+# CI does not install). Skip the whole module cleanly when scipy is absent, the
+# same way other optional-dependency example tests do — rather than erroring.
+pytest.importorskip("scipy")
+pytest.importorskip("numpy")
+
 _EXAMPLE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _REPO_ROOT = os.path.abspath(os.path.join(_EXAMPLE_ROOT, "..", ".."))
 _FFL = os.path.join(_EXAMPLE_ROOT, "ffl", "osm_equity.ffl")

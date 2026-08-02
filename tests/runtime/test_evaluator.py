@@ -2726,9 +2726,7 @@ class TestForeachExecution:
                 },
             },
         }
-        result = evaluator.execute(
-            ast, inputs={"items": []}, program_ast={"declarations": [ast]}
-        )
+        result = evaluator.execute(ast, inputs={"items": []}, program_ast={"declarations": [ast]})
         assert result.success is True
         assert result.status == ExecutionStatus.COMPLETED
 
@@ -6099,6 +6097,7 @@ class TestCatchBlockExecution:
         a failed catch sub-block. Regression for the osm.emergency finding #7
         verification run: the catch fired but the step still errored with
         'Catch block has N errored sub-block(s)'."""
+
         class _Dispatcher:
             def can_dispatch(self, facet_name: str) -> bool:
                 return facet_name in ("Risky", "Marker")
