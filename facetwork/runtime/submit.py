@@ -289,8 +289,10 @@ def main(args: list[str] | None = None) -> int:
 
     env_hashes = annotate_program(program_dict)
     if env_hashes:
-        print(f"Froze {len(env_hashes)} environment manifest(s): "
-              + ", ".join(f"{n}@{h[:8]}" for n, h in sorted(env_hashes.items())))
+        print(
+            f"Froze {len(env_hashes)} environment manifest(s): "
+            + ", ".join(f"{n}@{h[:8]}" for n, h in sorted(env_hashes.items()))
+        )
 
     # -------------------------------------------------------------------------
     # 4. Find workflow and extract default inputs

@@ -90,6 +90,8 @@ class BaseRunner:
     # active work items: (future, task_id, claimed_at_ms) — the tuple shape lets
     # the shared _cleanup_futures reap execution-timed-out handlers.
     _active_futures: list[tuple[Future, str, int]]
+    # cached provided-environments manifest hashes; None means "re-discover"
+    _provided_envs_cache: list[Any] | None = None
     _execution_timeout_ms: int
     # Per-workflow resume locks + pending-requeue set (see _resume_with_lock).
     _resume_locks: dict[str, threading.Lock]
@@ -150,9 +152,7 @@ class BaseRunner:
 
         envs = set(getattr(self._config, "provided_environments", None) or [])
         envs.update(
-            e.strip()
-            for e in os.environ.get("FW_PROVIDED_ENVS", "").split(",")
-            if e.strip()
+            e.strip() for e in os.environ.get("FW_PROVIDED_ENVS", "").split(",") if e.strip()
         )
         envs.update(discover_provided_environments())
         self._provided_envs_cache = sorted(envs)
@@ -202,8 +202,10 @@ class BaseRunner:
             if env_hash in provided or retry_after.get(env_hash, 0) > now:
                 continue
             manifest = self._manifest_for_hash(env_hash, workflow_id)
-            if manifest is None or (manifest.get("language") or "") != "python" or not manifest.get(
-                "resolved", True
+            if (
+                manifest is None
+                or (manifest.get("language") or "") != "python"
+                or not manifest.get("resolved", True)
             ):
                 retry_after[env_hash] = now + self._ENV_MATZ_BACKOFF_MS
                 continue
@@ -269,8 +271,9 @@ class BaseRunner:
         workflow_ast = self._load_workflow_ast(task.workflow_id)
         program_ast = self._program_ast_cache.get(task.workflow_id)
         if not program_ast:
-            logger.warning("Script task %s: no program AST for workflow %s",
-                           task.uuid, task.workflow_id)
+            logger.warning(
+                "Script task %s: no program AST for workflow %s", task.uuid, task.workflow_id
+            )
             return None
         from .evaluator import ExecutionContext
         from .persistence import IterationChanges
@@ -292,15 +295,15 @@ class BaseRunner:
             if isinstance(body, dict) and body.get("type") == "ScriptBlock":
                 script_def = body
         if script_def is None:
-            logger.warning("Script task %s: facet %s has no script block",
-                           task.uuid, task.name)
+            logger.warning("Script task %s: facet %s has no script block", task.uuid, task.name)
             return None
         interpreter = interpreter_for_hash(task.environment_hash)
         if interpreter is None:
             logger.warning(
                 "Script task %s: environment %s not materialized on this host "
                 "despite being advertised — releasing",
-                task.uuid, task.environment_hash,
+                task.uuid,
+                task.environment_hash,
             )
             self._provided_envs_cache = None  # re-discover on next poll
             return None
@@ -319,7 +322,7 @@ class BaseRunner:
             env_decl = environment_for_decl(program_ast, env_ref, ns) or {}
             pins = (env_decl.get("manifest") or {}).get("pins") or []
             for pin in pins:
-                pkg = re.split(r"[=<>\[!~]", pin, 1)[0].strip().lower()
+                pkg = re.split(r"[=<>\[!~]", pin, maxsplit=1)[0].strip().lower()
                 if pkg:
                     extra_modules.append(pkg)
                     extra_modules.append(pkg.replace("-", "_"))

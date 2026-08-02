@@ -37,8 +37,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.resolve:
         ip = catalog.resolve_ip(args.resolve)
         if not ip:
-            print(f"cannot resolve '{args.resolve}' (unknown entry or resolution failed)",
-                  file=sys.stderr)
+            print(
+                f"cannot resolve '{args.resolve}' (unknown entry or resolution failed)",
+                file=sys.stderr,
+            )
             return 1
         print(ip)
         return 0
@@ -68,9 +70,11 @@ def main(argv: list[str] | None = None) -> int:
         if s.get("ip_pin"):
             tags.append("pinned")
         alias = ",".join(s.get("aliases") or [])
-        print(f"  {s.get('name', '?'):<18} {s.get('group', '-'):<8} {ip:<16}"
-              f" {('[' + ' '.join(tags) + ']') if tags else '':<9}"
-              f" {s.get('purpose', '')}" + (f"  (aliases: {alias})" if alias else ""))
+        print(
+            f"  {s.get('name', '?'):<18} {s.get('group', '-'):<8} {ip:<16}"
+            f" {('[' + ' '.join(tags) + ']') if tags else '':<9}"
+            f" {s.get('purpose', '')}" + (f"  (aliases: {alias})" if alias else "")
+        )
     return 0
 
 

@@ -109,10 +109,10 @@ def main(argv: list[str] | None = None) -> int:
         prog="python -m facetwork.envbake",
         description="Materialize declared script environments into FW_ENV_ROOT",
     )
-    ap.add_argument("--root", action="append", default=[],
-                    help="Directory to sweep for *.ffl (repeatable)")
-    ap.add_argument("--check", action="store_true",
-                    help="List environments without materializing")
+    ap.add_argument(
+        "--root", action="append", default=[], help="Directory to sweep for *.ffl (repeatable)"
+    )
+    ap.add_argument("--check", action="store_true", help="List environments without materializing")
     args = ap.parse_args(argv)
     roots = args.root or ["/opt", "/app/examples"]
 
@@ -130,8 +130,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"envbake: SKIP {qualified}@{h} language={lang} (provided-only)")
             continue
         if not manifest.get("resolved", True):
-            print(f"envbake: FAIL {qualified}@{h} — manifest unresolved "
-                  f"(loose specs and resolution unavailable): {manifest.get('requires')}")
+            print(
+                f"envbake: FAIL {qualified}@{h} — manifest unresolved "
+                f"(loose specs and resolution unavailable): {manifest.get('requires')}"
+            )
             failures += 1
             continue
         if args.check:
@@ -145,9 +147,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"envbake: FAIL {qualified}@{h}: {exc}", file=sys.stderr)
             failures += 1
     if failures:
-        print(f"envbake: {failures} environment(s) failed — failing the build "
-              f"(a half-provided image silently strands env-tagged tasks)",
-              file=sys.stderr)
+        print(
+            f"envbake: {failures} environment(s) failed — failing the build "
+            f"(a half-provided image silently strands env-tagged tasks)",
+            file=sys.stderr,
+        )
         return 1
     print(f"envbake: {len(envs)} environment(s) processed into {env_root()}")
     return 0

@@ -198,7 +198,6 @@ class RepairMixin(_MixinBase):
                 ancestors_reset,
             )
 
-
     def finalize_terminal_runners(
         self, *, limit: int = 50, min_age_ms: int = 900_000
     ) -> list[dict]:
@@ -248,7 +247,9 @@ class RepairMixin(_MixinBase):
             if not workflow_id:
                 continue
 
-            steps = list(self._db.steps.find({"workflow_id": workflow_id}, {"state": 1, "object_type": 1}))
+            steps = list(
+                self._db.steps.find({"workflow_id": workflow_id}, {"state": 1, "object_type": 1})
+            )
             if not steps:
                 continue
             if any(not StepState.is_terminal(s.get("state", "")) for s in steps):
@@ -260,18 +261,20 @@ class RepairMixin(_MixinBase):
             # runner would never be finalised. (Note check 1's
             # `has_nonterminal_tasks` deliberately excludes it for a different
             # reason: check 5 may re-enqueue it.)
-            nonterminal_tasks = self._db.tasks.count_documents({
-                "workflow_id": workflow_id,
-                "state": {
-                    "$nin": [
-                        TaskState.COMPLETED,
-                        TaskState.FAILED,
-                        TaskState.IGNORED,
-                        TaskState.CANCELED,
-                        TaskState.DEAD_LETTER,
-                    ]
-                },
-            })
+            nonterminal_tasks = self._db.tasks.count_documents(
+                {
+                    "workflow_id": workflow_id,
+                    "state": {
+                        "$nin": [
+                            TaskState.COMPLETED,
+                            TaskState.FAILED,
+                            TaskState.IGNORED,
+                            TaskState.CANCELED,
+                            TaskState.DEAD_LETTER,
+                        ]
+                    },
+                }
+            )
             if nonterminal_tasks:
                 continue
 
@@ -285,13 +288,15 @@ class RepairMixin(_MixinBase):
                 {"uuid": doc["uuid"], "state": {"$in": ["running", "startup"]}},
                 {"$set": {"state": target, "end_time": now}},
             )
-            finalized.append({
-                "runner_id": doc["uuid"],
-                "workflow_id": workflow_id,
-                "workflow_name": (doc.get("workflow") or {}).get("name", ""),
-                "state": target,
-                "age_ms": now - (doc.get("start_time") or now),
-            })
+            finalized.append(
+                {
+                    "runner_id": doc["uuid"],
+                    "workflow_id": workflow_id,
+                    "workflow_name": (doc.get("workflow") or {}).get("name", ""),
+                    "state": target,
+                    "age_ms": now - (doc.get("start_time") or now),
+                }
+            )
 
         return finalized
 
@@ -559,9 +564,7 @@ class RepairMixin(_MixinBase):
         #   * the step must be older than `stranded_min_age_ms` so a live
         #     cascade mid-flight is never mistaken for a stall.
         result["stranded_block_steps"] = []
-        block_stuck_states = tuple(
-            st for st in STUCK_STEP_STATES if st != StepState.EVENT_TRANSMIT
-        )
+        block_stuck_states = tuple(st for st in STUCK_STEP_STATES if st != StepState.EVENT_TRANSMIT)
         if not has_nonterminal_tasks and tasks:
             cutoff = now - stranded_min_age_ms
             for step in steps:

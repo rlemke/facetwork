@@ -56,9 +56,7 @@ class TestFeatureRouting:
     def test_runner_with_the_feature_claims_it(self):
         store = MemoryStore()
         store.save_task(_task(features=["after"]))
-        claimed = store.claim_task(
-            task_names=["osm.Do"], task_list="osm", known_features=["after"]
-        )
+        claimed = store.claim_task(task_names=["osm.Do"], task_list="osm", known_features=["after"])
         assert claimed is not None and claimed.state == "running"
 
     def test_all_required_features_must_be_known(self):

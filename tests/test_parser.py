@@ -2476,9 +2476,7 @@ class TestAfterClause:
         )
 
     def test_single_target(self, parser):
-        ast = parser.parse(
-            self._wf("    a = A()\n    b = B() after a\n    yield W(z = b.y)")
-        )
+        ast = parser.parse(self._wf("    a = A()\n    b = B() after a\n    yield W(z = b.y)"))
         steps = ast.namespaces[0].workflows[0].body.block.steps
         assert steps[0].after == []
         assert steps[1].after == ["a"]
@@ -2497,16 +2495,16 @@ class TestAfterClause:
         start a new step.
         """
         ast = parser.parse(
-            self._wf("    a = A()\n    b = B()\n    c = C() after a,\n      b\n    yield W(z = c.w)")
+            self._wf(
+                "    a = A()\n    b = B()\n    c = C() after a,\n      b\n    yield W(z = c.w)"
+            )
         )
         assert ast.namespaces[0].workflows[0].body.block.steps[2].after == ["a", "b"]
 
     def test_after_composes_with_catch(self, parser):
         ast = parser.parse(
             self._wf(
-                "    a = A()\n"
-                "    b = B() after a catch { yield W(z = 0) }\n"
-                "    yield W(z = b.y)"
+                "    a = A()\n    b = B() after a catch { yield W(z = 0) }\n    yield W(z = b.y)"
             )
         )
         step = ast.namespaces[0].workflows[0].body.block.steps[1]

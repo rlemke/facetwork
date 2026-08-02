@@ -334,9 +334,7 @@ class TestRunnerServicePolling:
         steps = svc._poll_event_steps()
         assert len(steps) == 0
 
-    def test_poll_event_steps_glob_topic_matches(
-        self, store, evaluator, workflow_ast, program_ast
-    ):
+    def test_poll_event_steps_glob_topic_matches(self, store, evaluator, workflow_ast, program_ast):
         """A glob topic (census.*-style) matches qualified facet names."""
         registry = ToolRegistry()
         registry.register("CountDocuments", lambda p: {"output": 42})

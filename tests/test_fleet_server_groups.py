@@ -101,20 +101,22 @@ def test_parse_role_groups_rejects_missing_colon():
 def test_rewrite_hosts_repoints_afl_names():
     """Every afl-* entry moves to the new IP; unrelated lines are preserved and
     a missing afl-* name is added (so a stale/IPv6 mapping can't survive)."""
-    before = ("127.0.0.1\tlocalhost\n"
-              "192.0.2.10\tafl-mongodb\n"
-              "fd00::2\tafl-minio\n"
-              "10.0.0.5\tsome-other-host\n")
+    before = (
+        "127.0.0.1\tlocalhost\n"
+        "192.0.2.10\tafl-mongodb\n"
+        "fd00::2\tafl-minio\n"
+        "10.0.0.5\tsome-other-host\n"
+    )
     after = fl._rewrite_hosts(before, "192.0.2.20")
     lines = after.splitlines()
     assert "192.0.2.20\tafl-mongodb" in lines
     assert "192.0.2.20\tafl-minio" in lines
-    assert "192.0.2.20\tafl-postgres" in lines          # missing one added
-    assert "10.0.0.5\tsome-other-host" in lines             # unrelated untouched
+    assert "192.0.2.20\tafl-postgres" in lines  # missing one added
+    assert "10.0.0.5\tsome-other-host" in lines  # unrelated untouched
     assert "127.0.0.1\tlocalhost" in lines
-    assert "192.0.2.10" not in after and "fd00::2" not in after   # stale gone
+    assert "192.0.2.10" not in after and "fd00::2" not in after  # stale gone
 
 
 def test_rewrite_hosts_idempotent():
     once = fl._rewrite_hosts("127.0.0.1\tlocalhost\n", "10.1.1.1")
-    assert fl._rewrite_hosts(once, "10.1.1.1") == once      # no churn when current
+    assert fl._rewrite_hosts(once, "10.1.1.1") == once  # no churn when current

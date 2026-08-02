@@ -27,8 +27,5 @@ def test_canonical_directory_is_not_empty():
 def test_canonical_example_parses_and_validates(path):
     program = FFLParser().parse(path.read_text())
     result = validate(program)
-    errors = [
-        f"{getattr(e, 'rule_id', '?')}: {getattr(e, 'message', e)}"
-        for e in result.errors
-    ]
+    errors = [f"{getattr(e, 'rule_id', '?')}: {getattr(e, 'message', e)}" for e in result.errors]
     assert not errors, f"{path.name} is not validator-clean:\n  " + "\n  ".join(errors)

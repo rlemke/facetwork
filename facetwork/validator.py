@@ -27,7 +27,6 @@ import re
 from dataclasses import dataclass, field
 
 from .ast import (
-    EnvironmentDecl,
     AndThenBlock,
     ArrayLiteral,
     ArrayType,
@@ -35,12 +34,13 @@ from .ast import (
     CallExpr,
     CatchClause,
     ConcatExpr,
+    EnvironmentDecl,
     EventFacetDecl,
     FacetDecl,
     FacetSig,
+    ForeachLimit,
     ImplicitDecl,
     IndexExpr,
-    ForeachLimit,
     Literal,
     MapLiteral,
     MixinSig,
@@ -52,6 +52,7 @@ from .ast import (
     SchemaDecl,
     ScriptBlock,
     SourceLocation,
+    StepStmt,
     SysAssertStmt,
     SysLogStmt,
     TypeRef,
@@ -231,7 +232,7 @@ class FFLValidator:
         self._facets_by_short_name: dict[str, list[str]] = {}  # Short name -> list of full names
         self._namespaces: set[str] = set()  # All namespace names
         self._schemas: dict[str, SourceLocation] = {}  # Schema names by full name (for uniqueness)
-        self._environments: dict[str, "EnvironmentDecl"] = {}  # Environment decls by full name
+        self._environments: dict[str, EnvironmentDecl] = {}  # Environment decls by full name
         self._schema_info: dict[str, SchemaInfo] = {}  # Full name -> SchemaInfo
         self._schemas_by_short_name: dict[str, list[str]] = {}  # Short name -> [full names]
         self._current_namespace: str = ""
@@ -720,8 +721,7 @@ class FFLValidator:
         """Validate an environment declaration."""
         if not env.language:
             self._result.add_error(
-                f"Environment '{env.name}' must declare a language "
-                f'(e.g. language = "python")',
+                f"Environment '{env.name}' must declare a language (e.g. language = \"python\")",
                 env.location,
                 rule_id="ENV_MISSING_LANGUAGE",
             )
@@ -2498,7 +2498,7 @@ class FFLValidator:
                     limit.location,
                     rule_id="FOREACH_LIMIT_NOT_INTEGER",
                 )
-            elif int(value.value) < 1:
+            elif int(value.value) < 1:  # type: ignore[call-overload]  # kind=="integer" ⇒ int-convertible
                 self._result.add_error(
                     f"foreach limit must be at least 1, got {value.value}. "
                     f"Use `limit 1` to serialise the fan-out, or omit the "

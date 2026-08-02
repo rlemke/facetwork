@@ -63,7 +63,7 @@ def get_current_user(request: Request, store: MongoStore = Depends(get_store)) -
        acting-as-cookie behavior (attribution only, no access control).
     """
     from facetwork.runtime.entities import User
-    from facetwork.runtime.entities.user import STATUS_ACTIVE, KIND_ANONYMOUS
+    from facetwork.runtime.entities.user import KIND_ANONYMOUS, STATUS_ACTIVE
 
     from .auth import read_session
 

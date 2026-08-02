@@ -62,25 +62,19 @@ class TestEnvironmentClaimRouting:
 
     def test_tagged_task_claimable_with_matching_env(self, store):
         store.save_task(_task("t3", env="abc123"))
-        got = store.claim_task(
-            ["geo.Cluster"], task_list="geo", provided_environments=["abc123"]
-        )
+        got = store.claim_task(["geo.Cluster"], task_list="geo", provided_environments=["abc123"])
         assert got is not None and got.uuid == "t3"
 
     def test_tagged_task_invisible_with_wrong_env(self, store):
         store.save_task(_task("t4", env="abc123"))
         assert (
-            store.claim_task(
-                ["geo.Cluster"], task_list="geo", provided_environments=["other"]
-            )
+            store.claim_task(["geo.Cluster"], task_list="geo", provided_environments=["other"])
             is None
         )
 
     def test_untagged_still_claimable_when_envs_provided(self, store):
         store.save_task(_task("t5"))
-        got = store.claim_task(
-            ["geo.Cluster"], task_list="geo", provided_environments=["abc123"]
-        )
+        got = store.claim_task(["geo.Cluster"], task_list="geo", provided_environments=["abc123"])
         assert got is not None and got.uuid == "t5"
 
     def test_environment_hash_roundtrips(self, store):
@@ -175,7 +169,15 @@ class TestEnvScriptExecution:
             RunnerDefinition(
                 uuid="run-1",
                 workflow_id=result.workflow_id,
-                workflow=WorkflowDefinition(uuid="wfdef-1", name="demo.W", namespace_id="", facet_id="", flow_id="", starting_step="", version="1"),
+                workflow=WorkflowDefinition(
+                    uuid="wfdef-1",
+                    name="demo.W",
+                    namespace_id="",
+                    facet_id="",
+                    flow_id="",
+                    starting_step="",
+                    version="1",
+                ),
                 compiled_ast=program,
                 workflow_ast=workflow_ast,
             )
@@ -190,10 +192,7 @@ class TestEnvScriptExecution:
         assert env_hash in svc._provided_environments()  # discovered from FW_ENV_ROOT
         for _ in range(20):
             svc.run_once()
-            root = next(
-                s for s in store._steps.values()
-                if s.object_type == "Workflow"
-            )
+            root = next(s for s in store._steps.values() if s.object_type == "Workflow")
             if root.state.endswith("Complete"):
                 break
         assert root.state.endswith("Complete"), root.state
@@ -230,12 +229,14 @@ class TestEnvScriptExecution:
         store = MemoryStore()
         evaluator = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
         evaluator.execute(
-            find_workflow(program, "demo.W"), inputs={"x": 1},
-            program_ast=program, runner_id="run-1",
+            find_workflow(program, "demo.W"),
+            inputs={"x": 1},
+            program_ast=program,
+            runner_id="run-1",
         )
         svc = RunnerService(store, evaluator, RunnerConfig(), ToolRegistry())
         assert svc._provided_environments() == []
-        dispatched = svc.run_once()
+        svc.run_once()
         # The script task stays pending — this runner cannot claim it.
         task = next(t for t in store._tasks.values() if t.kind == "script")
         assert task.state == TaskState.PENDING
@@ -267,10 +268,10 @@ class TestEnvironmentDemandQuery:
         store.save_task(_task("d1", env="hashA", kind="script"))
         store.save_task(_task("d2", env="hashA", kind="script"))
         store.save_task(_task("d3", env="hashB", kind="script"))
-        store.save_task(_task("d4", env="hashC", kind=""))       # handler task: no
-        store.save_task(_task("d5", env="", kind="script"))      # untagged: no
+        store.save_task(_task("d4", env="hashC", kind=""))  # handler task: no
+        store.save_task(_task("d5", env="", kind="script"))  # untagged: no
         t = _task("d6", env="hashD", kind="script")
-        t.state = "running"                                       # claimed: no
+        t.state = "running"  # claimed: no
         store.save_task(t)
         demand = store.get_pending_script_environment_demand()
         assert [h for h, _ in demand] == ["hashA", "hashB"]
@@ -285,7 +286,7 @@ class TestLazyMaterialization:
     venv from the workflow's frozen manifest, advertises it, and completes the
     waiting workflow — no bake, no operator."""
 
-    def _setup(self, tmp_path, monkeypatch, requires='requires = []'):
+    def _setup(self, tmp_path, monkeypatch, requires="requires = []"):
         import json
 
         from facetwork import parse
@@ -314,12 +315,23 @@ class TestLazyMaterialization:
         ev = Evaluator(persistence=store, telemetry=Telemetry(enabled=False))
         wf = find_workflow(program, "lazy.W")
         res = ev.execute(wf, inputs={"x": 41}, program_ast=program, runner_id="run-1")
-        store.save_runner(RunnerDefinition(
-            uuid="run-1", workflow_id=res.workflow_id,
-            workflow=WorkflowDefinition(uuid="w1", name="lazy.W", namespace_id="",
-                                        facet_id="", flow_id="", starting_step="", version="1"),
-            compiled_ast=program, workflow_ast=wf,
-        ))
+        store.save_runner(
+            RunnerDefinition(
+                uuid="run-1",
+                workflow_id=res.workflow_id,
+                workflow=WorkflowDefinition(
+                    uuid="w1",
+                    name="lazy.W",
+                    namespace_id="",
+                    facet_id="",
+                    flow_id="",
+                    starting_step="",
+                    version="1",
+                ),
+                compiled_ast=program,
+                workflow_ast=wf,
+            )
+        )
         return store, ev, env_hash
 
     def test_hook_materializes_advertises_and_completes(self, tmp_path, monkeypatch):

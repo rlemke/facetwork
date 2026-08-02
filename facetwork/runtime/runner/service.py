@@ -497,9 +497,7 @@ class RunnerService(BaseRunner):
         provided_envs = self._provided_environments()
         if provided_envs:
             while capacity > 0:
-                task = self._persistence.claim_script_task(
-                    provided_envs, server_id=self._server_id
-                )
+                task = self._persistence.claim_script_task(provided_envs, server_id=self._server_id)
                 if task is None:
                     break
                 self._submit_event_task(task)
@@ -1464,9 +1462,7 @@ class RunnerService(BaseRunner):
                     logger.debug("Stuck-step sweep hit per-invocation cap; deferring rest")
                     break
                 try:
-                    self._sweep_workflow_steps(
-                        wf_id, budget, name=wf_names.get(wf_id, wf_id[:12])
-                    )
+                    self._sweep_workflow_steps(wf_id, budget, name=wf_names.get(wf_id, wf_id[:12]))
                 except Exception:
                     logger.debug("Sweep failed for workflow %s", wf_id, exc_info=True)
         except Exception:
@@ -1500,9 +1496,7 @@ class RunnerService(BaseRunner):
         # invocation — exactly the flood the budget exists to prevent. Those steps
         # exist to BECOME tasks, so draining them manufactures the starving work.
         if not leaf_steps and block_steps and not self._has_non_terminal_tasks(workflow_id):
-            budget = _SweepBudget(
-                _SWEEP_DRAIN_MAX_STEPS, _current_time_ms() + _SWEEP_DRAIN_MAX_MS
-            )
+            budget = _SweepBudget(_SWEEP_DRAIN_MAX_STEPS, _current_time_ms() + _SWEEP_DRAIN_MAX_MS)
             if len(block_steps) > _SWEEP_MAX_STEPS:
                 logger.info(
                     "Stuck-step sweep draining %d block step(s) from %s "
@@ -1637,8 +1631,7 @@ class RunnerService(BaseRunner):
             done = self._persistence.finalize_terminal_runners(limit=25)
             for d in done:
                 logger.info(
-                    "Finalized runner %s (%s): all steps and tasks terminal after "
-                    "%.0f min -> %s",
+                    "Finalized runner %s (%s): all steps and tasks terminal after %.0f min -> %s",
                     d["runner_id"][:12],
                     d.get("workflow_name") or d["workflow_id"][:12],
                     (d.get("age_ms") or 0) / 60000.0,

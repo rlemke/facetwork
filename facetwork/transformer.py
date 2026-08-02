@@ -22,8 +22,6 @@ from lark import Token, Transformer, v_args
 _T = TypeVar("_T")
 
 from .ast import (
-    EnvironmentDecl,
-    EnvironmentRef,
     AndThenBlock,
     ArrayLiteral,
     ArrayType,
@@ -34,6 +32,8 @@ from .ast import (
     ConcatExpr,
     DocComment,
     DocParam,
+    EnvironmentDecl,
+    EnvironmentRef,
     EventFacetDecl,
     FacetDecl,
     FacetSig,
@@ -209,7 +209,9 @@ class FFLTransformer(Transformer):
         sig = items[0]
         env_ref = self._find_one(items[1:], EnvironmentRef)
         catch = self._find_one(items[1:], CatchClause)
-        rest = [i for i in self._find_rest(items[1:], CatchClause) if not isinstance(i, EnvironmentRef)]
+        rest = [
+            i for i in self._find_rest(items[1:], CatchClause) if not isinstance(i, EnvironmentRef)
+        ]
         tail = rest[0] if rest else None
         pre_script, body = None, None
         if isinstance(tail, tuple):
@@ -952,8 +954,12 @@ class FFLTransformer(Transformer):
             else:
                 extra[key] = value
         return EnvironmentDecl(
-            name=name, language=language, requires=requires, extra=extra,
-            doc=doc, location=self._loc(meta),
+            name=name,
+            language=language,
+            requires=requires,
+            extra=extra,
+            doc=doc,
+            location=self._loc(meta),
         )
 
     @v_args(meta=True)

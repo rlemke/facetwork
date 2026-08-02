@@ -18,6 +18,7 @@ Config (env, all optional — defaults suit the MaxPro standalone box):
   FW_MAPS_BUCKET   bucket to browse        (default FW_S3_BUCKET or 'afl-cache')
   FW_MAPS_PREFIX   key prefix maps live under (default 'cache/')
 """
+
 from __future__ import annotations
 
 import json
@@ -52,6 +53,7 @@ PUBLISH_REPO = os.environ.get("FW_MAPS_PUBLISH_REPO", "rlemke/facetwork-maps")
 PUBLISH_BRANCH = os.environ.get("FW_MAPS_PUBLISH_BRANCH", "main")
 _publish_lock = threading.Lock()  # serialize pushes to the one Pages repo
 
+
 # A map = a key ".../maps/<name…>/index.html" under PREFIX. The domain is the first
 # segment after PREFIX; the name is everything between "maps/" and "/index.html".
 # Domains write map HTML under two conventions: <domain>/maps/<name>/index.html
@@ -61,7 +63,7 @@ def _classify(key: str):
     minus PREFIX and the trailing /index.html (used for the view URL + publish)."""
     if not key.startswith(PREFIX) or not key.endswith("/index.html"):
         return None
-    segs = key[len(PREFIX):-len("/index.html")].split("/")
+    segs = key[len(PREFIX) : -len("/index.html")].split("/")
     if len(segs) < 2:
         return None
     domain, sub = segs[0], segs[1:]
@@ -77,12 +79,18 @@ def _classify(key: str):
 
 def _client():
     return boto3.client(
-        "s3", endpoint_url=ENDPOINT, aws_access_key_id=ACCESS,
+        "s3",
+        endpoint_url=ENDPOINT,
+        aws_access_key_id=ACCESS,
         aws_secret_access_key=SECRET,
         # Fail fast rather than hang: under heavy MinIO load (e.g. a big concurrent
         # upload) an un-bounded list/get would block the request thread for minutes.
-        config=_BotoConfig(signature_version="s3v4", retries={"max_attempts": 2},
-                           connect_timeout=4, read_timeout=12),
+        config=_BotoConfig(
+            signature_version="s3v4",
+            retries={"max_attempts": 2},
+            connect_timeout=4,
+            read_timeout=12,
+        ),
     )
 
 
@@ -110,6 +118,7 @@ def cached_maps(s3, ttl: float = 20.0) -> list[dict]:
 
 
 # --- publish (opt-in) ------------------------------------------------------
+
 
 def _github_token() -> str | None:
     """Token for pushing to the Pages repo: env first, else the gh CLI session."""
@@ -153,18 +162,31 @@ def publish_map(map_rel: str, dest: str, label: str = "") -> dict:
     try:
         with _publish_lock:
             res = publish_bundles(
-                PUBLISH_REPO, [prefix], [dest],
-                branch=PUBLISH_BRANCH, include=[".html"],
-                labels=[label or None], token=token,
+                PUBLISH_REPO,
+                [prefix],
+                [dest],
+                branch=PUBLISH_BRANCH,
+                include=[".html"],
+                labels=[label or None],
+                token=token,
             )
-        pages = getattr(res, "pages_url", None) or f"https://{PUBLISH_REPO.split('/')[0]}.github.io/{PUBLISH_REPO.split('/')[1]}/{dest}/"
-        return {"ok": True, "pages_url": pages, "dest": dest,
-                "files": getattr(res, "files", None), "sha": getattr(res, "sha", None)}
+        pages = (
+            getattr(res, "pages_url", None)
+            or f"https://{PUBLISH_REPO.split('/')[0]}.github.io/{PUBLISH_REPO.split('/')[1]}/{dest}/"
+        )
+        return {
+            "ok": True,
+            "pages_url": pages,
+            "dest": dest,
+            "files": getattr(res, "files", None),
+            "sha": getattr(res, "sha", None),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)[:400]}
 
 
 # --- harvest --------------------------------------------------------------
+
 
 def list_maps(s3) -> list[dict]:
     """Every map index.html under PREFIX, newest first, with its meta.json."""
@@ -178,8 +200,13 @@ def list_maps(s3) -> list[dict]:
             if key.endswith("/index.html.meta.json"):
                 metas[key] = obj  # fetched lazily below
             elif _classify(key):
-                index_keys.append((key, obj.get("Size", 0),
-                                   obj.get("LastModified").isoformat() if obj.get("LastModified") else ""))
+                index_keys.append(
+                    (
+                        key,
+                        obj.get("Size", 0),
+                        obj.get("LastModified").isoformat() if obj.get("LastModified") else "",
+                    )
+                )
     # Render straight from the LIST results — size + last-modified are already
     # there. We deliberately do NOT fetch each map's meta.json: that was an N+1 of
     # sequential S3 GETs that made the page crawl (and hang under heavy MinIO load,
@@ -187,21 +214,24 @@ def list_maps(s3) -> list[dict]:
     # keeps the gallery instant. `metas` is unused now but the listing pass is free.
     for key, size, mtime in index_keys:
         domain, name, map_rel = _classify(key)
-        maps.append({
-            "domain": domain,
-            "name": name,
-            "url": "/m/" + key[len(PREFIX):],                      # key sans PREFIX
-            "map_rel": map_rel,                                     # for view/publish
-            "size": size,
-            "generated_at": mtime,
-            "layers": [],
-            "layer_counts": {},
-        })
+        maps.append(
+            {
+                "domain": domain,
+                "name": name,
+                "url": "/m/" + key[len(PREFIX) :],  # key sans PREFIX
+                "map_rel": map_rel,  # for view/publish
+                "size": size,
+                "generated_at": mtime,
+                "layers": [],
+                "layer_counts": {},
+            }
+        )
     maps.sort(key=lambda x: x["generated_at"], reverse=True)
     return maps
 
 
 # --- rendering ------------------------------------------------------------
+
 
 def _pretty(seg: str) -> str:
     return seg.replace("-", " ").replace("_", " ").replace("/", " · ").title()
@@ -280,27 +310,37 @@ async function doPublish(btn, mapRel){{
 def _actions(m: dict, can_publish: bool) -> str:
     """Actions row for a card: always a prominent View button; Publish when a token
     is available. The publish form (hidden) sits below the row, inside the card."""
-    view = (f'<a class="btn view" href="{escape(m["url"])}" target="_blank" '
-            f'rel="noopener">View map ↗</a>')
+    view = (
+        f'<a class="btn view" href="{escape(m["url"])}" target="_blank" '
+        f'rel="noopener">View map ↗</a>'
+    )
     if not can_publish:
-        note = ('<span class="status" style="width:auto">publishing disabled — no '
-                'GitHub token (<code>gh auth login</code>)</span>')
+        note = (
+            '<span class="status" style="width:auto">publishing disabled — no '
+            "GitHub token (<code>gh auth login</code>)</span>"
+        )
         return f'<div class="actions">{view}{note}</div>'
-    default_dest = f'{m["domain"]}/{m["name"]}'
-    toggle = (f'<button onclick="togglePub(this)">Publish to '
-              f'{escape(PUBLISH_REPO.split("/")[-1])} →</button>')
-    form = ('<div class="pubform" hidden>'
-            f'<input value="{escape(default_dest)}" spellcheck="false" aria-label="destination path">'
-            f'<button onclick="doPublish(this,{json.dumps(m["map_rel"])})">Publish</button>'
-            '<span class="status"></span></div>')
+    default_dest = f"{m['domain']}/{m['name']}"
+    toggle = (
+        f'<button onclick="togglePub(this)">Publish to '
+        f"{escape(PUBLISH_REPO.split('/')[-1])} →</button>"
+    )
+    form = (
+        '<div class="pubform" hidden>'
+        f'<input value="{escape(default_dest)}" spellcheck="false" aria-label="destination path">'
+        f'<button onclick="doPublish(this,{json.dumps(m["map_rel"])})">Publish</button>'
+        '<span class="status"></span></div>'
+    )
     return f'<div class="actions">{view}{toggle}</div>{form}'
 
 
 def render_gallery(maps: list[dict], can_publish: bool = False) -> str:
     if not maps:
-        body = ('<div class="empty">No maps in the store yet. Run a map workflow '
-                '(its output lands in MinIO under <code>%s&lt;domain&gt;/maps/…</code>) '
-                'and refresh.</div>' % escape(PREFIX))
+        body = (
+            '<div class="empty">No maps in the store yet. Run a map workflow '
+            f"(its output lands in MinIO under <code>{escape(PREFIX)}&lt;domain&gt;/maps/…</code>) "
+            "and refresh.</div>"
+        )
         return _PAGE.format(bucket=escape(BUCKET), count=0, body=body)
     by_domain: dict[str, list[dict]] = {}
     for m in maps:
@@ -310,19 +350,23 @@ def render_gallery(maps: list[dict], can_publish: bool = False) -> str:
         cards = []
         for m in by_domain[domain]:
             nlayers = len(m["layers"])
-            layer_bit = f'{nlayers} layer(s) · ' if nlayers else ""
-            meta = f'{layer_bit}{_human_size(int(m["size"] or 0))} · {escape(m["generated_at"][:10])}'
+            layer_bit = f"{nlayers} layer(s) · " if nlayers else ""
+            meta = (
+                f"{layer_bit}{_human_size(int(m['size'] or 0))} · {escape(m['generated_at'][:10])}"
+            )
             cards.append(
                 '<div class="card">'
                 f'<div class="t">{escape(_pretty(m["name"]))}</div>'
                 f'<div class="d">{escape(domain)}</div>'
                 f'<div class="meta">{meta}</div>'
-                f'{_actions(m, can_publish)}</div>')
+                f"{_actions(m, can_publish)}</div>"
+            )
         blocks.append(f'<h2>{escape(_pretty(domain))}</h2><div class="grid">{"".join(cards)}</div>')
     return _PAGE.format(bucket=escape(BUCKET), count=len(maps), body="".join(blocks))
 
 
 # --- HTTP -----------------------------------------------------------------
+
 
 class _Handler(BaseHTTPRequestHandler):
     server_version = "fw-mapserver/1.0"
@@ -344,17 +388,23 @@ class _Handler(BaseHTTPRequestHandler):
         s3 = self.server.s3  # type: ignore[attr-defined]
         if path in ("/", "/index.html"):
             try:
-                self._send(200, render_gallery(cached_maps(s3), can_publish=self.server.can_publish))
+                self._send(
+                    200,
+                    render_gallery(cached_maps(s3), can_publish=self.server.can_publish),  # type: ignore[attr-defined]
+                )
             except Exception as e:  # pragma: no cover - surfaced to the browser
-                self._send(503, f"<h1>maps store busy</h1><p>Could not list the object "
-                                f"store (it may be under heavy load): <code>{escape(str(e))}</code>."
-                                f"<br>Retry in a moment.</p>")
+                self._send(
+                    503,
+                    f"<h1>maps store busy</h1><p>Could not list the object "
+                    f"store (it may be under heavy load): <code>{escape(str(e))}</code>."
+                    f"<br>Retry in a moment.</p>",
+                )
             return
         if path == "/healthz":
             self._send(200, "ok", "text/plain")
             return
         if path.startswith("/m/"):
-            rel = path[len("/m/"):]
+            rel = path[len("/m/") :]
             if rel.endswith("/") or rel == "":
                 rel += "index.html"
             key = PREFIX + rel
@@ -378,15 +428,21 @@ class _Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             data = json.loads(self.rfile.read(length) or b"{}")
         except Exception:
-            self._send(400, json.dumps({"ok": False, "error": "bad request body"}), "application/json")
+            self._send(
+                400, json.dumps({"ok": False, "error": "bad request body"}), "application/json"
+            )
             return
         map_rel = (data.get("map") or "").strip().strip("/")
         dest = (data.get("dest") or "").strip()
         label = (data.get("label") or "").strip()
         # Only allow publishing a map that actually exists in the store (never an
         # arbitrary prefix — the server may be reachable on the LAN).
-        if not map_rel or not any(m["map_rel"] == map_rel for m in list_maps(self.server.s3)):
-            self._send(400, json.dumps({"ok": False, "error": f"unknown map {map_rel!r}"}), "application/json")
+        if not map_rel or not any(m["map_rel"] == map_rel for m in list_maps(self.server.s3)):  # type: ignore[attr-defined]
+            self._send(
+                400,
+                json.dumps({"ok": False, "error": f"unknown map {map_rel!r}"}),
+                "application/json",
+            )
             return
         result = publish_map(map_rel, dest, label)
         self._send(200 if result.get("ok") else 400, json.dumps(result), "application/json")
@@ -415,10 +471,12 @@ def serve(port: int, host: str = "0.0.0.0") -> None:
     httpd.s3 = _client()  # type: ignore[attr-defined]
     # Fail fast + informatively if the store is unreachable.
     try:
-        httpd.s3.head_bucket(Bucket=BUCKET)
+        httpd.s3.head_bucket(Bucket=BUCKET)  # type: ignore[attr-defined]
     except Exception as e:
-        raise SystemExit(f"cannot reach bucket '{BUCKET}' at {ENDPOINT}: {e}\n"
-                         f"  set FW_S3_ENDPOINT / FW_MAPS_BUCKET, or start MinIO.")
+        raise SystemExit(
+            f"cannot reach bucket '{BUCKET}' at {ENDPOINT}: {e}\n"
+            "  set FW_S3_ENDPOINT / FW_MAPS_BUCKET, or start MinIO."
+        ) from e
     httpd.can_publish = publish_available()  # type: ignore[attr-defined]
     lan = _lan_ip()
     print("Facetwork maps gallery is up — view it at:")
@@ -426,10 +484,12 @@ def serve(port: int, host: str = "0.0.0.0") -> None:
     if lan:
         print(f"    http://{lan}:{port}/   (from other machines on your network)")
     print(f"  serving {BUCKET} @ {ENDPOINT} (prefix {PREFIX!r})")
-    print("  publish → %s: %s" % (
-        PUBLISH_REPO,
-        "enabled (GitHub token found)" if httpd.can_publish
-        else "disabled (no GITHUB_TOKEN / gh auth)"))
+    _pub_state = (
+        "enabled (GitHub token found)"
+        if httpd.can_publish  # type: ignore[attr-defined]
+        else "disabled (no GITHUB_TOKEN / gh auth)"
+    )
+    print(f"  publish → {PUBLISH_REPO}: {_pub_state}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -438,6 +498,7 @@ def serve(port: int, host: str = "0.0.0.0") -> None:
 
 def main() -> None:
     import argparse
+
     ap = argparse.ArgumentParser(description="Local maps gallery over MinIO/S3.")
     ap.add_argument("--port", type=int, default=int(os.environ.get("FW_MAPS_PORT", "8090")))
     ap.add_argument("--host", default="0.0.0.0")

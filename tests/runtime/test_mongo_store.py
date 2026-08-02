@@ -122,14 +122,19 @@ class TestStepOperations:
         is_block and returned it — masking the gap in every in-proc test)."""
         wf_id = workflow_id()
         parent = StepDefinition(
-            id=step_id(), workflow_id=wf_id,
-            object_type="VariableAssignment", state="state.statement.catch.Continue",
+            id=step_id(),
+            workflow_id=wf_id,
+            object_type="VariableAssignment",
+            state="state.statement.catch.Continue",
         )
         mongo_store.save_step(parent)
         for ot in ("AndThen", "AndCatch", "AndWhen", "AndMap"):
             blk = StepDefinition(
-                id=step_id(), workflow_id=wf_id, object_type=ot,
-                container_id=parent.id, state="state.statement.Complete",
+                id=step_id(),
+                workflow_id=wf_id,
+                object_type=ot,
+                container_id=parent.id,
+                state="state.statement.Complete",
             )
             mongo_store.save_step(blk)
 

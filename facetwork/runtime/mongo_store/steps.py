@@ -69,7 +69,6 @@ class StepMixin(_MixinBase):
         Excludes terminal steps (Complete/Error) and EventTransmit steps
         that do not have ``request_transition`` set.
         """
-        from ..states import StepState
 
         docs = self._db.steps.find(
             {

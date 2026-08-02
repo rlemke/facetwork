@@ -20,7 +20,7 @@ monitoring their completion.
 """
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
@@ -306,9 +306,7 @@ class BlockExecutionBeginHandler(StateHandler):
         try:
             limit = int(raw)
         except (TypeError, ValueError):
-            raise RuntimeError(
-                f"foreach limit must be an integer, got {raw!r}"
-            ) from None
+            raise RuntimeError(f"foreach limit must be an integer, got {raw!r}") from None
         if limit < 1:
             raise RuntimeError(f"foreach limit must be >= 1, got {limit}")
         return limit
@@ -781,8 +779,10 @@ class BlockExecutionContinueHandler(StateHandler):
         capped foreach runs the same set of elements — and reports the same
         aggregate error — as an uncapped one. Only the width differs.
         """
-        limit = self.step.attributes.get_param(_FOREACH_LIMIT_ATTR)
-        values = self.step.attributes.get_param(_FOREACH_VALUES_ATTR)
+        # get_param returns object; these are a resolved int cap + a list of
+        # loop values at runtime — annotate Any so len()/int()/indexing type-check.
+        limit: Any = self.step.attributes.get_param(_FOREACH_LIMIT_ATTR)
+        values: Any = self.step.attributes.get_param(_FOREACH_VALUES_ATTR)
         if not limit or values is None:
             return 0
 

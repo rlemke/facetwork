@@ -115,7 +115,6 @@ STUCK_STEP_STATES: tuple[str, ...] = (
 )
 
 
-
 # Full state machine transitions for VariableAssignment steps
 STEP_TRANSITIONS: dict[str, str] = {
     StepState.CREATED: StepState.FACET_INIT_BEGIN,

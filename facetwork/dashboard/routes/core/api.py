@@ -50,6 +50,7 @@ def _deny_without_delete_right(user) -> JSONResponse | None:
         status_code=403,
     )
 
+
 router = APIRouter(prefix="/api")
 
 

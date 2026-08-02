@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from facetwork import parse
 from facetwork.emitter import JSONEmitter
 from facetwork.environments import (

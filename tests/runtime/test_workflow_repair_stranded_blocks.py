@@ -58,45 +58,51 @@ def _now_ms() -> int:
 def _seed(store, *, step_states, task_states, step_age_ms=3_600_000):
     """Insert a runner + steps + tasks directly, mimicking the observed shape."""
     now = _now_ms()
-    store._db.runners.insert_one({
-        "uuid": RUNNER,
-        "workflow_id": WF,
-        "state": "running",
-        "workflow": {
-            "uuid": WF,
-            "name": "county.atlas.workflows.BuildAtlasFanout",
-            "namespace_id": "cli",
-            "facet_id": WF,
-            "flow_id": "flow-stranded",
-            "starting_step": "",
-            "version": "1.0",
-            "metadata": None,
-            "documentation": None,
-            "date": 0,
-        },
-        "start_time": now - step_age_ms,
-    })
-    for i, st in enumerate(step_states):
-        store._db.steps.insert_one({
-            "uuid": f"step-{i}",
+    store._db.runners.insert_one(
+        {
+            "uuid": RUNNER,
             "workflow_id": WF,
-            "state": st,
-            "statement_name": f"s{i}",
-            "object_type": "VariableAssignment",
-            "last_modified": now - step_age_ms,
+            "state": "running",
+            "workflow": {
+                "uuid": WF,
+                "name": "county.atlas.workflows.BuildAtlasFanout",
+                "namespace_id": "cli",
+                "facet_id": WF,
+                "flow_id": "flow-stranded",
+                "starting_step": "",
+                "version": "1.0",
+                "metadata": None,
+                "documentation": None,
+                "date": 0,
+            },
             "start_time": now - step_age_ms,
-        })
+        }
+    )
+    for i, st in enumerate(step_states):
+        store._db.steps.insert_one(
+            {
+                "uuid": f"step-{i}",
+                "workflow_id": WF,
+                "state": st,
+                "statement_name": f"s{i}",
+                "object_type": "VariableAssignment",
+                "last_modified": now - step_age_ms,
+                "start_time": now - step_age_ms,
+            }
+        )
     for i, st in enumerate(task_states):
-        store._db.tasks.insert_one({
-            "uuid": f"task-{i}",
-            "workflow_id": WF,
-            "step_id": f"step-{i}",
-            "runner_id": RUNNER,
-            "flow_id": "flow-stranded",
-            "name": "county.atlas.BuildCountyAtlas",
-            "state": st,
-            "created": now - step_age_ms,
-        })
+        store._db.tasks.insert_one(
+            {
+                "uuid": f"task-{i}",
+                "workflow_id": WF,
+                "step_id": f"step-{i}",
+                "runner_id": RUNNER,
+                "flow_id": "flow-stranded",
+                "name": "county.atlas.BuildCountyAtlas",
+                "state": st,
+                "created": now - step_age_ms,
+            }
+        )
 
 
 @needs_mongomock

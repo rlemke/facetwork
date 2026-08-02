@@ -75,15 +75,31 @@ def test_local_override_merge(cat, monkeypatch):
     base = cat / "servers.json"
     monkeypatch.setattr(catalog, "DEFAULT_CATALOG", base)
     override = cat / "servers.local.json"
-    override.write_text(json.dumps({
-        "servers": [
-            {"name": "worker.local", "aliases": ["w2"], "purpose": "renamed",
-             "group": "runner", "infra": False, "ip_pin": None},
-            {"name": "extra.local", "aliases": [], "purpose": "added",
-             "group": "runner", "infra": False, "ip_pin": None},
-        ],
-        "_remove": ["infra.local"],
-    }))
+    override.write_text(
+        json.dumps(
+            {
+                "servers": [
+                    {
+                        "name": "worker.local",
+                        "aliases": ["w2"],
+                        "purpose": "renamed",
+                        "group": "runner",
+                        "infra": False,
+                        "ip_pin": None,
+                    },
+                    {
+                        "name": "extra.local",
+                        "aliases": [],
+                        "purpose": "added",
+                        "group": "runner",
+                        "infra": False,
+                        "ip_pin": None,
+                    },
+                ],
+                "_remove": ["infra.local"],
+            }
+        )
+    )
     monkeypatch.setattr(catalog, "LOCAL_OVERRIDE", override)
     names = {s["name"] for s in catalog.servers()}
     assert names == {"worker.local", "extra.local"}

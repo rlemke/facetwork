@@ -69,9 +69,7 @@ def _workflow_ast(limit=None):
                     "call": {
                         "type": "CallExpr",
                         "target": "Value",
-                        "args": [
-                            {"name": "input", "value": {"type": "InputRef", "path": ["r"]}}
-                        ],
+                        "args": [{"name": "input", "value": {"type": "InputRef", "path": ["r"]}}],
                     },
                 },
             ],
@@ -126,7 +124,9 @@ class TestForeachLimitRunsEverything:
 
     def test_capped_runs_every_element(self, store, evaluator):
         items = list(range(20))
-        result = evaluator.execute(_workflow_ast(limit={"type": "Int", "value": 4}), inputs={"items": items})
+        result = evaluator.execute(
+            _workflow_ast(limit={"type": "Int", "value": 4}), inputs={"items": items}
+        )
 
         assert result.success is True
         assert _value_inputs(store) == items, "a cap must not drop iterations"
@@ -285,8 +285,13 @@ class TestForeachWindowCannotWedge:
         values = values if values is not None else list(range(20))
 
         block = StepDefinition.create(
-            workflow_id="wf", object_type=ObjectType.AND_THEN, facet_name="",
-            statement_id="fe", container_id="c", block_id="", root_id="c",
+            workflow_id="wf",
+            object_type=ObjectType.AND_THEN,
+            facet_name="",
+            statement_id="fe",
+            container_id="c",
+            block_id="",
+            root_id="c",
         )
         block.set_attribute("_foreach_values", values)
         block.set_attribute("_foreach_limit", limit)
@@ -294,8 +299,12 @@ class TestForeachWindowCannotWedge:
         subs = []
         for i, (st, age) in enumerate(zip(sub_states, ages_ms)):
             s = StepDefinition.create(
-                workflow_id="wf", object_type=ObjectType.AND_THEN, facet_name="",
-                statement_id=f"foreach-{i}", container_id="c", block_id=block.id,
+                workflow_id="wf",
+                object_type=ObjectType.AND_THEN,
+                facet_name="",
+                statement_id=f"foreach-{i}",
+                container_id="c",
+                block_id=block.id,
                 root_id="c",
             )
             s.state = st
@@ -315,18 +324,16 @@ class TestForeachWindowCannotWedge:
     def test_stalled_slots_are_nudged_so_the_window_can_recover(self):
         """The production shape: every slot held, nothing progressing."""
         stalled = "state.block.execution.Continue"
-        h, subs, ctx = self._block_handler(
-            [stalled] * 4, [5 * 60_000] * 4, limit=4
-        )
+        h, subs, ctx = self._block_handler([stalled] * 4, [5 * 60_000] * 4, limit=4)
         remaining = h._refill_foreach_window(subs)
 
         assert remaining > 0, "elements remain unadmitted — the window IS blocked"
         nudged = ctx.changes.continuation_tasks
         assert len(nudged) == 4, f"all 4 stalled slots must be nudged, got {len(nudged)}"
         assert all(t.step_id in {s.id for s in subs} for t in nudged)
-        assert all(
-            t.data.get("reason") == "foreach_window_stalled" for t in nudged
-        ), "nudges must be identifiable in the task stream"
+        assert all(t.data.get("reason") == "foreach_window_stalled" for t in nudged), (
+            "nudges must be identifiable in the task stream"
+        )
 
     def test_a_live_cascade_is_never_nudged(self):
         """Sub-blocks that just changed are working, not stalled.
@@ -387,8 +394,13 @@ class TestForeachWindowCannotWedge:
         from facetwork.runtime.types import ObjectType
 
         block = StepDefinition.create(
-            workflow_id="wf", object_type=ObjectType.AND_THEN, facet_name="",
-            statement_id="fe", container_id="c", block_id="", root_id="c",
+            workflow_id="wf",
+            object_type=ObjectType.AND_THEN,
+            facet_name="",
+            statement_id="fe",
+            container_id="c",
+            block_id="",
+            root_id="c",
         )
         ctx = MagicMock()
         ctx.changes = IterationChanges()
