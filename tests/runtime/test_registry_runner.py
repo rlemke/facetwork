@@ -380,9 +380,11 @@ class TestModuleCaching:
         _handler_v1 = runner._dispatcher._load_handler(reg_v1)
         _handler_v2 = runner._dispatcher._load_handler(reg_v2)
         # Different checksum -> different cache entry -> different import
-        # (they're functionally equal but are separate function objects)
-        assert (reg_v1.module_uri, reg_v1.checksum) in runner._module_cache
-        assert (reg_v2.module_uri, reg_v2.checksum) in runner._module_cache
+        # (they're functionally equal but are separate function objects).
+        # Cache key is (module_uri, checksum, entrypoint) — the entrypoint is
+        # part of the key so distinct entrypoints in one module don't collide.
+        assert (reg_v1.module_uri, reg_v1.checksum, reg_v1.entrypoint) in runner._module_cache
+        assert (reg_v2.module_uri, reg_v2.checksum, reg_v2.entrypoint) in runner._module_cache
 
 
 # =========================================================================
