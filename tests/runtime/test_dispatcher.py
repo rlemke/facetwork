@@ -98,6 +98,38 @@ class TestRegistryDispatcher:
         result = dispatcher.dispatch("ns.Double", {"input": 5})
         assert result == {"output": 10}
 
+    def test_distinct_entrypoints_same_module_do_not_collide(self, store, tmp_path):
+        """Two facets from ONE module with DIFFERENT entrypoints must each
+        dispatch to their own handler.
+
+        Regression: the handler cache was keyed by ``(module_uri, checksum)``
+        without the entrypoint, so the first-dispatched facet's callable was
+        cached and returned for every other facet sharing that module —
+        silently mis-routing every facet after the first. (Domain packages use
+        a single dispatch entrypoint, which masked it; a module with N distinct
+        entrypoints hit it.)
+        """
+        f = tmp_path / "multi_handler.py"
+        f.write_text(
+            "def alpha(payload):\n    return {'who': 'alpha'}\n\n"
+            "def beta(payload):\n    return {'who': 'beta'}\n"
+        )
+        mod = f"file://{f}"
+        # same module_uri + (default) checksum, different entrypoints
+        store.save_handler_registration(
+            HandlerRegistration(facet_name="ns.Alpha", module_uri=mod, entrypoint="alpha")
+        )
+        store.save_handler_registration(
+            HandlerRegistration(facet_name="ns.Beta", module_uri=mod, entrypoint="beta")
+        )
+        dispatcher = RegistryDispatcher(persistence=store)
+        # Dispatch alpha first (populates the cache), then beta — and again in
+        # the reverse order to prove the cache is genuinely per-entrypoint.
+        assert dispatcher.dispatch("ns.Alpha", {}) == {"who": "alpha"}
+        assert dispatcher.dispatch("ns.Beta", {}) == {"who": "beta"}
+        assert dispatcher.dispatch("ns.Beta", {}) == {"who": "beta"}
+        assert dispatcher.dispatch("ns.Alpha", {}) == {"who": "alpha"}
+
     def test_dispatch_async_handler(self, store, tmp_path):
         """Async handler detected and invoked via asyncio.run()."""
         f = tmp_path / "async_handler.py"

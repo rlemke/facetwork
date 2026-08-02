@@ -105,7 +105,8 @@ class RegistryDispatcher:
     ) -> None:
         self._persistence = persistence
         self._topics = topics or []
-        self._module_cache: dict[tuple[str, str], Callable] = {}
+        # keyed by (module_uri, checksum, entrypoint) — see _load_handler
+        self._module_cache: dict[tuple[str, str, str], Callable] = {}
         self._import_lock = threading.Lock()
         # In-memory registration cache: facet_name -> registration
         self._reg_cache: dict[str, Any] = {}
@@ -245,7 +246,13 @@ class RegistryDispatcher:
 
     def _load_handler(self, reg: Any) -> Callable:
         """Load a handler callable, using cache when possible."""
-        cache_key = (reg.module_uri, reg.checksum)
+        # The cache stores the RESOLVED callable, so the entrypoint MUST be part
+        # of the key: two facets registered from the same module (same module_uri
+        # + checksum) but with different entrypoints would otherwise both get the
+        # first-cached callable, silently mis-routing every facet after the first
+        # to one handler. (Domain packages use a single dispatch entrypoint, which
+        # masked this — but a module with N distinct entrypoints hit it.)
+        cache_key = (reg.module_uri, reg.checksum, reg.entrypoint)
         if cache_key in self._module_cache:
             return self._module_cache[cache_key]
 
@@ -357,8 +364,8 @@ class RegistryDispatcher:
             raise
 
     @property
-    def module_cache(self) -> dict[tuple[str, str], Callable]:
-        """Expose cache for testing."""
+    def module_cache(self) -> dict[tuple[str, str, str], Callable]:
+        """Expose cache for testing. Keyed by (module_uri, checksum, entrypoint)."""
         return self._module_cache
 
 
