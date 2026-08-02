@@ -218,7 +218,9 @@ class StateHandler(ABC):
         except Exception as e:
             self.context.telemetry.log_error(self.step, self.state_name, e)
             return StateChangeResult(
-                step=self.step, success=False, error=e,
+                step=self.step,
+                success=False,
+                error=e,
             )
 
     @abstractmethod
@@ -241,7 +243,9 @@ class StateHandler(ABC):
         """Mark step as errored."""
         self.step.mark_error(exception)
         return StateChangeResult(
-            step=self.step, success=False, error=exception,
+            step=self.step,
+            success=False,
+            error=exception,
             continue_processing=False,
         )
 ```

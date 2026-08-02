@@ -62,22 +62,22 @@ Break long-running operations into batches. Between each batch, call
 def handle(payload: dict) -> dict:
     step_log = payload.get("_step_log")
     heartbeat = payload.get("_task_heartbeat")
-    
+
     items = get_work_items()
     batch_size = 10000
     processed = 0
-    
+
     for i in range(0, len(items), batch_size):
-        batch = items[i:i + batch_size]
+        batch = items[i : i + batch_size]
         process_batch(batch)  # blocking call
         processed += len(batch)
-        
+
         # Signal liveness after each batch
         if heartbeat:
             heartbeat(progress_message=f"Processed {processed:,}/{len(items):,}")
         if step_log and processed % (batch_size * 10) == 0:
             step_log(f"Progress: {processed:,}/{len(items):,}")
-    
+
     return {"processed": processed}
 ```
 
@@ -91,7 +91,7 @@ def handle(payload: dict) -> dict:
     heartbeat = payload.get("_task_heartbeat")
     step_log = payload.get("_step_log")
     conn = get_connection()
-    
+
     # 1. Create an unlogged staging table (no indexes, no WAL)
     staging = f"_staging_{region}_{os.getpid()}"
     cur = conn.cursor()
@@ -101,39 +101,42 @@ def handle(payload: dict) -> dict:
         )
     """)
     conn.commit()
-    
+
     try:
         # 2. Bulk load into staging (plain INSERT, no conflicts)
         for batch in read_source_in_batches():
             insert_batch(conn, staging, batch)
             if heartbeat:
                 heartbeat(progress_message=f"Loading: {count:,} rows")
-        
+
         # 3. Merge into main table in batches
         #    Add a serial column for windowed iteration
         cur.execute(f"ALTER TABLE {staging} ADD COLUMN _row_id SERIAL")
         conn.commit()
-        
+
         offset = 0
         batch_size = 200_000
         while True:
-            cur.execute(f"""
+            cur.execute(
+                f"""
                 INSERT INTO main_table (id, data, geom)
                 SELECT id, data, geom FROM {staging}
                 WHERE _row_id > %s AND _row_id <= %s
                 ON CONFLICT (id) DO UPDATE
                 SET data = EXCLUDED.data, geom = EXCLUDED.geom
-            """, (offset, offset + batch_size))
-            
+            """,
+                (offset, offset + batch_size),
+            )
+
             if cur.rowcount == 0:
                 break
             conn.commit()
             offset += batch_size
-            
+
             # Heartbeat between merge batches
             if heartbeat:
                 heartbeat(progress_message=f"Merged {offset:,} rows")
-        
+
         # 4. Drop staging table
         cur.execute(f"DROP TABLE {staging}")
         conn.commit()

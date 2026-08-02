@@ -143,9 +143,7 @@ Three StateChanger implementations handle different step types:
 **Factory function** (in `afl/runtime/evaluator.py`):
 
 ```python
-def create_state_changer(
-    step: StepDefinition, context: ExecutionContext
-) -> StateChanger:
+def create_state_changer(step: StepDefinition, context: ExecutionContext) -> StateChanger:
     if step.object_type == ObjectType.VARIABLE_ASSIGNMENT:
         return StepStateChanger(step, context)
     elif step.object_type == ObjectType.YIELD_ASSIGNMENT:
@@ -188,26 +186,26 @@ class StepStateChanger(StateChanger):
 
 ```python
 STEP_TRANSITIONS: dict[str, str] = {
-    StepState.CREATED:                  StepState.FACET_INIT_BEGIN,
-    StepState.FACET_INIT_BEGIN:         StepState.FACET_INIT_END,
-    StepState.FACET_INIT_END:           StepState.FACET_SCRIPTS_BEGIN,
-    StepState.FACET_SCRIPTS_BEGIN:      StepState.FACET_SCRIPTS_END,
-    StepState.FACET_SCRIPTS_END:        StepState.MIXIN_BLOCKS_BEGIN,
-    StepState.MIXIN_BLOCKS_BEGIN:       StepState.MIXIN_BLOCKS_CONTINUE,
-    StepState.MIXIN_BLOCKS_CONTINUE:    StepState.MIXIN_BLOCKS_END,
-    StepState.MIXIN_BLOCKS_END:         StepState.MIXIN_CAPTURE_BEGIN,
-    StepState.MIXIN_CAPTURE_BEGIN:      StepState.MIXIN_CAPTURE_END,
-    StepState.MIXIN_CAPTURE_END:        StepState.EVENT_TRANSMIT,
-    StepState.EVENT_TRANSMIT:           StepState.STATEMENT_BLOCKS_BEGIN,
-    StepState.STATEMENT_BLOCKS_BEGIN:   StepState.STATEMENT_BLOCKS_CONTINUE,
+    StepState.CREATED: StepState.FACET_INIT_BEGIN,
+    StepState.FACET_INIT_BEGIN: StepState.FACET_INIT_END,
+    StepState.FACET_INIT_END: StepState.FACET_SCRIPTS_BEGIN,
+    StepState.FACET_SCRIPTS_BEGIN: StepState.FACET_SCRIPTS_END,
+    StepState.FACET_SCRIPTS_END: StepState.MIXIN_BLOCKS_BEGIN,
+    StepState.MIXIN_BLOCKS_BEGIN: StepState.MIXIN_BLOCKS_CONTINUE,
+    StepState.MIXIN_BLOCKS_CONTINUE: StepState.MIXIN_BLOCKS_END,
+    StepState.MIXIN_BLOCKS_END: StepState.MIXIN_CAPTURE_BEGIN,
+    StepState.MIXIN_CAPTURE_BEGIN: StepState.MIXIN_CAPTURE_END,
+    StepState.MIXIN_CAPTURE_END: StepState.EVENT_TRANSMIT,
+    StepState.EVENT_TRANSMIT: StepState.STATEMENT_BLOCKS_BEGIN,
+    StepState.STATEMENT_BLOCKS_BEGIN: StepState.STATEMENT_BLOCKS_CONTINUE,
     StepState.STATEMENT_BLOCKS_CONTINUE: StepState.STATEMENT_BLOCKS_END,
-    StepState.STATEMENT_BLOCKS_END:     StepState.STATEMENT_CAPTURE_BEGIN,
-    StepState.CATCH_BEGIN:              StepState.CATCH_CONTINUE,
-    StepState.CATCH_CONTINUE:           StepState.CATCH_END,
-    StepState.CATCH_END:                StepState.STATEMENT_CAPTURE_BEGIN,
-    StepState.STATEMENT_CAPTURE_BEGIN:  StepState.STATEMENT_CAPTURE_END,
-    StepState.STATEMENT_CAPTURE_END:    StepState.STATEMENT_END,
-    StepState.STATEMENT_END:            StepState.STATEMENT_COMPLETE,
+    StepState.STATEMENT_BLOCKS_END: StepState.STATEMENT_CAPTURE_BEGIN,
+    StepState.CATCH_BEGIN: StepState.CATCH_CONTINUE,
+    StepState.CATCH_CONTINUE: StepState.CATCH_END,
+    StepState.CATCH_END: StepState.STATEMENT_CAPTURE_BEGIN,
+    StepState.STATEMENT_CAPTURE_BEGIN: StepState.STATEMENT_CAPTURE_END,
+    StepState.STATEMENT_CAPTURE_END: StepState.STATEMENT_END,
+    StepState.STATEMENT_END: StepState.STATEMENT_COMPLETE,
 }
 ```
 
@@ -231,12 +229,12 @@ class YieldStateChanger(StateChanger):
 
 ```python
 YIELD_TRANSITIONS: dict[str, str] = {
-    StepState.CREATED:             StepState.FACET_INIT_BEGIN,
-    StepState.FACET_INIT_BEGIN:    StepState.FACET_INIT_END,
-    StepState.FACET_INIT_END:      StepState.FACET_SCRIPTS_BEGIN,
+    StepState.CREATED: StepState.FACET_INIT_BEGIN,
+    StepState.FACET_INIT_BEGIN: StepState.FACET_INIT_END,
+    StepState.FACET_INIT_END: StepState.FACET_SCRIPTS_BEGIN,
     StepState.FACET_SCRIPTS_BEGIN: StepState.FACET_SCRIPTS_END,
-    StepState.FACET_SCRIPTS_END:   StepState.STATEMENT_END,   # Skip blocks
-    StepState.STATEMENT_END:       StepState.STATEMENT_COMPLETE,
+    StepState.FACET_SCRIPTS_END: StepState.STATEMENT_END,  # Skip blocks
+    StepState.STATEMENT_END: StepState.STATEMENT_COMPLETE,
 }
 ```
 
@@ -246,10 +244,10 @@ Schema instantiation steps use a simplified state machine that evaluates argumen
 
 ```python
 SCHEMA_TRANSITIONS: dict[str, str] = {
-    StepState.CREATED:          StepState.FACET_INIT_BEGIN,
+    StepState.CREATED: StepState.FACET_INIT_BEGIN,
     StepState.FACET_INIT_BEGIN: StepState.FACET_INIT_END,
-    StepState.FACET_INIT_END:   StepState.STATEMENT_END,
-    StepState.STATEMENT_END:    StepState.STATEMENT_COMPLETE,
+    StepState.FACET_INIT_END: StepState.STATEMENT_END,
+    StepState.STATEMENT_END: StepState.STATEMENT_COMPLETE,
 }
 ```
 
@@ -272,11 +270,11 @@ class BlockStateChanger(StateChanger):
 
 ```python
 BLOCK_TRANSITIONS: dict[str, str] = {
-    StepState.CREATED:                    StepState.BLOCK_EXECUTION_BEGIN,
-    StepState.BLOCK_EXECUTION_BEGIN:      StepState.BLOCK_EXECUTION_CONTINUE,
-    StepState.BLOCK_EXECUTION_CONTINUE:   StepState.BLOCK_EXECUTION_END,
-    StepState.BLOCK_EXECUTION_END:        StepState.STATEMENT_END,
-    StepState.STATEMENT_END:              StepState.STATEMENT_COMPLETE,
+    StepState.CREATED: StepState.BLOCK_EXECUTION_BEGIN,
+    StepState.BLOCK_EXECUTION_BEGIN: StepState.BLOCK_EXECUTION_CONTINUE,
+    StepState.BLOCK_EXECUTION_CONTINUE: StepState.BLOCK_EXECUTION_END,
+    StepState.BLOCK_EXECUTION_END: StepState.STATEMENT_END,
+    StepState.STATEMENT_END: StepState.STATEMENT_COMPLETE,
 }
 ```
 
@@ -294,6 +292,7 @@ The `StepTransition` dataclass manages state transitions with control flags:
 @dataclass
 class StepTransition:
     """Manages state transition control for a step."""
+
     original_state: str
     current_state: str
     changed: bool = False
@@ -397,7 +396,8 @@ class BlockExecutionBeginHandler(StateHandler):
             return StateChangeResult(step=self.step)
 
         graph = DependencyGraph.from_ast(
-            block_ast, self._get_workflow_inputs(),
+            block_ast,
+            self._get_workflow_inputs(),
             program_ast=self.context.program_ast,
         )
         self.context.set_block_graph(self.step.id, graph)
@@ -431,9 +431,7 @@ class BlockExecutionContinueHandler(StateHandler):
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
 
-        completed_ids = {
-            str(s.statement_id) for s in analysis.completed if s.statement_id
-        }
+        completed_ids = {str(s.statement_id) for s in analysis.completed if s.statement_id}
         self._create_ready_steps(graph, completed_ids)
         return self.stay(push=True)  # Re-queue for next iteration
 ```
@@ -478,6 +476,7 @@ The `StepAnalysis` dataclass tracks block execution state:
 @dataclass
 class StepAnalysis:
     """Analysis of step execution state within a block."""
+
     block: StepDefinition
     statements: Sequence[StatementDefinition]
 
@@ -499,9 +498,7 @@ class StepAnalysis:
 ```python
 def can_be_created(self) -> Sequence[StatementDefinition]:
     """Return statements whose dependencies are all satisfied."""
-    completed_ids = {
-        str(s.statement_id) for s in self.completed if s.statement_id
-    }
+    completed_ids = {str(s.statement_id) for s in self.completed if s.statement_id}
     ready = []
     for stmt in self.missing:
         if stmt.dependencies.issubset(completed_ids):
@@ -732,19 +729,20 @@ In the Python implementation, container notification is handled implicitly by th
 ```python
 class ObjectType:
     """Object type constants for step classification."""
+
     VARIABLE_ASSIGNMENT = "VariableAssignment"  # Regular statement
-    YIELD_ASSIGNMENT = "YieldAssignment"        # Capture/output statement
+    YIELD_ASSIGNMENT = "YieldAssignment"  # Capture/output statement
     SCHEMA_INSTANTIATION = "SchemaInstantiation"  # Schema data object creation
     WORKFLOW = "Workflow"
 
     # Block types:
-    AND_THEN = "AndThen"     # Sequential execution
-    AND_MAP = "AndMap"       # Parallel/mapping
-    AND_MATCH = "AndMatch"   # Conditional/pattern matching
+    AND_THEN = "AndThen"  # Sequential execution
+    AND_MAP = "AndMap"  # Parallel/mapping
+    AND_MATCH = "AndMatch"  # Conditional/pattern matching
 
-    FACET = "Facet"          # Mixin/facet type
-    BEFORE = "Before"        # Mixin hook
-    AFTER = "After"          # Mixin hook
+    FACET = "Facet"  # Mixin/facet type
+    BEFORE = "Before"  # Mixin hook
+    AFTER = "After"  # Mixin hook
     BLOCK = "Block"
 
     @classmethod
@@ -766,6 +764,7 @@ class ObjectType:
 @dataclass
 class StepDefinition:
     """Persistent step definition representing a runtime step instance."""
+
     id: StepId
     object_type: str
 
@@ -786,9 +785,17 @@ class StepDefinition:
     attributes: FacetAttributes = field(default_factory=FacetAttributes)
 
     @classmethod
-    def create(cls, workflow_id, object_type, facet_name="",
-               statement_id=None, container_id=None,
-               block_id=None, root_id=None, **kwargs) -> "StepDefinition":
+    def create(
+        cls,
+        workflow_id,
+        object_type,
+        facet_name="",
+        statement_id=None,
+        container_id=None,
+        block_id=None,
+        root_id=None,
+        **kwargs,
+    ) -> "StepDefinition":
         return cls(
             id=step_id(),
             object_type=object_type,

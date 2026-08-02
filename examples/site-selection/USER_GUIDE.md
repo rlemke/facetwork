@@ -125,9 +125,11 @@ Both `pyosmium` (for PBF extraction) and `shapely` (for point-in-polygon scoring
 ```python
 try:
     import osmium
+
     HAS_OSMIUM = True
 except ImportError:
     HAS_OSMIUM = False
+
 
 def extract_restaurants(pbf_path, region):
     if not HAS_OSMIUM:
@@ -171,7 +173,16 @@ WEIGHTS = {
 Extend the amenity filter in `restaurant_extractor.py`:
 
 ```python
-FOOD_AMENITIES = {"restaurant", "fast_food", "cafe", "bar", "pub", "food_court", "ice_cream", "bakery"}
+FOOD_AMENITIES = {
+    "restaurant",
+    "fast_food",
+    "cafe",
+    "bar",
+    "pub",
+    "food_court",
+    "ice_cream",
+    "bakery",
+}
 ```
 
 ### Score different business types

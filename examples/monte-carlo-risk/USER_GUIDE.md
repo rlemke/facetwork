@@ -115,7 +115,7 @@ Each batch simulates correlated price paths using Geometric Brownian Motion:
 
 ```python
 dW = cholesky @ uncorrelated_normals  # Cholesky transform for correlation
-S_t = S_0 * exp((mu - sigma^2/2) * dt + sigma * sqrt(dt) * dW)
+S_t = S_0 * exp((mu - sigma ^ 2 / 2) * dt + sigma * sqrt(dt) * dW)
 ```
 
 The `random_seed` parameter ensures reproducibility across runs.

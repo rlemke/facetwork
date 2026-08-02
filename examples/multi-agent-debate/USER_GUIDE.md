@@ -149,13 +149,15 @@ The runtime resolves these dependencies automatically — rebuttals only execute
 Each agent's argument is scored on three dimensions:
 
 ```python
-scores.append({
-    "agent_role": agent_role,
-    "clarity": _hash_int(..., 40, 95),
-    "evidence_quality": _hash_int(..., 35, 90),
-    "persuasiveness": _hash_int(..., 30, 95),
-    "overall": (clarity + evidence_quality + persuasiveness) // 3,
-})
+scores.append(
+    {
+        "agent_role": agent_role,
+        "clarity": _hash_int(..., 40, 95),
+        "evidence_quality": _hash_int(..., 35, 90),
+        "persuasiveness": _hash_int(..., 30, 95),
+        "overall": (clarity + evidence_quality + persuasiveness) // 3,
+    }
+)
 ```
 
 The judge picks the winner by highest overall score and computes the margin of victory.

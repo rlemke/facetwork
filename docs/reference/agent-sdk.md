@@ -139,18 +139,18 @@ A task is represented by the `TaskDefinition` dataclass
 @dataclass
 class TaskDefinition:
     uuid: str
-    name: str                          # Qualified facet name (e.g. "ns.CountDocs")
-    runner_id: str                     # ID of the runner that created this task
+    name: str  # Qualified facet name (e.g. "ns.CountDocs")
+    runner_id: str  # ID of the runner that created this task
     workflow_id: str
     flow_id: str
     step_id: str
     state: str = TaskState.PENDING
-    created: int = 0                   # Creation timestamp (ms since epoch)
-    updated: int = 0                   # Last update timestamp (ms since epoch)
+    created: int = 0  # Creation timestamp (ms since epoch)
+    updated: int = 0  # Last update timestamp (ms since epoch)
     error: Optional[dict] = None
     task_list_name: str = "default"
     data_type: str = ""
-    data: Optional[dict] = None        # Payload (step params, facet info)
+    data: Optional[dict] = None  # Payload (step params, facet info)
 ```
 
 ### 3.2 TaskState Transitions
@@ -239,7 +239,7 @@ polling library for building FFL Agent services without the full
 class AgentPollerConfig:
     service_name: str = "fw-agent"
     server_group: str = "default"
-    server_name: str = ""              # Auto-populated with socket.gethostname()
+    server_name: str = ""  # Auto-populated with socket.gethostname()
     task_list: str = "default"
     poll_interval_ms: int = 2000
     max_concurrent: int = 5
@@ -366,8 +366,8 @@ class ServerDefinition:
     service_name: str
     server_name: str
     server_ips: list[str] = field(default_factory=list)
-    start_time: int = 0               # Server start timestamp (ms)
-    ping_time: int = 0                # Last heartbeat timestamp (ms)
+    start_time: int = 0  # Server start timestamp (ms)
+    ping_time: int = 0  # Last heartbeat timestamp (ms)
     topics: list[str] = field(default_factory=list)
     handlers: list[str] = field(default_factory=list)
     handled: list[HandledCount] = field(default_factory=list)
@@ -497,7 +497,7 @@ class StepLogEntry:
     level: str = StepLogLevel.INFO
     message: str = ""
     details: dict = field(default_factory=dict)
-    time: int = 0                      # Timestamp (ms since epoch)
+    time: int = 0  # Timestamp (ms since epoch)
 ```
 
 ### 7.2 Level and Source Constants
@@ -654,7 +654,7 @@ the `AgentPoller` that adds distributed coordination capabilities.
 class RunnerConfig:
     server_group: str = "default"
     service_name: str = "afl-runner"
-    server_name: str = ""              # Auto-populated with socket.gethostname()
+    server_name: str = ""  # Auto-populated with socket.gethostname()
     topics: list[str] = field(default_factory=list)
     task_list: str = "default"
     poll_interval_ms: int = 2000
@@ -733,7 +733,7 @@ and picks up new handlers without restarting.
 class RegistryRunnerConfig:
     service_name: str = "afl-registry-runner"
     server_group: str = "default"
-    server_name: str = ""              # Auto-populated with hostname
+    server_name: str = ""  # Auto-populated with hostname
     task_list: str = "default"
     poll_interval_ms: int = 2000
     max_concurrent: int = 5
@@ -811,16 +811,16 @@ The registration is picked up on the next registry refresh.
 ```python
 @dataclass
 class HandlerRegistration:
-    facet_name: str          # Primary key: "ns.FacetName"
-    module_uri: str          # "my.handlers" or "file:///path/to.py"
+    facet_name: str  # Primary key: "ns.FacetName"
+    module_uri: str  # "my.handlers" or "file:///path/to.py"
     entrypoint: str = "handle"
     version: str = "1.0.0"
     checksum: str = ""
     timeout_ms: int = 30000
     requirements: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
-    created: int = 0         # Timestamp (ms)
-    updated: int = 0         # Timestamp (ms)
+    created: int = 0  # Timestamp (ms)
+    updated: int = 0  # Timestamp (ms)
 ```
 
 Stored in the `handler_registrations` collection (MongoDB) or the
@@ -971,6 +971,7 @@ _DISPATCH = {
     "cache.Europe": lambda p: {"data": download("europe")},
 }
 
+
 def handle(payload: dict) -> dict:
     facet = payload["_facet_name"]
     handler = _DISPATCH.get(facet)
@@ -989,6 +990,7 @@ allows the handler to route internally.
 # handlers/regions.py
 REGIONS = {"Africa": "africa", "Europe": "europe", "Asia": "asia"}
 
+
 def register_handlers(runner):
     for name, path in REGIONS.items():
         runner.register_handler(
@@ -996,6 +998,7 @@ def register_handlers(runner):
             module_uri="handlers.regions",
             entrypoint="handle",
         )
+
 
 def handle(payload: dict) -> dict:
     facet = payload["_facet_name"]
@@ -1328,7 +1331,7 @@ runtime callables. Calling it returns a whole-step snapshot dict:
 
 ```python
 def handle(payload: dict) -> dict:
-    ref = payload["facetRef"]              # tagged JSON ref
+    ref = payload["facetRef"]  # tagged JSON ref
     fetch = payload["_fetch_step"]
     upstream = fetch(ref)
     # upstream is:
@@ -1526,7 +1529,7 @@ on read and MUST clone before storing on write:
 def get_step(self, step_id: StepId) -> Optional[StepDefinition]:
     step = self._steps.get(step_id)
     if step:
-        return step.clone()    # copy.deepcopy
+        return step.clone()  # copy.deepcopy
     return None
 ```
 

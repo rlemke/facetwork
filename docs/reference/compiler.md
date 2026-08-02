@@ -35,10 +35,7 @@ entry1 = SourceLoader.load_file("main.ffl")
 entry2 = SourceLoader.load_file("lib.ffl", is_library=True)
 
 # Build compiler input
-compiler_input = CompilerInput(
-    primary_sources=[entry1],
-    library_sources=[entry2]
-)
+compiler_input = CompilerInput(primary_sources=[entry1], library_sources=[entry2])
 
 # Parse with provenance tracking
 parser = AFLParser()
@@ -236,9 +233,17 @@ echo 'facet Test()' | afl
 ### Python API
 ```python
 from afl import (
-    parse, emit_json, emit_dict, AFLParser, ParseError,
-    CompilerInput, SourceEntry, SourceRegistry, SourceLoader,
-    FileOrigin, JSONEmitter,
+    parse,
+    emit_json,
+    emit_dict,
+    AFLParser,
+    ParseError,
+    CompilerInput,
+    SourceEntry,
+    SourceRegistry,
+    SourceLoader,
+    FileOrigin,
+    JSONEmitter,
 )
 
 # Simple single-source parsing (legacy API)
@@ -249,10 +254,7 @@ json_str = emit_json(ast)
 entry1 = SourceLoader.load_file("main.ffl")
 entry2 = SourceLoader.load_file("lib.ffl", is_library=True)
 
-compiler_input = CompilerInput(
-    primary_sources=[entry1],
-    library_sources=[entry2]
-)
+compiler_input = CompilerInput(primary_sources=[entry1], library_sources=[entry2])
 
 parser = AFLParser()
 ast, registry = parser.parse_sources(compiler_input)

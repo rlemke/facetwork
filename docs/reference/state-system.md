@@ -82,15 +82,18 @@ class StateChanger(ABC):
                 if not result.success:
                     self.step.mark_error(result.error)
                     return StateChangeResult(
-                        step=self.step, success=False,
-                        error=result.error, continue_processing=False,
+                        step=self.step,
+                        success=False,
+                        error=result.error,
+                        continue_processing=False,
                     )
 
                 self.step = result.step
 
                 if self.step.is_terminal:
                     return StateChangeResult(
-                        step=self.step, continue_processing=False,
+                        step=self.step,
+                        continue_processing=False,
                     )
 
                 if not self.step.is_requesting_state_change:
@@ -103,8 +106,10 @@ class StateChanger(ABC):
         except Exception as e:
             self.step.mark_error(e)
             return StateChangeResult(
-                step=self.step, success=False,
-                error=e, continue_processing=False,
+                step=self.step,
+                success=False,
+                error=e,
+                continue_processing=False,
             )
 
     @abstractmethod
@@ -124,6 +129,7 @@ class StateChanger(ABC):
 @dataclass
 class StateChangeResult:
     """Result of a state change operation."""
+
     step: StepDefinition
     success: bool = True
     error: Optional[Exception] = None
@@ -347,7 +353,9 @@ class StateHandler(ABC):
         except Exception as e:
             self.context.telemetry.log_error(self.step, self.state_name, e)
             return StateChangeResult(
-                step=self.step, success=False, error=e,
+                step=self.step,
+                success=False,
+                error=e,
             )
 
     @abstractmethod
@@ -375,7 +383,9 @@ class StateHandler(ABC):
         """Mark step as errored."""
         self.step.mark_error(exception)
         return StateChangeResult(
-            step=self.step, success=False, error=exception,
+            step=self.step,
+            success=False,
+            error=exception,
             continue_processing=False,
         )
 ```
@@ -410,6 +420,7 @@ STATE_HANDLERS: dict[str, type[StateHandler]] = {
     StepState.BLOCK_EXECUTION_CONTINUE: BlockExecutionContinueHandler,
     StepState.BLOCK_EXECUTION_END: BlockExecutionEndHandler,
 }
+
 
 def get_handler(
     state: str,
@@ -522,10 +533,7 @@ class MixinBlocksContinueHandler(StateHandler):
         errored = [s for s in sub_steps if s.is_error]
         if errored:
             err = errored[0].transition.error
-            msg = (
-                f"{len(errored)} mixin sub-step(s) errored"
-                + (f": {err}" if err else "")
-            )
+            msg = f"{len(errored)} mixin sub-step(s) errored" + (f": {err}" if err else "")
             self.step.mark_error(RuntimeError(msg))
             return StateChangeResult(step=self.step)
 
@@ -702,9 +710,12 @@ class StatementCaptureBeginHandler(StateHandler):
         statement_blocks = [b for b in blocks if b.is_complete]
 
         for pending_step in self.context.changes.updated_steps:
-            if (pending_step.container_id == self.step.id and
-                pending_step.is_block and pending_step.is_complete and
-                pending_step not in statement_blocks):
+            if (
+                pending_step.container_id == self.step.id
+                and pending_step.is_block
+                and pending_step.is_complete
+                and pending_step not in statement_blocks
+            ):
                 statement_blocks.append(pending_step)
 
         for block in statement_blocks:
@@ -827,6 +838,7 @@ Provides detailed analysis of step execution state within a block:
 @dataclass
 class StepAnalysis:
     """Analysis of step execution state within a block."""
+
     block: StepDefinition
     statements: Sequence[StatementDefinition]
 
@@ -872,6 +884,7 @@ Tracks block completion for containing steps:
 @dataclass
 class BlockAnalysis:
     """Analysis of all blocks for a step."""
+
     step: StepDefinition
     blocks: list[StepDefinition]
     completed: list[StepDefinition] = field(default_factory=list)
@@ -898,6 +911,7 @@ Steps use the `StepTransition` dataclass to control state machine behavior.
 @dataclass
 class StepTransition:
     """Manages state transition control for a step."""
+
     original_state: str
     current_state: str
     changed: bool = False

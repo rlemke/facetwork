@@ -223,7 +223,7 @@ Verified with 3 concurrent evaluators producing zero duplicate steps.
 register_handler(
     facet_name="osm.viz.RenderMap",
     module_uri="file:///handlers/visualization/map_renderer.py",
-    entrypoint="handle"
+    entrypoint="handle",
 )
 ```
 

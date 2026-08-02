@@ -137,12 +137,15 @@ Handlers create boto3 clients pointing at LocalStack:
 ```python
 LOCALSTACK_URL = os.environ.get("LOCALSTACK_URL", "http://localhost:4566")
 
+
 def _lambda_client():
-    return boto3.client("lambda",
+    return boto3.client(
+        "lambda",
         endpoint_url=LOCALSTACK_URL,
         region_name="us-east-1",
         aws_access_key_id="test",
-        aws_secret_access_key="test")
+        aws_secret_access_key="test",
+    )
 ```
 
 For real AWS, unset `LOCALSTACK_URL` and configure proper credentials:

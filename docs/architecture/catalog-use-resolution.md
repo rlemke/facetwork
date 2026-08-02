@@ -19,7 +19,7 @@ present in that merged set:
 ```python
 # facetwork/validator.py
 for uses_decl in namespace.uses:
-    if uses_decl.name not in self._namespaces:          # not in the merged set
+    if uses_decl.name not in self._namespaces:  # not in the merged set
         self._result.add_error(
             f"Invalid use statement: namespace '{uses_decl.name}' does not exist",
             rule_id="USE_UNKNOWN_NAMESPACE",

@@ -36,13 +36,15 @@ call in the handler:
 # Today: deterministic handler
 poller.register("SummarizeDoc", lambda p: {"summary": p["text"][:100]})
 
+
 # Needed: LLM-backed handler
 async def summarize(payload):
     response = await claude.messages.create(
         model="claude-sonnet-4-20250514",
-        messages=[{"role": "user", "content": f"Summarize: {payload['text']}"}]
+        messages=[{"role": "user", "content": f"Summarize: {payload['text']}"}],
     )
     return {"summary": response.content[0].text}
+
 
 poller.register("SummarizeDoc", summarize)
 ```
