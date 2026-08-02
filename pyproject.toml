@@ -58,7 +58,11 @@ dashboard = [
     "markdown>=3.5",
 ]
 mcp = [
-    "mcp>=1.0",
+    # Cap below 2.0: mcp 2.0 renamed the Tool field (inputSchema -> input_schema)
+    # and dropped Server.list_tools, which facetwork/mcp/server.py uses. Unpinned,
+    # a fresh CI resolver pulled 2.0.0 and broke typecheck + tests/mcp. Stay on 1.x
+    # until server.py is ported to the 2.0 API.
+    "mcp>=1.0,<2",
 ]
 hdfs = [
     "pyarrow>=14.0",
