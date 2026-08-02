@@ -1,0 +1,1 @@
+docker pull server3.local:5050/facetwork-runner:b468430 + fw fleet agent apply --data-dir $HOME/afl_data

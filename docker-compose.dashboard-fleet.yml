@@ -1,0 +1,12 @@
+# Fleet override for the bundled dashboard: point it at the shared infra MongoDB
+# + MinIO the same way the runners do (afl-mongodb / afl-minio -> infra host IP),
+# instead of the full-stack bundled `mongodb` service alias.
+# Apply alongside docker-compose.full-stack.yml when running the dashboard on a
+# fleet host whose live DB is the external afl-mongodb.
+services:
+  dashboard:
+    environment:
+      FW_MONGODB_URL: mongodb://afl-mongodb:27017
+    extra_hosts:
+      - "afl-mongodb:${FW_INFRA_IP:-127.0.0.1}"
+      - "afl-minio:${FW_INFRA_IP:-127.0.0.1}"
