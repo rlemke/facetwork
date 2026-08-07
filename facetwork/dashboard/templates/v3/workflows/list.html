@@ -87,12 +87,19 @@ body.selmode .rsel{display:flex}
     {% for runner in group.runners %}
     {% set st = runner.state %}
     {% set p = progress.get(runner.uuid) if progress else None %}
-    <div class="run-line" data-row data-name="{{ (runner.workflow.name|short_workflow_name)|lower }} {{ runner.workflow.name|lower }}">
+    {# The run's inputs are what tell two runs of the same workflow apart. #}
+    {% set summary = runner|run_summary %}
+    <div class="run-line" data-row data-name="{{ (runner.workflow.name|short_workflow_name)|lower }} {{ runner.workflow.name|lower }} {{ summary|lower }}">
     <label class="rsel"><input type="checkbox" class="rcb" value="{{ runner.uuid }}"></label>
     <a class="run-row"
        href="/v3/workflows/{{ runner.uuid }}" style="--pc:{{ pill.get(st, 'var(--muted)') }}">
       <span class="statusdot" style="background:{{ pill.get(st, 'var(--muted)') }}"></span>
-      <span class="run-name"><b>{{ runner.workflow.name|short_workflow_name }}</b><small>{{ runner.workflow.name }}</small></span>
+      <span class="run-name" title="{{ runner.workflow.name }}">
+        <b>{{ runner.workflow.name|short_workflow_name }}</b>
+        {# Prefer the inputs; the namespace group heading already carries the
+           qualified name, so repeating it here separates nothing. #}
+        <small>{% if summary %}{{ summary }}{% else %}{{ runner.workflow.name }}{% endif %}</small>
+      </span>
       <span class="run-prog">
         {% if p and p.total %}<span class="bar"><i style="width:{{ p.pct }}%"></i></span>{{ p.completed }}/{{ p.total }}{% else %}<span style="opacity:.5">—</span>{% endif %}
       </span>

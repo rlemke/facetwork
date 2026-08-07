@@ -335,6 +335,7 @@ def main(args: list[str] | None = None) -> int:
     from .entities import (
         FlowDefinition,
         FlowIdentity,
+        Parameter,
         RunnerDefinition,
         RunnerState,
         SourceText,
@@ -403,6 +404,9 @@ def main(args: list[str] | None = None) -> int:
         state=RunnerState.CREATED,
         author=author_def,
         teams=list(flow_teams),
+        # Same reason as the dashboard path: without the inputs on the run,
+        # repeated runs of one workflow are indistinguishable in the runs list.
+        parameters=[Parameter(name=k, value=v) for k, v in inputs.items()],
     )
     store.save_runner(runner)
 

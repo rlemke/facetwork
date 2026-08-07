@@ -235,6 +235,13 @@ def short_workflow_name_filter(name: str) -> str:
     return short_workflow_name(name)
 
 
+def run_summary_filter(runner) -> str:
+    """Short summary of a run's inputs, for telling repeat runs apart."""
+    from .helpers import run_summary
+
+    return run_summary(runner)
+
+
 def step_category_filter(state: str) -> str:
     """Categorize a step state as running/complete/error."""
     from .helpers import categorize_step_state
@@ -302,6 +309,7 @@ def register_filters(env: Environment) -> None:
     env.filters["step_log_color"] = step_log_color
     env.filters["step_state_bg"] = step_state_bg
     env.filters["short_workflow_name"] = short_workflow_name_filter
+    env.filters["run_summary"] = run_summary_filter
     env.filters["step_category"] = step_category_filter
     env.filters["namespace_of"] = namespace_of_filter
     env.filters["filesizeformat"] = filesizeformat

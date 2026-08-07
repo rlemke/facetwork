@@ -1,0 +1,118 @@
+{# Shared styles + macros for the Stock Groups app.
+
+   Palette note: the two chart series use categorical slots 1 (blue) and 2
+   (orange) from the validated default palette, stepped per mode. Gain/loss uses
+   the status pair, and ALWAYS ships with a sign or a word beside it, so meaning
+   never rests on color alone. #}
+
+{% macro styles() %}
+<style>
+.stk{
+  --series-1:#3987e5;          /* group */
+  --series-2:#d95926;          /* benchmark */
+  --gain:#0ca30c;
+  --loss:#d03b3b;
+  --flat:var(--text-2);
+}
+[data-theme="light"] .stk{ --series-1:#2a78d6; --series-2:#eb6834; --gain:#006300; --loss:#c22c2c; }
+
+.stk-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.9rem}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:.85rem .95rem}
+.kpi .lbl{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.kpi .val{font-size:26px;font-weight:600;letter-spacing:-.02em;margin-top:.35rem;line-height:1.1;color:var(--text)}
+.kpi .val.sm{font-size:19px}
+.kpi .sub{font-size:11.5px;color:var(--muted);margin-top:.2rem}
+.gain{color:var(--gain)}.loss{color:var(--loss)}.flat{color:var(--flat)}
+
+.stk-note{font-size:11.5px;color:var(--text-2);line-height:1.55;padding:.8rem .95rem;
+  border:1px solid color-mix(in srgb,var(--st-warning) 38%,var(--border));
+  background:color-mix(in srgb,var(--st-warning) 7%,var(--surface));
+  border-radius:var(--r-md);margin-top:1.2rem}
+.stk-note b{color:var(--text);font-weight:600}
+
+/* Always-visible marker in the topbar, so the nature of the numbers is clear
+   without scrolling to the footer note. */
+.paperbadge{display:inline-flex;align-items:center;gap:.4rem;padding:.28rem .6rem;border-radius:30px;
+  font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;
+  color:var(--st-warning);border:1px solid color-mix(in srgb,var(--st-warning) 45%,transparent);
+  background:color-mix(in srgb,var(--st-warning) 10%,transparent);white-space:nowrap}
+.paperbadge svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;flex:none}
+
+/* Inline warning at the point of commitment (the Start button). */
+.stk-warn{display:flex;gap:.55rem;align-items:flex-start;font-size:12px;line-height:1.5;
+  color:var(--text-2);margin:.2rem 0 1rem;padding:.65rem .8rem;border-radius:var(--r-sm);
+  border:1px solid color-mix(in srgb,var(--st-warning) 38%,var(--border));
+  background:color-mix(in srgb,var(--st-warning) 8%,transparent)}
+.stk-warn svg{width:15px;height:15px;stroke:var(--st-warning);fill:none;stroke-width:1.9;flex:none;margin-top:.1rem}
+.stk-warn b{color:var(--text);font-weight:600}
+
+.stk-grid{display:grid;grid-template-columns:1fr;gap:1.1rem}
+.chartcard{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:.9rem}
+.chartcard h3{margin:0 0 .15rem;font-size:12.5px;font-weight:600;color:var(--text-2)}
+.chartcard .cap{margin:0 0 .7rem;font-size:11.5px;color:var(--muted)}
+.chartwrap{position:relative;height:280px}
+
+.stk-legend{display:flex;gap:1rem;flex-wrap:wrap;font-size:12px;color:var(--text-2);margin:.1rem 0 .6rem}
+.stk-legend span{display:inline-flex;align-items:center;gap:.4rem}
+.stk-legend i{width:11px;height:11px;border-radius:3px;display:inline-block;flex:none}
+
+.plbar{display:inline-block;height:8px;border-radius:2px;min-width:2px;vertical-align:middle}
+.tickercell{display:flex;align-items:center;gap:.5rem}
+.pinbadge{font:600 9.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;
+  color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);
+  border-radius:20px;padding:.15rem .4rem}
+.why{font-size:11.5px;color:var(--muted);max-width:38ch}
+.overflow-x{overflow-x:auto}
+</style>
+{% endmacro %}
+
+{# A group that has not been snapshotted yet is missing whole keys, so every
+   macro treats undefined exactly like null rather than raising in a template. #}
+{% macro pct(value, digits=2) %}{% if value is undefined or value is none %}<span class="flat">n/a</span>{% else %}<span class="{{ 'gain' if value > 0 else ('loss' if value < 0 else 'flat') }}">{{ '%+.*f'|format(digits, value * 100) }}%</span>{% endif %}{% endmacro %}
+
+{% macro money(value) %}{% if value is undefined or value is none %}<span class="flat">n/a</span>{% else %}${{ '{:,.2f}'.format(value) }}{% endif %}{% endmacro %}
+
+{# printf-style formatting has no thousands separator, so build the sign
+   explicitly and let str.format group the digits. #}
+{% macro signed_money(value) %}{% if value is undefined or value is none %}<span class="flat">n/a</span>{% else %}<span class="{{ 'gain' if value > 0 else ('loss' if value < 0 else 'flat') }}">{{ '+' if value > 0 else ('-' if value < 0 else '') }}${{ '{:,.2f}'.format(value|abs) }}</span>{% endif %}{% endmacro %}
+
+{# Always-visible topbar marker. Sits on EVERY page of this app so a reader who
+   never scrolls still knows the money is not real. #}
+{% macro paper_badge() %}
+<span class="paperbadge" title="Simulated positions only. No orders are placed. Not investment advice.">
+  <svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L14.7 3.9a2 2 0 00-3.4 0z"/></svg>
+  Paper trading
+</span>
+{% endmacro %}
+
+{# Shown immediately above the action that commits to a group. #}
+{% macro action_warning() %}
+<div class="stk-warn">
+  <svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L14.7 3.9a2 2 0 00-3.4 0z"/></svg>
+  <span><b>This is a simulation.</b> Starting a group records notional positions at
+  current prices so a selection strategy can be measured. <b>No orders are placed,
+  no money moves, and nothing here is investment advice.</b></span>
+</div>
+{% endmacro %}
+
+{% macro disclaimer() %}
+<div class="stk-note">
+  <b>Paper trading only &mdash; not investment advice.</b>
+  This tool records <b>notional (simulated) positions</b> to measure a selection
+  strategy. It places no orders, holds no assets, and moves no money. Nothing here
+  is a recommendation to buy or sell any security, and none of it is financial,
+  investment, tax or legal advice. Do not make investment decisions on the basis
+  of these numbers; consult a licensed advisor.
+  <br><br>
+  <b>Past performance does not predict future results, and no selection rule
+  predicts returns.</b> The scores are a transparent ranking over documented
+  historical factors, not a forecast &mdash; the benchmark column exists so you can
+  check whether the strategy actually beat simply holding the index, which is the
+  only honest test.
+  <br><br>
+  Prices come from a <b>delayed, unofficial feed</b> (roughly 15 minutes behind for
+  the default provider) that can be wrong or unavailable; every snapshot stores the
+  timestamp it was taken at. Figures exclude commissions, spreads, slippage,
+  borrowing costs, taxes and dividends, so real-world results would differ.
+</div>
+{% endmacro %}
