@@ -58,9 +58,7 @@ def test_zero_is_kept_because_it_is_a_real_value():
 
 def test_config_style_inputs_are_skipped():
     """Values identical across every run separate nothing."""
-    summary = run_summary(
-        _runner(name="X", force_refresh=True, lookback_days=400, dry_run=True)
-    )
+    summary = run_summary(_runner(name="X", force_refresh=True, lookback_days=400, dry_run=True))
     assert summary == "X"
 
 

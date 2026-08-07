@@ -90,9 +90,7 @@ def _submit(store, current_user, qualified_name: str, inputs: dict) -> str | Non
     flow, wf = _find_workflow(store, qualified_name)
     if not flow or not wf:
         return None
-    return create_flow_run(
-        flow, wf, json.dumps(inputs), "none", [], store, current_user
-    )
+    return create_flow_run(flow, wf, json.dumps(inputs), "none", [], store, current_user)
 
 
 def _group_view(db, group: dict) -> dict:
@@ -115,7 +113,9 @@ def _group_view(db, group: dict) -> dict:
         out["display_pl_pct"] = out.get("current_pl_pct")
         out["display_pl_abs"] = out.get("current_pl_abs")
         latest = db[SNAPSHOTS].find_one(
-            {"group_id": out["group_id"]}, {"_id": 0, "benchmark_pl_pct": 1}, sort=[("snapshot_date", -1)]
+            {"group_id": out["group_id"]},
+            {"_id": 0, "benchmark_pl_pct": 1},
+            sort=[("snapshot_date", -1)],
         )
         out["display_benchmark_pct"] = (latest or {}).get("benchmark_pl_pct")
         if out["display_pl_pct"] is not None and out["display_benchmark_pct"] is not None:
@@ -157,8 +157,14 @@ def api_group(group_id: str, store=Depends(get_store)):
     return JSONResponse(
         content={
             "group": _group_view(db, group),
-            "positions": _jsonable(list(db[POSITIONS].find({"group_id": group_id}, {"_id": 0}).sort("rank", 1))),
-            "snapshots": _jsonable(list(db[SNAPSHOTS].find({"group_id": group_id}, {"_id": 0}).sort("snapshot_date", 1))),
+            "positions": _jsonable(
+                list(db[POSITIONS].find({"group_id": group_id}, {"_id": 0}).sort("rank", 1))
+            ),
+            "snapshots": _jsonable(
+                list(
+                    db[SNAPSHOTS].find({"group_id": group_id}, {"_id": 0}).sort("snapshot_date", 1)
+                )
+            ),
         }
     )
 
@@ -172,10 +178,12 @@ def api_group_series(group_id: str, store=Depends(get_store)):
     """
     db = _stocks_db(store)
     snaps = list(
-        db[SNAPSHOTS].find(
+        db[SNAPSHOTS]
+        .find(
             {"group_id": group_id},
             {"_id": 0, "snapshot_date": 1, "pl_pct": 1, "total_value": 1, "benchmark_pl_pct": 1},
-        ).sort("snapshot_date", 1)
+        )
+        .sort("snapshot_date", 1)
     )
     group = db[GROUPS].find_one({"group_id": group_id}, {"_id": 0, "benchmark": 1, "name": 1})
     return JSONResponse(
@@ -188,7 +196,8 @@ def api_group_series(group_id: str, store=Depends(get_store)):
             # render as "-0.00%".
             "pl_pct": [round((s.get("pl_pct") or 0.0) * 100, 4) + 0.0 for s in snaps],
             "benchmark_pct": [
-                None if s.get("benchmark_pl_pct") is None
+                None
+                if s.get("benchmark_pl_pct") is None
                 else round(s["benchmark_pl_pct"] * 100, 4) + 0.0
                 for s in snaps
             ],
@@ -324,7 +333,9 @@ def stocks_create_group(
 
 
 @router.post("/{group_id}/snapshot")
-def stocks_snapshot(group_id: str, store=Depends(get_store), current_user=Depends(get_current_user)):
+def stocks_snapshot(
+    group_id: str, store=Depends(get_store), current_user=Depends(get_current_user)
+):
     """REFRESH NOW — submit a snapshot run for this group."""
     runner_id = _submit(store, current_user, WF_SNAPSHOT, {"group_id": group_id})
     if runner_id is None:

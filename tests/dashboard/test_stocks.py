@@ -52,7 +52,7 @@ def _stocks_db(store):
 
 def _seed_group(store, group_id="g1", status="open", **overrides):
     db = _stocks_db(store)
-    now = datetime.datetime(2026, 3, 2, 14, 0, tzinfo=datetime.timezone.utc)
+    now = datetime.datetime(2026, 3, 2, 14, 0, tzinfo=datetime.UTC)
     group = {
         "group_id": group_id,
         "name": "Momentum week 9",
@@ -88,42 +88,85 @@ def _seed_group(store, group_id="g1", status="open", **overrides):
     group.update(overrides)
     db["stock_groups"].insert_one(group)
 
-    db["stock_positions"].insert_many([
-        {
-            "group_id": group_id, "ticker": "AAPL", "name": "Apple Inc.", "rank": 1,
-            "entry_price": 100.0, "shares": 50.0, "weight": 0.5, "cost": 5000.0,
-            "last_price": 110.0, "pl_abs": 500.0, "pl_pct": 0.10, "manual": False,
-            "factors": {"mom_12_1": 0.34}, "llm_reason": "",
-        },
-        {
-            "group_id": group_id, "ticker": "MSFT", "name": "Microsoft Corp.", "rank": 2,
-            "entry_price": 200.0, "shares": 25.0, "weight": 0.5, "cost": 5000.0,
-            "last_price": 200.0, "pl_abs": 0.0, "pl_pct": 0.0, "manual": True,
-            "factors": {}, "llm_reason": "",
-        },
-    ])
+    db["stock_positions"].insert_many(
+        [
+            {
+                "group_id": group_id,
+                "ticker": "AAPL",
+                "name": "Apple Inc.",
+                "rank": 1,
+                "entry_price": 100.0,
+                "shares": 50.0,
+                "weight": 0.5,
+                "cost": 5000.0,
+                "last_price": 110.0,
+                "pl_abs": 500.0,
+                "pl_pct": 0.10,
+                "manual": False,
+                "factors": {"mom_12_1": 0.34},
+                "llm_reason": "",
+            },
+            {
+                "group_id": group_id,
+                "ticker": "MSFT",
+                "name": "Microsoft Corp.",
+                "rank": 2,
+                "entry_price": 200.0,
+                "shares": 25.0,
+                "weight": 0.5,
+                "cost": 5000.0,
+                "last_price": 200.0,
+                "pl_abs": 0.0,
+                "pl_pct": 0.0,
+                "manual": True,
+                "factors": {},
+                "llm_reason": "",
+            },
+        ]
+    )
 
-    db["stock_snapshots"].insert_many([
-        {
-            "group_id": group_id, "snapshot_date": "2026-03-02", "taken_at": now,
-            "total_cost": 10_000.0, "total_value": 10_000.0, "pl_abs": 0.0, "pl_pct": 0.0,
-            "benchmark_price": 500.0, "benchmark_pl_pct": 0.0, "kind": "open",
-            "holdings": [], "missing": [], "as_of": "2026-03-02T14:00:00+00:00",
-        },
-        {
-            "group_id": group_id, "snapshot_date": "2026-03-03",
-            "taken_at": now + datetime.timedelta(days=1),
-            "total_cost": 10_000.0, "total_value": 10_500.0, "pl_abs": 500.0, "pl_pct": 0.05,
-            "benchmark_price": 510.0, "benchmark_pl_pct": 0.02, "kind": "interim",
-            "holdings": [], "missing": [], "as_of": "2026-03-03T21:00:00+00:00",
-        },
-    ])
+    db["stock_snapshots"].insert_many(
+        [
+            {
+                "group_id": group_id,
+                "snapshot_date": "2026-03-02",
+                "taken_at": now,
+                "total_cost": 10_000.0,
+                "total_value": 10_000.0,
+                "pl_abs": 0.0,
+                "pl_pct": 0.0,
+                "benchmark_price": 500.0,
+                "benchmark_pl_pct": 0.0,
+                "kind": "open",
+                "holdings": [],
+                "missing": [],
+                "as_of": "2026-03-02T14:00:00+00:00",
+            },
+            {
+                "group_id": group_id,
+                "snapshot_date": "2026-03-03",
+                "taken_at": now + datetime.timedelta(days=1),
+                "total_cost": 10_000.0,
+                "total_value": 10_500.0,
+                "pl_abs": 500.0,
+                "pl_pct": 0.05,
+                "benchmark_price": 510.0,
+                "benchmark_pl_pct": 0.02,
+                "kind": "interim",
+                "holdings": [],
+                "missing": [],
+                "as_of": "2026-03-03T21:00:00+00:00",
+            },
+        ]
+    )
 
-    db["stock_candidates"].insert_many([
-        {"group_id": group_id, "ticker": "AAPL", "rank": 1, "score": 2.0, "selected": True},
-        {"group_id": group_id, "ticker": "MSFT", "rank": 2, "score": 1.5, "selected": True},
-        {"group_id": group_id, "ticker": "NVDA", "rank": 3, "score": 1.2, "selected": False},
-    ])
+    db["stock_candidates"].insert_many(
+        [
+            {"group_id": group_id, "ticker": "AAPL", "rank": 1, "score": 2.0, "selected": True},
+            {"group_id": group_id, "ticker": "MSFT", "rank": 2, "score": 1.5, "selected": True},
+            {"group_id": group_id, "ticker": "NVDA", "rank": 3, "score": 1.2, "selected": False},
+        ]
+    )
     return group_id
 
 
@@ -151,21 +194,33 @@ def test_index_lists_an_open_group(client):
     resp = tc.get("/stocks/")
     assert resp.status_code == 200
     assert "Momentum week 9" in resp.text
-    assert "+5.00%" in resp.text        # group P/L
-    assert "+2.00%" in resp.text        # benchmark
-    assert "+3.00%" in resp.text        # alpha = 5 - 2
+    assert "+5.00%" in resp.text  # group P/L
+    assert "+2.00%" in resp.text  # benchmark
+    assert "+3.00%" in resp.text  # alpha = 5 - 2
 
 
 def test_index_separates_closed_groups(client):
     tc, store = client
-    _seed_group(store, group_id="closed1", status="closed",
-                closed_at=datetime.datetime(2026, 3, 9, tzinfo=datetime.timezone.utc),
-                final={"total_cost": 10_000.0, "total_value": 11_000.0, "pl_abs": 1000.0,
-                       "pl_pct": 0.10, "benchmark_pl_pct": 0.03, "alpha": 0.07,
-                       "winners": 2, "losers": 0, "held_days": 7})
+    _seed_group(
+        store,
+        group_id="closed1",
+        status="closed",
+        closed_at=datetime.datetime(2026, 3, 9, tzinfo=datetime.UTC),
+        final={
+            "total_cost": 10_000.0,
+            "total_value": 11_000.0,
+            "pl_abs": 1000.0,
+            "pl_pct": 0.10,
+            "benchmark_pl_pct": 0.03,
+            "alpha": 0.07,
+            "winners": 2,
+            "losers": 0,
+            "held_days": 7,
+        },
+    )
     resp = tc.get("/stocks/")
     assert "+10.00%" in resp.text
-    assert "+7.00%" in resp.text        # alpha from the final block
+    assert "+7.00%" in resp.text  # alpha from the final block
     assert "Beat the benchmark" in resp.text
 
 
@@ -206,9 +261,20 @@ def test_detail_page_flags_a_pinned_position(client):
 
 def test_detail_page_of_a_closed_group_hides_the_action_buttons(client):
     tc, store = client
-    _seed_group(store, group_id="c1", status="closed",
-                final={"pl_abs": 0.0, "pl_pct": 0.0, "benchmark_pl_pct": 0.0,
-                       "alpha": 0.0, "winners": 0, "losers": 2, "held_days": 7})
+    _seed_group(
+        store,
+        group_id="c1",
+        status="closed",
+        final={
+            "pl_abs": 0.0,
+            "pl_pct": 0.0,
+            "benchmark_pl_pct": 0.0,
+            "alpha": 0.0,
+            "winners": 0,
+            "losers": 2,
+            "held_days": 7,
+        },
+    )
     resp = tc.get("/stocks/c1")
     assert "/stocks/c1/snapshot" not in resp.text
     assert "/stocks/c1/close" not in resp.text
@@ -239,8 +305,8 @@ def test_pages_render_for_a_group_that_has_never_been_snapshotted(client):
     assert index.status_code == 200
     detail = tc.get("/stocks/fresh")
     assert detail.status_code == 200
-    assert "$10,000.00" in detail.text   # falls back to the cost basis
-    assert "n/a" in detail.text          # P/L shown as unknown, not as zero
+    assert "$10,000.00" in detail.text  # falls back to the cost basis
+    assert "n/a" in detail.text  # P/L shown as unknown, not as zero
 
 
 def test_every_page_carries_the_paper_trading_badge(client):
@@ -436,15 +502,23 @@ def test_start_submits_the_workflow_when_seeded(client, monkeypatch):
     )
     monkeypatch.setattr(
         "facetwork.dashboard.routes.execution.flows.create_flow_run",
-        lambda flow, wf, inputs, purpose, teams, st, user: captured.setdefault("inputs", inputs)
-        and "runner-123" or "runner-123",
+        lambda flow, wf, inputs, purpose, teams, st, user: (
+            captured.setdefault("inputs", inputs) and "runner-123" or "runner-123"
+        ),
     )
 
     resp = tc.post(
         "/stocks/groups",
-        data={"name": "  Week 9  ", "universe": "dow30", "size": "5",
-              "capital": "50000", "horizon_days": "7", "benchmark": "spy",
-              "pinned": "AAPL", "use_llm": "1"},
+        data={
+            "name": "  Week 9  ",
+            "universe": "dow30",
+            "size": "5",
+            "capital": "50000",
+            "horizon_days": "7",
+            "benchmark": "spy",
+            "pinned": "AAPL",
+            "use_llm": "1",
+        },
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -453,8 +527,8 @@ def test_start_submits_the_workflow_when_seeded(client, monkeypatch):
     import json
 
     inputs = json.loads(captured["inputs"])
-    assert inputs["name"] == "Week 9"          # trimmed
-    assert inputs["benchmark"] == "SPY"        # upper-cased
+    assert inputs["name"] == "Week 9"  # trimmed
+    assert inputs["benchmark"] == "SPY"  # upper-cased
     assert inputs["size"] == 5
     assert inputs["use_llm"] is True
     assert inputs["pinned"] == "AAPL"
@@ -482,11 +556,15 @@ def test_start_coerces_a_nonsensical_size(client, monkeypatch):
     )
     monkeypatch.setattr(
         "facetwork.dashboard.routes.execution.flows.create_flow_run",
-        lambda flow, wf, inputs, purpose, teams, st, user: captured.setdefault("inputs", inputs)
-        and "r1" or "r1",
+        lambda flow, wf, inputs, purpose, teams, st, user: (
+            captured.setdefault("inputs", inputs) and "r1" or "r1"
+        ),
     )
-    tc.post("/stocks/groups", data={"name": "X", "size": "0", "horizon_days": "0"},
-            follow_redirects=False)
+    tc.post(
+        "/stocks/groups",
+        data={"name": "X", "size": "0", "horizon_days": "0"},
+        follow_redirects=False,
+    )
 
     import json
 

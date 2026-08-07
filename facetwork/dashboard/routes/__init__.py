@@ -29,8 +29,8 @@ def register_routes(app: FastAPI) -> None:
     from .core.home import router as home_router
     from .domain.census_maps import router as census_maps_router
     from .domain.climate_trends import router as climate_trends_router
-    from .domain.stocks import router as stocks_router
     from .domain.site_selection import router as site_selection_router
+    from .domain.stocks import router as stocks_router
     from .execution.catalog import router as catalog_router
     from .execution.runners import router as runners_router
     from .execution.steps import router as steps_router
