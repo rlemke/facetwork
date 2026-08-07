@@ -177,6 +177,19 @@
       "service": "runner-migration",
       "task_list": "migration"
     },
+    "stocks": {
+      "repo": "fwh_stocks",
+      "extras": ["yfinance"],
+      "description": "Stock-group paper-trading tracker: factor + analyst + optional LLM selection, daily mark-to-market snapshots, per-position and overall P/L vs a benchmark",
+      "service": "runner-stocks",
+      "task_list": "stocks",
+      "compose": {
+        "env": [
+          ["ANTHROPIC_API_KEY", "${ANTHROPIC_API_KEY:-}"],
+          ["FW_STOCKS_PROVIDER", "${FW_STOCKS_PROVIDER:-yfinance}"]
+        ]
+      }
+    },
     "amr": {
       "repo": "fwh_amr",
       "extras": [],

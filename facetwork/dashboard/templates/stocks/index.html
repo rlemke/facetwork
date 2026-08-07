@@ -1,0 +1,112 @@
+{% extends "v3/base.html" %}
+{% import "stocks/_shared.html" as s %}
+{% block title %}Stock Groups &middot; Facetwork{% endblock %}
+
+{% block head_extra %}{{ s.styles() }}{% endblock %}
+
+{% block breadcrumb %}<nav class="crumb"><span class="cur">Stock Groups</span></nav>{% endblock %}
+
+{% block topbar_actions %}
+<a class="btn primary" href="/stocks/new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> New group</a>
+{% endblock %}
+
+{% block content %}
+<div class="stk">
+
+  {% if not workflow_ready %}
+  <div class="filterbar">
+    <svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L14.7 3.9a2 2 0 00-3.4 0z"/></svg>
+    <span class="crit">The stocks workflows are not seeded.</span>
+    <span>Run <code>fw ffl seed</code> and start a runner with <code>--domain stocks</code> before creating a group.</span>
+  </div>
+  {% endif %}
+
+  {% if closed_count %}
+  <section class="stk-kpis" style="margin-bottom:1.1rem">
+    <div class="kpi">
+      <div class="lbl">Groups closed</div>
+      <div class="val">{{ closed_count }}</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">Beat the benchmark</div>
+      <div class="val">{{ beat_benchmark }} <span style="font-size:15px;color:var(--muted)">of {{ closed_count }}</span></div>
+      <div class="sub">Closed groups whose return exceeded their benchmark</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">Open now</div>
+      <div class="val">{{ open_groups|length }}</div>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="panel" style="margin-bottom:1.1rem">
+    <div class="panel-head"><h2>Open groups</h2></div>
+    {% if open_groups %}
+    <div class="overflow-x">
+    <table class="dtable">
+      <thead><tr>
+        <th>Group</th><th>Opened</th><th>Holdings</th>
+        <th class="num">Value</th><th class="num">P/L</th><th class="num">P/L %</th>
+        <th class="num">Benchmark</th><th class="num">vs Benchmark</th>
+      </tr></thead>
+      <tbody>
+      {% for g in open_groups %}
+        <tr>
+          <td><a href="/stocks/{{ g.group_id }}">{{ g.name }}</a>
+              <div class="t">{{ g.strategy.universe }} &middot; top {{ g.strategy.size }}</div></td>
+          <td class="t">{{ (g.opened_at or '')[:10] }}</td>
+          <td class="num">{{ g.position_count }}</td>
+          <td class="num">{{ s.money(g.display_value) }}</td>
+          <td class="num">{{ s.signed_money(g.display_pl_abs) }}</td>
+          <td class="num">{{ s.pct(g.display_pl_pct) }}</td>
+          <td class="num">{{ s.pct(g.display_benchmark_pct) }}</td>
+          <td class="num">{{ s.pct(g.alpha) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M6 16V9M11 16V5M16 16v-4"/></svg>
+      <h1>No open groups</h1>
+      <p>Start a group to select stocks, record entry prices, and track profit and loss over a horizon.</p>
+      <a class="btn primary" href="/stocks/new">New group</a>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Closed groups</h2></div>
+    {% if closed_groups %}
+    <div class="overflow-x">
+    <table class="dtable">
+      <thead><tr>
+        <th>Group</th><th>Closed</th><th class="num">Held</th><th class="num">Winners</th>
+        <th class="num">P/L</th><th class="num">P/L %</th><th class="num">Benchmark</th><th class="num">vs Benchmark</th>
+      </tr></thead>
+      <tbody>
+      {% for g in closed_groups %}
+        <tr>
+          <td><a href="/stocks/{{ g.group_id }}">{{ g.name }}</a>
+              <div class="t">{{ g.strategy.universe }} &middot; top {{ g.strategy.size }}</div></td>
+          <td class="t">{{ (g.closed_at or '')[:10] }}</td>
+          <td class="num">{{ g.final.held_days if g.final and g.final.held_days is not none else '&ndash;'|safe }}d</td>
+          <td class="num">{{ g.final.winners if g.final else '' }}/{{ g.position_count }}</td>
+          <td class="num">{{ s.signed_money(g.display_pl_abs) }}</td>
+          <td class="num">{{ s.pct(g.display_pl_pct) }}</td>
+          <td class="num">{{ s.pct(g.display_benchmark_pct) }}</td>
+          <td class="num">{{ s.pct(g.alpha) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div class="empty"><p>No closed groups yet.</p></div>
+    {% endif %}
+  </section>
+
+  {{ s.disclaimer() }}
+</div>
+{% endblock %}

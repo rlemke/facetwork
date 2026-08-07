@@ -806,6 +806,29 @@ services:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_sensor_monitoring:/handlers/fwh_sensor_monitoring
       - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
+
+  runner-stocks:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: stocks
+      FW_DOMAIN_REPO: fwh_stocks
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      FW_STOCKS_PROVIDER: ${FW_STOCKS_PROVIDER:-yfinance}
+      FW_REGISTRY_RUNNER_ARGS: "--task-list stocks"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_stocks:/handlers/fwh_stocks
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
   # <<< END generated domain runners <<<
 
   # Embedded-GraphHopper Java routing agent (osm.Routing.GraphHopper.RouteBatch).

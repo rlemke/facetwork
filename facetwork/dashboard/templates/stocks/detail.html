@@ -1,0 +1,156 @@
+{% extends "v3/base.html" %}
+{% import "stocks/_shared.html" as s %}
+{% block title %}{{ group.name }} &middot; Stock Groups{% endblock %}
+
+{% block head_extra %}{{ s.styles() }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><a href="/stocks/">Stock Groups</a>
+  <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg><span class="cur">{{ group.name }}</span></nav>
+{% endblock %}
+
+{% block topbar_actions %}
+{% if is_open %}
+<form method="post" action="/stocks/{{ group.group_id }}/snapshot" style="display:inline">
+  <button class="btn" type="submit"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg> Refresh now</button>
+</form>
+<form method="post" action="/stocks/{{ group.group_id }}/close" style="display:inline"
+      onsubmit="return confirm('End this group and record its final profit/loss? This cannot be undone.')">
+  <button class="btn danger" type="submit"><svg viewBox="0 0 24 24"><path d="M9 9h6v6H9z"/><circle cx="12" cy="12" r="9"/></svg> End &amp; record</button>
+</form>
+{% else %}
+<span class="statuspill"><span class="statusdot" style="background:var(--muted)"></span> Closed</span>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="stk">
+
+  {# ---- KPI row ------------------------------------------------------- #}
+  <section class="stk-kpis" style="margin-bottom:1.1rem">
+    <div class="kpi">
+      <div class="lbl">Current value</div>
+      <div class="val">{{ s.money(group.display_value) }}</div>
+      <div class="sub">Cost basis {{ s.money(group.initial_value) }}</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">Profit / loss</div>
+      <div class="val">{{ s.signed_money(group.display_pl_abs) }}</div>
+      <div class="sub">{{ s.pct(group.display_pl_pct) }} on cost</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">Benchmark ({{ group.benchmark }})</div>
+      <div class="val sm">{{ s.pct(group.display_benchmark_pct) }}</div>
+      <div class="sub">over the same window</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">vs Benchmark</div>
+      <div class="val sm">{{ s.pct(group.alpha) }}</div>
+      <div class="sub">{% if group.alpha is none %}needs a benchmark quote{% elif group.alpha > 0 %}ahead of the index{% elif group.alpha < 0 %}behind the index{% else %}level with the index{% endif %}</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">{{ 'Days remaining' if is_open else 'Days held' }}</div>
+      <div class="val sm">
+        {% if is_open %}{{ days_left if days_left is not none else '&ndash;'|safe }}
+        {% else %}{{ group.final.held_days if group.final and group.final.held_days is not none else '&ndash;'|safe }}{% endif %}
+      </div>
+      <div class="sub">{{ snapshot_count }} snapshot{{ '' if snapshot_count == 1 else 's' }} recorded</div>
+    </div>
+  </section>
+
+  {# ---- P/L over time -------------------------------------------------- #}
+  <section class="chartcard" style="margin-bottom:1.1rem">
+    <h3>Profit and loss over the holding period</h3>
+    <p class="cap">Percent change from entry. Both series share one axis so they compare directly.</p>
+    <div class="stk-legend">
+      <span><i style="background:var(--series-1)"></i> {{ group.name }}</span>
+      <span><i style="background:var(--series-2)"></i> {{ group.benchmark }} (benchmark)</span>
+    </div>
+    <div class="chartwrap"><canvas id="pl-chart"></canvas></div>
+    <p class="cap" id="chart-empty" style="display:none;margin-top:.7rem">
+      Only one snapshot so far &mdash; the line appears once a second snapshot is recorded.
+      {% if is_open %}Press <b>Refresh now</b> or wait for the daily close job.{% endif %}
+    </p>
+  </section>
+
+  {# ---- positions ------------------------------------------------------ #}
+  <section class="panel" style="margin-bottom:1.1rem">
+    <div class="panel-head">
+      <h2>Holdings</h2>
+      <span class="t" style="color:var(--muted);font-size:11.5px">sorted by contribution to profit/loss</span>
+    </div>
+    <div class="overflow-x">
+    <table class="dtable">
+      <thead><tr>
+        <th>Ticker</th><th>Name</th>
+        <th class="num">Shares</th><th class="num">Entry</th>
+        <th class="num">{{ 'Exit' if not is_open else 'Last' }}</th>
+        <th class="num">P/L</th><th class="num">P/L %</th>
+        <th>Contribution</th><th>Why it was picked</th>
+      </tr></thead>
+      <tbody>
+      {% for p in positions %}
+        {# `default(_, true)` also covers the key being absent entirely, which is
+           the state of a position that has not been marked yet. #}
+        {% set plpct = p.pl_pct | default(0.0, true) %}
+        <tr>
+          <td><div class="tickercell"><b>{{ p.ticker }}</b>{% if p.manual %}<span class="pinbadge">pinned</span>{% endif %}</div></td>
+          <td class="t">{{ p.name or '' }}</td>
+          <td class="num">{{ '%.4f'|format(p.shares) }}</td>
+          <td class="num">{{ s.money(p.entry_price) }}</td>
+          <td class="num">{{ s.money(p.exit_price if p.exit_price is defined and p.exit_price else p.last_price) }}</td>
+          <td class="num">{{ s.signed_money(p.pl_abs) }}</td>
+          <td class="num">{{ s.pct(p.pl_pct) }}</td>
+          <td>
+            {# Diverging bar: width is magnitude, side is sign. The signed number
+               in the previous column carries the meaning; this is a visual aid. #}
+            <span class="plbar" aria-hidden="true"
+                  style="width:{{ [ (plpct|abs) * 400, 100 ]|min }}px;
+                         background:{{ 'var(--gain)' if plpct > 0 else ('var(--loss)' if plpct < 0 else 'var(--flat)') }}"></span>
+          </td>
+          <td class="why">
+            {% if p.manual %}Pinned manually.
+            {% elif p.llm_reason %}{{ p.llm_reason }}
+            {% else %}Rank {{ p.rank }} of {{ group.screened_count }} screened{% if p.factors and p.factors.mom_12_1 is defined %}; 12-1 momentum {{ '%+.1f'|format(p.factors.mom_12_1 * 100) }}%{% endif %}.
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  {# ---- strategy record ------------------------------------------------ #}
+  <section class="panel">
+    <div class="panel-head"><h2>Strategy as run</h2></div>
+    <div class="overflow-x">
+    <table class="dtable">
+      <tbody>
+        <tr><td>Universe</td><td>{{ group.strategy.universe }} &mdash; {{ group.universe_size }} tickers, {{ group.screened_count }} passed the filters, {{ group.excluded_count }} excluded</td></tr>
+        <tr><td>Group size</td><td>{{ group.strategy.size }}</td></tr>
+        <tr><td>Notional capital</td><td>{{ s.money(group.strategy.capital) }}, equal weight, fractional shares</td></tr>
+        <tr><td>Factor weights</td><td class="t">{{ group.strategy.factor_weights }}</td></tr>
+        <tr><td>Stage weights</td><td class="t">{{ group.strategy.stage_weights }}</td></tr>
+        <tr><td>LLM re-rank</td><td>{{ 'enabled' if group.strategy.use_llm else 'not used' }}</td></tr>
+        <tr><td>Price provider</td><td>{{ group.provider }}</td></tr>
+        <tr><td>Opened</td><td class="t">{{ group.opened_at }}</td></tr>
+        {% if group.last_snapshot_at %}<tr><td>Last snapshot</td><td class="t">{{ group.last_snapshot_at }}</td></tr>{% endif %}
+        {% if group.closed_at %}<tr><td>Closed</td><td class="t">{{ group.closed_at }}</td></tr>{% endif %}
+        {% if group.skipped %}<tr><td>Skipped at open</td><td>{{ group.skipped|join(', ') }} &mdash; no quote available</td></tr>{% endif %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  {{ s.disclaimer() }}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script type="module">
+import { initStockChart } from "/static/stocks_charts.js";
+initStockChart({{ group.group_id | tojson }});
+</script>
+{% endblock %}

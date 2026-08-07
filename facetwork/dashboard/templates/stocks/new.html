@@ -1,0 +1,123 @@
+{% extends "v3/base.html" %}
+{% import "stocks/_shared.html" as s %}
+{% block title %}New stock group &middot; Facetwork{% endblock %}
+
+{% block head_extra %}
+{{ s.styles() }}
+<style>
+.frm{max-width:760px}
+.frm .row{display:grid;grid-template-columns:1fr 1fr;gap:.9rem}
+@media (max-width:700px){.frm .row{grid-template-columns:1fr}}
+.frm label{display:block;font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:.9rem 0 .35rem}
+.frm input,.frm select{width:100%;padding:.5rem .65rem;background:var(--bg);border:1px solid var(--border);
+  border-radius:var(--r-sm);color:var(--text);font:500 13px var(--sans);outline:none}
+.frm input:focus,.frm select:focus{border-color:var(--accent)}
+.frm .hint{font-size:11.5px;color:var(--muted);margin-top:.3rem;line-height:1.5}
+.frm .check{display:flex;align-items:flex-start;gap:.55rem;margin-top:1rem}
+.frm .check input{width:auto;margin-top:.15rem}
+.frm .check span{font-size:12.5px;color:var(--text-2)}
+.frm .actions{display:flex;gap:.6rem;margin-top:1.4rem;padding-top:1.1rem;border-top:1px solid var(--border)}
+.stages{display:grid;gap:.6rem;font-size:12.5px;color:var(--text-2);line-height:1.55}
+.stages b{color:var(--text);font-weight:600}
+.stages li{margin-bottom:.45rem}
+.stages ol{margin:.2rem 0 0;padding-left:1.1rem}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="crumb"><a href="/stocks/">Stock Groups</a>
+  <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg><span class="cur">New group</span></nav>
+{% endblock %}
+
+{% block content %}
+<div class="stk" style="display:grid;grid-template-columns:1fr 320px;gap:1.1rem;align-items:start">
+
+  <section class="panel">
+    <div class="panel-head"><h2>Start a stock group</h2></div>
+    <form class="frm" method="post" action="/stocks/groups" style="padding:.2rem 1rem 1.1rem">
+
+      <label for="name">Group name</label>
+      <input id="name" name="name" required maxlength="80" placeholder="e.g. Momentum week 32">
+
+      <div class="row">
+        <div>
+          <label for="universe">Universe</label>
+          <select id="universe" name="universe">
+            {% for value, label in universes %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+          <div class="hint">The pool the screener ranks. <b>Manual</b> uses only the pinned tickers below.</div>
+        </div>
+        <div>
+          <label for="size">Number of stocks</label>
+          <input id="size" name="size" type="number" min="1" max="50" value="10">
+          <div class="hint">Total group size, including any pinned tickers.</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="capital">Notional capital ($)</label>
+          <input id="capital" name="capital" type="number" min="100" step="100" value="100000">
+          <div class="hint">Split equally across the picks using fractional shares.</div>
+        </div>
+        <div>
+          <label for="horizon_days">Horizon (days)</label>
+          <input id="horizon_days" name="horizon_days" type="number" min="1" max="365" value="7">
+          <div class="hint">Sets the suggested close date. Nothing closes automatically &mdash; you press End.</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="benchmark">Benchmark</label>
+          <input id="benchmark" name="benchmark" value="SPY" maxlength="10">
+          <div class="hint">Compared against on the same timestamps.</div>
+        </div>
+        <div>
+          <label for="pinned">Pinned tickers (optional)</label>
+          <input id="pinned" name="pinned" placeholder="AAPL, MSFT">
+          <div class="hint">Always included and flagged manual. They bypass scoring and occupy slots.</div>
+        </div>
+      </div>
+
+      <div class="check">
+        <input id="use_llm" name="use_llm" type="checkbox" value="1">
+        <span><b>Add an LLM re-rank.</b> Claude reviews the top candidates and returns a bounded
+          adjustment plus a written reason stored with each pick. Needs <code>ANTHROPIC_API_KEY</code>;
+          if it is unavailable the group still opens on the quantitative signal alone.</span>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary" type="submit" {% if not workflow_ready %}disabled{% endif %}>
+          <svg viewBox="0 0 24 24"><path d="M5 4l14 8-14 8z"/></svg> Start group
+        </button>
+        <a class="btn" href="/stocks/">Cancel</a>
+      </div>
+      {% if not workflow_ready %}
+      <div class="hint" style="margin-top:.8rem">Seed the stocks workflows first: <code>fw ffl seed</code>.</div>
+      {% endif %}
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>How stocks are chosen</h2></div>
+    <div class="stages" style="padding:.9rem">
+      <ol>
+        <li><b>Hard filters.</b> Price above $5, 20-day average dollar volume above $10M, and at
+            least a year of history. These exclude names where the factor math is meaningless.</li>
+        <li><b>Factor screen.</b> 12-1 momentum, 3-month return, 6-month strength relative to the
+            benchmark, proximity to the 52-week high, minus a volatility penalty. Each is z-scored
+            across the survivors and winsorized.</li>
+        <li><b>Analyst consensus.</b> Recommendation mean and target upside for the top 50, scored
+            only where coverage is thick enough to mean anything.</li>
+        <li><b>Optional LLM re-rank</b> of the top 25, with a written reason per ticker.</li>
+      </ol>
+      <p style="margin:.2rem 0 0;color:var(--muted);font-size:11.5px;line-height:1.55">
+        The complete ranked list is saved &mdash; including the names that were not picked &mdash; so
+        you can check afterwards how the runners-up performed.
+      </p>
+    </div>
+  </section>
+</div>
+<div class="stk">{{ s.disclaimer() }}</div>
+{% endblock %}

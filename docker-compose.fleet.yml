@@ -176,6 +176,15 @@ services:
     environment:
       <<: *fleet-env
 
+  runner-stocks:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+      # Market-data backend. Keep this at yfinance on the fleet: `stub` serves
+      # SYNTHETIC prices and must never back a real group.
+      FW_STOCKS_PROVIDER: ${FW_STOCKS_PROVIDER:-yfinance}
+
   runner-osm-mapping:
     <<: *fleet-runner
     depends_on: !reset []

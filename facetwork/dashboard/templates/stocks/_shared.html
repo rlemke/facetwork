@@ -1,0 +1,70 @@
+{# Shared styles + macros for the Stock Groups app.
+
+   Palette note: the two chart series use categorical slots 1 (blue) and 2
+   (orange) from the validated default palette, stepped per mode. Gain/loss uses
+   the status pair, and ALWAYS ships with a sign or a word beside it, so meaning
+   never rests on color alone. #}
+
+{% macro styles() %}
+<style>
+.stk{
+  --series-1:#3987e5;          /* group */
+  --series-2:#d95926;          /* benchmark */
+  --gain:#0ca30c;
+  --loss:#d03b3b;
+  --flat:var(--text-2);
+}
+[data-theme="light"] .stk{ --series-1:#2a78d6; --series-2:#eb6834; --gain:#006300; --loss:#c22c2c; }
+
+.stk-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.9rem}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:.85rem .95rem}
+.kpi .lbl{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.kpi .val{font-size:26px;font-weight:600;letter-spacing:-.02em;margin-top:.35rem;line-height:1.1;color:var(--text)}
+.kpi .val.sm{font-size:19px}
+.kpi .sub{font-size:11.5px;color:var(--muted);margin-top:.2rem}
+.gain{color:var(--gain)}.loss{color:var(--loss)}.flat{color:var(--flat)}
+
+.stk-note{font-size:11.5px;color:var(--muted);line-height:1.5;padding:.7rem .9rem;
+  border:1px dashed var(--border-strong);border-radius:var(--r-md);margin-top:1.2rem}
+.stk-note b{color:var(--text-2);font-weight:600}
+
+.stk-grid{display:grid;grid-template-columns:1fr;gap:1.1rem}
+.chartcard{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:.9rem}
+.chartcard h3{margin:0 0 .15rem;font-size:12.5px;font-weight:600;color:var(--text-2)}
+.chartcard .cap{margin:0 0 .7rem;font-size:11.5px;color:var(--muted)}
+.chartwrap{position:relative;height:280px}
+
+.stk-legend{display:flex;gap:1rem;flex-wrap:wrap;font-size:12px;color:var(--text-2);margin:.1rem 0 .6rem}
+.stk-legend span{display:inline-flex;align-items:center;gap:.4rem}
+.stk-legend i{width:11px;height:11px;border-radius:3px;display:inline-block;flex:none}
+
+.plbar{display:inline-block;height:8px;border-radius:2px;min-width:2px;vertical-align:middle}
+.tickercell{display:flex;align-items:center;gap:.5rem}
+.pinbadge{font:600 9.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;
+  color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);
+  border-radius:20px;padding:.15rem .4rem}
+.why{font-size:11.5px;color:var(--muted);max-width:38ch}
+.overflow-x{overflow-x:auto}
+</style>
+{% endmacro %}
+
+{# A group that has not been snapshotted yet is missing whole keys, so every
+   macro treats undefined exactly like null rather than raising in a template. #}
+{% macro pct(value, digits=2) %}{% if value is undefined or value is none %}<span class="flat">n/a</span>{% else %}<span class="{{ 'gain' if value > 0 else ('loss' if value < 0 else 'flat') }}">{{ '%+.*f'|format(digits, value * 100) }}%</span>{% endif %}{% endmacro %}
+
+{% macro money(value) %}{% if value is undefined or value is none %}<span class="flat">n/a</span>{% else %}${{ '{:,.2f}'.format(value) }}{% endif %}{% endmacro %}
+
+{# printf-style formatting has no thousands separator, so build the sign
+   explicitly and let str.format group the digits. #}
+{% macro signed_money(value) %}{% if value is undefined or value is none %}<span class="flat">n/a</span>{% else %}<span class="{{ 'gain' if value > 0 else ('loss' if value < 0 else 'flat') }}">{{ '+' if value > 0 else ('-' if value < 0 else '') }}${{ '{:,.2f}'.format(value|abs) }}</span>{% endif %}{% endmacro %}
+
+{% macro disclaimer() %}
+<div class="stk-note">
+  <b>Paper trading only.</b> This records notional positions to measure a selection
+  strategy; it places no orders and is not investment advice. Prices come from a
+  delayed feed (roughly 15 minutes behind for the default provider), and every
+  snapshot stores the timestamp it was taken at. No selection rule predicts
+  returns &mdash; the benchmark column is there so you can see whether the
+  strategy actually beat simply holding the index.
+</div>
+{% endmacro %}
