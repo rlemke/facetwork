@@ -246,6 +246,7 @@ def create_flow_run(flow, workflow_def, inputs_json, purpose, teams, store, curr
     from facetwork.emitter import JSONEmitter
     from facetwork.parser import FFLParser
     from facetwork.runtime.entities import (
+        Parameter,
         RunnerDefinition,
         RunnerState,
         TaskDefinition,
@@ -305,6 +306,11 @@ def create_flow_run(flow, workflow_def, inputs_json, purpose, teams, store, curr
             author=author_def,
             purpose=purpose,
             teams=run_teams,
+            # Record the resolved inputs ON the run. Without this every run of a
+            # workflow is indistinguishable in the runs list — five
+            # "SnapshotStockGroups" rows with nothing to tell them apart. The
+            # field already existed but no submit path filled it.
+            parameters=[Parameter(name=k, value=v) for k, v in inputs.items()],
             compiled_ast=program_dict,
             workflow_ast=wf_ast,
         )

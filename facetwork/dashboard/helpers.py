@@ -54,6 +54,72 @@ def extract_namespace(workflow_name: str) -> str:
     return "system.unnamespaced"
 
 
+# Parameter names that identify a run to a human, tried in this order. Anything
+# else falls back to whatever scalar inputs the run actually carries.
+_RUN_LABEL_KEYS = ("name", "title", "label", "group_id", "region", "state", "id")
+
+# Inputs that describe HOW to run rather than WHAT was run — they are identical
+# across runs, so showing them separates nothing.
+_RUN_LABEL_SKIP = {
+    "force",
+    "force_refresh",
+    "dry_run",
+    "use_mock",
+    "lookback_days",
+    "factor_weights",
+    "stage_weights",
+    "dependency_signal",
+}
+
+_RUN_LABEL_MAX_PAIRS = 3
+_RUN_LABEL_MAX_CHARS = 72
+
+
+def run_summary(runner, max_pairs: int = _RUN_LABEL_MAX_PAIRS) -> str:
+    """A short, human-readable summary of a run's inputs.
+
+    Two runs of the same workflow are otherwise indistinguishable in the runs
+    list — this is what tells "S&P 500 momentum" apart from "Dow 30 test". Built
+    from ``RunnerDefinition.parameters``, so it works for every domain with no
+    per-workflow configuration.
+
+    Returns ``""`` when a run carries no distinguishing inputs (older runs
+    recorded before parameters were persisted, or genuinely parameterless
+    workflows), and callers simply render nothing.
+    """
+    params = getattr(runner, "parameters", None) or []
+    values: dict[str, object] = {}
+    for p in params:
+        name = getattr(p, "name", None)
+        if not name or name in _RUN_LABEL_SKIP:
+            continue
+        value = getattr(p, "value", None)
+        # Skip empties and dict/list blobs: they are noise at list density.
+        if value is None or value == "" or value is False or isinstance(value, dict | list):
+            continue
+        values[name] = value
+
+    if not values:
+        return ""
+
+    ordered = [k for k in _RUN_LABEL_KEYS if k in values]
+    ordered += [k for k in values if k not in ordered]
+
+    parts: list[str] = []
+    for key in ordered[:max_pairs]:
+        value = values[key]
+        text = str(value)
+        if len(text) > 40:
+            text = text[:37] + "..."
+        # A `name`-like value speaks for itself; others need their key.
+        parts.append(text if key in ("name", "title", "label") else f"{key}={text}")
+
+    summary = " · ".join(parts)
+    if len(summary) > _RUN_LABEL_MAX_CHARS:
+        summary = summary[: _RUN_LABEL_MAX_CHARS - 3] + "..."
+    return summary
+
+
 def short_workflow_name(workflow_name: str) -> str:
     """Extract the short name from a qualified workflow name.
 
