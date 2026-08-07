@@ -243,6 +243,58 @@ def test_pages_render_for_a_group_that_has_never_been_snapshotted(client):
     assert "n/a" in detail.text          # P/L shown as unknown, not as zero
 
 
+def test_every_page_carries_the_paper_trading_badge(client):
+    """The badge sits in the topbar, so it is visible without scrolling.
+
+    A reader must never be able to see profit/loss figures on this app without
+    also seeing that the money is not real.
+    """
+    tc, store = client
+    _seed_group(store)
+    for url in ("/stocks/", "/stocks/new", "/stocks/g1"):
+        text = tc.get(url).text
+        assert "paperbadge" in text, f"no paper-trading badge on {url}"
+        assert "Paper trading" in text, f"badge text missing on {url}"
+
+
+def test_every_page_carries_the_full_disclaimer(client):
+    tc, store = client
+    _seed_group(store)
+    for url in ("/stocks/", "/stocks/new", "/stocks/g1"):
+        text = tc.get(url).text
+        assert "not investment advice" in text, f"no disclaimer on {url}"
+        assert "Past performance does not predict future results" in text, url
+        assert "no money moves" in text or "moves no money" in text, url
+
+
+def test_new_group_form_warns_at_the_point_of_commitment(client):
+    """The warning must sit with the button that starts a group."""
+    tc, _ = client
+    text = tc.get("/stocks/new").text
+    assert "This is a simulation." in text
+    warn = text.index("This is a simulation.")
+    start = text.index("Start group")
+    assert warn < start, "the warning must precede the Start button"
+
+
+def test_detail_page_qualifies_the_figures_above_them(client):
+    tc, store = client
+    _seed_group(store)
+    text = tc.get("/stocks/g1").text
+    note = text.index("Simulated positions")
+    figures = text.index("Current value")
+    assert note < figures, "the qualifier must precede the P/L figures"
+
+
+def test_disclaimer_names_the_excluded_costs(client):
+    """Returns that ignore fees and slippage must say so."""
+    tc, store = client
+    _seed_group(store)
+    text = tc.get("/stocks/g1").text
+    for term in ("commissions", "slippage", "taxes", "dividends"):
+        assert term in text, f"disclaimer does not mention {term}"
+
+
 def test_detail_page_shows_the_disclaimer(client):
     tc, store = client
     _seed_group(store)

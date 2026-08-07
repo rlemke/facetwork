@@ -7,6 +7,7 @@
 {% block breadcrumb %}<nav class="crumb"><span class="cur">Stock Groups</span></nav>{% endblock %}
 
 {% block topbar_actions %}
+<span class="stk">{{ s.paper_badge() }}</span>
 <a class="btn primary" href="/stocks/new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> New group</a>
 {% endblock %}
 

@@ -29,6 +29,8 @@
   <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg><span class="cur">New group</span></nav>
 {% endblock %}
 
+{% block topbar_actions %}<span class="stk">{{ s.paper_badge() }}</span>{% endblock %}
+
 {% block content %}
 <div class="stk" style="display:grid;grid-template-columns:1fr 320px;gap:1.1rem;align-items:start">
 
@@ -86,6 +88,8 @@
           adjustment plus a written reason stored with each pick. Needs <code>ANTHROPIC_API_KEY</code>;
           if it is unavailable the group still opens on the quantitative signal alone.</span>
       </div>
+
+      {{ s.action_warning() }}
 
       <div class="actions">
         <button class="btn primary" type="submit" {% if not workflow_ready %}disabled{% endif %}>
