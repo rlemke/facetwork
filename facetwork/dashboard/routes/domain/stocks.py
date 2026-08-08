@@ -38,6 +38,23 @@ UNIVERSES = [
     ("manual", "Manual (pinned tickers only)"),
 ]
 
+# The eleven GICS sectors, with the everyday word people actually use. Offered
+# as checkboxes so the ambiguous free-text cases ("services") never arise in the
+# UI; the domain still resolves typed names for API and FFL callers.
+SECTORS = [
+    ("Information Technology", "Tech"),
+    ("Health Care", "Medical / health"),
+    ("Financials", "Financial"),
+    ("Consumer Discretionary", "Consumer discretionary"),
+    ("Consumer Staples", "Consumer staples"),
+    ("Communication Services", "Communications / media"),
+    ("Industrials", "Industrial"),
+    ("Energy", "Energy"),
+    ("Utilities", "Utilities"),
+    ("Real Estate", "Real estate"),
+    ("Materials", "Materials"),
+]
+
 
 # --------------------------------------------------------------------------
 # helpers
@@ -75,7 +92,12 @@ def _find_workflow(store, qualified_name: str):
     """
     flows = list(store.get_all_flows())
     namespace_root = qualified_name.split(".", 1)[0]
-    flows.sort(key=lambda f: f.name.name != namespace_root)
+    # NEWEST first, then name match. Re-seeding can leave more than one flow with
+    # the same name (it happened here: two `stocks` flows, and the older one had
+    # no `sectors` parameter). Picking arbitrarily meant the run was built from a
+    # stale AST and silently dropped parameters the caller had supplied -- the
+    # button appeared to work and the setting just vanished.
+    flows.sort(key=lambda f: (f.name.name != namespace_root, -(getattr(f, "created_at", 0) or 0)))
     for flow in flows:
         for wf in store.get_workflows_by_flow(flow.uuid):
             if wf.name == qualified_name:
@@ -254,6 +276,7 @@ def stocks_new(request: Request, store=Depends(get_store)):
         "stocks/new.html",
         {
             "universes": UNIVERSES,
+            "sectors": SECTORS,
             "workflow_ready": _find_workflow(store, WF_OPEN)[0] is not None,
             "active_tab": "stocks",
             "active_app": "Stocks",
@@ -308,6 +331,8 @@ def stocks_create_group(
     benchmark: str = Form("SPY"),
     pinned: str = Form(""),
     use_llm: str = Form(""),
+    sectors: list[str] = Form(default=[]),
+    max_per_sector: int = Form(0),
     store=Depends(get_store),
     current_user=Depends(get_current_user),
 ):
@@ -325,6 +350,11 @@ def stocks_create_group(
             "benchmark": (benchmark or "SPY").strip().upper(),
             "pinned": pinned.strip(),
             "use_llm": bool(use_llm),
+            # Checkbox values are already canonical GICS names, so the domain's
+            # alias resolution is a no-op here and the ambiguous free-text cases
+            # ("services") cannot arise from the UI at all.
+            "sectors": ", ".join(s for s in sectors if s),
+            "max_per_sector": max(0, int(max_per_sector)),
         },
     )
     if runner_id is None:

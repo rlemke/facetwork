@@ -361,6 +361,185 @@ def test_disclaimer_names_the_excluded_costs(client):
         assert term in text, f"disclaimer does not mention {term}"
 
 
+def test_new_group_form_offers_sector_checkboxes(client):
+    tc, _ = client
+    text = tc.get("/stocks/new").text
+    assert "Kinds of stock (sectors)" in text
+    for value in ("Information Technology", "Health Care", "Energy", "Real Estate"):
+        assert f'value="{value}"' in text, f"no checkbox for {value}"
+    assert "Max picks per sector" in text
+
+
+def test_new_group_form_explains_the_no_cap_default(client):
+    tc, _ = client
+    text = tc.get("/stocks/new").text
+    assert "0 means no cap" in text
+    assert "Nothing ticked = every sector." in text
+
+
+def test_start_passes_selected_sectors_to_the_workflow(client, monkeypatch):
+    tc, store = client
+    from facetwork.dashboard.routes.domain import stocks as mod
+
+    captured = {}
+
+    class FakeWorkflow:
+        name = mod.WF_OPEN
+
+    class FakeName:
+        name = "stocks"
+
+    class FakeFlow:
+        uuid = "flow-uuid"
+        name = FakeName()
+
+    monkeypatch.setattr(store, "get_all_flows", lambda: [FakeFlow()], raising=False)
+    monkeypatch.setattr(
+        store, "get_workflows_by_flow", lambda _uuid: [FakeWorkflow()], raising=False
+    )
+    monkeypatch.setattr(
+        "facetwork.dashboard.routes.execution.flows.create_flow_run",
+        lambda flow, wf, inputs, purpose, teams, st, user: (
+            captured.setdefault("inputs", inputs) and "r1" or "r1"
+        ),
+    )
+
+    tc.post(
+        "/stocks/groups",
+        data={
+            "name": "Tech and medical",
+            "sectors": ["Information Technology", "Health Care"],
+            "max_per_sector": "2",
+        },
+        follow_redirects=False,
+    )
+
+    import json
+
+    inputs = json.loads(captured["inputs"])
+    assert inputs["sectors"] == "Information Technology, Health Care"
+    assert inputs["max_per_sector"] == 2
+
+
+def test_start_with_no_sectors_ticked_sends_an_empty_filter(client, monkeypatch):
+    """Empty means every sector, not "no sectors"."""
+    tc, store = client
+    from facetwork.dashboard.routes.domain import stocks as mod
+
+    captured = {}
+
+    class FakeWorkflow:
+        name = mod.WF_OPEN
+
+    class FakeName:
+        name = "stocks"
+
+    class FakeFlow:
+        uuid = "flow-uuid"
+        name = FakeName()
+
+    monkeypatch.setattr(store, "get_all_flows", lambda: [FakeFlow()], raising=False)
+    monkeypatch.setattr(
+        store, "get_workflows_by_flow", lambda _uuid: [FakeWorkflow()], raising=False
+    )
+    monkeypatch.setattr(
+        "facetwork.dashboard.routes.execution.flows.create_flow_run",
+        lambda flow, wf, inputs, purpose, teams, st, user: (
+            captured.setdefault("inputs", inputs) and "r1" or "r1"
+        ),
+    )
+    tc.post("/stocks/groups", data={"name": "X"}, follow_redirects=False)
+
+    import json
+
+    inputs = json.loads(captured["inputs"])
+    assert inputs["sectors"] == ""
+    assert inputs["max_per_sector"] == 0
+
+
+def test_detail_page_shows_the_sector_column(client):
+    tc, store = client
+    db = _stocks_db(store)
+    _seed_group(store)
+    db["stock_positions"].update_one(
+        {"group_id": "g1", "ticker": "AAPL"},
+        {"$set": {"sector": "Information Technology"}},
+    )
+    text = tc.get("/stocks/g1").text
+    assert "<th>Sector</th>" in text
+    assert "Information Technology" in text
+
+
+def test_detail_page_reports_the_sector_strategy(client):
+    tc, store = client
+    _seed_group(
+        store,
+        group_id="sect",
+        strategy={
+            "universe": "sp500",
+            "size": 4,
+            "capital": 10_000.0,
+            "use_llm": False,
+            "sectors": ["Health Care", "Information Technology"],
+            "max_per_sector": 2,
+            "factor_weights": {},
+            "stage_weights": {},
+            "lookback_days": 400,
+            "pinned": [],
+        },
+    )
+    text = tc.get("/stocks/sect").text
+    assert "Health Care, Information Technology" in text
+    assert "Max per sector" in text
+
+
+def test_detail_page_says_all_sectors_when_unfiltered(client):
+    tc, store = client
+    _seed_group(store)
+    text = tc.get("/stocks/g1").text
+    assert "all sectors" in text
+    assert "no cap" in text
+
+
+def test_find_workflow_prefers_the_newest_flow(client):
+    """A stale duplicate must never win.
+
+    Re-seeding left two `stocks` flows here; the older one predated the
+    `sectors` parameter, so building a run from it silently dropped settings the
+    user had chosen and the feature looked broken with no error anywhere.
+    """
+    tc, store = client
+    from facetwork.dashboard.routes.domain import stocks as mod
+
+    class Wf:
+        def __init__(self, name):
+            self.name = name
+
+    class Name:
+        name = "stocks"
+
+    class Flow:
+        def __init__(self, uuid, created_at):
+            self.uuid = uuid
+            self.created_at = created_at
+            self.name = Name()
+
+    old, new_flow = Flow("old", 1000), Flow("new", 2000)
+    store.get_all_flows = lambda: [old, new_flow]  # oldest returned first
+    store.get_workflows_by_flow = lambda uuid: [Wf(mod.WF_OPEN)]
+
+    flow, wf = mod._find_workflow(store, mod.WF_OPEN)
+    assert flow.uuid == "new"
+    assert wf.name == mod.WF_OPEN
+
+
+def test_find_workflow_returns_none_when_absent(client):
+    tc, store = client
+    from facetwork.dashboard.routes.domain import stocks as mod
+
+    assert mod._find_workflow(store, "nope.Missing") == (None, None)
+
+
 def test_detail_page_shows_the_disclaimer(client):
     tc, store = client
     _seed_group(store)

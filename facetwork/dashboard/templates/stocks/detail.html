@@ -89,7 +89,7 @@
     <div class="overflow-x">
     <table class="dtable">
       <thead><tr>
-        <th>Ticker</th><th>Name</th>
+        <th>Ticker</th><th>Name</th><th>Sector</th>
         <th class="num">Shares</th><th class="num">Entry</th>
         <th class="num">{{ 'Exit' if not is_open else 'Last' }}</th>
         <th class="num">P/L</th><th class="num">P/L %</th>
@@ -103,6 +103,7 @@
         <tr>
           <td><div class="tickercell"><b>{{ p.ticker }}</b>{% if p.manual %}<span class="pinbadge">pinned</span>{% endif %}</div></td>
           <td class="t">{{ p.name or '' }}</td>
+          <td class="t">{{ p.sector or '&mdash;'|safe }}</td>
           <td class="num">{{ '%.4f'|format(p.shares) }}</td>
           <td class="num">{{ s.money(p.entry_price) }}</td>
           <td class="num">{{ s.money(p.exit_price if p.exit_price is defined and p.exit_price else p.last_price) }}</td>
@@ -136,6 +137,8 @@
       <tbody>
         <tr><td>Universe</td><td>{{ group.strategy.universe }} &mdash; {{ group.universe_size }} tickers, {{ group.screened_count }} passed the filters, {{ group.excluded_count }} excluded</td></tr>
         <tr><td>Group size</td><td>{{ group.strategy.size }}</td></tr>
+        <tr><td>Sectors</td><td>{% if group.strategy.sectors %}{{ group.strategy.sectors|join(', ') }}{% else %}all sectors{% endif %}</td></tr>
+        <tr><td>Max per sector</td><td>{% if group.strategy.max_per_sector %}{{ group.strategy.max_per_sector }}{% else %}no cap{% endif %}</td></tr>
         <tr><td>Notional capital</td><td>{{ s.money(group.strategy.capital) }}, equal weight, fractional shares</td></tr>
         <tr><td>Factor weights</td><td class="t">{{ group.strategy.factor_weights }}</td></tr>
         <tr><td>Stage weights</td><td class="t">{{ group.strategy.stage_weights }}</td></tr>
