@@ -43,12 +43,13 @@ public final class Protocol {
     public static final String TASK_STATE_FAILED = "failed";
     public static final String TASK_STATE_IGNORED = "ignored";
     public static final String TASK_STATE_CANCELED = "canceled";
+    public static final String TASK_STATE_DEAD_LETTER = "dead_letter";
 
     // Step states
-    public static final String STEP_STATE_EVENT_TRANSMIT = "state.facet.execution.EventTransmit";
-    public static final String STEP_STATE_CREATED = "state.facet.initialization.Created";
-    public static final String STEP_STATE_STATEMENT_ERROR = "state.facet.execution.StatementError";
-    public static final String STEP_STATE_COMPLETED = "state.facet.completion.Completed";
+    public static final String STEP_STATE_EVENT_TRANSMIT = "state.EventTransmit";
+    public static final String STEP_STATE_CREATED = "state.statement.Created";
+    public static final String STEP_STATE_STATEMENT_ERROR = "state.statement.Error";
+    public static final String STEP_STATE_COMPLETED = "state.statement.Complete";
 
     // Server states
     public static final String SERVER_STATE_STARTUP = "startup";

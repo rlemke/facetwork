@@ -197,10 +197,10 @@ class ProtocolTest {
 
     @Test
     void testStepStates() {
-        assertEquals("state.facet.execution.EventTransmit", Protocol.STEP_STATE_EVENT_TRANSMIT);
-        assertEquals("state.facet.initialization.Created", Protocol.STEP_STATE_CREATED);
-        assertEquals("state.facet.execution.StatementError", Protocol.STEP_STATE_STATEMENT_ERROR);
-        assertEquals("state.facet.completion.Completed", Protocol.STEP_STATE_COMPLETED);
+        assertEquals("state.EventTransmit", Protocol.STEP_STATE_EVENT_TRANSMIT);
+        assertEquals("state.statement.Created", Protocol.STEP_STATE_CREATED);
+        assertEquals("state.statement.Error", Protocol.STEP_STATE_STATEMENT_ERROR);
+        assertEquals("state.statement.Complete", Protocol.STEP_STATE_COMPLETED);
     }
 
     @Test

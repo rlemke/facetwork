@@ -20,35 +20,36 @@ package fwagent
 
 // Collection names matching agents/protocol/constants.json
 const (
-	CollectionSteps     = "steps"
-	CollectionEvents    = "events"
-	CollectionTasks     = "tasks"
-	CollectionServers   = "servers"
-	CollectionLocks     = "locks"
-	CollectionLogs      = "logs"
-	CollectionFlows     = "flows"
-	CollectionWorkflows = "workflows"
-	CollectionRunners   = "runners"
-	CollectionStepLogs              = "step_logs"
+	CollectionSteps                = "steps"
+	CollectionEvents               = "events"
+	CollectionTasks                = "tasks"
+	CollectionServers              = "servers"
+	CollectionLocks                = "locks"
+	CollectionLogs                 = "logs"
+	CollectionFlows                = "flows"
+	CollectionWorkflows            = "workflows"
+	CollectionRunners              = "runners"
+	CollectionStepLogs             = "step_logs"
 	CollectionHandlerRegistrations = "handler_registrations"
 )
 
 // Task states
 const (
-	TaskStatePending   = "pending"
-	TaskStateRunning   = "running"
-	TaskStateCompleted = "completed"
-	TaskStateFailed    = "failed"
-	TaskStateIgnored   = "ignored"
-	TaskStateCanceled  = "canceled"
+	TaskStatePending    = "pending"
+	TaskStateRunning    = "running"
+	TaskStateCompleted  = "completed"
+	TaskStateFailed     = "failed"
+	TaskStateIgnored    = "ignored"
+	TaskStateCanceled   = "canceled"
+	TaskStateDeadLetter = "dead_letter"
 )
 
 // Step states
 const (
-	StepStateEventTransmit  = "state.facet.execution.EventTransmit"
-	StepStateCreated        = "state.facet.initialization.Created"
-	StepStateStatementError = "state.facet.execution.StatementError"
-	StepStateCompleted      = "state.facet.completion.Completed"
+	StepStateEventTransmit  = "state.EventTransmit"
+	StepStateCreated        = "state.statement.Created"
+	StepStateStatementError = "state.statement.Error"
+	StepStateCompleted      = "state.statement.Complete"
 )
 
 // Server states

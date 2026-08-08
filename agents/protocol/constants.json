@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "description": "AFL protocol constants for multi-language agent interoperability",
 
   "collections": {
@@ -34,14 +34,15 @@
     "completed": "completed",
     "failed": "failed",
     "ignored": "ignored",
-    "canceled": "canceled"
+    "canceled": "canceled",
+    "dead_letter": "dead_letter"
   },
 
   "step_states": {
-    "EVENT_TRANSMIT": "state.facet.execution.EventTransmit",
-    "CREATED": "state.facet.initialization.Created",
-    "STATEMENT_ERROR": "state.facet.execution.StatementError",
-    "COMPLETED": "state.facet.completion.Completed"
+    "EVENT_TRANSMIT": "state.EventTransmit",
+    "CREATED": "state.statement.Created",
+    "STATEMENT_ERROR": "state.statement.Error",
+    "COMPLETED": "state.statement.Complete"
   },
 
   "server_states": {
@@ -98,7 +99,7 @@
 
   "task_document": {
     "uuid": "string — unique task ID",
-    "name": "string — task name (e.g. event facet name or 'afl:resume')",
+    "name": "string — task name (e.g. event facet name or 'fw:resume')",
     "runner_id": "string — runner UUID that created the task",
     "workflow_id": "string — workflow UUID",
     "flow_id": "string — flow UUID",
@@ -182,7 +183,7 @@
       "operation": "updateOne",
       "filter": {
         "uuid": "<step_id>",
-        "state": "state.facet.execution.EventTransmit"
+        "state": "state.EventTransmit"
       },
       "update": {
         "$set": {
@@ -212,7 +213,7 @@
       }
     },
     "create_resume_task": {
-      "description": "Insert an afl:resume task so the Python RunnerService resumes the workflow",
+      "description": "Insert an fw:resume task so the Python RunnerService resumes the workflow",
       "collection": "tasks",
       "operation": "insertOne",
       "document": {

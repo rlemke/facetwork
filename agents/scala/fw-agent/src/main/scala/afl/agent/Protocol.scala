@@ -23,12 +23,13 @@ object Protocol:
     val Failed = "failed"
     val Ignored = "ignored"
     val Canceled = "canceled"
+    val DeadLetter = "dead_letter"
 
   object StepState:
-    val EventTransmit = "state.facet.execution.EventTransmit"
-    val Created = "state.facet.initialization.Created"
-    val StatementError = "state.facet.execution.StatementError"
-    val Completed = "state.facet.completion.Completed"
+    val EventTransmit = "state.EventTransmit"
+    val Created = "state.statement.Created"
+    val StatementError = "state.statement.Error"
+    val Completed = "state.statement.Complete"
 
   object ServerState:
     val Startup = "startup"

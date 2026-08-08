@@ -200,7 +200,7 @@ class AgentPollerSpec extends AnyFlatSpec with Matchers:
   }
 
   it should "have correct EventTransmit state" in {
-    Protocol.StepState.EventTransmit shouldBe "state.facet.execution.EventTransmit"
+    Protocol.StepState.EventTransmit shouldBe "state.EventTransmit"
   }
 
   // --- StepAttributes.inferTypeHint tests ---

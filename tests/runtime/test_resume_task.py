@@ -404,7 +404,7 @@ class TestProtocolConstants:
         with open(constants_path) as f:
             data = json.load(f)
 
-        assert data["version"] == "1.0"
+        assert data["version"] == "1.1"
         assert "collections" in data
         assert "task_states" in data
         assert "step_states" in data
@@ -415,6 +415,56 @@ class TestProtocolConstants:
         assert "mongodb_operations" in data
         assert "claim_task" in data["mongodb_operations"]
         assert "create_resume_task" in data["mongodb_operations"]
+
+    @staticmethod
+    def _load_constants():
+        constants_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "agents", "protocol", "constants.json"
+        )
+        with open(constants_path) as f:
+            return json.load(f)
+
+    def test_step_states_match_the_runtime(self):
+        """The published step states must equal the runtime's own strings.
+
+        This is the guard that was missing. All four values had drifted to
+        `state.facet.*` names that exist nowhere in the runtime, and because
+        every SDK filtered `writeStepReturns` on the published EVENT_TRANSMIT
+        string, that update matched zero documents — silently, since the
+        UpdateOne result was discarded. Agents completed their tasks having
+        written no returns at all.
+        """
+        from facetwork.runtime.states import StepState
+
+        data = self._load_constants()
+        assert data["step_states"] == {
+            "EVENT_TRANSMIT": StepState.EVENT_TRANSMIT,
+            "CREATED": StepState.CREATED,
+            "STATEMENT_ERROR": StepState.STATEMENT_ERROR,
+            "COMPLETED": StepState.STATEMENT_COMPLETE,
+        }
+
+    def test_task_states_match_the_runtime(self):
+        """Every TaskState the runtime can write must be in the contract.
+
+        `dead_letter` was missing, so an agent written against the published
+        contract did not know that state existed.
+        """
+        from facetwork.runtime.entities.task import TaskState
+
+        data = self._load_constants()
+        code_states = {
+            v for k, v in vars(TaskState).items() if not k.startswith("_") and isinstance(v, str)
+        }
+        assert set(data["task_states"].values()) == code_states
+
+    def test_documented_update_filter_uses_the_real_event_transmit_state(self):
+        """The worked example in the contract must be executable as written."""
+        from facetwork.runtime.states import StepState
+
+        data = self._load_constants()
+        filt = data["mongodb_operations"]["update_step_returns"]["filter"]
+        assert filt["state"] == StepState.EVENT_TRANSMIT
 
     def test_resume_task_name_matches_constant(self):
         """RESUME_TASK_NAME matches the protocol constants file."""

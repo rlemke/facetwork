@@ -45,9 +45,9 @@ The Python RunnerService polls for `fw:resume` tasks, validates the step's retur
 
 | State | Value | Meaning |
 |-------|-------|---------|
-| EVENT_TRANSMIT | `state.facet.execution.EventTransmit` | Step is blocked, waiting for agent |
-| STATEMENT_ERROR | `state.facet.execution.StatementError` | Agent reported an error |
-| COMPLETED | `state.facet.completion.Completed` | Step finished successfully |
+| EVENT_TRANSMIT | `state.EventTransmit` | Step is blocked, waiting for agent |
+| STATEMENT_ERROR | `state.statement.Error` | Agent reported an error |
+| COMPLETED | `state.statement.Complete` | Step finished successfully |
 
 ---
 
@@ -152,7 +152,7 @@ doc = db.steps.findOne({ uuid: task.step_id })
 db.steps.updateOne(
   {
     uuid: task.step_id,
-    state: "state.facet.execution.EventTransmit"
+    state: "state.EventTransmit"
   },
   {
     $set: {
@@ -323,7 +323,7 @@ Agents should register themselves in the `servers` collection so the dashboard a
 - Implement handlers for specific event facet names
 - Follow the 6-step protocol exactly — the field names and state strings must match
 - Always use atomic `findOneAndUpdate` for task claiming
-- Always filter by `state: "state.facet.execution.EventTransmit"` when writing step returns
+- Always filter by `state: "state.EventTransmit"` when writing step returns
 - Always insert an `fw:resume` task after completing an event task
 - Handle errors by marking the task as `failed` with an error message
 - Use `afl.config.json` or environment variables for MongoDB connection settings

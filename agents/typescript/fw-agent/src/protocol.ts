@@ -36,12 +36,13 @@ export const TaskStateCompleted = "completed";
 export const TaskStateFailed = "failed";
 export const TaskStateIgnored = "ignored";
 export const TaskStateCanceled = "canceled";
+export const TaskStateDeadLetter = "dead_letter";
 
 // Step states
-export const StepStateEventTransmit = "state.facet.execution.EventTransmit";
-export const StepStateCreated = "state.facet.initialization.Created";
-export const StepStateStatementError = "state.facet.execution.StatementError";
-export const StepStateCompleted = "state.facet.completion.Completed";
+export const StepStateEventTransmit = "state.EventTransmit";
+export const StepStateCreated = "state.statement.Created";
+export const StepStateStatementError = "state.statement.Error";
+export const StepStateCompleted = "state.statement.Complete";
 
 // Server states
 export const ServerStateStartup = "startup";
