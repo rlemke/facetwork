@@ -527,7 +527,11 @@ Design points worth keeping:
 
 **First adopter**: `fwh_osm` checks the token in `ScanProgressTracker.tick()`, the boundary every PBF-scanning handler already goes through (ExtractAndFilter, OSMOSE Verify, Boundaries, BuildGraph, CombinedScan).
 
-**Live-verified on real data** (2026-08-09, 1 GB `australia-latest.osm.pbf`): a `CombinedScan` that runs 28.6s to completion aborted at 20.0s when the check tripped — `HandlerCancelled` raised inside a pyosmium callback does propagate out of the C-level `apply_file()` and unwind the scan. That was the one property unit tests could not settle. (Still only unit-tested: the full distributed path, `terminate-workflow` → runner → handler, on the fleet.)
+**Live-verified on real data** (2026-08-09, 1 GB `australia-latest.osm.pbf`): a `CombinedScan` that runs 28.6s to completion aborted at 20.0s when the check tripped — `HandlerCancelled` raised inside a pyosmium callback does propagate out of the C-level `apply_file()` and unwind the scan. That was the one property unit tests could not settle.
+
+**Verified through the real operator path** (2026-08-09): a handler looping with `ctx.raise_if_cancelled()`, submitted as a workflow and left running, stopped **within a second** of `fw maint terminate-workflow --force` — at tick ~46 of 120, i.e. 74s of work skipped. The full chain held: operator command → task `canceled` in Mongo → token poll → `HandlerCancelled` → runner clean stop, with `retry_count=0`, task `canceled` (not `failed`), and a dashboard-visible `warning` step log *"Handler cancelled: task was canceled (terminate-workflow)"*.
+
+Note the interaction with the terminate guard: `terminate-workflow` **refuses** while a task is heartbeating (<30s) and tells you to pass `--force`. Since a healthy long handler heartbeats by design, cancelling live work is always the `--force` path — the guard exists to stop accidental termination, not to prevent this.
 
 Two properties that fall out of the time-gated check (10s in the osm adopter):
 - **Worst-case stop latency is one check interval.** The run above tripped at 12s and stopped at 20s — the checks land at ~10s and ~20s.
