@@ -66,6 +66,7 @@ from .entities import (
     StepLogSource,
     TaskState,
 )
+from .errors import PermanentError
 from .evaluator import Evaluator, ExecutionResult, ExecutionStatus
 from .persistence import PersistenceAPI
 from .runner_config import BaseRunnerConfig
@@ -1117,6 +1118,50 @@ class RegistryRunner(BaseRunner):
                 task.name,
                 task.step_id,
             )
+
+        except PermanentError as exc:
+            # The handler has declared this failure deterministic: retrying would
+            # re-run the same doomed work five times to reach the same answer.
+            # Dead-letter now, but still fail the step so catch blocks and error
+            # propagation run exactly as they would at the end of the budget.
+            self._emit_step_log(
+                step_id=task.step_id,
+                workflow_id=task.workflow_id,
+                message=f"Permanent handler error (not retried): {exc}",
+                level=StepLogLevel.ERROR,
+                facet_name=task.name,
+            )
+            task.error = {"message": str(exc), "permanent": True}
+            self._transition_for_retry(task, permanent=True)
+            try:
+                self._evaluator.fail_step(
+                    task.step_id,
+                    str(exc),
+                    workflow_ast=self._ast_cache.get(task.workflow_id),
+                    program_ast=self._program_ast_cache.get(task.workflow_id),
+                )
+            except Exception:
+                logger.debug("Could not fail step %s", task.step_id, exc_info=True)
+            self._safe_save_task(task)
+            logger.warning(
+                "Event task %s dead-lettered as PERMANENT (name=%s, step=%s): %s",
+                task.uuid,
+                task.name,
+                task.step_id,
+                exc,
+            )
+            try:
+                self._resume_workflow(task.workflow_id, task.runner_id)
+            except Exception:
+                logger.debug(
+                    "Could not resume workflow %s after permanent error",
+                    task.workflow_id,
+                    exc_info=True,
+                )
+            # Deliberately NOT counted against the circuit breaker: a permanent
+            # error is a fact about this task's input, not about the handler's
+            # health. A handful of unsupported items in a fan-out must not stop
+            # this runner from claiming the facet for the good ones.
 
         except Exception as exc:
             # A handler EXECUTION error. Retry transient failures (connection

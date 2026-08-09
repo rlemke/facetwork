@@ -685,10 +685,25 @@ result; corruption (missing/invalid artifact) still fails loudly in the
 loader. Downstream metrics disclose `network_unroutable` instead of erroring.
 The region-level catch remains as the backstop for genuine failures.
 
-**Corollary — retries need an escape hatch**: deterministic failures ride the
-full retry budget today (there is no non-retryable error contract in the
-handler SDK). A `PermanentError` that dead-letters immediately is still open
-work — the routable-flag fix removed this instance's need for it.
+**Corollary — retries need an escape hatch**: ✅ **IMPLEMENTED.** Deterministic
+failures used to ride the full retry budget, because there was no non-retryable
+error contract in the handler SDK. `facetwork.runtime.errors.PermanentError`
+(re-exported from `handler_context` alongside `HandlerCancelled`, so handlers
+have one import site for control flow) now dead-letters immediately.
+
+Three decisions worth keeping:
+- **The budget is skipped, not consumed** — `retry_count` is left alone, because
+  it counts attempts and a permanent failure only ever gets one.
+- **The step still fails.** `catch` blocks and error propagation run exactly as
+  they would at the end of the budget; only the waiting is removed.
+- **It does NOT trip the circuit breaker.** The breaker exists for a *broken
+  handler*; a permanent error is a fact about the *input*. Counting it would let
+  a few unsupported items in a fan-out take a healthy facet out of service for
+  every other item — the opposite of the intent.
+
+Implemented in all three dispatch sites (RegistryRunner, AgentPoller,
+RunnerService) with a parity test asserting exactly that, since a fix landing in
+one runner and not the others is a recurring source of "works on my runner".
 
 ### 25. The Continuation-Chain Liveness Stall — Root-Caused and Closed
 

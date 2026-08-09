@@ -31,7 +31,16 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
-from .cancellation import CancellationToken, never_cancelled
+from .cancellation import CancellationToken, HandlerCancelled, never_cancelled
+from .errors import PermanentError
+
+__all__ = [
+    "CancellationToken",
+    "HandlerCancelled",
+    "HandlerContext",
+    "PermanentError",
+    "StageHandle",
+]
 
 
 @dataclass

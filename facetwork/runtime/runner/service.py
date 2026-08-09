@@ -46,6 +46,7 @@ from ..entities import (
     TaskDefinition,
     TaskState,
 )
+from ..errors import PermanentError
 from ..evaluator import Evaluator, ExecutionStatus
 from ..persistence import PersistenceAPI
 from ..states import StepState
@@ -1139,6 +1140,33 @@ class RunnerService(BaseRunner):
                     level=log_level,
                     message=log_msg,
                 )
+
+        except PermanentError as exc:
+            # Deterministic failure: retrying would re-run the same doomed work
+            # to reach the same answer. Dead-letter now, but still fail the step
+            # so catch blocks and error propagation run as they would at the end
+            # of the budget. Not counted against the circuit breaker — this is a
+            # fact about the input, not the handler's health.
+            self._emit_step_log(
+                step_id=task.step_id,
+                workflow_id=task.workflow_id,
+                facet_name=task.name,
+                level=StepLogLevel.ERROR,
+                message=f"Permanent handler error (not retried): {exc}",
+            )
+            task.error = {"message": str(exc), "permanent": True}
+            self._transition_for_retry(task, permanent=True)
+            try:
+                self._evaluator.fail_step(task.step_id, str(exc))
+            except Exception:
+                logger.debug("Could not fail step %s", task.step_id, exc_info=True)
+            logger.warning(
+                "Task %s dead-lettered as PERMANENT — %s: %s",
+                task.uuid,
+                self._task_label(task.uuid),
+                exc,
+            )
+            self._safe_save_task(task)
 
         except Exception as exc:
             # Preserve the original error message across retry attempts —

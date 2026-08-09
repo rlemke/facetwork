@@ -71,6 +71,7 @@ from .entities import (
     StepLogSource,
     TaskState,
 )
+from .errors import PermanentError
 from .evaluator import Evaluator, ExecutionResult, ExecutionStatus
 from .persistence import PersistenceAPI
 from .runner_config import BaseRunnerConfig
@@ -960,6 +961,35 @@ class AgentPoller:
                 pass
             task.state = TaskState.CANCELED
             task.error = {"message": f"cancelled: {exc.reason}"}
+            task.updated = _current_time_ms()
+            self._safe_save_task(task)
+
+        except PermanentError as exc:
+            # Deterministic failure — dead-letter without consuming the retry
+            # budget, but still fail the step so catch/error propagation runs.
+            logger.warning(
+                "Task %s dead-lettered as PERMANENT (name=%s, step=%s): %s",
+                task.uuid,
+                task.name,
+                task.step_id,
+                exc,
+            )
+            try:
+                self._emit_step_log(
+                    step_id=task.step_id,
+                    workflow_id=task.workflow_id,
+                    message=f"Permanent handler error (not retried): {exc}",
+                    level=StepLogLevel.ERROR,
+                    facet_name=task.name,
+                )
+            except Exception:
+                pass
+            try:
+                self._evaluator.fail_step(task.step_id, str(exc))
+            except Exception:
+                logger.debug("Could not fail step %s", task.step_id, exc_info=True)
+            task.state = TaskState.DEAD_LETTER
+            task.error = {"message": str(exc), "permanent": True}
             task.updated = _current_time_ms()
             self._safe_save_task(task)
 

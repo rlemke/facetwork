@@ -25,6 +25,38 @@ class RuntimeError(Exception):
     pass
 
 
+class PermanentError(Exception):
+    """Handler-facing: this failure will never succeed — do not retry.
+
+    The retry contract is built for *transient* faults: a connection reset, a
+    throttled API, a restarted database. It cannot tell those from a
+    deterministic one, so a handler that fails on bad input rides the full
+    budget — five attempts with exponential backoff, each re-running the same
+    doomed work, before dead-lettering with the answer it had the first time.
+    On a wide fan-out that multiplies: the emergency-atlas run burned 150 route
+    tasks x 5 attempts on regions whose road network simply had no motorway
+    tier (lessons-learned §24).
+
+    Raise this instead when the *input* is the problem and a retry cannot change
+    the outcome::
+
+        if region not in SUPPORTED_REGIONS:
+            raise PermanentError(f"region {region!r} is not supported")
+
+    The runner dead-letters the task immediately, fails the step so ``catch``
+    blocks and error propagation run, and does **not** count the failure against
+    the facet's circuit breaker — a permanent error says something about the
+    input, not about the handler's health, and a handful of bad items in a
+    fan-out must not stop a healthy facet from being claimed.
+
+    Do NOT raise it for anything that might succeed later — a timeout, a 5xx, a
+    lock conflict, a missing file another step is still writing. Those are what
+    the retry budget is for; marking them permanent turns a blip into lost work.
+    """
+
+    pass
+
+
 @dataclass
 class InvalidStepStateError(RuntimeError):
     """Raised when a step is in an invalid state for an operation."""

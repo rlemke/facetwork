@@ -691,9 +691,14 @@ class BaseRunner:
         dead_letter_state: str = TaskState.DEAD_LETTER,
         set_next_retry_after: bool = False,
         clear_error_on_retry: bool = True,
+        permanent: bool = False,
     ) -> bool:
         """Apply the retry-or-dead-letter state transition to ``task``.
 
+        - ``permanent=True`` (the handler raised ``PermanentError``): dead-letters
+          immediately without consuming the retry budget, and leaves
+          ``retry_count`` alone — it counts attempts, and a permanent failure
+          only ever gets one.
         - Increments ``retry_count`` and stamps ``updated``.
         - If ``max_retries`` has been reached: sets ``state`` to
           ``dead_letter_state`` (defaults to ``DEAD_LETTER``; the "no
@@ -711,8 +716,14 @@ class BaseRunner:
         site that lifting them in here would make the code harder to
         read, not easier.
         """
-        task.retry_count += 1
         task.updated = _current_time_ms()
+        if permanent:
+            # A PermanentError: the handler has told us a retry cannot change the
+            # outcome, so skip the budget entirely. retry_count is NOT bumped —
+            # it counts attempts, and there was only ever going to be one.
+            task.state = dead_letter_state
+            return True
+        task.retry_count += 1
         is_dead_letter = task.max_retries > 0 and task.retry_count >= task.max_retries
         if is_dead_letter:
             task.state = dead_letter_state

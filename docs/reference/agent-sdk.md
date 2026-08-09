@@ -1128,11 +1128,33 @@ dead-letters the task (when `retry_count >= max_retries`).
        raise RuntimeError(f"PostGIS connection failed for {region}: {exc}") from exc
    ```
 
-3. **Transient vs permanent** — the workflow repair tool
-   (`repair_workflow`) auto-retries steps whose error matches
-   transient patterns (connection refused, timeout, I/O error). For
-   permanent errors (bad input, missing data), include a clear
-   message so operators know not to blindly retry.
+3. **Transient vs permanent** — an ordinary exception is assumed
+   *transient* and rides the full retry budget (5 attempts with
+   exponential backoff). That is right for a connection reset, a
+   throttled API or a restarted database. When the **input** is the
+   problem and a retry cannot change the outcome, say so:
+   ```python
+   from facetwork.runtime.handler_context import PermanentError
+
+   if region not in SUPPORTED_REGIONS:
+       raise PermanentError(f"region {region!r} is not supported")
+   ```
+   The runner dead-letters the task immediately without consuming the
+   budget, still fails the step (so `catch` blocks and error propagation
+   run exactly as they would at the end of the budget), and does **not**
+   count it against the facet's circuit breaker — a permanent error is a
+   fact about the input, not the handler's health, so a few unsupported
+   items in a fan-out must not stop the facet being claimed for the rest.
+
+   Do *not* raise it for anything that might succeed later — a timeout, a
+   5xx, a lock conflict, a file another step is still writing. Marking
+   those permanent turns a blip into lost work. Without this, deterministic
+   failures multiply: the emergency-atlas run burned 150 route tasks × 5
+   attempts on regions whose road network genuinely had no motorway tier.
+
+   The workflow repair tool (`repair_workflow`) separately auto-retries
+   steps whose error matches transient patterns (connection refused,
+   timeout, I/O error), so a clear message still matters for operators.
 
 4. **Never silently return empty defaults** — if a required resource
    is missing, raise rather than returning `{"count": 0}`.
