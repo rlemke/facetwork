@@ -422,6 +422,11 @@ class StepMixin(_MixinBase):
         # request_transition=True for an EventTransmit-blocked step).
         if hasattr(step, "transition"):
             doc["request_transition"] = step.transition.request_transition
+            # push_me marks a step that deferred itself and needs re-queuing when
+            # its dependency lands. resume_step's stuck-sibling scan reads it back
+            # off the store, so without this it was always False there and parked
+            # steps were never rescued (the leaf-stranding stall).
+            doc["push_me"] = step.transition.push_me
 
         error = getattr(step, "error", None)
         if error is None and hasattr(step, "transition"):
@@ -449,6 +454,9 @@ class StepMixin(_MixinBase):
         # to skip the current state's handler and advance immediately,
         # bypassing EventTransmit blocking and block completion checks.
         step.transition.request_transition = doc.get("request_transition", False)
+        # Old documents predate the field; False is the safe default (the step is
+        # simply not awaiting a re-queue).
+        step.transition.push_me = doc.get("push_me", False)
 
         step.statement_id = doc.get("statement_id")
         step.statement_name = doc.get("statement_name", "")

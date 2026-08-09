@@ -1059,6 +1059,9 @@ class Evaluator:
 
         # Record the state before processing to detect real progress
         state_before = step.state
+        # …and the deferral flag, so a step that newly parks itself is persisted
+        # exactly once (see the push_me branch below).
+        push_before = step.transition.push_me
 
         # Get appropriate state changer
         changer = get_state_changer(step, context)
@@ -1096,6 +1099,30 @@ class Evaluator:
             context.mark_block_dirty(result.step.container_id)
             context.changes.add_updated_step(result.step)
             return True
+
+        # A step that deferred itself — stay(push=True), e.g. FACET_INIT_BEGIN
+        # waiting on a cross-block reference, or blocks.Continue waiting on
+        # children. It sets push_me and does NOT mark a parent dirty (the parent
+        # is waiting on IT, so notifying the parent only produces a paused
+        # re-evaluation). The ONLY thing that re-queues it later is the
+        # stuck-sibling scan in resume_step, which tests `transition.push_me`
+        # read back from the store — so the flag has to be persisted here.
+        #
+        # It wasn't: this branch fell through to `return False`, dropping the
+        # update, and push_me never reached the DB. The step then sat at its
+        # current state with no wake-up path at all, and even a sweep over it
+        # committed nothing. That is the leaf-stranding stall — survivable on an
+        # unbounded fan-out (a slow tail), fatal with `foreach … limit N`, where
+        # the stranded iterations hold every window slot and admission stops.
+        # See docs/architecture/ffl-foreach-limit.md.
+        #
+        # Persist only on the False→True edge: once the flag round-trips, a
+        # re-sweep of the same parked step is a no-op, so this cannot turn into
+        # a per-sweep write storm or a version-conflict source across runners.
+        if result.continue_processing and not result.step.is_terminal:
+            if result.step.transition.push_me and not push_before:
+                context.changes.add_updated_step(result.step)
+            return False
 
         return False
 

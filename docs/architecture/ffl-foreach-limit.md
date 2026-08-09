@@ -36,6 +36,37 @@ admission stops and the run freezes (observed at 628/3,167, then again at 1,368)
 reason. Safe uses today are short or narrow fan-outs where a runner restart is unlikely
 mid-run. See the liveness section below and county-atlas §9.7.
 
+### Root cause found and fixed — fleet verification still outstanding
+
+The stranding was root-caused to **two** defects that had to hold together, both now
+fixed with regression tests (`tests/runtime/test_deferred_step_wakeup.py`):
+
+1. **The deferral was dropped.** A handler that cannot proceed parks its step with
+   `stay(push=True)` and deliberately does *not* mark a parent dirty — the parent is
+   waiting on that very step, so notifying it only yields a paused re-evaluation
+   (measured: resuming the sub-block gives `iterations=0`/PAUSED, resuming the parked
+   step itself completes it). But `_process_step`'s "step was modified" branch was
+   guarded on `not result.continue_processing`, which is exactly false for a deferral,
+   so the update was discarded: `push_me` never reached the store, no parent was
+   dirtied, and `has_changes` stayed false — a sweep over such a step committed
+   *nothing*, which is why the stuck-step sweep appeared to have no effect on them.
+2. **`push_me` was not persisted at all.** It was absent from the step document, so
+   `resume_step`'s stuck-sibling scan — the one mechanism designed to re-queue a parked
+   step, which tests `transition.push_me` read back off the store — saw False for every
+   step. The rescue path was dead on the Mongo store regardless of (1).
+
+With both fixed, a parked step is recorded once (on the False→True edge, so re-sweeping
+is not a write storm) and is found by the sibling scan when a sibling lands, which is the
+wake-up the tail was missing.
+
+**This is not yet clearance to re-add the cap.** What is verified is the mechanism, in
+unit and integration tests; what is *not* is the original end-to-end claim — that a wide,
+long-running capped fan-out survives a runner restart unattended. Two earlier fixes for
+this same stall (the window nudge and the program-AST fallback) were plausible
+code-reading stories that each cost a bake+rollout and changed nothing, so the bar here
+is empirical: re-enable the cap on `BuildAtlasFanout` only after a capped national run
+completes without an external watchdog.
+
 ## The clause
 
 ```ffl
