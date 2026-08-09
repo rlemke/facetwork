@@ -15,8 +15,9 @@ handlers to inline scripts — identical atlas rankings, ~23% fewer tasks per
 run, and their logic now ships by publishing the flow. The capability/logic
 tier split it validates: handlers keep I/O, external binaries, heartbeats,
 and SDK access; pure+cheap facets (per the effect/cost mixins) are script
-candidates. Still open from §8: `fw install check` coverage and dashboard
-surfacing.
+candidates. **Coverage surfacing SHIPPED**: `fw install check` reports (and
+`--install` materializes) this host's environments, and the dashboard's Servers
+page carries a fleet-wide coverage panel — see §8.
 
 **Fleet pilot PASSED 2026-07-20** (fleet v90): a
 `humanize`-pinned environment (`envpilot.PyHuman@0aabcaef`) was materialized
@@ -223,6 +224,12 @@ Validator rules (each with a `rule_id` + docs page, per house rule):
   dashboard can say "runner provides PyGeo (2 versions)"?
 - Wheelhouse population: at publish time (publisher uploads wheels for all
   fleet arches) or first-materialization (runner uploads what it built)?
-- Should `fw fleet status` / the dashboard Filters page surface environment
-  coverage ("PyGeo: provided by 12 runners on 3 hosts")? (Probably yes,
-  cheap — it is one more field on records already shown.)
+- ~~Should `fw fleet status` / the dashboard surface environment coverage
+  ("PyGeo: provided by 12 runners on 3 hosts")?~~ **ANSWERED — shipped in two
+  places.** Per-host: `fw install check` lists every declared environment against
+  what this host provides under `FW_ENV_ROOT`, and `--install` materializes the
+  gaps through the same builder as the image bake. Fleet-wide: the dashboard
+  **Servers** page shows each manifest hash with its providing runners/hosts, and
+  flags in red any hash that **pending script tasks are waiting on that no live
+  runner provides** — the silent-stall case, which needs the task side as well as
+  the server side to detect. (`fw fleet status` still reports roles only.)

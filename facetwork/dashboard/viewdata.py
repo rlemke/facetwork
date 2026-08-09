@@ -191,6 +191,53 @@ def _build_server_detail_context(server: Any, store: Any) -> dict:
     }
 
 
+def _build_environment_coverage(live_servers: list, store: Any) -> list[dict]:
+    """Fleet-wide script-environment coverage (script-environments.md §3).
+
+    An environment is a *claim-routing dimension*: a script task carries its
+    manifest hash and only a runner advertising that hash claims it. The failure
+    mode is therefore silent — a task nobody can claim just sits pending, with
+    no error anywhere. This surfaces both sides so the gap is visible:
+
+    * which hashes the live runners provide (and on how many hosts), and
+    * which hashes **pending tasks are waiting for that nobody provides** —
+      the actionable row, since that work will never start on its own.
+    """
+    provided: dict[str, dict] = {}
+    for s in live_servers:
+        for h in getattr(s, "provided_environments", None) or []:
+            entry = provided.setdefault(h, {"runners": 0, "hosts": set()})
+            entry["runners"] += 1
+            host = getattr(s, "server_name", "") or ""
+            if host:
+                entry["hosts"].add(host)
+
+    waiting: dict[str, int] = {}
+    try:
+        for t in store.get_tasks_by_state("pending"):
+            h = getattr(t, "environment_hash", "") or ""
+            if h:
+                waiting[h] = waiting.get(h, 0) + 1
+    except Exception:  # noqa: BLE001 - coverage is diagnostic; never break the page
+        waiting = {}
+
+    rows = []
+    for h in sorted(set(provided) | set(waiting)):
+        entry = provided.get(h)
+        rows.append(
+            {
+                "hash": h,
+                "runners": entry["runners"] if entry else 0,
+                "hosts": sorted(entry["hosts"]) if entry else [],
+                "waiting": waiting.get(h, 0),
+                "covered": bool(entry),
+            }
+        )
+    # Uncovered first — those are the ones an operator has to act on.
+    rows.sort(key=lambda r: (r["covered"], -r["waiting"], r["hash"]))
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Handler views
 # ---------------------------------------------------------------------------

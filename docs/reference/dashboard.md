@@ -52,10 +52,21 @@ detail page, so you can traverse the whole runtime graph by clicking:
 |------|--------------|
 | **Runs** (`/v3/workflows`) | the run detail (`/v3/workflows/{runner_id}`) |
 | **Events** / **Tasks** | the event/task's **step** (`/v3/steps/{step_id}`) — parameters & returns, mixin marker, live logs, duration/heartbeat, workflow; bootstrap rows with no step fall back to the run |
-| **Servers** (`/v3/servers`) | the **server detail** (`/v3/servers/{server_id}`) — identity, the handlers it serves, its tasks |
+| **Servers** (`/v3/servers`) | the **server detail** (`/v3/servers/{server_id}`) — identity, the script **environments** it provides, the handlers it serves, its tasks |
 | **Handlers** (`/v3/handlers`) | the **handler detail** (`/v3/handlers/{facet_name}`) — registration (module/entrypoint/timeout/version), the live servers serving the facet, recent tasks |
 | **Fleet hosts** | that host's runner processes (`/v3/servers?host=<host>`) |
 | **Fleet roles** | the role's namespace handlers (`/v3/handlers?ns=<namespace>`), or — for roles with no namespace (e.g. ffl-runner) — its runner processes (`/v3/servers?group=<role>`) |
+
+The Servers page also carries a **Script environments** panel — fleet-wide
+coverage of the environments in [script-environments.md](../architecture/script-environments.md).
+Each row is a manifest hash: green with the providing runners/hosts when at
+least one live runner advertises it, **red** when none does. The red rows are
+the ones to act on: an environment is a claim-routing dimension, so a pending
+script task whose hash nobody provides is never claimed and never fails — it
+just sits there. The count column is how many pending tasks are waiting on that
+hash. Coverage is computed over live runners regardless of the tab/host filter.
+Fix a red row by materializing the environment on a host (`fw install check
+--install`, or `fw ffl bake-envs`) or by rolling out an image that bakes it.
 
 The detail pages **cross-link** (server ↔ its handlers ↔ the servers serving them ↔
 step detail), and the Servers page supports `?host=` and `?group=` filters

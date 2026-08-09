@@ -546,6 +546,60 @@ class TestServerRoutes:
         assert resp.status_code == 200
         assert "worker-01" in resp.text
 
+    def _live_server(self, store, uuid, envs, name="worker-01"):
+        import time as _time
+
+        from facetwork.runtime.entities import ServerDefinition, ServerState
+
+        store.save_server(
+            ServerDefinition(
+                uuid=uuid,
+                server_group="workers",
+                service_name="facetwork",
+                server_name=name,
+                state=ServerState.RUNNING,
+                ping_time=int(_time.time() * 1000),
+                provided_environments=envs,
+            )
+        )
+
+    def test_server_list_shows_provided_environment_coverage(self, client):
+        """A hash a live runner advertises is listed as covered, with its host."""
+        tc, store = client
+        self._live_server(store, "s-env", ["0aabcaefe02915c3"])
+
+        resp = tc.get("/v3/servers")
+        assert resp.status_code == 200
+        assert "Script environments" in resp.text
+        assert "0aabcaefe02915c3" in resp.text
+        assert "1 runner" in resp.text
+
+    def test_server_list_flags_environment_no_runner_provides(self, client):
+        """The silent failure this panel exists for: a pending script task whose
+        manifest hash no live runner advertises can never be claimed."""
+        tc, store = client
+        from facetwork.runtime.entities import TaskDefinition
+
+        self._live_server(store, "s-env", ["0aabcaefe02915c3"])
+        store.save_task(
+            TaskDefinition(
+                uuid="t-1",
+                name="canonical.envscript.Humanize",
+                runner_id="r-1",
+                workflow_id="w-1",
+                flow_id="f-1",
+                step_id="st-1",
+                state="pending",
+                environment_hash="notprovided00000",
+                kind="script",
+            )
+        )
+
+        resp = tc.get("/v3/servers")
+        assert resp.status_code == 200
+        assert "notprovided00000" in resp.text
+        assert "no live runner provides this" in resp.text
+
     # NOTE: the v3 Servers page is a single list (runner processes grouped by
     # host) with no per-server detail page, so the server-detail tests
     # (detail, detail_not_found, handled_stats, with_error) and the

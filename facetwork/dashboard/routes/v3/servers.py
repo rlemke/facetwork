@@ -59,6 +59,7 @@ def servers_v3(
     """
     from ...viewdata import (
         _apply_effective_state,
+        _build_environment_coverage,
         _count_servers_by_tab,
         _enrich_servers_with_tasks,
         _filter_servers,
@@ -67,6 +68,9 @@ def servers_v3(
     all_servers = _apply_effective_state(list(store.get_all_servers()))
     tab_counts = _count_servers_by_tab(all_servers)
     filtered = _filter_servers(all_servers, tab)
+    # Coverage is a fleet-wide fact about LIVE runners, so it's computed off the
+    # running set rather than the current tab/host filter.
+    env_coverage = _build_environment_coverage(_filter_servers(all_servers, "running"), store)
     if host:
         h = _norm_host(host)
         filtered = [s for s in filtered if _norm_host(getattr(s, "server_name", "")) == h]
@@ -95,6 +99,7 @@ def servers_v3(
         "v3/servers/list.html",
         {
             "groups": groups,
+            "env_coverage": env_coverage,
             "tab": tab,
             "tab_counts": tab_counts,
             "dot": _DOT,

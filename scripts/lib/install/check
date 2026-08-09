@@ -4,13 +4,17 @@
 # Scans tests/ + examples/ for imported third-party modules (both hard imports
 # and pytest.importorskip(...) markers), reports which are NOT importable on this
 # host, and cross-checks the standalone example packages against what's actually
-# installed (facetwork.examples entry points). With --install it installs the
-# gaps: example-provided modules via `fw install domain <name>`, everything else
-# via pip (boto3 → the facetwork [s3] extra).
+# installed (facetwork.examples entry points). It also reports SCRIPT ENVIRONMENT
+# coverage: which declared `environment`s this host actually provides under
+# FW_ENV_ROOT. With --install it installs the gaps: example-provided modules via
+# `fw install domain <name>`, script environments via envbake materialization,
+# everything else via pip (boto3 → the facetwork [s3] extra).
 #
 # This is the automation of the host-by-host gap hunt: a fresh runner host can
 # run `fw install check --install` instead of discovering missing deps via failed
-# test runs.
+# test runs. Environment coverage is the same class of gap one level up: a host
+# missing a declared environment never CLAIMS its script tasks (they carry the
+# manifest hash), so the work simply doesn't run here — silently.
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 
@@ -22,7 +26,7 @@ for a in "$@"; do
         --dry|--dry-run) INSTALL=0 ;;
         --break-system-packages) BREAK=1 ;;
         -h|--help)
-            sed -n '3,12p' "$0" | grep -v '^# fw-summary:' | sed 's/^# \{0,1\}//'
+            sed -n '3,17p' "$0" | grep -v '^# fw-summary:' | sed 's/^# \{0,1\}//'
             echo; echo "Usage: fw install check [--install] [--break-system-packages]"
             exit 0 ;;
         *) echo "unknown arg: $a" >&2; exit 2 ;;
@@ -125,14 +129,23 @@ def importable(mod):
 
 
 def parse_registry():
-    """name -> (repo, extras, desc) from scripts/lib/install/domain."""
+    """name -> (repo, extras, desc) from the domain catalog (domains.json).
+
+    The catalog is the single source of truth (`fw install domain` reads it via
+    _catalog.sh), so read it the same way rather than scraping that script — an
+    earlier regex over its inline table silently reported ZERO domains once the
+    table moved into domains.json.
+    """
+    try:
+        from facetwork.domains import catalog
+    except Exception:
+        return {}
     reg = {}
-    path = os.path.join(FW_LIB, "install", "domain")
-    rx = re.compile(r'^\s*"([a-z0-9-]+)\|([^|]*)\|([^|]*)\|(.*)"')
-    for line in open(path, encoding="utf-8", errors="ignore"):
-        m = rx.match(line)
-        if m:
-            reg[m.group(1)] = (m.group(2), m.group(3), m.group(4))
+    for name, d in (catalog.domains() or {}).items():
+        extras = d.get("extras") or []
+        if isinstance(extras, str):
+            extras = [e for e in extras.split(",") if e]
+        reg[name] = (d.get("repo", ""), ",".join(extras), d.get("description", ""))
     return reg
 
 
@@ -187,6 +200,58 @@ for name in sorted(reg):
     extra_note = f"  [extras: {extras}]" if extras else ""
     print(f"  {mark:<28} {name}{extra_note}")
 
+# Section 3: script-environment coverage (script-environments.md §4).
+# A declared `environment` is a CLAIM-ROUTING dimension: script tasks carry its
+# manifest hash and a runner only claims them if it provides that hash. So a
+# host that passes sections 1-2 can still be silently unable to run script work.
+env_gaps = []   # [(qualified, hash, manifest)] — python envs missing here
+env_rows = []   # [(mark, label, note)]
+env_note = None
+
+
+def env_root():  # replaced by the real one below when facetwork is importable
+    return os.environ.get("FW_ENV_ROOT", "/opt/fw_envs")
+
+
+try:
+    from facetwork.envbake import collect_environments
+    from facetwork.environments import env_root, interpreter_for_hash, materialize_environment
+
+    env_roots = [os.path.join(FW_ROOT, "examples"),
+                 os.environ.get("FWH_HANDLERS_ROOT") or os.path.expanduser("~/fw_handlers")]
+    try:
+        declared = collect_environments([r for r in env_roots if os.path.isdir(r)])
+    except SystemExit as exc:
+        # Conflicting declarations of the same name — report, don't abort the check.
+        declared, env_note = {}, str(exc)
+    for qualified, info in sorted(declared.items()):
+        manifest, h = info["manifest"], info["hash"]
+        lang = (manifest.get("language") or "?").lower()
+        label = f"{qualified}@{h}"
+        if lang != "python":
+            env_rows.append(("○", label, f"language={lang} — provided-only (polyglot agent)"))
+        elif not manifest.get("resolved", True):
+            # Unresolved => this hash is NOT the published one; presence here is
+            # unverifiable. Say so rather than reporting a false gap.
+            env_rows.append(("!", label, "manifest UNRESOLVED (index unreachable?) — coverage unverifiable"))
+        elif interpreter_for_hash(h):
+            env_rows.append(("✓", label, f"provided ({len(manifest.get('pins') or [])} pin(s))"))
+        else:
+            env_rows.append(("✗", label, "NOT materialized here -> fw ffl bake-envs"))
+            env_gaps.append((qualified, h, manifest))
+except Exception as exc:  # noqa: BLE001 - env coverage is additive; never break the dep check
+    env_note = f"could not analyze ({exc})"
+
+print()
+print(f"Script environments (FW_ENV_ROOT={env_root()}):")
+if env_note:
+    print(f"  ? {env_note}")
+elif not env_rows:
+    print("  ✓ none declared under examples/ + the domain checkouts")
+else:
+    for mark, label, note in env_rows:
+        print(f"  {mark} {label:<44} {note}")
+
 n_missing = len(missing_mods)
 print()
 if not DO_INSTALL:
@@ -195,15 +260,19 @@ if not DO_INSTALL:
         print("domain package to run it:  fw install domain <name>")
     else:
         print("All test/example module dependencies satisfied.")
+    if env_gaps:
+        print(f"{len(env_gaps)} declared environment(s) NOT provided here — this host will not")
+        print("claim their script tasks. Fix with:  fw install check --install  (or fw ffl bake-envs)")
     sys.exit(0)
 
 # --- install (--install) ---------------------------------------------------
-if not missing_mods:
-    print("Nothing to install — all test/example modules already importable.")
+if not missing_mods and not env_gaps:
+    print("Nothing to install — modules importable and every declared environment provided.")
     sys.exit(0)
 
-print("Installing missing dependencies…")
 rc = 0
+if missing_mods:
+    print("Installing missing dependencies…")
 # group: example installs and pip installs
 example_names, pip_specs = [], []
 for m in missing_mods:
@@ -241,7 +310,7 @@ if pep668:
     print("  fw install repo                 # create a repo .venv and install into it (recommended)")
     print("  fw install check --install --break-system-packages   # override (risks the system python)")
     rc = rc or 1
-else:
+elif missing_mods:
     # importable() is cached per-process; spawn a fresh interpreter so a just-
     # installed package (possibly in a site dir not on our startup sys.path) is seen.
     check = "import importlib.util,sys; sys.exit(0 if all(importlib.util.find_spec(m) for m in sys.argv[1:]) else 1)"
@@ -252,5 +321,22 @@ else:
         rc = rc or 1
     else:
         print("✓ all previously-missing modules now importable")
+
+# Materialize the missing script environments (same builder the image bake and
+# `fw ffl bake-envs` use, so a host converges on the SAME content-addressed venv).
+if env_gaps:
+    print(f"Materializing {len(env_gaps)} script environment(s) into {env_root()}…")
+    for qualified, h, manifest in env_gaps:
+        try:
+            interpreter = materialize_environment(manifest, h)
+            print(f"  ✓ {qualified}@{h} -> {interpreter}")
+        except PermissionError:
+            print(f"  ✗ {qualified}@{h}: {env_root()} is not writable by this user.")
+            print(f"    Point FW_ENV_ROOT at a writable dir (e.g. FW_ENV_ROOT=$HOME/fw_envs) and re-run,")
+            print(f"    exporting the same value for the runners — they look the environment up there.")
+            rc = rc or 1
+        except Exception as exc:  # noqa: BLE001 - report every env, then fail
+            print(f"  ✗ {qualified}@{h}: {str(exc)[:300]}")
+            rc = rc or 1
 sys.exit(rc)
 PY

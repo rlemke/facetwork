@@ -30,6 +30,15 @@ a.srv-row{text-decoration:none;color:inherit;cursor:pointer}
 .srv-row .chev{justify-self:end;color:var(--muted);font:600 15px/1 var(--sans);opacity:0;transition:opacity .12s}
 a.srv-row:hover .chev{opacity:1}
 @media (max-width:900px){.srv-row{grid-template-columns:16px 1fr 80px 16px}.srv-meta,.srv-tasks{display:none}}
+
+.env-panel{margin-top:1.2rem}
+.env-row{display:grid;grid-template-columns:16px 190px 1fr 150px;gap:.9rem;align-items:center;
+  padding:.5rem .9rem;border-bottom:1px solid var(--border);font-size:13px}
+.env-row:last-child{border-bottom:none}
+.env-hash{font:500 12px var(--mono);color:var(--text-2)}
+.env-hosts{font:500 11.5px var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.env-warn{color:var(--st-error);font:600 11.5px var(--mono)}
+@media (max-width:900px){.env-row{grid-template-columns:16px 1fr 90px}.env-hosts{display:none}}
 </style>
 {% endblock %}
 
@@ -79,6 +88,33 @@ a.srv-row:hover .chev{opacity:1}
 {% endfor %}
 {% else %}
 <div class="empty"><p>No {{ tab }} servers.</p></div>
+{% endif %}
+
+{% if env_coverage %}
+<div class="env-panel">
+  <div class="host-head">
+    Script environments
+    <span class="c">{{ env_coverage|length }}</span>
+    <span class="t">manifest hashes across the live fleet</span>
+  </div>
+  <div class="srv">
+    <div class="env-row" style="border-bottom:1px solid var(--border)">
+      <span></span><span class="col-h">Manifest</span><span class="col-h">Provided by</span><span class="col-h">Pending tasks</span>
+    </div>
+    {% for e in env_coverage %}
+    <div class="env-row" title="{% if e.covered %}Provided by {{ e.runners }} live runner(s){% else %}No live runner provides this environment{% endif %}">
+      <span class="statusdot" style="background:{{ 'var(--st-running)' if e.covered else 'var(--st-error)' }}"></span>
+      <span class="env-hash">{{ e.hash }}</span>
+      {% if e.covered %}
+      <span class="env-hosts">{{ e.runners }} runner{{ '' if e.runners==1 else 's' }} · {{ e.hosts|join(', ') }}</span>
+      {% else %}
+      <span class="env-warn">no live runner provides this — script tasks cannot be claimed</span>
+      {% endif %}
+      <span class="srv-tasks" style="color:{{ 'var(--st-error)' if (e.waiting and not e.covered) else ('var(--st-running)' if e.waiting else 'var(--muted)') }}">{{ e.waiting }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
 {% endif %}
 {% endblock %}
 

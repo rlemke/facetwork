@@ -48,6 +48,11 @@
     {% if server.service_name %}<dt>Service</dt><dd>{{ server.service_name }}</dd>{% endif %}
     {% if server.version %}<dt>Version</dt><dd>{{ server.version }}</dd>{% endif %}
     <dt>Handlers</dt><dd>{{ server.handlers|length if server.handlers else 0 }}</dd>
+    {# Script environments this runner PROVIDES — it can only claim script tasks
+       whose manifest hash appears here (script-environments.md §3). #}
+    <dt>Environments</dt>
+    <dd>{% if server.provided_environments %}{{ server.provided_environments|join(', ') }}
+        {%- else %}<span style="color:var(--muted)">default only</span>{% endif %}</dd>
     <dt>Active tasks</dt><dd>{{ task_counts.get('running', 0) }}</dd>
     {% if last_ping_s is not none %}<dt>Last ping</dt><dd>{{ last_ping_s }}s ago</dd>{% endif %}
   </dl>

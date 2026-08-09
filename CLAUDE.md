@@ -46,14 +46,23 @@ Notes for working with `fw`:
   fleet/runner ops — prefer them over raw `docker`/`pymongo`. Most take `--dry`.
 - Mongo-touching commands default to `localhost:27017`; on a runner host that isn't
   the DB, pass `--mongo mongodb://server3.local:27017` (or set `FW_MONGODB_URL`).
-- **`fw install check [--install]`** — dependency analyzer. Statically scans
-  `tests/` + `examples/` for imported modules (incl. `pytest.importorskip`), reports
-  what isn't importable on this host, and lists example packages vs what's installed.
-  `--install` fixes the gaps (domain modules via `fw install domain`, `boto3` via the
-  `[s3]` extra, else pip; PEP 668-aware). Run it to bring a new runner host to full
-  dependency coverage instead of discovering gaps through failing test runs. A host
+- **`fw install check [--install]`** — host-readiness analyzer, three sections.
+  (1) Statically scans `tests/` + `examples/` for imported modules (incl.
+  `pytest.importorskip`) and reports what isn't importable here. (2) Lists the
+  catalog's domain packages vs what's installed (read from `domains.json`, same
+  source as `fw install domain`). (3) **Script-environment coverage** — every
+  declared `environment` (swept from `examples/` + the domain checkouts) against
+  what this host actually provides under `FW_ENV_ROOT`. That third one is the
+  silent gap: an environment is a claim-routing dimension, so a host missing one
+  never *claims* its script tasks — no error, the work just doesn't run here.
+  `--install` fixes all of it (domain modules via `fw install domain`, `boto3` via
+  the `[s3]` extra, else pip; missing environments materialized the same way
+  `fw ffl bake-envs` and the image bake do, so every host converges on the same
+  content-addressed venv; PEP 668-aware). Run it to bring a new runner host to
+  full coverage instead of discovering gaps through failing test runs. A host
   with no repo `.venv` (system Homebrew python is PEP 668-locked) needs `fw install repo`
-  first to create one.
+  first to create one; if `FW_ENV_ROOT` (default `/opt/fw_envs`) isn't writable,
+  point it somewhere that is and export the same value for the runners.
 - **`domains.json` (catalog) + `fw util gen-compose`** — the domain/example set is
   defined ONCE in `domains.json`, not hardcoded in scripts. Each domain entry:
   `repo`, `extras`, `description`, and (for domains with a compose runner)
