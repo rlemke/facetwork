@@ -525,6 +525,14 @@ Design points worth keeping:
 - **The terminal write stays ownership-gated**, so a zombie cannot cancel the task its successor is legitimately running.
 - **Payload contract**: injected values are plain data or *callables* — handlers serialise payloads with `{k: v for k, v in payload.items() if not callable(v)}`. Cancellation therefore travels as the callable `_cancellation_check`; injecting the token object passed its own tests while breaking every handler that logs its payload.
 
+**First adopter**: `fwh_osm` checks the token in `ScanProgressTracker.tick()`, the boundary every PBF-scanning handler already goes through (ExtractAndFilter, OSMOSE Verify, Boundaries, BuildGraph, CombinedScan).
+
+**Live-verified on real data** (2026-08-09, 1 GB `australia-latest.osm.pbf`): a `CombinedScan` that runs 28.6s to completion aborted at 20.0s when the check tripped — `HandlerCancelled` raised inside a pyosmium callback does propagate out of the C-level `apply_file()` and unwind the scan. That was the one property unit tests could not settle. (Still only unit-tested: the full distributed path, `terminate-workflow` → runner → handler, on the fleet.)
+
+Two properties that fall out of the time-gated check (10s in the osm adopter):
+- **Worst-case stop latency is one check interval.** The run above tripped at 12s and stopped at 20s — the checks land at ~10s and ~20s.
+- **A scan shorter than the interval is never checked**, so it simply completes. Harmless by construction, but it means "cancellation works" cannot be demonstrated on a small input — the first attempt at this test used an 85 MB extract that finished in 1.9s and looked like a failure.
+
 **Still open**: `terminate(external_id)` for delegated engines — see [`external-engine-delegation.md`](external-engine-delegation.md) §7.2. The token is the signal such an adapter's watcher needs; the hook itself lands with the first adapter.
 
 ### 17. Compensating Actions (Partial Rollback)
