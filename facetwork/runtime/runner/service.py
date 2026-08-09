@@ -35,6 +35,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 from ..agent import ToolRegistry
+from ..cancellation import HandlerCancelled
 from ..entities import (
     HandledCount,
     RunnerState,
@@ -649,6 +650,13 @@ class RunnerService(BaseRunner):
                 },
             }
 
+        # Cooperative cancellation (lessons-learned §16) — asks the store whether
+        # this execution's result would still be accepted (operator terminate, a
+        # watchdog that already failed the task, or a reclaim that made us a
+        # zombie). Cached, so handlers may check it in a loop.
+        def _cancellation_check() -> str | None:
+            return self._persistence.task_cancellation_reason(task.uuid, self._server_id)
+
         retry_count = getattr(task, "retry_count", 0) or 0
         payload.update(
             {
@@ -656,6 +664,7 @@ class RunnerService(BaseRunner):
                 "_task_heartbeat": _task_heartbeat_callback,
                 "_set_stage_budget": _set_stage_budget_callback,
                 "_fetch_step": _fetch_step_callback,
+                "_cancellation_check": _cancellation_check,
                 "_task_uuid": task.uuid,
                 "_retry_count": retry_count,
                 "_is_retry": retry_count > 0,
@@ -1062,6 +1071,31 @@ class RunnerService(BaseRunner):
                     task.name,
                     task.step_id,
                 )
+
+        except HandlerCancelled as exc:
+            # Cooperative stop, not a failure: no retry (the work was
+            # deliberately abandoned) and no fail_step — terminate-workflow has
+            # already marked the step, or another runner owns the task now and
+            # will finish it. _safe_save_task's ownership gate drops this write
+            # when the reason was a reclaim, so a zombie cannot cancel the task
+            # its successor is legitimately running.
+            logger.info(
+                "Handler '%s' stopped on cancellation (step=%s): %s",
+                task.name,
+                task.step_id,
+                exc.reason,
+            )
+            self._emit_step_log(
+                step_id=task.step_id,
+                workflow_id=task.workflow_id,
+                facet_name=task.name,
+                level=StepLogLevel.WARNING,
+                message=f"Handler cancelled: {exc.reason}",
+            )
+            task.state = TaskState.CANCELED
+            task.error = {"message": f"cancelled: {exc.reason}"}
+            task.updated = _current_time_ms()
+            self._safe_save_task(task)
 
         except (ImportError, ModuleNotFoundError) as exc:
             # Handler module can't be loaded on this runner.  Increment

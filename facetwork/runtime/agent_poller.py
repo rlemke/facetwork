@@ -61,6 +61,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..ast_features import known_features as _known_ast_features
+from .cancellation import HandlerCancelled
 from .entities import (
     RunnerState,
     ServerDefinition,
@@ -828,6 +829,13 @@ class AgentPoller:
                 )
 
             payload["_task_heartbeat"] = _task_heartbeat_callback
+
+            # Cooperative cancellation (lessons-learned §16) — same contract as
+            # RegistryRunner, so a handler behaves identically on either runner.
+            payload["_cancellation_check"] = (
+                lambda: self._persistence.task_cancellation_reason(task.uuid, self._server_id)
+            )
+
             payload["_task_uuid"] = task.uuid
             # Execution scope (unique per run) — lets handlers isolate per-run
             # output artifacts. EXECUTION id, distinct from the definition;
@@ -927,6 +935,33 @@ class AgentPoller:
                 task.name,
                 task.step_id,
             )
+
+        except HandlerCancelled as exc:
+            # Cooperative stop, not a failure — must be caught BEFORE the broad
+            # handler below, which would fail the step and burn a retry for work
+            # that was deliberately abandoned. The step is left alone: either
+            # terminate-workflow already marked it, or another runner owns the
+            # task now and will finish it.
+            logger.info(
+                "Handler '%s' stopped on cancellation (step=%s): %s",
+                task.name,
+                task.step_id,
+                exc.reason,
+            )
+            try:
+                self._emit_step_log(
+                    step_id=task.step_id,
+                    workflow_id=task.workflow_id,
+                    message=f"Handler cancelled: {exc.reason}",
+                    level=StepLogLevel.WARNING,
+                    facet_name=task.name,
+                )
+            except Exception:
+                pass
+            task.state = TaskState.CANCELED
+            task.error = {"message": f"cancelled: {exc.reason}"}
+            task.updated = _current_time_ms()
+            self._safe_save_task(task)
 
         except Exception as exc:
             # Emit error step log

@@ -376,6 +376,24 @@ class MemoryStore(PersistenceAPI):
         """Save a task."""
         self._tasks[task.uuid] = task
 
+    def task_cancellation_reason(self, task_id: str, server_id: str = "") -> str | None:
+        """Why an in-flight execution should stop, or None.
+
+        Mirrors ``MongoStore.task_cancellation_reason`` (parity — a runner
+        behaves the same on either store).
+        """
+        task = self._tasks.get(task_id)
+        if task is None:
+            return "task record no longer exists"
+        state = getattr(task, "state", "") or ""
+        if state == "canceled":
+            return "task was canceled (terminate-workflow)"
+        if state in ("completed", "failed", "dead_letter", "ignored"):
+            return f"task already terminal ({state})"
+        if server_id and (getattr(task, "server_id", "") or "") != server_id:
+            return "task was reclaimed by another runner"
+        return None
+
     def save_task_if_owned(self, task: "TaskDefinition", expected_server_id: str) -> bool:
         """Save a task only if its current server_id still matches.
 

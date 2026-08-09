@@ -511,18 +511,21 @@ A shared thread pool means one slow handler type (PostGIS imports taking hours) 
 
 **Effort**: Medium-Large. **Priority**: High.
 
-### 16. Cancellation Propagation
+### 16. Cancellation Propagation — ✅ IMPLEMENTED
 
-Cancelling a workflow sets the runner state but doesn't reach in-flight handlers. Long-running imports continue consuming resources.
+Cancelling a workflow set the runner state but never reached in-flight handlers: `fw maint terminate-workflow` marked the tasks `canceled` and a long import kept consuming CPU, disk and API quota until it finished on its own.
 
-**Requirement**:
-- Inject a `CancellationToken` into handler payloads (alongside `_task_heartbeat`). Handlers check `token.is_cancelled` periodically.
-- Poll loop checks runner states each cycle. When cancelled: set token, cancel pending tasks in DB, cancel futures (best-effort).
-- Non-cooperative handlers are killed by the execution timeout.
+**Shipped**: `facetwork/runtime/cancellation.py` — a `CancellationToken` injected into every dispatch by all three payload builders (`RegistryRunner`, `AgentPoller`, `RunnerService._build_handler_payload`), surfaced as `ctx.is_cancelled` / `ctx.raise_if_cancelled()` on `HandlerContext`. Backed by `PersistenceAPI.task_cancellation_reason()` in both stores.
 
-**Where**: Runner poll loop, `_process_event_task` payload injection, new `CancellationToken` class.
+Design points worth keeping:
+- **Cancelled means "your result would not be accepted"** — broader than an operator terminate, and the extra cases matter more: a watchdog that already failed the task, and a *reclaim* (the orphan reaper moved the task, so this execution is a zombie doing duplicate work). Zombies were previously invisible to the handler.
+- **Cooperative, and latching.** Python cannot safely kill a thread blocked in a C extension, so non-cooperative handlers remain bounded by `FW_TASK_EXECUTION_TIMEOUT_MS`. Once cancelled the token never reports healthy again, so a transient store read cannot resume doomed work; conversely a store *error* never cancels a healthy handler.
+- **Cached polling** (~3s) so handlers can check inside tight loops without a query per iteration.
+- **A cancelled handler is a clean stop, not a failure** — no retry, no `fail_step`. Retrying a deliberately-abandoned task would burn the same resources again, which is worse than not cancelling.
+- **The terminal write stays ownership-gated**, so a zombie cannot cancel the task its successor is legitimately running.
+- **Payload contract**: injected values are plain data or *callables* — handlers serialise payloads with `{k: v for k, v in payload.items() if not callable(v)}`. Cancellation therefore travels as the callable `_cancellation_check`; injecting the token object passed its own tests while breaking every handler that logs its payload.
 
-**Effort**: Medium. **Priority**: High.
+**Still open**: `terminate(external_id)` for delegated engines — see [`external-engine-delegation.md`](external-engine-delegation.md) §7.2. The token is the signal such an adapter's watcher needs; the hook itself lands with the first adapter.
 
 ### 17. Compensating Actions (Partial Rollback)
 

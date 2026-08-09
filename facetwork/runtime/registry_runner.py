@@ -55,6 +55,7 @@ from typing import Any
 
 from ..ast_features import known_features as _known_ast_features
 from .base_runner import BaseRunner
+from .cancellation import HandlerCancelled
 from .dispatcher import RegistryDispatcher
 from .entities import (
     HandlerRegistration,
@@ -864,6 +865,16 @@ class RegistryRunner(BaseRunner):
                 )
 
             payload["_task_heartbeat"] = _task_heartbeat_callback
+
+            # Cooperative cancellation (lessons-learned §16). The token asks the
+            # store whether this execution's result would still be accepted —
+            # operator terminate, a watchdog that already failed the task, or a
+            # reclaim that turned us into a zombie. Cached, so a handler may
+            # check it as often as it likes.
+            payload["_cancellation_check"] = (
+                lambda: self._persistence.task_cancellation_reason(task.uuid, self._server_id)
+            )
+
             payload["_task_uuid"] = task.uuid
             # Execution scope (unique per run) — lets handlers isolate per-run
             # output artifacts. This is the EXECUTION id, distinct from the
@@ -975,6 +986,32 @@ class RegistryRunner(BaseRunner):
                         timeout_pool.shutdown(wait=False)
                 else:
                     result = self._dispatcher.dispatch(task.name, payload)
+            except HandlerCancelled as exc:
+                # A cooperative handler noticed it was cancelled and stopped.
+                # This is a clean stop, NOT a failure: do not retry (the work was
+                # deliberately abandoned) and do not fail the step (terminate
+                # already marked it, or another runner now owns the task).
+                # _safe_save_task's ownership gate drops this write outright when
+                # the reason was a reclaim, so a zombie cannot cancel the task
+                # its successor is legitimately running.
+                logger.info(
+                    "Handler '%s' stopped on cancellation (step=%s): %s",
+                    task.name,
+                    task.step_id,
+                    exc.reason,
+                )
+                self._emit_step_log(
+                    step_id=task.step_id,
+                    workflow_id=task.workflow_id,
+                    message=f"Handler cancelled: {exc.reason}",
+                    level=StepLogLevel.WARNING,
+                    facet_name=task.name,
+                )
+                task.state = TaskState.CANCELED
+                task.error = {"message": f"cancelled: {exc.reason}"}
+                task.updated = _current_time_ms()
+                self._safe_save_task(task)
+                return
             except (ImportError, ModuleNotFoundError) as exc:
                 # Handler module can't be loaded on this runner.  Increment
                 # retry_count so the task eventually dead-letters instead of

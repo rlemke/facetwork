@@ -81,6 +81,52 @@ def handle(payload: dict) -> dict:
     return {"processed": processed}
 ```
 
+### Stopping when the work has been cancelled
+
+The same batch boundary is where you check whether the work is still wanted.
+Cancellation is **cooperative**: a handler that never checks runs to completion
+(or until `FW_TASK_EXECUTION_TIMEOUT_MS`), because Python cannot safely kill a
+thread blocked in a C extension. Checking costs one cached store lookup every few
+seconds no matter how often you call it, so put it in the loop:
+
+```python
+from facetwork.runtime.handler_context import HandlerContext
+
+def handle(payload: dict) -> dict:
+    ctx = HandlerContext.from_payload(payload)
+
+    for i in range(0, len(items), batch_size):
+        ctx.raise_if_cancelled()          # abort between batches
+        process_batch(items[i : i + batch_size])
+        ctx.heartbeat(progress_message=f"{i:,}/{len(items):,}")
+
+    return {"processed": len(items)}
+```
+
+`raise_if_cancelled()` raises `HandlerCancelled`, which the runner treats as a
+**clean stop**: the task keeps its cancelled state and is *not* retried. When
+there is partial state to clean up, check the flag instead and unwind yourself:
+
+```python
+    if ctx.is_cancelled:                  # ctx.cancellation_reason says why
+        drop_staging_tables()
+        return {"status": "cancelled", "processed": processed}
+```
+
+You are cancelled when your result would no longer be accepted, which is broader
+than an operator terminate and the extra cases are the ones that used to waste
+the most work:
+
+| Reason | What happened |
+|--------|---------------|
+| `task was canceled` | someone ran `fw maint terminate-workflow` |
+| `task already terminal (failed)` | the execution watchdog gave up on you while you kept running |
+| `task was reclaimed by another runner` | the orphan reaper moved your task; you are a zombie and the store will refuse your write anyway |
+| `task record no longer exists` | the step was deleted by a repair or re-run |
+
+Nothing is required of an existing handler — an unmodified one keeps its old
+behaviour, it just cannot stop early.
+
 ### Database Import Pattern (Staging Tables)
 
 For bulk database imports, use **staging tables** to isolate the import
@@ -209,6 +255,8 @@ task is at risk of being reaped.
 ## Checklist for Long-Running Handlers
 
 1. **Call `_task_heartbeat`** — not just `_step_log` — between blocking operations
+1. **Check `ctx.raise_if_cancelled()`** at the same batch boundary, so a terminated run
+   stops in seconds instead of burning its full budget
 2. **Batch all database writes** — never issue a single SQL statement that runs for more than a few minutes
 3. **Use staging tables** for bulk imports to avoid index and lock contention
 4. **Set `timeout_ms=0`** on handler registration to disable per-handler timeout

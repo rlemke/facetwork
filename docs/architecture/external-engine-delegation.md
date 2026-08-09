@@ -313,18 +313,35 @@ Mitigations, in order of preference:
 3. Do not rely on the handler failing fast — by then the task has been claimed
    and burned a retry.
 
-### 7.2 Cancellation is a genuine prerequisite
+### 7.2 Cancellation — the in-process half is now implemented
 
-[`lessons-learned.md`](lessons-learned.md) §13–22 lists cancellation propagation
-as **not implemented**. Delegation makes that materially worse: today
+Delegation makes cancellation materially worse than it is locally:
 `fw maint terminate-workflow` marks Facetwork state terminal, and a delegated
 Temporal workflow or Airflow DAG would keep running — and keep billing —
 indefinitely, with nothing left pointing at it.
 
-An adapter contract therefore needs a `terminate(external_id)` hook, and
-`fw maint terminate-workflow` needs to call it for any step carrying an external
-handle. **This is a prerequisite, not a nice-to-have**: without it, delegation
-leaks resources by construction.
+**Half of this is now done.** Cooperative cancellation shipped
+([`lessons-learned.md`](lessons-learned.md) §16,
+`facetwork/runtime/cancellation.py`): every dispatch carries a token, and a
+handler asks it whether its result would still be accepted — operator terminate,
+a watchdog that already failed the task, or a reclaim that turned it into a
+zombie. That is exactly the signal a D3 adapter's watcher needs: it is the thing
+already polling while the task is parked, so it is the natural place to call
+`terminate(external_id)` and stop waiting.
+
+**What an adapter still owes:**
+
+- a `terminate(external_id)` hook in its contract, and
+- the wiring so a cancelled park actually invokes it — the watcher acts on the
+  token, and `fw maint terminate-workflow` reaches parked steps that no runner is
+  currently watching (a host may have died holding the park).
+
+The second point is the sharp edge: a park whose watcher is gone has no process
+left to notice the cancellation, so terminate must be able to act from the
+external handle recorded in persistent state (§6's derived id is what makes that
+possible — the id is re-derivable, not held only in the dead process's memory).
+**Until an adapter implements both, delegation still leaks by construction**; the
+runtime no longer stands in the way.
 
 ## 8. The boundary contract
 

@@ -128,7 +128,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | **Python scripts & environments — when to use them vs handlers** — the capability/logic tier decision rule, script contract + sandbox, environment declaration/freeze/bake/lazy lifecycle, the osm.emergency migration numbers, gotchas | [docs/guides/scripts-and-environments.md](docs/guides/scripts-and-environments.md) |
 | **Multi-language (polyglot) handlers** — Java/Go/Scala/TS handlers alongside Python via the Mongo-coordinated agent protocol (name-filtered claim → coexistence); worked example: the embedded-GraphHopper Java agent (`fwh_osm/java/osm-gh-router`) | [docs/guides/multi-language-handlers.md](docs/guides/multi-language-handlers.md) |
 | LLM integration | [docs/guides/llm-integration.md](docs/guides/llm-integration.md) |
-| Long-running handlers | [docs/guides/long-running-handlers.md](docs/guides/long-running-handlers.md) |
+| **Long-running handlers** — heartbeats, batch boundaries, staging tables, and **cooperative cancellation** (`ctx.raise_if_cancelled()` / `ctx.is_cancelled`: stop when a run is terminated, a watchdog already failed the task, or a reclaim made this execution a zombie; a cancelled handler is a clean stop — no retry, no failed step) | [docs/guides/long-running-handlers.md](docs/guides/long-running-handlers.md) |
 | FFL examples | [docs/reference/examples.md](docs/reference/examples.md) |
 | Execution traces | [docs/reference/execution-traces.md](docs/reference/execution-traces.md) |
 | Build & run reference | [docs/reference/cli.md](docs/reference/cli.md) |

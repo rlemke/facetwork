@@ -656,6 +656,30 @@ class PersistenceAPI(Protocol):
         """
         return None
 
+    def task_cancellation_reason(self, task_id: str, server_id: str = "") -> str | None:
+        """Why an in-flight execution of ``task_id`` should stop, or None.
+
+        Answers one question for a running handler: *would anything I produce
+        still be accepted?* It is the store side of cooperative cancellation
+        (:mod:`facetwork.runtime.cancellation`, lessons-learned §16).
+
+        Returns a human-readable reason when the execution is doomed:
+
+        * the task row is gone (deleted by a repair/re-run);
+        * its state is ``canceled`` — ``fw maint terminate-workflow``;
+        * its state is otherwise terminal — the execution watchdog already
+          failed or dead-lettered it while this handler kept running;
+        * ``server_id`` is given and no longer matches the row — the orphan
+          reaper reset the task and another runner re-claimed it, so this
+          execution is a zombie doing duplicate work whose terminal write will
+          be refused anyway.
+
+        Returns None while the execution is still the live owner. Implementations
+        must keep this to a single cheap, projected lookup: it is polled by every
+        concurrent handler.
+        """
+        return None
+
     def update_task_stage_budget(
         self,
         task_id: str,

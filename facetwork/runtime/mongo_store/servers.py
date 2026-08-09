@@ -172,6 +172,26 @@ class ServerMixin(_MixinBase):
             {"$set": {"handled": [asdict(h) for h in handled]}},
         )
 
+    def task_cancellation_reason(self, task_id: str, server_id: str = "") -> str | None:
+        """Why an in-flight execution should stop, or None. See PersistenceAPI.
+
+        One projected lookup on the ``uuid`` index — this is polled by every
+        concurrent handler on every runner, so it must not grow.
+        """
+        doc = self._db.tasks.find_one({"uuid": task_id}, {"state": 1, "server_id": 1, "_id": 0})
+        if doc is None:
+            return "task record no longer exists"
+        state = doc.get("state") or ""
+        if state == "canceled":
+            return "task was canceled (terminate-workflow)"
+        if state in ("completed", "failed", "dead_letter", "ignored"):
+            # Someone else already wrote a terminal state — typically the
+            # execution-timeout watchdog. Our result cannot land.
+            return f"task already terminal ({state})"
+        if server_id and (doc.get("server_id") or "") != server_id:
+            return "task was reclaimed by another runner"
+        return None
+
     def update_task_heartbeat(
         self,
         task_id: str,

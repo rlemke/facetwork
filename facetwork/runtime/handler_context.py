@@ -31,6 +31,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
+from .cancellation import CancellationToken, never_cancelled
+
 
 @dataclass
 class StageHandle:
@@ -73,6 +75,24 @@ class StageHandle:
         return max(0, self.timeout_ms - elapsed)
 
 
+def _token_from_payload(payload: dict) -> CancellationToken:
+    """Rebuild the cancellation token from the flat payload keys.
+
+    Runners inject ``_cancellation_check`` — a *callable* returning a reason or
+    None — rather than the token object, so the payload keeps its invariant that
+    every injected value is plain data or a callable (handlers rely on that to
+    serialise payloads). A token object under ``_cancellation`` is still accepted
+    for direct in-process construction.
+    """
+    token = payload.get("_cancellation")
+    if isinstance(token, CancellationToken):
+        return token
+    check = payload.get("_cancellation_check")
+    if callable(check):
+        return CancellationToken(_check=check)
+    return never_cancelled()
+
+
 def _noop_stage_budget(timeout_ms: int, stage_name: str = "") -> None:
     return None
 
@@ -98,6 +118,8 @@ class HandlerContext:
         heartbeat: Callback to signal liveness and avoid timeout reaping.
             Signature: ``(progress_pct: int | None = None, progress_message: str | None = None) -> None``
         metadata: Handler registration metadata dict (from ``HandlerRegistration.metadata``).
+        cancellation: Cooperative cancellation token for this execution. Prefer
+            the ``is_cancelled`` / ``raise_if_cancelled()`` helpers below.
     """
 
     facet_name: str = ""
@@ -109,6 +131,30 @@ class HandlerContext:
     _set_stage_budget: Callable[[int, str], None] = field(default=_noop_stage_budget, repr=False)
     _fetch_step: Callable[[object], dict] = field(default=_noop_fetch_step, repr=False)
     metadata: dict[str, Any] = field(default_factory=dict)
+    cancellation: CancellationToken = field(default_factory=never_cancelled, repr=False)
+
+    @property
+    def is_cancelled(self) -> bool:
+        """True once this execution's result would no longer be accepted.
+
+        Check it between units of work in a long handler and return early —
+        cancellation is cooperative, so a handler that never looks runs until
+        the execution timeout. See :mod:`facetwork.runtime.cancellation`.
+        """
+        return self.cancellation.is_cancelled
+
+    @property
+    def cancellation_reason(self) -> str:
+        """Why the execution was cancelled, or "" while healthy."""
+        return self.cancellation.reason
+
+    def raise_if_cancelled(self) -> None:
+        """Abort with ``HandlerCancelled`` if this execution is cancelled.
+
+        The runner treats that as a clean stop, not a failure: the task keeps
+        its cancelled state and is not retried.
+        """
+        self.cancellation.raise_if_cancelled()
 
     def fetch_step(self, ref: object) -> dict:
         """Fetch a referenced step's data by StepReference.
@@ -185,6 +231,7 @@ class HandlerContext:
             _set_stage_budget=payload.get("_set_stage_budget", _noop_stage_budget),
             _fetch_step=payload.get("_fetch_step", _noop_fetch_step),
             metadata=payload.get("_handler_metadata", {}),
+            cancellation=_token_from_payload(payload),
         )
 
     def to_payload_keys(self) -> dict[str, Any]:
@@ -199,5 +246,6 @@ class HandlerContext:
             "_set_stage_budget": self._set_stage_budget,
             "_fetch_step": self._fetch_step,
             "_handler_metadata": self.metadata,
+            "_cancellation_check": self.cancellation.check,
             "_ctx": self,
         }
