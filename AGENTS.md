@@ -122,7 +122,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Non-functional requirements | [docs/reference/nonfunctional.md](docs/reference/nonfunctional.md) |
 | Architecture overview | [docs/architecture/overview.md](docs/architecture/overview.md) |
 | **`/ffl-first`** — fulfill a request as a reviewed FFL workflow (discover→reuse→gated-author→gated-scaffold→FFL-only data→run); two review gates (workflow shown before run, handler shown before use); `fw ffl run` is its dashboard-visible run mechanism | [docs/guides/ffl-first.md](docs/guides/ffl-first.md) |
-| Codex workflow catalog (store/version/run FFL with no file; `fw_catalog_*` MCP tools) | [docs/architecture/Codex-workflow-catalog.md](docs/architecture/Codex-workflow-catalog.md) |
+| Codex workflow catalog (store/version/run FFL with no file; `fw_catalog_*` MCP tools) | [docs/architecture/claude-workflow-catalog.md](docs/architecture/claude-workflow-catalog.md) |
 | `use` resolution: file-based compile vs. the catalog (hermetic pinned-dep model) | [docs/architecture/catalog-use-resolution.md](docs/architecture/catalog-use-resolution.md) |
 | Extending with new handlers (NL needs a capability no facet provides → detect gap → scaffold facet+handler+test) — `fw ffl scaffold` | [docs/architecture/extending-with-new-handlers.md](docs/architecture/extending-with-new-handlers.md) |
 | **Server catalog (`servers.json`)** — machines by STABLE NAME + aliases (`afl-mongodb`…); resolved to the current IP at startup/reconcile so DHCP drift self-heals (no `/etc/hosts` edits). `fw fleet servers` | [docs/reference/server-catalog.md](docs/reference/server-catalog.md) |
