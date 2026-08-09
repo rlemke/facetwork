@@ -226,18 +226,27 @@ parked task returns to `pending` and is re-delivered. That is correct recovery,
 not a bug — *provided submission is idempotent*, which is §6. Recovery and
 idempotency are the same design decision viewed from two sides.
 
-### 5.2 A protocol drift to fix first
+### 5.2 A protocol drift — fixed (kept as a standing rule)
 
-`TaskState` in
+This section used to record a prerequisite: `TaskState` in
 [`facetwork/runtime/entities/task.py`](../../facetwork/runtime/entities/task.py)
-defines `DEAD_LETTER = "dead_letter"`. The published contract in
-`agents/protocol/constants.json` (v1.0) lists only six states and **does not
-include `dead_letter`**.
+defines `DEAD_LETTER = "dead_letter"`, but the published contract in
+`agents/protocol/constants.json` (then v1.0) listed only six states and omitted
+it — so an adapter written against the published contract would meet a
+dead-lettered task as an unknown value.
 
-An external adapter written against the published contract therefore does not
-know that state exists — it would treat a dead-lettered task as an unknown
-value. Any serious external-engine work should bump the protocol constants
-first. It is a one-line fix and a real interoperability bug.
+**Resolved** (d12a389): `constants.json` is now **v1.1** and publishes all seven
+states — `pending`, `running`, `completed`, `failed`, `ignored`, `canceled`,
+`dead_letter`. No action is outstanding here; the remaining prerequisite for
+delegation is cancellation propagation (§7.2).
+
+The rule it leaves behind still applies, because the failure was silent in both
+directions: **`constants.json` is the contract an out-of-process adapter compiles
+against, so a new `TaskState` is not shipped until the same change publishes it
+there.** An adapter should read the state vocabulary from the contract rather
+than hardcode it, and treat an unrecognised state as non-terminal-unknown
+(log and re-poll) rather than as a terminal value — that way a future addition
+degrades instead of silently mis-deciding.
 
 ## 6. Idempotent submission: derive the id, do not configure it
 
