@@ -1782,10 +1782,16 @@ class TestReapStuckTasks:
             task_list_name="default",
         )
         mongo_store.save_task(task)
-        # Set timeout_ms=5000 and updated to 6 seconds ago
+        # timeout_ms=5000, last activity old enough to clear timeout + the
+        # reclaim grace. The grace exists because this threshold is the SAME
+        # timeout_ms the owning runner dispatches on: without it the reap and
+        # the owner's own timeout fire together and the task can be handed to a
+        # second runner mid-execution (test_reclaim_grace.py).
+        from facetwork.runtime.mongo_store.base import BaseMixin
+
         mongo_store._db.tasks.update_one(
             {"uuid": "stuck-explicit"},
-            {"$set": {"timeout_ms": 5000, "updated": now - 6000}},
+            {"$set": {"timeout_ms": 5000, "updated": now - (6000 + BaseMixin.RECLAIM_GRACE_MS)}},
         )
 
         reaped = mongo_store.reap_stuck_tasks(default_stuck_ms=999_999_999)

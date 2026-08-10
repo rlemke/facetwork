@@ -15,6 +15,7 @@
 """Task CRUD operations mixin for MongoStore."""
 
 import logging
+import os
 import re
 from collections.abc import Sequence
 from typing import Any
@@ -583,7 +584,11 @@ class TaskMixin(_MixinBase):
             stage_budget = doc.get("stage_budget_expires", 0) or 0
             if stage_budget > now:
                 continue  # inside an active stage budget — don't reap
-            if now - last_activity > doc["timeout_ms"]:
+            # + grace: this threshold is the SAME timeout_ms the owning runner
+            # dispatches on, so without it the reap and the owner's own timeout
+            # fire together and the task can be handed to a second runner while
+            # the first is still winding down. The owner acts first, always.
+            if now - last_activity > doc["timeout_ms"] + self.RECLAIM_GRACE_MS:
                 stuck_uuids.append(doc["uuid"])
                 reaped.append(
                     {
@@ -598,7 +603,19 @@ class TaskMixin(_MixinBase):
                 )
 
         # --- Pass 2: tasks without explicit timeout, using default ---
-        cutoff = now - default_stuck_ms
+        # Clamp the default up to the execution timeout + grace, the same
+        # derivation the lease uses. These are independently-configured knobs
+        # (FW_STUCK_TIMEOUT_MS vs FW_TASK_EXECUTION_TIMEOUT_MS) with a required
+        # ordering: a stuck-timeout at or below the execution timeout lets this
+        # reaper reset a task that its owner is still legitimately executing —
+        # the same double-execution hazard as a short lease. The stock defaults
+        # (30min vs 15min) happen to satisfy it; a deployment that raises the
+        # execution timeout without raising this one does not.
+        exec_timeout_ms = int(
+            os.environ.get("FW_TASK_EXECUTION_TIMEOUT_MS", str(self.DEFAULT_EXECUTION_TIMEOUT_MS))
+        )
+        effective_stuck_ms = max(default_stuck_ms, exec_timeout_ms + self.RECLAIM_GRACE_MS)
+        cutoff = now - effective_stuck_ms
         default_cursor = self._db.tasks.find(
             {
                 "state": "running",
@@ -634,7 +651,7 @@ class TaskMixin(_MixinBase):
                     "server_id": doc.get("server_id", ""),
                     "task_started_ms": str(doc.get("updated", 0)),
                     "reason": "stuck",
-                    "timeout_ms": str(default_stuck_ms),
+                    "timeout_ms": str(effective_stuck_ms),
                 }
             )
 

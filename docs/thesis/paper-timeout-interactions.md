@@ -133,6 +133,20 @@ stranger. The 5-minute floor is a floor, not the operative value — a reader
 skimming the defaults table would reasonably but wrongly conclude the lease
 is five minutes.
 
+The same ordering binds every *other* path that can take a running task away
+from its claimant, and stating I1 in terms of the lease alone was too narrow.
+There are three such paths, and two of them were unguarded: the per-task stuck
+reap compared against the very same `timeout_ms` the owning runner dispatches
+on — so the reaper and the owner fired *together*, a coin-flip over whether the
+task was handed to a second runner while the first was winding down — and the
+default stuck reap used an independently-configured threshold with no relation
+to the execution timeout at all. The stock defaults (30 min stuck, 15 min
+execution) happen to be ordered correctly, which is why this went unnoticed;
+a deployment raising the execution timeout to four hours without raising the
+stuck timeout is not, and ours had raised it. The generalised invariant is
+therefore: **no external reclaim path may fire before the owner's own bound
+plus a grace**, and the grace is now one named constant shared by all three.
+
 **I2 — Server death must be recovered faster than task slowness.**
 A dead host should not hold work for a lease period. The reaper therefore
 runs on heartbeat staleness (2 min) and is independent of the lease (16 min):
@@ -389,11 +403,21 @@ author raising an execution timeout past a previously-adequate lease — is
 closed by the same code. Nine tests cover it, four of which were confirmed to
 fail against the pre-clamp implementation.
 
-What remains open is narrower: the reaper and stuck-task timeouts are still
-independently configurable and have no derived relationship to each other, and
-we have not established what their correct ordering *is* — only that we have
-not seen it violated. An invariant nobody has articulated is not enforced, it
-is merely untested.
+The item this section listed as open in its first draft — that the reaper and
+stuck-task timeouts had no articulated relationship, and that "an invariant
+nobody has articulated is not enforced, it is merely untested" — was then
+articulated and enforced (§3). Writing it down was what exposed it: both stuck
+reaps could fire at or before the owning runner's own deadline, one of them
+because it compared against the identical number the owner dispatches on. This
+is the second time in this paper's short history that stating an invariant
+plainly revealed it to be violated in the very system being described, which we
+record as the method's main practical argument rather than as a coincidence.
+
+What remains genuinely open is the *reaper* (server-liveness) side. Its 2-minute
+threshold is deliberately independent of the task-level clocks — that is I2 —
+but "independent" is a claim about intent, and we have not derived a bound on
+how far it may drift toward them before a slow-but-alive host has its work
+stolen. We know of no violation; we also have no test that would notice one.
 
 The cancellation stop-latency claim (§4.5) is measured on a single scan
 workload at one check interval; the acceptance evidence for the surrounding

@@ -108,10 +108,21 @@ class BaseMixin:
     # Task execution-timeout default, mirrored from RunnerConfig / agent_poller
     # so the lease can be derived from it. Keep in sync with FW_TASK_EXECUTION_TIMEOUT_MS.
     DEFAULT_EXECUTION_TIMEOUT_MS = 900_000
-    # Grace the lease is held ABOVE the execution timeout, so the owning runner's
-    # own execution-timeout watchdog resets a stuck task (on that runner) BEFORE
-    # any other runner's lease-expiry reclaim can pick it up and run it a 2nd time.
-    LEASE_OVER_EXEC_GRACE_MS = 60_000
+    # Grace that EVERY external reclaim path is held above the owning runner's
+    # own bound, so the owner always acts first on its own wedged task and no
+    # other party can hand the work to a second runner while it still runs.
+    #
+    # This governs three paths, all of which used to be able to fire at or
+    # before the owner's own deadline:
+    #   - lease expiry            (_lease_ms, below)
+    #   - the per-task stuck reap (reap_stuck_tasks pass 1 — its threshold is
+    #                              the SAME timeout_ms the owner dispatches on,
+    #                              so without grace they raced)
+    #   - the default stuck reap  (pass 2 — independent of the execution timeout)
+    # See docs/thesis/paper-timeout-interactions.md §3.
+    RECLAIM_GRACE_MS = 60_000
+    # Historical name, kept because it reads correctly at the lease call site.
+    LEASE_OVER_EXEC_GRACE_MS = RECLAIM_GRACE_MS
 
     def _lease_ms(self) -> int:
         """Active task-lease duration.
