@@ -22,11 +22,14 @@ belongs in the workflow, next to the fan-out it governs — and CLAUDE.md alread
 asks for exactly this: *"for every shared resource (thread pool, connection,
 queue): consider isolation/bulkheads."*
 
-## ⚠️ Status: do not use on long fan-outs yet
+## ⚠️ Status: root cause fixed; cleared for moderate fan-outs, not yet for 3,000-wide
 
-The clause is implemented, tested, and shipped, but it is **not yet safe on a wide,
-long-running fan-out**. It amplifies a pre-existing defect: leaf steps park at
-`state.statement.blocks.Begin` after their task completes and are never cascaded onward.
+The clause is implemented, tested and shipped. It used to amplify a pre-existing defect —
+leaf steps parked at `state.statement.blocks.Begin` after their task completed and were
+never cascaded onward — which **has since been root-caused and fixed** (see below); a
+capped fan-out now survives a runner kill unattended at moderate scale. What has *not* been
+re-run since the fix is the 3,000-wide national atlas that originally froze, so that one
+still needs its own confirming run.
 
 Unbounded, that stranding is survivable — the 3,167-county national run stranded ~10% and
 still finished. Capped, it is fatal: stranded sub-blocks hold every window slot, so
@@ -59,13 +62,33 @@ With both fixed, a parked step is recorded once (on the False→True edge, so re
 is not a write storm) and is found by the sibling scan when a sibling lands, which is the
 wake-up the tail was missing.
 
-**This is not yet clearance to re-add the cap.** What is verified is the mechanism, in
-unit and integration tests; what is *not* is the original end-to-end claim — that a wide,
-long-running capped fan-out survives a runner restart unattended. Two earlier fixes for
-this same stall (the window nudge and the program-AST fallback) were plausible
-code-reading stories that each cost a bake+rollout and changed nothing, so the bar here
-is empirical: re-enable the cap on `BuildAtlasFanout` only after a capped national run
-completes without an external watchdog.
+Two earlier fixes for this same stall (the window nudge and the program-AST fallback) were
+plausible code-reading stories that each cost a bake+rollout and changed nothing, so the
+bar here is empirical.
+
+### Acceptance run — passed at small scale (2026-08-10)
+
+The stated criterion is *"a capped fan-out survives a runner restart unattended"*. On the
+deployed fix (v146):
+
+| | |
+|---|---|
+| Workload | 60 iterations, `limit 6`, one runner (`--max-concurrent 4`) |
+| Interruption | runner **SIGKILL**ed mid-flight — 1 task in flight, 29 iterations not yet admitted |
+| Result | restarted once, then left alone: **completed in ~135s**, workflow `completed` |
+| Tasks | 61/61 completed, **0** dead-lettered or failed |
+| Recovery | exactly **1** task re-claimed (`retry_count=1`) — the killed one, recovered by the reaper |
+
+Pre-fix this is the shape that stalled: the killed iteration's leaf parks, holds a window
+slot, and admission stops. It did not — no watchdog, no `repair-workflow`.
+
+**What this does and does not license.** The criterion is met, so the mechanism is sound
+end to end under a restart. It is *not* the scale that broke: the original failures were a
+3,167-county fan-out over hours across ~21 runners (froze at 628, then 1,368), and a 60-item
+run on one runner cannot exercise the contention, sweep cadence and multi-runner
+re-claim that made stranding common there. Treat the cap as safe for moderate fan-outs;
+before re-enabling it on `fwh_county_atlas.BuildAtlasFanout`, run the national atlas capped
+and confirm it finishes without an external watchdog.
 
 ## The clause
 
