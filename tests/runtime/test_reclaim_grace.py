@@ -153,3 +153,74 @@ def test_reported_timeout_is_the_threshold_actually_applied(store, monkeypatch):
     _running_task(store, "t1", timeout_ms=0, age_ms=5 * 60 * MIN)
     [row] = store.reap_stuck_tasks(default_stuck_ms=30 * MIN)
     assert int(row["timeout_ms"]) == 4 * 60 * MIN + GRACE
+
+
+# --- The third clock: server-liveness reaping vs a declared stage -------------
+#
+# I3: "a declared long phase must suppress every clock that would otherwise fire
+# during it." The lease covers the budget and the stuck reap skips it. The
+# orphan reaper — which acts on SERVER heartbeat staleness — did not, so a
+# handler that had declared a long silent phase could still be reaped out from
+# under itself. The scenario is not exotic: the heavy work that motivates
+# declaring a budget (a multi-GB osmium scan) is exactly what saturates a host
+# until its server heartbeat starves too, so both signals go stale for the same
+# benign reason.
+
+
+def _dead_server_with_task(store, *, budget_left_ms: int, silent_ms: int = 10 * MIN):
+    from facetwork.runtime.mongo_store.base import _current_time_ms
+
+    now = _current_time_ms()
+    store._db.servers.insert_one(
+        {"uuid": "server-A", "state": "running", "ping_time": now - silent_ms}
+    )
+    store._db.tasks.insert_one(
+        {
+            "uuid": "t1",
+            "name": "osm.ToGeoJson",
+            "state": "running",
+            "server_id": "server-A",
+            "step_id": "s1",
+            "workflow_id": "w1",
+            "updated": now - silent_ms,
+            "task_heartbeat": now - silent_ms,
+            "stage_budget_expires": (now + budget_left_ms) if budget_left_ms else 0,
+        }
+    )
+
+
+def test_active_stage_budget_survives_the_orphan_reaper(store):
+    """A declared long phase is not reaped mid-stage."""
+    _dead_server_with_task(store, budget_left_ms=20 * MIN)
+    assert store.reap_orphaned_tasks(down_timeout_ms=2 * MIN) == []
+
+
+def test_expired_stage_budget_is_reaped(store):
+    """The budget defers recovery, it does not cancel it."""
+    _dead_server_with_task(store, budget_left_ms=0)
+    reaped = store.reap_orphaned_tasks(down_timeout_ms=2 * MIN)
+    assert [r["step_id"] for r in reaped] == ["s1"]
+
+
+def test_a_live_handler_on_a_stale_server_is_still_protected(store):
+    """Pre-existing guard, pinned: a fresh TASK heartbeat outranks a stale server."""
+    from facetwork.runtime.mongo_store.base import _current_time_ms
+
+    now = _current_time_ms()
+    store._db.servers.insert_one(
+        {"uuid": "server-A", "state": "running", "ping_time": now - 10 * MIN}
+    )
+    store._db.tasks.insert_one(
+        {
+            "uuid": "t1",
+            "name": "ns.Busy",
+            "state": "running",
+            "server_id": "server-A",
+            "step_id": "s1",
+            "workflow_id": "w1",
+            "updated": now - 10 * MIN,
+            "task_heartbeat": now - 5_000,  # still beating
+            "stage_budget_expires": 0,
+        }
+    )
+    assert store.reap_orphaned_tasks(down_timeout_ms=2 * MIN) == []

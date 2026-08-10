@@ -414,7 +414,35 @@ class TaskMixin(_MixinBase):
             {
                 "state": "running",
                 "server_id": {"$in": dead_ids},
-                **stale_heartbeat_filter,
+                # NB: both clauses below are $or's, so they must be combined
+                # under $and — spreading one and then adding the other as a
+                # second "$or" key silently DROPS the first (a dict literal
+                # keeps the last value for a repeated key), which quietly
+                # removes the task-heartbeat guard.
+                # An ACTIVE stage budget wins over server-heartbeat staleness.
+                # A declared long phase means the handler legitimately stops
+                # heartbeating — and the heavy work that motivates declaring one
+                # (a multi-GB osmium scan) is exactly what saturates a host until
+                # its SERVER heartbeat starves too. Without this, both signals go
+                # stale for the same benign reason and the task is handed to a
+                # second runner mid-stage, duplicating hours of work.
+                #
+                # The cost is deliberate: if the host really is dead, its
+                # budgeted task waits for the budget to expire before being
+                # recovered. That is bounded and self-healing, and the lease
+                # (which also covers the budget) already made this the behaviour
+                # for lease-expiry reclaim — this aligns the third clock with the
+                # other two. See paper-timeout-interactions.md §3 (I3).
+                "$and": [
+                    stale_heartbeat_filter,
+                    {
+                        "$or": [
+                            {"stage_budget_expires": {"$exists": False}},
+                            {"stage_budget_expires": 0},
+                            {"stage_budget_expires": {"$lt": now}},
+                        ]
+                    },
+                ],
             },
             {"step_id": 1, "workflow_id": 1, "name": 1, "server_id": 1, "updated": 1},
         )

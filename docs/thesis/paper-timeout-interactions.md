@@ -413,11 +413,39 @@ is the second time in this paper's short history that stating an invariant
 plainly revealed it to be violated in the very system being described, which we
 record as the method's main practical argument rather than as a coincidence.
 
-What remains genuinely open is the *reaper* (server-liveness) side. Its 2-minute
-threshold is deliberately independent of the task-level clocks — that is I2 —
-but "independent" is a claim about intent, and we have not derived a bound on
-how far it may drift toward them before a slow-but-alive host has its work
-stolen. We know of no violation; we also have no test that would notice one.
+The *reaper* (server-liveness) side was examined next and produced the sharpest
+instance of the pattern. Its 2-minute threshold is deliberately independent of
+the task clocks (I2), and it is already guarded: a task whose own heartbeat is
+fresh is spared even when its server's is stale, so a busy-but-alive host keeps
+its work. But it did not honour a **stage budget** — and the scenario that
+breaks is not exotic, it is the motivating one. The heavy work that makes a
+handler declare a long silent phase (a multi-GB osmium scan) is exactly what
+saturates a host until the *server* heartbeat starves too. Both signals then go
+stale for the same benign reason, the declared budget is ignored, and the task
+is handed to a second runner mid-stage. I3 — "a declared long phase must
+suppress every clock that would otherwise fire during it" — was stated in §3 of
+this paper as though it held; it held for two clocks of three. A probe confirmed
+the third in one run: a task with twenty minutes of declared budget remaining,
+reaped.
+
+The fix aligns the third clock with the other two, at a deliberate cost: if the
+host really is dead, its budgeted task now waits for the budget to expire before
+recovery. That is bounded and self-healing, and it was already the behaviour for
+lease-expiry reclaim, since the lease covers the budget.
+
+Two things about that episode are worth more than the fix. First, the invariant
+was violated *in the system that had just published it* — the third time in this
+corpus that writing a property down plainly is what revealed the code
+disagreeing with it. Second, the guard the new test pinned caught a defect the
+same change had introduced moments earlier: spreading one `$or` clause into a
+dict literal and adding a second silently dropped the first, removing the
+task-heartbeat protection entirely. A test written for the invariant, not for
+the diff, is what noticed.
+
+What remains open is now narrow and honest: we still have no derived bound on
+how far the reaper's threshold may drift toward the task-level clocks before a
+merely-slow host is treated as dead. The guards make that safe in the cases we
+have constructed; we have not shown it safe in general.
 
 The cancellation stop-latency claim (§4.5) is measured on a single scan
 workload at one check interval; the acceptance evidence for the surrounding
