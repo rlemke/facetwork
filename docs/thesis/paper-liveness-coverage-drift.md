@@ -2,9 +2,10 @@
 
 *Research companion to the Facetwork thesis (`thesis.md`). Empirical basis:
 the July 2026 continuation-liveness investigation — a disproven fix, a
-read-only forensic redo, and a verified low-risk fix; all commits, probes,
-and workflow-state records are in the Facetwork repository and its fleet's
-execution history.*
+read-only forensic redo, and a verified low-risk fix — and its August 2026
+sequel (§8), a second stall in the same workload whose mechanism is the dual
+of the first; all commits, probes, and workflow-state records are in the
+Facetwork repository and its fleet's execution history.*
 
 ---
 
@@ -33,10 +34,20 @@ step advance in six seconds. The real fix is a read-query change with no
 write-semantics risk: a single canonical set of stall-states referenced by
 every sweep site. Verification on the workload that had never once completed
 without babysitting: it completed hands-off, zero re-seeds, identical
-output. The transferable lessons are a named failure mode (*coverage drift*)
-with a structural remedy (one authoritative stall-state set), and a
-methodological rule the false start earned the hard way: **for liveness
-bugs, observe the frozen system before you mutate a write path.**
+output. A second stall in the same workload, root-caused three weeks later
+(§8), turns out to be the **dual** of this mode and sharpens the lesson: the
+stranding state was correctly covered, the sweep did select and process those
+steps, and the rescue still accomplished nothing, because the parked-step
+update was discarded before commit and the flag its re-queue path reads was
+never persisted at all. Coverage of the *selection* layer is necessary and
+not sufficient; a safety net must also be observable in its *effect*, since a
+loop that reports "resumed 68 steps" while committing nothing looks healthy
+in every log it writes. The transferable lessons are a named failure mode
+(*coverage drift*) with a structural remedy (one authoritative stall-state
+set), its dual (a rescue that runs and is a no-op), and a methodological rule
+the false start earned the hard way and the second stall confirmed twice
+more: **for liveness bugs, observe the frozen system before you mutate a
+write path.**
 
 ## 1. Introduction
 
@@ -75,6 +86,10 @@ reading-from-the-running-system. We contribute:
    that settled it.
 4. **A low-risk structural fix and its measured effect** (§7): one
    authoritative stall-state set; before/after on the same workload.
+5. **The dual failure mode** (§8): a later stall in the same workload where
+   coverage was correct and the rescue ran anyway to no effect — with the
+   obligation it implies, that a self-healing loop be instrumented by the
+   transitions it *commits* rather than the rescues it *attempts*.
 
 ## 2. Background
 
@@ -309,7 +324,119 @@ model, like the coordination substrate, does not reveal its behavior to
 local reading; both times the fix "obviously" belonged somewhere it did
 nothing, and only running the system showed it.
 
-## 8. Related work and discussion
+## 8. The second variant: a rescue that ran and did nothing
+
+§9 of the first version of this paper left a question open. Earlier stalls
+in this workload's history were described in terms of block-level `Begin`
+states rather than catch states, and we declined to claim they shared the
+catch-coverage mechanism. They did not. Three weeks later the block-level
+variant was reproduced, root-caused, and fixed, and its mechanism is the
+**dual** of coverage drift — instructive precisely because the remedy of §7
+would never have caught it.
+
+### 8.1 Symptom
+
+The signature was familiar and the diagnosis was not. Leaf steps — the
+innermost work of a wide `foreach` — parked at `statement.blocks.Begin`
+*after their handler task had completed successfully*. The work was done;
+only the transition onward was missing. Unbounded, this was survivable: a
+3,167-way county fan-out stranded roughly a tenth of its leaves and still
+finished, because the tail eventually cleared. Bounding the fan-out width
+made it fatal. Under `foreach … limit N`, stranded leaves hold window slots
+that are never released, so admission stops: runs froze at 628 of 3,167, and
+again at 1,368. The width cap did not cause the bug; it converted a slow
+tail into a hard stall, which is what a bulkhead does to any leak of
+concurrency permits.
+
+### 8.2 Why §7's remedy did not apply
+
+`statement.blocks.Begin` was **in** the canonical stall-state set. The sweep
+selected these workflows, `get_actionable_steps_by_workflow` returned the
+leaves themselves, and the sweep called its resume path on them. Coverage was
+correct. The rescue nevertheless accomplished nothing, and did so silently.
+
+Two independent defects were both required:
+
+1. **The deferral was discarded.** A handler state that cannot proceed parks
+   its step by returning "stay, and push me for re-queue". The evaluator's
+   branch for *changed but not advanced* steps was guarded on `not
+   result.continue_processing` — which is exactly false for a deferral. The
+   step update was dropped: the push flag never reached persistence, no parent
+   was marked dirty, and the iteration reported no changes. A sweep over such
+   a step therefore committed **nothing**, which is why the sweep appeared
+   inert on precisely the steps it was correctly selecting.
+2. **The flag was not persisted at all.** The re-queue path that *is* designed
+   to rescue a parked step — a scan of a dirtied container's children for the
+   push flag — reads that flag back from the store. It was absent from the
+   persisted step document, so the scan read false for every step, forever.
+   The designed rescue was dead code on the production backend independently
+   of (1).
+
+Either defect alone hides the other. Fixing the selection set — the remedy
+this paper proposes — would have changed nothing here, because selection was
+never the problem.
+
+### 8.3 The dual failure mode
+
+Coverage drift is a defect of the **selection** layer: the loop does not
+*look at* the states where work strands. This is a defect of the **effect**
+layer: the loop looks at the right state, runs, and has no effect. Both
+present identically to an operator — a safety net that runs on schedule while
+work sits still — and the second is the more insidious, because every
+observable signal says the net is working. The sweep logged the workflow, it
+logged the step, it reported success. Only the absence of a *write* betrayed
+it.
+
+The generalisation for any self-healing loop is a second obligation beside
+coverage: **a rescue must be observable in its effect, not merely in its
+execution**. A loop that cannot distinguish "resumed 68 steps" from "resumed
+68 steps and committed nothing" cannot be trusted by the operator reading its
+logs. Counting committed state transitions, not attempted rescues, would have
+surfaced this in an afternoon rather than across months and two failed fixes.
+
+### 8.4 Method, again
+
+Two fixes preceded the correct one, and both failed the way §4's fix failed:
+a plausible mechanism reasoned from reading code, shipped through a full image
+bake and fleet rollout, changing nothing. One targeted a window-refill nudge
+that sat behind the very resume that was dying before reaching it; its warning
+never once appeared in a log. The other restored an AST that was never
+missing.
+
+The correct diagnosis took one run of a twenty-line probe: stub the state
+changer to return a deferral, call the evaluator's step-processing function
+directly, print what was committed. It reported the persisted flag false, the
+updated-steps list empty, and the dirty set empty — the entire mechanism, in a
+single output, after roughly an hour of code reading had produced only
+stories. This is §4's lesson recurring with a sharper edge: it is not merely
+that one must observe before mutating a write path, but that the observation
+is usually *cheap and available* at the moment one is tempted to theorise.
+
+### 8.5 Verification
+
+The fix persists the parked step on the false-to-true edge of the flag only —
+idempotent, so re-sweeping an already-parked step remains a no-op rather than
+a per-sweep write storm — and round-trips the flag through the store. Eight
+regression tests cover both persistence backends and were confirmed to **fail
+against the pre-fix code** before being accepted, including an end-to-end one:
+a sibling landing must re-queue a parked step, which pre-fix ends after a
+single iteration with the parked step untouched.
+
+The behavioural criterion this workload had never met was that a *capped*
+fan-out survive a runner restart unattended. On the deployed fix: sixty
+iterations at width six, the runner killed with `SIGKILL` mid-flight with one
+task in flight and twenty-nine iterations not yet admitted, then restarted
+once and left alone. It completed in about 135 seconds — 61 of 61 tasks, none
+dead-lettered, exactly one task re-claimed by the orphan reaper, the one that
+had been killed. That is the shape that previously stalled.
+
+We scope this deliberately. Sixty iterations on one runner does not exercise
+the contention, sweep cadence and multi-runner re-claim that made stranding
+common at 3,167 iterations across twenty-one runners, and the national atlas
+has not been re-run capped since the fix. The mechanism is established and the
+restart criterion is met; the scale claim is not yet earned.
+
+## 9. Related work and discussion
 
 *Self-healing and safety nets.* Reconciliation loops (Kubernetes
 controllers), reapers, and watchdogs all encode a target set of unhealthy
@@ -343,15 +470,21 @@ system before mutating a write path — is not a counsel of caution but of
 *evidence order*: in a concurrent system the state is more truthful than
 the source.
 
-## 9. Threats to validity and scope
+## 10. Threats to validity and scope
 
-The fix is verified for the **catch-frontier** variant of the stall, which
-is the variant the current atlas exhibits and reproduces on demand. Earlier,
-pre-catch stalls in this workload's history were described in terms of
-block-level "Begin" states; whether those had an additional or distinct
-mechanism (a sweep per-invocation bound, a lease-hold interaction) is not
-established here — the current runtime's reproducible stall is the
-catch-coverage gap, and we scope the claim to it. We report one workload on
+The §7 fix is verified for the **catch-frontier** variant of the stall. The
+block-level `Begin` variant, whose mechanism this paper originally declined to
+claim, was established separately (§8) and proved to be *distinct*: coverage
+was correct there and the defect lay in the rescue's effect. That resolves the
+open question but also bounds the §7 remedy — a canonical stall-state set
+fixes selection, and nothing about selection would have caught §8. Readers
+should treat the two as complementary obligations rather than one fix.
+
+The §8 verification carries its own limit, stated there and repeated here: a
+sixty-iteration capped fan-out on a single runner meets the restart criterion
+but does not reproduce the scale at which the stall was originally common
+(3,167 iterations, twenty-one runners); that run has not been repeated capped
+since the fix. We report one workload on
 one four-host fleet; the hands-off result is a single (repeatable)
 observation, not a distribution. The ~5-minute residual latency means the
 fix restores *correctness and unattendedness*, not *speed* — a system needing
@@ -359,7 +492,7 @@ low fan-in-tail latency would want the catch-entry continuation follow-up.
 Finally, coverage drift is argued as a general mode from one instance; we
 claim the mechanism and remedy transfer, not a frequency across systems.
 
-## 10. Conclusion
+## 11. Conclusion
 
 A workflow froze at its tail for months, and the safety net built to prevent
 exactly that watched it freeze — because the net's list of states-to-rescue
@@ -368,10 +501,24 @@ fix, reasoned confidently from a real symptom, changed write semantics and
 turned the freeze into a storm; the second, forbidden from touching write
 paths until it had read the frozen system, found a single stuck step, proved
 it processable in six seconds, and closed the hole with one canonical list.
-The workload that had never finished unattended now does. The bug was small;
-the two lessons are not — *coverage drift* is a liveness hole latent in every
-self-healing loop, and *observe before you mutate* is the evidence order that
-concurrent-liveness debugging demands.
+The workload that had never finished unattended now does.
+
+A second stall in the same workload then made the same point from the other
+side. There the state *was* covered, the sweep *did* process it, and the
+rescue still did nothing — the parked-step write was discarded before commit
+and the flag the designed re-queue path reads had never been persisted at all.
+Two more code-reasoned fixes died against it before a twenty-line probe
+settled it in one run. A capped fan-out now survives a `SIGKILL` mid-flight
+and finishes unattended.
+
+The bugs were small; the lessons are not. *Coverage drift* is a liveness hole
+latent in every self-healing loop, and it has a dual that is harder to see: a
+loop can select the right work, run on schedule, report success, and commit
+nothing — so a safety net must be instrumented by the state transitions it
+*commits*, not the rescues it attempts. And across all three failed fixes in
+this history, *observe before you mutate* was the evidence order that
+concurrent-liveness debugging demanded and that reading code, however
+carefully, never supplied.
 
 ---
 
