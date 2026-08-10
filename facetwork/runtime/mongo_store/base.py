@@ -17,7 +17,7 @@
 import logging
 import os
 import time
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 try:
     from pymongo import ASCENDING, MongoClient
@@ -116,21 +116,62 @@ class BaseMixin:
     def _lease_ms(self) -> int:
         """Active task-lease duration.
 
-        Honors an explicit ``FW_LEASE_DURATION_MS`` verbatim. Otherwise defaults
-        to ``max(DEFAULT_LEASE_MS, execution_timeout + grace)`` so a handler that
-        runs for minutes without heartbeating is NOT lease-reclaimed by another
-        runner (and thus double-executed) before its own execution-timeout
-        watchdog fires. This is only the per-task backstop: a genuinely dead
-        SERVER is still recovered promptly by the reaper (FW_REAPER_TIMEOUT_MS,
-        ~2min) via heartbeat staleness, independent of the lease.
+        Defaults to ``max(DEFAULT_LEASE_MS, execution_timeout + grace)`` so a
+        handler that runs for minutes without heartbeating is NOT lease-reclaimed
+        by another runner (and thus double-executed) before its own
+        execution-timeout watchdog fires. This is only the per-task backstop: a
+        genuinely dead SERVER is still recovered promptly by the reaper
+        (FW_REAPER_TIMEOUT_MS, ~2min) via heartbeat staleness, independent of the
+        lease.
+
+        An explicit ``FW_LEASE_DURATION_MS`` is honoured only when it respects
+        that ordering, and is **clamped up** to the derived floor when it does
+        not. The ordering is a correctness invariant, not a preference: a lease
+        shorter than the execution timeout means another runner may reclaim a
+        task while its current claimant is still executing it, so the work runs
+        twice — in an external API's rate limit, or a PostGIS import, corrupt.
+        Setting a "reasonable" 5-minute lease next to a 15-minute execution
+        timeout is exactly how that used to happen, and nothing warned.
+
+        The floor is recomputed from the *current* execution timeout on every
+        call, so raising ``FW_TASK_EXECUTION_TIMEOUT_MS`` for one domain also
+        raises that domain's lease floor rather than silently inverting the
+        invariant. See docs/thesis/paper-timeout-interactions.md §4.1.
         """
-        explicit = os.environ.get("FW_LEASE_DURATION_MS")
-        if explicit:
-            return int(explicit)
         exec_timeout = int(
             os.environ.get("FW_TASK_EXECUTION_TIMEOUT_MS", str(self.DEFAULT_EXECUTION_TIMEOUT_MS))
         )
-        return max(self.DEFAULT_LEASE_MS, exec_timeout + self.LEASE_OVER_EXEC_GRACE_MS)
+        floor = max(self.DEFAULT_LEASE_MS, exec_timeout + self.LEASE_OVER_EXEC_GRACE_MS)
+        explicit = os.environ.get("FW_LEASE_DURATION_MS")
+        if not explicit:
+            return floor
+        requested = int(explicit)
+        if requested >= floor:
+            return requested
+        self._warn_lease_clamped(requested, floor, exec_timeout)
+        return floor
+
+    # Warn once per process: _lease_ms is called on every claim, heartbeat and
+    # stage-budget renewal, so an un-throttled warning would be a log flood on
+    # the very hosts whose logs an operator is trying to read.
+    _lease_clamp_warned: ClassVar[bool] = False
+
+    @classmethod
+    def _warn_lease_clamped(cls, requested: int, floor: int, exec_timeout: int) -> None:
+        if cls._lease_clamp_warned:
+            return
+        cls._lease_clamp_warned = True
+        logger.warning(
+            "FW_LEASE_DURATION_MS=%dms is shorter than the execution timeout "
+            "(%dms) plus grace (%dms) — clamping the lease to %dms. A lease "
+            "below that floor lets another runner reclaim a task while it is "
+            "still executing here, running the work twice. Raise the lease, or "
+            "lower FW_TASK_EXECUTION_TIMEOUT_MS, to silence this.",
+            requested,
+            exec_timeout,
+            cls.LEASE_OVER_EXEC_GRACE_MS,
+            floor,
+        )
 
     @staticmethod
     def _find_decoded(collection: Any, query: dict, decoder: Any) -> Any:

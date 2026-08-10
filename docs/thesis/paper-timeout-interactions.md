@@ -157,10 +157,22 @@ is executed twice, 16 minutes apart".
 a second runner. Output is correct-looking but the work was paid for twice —
 in an external API's rate limit, or a PostGIS import, corrupt.
 **Mechanism.** I1 inverted: lease shorter than the execution bound.
-**Mitigation.** Derivation, as above, rather than two independent knobs.
-**Residual.** `FW_LEASE_DURATION_MS`, when set, is honoured *verbatim* — an
-operator who sets a "reasonable" 5-minute lease alongside a 15-minute
-execution timeout silently re-creates the hazard. See §7.
+**Mitigation.** Derivation, as above, rather than two independent knobs — and,
+since the configuration surface still exposed the inversion, a **clamp**: an
+explicit `FW_LEASE_DURATION_MS` below the derived floor is raised to it, with a
+warning naming both values and the consequence. The clamp recomputes the floor
+from the *current* execution timeout on every call, so it also closes the
+per-domain variant (a domain raising its own execution timeout past a
+previously-fine explicit lease). The warning fires once per process: the
+function runs on every claim, heartbeat and stage renewal, so an unthrottled
+warning would flood the logs of exactly the host being diagnosed.
+**Note on the choice.** Clamping silently overrides an operator's explicit
+configuration, which is normally poor manners; it is justified here because the
+setting is not a preference but an invariant whose violation is invisible
+(duplicated work looks like success) and whose blast radius is data corruption.
+Refusing to start would be the louder alternative, but the lease is read
+per-operation rather than at startup, so a raise would fail a running fleet
+rather than a misconfiguration.
 
 ### 4.2 The zombie: a claimant that is wrong and cannot tell
 
@@ -366,14 +378,22 @@ is what we encountered, not a survey, and there is no claim that these nine
 are exhaustive or representative in frequency. Several entries are single
 incidents whose mitigation has held rather than controlled experiments.
 
-Two hazards remain live in our own configuration surface, and honesty
-requires naming them. First, §4.1's residual: an explicit
-`FW_LEASE_DURATION_MS` is honoured verbatim and can invert I1. The fix — clamp
-an explicit lease to the derived floor, or refuse to start — is known and not
-yet implemented; we report the hazard rather than a fix. Second, the execution
-timeout, reaper and stuck-task timeouts remain independently configurable per
-example and per domain, so a domain author raising an execution timeout past
-the lease reproduces §4.1 within one domain's configuration.
+Both configuration-surface hazards named in the first draft of this paper were
+closed while it was being written, which is worth recording as a datapoint
+about the exercise rather than hidden: writing the catalogue is what made the
+two live inversions legible as *the same* invariant, and the fix was nine
+lines. An explicit `FW_LEASE_DURATION_MS` below the derived floor is now
+clamped up with a one-time warning, and because the floor is recomputed per
+call from the current execution timeout, the per-domain variant — a domain
+author raising an execution timeout past a previously-adequate lease — is
+closed by the same code. Nine tests cover it, four of which were confirmed to
+fail against the pre-clamp implementation.
+
+What remains open is narrower: the reaper and stuck-task timeouts are still
+independently configurable and have no derived relationship to each other, and
+we have not established what their correct ordering *is* — only that we have
+not seen it violated. An invariant nobody has articulated is not enforced, it
+is merely untested.
 
 The cancellation stop-latency claim (§4.5) is measured on a single scan
 workload at one check interval; the acceptance evidence for the surrounding

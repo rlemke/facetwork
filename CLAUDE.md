@@ -386,7 +386,7 @@ Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event f
 | `FW_REAPER_TIMEOUT_MS` | `120000` (2min) | Dead-server detection threshold |
 | `FW_STUCK_TIMEOUT_MS` | `1800000` (30min) | Stuck-task watchdog timeout |
 | `FW_TASK_EXECUTION_TIMEOUT_MS` | `900000` (15min) | Per-task execution timeout; timed-out tasks reset to pending |
-| `FW_LEASE_DURATION_MS` | `300000` (5min) | Task lease duration; renewed by handler heartbeat |
+| `FW_LEASE_DURATION_MS` | derived: `max(5min, execution_timeout + 1min)` = **16min** by default | Task lease; renewed by handler heartbeat. The 5min is only a *floor* — the lease must outlast the execution timeout so the owning runner's watchdog resets a wedged task before another runner's lease-expiry reclaim runs it a **second time**. An explicit value below that floor is **clamped up** (with a one-time warning) rather than honoured: it's a correctness invariant, not a preference. See [paper-timeout-interactions.md](docs/thesis/paper-timeout-interactions.md) §4.1 |
 
 Examples/domains can override these defaults — local examples via a `runner.env` file in their directory, standalone domain packages via `runner_env={...}` on their `DomainPackage`. The `start-runner` script applies them automatically. Handlers that perform blocking I/O (where heartbeats cannot fire) should register with `timeout_ms=0` and rely on the global execution timeout instead.
 
