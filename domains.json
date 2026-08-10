@@ -62,10 +62,6 @@
           [
             "FW_STUCK_TIMEOUT_MS",
             "14400000"
-          ],
-          [
-            "FW_LEASE_DURATION_MS",
-            "14400000"
           ]
         ],
         "volumes": [
@@ -104,10 +100,6 @@
           ],
           [
             "FW_STUCK_TIMEOUT_MS",
-            "14400000"
-          ],
-          [
-            "FW_LEASE_DURATION_MS",
             "14400000"
           ]
         ],

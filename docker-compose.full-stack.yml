@@ -135,7 +135,13 @@ x-s3-storage: &s3-storage
   # completes wherever it's claimed.
   FW_TASK_EXECUTION_TIMEOUT_MS: ${FW_TASK_EXECUTION_TIMEOUT_MS:-14400000}
   FW_STUCK_TIMEOUT_MS: ${FW_STUCK_TIMEOUT_MS:-14400000}
-  FW_LEASE_DURATION_MS: ${FW_LEASE_DURATION_MS:-14400000}
+  # NOTE: deliberately no FW_LEASE_DURATION_MS. The lease is DERIVED from the
+  # execution timeout (+60s grace) so the owning runner's watchdog always resets
+  # a wedged task before another runner's lease-expiry reclaim can run it twice.
+  # Pinning it here set lease == execution timeout, which is BELOW that floor —
+  # the runtime clamps it up and warns. Leaving it derived means any future
+  # change to the timeout above carries the lease with it.
+  # See docs/thesis/paper-timeout-interactions.md §4.1.
   # Role group, same as the osm runners: `start-runner --fleet` sets
   # FW_SERVER_GROUP=runner so every per-example fleet runner groups under
   # "runner" (not "default"). The non-osm services don't pass --server-group in
@@ -703,7 +709,6 @@ services:
       FW_OSM_TOLERATE_MD5: ${FW_OSM_TOLERATE_MD5:-true}
       FW_TASK_EXECUTION_TIMEOUT_MS: 14400000
       FW_STUCK_TIMEOUT_MS: 14400000
-      FW_LEASE_DURATION_MS: 14400000
       FW_REGISTRY_RUNNER_ARGS: "--task-list osm --server-group ${FW_SERVER_GROUP:-default}"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm
@@ -735,7 +740,6 @@ services:
       FW_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
       FW_TASK_EXECUTION_TIMEOUT_MS: 14400000
       FW_STUCK_TIMEOUT_MS: 14400000
-      FW_LEASE_DURATION_MS: 14400000
       FW_REGISTRY_RUNNER_ARGS: "--task-list continental"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm_lz:/handlers/fwh_osm_lz
