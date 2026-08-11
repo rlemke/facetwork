@@ -1,0 +1,50 @@
+/** Delegating a compute-heavy step to a Ray cluster.
+  *
+  * The design is docs/architecture/external-engine-delegation.md §8.4. Facetwork
+  * keeps the durable coarse structure — persisted steps, retry, catch, repair,
+  * survival across restarts — and hands the fine-grained parallel interior of a
+  * single step to Ray.
+  *
+  * Reach for this when the inner work is BOTH parallel and substantial. A
+  * Facetwork step costs ~2.6s of engine overhead, so 3,000 five-millisecond
+  * operations are ruinous as steps and trivial as one Ray job; but a job whose
+  * tasks are themselves microseconds buys a submission and nothing else — Ray
+  * packs before it spreads and will run them all on one node.
+  */
+namespace ray.delegate {
+
+    /** Submit a Ray job and wait for it.
+      *
+      * The adapter derives the Ray submission id from the step id, so a
+      * redelivered task attaches to the running job instead of starting a
+      * second one. `entrypoint` runs inside `working_dir` on the cluster.
+      *
+      * Effect is external and cost expensive so an LLM composing workflows
+      * prefers a pure/cheap primitive when one exists (fw_capabilities).
+      */
+    event facet SubmitJob(
+        entrypoint: String,
+        working_dir: String = "",
+        runtime_env_json: String = "{}",
+        run_timeout_minutes: Long = 120
+    ) => (
+        submission_id: String,
+        status: String,
+        logs_tail: String
+    ) with Effect(kind = "external") with Cost(tier = "expensive")
+      with Timeout(minutes = 120)
+}
+
+namespace ray.delegate.example {
+    use ray.delegate
+
+    /** The shape the design argues for: Facetwork owns the durable pipeline,
+      * one step is delegated compute. */
+    workflow DelegatedCompute(
+        entrypoint: String = "python job.py",
+        working_dir: String = ""
+    ) => (status: String, submission_id: String) andThen {
+        job = SubmitJob(entrypoint = $.entrypoint, working_dir = $.working_dir)
+        yield DelegatedCompute(status = job.status, submission_id = job.submission_id)
+    }
+}

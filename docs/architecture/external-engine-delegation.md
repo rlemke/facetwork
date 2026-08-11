@@ -1,8 +1,13 @@
 # FFL as a front end to other workflow systems — delegation
 
-**Status: DESIGN.** No adapter code exists yet. One shallow precedent ships
-today ([`examples/aws-lambda`](../../examples/aws-lambda)); this document
-generalises it and works out the part that example leaves unsolved.
+**Status: DESIGN, with one working adapter.** The design below is still the
+general account. A **D2** (blocking) adapter for Ray now ships in
+[`examples/ray-delegate`](../../examples/ray-delegate) — derived ids, stage
+budget, and cancellation-driven `stop_job` — verified against a real cluster
+(§8.4). D3 (park and resume) remains unimplemented, and the Temporal and Airflow
+adapters remain sketches. The shallow precedent that motivated this document
+([`examples/aws-lambda`](../../examples/aws-lambda), fire-and-describe) still
+ships too.
 
 ## 1. What this is, and what it is not
 
