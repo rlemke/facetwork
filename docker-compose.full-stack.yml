@@ -134,7 +134,11 @@ x-s3-storage: &s3-storage
   # timeouts (same values the osm runners get via domains.json) so an osm task
   # completes wherever it's claimed.
   FW_TASK_EXECUTION_TIMEOUT_MS: ${FW_TASK_EXECUTION_TIMEOUT_MS:-14400000}
-  FW_STUCK_TIMEOUT_MS: ${FW_STUCK_TIMEOUT_MS:-14400000}
+  # NOTE: deliberately no FW_STUCK_TIMEOUT_MS either. Like the lease, the
+  # stuck-task threshold is derived — clamped up to execution_timeout + grace —
+  # so no external reclaim fires before the owning runner's own bound. Pinning
+  # it here to the SAME 14400000 as the timeout above was an inversion by
+  # exactly that grace, and the pinned number was not the effective one.
   # NOTE: deliberately no FW_LEASE_DURATION_MS. The lease is DERIVED from the
   # execution timeout (+60s grace) so the owning runner's watchdog always resets
   # a wedged task before another runner's lease-expiry reclaim can run it twice.
@@ -527,7 +531,6 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       FW_ATLAS_BUCKET: ${FW_ATLAS_BUCKET:-osm-extracts}
       FW_TASK_EXECUTION_TIMEOUT_MS: 1800000
-      FW_STUCK_TIMEOUT_MS: 1800000
       FW_REGISTRY_RUNNER_ARGS: "--task-list county"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_county_atlas:/handlers/fwh_county_atlas
@@ -708,7 +711,6 @@ services:
       FW_OSM_USE_CACHE_IF_PRESENT: ${FW_OSM_USE_CACHE_IF_PRESENT:-true}
       FW_OSM_TOLERATE_MD5: ${FW_OSM_TOLERATE_MD5:-true}
       FW_TASK_EXECUTION_TIMEOUT_MS: 14400000
-      FW_STUCK_TIMEOUT_MS: 14400000
       FW_REGISTRY_RUNNER_ARGS: "--task-list osm --server-group ${FW_SERVER_GROUP:-default}"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm
@@ -739,7 +741,6 @@ services:
       FW_DOMAIN_REPO: fwh_osm_lz
       FW_POSTGIS_URL: postgresql://${POSTGRES_USER:-afl}:${POSTGRES_PASSWORD:-afl}@postgis:5432/${POSTGRES_DB:-afl_gis}
       FW_TASK_EXECUTION_TIMEOUT_MS: 14400000
-      FW_STUCK_TIMEOUT_MS: 14400000
       FW_REGISTRY_RUNNER_ARGS: "--task-list continental"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm_lz:/handlers/fwh_osm_lz
