@@ -27,7 +27,7 @@ First, the thesis has an argumentative structure, not a descriptive one. I am no
 
 Second, much of the work is synthesis. The lock-free claim protocol is a straightforward application of atomic document updates; the DSL borrows from CWL, Nextflow, and BPEL; the lease model is Gray and Cheriton. The contribution lies in the combination and in two small-but-genuine new mechanisms: the staged timeout budget and the block-mediated evaluator.
 
-Third, the honest limitations are in Chapter 14. I am not going to hide behind them in the questions that follow, and I am not going to pretend they do not exist.
+Third, the honest limitations are in Chapter 15. I am not going to hide behind them in the questions that follow, and I am not going to pretend they do not exist.
 
 I look forward to the questions.
 
@@ -195,7 +195,7 @@ CockroachDB, FoundationDB, and YugabyteDB all support the required primitives, e
 
 What would be lost in a PostgreSQL port is the operational knowledge teams have built up around MongoDB's specific failure modes (step-down behaviour during primary rotation, election delays, etc.). For teams already running PostgreSQL, those costs are paid in PostgreSQL's own failure modes, which are well-understood in that community.
 
-I will accept the criticism that the thesis should state more prominently that the claim protocol is portable, and that MongoDB is an incidental rather than essential choice. It is in Chapter 14 but it deserves to be in Chapter 5.
+I will accept the criticism that the thesis should state more prominently that the claim protocol is portable, and that MongoDB is an incidental rather than essential choice. It is in Chapter 15 but it deserves to be in Chapter 5.
 
 ### Q11 (Dr. Yegge)
 
@@ -274,7 +274,7 @@ Re-run From Here deletes downstream steps and re-executes the chosen step with i
 
 The mitigation is the same as for the zombie-handler problem: external idempotency. If the handler's external call uses a deterministic idempotency key derived from the task's UUID, the external system de-duplicates. This is standard practice for payment APIs, message queues with idempotent producer support, and many SaaS APIs. Slack, infamously, does not offer idempotency keys on message posts, so for Slack specifically the mitigation is to either (a) tag the handler with a `@not_retryable` annotation that causes Re-run From Here to ask for operator confirmation with an explicit warning, or (b) move the Slack post into a separate "notification" handler chained to the main work so that re-running the main work does not re-post.
 
-The broader admission is that Facetwork's recovery model puts the burden of idempotence on the handler author, and the tooling to make this easy — annotations, warnings, framework-level idempotency-key plumbing — is not yet built. Temporal's model puts that burden on the replay infrastructure, at the cost I discussed in Q15. Neither system solves the problem for handlers that interact with external APIs without idempotency support; both systems give the author a path to safety. Facetwork's path is less paved; Temporal's is more so. I should say this more plainly in Chapter 14.
+The broader admission is that Facetwork's recovery model puts the burden of idempotence on the handler author, and the tooling to make this easy — annotations, warnings, framework-level idempotency-key plumbing — is not yet built. Temporal's model puts that burden on the replay infrastructure, at the cost I discussed in Q15. Neither system solves the problem for handlers that interact with external APIs without idempotency support; both systems give the author a path to safety. Facetwork's path is less paved; Temporal's is more so. I should say this more plainly in Chapter 15.
 
 ### Q17 (Prof. Gray)
 
@@ -346,7 +346,7 @@ I will add a Flyte comparison before the final submission.
 
 ### Q22 (Prof. Kleppmann)
 
-> *Your evaluation in Chapter 13 is one workload. No benchmark, no throughput measurement, no comparison, no statistical treatment. This is an existence proof, not an evaluation.*
+> *Your evaluation in Chapter 14 is one workload. No benchmark, no throughput measurement, no comparison, no statistical treatment. This is an existence proof, not an evaluation.*
 
 Accepted, with clarification.
 
@@ -386,7 +386,7 @@ Configuration C: global timeout = 4 hours, staged timeouts active (PBF scan budg
 
 The claim is that configuration C achieves what neither A nor B can. A is too short; B disables the watchdog; only C distinguishes legitimate long stages from stuck handlers. I observed exactly this behaviour during the OSM evaluation: configuration A was the original deployment, configuration B was the interim response, configuration C is the state after the work in Chapter 8.
 
-This is not a benchmark of throughput. It is a demonstration of a qualitative capability. I will add it to Chapter 13.
+This is not a benchmark of throughput. It is a demonstration of a qualitative capability. I will add it to Chapter 14.
 
 ---
 
@@ -422,7 +422,7 @@ Three, given freely.
 
 **Third, handler memory leaks in the RegistryRunner model.** The Python RegistryRunner loads handler modules dynamically and keeps them resident. A handler with a small per-invocation memory leak accumulates over hundreds of tasks. The runner's memory grows over days, and eventually it OOM-kills. There is no framework-level mitigation. Operators periodically restart runners as a hygiene measure. A principled solution would be per-task process isolation, which is what AgentPoller offers, but at the cost of startup overhead. I have not designed a middle ground.
 
-Each of these is a real production concern. None is a design flaw; each is an operational concern the thesis under-weights. I will add a Chapter 14 subsection titled "Production concerns the design under-weights" that names them.
+Each of these is a real production concern. None is a design flaw; each is an operational concern the thesis under-weights. I will add a Chapter 15 subsection titled "Production concerns the design under-weights" that names them.
 
 ### Q27 (Dr. Yegge)
 

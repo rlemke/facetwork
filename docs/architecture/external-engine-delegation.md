@@ -287,7 +287,7 @@ possess, so it cannot desync. A configured or randomly-generated id would have t
 be stored and looked up, and the store-then-crash window is precisely where
 duplicates come from.
 
-**Stated honestly:** thesis §14.2 lists "no idempotence enforcement" as an open
+**Stated honestly:** thesis §15.2 lists "no idempotence enforcement" as an open
 problem — handlers own idempotency and the compiler does not check it. The above
 is an adapter *convention*, not a platform guarantee. An adapter that ignores it
 will double-submit and nothing will stop it.
