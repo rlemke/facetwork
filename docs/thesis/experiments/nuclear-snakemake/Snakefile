@@ -1,0 +1,131 @@
+# The nuclear-reactor world map, expressed as a Snakemake workflow.
+#
+# This is the Snakemake counterpart of save_earth's BuildNuclearReactorMap
+# (fwh_save_earth/src/save_earth/ffl/save_earth.ffl), built so the two can be
+# timed against each other and their outputs compared.
+#
+# THE POINT OF THIS FILE is to compare ORCHESTRATORS, not implementations, so
+# both rules call the SAME handler functions Facetwork's runner calls
+# (save_earth.handlers.*). Reimplementing the Overpass query here would compare
+# my Python to theirs and tell us nothing about the engines. What differs
+# between the two runs is exactly one thing: what decides when each step runs.
+#
+# Output is isolated by pointing FW_DATA_ROOT at this run's own directory, so a
+# Snakemake run never reads or clobbers the Facetwork cache — that isolation is
+# also what makes the timing honest, since a warm shared cache would let
+# whichever engine ran second "win".
+#
+#   snakemake -j 4 --config outdir=runs/snakemake
+#   snakemake -j 4 --config outdir=runs/snakemake use_mock=true   # offline
+#
+# See README.md for the full comparison procedure.
+
+import os
+import sys
+from pathlib import Path
+
+WORKDIR = Path(workflow.basedir)
+
+# The rule bodies run under the interpreter that has fwh_save_earth installed,
+# NOT under Snakemake's own. Keeping them as `shell:` invocations of standalone
+# CLIs (rather than `script:` bodies) is what makes that separation possible —
+# and it means each rule can also be run by hand when something misbehaves.
+PYTHON = config.get("python", str(Path.home() / "facetwork" / ".venv" / "bin" / "python3"))
+
+OUTDIR = Path(config.get("outdir", "runs/snakemake")).resolve()
+USE_MOCK = str(config.get("use_mock", "false")).lower() in ("1", "true", "yes")
+FORCE = str(config.get("force", "false")).lower() in ("1", "true", "yes")
+
+# Workflow parameters, mirroring BuildNuclearReactorMap's FFL defaults. They are
+# repeated here rather than imported because the comparison is only meaningful
+# if both engines are given the same inputs explicitly.
+CENTER_LAT = float(config.get("center_lat", 25.0))
+CENTER_LON = float(config.get("center_lon", 10.0))
+ZOOM = float(config.get("zoom", 2.0))
+REGION = "nuclear"
+ONLY_LAYERS = "nuclear-reactors"
+
+# Attribution strings are byte-for-byte those of the FFL workflow. They name the
+# FFL workflow because the goal is a DIFFABLE reproduction of its output; adding
+# a "produced by Snakemake" marker here would guarantee a diff in every run and
+# defeat the comparison. These maps are local artifacts, not published ones.
+ATTRIBUTION_WORKFLOW = "save_earth.workflows.BuildNuclearReactorMap"
+ATTRIBUTION_FFL_URL = (
+    "https://github.com/rlemke/fwh_save_earth/blob/main/src/save_earth/ffl/save_earth.ffl"
+)
+DESCRIPTION = (
+    "Nuclear power reactors and plants worldwide, from OpenStreetMap. Click any "
+    "site for its full details (operator, electrical output, start date, reactor "
+    "type, status, ...)."
+)
+
+# The storage layer's on-disk layout under FW_DATA_ROOT. Declaring the real
+# files as rule outputs (rather than flag files) is what buys Snakemake's
+# incremental behaviour — the property Chapter 13 credits it with.
+CACHE = OUTDIR / "cache" / "save-earth"
+REACTORS_GEOJSON = CACHE / "nuclear" / "reactors.geojson"
+MAP_HTML = CACHE / "maps" / REGION / "index.html"
+
+envvars_common = {
+    "FW_DATA_ROOT": str(OUTDIR),
+    "FW_STORAGE": "local",
+}
+
+
+rule all:
+    input:
+        MAP_HTML,
+
+
+rule download_reactors:
+    """save_earth.sources.DownloadNuclearReactors — worldwide OSM nuclear features."""
+    output:
+        geojson=REACTORS_GEOJSON,
+        meta=str(REACTORS_GEOJSON) + ".meta.json",
+    params:
+        outdir=str(OUTDIR),
+        mock="--use-mock" if USE_MOCK else "",
+        force="--force" if FORCE else "",
+        script=str(WORKDIR / "scripts" / "download_reactors.py"),
+        python=PYTHON,
+    benchmark:
+        str(OUTDIR / "benchmarks" / "download_reactors.tsv")
+    shell:
+        "{params.python} {params.script} --outdir {params.outdir} "
+        "{params.mock} {params.force}"
+
+
+rule build_map:
+    """save_earth.maps.BuildMap — render the MapLibre HTML for the nuclear layer.
+
+    The dependency on the GeoJSON is expressed as an input file. In FFL the same
+    ordering is expressed by referencing the download's feature_count, because
+    the actual hand-off happens through the cache rather than through a value —
+    the two engines are stating the same fact in the terms each understands.
+    """
+    input:
+        geojson=REACTORS_GEOJSON,
+    output:
+        html=MAP_HTML,
+    params:
+        outdir=str(OUTDIR),
+        region=REGION,
+        center_lat=CENTER_LAT,
+        center_lon=CENTER_LON,
+        zoom=ZOOM,
+        only_layers=ONLY_LAYERS,
+        attribution_workflow=ATTRIBUTION_WORKFLOW,
+        attribution_ffl_url=ATTRIBUTION_FFL_URL,
+        description=DESCRIPTION,
+        script=str(WORKDIR / "scripts" / "build_map.py"),
+        python=PYTHON,
+    benchmark:
+        str(OUTDIR / "benchmarks" / "build_map.tsv")
+    shell:
+        "{params.python} {params.script} --outdir {params.outdir} "
+        "--region {params.region} --center-lat {params.center_lat} "
+        "--center-lon {params.center_lon} --zoom {params.zoom} "
+        "--only-layers {params.only_layers} "
+        "--attribution-workflow {params.attribution_workflow:q} "
+        "--attribution-ffl-url {params.attribution_ffl_url:q} "
+        "--description {params.description:q}"
