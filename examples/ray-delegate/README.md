@@ -59,6 +59,29 @@ fw ffl run --primary ffl/ray_delegate.ffl \
 | **Terminate propagates** | on cancellation *or* timeout the adapter calls `stop_job` before unwinding, so the external run dies with the workflow instead of billing on unattended |
 | **Failure is retryable, config error is not** | a failed Ray job raises normally (a worker can die transiently); a missing step id or a non-positive timeout raises `PermanentError` and dead-letters immediately |
 
+## Verified end to end
+
+Driven by a real workflow, not called directly — `fw ffl run` → step → task →
+claim → handler → Ray job → returns → workflow `completed`, the Ray job carrying
+the derived id `fw-<step_id>` and running across all three nodes, task retries
+zero.
+
+Terminate propagation, the case the design was blocked on:
+
+```
+12:45:15  fw maint terminate-workflow --force <runner_id>
+12:45:19  Handler 'ray.delegate.SubmitJob' stopped on cancellation
+          → Ray job fw-c6edc09d-… : STOPPED
+```
+
+Four seconds from operator command to a dead external job.
+
+Two bugs surfaced only by running it, neither visible to the unit tests:
+`RunnerService` was not injecting `_step_id` into the handler payload (a
+framework parity gap, since fixed), and this example's workflow was not
+threading `runtime_env_json` down to the facet, so the delegated job ran with no
+dependencies and failed on its first import.
+
 ## Depth: this is D2, not D3
 
 §4 of the design describes three depths. This is **D2 — blocking with

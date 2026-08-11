@@ -42,9 +42,18 @@ namespace ray.delegate.example {
       * one step is delegated compute. */
     workflow DelegatedCompute(
         entrypoint: String = "python job.py",
-        working_dir: String = ""
+        working_dir: String = "",
+        runtime_env_json: String = "{}"
     ) => (status: String, submission_id: String) andThen {
-        job = SubmitJob(entrypoint = $.entrypoint, working_dir = $.working_dir)
+        job = SubmitJob(
+            entrypoint = $.entrypoint,
+            working_dir = $.working_dir,
+            // Thread the dependency spec through. Omitting it here made the
+            // facet default ("{}") always win, so the delegated job ran with no
+            // dependencies and failed on its first import — a quiet failure,
+            // because every layer was individually doing what it was told.
+            runtime_env_json = $.runtime_env_json
+        )
         yield DelegatedCompute(status = job.status, submission_id = job.submission_id)
     }
 }

@@ -586,6 +586,37 @@ cancellation, so a parked watcher learns its work is unwanted — is now
 implemented (lessons-learned §16). `stop_job()` is the other half, and it is a
 one-line call rather than a design problem.
 
+**Run end to end through the runtime (2026-08-11).** The adapter in
+[`examples/ray-delegate`](../../examples/ray-delegate) was driven by a real
+workflow, not called directly: `fw ffl run` → step → task → claim → handler →
+Ray job → returns → workflow `completed`, with the Ray job carrying the derived
+id `fw-<step_id>`, succeeding across all three nodes, and the task showing zero
+retries.
+
+Then the case §7.2 exists for. A delegated job was left running and the operator
+command issued:
+
+```
+12:45:15  fw maint terminate-workflow --force <runner_id>
+12:45:19  Handler 'ray.delegate.SubmitJob' stopped on cancellation:
+          task was canceled (terminate-workflow)
+          → Ray job fw-c6edc09d-… : STOPPED
+```
+
+Operator command → task `canceled` in Mongo → cancellation token → the handler
+unwinding → `stop_job`. Four seconds, and no orphaned external run. That is the
+prerequisite this section named, closed with evidence rather than argument.
+
+Two defects surfaced only by doing this, both worth recording because both were
+invisible to unit tests. **(1)** `RunnerService` did not inject `_step_id` into
+the handler payload, though the other two dispatch sites did — so an adapter
+deriving its external id from the step could not run there at all
+(fixed; parity now pinned by `tests/runtime/test_payload_parity.py`). **(2)** The
+example workflow did not thread `runtime_env_json` down to the facet, so the
+facet default `"{}"` always won and the delegated job failed on its first import
+— a quiet failure in which every layer was individually doing exactly what it
+was told.
+
 **What is genuinely different from §8.2/§8.3.** Ray recovers by *lineage
 re-execution* and does not survive loss of its own cluster. Facetwork must
 therefore treat a vanished job as a retryable step rather than trusting Ray's
