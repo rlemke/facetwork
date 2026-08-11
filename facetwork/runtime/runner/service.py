@@ -667,6 +667,15 @@ class RunnerService(BaseRunner):
                 "_fetch_step": _fetch_step_callback,
                 "_cancellation_check": _cancellation_check,
                 "_task_uuid": task.uuid,
+                # Step/workflow identity. RegistryRunner and AgentPoller have
+                # always injected these; this builder did not, so a handler that
+                # correlates to its step — logging, naming an artifact, deriving
+                # an idempotency key for an external system — worked on two
+                # runners and broke on the third. The Ray delegation adapter,
+                # which derives its external submission id from _step_id, is what
+                # surfaced it.
+                "_step_id": task.step_id,
+                "_workflow_id": task.workflow_id,
                 "_retry_count": retry_count,
                 "_is_retry": retry_count > 0,
             }
