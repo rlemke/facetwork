@@ -1589,13 +1589,13 @@ The burst was the periodic stuck-step sweep. The cause was in the resume path: a
 
 Keying the deferral by step id — so identical requests still coalesce but distinct steps all run — removes the stall:
 
-| 200-wide no-op fan-out | before | after |
-|---|---|---|
-| wall-clock | 844.6s | **71.6s** |
-| execution (submit → last handler task done) | 2.1s | 2.1s |
-| cascade (last task → workflow terminal) | 842.5s | 69.6s |
+| 200-wide no-op fan-out | stalled | resume fixed | + read caching |
+|---|---|---|---|
+| wall-clock | 844.6s | 71.6s | **55.8s** |
+| execution (submit → last handler task done) | 2.1s | 2.1s | 2.1s |
+| cascade (last task → workflow terminal) | 842.5s | 69.6s | 53.6s |
 
-Execution was never the bottleneck and does not change; the bookkeeping behind it drops by 12×. What remains is a real per-step cost — the cascade advances at roughly nine steps per second, each step being an evaluator pass with its own persistence round-trip — and that, not the stall, is the honest measure of Facetwork's coarse-grained bias. It is still two orders of magnitude slower per unit of work than Snakemake's 14ms dispatch.
+Execution was never the bottleneck and does not change; the bookkeeping behind it drops by 15×. The third column is a second, independent fix: the cascade re-read the same step documents constantly — 11,709 `get_step` calls over a 157-step workflow in one measured run — and caching those reads for the duration of an iteration removed a further 22%. What remains is a real per-step cost — the cascade advances at roughly nine steps per second, each step being an evaluator pass with its own persistence round-trip — and that, not the stall, is the honest measure of Facetwork's coarse-grained bias. It is still two orders of magnitude slower per unit of work than Snakemake's 14ms dispatch.
 
 Two things are worth keeping from the defect itself. First, the symptom was not "slow" but "finished, yet still reported as running" — the work completed promptly and the workflow said `running` for a quarter of an hour afterwards, which is harder to recognise than a throughput deficit and sends an operator looking at executors that are idle. Second, the failure mode was a safety net silently doing the routine work: the sweep exists to catch steps that were missed, so when it began catching *all* of them the system still produced correct results and simply became slow. That is the same shape as the defects catalogued in [`paper-liveness-coverage-drift.md`](paper-liveness-coverage-drift.md) §8, and it is the recurring hazard of recovery mechanisms that are too good at their job.
 

@@ -642,8 +642,10 @@ class BlockExecutionContinueHandler(StateHandler):
                 self.step.request_state_change(True)
                 return StateChangeResult(step=self.step)
 
-        # Load current steps in this block
-        steps = list(self.context.persistence.get_steps_by_block(self.step.id))
+        # Load current steps in this block. Cached per iteration: the block
+        # state machine re-reads the same block on every pass, and on a wide
+        # fan-out that was ~3.9k queries in one run.
+        steps = self.context.get_steps_by_block_cached(self.step.id)
 
         # Include pending created steps
         for pending in self.context.changes.created_steps:

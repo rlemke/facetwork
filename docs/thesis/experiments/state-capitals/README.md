@@ -79,7 +79,7 @@ changes.
 |---|---|---|
 | **Nextflow** | **3.8s** | 50 fan-out tasks |
 | **Snakemake** | 5.2s | `-j 8`; 0.065s mean per state |
-| **Facetwork** | 10.0s | `foreach` fan-out + `after` fan-in |
+| **Facetwork** | 4.4s | `foreach` fan-out + `after` fan-in (6.5s before the read caching below) |
 
 **All three produce identical output** — the same 50 states and capitals, byte
 for byte.
@@ -89,17 +89,37 @@ wall-clock includes starting the engine, because for them that *is* the run.
 Facetwork's excludes starting the runner, because a runner is a long-lived
 **service** you submit to; what is measured is submit → workflow terminal.
 
-Facetwork is ~2× the others here, on 52 steps. That is the per-step durability
-cost the thesis argues for, and at this width it is a couple of seconds rather
-than the order-of-magnitude gap Chapter 13 predicts at thousands of steps.
+All three land within ~1.5s of each other on 52 steps. That is closer than
+Chapter 13 would lead you to expect, and the reason is that at this width the
+per-step durability cost is small in absolute terms; it is what dominates at
+thousands of steps, not at fifty.
+
+### Profiling the fan-out, and what it cost
+
+This workflow's time was almost entirely bookkeeping, not work: **execution 0.63s,
+cascade 5.78s**. Instrumenting the persistence layer showed why — **11,709
+`get_step` calls over a 157-step workflow**, about 75 re-reads per step, plus
+3,883 block queries. The cascade was reading the same documents over and over
+within a single resume.
+
+Caching those reads for the duration of one iteration (and indexing the
+pending-changes lookup, which was a linear scan) took the run from **6.5s to
+4.4s** with byte-identical output, and the 200-wide no-op fan-out of thesis
+§13.3 from 71.6s to 55.8s.
+
+Worth noting what profiling *disproved*: the suspected culprit was a
+full-workflow step scan in the block handler. It was called **once**. Reading the
+code suggested one answer and measuring gave another.
 
 ### The same workflow, before today's cascade fix: 294.1s
 
-Run against the commit before
-[`69753bb`](../../thesis.md) (deferred resumes keyed by workflow rather than by
-step), this identical workflow took **294.1 seconds instead of 10.0 — 29×** —
-and produced byte-identical output. The extra 284 seconds were the stuck-step
-sweep discovering, in batches, the sibling resumes that had been dropped.
+Run against the commit before `69753bb` (deferred resumes keyed by workflow
+rather than by step), this identical workflow took **294.1 seconds** against the
+**6.5s** the same build measured afterwards — **45×** — and produced
+byte-identical output. The extra 288 seconds were the stuck-step sweep
+discovering, in batches, the sibling resumes that had been dropped. (Against
+today's 4.4s the ratio is 67×, but that mixes in the read caching above; 45× is
+the honest figure for the resume fix alone.)
 
 Two things make this worth recording. It is the fix measured on **real work**
 rather than the synthetic no-op fan-out of thesis §13.3, and it shows the failure

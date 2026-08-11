@@ -107,6 +107,57 @@ class ExecutionContext:
     # Cache for completed steps by name within blocks
     _completed_step_cache: dict[str, StepDefinition] = field(default_factory=dict)
 
+    # Read-through cache of steps fetched from persistence during ONE iteration.
+    #
+    # The cascade re-reads the same handful of documents constantly — a 50-way
+    # fan-out did 11,709 get_step calls over a 157-step workflow, ~75 fetches
+    # per step, which was the single largest cost in the run. Scoped to an
+    # iteration and cleared at every boundary (see invalidate_step_cache), so a
+    # committed write is never served from it.
+    #
+    # Pending changes are consulted BEFORE this cache, so a step mutated in
+    # memory is always found there and can never be shadowed by a stale read.
+    _step_cache: dict[str, StepDefinition | None] = field(default_factory=dict)
+
+    # Same idea for "the steps in this block", which the block state machine
+    # re-reads on every pass over every block.
+    _block_steps_cache: dict[str, list[StepDefinition]] = field(default_factory=dict)
+
+    def invalidate_step_cache(self) -> None:
+        """Drop the per-iteration read caches. Call at every iteration boundary."""
+        self._step_cache.clear()
+        self._block_steps_cache.clear()
+
+    def get_steps_by_block_cached(self, block_id: StepId | BlockId) -> list[StepDefinition]:
+        """The stored steps of a block, read once per iteration.
+
+        Returns the STORED steps only. Callers layer pending creates and updates
+        on top themselves (block_execution does exactly that), so this must not
+        merge them — doing so here would apply them twice.
+
+        A fresh list is returned each call because callers append to it.
+        """
+        key = str(block_id)
+        cached = self._block_steps_cache.get(key)
+        if cached is None:
+            cached = list(self.persistence.get_steps_by_block(block_id))
+            self._block_steps_cache[key] = cached
+        return list(cached)
+
+    def get_step_cached(self, step_id: StepId | BlockId) -> StepDefinition | None:
+        """Read a step from persistence, once per iteration.
+
+        Deliberately does NOT consult pending changes — callers that want the
+        in-memory version use ``_find_step``. This one preserves "read what is
+        stored" semantics and only removes the repeated round-trips.
+        """
+        key = str(step_id)
+        if key in self._step_cache:
+            return self._step_cache[key]
+        step = self.persistence.get_step(step_id)
+        self._step_cache[key] = step
+        return step
+
     # Track which block IDs need Continue re-evaluation.
     # None = all dirty (first iteration), empty set = nothing dirty.
     _dirty_blocks: set[str] | None = field(default=None)
@@ -327,16 +378,14 @@ class ExecutionContext:
         Returns:
             The step, or None
         """
-        # Check pending created steps
-        for step in self.changes.created_steps:
-            if step.id == step_id:
-                return step
-        # Check pending updated steps
-        for step in self.changes.updated_steps:
-            if step.id == step_id:
-                return step
-        # Check persistence
-        return self.persistence.get_step(step_id)
+        # Pending changes first — a step created or mutated this iteration has
+        # not been written yet, so the stored document is stale. Indexed rather
+        # than scanned: this is the hottest lookup in the cascade.
+        pending = self.changes.find_pending(step_id)
+        if pending is not None:
+            return pending
+        # Then persistence, at most once per step per iteration.
+        return self.get_step_cached(step_id)
 
     def _find_statement_body(self, step: StepDefinition) -> dict | list | None:
         """Find the inline andThen body for a step's statement.
@@ -1994,6 +2043,7 @@ class Evaluator:
                     break
 
                 context.changes = IterationChanges()
+                context.invalidate_step_cache()
                 # Reset dirty set — will be populated by _process_step
                 # when steps progress and notify their parents
                 context._dirty_blocks = set()
@@ -2003,7 +2053,7 @@ class Evaluator:
                 for current_id in work_queue:
                     if current_id in processed_ids:
                         continue
-                    step = self.persistence.get_step(current_id)
+                    step = context.get_step_cached(current_id)
                     if step is None or step.is_terminal:
                         continue
                     processed_ids.add(current_id)
@@ -2226,6 +2276,7 @@ class Evaluator:
                     break
 
                 context.changes = IterationChanges()
+                context.invalidate_step_cache()
                 context._dirty_blocks = set()
                 processed_ids: set[str] = set()
 
@@ -2286,6 +2337,7 @@ class Evaluator:
                     logger.debug("continuation dedup query failed", exc_info=True)
             if remaining_dirty:
                 context.changes = IterationChanges()
+                context.invalidate_step_cache()
                 generate_continuation_events(
                     context.changes,
                     dirty_blocks=remaining_dirty,
@@ -2343,6 +2395,11 @@ class Evaluator:
         Args:
             context: Execution context
         """
+        # A commit writes the steps this iteration touched, so every cached read
+        # taken before it is now potentially stale. Drop them here as well as at
+        # the loop boundaries — a caller that commits and keeps going (the
+        # evaluator does) must not carry pre-commit reads across the write.
+        context.invalidate_step_cache()
         if context.changes.has_changes:
             logger.info(
                 "Iteration commit: workflow_id=%s created=%d updated=%d tasks=%d continuations=%d",

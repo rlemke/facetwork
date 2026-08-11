@@ -56,12 +56,17 @@ class IterationChanges:
     _created_ids: set[StepId] = field(default_factory=set)
     _updated_ids: dict[StepId, int] = field(default_factory=dict)
     _continuation_step_ids: set[str] = field(default_factory=set)
+    # id -> pending step, so a lookup does not scan the lists. The indexes above
+    # already exist for dedup; this one makes them usable for FINDING a step,
+    # which is the hot path (a 50-way fan-out did ~7.5k of these lookups).
+    _pending_by_id: dict[StepId, StepDefinition] = field(default_factory=dict)
 
     def add_created_step(self, step: StepDefinition) -> None:
         """Record a newly created step (idempotent)."""
         if step.id not in self._created_ids:
             self._created_ids.add(step.id)
             self.created_steps.append(step)
+            self._pending_by_id[step.id] = step
 
     def add_updated_step(self, step: StepDefinition) -> None:
         """Record an updated step (replaces previous update for same ID)."""
@@ -72,6 +77,17 @@ class IterationChanges:
         else:
             self._updated_ids[step.id] = len(self.updated_steps)
             self.updated_steps.append(step)
+        # An update supersedes a create of the same step for lookup purposes:
+        # both refer to the same step, and the updated object is the current one.
+        self._pending_by_id[step.id] = step
+
+    def find_pending(self, step_id: StepId) -> StepDefinition | None:
+        """The pending (uncommitted) version of a step, if any.
+
+        Pending changes beat persistence: a step mutated this iteration has not
+        been written yet, so the stored document is stale.
+        """
+        return self._pending_by_id.get(step_id)
 
     def add_created_task(self, task: "TaskDefinition") -> None:
         """Record a newly created task."""
@@ -102,6 +118,7 @@ class IterationChanges:
         self._created_ids.clear()
         self._updated_ids.clear()
         self._continuation_step_ids.clear()
+        self._pending_by_id.clear()
 
 
 @runtime_checkable
