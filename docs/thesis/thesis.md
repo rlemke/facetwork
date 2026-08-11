@@ -187,6 +187,18 @@ Facetwork is a **DSL-described, document-atomic, state-persisted** workflow syst
 
 Jenkins is not a direct competitor — it is a CI/CD controller, not a workflow runtime — but its shape represents a pattern worth contrasting against because it is so widely familiar.
 
+### 2.6 Adjacent, not comparable: compute substrates
+
+One family is conspicuously absent from the comparisons in Chapters 9-12, and its absence is a claim rather than an oversight. Ray, Spark and Dask are frequently proposed as alternatives to a workflow runtime, and they are not one — measured against §2.1's five layers they fail three. Ray is the clearest case, and the most instructive, because it is the closest of the three to a workflow system: it has a durable-execution library (Ray Workflows) and a mature job-submission API, so if any of them belonged in the peer group it would be Ray.
+
+It still does not. Ray's *description layer* is Python decorators on ordinary functions rather than a notation with its own semantics — which is a strength for its purpose and means there is no artifact to type-check, diff, or hand to a domain expert. Its *persistence layer* keeps task state in memory and object references in a distributed object store; a workflow instance is not a durable record that survives the cluster. Its *recovery layer* re-executes lineage, an elegant answer for pure functions and the wrong one for a handler that spent forty minutes half-importing a PostGIS table. And its *coordination layer* has a head node and a scheduler, which is precisely the topology §5 argues against for this thesis's deployment target.
+
+What Ray is instead is a *compute substrate*, and an outstanding one: microsecond task dispatch, zero-copy object sharing, GPU placement groups, gang scheduling for collective communication. Every one of those is something Facetwork's leaderless claim model cannot express and should not try to. There is no way in a first-come-first-served claim protocol to say "these eight tasks must run simultaneously on eight GPUs with a rendezvous between them", which is what data-parallel training requires; adding it would mean adding a scheduler.
+
+The relationship is therefore complementary, and the seam is a step. Facetwork owns the durable coarse structure — persisted steps, retry, `catch`, repair, survival across restarts and machine sleep — while a single step delegates its fine-grained parallel interior. The economics are measurable rather than rhetorical: a Facetwork step costs roughly 2.6 seconds of engine overhead ([`paper-environment-provisioning.md`](paper-environment-provisioning.md) §4), which is negligible against a thirty-minute PBF scan and ruinous against three thousand five-millisecond geometry operations. The first is a step; the second is one Ray job inside a step. A fine-tuning pipeline decomposes the same way — ingest, clean, shard, validate, evaluate and publish as durable Facetwork steps, with *train* delegated to a system built for it.
+
+This is now implemented rather than argued: [`examples/ray-delegate`](../../examples/ray-delegate) delegates a step to Ray at both depths described in [`external-engine-delegation.md`](../architecture/external-engine-delegation.md) §4, and the property that made delegation dangerous — an external run outliving the workflow that started it — is closed by cancellation propagating into `stop_job` ([`lessons-learned.md`](../architecture/lessons-learned.md) §16). The honest summary of the comparison is that Ray answers a question this thesis does not ask, and that the two compose better than either replaces the other.
+
 ## Chapter 3. Related Work
 
 ### 3.1 The theory of distributed coordination
