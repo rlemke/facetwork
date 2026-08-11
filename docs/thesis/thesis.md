@@ -1583,11 +1583,21 @@ Three things in that table deserve care.
 
 **At county-atlas width, both scale without strain.** The same 3,167-way fan-out — the width of §14's evaluation, with the per-task work removed so the measurement is dispatch only — completes in 44.8s under Snakemake (14 ms/task; the 3,167-job DAG builds in 2.1s) and 109.3s under Nextflow (35 ms/task). Neither system is troubled by the scale that this thesis treats as a stress case.
 
-Facetwork's equivalent number is not a throughput figure at all, and the attempt to produce one is instructive. A 200-wide fan-out of no-op steps reported a workflow duration of 506 seconds, which divided out to a superficially damning 2.5 seconds per step. The step records say otherwise: **all step activity spans 1.0 second**, and the remaining 504 seconds elapse after the last step is modified. The fan-out executes at roughly 200 steps per second — faster than either comparator's dispatch — and then the *workflow* takes eight minutes to be marked finished.
+Facetwork's equivalent number was not a throughput figure at all, and the attempt to produce one found a defect. A 200-wide fan-out of no-op steps reported a workflow duration of 844 seconds, which divides out to a superficially damning 4.2 seconds per step. The records say otherwise: **every leaf task completed within 2.1 seconds**, and step completions then froze — flat for over eight minutes — before a single burst finished all 602 steps in the last fifteen seconds. The executors were idle for 98% of the run.
 
-The runner log names the mechanism. The leaf tasks complete; the 286 block steps above them are not cascaded inline; they wait for the periodic stuck-step sweep, which notices four and a half minutes later and drains them in a single pass. Wide fan-outs are therefore paced by a recovery loop rather than by execution — the safety net doing the routine work, which is the same shape as the defects in [`paper-liveness-coverage-drift.md`](paper-liveness-coverage-drift.md) §8, and is unresolved at the time of writing.
+The burst was the periodic stuck-step sweep. The cause was in the resume path: a resume is per *step*, but the mechanism that keeps handler threads from blocking on a contended workflow recorded only the *workflow*. When two hundred leaves finished at once, one thread won the per-workflow lock and the other 199 registered a marker whose only effect was to make the holder re-run its own step's resume. Their resumes were discarded. Nothing cascaded the block steps above them, and the workflow waited for the sweep to walk its stuck steps and drain them.
 
-The honest reading is that this is worse than a throughput deficit, because it is not visible as one: the work finishes promptly and the workflow reports `running` for minutes afterwards, so an operator watching a wide fan-out sees a system that appears slow while its executors sit idle.
+Keying the deferral by step id — so identical requests still coalesce but distinct steps all run — removes the stall:
+
+| 200-wide no-op fan-out | before | after |
+|---|---|---|
+| wall-clock | 844.6s | **71.6s** |
+| execution (submit → last handler task done) | 2.1s | 2.1s |
+| cascade (last task → workflow terminal) | 842.5s | 69.6s |
+
+Execution was never the bottleneck and does not change; the bookkeeping behind it drops by 12×. What remains is a real per-step cost — the cascade advances at roughly nine steps per second, each step being an evaluator pass with its own persistence round-trip — and that, not the stall, is the honest measure of Facetwork's coarse-grained bias. It is still two orders of magnitude slower per unit of work than Snakemake's 14ms dispatch.
+
+Two things are worth keeping from the defect itself. First, the symptom was not "slow" but "finished, yet still reported as running" — the work completed promptly and the workflow said `running` for a quarter of an hour afterwards, which is harder to recognise than a throughput deficit and sends an operator looking at executors that are idle. Second, the failure mode was a safety net silently doing the routine work: the sweep exists to catch steps that were missed, so when it began catching *all* of them the system still produced correct results and simply became slow. That is the same shape as the defects catalogued in [`paper-liveness-coverage-drift.md`](paper-liveness-coverage-drift.md) §8, and it is the recurring hazard of recovery mechanisms that are too good at their job.
 
 **The cold column favours them, and this is the cost of the durability above.** Both engines dispatch a task in milliseconds. A Facetwork step costs roughly 2.6 seconds of engine overhead — a bootstrap task, a persisted step row, a task row, a claim poll — which is why §2.6 argues for delegating fine-grained work to a compute substrate rather than modelling it as steps. For a twelve-task pipeline of three-second tasks, Snakemake and Nextflow are simply the right tools and Facetwork is the wrong one.
 
