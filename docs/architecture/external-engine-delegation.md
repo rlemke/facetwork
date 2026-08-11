@@ -552,6 +552,29 @@ candidate for the *first* adapter:
 | operator-visible logs | `get_job_logs()` |
 | **terminate** (§7.2) | `stop_job()` |
 
+**Verified against a real cluster (2026-08-11).** The table above is not
+inferred from documentation — it was checked against a three-node cluster
+(`docker-compose.ray.yml`, Ray 2.57.0, head + 2 workers) by a script performing
+the adapter's exact moves:
+
+| Contract row | Result |
+|---|---|
+| derived handle | `submit_job(submission_id="fw-<step_id>")` returns that id |
+| **idempotent submission (§6)** | re-submitting the same id raises rather than starting a second run — the "attach, don't double-run" behaviour the design needs |
+| status while parked | polls to `SUCCEEDED` |
+| logs | `get_job_logs` returns the job's stdout |
+| dependency provisioning | a `runtime_env` pip pin was importable in the job |
+| **terminate (§7.2)** | `stop_job` on a running job reaches `STOPPED` |
+
+One behaviour worth knowing before writing the adapter: a first attempt ran 24
+trivially-short tasks and Ray scheduled **all of them on one node** — the
+scheduler packs before it spreads, and microsecond tasks never justify the
+spread. Re-run with tasks that each hold a CPU for three seconds, the same job
+used all three nodes. Delegation therefore only buys parallelism if the
+delegated *inner* work is itself substantial; shipping a trivial job to Ray buys
+a job submission and nothing else. That is the same granularity argument this
+section makes about Facetwork steps, one level down.
+
 That last row is the one that used to block this. §7.2 named
 `terminate(external_id)` as a prerequisite, and the runtime half — cooperative
 cancellation, so a parked watcher learns its work is unwanted — is now
