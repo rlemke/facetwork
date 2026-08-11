@@ -1,0 +1,72 @@
+# A simulated multi-node Ray cluster, for developing the delegation adapter
+# (docs/architecture/external-engine-delegation.md §8.4).
+#
+# Delegating to Ray presumes a LONG-LIVED head node — starting a cluster per job
+# costs the init plus environment provisioning measured in
+# docs/thesis/paper-environment-provisioning.md §4, which erases the benefit
+# unless the job is substantial. This file is the development stand-in for that
+# head node: one head plus N workers on one host, so the adapter can be written
+# and tested against a real multi-node topology (job submission, scheduling
+# across nodes, per-node runtime_env materialization) without a second machine.
+#
+# It is NOT part of the fleet. Separate project name, separate network; nothing
+# here touches facetwork's compose project.
+#
+#   docker compose -f docker-compose.ray.yml -p ray up -d
+#   docker compose -f docker-compose.ray.yml -p ray up -d --scale worker=3
+#   open http://localhost:8265                 # Ray dashboard
+#   docker compose -f docker-compose.ray.yml -p ray down
+#
+# Submitting from the host (the shape the adapter uses):
+#   pip install "ray[default]==2.57.0"
+#   RAY_ADDRESS=http://localhost:8265 ray job submit -- python -c "print(1)"
+#
+# Image note: rayproject/ray:2.57.0 publishes an arm64 variant, so this runs
+# natively on Apple Silicon — no qemu emulation, unlike some of the fleet images.
+
+x-ray-common: &ray-common
+  image: rayproject/ray:2.57.0
+  # Ray's object store is shared memory; the default 64MB /dev/shm makes it spill
+  # to disk and warn on every start.
+  shm_size: 2gb
+  environment:
+    RAY_DISABLE_USAGE_STATS: "1"
+  networks: [raynet]
+
+services:
+  head:
+    <<: *ray-common
+    container_name: ray-head
+    command: >
+      ray start --head
+        --dashboard-host 0.0.0.0
+        --port 6379
+        --num-cpus ${RAY_HEAD_CPUS:-2}
+        --block
+    ports:
+      # 8265 = dashboard AND the Job Submission API the adapter talks to.
+      - "${RAY_DASHBOARD_PORT:-8265}:8265"
+      # 10001 = Ray Client, only needed for ray.init("ray://…").
+      - "${RAY_CLIENT_PORT:-10001}:10001"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "ray status >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  worker:
+    <<: *ray-common
+    command: >
+      ray start --address=ray-head:6379
+        --num-cpus ${RAY_WORKER_CPUS:-2}
+        --block
+    depends_on:
+      head:
+        condition: service_healthy
+    deploy:
+      replicas: ${RAY_WORKERS:-2}
+
+networks:
+  raynet:
+    driver: bridge

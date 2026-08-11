@@ -474,6 +474,107 @@ namespace airflow.example {
 }
 ```
 
+### 8.4 Worked example — Ray
+
+Ray is a different kind of target from the two above, and the difference is what
+makes it worth writing down. Temporal and Airflow are *workflow engines*:
+delegating to them puts two orchestrators in one system, each with an opinion
+about who owns the DAG. Ray is a **compute substrate**, so the seam is clean —
+Facetwork keeps durable coarse structure (persisted steps, repair, catch/retry,
+survival across restarts), Ray takes the fine-grained parallel interior of a
+single step.
+
+**Why you would want it.** A Facetwork step costs roughly 2.6s of engine
+overhead — bootstrap, a persisted step row, a task row, a claim poll
+([`paper-environment-provisioning.md`](../thesis/paper-environment-provisioning.md) §4).
+That is irrelevant for a step that scans a PBF for thirty minutes and ruinous for
+3,000 geometry operations of 5ms each: as steps that is hours of pure
+bookkeeping, as one Ray job it is seconds. Delegation here is not about reaching
+someone else's cluster — it is about **not paying step overhead for work that
+does not need a step**.
+
+```ffl
+namespace ray.delegate {
+
+    /** Submit a Ray job and wait for it. The adapter derives the Ray
+      * submission_id from the step id, so a redelivered task attaches to the
+      * running job instead of starting a second one. */
+    event facet SubmitJob(
+        entrypoint: String,
+        runtime_env_json: String = "{}",
+        input_uri: String = "",
+        output_uri: String = "",
+        run_timeout_minutes: Int = 120
+    ) => (
+        submission_id: String,
+        status: String,
+        output_uri: String
+    ) with Effect(kind = "external") with Cost(tier = "expensive")
+      with Timeout(minutes = 120)
+}
+```
+
+Adapter, in outline — the same five moves as §8.2:
+
+```python
+from ray.job_submission import JobSubmissionClient
+
+def handle(payload):
+    ctx = HandlerContext.from_payload(payload)
+    client = JobSubmissionClient(os.environ["FW_RAY_ADDRESS"])
+    external_id = f"fw-{payload['_step_id']}"           # derived, not generated
+
+    try:
+        client.submit_job(                              # idempotent by id
+            entrypoint=payload["entrypoint"],
+            submission_id=external_id,
+            runtime_env=json.loads(payload["runtime_env_json"]),
+        )
+    except RuntimeError:                                # id exists -> attach
+        pass
+
+    store.update_task_stage_budget(                     # park, do not block
+        payload["_task_id"],
+        budget_expires=now_ms() + payload["run_timeout_minutes"] * 60_000,
+        stage_name="ray-job",
+    )
+    return PARKED
+```
+
+Ray supplies every primitive the contract asks for, which is why it is a good
+candidate for the *first* adapter:
+
+| Contract requirement | Ray API |
+|---|---|
+| submit + handle | `submit_job()` |
+| idempotent submission (§6) | `submission_id=` — derive from `step_id` |
+| status while parked | `get_job_status()` |
+| operator-visible logs | `get_job_logs()` |
+| **terminate** (§7.2) | `stop_job()` |
+
+That last row is the one that used to block this. §7.2 named
+`terminate(external_id)` as a prerequisite, and the runtime half — cooperative
+cancellation, so a parked watcher learns its work is unwanted — is now
+implemented (lessons-learned §16). `stop_job()` is the other half, and it is a
+one-line call rather than a design problem.
+
+**What is genuinely different from §8.2/§8.3.** Ray recovers by *lineage
+re-execution* and does not survive loss of its own cluster. Facetwork must
+therefore treat a vanished job as a retryable step rather than trusting Ray's
+retries — which is the existing behaviour, so the rule is simply "do not assume
+Ray's recovery is yours". Data crosses as `s3://` URIs, not payloads: both sides
+already read the same object store, so a Ray task opens the same object a
+handler would.
+
+**Prerequisite this one has and the others do not.** Temporal and Airflow are
+assumed to be running somewhere already. A Ray cluster is not part of the
+informal fleet, and starting one per job costs the cluster init plus environment
+provisioning measured in the companion paper — enough to erase the benefit
+unless the job is substantial. Delegation to Ray therefore presumes a
+**long-lived head node**, which is a deployment decision, not a code change. A
+single-host simulation for development is in
+[`docker-compose.ray.yml`](../../docker-compose.ray.yml).
+
 ## 9. What does not cross the boundary
 
 Delegation is also a way of finding out which parts of Facetwork are genuinely
