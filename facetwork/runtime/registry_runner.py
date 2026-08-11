@@ -131,7 +131,7 @@ class RegistryRunner(BaseRunner):
         self._program_ast_cache: dict[str, dict] = {}
         self._resume_locks: dict[str, threading.Lock] = {}
         self._resume_locks_lock = threading.Lock()
-        self._resume_pending: set[str] = set()
+        self._resume_pending: dict[str, dict[str, Any]] = {}
         self._resume_pending_lock = threading.Lock()
 
         # Shared dispatcher for inline execution and _process_event

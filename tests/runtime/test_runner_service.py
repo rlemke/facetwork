@@ -1179,7 +1179,7 @@ class TestResumeWorkflowEdgeCases:
         finally:
             lock.release()
         # With the lock free, the body runs.
-        service._resume_pending.discard(wf_id)
+        service._resume_pending.pop(wf_id, None)
         service._resume_workflow(wf_id)
         service._do_resume_full.assert_called_once_with(wf_id)
 

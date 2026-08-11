@@ -93,10 +93,12 @@ class BaseRunner:
     # cached provided-environments manifest hashes; None means "re-discover"
     _provided_envs_cache: list[Any] | None = None
     _execution_timeout_ms: int
-    # Per-workflow resume locks + pending-requeue set (see _resume_with_lock).
+    # Per-workflow resume locks + deferred resumes (see _resume_with_lock).
+    # workflow_id -> {key: resume_fn}; the key (a step id, or "" for a full
+    # resume) is the coalescing unit, so distinct steps are never merged.
     _resume_locks: dict[str, threading.Lock]
     _resume_locks_lock: threading.Lock
-    _resume_pending: set[str]
+    _resume_pending: dict[str, dict[str, Callable[[], None]]]
     _resume_pending_lock: threading.Lock
     # Workflow/program AST caches (see _load_workflow_ast).
     _ast_cache: dict[str, dict]
@@ -742,37 +744,70 @@ class BaseRunner:
     # Workflow resume (non-blocking, bulkheaded)
     # =========================================================================
 
-    def _resume_with_lock(self, workflow_id: str, resume_fn: Callable[[], None]) -> None:
+    def _resume_with_lock(
+        self, workflow_id: str, resume_fn: Callable[[], None], key: str = ""
+    ) -> None:
         """Run ``resume_fn()`` under a NON-BLOCKING per-workflow lock.
 
-        If another thread already holds this workflow's resume lock, the
-        workflow is marked pending and the call returns immediately — the
-        holder re-runs ``resume_fn`` for any pending flag after its current
-        iteration. This bulkheads the poll/handler threads: they never BLOCK
-        waiting on a contended per-workflow lock (which under a wide fan-out
-        parks the whole worker pool — the convoy this replaces), and no resume
-        request is lost. The stuck-step sweep remains the ultimate safety net.
+        If another thread already holds this workflow's resume lock, the request
+        is *deferred* and the call returns immediately — the holder runs it after
+        its current iteration. This bulkheads the poll/handler threads: they
+        never BLOCK on a contended per-workflow lock (which under a wide fan-out
+        parks the whole worker pool — the convoy this replaces).
+
+        ``key`` identifies WHAT is being resumed and is the unit of coalescing.
+        Resumes are per STEP, so the step id must be the key: deferring by
+        workflow alone collapses N distinct step resumes into "re-run whichever
+        one happened to win the lock", silently dropping the other N-1. On a
+        200-wide fan-out that dropped 199 of them — every leaf finished in
+        seconds, the block steps above them were never cascaded, and the
+        workflow sat untouched until the stuck-step sweep walked all its stuck
+        steps minutes later. Same key twice while deferred = one run, which is
+        the coalescing this is for; different keys all run.
         """
         with self._resume_locks_lock:
             lock = self._resume_locks.setdefault(workflow_id, threading.Lock())
 
-        if not lock.acquire(blocking=False):
-            with self._resume_pending_lock:
-                self._resume_pending.add(workflow_id)
-            logger.debug("Resume already in progress for workflow %s, marked pending", workflow_id)
-            return
+        # Acquire-or-defer, decided under _resume_pending_lock, and the holder
+        # releases under the SAME lock (below). That mutual exclusion is what
+        # makes the hand-off safe: without it a thread whose acquire fails can
+        # register in the window between the holder's final "anything pending?"
+        # check and its release, so the holder never sees it and nobody re-runs.
+        with self._resume_pending_lock:
+            if not lock.acquire(blocking=False):
+                self._resume_pending.setdefault(workflow_id, {})[key] = resume_fn
+                logger.debug(
+                    "Resume in progress for workflow %s, deferred %s", workflow_id, key or "(full)"
+                )
+                return
 
         try:
             resume_fn()
-            # Re-run if other threads flagged a pending resume while we held it.
+            # Drain everything deferred while we held the lock, then release
+            # while still holding _resume_pending_lock so nothing can slip in
+            # between the check and the release.
             while True:
                 with self._resume_pending_lock:
-                    if workflow_id not in self._resume_pending:
+                    deferred = self._resume_pending.pop(workflow_id, None)
+                    if not deferred:
+                        lock.release()
                         break
-                    self._resume_pending.discard(workflow_id)
-                resume_fn()
-        finally:
+                for deferred_key, fn in list(deferred.items()):
+                    try:
+                        fn()
+                    except Exception:
+                        # One unresumable step must not discard the rest of the
+                        # batch — that would reintroduce the dropped-resume
+                        # stall for every sibling behind it.
+                        logger.debug(
+                            "Deferred resume failed: workflow=%s key=%s",
+                            workflow_id,
+                            deferred_key or "(full)",
+                            exc_info=True,
+                        )
+        except BaseException:
             lock.release()
+            raise
         # Opportunistically bound the workflow-keyed caches/locks (cheap no-op
         # while under the cap) so a long-lived runner doesn't leak them.
         self._prune_workflow_caches()
@@ -804,7 +839,7 @@ class BaseRunner:
                         lock.release()
                         del self._resume_locks[wid]
                         with self._resume_pending_lock:
-                            self._resume_pending.discard(wid)
+                            self._resume_pending.pop(wid, None)
 
     # =========================================================================
     # Runner terminal-state transition (guarded)

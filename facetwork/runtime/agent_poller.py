@@ -1042,28 +1042,38 @@ class AgentPoller:
                 self._resume_locks[workflow_id] = threading.Lock()
             lock = self._resume_locks[workflow_id]
 
-        if not lock.acquire(blocking=False):
-            # Another thread is already resuming — mark pending so
-            # the holder re-runs after its current iteration.
-            with self._resume_pending_lock:
+        # Acquire-or-flag under _resume_pending_lock, and release under it too
+        # (below). Splitting the holder's "anything pending?" check from its
+        # release loses any flag raised in between — the holder never sees it and
+        # nobody re-runs, so the workflow waits for the stuck-step sweep.
+        with self._resume_pending_lock:
+            if not lock.acquire(blocking=False):
+                # Another thread is already resuming — mark pending so
+                # the holder re-runs after its current iteration.
                 self._resume_pending.add(workflow_id)
-            logger.debug("Resume already in progress for workflow %s, marked pending", workflow_id)
-            return
+                logger.debug(
+                    "Resume already in progress for workflow %s, marked pending", workflow_id
+                )
+                return
 
         try:
             self._do_resume(workflow_id, runner_id, step_id=step_id)
 
             # Re-run if other threads flagged a pending resume while
             # we held the lock.  Pending resumes use full resume()
-            # since we don't know which specific step triggered them.
+            # since we don't know which specific step triggered them —
+            # slower than the focused path, but it cannot drop a sibling's
+            # work the way a step-blind re-run of one closure would.
             while True:
                 with self._resume_pending_lock:
                     if workflow_id not in self._resume_pending:
+                        lock.release()
                         break
                     self._resume_pending.discard(workflow_id)
                 self._do_resume(workflow_id, runner_id)
-        finally:
+        except BaseException:
             lock.release()
+            raise
 
     def _do_resume(self, workflow_id: str, runner_id: str, step_id: str = "") -> None:
         """Execute a single evaluator resume for *workflow_id*.

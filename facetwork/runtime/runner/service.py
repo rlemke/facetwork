@@ -297,7 +297,7 @@ class RunnerService(BaseRunner):
         # Per-workflow resume locks + pending-requeue (BaseRunner._resume_with_lock).
         self._resume_locks: dict[str, threading.Lock] = {}
         self._resume_locks_lock = threading.Lock()
-        self._resume_pending: set[str] = set()
+        self._resume_pending: dict[str, dict[str, Any]] = {}
         self._resume_pending_lock = threading.Lock()
         self._last_reap: int = 0
         self._reap_interval_ms: int = 60000  # check for orphans every 60s
@@ -1878,7 +1878,11 @@ class RunnerService(BaseRunner):
         the workflow is marked pending and the holder re-runs, with the
         stuck-step sweep as the ultimate safety net.
         """
-        self._resume_with_lock(workflow_id, lambda: self._do_resume_step(workflow_id, step_id))
+        # Key on the step: a resume is per step, so coalescing by workflow alone
+        # would drop every concurrent sibling's resume but one.
+        self._resume_with_lock(
+            workflow_id, lambda: self._do_resume_step(workflow_id, step_id), key=step_id
+        )
 
     def _do_resume_step(self, workflow_id: str, step_id: str) -> None:
         """One resume-step cycle (the body run under _resume_with_lock)."""
