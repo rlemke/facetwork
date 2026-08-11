@@ -1,0 +1,101 @@
+/** Find the capital of every US state from cached OpenStreetMap data.
+  *
+  * Shape: one cached fetch, a 50-way fan-out, then a fan-in.
+  *
+  *   FetchStateData          the ONE networked step; a no-op when cached
+  *   foreach state           50 iterations, each reading ONLY the cache
+  *   CombineCapitals         fan-in over all 50
+  *
+  * The capital is not read from a bundled list. Every US state is an OSM
+  * relation (boundary=administrative, admin_level=4, ISO3166-2=US-XX) carrying
+  * a member with role admin_centre that points at the capital's node — that
+  * link is the answer, and the node supplies name, position and population.
+  *
+  * The Snakemake and Nextflow versions beside this file express the same three
+  * stages, and all three call the same Python (capitals_lib.py), so what
+  * differs between them is only what decides when each step runs. */
+namespace capitals {
+
+    /** Download the OSM state relations + capital nodes into the shared cache.
+      *
+      * Returns counts only — the data itself goes to the cache, which is
+      * exactly why the ordering below has to be stated with `after`. */
+    event facet FetchStateData(force: Boolean = false) => (
+        cache_path: String,
+        state_count: Int,
+        was_cached: Boolean
+    ) with Effect(kind = "external") with Cost(tier = "moderate")
+
+    /** Resolve ONE state's capital from the cache. Never touches the network:
+      * the handler RAISES if the cache is absent rather than fetching, so a
+      * 50-way fan-out cannot silently become 50 Overpass queries. */
+    event facet ResolveCapital(state_code: String) => (
+        state: String,
+        capital: String,
+        out_path: String
+    ) with Effect(kind = "io") with Cost(tier = "free")
+
+    /** Fan-in: merge the per-state results into one table. Reads the scratch
+      * directory the fan-out wrote, so again no value flows and the ordering
+      * must be explicit. */
+    event facet CombineCapitals() => (
+        out_path: String,
+        count: Int
+    ) with Effect(kind = "io") with Cost(tier = "free")
+
+    /** The fan-out itself, as a named step so the fan-in can wait on it.
+      *
+      * A `foreach` has to be a step to be the target of `after`, and a step is
+      * a call — hence this composed facet rather than a bare `andThen foreach`
+      * in the workflow body. */
+    facet ResolveAll(states: Json) => (paths: Json)
+        andThen foreach s in $.states {
+            resolved = ResolveCapital(state_code = $.s)
+            yield ResolveAll(paths = resolved.out_path)
+        }
+
+    /** Same fan-out with a width cap, for measuring the effect of bounding it.
+      * Identical elements and identical result — only concurrency changes. */
+    facet ResolveAllCapped(states: Json, width: Int) => (paths: Json)
+        andThen foreach s in $.states limit $.width {
+            resolved = ResolveCapital(state_code = $.s)
+            yield ResolveAllCapped(paths = resolved.out_path)
+        }
+
+    workflow FindStateCapitals(states: Json) => (
+        out_path: String,
+        count: Int
+    ) andThen {
+
+        // The one networked step.
+        fetched = FetchStateData()
+
+        // INVISIBLE dependency: the fan-out reads what the fetch cached and
+        // takes no value from it, so without `after` the two are unordered and
+        // fifty iterations would race an unwritten cache.
+        resolved = ResolveAll(states = $.states) after fetched
+
+        // `after resolved` waits for EVERY iteration — the fan-in.
+        combined = CombineCapitals() after resolved
+
+        yield FindStateCapitals(
+            out_path = combined.out_path,
+            count = combined.count
+        )
+    }
+
+    /** Width-capped variant. `limit` is a bulkhead, not a correctness knob:
+      * the same 50 states resolve either way. */
+    workflow FindStateCapitalsCapped(states: Json, width: Int = 8) => (
+        out_path: String,
+        count: Int
+    ) andThen {
+        fetched = FetchStateData()
+        resolved = ResolveAllCapped(states = $.states, width = $.width) after fetched
+        combined = CombineCapitals() after resolved
+        yield FindStateCapitalsCapped(
+            out_path = combined.out_path,
+            count = combined.count
+        )
+    }
+}

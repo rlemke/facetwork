@@ -1,0 +1,8 @@
+# Generated: engine outputs, the warmed cache, and logs.
+runs/
+cache/
+.snakemake/
+.nextflow/
+.nextflow.log*
+*.log
+prefix_run.env

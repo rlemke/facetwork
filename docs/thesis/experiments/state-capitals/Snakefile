@@ -1,0 +1,92 @@
+# US state capitals from cached OSM data — the Snakemake version.
+#
+# The same three stages as capitals.ffl: one cached fetch, a 50-way fan-out,
+# then a fan-in. Every rule shells out to scripts/, which call the same
+# capitals_lib.py that Facetwork's handlers and the Nextflow processes call, so
+# the only difference between the three runs is what schedules the work.
+#
+#   snakemake -j 8 --config outdir=runs/snakemake
+#   snakemake -j 1 --config outdir=runs/snakemake     # serialised fan-out
+#
+# The fan-out is expressed the way Snakemake expresses everything: `rule all`
+# asks for 50 output files, and Snakemake works backwards to 50 independent jobs
+# of the same rule. There is no fan-out construct — the file pattern IS the
+# fan-out, which is the fundamental difference from FFL's `foreach`.
+
+import sys
+from pathlib import Path
+
+WORKDIR = Path(workflow.basedir)
+sys.path.insert(0, str(WORKDIR))
+from capitals_lib import STATE_CODES  # the SAME list all three engines use
+
+PYTHON = config.get("python", str(Path.home() / "facetwork" / ".venv" / "bin" / "python3"))
+OUTDIR = Path(config.get("outdir", "runs/snakemake")).resolve()
+
+# The cache is SHARED by all three engines and warmed once (see README). Each
+# engine gets its own outdir for the fan-out and fan-in, but re-downloading per
+# engine would put an unthrottled network in the middle of the measurement --
+# the confound that made the nuclear-map live timings uncomparable.
+CACHE_DIR = Path(config.get("cache_dir", WORKDIR / "cache")).resolve()
+CACHE = CACHE_DIR / "osm_states.json"
+STATE_JSON = str(OUTDIR / "states" / "{state}.json")
+COMBINED = OUTDIR / "capitals.json"
+
+
+rule all:
+    input:
+        COMBINED,
+
+
+rule fetch_states:
+    """The ONE networked step: OSM state relations + capital nodes -> cache."""
+    output:
+        cache=CACHE,
+    params:
+        script=str(WORKDIR / "scripts" / "fetch_states.py"),
+        cache_dir=lambda w, output: str(Path(output.cache).parent),
+        python=PYTHON,
+    benchmark:
+        str(OUTDIR / "benchmarks" / "fetch_states.tsv")
+    shell:
+        "{params.python} {params.script} --cache-dir {params.cache_dir}"
+
+
+rule state_capital:
+    """One state — the fan-out body. Reads ONLY the cache.
+
+    Declaring the cache as an input is what orders this after the fetch. FFL
+    states the same fact with `after fetched`, because there the hand-off is
+    through a cache the compiler cannot see; here the file IS the edge.
+    """
+    input:
+        cache=CACHE,
+    output:
+        state=STATE_JSON,
+    params:
+        script=str(WORKDIR / "scripts" / "state_capital.py"),
+        cache_dir=lambda w, input: str(Path(input.cache).parent),
+        out_dir=str(OUTDIR / "states"),
+        python=PYTHON,
+    benchmark:
+        str(OUTDIR / "benchmarks" / "state_{state}.tsv")
+    shell:
+        "{params.python} {params.script} --cache-dir {params.cache_dir} "
+        "--state {wildcards.state} --out-dir {params.out_dir}"
+
+
+rule combine:
+    """Fan-in over all 50 states."""
+    input:
+        states=expand(STATE_JSON, state=STATE_CODES),
+    output:
+        combined=COMBINED,
+    params:
+        script=str(WORKDIR / "scripts" / "combine.py"),
+        states_dir=str(OUTDIR / "states"),
+        python=PYTHON,
+    benchmark:
+        str(OUTDIR / "benchmarks" / "combine.tsv")
+    shell:
+        "{params.python} {params.script} --states-dir {params.states_dir} "
+        "--out {output.combined}"
