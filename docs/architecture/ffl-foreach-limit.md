@@ -22,24 +22,24 @@ belongs in the workflow, next to the fan-out it governs — and CLAUDE.md alread
 asks for exactly this: *"for every shared resource (thread pool, connection,
 queue): consider isolation/bulkheads."*
 
-## ⚠️ Status: root cause fixed; cleared for moderate fan-outs, not yet for 3,000-wide
+## Status: cleared — the national fan-out that froze now completes unattended
 
 The clause is implemented, tested and shipped. It used to amplify a pre-existing defect —
 leaf steps parked at `state.statement.blocks.Begin` after their task completed and were
-never cascaded onward — which **has since been root-caused and fixed** (see below); a
-capped fan-out now survives a runner kill unattended at moderate scale. What has *not* been
-re-run since the fix is the 3,000-wide national atlas that originally froze, so that one
-still needs its own confirming run.
+never cascaded onward — which **has since been root-caused and fixed** (see below). The
+workload it was reverted for has now been re-run capped, at full scale, and passed
+(§ *Acceptance runs*). `fwh_county_atlas.BuildAtlasFanout` carries its cap again
+(fwh_county_atlas `4c0ef3f`).
 
-Unbounded, that stranding is survivable — the 3,167-county national run stranded ~10% and
-still finished. Capped, it is fatal: stranded sub-blocks hold every window slot, so
-admission stops and the run freezes (observed at 628/3,167, then again at 1,368).
+The history, for context. Unbounded, the stranding was survivable — the 3,167-county
+national run stranded ~10% of its leaves and still finished. Capped, it was fatal:
+stranded sub-blocks held every window slot, admission stopped, and the run froze (observed
+at 628/3,167, then again at 1,368). The cap did not cause the bug; it converted a slow tail
+into a hard stall, which is what a bulkhead does to any leak of concurrency permits.
+`BuildAtlasFanout` was retrofitted and reverted for that reason, and has now been
+un-reverted. See the liveness section below and county-atlas §9.7.
 
-`fwh_county_atlas.BuildAtlasFanout` was retrofitted with a cap and **reverted** for this
-reason. Safe uses today are short or narrow fan-outs where a runner restart is unlikely
-mid-run. See the liveness section below and county-atlas §9.7.
-
-### Root cause found and fixed — fleet verification still outstanding
+### Root cause found and fixed
 
 The stranding was root-caused to **two** defects that had to hold together, both now
 fixed with regression tests (`tests/runtime/test_deferred_step_wakeup.py`):
@@ -66,7 +66,28 @@ Two earlier fixes for this same stall (the window nudge and the program-AST fall
 plausible code-reading stories that each cost a bake+rollout and changed nothing, so the
 bar here is empirical.
 
-### Acceptance run — passed at small scale (2026-08-10)
+### Acceptance runs
+
+**The national fan-out — passed (2026-08-11).** The workload the cap was reverted for,
+re-run capped on the deployed fix and left alone:
+
+| | |
+|---|---|
+| Workload | **3,167 counties**, `limit 32`, one host, 4 executors |
+| Result | **3,173/3,173 tasks completed**, 0 failed, 0 dead-lettered |
+| Steps | 0 non-terminal, 0 errored |
+| Output | 3,168 county maps written to the bucket |
+| Interruption | survived a **7.4-hour full-system hibernation** mid-fan-out (the host's battery reached 1%); resumed on wake, 3 tasks re-claimed by the reaper |
+| Intervention | none — no watchdog, no `repair-workflow`, no re-seeding |
+
+This is the same fan-out that previously froze at 628/3,167 and again at 1,368. The
+hibernation was accidental but strengthens the result: a full-system suspend is a harsher
+interruption than the runner restart the criterion asks for, and the progress curve during
+it (flat for 7.4h, then resuming at the prior rate) is worth knowing as a *false* stall
+signature — it is indistinguishable from the real thing in workflow state alone, and was
+told apart only by `pmset -g log`.
+
+**A capped fan-out surviving a runner kill — passed at small scale (2026-08-10)**
 
 The stated criterion is *"a capped fan-out survives a runner restart unattended"*. On the
 deployed fix (v146):
@@ -82,13 +103,15 @@ deployed fix (v146):
 Pre-fix this is the shape that stalled: the killed iteration's leaf parks, holds a window
 slot, and admission stops. It did not — no watchdog, no `repair-workflow`.
 
-**What this does and does not license.** The criterion is met, so the mechanism is sound
-end to end under a restart. It is *not* the scale that broke: the original failures were a
-3,167-county fan-out over hours across ~21 runners (froze at 628, then 1,368), and a 60-item
-run on one runner cannot exercise the contention, sweep cadence and multi-runner
-re-claim that made stranding common there. Treat the cap as safe for moderate fan-outs;
-before re-enabling it on `fwh_county_atlas.BuildAtlasFanout`, run the national atlas capped
-and confirm it finishes without an external watchdog.
+**What the two runs together license.** The small run isolates the restart criterion; the
+national run supplies the scale that originally broke. Both passed on the deployed fix, so
+the cap is cleared for use, and `BuildAtlasFanout` carries it again.
+
+One dimension remains untested rather than proven: both runs were served by a **single
+host**. The original failures ran across ~21 runners on four hosts, and multi-runner
+contention — many sweepers over one workflow, cross-host re-claim — is not reproduced by
+four executors in one process. Nothing observed suggests it matters; it simply has not been
+measured since the fix.
 
 ## The clause
 
