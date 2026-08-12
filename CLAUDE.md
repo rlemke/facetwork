@@ -32,7 +32,7 @@ Groups: **`install`** (toolchain/venv/examples/**check**) · **`single`** (local
 up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgroup) ·
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
-(compile/run/publish/seed/scaffold/catalog/**bake-envs**) · **`maint`** (disk-guard/repair-workflow/
+(compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/repair-workflow/
 terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**) ·
 **`mode`** (day-cluster/night-local switch: status/local/cluster/join/leave).
@@ -119,6 +119,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 |-------|----------|
 | **Dashboard (v3 UI)** — navigation, pages, the global **Filters** page (persisted Flow/Workflow filters), Users/Teams + acting-as, domain apps; v3 is the default and the only UI (v2 + legacy non-prefixed pages removed; only `/namespaces` + `/sources` remain outside `/v3`) | [docs/reference/dashboard.md](docs/reference/dashboard.md) |
 | FFL syntax | [docs/reference/language/grammar.md](docs/reference/language/grammar.md) |
+| **Editing FFL (`fw ffl lsp`)** — language server: validator diagnostics inline as you type (with `rule_id` + rule-doc link), completion of declared facets with signatures, hover showing a signature or the rule doc; Neovim/VS Code/Helix setup | [docs/guides/editor-setup.md](docs/guides/editor-setup.md) |
 | **`foreach … limit N`** (**cleared** — leaf-stranding root cause fixed; the 3,167-county national fan-out that originally froze at 628 was re-run capped and completed unattended: 3,173/3,173 tasks, 0 failed, 0 non-terminal steps, surviving a 7.4h host hibernation mid-run. county-atlas carries its cap again. Untested since the fix: multi-**host** contention — both acceptance runs were single-host) — bulkhead on fan-out width: at most N iterations in flight, slots refilled as they finish. Same elements, same result — only concurrency changes. Cap may be a literal or a reference (`limit $.width`); `limit 1` serialises, omitting is unbounded. `limit` is a **contextual** keyword (still valid as a param name). Canonical example `13-foreach-limit.ffl` | [docs/architecture/ffl-foreach-limit.md](docs/architecture/ffl-foreach-limit.md) |
 | **`after` clause** — explicit ordering for **invisible** dependencies (state passed through a shared cache/object store/scratch dir, so no value flows and the compiler can't see the edge). Replaces the `dependency_signal` idiom; expresses fan-in after a `foreach`. Canonical example `12-step-after.ffl`; codemod: `fw ffl migrate-after` | [docs/architecture/ffl-after-clause.md](docs/architecture/ffl-after-clause.md) |
 | Runtime execution model | [docs/reference/runtime.md](docs/reference/runtime.md) |

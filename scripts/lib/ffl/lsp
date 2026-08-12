@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# fw-summary: Start the FFL language server (LSP) on stdio, for editors.
+#
+# Speaks the Language Server Protocol over stdin/stdout: inline diagnostics as
+# you type (the same rule_ids and messages `fw ffl compile --check` prints),
+# completion of the facets a file declares, and hover showing a facet's
+# signature or the rule doc for a diagnostic.
+#
+# Not run by hand — an editor launches it. Point your client at:
+#
+#   command: fw
+#   args:    ["ffl", "lsp"]
+#   filetypes / languageId: ffl   (files matching *.ffl)
+#
+# VS Code needs a thin extension to register the language id; Neovim can start
+# it directly with vim.lsp.start{ cmd = { "fw", "ffl", "lsp" } }.
+#
+# Options are forwarded to `python -m facetwork.lsp`:
+#   --log-level LEVEL   default WARNING; logs go to stderr, never stdout
+#                       (stdout is the protocol channel and must stay clean)
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+PYTHON="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON=python3
+
+exec env PYTHONPATH="$REPO_ROOT" "$PYTHON" -m facetwork.lsp "$@"
