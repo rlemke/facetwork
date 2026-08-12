@@ -190,7 +190,16 @@ Option one: unroll the recursion at workflow generation time. If the tree depth 
 
 Option two: implement the recursion inside a single handler. A facet named `WalkTree` takes a root and internally walks the tree, returning an aggregated result. This moves the recursive structure into handler code, where it is not visible to the workflow and not statically checkable, but it *is* expressible and is sometimes the right answer.
 
-What FFL does not offer is what Nextflow offers — dynamic workflow expansion at runtime based on intermediate results. This is a real capability gap. The authors who genuinely need it should use a different system, or wait for the cross-workflow composition primitives discussed in §14.2 to mature: once a workflow can call another workflow as an event facet with runtime-determined parameters, recursive walks become expressible as mutual workflow calls, which the runtime's actor-model block evaluator will serialise correctly.
+I should be careful about how I state what is missing, because an earlier draft over-generalised it to "dynamic workflow expansion at runtime based on intermediate results", and that is not a gap — FFL does exactly this, in production. A step returns a collection discovered at run time and a `foreach` fans out over it:
+
+```ffl
+children = county.atlas.ListCounties(prefix = $.prefix, bucket = $.bucket)
+    andThen foreach cty in $.counties limit $$.concurrency { … }
+```
+
+The fan-out width is unknown at compile time; the 3,167-way national run of §14 was determined entirely by what that step returned. Expansion driven by an intermediate result is ordinary FFL.
+
+What is genuinely absent is **unbounded recursive** expansion: a step whose output spawns another level of the same structure, repeatedly, to a depth not known when the run starts. That is the web-crawler and tree-walk case, and it is a real gap. Authors who need it should use a different system, or wait for the cross-workflow composition primitives in §14.2: once a workflow can call another workflow as an event facet with runtime-determined parameters, recursive walks become expressible as mutual workflow calls, which the runtime's actor-model block evaluator will serialise correctly.
 
 I do not think FFL is universally adequate. I think it is adequate for the workloads I target. A recursive web crawler is not one of those workloads.
 
@@ -347,7 +356,9 @@ I will concede that the chapter's title could be less confrontational. The conte
 
 Concession: the thesis should compare against Argo and Prefect directly and does not. Let me offer shorter answers.
 
-**Argo Workflows** is YAML-on-Kubernetes. Its strengths are Kubernetes-native scheduling and the operational benefits of container isolation. Its weaknesses are the static nature of YAML DAGs, the per-step pod-startup cost (seconds minimum), and the limited expressiveness compared with FFL's `andThen when` and mixins. For workflows dominated by container startup latency, Argo is penalised; for workflows where every step is a long-running process, Argo is competitive. Facetwork's per-task overhead is in the tens of milliseconds rather than seconds.
+**Argo Workflows** is YAML-on-Kubernetes. Its strengths are Kubernetes-native scheduling and the operational benefits of container isolation. Its weaknesses are the static nature of YAML DAGs, the per-step pod-startup cost (seconds minimum), and the limited expressiveness compared with FFL's `andThen when` and mixins. For workflows dominated by container startup latency, Argo is penalised; for workflows where every step is a long-running process, Argo is competitive.
+
+An earlier draft of this answer claimed Facetwork's per-task overhead is "in the tens of milliseconds rather than seconds", and used that to claim an advantage here. **That is wrong and I withdraw it.** §13.3 measures a Facetwork step at roughly 2.6 seconds of engine overhead — a bootstrap task, a persisted step row, a task row, a claim poll — with the step-state cascade advancing at about nine steps per second even after two rounds of optimisation. Snakemake dispatches at 14 ms per task and Nextflow at 35 ms. Facetwork is two orders of magnitude off the figure I quoted, and it is in the same *seconds* regime as the pod startup I was contrasting it against. The honest comparison with Argo is therefore not "we are faster per step"; it is that we buy durable, queryable, resumable per-step state for a comparable per-step cost, and that neither system is the right choice for thousands of millisecond-scale tasks (§2.6 argues for delegating those to a compute substrate instead).
 
 **Prefect** and **Dagster** are Python-library workflow runtimes with DAG semantics and code-based authoring. They share Airflow's weaknesses at the scheduling layer (historically single-scheduler, though both have improved) and Airflow's strengths at library ecosystem. Against Facetwork, their main weakness is the same as Airflow's: no typed language-level separation of topology from implementation, and no live-updatable multi-language handlers.
 
@@ -369,9 +380,21 @@ The OSM geocoder is an existence proof that the design choices hold together on 
 
 I did not do this for three reasons, two honest and one slightly defensive. First, implementing a multi-hour OSM import twice is a large amount of work and was not the thesis's contribution. Second, performance comparisons between workflow systems are genuinely hard to design well; the systems make different assumptions and a benchmark that favours one over the other can often be devised. Third, defensively, the thesis argues for a design that serves a class of workloads; performance is one dimension of that service and not the most important one.
 
-I accept that the thesis is weaker without benchmarks, and I accept that a committee member who thinks of a thesis as requiring benchmarks can reasonably withhold approval pending them. A revised version would include: a microbenchmark of the claim protocol's throughput, a latency measurement of step-level recovery versus workflow-level restart, and a comparison of the staged-timeout mechanism's behaviour versus flat timeouts on simulated long-running workloads.
+I accept that the thesis is weaker without a controlled head-to-head against Temporal on the same workload, and that a committee member who requires one can reasonably withhold approval pending it.
 
-I will commit to adding these to the final submission if the committee requires them.
+I should update this answer, though, because it was written before the measurement that does now exist, and leaving it as drafted understates the thesis. Chapter 13 and [`experiments/`](experiments/) contain the same workload implemented in **Facetwork, Snakemake and Nextflow**, with all three calling identical handler code so that what differs between the runs is only what schedules them, and with their outputs diffed to confirm they agree byte for byte. That covers a two-step pipeline and a 50-way fan-out, at 200/800/3,167 width, and it produced results I did not expect and would not have invented — a Facetwork fan-out paced by its recovery sweep rather than by execution, and Snakemake serving a stale answer after an algorithm change.
+
+What exists now:
+
+* **Cross-engine, same workload, verified-identical output** — §13.3 and the two experiments.
+* **Fan-out scaling and its cost decomposition** — execution versus cascade separated at three widths, which is what located both runtime defects (844.6s → 55.8s, and 294.1s → 4.4s on a real workflow).
+* **Persistence profiling with call-site attribution** — 17,011 store calls for a 157-step workflow, which disproved my own hypothesis about where the cost was.
+* **Timeout interactions** — [`paper-timeout-interactions.md`](paper-timeout-interactions.md), which is the staged-versus-flat comparison this answer promised.
+* **Environment provisioning** — [`paper-environment-provisioning.md`](paper-environment-provisioning.md), including results where Facetwork's lazy tier *loses*.
+
+What is still missing, and I will not pretend otherwise: a microbenchmark of the claim protocol's throughput in isolation, a latency measurement of step-level recovery versus workflow-level restart, and the Temporal head-to-head. The measurements above are also single-host, taken on a workstation with other runners live, and should be read as engineering measurement rather than as controlled benchmarking.
+
+So the fair statement is no longer "this thesis is design without measurement". It is that the measurement is of *this* system's behaviour, and comparative against two systems in the scientific-pipeline tradition, but not yet against the durable-execution systems that are its nearest architectural neighbours.
 
 ### Q23 (Dr. Yegge)
 
@@ -471,7 +494,7 @@ That is ninety seconds. Thank you for the time.
 
 I want to thank the committee for the questions. Several of them — the zombie-handler result-write gating, the MongoDB write-concern startup check, the Flyte comparison chapter, the idempotency-annotation framework, the stress-test configurations for staged timeouts — I will act on before the final submission. Several others — the determinism-tax caricature, the Jenkins-strawman framing, the BPMN-interchange concession — I will soften in the revised text.
 
-The questions about evaluation depth are the ones I am most conscious of. I accept that this thesis is more *design* than *measurement*. A scholarly workflow system paper would be both. If the committee's judgement is that more measurement is required, I will do it. If the committee's judgement is that the design argument stands and the measurement is separable follow-on work, I will accept that too.
+The questions about evaluation depth are the ones I am most conscious of. This thesis leans *design*, but less than the earlier draft of these answers admitted: Chapter 13 now carries the same workload implemented in three engines with outputs verified identical, fan-out cost decomposed at three widths, and two runtime defects found and fixed by measurement rather than by reading. What it still lacks is a controlled comparison against a durable-execution peer — Temporal — and isolated microbenchmarks of the claim protocol. If the committee's judgement is that those are required, I will do them. If the judgement is that the design argument stands and they are separable follow-on work, I will accept that too.
 
 I do not expect the committee to agree with every argument in the thesis. I do hope to have made a case that the design is coherent, the choices reinforce each other, and the class of workloads addressed is worth addressing.
 
