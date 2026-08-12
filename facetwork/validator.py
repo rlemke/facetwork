@@ -26,6 +26,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
+from . import suggest as _suggest
 from .ast import (
     AndThenBlock,
     ArrayLiteral,
@@ -88,7 +89,13 @@ class ValidationError:
             location = f" at line {self.line}"
             if self.column is not None:
                 location += f", column {self.column}"
-        return f"{self.message}{location}"
+        # The location belongs on the SUMMARY line, not trailing whatever the
+        # message happens to end with. Messages that explain themselves over
+        # several lines (the `$`-scoping ladder) would otherwise read
+        # "…try '$.width' at line 6", attaching the position to the advice
+        # rather than to the offending reference.
+        head, sep, rest = self.message.partition("\n")
+        return f"{head}{location}{sep}{rest}"
 
 
 def _docs_uri_for(rule_id: str) -> str | None:
@@ -603,7 +610,8 @@ class FFLValidator:
                 return self._facets[name]
             # Not found as exact match
             self._result.add_error(
-                f"Unknown facet '{name}'",
+                f"Unknown facet '{name}'"
+                f"{_suggest.did_you_mean(name, self._facets.keys())}",
                 location,
                 rule_id="REF_UNKNOWN_FACET",
             )
@@ -674,7 +682,24 @@ class FFLValidator:
             )
             return None
 
-        # Not found anywhere - this is OK, might be an external facet
+        # Not found anywhere. This is legal — the facet may be declared in a
+        # library compiled separately — so it cannot be an error. But a TYPO
+        # takes the same path and compiles clean, only to fail at run time as
+        # "no handler for facet", far from the line that caused it.
+        #
+        # Warn only when there is a concrete near-match to name. With no close
+        # candidate this really is an external reference and silence is right,
+        # which keeps the false-positive rate at essentially zero.
+        near = _suggest.closest(short_name, self._facets_by_short_name.keys())
+        if near:
+            qualified = self._facets_by_short_name.get(near) or [near]
+            self._result.add_warning(
+                f"Facet '{short_name}' is not declared here and is being treated as "
+                f"external — did you mean '{sorted(qualified)[0]}'? "
+                f"(an undeclared facet compiles, then fails at run time with no handler)",
+                location,
+                rule_id="REF_FACET_ASSUMED_EXTERNAL",
+            )
         return None
 
     def _validate_program(self, program: Program) -> None:
@@ -2380,10 +2405,17 @@ class FFLValidator:
             if idx < 0:
                 dollars = "$" * (depth + 1)
                 levels = max(len(self._container_stack) - 1, 0)
+                # The author knows which attribute they want and has guessed at
+                # the number of dollars. Print the ladder so "how many?" is
+                # answered directly instead of by counting braces in the source.
                 self._result.add_error(
                     f"'{dollars}.{attr}' walks up {depth} container level(s), "
                     f"past the outermost container ({levels} enclosing level(s) "
-                    f"available)",
+                    f"available)"
+                    + _suggest.dollar_ladder(
+                        [(f.name or f.kind, f.attrs) for f in reversed(self._container_stack)],
+                        attr,
+                    ),
                     ref.location,
                     rule_id="REF_DOLLAR_OVERFLOW",
                 )
@@ -2441,7 +2473,8 @@ class FFLValidator:
             if returns and attr not in returns:
                 self._result.add_error(
                     f"Invalid attribute '{attr}' for step '{step_name}': "
-                    f"valid attributes are {sorted(returns)}",
+                    f"valid attributes are {sorted(returns)}"
+                    f"{_suggest.did_you_mean(attr, returns)}",
                     ref.location,
                     rule_id="REF_INVALID_STEP_ATTRIBUTE",
                 )
@@ -2469,8 +2502,12 @@ class FFLValidator:
             return
         if foreach_var and step_name == foreach_var:
             return
+        # A near-miss gets the name to copy; a wild miss still learns which
+        # names are eligible from here, which is the scoping rule the author
+        # actually got wrong.
         self._result.add_error(
-            f"Reference to undefined step '{step_name}'",
+            f"Reference to undefined step '{step_name}'"
+            f"{_suggest.suggestion(step_name, step_returns.keys(), 'steps in scope here')}",
             ref.location,
             rule_id="REF_UNDEFINED_STEP",
         )
@@ -2615,7 +2652,8 @@ class FFLValidator:
             if returns and attr not in returns:
                 self._result.add_error(
                     f"Invalid attribute '{attr}' for step '{step_name}': "
-                    f"valid attributes are {sorted(returns)}",
+                    f"valid attributes are {sorted(returns)}"
+                    f"{_suggest.did_you_mean(attr, returns)}",
                     ref.location,
                     rule_id="REF_INVALID_STEP_ATTRIBUTE",
                 )

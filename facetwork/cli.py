@@ -360,6 +360,13 @@ def _handle_compile(parsed: argparse.Namespace) -> int:
     # Validate (unless skipped)
     if not parsed.no_validate:
         result = validate(ast)
+        # Warnings were being collected and then dropped on the floor: the
+        # validator has emitted them for some time, but nothing ever printed
+        # them, so a warning was indistinguishable from silence. Print them
+        # whether or not the source is otherwise valid — a warning on a file
+        # that compiles is exactly the case worth reporting.
+        for warning in result.warnings:
+            print(f"Warning: {warning}", file=sys.stderr)
         if not result.is_valid:
             for error in result.errors:
                 print(f"Error: {error}", file=sys.stderr)
