@@ -45,3 +45,17 @@ clause is the explicit "no cap" one — so every intent has a spelling that
 isn't `0`.
 
 See [ffl-foreach-limit.md](../../architecture/ffl-foreach-limit.md).
+
+## When you want the caller to decide, including "uncapped"
+
+`limit 0` as a literal stays an error. But a cap taken as a **parameter** treats
+0 as unbounded, so one declaration covers both behaviours:
+
+```ffl
+facet ResolveAll(states: Json, width: Int = 0) => (paths: Json)
+    andThen foreach s in $.states limit $.width { … }
+```
+
+`width = 0` runs uncapped; any positive value caps. Negative values still fail —
+0 is the author supplying an answer, not the runtime failing to get one, which
+is why an *unresolvable* cap continues to fail the run.

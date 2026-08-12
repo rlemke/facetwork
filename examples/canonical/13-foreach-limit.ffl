@@ -31,6 +31,15 @@ namespace atlas {
             yield BuildAllTunable(paths = built.path)
         }
 
+    // A cap taken as a PARAMETER can also be turned off: 0 means unbounded, so
+    // one facet covers both behaviours instead of needing a capped twin. (A
+    // literal `limit 0` stays a compile error — omit the clause instead.)
+    workflow BuildAllOptional(counties: Json, width: Int = 0) => (paths: Json)
+        andThen foreach c in $.counties limit $.width {
+            built = BuildCounty(fips = $.c)
+            yield BuildAllOptional(paths = built.path)
+        }
+
     // `limit 1` serialises — the explicit spelling for "one at a time".
     workflow BuildAllSerial(counties: Json) => (paths: Json)
         andThen foreach c in $.counties limit 1 {

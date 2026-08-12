@@ -252,6 +252,69 @@ class TestForeachLimitFromAReference:
         assert _value_inputs(store) == list(range(10))
 
 
+class TestParameterisedCapCanBeUncapped:
+    """A cap that comes from a parameter must be able to say "no cap".
+
+    Without this a facet that wants both behaviours has to be written twice —
+    once with `limit $.width` and once without — which is what the
+    state-capitals experiment had to do (ResolveAll + ResolveAllCapped, plus a
+    workflow each: four declarations for two behaviours).
+
+    A literal is different and stays strict: `limit 0` in the source is a
+    decision the author already made, and writing no clause says it better.
+    """
+
+    def test_a_parameter_of_zero_means_unbounded(self, store, evaluator):
+        result = evaluator.execute(
+            _workflow_ast(limit={"type": "InputRef", "path": ["cap"]}),
+            inputs={"items": list(range(10)), "cap": 0},
+        )
+        assert result.success is True
+        assert _value_inputs(store) == list(range(10)), "elements were dropped"
+
+    def test_zero_and_omitted_produce_the_same_result(self, store, evaluator):
+        """Same elements, same answer — only concurrency may differ."""
+        capped = evaluator.execute(
+            _workflow_ast(limit={"type": "InputRef", "path": ["cap"]}),
+            inputs={"items": list(range(8)), "cap": 0},
+        )
+        assert capped.success is True
+        assert _value_inputs(store) == list(range(8))
+
+    def test_a_positive_parameter_still_caps(self, store, evaluator):
+        """The knob still works — 0 is a sentinel, not a disabling of the clause."""
+        result = evaluator.execute(
+            _workflow_ast(limit={"type": "InputRef", "path": ["cap"]}),
+            inputs={"items": list(range(10)), "cap": 2},
+        )
+        assert result.success is True
+        assert _value_inputs(store) == list(range(10))
+
+    def test_a_negative_parameter_is_still_an_error(self, store, evaluator):
+        """Negative is a mistake, not a considered setting.
+
+        Only 0 is the sentinel; anything else below 1 must fail loudly rather
+        than be rounded into "unbounded".
+        """
+        result = evaluator.execute(
+            _workflow_ast(limit={"type": "InputRef", "path": ["cap"]}),
+            inputs={"items": list(range(4)), "cap": -1},
+        )
+        assert result.success is False
+
+    def test_an_unresolvable_cap_still_fails(self, store, evaluator):
+        """The guarantee this clause exists for is unchanged.
+
+        0 is the author SUPPLYING an answer; an unresolvable reference is the
+        runtime failing to get one, and must not silently become unbounded.
+        """
+        result = evaluator.execute(
+            _workflow_ast(limit={"type": "InputRef", "path": ["nope"]}),
+            inputs={"items": list(range(4))},
+        )
+        assert result.success is False
+
+
 class TestForeachWindowCannotWedge:
     """A stalled sub-block must not hold a window slot forever.
 

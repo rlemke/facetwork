@@ -47,19 +47,16 @@ namespace capitals {
       *
       * A `foreach` has to be a step to be the target of `after`, and a step is
       * a call — hence this composed facet rather than a bare `andThen foreach`
-      * in the workflow body. */
-    facet ResolveAll(states: Json) => (paths: Json)
-        andThen foreach s in $.states {
-            resolved = ResolveCapital(state_code = $.s)
-            yield ResolveAll(paths = resolved.out_path)
-        }
-
-    /** Same fan-out with a width cap, for measuring the effect of bounding it.
-      * Identical elements and identical result — only concurrency changes. */
-    facet ResolveAllCapped(states: Json, width: Int) => (paths: Json)
+      * in the workflow body.
+      *
+      * ONE facet covers both capped and uncapped: the cap is a parameter, and
+      * `width = 0` means unbounded. This used to be two facets and two
+      * workflows — four declarations for two behaviours — because a
+      * parameterised cap had no way to say "no cap". */
+    facet ResolveAll(states: Json, width: Int = 0) => (paths: Json)
         andThen foreach s in $.states limit $.width {
             resolved = ResolveCapital(state_code = $.s)
-            yield ResolveAllCapped(paths = resolved.out_path)
+            yield ResolveAll(paths = resolved.out_path)
         }
 
     workflow FindStateCapitals(states: Json) => (
@@ -85,13 +82,15 @@ namespace capitals {
     }
 
     /** Width-capped variant. `limit` is a bulkhead, not a correctness knob:
-      * the same 50 states resolve either way. */
+      * the same 50 states resolve either way. Shares ResolveAll with the
+      * uncapped workflow above — the only difference is what `width` is set to,
+      * and 0 would make this identical to it. */
     workflow FindStateCapitalsCapped(states: Json, width: Int = 8) => (
         out_path: String,
         count: Int
     ) andThen {
         fetched = FetchStateData()
-        resolved = ResolveAllCapped(states = $.states, width = $.width) after fetched
+        resolved = ResolveAll(states = $.states, width = $.width) after fetched
         combined = CombineCapitals() after resolved
         yield FindStateCapitalsCapped(
             out_path = combined.out_path,

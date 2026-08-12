@@ -226,9 +226,34 @@ log) and resumes the parents, which cannot move. The real fix belongs in that
 classification and ordering, and must be validated against a capped fan-out surviving a
 runner restart unattended.
 
+### A parameterised cap of 0 means unbounded
+
+`limit 0` written as a **literal** is a compile error — the author has already
+decided, and writing no clause says it better. But when the cap comes from a
+**parameter** it is a knob the caller turns, and "no cap" is a legitimate
+setting for it:
+
+```ffl
+facet ResolveAll(states: Json, width: Int = 0) => (paths: Json)
+    andThen foreach s in $.states limit $.width {
+        resolved = ResolveCapital(state_code = $.s)
+        yield ResolveAll(paths = resolved.out_path)
+    }
+```
+
+One facet now covers both behaviours. Without the sentinel it takes two — one
+with the clause and one without — plus a workflow each, which is what
+[`experiments/state-capitals`](../thesis/experiments/state-capitals/) carried
+until this was added: four declarations for two behaviours that differ only in
+concurrency.
+
+Note the distinction from the failure case below. **0 is the author supplying an
+answer; an unresolvable cap is the runtime failing to get one.** Negative values
+remain an error at any depth — that is a mistake, not a considered setting.
+
 ### Failure handling
 
-A limit that cannot be resolved to a positive integer **fails the run**. It does
+A limit that cannot be resolved to an integer **fails the run**. It does
 not fall back to unbounded: the author asked for a bound precisely because
 unbounded was dangerous, so silently removing it would reintroduce the stampede
 at the worst moment.

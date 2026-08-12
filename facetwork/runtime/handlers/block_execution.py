@@ -295,20 +295,42 @@ class BlockExecutionBeginHandler(StateHandler):
         The cap may be a literal or a reference (so it can come from a workflow
         parameter), hence the full expression evaluation.
 
-        A limit that cannot be resolved to a positive integer is a hard error,
-        not a silent fallback to unlimited: the whole point of the clause is to
-        keep a 3,000-wide fan-out from stampeding, and quietly ignoring it would
+        A limit that cannot be resolved to an integer is a hard error, not a
+        silent fallback to unlimited: the whole point of the clause is to keep a
+        3,000-wide fan-out from stampeding, and quietly ignoring it would
         reintroduce exactly the failure it prevents.
+
+        **A PARAMETERISED cap of 0 means unbounded.** A literal is a decision the
+        author already made, so `limit 0` stays a compile error (write no clause
+        instead). But a cap that comes from a parameter is a knob the CALLER
+        turns, and "no cap" is a legitimate setting for it — without a way to say
+        so, a facet that wants both behaviours has to be written twice, once with
+        the clause and once without. Note the difference from an UNRESOLVABLE
+        cap, which still fails: 0 is the author supplying an answer, not the
+        runtime failing to get one.
+
+        Negative values remain an error at any depth — that is a mistake, not a
+        considered setting.
         """
         if "limit" not in foreach:
             return None
-        raw = evaluator.evaluate(foreach["limit"], eval_ctx)
+        node = foreach["limit"]
+        raw = evaluator.evaluate(node, eval_ctx)
         try:
             limit = int(raw)
         except (TypeError, ValueError):
             raise RuntimeError(f"foreach limit must be an integer, got {raw!r}") from None
+        # A bare integer in the source is a fixed decision; anything else (a
+        # parameter reference, an expression over one) is a knob.
+        is_literal = isinstance(node, dict) and node.get("type") in ("Int", "Integer")
+        if limit == 0 and not is_literal:
+            logger.info("Foreach fan-out uncapped: limit parameter resolved to 0")
+            return None
         if limit < 1:
-            raise RuntimeError(f"foreach limit must be >= 1, got {limit}")
+            raise RuntimeError(
+                f"foreach limit must be >= 1, got {limit}"
+                + ("" if is_literal else " (0 means unbounded for a parameterised cap)")
+            )
         return limit
 
     def _process_when(self, block_ast: dict) -> StateChangeResult:

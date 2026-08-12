@@ -2539,7 +2539,10 @@ class FFLValidator:
                 self._result.add_error(
                     f"foreach limit must be at least 1, got {value.value}. "
                     f"Use `limit 1` to serialise the fan-out, or omit the "
-                    f"clause for unbounded width.",
+                    f"clause for unbounded width. To let the CALLER choose "
+                    f"(including uncapped), take the cap as a parameter — "
+                    f"`limit $.width` with `width: Int = 0` — where 0 means "
+                    f"unbounded.",
                     limit.location,
                     rule_id="FOREACH_LIMIT_NOT_POSITIVE",
                 )
