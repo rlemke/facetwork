@@ -59,9 +59,19 @@ PY
 
 # _mode_resolve_ip <host> — current IPv4 for a hostname (mDNS/DNS), empty on failure.
 _mode_resolve_ip() {
+    # Resolve a host to an address CONTAINERS can use to reach it.
+    #
+    # Must skip loopback. A machine's own .local name resolves to both 127.0.0.1
+    # and its LAN address, and dscacheutil lists loopback first — so taking the
+    # first answer yields 127.0.0.1, which inside a container points at the
+    # container itself, not at the host. Every runner then fails to reach Mongo.
+    # That is why this host had an IP pinned by hand, and why the pin silently
+    # went stale when the machine changed subnet.
     local host="$1" ip=""
-    ip="$(dscacheutil -q host -a name "$host" 2>/dev/null | awk '/^ip_address:/{print $2; exit}')"
-    [ -z "$ip" ] && ip="$(ping -c1 -t1 "$host" 2>/dev/null | awk -F'[()]' '/PING/{print $2; exit}')"
+    ip="$(dscacheutil -q host -a name "$host" 2>/dev/null \
+          | awk '/^ip_address:/ && $2 !~ /^127\./ {print $2; exit}')"
+    [ -z "$ip" ] && ip="$(ping -c1 -t1 "$host" 2>/dev/null \
+          | awk -F'[()]' '/PING/{print $2; exit}' | grep -v '^127\.' )"
     echo "$ip"
 }
 

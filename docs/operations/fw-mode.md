@@ -46,6 +46,9 @@ Each switch is driven by a gitignored, host-local profile — `mode.local.json` 
 | key | `local` (this machine) | `cluster` (shared host) |
 |---|---|---|
 | `infra_host` / `infra_ip` | this machine | the infra host (IP **re-resolved live**) |
+
+**Leave `infra_ip` empty.** It is re-resolved from `infra_host` on every apply, so a DHCP or subnet change self-heals; pinning a value defeats that and goes stale silently — the containers keep the address they were created with, while `fw mode status` reports the infra host unreachable. Resolution deliberately skips loopback: a machine's own `.local` name resolves to both `127.0.0.1` and its LAN address, and `127.0.0.1` inside a container points at the container itself, not the host.
+
 | `fleet_registry` | `host.docker.internal:5050` (local `registry:2`) | `server3.local:5050` |
 | `mongodb_url` / `s3_endpoint` | `afl-mongodb` / `afl-minio` → localhost | → the infra host |
 | `data_dir` / `data_root` | local scratch + `s3://afl-cache` | same names, remote |
