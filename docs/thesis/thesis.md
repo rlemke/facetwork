@@ -1573,11 +1573,48 @@ Both target the same operational reality Facetwork does — long jobs, heterogen
 |---|---|---|---|
 | **Snakemake** (`-j 4`) | 12.4s | **0.5s** | 1.7s — re-ran only the 4 missing shards |
 | **Nextflow** | 6.2s | 2.1s (`cached=13`) | 5.4s — re-ran **all 13** (`cached=0`) |
-| **Facetwork** | see §14 | n/a — no output cache | resumed exactly the remaining work after `SIGKILL`, and after a 7.4-hour host hibernation |
+| **Facetwork** | see §14 | re-runs — no *runtime* output cache; see below | resumed exactly the remaining work after `SIGKILL`, and after a 7.4-hour host hibernation |
 
 Three things in that table deserve care.
 
-**The re-run column is a capability Facetwork does not have at all.** Snakemake answers "nothing to do" in half a second because the outputs are on disk and newer than their inputs. Nextflow answers it in two seconds from its task cache. Facetwork has no equivalent: re-running a workflow re-runs it. Handlers implement their own caching — every domain in this project has a sidecar-backed cache doing exactly that — but it is handler-author work repeated per domain, not a runtime guarantee. This is a real feature gap, and the honest statement is that the scientific-pipeline tradition solved incremental recomputation and Facetwork did not attempt it.
+**The re-run column is the one that most repays being read carefully**, because the obvious reading of it is wrong.
+
+Snakemake answers "nothing to do" in half a second because the outputs are on disk and newer than their inputs. Facetwork has no runtime equivalent: a new submission is a new execution, so it re-runs. Measured on the 50-way state-capitals workflow of [`experiments/state-capitals`](experiments/state-capitals/), with every output already present and the shared cache warm:
+
+| re-run, nothing changed | |
+|---|---|
+| **Snakemake** | **0.63s** — "Nothing to be done" |
+| **Facetwork** | **4.61s** — and it created **157 steps and 53 tasks** to discover the handlers had nothing to do |
+
+The temptation is to call this a feature gap. It is better described as a trade, and the reason is that **an existing output is not evidence that the output is complete, or current, or produced by the algorithm now in the file.** A path and an mtime say only that something was written there once. Skipping on that basis is sound exactly when the recipe is fixed, and unsound the moment it is not.
+
+That is demonstrable rather than theoretical. Taking the same state-capitals workflow and editing `capitals_lib.py` — the module that computes every per-state result — Snakemake 9.25 reported **"Nothing to be done (all requested files are present and up to date)"** and served the previous outputs. The algorithm had changed; the answer was stale; nothing said so. Editing the rule's own `shell:` string, by contrast, re-ran all fifty jobs immediately.
+
+That pair locates the boundary precisely: Snakemake's `code` rerun-trigger sees **the rule's own directive text and nothing transitively behind it**. It is not a bug — it cannot read the contents of a program it merely invokes — but note where the blind spot falls. It falls on `shell:` calling an external CLI, which is the very pattern that separates an algorithm team from a workflow team (§13.5). The cleaner that separation, the more of the algorithm is invisible to the staleness check.
+
+**What is actually required is a key binding an output to the algorithm that produced it**, not a timestamp comparing it to its inputs. Facetwork's sidecars carry one. Every cached artifact is written with a companion `.meta.json`:
+
+```json
+{ "relative_path": "reactors.geojson",
+  "sha256": "55c974ee6bbf5d81b9d72deca65ffb8bf5ccf42d639e4daf083cdf4d67c35bc0",
+  "size_bytes": 608376,
+  "generated_at": "2026-08-11T16:29:04Z",
+  "tool":   { "name": "nuclear", "version": "1.0" },
+  "source": { "url": "https://overpass-api.de/api/interpreter", "license": "ODbL 1.0" } }
+```
+
+A content hash, the producing tool *and its version*, and the upstream it came from. A handler consulting that can answer a question mtime cannot even express: *was this produced by this version of this algorithm, from this source?* It can also encode policy no engine could infer — `nuclear.download(max_age_hours=720)` says a reactor fleet changes slowly, which is a domain fact, not a scheduling one.
+
+The osm domain states the resulting rule as a contract rather than leaving it to each caller (`pbf_download.agent-spec.yaml`, `cache_validity`): a cached extract may be skipped only when the *re-fetched* upstream checksum still equals the recorded one, **and** the file exists, **and** its size matches the sidecar. Presence is one of three conditions, not the condition — the question being asked is not "did this download once finish" but "is what we hold still what upstream says it is". That contract also enumerates what a new extract invalidates (`pbf_geojson`, `pbf_shapefile`, the routing graphs), which is the part a timestamp cannot represent at all: when a root artifact changes, every artifact derived from it is stale although nothing about *those* artifacts changed. A derived cache_type records the upstream `sha256` at derivation time and compares it against the upstream's current sidecar before reuse, so a fresh PBF cannot silently coexist with tiles built from the previous one.
+
+The two designs therefore fail in opposite directions, and this is the substance of the trade:
+
+* **Engine-side mtime fails unsafely.** It skips work that should have run, and reports success. The wrong answer is silent.
+* **Handler-side validity fails safely.** A handler that implements no check simply does the work again — slower, and correct.
+
+For an orchestrator whose claim is durability, failing towards *correct but slow* is the right default. What Facetwork pays for it is the 4.61 seconds and 157 steps above: bookkeeping to discover there is nothing to do. That cost is real and scales with width — at county-atlas width it is thousands of steps and minutes of cascade even when every handler returns instantly — but it is a **performance** debt, not a correctness one, and the two should not be traded at par.
+
+The honest cost is elsewhere, and it is a burden on people rather than on the machine. Incremental recomputation in Facetwork is **handler-author work, repeated per domain, and only as good as the author's understanding of how their data is produced**. Whoever writes the handler must know what makes an output stale — an upstream revision, a schema change, an algorithm version — and choose a key that captures it. Every `fwh_*` domain in this project does this and does it differently. Snakemake gives its users a weaker guarantee, but gives it to everyone, for free, without their having to think about it. That is a real advantage of the make model and it should not be argued away; the point of this section is only that the guarantee is weaker than it looks, and that the strong version cannot be had from a timestamp.
 
 **The interruption column favours Facetwork, but not for the reason it first appears.** Nextflow's `-resume` re-ran everything after a mid-run `SIGTERM` in this test, while a graceful interrupt closer to completion cached all thirteen tasks; whether the difference is cache-flush timing rather than a limitation is not established here, and it would be unfair to present one sample as a defect in a mature system. The durable point is *where completion is recorded*: Snakemake records it in the filesystem, Nextflow in a session cache belonging to the run, and Facetwork in a task and step store that no participant owns. Only the third survives the loss of the machine that started the run, which is why the hibernation result has no counterpart in the other two columns — the question does not arise for a system whose orchestrator is a process on someone's laptop.
 

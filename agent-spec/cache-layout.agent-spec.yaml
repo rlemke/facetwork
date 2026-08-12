@@ -167,8 +167,38 @@ read_protocol:
   single_entry:
     - "Compute path D from (namespace, cache_type, relative_path)."
     - "Read D.meta.json. Missing sidecar means the entry is not cached."
-    - "If caller wants to verify currency, check that D exists and its size equals sidecar.size_bytes. Checking sha256 is optional and expensive."
+    - "If caller wants to verify INTEGRITY, check that D exists and its size equals sidecar.size_bytes. Checking sha256 is optional and expensive."
     - "No lock required."
+
+  reuse_decision:
+    principle: "An existing artifact is NOT evidence that it is complete, current, or produced by the algorithm running now. Existence and size answer 'was something written here', which is a different question from 'may I skip the work'."
+    why_it_matters: "A timestamp- or existence-based skip is sound only while the recipe is fixed. Change the code that produces an artifact and the file is stale while still existing, still the right size, and still newer than its inputs — so an existence check reports success and serves the previous answer. This is not hypothetical: Snakemake 9.25 was measured doing exactly that on the state-capitals workflow after its algorithm module changed (thesis 13.3), because a rule's rerun-trigger sees the rule's own text and not the contents of a program it invokes."
+    requirement: "A handler that reuses a cached artifact MUST decide from a key that binds the artifact to how it was produced — not merely from the artifact's presence. The sidecar carries the material for this: tool.name + tool.version (the producing algorithm), source (the upstream it derived from, including its sha256 where recorded), and generated_at (for freshness policies)."
+    minimum_check:
+      - "ALGORITHM — tool.version equals the version the handler would produce now, else re-derive. Bump tool.version whenever the output shape or the derivation changes; that field IS the algorithm key."
+      - "UPSTREAM — the source identity still matches. For a root artifact that means the publisher's own checksum, RE-FETCHED and compared, not merely the value recorded last time: presence proves only that a download once finished. For a derived artifact it means source.sha256 still equals the current sha256 of the upstream sidecar."
+      - "FRESHNESS — generated_at within the window the DOMAIN defines, when the upstream mutates on its own schedule (e.g. nuclear.DEFAULT_MAX_AGE_HOURS = 720 — a reactor fleet changes slowly). A domain fact; no engine can infer it."
+    worked_example: |
+      osm/pbf_download states this as a contract rather than leaving it to each
+      caller (see pbf_download.agent-spec.yaml, cache_validity):
+
+        keyed_on:  upstream_md5      # Geofabrik's published .md5 for the region
+                   recorded_md5      # source_checksum.value in our sidecar
+                   file_presence     # exists, at the recorded size
+        skip_when: recorded_md5 == fetch_md5(source_url)
+                   AND exists(cache_file)
+                   AND size(cache_file) == sidecar.size_bytes
+
+      Note what it does NOT do: trust that the file is there. It goes back to
+      the publisher for the current checksum every time, because the question
+      is not "did we download this once" but "is what we have still what
+      upstream says it is".
+    downstream_invalidation:
+      principle: "A cache key is not only about this artifact. When a root artifact's sha256 changes, every artifact DERIVED from it is stale even though nothing about those artifacts changed."
+      requirement: "A cache_type that derives from another MUST record the upstream sha256 in source.sha256 at derivation time, and MUST compare it against the upstream's CURRENT sidecar before reuse. Without that link a fresh PBF silently coexists with GeoJSON, shapefiles and tiles built from the previous one."
+      practice: "osm/pbf_download enumerates its dependents explicitly (invalidates: pbf_geojson, pbf_shapefile, osrm, graphhopper, …), which makes the blast radius of a new upstream reviewable instead of discovered."
+    failure_direction: "When in doubt, re-derive. A handler that skips wrongly returns a stale answer and reports success; a handler that re-derives unnecessarily is only slow. The runtime does not decide this for you — absent a check it simply runs the handler again, which is the safe default, and the cost of that default is bookkeeping rather than a wrong result."
+    responsibility: "This is handler-author work and cannot be pushed into the runtime: only the author knows what makes their data stale. Facetwork steps are not required to produce files, so there is no universal artifact for the engine to timestamp — which is precisely why the key lives in the sidecar and the decision lives in the handler."
 
   listing_all_entries:
     option_a_walk:
