@@ -1609,8 +1609,10 @@ The osm domain states the resulting rule as a contract rather than leaving it to
 
 The two designs therefore fail in opposite directions, and this is the substance of the trade:
 
-* **Engine-side mtime fails unsafely.** It skips work that should have run, and reports success. The wrong answer is silent.
-* **Handler-side validity fails safely.** A handler that implements no check simply does the work again — slower, and correct.
+* **Engine-side mtime fails unsafely.** It skips work that should have run, and reports success. The wrong answer is silent and survives into whatever consumes it.
+* **Handler-side validity fails safely.** A handler that implements no check simply does the work again — slower, and correct. The slowness is visible; the staleness would not have been.
+
+Which settles what the *default* should be. **Assume the algorithm has changed: re-derive by default, and treat skipping as the exception that must be earned by a key identifying the output.** The opposite framing — skip unless something proves the output stale — puts the burden of proof on the party least able to discharge it, because nothing on disk records that the code which wrote it has since been edited. An artifact cannot testify to its own currency.
 
 For an orchestrator whose claim is durability, failing towards *correct but slow* is the right default. What Facetwork pays for it is the 4.61 seconds and 157 steps above: bookkeeping to discover there is nothing to do. That cost is real and scales with width — at county-atlas width it is thousands of steps and minutes of cascade even when every handler returns instantly — but it is a **performance** debt, not a correctness one, and the two should not be traded at par.
 

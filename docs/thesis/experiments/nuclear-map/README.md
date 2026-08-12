@@ -108,11 +108,37 @@ crash, not what it produces.
 expected one.** Chapter 13 says Facetwork has no incremental recomputation, and
 at the *runtime* level that is true — re-running a workflow re-runs every step.
 But save_earth's handlers keep their own sidecar cache, so Facetwork's re-run
-steps did nothing and it finished within a second of the others. Read the
-chapter's claim precisely: incremental recomputation is **handler-author work
-repeated per domain**, not a runtime guarantee, and where a domain has done that
-work the practical difference disappears. It is a real gap in the runtime, not
-in every workflow built on it.
+steps did nothing and it finished within a second of the others. Incremental
+recomputation is **handler-author work repeated per domain**, not a runtime
+guarantee, and where a domain has done that work the practical difference
+disappears.
+
+**But "faster on a warm re-run" is the wrong thing to be pleased about, and this
+is the important half.** An output that exists is not evidence that it is
+complete, current, or produced by the code running now. A path and an mtime say
+only that something was written there once. Skipping on that basis is sound
+while the recipe is fixed and unsound the moment it is not — and when it is
+unsound it is *silent*: the run reports success and serves the previous answer.
+
+The companion experiment demonstrates it. In
+[`state-capitals/`](../state-capitals/), editing the module that computes every
+result and re-running Snakemake yields "Nothing to be done (all requested files
+are present and up to date)". A rerun-trigger sees the rule's own directive text
+and nothing transitively behind it, so an algorithm invoked through `shell:` is
+invisible to it — and `shell:` is exactly how an algorithm team is separated
+from a workflow team.
+
+**So the safe default is the opposite of the make model: assume the algorithm
+has changed and re-run, unless a key positively identifies the output.** That is
+Facetwork's default, and its cost is time, not correctness. A handler may
+override it — but only by answering what a timestamp cannot: was this produced
+by *this version* of the code, from an upstream that is *still* what it was
+(re-checked, not remembered), within a freshness window the *domain* defines?
+save_earth's sidecars answer the last two; `osm` answers all three, re-fetching
+Geofabrik's published `.md5` every run rather than trusting that a download once
+finished. The contract is
+[`cache-layout.agent-spec.yaml`](../../../../agent-spec/cache-layout.agent-spec.yaml)
+under `read_protocol.reuse_decision`.
 
 Note also that Nextflow needs `-resume` to be incremental at all, while
 Snakemake decides from the output files themselves. That is a real difference

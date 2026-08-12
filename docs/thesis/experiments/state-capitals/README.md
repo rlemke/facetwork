@@ -36,6 +36,56 @@ nuclear-map's live timings uncomparable, and a live problem here: Overpass
 returned `504 Gateway Timeout` during this work. Separate outputs let the three
 answers be diffed.
 
+## An existing output is not a reason to skip the step
+
+This experiment is also where the reuse question got settled, because the
+workflow is small enough to perturb deliberately.
+
+Editing `capitals_lib.py` — the module that computes every per-state result —
+and re-running Snakemake produces:
+
+```
+Nothing to be done (all requested files are present and up to date).
+```
+
+The algorithm had changed. Every one of the fifty outputs was stale. Nothing
+said so, and the run reported success. Editing the rule's own `shell:` string
+instead re-ran all fifty immediately, which locates the boundary exactly:
+**a rerun-trigger sees the rule's own directive text and nothing transitively
+behind it.** It cannot read the contents of a program it merely invokes — and
+that blind spot falls on `shell:` calling an external CLI, which is the pattern
+that separates an algorithm team from a workflow team.
+
+So the presence of an output tells you that something was written there once.
+It does not tell you the output is complete, or current, or produced by the code
+that is in the file now.
+
+**The safe default is therefore the opposite of the make model: assume the
+algorithm has changed, and re-run, unless a key positively identifies the
+output.** That posture costs time and cannot cost correctness. Skipping by
+default costs nothing until it is wrong, and when it is wrong it is silent.
+
+A key that discharges the assumption has to answer three questions a timestamp
+cannot even express:
+
+| | |
+|---|---|
+| **algorithm** | was this produced by the version of the code running now? |
+| **upstream** | is the input still what it was — re-checked, not remembered? |
+| **freshness** | has the source had a chance to change since (a domain fact, not a scheduling one)? |
+
+Facetwork's runtime makes no attempt to answer them and re-runs, which is the
+safe half of the trade; its cost is measured above. Handlers that *can* answer
+them do, and then genuinely skip: `osm` re-fetches Geofabrik's published `.md5`
+every run rather than trusting that a download once finished, and its derived
+artifacts break the chain on a `source.sha256` mismatch. The contract is written
+up in [`cache-layout.agent-spec.yaml`](../../../../agent-spec/cache-layout.agent-spec.yaml)
+under `read_protocol.reuse_decision`.
+
+This experiment's own fetch step is a small instance of the same discipline: it
+records the Overpass query text alongside the data, so a changed query is
+visible in the artifact rather than inferred from its age.
+
 ## The same fan-out, three notations
 
 | | fan-out | fan-in |
