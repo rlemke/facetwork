@@ -105,7 +105,22 @@ Second, the workloads I have in mind do not need the features Nextflow provides.
 
 Third, expressiveness is not a virtue in isolation. The question is *who writes workflows in this language*. For domain experts — epidemiologists, urban planners, SREs — the minimum viable set of constructs is small: typed steps, sequencing, conditional, iteration over a bounded collection. FFL has exactly those. A language with more is a language that has more corners for its users to get lost in.
 
-I will concede that CWL's file-object type system is more developed than FFL's, and I will concede that Snakemake's wildcard pattern-matching on file paths has no analogue in FFL and is a real ergonomic loss for certain data-pipeline authors. I think those concessions are specific enough to be debated on their merits rather than treated as evidence that FFL is generally under-powered.
+I will concede that CWL's file-object type system is more developed than FFL's — it carries `File` as a first-class type with secondary files and formats, and FFL passes paths as strings.
+
+I previously conceded Snakemake's wildcards as well, and I now think that concession was wrong, so let me withdraw it and say why. Wildcards do two separable things. The first is **enumeration**: `glob_wildcards("data/{sample}.txt")` discovers the sample set, and `expand` turns it into targets. That has a direct analogue in FFL and it is not hypothetical — it is how the largest fan-out in this project is written:
+
+```ffl
+children = county.atlas.ListCounties(prefix = $.prefix, bucket = $.bucket)
+    andThen foreach cty in $.counties limit $$.concurrency { … }
+```
+
+`ListCounties(prefix, bucket)` *is* a glob; noaa-weather's `DiscoverStations → foreach station` is the same shape. Enumerate, then iterate. Nothing is lost.
+
+The second thing is **backward unification**: given `input: "data/{sample}.txt"` and `output: "out/{sample}.csv"`, asking for `out/A.csv` lets Snakemake infer `sample=A` and derive the chain that produces it. That genuinely has no FFL analogue. But it is not really an ergonomic feature of path syntax — it is make-style backward chaining, and it is inseparable from the model that outputs are files, that filenames encode parameters, and that existence plus mtime implies completeness. §13.3 gives a measured demonstration of that last assumption failing silently. Conceding backward chaining as a loss concedes something welded to a premise the thesis argues against.
+
+There is a genuine trade in the *other* direction that I should state, because it favours FFL for the workloads this thesis targets. `glob_wildcards` is evaluated during DAG construction, on the submitting machine, before any rule runs — so it sees what that machine's filesystem sees. `ListCounties` is a **step**: it executes on a runner that can reach the object store, its result is a durable typed value that flows to the `foreach`, it is retryable, and the enumeration it performed is recorded in the step. For a fleet whose data lives in MinIO rather than on the laptop that launched the run, enumeration has to be work rather than parse-time metaprogramming.
+
+What remains, honestly, is a cost of a different kind: FFL's version requires someone to write `ListCounties` — a facet and a handler — where Snakemake's requires one line. For a small single-machine pipeline over local files, that is real friction and I would not pretend otherwise. It is a statement about how much scaffolding the model demands for a small job, not about what the language can express.
 
 ### Q7 (Prof. Liskov)
 
