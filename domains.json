@@ -255,7 +255,21 @@
     "gridbuilder": {
       "repo": "fwh_gridbuilder",
       "extras": [],
-      "description": "OpenStreetMap power infrastructure (substations, lines) → model-ready grid CSV/GeoJSON per country; the FFL equivalent of PyPSA grid-builder"
+      "description": "OpenStreetMap power infrastructure (substations, lines) → model-ready grid CSV/GeoJSON per country; the FFL equivalent of PyPSA grid-builder",
+      "service": "runner-gridbuilder",
+      "task_list": "grid",
+      "compose": {
+        "notes": [
+          "Each retrieval downloads a regional PBF (Belgium ~660MB), so the",
+          "earth-osm cache lives on the mounted data volume rather than the",
+          "container layer: a container-local cache re-downloads on every",
+          "restart and grows the Docker VM disk, which is how a previous",
+          "concurrent fan-out took Mongo down with it."
+        ],
+        "env": [
+          ["FW_GRIDBUILDER_DATA_DIR", "/Volumes/afl_data/earth-osm"]
+        ]
+      }
     },
     "cancer": {
       "repo": "fwh_cancer",

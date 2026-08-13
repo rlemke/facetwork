@@ -558,6 +558,33 @@ services:
       - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
 
+  runner-gridbuilder:
+    # Each retrieval downloads a regional PBF (Belgium ~660MB), so the
+    # earth-osm cache lives on the mounted data volume rather than the
+    # container layer: a container-local cache re-downloads on every
+    # restart and grows the Docker VM disk, which is how a previous
+    # concurrent fan-out took Mongo down with it.
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAME: gridbuilder
+      FW_DOMAIN_REPO: fwh_gridbuilder
+      FW_GRIDBUILDER_DATA_DIR: /Volumes/afl_data/earth-osm
+      FW_REGISTRY_RUNNER_ARGS: "--task-list grid"
+    volumes:
+      - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_gridbuilder:/handlers/fwh_gridbuilder
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+    restart: unless-stopped
+
   runner-h1b:
     build:
       context: .
