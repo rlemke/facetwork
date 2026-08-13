@@ -1,0 +1,108 @@
+// Canonical: the built-in fw.http facets — fetching with a sound cache key.
+//
+// `fw.http.*` ships with Facetwork (facetwork/ffl/http.ffl + the handlers in
+// facetwork/handlers/), like `fw.file.*` (see 14-builtin-file-facets.ffl).
+// Every runner registers them at startup, so no handler is written for this.
+//
+// No `--library` needed: the compiler knows the shipped `fw.*` declarations the
+// same way the runners know their handlers.
+//   fw ffl compile --check --primary this.ffl
+//
+// WHY THIS IS A BUILT-IN. 14 of the 23 domain packages hand-rolled
+// download-plus-cache, and an audit found them disagreeing on the one decision
+// that matters: whether what is already on disk may be REUSED. One froze on a
+// moving `…-latest.osm.pbf` target, one recorded a cache key and never compared
+// it, and nineteen call sites skipped work on file existence alone. Existence is
+// not currency, and getting it wrong is silent — the run succeeds and processes
+// last month's data.
+//
+// So `Fetch` answers the question instead of assuming:
+//   * `max_age_hours`  — how long this DOMAIN considers its source stable;
+//   * `checksum_url`   — re-fetch the publisher's .md5/.sha256 and compare;
+//   * otherwise        — a conditional GET; a 304 is upstream itself saying
+//                        "still what you hold", for the cost of one round trip.
+//
+// `was_cached` is that answer, available to the workflow. Downstream work can be
+// gated on it rather than redone blindly.
+
+namespace canonical.http {
+    use fw.http
+    use fw.file
+
+    // Stand-in for the domain work that turns a fetched input into an output.
+    event facet Render(source: String, dest: String) => (path: String)
+
+    // ------------------------------------------------------------------
+    // Fan-out: the collection comes from the API at RUN time.
+    // ------------------------------------------------------------------
+    facet FetchRegions(regions: Json, base_url: String, dir: String) => (paths: Json)
+        // `limit` because these are large downloads sharing one link and one
+        // scratch disk — bound the width, don't open 50 sockets at the origin.
+        andThen foreach r in $.regions limit 4 {
+            got = fw.http.Fetch(
+                url = $.base_url ++ "/" ++ $.r ++ ".osm.pbf",
+                checksum_url = $.base_url ++ "/" ++ $.r ++ ".osm.pbf.md5",
+                dest = $.dir ++ "/" ++ $.r ++ ".osm.pbf",
+                max_age_hours = 24
+            )
+            yield FetchRegions(paths = got.path)
+        }
+
+    workflow Ingest(base_url: String, index_url: String, dir: String) => (
+        paths: Json,
+        cached: Int
+    ) andThen {
+        // A JSON API whose result feeds the next step: GetJson returns the
+        // PARSED value, so `foreach` iterates the collection. (Returning the
+        // text instead makes a fan-out iterate its characters.)
+        index = fw.http.GetJson(url = $.index_url)
+
+        fetched = FetchRegions(regions = index.data, base_url = $.base_url, dir = $.dir)
+
+        // `dest` goes through the storage abstraction, so `dir` may be a local
+        // path, `s3://…` or `hdfs://…`. On a fleet the data is in the object
+        // store, not on the machine that launched the run.
+        listed = fw.file.List(path = $.dir, pattern = "*.osm.pbf")
+
+        yield Ingest(paths = fetched.paths, cached = listed.count)
+    }
+
+    // ------------------------------------------------------------------
+    // Derived artifacts: rebuild when the INPUT changed, not on a schedule.
+    // ------------------------------------------------------------------
+    workflow RefreshMap(url: String, source: String, dest: String) => (
+        map: String,
+        input_sha: String
+    ) andThen {
+        // Attach the `when` to the step it gates: inside the cases `$` is that
+        // step, so `$.was_cached` is the fetcher's own answer.
+        got = fw.http.Fetch(url = $.url, dest = $.source, max_age_hours = 24) andThen when {
+            // The bytes actually changed upstream — a fact the fetcher
+            // established, not an inference from a timestamp.
+            case $.was_cached == false => {
+                made = Render(source = $$.source, dest = $$.dest)
+                yield RefreshMap(map = made.path, input_sha = $.sha256)
+            }
+            case _ => {
+                // Input unchanged, so the existing output is still valid FOR
+                // IT. Yield the input's digest either way: without that link a
+                // later run cannot tell a stale output from a current one, and
+                // existence checks start lying again.
+                yield RefreshMap(map = $$.dest, input_sha = $.sha256)
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Reading provenance a DIFFERENT workflow wrote.
+    // ------------------------------------------------------------------
+    // Every Fetch leaves `<dest>.meta.json`. A workflow that consumes an
+    // artifact it did not download reads that sidecar to learn which version it
+    // is working from — and reports absence rather than failing, so the caller
+    // can branch with `when` instead of wrapping it in `catch`.
+    workflow InputVersion(source: String) => (sha256: String, fetched_at: String)
+        andThen {
+            prov = fw.http.Provenance(path = $.source)
+            yield InputVersion(sha256 = prov.sha256, fetched_at = prov.fetched_at)
+        }
+}

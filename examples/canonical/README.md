@@ -22,6 +22,9 @@ These files are also exposed via the MCP server at `fw://examples/canonical/`.
 | [`11-environment-script.ffl`](11-environment-script.ffl) | Named execution environment (`environment` + `in environment`): a script bound to a frozen dependency manifest, executed only on runners providing it. Braces take raw code. |
 | [`11-author-teams.ffl`](11-author-teams.ffl) | Ownership annotation mixins: `with Author(email = …)` / `with Teams(names = […])` tag a workflow's author and teams (read by the runtime to attribute and team-filter runs). |
 | [`12-step-after.ffl`](12-step-after.ffl) | `after` clause: explicit ordering for an **invisible** dependency (producer wrote a shared cache/object store, no value flows). Shows the `after a, b` fan-in and, by contrast, the value reference that orders itself — writing `after` for that is `AFTER_REDUNDANT`. |
+| [`13-foreach-limit.ffl`](13-foreach-limit.ffl) | `foreach … limit N`: a bulkhead on fan-out width — at most N iterations in flight, slots refilled as they finish. Same elements, same result; only concurrency changes. |
+| [`14-builtin-file-facets.ffl`](14-builtin-file-facets.ffl) | Built-in `fw.file.*` — list/read/write/copy/hash with **no handler to write**, and storage-aware (local, `s3://`, `hdfs://`). `List` is the enumerate-then-fan-out primitive: the width is discovered at run time. |
+| [`15-builtin-http-facets.ffl`](15-builtin-http-facets.ffl) | Built-in `fw.http.*` — fetching whose **reuse decision is sound by default** (conditional GET / published checksum / `max_age_hours`), the provenance sidecar every fetch leaves, and gating derived work on `was_cached`. |
 
 ## Conventions worth noticing
 

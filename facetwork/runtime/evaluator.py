@@ -657,10 +657,20 @@ class ExecutionContext:
         Returns:
             The facet declaration dict, or None if not found
         """
-        if not self.program_ast:
-            return None
+        declarations = list((self.program_ast or {}).get("declarations", []))
 
-        declarations = self.program_ast.get("declarations", [])
+        # The framework's own `fw.*` facets are ambient — they ship in the wheel
+        # and every runner registers their handlers at startup, so they are NOT
+        # in the workflow's stored AST. Appending them here (rather than at
+        # compile time) also covers workflows stored before they existed. The
+        # workflow's own declarations come first, so nothing shadows them.
+        if facet_name.startswith("fw."):
+            from facetwork.builtin_ffl import builtin_declarations
+
+            declarations = declarations + list(builtin_declarations())
+
+        if not declarations:
+            return None
 
         # If the name contains a dot, try qualified lookup first
         if "." in facet_name:

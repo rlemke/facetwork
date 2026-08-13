@@ -28,7 +28,6 @@ and reads capped (so a step's return value cannot be an arbitrarily large file).
 
 from __future__ import annotations
 
-import json
 import os
 
 import pytest

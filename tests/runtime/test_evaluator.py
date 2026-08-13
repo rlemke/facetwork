@@ -1495,6 +1495,43 @@ class TestExecutionContext:
         result = context.get_facet_definition("Value")
         assert result is None
 
+    def test_builtin_facets_resolve_without_being_in_the_stored_ast(self, context):
+        """`fw.*` is ambient: it ships in the wheel and every runner registers
+        its handlers, so it is NOT in the workflow's compiled AST.
+
+        The failure this prevents is the one that showed up on a real runner:
+        a `fw.http.Fetch` step erroring with "cannot resolve facet in program
+        AST" on a runner perfectly able to execute it. Resolving here rather
+        than at compile time also covers workflows stored before the built-ins
+        existed.
+        """
+        context.program_ast = {
+            "type": "Program",
+            "declarations": [{"type": "Namespace", "name": "app", "declarations": []}],
+        }
+        found = context.get_facet_definition("fw.http.Fetch")
+        assert found is not None
+        assert found.get("type") == "EventFacetDecl"
+        assert context.get_facet_definition("fw.file.List") is not None
+        assert context.get_facet_definition("fw.http.NotAFacet") is None
+
+    def test_a_workflows_own_declaration_wins_over_a_builtin(self, context):
+        """Built-ins are appended, never prepended — someone who declares their
+        own `fw.*` facet gets theirs, not ours."""
+        context.program_ast = {
+            "type": "Program",
+            "declarations": [
+                {
+                    "type": "Namespace",
+                    "name": "fw.http",
+                    "declarations": [
+                        {"type": "FacetDecl", "name": "Fetch", "params": [], "marker": "mine"}
+                    ],
+                }
+            ],
+        }
+        assert context.get_facet_definition("fw.http.Fetch").get("marker") == "mine"
+
     def test_search_declarations_namespace_nested(self, context):
         """_search_declarations finds facets inside namespaces (lines 280-285)."""
         context.program_ast = {

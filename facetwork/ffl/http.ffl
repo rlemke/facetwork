@@ -1,0 +1,102 @@
+/** HTTP fetching with a sound cache key, shipped with Facetwork.
+  *
+  * 14 of the 23 domain packages hand-roll download-plus-cache, and an audit
+  * found them doing it inconsistently: one froze on a moving `latest` target,
+  * one recorded its cache key and never compared it, and nineteen call sites
+  * skipped on file existence alone. That is not domain logic anyone should be
+  * rewriting — it is infrastructure, and getting it wrong is silent.
+  *
+  * `Fetch` makes the correct reuse decision the DEFAULT. It answers the three
+  * questions a timestamp cannot (see agent-spec/cache-layout.agent-spec.yaml,
+  * read_protocol.reuse_decision):
+  *
+  *   UPSTREAM   a conditional GET with If-None-Match / If-Modified-Since. A 304
+  *              is upstream saying "still what you hold" — the HTTP-native form
+  *              of re-fetching a published checksum, and nearly free. Or pass
+  *              `checksum_url` for publishers that ship a .md5/.sha256 beside
+  *              the artifact (Geofabrik's PBFs work this way).
+  *   FRESHNESS  `max_age_hours`, which the DOMAIN sets because only the domain
+  *              knows how often its source moves.
+  *   INTEGRITY  the stored size and digest are checked before reuse, so a
+  *              truncated download is never served as complete.
+  *
+  * Every fetch writes a sidecar (`<dest>.meta.json`) carrying `sha256`, the
+  * source URL, the upstream validators and `fetched_at`, so a DERIVED artifact
+  * can record which version of this input it was built from and detect later
+  * that the input changed.
+  *
+  * Storage-aware: `dest` may be a local path, `s3://…` or `hdfs://…`. Downloads
+  * stage to a temporary name and are renamed on success, so an interrupted
+  * fetch cannot leave a partial file that looks finished. */
+namespace fw.http {
+
+    /** Fetch a URL to `dest`, reusing what is already there when it is provably
+      * still current.
+      *
+      * `was_cached` says whether the network was avoided; `revalidated` says the
+      * cache was CHECKED against upstream (a 304) rather than merely trusted on
+      * age. The two are different claims and a caller may care which it got. */
+    event facet Fetch(
+        url: String,
+        dest: String,
+        max_age_hours: Double = 0.0,
+        force: Boolean = false,
+        checksum_url: String = "",
+        expected_sha256: String = "",
+        timeout_seconds: Int = 300,
+        user_agent: String = ""
+    ) => (
+        path: String,
+        size_bytes: Long,
+        sha256: String,
+        was_cached: Boolean,
+        revalidated: Boolean,
+        status: Int,
+        etag: String,
+        fetched_at: String
+    ) with RetryPolicy() with Effect(kind = "external") with Cost(tier = "moderate")
+
+    /** Fetch a URL and return its body, for small responses — an API call whose
+      * result feeds the next step rather than being stored.
+      *
+      * `max_bytes` caps it, because a step's return value lives in the step
+      * store and that is not a blob store. Use `Fetch` for anything large. */
+    event facet Get(
+        url: String,
+        max_bytes: Long = 1048576,
+        timeout_seconds: Int = 60,
+        user_agent: String = ""
+    ) => (
+        body: String,
+        status: Int,
+        size_bytes: Long,
+        truncated: Boolean
+    ) with RetryPolicy() with Effect(kind = "external") with Cost(tier = "cheap")
+
+    /** Fetch a JSON API and return the parsed value, ready for `foreach`. */
+    event facet GetJson(
+        url: String,
+        max_bytes: Long = 8388608,
+        timeout_seconds: Int = 60,
+        user_agent: String = ""
+    ) => (
+        data: Json,
+        status: Int,
+        size_bytes: Long
+    ) with RetryPolicy() with Effect(kind = "external") with Cost(tier = "cheap")
+
+    /** Read the sidecar `Fetch` wrote — the provenance of a cached artifact.
+      *
+      * A derived step records the input's `sha256` at derivation time and
+      * compares it against the CURRENT value before reusing its own output.
+      * Without that link a fresh input silently coexists with artifacts built
+      * from the previous one. */
+    event facet Provenance(path: String) => (
+        exists: Boolean,
+        url: String,
+        sha256: String,
+        size_bytes: Long,
+        fetched_at: String,
+        etag: String
+    ) with Effect(kind = "io") with Cost(tier = "free")
+}

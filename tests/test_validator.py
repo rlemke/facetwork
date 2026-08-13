@@ -4246,3 +4246,73 @@ class TestAfterClause:
         )
         result = validator.validate(ast)
         assert result.is_valid, [e.message for e in result.errors]
+
+
+class TestBuiltinDeclarationsAreAlwaysVisible:
+    """The framework's own ``fw.*`` FFL needs no ``--library``.
+
+    ``fw.file`` / ``fw.http`` ship in the wheel and every runner registers their
+    handlers at startup, so there is no library for an author to pass. Telling
+    them the namespace "does not exist" would send them to fix something that is
+    not broken.
+    """
+
+    def test_use_of_a_builtin_namespace_resolves(self, validator):
+        result = validator.validate(
+            parse("""
+        namespace app {
+            use fw.file
+            workflow W(dir: String) => (n: Int) andThen {
+                found = fw.file.List(path = $.dir, pattern = "*.csv")
+                yield W(n = found.count)
+            }
+        }
+        """)
+        )
+        assert result.is_valid, [e.message for e in result.errors]
+
+    def test_a_wrong_field_on_a_builtin_is_still_caught(self, validator):
+        """Visible means CHECKED — the signatures are real, not a blanket pass."""
+        result = validator.validate(
+            parse("""
+        namespace app {
+            workflow W(url: String, dest: String) => (n: Long) andThen {
+                got = fw.http.Fetch(url = $.url, dest = $.dest)
+                yield W(n = got.no_such_field)
+            }
+        }
+        """)
+        )
+        assert not result.is_valid
+        assert any("no_such_field" in e.message for e in result.errors)
+
+    def test_a_users_own_short_name_is_not_made_ambiguous(self, validator):
+        """The reason the built-ins stay out of the short-name index: someone
+        else's ``List`` facet must keep resolving unqualified."""
+        result = validator.validate(
+            parse("""
+        namespace app {
+            event facet List(dir: String) => (count: Int)
+            workflow W(dir: String) => (n: Int) andThen {
+                found = List(dir = $.dir)
+                yield W(n = found.count)
+            }
+        }
+        """)
+        )
+        assert result.is_valid, [e.message for e in result.errors]
+        assert not any(e.rule_id == "REF_AMBIGUOUS_FACET" for e in result.errors)
+
+    def test_a_program_defining_the_namespace_itself_wins(self):
+        """How the shipped files validate when they ARE what is being compiled:
+        their own declarations must not collide with the preloaded copy."""
+        import os
+
+        from facetwork.builtin_ffl import builtin_ffl_paths
+
+        for path in builtin_ffl_paths():
+            with open(path) as fh:
+                result = validate(parse(fh.read()))
+            assert result.is_valid, (
+                f"{os.path.basename(path)}: " + "; ".join(e.message for e in result.errors)
+            )

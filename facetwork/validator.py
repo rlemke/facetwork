@@ -276,6 +276,7 @@ class FFLValidator:
         # First pass: collect all namespace names and facet definitions
         self._collect_namespaces(program)
         self._collect_facets(program)
+        self._collect_builtin_declarations(program)
 
         # Second pass: validate references and yields
         self._validate_program(program)
@@ -326,6 +327,41 @@ class FFLValidator:
             for env in namespace.environments:
                 self._environments[f"{namespace.name}.{env.name}"] = env
 
+    def _collect_builtin_declarations(self, program: Program) -> None:
+        """Make the framework's own ``fw.*`` declarations visible.
+
+        ``fw.file`` / ``fw.http`` ship in the wheel and every runner registers
+        their handlers at startup, so there is no library for an author to pass.
+        Without this, ``use fw.file`` fails as USE_UNKNOWN_NAMESPACE against a
+        namespace that is always there, and the author is sent to fix something
+        that is not broken.
+
+        Two deliberate limits:
+
+        * a namespace the program defines itself wins — that is how the shipped
+          files validate when they are themselves the thing being compiled;
+        * built-ins are registered by FULL name only, NOT in the short-name
+          index, so someone's own ``List`` or ``Fetch`` facet is not made
+          ambiguous by ours. Qualified use (``fw.file.List``) and ``use``-scoped
+          resolution both go through ``_facets``, so nothing is lost.
+        """
+        from facetwork.builtin_ffl import builtin_programs
+
+        own_namespaces = {ns.name for ns in program.namespaces}
+        for builtin in builtin_programs():
+            for namespace in builtin.namespaces:
+                if namespace.name in own_namespaces:
+                    continue
+                self._namespaces.add(namespace.name)
+                for facet in namespace.facets:
+                    self._register_facet(facet.sig, namespace.name, index_short_name=False)
+                for event_facet in namespace.event_facets:
+                    self._register_facet(event_facet.sig, namespace.name, index_short_name=False)
+                for workflow in namespace.workflows:
+                    self._register_facet(workflow.sig, namespace.name, index_short_name=False)
+                for env in namespace.environments:
+                    self._environments.setdefault(f"{namespace.name}.{env.name}", env)
+
     _PRIMITIVE_TYPES = {"String", "Int", "Long", "Double", "Boolean"}
 
     @staticmethod
@@ -344,8 +380,15 @@ class FFLValidator:
                 return name
         return "Unknown"
 
-    def _register_facet(self, sig: FacetSig, namespace: str = "") -> None:
-        """Register a facet definition."""
+    def _register_facet(
+        self, sig: FacetSig, namespace: str = "", index_short_name: bool = True
+    ) -> None:
+        """Register a facet definition.
+
+        ``index_short_name=False`` registers it for qualified lookup only — see
+        ``_collect_builtin_declarations`` for why the built-ins stay out of the
+        short-name index.
+        """
         full_name = f"{namespace}.{sig.name}" if namespace else sig.name
         params = {p.name for p in sig.params}
         params_types: dict[str, str] = {}
@@ -373,6 +416,8 @@ class FFLValidator:
             location=sig.location,
         )
         # Track by short name for ambiguity detection
+        if not index_short_name:
+            return
         short_name = sig.name
         if short_name not in self._facets_by_short_name:
             self._facets_by_short_name[short_name] = []

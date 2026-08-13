@@ -5,8 +5,9 @@
 // can list, read, write, copy, hash and delete without anyone implementing a
 // handler for it.
 //
-// Compile against the shipped declarations:
-//   fw ffl compile --check --primary this.ffl --library facetwork/ffl/file.ffl
+// No `--library` needed: the compiler knows the shipped `fw.*` declarations the
+// same way the runners know their handlers.
+//   fw ffl compile --check --primary this.ffl
 //
 // STORAGE-AWARE. Paths go through the storage abstraction, so `path` may be a
 // local directory, an `s3://` prefix or `hdfs://`. The same workflow runs
