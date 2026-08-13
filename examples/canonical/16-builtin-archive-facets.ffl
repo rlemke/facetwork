@@ -1,0 +1,95 @@
+// Canonical: the built-in fw.archive facets — unpacking with no handler.
+//
+// `fw.archive.*` ships with Facetwork (facetwork/ffl/archive.ffl + the handlers
+// in facetwork/handlers/), like `fw.file.*` and `fw.http.*`. No `--library`:
+//   fw ffl compile --check --primary this.ffl
+//
+// WHY THIS IS A BUILT-IN. 9 of the 23 domain packages hand-roll archive
+// handling across 17 sites, and they write one of three things: extract
+// everything to a temp dir and glob it for `*.shp`; pull the ONE member whose
+// exact name moves each release (`UcdpPrioConflict-v25.1.csv` → `-v25.2`); or
+// walk a tar filtering members by suffix. Three facets, one each.
+//
+// Format comes from the archive's CONTENT, not its extension — publishers
+// mislabel, and a `.gz` that is really a zip should not be a per-source bug.
+//
+// Members that would land outside `dest` are refused. On this Python a tar
+// member named `../x` really does write outside the destination and a symlink
+// member is created as given; zip sanitises, but silently renames.
+//
+// THE CHAIN BELOW is the point: fetch → extract → fan out over what came out,
+// with nothing written in Python. Each link is storage-aware, so the same
+// workflow runs against a local scratch dir or `s3://` on a fleet.
+
+namespace canonical.archive {
+    use fw.http
+    use fw.archive
+    use fw.file
+
+    // Stand-in for the domain work — one step per extracted file.
+    event facet LoadShapefile(path: String) => (features: Int)
+
+    facet LoadEach(paths: Json) => (counts: Json)
+        andThen foreach p in $.paths {
+            loaded = LoadShapefile(path = $.p)
+            yield LoadEach(counts = loaded.features)
+        }
+
+    // ------------------------------------------------------------------
+    // Fetch → extract → fan out. The census/TIGER shape.
+    // ------------------------------------------------------------------
+    workflow IngestShapefiles(url: String, work_dir: String) => (
+        extracted: Int,
+        counts: Json
+    ) andThen {
+        // Reused only if provably current — see 15-builtin-http-facets.ffl.
+        got = fw.http.Fetch(
+            url = $.url,
+            dest = $.work_dir ++ "/tiger.zip",
+            max_age_hours = 168
+        )
+
+        // `pattern` takes only what is wanted: a TIGER archive holds eight
+        // files and the pipeline reads one. Extracting all eight and then
+        // globbing (what the hand-rolled version does) writes seven files
+        // nobody asked for.
+        unpacked = fw.archive.Extract(
+            archive = got.path,
+            dest = $.work_dir ++ "/shp",
+            pattern = "*.shp"
+        )
+
+        // The fan-out width is whatever was actually in the archive.
+        loaded = LoadEach(paths = unpacked.paths)
+
+        yield IngestShapefiles(extracted = unpacked.count, counts = loaded.counts)
+    }
+
+    // ------------------------------------------------------------------
+    // The one member whose name moves between releases.
+    // ------------------------------------------------------------------
+    workflow ReadReleaseTable(url: String, work_dir: String) => (
+        name: String,
+        csv: String
+    ) andThen {
+        got = fw.http.Fetch(url = $.url, dest = $.work_dir ++ "/release.zip")
+
+        // Match on the glob, not the literal name: the version in the file
+        // name changes every release, and a pinned literal turns that into a
+        // KeyError months later. `name` reports what it actually matched, so
+        // the run records which release it read.
+        member = fw.archive.ReadMember(archive = got.path, pattern = "*.csv")
+
+        yield ReadReleaseTable(name = member.name, csv = member.text)
+    }
+
+    // ------------------------------------------------------------------
+    // Look before unpacking.
+    // ------------------------------------------------------------------
+    // `List` enumerates members without writing anything. Use it when a
+    // release may have changed layout: a name that no longer matches shows up
+    // here, rather than as an empty result three steps downstream.
+    //
+    //     inside = fw.archive.List(archive = got.path, pattern = "*.shp")
+    //     sys.assert(inside.count > 0)
+}

@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 _BUILTIN_MODULES: list[tuple[str, str]] = [
     ("facetwork.handlers.file_handlers", "file.ffl"),
     ("facetwork.handlers.http_handlers", "http.ffl"),
+    ("facetwork.handlers.archive_handlers", "archive.ffl"),
 ]
 
 # Generous relative to the work: a Copy or Hash of a large artifact is legitimate

@@ -1,0 +1,102 @@
+/** Archive extraction, shipped with Facetwork.
+  *
+  * 9 of the 23 domain packages hand-roll this across 17 sites, and they all
+  * write one of three things:
+  *
+  *   1. `ZipFile(...).extractall(tmp)` then glob the result for `*.shp`
+  *      (census TIGER, county-atlas);
+  *   2. pull ONE member whose exact name moves between releases —
+  *      `next(n for n in zf.namelist() if n.endswith(".csv"))` (UCDP conflict,
+  *      SEC DERA, intOGen);
+  *   3. walk a tar opened `r:*`, filtering members by suffix (GDC/TCGA).
+  *
+  * None of that is domain logic. `Extract` also refuses members that escape
+  * `dest` — measured on this Python (3.12), a tar member named `../x` writes
+  * OUTSIDE the destination and a symlink member is created pointing wherever
+  * it likes; `zipfile` sanitises instead, but silently, so a member named
+  * `../x` lands flattened as `x` and the caller is never told the archive's
+  * layout was not what it claimed. The six `extractall` sites in the domains
+  * are all zip, so none is exposed to the escape today — but the guard is what
+  * keeps that true when one of them is later pointed at a tar.
+  *
+  * The three facets map onto the three shapes above:
+  *
+  *   Extract      unpack (optionally only what matches a glob)
+  *   List         enumerate members WITHOUT unpacking — the fan-out primitive
+  *   ReadMember   read one member by name, or by glob when the name moves
+  *
+  * Format is detected from the archive's CONTENT, not its extension: zip, tar,
+  * tar.gz/.bz2/.xz, and plain gzip. Publishers mislabel, and a `.gz` that is
+  * really a zip should still work.
+  *
+  * Storage-aware: `archive` and `dest` may be local paths, `s3://…` or
+  * `hdfs://…`. Pairs with `fw.http.Fetch` — fetch the archive, extract it,
+  * `foreach` over what came out. */
+namespace fw.archive {
+
+    /** Unpack an archive into `dest`, returning what was written.
+      *
+      * `pattern` extracts only matching members (`"*.shp"`), which is usually
+      * what the caller wanted — a TIGER zip holds eight files and the pipeline
+      * reads one. `strip_components` drops leading path segments the way
+      * `tar --strip-components` does, for archives wrapped in a version-named
+      * top directory.
+      *
+      * `max_files` / `max_bytes` bound the unpacked result (0 = unbounded).
+      * They are OPT-IN rather than a compression-ratio heuristic: legitimate
+      * CSV and TSV compress far enough to trip any ratio threshold worth
+      * setting, so a default guard would fail real work while a determined
+      * bomb picks a ratio under it. */
+    event facet Extract(
+        archive: String,
+        dest: String,
+        pattern: String = "",
+        strip_components: Int = 0,
+        overwrite: Boolean = true,
+        max_files: Int = 0,
+        max_bytes: Long = 0
+    ) => (
+        paths: Json,
+        count: Int,
+        bytes: Long,
+        format: String
+    ) with Effect(kind = "io") with Cost(tier = "moderate")
+
+    /** Member names inside an archive, without unpacking it.
+      *
+      * The enumerate-then-`foreach` primitive for archives, and the honest way
+      * to answer "what is actually in here?" — a release that quietly changed
+      * its layout shows up as a name that no longer matches, rather than as an
+      * empty result three steps later. */
+    event facet List(
+        archive: String,
+        pattern: String = "",
+        files_only: Boolean = true
+    ) => (
+        names: Json,
+        count: Int
+    ) with Effect(kind = "io") with Cost(tier = "cheap")
+
+    /** Read one member's text, without unpacking the archive.
+      *
+      * Give `member` when the name is fixed, or `pattern` when it is not —
+      * the case every domain hit: `UcdpPrioConflict-v25.1.csv` becomes
+      * `-v25.2` next release, so the glob is the stable reference and the
+      * literal name is not.
+      *
+      * `truncated` is reported rather than silently applied: a step value is
+      * not a blob store, and a clipped CSV that looks complete is worse than
+      * an error. Use `Extract` for anything large. */
+    event facet ReadMember(
+        archive: String,
+        member: String = "",
+        pattern: String = "",
+        max_bytes: Long = 8388608,
+        encoding: String = "utf-8"
+    ) => (
+        text: String,
+        name: String,
+        size_bytes: Long,
+        truncated: Boolean
+    ) with Effect(kind = "io") with Cost(tier = "cheap")
+}
