@@ -294,6 +294,20 @@ def main() -> None:
 
         # Pass --topics so preload() only import-verifies THIS runner's own
         # handlers (not the whole 500+-registration universe) — big startup win.
+        # The framework's own handlers (fw.file.*) must be in persistence BEFORE
+        # the dispatcher preloads: preload is what decides which facets this
+        # runner advertises and therefore claims. Registering after it produced a
+        # runner that logged "Registered 12 built-in handler(s)" and then never
+        # claimed one of their tasks.
+        try:
+            from facetwork.handlers import register_builtin_handlers
+
+            register_builtin_handlers(store)
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "built-in handler registration failed", exc_info=True
+            )
+
         dispatcher = RegistryDispatcher(persistence=store, topics=args.topics or None)
         loadable = dispatcher.preload(verify=True)
         # Scope to --topics: register (and therefore advertise + CLAIM) only the

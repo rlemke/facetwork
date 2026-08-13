@@ -1,0 +1,167 @@
+/** Common file operations, shipped with Facetwork.
+  *
+  * These are ordinary event facets with handlers that ship in the framework
+  * (`facetwork/handlers/file_handlers.py`), so a workflow can do file work
+  * without anyone writing a handler for it.
+  *
+  * **Storage-aware.** Every path goes through `facetwork.runtime.storage`, so
+  * the same workflow works against a local path, `s3://…` or `hdfs://…`. That
+  * matters more than it sounds: on a fleet the data is in the object store, not
+  * on the machine that launched the run, so a `pathlib`-based equivalent would
+  * work on a laptop and silently find nothing on a runner.
+  *
+  * **Why not `script { }`?** The script sandbox deliberately has no `open` and
+  * no `os`/`pathlib` import, and widening it would delete the property it
+  * exists for. See docs/guides/scripts-and-environments.md §5.
+  *
+  * `List` is the enumerate-then-fan-out primitive:
+  *
+  *     found = fw.file.List(path = $.bucket, pattern = "*.geojson")
+  *         andThen foreach p in found.paths { … }
+  */
+namespace fw.file {
+
+    /** Environment for YOUR OWN script facets that need file access.
+      *
+      *     facet Summarise(path: String) => (lines: Long)
+      *         in environment fw.file.FileOps
+      *         script {
+      * import fsspec
+      * with fsspec.open(params['path'], 'rt') as fh:
+      *     result['lines'] = sum(1 for _ in fh)
+      *         }
+      *
+      * **Why an environment is what unlocks this.** A bare `script { }` cannot
+      * do file work: the sandbox removes the `open` builtin and allows only a
+      * fixed stdlib import list. An environment's frozen pins are added to that
+      * allowlist (base_runner passes them as extra_import_modules), and an
+      * imported module's own internals are not restricted — so `fsspec.open`
+      * works where the bare builtin `open` does not. Binding to an environment
+      * is therefore a deliberate, declared widening rather than a hole.
+      *
+      * **fsspec, not pathlib**, for the same reason the handlers below use the
+      * storage abstraction: fsspec speaks `s3://` and `hdfs://` as well as local
+      * paths, so a script written against it keeps working when the data moves
+      * to the object store. A pathlib script would pass on a laptop and find
+      * nothing on a runner.
+      *
+      * Prefer the facets below when they cover what you need — they need no
+      * environment, no venv to materialise, and no pins to keep current. Reach
+      * for this when your file work is genuinely custom logic. */
+    environment FileOps {
+        language = "python",
+        requires = [
+            "fsspec==2026.7.0",
+            "s3fs==2026.7.0"
+        ]
+    }
+
+    /** Enumerate paths under a directory or prefix.
+      *
+      * `pattern` is a glob applied to the BASENAME (`*.csv`, `US-*.json`).
+      * `recursive` walks sub-directories. Returns paths sorted, so a fan-out
+      * over them is reproducible. */
+    event facet List(
+        path: String,
+        pattern: String = "*",
+        recursive: Boolean = false,
+        files_only: Boolean = true
+    ) => (
+        paths: Json,
+        count: Int
+    ) with Effect(kind = "io") with Cost(tier = "cheap")
+
+    /** True when the path exists. Cheap enough to gate a branch on. */
+    event facet Exists(path: String) => (
+        exists: Boolean
+    ) with Effect(kind = "io") with Cost(tier = "free")
+
+    /** Size, modification time and kind. `exists = false` rather than an error
+      * when the path is absent, so callers can branch instead of catching. */
+    event facet Stat(path: String) => (
+        exists: Boolean,
+        size_bytes: Long,
+        modified_at: Double,
+        is_dir: Boolean
+    ) with Effect(kind = "io") with Cost(tier = "free")
+
+    /** Read a whole text file.
+      *
+      * `max_bytes` caps the read (0 = no cap) — a step's return value travels
+      * through the step store, so reading an unbounded file into it is a way to
+      * make the database unhappy. */
+    event facet ReadText(
+        path: String,
+        encoding: String = "utf-8",
+        max_bytes: Long = 0
+    ) => (
+        text: String,
+        size_bytes: Long,
+        truncated: Boolean
+    ) with Effect(kind = "io") with Cost(tier = "cheap")
+
+    /** Write text, creating parent directories. Returns the path so the next
+      * step can reference it rather than re-deriving it. */
+    event facet WriteText(
+        path: String,
+        text: String,
+        encoding: String = "utf-8"
+    ) => (
+        path: String,
+        size_bytes: Long
+    ) with Effect(kind = "io") with Cost(tier = "cheap")
+
+    /** Read a JSON file into a value the workflow can pass around. */
+    event facet ReadJson(path: String) => (
+        data: Json,
+        size_bytes: Long
+    ) with Effect(kind = "io") with Cost(tier = "cheap")
+
+    /** Write a value as JSON. */
+    event facet WriteJson(
+        path: String,
+        data: Json,
+        indent: Int = 0
+    ) => (
+        path: String,
+        size_bytes: Long
+    ) with Effect(kind = "io") with Cost(tier = "cheap")
+
+    /** Copy a file. Streams, so a large file does not pass through the step. */
+    event facet Copy(source: String, dest: String) => (
+        dest: String,
+        size_bytes: Long
+    ) with Effect(kind = "io") with Cost(tier = "moderate")
+
+    /** Delete a file, or a directory tree with `recursive`.
+      *
+      * Absent path returns `deleted = false` rather than failing: deleting
+      * something that is already gone is the outcome the caller wanted. */
+    event facet Delete(path: String, recursive: Boolean = false) => (
+        deleted: Boolean
+    ) with Effect(kind = "io") with Cost(tier = "cheap")
+
+    /** Create a directory (and parents). Idempotent. */
+    event facet MakeDir(path: String) => (
+        path: String
+    ) with Effect(kind = "io") with Cost(tier = "free")
+
+    /** Content digest — the key that binds an artifact to what produced it.
+      *
+      * Reads in chunks, so the file never lands in memory whole. See
+      * agent-spec/cache-layout.agent-spec.yaml on why a digest, not an mtime,
+      * is what makes a reuse decision sound. */
+    event facet Hash(path: String, algorithm: String = "sha256") => (
+        digest: String,
+        algorithm: String,
+        size_bytes: Long
+    ) with Effect(kind = "io") with Cost(tier = "moderate")
+
+    /** Filter a path list by glob — a FileList operation, no I/O.
+      *
+      * Lets a workflow narrow what `List` returned without a second listing. */
+    event facet Filter(paths: Json, pattern: String) => (
+        paths: Json,
+        count: Int
+    ) with Effect(kind = "pure") with Cost(tier = "free")
+}

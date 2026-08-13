@@ -1,0 +1,67 @@
+// Canonical: the built-in fw.file facets — file work with no handler to write.
+//
+// `fw.file.*` ships with Facetwork (facetwork/ffl/file.ffl + the handlers in
+// facetwork/handlers/). Every runner registers them at startup, so a workflow
+// can list, read, write, copy, hash and delete without anyone implementing a
+// handler for it.
+//
+// Compile against the shipped declarations:
+//   fw ffl compile --check --primary this.ffl --library facetwork/ffl/file.ffl
+//
+// STORAGE-AWARE. Paths go through the storage abstraction, so `path` may be a
+// local directory, an `s3://` prefix or `hdfs://`. The same workflow runs
+// against all three — which is the point on a fleet, where the data is in the
+// object store and not on the machine that launched the run.
+//
+// `List` is the enumerate-then-fan-out primitive: a step returns the collection
+// discovered at RUN time, and `foreach` fans out over it. The width is not known
+// at compile time, which is how a 3,000-way fan-out gets built from whatever is
+// actually there.
+
+namespace canonical.files {
+    use fw.file
+
+    // The fan-out has to be a named step for the fan-in to wait on it, so the
+    // foreach lives in a composed facet (see 12-step-after.ffl).
+    facet HashEach(paths: Json) => (digests: Json)
+        andThen foreach p in $.paths {
+            h = fw.file.Hash(path = $.p)
+            yield HashEach(digests = h.digest)
+        }
+
+    workflow Inventory(dir: String, pattern: String = "*.csv") => (
+        count: Int,
+        digests: Json,
+        manifest: String
+    ) andThen {
+        // Discover at run time — the fan-out width comes from this result.
+        found = fw.file.List(path = $.dir, pattern = $.pattern)
+
+        // One Hash step per file found.
+        hashed = HashEach(paths = found.paths)
+
+        // Write the result somewhere durable. WriteJson creates parent
+        // directories, so no MakeDir step is needed first.
+        written = fw.file.WriteJson(
+            path = $.dir ++ "/manifest.json",
+            data = hashed.digests,
+            indent = 2
+        )
+
+        yield Inventory(
+            count = found.count,
+            digests = hashed.digests,
+            manifest = written.path
+        )
+    }
+
+    // `List` returns an empty collection for a missing path rather than
+    // failing, so a discovery step cannot force a `catch` around itself. Guard
+    // on the count when an empty fan-out would be wrong:
+    //
+    //     found = fw.file.List(path = $.dir)
+    //     sys.assert(found.count > 0)
+    //
+    // Prefer this to letting a workflow "succeed" having processed nothing —
+    // silent no-work is harder to notice than a failure.
+}

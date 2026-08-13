@@ -162,6 +162,7 @@ When building a new domain pipeline that ingests from multiple data sources, mir
 | Cache layout (sidecars, namespaces, cache types) | [agent-spec/cache-layout.agent-spec.yaml](agent-spec/cache-layout.agent-spec.yaml) |
 | MCP context-engineering design (rule_ids, docs URIs) | [docs/architecture/mcp-context-engineering.md](docs/architecture/mcp-context-engineering.md) |
 | Validator rule docs (one file per rule_id) | [docs/reference/rules/](docs/reference/rules/) |
+| **Built-in `fw.file` facets** — list/read/write/copy/hash/delete with NO handler to write; storage-aware (same workflow on local, `s3://`, `hdfs://`); `List` is the enumerate-then-`foreach` primitive. Ships in `facetwork/ffl/file.ffl`, auto-registered by every runner. A `script {}` block CANNOT do file I/O (no `open`, no `os`/`pathlib` import) — bind `in environment fw.file.FileOps` to get `fsspec` in a script | [examples/canonical/14-builtin-file-facets.ffl](examples/canonical/14-builtin-file-facets.ffl) |
 | Canonical FFL examples | [examples/canonical/](examples/canonical/) |
 
 ## Writing and fixing FFL — the validator-driven loop
