@@ -1263,3 +1263,44 @@ The remote management scripts share a common helper library sourced after `_env.
 | `_afl_poll_server_state <uuid> <state> <timeout>` | Polls until server reaches expected state |
 | `_afl_poll_new_server <host> <state> <timeout> [exclude...]` | Polls until a new server appears on hostname |
 | `_afl_resolve_hosts [hosts...]` | Resolves target hosts from args or `FW_RUNNER_HOSTS` |
+
+
+## The external data disk dropped — `fw maint disk-recover`
+
+The volume backing the local registry and MinIO (`/Volumes/afl_data_local`) can
+disappear: a sleeping drive, a flaky cable, a machine that moved networks. When
+it returns **the stack does not recover on its own**, and both symptoms are
+quiet:
+
+| | |
+|---|---|
+| registry | `HTTP 503` — fails `fw fleet rollout` at the image **push** |
+| MinIO | `/minio/health/live` still answers **200** while every object listing raises `InternalError` |
+
+That second one is the dangerous one: nothing alarms, and runs simply fail to
+read their data.
+
+**Why restarting the containers is not enough.** A bind mount is resolved when a
+container *starts*, and Docker Desktop's VM keeps a dead mount point at
+`/host_mnt/<path>` once the host path has gone — so a restarted container hits
+the same dead mount. Clearing it from inside the VM does not work either:
+`umount -l` fails and `rmdir` reports `Device or resource busy`, because
+Docker's own host-mount layer holds it, and it keeps holding it even with the
+containers stopped. Only restarting Docker reinitialises that layer.
+
+```bash
+fw maint disk-recover --check   # diagnose only; exit 1 if anything is broken
+fw maint disk-recover           # repair what is broken
+fw maint disk-recover --dry     # show the steps without running them
+```
+
+The repair is: restart Docker (`docker desktop restart`, ~10s) → **recreate**
+the registry and MinIO (recreate, not restart, so the bind mounts resolve
+afresh) → kickstart the fleet-agent so it rebuilds the runners → verify.
+
+Verification deliberately uses a **real object listing** rather than MinIO's
+health endpoint, because the health endpoint is exactly what lies in this
+failure. Reconnect the drive first: the command stops immediately if the path is
+absent, since nothing else can work without it.
+
+After recovering, re-run whatever was interrupted — typically `fw fleet rollout`.

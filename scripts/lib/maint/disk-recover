@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# fw-summary: recover the stack after the external data disk dropped and returned
+#
+# The external volume that backs the local registry and MinIO
+# (/Volumes/afl_data_local) can disappear — a sleeping drive, a flaky cable, a
+# machine that moved. When it comes back, the stack does NOT recover on its own,
+# and the failure is quiet in a way that wastes a lot of time:
+#
+#   registry  ->  HTTP 503, which fails a `fw fleet rollout` at the image PUSH
+#   MinIO     ->  health endpoint answers 200 while every object listing raises
+#                 InternalError. Nothing alarms; runs just fail to read data.
+#
+# The cause is that a bind mount is resolved when a container STARTS, and Docker
+# Desktop's VM keeps a dead mount point at /host_mnt/<path> once the host path
+# has gone. Restarting the containers is not enough — they re-hit the dead
+# mount. Clearing it from inside the VM does not work either: `umount -l` fails
+# and `rmdir` reports "Device or resource busy", because Docker's own host-mount
+# layer holds it. Only restarting Docker reinitialises that layer.
+#
+# So the recovery is: restart Docker -> recreate the two containers (recreate,
+# not restart, so the bind mount resolves afresh) -> let the fleet-agent bring
+# the runners back -> VERIFY, including a real object listing, because MinIO's
+# health check will happily lie.
+#
+# Usage:
+#   fw maint disk-recover            # diagnose, then repair what is broken
+#   fw maint disk-recover --check    # diagnose only, exit 1 if anything is broken
+#   fw maint disk-recover --dry      # show what would be done
+#   fw maint disk-recover --force    # restart Docker even if the probe passes
+set -uo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+DATA_DISK="${FW_DATA_DISK:-/Volumes/afl_data_local}"
+REGISTRY_NAME="${FW_REGISTRY_NAME:-facetwork-registry}"
+REGISTRY_PORT="${FW_REGISTRY_PORT:-5050}"
+REGISTRY_IMAGE="${FW_REGISTRY_IMAGE:-registry:2}"
+MINIO_ENDPOINT="${FW_S3_ENDPOINT_LOCAL:-http://localhost:9000}"
+MINIO_BUCKET="${FW_CACHE_BUCKET:-afl-cache}"
+COMPOSE_FILE="${REPO_ROOT}/docker-compose.full-stack.yml"
+COMPOSE_PROJECT="${FW_COMPOSE_PROJECT:-facetwork}"
+PYTHON="${REPO_ROOT}/.venv/bin/python3"; [[ -x "$PYTHON" ]] || PYTHON=python3
+
+CHECK_ONLY=0; DRY=0; FORCE=0
+for arg in "$@"; do
+    case "$arg" in
+        --check) CHECK_ONLY=1 ;;
+        --dry)   DRY=1 ;;
+        --force) FORCE=1 ;;
+        -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown option: $arg" >&2; exit 2 ;;
+    esac
+done
+
+run() { if [[ $DRY -eq 1 ]]; then echo "    would run: $*"; else "$@"; fi; }
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
+bad()  { printf '  \033[31m✗\033[0m %s\n' "$1"; }
+
+# ---------------------------------------------------------------- diagnose
+echo "== diagnosis =="
+PROBLEMS=0
+
+if [[ -d "$DATA_DISK" ]]; then
+    ok "data disk mounted: $DATA_DISK"
+else
+    bad "data disk NOT mounted: $DATA_DISK"
+    echo
+    echo "  Reconnect the drive first — nothing here can run without it."
+    echo "  (Everything below depends on that path existing.)"
+    exit 1
+fi
+
+docker info >/dev/null 2>&1 && ok "docker daemon up" || { bad "docker daemon down"; PROBLEMS=1; }
+
+# The decisive test. A stale mount point makes any bind of this path fail with
+# "mkdir /host_mnt/...: file exists" — which is what poisons registry + MinIO.
+STALE_MOUNT=0
+if docker info >/dev/null 2>&1; then
+    PROBE_IMG="$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>' | head -1)"
+    if [[ -n "$PROBE_IMG" ]]; then
+        if docker run --rm --entrypoint sh -v "$DATA_DISK:/probe" "$PROBE_IMG" \
+             -c 'ls /probe >/dev/null' >/dev/null 2>&1; then
+            ok "docker can bind-mount the data disk"
+        else
+            bad "docker CANNOT bind-mount the data disk (stale /host_mnt entry)"
+            STALE_MOUNT=1; PROBLEMS=1
+        fi
+    fi
+fi
+
+REG_CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${REGISTRY_PORT}/v2/" 2>/dev/null || echo 000)"
+[[ "$REG_CODE" == "200" ]] && ok "registry /v2/ -> 200" || { bad "registry /v2/ -> ${REG_CODE}"; PROBLEMS=1; }
+
+# NOT the health endpoint: MinIO answers 200 on /minio/health/live while its
+# backend is unreadable. Only a real listing tells the truth.
+MINIO_OK=0
+if "$PYTHON" - "$MINIO_ENDPOINT" "$MINIO_BUCKET" >/dev/null 2>&1 <<'PYEOF'
+import sys
+import boto3
+s3 = boto3.client("s3", endpoint_url=sys.argv[1],
+                  aws_access_key_id="minioadmin", aws_secret_access_key="minioadmin")
+s3.list_objects_v2(Bucket=sys.argv[2], MaxKeys=1)
+PYEOF
+then MINIO_OK=1; ok "minio serves a real object listing"; else bad "minio cannot list ${MINIO_BUCKET} (health may still say 200)"; PROBLEMS=1; fi
+
+RUNNERS="$(docker ps --format '{{.Image}}' 2>/dev/null | grep -c facetwork-runner || true)"
+[[ "${RUNNERS:-0}" -gt 0 ]] && ok "runners up: ${RUNNERS}" || { bad "no runners up"; PROBLEMS=1; }
+
+echo
+if [[ $PROBLEMS -eq 0 && $FORCE -eq 0 ]]; then
+    echo "Nothing to repair."
+    exit 0
+fi
+if [[ $CHECK_ONLY -eq 1 ]]; then
+    echo "Problems found (--check: not repairing)."
+    exit 1
+fi
+
+# ---------------------------------------------------------------- repair
+echo "== repair =="
+
+# 1. Docker, if the mount is stale or the daemon is down. This is the only step
+#    that clears the dead /host_mnt entry, and it takes the runners with it —
+#    they are stateless and the agent brings them back.
+if [[ $STALE_MOUNT -eq 1 || $FORCE -eq 1 ]] || ! docker info >/dev/null 2>&1; then
+    INFLIGHT="$("$PYTHON" - <<'PYEOF' 2>/dev/null || echo "?"
+from pymongo import MongoClient
+db = MongoClient("mongodb://localhost:27017", serverSelectionTimeoutMS=2000).facetwork
+print(db.tasks.count_documents({"state": {"$in": ["running", "pending"]}}))
+PYEOF
+)"
+    echo "  in-flight tasks before restart: ${INFLIGHT}"
+    [[ "${INFLIGHT}" != "0" && "${INFLIGHT}" != "?" ]] && \
+        echo "  (they will be reclaimed — tasks survive a runner restart)"
+    echo "  restarting Docker (clears the stale /host_mnt entry)"
+    run docker desktop restart
+    if [[ $DRY -eq 0 ]]; then
+        for _ in $(seq 1 60); do
+            [[ "$(docker desktop status 2>/dev/null | awk '/^Status/{print $2}')" == "running" ]] && break
+            sleep 5
+        done
+        docker info >/dev/null 2>&1 && ok "docker back up" || {
+            bad "docker did not come back — check the Docker Desktop window"; exit 1; }
+    fi
+fi
+
+# 2. RECREATE (not restart) both containers, so their bind mounts resolve now.
+echo "  recreating the registry"
+run docker rm -f "$REGISTRY_NAME"
+run docker run -d --name "$REGISTRY_NAME" --restart always \
+    -p "${REGISTRY_PORT}:5000" -v "${DATA_DISK}/registry:/var/lib/registry" "$REGISTRY_IMAGE"
+
+echo "  recreating mongodb + minio"
+run docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d --force-recreate mongodb minio
+
+# 3. The agent recreates the runners; it may be mid-backoff, so nudge it.
+echo "  kickstarting the fleet-agent"
+run launchctl kickstart -k "gui/$(id -u)/com.facetwork.fleet-agent"
+
+[[ $DRY -eq 1 ]] && { echo; echo "(--dry: nothing was changed)"; exit 0; }
+
+# ---------------------------------------------------------------- verify
+echo
+echo "== verify =="
+sleep 10
+REG_CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${REGISTRY_PORT}/v2/" 2>/dev/null || echo 000)"
+[[ "$REG_CODE" == "200" ]] && ok "registry /v2/ -> 200" || bad "registry /v2/ -> ${REG_CODE}"
+
+if "$PYTHON" - "$MINIO_ENDPOINT" "$MINIO_BUCKET" >/dev/null 2>&1 <<'PYEOF'
+import sys
+import boto3
+s3 = boto3.client("s3", endpoint_url=sys.argv[1],
+                  aws_access_key_id="minioadmin", aws_secret_access_key="minioadmin")
+s3.list_objects_v2(Bucket=sys.argv[2], MaxKeys=1)
+PYEOF
+then ok "minio serves a real object listing"; else bad "minio still cannot list ${MINIO_BUCKET}"; fi
+
+echo "  waiting for runners (the agent recreates them one at a time)"
+for _ in $(seq 1 18); do
+    N="$(docker ps --format '{{.Image}}' | grep -c facetwork-runner || true)"
+    [[ "${N:-0}" -ge 10 ]] && break
+    sleep 10
+done
+N="$(docker ps --format '{{.Image}}' | grep -c facetwork-runner || true)"
+[[ "${N:-0}" -gt 0 ]] && ok "runners up: ${N}" || bad "no runners came back — see ~/.facetwork/fleet-agent.log"
+
+echo
+echo "Done. If you were mid-deploy, re-run: fw fleet rollout"

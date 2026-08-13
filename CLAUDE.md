@@ -32,7 +32,7 @@ Groups: **`install`** (toolchain/venv/examples/**check**) · **`single`** (local
 up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgroup) ·
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
-(compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/repair-workflow/
+(compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/**disk-recover**/repair-workflow/
 terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**) ·
 **`mode`** (day-cluster/night-local switch: status/local/cluster/join/leave).
