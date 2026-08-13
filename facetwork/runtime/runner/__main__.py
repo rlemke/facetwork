@@ -321,7 +321,21 @@ def main() -> None:
         topic_globs = args.topics or []
         registered = 0
         for facet_name in dispatcher.dispatchable_facets():
-            if topic_globs and not any(fnmatch.fnmatch(facet_name, g) for g in topic_globs):
+            # The framework's own `fw.*` facets are AMBIENT: every runner
+            # registers them above and any runner can execute them, exactly like
+            # the fw:execute / fw:resume protocol tasks. Topic scoping must not
+            # hide them — a runner that does not advertise a name never claims
+            # it, so on a fleet where every runner is topic-scoped to its own
+            # domain (`--topics census.*`), NO runner claims `fw.http.Fetch` and
+            # its task sits pending forever with server_id=None. Observed on the
+            # first fleet deploy: all 13 runners logged "Registered 21 built-in
+            # handler(s)" and not one of them would take the work.
+            ambient = facet_name.startswith("fw.")
+            if (
+                topic_globs
+                and not ambient
+                and not any(fnmatch.fnmatch(facet_name, g) for g in topic_globs)
+            ):
                 continue
             tool_registry.register(facet_name, _make_proxy(dispatcher, facet_name))
             registered += 1

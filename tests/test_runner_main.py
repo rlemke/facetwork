@@ -161,3 +161,59 @@ class TestRunnerMain:
             patch("facetwork.runtime.runner.__main__.RunnerService"),
         ):
             main()
+
+
+class TestAmbientBuiltinsSurviveTopicScoping:
+    """A topic-scoped runner must still advertise the framework's own facets.
+
+    The failure this pins was found on a fleet deploy, not in a test. Every
+    runner is scoped to its own domain (`--topics census.*`), and the topic
+    filter dropped `fw.*` from the tool registry. A runner that does not
+    advertise a name never claims it, so with all thirteen runners scoped, NO
+    runner in the fleet would claim `fw.http.Fetch` — the task sat pending with
+    server_id=None while every runner logged "Registered 21 built-in
+    handler(s)" at startup and looked healthy.
+    """
+
+    @patch("signal.signal")
+    @patch("facetwork.runtime.mongo_store.MongoStore")
+    @patch("facetwork.config.load_config")
+    def test_topic_scoped_runner_still_registers_fw_facets(
+        self, mock_config, mock_mongo, mock_signal
+    ):
+        from facetwork.runtime.runner.__main__ import main
+
+        mock_config.return_value = _make_mock_config()
+        mock_mongo.from_config.return_value = MagicMock()
+
+        facets = [
+            "census.Acs.Fetch",
+            "osm.cache.Download",
+            "fw.file.List",
+            "fw.http.Fetch",
+            "fw.archive.Extract",
+        ]
+
+        with (
+            patch(
+                "sys.argv",
+                ["afl-runner", "--registry", "--topics", "census.*"],
+            ),
+            patch("facetwork.runtime.runner.__main__.RunnerService"),
+            patch("facetwork.runtime.dispatcher.RegistryDispatcher") as mock_disp,
+            patch("facetwork.handlers.register_builtin_handlers", return_value=len(facets)),
+            patch("facetwork.runtime.agent.ToolRegistry") as mock_registry,
+            patch("facetwork.runtime.runner.__main__._warn_registry_drift"),
+        ):
+            mock_disp.return_value.dispatchable_facets.return_value = facets
+            mock_disp.return_value.preload.return_value = len(facets)
+            main()
+
+        advertised = {call.args[0] for call in mock_registry.return_value.register.call_args_list}
+
+        assert "census.Acs.Fetch" in advertised, "topic scoping broke"
+        assert "osm.cache.Download" not in advertised, "scoping must still exclude other domains"
+        for builtin in ("fw.file.List", "fw.http.Fetch", "fw.archive.Extract"):
+            assert builtin in advertised, (
+                f"{builtin} was hidden by --topics; no runner would claim its task"
+            )
