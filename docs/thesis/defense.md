@@ -128,13 +128,24 @@ What happens when you point the mechanism at that data is worth stating precisel
 
 Complete success, zero samples processed. That is not a wrong answer; it is *no work at all*, reported as done — the same silent-success failure family as the stale-output result in §13.3, and arguably the more dangerous member of it.
 
-This is not a claim that Snakemake cannot use object storage: version 8 introduced storage plugins, and remote inputs are declared through them. It is a narrower claim, and it is the one that matters for the concession I withdrew above. **The discovery half of wildcards — the half that has ergonomic value — is a local-filesystem operation.** Move the data to a bucket and you write the enumeration yourself, in Python, against a listing API. Which is to say you write `ListCounties`. The ergonomic advantage evaporates precisely in the setting this thesis is about.
+This is not a claim that Snakemake cannot use object storage: version 8 introduced storage plugins, and remote inputs are declared through them. It is a narrower claim, and it is the one that matters for the concession I withdrew above. **The discovery half of wildcards — the half that has ergonomic value — is a local-filesystem operation.** Move the data to a bucket and you write the enumeration yourself, in Python, against a listing API. The ergonomic advantage evaporates precisely in the setting this thesis is about — while on the FFL side the equivalent (`fw.file.List`, below) is one built-in call whose backend follows the URI scheme.
 
 I should not overstate the contrast. An FFL enumeration step that returns an empty collection also fans out over nothing, and the workflow also completes. Empty is not impossible here either. The differences are where the enumeration happens and whether its result is observable: `ListCounties` runs on a runner that holds the store's credentials and can actually see the data, so an empty result means the prefix is empty rather than that the wrong machine was asked; and the result is a value recorded in the step store, so `children.counties = []` is visible in the dashboard rather than being an absence inferred from a DAG that was never built. A handler can also refuse it outright — the fan-in in [`experiments/state-capitals`](experiments/state-capitals/) raises rather than emit a table of 47 states, because a partial result that looks like a result is worse than a failure.
 
 There is a genuine trade in the *other* direction that I should state, because it favours FFL for the workloads this thesis targets. `glob_wildcards` is evaluated during DAG construction, on the submitting machine, before any rule runs — so it sees what that machine's filesystem sees. `ListCounties` is a **step**: it executes on a runner that can reach the object store, its result is a durable typed value that flows to the `foreach`, it is retryable, and the enumeration it performed is recorded in the step. For a fleet whose data lives in MinIO rather than on the laptop that launched the run, enumeration has to be work rather than parse-time metaprogramming.
 
-What remains, honestly, is a cost of a different kind: FFL's version requires someone to write `ListCounties` — a facet and a handler — where Snakemake's requires one line. For a small single-machine pipeline over local files, that is real friction and I would not pretend otherwise. It is a statement about how much scaffolding the model demands for a small job, not about what the language can express.
+I claimed, in an earlier version of this answer, that a cost remained: FFL's version needs someone to write `ListCounties` — a facet and a handler — where Snakemake's needs one line, which is real friction for a small pipeline. **That is no longer true, and the fix is the interesting part.** Enumeration is not domain logic; it is infrastructure, and it now ships with the framework:
+
+```ffl
+found = fw.file.List(path = $.dir, pattern = "*.csv")
+    andThen foreach p in found.paths { … }
+```
+
+`fw.file.*` is a set of built-in facets — `List`, `Stat`, `Hash`, `ReadText`, `WriteJson`, `Copy` and the rest — registered by every runner at startup, with no handler for anyone to write. One line, as Snakemake's is.
+
+The difference that survives is the one this section is about. `fw.file.List` resolves its path through the storage abstraction, so `path` may equally be a directory, an `s3://` prefix or `hdfs://`, and the workflow does not change. `glob_wildcards` pointed at `s3://…` returns an empty list and the run reports success having done nothing. So the comparison is no longer "one line versus a facet and a handler"; it is one line that works where the data is, against one line that works on the machine that launched the run.
+
+There is a genuine cost left, and it is smaller and different: a built-in library is a surface the framework now owns and must keep coherent. The registration cross-checks the shipped FFL against the handler dispatch and refuses to start on drift, because the failure it replaces — a facet that compiles, dispatches, and dies on a runner with "no handler" — is exactly the kind of late, distant error this thesis argues against elsewhere.
 
 ### Q7 (Prof. Liskov)
 

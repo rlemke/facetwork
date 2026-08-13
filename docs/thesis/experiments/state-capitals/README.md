@@ -102,6 +102,33 @@ All three call the same `capitals_lib.py`, so what differs between the runs is
 only what decides when each step executes. The 50 state codes come from that one
 module too, so the three fan-outs cannot drift to different widths.
 
+### Where the list comes from, and why it matters here
+
+This experiment hands all three engines the same fixed list of 50 codes, so the
+comparison is about scheduling rather than discovery. Real pipelines discover
+their work instead, and that is where the engines diverge:
+
+| | discovery |
+|---|---|
+| **Snakemake** | `glob_wildcards("data/{sample}.txt")` — evaluated at DAG-construction time, on the submitting machine, against its local filesystem |
+| **Nextflow** | `Channel.fromPath(...)`, likewise resolved by the driver process |
+| **FFL** | `fw.file.List(path = …, pattern = …)` — a **step**, executed on a runner, resolving the path through the storage abstraction |
+
+The FFL form is a built-in (`facetwork/ffl/file.ffl`), so it costs one line and
+no handler:
+
+```ffl
+found = fw.file.List(path = $.dir, pattern = "*.csv")
+    andThen foreach p in found.paths { … }
+```
+
+It takes a local directory, an `s3://` prefix or `hdfs://` without the workflow
+changing. Pointing `glob_wildcards` at `s3://…` returns an empty list — no error
+— so the run builds zero jobs and reports success. On a fleet whose data lives
+in MinIO rather than on the laptop that launched the run, that difference is the
+whole ballgame: enumeration has to be *work*, done where the credentials and the
+data are, not parse-time metaprogramming on the submitting host.
+
 ## Run it
 
 ```bash

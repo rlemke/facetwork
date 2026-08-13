@@ -1648,6 +1648,40 @@ Snakemake trusts the output file. To see what that means, `out/05.txt` was trunc
 
 Facetwork's step is Complete because the runtime recorded a state transition, not because an artifact appeared. The corresponding failure — a handler that wrote a truncated file and returned success — is equally possible, and Facetwork would equally believe it; the difference is that the *engine's* notion of completion cannot be forged by touching the filesystem, and the step's returns, task state and logs remain as evidence. This is a genuine architectural distinction and a modest one. It matters most in the case this thesis cares about: a run whose machine died halfway.
 
+### 13.4a Discovery: where the work list comes from
+
+A pipeline rarely knows its work list in advance; it discovers it. Snakemake
+discovers with `glob_wildcards`, Nextflow with `Channel.fromPath` — both
+evaluated by the driver process, on the machine that launched the run, against
+that machine's filesystem. FFL discovers with a **step**:
+
+```ffl
+found = fw.file.List(path = $.prefix, pattern = "*.geojson")
+    andThen foreach p in found.paths { … }
+```
+
+`fw.file.List` is one of a set of facets that ship with the framework and are
+registered by every runner, so this costs one line and no handler — the same
+economy as `glob_wildcards`. What differs is where it runs and what it can see.
+The path resolves through the storage abstraction, so a local directory, an
+`s3://` prefix and `hdfs://` are the same call; and the call executes on a
+runner that holds the store's credentials, not on the submitting host.
+
+The consequence is measurable rather than stylistic. `glob_wildcards` pointed at
+`s3://bucket/data/{sample}.txt` returns an empty list — no error, no warning —
+so `expand` yields no targets, the DAG has no jobs, and Snakemake 9.25 reports
+`1 of 1 steps (100%) done` with exit code 0. Complete success, zero samples
+processed. That is the same silent-success family as the stale-output result in
+§13.3, and for a fleet whose data lives in an object store it is the more likely
+of the two to bite: the workflow is not wrong about the answer, it never
+computed one.
+
+None of this makes the enumeration infallible — an FFL step that finds nothing
+also fans out over nothing. The differences are that the search happened where
+the data is, that its result is a value recorded in the step store rather than
+an absence inferred from a DAG that was never built, and that a handler or a
+`sys.assert` can refuse an empty result outright.
+
 ### 13.5 The seven dimensions
 
 | Dimension | Snakemake | Nextflow | Facetwork |
