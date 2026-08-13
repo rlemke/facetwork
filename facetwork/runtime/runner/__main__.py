@@ -21,9 +21,9 @@ Usage:
 import argparse
 import logging
 import os
-import signal
 from pathlib import Path
 
+from ..signals import install_shutdown_handlers
 from .service import RunnerConfig, RunnerService
 
 _drift_logger = logging.getLogger("facetwork.runtime.runner.drift")
@@ -374,12 +374,11 @@ def main() -> None:
         tool_registry=tool_registry,
     )
 
-    # Signal handlers for graceful shutdown
-    def handle_signal(signum: int, frame: object) -> None:
-        service.stop()
-
-    signal.signal(signal.SIGTERM, handle_signal)
-    signal.signal(signal.SIGINT, handle_signal)
+    # Graceful shutdown. Installed via the shared helper so a handler that
+    # forks (earth-osm's multiprocessing pool, say) cannot leave its children
+    # holding a copy of this handler — a terminating worker would otherwise log
+    # "Runner stopping" under the PARENT's server_id while the runner is fine.
+    install_shutdown_handlers(service.stop)
 
     print(f"Starting FFL runner: {runner_config.service_name}")
     print(f"  Server group: {runner_config.server_group}")

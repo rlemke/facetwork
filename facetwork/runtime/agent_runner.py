@@ -22,10 +22,11 @@ setup, signal handling, and the registry/poller branching logic.
 from __future__ import annotations
 
 import os
-import signal
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from .signals import install_shutdown_handlers
 
 if TYPE_CHECKING:
     from .evaluator import Evaluator
@@ -144,12 +145,11 @@ def _run_registry(
     runner = RegistryRunner(persistence=store, evaluator=evaluator, config=runner_config)
     register(runner=runner)
 
-    def shutdown(signum: int, frame: object) -> None:
+    def shutdown() -> None:
         print("\nShutting down...")
         runner.stop()
 
-    signal.signal(signal.SIGTERM, shutdown)
-    signal.signal(signal.SIGINT, shutdown)
+    install_shutdown_handlers(shutdown)
 
     if topics:
         print(f"Topic filter: {topics}")
@@ -164,6 +164,7 @@ def _run_poller(
     register: Callable[..., object],
 ) -> None:
     from .agent_poller import AgentPoller, AgentPollerConfig
+    from .signals import install_shutdown_handlers
 
     poller_config = AgentPollerConfig(
         service_name=config.service_name,
@@ -175,12 +176,11 @@ def _run_poller(
     poller = AgentPoller(persistence=store, evaluator=evaluator, config=poller_config)
     register(poller=poller)
 
-    def shutdown(signum: int, frame: object) -> None:
+    def shutdown() -> None:
         print("\nShutting down...")
         poller.stop()
 
-    signal.signal(signal.SIGTERM, shutdown)
-    signal.signal(signal.SIGINT, shutdown)
+    install_shutdown_handlers(shutdown)
 
     print(f"{config.service_name} started. Press Ctrl+C to stop.")
     poller.start()

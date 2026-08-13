@@ -361,7 +361,12 @@ class RunnerService(BaseRunner):
 
     def stop(self) -> None:
         """Signal the service to stop gracefully."""
-        logger.info("Runner stopping: server_id=%s", self._server_id)
+        # pid included because this line was once emitted by forked children of
+        # a handler's multiprocessing pool, carrying THIS server_id while the
+        # runner was healthy. The handler install now prevents that
+        # (facetwork.runtime.signals); the pid makes any recurrence obvious in
+        # the log rather than requiring the process tree to be inspected.
+        logger.info("Runner stopping: server_id=%s pid=%s", self._server_id, os.getpid())
         self._stopping.set()
         self._work_ready.set()  # wake a poll loop parked in _poll_pause
 
