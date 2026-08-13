@@ -247,6 +247,10 @@ class AttributeValue:
     name: str
     value: object
     type_hint: str = "Any"
+    #: Set by a `+=` yield argument. Tells yield capture to AGGREGATE this
+    #: value across repeated yields to the same target (one per `foreach`
+    #: iteration) instead of letting the last one overwrite the rest.
+    append: bool = False
 
     def __post_init__(self):
         """Infer type hint from value if not provided."""

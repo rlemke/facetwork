@@ -273,6 +273,7 @@ class BlockExecutionBeginHandler(StateHandler):
             )
             sub_block.foreach_var = variable
             sub_block.foreach_value = element
+            sub_block.foreach_index = i
 
             # Cache the body AST for this sub-block
             self.context.set_block_ast_cache(sub_block.id, body_ast)
@@ -867,6 +868,7 @@ class BlockExecutionContinueHandler(StateHandler):
             )
             sub_block.foreach_var = variable
             sub_block.foreach_value = values[i]
+            sub_block.foreach_index = i
             self.context.set_block_ast_cache(sub_block.id, body_ast)
             self.context.changes.add_created_step(sub_block)
             sub_blocks.append(sub_block)

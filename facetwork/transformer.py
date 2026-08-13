@@ -488,6 +488,11 @@ class FFLTransformer(Transformer):
     def named_arg(self, meta, name: str, value) -> NamedArg:
         return NamedArg(name=name, value=value, location=self._loc(meta))
 
+    @v_args(meta=True, inline=True)
+    def named_arg_append(self, meta, name: str, value) -> NamedArg:
+        """``name += expr`` — an aggregating yield argument."""
+        return NamedArg(name=name, value=value, append=True, location=self._loc(meta))
+
     def named_args(self, items: list) -> list[NamedArg]:
         return list(items)
 

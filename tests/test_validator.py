@@ -4316,3 +4316,108 @@ class TestBuiltinDeclarationsAreAlwaysVisible:
             assert result.is_valid, (
                 f"{os.path.basename(path)}: " + "; ".join(e.message for e in result.errors)
             )
+
+
+class TestForeachYieldAggregation:
+    """`+=` on a yield, and the warning for the silent form it replaces.
+
+    The bug this came from: a fan-out that yields `xs = item` runs every
+    iteration, succeeds, and returns only the last one. Measured — 3 files gave
+    1 digest, a 2x2 grid gave a 1-entry manifest — with nothing in either run
+    indicating the other results were dropped.
+    """
+
+    def _src(self, body: str) -> str:
+        return (
+            "namespace x {\n"
+            "    event facet W(v: String) => (out: String)\n"
+            f"{body}\n"
+            "}\n"
+        )
+
+    def test_append_aggregates_without_warning(self, validator):
+        result = validator.validate(parse(self._src("""
+    facet Each(xs: Json) => (outs: Json)
+        andThen foreach x in $.xs {
+            w = W(v = $.x)
+            yield Each(outs += w.out)
+        }""")))
+        assert result.is_valid, [e.message for e in result.errors]
+        assert not [w for w in result.warnings if w.rule_id == "YIELD_FOREACH_OVERWRITES"]
+
+    def test_bare_assign_of_a_step_value_warns(self, validator):
+        result = validator.validate(parse(self._src("""
+    facet Each(xs: Json) => (outs: Json)
+        andThen foreach x in $.xs {
+            w = W(v = $.x)
+            yield Each(outs = w.out)
+        }""")))
+        assert result.is_valid, "must stay a warning — existing workflows keep compiling"
+        warned = [w for w in result.warnings if w.rule_id == "YIELD_FOREACH_OVERWRITES"]
+        assert len(warned) == 1
+        assert "+=" in warned[0].message, "the message must name the fix"
+
+    def test_a_literal_is_not_warned_about(self, validator):
+        """`status = "partial"` is the same every iteration — deliberate
+        last-wins, and by far the most common form in the installed domains.
+        Flagging it would make the rule noise."""
+        result = validator.validate(parse(self._src("""
+    facet Each(xs: Json) => (status: String)
+        andThen foreach x in $.xs {
+            w = W(v = $.x)
+            yield Each(status = "partial")
+        }""")))
+        assert not [w for w in result.warnings if w.rule_id == "YIELD_FOREACH_OVERWRITES"]
+
+    def test_no_warning_outside_a_foreach(self, validator):
+        result = validator.validate(parse(self._src("""
+    workflow Once(a: String) => (out: String) andThen {
+        w = W(v = $.a)
+        yield Once(out = w.out)
+    }""")))
+        assert not [w for w in result.warnings if w.rule_id == "YIELD_FOREACH_OVERWRITES"]
+
+    def test_append_on_a_step_call_is_an_error(self, validator):
+        """A call argument is evaluated once, so `+=` cannot mean anything
+        there — accepting it would make it a second spelling of `=`."""
+        result = validator.validate(parse(self._src("""
+    workflow Once(a: String) => (out: String) andThen {
+        w = W(v += $.a)
+        yield Once(out = w.out)
+    }""")))
+        assert not result.is_valid
+        assert [e for e in result.errors if e.rule_id == "YIELD_APPEND_OUTSIDE_YIELD"]
+
+    def test_append_survives_parse_and_emit(self):
+        """The flag has to reach the runtime, and only when set — an
+        unconditional key would rewrite every stored AST."""
+        from facetwork.emitter import emit_dict
+
+        program = parse(self._src("""
+    facet Each(xs: Json) => (outs: Json, n: Int)
+        andThen foreach x in $.xs {
+            w = W(v = $.x)
+            yield Each(outs += w.out, n = 1)
+        }"""))
+        emitted = emit_dict(program, include_locations=False)
+        args = _find_yield_args(emitted)
+        by_name = {a["name"]: a for a in args}
+        assert by_name["outs"].get("append") is True
+        assert "append" not in by_name["n"], "unset args must emit unchanged"
+
+
+def _find_yield_args(node):
+    """First YieldStmt's args anywhere in an emitted program."""
+    if isinstance(node, dict):
+        if node.get("type") == "YieldStmt":
+            return node.get("call", {}).get("args", [])
+        for value in node.values():
+            found = _find_yield_args(value)
+            if found:
+                return found
+    elif isinstance(node, list):
+        for item in node:
+            found = _find_yield_args(item)
+            if found:
+                return found
+    return []

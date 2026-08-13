@@ -146,10 +146,22 @@ class IndexExpr(ASTNode):
 
 @dataclass
 class NamedArg(ASTNode):
-    """Named argument: name = expr"""
+    """Named argument: ``name = expr``, or ``name += expr`` in a yield.
+
+    ``append=True`` (written ``+=``) marks the argument as AGGREGATING: when the
+    same yield target is reached repeatedly — once per iteration of a `foreach`
+    — the values accumulate instead of the last one overwriting the rest.
+
+    It exists because the overwrite was the silent default. A fan-out that
+    yields `xs = item` runs every iteration, reports success, and returns only
+    the final one; nothing in the source says which was meant. `+=` says it at
+    the point it happens, so a reader does not have to know the runtime's
+    value-type merge rules to predict the result.
+    """
 
     name: str
     value: "Literal | Reference | ConcatExpr | BinaryExpr | ArrayLiteral | MapLiteral | IndexExpr"
+    append: bool = False
 
 
 # Mixins

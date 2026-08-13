@@ -42,7 +42,7 @@ namespace canonical.exec {
                 args = ["-f", "GeoJSON", $.out_dir ++ "/out.geojson", $.p],
                 timeout_seconds = 600
             )
-            yield ConvertEach(outputs = [converted.command_line])
+            yield ConvertEach(outputs += converted.command_line)
         }
 
     workflow ConvertShapefiles(dir: String, out_dir: String) => (

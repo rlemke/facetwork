@@ -45,7 +45,7 @@ namespace canonical.http {
                 dest = $.dir ++ "/" ++ $.r ++ ".osm.pbf",
                 max_age_hours = 24
             )
-            yield FetchRegions(paths = [got.path])
+            yield FetchRegions(paths += got.path)
         }
 
     workflow Ingest(base_url: String, index_url: String, dir: String) => (

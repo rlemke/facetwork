@@ -514,10 +514,15 @@ class JSONEmitter:
 
     def _named_arg(self, node: NamedArg) -> dict:
         """Convert NamedArg node."""
-        return {
+        data = {
             "name": node.name,
             "value": self._convert(node.value),
         }
+        # Emitted only when set, so every existing compiled AST is unchanged
+        # byte-for-byte and a stored workflow keeps its current behaviour.
+        if node.append:
+            data["append"] = True
+        return data
 
     def _step_stmt(self, node: StepStmt) -> dict:
         """Convert StepStmt node."""

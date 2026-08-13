@@ -6899,3 +6899,73 @@ class TestForeachCrossBlockStepRef:
         # Verify foreach values
         foreach_values = sorted([s.foreach_value for s in sub_blocks])
         assert foreach_values == [1, 2, 3]
+
+
+class TestAppendYieldMerge:
+    """`+=` merge semantics and aggregation ORDER.
+
+    Both were found the same way: a fan-out that looked completely successful
+    and returned one result. The order half is the subtler of the two — even
+    the correct aggregation was in dispatch-completion order, so a manifest
+    came out differently run to run.
+    """
+
+    def test_scalar_appends_and_list_extends(self):
+        from facetwork.runtime.handlers.capture import _merge_appended_value
+
+        # First yield: no accumulator yet.
+        assert _merge_appended_value(None, "a") == ["a"]
+        # Subsequent scalars append — no bracket ceremony for the common case.
+        assert _merge_appended_value(["a"], "b") == ["a", "b"]
+        # A list EXTENDS, so a nested fan-out (`sets += country.sets`) flattens
+        # one level instead of nesting.
+        assert _merge_appended_value(["a"], ["b", "c"]) == ["a", "b", "c"]
+        # ...and wrapping is how you append a list AS an element.
+        assert _merge_appended_value(["a"], [["b", "c"]]) == ["a", ["b", "c"]]
+
+    def test_bare_assign_still_overwrites(self):
+        """The historical contract is unchanged for `=`: only `+=` aggregates,
+        so no existing workflow changes behaviour."""
+        from facetwork.runtime.handlers.capture import _merge_yield_value
+
+        assert _merge_yield_value("a", "b") == "b"
+        assert _merge_yield_value({"x": 1}, {"y": 2}) == {"y": 2}
+        assert _merge_yield_value(["a"], ["b"]) == ["a", "b"]  # list concat, as before
+
+    def test_foreach_subblocks_record_their_index(self):
+        """The key aggregation order is derived from."""
+        from facetwork.runtime.step import StepDefinition
+
+        step = StepDefinition(id="s1", object_type="AndThen", workflow_id="w1")
+        assert step.foreach_index is None, "only foreach sub-blocks carry one"
+
+    def test_aggregation_follows_iteration_not_completion_order(self):
+        """Sorting key used by yield collection.
+
+        Iterations complete in whatever order the executors finish them, so
+        without this the aggregate is ordered by luck and two runs of the same
+        workflow produce different output — which makes anything diffed
+        between runs (a manifest, a report) irreproducible.
+        """
+        from facetwork.runtime.step import StepDefinition
+
+        def block(idx):
+            b = StepDefinition(id=f"b{idx}", object_type="AndThen", workflow_id="w1")
+            b.foreach_index = idx
+            return b
+
+        # As if iteration 2 finished first, then 0, then 1.
+        completed = [block(2), block(0), block(1)]
+        ordered = sorted(
+            completed,
+            key=lambda b: (getattr(b, "foreach_index", None) is None, getattr(b, "foreach_index", -1)),
+        )
+        assert [b.foreach_index for b in ordered] == [0, 1, 2]
+
+        # A non-foreach block (index None) sorts last and keeps its position.
+        plain = StepDefinition(id="plain", object_type="AndThen", workflow_id="w1")
+        mixed = sorted(
+            [plain, block(1), block(0)],
+            key=lambda b: (getattr(b, "foreach_index", None) is None, getattr(b, "foreach_index", -1)),
+        )
+        assert [b.id for b in mixed] == ["b0", "b1", "plain"]

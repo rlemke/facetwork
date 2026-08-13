@@ -35,8 +35,30 @@ def _names_match(a: str | None, b: str | None) -> bool:
     return a.endswith("." + b) or b.endswith("." + a)
 
 
+def _merge_appended_value(existing: object, new: object) -> object:
+    """Combine values for a ``+=`` yield argument — always aggregating.
+
+    ``+=`` states the intent in the source, so the merge does not have to infer
+    it from the runtime value's type:
+
+      - a list ``new`` EXTENDS (``xs += country.sets`` flattens one level, which
+        is what a nested fan-out wants);
+      - anything else APPENDS as a single element (``xs += item``), so the
+        author never has to remember to wrap a scalar in brackets.
+
+    That asymmetry is the one judgement call here. It is chosen because the
+    common case — appending the per-iteration result — should need no
+    ceremony, and the nested case reads correctly too. To append a list AS an
+    element, wrap it: ``xs += [inner]``.
+    """
+    base: list = list(existing) if isinstance(existing, list) else ([] if existing is None else [existing])
+    if isinstance(new, list):
+        return base + list(new)
+    return base + [new]
+
+
 def _merge_yield_value(existing: object, new: object) -> object:
-    """Combine a prior yield value with a fresh one.
+    """Combine a prior yield value with a fresh one (bare ``=`` arguments).
 
     Yield merge semantics are type-driven:
       - ``list``   → concat (``existing + new``). Order is yield order; for
@@ -318,10 +340,19 @@ class StatementCaptureBeginHandler(StateHandler):
             s for s in steps if s.object_type == ObjectType.YIELD_ASSIGNMENT and s.is_complete
         ]
 
-        # Recurse into sub-blocks (andWhen cases, nested andThen blocks)
-        for s in steps:
-            if s.is_block and s.is_complete:
-                yields.extend(self._collect_yields_recursive(s.id))
+        # Recurse into sub-blocks (andWhen cases, nested andThen blocks).
+        #
+        # Ordered by `foreach_index` so an aggregate follows ITERATION order.
+        # Without this the order is whichever sub-block finished first, so a
+        # parallel fan-out aggregates differently run to run and anything
+        # diffed between runs — a manifest, a report — is not reproducible.
+        # Sub-blocks that are not foreach iterations keep their existing
+        # relative order (sort is stable, and they sort as index -1).
+        for s in sorted(
+            (s for s in steps if s.is_block and s.is_complete),
+            key=lambda b: (getattr(b, "foreach_index", None) is None, getattr(b, "foreach_index", -1)),
+        ):
+            yields.extend(self._collect_yields_recursive(s.id))
 
         # Also follow step_body blocks: for each non-block step, check if
         # it has block children (from andThen when/foreach step_body).
@@ -353,12 +384,25 @@ class StatementCaptureBeginHandler(StateHandler):
         """
         for name, attr in yield_step.attributes.params.items():
             existing = self.step.attributes.returns.get(name)
-            merged_value = (
-                _merge_yield_value(existing.value, attr.value)
-                if existing is not None
-                else attr.value
-            )
+            if getattr(attr, "append", False):
+                # `+=` — aggregate regardless of the value's runtime type.
+                merged_value = _merge_appended_value(
+                    existing.value if existing is not None else None, attr.value
+                )
+            else:
+                merged_value = (
+                    _merge_yield_value(existing.value, attr.value)
+                    if existing is not None
+                    else attr.value
+                )
             self.step.attributes.set_return(name, merged_value, attr.type_hint)
+            if getattr(attr, "append", False):
+                # Keep the flag on the accumulator so the NEXT yield into this
+                # field aggregates too — without it, iteration two would fall
+                # back to the type-driven rule and a scalar would overwrite.
+                target = self.step.attributes.returns.get(name)
+                if target is not None:
+                    target.append = True
 
     def _merge_yield_into_mixin_substep(self, yield_step: "StepDefinition", alias: str) -> None:
         """Merge a yield into the aliased mixin sub-step's returns.
@@ -379,12 +423,21 @@ class StatementCaptureBeginHandler(StateHandler):
             return
         for name, attr in yield_step.attributes.params.items():
             existing = sub_step.attributes.returns.get(name)
-            merged_value = (
-                _merge_yield_value(existing.value, attr.value)
-                if existing is not None
-                else attr.value
-            )
+            if getattr(attr, "append", False):
+                merged_value = _merge_appended_value(
+                    existing.value if existing is not None else None, attr.value
+                )
+            else:
+                merged_value = (
+                    _merge_yield_value(existing.value, attr.value)
+                    if existing is not None
+                    else attr.value
+                )
             sub_step.attributes.set_return(name, merged_value, attr.type_hint)
+            if getattr(attr, "append", False):
+                target = sub_step.attributes.returns.get(name)
+                if target is not None:
+                    target.append = True
         self.context.changes.add_updated_step(sub_step)
 
     def _get_mixin_substep(self, alias: str) -> "StepDefinition | None":

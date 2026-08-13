@@ -157,7 +157,13 @@ mixin_call: "with" QNAME "(" [named_args] ")" ["as" IDENT]
 
 // Arguments (allow newlines)
 named_args: _NL* named_arg (_NL* "," _NL* named_arg)* _NL*
+// `+=` is meaningful only in a `yield` inside a `foreach`, where it AGGREGATES
+// across iterations instead of overwriting (YIELD_APPEND_OUTSIDE_YIELD rejects
+// it elsewhere). It is accepted by the shared arg rule rather than a separate
+// yield-only rule so that misuse is a validator diagnostic naming the reason,
+// not a parse error pointing at a token.
 named_arg: IDENT "=" _NL* expr
+         | IDENT "+=" _NL* expr    -> named_arg_append
 
 // Expressions (lowest to highest precedence)
 expr: or_expr

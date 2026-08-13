@@ -143,6 +143,12 @@ class StepDefinition:
     # Foreach iteration binding
     foreach_var: str | None = None
     foreach_value: Any = None
+    #: 0-based position of this sub-block in its `foreach`. Recorded so yield
+    #: aggregation can be ordered by ITERATION rather than by whichever
+    #: iteration finished first — otherwise a parallel fan-out produces a
+    #: different ordering run to run, and anything diffed between runs (a
+    #: manifest, a report) is not reproducible.
+    foreach_index: int | None = None
 
     # Metadata
     timestamp: str | None = None  # Last update timestamp

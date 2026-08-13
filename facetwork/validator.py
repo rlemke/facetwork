@@ -2138,10 +2138,23 @@ class FFLValidator:
         current_step: str | None = None,
         step_returns_types: dict[str, dict[str, str]] | None = None,
         other_block_steps: set[str] | None = None,
+        is_yield: bool = False,
     ) -> None:
         """Validate references in a call expression."""
         target_facet = self._lookup_facet_for_type(call.name)
         for arg in call.args:
+            if arg.append and not is_yield:
+                # `+=` means "aggregate across repeated yields to this target".
+                # A step call happens once, so there is nothing to aggregate
+                # with and the operator would just be a confusing spelling of
+                # `=`. Rejected rather than quietly accepted.
+                self._result.add_error(
+                    f"'{arg.name} += …' is only meaningful in a yield, where repeated yields "
+                    f"to the same target (one per foreach iteration) aggregate. "
+                    f"A call argument is evaluated once — use '='.",
+                    arg.location or call.location,
+                    rule_id="YIELD_APPEND_OUTSIDE_YIELD",
+                )
             for ref in self._extract_references(arg.value):
                 self._validate_reference(
                     ref,
@@ -2706,6 +2719,49 @@ class FFLValidator:
                     rule_id="REF_INVALID_STEP_ATTRIBUTE",
                 )
 
+    def _check_foreach_aggregation(
+        self,
+        yield_stmt: YieldStmt,
+        foreach_var: str | None,
+        steps: dict[str, StepInfo],
+    ) -> None:
+        """Warn when a `foreach` yield silently keeps only its last iteration.
+
+        Inside a `foreach`, the yield runs once per iteration. A bare `=`
+        ASSIGNS, so each iteration overwrites the previous and the fan-out's
+        result is the final iteration's value alone — while every iteration's
+        step still ran and the workflow still reported success. Nothing about
+        the run says the other N-1 results were dropped.
+
+        Measured before this check existed: a 3-file fan-out returned 1 digest,
+        and a 2x2 grid-builder fan-out wrote a 1-entry manifest. Both looked
+        entirely successful.
+
+        A WARNING rather than an error, and only for STEP-DERIVED values:
+        `yield F(status = "partial")` is a literal that is the same every
+        iteration, which is deliberate last-wins and by far the most common
+        form in the installed domains. A step reference is the case where an
+        author almost certainly meant to collect.
+        """
+        if not foreach_var:
+            return
+        for arg in yield_stmt.call.args:
+            if arg.append or not isinstance(arg.value, Reference):
+                continue
+            # A reference to a step in this block — i.e. a per-iteration result.
+            parts = [p for p in (arg.value.path or []) if isinstance(p, str)]
+            step_name = parts[0] if parts else None
+            if not step_name or step_name not in steps:
+                continue
+            self._result.add_warning(
+                f"'{arg.name} = {step_name}.{'.'.join(parts[1:]) or ''}' inside a foreach keeps only "
+                f"the LAST iteration — each one overwrites the previous, and every iteration still "
+                f"runs, so the loss is silent. Use '{arg.name} += …' to aggregate across iterations, "
+                f"or a literal if last-wins is intended.",
+                arg.location or yield_stmt.location,
+                rule_id="YIELD_FOREACH_OVERWRITES",
+            )
+
     def _validate_yield(
         self,
         yield_stmt: YieldStmt,
@@ -2749,6 +2805,8 @@ class FFLValidator:
                 rule_id="YIELD_TARGET_AMBIGUOUS",
             )
 
+        self._check_foreach_aggregation(yield_stmt, foreach_var, steps)
+
         # Validate references in yield arguments
         self._validate_call_references(
             yield_stmt.call,
@@ -2758,6 +2816,7 @@ class FFLValidator:
             foreach_var,
             step_returns_types=step_returns_types,
             other_block_steps=other_block_steps,
+            is_yield=True,
         )
 
     def _validate_sys_stmt(

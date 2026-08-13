@@ -394,27 +394,30 @@ class StepMixin(_MixinBase):
         if step.foreach_var is not None:
             doc["foreach_var"] = step.foreach_var
             doc["foreach_value"] = step.foreach_value
+            if step.foreach_index is not None:
+                doc["foreach_index"] = step.foreach_index
 
         if step.attributes:
             from ..types import serialize_attribute_value
 
+            def _attr_doc(v) -> dict:
+                d = {
+                    "name": v.name,
+                    "value": serialize_attribute_value(v.value),
+                    "type_hint": v.type_hint,
+                }
+                # `+=` aggregation flag. Written only when set, so existing
+                # step documents are unchanged. It has to survive the round
+                # trip: yield capture reads the yield step back FROM the store,
+                # so a flag that lives only in memory is a flag that silently
+                # does nothing.
+                if getattr(v, "append", False):
+                    d["append"] = True
+                return d
+
             doc["attributes"] = {
-                "params": {
-                    k: {
-                        "name": v.name,
-                        "value": serialize_attribute_value(v.value),
-                        "type_hint": v.type_hint,
-                    }
-                    for k, v in step.attributes.params.items()
-                },
-                "returns": {
-                    k: {
-                        "name": v.name,
-                        "value": serialize_attribute_value(v.value),
-                        "type_hint": v.type_hint,
-                    }
-                    for k, v in step.attributes.returns.items()
-                },
+                "params": {k: _attr_doc(v) for k, v in step.attributes.params.items()},
+                "returns": {k: _attr_doc(v) for k, v in step.attributes.returns.items()},
             }
 
         # Persist transition flags so round-tripped steps retain their
@@ -484,15 +487,22 @@ class StepMixin(_MixinBase):
             step.attributes = FacetAttributes()
             for k, v in attrs.get("params", {}).items():
                 step.attributes.params[k] = AttributeValue(
-                    v["name"], deserialize_attribute_value(v["value"]), v.get("type_hint", "Any")
+                    v["name"],
+                    deserialize_attribute_value(v["value"]),
+                    v.get("type_hint", "Any"),
+                    append=bool(v.get("append", False)),
                 )
             for k, v in attrs.get("returns", {}).items():
                 step.attributes.returns[k] = AttributeValue(
-                    v["name"], deserialize_attribute_value(v["value"]), v.get("type_hint", "Any")
+                    v["name"],
+                    deserialize_attribute_value(v["value"]),
+                    v.get("type_hint", "Any"),
+                    append=bool(v.get("append", False)),
                 )
 
         step.foreach_var = doc.get("foreach_var")
         step.foreach_value = doc.get("foreach_value")
+        step.foreach_index = doc.get("foreach_index")
 
         step.start_time = doc.get("start_time", 0)
         step.last_modified = doc.get("last_modified", 0)

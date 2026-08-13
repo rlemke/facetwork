@@ -180,8 +180,22 @@ class FacetInitializationBeginHandler(StateHandler):
             # For schema instantiation, store values as returns (accessible via step.field)
             # For facet calls, store values as params
             is_schema = self.step.object_type == ObjectType.SCHEMA_INSTANTIATION
+            # `+=` args: carry the flag onto the evaluated attribute so yield
+            # capture can aggregate them. The alternative — re-reading the AST
+            # at capture time — would put the same rule in two places, and the
+            # value is already here.
+            append_names = {
+                a.get("name")
+                for a in (stmt_def.args or [])
+                if isinstance(a, dict) and a.get("append")
+            }
             for name, value in evaluated.items():
                 self.step.set_attribute(name, value, is_return=is_schema)
+                if name in append_names:
+                    bag = self.step.attributes.returns if is_schema else self.step.attributes.params
+                    attr = bag.get(name)
+                    if attr is not None:
+                        attr.append = True
 
             self.step.request_state_change(True)
             return StateChangeResult(step=self.step)
