@@ -129,6 +129,12 @@ in MinIO rather than on the laptop that launched the run, that difference is the
 whole ballgame: enumeration has to be *work*, done where the credentials and the
 data are, not parse-time metaprogramming on the submitting host.
 
+`fw.file.List` is now one of twenty-one built-ins across four namespaces —
+`fw.file`, `fw.http`, `fw.archive`, `fw.exec` — so the fetch → extract → fan-out
+chain that opens most real pipelines is writable with no handler at all. The
+selection rule and what it cost are in [thesis §13.4b](../../thesis.md);
+`fw.exec.Run` is the `shell:` analogue, argv-list only and gated per host.
+
 ## Run it
 
 ```bash

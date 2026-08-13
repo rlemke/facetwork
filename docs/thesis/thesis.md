@@ -1592,6 +1592,8 @@ That is demonstrable rather than theoretical. Taking the same state-capitals wor
 
 That pair locates the boundary precisely: Snakemake's `code` rerun-trigger sees **the rule's own directive text and nothing transitively behind it**. It is not a bug — it cannot read the contents of a program it merely invokes — but note where the blind spot falls. It falls on `shell:` calling an external CLI, which is the very pattern that separates an algorithm team from a workflow team (§13.5). The cleaner that separation, the more of the algorithm is invisible to the staleness check.
 
+Facetwork acquired the same capability while this was being written — `fw.exec.Run` invokes an external CLI from FFL (§13.4b) — so it is worth being explicit that it does not acquire the same blind spot, and why. Not because Facetwork can see inside the invoked binary; it cannot, and no orchestrator can. It is because the two systems default in opposite directions: Snakemake asks "may I skip this?" and answers from what it can see, so anything it cannot see reads as *unchanged*; Facetwork re-derives unless a handler produces a key saying otherwise, so anything it cannot see reads as *changed*. The blind spot is identical. Only its direction of failure differs, and that is the whole of §13.3's argument restated on a new facet.
+
 **What is actually required is a key binding an output to the algorithm that produced it**, not a timestamp comparing it to its inputs. Facetwork's sidecars carry one. Every cached artifact is written with a companion `.meta.json`:
 
 ```json
@@ -1617,6 +1619,12 @@ Which settles what the *default* should be. **Assume the algorithm has changed: 
 For an orchestrator whose claim is durability, failing towards *correct but slow* is the right default. What Facetwork pays for it is the 4.61 seconds and 157 steps above: bookkeeping to discover there is nothing to do. That cost is real and scales with width — at county-atlas width it is thousands of steps and minutes of cascade even when every handler returns instantly — but it is a **performance** debt, not a correctness one, and the two should not be traded at par.
 
 The honest cost is elsewhere, and it is a burden on people rather than on the machine. Incremental recomputation in Facetwork is **handler-author work, repeated per domain, and only as good as the author's understanding of how their data is produced**. Whoever writes the handler must know what makes an output stale — an upstream revision, a schema change, an algorithm version — and choose a key that captures it. Every `fwh_*` domain in this project does this and does it differently. Snakemake gives its users a weaker guarantee, but gives it to everyone, for free, without their having to think about it. That is a real advantage of the make model and it should not be argued away; the point of this section is only that the guarantee is weaker than it looks, and that the strong version cannot be had from a timestamp.
+
+An audit of that burden across the 23 domain packages found what "repeated per domain" costs in practice. **Fourteen of the twenty-three hand-roll download-plus-cache**, and they disagree on the one decision that matters — whether what is already on disk may be reused. One froze permanently on a moving `…-latest.osm.pbf` target, because the file existed and nothing asked upstream whether it had changed. One recorded a cache key and never compared it against anything. Nineteen call sites skip work on file existence alone, which is the very assumption this section has just spent several pages dismantling — reproduced inside the system that dismantles it, because each author reimplemented the check and each got a slightly different amount of it right.
+
+That finding is a criticism of the "leave it to the handler author" position, not a vindication of it, and the fix is to move the decision into the framework rather than to keep asking each author to rediscover it. A built-in `fw.http.Fetch` now makes the sound reuse decision the *default*: a conditional GET carrying `If-None-Match`, where a 304 is upstream itself stating that what we hold is still current; or a re-fetched published checksum for publishers that ship one; or a `max_age_hours` window, which remains a **domain** fact and stays a domain decision. Size and source URL are verified before reuse, so a truncated download cannot be served as complete, and every fetch writes a sidecar recording the digest, the source and the fetch time.
+
+This narrows the gap with Snakemake's position without closing it, and the residue is worth stating precisely. What is now free-and-uniform is the *upstream* half — has the input changed? What is still per-domain author work is the *downstream* half: when a root artifact changes, every artifact derived from it is stale although nothing about those artifacts changed, and only the domain knows what derives from what. The framework can hand the author the fact (the input's digest, in the sidecar); it cannot know that the tiles were built from that PBF. So the correct claim is narrower than "solved": the most-repeated and most-often-wrong check is now framework-owned, and the genuinely domain-specific one is not.
 
 **The interruption column favours Facetwork, but not for the reason it first appears.** Nextflow's `-resume` re-ran everything after a mid-run `SIGTERM` in this test, while a graceful interrupt closer to completion cached all thirteen tasks; whether the difference is cache-flush timing rather than a limitation is not established here, and it would be unfair to present one sample as a defect in a mature system. The durable point is *where completion is recorded*: Snakemake records it in the filesystem, Nextflow in a session cache belonging to the run, and Facetwork in a task and step store that no participant owns. Only the third survives the loss of the machine that started the run, which is why the hibernation result has no counterpart in the other two columns — the question does not arise for a system whose orchestrator is a process on someone's laptop.
 
@@ -1681,6 +1689,69 @@ also fans out over nothing. The differences are that the search happened where
 the data is, that its result is a value recorded in the step store rather than
 an absence inferred from a DAG that was never built, and that a handler or a
 `sys.assert` can refuse an empty result outright.
+
+### 13.4b The built-in facet library, and the `shell:` question
+
+`fw.file.List` is one member of a library that grew in response to the audit in
+§13.3, and the shape of that growth is itself an argument. Twenty-one facets
+across four namespaces now ship with the framework and are registered by every
+runner with no handler for anyone to write:
+
+| Namespace | Facets | What it replaces in the domains |
+|---|---|---|
+| `fw.file` | 12 — `List`, `Stat`, `Hash`, `ReadText`, `WriteJson`, `Copy`, … | ad-hoc `pathlib` handlers; enumeration (§13.4a) |
+| `fw.http` | 4 — `Fetch`, `Get`, `GetJson`, `Provenance` | download-plus-cache, hand-rolled in **14 of 23** domains |
+| `fw.archive` | 3 — `Extract`, `List`, `ReadMember` | zip/tar handling, hand-rolled in **9 of 23** across 17 sites |
+| `fw.exec` | 2 — `Run`, `Which` | *nothing* — see below |
+
+The selection rule is visible in the last column, and only the first three rows
+satisfy it. Each was chosen because a survey found the same non-domain logic
+rewritten many times *and getting it wrong differently each time*: the reuse
+decision in §13.3, and in the archive case a set of small recurring shapes —
+extract-then-glob for a shapefile, read the one member whose name carries a
+version that moves each release, walk a tar filtering by suffix. None of that is
+domain knowledge, and a framework that leaves it to twenty-three authors is
+choosing to have twenty-three slightly different answers.
+
+`fw.exec` is the exception that clarifies the rule, because it removes no
+duplication at all. All forty-eight `subprocess` call sites in the domain
+packages are inside Python handlers, where `subprocess` is already one import
+away. It exists for a different reason — it is FFL's answer to Snakemake's
+`shell:`, the escape hatch for an author who writes no Python — and comparing
+the two is more instructive than the file facets are.
+
+Snakemake's `shell:` is a **string**, with wildcards interpolated into it and a
+shell to parse the result. That is where its quoting and injection bugs live: a
+file name containing a space, a quote, or `$(…)` changes what runs. `fw.exec.Run`
+takes an **argv list** and never invokes a shell, so an argument cannot be
+reinterpreted as syntax. That is a straightforward win and I claim it as one.
+
+The second difference is not a win but a deliberate asymmetry, and it costs
+something. `Run` executes only commands named in that runner's `FW_EXEC_ALLOW`;
+unset means refuse. Snakemake has no such gate and needs none — the person who
+writes the Snakefile is the person who owns the machine. Facetwork has already
+assumed otherwise: a `script { }` block has no `open` builtin and a fixed import
+allowlist precisely because the FFL author is not fully trusted (§8), and an
+ungated exec would erase that in one facet. So the gate follows the model script
+environments already use — the host advertises a capability, and work needing it
+runs where the capability is provided. The cost is real and should not be hidden:
+a workflow that runs on a colleague's laptop under Snakemake needs a
+provisioning step under Facetwork, and "it works on the host that was set up for
+it" is a worse property than "it works". The compensating facet is `Which`,
+which reports the gate's answer without running anything, so a workflow can fail
+once, naming the cause, instead of fanning out three thousand identical failures.
+
+There is a cost to the library as a whole, separate from any facet in it. It is
+surface the framework now owns and must keep coherent, and the coherence problem
+is the same late-and-distant one this thesis argues against elsewhere: a facet
+declared in the shipped FFL with no handler behind it compiles, dispatches, and
+dies on a runner hours later with "no handler for facet". Registration therefore
+cross-checks the shipped declarations against the handler dispatch and refuses to
+start on drift. Building the library also exposed two real gaps in the compiler
+and runtime — `use fw.file` was rejected as an unknown namespace, and the runtime
+resolved facets only against the workflow's stored AST, which by construction
+does not contain the built-ins — both of which were latent the moment ambient
+declarations existed at all, and neither of which any test had covered.
 
 ### 13.5 The seven dimensions
 
