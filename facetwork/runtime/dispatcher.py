@@ -134,7 +134,20 @@ class RegistryDispatcher:
             # must not pay to `find_spec` (and, for cross-domain deps, import)
             # the whole 500+-registration handler universe just to keep its own
             # ~few dozen. Non-matching registrations are simply not ours.
-            if self._topics and not any(fnmatch.fnmatch(reg.facet_name, t) for t in self._topics):
+            #
+            # EXCEPT the framework's own `fw.*` facets, which are ambient: every
+            # runner registers them and any runner can execute them, like the
+            # fw:execute / fw:resume protocol tasks. Dropping them here is what
+            # made a topic-scoped fleet leave `fw.http.Fetch` pending with no
+            # claimer — they never reached the advertise step, so exempting them
+            # only there was not enough. Their modules ship in the wheel, so the
+            # import-check they still go through costs nothing.
+            ambient = reg.facet_name.startswith("fw.")
+            if (
+                self._topics
+                and not ambient
+                and not any(fnmatch.fnmatch(reg.facet_name, t) for t in self._topics)
+            ):
                 continue
             if verify and not registration_module_available(reg.module_uri):
                 skipped.append(reg.facet_name)

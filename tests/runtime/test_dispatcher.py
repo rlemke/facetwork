@@ -272,6 +272,34 @@ class TestRegistryDispatcher:
         assert dispatcher.can_dispatch("ns.Here") is True
         assert dispatcher.can_dispatch("ns.Gone") is False
 
+    def test_topics_scope_registrations_but_never_the_ambient_builtins(self, store, handler_file):
+        """Topic scoping keeps a runner to its own domain — except for `fw.*`.
+
+        The framework's own facets are ambient: every runner registers them and
+        any runner can execute them, like the fw:execute / fw:resume protocol
+        tasks. On a fleet where every runner is scoped to its domain
+        (`--topics census.*`), dropping them here meant NO runner advertised
+        `fw.http.Fetch`, so its task sat pending with server_id=None while all
+        thirteen runners logged "Registered 21 built-in handler(s)" and looked
+        healthy.
+        """
+        for name in ("census.Acs.Fetch", "osm.cache.Download", "fw.http.Fetch", "fw.file.List"):
+            store.save_handler_registration(
+                HandlerRegistration(
+                    facet_name=name, module_uri=f"file://{handler_file}", entrypoint="handle"
+                )
+            )
+
+        dispatcher = RegistryDispatcher(persistence=store, topics=["census.*"])
+        dispatcher.preload(verify=True)
+        advertised = set(dispatcher.dispatchable_facets())
+
+        assert "census.Acs.Fetch" in advertised, "topic scoping broke"
+        assert "osm.cache.Download" not in advertised, "scoping must still exclude other domains"
+        assert {"fw.http.Fetch", "fw.file.List"} <= advertised, (
+            "built-ins hidden by --topics; no runner in a scoped fleet would claim their tasks"
+        )
+
     def test_registration_module_available(self, handler_file):
         """registration_module_available: True for an existing file:// path, False otherwise."""
         from facetwork.runtime.dispatcher import registration_module_available
