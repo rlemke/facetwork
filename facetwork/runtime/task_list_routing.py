@@ -67,3 +67,28 @@ def namespaces_for(names) -> list[str]:
         if ns:
             out.add(ns)
     return sorted(out)
+
+
+#: Namespace prefix of the facets that ship with the framework itself
+#: (``fw.file``, ``fw.http``, ``fw.archive``, ``fw.exec``).
+AMBIENT_PREFIX = "fw."
+
+
+def is_ambient(facet_name: str) -> bool:
+    """Whether *facet_name* is one of the framework's own built-in facets.
+
+    These are **ambient**: every runner registers their handlers at startup and
+    any runner can execute them, exactly like the ``fw:execute`` / ``fw:resume``
+    protocol tasks. So every place that narrows what a runner will serve —
+    ``--topics`` scoping above all — has to let them through, or their tasks are
+    claimable by nobody.
+
+    That failure is silent and fleet-wide: with all thirteen runners scoped to
+    their own domain (``--topics census.*``), ``fw.http.Fetch`` sat pending with
+    ``server_id=''`` while every runner logged "Registered 21 built-in
+    handler(s)" and looked healthy. The scoping is applied in FOUR independent
+    places (registry preload, advertise, event-name derivation, step polling),
+    and fixing them one at a time took three deploys to find them all — hence
+    one predicate rather than four copies of ``startswith``.
+    """
+    return (facet_name or "").startswith(AMBIENT_PREFIX)

@@ -318,6 +318,8 @@ def main() -> None:
         # they only drop non-importable modules — so filter here.
         import fnmatch
 
+        from facetwork.runtime.task_list_routing import is_ambient
+
         topic_globs = args.topics or []
         registered = 0
         for facet_name in dispatcher.dispatchable_facets():
@@ -330,7 +332,7 @@ def main() -> None:
             # its task sits pending forever with server_id=None. Observed on the
             # first fleet deploy: all 13 runners logged "Registered 21 built-in
             # handler(s)" and not one of them would take the work.
-            ambient = facet_name.startswith("fw.")
+            ambient = is_ambient(facet_name)
             if (
                 topic_globs
                 and not ambient

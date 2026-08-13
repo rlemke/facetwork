@@ -32,6 +32,7 @@ import socket
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -3749,3 +3750,54 @@ class TestContinuationDrain:
         assert d.can_dispatch("ns.Compute") is True  # short-name fallback
         assert d.can_dispatch("ns.Missing") is False
         assert d.dispatch("ns.Compute", {"x": 3}) == {"out": 6}
+
+
+class TestAmbientBuiltinsAreClaimableByAnyRunner:
+    """`fw.*` must survive every layer of --topics scoping.
+
+    Scoping is applied in FOUR independent places — registry preload, the
+    advertise loop, `_get_event_names`, and `_poll_event_steps` — and each one
+    that drops a name makes the runner stop claiming it. Fixing them one at a
+    time cost three deploys, because each fix looked correct in isolation while
+    an untouched layer downstream still filtered the name out.
+
+    So this asserts the property at the level that matters: what the runner
+    would actually claim.
+    """
+
+    def test_get_event_names_keeps_builtins_under_topic_scoping(self):
+        from facetwork.runtime.agent import ToolRegistry
+        from facetwork.runtime.runner.service import RunnerService
+
+        registry = ToolRegistry()
+        for name in ("census.Acs.Fetch", "osm.cache.Download", "fw.http.Fetch", "fw.file.List"):
+            registry.register(name, lambda payload: {})
+
+        svc = RunnerService.__new__(RunnerService)
+        svc._tool_registry = registry
+        svc._config = SimpleNamespace(topics=["census.*"])
+
+        names = set(svc._get_event_names())
+        assert "census.Acs.Fetch" in names, "topic scoping broke"
+        assert "osm.cache.Download" not in names, "scoping must still exclude other domains"
+        assert {"fw.http.Fetch", "fw.file.List"} <= names, (
+            "built-ins dropped; a name not returned here is never claimed"
+        )
+
+    def test_the_polled_task_lists_include_fw(self):
+        """The other half: advertising the name is useless if the runner does
+        not poll the queue the task is on. `fw.http.Fetch` routes to list `fw`
+        (its top-level namespace), so `fw` must be in the poll set."""
+        from facetwork.runtime.task_list_routing import namespaces_for
+
+        assert "fw" in namespaces_for(["census.Acs.Fetch", "fw.http.Fetch"])
+
+    def test_registry_runner_topic_match_lets_builtins_through(self):
+        from facetwork.runtime.registry_runner import RegistryRunner
+
+        runner = RegistryRunner.__new__(RegistryRunner)
+        runner._config = SimpleNamespace(topics=["census.*"])
+
+        assert runner._matches_topics("census.Acs.Fetch") is True
+        assert runner._matches_topics("osm.cache.Download") is False
+        assert runner._matches_topics("fw.archive.Extract") is True

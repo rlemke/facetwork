@@ -215,7 +215,15 @@ class RegistryRunner(BaseRunner):
     # =========================================================================
 
     def _matches_topics(self, facet_name: str) -> bool:
-        """Check if a facet name matches any configured topic pattern."""
+        """Check if a facet name matches any configured topic pattern.
+
+        The framework's own facets always match — see
+        :func:`~facetwork.runtime.task_list_routing.is_ambient`.
+        """
+        from .task_list_routing import is_ambient
+
+        if is_ambient(facet_name):
+            return True
         return any(fnmatch.fnmatch(facet_name, pattern) for pattern in self._config.topics)
 
     def _refresh_registry(self) -> None:

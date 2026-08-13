@@ -778,7 +778,11 @@ class RunnerService(BaseRunner):
         if self._config.topics:
             topics_set = set(self._config.topics)
 
+            from ..task_list_routing import is_ambient
+
             def _topic_match(facet_name: str) -> bool:
+                if is_ambient(facet_name):
+                    return True  # framework's own facets — see `is_ambient`
                 short = facet_name.rsplit(".", 1)[-1]
                 if facet_name in topics_set or short in topics_set:
                     return True
@@ -811,6 +815,8 @@ class RunnerService(BaseRunner):
         dead literal that never claims anything. Non-glob topics pass through
         verbatim. Without topics, all non-builtin handler names are used.
         """
+        from ..task_list_routing import is_ambient
+
         handler_names = [
             name for name in self._tool_registry._handlers.keys() if not name.startswith("fw:")
         ]
@@ -821,6 +827,9 @@ class RunnerService(BaseRunner):
                     names.extend(n for n in handler_names if fnmatch.fnmatch(n, topic))
                 else:
                     names.append(topic)
+            # The framework's own facets are ambient — see `is_ambient`. A name
+            # this runner does not return here is a name it never claims.
+            names.extend(n for n in handler_names if is_ambient(n))
             return sorted(set(names))
         return handler_names
 

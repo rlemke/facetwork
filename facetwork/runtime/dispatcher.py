@@ -126,6 +126,8 @@ class RegistryDispatcher:
         """
         import fnmatch
 
+        from .task_list_routing import is_ambient as _is_ambient
+
         registrations = self._persistence.list_handler_registrations()
         self._reg_cache.clear()
         skipped: list[str] = []
@@ -142,7 +144,7 @@ class RegistryDispatcher:
             # claimer — they never reached the advertise step, so exempting them
             # only there was not enough. Their modules ship in the wheel, so the
             # import-check they still go through costs nothing.
-            ambient = reg.facet_name.startswith("fw.")
+            ambient = _is_ambient(reg.facet_name)
             if (
                 self._topics
                 and not ambient
