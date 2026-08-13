@@ -252,6 +252,11 @@
       ],
       "description": "Sentinel-2 land-cover change (STAC + COG \u2192 NDVI/composite \u2192 difference/classify \u2192 MapLibre tiled map)"
     },
+    "gridbuilder": {
+      "repo": "fwh_gridbuilder",
+      "extras": [],
+      "description": "OpenStreetMap power infrastructure (substations, lines) → model-ready grid CSV/GeoJSON per country; the FFL equivalent of PyPSA grid-builder"
+    },
     "cancer": {
       "repo": "fwh_cancer",
       "extras": [],
