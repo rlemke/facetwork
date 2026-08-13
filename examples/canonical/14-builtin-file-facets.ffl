@@ -27,7 +27,13 @@ namespace canonical.files {
     facet HashEach(paths: Json) => (digests: Json)
         andThen foreach p in $.paths {
             h = fw.file.Hash(path = $.p)
-            yield HashEach(digests = h.digest)
+            // THE BRACKETS ARE LOAD-BEARING. Yielding a bare value ASSIGNS it,
+            // so each iteration overwrites the last and `digests` ends up as the
+            // final file's hash alone — while every Hash step still ran, so the
+            // run looks entirely successful. Yielding a LIST concatenates across
+            // iterations, which is what a fan-out result almost always wants.
+            // Measured: 3 files gave 1 digest without the brackets, 3 with.
+            yield HashEach(digests = [h.digest])
         }
 
     workflow Inventory(dir: String, pattern: String = "*.csv") => (

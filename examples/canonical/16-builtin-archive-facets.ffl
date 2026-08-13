@@ -32,7 +32,7 @@ namespace canonical.archive {
     facet LoadEach(paths: Json) => (counts: Json)
         andThen foreach p in $.paths {
             loaded = LoadShapefile(path = $.p)
-            yield LoadEach(counts = loaded.features)
+            yield LoadEach(counts = [loaded.features])
         }
 
     // ------------------------------------------------------------------
