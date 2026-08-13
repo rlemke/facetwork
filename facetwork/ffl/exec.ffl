@@ -1,0 +1,77 @@
+/** Running an external program, shipped with Facetwork.
+  *
+  * This is the analogue of Snakemake's `shell:` — the escape hatch for a
+  * workflow author who needs a tool the platform does not wrap. It differs from
+  * `shell:` in two ways that are deliberate, not incidental.
+  *
+  * NO SHELL. `args` is an argv LIST, always executed without a shell. Snakemake
+  * interpolates wildcards into a shell string, which is where its quoting and
+  * injection bugs live: a file name containing a space, a quote, or `$(…)`
+  * changes what runs. An argv list cannot be reinterpreted, so a path is a path.
+  *
+  * THE HOST DECIDES WHAT MAY RUN. `command` must be named in the runner's
+  * `FW_EXEC_ALLOW` (comma-separated, e.g. `osmium,tippecanoe,ogr2ogr`).
+  * Unset means REFUSE, and the error names the host and the variable.
+  *
+  * That gate exists because Facetwork already decided the FFL author is not
+  * fully trusted: a `script {}` block has no `open` builtin and a fixed import
+  * allowlist. An ungated exec would walk around all of it. The gate follows the
+  * model script environments already use — the host advertises a capability,
+  * and work that needs it runs only where it is provided. A host without the
+  * binary should simply not list it.
+  *
+  * The command must be a bare name resolved on PATH, never a path. Otherwise
+  * `fw.file.WriteText` could plant a file and `Run` could execute it, which
+  * would make the allowlist decorative. (`fw.file` cannot set the execute bit,
+  * so this closes the loop — but only while the rule holds.)
+  *
+  * ENVIRONMENT IS NOT INHERITED. A runner process holds real credentials
+  * (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, S3 keys). The child gets a scrubbed
+  * environment — PATH, HOME, LANG, TMPDIR — plus exactly what `env` adds. A
+  * subprocess that needs a secret must be handed it deliberately. */
+namespace fw.exec {
+
+    /** Run *command* with *args* and return what it produced.
+      *
+      * A non-zero exit fails the step, with the tail of stderr in the message —
+      * the one thing that turns "exit status 1" into a diagnosis. List the
+      * codes that are not failures in `allow_exit_codes` (grep's 1 for "no
+      * match", rsync's 24).
+      *
+      * `stdout`/`stderr` are capped at `max_output_bytes` and the excess is
+      * drained rather than buffered, so a chatty program cannot exhaust the
+      * runner's memory. `truncated` says it happened. Output that matters
+      * belongs in a file the program writes, not in a step value.
+      *
+      * `timeout_seconds` kills the whole process GROUP, so a program that
+      * spawned children does not leave them behind holding the scratch disk. */
+    event facet Run(
+        command: String,
+        args: Json = [],
+        cwd: String = "",
+        env: Json = null,
+        stdin: String = "",
+        timeout_seconds: Int = 900,
+        max_output_bytes: Long = 1048576,
+        allow_exit_codes: Json = []
+    ) => (
+        exit_code: Int,
+        stdout: String,
+        stderr: String,
+        truncated: Boolean,
+        duration_ms: Long,
+        command_line: String
+    ) with Effect(kind = "external") with Cost(tier = "moderate")
+
+    /** Whether this runner can run *command* — is it on PATH, and is it
+      * allowed here?
+      *
+      * `allowed` reports the gate's answer without running anything, so a
+      * workflow can branch or assert before fanning out 3,000 iterations that
+      * would each fail identically on a host that was never provisioned. */
+    event facet Which(command: String) => (
+        found: Boolean,
+        path: String,
+        allowed: Boolean
+    ) with Effect(kind = "io") with Cost(tier = "free")
+}

@@ -1,0 +1,83 @@
+// Canonical: the built-in fw.exec facets — running an external tool.
+//
+// This is Facetwork's answer to Snakemake's `shell:`, and the differences are
+// deliberate. Compile with no `--library`:
+//   fw ffl compile --check --primary this.ffl
+//
+// NO SHELL. `args` is an argv LIST, executed without a shell, and there is no
+// flag to change that. Snakemake interpolates wildcards into a shell string,
+// which is where its quoting bugs live: a file name containing a space, a
+// quote, or `$(…)` changes what runs. An argv element cannot be reinterpreted.
+//
+// THE HOST DECIDES WHAT MAY RUN. `command` must be named in that runner's
+// `FW_EXEC_ALLOW` (e.g. `FW_EXEC_ALLOW=osmium,tippecanoe,ogr2ogr`). Unset means
+// refuse. This is not ceremony: Facetwork already decided the FFL author is not
+// fully trusted — a `script {}` block has no `open` builtin and a fixed import
+// allowlist — and an ungated exec would erase that. It also follows the model
+// script environments use: the host advertises a capability, and work that
+// needs it runs where it is provided.
+//
+// The command is a bare name resolved on PATH, never a path — otherwise
+// `fw.file.WriteText` could plant a file and `Run` could execute it.
+//
+// THE ENVIRONMENT IS NOT INHERITED. A runner holds real credentials
+// (ANTHROPIC_API_KEY, GITHUB_TOKEN, S3 keys); the child gets PATH/HOME/LANG/
+// TMPDIR plus exactly what `env` adds.
+//
+// WHEN NOT TO USE THIS. If the work is Python, a `script { }` block or a
+// handler is better: it stays inside the sandbox, needs no host provisioning,
+// and runs everywhere. Reach for `Run` when the capability IS an external
+// binary.
+
+namespace canonical.exec {
+    use fw.exec
+    use fw.file
+
+    facet ConvertEach(paths: Json, out_dir: String) => (outputs: Json)
+        // `limit` because each iteration is a whole external process competing
+        // for CPU and scratch disk — the case the cap was built for.
+        andThen foreach p in $.paths limit 4 {
+            converted = fw.exec.Run(
+                command = "ogr2ogr",
+                args = ["-f", "GeoJSON", $.out_dir ++ "/out.geojson", $.p],
+                timeout_seconds = 600
+            )
+            yield ConvertEach(outputs = converted.command_line)
+        }
+
+    workflow ConvertShapefiles(dir: String, out_dir: String) => (
+        converted: Json,
+        tool: String
+    ) andThen {
+        // Check the capability BEFORE fanning out. A 3,000-way fan-out on a
+        // host that was never provisioned fails 3,000 times, identically, and
+        // the first useful line of the diagnosis is buried. `Which` reports
+        // rather than raises so the workflow can say so itself.
+        tool = fw.exec.Which(command = "ogr2ogr") andThen when {
+            case $.allowed == false => {
+                // Fail HERE, once, naming the cause — rather than letting the
+                // fan-out fail per iteration with the reason buried.
+                sys.log(reason = "ogr2ogr not permitted on this runner", host = $.path)
+                sys.assert($.allowed == true)
+                yield ConvertShapefiles(converted = null, tool = $.path)
+            }
+            case _ => {
+                found = fw.file.List(path = $$.dir, pattern = "*.shp")
+                done = ConvertEach(paths = found.paths, out_dir = $$.out_dir)
+                yield ConvertShapefiles(converted = done.outputs, tool = $.path)
+            }
+        }
+    }
+
+    // A tool that reports "nothing matched" with a non-zero exit is not
+    // failing. Name those codes rather than wrapping the step in `catch`:
+    //
+    //     hits = fw.exec.Run(
+    //         command = "grep",
+    //         args = ["-c", $.term, $.file],
+    //         allow_exit_codes = [1]          // 1 == no match, not an error
+    //     )
+    //
+    // Anything else fails the step with the tail of stderr in the message,
+    // which is what turns "exit status 1" into a diagnosis.
+}

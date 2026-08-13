@@ -26,6 +26,7 @@ These files are also exposed via the MCP server at `fw://examples/canonical/`.
 | [`14-builtin-file-facets.ffl`](14-builtin-file-facets.ffl) | Built-in `fw.file.*` — list/read/write/copy/hash with **no handler to write**, and storage-aware (local, `s3://`, `hdfs://`). `List` is the enumerate-then-fan-out primitive: the width is discovered at run time. |
 | [`15-builtin-http-facets.ffl`](15-builtin-http-facets.ffl) | Built-in `fw.http.*` — fetching whose **reuse decision is sound by default** (conditional GET / published checksum / `max_age_hours`), the provenance sidecar every fetch leaves, and gating derived work on `was_cached`. |
 | [`16-builtin-archive-facets.ffl`](16-builtin-archive-facets.ffl) | Built-in `fw.archive.*` — `Extract` / `List` / `ReadMember`; format detected from content, members that would land outside `dest` refused. Shows the **fetch → extract → fan out** chain with no Python written. |
+| [`17-builtin-exec-facets.ffl`](17-builtin-exec-facets.ffl) | Built-in `fw.exec.*` — running an external tool (Snakemake's `shell:`, argv-list only and **host-gated** by `FW_EXEC_ALLOW`). Shows `Which` as the pre-fan-out capability check and `allow_exit_codes` for tools whose non-zero exit isn't a failure. |
 
 ## Conventions worth noticing
 

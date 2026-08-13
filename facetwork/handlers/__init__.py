@@ -38,6 +38,7 @@ _BUILTIN_MODULES: list[tuple[str, str]] = [
     ("facetwork.handlers.file_handlers", "file.ffl"),
     ("facetwork.handlers.http_handlers", "http.ffl"),
     ("facetwork.handlers.archive_handlers", "archive.ffl"),
+    ("facetwork.handlers.exec_handlers", "exec.ffl"),
 ]
 
 # Generous relative to the work: a Copy or Hash of a large artifact is legitimate
@@ -51,14 +52,25 @@ def _ffl_path(filename: str) -> str:
 
 def builtin_facets() -> dict[str, str]:
     """Map of facet name -> handler module URI, for every built-in facet."""
+    return {facet: uri for facet, (uri, _timeout) in _builtin_entries().items()}
+
+
+def _builtin_entries() -> dict[str, tuple[str, int]]:
+    """facet name -> (module URI, timeout_ms).
+
+    A module may set ``HANDLER_TIMEOUT_MS`` to override the default — 0 disables
+    the per-handler execution timeout, which is what a handler wrapping a
+    long-running external tool needs (see ``exec_handlers``).
+    """
     import importlib
 
-    out: dict[str, str] = {}
+    out: dict[str, tuple[str, int]] = {}
     for module_name, _ffl in _BUILTIN_MODULES:
         module = importlib.import_module(module_name)
         uri = f"file://{os.path.abspath(module.__file__)}"
+        timeout = getattr(module, "HANDLER_TIMEOUT_MS", _BUILTIN_TIMEOUT_MS)
         for facet in module.facet_names():
-            out[facet] = uri
+            out[facet] = (uri, int(timeout))
     return out
 
 
@@ -100,7 +112,8 @@ def register_builtin_handlers(persistence: Any) -> int:
 
     from facetwork.runtime.entities import HandlerRegistration
 
-    handlers = builtin_facets()
+    entries = _builtin_entries()
+    handlers = {facet: uri for facet, (uri, _t) in entries.items()}
     declared = declared_facets()
     if declared:
         missing_handler = declared - set(handlers)
@@ -114,7 +127,7 @@ def register_builtin_handlers(persistence: Any) -> int:
 
     now = str(int(time.time() * 1000))
     count = 0
-    for facet_name, module_uri in sorted(handlers.items()):
+    for facet_name, (module_uri, timeout_ms) in sorted(entries.items()):
         persistence.save_handler_registration(
             HandlerRegistration(
                 facet_name=facet_name,
@@ -122,7 +135,7 @@ def register_builtin_handlers(persistence: Any) -> int:
                 entrypoint="handle",
                 version="1.0.0",
                 checksum="",
-                timeout_ms=_BUILTIN_TIMEOUT_MS,
+                timeout_ms=timeout_ms,
                 requirements=[],
                 metadata={"builtin": "true"},
                 created=now,
