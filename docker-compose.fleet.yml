@@ -221,6 +221,15 @@ services:
     environment:
       <<: *fleet-env
 
+  runner-gridbuilder:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+      # earth-osm's PBF cache. Repeated from the full-stack block because
+      # `environment` is replaced by this override, not merged into it.
+      FW_GRIDBUILDER_DATA_DIR: /Volumes/afl_data/earth-osm
+
   runner-sensor-monitoring:
     <<: *fleet-runner
     depends_on: !reset []
