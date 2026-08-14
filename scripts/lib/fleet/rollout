@@ -195,6 +195,27 @@ BUILD=(docker buildx build --builder "$BUILDER" --platform "$PLATFORM"
 BUILD+=(--push .)
 "${BUILD[@]}"
 
+# Pre-pull locally even without --stagger. `buildx --push` does not load the
+# image into the host daemon's store, so THIS host has no copy of the tag it
+# just built — and its fleet-agent then cold-pulls ~GB inside a bounded
+# `docker compose up`, which times out (exit 124) and retries on every cycle.
+# Observed repeatedly: runner-ffl failing 124 in a loop while the deploy sat
+# unconverged, and a single manual `docker pull` fixing it. On a standalone box
+# the local host IS the fleet, so the --stagger path that protects remotes never
+# ran. Failure here is a WARNING, not fatal: the agent can still pull, just
+# slowly, and refusing to flip the config would be a worse outcome than a slow
+# reconcile.
+if [ "$STAGGER" != 1 ]; then
+    echo "=== local pre-pull of $TAG (so the agent's reconcile does not cold-pull) ==="
+    if _bounded "$PULL_TIMEOUT" docker pull "$NEW_IMAGE" >/dev/null 2>&1; then
+        echo "  cached ✓ — reconcile will not hit the registry"
+    else
+        echo "  WARNING: local pre-pull did not finish in ${PULL_TIMEOUT}s." >&2
+        echo "           The agent will pull during reconcile and may hit its own" >&2
+        echo "           timeout (exit 124) for a cycle or two before converging." >&2
+    fi
+fi
+
 if [ "$STAGGER" = 1 ]; then
     echo "=== staggered pre-pull of $TAG (serialize registry load before the flip; ${PULL_TIMEOUT}s/host cap) ==="
     echo "  local ($(hostname -s 2>/dev/null || hostname)):"
