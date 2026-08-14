@@ -259,10 +259,22 @@ while [ "$elapsed" -lt "$TIMEOUT" ]; do
     # parser counted 'applied v' — a string that now appears ONLY on LAGGING
     # hosts, so a fully converged fleet scored 0/0 and this loop reported failure
     # for a rollout that had actually succeeded.
-    total="$(printf '%s' "$STATUS" | grep -c 'runner(s)' || true)"
-    onnew="$(printf '%s' "$STATUS" | grep -c 'up-to-date' || true)"
-    echo "  ${onnew}/${total} host(s) on v${NEWVER} (${elapsed}s)"
-    [ -n "$NEWVER" ] && [ "$onnew" -ge "$total" ] && [ "$total" -gt 0 ] && { echo "All hosts converged."; break; }
+    # Count only hosts that CAN converge. A host printed with
+    # "** NO RUNNERS ALIVE **" has no agent running to apply anything, so
+    # waiting on it is waiting on nothing: on the standalone box that is
+    # server1/2/3, dead for weeks at v140, and counting them made every single
+    # rollout exit non-zero with the deploy actually fine. A wrong failure every
+    # time is worse than no signal — it trains you to ignore the one that matters.
+    #
+    # The 0/4-reads-as-success lesson still holds: dead hosts are EXCLUDED, not
+    # forgiven. If nothing is alive, live_total is 0 and this cannot converge.
+    LIVE="$(printf '%s' "$STATUS" | grep 'runner(s)' | grep -v 'NO RUNNERS ALIVE' || true)"
+    DEAD="$(printf '%s' "$STATUS" | grep 'runner(s)' | grep 'NO RUNNERS ALIVE' || true)"
+    total="$(printf '%s' "$LIVE" | grep -c 'runner(s)' || true)"
+    onnew="$(printf '%s' "$LIVE" | grep -c 'up-to-date' || true)"
+    ndead="$(printf '%s' "$DEAD" | grep -c 'runner(s)' || true)"
+    echo "  ${onnew}/${total} live host(s) on v${NEWVER} (${elapsed}s)$([ "${ndead:-0}" -gt 0 ] && echo " — ${ndead} host(s) with no runners alive, not counted")"
+    [ -n "$NEWVER" ] && [ "$onnew" -ge "$total" ] && [ "$total" -gt 0 ] && { echo "All live hosts converged."; break; }
     sleep 12; elapsed=$((elapsed+12))
 done
 "$FW_LIB/fleet/config" status --mongo "$MONGO" | grep -E 'runner\(s\)' || true
@@ -270,10 +282,25 @@ done
 # Printing "Rollout complete" either way is how a 0/4-converged rollout read as a
 # success on 2026-07-29 — say which one happened, and exit non-zero if unfinished.
 if [ -n "$NEWVER" ] && [ "${onnew:-0}" -ge "${total:-0}" ] && [ "${total:-0}" -gt 0 ]; then
-    echo "Rollout complete: $NEW_IMAGE (all $total host(s) on v$NEWVER)"
+    echo "Rollout complete: $NEW_IMAGE (all $total live host(s) on v$NEWVER)"
+    if [ "${ndead:-0}" -gt 0 ]; then
+        # Named, not hidden: a host that stopped reporting is worth knowing about,
+        # it is just not this rollout's failure. It will pick the image up when
+        # its agent comes back.
+        echo "" >&2
+        echo "NOTE: ${ndead} host(s) have no runners alive and were not waited for:" >&2
+        printf '%s\n' "$DEAD" | sed 's/^/       /' >&2
+        echo "      They apply the new image when their fleet-agent next runs." >&2
+    fi
 else
     echo "" >&2
-    echo "ERROR: rollout NOT converged after ${TIMEOUT}s — ${onnew:-0}/${total:-0} host(s) on v${NEWVER:-?}." >&2
+    if [ "${total:-0}" -eq 0 ]; then
+        echo "ERROR: rollout NOT converged after ${TIMEOUT}s — NO host has a live runner." >&2
+        echo "       The image is pushed and fleet_config points at it, but nothing is" >&2
+        echo "       running to apply it. Start a fleet-agent, or check the infra." >&2
+        exit 1
+    fi
+    echo "ERROR: rollout NOT converged after ${TIMEOUT}s — ${onnew:-0}/${total:-0} LIVE host(s) on v${NEWVER:-?}." >&2
     echo "       The image is pushed and fleet_config points at it, so agents keep retrying." >&2
     echo "       Check: fw fleet status; per-host \`docker ps\` image tags; a wedged" >&2
     echo "       \`docker compose\` (its fleet-agent log goes stale while it hangs)." >&2
