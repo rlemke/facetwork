@@ -234,9 +234,13 @@ INFRA_HOST_NAMES = ("afl-mongodb", "afl-minio", "afl-postgres")
 
 
 def resolve_infra_ip(*, log=None) -> str | None:
-    """Current IP of the infra host from the server catalog, with the loopback→LAN
-    guard (on the infra host the stable name resolves to 127.0.0.1, which is poison
-    inside a container). This is the same address `extra_hosts` should carry."""
+    """Current NUMERIC IP of the infra host from the server catalog, with the
+    loopback→LAN guard (on the infra host the stable name resolves to 127.0.0.1,
+    which is poison inside a container).
+
+    This is the address to write into a RUNNING container's /etc/hosts. For the
+    value compose bakes in at create time use :func:`container_infra_ip`, which
+    prefers Docker's gateway alias when infra is this machine."""
     try:
         from facetwork.servers import catalog as _srv
 
@@ -249,6 +253,47 @@ def resolve_infra_ip(*, log=None) -> str | None:
         if log:
             log(f"infra-IP resolve failed: {exc}")
         return None
+
+
+def container_infra_ip(*, log=None) -> str | None:
+    """What container ``extra_hosts`` should map the afl-* names to: Docker's
+    ``host-gateway`` alias when infra is this machine (immune to this host's own
+    DHCP drift), else the resolved infra IP. See servers.catalog.container_ip."""
+    try:
+        from facetwork.servers import catalog as _srv
+
+        return _srv.container_ip()
+    except Exception as exc:  # noqa: BLE001
+        if log:
+            log(f"container-IP resolve failed: {exc}")
+        return resolve_infra_ip(log=log)
+
+
+def _container_resolves(container: str, name: str) -> str | None:
+    """The IPv4 ``name`` resolves to INSIDE ``container``, or None.
+
+    ``ahostsv4``, NOT ``hosts``: plain ``getent hosts`` is AF_UNSPEC and prefers
+    the AAAA answer, so on an IPv6-enabled compose network it returns the
+    service's container address from Docker's embedded DNS and never sees the
+    IPv4 /etc/hosts entry we write. Comparing against that made every poll
+    report drift and rewrite a file that was already correct — 16 containers,
+    forever, with a misleading "drift:" line each time."""
+    try:
+        out = subprocess.run(
+            ["docker", "exec", container, "getent", "ahostsv4", name],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.split()
+        return out[0] if out else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _container_gateway_ip(container: str) -> str | None:
+    """The address ``host-gateway`` resolves to INSIDE ``container`` (Docker
+    publishes it as host.docker.internal). ``None`` if it doesn't resolve."""
+    return _container_resolves(container, "host.docker.internal")
 
 
 def _rewrite_hosts(content: str, ip: str, names=INFRA_HOST_NAMES) -> str:
@@ -292,14 +337,15 @@ def refresh_container_hosts(ip: str, *, log=None) -> list[str]:
     patched: list[str] = []
     for c in _runner_containers():
         try:
-            cur = subprocess.run(
-                ["docker", "exec", c, "getent", "hosts", "afl-mongodb"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            ).stdout.split()
-            cur_ip = cur[0] if cur else None
+            cur_ip = _container_resolves(c, "afl-mongodb")
             if cur_ip == ip:
+                continue
+            # Created with `afl-mongodb:host-gateway` (infra is this machine):
+            # that mapping is maintained by Docker and can never go stale, so
+            # "differs from the LAN IP" is not drift — leave it alone, or we
+            # would rewrite it back every poll and downgrade it to an address
+            # that dies on the next DHCP lease.
+            if cur_ip and cur_ip == _container_gateway_ip(c):
                 continue
             content = subprocess.run(
                 ["docker", "exec", c, "cat", "/etc/hosts"],

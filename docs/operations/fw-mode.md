@@ -49,6 +49,8 @@ Each switch is driven by a gitignored, host-local profile — `mode.local.json` 
 
 **Leave `infra_ip` empty.** It is re-resolved from `infra_host` on every apply, so a DHCP or subnet change self-heals; pinning a value defeats that and goes stale silently — the containers keep the address they were created with, while `fw mode status` reports the infra host unreachable. Resolution deliberately skips loopback: a machine's own `.local` name resolves to both `127.0.0.1` and its LAN address, and `127.0.0.1` inside a container points at the container itself, not the host.
 
+**In `local` mode the containers get no address at all.** Since infra *is* this machine, `FW_INFRA_IP` is written as Docker's **`host-gateway`** alias (`catalog.container_ip()`), which Docker maintains — so the mapping survives a reboot onto a new DHCP lease, a subnet change, or no network at all, with nothing to re-resolve and no per-reboot edit. Only `cluster` mode carries a real address, because there infra is a different machine. `fw mode status` shows both: the live-resolved IP it probes, and what the containers actually use. See [server-catalog.md](../reference/server-catalog.md#when-infra-is-this-machine-host-gateway-not-an-address).
+
 | `fleet_registry` | `host.docker.internal:5050` (local `registry:2`) | `server3.local:5050` |
 | `mongodb_url` / `s3_endpoint` | `afl-mongodb` / `afl-minio` → localhost | → the infra host |
 | `data_dir` / `data_root` | local scratch + `s3://afl-cache` | same names, remote |

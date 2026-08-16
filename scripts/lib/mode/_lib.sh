@@ -78,6 +78,17 @@ _mode_resolve_ip() {
 # _mode_mongo_reachable <ip_or_host> — true if TCP :27017 answers within 3s.
 _mode_mongo_reachable() { nc -z -G 3 "$1" 27017 >/dev/null 2>&1; }
 
+# _mode_container_ip <host> — what CONTAINERS should map afl-* to for <host>:
+# Docker's `host-gateway` alias when <host> is this machine (Docker maintains it,
+# so it survives this box rebooting onto a new DHCP lease — the recurring staleness
+# a pinned IP causes), else the resolved address. Falls back to plain resolution.
+_mode_container_ip() {
+    local host="$1" v=""
+    v="$(cd "$FW_ROOT" && "$_MODE_PY" -m facetwork.servers --container-ip "$host" 2>/dev/null || true)"
+    [ -z "$v" ] && v="$(_mode_resolve_ip "$host")"
+    echo "$v"
+}
+
 # _mode_runner_containers — names of this host's runner containers.
 _mode_runner_containers() { docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^facetwork-runner-' || true; }
 
@@ -135,11 +146,17 @@ _mode_apply() {
     [ -z "$infra_ip" ] && infra_ip="$(_mode_resolve_ip "$infra_host")"
     [ "$hosts_ip" = "@resolve" ] && hosts_ip="$infra_ip"
 
+    # What CONTAINERS get (compose extra_hosts) is NOT always what the host
+    # probes: when infra is this machine it is Docker's `host-gateway` alias, so
+    # the value written to .env.fleet stays correct across reboots onto a new IP.
+    local container_ip; container_ip="$(_mode_container_ip "$infra_host")"
+
     local reachable=0
     { [ -n "$infra_ip" ] && _mode_mongo_reachable "$infra_ip"; } && reachable=1
 
     echo "Switch to mode '$target':"
     printf '  %-14s %s\n' infra "$infra_host (${infra_ip:-unresolved})  Mongo:27017 $([ "$reachable" = 1 ] && echo 'reachable ✓' || echo 'UNREACHABLE ✗')"
+    printf '  %-14s %s\n' containers "afl-* -> ${container_ip:-unresolved}"
     printf '  %-14s %s\n' registry "$reg"
     printf '  %-14s %s\n' mongo "$mongo"
     printf '  %-14s %s\n' data_dir "$data_dir"
@@ -165,7 +182,7 @@ _mode_apply() {
     fi
 
     _env_upsert "$FW_ROOT/.env.fleet" FW_INFRA_HOST   "$infra_host"
-    _env_upsert "$FW_ROOT/.env.fleet" FW_INFRA_IP     "$infra_ip"
+    _env_upsert "$FW_ROOT/.env.fleet" FW_INFRA_IP     "${container_ip:-$infra_ip}"
     _env_upsert "$FW_ROOT/.env.fleet" FW_MONGODB_URL  "$mongo"
     _env_upsert "$FW_ROOT/.env.fleet" FW_S3_ENDPOINT  "$s3"
     _env_upsert "$FW_ROOT/.env.fleet" FW_DATA_DIR     "$data_dir"

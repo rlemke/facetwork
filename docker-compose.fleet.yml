@@ -59,7 +59,10 @@ x-fleet-runner: &fleet-runner
   # FW_INFRA_IP is normally set for you: runner/start resolves FW_INFRA_HOST
   # (a stable NAME, default server3.local) to the infra host's CURRENT IP via
   # mDNS/DNS and exports it here, so these mappings track DHCP drift with no
-  # per-host edit — the name is stable even when the address changes. The
+  # per-host edit — the name is stable even when the address changes. When that
+  # host is THIS machine (standalone / `fw mode local`) the value is Docker's
+  # `host-gateway` alias instead of an address: Docker maintains it, so it
+  # cannot go stale when this box reboots onto a new lease. The
   # literal below is only a last-resort fallback if that resolution is skipped
   # or fails. To pin a fixed address, set FW_INFRA_HOST="" + FW_INFRA_IP=<ip>.
   # Fallback is 127.0.0.1 (a VALID address, so `compose config` still enumerates

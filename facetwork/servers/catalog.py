@@ -122,3 +122,90 @@ def resolve_ip(entry_or_name: dict | str) -> str | None:
         return socket.gethostbyname(name)
     except OSError:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Container-facing address
+# ---------------------------------------------------------------------------
+
+#: Docker's own alias for "the machine hosting this container". Valid wherever
+#: ``extra_hosts`` / ``--add-host`` accepts an address (Docker >= 20.10, and
+#: Docker Desktop), and maintained BY Docker — so unlike a resolved LAN address
+#: it cannot go stale when this machine's DHCP lease changes, and it still
+#: works with no network at all.
+HOST_GATEWAY = "host-gateway"
+
+
+def _local_addresses() -> set[str]:
+    """Every IPv4 address this machine answers on, incl. loopback."""
+    addrs = {"127.0.0.1"}
+    try:
+        for _fam, _typ, _proto, _canon, sa in socket.getaddrinfo(
+            socket.gethostname(), None, socket.AF_INET
+        ):
+            addrs.add(sa[0])
+    except OSError:
+        pass
+    try:  # primary LAN address (routing lookup only — no packet is sent)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("192.0.2.1", 9))  # TEST-NET
+            addrs.add(s.getsockname()[0])
+        finally:
+            s.close()
+    except OSError:
+        pass
+    return addrs
+
+
+def is_self(entry_or_name: dict | str) -> bool:
+    """True when the catalog entry names THIS machine.
+
+    Checked by short hostname first (cheap, works offline) and then by address,
+    so it holds whether the entry is written ``MaxPro.local`` or ``maxpro``."""
+    entry = entry_or_name if isinstance(entry_or_name, dict) else find(entry_or_name)
+    if not entry:
+        return False
+    name = entry.get("name") or ""
+    if name:
+        try:
+            me = socket.gethostname().split(".")[0].lower()
+        except OSError:
+            me = ""
+        if me and name.split(".")[0].lower() == me:
+            return True
+    ip = resolve_ip(entry)
+    return bool(ip) and ip in _local_addresses()
+
+
+def container_ip(entry_or_name: dict | str | None = None) -> str | None:
+    """The address a CONTAINER should map the ``afl-*`` names to (compose
+    ``extra_hosts``). Defaults to the infra entry.
+
+    When infra runs on THIS machine — the standalone/`fw mode local` case — the
+    answer is :data:`HOST_GATEWAY`, never an IP: the containers reach the host's
+    published ports through Docker's own gateway, so a new DHCP lease after a
+    reboot (or no network at all) cannot strand them on an address that no
+    longer exists. Otherwise the infra host is remote and its stable name is
+    resolved live, exactly as before. An explicit ``ip_pin`` still wins — a
+    deployment that pinned an address asked for that address.
+
+    Not for host-side use: probe the host's own services on 127.0.0.1 / the
+    resolved IP (see :func:`resolve_ip`); ``host-gateway`` means nothing there."""
+    if entry_or_name is None:
+        entry = infra()
+    elif isinstance(entry_or_name, dict):
+        entry = entry_or_name
+    else:
+        # A name that isn't in the catalog is still resolvable — a deployment
+        # may set FW_INFRA_HOST to a host it never catalogued. Treat it as a
+        # one-off entry rather than refusing, so this call is a drop-in for the
+        # plain name resolution it replaces.
+        entry = find(entry_or_name) or {"name": entry_or_name}
+    if not entry:
+        return None
+    if entry.get("ip_pin"):
+        return str(entry["ip_pin"])
+    if is_self(entry):
+        return HOST_GATEWAY
+    return resolve_ip(entry)

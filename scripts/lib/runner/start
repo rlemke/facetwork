@@ -209,25 +209,13 @@ if [[ "$MODE" == "docker" || "$MODE" == "fleet" ]]; then
         # if the catalog is absent/empty.
         FW_INFRA_HOST="${FW_INFRA_HOST:-$("$PY" -m facetwork.servers --infra-name 2>/dev/null || true)}"
         FW_INFRA_HOST="${FW_INFRA_HOST:-server3.local}"
+        # When the infra host IS this machine (standalone / `fw mode local`),
+        # the answer is Docker's `host-gateway` alias rather than any address:
+        # Docker maintains it, so a reboot onto a new DHCP lease cannot strand
+        # the containers on an address that no longer exists. See
+        # facetwork/servers/catalog.py::container_ip.
         if [[ -n "$FW_INFRA_HOST" ]]; then
-            _infra_ip="$("$PY" - "$FW_INFRA_HOST" <<'PYEOF' 2>/dev/null || true
-import socket, sys
-try:
-    ip = socket.gethostbyname(sys.argv[1])
-    if ip.startswith("127.") or ip == "::1":
-        # Self-resolution on the infra host: loopback is poison inside the
-        # containers this value is destined for (extra_hosts) — use the LAN IP.
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.connect(("192.0.2.1", 9))
-            ip = s.getsockname()[0]
-        finally:
-            s.close()
-    print(ip)
-except Exception:
-    sys.exit(1)
-PYEOF
-)"
+            _infra_ip="$("$PY" -m facetwork.servers --container-ip "$FW_INFRA_HOST" 2>/dev/null || true)"
             if [[ -n "${_infra_ip:-}" ]]; then
                 export FW_INFRA_IP="$_infra_ip"
                 echo "  Infra host: $FW_INFRA_HOST -> $FW_INFRA_IP (resolved; afl-* container names map here)"
@@ -237,9 +225,14 @@ PYEOF
                 echo "  WARNING: could not resolve FW_INFRA_HOST=$FW_INFRA_HOST and no FW_INFRA_IP set — compose default applies" >&2
             fi
         fi
+        # Host-side probes below cannot use the gateway alias (it only means
+        # something inside a container) — they reach the same services on
+        # loopback, since this machine is the one publishing them.
+        _infra_probe_ip="${FW_INFRA_IP:-}"
+        [[ "$_infra_probe_ip" == "host-gateway" ]] && _infra_probe_ip="127.0.0.1"
 
         echo "Preflight — shared services must be reachable from this host:"
-        if "$PY" - "$FW_MONGODB_URL" "${FW_INFRA_IP:-}" <<'PYEOF' 2>/dev/null
+        if "$PY" - "$FW_MONGODB_URL" "${_infra_probe_ip:-}" <<'PYEOF' 2>/dev/null
 import sys
 from pymongo import MongoClient
 from urllib.parse import urlparse, urlunparse
@@ -259,7 +252,7 @@ PYEOF
             echo "    Check host/port, /etc/hosts (afl-mongodb -> IP), mongod binds 0.0.0.0, firewall." >&2
             exit 1
         fi
-        if "$PY" - "$FW_S3_ENDPOINT" "${FW_INFRA_IP:-}" <<'PYEOF' 2>/dev/null
+        if "$PY" - "$FW_S3_ENDPOINT" "${_infra_probe_ip:-}" <<'PYEOF' 2>/dev/null
 import socket, sys
 from urllib.parse import urlparse
 u = urlparse(sys.argv[1]); host = u.hostname or sys.argv[1]
@@ -273,7 +266,7 @@ if infra_ip and host.startswith("afl-"):
 port = u.port or (443 if u.scheme == "https" else 80)
 socket.create_connection((host, port), timeout=5).close()
 PYEOF
-        then echo "  ✓ MinIO/S3 reachable: $FW_S3_ENDPOINT${FW_INFRA_IP:+ (via FW_INFRA_IP=$FW_INFRA_IP)}"
+        then echo "  ✓ MinIO/S3 reachable: $FW_S3_ENDPOINT${_infra_probe_ip:+ (via $_infra_probe_ip)}"
         else
             echo "  ✗ MinIO/S3 NOT reachable: $FW_S3_ENDPOINT" >&2
             echo "    Check the endpoint URL/port, MinIO binds 0.0.0.0, firewall." >&2

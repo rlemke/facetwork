@@ -14,9 +14,23 @@ reg="$(grep -m1 -E '^FW_FLEET_REGISTRY=' "$FW_ROOT/.env" 2>/dev/null | cut -d= -
 infra_ip="$(grep -m1 -E '^FW_INFRA_IP=' "$FW_ROOT/.env.fleet" 2>/dev/null | cut -d= -f2-)"
 infra_host="$(grep -m1 -E '^FW_INFRA_HOST=' "$FW_ROOT/.env.fleet" 2>/dev/null | cut -d= -f2-)"
 
+# Resolve LIVE rather than trusting the file: FW_INFRA_IP is written once per
+# `fw mode` switch, so on a machine that reboots onto a new DHCP lease the file
+# is the one thing guaranteed to be stale. Everything that creates containers
+# re-resolves at start time, and this must report what they will actually use.
+live_ip="$(_mode_resolve_ip "${infra_host:-}")"
+container_ip="$(_mode_container_ip "${infra_host:-}")"
+probe_ip="$live_ip"; [ -z "$probe_ip" ] && probe_ip="$infra_ip"
+
 echo "Config (what runners + CLI use):"
 printf '  %-18s %s\n' "infra host"     "${infra_host:-<unset>}"
-printf '  %-18s %s\n' "infra IP"       "${infra_ip:-<unset>}  (containers reach afl-mongodb/afl-minio here)"
+# A file value that matches neither the live address nor what containers use is
+# a stale pin from an earlier network — say so instead of reporting it as truth.
+stale=""
+[ -n "$infra_ip" ] && [ "$infra_ip" != "$live_ip" ] && [ "$infra_ip" != "$container_ip" ] \
+    && stale="   ⚠️ .env.fleet pins a stale $infra_ip"
+printf '  %-18s %s\n' "infra IP"       "${live_ip:-<unresolved>} (live)$stale"
+printf '  %-18s %s\n' "containers use" "${container_ip:-<unresolved>}  (afl-mongodb/afl-minio -> here)"
 printf '  %-18s %s\n' "image registry" "${reg:-server3.local:5050 (default)}"
 if [ -f "$FW_ROOT/servers.local.json" ]; then
     printf '  %-18s %s\n' "server catalog" "servers.local.json present (overrides infra resolution)"
@@ -26,9 +40,9 @@ fi
 
 echo
 echo "Reachability:"
-if [ -n "$infra_ip" ]; then
-    if _mode_mongo_reachable "$infra_ip"; then s="reachable ✓"; else s="UNREACHABLE ✗"; fi
-    printf '  %-18s %s\n' "Mongo :27017"  "$infra_ip → $s"
+if [ -n "$probe_ip" ]; then
+    if _mode_mongo_reachable "$probe_ip"; then s="reachable ✓"; else s="UNREACHABLE ✗"; fi
+    printf '  %-18s %s\n' "Mongo :27017"  "$probe_ip → $s"
 fi
 
 echo

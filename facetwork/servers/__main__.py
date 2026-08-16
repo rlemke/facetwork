@@ -24,7 +24,27 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--env", action="store_true", help="print shell exports for the infra host")
     p.add_argument("--infra-name", action="store_true", help="print the infra host's stable name")
     p.add_argument("--resolve", metavar="NAME", help="print the current IP for a name/alias")
+    p.add_argument(
+        "--container-ip",
+        nargs="?",
+        const="",
+        metavar="NAME",
+        help="print the address containers should map afl-* to (default: the infra "
+        "host); 'host-gateway' when that host is this machine",
+    )
     args = p.parse_args(argv)
+
+    if args.container_ip is not None:
+        val = catalog.container_ip(args.container_ip or None)
+        if not val:
+            print(
+                f"cannot resolve '{args.container_ip or 'the infra host'}' "
+                "(unknown entry or resolution failed)",
+                file=sys.stderr,
+            )
+            return 1
+        print(val)
+        return 0
 
     if args.infra_name:
         entry = catalog.infra()
@@ -50,10 +70,17 @@ def main(argv: list[str] | None = None) -> int:
         if not entry:
             print("no infra entry in the server catalog", file=sys.stderr)
             return 1
-        ip = catalog.resolve_ip(entry)
+        # FW_INFRA_IP is CONTAINER-facing (it lands in compose extra_hosts), so
+        # it is the gateway alias when infra is this machine — see
+        # catalog.container_ip. FW_INFRA_HOST_IP carries the numeric address for
+        # host-side probes, which cannot use that alias.
+        ip = catalog.container_ip(entry)
+        host_ip = catalog.resolve_ip(entry)
         print(f"export FW_INFRA_HOST={entry.get('name', '')}")
         if ip:
             print(f"export FW_INFRA_IP={ip}")
+        if host_ip:
+            print(f"export FW_INFRA_HOST_IP={host_ip}")
         return 0
 
     src = catalog.catalog_source()
