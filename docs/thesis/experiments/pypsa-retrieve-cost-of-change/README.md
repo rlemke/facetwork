@@ -100,6 +100,51 @@ express as data, it can change as data. PyPSA-Eur got there first for URLs and
 versions, and its remaining 73 rules are what is left over — the fetches whose
 *shape*, not whose address, varies.
 
+## Appendix: killing a runner mid-fan-out, twice
+
+§13's interruption row was measured on the state-capitals workflow, which I
+wrote. Repeating it here needed no new data: the six datasets are already in the
+object store, so a probe workflow with `max_age_hours = 0` forces a conditional
+GET per dataset — real network round-trips, 304 responses, no bodies. Eight
+fetches, ~0.4s each, 4.5s serialised at `limit 1`. Long enough to interrupt.
+
+The first attempt tested something other than what it set out to.
+
+**Run 1 — one of seventeen.** `SIGKILL` to a runner mid-fan-out, and the
+workflow finished **1.5 seconds later**. Not durability: `fw.http.Fetch` is an
+ambient built-in, so all 16 fleet containers could serve it, and seven distinct
+servers claimed tasks during this single four-second run. The peers simply took
+the rest. `retry_count` was **0 on all 11 tasks** — nothing was reclaimed, the
+reaper never ran, no work repeated. That is the informal-fleet property rather
+than the durability one, and it is worth recording as its own result: with
+interchangeable participants, losing one mid-run is a non-event, and the
+distribution across seven of them was the outcome of racing claims, not of a
+scheduler.
+
+**Run 2 — the last one standing.** To test what was intended, this host left the
+cluster (`fw mode leave`, 16 containers stopped) so exactly one runner could
+serve the work:
+
+| | |
+|---|---|
+| `SIGKILL` | 22:35:18.9, with 4 tasks complete and **1 `fw.http.Fetch` orphaned in `running`** on the dead server |
+| live runners after the kill | **0** |
+| replacement process up | 22:36:03 (a different `server_id`) |
+| orphan reaper fires | 22:38:03 — *"reset 1 task(s) from crashed server(s)"* |
+| orphaned task re-claimed | 22:38:05, `retry_count` 1 |
+| run complete | 22:38:08 — **169s after the kill** |
+
+Two details matter more than the total. First, the four completed tasks **did
+not re-run**: they keep the dead server's id and `retry_count` 0, and their
+timestamps never move. Exactly the remaining work was resumed, on a workflow
+this thesis did not write. Second, the replacement runner was alive for two
+minutes before anything happened, and *should* have been: it cannot distinguish
+a crashed owner from a slow one, so it waits out `FW_REAPER_TIMEOUT_MS` (120s)
+rather than reclaiming on sight. The 169s is that safety interval, not latency
+to be optimised away — the alternative is running a task twice.
+
+No repair command was needed in either run.
+
 ## Reproducing
 
 ```bash
@@ -115,4 +160,14 @@ fw runner start --domain pypsa-data --no-dashboard
 fw ffl run src/pypsa_data/ffl/pypsa_data.ffl --workflow pypsa.data.RetrieveDatasets \
   --inputs '{"csv_path":"versions.plus.csv","out_dir":"…","names":["demo_new_dataset"]}'
 git status --short   # expect: empty
+
+# interruption (appendix). `interrupt_probe.ffl` here is the max_age_hours=0
+# variant; leaving the cluster is what makes the second run test the reaper
+# rather than the fleet's redundancy.
+fw mode leave
+fw ffl run --primary interrupt_probe.ffl --library …/pypsa_data.ffl \
+  --workflow probe.RevalidateAll --inputs '{…,"concurrency":1}'
+sleep 2 && kill -9 $(pgrep -f facetwork.runtime.runner | head -1)
+fw runner start --domain pypsa-data --no-dashboard    # a different process
+fw mode join
 ```

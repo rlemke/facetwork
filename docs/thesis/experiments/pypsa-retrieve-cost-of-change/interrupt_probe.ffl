@@ -1,0 +1,69 @@
+/** Interruption probe over PyPSA-Eur's retrieve layer.
+  *
+  * Same shape as `pypsa.data.RetrieveDatasets`, with one deliberate change:
+  * `max_age_hours = 0` forces a conditional GET per dataset instead of taking
+  * the 24-hour age grace. That makes each step a real network round-trip —
+  * long enough to interrupt a run in the middle — while transferring no bodies,
+  * because every one of these is already in the object store and answers 304.
+  *
+  * The question is not whether the fetches work. It is where completion is
+  * recorded: kill the runner mid-fan-out and a different process must be able
+  * to finish exactly the remaining work. */
+namespace probe {
+    use fw.http
+    use fw.file
+    use pypsa.data
+
+    facet FetchOne(dataset: Json, out_dir: String) => (stored: Json)
+        andThen {
+            got = fw.http.Fetch(
+                url = $.dataset.url,
+                dest = $.out_dir ++ "/" ++ $.dataset.filename,
+                max_age_hours = 0
+            )
+            yield FetchOne(stored = got.path)
+        }
+
+    facet FetchEachSlow(datasets: Json, out_dir: String, concurrency: Int) => (stored: Json)
+        andThen foreach d in $.datasets limit $.concurrency {
+            one = FetchOne(dataset = $.d, out_dir = $.out_dir)
+            yield FetchEachSlow(stored += one.stored)
+        }
+
+    workflow RevalidateAll(
+        csv_path: String,
+        out_dir: String,
+        names: Json = [],
+        versions: String = "all",
+        concurrency: Int = 1
+    ) => (
+        stored: Json,
+        count: Int,
+        manifest: String
+    ) andThen {
+        cat = pypsa.data.Catalog(
+            csv_path = $.csv_path,
+            names = $.names,
+            versions = $.versions,
+            supported_only = false
+        )
+
+        fetched = FetchEachSlow(
+            datasets = cat.datasets,
+            out_dir = $.out_dir,
+            concurrency = $.concurrency
+        )
+
+        manifest = fw.file.WriteJson(
+            path = $.out_dir ++ "/revalidated.json",
+            data = fetched.stored,
+            indent = 2
+        )
+
+        yield RevalidateAll(
+            stored = fetched.stored,
+            count = cat.count,
+            manifest = manifest.path
+        )
+    }
+}
