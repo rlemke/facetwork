@@ -1,0 +1,23 @@
+# A deliberately small fan-out + merge — the shape the thesis's engine
+# comparison uses, with the payload removed so what is measured is delegation
+# and not arithmetic. No downloads, no data: it runs anywhere.
+
+SHARDS = [f"{i:02d}" for i in range(1, 13)]
+
+rule all:
+    input:
+        "out/merged.txt"
+
+rule shard:
+    output:
+        "out/{shard}.txt"
+    shell:
+        "mkdir -p out && printf 'shard %s\\n' {wildcards.shard} > {output}"
+
+rule merge:
+    input:
+        expand("out/{shard}.txt", shard=SHARDS)
+    output:
+        "out/merged.txt"
+    shell:
+        "cat {input} > {output}"

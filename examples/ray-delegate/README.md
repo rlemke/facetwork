@@ -82,17 +82,20 @@ framework parity gap, since fixed), and this example's workflow was not
 threading `runtime_env_json` down to the facet, so the delegated job ran with no
 dependencies and failed on its first import.
 
-## Depth: this is D2, not D3
+## Depth: both D2 and D3 are here
 
-§4 of the design describes three depths. This is **D2 — blocking with
-heartbeat**: the handler waits, so it occupies a runner worker slot for the
-whole external run. With `FW_MAX_CONCURRENT=2`, three concurrent four-hour jobs
-saturate two runners.
+§4 of the design describes three depths. The **handler** (`handlers/ray_handlers.py`)
+is **D2 — blocking with heartbeat**: it waits, so it occupies a runner worker
+slot for the whole external run. With `FW_MAX_CONCURRENT=2`, three concurrent
+four-hour jobs saturate two runners.
 
-**D3** (park and resume) removes that by returning the slot and letting a
-watcher complete the step when Ray finishes. It needs a watcher process, which
-is why it is not here — but every piece D3 requires is: derived ids, the stage
-budget, and cancellation-driven terminate.
+**D3** (park and resume) removes that, and ships alongside it as
+[`watcher.py`](watcher.py): it claims the task, submits, parks via the stage
+budget, and completes the step out of band with an `fw:resume`, so N concurrent
+external runs cost N dict entries rather than N worker slots. Pick by shape —
+D2 for short jobs or few of them, D3 for long ones or many. Usage and the
+deployment caveat (**D3 needs some runner polling that task list to process the
+`fw:resume`**) are in [the guide](../../docs/guides/delegating-to-ray.md).
 
 ## Tests
 

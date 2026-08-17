@@ -1,11 +1,21 @@
 # FFL as a front end to other workflow systems — delegation
 
-**Status: DESIGN, with one working adapter.** The design below is still the
-general account. A **D2** (blocking) adapter for Ray now ships in
+**Status: DESIGN, with two working adapters.** The design below is still the
+general account. A **D2** (blocking) adapter for Ray ships in
 [`examples/ray-delegate`](../../examples/ray-delegate) — derived ids, stage
 budget, and cancellation-driven `stop_job` — verified against a real cluster
-(§8.4). D3 (park and resume) remains unimplemented, and the Temporal and Airflow
-adapters remain sketches. The shallow precedent that motivated this document
+(§8.4). A second D2 adapter, for **Snakemake**, ships in
+[`examples/snakemake-delegate`](../../examples/snakemake-delegate); it is the
+useful contrast, because Snakemake has no job registry to attach to. It is a
+local process that records completion in the filesystem, so idempotency there is
+not a derived id but the target engine's own incremental model, and terminate
+propagation means killing a process *group* rather than calling an API.
+
+**D3 also ships, for Ray**: [`examples/ray-delegate/watcher.py`](../../examples/ray-delegate/watcher.py)
+claims, submits, parks on the stage budget and completes the step out of band
+with an `fw:resume`, re-deriving external ids on restart. (This status line said
+D3 was unimplemented for some time after the watcher landed — the claim outlived
+the gap.) The Temporal and Airflow adapters remain sketches. The shallow precedent that motivated this document
 ([`examples/aws-lambda`](../../examples/aws-lambda), fire-and-describe) still
 ships too.
 
@@ -150,6 +160,24 @@ and **clears it on exit**, so the scope is exactly the external call.
 The cost of D2 is real: one runner worker slot is occupied for the entire
 external run. With `FW_MAX_CONCURRENT` defaulting to 2, three concurrent
 four-hour Temporal workflows saturate two runners.
+
+### 4.2a Which depth an engine ADMITS
+
+D3 is recommended where it is available, but it is not always available, and the
+constraint is a property of the target engine rather than of the adapter author:
+
+> **The depth you can use is a property of the target engine's handle.**
+
+D3 parks a task so that a *different* process — possibly on a different host,
+after the reaper moves it — can observe the external run and complete the step.
+That needs a handle which is durable and re-derivable from persistent state
+(§11, G5). Ray has one: a server-side `submission_id` recomputed from the step
+id. A **local process** does not: a PID is not durable (the OS reuses them) and
+a lock file says only that *someone* holds it. So
+[`examples/snakemake-delegate`](../../examples/snakemake-delegate) is D2 by
+necessity, and its README works the reasoning through. Give the same engine a
+scheduler (`snakemake --executor slurm`) and the handle appears, at which point
+D3 applies unchanged.
 
 ### 4.2 D3 — detached submit and resume (recommended)
 

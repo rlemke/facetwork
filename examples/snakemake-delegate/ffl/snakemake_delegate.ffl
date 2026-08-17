@@ -1,0 +1,94 @@
+/** Delegating a stage to Snakemake.
+  *
+  * The design is docs/architecture/external-engine-delegation.md §4 (D2,
+  * blocking with heartbeat). Facetwork keeps the durable coarse structure —
+  * persisted steps, retry, `catch`, repair, survival across restarts — and one
+  * step hands its interior to a Snakefile that already exists.
+  *
+  * The point is NOT to run Snakemake workflows better. It is that a team with a
+  * working Snakefile should not have to port it to get durability, cancellation
+  * and a fleet: they keep the Snakefile and gain a step around it. Delegation is
+  * reach, not portability (§1) — nothing here transpiles anything.
+  *
+  * Snakemake differs from the Ray adapter in one way that shapes the whole
+  * thing: there is no external job registry to attach to. It is a local process
+  * whose completion is recorded in the FILESYSTEM. So idempotency is not a
+  * derived submission id — it is Snakemake's own incremental model. A
+  * redelivered task re-invokes it and gets "nothing to be done", which is
+  * exactly the behaviour thesis §13.3 examines, here relied upon on purpose.
+  */
+namespace snakemake.delegate {
+
+    /** Run a Snakefile to completion and report what it did.
+      *
+      * `workdir` is where Snakemake resolves relative paths and keeps its
+      * `.snakemake/` state — so it is also where its incremental decisions and
+      * its lock live. `targets` is the space-separated rule/file list; empty
+      * means the default target.
+      *
+      * Effect is external and cost expensive so an LLM composing workflows
+      * prefers a pure/cheap primitive when one exists (fw_capabilities).
+      */
+    event facet RunWorkflow(
+        snakefile: String,
+        workdir: String,
+        targets: String = "",
+        cores: Int = 1,
+        extra_args: String = "",
+        run_timeout_minutes: Long = 120,
+        unlock_stale: Boolean = false
+    ) => (
+        status: String,
+        jobs_run: Long,
+        nothing_to_be_done: Boolean,
+        duration_seconds: Double,
+        log_tail: String
+    ) with Effect(kind = "external") with Cost(tier = "expensive")
+      with Timeout(minutes = 120)
+}
+
+namespace snakemake.delegate.example {
+    use snakemake.delegate
+    use fw.file
+
+    /** The shape the design argues for: Facetwork owns the durable pipeline and
+      * one step is somebody else's engine.
+      *
+      * The second call is the interesting one. It asks for the same targets
+      * again, and Snakemake answers "nothing to be done" from the filesystem —
+      * so the step is cheap, and the workflow can see that it was cheap
+      * (`nothing_to_be_done`) rather than having to assume it. */
+    workflow DelegatedStage(
+        snakefile: String,
+        workdir: String,
+        targets: String = "",
+        cores: Int = 2
+    ) => (
+        status: String,
+        jobs_run: Long,
+        second_call_was_free: Boolean
+    ) andThen {
+        first = RunWorkflow(
+            snakefile = $.snakefile,
+            workdir = $.workdir,
+            targets = $.targets,
+            cores = $.cores
+        )
+
+        // INVISIBLE dependency: the two calls share a working directory rather
+        // than passing a value, so the ordering has to be stated. Without this
+        // they could run concurrently and race on Snakemake's own lock.
+        again = RunWorkflow(
+            snakefile = $.snakefile,
+            workdir = $.workdir,
+            targets = $.targets,
+            cores = $.cores
+        ) after first
+
+        yield DelegatedStage(
+            status = first.status,
+            jobs_run = first.jobs_run,
+            second_call_was_free = again.nothing_to_be_done
+        )
+    }
+}
