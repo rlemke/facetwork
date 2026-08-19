@@ -26,7 +26,7 @@
     "osm-geocoder": {
       "repo": "fwh_osm",
       "extras": [],
-      "description": "OSM PBF \u2192 PostGIS \u2192 routing/tiles (production-scale)",
+      "description": "OSM PBF → PostGIS → routing/tiles (production-scale)",
       "service": "runner-osm-geocoder",
       "task_list": "osm",
       "server_group_arg": true,
@@ -66,7 +66,7 @@
           "afl_geofabrik:/geofabrik"
         ],
         "notes": [
-          "Durable cache + output \u2192 MinIO (osm-s3-env); staging/tmp/locks \u2192 /scratch (the LARGE external disk, NOT the small internal volume \u2014 continent extracts staged on the internal disk ENOSPC-crash the shared mongodb volume).",
+          "Durable cache + output → MinIO (osm-s3-env); staging/tmp/locks → /scratch (the LARGE external disk, NOT the small internal volume — continent extracts staged on the internal disk ENOSPC-crash the shared mongodb volume).",
           "Timeouts raised to 4h: multi-GB Geofabrik downloads + osmium parses run for hours; the 15min/30min/5min defaults would kill long facets or let another runner steal a 30GB download mid-flight. Matches fwh_osm's DomainPackage runner_env."
         ]
       }
@@ -101,7 +101,7 @@
           "${FW_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch"
         ],
         "notes": [
-          "Pure workflow catalog over fwh_osm \u2014 its facets dispatch to the osm-geocoder runner's handlers, so start that one first (depends_on) and mount fwh_osm read-only.",
+          "Pure workflow catalog over fwh_osm — its facets dispatch to the osm-geocoder runner's handlers, so start that one first (depends_on) and mount fwh_osm read-only.",
           "Same 4h timeouts + external scratch as osm-geocoder: it orchestrates continental fan-outs that stage multi-GB PBFs and run for hours."
         ]
       }
@@ -163,14 +163,22 @@
     },
     "stocks": {
       "repo": "fwh_stocks",
-      "extras": ["yfinance"],
+      "extras": [
+        "yfinance"
+      ],
       "description": "Stock-group paper-trading tracker: factor + analyst + optional LLM selection, daily mark-to-market snapshots, per-position and overall P/L vs a benchmark",
       "service": "runner-stocks",
       "task_list": "stocks",
       "compose": {
         "env": [
-          ["ANTHROPIC_API_KEY", "${ANTHROPIC_API_KEY:-}"],
-          ["FW_STOCKS_PROVIDER", "${FW_STOCKS_PROVIDER:-yfinance}"]
+          [
+            "ANTHROPIC_API_KEY",
+            "${ANTHROPIC_API_KEY:-}"
+          ],
+          [
+            "FW_STOCKS_PROVIDER",
+            "${FW_STOCKS_PROVIDER:-yfinance}"
+          ]
         ]
       }
     },
@@ -220,7 +228,7 @@
     "health": {
       "repo": "fwh_health",
       "extras": [],
-      "description": "Disease-burden choropleths (cancer/diabetes/Alzheimer's/stroke) \u2014 CDC NCHS + PLACES + WHO, US state/county + world",
+      "description": "Disease-burden choropleths (cancer/diabetes/Alzheimer's/stroke) — CDC NCHS + PLACES + WHO, US state/county + world",
       "service": "runner-health",
       "task_list": "health"
     },
@@ -241,7 +249,7 @@
     "save-earth": {
       "repo": "fwh_save_earth",
       "extras": [],
-      "description": "Open environmental datasets (OpenLitterMap, EPA Superfund/Brownfields/TRI, OSM nuclear) \u2192 MapLibre HTML maps",
+      "description": "Open environmental datasets (OpenLitterMap, EPA Superfund/Brownfields/TRI, OSM nuclear) → MapLibre HTML maps",
       "service": "runner-save-earth",
       "task_list": "save_earth"
     },
@@ -250,12 +258,17 @@
       "extras": [
         "geo"
       ],
-      "description": "Sentinel-2 land-cover change (STAC + COG \u2192 NDVI/composite \u2192 difference/classify \u2192 MapLibre tiled map)"
+      "description": "Sentinel-2 land-cover change (STAC + COG → NDVI/composite → difference/classify → MapLibre tiled map)"
     },
     "pypsa-data": {
       "repo": "fwh_pypsa_data",
       "extras": [],
-      "description": "PyPSA-Eur dataset catalogue (data/versions.csv) \u2192 retrieved + unpacked via the built-in fw.http/fw.archive facets; the FFL port of rules/retrieve.smk"
+      "description": "PyPSA-Eur dataset catalogue (data/versions.csv) → retrieved + unpacked via the built-in fw.http/fw.archive facets; the FFL port of rules/retrieve.smk"
+    },
+    "pypsa-earth": {
+      "repo": "fwh_pypsa_earth",
+      "extras": [],
+      "description": "PyPSA-Earth's OSM stage (build_shapes -> download/clean/build_osm_network) as FFL; raw OpenStreetMap power infrastructure -> grid topology. Calls upstream's own functions, so the payload is theirs. NOT fleet-deployed: needs a pypsa-earth checkout (FW_PYPSA_EARTH_DIR) plus ~178 MiB of its dependencies on the host"
     },
     "gridbuilder": {
       "repo": "fwh_gridbuilder",
@@ -272,7 +285,10 @@
           "concurrent fan-out took Mongo down with it."
         ],
         "env": [
-          ["FW_GRIDBUILDER_DATA_DIR", "/Volumes/afl_data/earth-osm"]
+          [
+            "FW_GRIDBUILDER_DATA_DIR",
+            "/Volumes/afl_data/earth-osm"
+          ]
         ]
       }
     },
@@ -307,7 +323,7 @@
     "county-atlas": {
       "repo": "fwh_county_atlas",
       "extras": [],
-      "description": "Per-county information maps (OSM + census/CDC/EPA/USGS/NOAA/FEMA/HUD) + US\u2192state\u2192county index",
+      "description": "Per-county information maps (OSM + census/CDC/EPA/USGS/NOAA/FEMA/HUD) + US→state→county index",
       "service": "runner-county-atlas",
       "task_list": "county",
       "fleet_default": true,

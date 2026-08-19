@@ -100,6 +100,43 @@ express as data, it can change as data. PyPSA-Eur got there first for URLs and
 versions, and its remaining 73 rules are what is left over — the fetches whose
 *shape*, not whose address, varies.
 
+## The prediction, tested on a different workflow
+
+The table above says the collapse pays off for a *new plain download* and not
+for a rule whose body is a bespoke script. That was a claim about shape, made
+from one repository's history, so it was worth testing where it predicts a
+*negative* result.
+
+[`fwh_pypsa_earth`](https://github.com/rlemke/fwh_pypsa_earth) ports PyPSA-Earth's
+OSM stage — `build_shapes` → `download_osm_data` → `clean_osm_data` →
+`build_osm_network`, three rules of about sixty. Every one is `script:`-shaped.
+
+| | `fwh_pypsa_data` (retrieve.smk) | `fwh_pypsa_earth` (OSM stage) |
+|---|---|---|
+| upstream rules ported | 73 | 3 |
+| what the rules are | near-copies of one shape | three distinct algorithms |
+| upstream Python behind them | none (a CSV table) | 2,168 lines |
+| result | **73 rules → one `foreach`** | **~1 facet per rule** |
+
+So the prediction holds in both directions: where the work list was already a
+table, the rules collapsed; where the rule body is an algorithm, nothing
+collapses and the port is a wrapper. The FFL gain in the second case is
+different in kind — durable steps, a per-country fan-out across a fleet, local
+sourcing — and explicitly **not** brevity.
+
+Two things the port added that the pricing exercise could not have found:
+
+- **Wrapping is only possible if the code is callable, and theirs is not.**
+  `clean_data` and `built_network` look like path-in/path-out functions and are
+  not: two of their helpers read module-level globals that only `__main__`
+  assigns, and one indexes `inputs` as an attribute. All three are invisible
+  under Snakemake, where the parameter and the global are the same object. A
+  *delegation* would have run first time and taught none of this.
+- **The dependency tax is paid in full regardless.** Importing three scripts
+  pulled ~178 MiB (pypsa and 27 deps, then sklearn, fiona, numba/llvmlite),
+  most of it for code these rules never execute. Delegation would pay the same,
+  because it needs the same environment.
+
 ## Appendix: killing a runner mid-fan-out, twice
 
 §13's interruption row was measured on the state-capitals workflow, which I
