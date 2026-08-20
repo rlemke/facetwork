@@ -196,8 +196,17 @@ install_one() {
             current_branch="$(git -C "$target_dir" rev-parse --abbrev-ref HEAD)"
             git -C "$target_dir" pull --ff-only --quiet origin "$current_branch" \
                 || echo "    WARNING: fast-forward pull failed; leaving local commits in place"
+        elif [[ -d "$target_dir" && -z "$(ls -A "$target_dir" 2>/dev/null)" ]]; then
+            # An EMPTY directory is not a checkout worth protecting — it is what
+            # a failed or abandoned clone leaves behind. Treating it like a
+            # populated one skipped the clone and then failed in pip with
+            # "does not appear to be a Python project", which names the wrong
+            # problem entirely. Clone into it.
+            echo "    Cloning into $target_dir (was an empty directory)"
+            git clone --quiet "https://github.com/rlemke/$repo.git" "$target_dir"
         elif [[ -d "$target_dir" ]]; then
             echo "    $target_dir exists but is not a git checkout — skipping clone."
+            echo "    (non-empty and unversioned: refusing to overwrite local work)"
         else
             echo "    Cloning into $target_dir"
             git clone --quiet "https://github.com/rlemke/$repo.git" "$target_dir"

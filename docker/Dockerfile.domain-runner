@@ -145,6 +145,28 @@ COPY domains.json ./domains.json
 COPY docker/bake-domains.py /tmp/bake-domains.py
 RUN FWH_DOMAINS_REF=${FWH_DOMAINS_REF} python /tmp/bake-domains.py
 
+# Audit the domains we just baked (`fw util ffl-audit`). The clone above is the
+# only moment every domain's CURRENT source sits on one disk, so the check is
+# nearly free here and impossible to forget — which matters, because the drift
+# this catches is invisible until someone runs the workflow months later. One
+# domain shipped with ALL SIX handlers dead (an obsolete `_step_log.append`)
+# and nothing noticed, because its own tests pass without ever injecting
+# `_step_log`.
+#
+# FAILS THE BUILD, deliberately and in the same spirit as the envbake step
+# below: shipping an image whose handlers cannot execute is not a warning, it
+# is a broken deployment that looks healthy. Set FW_SKIP_DOMAIN_AUDIT=1 to ship
+# anyway when a drifted domain is knowingly not the one you need.
+# (no COPY needed — `COPY facetwork/ ./facetwork/` above already brought it in,
+# and a second copy of a file from that tree would only look like it was
+# missing.)
+ARG FW_SKIP_DOMAIN_AUDIT=0
+RUN if [ "${FW_SKIP_DOMAIN_AUDIT}" = "1" ]; then \
+        echo "FW_SKIP_DOMAIN_AUDIT=1 — skipping the baked-domain audit"; \
+    else \
+        python -m facetwork.ffl_audit --root /opt; \
+    fi
+
 # Bake declared script environments (script-environments.md §4.1): sweep the
 # baked domain repos + canonical examples for `environment` declarations,
 # freeze their manifests, and materialize each as a venv under /opt/fw_envs —
