@@ -33,7 +33,7 @@ up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgrou
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/**disk-recover**/repair-workflow/
-terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana) ·
+terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**/**ffl-audit**) ·
 **`mode`** (day-cluster/night-local switch: status/local/cluster/join/leave).
 
@@ -82,6 +82,18 @@ Notes for working with `fw`:
   or drop a gitignored `domains.local.json` (merged over the defaults — entries
   add/replace by key; top-level `"_remove": […]` drops standard ones). Run
   `gen-compose` after editing the catalog.
+- **`fw svc stocks-snapshot [--install|--uninstall|--status] [--at HH:MM]`** —
+  marks every OPEN paper-trading group to market (submits
+  `stocks.workflows.SnapshotStockGroups` with a blank `group_id`, the form the
+  FFL calls "the daily cron entry"). `--install` writes a weekday **launchd**
+  timer (`com.facetwork.stocks-snapshot`) firing at **23:30 local**, which is
+  after the US close in every DST alignment — ET and Central European time
+  normally sit 6h apart but switch on different dates, so the gap is 5h for a
+  few weeks each spring/autumn. Safe to re-run: the snapshot key is the
+  US/Eastern calendar date and the write is an **upsert**, so a second run the
+  same day REPLACES that day's mark instead of adding a point. ⚠️ Without this
+  timer nothing marks the groups — they simply stop having a series, with no
+  error anywhere.
 - **`fw util ffl-audit [--root PATH] [--json] [--no-contracts]`** — sweep every
   `fwh_*` domain repo for drift against the CURRENT runtime, and exit non-zero
   if any is found (CI-usable). Domain packages live in their own repos and

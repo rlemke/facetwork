@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# fw-summary: mark open paper-trading groups to market; --install adds the weekday launchd timer
+#
+# Submits stocks.workflows.SnapshotStockGroups with a blank group_id, which
+# marks EVERY open group. The FFL calls this "the form the daily cron entry
+# runs" — this is that entry.
+#
+# Timing: the job fires at 23:30 LOCAL on weekdays, which is after the US close
+# in every DST alignment. ET and Central European time normally sit 6h apart
+# (16:00 ET close = 22:00 here), but the two zones switch on different dates, so
+# for a few weeks each spring and autumn the gap is 5h. 23:30 is comfortably
+# past the close either way — 17:30 ET normally, 18:30 ET during the skew.
+#
+# The snapshot key is the US/Eastern CALENDAR date and the write is an upsert
+# (stocks.portfolio.trading_date), so re-running is safe: a second run the same
+# day replaces that day's mark rather than adding a point. US holidays are not
+# special-cased — a holiday run records the prior close under that date, which
+# upstream documents as intended rather than a defect.
+#
+# 23:30 local is 17:30 ET normally and 18:30 ET during the skew, so the ET date
+# the snapshot is filed under is always the same weekday the timer fired on.
+#
+# Usage:
+#   fw svc stocks-snapshot                # run one snapshot now (also what the timer calls)
+#   fw svc stocks-snapshot --group ID     # just one group
+#   fw svc stocks-snapshot --install      # write + load the weekday timer
+#   fw svc stocks-snapshot --at 22:45     # install at a different local time
+#   fw svc stocks-snapshot --uninstall    # unload + remove
+#   fw svc stocks-snapshot --status       # is the timer loaded, and when did it last run?
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+set -euo pipefail
+
+LABEL="com.facetwork.stocks-snapshot"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+WRAPPER="$HOME/.facetwork/stocks-snapshot.sh"
+LOGDIR="$HOME/.facetwork"
+LOG="$LOGDIR/stocks-snapshot.log"
+GROUP="" ACTION="run" AT="23:30" LOAD=1
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --group) GROUP="$2"; shift 2 ;;
+        --install) ACTION="install"; shift ;;
+        --uninstall|--remove) ACTION="uninstall"; shift ;;
+        --status) ACTION="status"; shift ;;
+        --at) AT="$2"; shift 2 ;;
+        --no-load) LOAD=0; shift ;;
+        -h|--help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+FFL="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_stocks/src/stocks/ffl/stocks.ffl"
+
+run_snapshot() {
+    [ -f "$FFL" ] || { echo "no stocks FFL at $FFL — is fwh_stocks installed?" >&2; exit 1; }
+    echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] snapshotting ${GROUP:-all open groups}"
+    # The runner claims this; nothing here needs the domain importable locally.
+    "$FW_ROOT/fw" ffl run --primary "$FFL" \
+        --workflow stocks.workflows.SnapshotStockGroups \
+        --inputs "{\"group_id\": \"$GROUP\"}"
+}
+
+case "$ACTION" in
+run) run_snapshot ;;
+
+status)
+    if launchctl list 2>/dev/null | grep -q "$LABEL"; then
+        echo "timer: LOADED ($LABEL)"
+    else
+        echo "timer: not loaded — install with: fw svc stocks-snapshot --install"
+    fi
+    [ -f "$PLIST" ] && echo "plist:  $PLIST" || echo "plist:  (none)"
+    if [ -f "$LOG" ]; then
+        echo "last log lines ($LOG):"
+        tail -5 "$LOG" | sed 's/^/  /'
+    else
+        echo "log:    (none yet at $LOG)"
+    fi
+    ;;
+
+uninstall)
+    launchctl unload "$PLIST" 2>/dev/null || true
+    rm -f "$PLIST" "$WRAPPER"
+    echo "uninstalled $LABEL (removed $PLIST + $WRAPPER)."
+    echo "Open groups stop being marked to market — their series just stops."
+    ;;
+
+install)
+    if [ "$(uname)" != "Darwin" ]; then
+        echo "launchd is macOS-only. On Linux use a systemd user timer, or cron:" >&2
+        echo "  30 23 * * 1-5  cd $FW_ROOT && ./fw svc stocks-snapshot >> $LOG 2>&1" >&2
+        exit 1
+    fi
+    case "$AT" in
+        [0-9][0-9]:[0-9][0-9]) HH="${AT%%:*}"; MM="${AT##*:}" ;;
+        *) echo "--at wants HH:MM (24h), got '$AT'" >&2; exit 2 ;;
+    esac
+    mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
+
+    # Login shell so PATH/venv/docker resolve the way they do interactively —
+    # a LaunchAgent otherwise starts with almost no environment.
+    cat > "$WRAPPER" <<WRAP
+#!/bin/bash -l
+# Facetwork daily stocks mark-to-market — launched by $LABEL.
+# Regenerate via 'fw svc stocks-snapshot --install'. Do not hand-edit.
+set -u
+export PYTHONUNBUFFERED=1
+# The snapshot is executed by the stocks RUNNER, not by this script, so wait for
+# Docker rather than failing at 23:30 on a machine that just woke up.
+if ! docker info >/dev/null 2>&1; then
+  open -a Docker >/dev/null 2>&1 || true
+  for i in \$(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 5; done
+fi
+cd "$FW_ROOT" || exit 1
+exec ./fw svc stocks-snapshot
+WRAP
+    chmod +x "$WRAPPER"
+
+    cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$LABEL</string>
+    <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
+    <!-- Weekdays only (1=Mon … 5=Fri). RunAtLoad is deliberately FALSE: this is
+         a scheduled mark, and firing one at install time would put an extra
+         point in the series at an arbitrary hour. -->
+    <key>RunAtLoad</key><false/>
+    <key>StartCalendarInterval</key>
+    <array>
+$(for d in 1 2 3 4 5; do
+    printf '        <dict><key>Weekday</key><integer>%s</integer><key>Hour</key><integer>%s</integer><key>Minute</key><integer>%s</integer></dict>\n' \
+        "$d" "$((10#$HH))" "$((10#$MM))"
+done)
+    </array>
+    <key>WorkingDirectory</key><string>$FW_ROOT</string>
+    <key>StandardOutPath</key><string>$LOG</string>
+    <key>StandardErrorPath</key><string>$LOGDIR/stocks-snapshot.err.log</string>
+</dict>
+</plist>
+PLISTEOF
+
+    echo "wrote:"
+    echo "  $WRAPPER"
+    echo "  $PLIST   (weekdays at $AT local)"
+    if [ "$LOAD" = 1 ]; then
+        launchctl unload "$PLIST" 2>/dev/null || true
+        launchctl load "$PLIST"
+        echo "loaded $LABEL — open groups mark to market every weekday at $AT."
+        echo "  logs: $LOG  ·  check: fw svc stocks-snapshot --status"
+    else
+        echo "not loaded (--no-load). Activate with: launchctl load $PLIST"
+    fi
+    ;;
+esac
