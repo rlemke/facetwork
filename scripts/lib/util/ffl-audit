@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# fw-summary: validate every domain repo's FFL + handler contracts against the current runtime
+#
+# Domain packages live in their own repos and deploy baked into an image, so
+# nothing forces them to keep up when a language rule or a handler contract
+# changes — they keep compiling, keep deploying, and fail only when someone
+# finally runs the workflow. This sweeps for that on purpose.
+#
+# Two checks. FFL validation catches rules that shipped after the FFL was
+# written (relative $-scoping, `after`, yield aggregation). The handler-contract
+# scan catches obsolete runtime APIs — currently `_step_log.append(...)`, which
+# kills a handler at its first log line and which a domain's OWN TESTS DO NOT
+# CATCH (they omit `_step_log`, so the branch never runs). One domain had all
+# six handlers dead that way with 48 tests green.
+#
+# Exits non-zero on any drift, so it works as a CI guard.
+#
+# Usage:
+#   fw util ffl-audit                    # audit ~/fw_handlers (or FWH_HANDLERS_ROOT)
+#   fw util ffl-audit --root /opt        # audit BAKED domains (inside a runner container)
+#   fw util ffl-audit --json             # machine-readable
+#   fw util ffl-audit --no-contracts     # FFL validation only
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+set -euo pipefail
+
+PY="$FW_ROOT/.venv/bin/python3"; [ -x "$PY" ] || PY="$FW_ROOT/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || command -v python)"
+exec env PYTHONPATH="$FW_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PY" -m facetwork.ffl_audit "$@"

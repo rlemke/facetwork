@@ -34,7 +34,7 @@ up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgrou
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/**disk-recover**/repair-workflow/
 terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana) ·
-**`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**) ·
+**`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**/**ffl-audit**) ·
 **`mode`** (day-cluster/night-local switch: status/local/cluster/join/leave).
 
 Notes for working with `fw`:
@@ -82,6 +82,24 @@ Notes for working with `fw`:
   or drop a gitignored `domains.local.json` (merged over the defaults — entries
   add/replace by key; top-level `"_remove": […]` drops standard ones). Run
   `gen-compose` after editing the catalog.
+- **`fw util ffl-audit [--root PATH] [--json] [--no-contracts]`** — sweep every
+  `fwh_*` domain repo for drift against the CURRENT runtime, and exit non-zero
+  if any is found (CI-usable). Domain packages live in their own repos and
+  deploy baked into an image, so nothing forces them to keep up when a rule
+  changes: they keep compiling, keep deploying, and fail only when someone
+  finally runs the workflow. Two checks. (1) **FFL validation** — catches rules
+  that shipped after the FFL was written (relative `$`-scoping, `after`, yield
+  aggregation). Choosing the library set is the hard part and both naive answers
+  produce ~90 phantom errors, so it is **derived** per repo (supply only repos
+  providing a namespace this one *uses* but does not *define*) and the audit
+  prints what it supplied. (2) **Handler contracts** — obsolete runtime APIs in
+  handler Python; currently `_step_log.append(…)`, since `_step_log` is a
+  **callback** (`step_log(msg, level=…)`) and `.append` kills the handler at its
+  first log line. ⚠️ That second check exists because a domain's OWN TESTS DO
+  NOT CATCH IT — they pass `params` without `_step_log`, so the branch never
+  runs; `fwh_sensor_monitoring` had all six handlers dead with 48 tests green.
+  Use `--root /opt` **inside a runner container** to audit the BAKED domains,
+  which is what the fleet actually executes — local checkouts can be behind.
 - **`fw util memory-sync [-m MSG] [--dry]`** — commit + push this project's Claude
   memory directory (`~/.claude/projects/<slug>/memory`, where `<slug>` is the repo
   path with `/` and `_` replaced by `-`; override with `FW_MEMORY_DIR`) to its
