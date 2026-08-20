@@ -33,7 +33,7 @@ up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgrou
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/**disk-recover**/repair-workflow/
-terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**) ·
+terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**/**ffl-audit**) ·
 **`mode`** (day-cluster/night-local switch: status/local/cluster/join/leave).
 
@@ -82,6 +82,19 @@ Notes for working with `fw`:
   or drop a gitignored `domains.local.json` (merged over the defaults — entries
   add/replace by key; top-level `"_remove": […]` drops standard ones). Run
   `gen-compose` after editing the catalog.
+- **`fw svc osm-extracts [--install|--uninstall|--status] [--port N]`** — serves
+  the self-hosted planet-split tree (`<region>-latest.osm.pbf` +
+  `<region>-updates/`) over HTTP: **our Geofabrik**. This is what the
+  `osmosis_replication_base_url` stamped into every extract points at, so
+  without it the stamp is a promise nothing keeps — a consumer reads our URL
+  from the PBF header, gets connection-refused, and silently falls back to
+  re-downloading whole multi-GB extracts from a third party. Binds `0.0.0.0`
+  because the stamped URL is a hostname other fleet members fetch from.
+  ⚠️ The launchd plist deliberately sets **no `WorkingDirectory`**: the tree is
+  on an external volume and launchd chdir-ing there before the job starts fails
+  with *"getcwd: Operation not permitted"*; the wrapper cd's itself after
+  waiting for the mount. Producer side: `fwh_osm`'s
+  `publish-replication.sh` (see that repo's `docs/replication-publishing.md`).
 - **`fw svc stocks-snapshot [--install|--uninstall|--status] [--at HH:MM]`** —
   marks every OPEN paper-trading group to market (submits
   `stocks.workflows.SnapshotStockGroups` with a blank `group_id`, the form the

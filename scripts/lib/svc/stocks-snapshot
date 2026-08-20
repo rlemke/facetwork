@@ -66,7 +66,12 @@ case "$ACTION" in
 run) run_snapshot ;;
 
 status)
-    if launchctl list 2>/dev/null | grep -q "$LABEL"; then
+    # NOT `launchctl list | grep -q`: under `set -o pipefail`, grep -q exits on
+    # the first match, launchctl then dies on SIGPIPE, and pipefail propagates
+    # THAT failure — so the check reports "not loaded" for a job that is
+    # demonstrably running. Whether it fires depends on how much launchctl had
+    # left to write, which made it look intermittent. Capture, then test.
+    if [ -n "$(launchctl list 2>/dev/null | grep -F "$LABEL" || true)" ]; then
         echo "timer: LOADED ($LABEL)"
     else
         echo "timer: not loaded — install with: fw svc stocks-snapshot --install"

@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# fw-summary: serve the self-hosted OSM extracts + replication diffs (our Geofabrik)
+#
+# Serves the planet-split tree — `<region>-latest.osm.pbf` and the
+# `<region>-updates/` replication directories — over HTTP, which is what the
+# `osmosis_replication_base_url` stamped into every extract points at.
+#
+# Without this the stamp is a promise nothing keeps: a consumer reads our URL
+# from the PBF header, gets connection-refused, and falls back to re-downloading
+# the whole multi-GB extract from a third party. That is exactly the shape of
+# the Phase 1 gap this project just closed — the replication directories existed
+# but were empty — so leaving the URL unserved would repeat it one layer up.
+#
+# Binds 0.0.0.0 on purpose: the stamped URL is a HOSTNAME (MaxPro.local:8088)
+# because fleet members fetch from it, and 127.0.0.1 would answer only here.
+# The tree is OpenStreetMap data under ODbL — public by license — so directory
+# listing is left on, exactly as Geofabrik serves it.
+#
+# Usage:
+#   fw svc osm-extracts                  # serve in the foreground (port 8088)
+#   fw svc osm-extracts --port 9000
+#   fw svc osm-extracts --install        # launchd unit, RunAtLoad + KeepAlive
+#   fw svc osm-extracts --uninstall
+#   fw svc osm-extracts --status
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+set -euo pipefail
+
+LABEL="com.facetwork.osm-extracts"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+WRAPPER="$HOME/.facetwork/osm-extracts.sh"
+LOGDIR="$HOME/.facetwork"
+LOG="$LOGDIR/osm-extracts.log"
+PORT="${FW_OSM_EXTRACTS_PORT:-8088}"
+ROOT="${FW_OSM_SELFHOST_WWW:-}"
+ACTION="serve"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --port) PORT="$2"; shift 2 ;;
+        --root) ROOT="$2"; shift 2 ;;
+        --install) ACTION="install"; shift ;;
+        --uninstall|--remove) ACTION="uninstall"; shift ;;
+        --status) ACTION="status"; shift ;;
+        -h|--help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+PY="$FW_ROOT/.venv/bin/python3"; [ -x "$PY" ] || PY="$FW_ROOT/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || command -v python)"
+
+case "$ACTION" in
+status)
+    # NOT `launchctl list | grep -q`: under `set -o pipefail`, grep -q exits on
+    # the first match, launchctl then dies on SIGPIPE, and pipefail propagates
+    # THAT failure — so the check reports "not loaded" for a job that is
+    # demonstrably running. Whether it fires depends on how much launchctl had
+    # left to write, which made it look intermittent. Capture, then test.
+    if [ -n "$(launchctl list 2>/dev/null | grep -F "$LABEL" || true)" ]; then
+        echo "unit:  LOADED ($LABEL)"
+    else
+        echo "unit:  not loaded — install with: fw svc osm-extracts --install"
+    fi
+    if curl -sf --max-time 5 "http://127.0.0.1:$PORT/" >/dev/null 2>&1; then
+        echo "http:  answering on port $PORT"
+        # The stamped URL is what consumers actually follow, so check THAT
+        # rather than just the port: a served tree with no state.txt is still
+        # a broken replication endpoint.
+        for r in africa europe north-america; do
+            s=$(curl -sf --max-time 5 "http://127.0.0.1:$PORT/$r-updates/state.txt" 2>/dev/null \
+                | sed -n 's/^sequenceNumber=//p')
+            printf "  %-16s %s\n" "$r" "${s:-<no state.txt>}"
+        done
+    else
+        echo "http:  NOT answering on port $PORT"
+    fi
+    [ -f "$LOG" ] && { echo "log:   $LOG"; tail -3 "$LOG" | sed 's/^/  /'; }
+    ;;
+
+uninstall)
+    launchctl unload "$PLIST" 2>/dev/null || true
+    rm -f "$PLIST" "$WRAPPER"
+    echo "uninstalled $LABEL."
+    echo "⚠️  Every extract's osmosis_replication_base_url still points here. With"
+    echo "    nothing serving it, consumers fall back to a full re-download."
+    ;;
+
+install)
+    if [ "$(uname)" != "Darwin" ]; then
+        echo "launchd is macOS-only. On Linux use a systemd unit running:" >&2
+        echo "  fw svc osm-extracts --port $PORT --root $ROOT" >&2
+        exit 1
+    fi
+    [ -n "$ROOT" ] || { echo "set FW_OSM_SELFHOST_WWW or pass --root" >&2; exit 2; }
+    [ -d "$ROOT" ] || { echo "not a directory: $ROOT" >&2; exit 2; }
+    mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
+
+    cat > "$WRAPPER" <<WRAP
+#!/bin/bash -l
+# Self-hosted OSM extract + replication server — launched by $LABEL.
+# Regenerate via 'fw svc osm-extracts --install'. Do not hand-edit.
+set -u
+export PYTHONUNBUFFERED=1
+# The tree lives on an external volume; if it is not mounted yet (boot, or a
+# disk that spun up late) serving an EMPTY directory would answer 404 to every
+# consumer, which reads as "the replication stream was deleted" rather than as
+# "the disk is not ready". Wait for it instead.
+for i in \$(seq 1 60); do
+  [ -d "$ROOT" ] && break
+  sleep 5
+done
+[ -d "$ROOT" ] || { echo "\$(date): $ROOT not present — refusing to serve"; exit 1; }
+cd "$ROOT" || exit 1
+exec "$PY" -m http.server "$PORT" --bind 0.0.0.0
+WRAP
+    chmod +x "$WRAPPER"
+
+    cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$LABEL</string>
+    <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>ThrottleInterval</key><integer>15</integer>
+    <!-- NO WorkingDirectory: the tree lives on an external volume, and launchd
+         chdir-ing there before the job starts fails with "getcwd: Operation not
+         permitted" — the agent has not been granted access to removable media
+         at that point. The wrapper cd's itself, after waiting for the mount. -->
+    <key>StandardOutPath</key><string>$LOG</string>
+    <key>StandardErrorPath</key><string>$LOGDIR/osm-extracts.err.log</string>
+</dict>
+</plist>
+PLISTEOF
+
+    echo "wrote:"
+    echo "  $WRAPPER"
+    echo "  $PLIST   (root $ROOT, port $PORT)"
+    launchctl unload "$PLIST" 2>/dev/null || true
+    launchctl load "$PLIST"
+    echo "loaded $LABEL — serving http://$(hostname):$PORT/"
+    echo "  check: fw svc osm-extracts --status"
+    ;;
+
+serve)
+    [ -n "$ROOT" ] || { echo "set FW_OSM_SELFHOST_WWW or pass --root" >&2; exit 2; }
+    cd "$ROOT"
+    echo "serving $ROOT on 0.0.0.0:$PORT"
+    exec "$PY" -m http.server "$PORT" --bind 0.0.0.0
+    ;;
+esac
