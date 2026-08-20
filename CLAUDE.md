@@ -33,7 +33,7 @@ up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgrou
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/**disk-recover**/repair-workflow/
-terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**) ·
+terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**/**osm-replicate**) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**/**ffl-audit**) ·
 **`mode`** (day-cluster/night-local switch: status/local/cluster/join/leave).
 
@@ -82,6 +82,18 @@ Notes for working with `fw`:
   or drop a gitignored `domains.local.json` (merged over the defaults — entries
   add/replace by key; top-level `"_remove": […]` drops standard ones). Run
   `gen-compose` after editing the catalog.
+- **`fw svc osm-replicate [--days N] [--install] [--status]`** — publishes new
+  per-region OSM replication diffs (fwh_osm's producer); `--install` adds a
+  **nightly launchd timer at 03:15 local**, which is after OSM's ~00:18 UTC
+  daily publish in both DST halves. Being current is a RATE, not a state:
+  without this the stream simply stops advancing and nothing reports it, which
+  is how the extracts silently reached 39 days stale in the first place.
+  Defaults to `--days 4` so a missed night heals itself. ⚠️ Two launchd traps,
+  both hit here: a bare `python3` resolves to **Xcode's sandboxed 3.9**, which
+  raises "Operation not permitted" on an external volume and has none of the
+  deps — always exec the venv interpreter; and `Path.glob` silently returns
+  EMPTY when a directory cannot be enumerated, so set
+  `FW_OSM_SELFHOST_REGIONS` and never let a scheduled job depend on readdir.
 - **`fw svc osm-extracts [--install|--uninstall|--status] [--port N]`** — serves
   the self-hosted planet-split tree (`<region>-latest.osm.pbf` +
   `<region>-updates/`) over HTTP: **our Geofabrik**. This is what the
