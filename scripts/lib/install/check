@@ -17,6 +17,14 @@
 # manifest hash), so the work simply doesn't run here — silently.
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+# Load .env, so FW_ENV_ROOT here is the one the RUNNERS will use. Without this,
+# the section that reports script-environment coverage read the /opt/fw_envs
+# default while a host with an unwritable /opt had FW_ENV_ROOT pointed elsewhere
+# in .env — reporting a materialized environment as missing. An advisory check
+# that disagrees with the runtime is worse than none: this gap is silent by
+# nature (a host missing an environment simply never CLAIMS its script tasks),
+# so the report is the only signal there is.
+source "$FW_LIB/_helpers/_env.sh"
 
 PYTHON="$FW_ROOT/.venv/bin/python3"; [ -x "$PYTHON" ] || PYTHON=python3
 INSTALL=0 BREAK=0
