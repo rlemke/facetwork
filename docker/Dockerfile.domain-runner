@@ -158,7 +158,10 @@ RUN python -m facetwork.envbake --root /opt --root /app/examples \
 
 # Entrypoint installs the named example then starts the runner.
 COPY docker/entrypoint-domain-runner.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# ...and the generalist variant, which serves SEVERAL cold domains from one
+# container (compose service `runner-generalist` selects it via `entrypoint:`).
+COPY docker/entrypoint-generalist-runner.sh /usr/local/bin/entrypoint-generalist.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/entrypoint-generalist.sh
 
 ENV PYTHONUNBUFFERED=1
 ENV FW_HANDLERS_ROOT=/handlers

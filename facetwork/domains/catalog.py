@@ -97,6 +97,30 @@ def compose_domains() -> dict:
     return {n: s for n, s in domains().items() if s.get("service")}
 
 
+def consolidated_domains() -> list[str]:
+    """Domains served by ONE generalist runner instead of a container each.
+
+    A per-domain runner is right for a hot domain: it bulkheads a heavy handler
+    and keeps a flooded queue off everyone else. It is poor value for a domain
+    that runs a handful of tasks a month — an idle runner still costs ~150 MiB
+    resident and polls MongoDB forever (measured here at ~8.6 findAndModify/s
+    per runner, whether or not it has work).
+
+    This is a **per-deployment** decision, not a property of the domain: the
+    same domain is cold on one deployment and hot on another. So it is read
+    from a top-level ``"consolidated"`` list, which belongs in the gitignored
+    ``domains.local.json`` rather than the shared catalog — one host
+    consolidating must not stop another host's runners when it pulls.
+
+    Kept as a top-level key on purpose: the overlay merge REPLACES a domain
+    entry wholesale, so a per-entry flag would force each consolidated domain
+    to be copied in full into the override just to set one boolean.
+    """
+    names = load_catalog().get("consolidated") or []
+    known = domains()
+    return sorted(n for n in names if n in known)
+
+
 def compose_services() -> list[str]:
     """The ``runner-<service>`` names for all compose domains (sorted by domain)."""
     return [s["service"] for _n, s in sorted(compose_domains().items())]

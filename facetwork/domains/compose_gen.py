@@ -98,11 +98,66 @@ def render_block(name: str, spec: dict) -> str:
     for vol in vols:
         L.append(f"      - {vol}\n")
     L.append("    restart: unless-stopped\n")
+    if spec.get("_consolidated"):
+        # Behind a profile, so a plain `docker compose up -d` does NOT start it:
+        # this domain's work is served by runner-generalist. Opt back in for one
+        # host with `--profile per-domain` (or drop it from the catalog's
+        # "consolidated" list) the moment the domain gets busy or slow enough to
+        # deserve its own bulkhead again.
+        L.append('    profiles: ["per-domain"]\n')
     return "".join(L)
 
 
+def _render_generalist(names: list[str]) -> str:
+    """The one runner that fronts every consolidated domain.
+
+    Generated rather than hand-written, even though it is not itself a domain:
+    its membership list and the `profiles:` keys that silence the per-domain
+    blocks are the SAME fact. Two hand-maintained copies would drift, and the
+    failure mode is silent — a domain in neither set is simply never claimed by
+    anyone, which looks exactly like an idle queue.
+    """
+    return (
+        "  # Generalist runner: ONE container serving every domain listed in the\n"
+        "  # catalog's `consolidated` set, whose own per-domain blocks are behind\n"
+        "  # the `per-domain` profile. Claiming stays name-filtered server-side, so\n"
+        "  # this runner claims exactly these namespaces and cannot reach a hot\n"
+        "  # domain's queue.\n"
+        "  runner-generalist:\n"
+        "    build:\n"
+        "      context: .\n"
+        "      dockerfile: docker/Dockerfile.domain-runner\n"
+        '    entrypoint: ["/usr/local/bin/entrypoint-generalist.sh"]\n'
+        "    depends_on:\n"
+        "      mongodb:\n"
+        "        condition: service_healthy\n"
+        "      minio-setup:\n"
+        "        condition: service_completed_successfully\n"
+        "    environment:\n"
+        "      <<: *s3-storage\n"
+        "      FW_MONGODB_URL: mongodb://mongodb:27017\n"
+        "      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}\n"
+        f"      FW_DOMAIN_NAMES: {','.join(names)}\n"
+        "      # More workers than a single-domain runner: this one fronts several\n"
+        "      # queues, so one slow handler should not block the rest.\n"
+        '      FW_REGISTRY_RUNNER_ARGS: "--max-concurrent ${FW_GENERALIST_WORKERS:-4}"\n'
+        "    volumes:\n"
+        f"      - {_DATA_DIR}:/Volumes/afl_data\n"
+        "    restart: unless-stopped\n"
+    )
+
+
 def _render_region() -> str:
-    blocks = [render_block(n, s) for n, s in sorted(compose_domains().items())]
+    from .catalog import consolidated_domains
+
+    cold = consolidated_domains()
+    specs = dict(compose_domains())
+    for n in cold:
+        if n in specs:
+            specs[n] = {**specs[n], "_consolidated": True}
+    blocks = [render_block(n, s) for n, s in sorted(specs.items())]
+    if cold:
+        blocks.append(_render_generalist(cold))
     return BEGIN + "\n".join(blocks) + END
 
 

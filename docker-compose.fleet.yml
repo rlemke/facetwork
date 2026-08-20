@@ -251,6 +251,17 @@ services:
     environment:
       <<: *fleet-env
 
+  # Generalist runner: one container fronting every domain in the catalog's
+  # `consolidated` set (see domains.local.json). It needs the same override as
+  # any other runner — without one a fleet host would BUILD it locally and no
+  # `fleet set --image` rollout could ever update it, which is exactly the
+  # version-skew failure this file exists to prevent.
+  runner-generalist:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+
   # Orchestration tier (continuation_mode=shared, set in the full-stack file).
   # Shares the core runner image by default so `fleet set --image` rolls it
   # along with the handler runners; pin it independently with FW_FFL_IMAGE to
