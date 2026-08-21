@@ -33,7 +33,7 @@ up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgrou
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/**disk-recover**/repair-workflow/
-terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**/**osm-replicate**) ·
+terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**/**osm-replicate**/**osm-watchdog**) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**/**ffl-audit**) ·
 **`mode`** (day-cluster/night-local switch: status/local/cluster/join/leave).
 
@@ -82,6 +82,17 @@ Notes for working with `fw`:
   or drop a gitignored `domains.local.json` (merged over the defaults — entries
   add/replace by key; top-level `"_remove": […]` drops standard ones). Run
   `gen-compose` after editing the catalog.
+- **`fw svc osm-watchdog [--install] [--every-hours N] [--status]`** — an
+  INDEPENDENT agent (12h) that runs the chain check and alarms if the OSM
+  stream or an index has stalled. It exists because `osm-replicate`'s own
+  post-publish check catches a job that RUNS and finds a problem, but cannot
+  catch a job that never runs — a process cannot observe its own absence, and
+  that failure has occurred here (a fixed nightly time never fired on a
+  sleeping laptop). Deliberately trivial: it publishes nothing and mutates
+  nothing. ⚠️ Exit codes are load-bearing — `--check` returns **0** healthy,
+  **1** stalled, **2** could-not-verify (offline), and only **1** alarms.
+  Alarming when merely offline would train you to ignore the alarm, which is
+  how the original silent failure survived in the first place.
 - **`fw svc osm-replicate [--days N] [--install] [--status]`** — publishes new
   per-region OSM replication diffs (fwh_osm's producer); `--install` adds a
   **nightly launchd timer at 03:15 local**, which is after OSM's ~00:18 UTC

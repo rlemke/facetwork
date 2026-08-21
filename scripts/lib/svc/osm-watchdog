@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# fw-summary: independent watchdog that alarms if OSM replication or its indexes stall
+#
+# `fw svc osm-replicate` already verifies the chain after publishing. That
+# catches a job that RUNS and finds a problem. It cannot catch a job that never
+# runs at all — a process cannot observe its own absence — and that has happened
+# here: a fixed nightly time never fired once on a sleeping laptop, silently,
+# for a whole day.
+#
+# So this is a SEPARATE agent with its own label and its own schedule. Two
+# independent launchd jobs both failing is far less likely than one, and this
+# one is deliberately trivial: it runs `--check` and alarms. It publishes
+# nothing, applies nothing, and mutates nothing — the less it does, the less
+# there is to break in the thing whose job is to notice breakage.
+#
+# EXIT CODES MATTER HERE. `--check` returns 0 healthy, 1 STALLED, 2
+# could-not-verify (no network). Only 1 alarms. A laptop off the network is not
+# a stall, and alarming on it would train you to ignore the alarm — which is
+# exactly how the original silent failure survived.
+#
+# Usage:
+#   fw svc osm-watchdog                  # check once now
+#   fw svc osm-watchdog --install        # every 12h, independent of the publisher
+#   fw svc osm-watchdog --every-hours 6 --install
+#   fw svc osm-watchdog --uninstall
+#   fw svc osm-watchdog --status
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+set -uo pipefail   # NOT -e: this must report a failing check, not die on it
+
+LABEL="com.facetwork.osm-watchdog"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+WRAPPER="$HOME/.facetwork/osm-watchdog.sh"
+LOGDIR="$HOME/.facetwork"
+LOG="$LOGDIR/osm-watchdog.log"
+HEALTH="$LOGDIR/osm-health.txt"
+EVERY_HOURS=12 ACTION="run"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --every-hours) EVERY_HOURS="$2"; shift 2 ;;
+        --install) ACTION="install"; shift ;;
+        --uninstall|--remove) ACTION="uninstall"; shift ;;
+        --status) ACTION="status"; shift ;;
+        -h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+PUBLISH="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm/src/osm_geocoder/tools/publish-replication.sh"
+
+case "$ACTION" in
+run)
+    if [ ! -x "$PUBLISH" ]; then
+        echo "[$(date '+%F %T %Z')] cannot check: $PUBLISH missing"
+        exit 1
+    fi
+    "$PUBLISH" --check > "$HEALTH" 2>&1
+    rc=$?
+    case "$rc" in
+        0) echo "[$(date '+%F %T %Z')] OK — chain current" ;;
+        2) echo "[$(date '+%F %T %Z')] could not verify (offline?) — NOT alarming" ;;
+        *)
+            echo "[$(date '+%F %T %Z')] STALLED:"
+            sed 's/^/  /' "$HEALTH" | tail -12
+            if command -v osascript >/dev/null 2>&1; then
+                osascript -e 'display notification "OSM replication or its index has STALLED — fw svc osm-replicate --status" with title "Facetwork watchdog"' >/dev/null 2>&1 || true
+            fi
+            ;;
+    esac
+    exit $rc
+    ;;
+
+status)
+    if [ -n "$(launchctl list 2>/dev/null | grep -F "$LABEL" || true)" ]; then
+        echo "watchdog: LOADED ($LABEL)"
+    else
+        echo "watchdog: not loaded — install with: fw svc osm-watchdog --install"
+    fi
+    [ -f "$LOG" ] && { echo "log:"; tail -5 "$LOG" | sed 's/^/  /'; } || echo "log: (none yet)"
+    ;;
+
+uninstall)
+    launchctl unload "$PLIST" 2>/dev/null || true
+    rm -f "$PLIST" "$WRAPPER"
+    echo "uninstalled $LABEL."
+    echo "⚠️  A stalled stream will again go unreported unless the publish job"
+    echo "    itself runs and notices — which it cannot do if it never runs."
+    ;;
+
+install)
+    if [ "$(uname)" != "Darwin" ]; then
+        echo "launchd is macOS-only. On Linux use a systemd timer, or cron:" >&2
+        echo "  0 */$EVERY_HOURS * * *  cd $FW_ROOT && ./fw svc osm-watchdog >> $LOG 2>&1" >&2
+        exit 1
+    fi
+    mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
+
+    cat > "$WRAPPER" <<WRAP
+#!/bin/bash -l
+# OSM replication watchdog — launched by $LABEL.
+# Regenerate via 'fw svc osm-watchdog --install'. Do not hand-edit.
+set -u
+export PYTHONUNBUFFERED=1
+# Unlike the publisher this does NOT wait for the external volume: if the tree
+# is absent the check reports it, which is information worth having rather than
+# a reason to stay quiet.
+cd "$FW_ROOT" || exit 1
+exec ./fw svc osm-watchdog
+WRAP
+    chmod +x "$WRAPPER"
+
+    cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$LABEL</string>
+    <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
+    <!-- Periodic, and RunAtLoad, for the same reason as the publisher: a
+         missed StartCalendarInterval is NOT run on wake, so a fixed time on a
+         sleeping machine never fires. StartInterval does. -->
+    <key>RunAtLoad</key><true/>
+    <key>StartInterval</key><integer>$((EVERY_HOURS * 3600))</integer>
+    <key>StandardOutPath</key><string>$LOG</string>
+    <key>StandardErrorPath</key><string>$LOGDIR/osm-watchdog.err.log</string>
+</dict>
+</plist>
+PLISTEOF
+
+    echo "wrote:"
+    echo "  $WRAPPER"
+    echo "  $PLIST   (every ${EVERY_HOURS}h, independent of the publisher)"
+    launchctl unload "$PLIST" 2>/dev/null || true
+    launchctl load "$PLIST"
+    echo "loaded $LABEL — a stalled chain will now be reported even if the"
+    echo "publish job stops running entirely."
+    ;;
+esac
