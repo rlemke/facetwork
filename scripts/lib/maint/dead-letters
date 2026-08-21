@@ -25,6 +25,8 @@
 #   fw maint dead-letters --all               # fail on recent ones too
 #   fw maint dead-letters --retry NAME        # re-enqueue one facet's dead letters
 #   fw maint dead-letters --retry-all         # re-enqueue everything (deliberate)
+#   fw maint dead-letters --drop NAME --reason "typo'd region, never valid"
+#                                             # retire what can never succeed
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 source "$FW_LIB/_helpers/_env.sh"
 set -uo pipefail
@@ -38,7 +40,7 @@ import sys
 
 import pymongo
 
-from facetwork.runtime.dead_letters import FORGOTTEN_HOURS, collect, retry
+from facetwork.runtime.dead_letters import FORGOTTEN_HOURS, collect, drop, retry
 
 args = sys.argv[1:]
 if any(a in ("-h", "--help") for a in args):
@@ -48,6 +50,19 @@ if any(a in ("-h", "--help") for a in args):
 
 fail_on_recent = "--all" in args
 retry_all = "--retry-all" in args
+drop_name = ""
+drop_reason = "triaged: cannot succeed"
+if "--drop" in args:
+    i = args.index("--drop")
+    if i + 1 >= len(args):
+        print("--drop needs a facet name", file=sys.stderr)
+        raise SystemExit(2)
+    drop_name = args[i + 1]
+if "--reason" in args:
+    i = args.index("--reason")
+    if i + 1 < len(args):
+        drop_reason = args[i + 1]
+
 retry_name = ""
 if "--retry" in args:
     i = args.index("--retry")
@@ -63,6 +78,19 @@ db = pymongo.MongoClient(url, serverSelectionTimeoutMS=5000)[dbname]
 groups = collect(db)
 if not groups:
     print("no dead-lettered tasks.")
+    raise SystemExit(0)
+
+if drop_name:
+    targets = [g for g in groups if g.name == drop_name]
+    if not targets:
+        print(f"no dead letters named {drop_name!r}.", file=sys.stderr)
+        raise SystemExit(2)
+    uuids = [u for g in targets for u in g.uuids]
+    n = drop(db, uuids, drop_reason)
+    print(f"retired {n} task(s) for {drop_name}")
+    print(f"  reason: {drop_reason}")
+    print("\nMarked cancelled, not deleted — a dropped task is the only record")
+    print("that this deployment tried the work and abandoned it.")
     raise SystemExit(0)
 
 if retry_all or retry_name:

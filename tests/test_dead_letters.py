@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import time
 
-from facetwork.runtime.dead_letters import FORGOTTEN_HOURS, collect, retry
+from facetwork.runtime.dead_letters import FORGOTTEN_HOURS, collect, drop, retry
 
 
 class _FakeTasks:
@@ -155,3 +155,36 @@ def test_retry_only_touches_dead_letters():
 def test_retrying_nothing_is_a_noop():
     db = _FakeDB([_task("a.B", hours_ago=50, uuid="1")])
     assert retry(db, []) == 0
+
+
+# --- retiring what can never succeed ----------------------------------------
+
+
+def test_drop_retires_and_records_why():
+    """Without a way to retire the impossible, the check stays red forever on a
+    typo'd region or a deleted scratch file. A permanently red check is
+    indistinguishable from a broken one and gets ignored — the failure this
+    tool exists to prevent, reintroduced by the tool itself."""
+    docs = [_task("a.B", hours_ago=500, uuid="1")]
+    db = _FakeDB(docs)
+    assert drop(db, ["1"], "region was a typo") == 1
+    assert docs[0]["state"] == "cancelled"
+    assert docs[0]["dropped_reason"] == "region was a typo"
+    assert docs[0]["dropped_at"] > 0
+
+
+def test_dropped_tasks_are_cancelled_not_deleted():
+    """A dropped task is the only record that this deployment tried the work
+    and abandoned it; deleting would erase that evidence."""
+    docs = [_task("a.B", hours_ago=500, uuid="1")]
+    db = _FakeDB(docs)
+    drop(db, ["1"], "why")
+    assert len(docs) == 1, "still present in the collection"
+    assert collect(db) == [], "but no longer reported as a dead letter"
+
+
+def test_drop_only_touches_dead_letters():
+    docs = [_task("a.B", hours_ago=1, uuid="1", state="running")]
+    db = _FakeDB(docs)
+    assert drop(db, ["1"], "no") == 0
+    assert docs[0]["state"] == "running"

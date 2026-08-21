@@ -106,6 +106,30 @@ def collect(db, *, now_ms: int | None = None) -> list[DeadLetterGroup]:
     return groups
 
 
+def drop(db, uuids: list[str], reason: str, *, now_ms: int | None = None) -> int:
+    """Retire dead letters that can never succeed. Returns how many were closed.
+
+    Without this the check stays red forever on things like a typo'd region or
+    a file in a scratch directory that was deleted weeks ago. A permanently red
+    check is indistinguishable from a broken one and gets ignored — which is
+    the failure this tool exists to prevent, reintroduced by the tool itself.
+
+    Marks ``cancelled`` rather than deleting, and records WHY and WHEN in the
+    task. A dropped task is evidence about what this deployment tried and
+    abandoned; deleting it would erase the only record that the work was ever
+    attempted.
+    """
+    if not uuids:
+        return 0
+    now = now_ms or int(time.time() * 1000)
+    res = db.tasks.update_many(
+        {"uuid": {"$in": list(uuids)}, "state": "dead_letter"},
+        {"$set": {"state": "cancelled", "updated": now,
+                  "dropped_reason": reason, "dropped_at": now}},
+    )
+    return int(res.modified_count)
+
+
 def retry(db, uuids: list[str], *, now_ms: int | None = None) -> int:
     """Re-enqueue specific dead letters. Returns how many were reset.
 
