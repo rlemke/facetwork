@@ -28,6 +28,12 @@
 # `--days 4` by default, not 1: missed periods then heal themselves instead of
 # leaving a permanent hole, and re-publishing a day is a no-op.
 #
+# INDEXES. Any name in $FW_OSM_NIGHTLY_INDEXES (space/comma separated) is
+# advanced with the SAME diff, inside the publish loop — the file is already
+# local and the sequences are already walked in order. An index that fails does
+# not stop the stream: the diffs on disk are the durable artefact and an index
+# can always be rebuilt from them.
+#
 # Usage:
 #   fw svc osm-replicate                 # publish up to 4 new days now
 #   fw svc osm-replicate --days 14       # bigger catch-up
@@ -36,6 +42,11 @@
 #   fw svc osm-replicate --at 03:15 --install # fixed time (always-on hosts only)
 #   fw svc osm-replicate --uninstall
 #   fw svc osm-replicate --status
+#
+# After publishing, the job VERIFIES the chain (--check) and raises a desktop
+# notification if the stream or an index has stalled. Every other failure here
+# is loud; a stopped stream is not, because consumers silently fall back and
+# keep rendering from a slower source forever.
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 source "$FW_LIB/_helpers/_env.sh"
 set -euo pipefail
@@ -66,7 +77,28 @@ case "$ACTION" in
 run)
     [ -x "$PUBLISH" ] || { echo "not found: $PUBLISH — is fwh_osm installed?" >&2; exit 1; }
     echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] publishing up to $DAYS day(s)"
-    exec "$PUBLISH" --days "$DAYS"
+    IDX_ARGS=()
+    for i in ${FW_OSM_NIGHTLY_INDEXES//,/ }; do IDX_ARGS+=(--update-index "$i"); done
+    "$PUBLISH" --days "$DAYS" "${IDX_ARGS[@]+"${IDX_ARGS[@]}"}"
+    rc=$?
+
+    # Verify the chain, and make a stall LOUD. Every other failure in this
+    # pipeline reports itself; a stopped stream does not, because consumers
+    # just fall back and keep rendering from a slower source indefinitely.
+    if ! "$PUBLISH" --check > "$LOGDIR/osm-health.txt" 2>&1; then
+        echo "STALLED — see $LOGDIR/osm-health.txt"
+        sed 's/^/  /' "$LOGDIR/osm-health.txt" | tail -12
+        # A desktop notification is the only channel that reaches someone who
+        # is not already reading logs, which is the whole problem being solved.
+        # Best-effort: if osascript is unavailable the non-zero exit and the log
+        # still stand.
+        if command -v osascript >/dev/null 2>&1; then
+            osascript -e 'display notification "OSM replication or index has stalled — run: fw svc osm-replicate --status" with title "Facetwork"' >/dev/null 2>&1 || true
+        fi
+        exit 1
+    fi
+    echo "chain healthy — stream and indexes current"
+    exit $rc
     ;;
 
 status)
