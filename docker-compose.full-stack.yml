@@ -898,8 +898,10 @@ services:
       # More workers than a single-domain runner: this one fronts several
       # queues, so one slow handler should not block the rest.
       FW_REGISTRY_RUNNER_ARGS: "--max-concurrent ${FW_GENERALIST_WORKERS:-4}"
+      FW_OSM_INDEX_ROOT: /opt/fw_osm_indexes
     volumes:
       - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - /Volumes/afl_data_local/osm-selfhost/indexes:/opt/fw_osm_indexes:ro
     restart: unless-stopped
   # <<< END generated domain runners <<<
 

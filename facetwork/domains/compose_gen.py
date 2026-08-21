@@ -117,6 +117,14 @@ def _render_generalist(names: list[str]) -> str:
     failure mode is silent — a domain in neither set is simply never claimed by
     anyone, which looks exactly like an idle queue.
     """
+    from .catalog import index_dir
+
+    # READ-ONLY on purpose: runners CONSUME indexes, only the host publish job
+    # writes them. A runner cannot corrupt the thing every map depends on.
+    idx = index_dir()
+    idx_mount = f"      - {idx}:/opt/fw_osm_indexes:ro\n" if idx else ""
+    idx_env = ("      FW_OSM_INDEX_ROOT: /opt/fw_osm_indexes\n" if idx else "")
+
     return (
         "  # Generalist runner: ONE container serving every domain listed in the\n"
         "  # catalog's `consolidated` set, whose own per-domain blocks are behind\n"
@@ -141,9 +149,11 @@ def _render_generalist(names: list[str]) -> str:
         "      # More workers than a single-domain runner: this one fronts several\n"
         "      # queues, so one slow handler should not block the rest.\n"
         '      FW_REGISTRY_RUNNER_ARGS: "--max-concurrent ${FW_GENERALIST_WORKERS:-4}"\n'
-        "    volumes:\n"
+        + idx_env
+        + "    volumes:\n"
         f"      - {_DATA_DIR}:/Volumes/afl_data\n"
-        "    restart: unless-stopped\n"
+        + idx_mount
+        + "    restart: unless-stopped\n"
     )
 
 

@@ -121,6 +121,21 @@ def consolidated_domains() -> list[str]:
     return sorted(n for n in names if n in known)
 
 
+def index_dir() -> str:
+    """Host directory holding tag indexes, mounted READ-ONLY into runners.
+
+    Per-deployment, like ``consolidated``: the indexes live wherever this host
+    keeps bulk data, and another host may have none at all. Read from the
+    catalog rather than the ambient environment so ``gen-compose`` produces the
+    same file whoever runs it — a generated artefact that changes shape based on
+    who happened to have a variable exported is a bad artefact.
+
+    Empty (the default) emits no mount, so deployments without indexes are
+    unaffected by regenerating.
+    """
+    return str(load_catalog().get("index_dir") or "").strip()
+
+
 def compose_services() -> list[str]:
     """The ``runner-<service>`` names for all compose domains (sorted by domain)."""
     return [s["service"] for _n, s in sorted(compose_domains().items())]
