@@ -12,19 +12,28 @@
 # restarts the next morning, now with a working mechanism sitting idle behind
 # it.
 #
-# TIMING. OSM publishes each day's diff shortly after 00:00 UTC (observed ~00:18
-# UTC). 03:15 LOCAL is 01:15 UTC on CEST and 02:15 UTC on CET, so it lands after
-# the upstream diff in both halves of the year.
+# SCHEDULING — measured, not assumed. The first install used a fixed 03:15
+# nightly time (after OSM's ~00:18 UTC publish in both DST halves). It never
+# fired: this machine sleeps — 62 sleep/wake cycles since boot — and launchd
+# does NOT run a missed StartCalendarInterval on wake. `runs` stayed put, the
+# log stayed empty, and nothing reported anything. A laptop asleep at 03:15
+# publishes nothing, forever, silently — the same shape of failure this whole
+# tool exists to end.
 #
-# `--days 4` by default, not 1: a missed night then heals itself on the next
-# run instead of leaving a permanent hole, and publishing a day that is already
-# published is a no-op.
+# So the default is a periodic StartInterval (every 6h), which DOES fire on wake
+# once its period has elapsed: worst case becomes "shortly after you next open
+# the lid" instead of "never". `--at HH:MM` restores a fixed time for an
+# always-on host, where predictability is worth more than tolerance.
+#
+# `--days 4` by default, not 1: missed periods then heal themselves instead of
+# leaving a permanent hole, and re-publishing a day is a no-op.
 #
 # Usage:
 #   fw svc osm-replicate                 # publish up to 4 new days now
 #   fw svc osm-replicate --days 14       # bigger catch-up
-#   fw svc osm-replicate --install       # nightly timer at 03:15 local
-#   fw svc osm-replicate --at 04:00 --install
+#   fw svc osm-replicate --install            # every 6h, fires on wake
+#   fw svc osm-replicate --every-hours 12 --install
+#   fw svc osm-replicate --at 03:15 --install # fixed time (always-on hosts only)
 #   fw svc osm-replicate --uninstall
 #   fw svc osm-replicate --status
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
@@ -36,12 +45,13 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 WRAPPER="$HOME/.facetwork/osm-replicate.sh"
 LOGDIR="$HOME/.facetwork"
 LOG="$LOGDIR/osm-replicate.log"
-DAYS=4 AT="03:15" ACTION="run"
+DAYS=4 AT="" EVERY_HOURS=6 ACTION="run"
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --days) DAYS="$2"; shift 2 ;;
         --at) AT="$2"; shift 2 ;;
+        --every-hours) EVERY_HOURS="$2"; shift 2 ;;
         --install) ACTION="install"; shift ;;
         --uninstall|--remove) ACTION="uninstall"; shift ;;
         --status) ACTION="status"; shift ;;
@@ -85,10 +95,21 @@ install)
         echo "  15 3 * * *  cd $FW_ROOT && ./fw svc osm-replicate >> $LOG 2>&1" >&2
         exit 1
     fi
-    case "$AT" in
-        [0-9][0-9]:[0-9][0-9]) HH="${AT%%:*}"; MM="${AT##*:}" ;;
-        *) echo "--at wants HH:MM (24h), got '$AT'" >&2; exit 2 ;;
-    esac
+    if [ -n "$AT" ]; then
+        case "$AT" in
+            [0-9][0-9]:[0-9][0-9]) HH="${AT%%:*}"; MM="${AT##*:}" ;;
+            *) echo "--at wants HH:MM (24h), got '$AT'" >&2; exit 2 ;;
+        esac
+        SCHEDULE="    <key>StartCalendarInterval</key>
+    <dict><key>Hour</key><integer>$((10#$HH))</integer><key>Minute</key><integer>$((10#$MM))</integer></dict>"
+        SCHED_DESC="daily at $AT local"
+    else
+        SCHEDULE="    <!-- Periodic, not a fixed time: a missed StartCalendarInterval is NOT
+         run on wake, so on a machine that sleeps a nightly entry never fires.
+         StartInterval does fire on wake once its period has elapsed. -->
+    <key>StartInterval</key><integer>$((EVERY_HOURS * 3600))</integer>"
+        SCHED_DESC="every ${EVERY_HOURS}h (fires on wake)"
+    fi
     mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
 
     cat > "$WRAPPER" <<WRAP
@@ -121,9 +142,8 @@ WRAP
     <key>Label</key><string>$LABEL</string>
     <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
     <!-- Every day, not weekdays: OSM replication does not observe weekends. -->
-    <key>RunAtLoad</key><false/>
-    <key>StartCalendarInterval</key>
-    <dict><key>Hour</key><integer>$((10#$HH))</integer><key>Minute</key><integer>$((10#$MM))</integer></dict>
+    <key>RunAtLoad</key><true/>
+$SCHEDULE
     <!-- No WorkingDirectory: it would be the repo, which is fine, but the
          wrapper cd's anyway and the external volume must not be chdir'd into
          by launchd (getcwd: Operation not permitted). -->
@@ -135,7 +155,7 @@ PLISTEOF
 
     echo "wrote:"
     echo "  $WRAPPER"
-    echo "  $PLIST   (daily at $AT local, --days $DAYS)"
+    echo "  $PLIST   ($SCHED_DESC, --days $DAYS)"
     launchctl unload "$PLIST" 2>/dev/null || true
     launchctl load "$PLIST"
     echo "loaded $LABEL — the replication stream now advances nightly."
