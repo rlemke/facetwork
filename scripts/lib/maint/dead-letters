@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# fw-summary: report tasks that exhausted their retries and were then forgotten
+#
+# A dead letter is a task that failed, spent its retry budget, gave up, and
+# stopped telling anyone. `repair-workflow` can re-enqueue them, but it is
+# invoked per workflow by someone who already suspects a problem. Nothing asked
+# the standing question: is anything dead and unattended?
+#
+# The cost of that gap, measured here: a DownloadNuclearReactors task met ONE
+# transient 503 from the object store on 2026-08-11 (MinIO was not down — seven
+# other tasks completed in the same window), retried five times, dead-lettered,
+# and sat untouched for ten days. It was found only because someone happened to
+# sort steps by recency while looking at something else.
+#
+# Reports by default and does NOT retry. A dead letter has already proved it
+# fails; re-driving the set unattended would spend the budget again on whatever
+# is genuinely broken and bury the transient ones this is meant to rescue.
+#
+# Exit codes are load-bearing, as with the OSM watchdog: 0 nothing forgotten,
+# 1 forgotten dead letters present. Recent ones (< 24h) are shown but do not
+# fail the check — someone may still be watching them.
+#
+# Usage:
+#   fw maint dead-letters                     # report; exit 1 if any are forgotten
+#   fw maint dead-letters --all               # fail on recent ones too
+#   fw maint dead-letters --retry NAME        # re-enqueue one facet's dead letters
+#   fw maint dead-letters --retry-all         # re-enqueue everything (deliberate)
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+set -uo pipefail
+
+PY="$FW_ROOT/.venv/bin/python3"; [ -x "$PY" ] || PY="$FW_ROOT/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || command -v python)"
+
+exec env PYTHONPATH="$FW_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PY" - "$@" <<'PYEOF'
+import os
+import sys
+
+import pymongo
+
+from facetwork.runtime.dead_letters import FORGOTTEN_HOURS, collect, retry
+
+args = sys.argv[1:]
+if any(a in ("-h", "--help") for a in args):
+    print(__doc__ or "")
+    print("fw maint dead-letters [--all] [--retry NAME] [--retry-all]")
+    raise SystemExit(0)
+
+fail_on_recent = "--all" in args
+retry_all = "--retry-all" in args
+retry_name = ""
+if "--retry" in args:
+    i = args.index("--retry")
+    if i + 1 >= len(args):
+        print("--retry needs a facet name", file=sys.stderr)
+        raise SystemExit(2)
+    retry_name = args[i + 1]
+
+url = os.environ.get("FW_MONGODB_URL") or "mongodb://localhost:27017"
+dbname = os.environ.get("FW_MONGODB_DATABASE") or "facetwork"
+db = pymongo.MongoClient(url, serverSelectionTimeoutMS=5000)[dbname]
+
+groups = collect(db)
+if not groups:
+    print("no dead-lettered tasks.")
+    raise SystemExit(0)
+
+if retry_all or retry_name:
+    targets = [g for g in groups if retry_all or g.name == retry_name]
+    if not targets:
+        print(f"no dead letters named {retry_name!r}. Names present:", file=sys.stderr)
+        for g in groups:
+            print(f"  {g.name}", file=sys.stderr)
+        raise SystemExit(2)
+    uuids = [u for g in targets for u in g.uuids]
+    n = retry(db, uuids)
+    print(f"re-enqueued {n} task(s) across {len(targets)} facet(s):")
+    for g in targets:
+        print(f"  {g.name}  ({g.count})")
+    print("\nThey will be claimed by a runner that has the handler. If the cause")
+    print("was not transient they will dead-letter again — which is the point of")
+    print("retrying deliberately rather than on a timer.")
+    raise SystemExit(0)
+
+forgotten = [g for g in groups if g.forgotten]
+total = sum(g.count for g in groups)
+print(f"{total} dead-lettered task(s) in {len(groups)} facet(s):\n")
+print(f"{'facet':<46}{'n':>4}{'oldest':>10}")
+print("-" * 74)
+for g in groups:
+    age = f"{g.oldest_hours / 24:.1f}d" if g.oldest_hours >= 48 else f"{g.oldest_hours:.0f}h"
+    mark = "  <-- FORGOTTEN" if g.forgotten else ""
+    print(f"{g.name[:45]:<46}{g.count:>4}{age:>10}{mark}")
+    for e in g.errors:
+        print(f"      {e[:110]}")
+
+print()
+if forgotten and not fail_on_recent:
+    print(f"{len(forgotten)} facet(s) have dead letters older than {FORGOTTEN_HOURS:.0f}h —")
+    print("nobody is watching these. Inspect, then:  fw maint dead-letters --retry <facet>")
+    raise SystemExit(1)
+if groups and fail_on_recent:
+    raise SystemExit(1)
+print("dead letters present, but all recent — someone may still be on them.")
+raise SystemExit(0)
+PYEOF

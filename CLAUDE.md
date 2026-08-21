@@ -33,7 +33,7 @@ up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgrou
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/**disk-recover**/repair-workflow/
-terminate-workflow/cache-index/**purge-servers**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**/**osm-replicate**/**osm-watchdog**) ·
+terminate-workflow/cache-index/**purge-servers**/**dead-letters**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**/**osm-replicate**/**osm-watchdog**) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**/**ffl-audit**) ·
 **`mode`** (day-cluster/night-local switch: status/local/cluster/join/leave).
 
@@ -530,6 +530,30 @@ persistence layer must not import). Call that helper, never `store.repair_workfl
 directly, or the surface will report stranded steps without fixing them.
 
 **Preventative**: Runners now verify all tasks are terminal before marking a workflow as completed.
+
+### Dead letters — the failures that stopped telling you
+
+`fw maint dead-letters` reports tasks that exhausted their retries and were then
+forgotten. `repair-workflow` can re-enqueue them, but it is invoked per workflow
+by someone who already suspects a problem; nothing asked the standing question
+*is anything dead and unattended?*
+
+The cost of that gap, measured: a `DownloadNuclearReactors` task met ONE
+transient `503 HeadObject` from the object store (MinIO was **not** down — seven
+other tasks completed in the same window), retried five times, dead-lettered,
+and sat untouched for **ten days**. A single retry then completed it in seconds.
+The first sweep found **27 dead letters across 19 facets**, the oldest 22 days.
+
+- Exit **0** if nothing is forgotten, **1** if any is older than 24h. Recent ones
+  are shown but do not fail the check — a noisy check gets ignored, which is how
+  the ten-day-old one survived in the first place.
+- **Reports; does not retry.** A dead letter has already proved it fails, so
+  re-driving the set unattended would spend the budget again on whatever is
+  genuinely broken and bury the transient ones worth rescuing.
+  `--retry <facet>` is the deliberate act, with the error in front of you.
+- Retry resets `retry_count` and clears `server_id`, not just the state:
+  otherwise the task dead-letters again on its first hiccup and reads as "the
+  retry did not work" rather than "it was never given a budget".
 
 ### Terminating abandoned workflows
 
