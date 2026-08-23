@@ -185,9 +185,15 @@ def _render_region() -> str:
     # per-host choice, but this file is committed and shared, and
     # docker-compose.fleet.yml carries a `runner-generalist` override so that
     # `fleet set --image` can roll the role. Emitting the block only when the
-    # generating host happened to consolidate something made that override
-    # dangle — `docker compose config` then rejects the WHOLE pair, taking every
-    # other runner with it, on hosts that never used the generalist at all.
+    # generating host happened to consolidate something left that override
+    # dangling on every other host.
+    #
+    # Compose does NOT error on that (measured, don't re-derive it): a service
+    # present only in the override file is simply DEFINED by it. So the merged
+    # config gains a `runner-generalist` built purely from `*fleet-runner` —
+    # correct image, no `FW_DOMAIN_NAMES`, no index mount. It starts, claims
+    # nothing, and reports healthy. The quiet wrong answer, not a loud failure,
+    # which is exactly why this is generated rather than left to chance.
     # Defined always, started only via fleet_config or the `generalist` profile.
     blocks.append(_render_generalist(cold))
     return BEGIN + "\n".join(blocks) + END
