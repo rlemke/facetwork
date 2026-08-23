@@ -105,3 +105,38 @@ def test_env_file_is_full_replace(base, tmp_path, monkeypatch):
     monkeypatch.setenv("FW_DOMAINS_FILE", str(envf))
     assert catalog.catalog_source() == envf
     assert catalog.domain_names() == ["only"]  # neither base nor local merged in
+
+
+def test_override_is_a_delta_not_a_replacement(base):
+    """A local override must not drop the shared catalog's top-level settings.
+
+    Regression: `_merge` built its result from `{}` and copied top-level keys
+    from the OVERLAY only, so merely having a `domains.local.json` — even one
+    that says nothing about them — silently dropped `defaults` and `index_dir`.
+    The fleet's replica counts reverted to the code fallbacks, and `index_dir`
+    vanishing desynced the GENERATED compose file between hosts that had a
+    local override and hosts that did not.
+    """
+    _tmp, default, local = base
+    _write(
+        default,
+        {
+            "version": 1,
+            "defaults": {"replicas": 1, "scaled_replicas": 3},
+            "index_dir": "/srv/indexes",
+            "domains": {"osm-geocoder": {"repo": "fwh_osm", "service": "runner-osm-geocoder"}},
+            "examples": {},
+        },
+    )
+    # An override concerned only with domains says nothing about the rest...
+    _write(local, {"domains": {"acme": {"repo": "fwh_acme"}}})
+    cat = catalog.load_catalog()
+    assert cat["defaults"] == {"replicas": 1, "scaled_replicas": 3}
+    assert catalog.index_dir() == "/srv/indexes"
+    assert cat["version"] == 1
+    assert set(cat["domains"]) == {"osm-geocoder", "acme"}
+
+    # ...but when it DOES restate one, the override still wins.
+    _write(local, {"index_dir": "/mnt/other", "defaults": {"replicas": 2}})
+    assert catalog.index_dir() == "/mnt/other"
+    assert catalog.load_catalog()["defaults"] == {"replicas": 2}

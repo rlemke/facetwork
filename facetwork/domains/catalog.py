@@ -34,15 +34,27 @@ def _read(path: Path) -> dict:
 
 
 def _merge(base: dict, overlay: dict) -> dict:
-    """Overlay ``domains``/``examples`` onto base by key; honor ``_remove``."""
-    out = {"domains": dict(base.get("domains", {})), "examples": dict(base.get("examples", {}))}
+    """Overlay ``domains``/``examples`` onto base by key; honor ``_remove``.
+
+    Every other top-level key (``defaults``, ``index_dir``, ``version``, …)
+    comes from base unless the overlay restates it. Starting from ``{}`` and
+    copying only the overlay's keys — as this did — meant that merely HAVING a
+    ``domains.local.json`` dropped the shared catalog's deployment-wide
+    settings: ``defaults`` went None, so the fleet's replica counts silently
+    reverted to the code fallbacks, and ``index_dir`` vanished, which desynced
+    the generated compose file between hosts that had a local override and
+    hosts that did not. An override is meant to be a DELTA, not a replacement.
+    """
+    out = {k: v for k, v in base.items() if k not in ("domains", "examples", "_remove")}
+    out["domains"] = dict(base.get("domains", {}))
+    out["examples"] = dict(base.get("examples", {}))
     for section in ("domains", "examples"):
         for name, spec in (overlay.get(section) or {}).items():
             out[section][name] = spec
     for name in overlay.get("_remove", []) or []:
         out["domains"].pop(name, None)
         out["examples"].pop(name, None)
-    # carry through any other top-level keys from the overlay (e.g. version)
+    # overlay wins for any other top-level key it actually states
     for k, v in overlay.items():
         if k not in ("domains", "examples", "_remove"):
             out[k] = v

@@ -5,6 +5,8 @@
     "replicas": 1,
     "scaled_replicas": 3
   },
+  "_index_dir_comment": "Host directory holding the maintained OSM tag indexes, mounted READ-ONLY into runner-generalist as /opt/fw_osm_indexes. Shared (not host-local) so `fw util gen-compose` produces the SAME file on every host \u2014 a per-host value here silently desyncs the committed artefact. A host whose tree lives elsewhere overrides the PATH with FW_OSM_INDEX_HOST_DIR, no regeneration needed. A host with no tree at all mounts an empty dir, which the consumers handle: index_file() returns None when the .sqlite is absent and they fall back to Overpass.",
+  "index_dir": "/Volumes/afl_data/osm-selfhost/indexes",
   "domains": {
     "anthropic": {
       "repo": "fwh_anthropic",
@@ -163,14 +165,22 @@
     },
     "stocks": {
       "repo": "fwh_stocks",
-      "extras": ["yfinance"],
+      "extras": [
+        "yfinance"
+      ],
       "description": "Stock-group paper-trading tracker: factor + analyst + optional LLM selection, daily mark-to-market snapshots, per-position and overall P/L vs a benchmark",
       "service": "runner-stocks",
       "task_list": "stocks",
       "compose": {
         "env": [
-          ["ANTHROPIC_API_KEY", "${ANTHROPIC_API_KEY:-}"],
-          ["FW_STOCKS_PROVIDER", "${FW_STOCKS_PROVIDER:-yfinance}"]
+          [
+            "ANTHROPIC_API_KEY",
+            "${ANTHROPIC_API_KEY:-}"
+          ],
+          [
+            "FW_STOCKS_PROVIDER",
+            "${FW_STOCKS_PROVIDER:-yfinance}"
+          ]
         ]
       }
     },
@@ -265,7 +275,7 @@
     "gridbuilder": {
       "repo": "fwh_gridbuilder",
       "extras": [],
-      "description": "OpenStreetMap power infrastructure (substations, lines) → model-ready grid CSV/GeoJSON per country; the FFL equivalent of PyPSA grid-builder",
+      "description": "OpenStreetMap power infrastructure (substations, lines) \u2192 model-ready grid CSV/GeoJSON per country; the FFL equivalent of PyPSA grid-builder",
       "service": "runner-gridbuilder",
       "task_list": "grid",
       "compose": {
@@ -277,7 +287,10 @@
           "concurrent fan-out took Mongo down with it."
         ],
         "env": [
-          ["FW_GRIDBUILDER_DATA_DIR", "/Volumes/afl_data/earth-osm"]
+          [
+            "FW_GRIDBUILDER_DATA_DIR",
+            "/Volumes/afl_data/earth-osm"
+          ]
         ]
       }
     },

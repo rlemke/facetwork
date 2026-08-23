@@ -888,7 +888,7 @@ services:
       FW_OSM_INDEX_ROOT: /opt/fw_osm_indexes
     volumes:
       - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
-      - ${FW_OSM_INDEX_HOST_DIR:-/Volumes/afl_data_local/osm-selfhost/indexes}:/opt/fw_osm_indexes:ro
+      - ${FW_OSM_INDEX_HOST_DIR:-/Volumes/afl_data/osm-selfhost/indexes}:/opt/fw_osm_indexes:ro
     restart: unless-stopped
     profiles: ["generalist"]
   # <<< END generated domain runners <<<
