@@ -105,7 +105,7 @@ Notes for working with `fw`:
   deps — always exec the venv interpreter; and `Path.glob` silently returns
   EMPTY when a directory cannot be enumerated, so set
   `FW_OSM_SELFHOST_REGIONS` and never let a scheduled job depend on readdir.
-- **`fw svc osm-extracts [--install|--uninstall|--status] [--port N]`** — serves
+- **`fw svc osm-extracts [--install|--uninstall|--status] [--container] [--port N]`** — serves
   the self-hosted planet-split tree (`<region>-latest.osm.pbf` +
   `<region>-updates/`) over HTTP: **our Geofabrik**. This is what the
   `osmosis_replication_base_url` stamped into every extract points at, so
@@ -118,6 +118,20 @@ Notes for working with `fw`:
   with *"getcwd: Operation not permitted"*; the wrapper cd's itself after
   waiting for the mount. Producer side: `fwh_osm`'s
   `publish-replication.sh` (see that repo's `docs/replication-publishing.md`).
+  ⚠️ **`--container` (nginx) is the right mode on some hosts, and server3 is
+  one.** macOS Sequoia withholds Local Network permission from native processes
+  unless something can prompt for it, which a launchd job cannot — there, the
+  python server answered `localhost` with 200 and **timed out from every other
+  machine**, while Docker-published ports (Mongo/MinIO/registry) were fine
+  because Docker Desktop holds the permission. TCP still connects, so `nc -z`,
+  `lsof` and `launchctl` all report healthy; **only a fetch from another host
+  detects it**, which is why `--status` prints that command instead of implying
+  reachability it cannot verify. The container mode also gains HTTP **Range**
+  support, which `python -m http.server` has never implemented — on multi-GB
+  PBFs that is the difference between resuming a broken download and restarting
+  it. It refuses to start against an unmounted tree rather than serving an empty
+  directory (404-for-everything reads as "the stream was deleted"), and if the
+  volume ever mounts *after* Docker the fix is to **recreate**, not restart.
 - **`fw svc stocks-snapshot [--install|--uninstall|--status] [--at HH:MM]`** —
   marks every OPEN paper-trading group to market (submits
   `stocks.workflows.SnapshotStockGroups` with a blank `group_id`, the form the

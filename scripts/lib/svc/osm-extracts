@@ -20,8 +20,23 @@
 #   fw svc osm-extracts                  # serve in the foreground (port 8088)
 #   fw svc osm-extracts --port 9000
 #   fw svc osm-extracts --install        # launchd unit, RunAtLoad + KeepAlive
-#   fw svc osm-extracts --uninstall
+#   fw svc osm-extracts --install --container   # nginx container instead (see below)
+#   fw svc osm-extracts --uninstall [--container]
 #   fw svc osm-extracts --status
+#
+# --container: serve from an nginx container instead of a launchd python job.
+# Two reasons, both load-bearing on at least one host here:
+#
+#   1. macOS Sequoia drops INBOUND LAN connections to native processes unless
+#      the binary holds Local Network permission — which a launchd job has no
+#      way to prompt for. On server3 the python server answered localhost with
+#      200 and timed out from every other host, while Docker-published ports
+#      (Mongo, MinIO, registry) worked, because Docker Desktop holds that
+#      permission. TCP still connects, so nc/lsof/launchctl all look healthy;
+#      only a cross-host HTTP fetch finds it.
+#   2. `python -m http.server` does not implement HTTP Range. These are
+#      multi-GB PBFs, so a consumer that loses a connection restarts the whole
+#      download and cannot resume. nginx serves ranges natively.
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 source "$FW_LIB/_helpers/_env.sh"
 set -euo pipefail
@@ -34,15 +49,20 @@ LOG="$LOGDIR/osm-extracts.log"
 PORT="${FW_OSM_EXTRACTS_PORT:-8088}"
 ROOT="${FW_OSM_SELFHOST_WWW:-}"
 ACTION="serve"
+CONTAINER=0
+IMAGE="${FW_OSM_EXTRACTS_IMAGE:-nginx:alpine}"
+CNAME="${FW_OSM_EXTRACTS_CONTAINER:-facetwork-osm-extracts}"
+NGINX_CONF="$LOGDIR/osm-extracts.nginx.conf"
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --port) PORT="$2"; shift 2 ;;
         --root) ROOT="$2"; shift 2 ;;
+        --container) CONTAINER=1; shift ;;
         --install) ACTION="install"; shift ;;
         --uninstall|--remove) ACTION="uninstall"; shift ;;
         --status) ACTION="status"; shift ;;
-        -h|--help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
@@ -57,10 +77,13 @@ status)
     # THAT failure — so the check reports "not loaded" for a job that is
     # demonstrably running. Whether it fires depends on how much launchctl had
     # left to write, which made it look intermittent. Capture, then test.
-    if [ -n "$(launchctl list 2>/dev/null | grep -F "$LABEL" || true)" ]; then
-        echo "unit:  LOADED ($LABEL)"
+    _c_state="$(docker inspect -f '{{.State.Status}} {{if .State.Health}}({{.State.Health.Status}}){{end}}' "$CNAME" 2>/dev/null || true)"
+    if [ -n "$_c_state" ]; then
+        echo "unit:  CONTAINER $CNAME — $_c_state"
+    elif [ -n "$(launchctl list 2>/dev/null | grep -F "$LABEL" || true)" ]; then
+        echo "unit:  LOADED ($LABEL, native launchd)"
     else
-        echo "unit:  not loaded — install with: fw svc osm-extracts --install"
+        echo "unit:  not loaded — install with: fw svc osm-extracts --install [--container]"
     fi
     if curl -sf --max-time 5 "http://127.0.0.1:$PORT/" >/dev/null 2>&1; then
         echo "http:  answering on port $PORT"
@@ -75,10 +98,33 @@ status)
     else
         echo "http:  NOT answering on port $PORT"
     fi
-    [ -f "$LOG" ] && { echo "log:   $LOG"; tail -3 "$LOG" | sed 's/^/  /'; }
+    # Loopback proving nothing is exactly how a dead endpoint hid here: on a
+    # host where macOS withholds Local Network permission from native processes,
+    # 127.0.0.1 answers 200 while every other machine times out. Connecting to
+    # this host's OWN LAN name short-circuits through loopback too, so status
+    # cannot settle it locally — say so rather than implying reachability.
+    echo "reach: only a fetch FROM ANOTHER HOST proves the stamped URL resolves:"
+    echo "         curl -m10 -o /dev/null -w '%{http_code}\\n' http://$(hostname):$PORT/"
+    # Tail the backend that is ACTUALLY serving. Reading the retired launchd
+    # log while a container serves shows the old process's last words as though
+    # they were current — which is worse than showing nothing.
+    if [ -n "$_c_state" ]; then
+        echo "log:   docker logs $CNAME"
+        docker logs --tail 3 "$CNAME" 2>&1 | sed 's/^/  /'
+    elif [ -f "$LOG" ]; then
+        echo "log:   $LOG"; tail -3 "$LOG" | sed 's/^/  /'
+    fi
     ;;
 
 uninstall)
+    if [ "$CONTAINER" = 1 ]; then
+        docker rm -f "$CNAME" >/dev/null 2>&1 && echo "removed container $CNAME." \
+            || echo "no container $CNAME."
+        rm -f "$NGINX_CONF"
+        echo "⚠️  Every extract's osmosis_replication_base_url still points here. With"
+        echo "    nothing serving it, consumers fall back to a full re-download."
+        exit 0
+    fi
     launchctl unload "$PLIST" 2>/dev/null || true
     rm -f "$PLIST" "$WRAPPER"
     echo "uninstalled $LABEL."
@@ -87,6 +133,63 @@ uninstall)
     ;;
 
 install)
+    if [ "$CONTAINER" = 1 ]; then
+        [ -n "$ROOT" ] || { echo "set FW_OSM_SELFHOST_WWW or pass --root" >&2; exit 2; }
+        command -v docker >/dev/null || { echo "docker not on PATH" >&2; exit 2; }
+        # Refuse to CREATE against an unmounted tree. A bind mount to a missing
+        # path does not fail — Docker materialises an empty directory, nginx
+        # then answers 404 for every extract, and a consumer reads that as "the
+        # replication stream was deleted" rather than "the disk is not ready".
+        # The host's external volume losing the race to Docker at boot is a
+        # failure that has happened here before, so check rather than hope.
+        [ -d "$ROOT" ] || { echo "not a directory: $ROOT (external volume not mounted?)" >&2; exit 2; }
+        if ! ls "$ROOT"/*-latest.osm.pbf >/dev/null 2>&1; then
+            echo "no <region>-latest.osm.pbf under $ROOT — refusing to serve an empty tree" >&2
+            exit 2
+        fi
+        mkdir -p "$LOGDIR"
+
+        # autoindex mirrors what Geofabrik serves (and what the python server
+        # did). The data is OpenStreetMap under ODbL — public by license.
+        cat > "$NGINX_CONF" <<'NGINXEOF'
+server {
+    listen 80;
+    server_name _;
+    root /srv;
+    autoindex on;
+    autoindex_exact_size off;
+    autoindex_localtime on;
+    sendfile on;
+    # Multi-GB PBFs: keep them out of userspace buffers and let a client resume.
+    # Range support is the whole reason this is nginx and not http.server.
+    sendfile_max_chunk 2m;
+    max_ranges 1;
+    # A stalled fetch of a 40 GB file should not be killed mid-transfer.
+    send_timeout 300s;
+    access_log /dev/stdout;
+    error_log  /dev/stderr;
+}
+NGINXEOF
+
+        docker rm -f "$CNAME" >/dev/null 2>&1 || true
+        docker run -d --name "$CNAME" --restart unless-stopped \
+            -p "0.0.0.0:$PORT:80" \
+            -v "$ROOT:/srv:ro" \
+            -v "$NGINX_CONF:/etc/nginx/conf.d/default.conf:ro" \
+            --health-cmd 'ls /srv/*-latest.osm.pbf >/dev/null 2>&1 && wget -q -O /dev/null http://127.0.0.1/ || exit 1' \
+            --health-interval 60s --health-timeout 10s --health-retries 3 \
+            "$IMAGE" >/dev/null
+        echo "wrote:"
+        echo "  $NGINX_CONF"
+        echo "started container $CNAME ($IMAGE) — root $ROOT, published 0.0.0.0:$PORT"
+        echo "  serving http://$(hostname):$PORT/"
+        echo "  check: fw svc osm-extracts --status"
+        echo "⚠️  If the external volume ever mounts AFTER Docker, this container"
+        echo "    holds the EMPTY directory it was created against — the health"
+        echo "    check turns unhealthy. Recovery is to RECREATE it (re-run this),"
+        echo "    not to restart it."
+        exit 0
+    fi
     if [ "$(uname)" != "Darwin" ]; then
         echo "launchd is macOS-only. On Linux use a systemd unit running:" >&2
         echo "  fw svc osm-extracts --port $PORT --root $ROOT" >&2
