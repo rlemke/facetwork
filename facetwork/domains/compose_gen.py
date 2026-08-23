@@ -121,8 +121,20 @@ def _render_generalist(names: list[str]) -> str:
 
     # READ-ONLY on purpose: runners CONSUME indexes, only the host publish job
     # writes them. A runner cannot corrupt the thing every map depends on.
+    #
+    # The catalog value is only the DEFAULT, not a literal: the index tree lives
+    # on whatever bulk volume a host happens to have, and this generated file is
+    # shared by every host. Baked in bare, one host's absolute path reaches all
+    # of them, and a bind mount to a missing directory does not fail — Docker
+    # creates it empty, so the runner sees zero indexes and silently falls back
+    # to Overpass. FW_OSM_INDEX_HOST_DIR lets a host point at its own tree
+    # without editing (or diverging from) the generated artefact.
     idx = index_dir()
-    idx_mount = f"      - {idx}:/opt/fw_osm_indexes:ro\n" if idx else ""
+    idx_mount = (
+        f"      - ${{FW_OSM_INDEX_HOST_DIR:-{idx}}}:/opt/fw_osm_indexes:ro\n"
+        if idx
+        else ""
+    )
     idx_env = ("      FW_OSM_INDEX_ROOT: /opt/fw_osm_indexes\n" if idx else "")
 
     return (
