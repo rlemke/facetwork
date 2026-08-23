@@ -861,6 +861,36 @@ services:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_stocks:/handlers/fwh_stocks
       - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
     restart: unless-stopped
+
+  # Generalist runner: ONE container serving every domain listed in the
+  # catalog's `consolidated` set, whose own per-domain blocks are behind
+  # the `per-domain` profile. Claiming stays name-filtered server-side, so
+  # this runner claims exactly these namespaces and cannot reach a hot
+  # domain's queue.
+  runner-generalist:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    entrypoint: ["/usr/local/bin/entrypoint-generalist.sh"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *s3-storage
+      FW_MONGODB_URL: mongodb://mongodb:27017
+      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
+      FW_DOMAIN_NAMES: 
+      # More workers than a single-domain runner: this one fronts several
+      # queues, so one slow handler should not block the rest.
+      FW_REGISTRY_RUNNER_ARGS: "--max-concurrent ${FW_GENERALIST_WORKERS:-4}"
+      FW_OSM_INDEX_ROOT: /opt/fw_osm_indexes
+    volumes:
+      - ${FW_DATA_DIR:-/Volumes/afl_data}:/Volumes/afl_data
+      - ${FW_OSM_INDEX_HOST_DIR:-/Volumes/afl_data_local/osm-selfhost/indexes}:/opt/fw_osm_indexes:ro
+    restart: unless-stopped
+    profiles: ["generalist"]
   # <<< END generated domain runners <<<
 
   # Embedded-GraphHopper Java routing agent (osm.Routing.GraphHopper.RouteBatch).

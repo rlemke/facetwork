@@ -166,6 +166,9 @@ def _render_generalist(names: list[str]) -> str:
         f"      - {_DATA_DIR}:/Volumes/afl_data\n"
         + idx_mount
         + "    restart: unless-stopped\n"
+        # Emitted even with an empty `consolidated`, so keep it from starting.
+        # See _render_region for why the block itself is unconditional.
+        + ('    profiles: ["generalist"]\n' if not names else "")
     )
 
 
@@ -178,8 +181,15 @@ def _render_region() -> str:
         if n in specs:
             specs[n] = {**specs[n], "_consolidated": True}
     blocks = [render_block(n, s) for n, s in sorted(specs.items())]
-    if cold:
-        blocks.append(_render_generalist(cold))
+    # UNCONDITIONAL, even when nothing is consolidated. `consolidated` is a
+    # per-host choice, but this file is committed and shared, and
+    # docker-compose.fleet.yml carries a `runner-generalist` override so that
+    # `fleet set --image` can roll the role. Emitting the block only when the
+    # generating host happened to consolidate something made that override
+    # dangle — `docker compose config` then rejects the WHOLE pair, taking every
+    # other runner with it, on hosts that never used the generalist at all.
+    # Defined always, started only via fleet_config or the `generalist` profile.
+    blocks.append(_render_generalist(cold))
     return BEGIN + "\n".join(blocks) + END
 
 
