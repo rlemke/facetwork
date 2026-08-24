@@ -471,6 +471,20 @@ Handler caches and outputs live on a backend selected by `FW_STORAGE` + `FW_DATA
 
 ### Multi-server operation + fleet
 
+⚠️ **`.env.fleet` does not configure fleet-managed runners.** `fw fleet agent`
+builds its compose environment from **`fleet_config` in Mongo** and writes only
+`FW_RUNNER_IMAGE`, `FW_FFL_IMAGE`, `FW_GH_ROUTER_IMAGE`, `FW_SERVER_GROUP` and
+`FW_REGISTRY_RUNNER_ARGS` to the temp env file it hands to compose — it never
+reads `.env.fleet`. Every other `${VAR:-default}` in the compose files therefore
+resolves to its **default**, not to what `.env.fleet` says. `.env.fleet` is read
+by `fw runner start`, `fw mode`, and the fleet-agent *wrapper* (for `--mongo` /
+`--data-dir`) — so a value there governs a locally-started runner while a
+fleet-managed one silently ignores it. This cost real debugging time:
+`FW_OSM_OFFLINE=1` sat in `.env.fleet` looking like active enforcement while
+every fleet container ran with it empty. To change what fleet runners get,
+change `fleet_config` (`fw fleet set`), not a file.
+
+
 There is no "master": infra services (MongoDB, MinIO, Dashboard) are URL-addressed only, and every Facetwork server is a homogeneous, stateless, leaderless runner — any runner with Mongo access can seed (`fw ffl seed`). Remote DB access (bind `0.0.0.0`, `/etc/hosts` entries for `afl-mongodb`/`afl-postgres`), the fleet controller (`fw runner start --fleet`, `fw fleet set/status/secret`, `fw fleet agent apply|watch`), joining a new server, and the one-box simulation (`fw fleet simulate`) are all in [docs/operations/deployment.md](docs/operations/deployment.md) and [docs/operations/join-fleet-from-new-server.md](docs/operations/join-fleet-from-new-server.md).
 
 Set `ANTHROPIC_API_KEY` to enable live Claude API calls for prompt-block event facets. Set `FW_POSTGIS_URL` (e.g. `postgresql://afl:afl@afl-postgres:5432/afl_gis`) for PostGIS imports — without it the importer falls back to a hardcoded default that may not match your setup.
