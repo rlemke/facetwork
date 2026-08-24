@@ -57,6 +57,29 @@ run)
     fi
     "$PUBLISH" --check > "$HEALTH" 2>&1
     rc=$?
+
+    # The chain check reads the published stream, which the 6-hourly publisher
+    # keeps current — so it stays GREEN even when the nightly re-split job has
+    # been failing for weeks. That job's failure is invisible from here unless
+    # we look at its own outcome, so look. Only when it has ever run on this
+    # host: a machine that does not run maintain must not alarm about it.
+    MAINT_HEALTH="$HOME/.facetwork/osm-selfhost/maintain-health.txt"
+    MAINT_MAX_AGE_H="${FW_OSM_MAINTAIN_MAX_AGE_HOURS:-36}"
+    if [ -f "$MAINT_HEALTH" ]; then
+        m_rc="$(sed -n 's/^rc=//p' "$MAINT_HEALTH" | head -1)"
+        m_at="$(sed -n 's/^at=//p' "$MAINT_HEALTH" | head -1)"
+        m_age_h="$(( ( $(date +%s) - $(stat -f %m "$MAINT_HEALTH" 2>/dev/null || echo 0) ) / 3600 ))"
+        if [ "${m_rc:-1}" != "0" ]; then
+            echo "  maintain: LAST RUN FAILED (rc=${m_rc:-?}) at ${m_at:-?}" >> "$HEALTH"
+            rc=1
+        elif [ "$m_age_h" -gt "$MAINT_MAX_AGE_H" ]; then
+            # Succeeded, but not recently — a nightly job silent for >36h has
+            # stopped firing, which is the failure this watchdog exists for.
+            echo "  maintain: last SUCCESS was ${m_age_h}h ago (limit ${MAINT_MAX_AGE_H}h) — job stopped firing?" >> "$HEALTH"
+            rc=1
+        fi
+    fi
+
     case "$rc" in
         0) echo "[$(date '+%F %T %Z')] OK — chain current" ;;
         2) echo "[$(date '+%F %T %Z')] could not verify (offline?) — NOT alarming" ;;

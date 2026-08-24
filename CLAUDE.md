@@ -92,7 +92,13 @@ Notes for working with `fw`:
   nothing. ⚠️ Exit codes are load-bearing — `--check` returns **0** healthy,
   **1** stalled, **2** could-not-verify (offline), and only **1** alarms.
   Alarming when merely offline would train you to ignore the alarm, which is
-  how the original silent failure survived in the first place.
+  how the original silent failure survived in the first place. It also alarms
+  when the nightly **re-split** (`osm-maintain`) last failed, or last succeeded
+  more than 36h ago (`FW_OSM_MAINTAIN_MAX_AGE_HOURS`), read from the
+  `maintain-health.txt` that wrapper now writes — because the chain check reads
+  the published stream, which the 6-hourly publisher keeps green, so a re-split
+  erroring for weeks is invisible from the stream alone. Skipped entirely where
+  that file is absent, so hosts that do not run maintain never alarm about it.
 - **`fw svc osm-replicate [--days N] [--install] [--status]`** — publishes new
   per-region OSM replication diffs (fwh_osm's producer); `--install` adds a
   **nightly launchd timer at 03:15 local**, which is after OSM's ~00:18 UTC
