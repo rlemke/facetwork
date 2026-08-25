@@ -307,6 +307,12 @@ services:
       context: .
       dockerfile: docker/Dockerfile.dashboard
     container_name: facetwork-dashboard
+    # `afl-mongodb` is ALREADY taken inside this compose network by the bundled
+    # Mongo, so a cluster member needs a name that unambiguously means "the
+    # fleet's". Driven by FW_INFRA_IP like the runners' aliases, so recreating
+    # the container follows DHCP drift instead of freezing an address.
+    extra_hosts:
+      - "afl-fleet-mongodb:${FW_INFRA_IP:-127.0.0.1}"
     depends_on:
       mongodb:
         condition: service_healthy

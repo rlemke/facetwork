@@ -76,7 +76,12 @@ def create_app(config_path: str | None = None) -> FastAPI:
         # Outlive a cycle so a slow tick does not hand the lease away mid-reap,
         # but expire soon enough that a dead instance is replaced promptly.
         lease_ttl_ms = interval * 3 * 1000
-        was_holder = False
+        # None, not False: the FIRST decision must always be logged. Seeded with
+        # False, an instance that stands down on its first cycle logs nothing at
+        # all, and a silent standby is indistinguishable from a loop that died
+        # or never started — which is the whole thing you go to the log to rule
+        # out.
+        was_holder: bool | None = None
 
         # Delay import to avoid circular deps / missing optional packages
         await asyncio.sleep(5)
