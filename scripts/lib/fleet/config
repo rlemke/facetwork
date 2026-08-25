@@ -83,6 +83,7 @@ def _print_cfg(cfg):
     minio = cfg.get("minio", {})
     eps = cfg.get("endpoints", {})
     print(f"  version:   {cfg.get('version', '-')}")
+    print(f"  osm-offline: {'ON (third-party mirrors forbidden)' if cfg.get('osm_offline') else 'off'}")
     print(f"  updated:   {cfg.get('updated_at', '-')}")
     # Infra services are identified by access URL only (single node, cluster, or
     # managed service — the fleet does not track their internal membership).
@@ -105,6 +106,8 @@ def cmd_set(a):
         cfg.setdefault("minio", {})["endpoint"] = a.minio
     if a.bucket:
         cfg.setdefault("minio", {})["bucket"] = a.bucket
+    if a.osm_offline is not None:
+        cfg["osm_offline"] = (a.osm_offline == "on")
     # Infra services addressed by URL only — no fleet membership is recorded for
     # them. MinIO's endpoint also mirrors into `endpoints.minio` for a unified view.
     if a.mongo_url:
@@ -290,6 +293,11 @@ def main():
     ps.add_argument("--dashboard-url", help="dashboard URL, e.g. http://afl-dashboard:8080 (informational; URL-addressed service)")
     ps.add_argument("--osm-replicas", type=int, help="osm runners per server")
     ps.add_argument("--task-list", help="task list for osm runners (default osm)")
+    ps.add_argument("--osm-offline", choices=("on", "off"), default=None,
+                    help="forbid osm extract fetches to THIRD-PARTY mirrors "
+                         "(geofabrik/osmfr) fleet-wide; the self-hosted mirror is "
+                         "always permitted. Lives here, not in .env.fleet, because "
+                         "the agent only passes what fleet_config carries")
     ps.add_argument("--image", help="runner image tag (a change triggers a rolling recreate fleet-wide)")
     ps.add_argument("--gh-router-image", help="embedded-GraphHopper agent image tag for the gh-router role (a change recreates it fleet-wide)")
     ps.add_argument("--ffl-replicas", type=int, help="ffl-runner (orchestration tier, continuation_mode=shared) per server; 0 disables")

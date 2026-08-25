@@ -306,6 +306,12 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         "FW_DATA_DIR": data_dir,
         "FW_OSM_REPLICAS": str(replicas),
     }
+    # Third-party-egress guard, carried in fleet_config so it reaches EVERY host.
+    # It cannot live in .env.fleet: this agent builds its compose env from
+    # fleet_config alone, so a value there would resolve to the compose default
+    # (empty) and silently do nothing — which is exactly what it did.
+    if cfg.get("osm_offline"):
+        env["FW_OSM_OFFLINE"] = "1"
     if image:
         env["FW_RUNNER_IMAGE"] = image
     if gh_image:
@@ -321,6 +327,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         # queue from the handler), so no task-list map is needed here.
 
     label = (f"v{cfg.get('version')} group={grp} minio={endpoint} osm-replicas={replicas} creds={creds_src}"
+             + (" osm-offline=1" if cfg.get("osm_offline") else "")
              + (f" image={image}" if image else "")
              + (f" gh-router={gh_image}" if gh_image else "")
              + (f" ffl-replicas={ffl_replicas}" if ffl_replicas else "")

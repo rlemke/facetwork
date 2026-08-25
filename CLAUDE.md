@@ -472,11 +472,14 @@ Handler caches and outputs live on a backend selected by `FW_STORAGE` + `FW_DATA
 ### Multi-server operation + fleet
 
 ⚠️ **`.env.fleet` does not configure fleet-managed runners.** `fw fleet agent`
-builds its compose environment from **`fleet_config` in Mongo** and writes only
-`FW_RUNNER_IMAGE`, `FW_FFL_IMAGE`, `FW_GH_ROUTER_IMAGE`, `FW_SERVER_GROUP` and
-`FW_REGISTRY_RUNNER_ARGS` to the temp env file it hands to compose — it never
-reads `.env.fleet`. Every other `${VAR:-default}` in the compose files therefore
-resolves to its **default**, not to what `.env.fleet` says. `.env.fleet` is read
+builds its compose environment from **`fleet_config` in Mongo** — Mongo/S3
+endpoints and credentials, `FW_DATA_DIR`, `FW_OSM_REPLICAS`, the image tags,
+`FW_SERVER_GROUP`, `FW_REGISTRY_RUNNER_ARGS` and `FW_OSM_OFFLINE` — and writes
+only those to the temp env file it hands to compose. It never reads
+`.env.fleet`. Every `${VAR:-default}` in the compose files that is NOT on that
+list therefore resolves to its **default**, not to what `.env.fleet` says. Add a
+new knob by teaching `fleet_config` + the agent about it (as `--osm-offline`
+does), never by putting it in the file. `.env.fleet` is read
 by `fw runner start`, `fw mode`, and the fleet-agent *wrapper* (for `--mongo` /
 `--data-dir`) — so a value there governs a locally-started runner while a
 fleet-managed one silently ignores it. This cost real debugging time:
