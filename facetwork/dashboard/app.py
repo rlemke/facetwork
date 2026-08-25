@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import socket
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -45,14 +46,37 @@ def create_app(config_path: str | None = None) -> FastAPI:
     """
 
     async def _reaper_loop() -> None:
-        """Periodically reap orphaned and stuck tasks.
+        """Periodically reap orphaned and stuck tasks — in ONE instance at a time.
 
         Runs independently of runners so stale tasks are cleaned up even
         when all runners are at capacity or offline.
+
+        The dashboard is stateless and several instances can serve at once (two
+        do here), but this loop WRITES: it resets orphaned and stuck tasks. One
+        copy per instance means N dashboards reap N times as often and enter the
+        reap-vs-reclaim race N times as often.
+
+        So instances contend for a short Mongo lease and only the holder reaps.
+        A lease, not a config flag naming one host: a flag leaves nobody reaping
+        whenever that host is down, and the whole point of this loop is to be the
+        thing that still works when other things are not. `FW_DASHBOARD_REAPER=0`
+        opts an instance out entirely.
         """
         interval = int(os.environ.get("FW_DASHBOARD_REAP_INTERVAL_S", "60"))
         reaper_timeout = int(os.environ.get("FW_REAPER_TIMEOUT_MS", "300000"))
         stuck_timeout = int(os.environ.get("FW_STUCK_TIMEOUT_MS", "14400000"))
+
+        if os.environ.get("FW_DASHBOARD_REAPER", "1").strip().lower() in ("0", "false", "no"):
+            logger.info("Dashboard reaper: disabled on this instance (FW_DASHBOARD_REAPER)")
+            return
+
+        # Identify the holder in a way a human can act on when it appears in a
+        # log line — a bare uuid tells you nothing about which box to go look at.
+        holder = f"{socket.gethostname()}:{os.getpid()}"
+        # Outlive a cycle so a slow tick does not hand the lease away mid-reap,
+        # but expire soon enough that a dead instance is replaced promptly.
+        lease_ttl_ms = interval * 3 * 1000
+        was_holder = False
 
         # Delay import to avoid circular deps / missing optional packages
         await asyncio.sleep(5)
@@ -67,6 +91,18 @@ def create_app(config_path: str | None = None) -> FastAPI:
         while True:
             try:
                 await asyncio.sleep(interval)
+                # Re-acquire every cycle: this both renews our own lease and
+                # picks it up if the previous holder died.
+                holding = store.try_acquire_lease(
+                    "dashboard-reaper", holder, lease_ttl_ms)
+                if holding != was_holder:
+                    logger.info(
+                        "Dashboard reaper: %s (holder=%s)",
+                        "now reaping" if holding else "standing down, another instance holds the lease",
+                        holder)
+                    was_holder = holding
+                if not holding:
+                    continue
                 reaped = store.reap_orphaned_tasks(down_timeout_ms=reaper_timeout)
                 if reaped:
                     logger.warning("Dashboard reaper: reset %d orphaned task(s)", len(reaped))

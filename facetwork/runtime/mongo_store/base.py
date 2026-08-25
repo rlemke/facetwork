@@ -377,6 +377,43 @@ class BaseMixin:
         # present on the assembled MongoStore and is idempotent.
         self.ensure_special_users()  # type: ignore[attr-defined]
 
+    def try_acquire_lease(self, name: str, holder: str, ttl_ms: int) -> bool:
+        """Acquire or renew a singleton lease. True if *holder* now owns it.
+
+        For background work that must run in exactly ONE process even though
+        every process is identical and the fleet is deliberately leaderless
+        (the dashboard reaper is the first such job: every dashboard instance
+        would otherwise run its own copy).
+
+        The lease EXPIRES rather than being assigned. That matters more than it
+        looks: the obvious alternative — a config flag naming one instance —
+        silently leaves NOBODY doing the work whenever that instance is down,
+        which is the exact class of unattended-gap failure the reaper exists to
+        catch. Here a dead holder's lease simply lapses and the next caller
+        takes over.
+
+        Renewal is re-acquisition by the same holder, so a caller just calls
+        this every cycle and reaps only when it returns True.
+        """
+        from pymongo import ReturnDocument
+        from pymongo.errors import DuplicateKeyError
+
+        now = _current_time_ms()
+        try:
+            doc = self._db.leases.find_one_and_update(
+                # Take it if it is ours already, or if whoever held it let it lapse.
+                {"_id": name,
+                 "$or": [{"holder": holder}, {"expires_at": {"$lte": now}}]},
+                {"$set": {"holder": holder, "expires_at": now + ttl_ms}},
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+        except DuplicateKeyError:
+            # The upsert raced a live holder: the filter matched nothing, so it
+            # tried to INSERT a _id that already exists. Someone else owns it.
+            return False
+        return bool(doc and doc.get("holder") == holder)
+
     def close(self) -> None:
         """Close the MongoDB connection."""
         self._client.close()
