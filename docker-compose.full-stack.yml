@@ -311,7 +311,16 @@ services:
       mongodb:
         condition: service_healthy
     environment:
-      FW_MONGODB_URL: mongodb://mongodb:27017
+      # Overridable, unlike the bundled `mongodb://mongodb:27017` it defaults to.
+      # On a host that ALSO belongs to a cluster the bundled Mongo is NOT the
+      # fleet's: `mongodb` and `afl-mongodb` both resolve to this host's own
+      # container (the service carries that alias), so a dashboard here silently
+      # shows a DIFFERENT database from the one the runners use. Measured
+      # 2026-08-25 on MaxPro: its dashboard served a snapshot 4 days stale (349
+      # runners, newest run 08-21) while the fleet Mongo had 363 and a run from
+      # that morning. Nothing looked wrong on screen — it was the wrong world.
+      # Point this at the fleet Mongo on any host that is not standalone.
+      FW_MONGODB_URL: ${FW_DASHBOARD_MONGODB_URL:-mongodb://mongodb:27017}
       FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
       FW_EXAMPLES_DATABASE: ${FW_EXAMPLES_DATABASE:-afl_examples}
       # Opt-in shared-token auth (DashboardAuthMiddleware). When set, every
