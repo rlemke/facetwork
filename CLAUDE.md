@@ -33,7 +33,7 @@ up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgrou
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/**disk-recover**/repair-workflow/
-terminate-workflow/cache-index/**purge-servers**/**dead-letters**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**/**osm-replicate**/**osm-watchdog**) ·
+terminate-workflow/cache-index/**purge-servers**/**dead-letters**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**/**osm-replicate**/**osm-watchdog**/**osm-admin-regen**) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**/**ffl-audit**) ·
 **`mode`** (day-cluster/night-local switch: status/local/cluster/join/leave).
 
@@ -99,6 +99,23 @@ Notes for working with `fw`:
   the published stream, which the 6-hourly publisher keeps green, so a re-split
   erroring for weeks is invisible from the stream alone. Skipped entirely where
   that file is absent, so hosts that do not run maintain never alarm about it.
+- **`fw svc osm-admin-regen [--region R] [--level N] [--install] [--status]`** —
+  refreshes the **sub-region** extracts in `osm-extracts`. That bucket holds two
+  things with different lifecycles: the 8 continent extracts (kept current by
+  the nightly re-split) and ~3,877 country/state/county extracts that **nothing
+  refreshed** — they sat at a July vintage for 33 days while the continents were
+  same-day. Submits `osm.planet.BuildAdminSetWorkflow`, so it returns in seconds
+  and the fan-out is dashboard-visible; `--install` adds a weekly launchd timer
+  (Wed 08:17, `RunAtLoad` false — installing a timer must not launch a
+  multi-hour job). ⚠️ Scope is a **pilot by default** (one continent,
+  `admin_level 2`): the county tier is a 3,167-way fan-out that has frozen
+  before and needs `foreach limit`, so widen only after a tier completes.
+  ⚠️ `osmfr_fallback` is forced **off** — the straggler fallback fetches from
+  OSM France, which `osm_offline: true` forbids fleet-wide, so leaving it on
+  fails those regions anyway; off under-produces visibly instead. Use
+  `BuildAdminSetWorkflow`, **not** `BuildAdminFanout`, which does not expose
+  that flag at all. Skips a tick while the nightly re-split holds its lock
+  (same external volume, and the split rewrites the extracts this reads).
 - **`fw svc osm-replicate [--days N] [--install] [--status]`** — publishes new
   per-region OSM replication diffs (fwh_osm's producer); `--install` adds a
   **nightly launchd timer at 03:15 local**, which is after OSM's ~00:18 UTC
