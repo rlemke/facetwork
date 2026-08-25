@@ -312,6 +312,13 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     # (empty) and silently do nothing — which is exactly what it did.
     if cfg.get("osm_offline"):
         env["FW_OSM_OFFLINE"] = "1"
+    # Where runners fetch region PBFs. Same reason as the guard above: the agent
+    # builds its compose env from fleet_config alone, so this cannot live in
+    # .env.fleet — a value there resolves to the compose DEFAULT and silently
+    # does nothing. Unset here keeps that default.
+    geofabrik = (cfg.get("endpoints", {}) or {}).get("geofabrik")
+    if geofabrik:
+        env["FW_GEOFABRIK_BASE_URL"] = geofabrik
     if image:
         env["FW_RUNNER_IMAGE"] = image
     if gh_image:
@@ -328,6 +335,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
 
     label = (f"v{cfg.get('version')} group={grp} minio={endpoint} osm-replicas={replicas} creds={creds_src}"
              + (" osm-offline=1" if cfg.get("osm_offline") else "")
+             + (f" geofabrik={geofabrik}" if geofabrik else "")
              + (f" image={image}" if image else "")
              + (f" gh-router={gh_image}" if gh_image else "")
              + (f" ffl-replicas={ffl_replicas}" if ffl_replicas else "")

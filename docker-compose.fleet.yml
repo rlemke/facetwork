@@ -72,6 +72,11 @@ x-fleet-runner: &fleet-runner
   extra_hosts:
     - "afl-mongodb:${FW_INFRA_IP:-127.0.0.1}"
     - "afl-minio:${FW_INFRA_IP:-127.0.0.1}"
+    # The self-hosted extract server (`fw svc osm-extracts`) runs on the infra
+    # host too. Named, not addressed by IP: a literal would freeze at whatever
+    # DHCP handed out on the day it was written, which is the failure the other
+    # two aliases already exist to avoid.
+    - "afl-extracts:${FW_INFRA_IP:-127.0.0.1}"
 
 # NOTE: `depends_on: !reset []` must sit DIRECTLY on each service, not in the
 # anchor above — Compose's `!reset` tag is not preserved through a `<<:` alias

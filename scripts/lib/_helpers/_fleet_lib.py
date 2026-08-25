@@ -230,7 +230,7 @@ def resolve_minio(from_config: str | None) -> str | None:
 # catalog / mDNS even while the container is DB-blind), so it patches the entry and
 # the existing clients auto-reconnect — no runner code change, no recreation.
 
-INFRA_HOST_NAMES = ("afl-mongodb", "afl-minio", "afl-postgres")
+INFRA_HOST_NAMES = ("afl-mongodb", "afl-minio", "afl-postgres", "afl-extracts")
 
 
 def resolve_infra_ip(*, log=None) -> str | None:
