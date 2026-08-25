@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+# fw-summary: regenerate admin-level OSM sub-region extracts; --install adds the weekly launchd timer
+#
+# The `osm-extracts` bucket holds two very different things: the 8 CONTINENT
+# extracts, which the nightly `planet_maintain` + a copy step keep current, and
+# ~3,877 SUB-REGION extracts (country / state / county) that nothing refreshes
+# at all. On 2026-08-25 those sub-regions were a July vintage — 33 days stale —
+# while the continents were same-day. This is the job that was missing.
+#
+# It submits `osm.planet.BuildAdminSetWorkflow`, which splits ONE source region
+# into its admin-level children and publishes them to the bucket. The fleet runs
+# the actual work; this only submits, so it returns in seconds and the run is
+# visible in the dashboard like any other.
+#
+# ⚠️ SCOPE IS DELIBERATELY SMALL BY DEFAULT (one continent, admin_level 2 =
+# countries). The full set is 199 country + 511 state + 3,167 county regions;
+# the county tier alone is a 3,167-way fan-out that has frozen before and needs
+# `foreach limit`. Widen only after a tier has been observed to complete.
+#
+# ⚠️ osmfr_fallback is forced OFF. BuildAdminSet's straggler fallback fetches
+# from OSM France, and fleet_config carries `osm_offline: true`, which forbids
+# third-party mirrors — so with the fallback ON the stragglers fail anyway. Off
+# is the honest setting: it under-produces visibly instead of erroring. Do NOT
+# "fix" this by turning the egress guard off; measure the miss rate first.
+#
+# ⚠️ Use BuildAdminSetWorkflow, NOT BuildAdminFanout: the fan-out workflow does
+# not expose `osmfr_fallback`, so it cannot be told to skip the blocked path.
+#
+# Usage:
+#   fw svc osm-admin-regen                     # submit one regeneration now
+#   fw svc osm-admin-regen --region europe --level 2
+#   fw svc osm-admin-regen --install           # weekly timer (Wed 08:17 local)
+#   fw svc osm-admin-regen --install --at 09:05 --day 6
+#   fw svc osm-admin-regen --uninstall
+#   fw svc osm-admin-regen --status            # timer loaded? last run? still running?
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+set -uo pipefail   # NOT -e: the health file must record a failure, not die before it
+
+LABEL="com.facetwork.osm-admin-regen"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+WRAPPER="$HOME/.facetwork/osm-admin-regen.sh"
+LOGDIR="$HOME/.facetwork"
+LOG="$LOGDIR/osm-admin-regen.log"
+HEALTH="$LOGDIR/osm-admin-regen-health.txt"
+
+# Pilot scope. Overridable per host without editing this file.
+REGION="${FW_OSM_REGEN_REGION:-europe}"
+LEVEL="${FW_OSM_REGEN_LEVEL:-2}"
+STRATEGY="${FW_OSM_REGEN_STRATEGY:-complete_ways}"
+BUCKET="${FW_OSM_EXTRACT_BUCKET:-osm-extracts}"
+ACTION="run" AT="08:17" DAY=3   # 3 = Wednesday
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --region) REGION="$2"; shift 2 ;;
+        --level) LEVEL="$2"; shift 2 ;;
+        --strategy) STRATEGY="$2"; shift 2 ;;
+        --at) AT="$2"; shift 2 ;;
+        --day) DAY="$2"; shift 2 ;;
+        --install) ACTION="install"; shift ;;
+        --uninstall|--remove) ACTION="uninstall"; shift ;;
+        --status) ACTION="status"; shift ;;
+        -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+WORKFLOW="osm.planet.BuildAdminSetWorkflow"
+FFL="${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm/src/osm_geocoder/handlers/planet/ffl/osmplanet.ffl"
+PYBIN="${PYTHON:-$FW_ROOT/.venv/bin/python}"
+
+# Is a regeneration already in flight? This job SUBMITS and returns, so a file
+# lock would be released while the real work is still running fleet-wide and the
+# next timer tick would pile a second fan-out on top of the first. The only
+# honest question is what the runtime says, so ask it.
+regen_in_flight() {
+    "$PYBIN" - "$WORKFLOW" <<'PY' 2>/dev/null
+import os, sys
+try:
+    import pymongo
+except ImportError:
+    sys.exit(2)                       # can't tell — caller treats as "unknown"
+url = os.environ.get("FW_MONGODB_URL") or "mongodb://localhost:27017"
+try:
+    db = pymongo.MongoClient(url, serverSelectionTimeoutMS=8000).get_database(
+        os.environ.get("FW_MONGODB_DATABASE") or "facetwork")
+    # The field is NESTED (`workflow.name`), not a flat `workflow_name` — a
+    # flat query matches nothing and the guard silently never fires, which is
+    # strictly worse than having no guard.
+    n = db.runners.count_documents(
+        {"workflow.name": sys.argv[1], "state": {"$nin": ["completed", "failed", "terminated"]}})
+except Exception:
+    sys.exit(2)
+print(n)
+sys.exit(0 if n == 0 else 1)
+PY
+}
+
+case "$ACTION" in
+run)
+    mkdir -p "$LOGDIR"
+    rc=0
+    stamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+    echo "=== [$(date '+%F %T %Z')] osm-admin-regen start (region=$REGION level=$LEVEL strategy=$STRATEGY) ==="
+
+    if [ ! -f "$FFL" ]; then
+        echo "  no planet FFL at $FFL — is fwh_osm checked out here?"
+        printf 'at=%s\nrc=1\nreason=missing-ffl\n' "$stamp" > "$HEALTH"
+        exit 1
+    fi
+
+    # Never stack on the nightly re-split: both hammer the same external volume,
+    # and the split rewrites the very continent extracts this reads from.
+    if [ -d "$HOME/.facetwork/osm-selfhost/maintain.lock.d" ]; then
+        echo "  osm-maintain is running — skipping this tick (they contend for the same disk)"
+        printf 'at=%s\nrc=0\nreason=skipped-maintain-running\n' "$stamp" > "$HEALTH"
+        exit 0
+    fi
+
+    regen_in_flight >/dev/null; inflight=$?
+    if [ "$inflight" = "1" ]; then
+        echo "  a $WORKFLOW run is still non-terminal — skipping rather than stacking a second fan-out"
+        printf 'at=%s\nrc=0\nreason=skipped-already-running\n' "$stamp" > "$HEALTH"
+        exit 0
+    elif [ "$inflight" = "2" ]; then
+        echo "  WARNING: could not check for an in-flight run (no pymongo / Mongo unreachable) — submitting anyway"
+    fi
+
+    # osmfr_fallback=false: see the header. Publishing under-produces visibly
+    # instead of failing on a mirror the egress guard forbids.
+    inputs="{\"source_region\": \"$REGION\", \"admin_level\": $LEVEL, \"strategy\": \"$STRATEGY\", \"bucket\": \"$BUCKET\", \"osmfr_fallback\": false}"
+    echo "  submitting $WORKFLOW $inputs"
+    out="$("$FW_ROOT/fw" ffl run --primary "$FFL" --workflow "$WORKFLOW" --inputs "$inputs" 2>&1)"
+    rc=$?
+    echo "$out" | sed 's/^/    /'
+    runner="$(echo "$out" | grep -oE '[0-9a-f-]{36}' | head -1)"
+
+    printf 'at=%s\nrc=%s\nregion=%s\nlevel=%s\nworkflow=%s\nrunner=%s\n' \
+        "$stamp" "$rc" "$REGION" "$LEVEL" "$WORKFLOW" "${runner:-unknown}" > "$HEALTH"
+    # rc here means SUBMITTED, not finished — the fan-out runs on the fleet for
+    # hours afterwards. --status reports the run's real state; don't read a 0
+    # here as "the extracts were rebuilt".
+    echo "=== [$(date '+%F %T %Z')] submitted (rc=$rc, runner=${runner:-unknown}) — completion is tracked in the dashboard ==="
+    exit $rc
+    ;;
+
+status)
+    if launchctl list 2>/dev/null | grep -qF "$LABEL"; then
+        echo "timer: LOADED ($LABEL)"
+    else
+        echo "timer: not loaded — install with: fw svc osm-admin-regen --install"
+    fi
+    echo "scope: region=$REGION level=$LEVEL (pilot default; widen only after a tier completes)"
+    if [ -f "$HEALTH" ]; then
+        echo "last submission:"; sed 's/^/  /' "$HEALTH"
+    else
+        echo "last submission: (never)"
+    fi
+    n="$(regen_in_flight)"; s=$?
+    case "$s" in
+        0) echo "in flight: none" ;;
+        1) echo "in flight: $n non-terminal $WORKFLOW run(s)" ;;
+        *) echo "in flight: UNKNOWN (no pymongo / Mongo unreachable)" ;;
+    esac
+    [ -f "$LOG" ] && { echo "log:"; tail -5 "$LOG" | sed 's/^/  /'; }
+    ;;
+
+uninstall)
+    launchctl unload "$PLIST" 2>/dev/null || true
+    rm -f "$PLIST" "$WRAPPER"
+    echo "uninstalled $LABEL."
+    echo "⚠️  Nothing else refreshes the sub-region extracts — they will drift"
+    echo "    stale silently, which is the state this job was written to end."
+    ;;
+
+install)
+    if [ "$(uname)" != "Darwin" ]; then
+        echo "launchd is macOS-only. On Linux use a systemd timer, or cron:" >&2
+        echo "  17 8 * * 3  cd $FW_ROOT && ./fw svc osm-admin-regen >> $LOG 2>&1" >&2
+        exit 1
+    fi
+    HH="${AT%%:*}"; MM="${AT##*:}"
+    case "$HH$MM" in *[!0-9]*) echo "--at wants HH:MM, got '$AT'" >&2; exit 2 ;; esac
+    mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
+
+    cat > "$WRAPPER" <<WRAP
+#!/bin/bash -l
+# Admin sub-region regeneration — launched by $LABEL.
+# Regenerate via 'fw svc osm-admin-regen --install'. Do not hand-edit.
+set -u
+export PYTHONUNBUFFERED=1
+export FW_OSM_REGEN_REGION="$REGION"
+export FW_OSM_REGEN_LEVEL="$LEVEL"
+export FW_OSM_REGEN_STRATEGY="$STRATEGY"
+cd "$FW_ROOT" || exit 1
+exec ./fw svc osm-admin-regen
+WRAP
+    chmod +x "$WRAPPER"
+
+    cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$LABEL</string>
+    <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
+    <!-- RunAtLoad is deliberately FALSE: this submits a multi-hour fleet-wide
+         fan-out, and firing one the moment the timer is installed is not a
+         thing anyone asked for. Run it by hand once to pilot it. -->
+    <key>RunAtLoad</key><false/>
+    <!-- Weekly. Unlike the watchdog this uses StartCalendarInterval rather than
+         StartInterval: a missed week is genuinely fine (the extracts are only
+         getting a little staler), whereas an interval timer would drift its
+         fire time forward on every reboot until it landed mid-workday on the
+         same disk the nightly re-split is using. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>$((10#$DAY))</integer><key>Hour</key><integer>$((10#$HH))</integer><key>Minute</key><integer>$((10#$MM))</integer></dict>
+    </array>
+    <key>WorkingDirectory</key><string>$FW_ROOT</string>
+    <key>StandardOutPath</key><string>$LOG</string>
+    <key>StandardErrorPath</key><string>$LOGDIR/osm-admin-regen.err.log</string>
+</dict>
+</plist>
+PLISTEOF
+
+    echo "wrote:"
+    echo "  $WRAPPER"
+    echo "  $PLIST   (weekly, weekday $DAY at $AT local; region=$REGION level=$LEVEL)"
+    launchctl unload "$PLIST" 2>/dev/null || true
+    launchctl load "$PLIST"
+    echo "loaded $LABEL — sub-region extracts will now be refreshed on a schedule"
+    echo "instead of drifting until someone notices."
+    ;;
+esac
