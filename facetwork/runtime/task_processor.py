@@ -76,7 +76,14 @@ class TaskProcessor:
         """Build the handler payload with all injected callbacks.
 
         Adds ``_step_log``, ``_task_heartbeat``, ``_task_uuid``,
-        ``_retry_count``, ``_is_retry`` to the task data.
+        ``_retry_count``, ``_is_retry``, ``_step_id`` to the task data.
+
+        Keep this in step with the other payload builders (RegistryRunner,
+        AgentPoller). A key present in some builders and not others makes a
+        handler's behaviour depend on which runner happened to claim its task —
+        ``_step_id`` was missing here while both others provided it, and the
+        delegation adapters that derive an external run id from it dead-lettered
+        with "no _step_id in payload" only on this path.
         """
         payload = dict(task.data or {})
 
@@ -103,6 +110,12 @@ class TaskProcessor:
             except Exception:
                 logger.debug("Failed to save step log for %s", task.step_id)
 
+        # Durable identity of the step this task serves. Delegation adapters
+        # derive the EXTERNAL engine's run id from it so a retry re-attaches
+        # to the same remote job instead of launching a second one; without
+        # it that idempotency is impossible. See
+        # docs/architecture/external-engine-delegation.md.
+        payload["_step_id"] = task.step_id
         payload["_step_log"] = _step_log_callback
 
         # Heartbeat callback

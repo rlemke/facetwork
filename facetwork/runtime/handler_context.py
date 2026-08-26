@@ -119,6 +119,8 @@ class HandlerContext:
 
     Attributes:
         facet_name: Qualified event facet name (e.g. ``"osm.ops.PostGisImport"``).
+        step_id: Durable id of the step this task serves. Stable across retries,
+            which is what makes it the right seed for an external engine's run id.
         task_uuid: Unique task identifier.
         retry_count: Number of prior attempts (0 on first execution).
         is_retry: ``True`` when reclaiming a previously-attempted task.
@@ -132,6 +134,7 @@ class HandlerContext:
     """
 
     facet_name: str = ""
+    step_id: str = ""
     task_uuid: str = ""
     retry_count: int = 0
     is_retry: bool = False
@@ -247,6 +250,7 @@ class HandlerContext:
         """Return the flat payload keys for backward compatibility."""
         return {
             "_facet_name": self.facet_name,
+            "_step_id": self.step_id,
             "_task_uuid": self.task_uuid,
             "_retry_count": self.retry_count,
             "_is_retry": self.is_retry,
