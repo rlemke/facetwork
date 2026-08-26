@@ -12,10 +12,22 @@
 # the actual work; this only submits, so it returns in seconds and the run is
 # visible in the dashboard like any other.
 #
-# ⚠️ SCOPE IS DELIBERATELY SMALL BY DEFAULT (one continent, admin_level 2 =
-# countries). The full set is 199 country + 511 state + 3,167 county regions;
-# the county tier alone is a 3,167-way fan-out that has frozen before and needs
-# `foreach limit`. Widen only after a tier has been observed to complete.
+# ⚠️ SCOPE IS DELIBERATELY SMALL BY DEFAULT (one COUNTRY at admin_level 4 =
+# its subdivisions). The full set is 199 country + 511 state + 3,167 county
+# regions; the county tier alone is a 3,167-way fan-out that has frozen before
+# and needs `foreach limit`. Widen only after a tier has been observed to
+# complete.
+#
+# ⚠️ The default was `europe` @ admin_level 2 and that can NEVER produce
+# anything. Under a country_prefix, levels <= 4 are SUBDIVISIONS and must carry
+# ISO 3166-2 ("FR-ARA"); a COUNTRY carries ISO 3166-1 ("FR") and is dropped as
+# island noise. The 2026-08-26 run proved it: 40 GB downloaded, a 227 MB
+# boundary extract built, all 94 countries dropped, 0 published, rc=0, 3h20m.
+# boundary_gen now RAISES on a total drop, so that cannot pass silently again.
+#
+# France is the default because its source extract exists (5.79 GB), it has no
+# subdivisions published yet — so the resume-skip below does not neuter the run
+# — and it is a seventh the size of the whole continent.
 #
 # ⚠️ osmfr_fallback is forced OFF. BuildAdminSet's straggler fallback fetches
 # from OSM France, and fleet_config carries `osm_offline: true`, which forbids
@@ -28,7 +40,7 @@
 #
 # Usage:
 #   fw svc osm-admin-regen                     # submit one regeneration now
-#   fw svc osm-admin-regen --region europe --level 2
+#   fw svc osm-admin-regen --region europe/germany --level 6   # Kreise
 #   fw svc osm-admin-regen --install           # weekly timer (Wed 08:17 local)
 #   fw svc osm-admin-regen --install --at 09:05 --day 6
 #   fw svc osm-admin-regen --uninstall
@@ -45,8 +57,8 @@ LOG="$LOGDIR/osm-admin-regen.log"
 HEALTH="$LOGDIR/osm-admin-regen-health.txt"
 
 # Pilot scope. Overridable per host without editing this file.
-REGION="${FW_OSM_REGEN_REGION:-europe}"
-LEVEL="${FW_OSM_REGEN_LEVEL:-2}"
+REGION="${FW_OSM_REGEN_REGION:-europe/france}"
+LEVEL="${FW_OSM_REGEN_LEVEL:-4}"
 STRATEGY="${FW_OSM_REGEN_STRATEGY:-complete_ways}"
 BUCKET="${FW_OSM_EXTRACT_BUCKET:-osm-extracts}"
 ACTION="run" AT="08:17" DAY=3   # 3 = Wednesday
