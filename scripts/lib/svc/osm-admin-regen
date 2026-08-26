@@ -41,6 +41,8 @@
 # Usage:
 #   fw svc osm-admin-regen                     # submit one regeneration now
 #   fw svc osm-admin-regen --region europe/germany --level 6   # Kreise
+#   fw svc osm-admin-regen --refresh-after-days 30   # only rebuild month-old work
+#   fw svc osm-admin-regen --force                   # rebuild regardless of age
 #   fw svc osm-admin-regen --install           # weekly timer (Wed 08:17 local)
 #   fw svc osm-admin-regen --install --at 09:05 --day 6
 #   fw svc osm-admin-regen --uninstall
@@ -60,6 +62,15 @@ HEALTH="$LOGDIR/osm-admin-regen-health.txt"
 REGION="${FW_OSM_REGEN_REGION:-europe/france}"
 LEVEL="${FW_OSM_REGEN_LEVEL:-4}"
 STRATEGY="${FW_OSM_REGEN_STRATEGY:-complete_ways}"
+# Rebuild anything older than this many days. Matches the weekly cadence, so each
+# run refreshes what the last one left. 0 would mean "never refresh", which is the
+# handler's default and the reason the July extracts could never be regenerated:
+# BuildAdminSet skips whatever is already published, forever.
+# ⚠️ Staleness, not a force flag — the skip is what lets a large set converge
+# across task retries. A retry minutes later still skips; only week-old work is
+# rebuilt.
+REFRESH_DAYS="${FW_OSM_REGEN_REFRESH_DAYS:-7}"
+FORCE="${FW_OSM_REGEN_FORCE:-false}"
 BUCKET="${FW_OSM_EXTRACT_BUCKET:-osm-extracts}"
 ACTION="run" AT="08:17" DAY=3   # 3 = Wednesday
 
@@ -68,6 +79,8 @@ while [ $# -gt 0 ]; do
         --region) REGION="$2"; shift 2 ;;
         --level) LEVEL="$2"; shift 2 ;;
         --strategy) STRATEGY="$2"; shift 2 ;;
+        --refresh-after-days) REFRESH_DAYS="$2"; shift 2 ;;
+        --force) FORCE=true; shift ;;
         --at) AT="$2"; shift 2 ;;
         --day) DAY="$2"; shift 2 ;;
         --install) ACTION="install"; shift ;;
@@ -141,7 +154,7 @@ run)
 
     # osmfr_fallback=false: see the header. Publishing under-produces visibly
     # instead of failing on a mirror the egress guard forbids.
-    inputs="{\"source_region\": \"$REGION\", \"admin_level\": $LEVEL, \"strategy\": \"$STRATEGY\", \"bucket\": \"$BUCKET\", \"osmfr_fallback\": false}"
+    inputs="{\"source_region\": \"$REGION\", \"admin_level\": $LEVEL, \"strategy\": \"$STRATEGY\", \"bucket\": \"$BUCKET\", \"osmfr_fallback\": false, \"refresh_after_days\": $REFRESH_DAYS, \"force_refresh\": $FORCE}"
     echo "  submitting $WORKFLOW $inputs"
     out="$("$FW_ROOT/fw" ffl run --primary "$FFL" --workflow "$WORKFLOW" --inputs "$inputs" 2>&1)"
     rc=$?
@@ -163,7 +176,7 @@ status)
     else
         echo "timer: not loaded — install with: fw svc osm-admin-regen --install"
     fi
-    echo "scope: region=$REGION level=$LEVEL (pilot default; widen only after a tier completes)"
+    echo "scope: region=$REGION level=$LEVEL refresh>${REFRESH_DAYS}d force=$FORCE (pilot default; widen only after a tier completes)"
     if [ -f "$HEALTH" ]; then
         echo "last submission:"; sed 's/^/  /' "$HEALTH"
     else
@@ -205,6 +218,8 @@ export PYTHONUNBUFFERED=1
 export FW_OSM_REGEN_REGION="$REGION"
 export FW_OSM_REGEN_LEVEL="$LEVEL"
 export FW_OSM_REGEN_STRATEGY="$STRATEGY"
+export FW_OSM_REGEN_REFRESH_DAYS="$REFRESH_DAYS"
+export FW_OSM_REGEN_FORCE="$FORCE"
 cd "$FW_ROOT" || exit 1
 exec ./fw svc osm-admin-regen
 WRAP
