@@ -116,3 +116,53 @@ def test_requires_survives_the_round_trip():
     back = ms.get_task("t9")
     assert back.requires == {"memory_gb": 10}
     assert back.required_features == ["after"]
+
+
+# --- every registration and claim site must participate ----------------------
+#
+# Written because I got this wrong: there are THREE places that build a
+# ServerDefinition (registry_runner, agent_poller, runner/service) and I patched
+# one. The code deployed cleanly, the probe worked, and 46 runners registered
+# with no resources at all — the feature was simply inert. Same shape as the
+# `_step_id` payload-builder drift found the day before.
+import ast as _ast
+import pathlib as _pathlib
+
+_RUNTIME = _pathlib.Path(__file__).resolve().parents[2] / "facetwork" / "runtime"
+_REGISTRARS = ["registry_runner.py", "agent_poller.py", "runner/service.py"]
+
+
+def _calls(path, func_name):
+    """Every call to `func_name` in the file, as AST nodes."""
+    tree = _ast.parse(path.read_text())
+    out = []
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Call):
+            f = node.func
+            name = getattr(f, "id", None) or getattr(f, "attr", None)
+            if name == func_name:
+                out.append(node)
+    return out
+
+
+@pytest.mark.parametrize("rel", _REGISTRARS)
+def test_every_registration_advertises_resources(rel):
+    calls = _calls(_RUNTIME / rel, "ServerDefinition")
+    assert calls, f"{rel}: expected a ServerDefinition construction"
+    for c in calls:
+        kw = {k.arg for k in c.keywords}
+        assert "resources" in kw, (
+            f"{rel} builds a ServerDefinition without resources= — that runner "
+            "registers with no advertised capacity and silently declines every "
+            "task carrying a requirement")
+
+
+@pytest.mark.parametrize("rel", ["registry_runner.py", "agent_poller.py"])
+def test_every_claim_site_passes_resources(rel):
+    calls = _calls(_RUNTIME / rel, "claim_task")
+    assert calls, f"{rel}: expected claim_task call(s)"
+    for c in calls:
+        kw = {k.arg for k in c.keywords}
+        assert "resources" in kw, (
+            f"{rel} calls claim_task without resources= — that poll loop would "
+            "claim work the runner cannot finish")

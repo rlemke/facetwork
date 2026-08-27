@@ -357,6 +357,7 @@ class AgentPoller:
                 task_list=self._poll_task_lists(),
                 server_id=self._server_id,
                 known_features=_known_ast_features(),
+                resources=self._measured_resources(),
             )
             if task is None:
                 break
@@ -469,6 +470,7 @@ class AgentPoller:
             handlers=list(self._handlers.keys()),
             handled=[],
             state=ServerState.RUNNING,
+            resources=self._measured_resources(),
         )
         self._persistence.save_server(server)
 
@@ -553,6 +555,7 @@ class AgentPoller:
                 task_list=self._poll_task_lists(),
                 server_id=self._server_id,
                 known_features=_known_ast_features(),
+                resources=self._measured_resources(),
             )
             if task is None:
                 break
