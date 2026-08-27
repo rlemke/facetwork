@@ -752,7 +752,7 @@ services:
       FW_GEOFABRIK_MIRROR: /geofabrik
       FW_OSM_USE_CACHE_IF_PRESENT: ${FW_OSM_USE_CACHE_IF_PRESENT:-true}
       FW_OSM_TOLERATE_MD5: ${FW_OSM_TOLERATE_MD5:-true}
-      FW_TASK_EXECUTION_TIMEOUT_MS: ${FW_TASK_EXECUTION_TIMEOUT_MS:-14400000}
+      FW_TASK_EXECUTION_TIMEOUT_MS: ${FW_TASK_EXECUTION_TIMEOUT_MS:-28800000}
       FW_REGISTRY_RUNNER_ARGS: "--task-list osm --server-group ${FW_SERVER_GROUP:-default}"
     volumes:
       - ${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm
