@@ -30,6 +30,7 @@ from __future__ import annotations
 import gzip
 import io
 import os
+import sys
 import tarfile
 import zipfile
 
@@ -214,12 +215,21 @@ def test_a_traversing_zip_member_is_refused_rather_than_silently_flattened(tmp_p
     assert not (tmp_path / "escaped.txt").exists()
 
 
-def test_a_traversing_tar_member_really_would_escape(tmp_path):
-    """Pins the stdlib behaviour the guard exists for, so a Python that changes
-    it (3.14 makes filtering the default) is caught here.
+def test_a_traversing_tar_member_is_refused_whatever_the_stdlib_does(tmp_path):
+    """Our guard refuses `../escaped.txt` on EVERY Python — and records whether
+    the stdlib would have escaped, because that is what says how load-bearing
+    the guard currently is.
 
-    This is the case that is a genuine escape today, and the reason the check
-    is not "zipfile already handles it".
+    The stdlib is mid-migration and the two regimes are both live here:
+      * <= 3.13 (the runner image is 3.12): `extractall` really escapes, only a
+        DeprecationWarning. The guard is the ONLY protection.
+      * >= 3.14 (this dev machine): filtering is the default and the stdlib
+        raises. The guard is then defence in depth.
+
+    An earlier version of this test asserted the escape unconditionally and so
+    started failing the moment the dev interpreter reached 3.14 — while
+    production, on 3.12, was still genuinely exposed. Asserting the invariant and
+    OBSERVING the stdlib keeps the signal without the false alarm.
     """
     path = tmp_path / "evil.tar"
     with tarfile.open(path, "w") as tf:
@@ -228,12 +238,25 @@ def test_a_traversing_tar_member_really_would_escape(tmp_path):
         info.size = len(body)
         tf.addfile(info, io.BytesIO(body))
 
+    # Observe (do not require) the stdlib's behaviour on THIS interpreter.
     control = tmp_path / "control"
     (control / "dest").mkdir(parents=True)  # must exist: extractall mkdirs `dest/..`
-    with tarfile.open(path) as tf:
-        tf.extractall(control / "dest")  # noqa: S202 — demonstrating the hazard
-    assert (control / "escaped.txt").exists(), "stdlib no longer escapes; revisit the guard"
+    try:
+        with tarfile.open(path) as tf:
+            tf.extractall(control / "dest")  # noqa: S202 — demonstrating the hazard
+        stdlib_escaped = (control / "escaped.txt").exists()
+    except Exception:
+        stdlib_escaped = False  # 3.14+ filters by default and refuses
 
+    if sys.version_info < (3, 14):
+        assert stdlib_escaped, (
+            "stdlib stopped escaping BEFORE 3.14 — the guard may now be "
+            "redundant on this interpreter; re-check before relying on that"
+        )
+    # else: 3.14+ may refuse; either way the guard below must hold.
+
+    # The invariant, on every interpreter: we refuse it ourselves and nothing
+    # lands outside `dest`.
     out = _call("Extract", archive=str(path), dest=str(tmp_path / "out"))
     assert out["count"] == 0
     assert not (tmp_path / "escaped.txt").exists()
