@@ -408,6 +408,72 @@ class BaseRunner:
         except Exception:
             return []
 
+    def _measured_resources(self) -> dict:
+        # Cached: the poll loop calls this on every claim, and disk/cpu probes
+        # are syscalls. Capacity is treated as static for the process lifetime —
+        # a runner that wants to react to a filling disk should restart.
+        cached = getattr(self, "_resources_cache", None)
+        if cached is not None:
+            return cached
+        self._resources_cache = self.__measure_resources()
+        return self._resources_cache
+
+    def __measure_resources(self) -> dict:
+        """MEASURED capacity of this host, for resource-aware claim routing.
+
+        Measured, never configured: the OOM this exists to prevent was against a
+        real 7.75 GiB Docker VM, and a config file asserting "16 GB" would have
+        lied. Inside a container these read the CGROUP limit where one is set,
+        which is the number that actually kills the process.
+
+        Best-effort by design — a dimension we cannot measure is OMITTED, not
+        guessed. An absent dimension makes this runner decline tasks that demand
+        it, which is the safe direction: declining is a delay, accepting work we
+        cannot finish is a failure.
+        """
+        import os as _os
+        import shutil as _shutil
+
+        res: dict = {}
+        try:
+            res["cpus"] = float(_os.cpu_count() or 0) or None
+            if res["cpus"] is None:
+                res.pop("cpus")
+        except Exception:
+            pass
+
+        # Memory: prefer the cgroup limit (what the OOM killer enforces in a
+        # container) and fall back to the host total.
+        mem_bytes = None
+        for path in ("/sys/fs/cgroup/memory.max",
+                     "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+            try:
+                raw = open(path).read().strip()
+                if raw and raw != "max":
+                    v = int(raw)
+                    # Unlimited is reported as an absurd sentinel; ignore it.
+                    if 0 < v < (1 << 62):
+                        mem_bytes = v
+                    break
+            except Exception:
+                continue
+        if mem_bytes is None:
+            try:
+                mem_bytes = _os.sysconf("SC_PAGE_SIZE") * _os.sysconf("SC_PHYS_PAGES")
+            except Exception:
+                mem_bytes = None
+        if mem_bytes:
+            res["memory_gb"] = round(mem_bytes / (1024 ** 3), 2)
+
+        # Scratch: free space where this runner actually stages, not "/".
+        scratch = (_os.environ.get("FW_LOCAL_SCRATCH")
+                   or _os.environ.get("FW_OUTPUT_BASE") or "/tmp")
+        try:
+            res["scratch_gb"] = round(_shutil.disk_usage(scratch).free / (1024 ** 3), 1)
+        except Exception:
+            pass
+        return res
+
     def _heartbeat_loop(self) -> None:
         """Periodically update the server's ping_time, self-healing the record.
 

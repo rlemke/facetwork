@@ -461,6 +461,7 @@ class MemoryStore(PersistenceAPI):
         server_id: str = "",
         provided_environments: list[str] | None = None,
         known_features: list[str] | None = None,
+        resources: dict | None = None,
     ) -> Optional["TaskDefinition"]:
         """Atomically claim a pending task matching one of the given names.
 
@@ -473,10 +474,28 @@ class MemoryStore(PersistenceAPI):
         of them, so an executor too old to honor a construct waits rather than
         running the workflow with that construct silently dropped.
 
+        Resource routing: a task carrying ``requires`` is claimable only by a
+        runner whose measured capacity meets EVERY dimension it names. A
+        dimension the runner does not advertise BLOCKS the claim rather than
+        being ignored — ignoring it would reintroduce the accept-then-fail this
+        exists to prevent.
+
         Mirrors MongoStore.claim_task — keep the two in behavioral lockstep.
         """
         provided = set(provided_environments or [])
         known = set(known_features or [])
+        have = {k: v for k, v in (resources or {}).items()
+                if isinstance(v, (int, float))}
+
+        def _fits(task) -> bool:
+            need = getattr(task, "requires", None) or {}
+            if not need:
+                return True                      # unconstrained: anyone may claim
+            for dim, want in need.items():
+                cap = have.get(dim)
+                if cap is None or want > cap:
+                    return False
+            return True
         with self._claim_lock:
             names_set = set(task_names)
             tl_set = set(task_list) if isinstance(task_list, (list, tuple, set)) else {task_list}
@@ -490,6 +509,7 @@ class MemoryStore(PersistenceAPI):
                     and task.task_list_name in tl_set
                     and (env == "" or env in provided)
                     and needed <= known
+                    and _fits(task)
                     and (task.next_retry_after == 0 or task.next_retry_after <= now)
                 ):
                     task.state = "running"

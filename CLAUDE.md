@@ -33,7 +33,7 @@ up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgrou
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
 agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/**disk-recover**/repair-workflow/
-terminate-workflow/cache-index/**purge-servers**/**dead-letters**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**/**osm-replicate**/**osm-watchdog**/**osm-admin-regen**) ·
+terminate-workflow/cache-index/**purge-servers**/**dead-letters**/**unsatisfiable**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**/**osm-replicate**/**osm-watchdog**/**osm-admin-regen**) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**/**ffl-audit**) ·
 **`mode`** (day-cluster/night-local switch: status/local/cluster/join/leave).
 
@@ -584,6 +584,47 @@ persistence layer must not import). Call that helper, never `store.repair_workfl
 directly, or the surface will report stranded steps without fixing them.
 
 **Preventative**: Runners now verify all tasks are terminal before marking a workflow as completed.
+
+### Resource-aware claim routing
+
+A runner claims only work it can actually finish. A task may carry a resource
+floor (`requires: {memory_gb, scratch_gb, …}`); a runner advertises its
+**measured** capacity (`resources` on its server record, read from the cgroup
+limit inside a container — the number the OOM killer enforces); `claim_task`
+filters. This is the third capability dimension alongside `environment_hash` and
+`required_features`, and follows their contract exactly: **absent means
+unconstrained**, so it is inert for work that does not use it.
+
+Motivating measurement (2026-08-26): MaxPro (7.75 GiB Docker VM) and server3
+(13.63 GiB) are BOTH in the `heavy` server group, so group-based placement could
+not tell them apart. MaxPro claimed a German Kreise split, OOM'd at a 5.8 GB
+budget, failed, and only then retried onto server3. A floor of `memory_gb=10`
+skips MaxPro at claim time instead.
+
+Set a floor with a `Requires` mixin, on the facet or at the call site (call site
+wins, exactly like `Timeout`). Values may be literals or reference one of the
+step's OWN params — which is what makes a requirement **dynamic**:
+
+```
+probe = osm.Probe(region = $.region)                 => (size_gb)
+split = osm.Split(gb = probe.size_gb) with Requires(memory_gb = "$.gb")
+```
+
+A task is created only AFTER its upstream steps complete, so by then the params
+are resolved to values and the requirement is data, not an expression to
+evaluate at claim time.
+
+⚠️ **A requirement nothing can meet is a new way to disappear** — such a task is
+never claimed, never errors, never dead-letters. `fw maint unsatisfiable`
+compares pending requirements against every live runner and exits **1** when it
+finds one (**2** = could not tell, e.g. no live servers — so an offline fleet
+does not cry wolf). A dimension name no runner advertises declines everywhere by
+design; that is reported rather than silently ignored.
+
+⚠️ Advertised capacity is **static per process** and does not account for what a
+runner is already doing, so it is a floor against catastrophic placement, not a
+scheduler. Real numbers: BuildAdminSet's own adaptive batcher measured
+3.76 GB/region against a *starting estimate* of 2.15 GB — off by 75%.
 
 ### Dead letters — the failures that stopped telling you
 

@@ -148,6 +148,7 @@ class TaskMixin(_MixinBase):
         server_id: str = "",
         provided_environments: list[str] | None = None,
         known_features: list[str] | None = None,
+        resources: dict | None = None,
     ) -> TaskDefinition | None:
         """Atomically claim a pending task matching one of the given names.
 
@@ -217,6 +218,50 @@ class TaskMixin(_MixinBase):
                 {"required_features": {"$not": {"$elemMatch": {"$nin": list(known_features)}}}}
             )
 
+        # Resource routing: a task carrying `requires` is claimable only by a
+        # runner whose MEASURED capacity meets every dimension. Unlike the two
+        # filters above this is a numeric comparison, not set membership, but the
+        # contract is identical — absent/empty means unconstrained, so this is
+        # inert for every task created before it existed.
+        #
+        # Motivation, measured 2026-08-26: MaxPro (7.75 GiB VM) and server3
+        # (13.63 GiB) are BOTH in the `heavy` server group, so group-based
+        # placement could not tell them apart. MaxPro claimed a Kreise split,
+        # OOM'd at a 5.8 GB budget, failed, and only then retried onto server3.
+        # A floor of memory_gb=10 would have skipped MaxPro at claim time
+        # instead of accepting work it could not finish.
+        #
+        # An unknown dimension is NOT silently ignored: a runner that advertises
+        # no value for a dimension the task demands cannot claim it. Ignoring it
+        # would reintroduce exactly the accept-then-fail this prevents.
+        # Keep in behavioral lockstep with MemoryStore.claim_task.
+        res_conditions: list[dict] = [
+            {"requires": {"$exists": False}},
+            {"requires": {}},
+        ]
+        have = {k: v for k, v in (resources or {}).items() if isinstance(v, (int, float))}
+        if have:
+            # Two halves, and BOTH are needed:
+            #   1. every dimension the task names is one we advertise, expressed
+            #      with the same `$not/$elemMatch/$nin` subset trick as
+            #      required_features above (hence the parallel `requires_dims`
+            #      array — a `$expr`/`$setIsSubset` form is unavailable in the
+            #      in-memory test double, and an operator we cannot test is not
+            #      one to depend on);
+            #   2. each named dimension is within capacity.
+            # Half 1 is what makes an UNKNOWN dimension decline rather than pass:
+            # a runner that cannot measure something must not assume it fits.
+            per_dim: list[dict] = [
+                {"requires_dims": {"$not": {"$elemMatch": {"$nin": list(have)}}}}
+            ]
+            per_dim += [
+                {"$or": [{f"requires.{dim}": {"$exists": False}},
+                         {f"requires.{dim}": {"$lte": cap}}]}
+                for dim, cap in have.items()
+            ]
+            res_conditions.append({"$and": per_dim})
+        res_ok: dict[str, Any] = {"$or": res_conditions}
+
         # Backoff filter: skip tasks still in their retry cooldown window.
         retry_eligible = {
             "$or": [
@@ -235,7 +280,7 @@ class TaskMixin(_MixinBase):
             {
                 "state": "pending",
                 "task_list_name": tl_filter,
-                "$and": [name_filter, retry_eligible, env_ok, feat_ok],
+                "$and": [name_filter, retry_eligible, env_ok, feat_ok, res_ok],
             },
             {"$set": update},
             return_document=ReturnDocument.AFTER,
@@ -744,6 +789,16 @@ class TaskMixin(_MixinBase):
             "stage_name": task.stage_name,
             "environment_hash": task.environment_hash,
             "kind": task.kind,
+            # ⚠️ required_features was MISSING here: the claim filter queries it,
+            # but nothing wrote it, so feature routing was inert — 0 of 15,600
+            # live task docs carried the field (measured 2026-08-27). It fails
+            # open, so nothing broke; the guarantee simply did not exist.
+            "required_features": list(task.required_features or []),
+            "requires": dict(task.requires or {}),
+            # Parallel key list so the claim filter can express "no dimension
+            # outside what this runner advertises" with operators the
+            # in-memory double also supports. Derived, never authored.
+            "requires_dims": sorted(task.requires or {}),
         }
 
     def _doc_to_task(self, doc: dict) -> TaskDefinition:
@@ -771,4 +826,6 @@ class TaskMixin(_MixinBase):
             stage_name=doc.get("stage_name", ""),
             environment_hash=doc.get("environment_hash", ""),
             kind=doc.get("kind", ""),
+            required_features=list(doc.get("required_features") or []),
+            requires=dict(doc.get("requires") or {}),
         )

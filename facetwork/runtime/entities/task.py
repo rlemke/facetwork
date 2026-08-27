@@ -52,3 +52,8 @@ class TaskDefinition:
     # dropped. Same shape as environment routing: a capability the claim
     # filters on, not something the handler reads.
     required_features: list[str] = field(default_factory=list)
+    # Resource floor this task needs, e.g. {"memory_gb": 10, "scratch_gb": 60}.
+    # Claim-side routing keeps it away from runners that cannot serve it, so a
+    # runner never accepts work it will only fail. Empty = unconstrained, the
+    # same "absent means anyone" rule environment_hash and required_features use.
+    requires: dict = field(default_factory=dict)

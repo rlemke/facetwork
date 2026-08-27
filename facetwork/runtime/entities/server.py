@@ -53,6 +53,11 @@ class ServerDefinition:
     # version skew VISIBLE: `fw fleet status` can show which runners would
     # decline a workflow instead of silently mis-running it.
     ast_features: list = field(default_factory=list)
+    # MEASURED capacity of this host, e.g. {"memory_gb": 13.6, "cpus": 12,
+    # "scratch_gb": 3400}. Measured rather than configured: a config file saying
+    # "16 GB" lies, and the OOM this exists to prevent was against a real
+    # 7.75 GiB Docker VM.
+    resources: dict = field(default_factory=dict)
 
 
 @dataclass

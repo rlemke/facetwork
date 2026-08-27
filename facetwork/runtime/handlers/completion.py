@@ -360,8 +360,78 @@ class EventTransmitHandler(StateHandler):
             environment_hash=env_hash,
             kind="script" if (env_hash and has_script) else "",
             required_features=self._required_features(),
+            requires=self._resolve_requires(),
         )
         self.context.changes.add_created_task(task)
+
+    def _resolve_requires(self) -> dict:
+        """Resource floor for this task, from ``Requires`` mixins.
+
+        Mirrors :meth:`_resolve_timeout_ms`: facet-level mixins first, call-site
+        mixins override. Claim-side routing then keeps the task away from
+        runners that cannot serve it, so a runner never accepts work it will
+        only fail. Dimension names are free-form: a name no runner advertises
+        declines everywhere and is reported by `fw maint unsatisfiable`,
+        which is louder than silently dropping it.
+
+        Values may be LITERAL or reference one of this step's own params:
+
+            probe = osm.Probe(region = $.region)          => (size_gb)
+            split = osm.Split(gb = probe.size_gb) with Requires(memory_gb = "$.gb")
+
+        That is what makes the requirement dynamic without any new evaluation
+        machinery: a task is created only AFTER its upstream steps complete, so
+        by the time this runs the step's params are already resolved to values.
+        """
+        from ..types import serialize_attribute_value
+
+        params: dict = {}
+        try:
+            for name, attr in self.step.attributes.params.items():
+                params[name] = serialize_attribute_value(attr.value)
+        except Exception:  # never block task creation on this
+            params = {}
+
+        def _num(raw) -> float | None:
+            """Literal number, or the value of a `$.param` / bare param name."""
+            if isinstance(raw, bool):
+                return None
+            if isinstance(raw, (int, float)):
+                return float(raw)
+            if isinstance(raw, dict):
+                return _num(raw.get("value"))
+            if isinstance(raw, str):
+                key = raw[2:] if raw.startswith("$.") else raw
+                v = params.get(key)
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    return float(v)
+            return None
+
+        def _collect(mixins, into: dict) -> None:
+            for mixin in mixins or []:
+                target = mixin.get("target", "") if isinstance(mixin, dict) else ""
+                if target != "Requires" and not target.endswith(".Requires"):
+                    continue
+                for arg in mixin.get("args", []) or []:
+                    name = arg.get("name", "")
+                    val = _num(arg.get("value"))
+                    # An unresolvable value is DROPPED, not defaulted: inventing a
+                    # floor would route on a number nobody asked for, and dropping
+                    # it degrades to today's behaviour (unconstrained).
+                    if name and val is not None and val > 0:
+                        into[name] = val
+
+        out: dict = {}
+        try:
+            facet_def = self.context.get_facet_definition(self.step.facet_name)
+            if facet_def:
+                _collect(facet_def.get("mixins", []), out)
+            stmt_def = self.context.get_statement_definition(self.step)
+            if stmt_def:
+                _collect(getattr(stmt_def, "mixins", None) or [], out)
+        except Exception:
+            return {}
+        return out
 
     def _required_features(self) -> list[str]:
         """AST features an executor must understand to run this workflow faithfully.

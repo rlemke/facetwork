@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+# fw-summary: find pending tasks whose resource requirements no runner can ever meet
+#
+# Resource-aware claim routing keeps a task away from runners that cannot serve
+# it. That is the point — a runner should never accept work it will only fail.
+# But it creates a new way to disappear: a task demanding more than ANY host has
+# is simply never claimed. It does not error, it does not retry, it does not
+# dead-letter. It waits, silently, forever.
+#
+# That is the same shape as every other silent gap in this system (the dead
+# letters nobody watched, the reconcile that only ever logged "lagging"), so it
+# gets the same treatment: something must ask the standing question.
+#
+# ⚠️ Exit codes are load-bearing, matching `fw maint dead-letters`:
+#     0  nothing unsatisfiable
+#     1  at least one task no live runner can serve
+#     2  could not tell (no Mongo, no live servers to compare against)
+# Only 1 is a real alarm. Reporting "unsatisfiable" when the fleet is merely
+# offline would train you to ignore it.
+"""Report pending tasks whose `requires` exceeds every live runner's capacity."""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--mongo", default=os.environ.get("FW_MONGODB_URL")
+                    or "mongodb://localhost:27017")
+    ap.add_argument("--database", default=os.environ.get("FW_MONGODB_DATABASE") or "facetwork")
+    ap.add_argument("--stale-server-minutes", type=float, default=5.0,
+                    help="ignore servers whose heartbeat is older than this")
+    a = ap.parse_args()
+
+    try:
+        import pymongo
+    except ImportError:
+        print("pymongo is required", file=sys.stderr)
+        return 2
+
+    try:
+        db = pymongo.MongoClient(a.mongo, serverSelectionTimeoutMS=8000).get_database(a.database)
+        pending = list(db.tasks.find({"state": "pending", "requires": {"$nin": [None, {}]}},
+                                     {"uuid": 1, "name": 1, "requires": 1, "created": 1}))
+        servers = list(db.servers.find({"state": "running"}, {"server_name": 1, "resources": 1,
+                                                              "ping_time": 1}))
+    except Exception as exc:  # noqa: BLE001
+        print(f"could not query {a.mongo}: {type(exc).__name__}", file=sys.stderr)
+        return 2
+
+    import time
+    now = time.time() * 1000
+    live = [s for s in servers
+            if (now - float(s.get("ping_time") or 0)) / 60000 <= a.stale_server_minutes]
+    if not live:
+        # No live fleet to compare against: cannot distinguish "impossible" from
+        # "nobody is home". Do not alarm — see the exit-code note above.
+        print("could not verify: no live servers to compare against")
+        return 2
+
+    # Best capacity the fleet offers per dimension. A task is unsatisfiable only
+    # if NO single host meets ALL of its dimensions — checking per-host, not
+    # against a per-dimension maximum, because capacity does not combine across
+    # machines.
+    def fits(need: dict, res: dict) -> bool:
+        for dim, want in (need or {}).items():
+            cap = res.get(dim)
+            if not isinstance(cap, (int, float)) or want > cap:
+                return False
+        return True
+
+    bad = []
+    for t in pending:
+        need = t.get("requires") or {}
+        if not any(fits(need, s.get("resources") or {}) for s in live):
+            bad.append(t)
+
+    if not bad:
+        print(f"OK — {len(pending)} pending task(s) with requirements, all satisfiable "
+              f"by at least one of {len(live)} live runner(s)")
+        return 0
+
+    print(f"{len(bad)} pending task(s) NO live runner can serve "
+          f"(checked against {len(live)} runner(s)):\n")
+    for t in bad[:20]:
+        age_h = (now - float(t.get("created") or now)) / 3_600_000
+        print(f"  {t.get('name','?')[:48]:48s} waiting {age_h:5.1f}h  needs {t.get('requires')}")
+    print("\n  fleet capacity:")
+    for s in live:
+        print(f"    {s.get('server_name','?'):10s} {s.get('resources') or '(none advertised)'}")
+    print("\n  These will NOT retry and will NOT dead-letter — they are simply never")
+    print("  claimed. Lower the requirement, add a capable host, or terminate them:")
+    print("    fw maint terminate-workflow <runner_id>")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
