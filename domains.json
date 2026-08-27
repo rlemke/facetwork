@@ -59,7 +59,7 @@
           ],
           [
             "FW_TASK_EXECUTION_TIMEOUT_MS",
-            "14400000"
+            "${FW_TASK_EXECUTION_TIMEOUT_MS:-14400000}"
           ]
         ],
         "volumes": [
@@ -94,7 +94,7 @@
         "env": [
           [
             "FW_TASK_EXECUTION_TIMEOUT_MS",
-            "14400000"
+            "${FW_TASK_EXECUTION_TIMEOUT_MS:-14400000}"
           ]
         ],
         "volumes": [
