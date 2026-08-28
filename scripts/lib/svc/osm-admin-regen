@@ -73,11 +73,23 @@ REFRESH_DAYS="${FW_OSM_REGEN_REFRESH_DAYS:-7}"
 FORCE="${FW_OSM_REGEN_FORCE:-false}"
 BUCKET="${FW_OSM_EXTRACT_BUCKET:-osm-extracts}"
 ACTION="run" AT="08:17" DAY=3   # 3 = Wednesday
+# A named scope from osm-admin-sets.json; expands to one submission per region.
+SET_NAME="${FW_OSM_REGEN_SET:-}"
+# Seconds between submissions in a set. Each is a whole-extract download plus a
+# fan-out, so firing 51 at once would have them all contend for the same disk
+# and network on whichever hosts claim them.
+STAGGER="${FW_OSM_REGEN_STAGGER:-20}"
+IGNORE_STALE=0
+SCOPE_HELPER="$(dirname "${BASH_SOURCE[0]}")/_osm_admin_scope.py"
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --region) REGION="$2"; shift 2 ;;
         --level) LEVEL="$2"; shift 2 ;;
+        --set) SET_NAME="$2"; shift 2 ;;
+        --list-sets) ACTION="list-sets"; shift ;;
+        --stagger) STAGGER="$2"; shift 2 ;;
+        --ignore-stale-source) IGNORE_STALE=1; shift ;;
         --strategy) STRATEGY="$2"; shift 2 ;;
         --refresh-after-days) REFRESH_DAYS="$2"; shift 2 ;;
         --force) FORCE=true; shift ;;
@@ -152,6 +164,45 @@ run)
         echo "  WARNING: could not check for an in-flight run (no pymongo / Mongo unreachable) — submitting anyway"
     fi
 
+    # A named set fans out over several source regions IN ORDER. The order is a
+    # correctness property, not a preference: BuildAdminSet reads its source from
+    # the bucket, so a child tier built on a stale parent gets a fresh mtime over
+    # month-old data - and these sub-regions carry no replication timestamp, so
+    # mtime is the only age signal anything has. _osm_admin_scope.py enforces
+    # that with each set's requires_fresh patterns.
+    if [ -n "$SET_NAME" ]; then
+        extra=""
+        [ "$IGNORE_STALE" = "1" ] && extra="--ignore-stale-source"
+        if ! pairs="$("$PYBIN" "$SCOPE_HELPER" --set "$SET_NAME" --bucket "$BUCKET" $extra 2>&1)"; then
+            echo "$pairs" | sed 's/^/  /'
+            printf 'at=%s\nrc=1\nreason=scope-refused\nset=%s\n' "$stamp" "$SET_NAME" > "$HEALTH"
+            exit 1
+        fi
+        n=$(printf '%s\n' "$pairs" | grep -c .)
+        echo "  set '$SET_NAME' -> $n submission(s), ${STAGGER}s apart"
+        i=0; failed=0; first_runner=""
+        while IFS=$'\t' read -r sr lv; do
+            [ -z "$sr" ] && continue
+            i=$((i+1))
+            si="{\"source_region\": \"$sr\", \"admin_level\": $lv, \"strategy\": \"$STRATEGY\", \"bucket\": \"$BUCKET\", \"osmfr_fallback\": false, \"refresh_after_days\": $REFRESH_DAYS, \"force_refresh\": $FORCE}"
+            echo "  [$i/$n] $sr @ level $lv"
+            if so="$("$FW_ROOT/fw" ffl run --primary "$FFL" --workflow "$WORKFLOW" --inputs "$si" 2>&1)"; then
+                r="$(printf '%s' "$so" | grep -oE '[0-9a-f-]{36}' | head -1)"
+                [ -z "$first_runner" ] && first_runner="$r"
+                echo "      submitted ${r:-?}"
+            else
+                failed=$((failed+1)); printf '%s\n' "$so" | sed 's/^/      /'
+            fi
+            [ "$i" -lt "$n" ] && sleep "$STAGGER"
+        done <<< "$pairs"
+        printf 'at=%s\nrc=%s\nset=%s\nsubmitted=%s\nfailed=%s\nworkflow=%s\nrunner=%s\n' \
+            "$stamp" "$([ "$failed" -eq 0 ] && echo 0 || echo 1)" "$SET_NAME" \
+            "$((n-failed))" "$failed" "$WORKFLOW" "${first_runner:-unknown}" > "$HEALTH"
+        echo "=== [$(date '+%F %T %Z')] set '$SET_NAME': $((n-failed))/$n submitted, $failed failed ==="
+        echo "    submitted != finished: the fan-outs run on the fleet for hours"
+        exit $([ "$failed" -eq 0 ] && echo 0 || echo 1)
+    fi
+
     # osmfr_fallback=false: see the header. Publishing under-produces visibly
     # instead of failing on a mirror the egress guard forbids.
     inputs="{\"source_region\": \"$REGION\", \"admin_level\": $LEVEL, \"strategy\": \"$STRATEGY\", \"bucket\": \"$BUCKET\", \"osmfr_fallback\": false, \"refresh_after_days\": $REFRESH_DAYS, \"force_refresh\": $FORCE}"
@@ -168,6 +219,11 @@ run)
     # here as "the extracts were rebuilt".
     echo "=== [$(date '+%F %T %Z')] submitted (rc=$rc, runner=${runner:-unknown}) — completion is tracked in the dashboard ==="
     exit $rc
+    ;;
+
+list-sets)
+    "$PYBIN" "$SCOPE_HELPER" --set _ --list-sets 2>&1 | sed 's/^/  /'
+    exit 0
     ;;
 
 status)

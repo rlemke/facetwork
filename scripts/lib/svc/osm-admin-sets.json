@@ -1,0 +1,21 @@
+{
+  "_comment": "Named scopes for `fw svc osm-admin-regen --set NAME`. Each entry is submitted as one BuildAdminSetWorkflow, in the order listed. Override the file with FW_OSM_REGEN_SETS_FILE.",
+  "_chain_comment": "ORDER MATTERS AND IS A CORRECTNESS ISSUE, not a preference. BuildAdminSet downloads its source FROM THE BUCKET, so regenerating children from a stale parent produces extracts with a fresh mtime over month-old data - which reads as current to anything that measures age (these sub-regions carry no replication timestamp, so mtime is the only signal). Always refresh a tier before the tier below it.",
+  "sets": {
+    "na-states": {
+      "description": "96 US states + Canadian provinces + Mexican states, from the 21 GB north-america continent extract",
+      "requires_fresh": [],
+      "regions": [{ "region": "north-america", "level": 4 }]
+    },
+    "us-counties": {
+      "description": "3,167 US counties, one submission per state (51). Mirrors the europe/germany@6 Kreise run that completed in 5.2h.",
+      "requires_fresh": ["north-america/us/*-latest.osm.pbf"],
+      "regions_from": { "prefix": "north-america/us/", "depth": 2, "level": 6 }
+    },
+    "eu-countries": {
+      "description": "European countries from the 40 GB europe extract (completed in 9.8h on 2026-08-27)",
+      "requires_fresh": [],
+      "regions": [{ "region": "europe", "level": 2 }]
+    }
+  }
+}
