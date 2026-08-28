@@ -28,6 +28,12 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+
+# `fw` execs this file directly, so nothing has sourced .env - see _dotenv.
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "_helpers"))
+from _dotenv import load_env  # noqa: E402
+
+load_env(__file__)
 import time
 
 # Matches persistence.RECLAIM_GRACE_MS's intent: a task is not "stalled" the
@@ -53,7 +59,8 @@ def main() -> int:
         print("pymongo is required", file=sys.stderr)
         return 2
     try:
-        db = pymongo.MongoClient(a.mongo, serverSelectionTimeoutMS=8000).get_database(a.database)
+        url = a.mongo
+        db = pymongo.MongoClient(url, serverSelectionTimeoutMS=8000).get_database(a.database)
         running = list(db.tasks.find({"state": "running"},
                                      {"uuid": 1, "name": 1, "server_id": 1, "updated": 1,
                                       "task_heartbeat": 1, "timeout_ms": 1,
@@ -62,6 +69,19 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"could not query {a.mongo}: {type(exc).__name__}", file=sys.stderr)
         return 2
+
+    # ⚠️ ALWAYS say which Mongo this is. There are two reachable from a fleet
+    # host and they disagree: measured 2026-08-28, `afl-mongodb` reached a
+    # container with 2 running runners and 4 dead letters, while `localhost` and
+    # `server3.local` reached a DIFFERENT container - 27h uptime, 0 running, 12
+    # dead letters. Both answer on 27017 and one of the names even resolves to
+    # the other's IP. A tool that prints numbers without naming its source lets
+    # you diagnose the wrong world with total confidence; that has happened.
+    try:
+        st = db.client.admin.command("serverStatus")
+        print(f"mongo {url}  host={st.get('host', '?')}  up={st.get('uptime', 0) / 3600:.1f}h")
+    except Exception:  # noqa: BLE001 - identity is context, never fatal
+        print(f"mongo {url}  (could not read serverStatus)")
 
     if not running:
         print("no running tasks")

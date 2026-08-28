@@ -38,6 +38,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+# `fw` execs this file directly, so nothing has sourced .env - see _dotenv. Its
+# absence is not cosmetic here: FW_MONGODB_URL would fall back to localhost,
+# which on a fleet host is a DIFFERENT MongoDB from the fleet's.
+import pathlib as _pl
+sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[1] / "_helpers"))
+from _dotenv import load_env  # noqa: E402
+
+load_env(__file__)
+
+
 logger = logging.getLogger("afl.cache-index")
 
 
