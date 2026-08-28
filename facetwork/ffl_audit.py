@@ -71,7 +71,17 @@ NS_USE = re.compile(r"^\s*use\s+([\w.]+)", re.M)
 CONTRACT_CHECKS = [
     (
         "_step_log-as-list",
-        re.compile(r"\bstep_log\s*\.\s*append\s*\("),
+        # ⚠️ `\bstep_log` MISSED the spelling this check is named after.
+        # `_` is a word character, so there is no word boundary between the
+        # underscore and the `s` - `_step_log.append(` did not match, while the
+        # bare `step_log.append(` did. The documented failure (six handlers dead
+        # in fwh_sensor_monitoring with 48 tests green) is written `_step_log`,
+        # so the check was blind to its own motivating case.
+        # The lookbehind excludes `_` as well as alphanumerics, so an unrelated
+        # `my_step_log.append(` on a genuine list is not flagged; the second arm
+        # catches the subscript form, `params["_step_log"].append(`.
+        re.compile(r"""(?:(?<![A-Za-z0-9_])_?step_log|\[\s*["']_step_log["']\s*\])"""
+                   r"""\s*\.\s*append\s*\("""),
         "`_step_log` is a callback — step_log(message, level=…), not a list. "
         "`.append` raises AttributeError at the handler's first log line.",
     ),
@@ -94,9 +104,28 @@ class RepoResult:
         return self.status == "drift" or bool(self.contract_hits)
 
 
+# Directories that hold COPIES of a repo's own sources. Reading them makes the
+# audit see the same namespace twice and report every reference to it as
+# ambiguous - against two candidates with the SAME fully-qualified name, which is
+# the tell. Measured: one `python -m build --wheel` in fwh_save_earth left a
+# build/lib/ copy and produced 218 phantom "Ambiguous facet reference
+# 'RetryPolicy': could be save_earth.mixins.RetryPolicy,
+# save_earth.mixins.RetryPolicy" errors, which is enough noise to bury a real
+# finding in the tier this audit exists to gate.
+_COPY_DIRS = frozenset({
+    ".venv", "venv", "site-packages", "build", "dist", "sdist",
+    ".eggs", ".tox", "__pycache__", "node_modules", ".git",
+})
+
+
+def _is_vendored(path: pathlib.Path) -> bool:
+    """True for a path inside a build artifact or vendored dependency tree."""
+    return any(part in _COPY_DIRS or part.endswith(".egg-info") for part in path.parts)
+
+
 def ffl_files(repo: pathlib.Path) -> list[pathlib.Path]:
-    """Every ``.ffl`` in a repo, excluding vendored virtualenvs."""
-    return sorted(f for f in repo.rglob("*.ffl") if ".venv" not in f.parts)
+    """Every ``.ffl`` in a repo, excluding build artifacts and vendored trees."""
+    return sorted(f for f in repo.rglob("*.ffl") if not _is_vendored(f))
 
 
 def scan_namespaces(files: list[pathlib.Path]) -> tuple[set[str], set[str]]:
@@ -144,7 +173,9 @@ def scan_contracts(repo: pathlib.Path) -> list[str]:
     hits: list[str] = []
     for py in sorted(repo.rglob("*.py")):
         parts = py.parts
-        if ".venv" in parts or "site-packages" in parts:
+        # Same exclusion set as the FFL scan: the two used to differ, so a build
+        # artifact was invisible to one scan and poisoned the other.
+        if _is_vendored(py):
             continue
         if any(p in ("tests", "test") for p in parts):
             continue

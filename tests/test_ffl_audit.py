@@ -26,6 +26,7 @@ from __future__ import annotations
 import pathlib
 
 from facetwork.ffl_audit import (
+    CONTRACT_CHECKS,
     dependencies_for,
     ffl_files,
     scan_contracts,
@@ -137,3 +138,58 @@ def test_a_vendored_dependency_is_not_scanned(tmp_path):
     d.mkdir(parents=True)
     (d / "mod.py").write_text('step_log.append({"message": "x"})\n')
     assert scan_contracts(tmp_path) == []
+
+
+def test_step_log_check_catches_the_spelling_it_is_named_after():
+    """⚠️ The regex was `\\bstep_log…`, which MISSES `_step_log.append(`.
+
+    `_` is a word character, so there is no boundary between it and the `s`.
+    The check is called `_step_log-as-list` and the documented failure it exists
+    to prevent (six handlers dead in fwh_sensor_monitoring, 48 tests green) is
+    written `_step_log` — so the check was blind to its own motivating case
+    while happily matching the bare `step_log.append(`.
+    """
+    pattern = CONTRACT_CHECKS[0][1]
+    for src in ('_step_log.append("x")',
+                'step_log.append("x")',
+                'params["_step_log"].append("x")',
+                "params['_step_log'].append('x')",
+                '_step_log .append( "x" )',
+                '        _step_log.append(msg)'):
+        assert pattern.search(src), f"must flag: {src}"
+
+
+def test_step_log_check_does_not_flag_unrelated_lists():
+    """A genuine list that merely contains 'step_log' in its name is not the bug."""
+    pattern = CONTRACT_CHECKS[0][1]
+    for src in ('my_step_log.append("x")',
+                'step_logs.append(x)',
+                'self.step_log_list.append(x)',
+                'astep_log.append(x)',
+                'step_log(msg, level="info")'):
+        assert not pattern.search(src), f"must NOT flag: {src}"
+
+
+def test_build_artifacts_are_excluded_from_both_scans(tmp_path):
+    """A build/ copy of a repo's own FFL made every reference to its namespace
+    'ambiguous' against two candidates with the SAME name — 218 phantom errors
+    from one `python -m build --wheel`, enough to bury a real finding.
+
+    Both scans must use the same exclusions; they used to differ, so an artifact
+    was invisible to one and poisoned the other.
+    """
+    repo = tmp_path / "fwh_x"
+    for rel in ("src/x/ffl/a.ffl", "build/lib/x/ffl/a.ffl",
+                "dist/x/ffl/a.ffl", ".venv/lib/x.ffl", "x.egg-info/a.ffl"):
+        p = repo / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("namespace x {}\n")
+    found = [str(f.relative_to(repo)) for f in ffl_files(repo)]
+    assert found == ["src/x/ffl/a.ffl"], found
+
+    for rel in ("src/x/h.py", "build/lib/x/h.py", "site-packages/x/h.py"):
+        p = repo / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text('_step_log.append("x")\n')
+    hits = scan_contracts(repo)
+    assert len(hits) == 1 and "src/x/h.py" in hits[0], hits
