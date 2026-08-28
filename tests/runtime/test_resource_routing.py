@@ -157,12 +157,36 @@ def test_every_registration_advertises_resources(rel):
             "task carrying a requirement")
 
 
-@pytest.mark.parametrize("rel", ["registry_runner.py", "agent_poller.py"])
-def test_every_claim_site_passes_resources(rel):
-    calls = _calls(_RUNTIME / rel, "claim_task")
-    assert calls, f"{rel}: expected claim_task call(s)"
-    for c in calls:
-        kw = {k.arg for k in c.keywords}
-        assert "resources" in kw, (
-            f"{rel} calls claim_task without resources= — that poll loop would "
-            "claim work the runner cannot finish")
+def _files_calling(func_name):
+    """Every runtime module that CALLS func_name — discovered, not listed.
+
+    Hardcoding the file list is what let this bug through twice: the first pass
+    listed only registry_runner + agent_poller, so RunnerService — the class the
+    osm runners actually run — kept claiming without resources and a task
+    requiring 10 GB sat pending forever while a 13.63 GB host ignored it.
+    """
+    out = []
+    for path in _RUNTIME.rglob("*.py"):
+        if "test" in path.name:
+            continue
+        try:
+            if _calls(path, func_name):
+                out.append(path)
+        except SyntaxError:
+            continue
+    return out
+
+
+def test_every_claim_site_passes_resources():
+    files = _files_calling("claim_task")
+    # exclude the store implementations themselves (they DEFINE it)
+    callers = [f for f in files if "store" not in f.name and f.name != "dao.py"]
+    assert callers, "expected to find claim_task callers"
+    missing = []
+    for path in callers:
+        for c in _calls(path, "claim_task"):
+            if "resources" not in {k.arg for k in c.keywords}:
+                missing.append(f"{path.relative_to(_RUNTIME)}:{c.lineno}")
+    assert not missing, (
+        "claim_task called without resources= at: " + ", ".join(missing) +
+        " — that poll loop claims work the runner may not be able to finish")

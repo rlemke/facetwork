@@ -494,6 +494,7 @@ class RunnerService(BaseRunner):
                     task_names=event_names,
                     task_list=poll_lists,
                     server_id=self._server_id,
+                    resources=self._measured_resources(),
                 )
                 if task is None:
                     break
@@ -518,6 +519,7 @@ class RunnerService(BaseRunner):
                 task_names=[RESUME_TASK_NAME],
                 task_list=poll_lists,
                 server_id=self._server_id,
+                resources=self._measured_resources(),
             )
             if task is None:
                 break
@@ -533,6 +535,7 @@ class RunnerService(BaseRunner):
                     task_names=builtin_names,
                     task_list=poll_lists,
                     server_id=self._server_id,
+                    resources=self._measured_resources(),
                 )
                 if task is None:
                     break
@@ -553,6 +556,7 @@ class RunnerService(BaseRunner):
                     task_names=[CONTINUATION_TASK_NAME],
                     task_list=CONTINUATION_TASK_LIST,
                     server_id=self._server_id,
+                    resources=self._measured_resources(),
                 )
                 if task is None:
                     break
@@ -924,6 +928,7 @@ class RunnerService(BaseRunner):
                     "No handler for facet '%s' on step %s",
                     step.facet_name,
                     step.id,
+        resources=self._measured_resources(),
                 )
                 return
 
