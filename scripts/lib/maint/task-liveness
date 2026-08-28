@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+# fw-summary: show whether RUNNING tasks are actually alive (heartbeat, not last-update)
+#
+# ⚠️ THIS EXISTS BECAUSE THE OBVIOUS FIELD LIES. A task document carries both
+# `updated` and `task_heartbeat`, and only the second is a liveness signal:
+#
+#     updated         set on STATE CHANGE only. A task that has been running
+#                     happily for six hours still shows `updated` six hours ago.
+#     task_heartbeat  written by the handler's `_task_heartbeat` callback while
+#                     it works. THIS is what the runtime uses - base_runner
+#                     prefers it over claimed_at, and reap_stuck_tasks compares
+#                     max(task_heartbeat, updated) against the timeout.
+#
+# Reading `updated` and concluding "this task is wedged" is a mistake that has
+# been made repeatedly, including three times in one session while diagnosing a
+# perfectly healthy 21 GB download. The two ages are printed side by side here
+# so the difference is visible rather than folklore.
+#
+# ⚠️ Exit codes follow `fw maint dead-letters` / `unsatisfiable`:
+#     0  every running task is heartbeating within its budget
+#     1  at least one is genuinely stalled (past timeout + grace: it will be
+#        reclaimed, and a non-cancellable handler may then run twice)
+#     2  could not verify (no Mongo)
+# Only 1 is an alarm.
+"""Report real liveness for running tasks: heartbeat age vs. its timeout."""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import time
+
+# Matches persistence.RECLAIM_GRACE_MS's intent: a task is not "stalled" the
+# instant it passes its timeout, because the owning runner gets first refusal.
+DEFAULT_GRACE_MS = 60_000
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--mongo", default=os.environ.get("FW_MONGODB_URL")
+                    or "mongodb://localhost:27017")
+    ap.add_argument("--database", default=os.environ.get("FW_MONGODB_DATABASE") or "facetwork")
+    ap.add_argument("--default-timeout-ms", type=int,
+                    default=int(os.environ.get("FW_TASK_EXECUTION_TIMEOUT_MS", "900000")),
+                    help="budget for tasks registered with timeout_ms=0")
+    ap.add_argument("--grace-ms", type=int, default=DEFAULT_GRACE_MS)
+    ap.add_argument("--all", action="store_true", help="list healthy tasks too")
+    a = ap.parse_args()
+
+    try:
+        import pymongo
+    except ImportError:
+        print("pymongo is required", file=sys.stderr)
+        return 2
+    try:
+        db = pymongo.MongoClient(a.mongo, serverSelectionTimeoutMS=8000).get_database(a.database)
+        running = list(db.tasks.find({"state": "running"},
+                                     {"uuid": 1, "name": 1, "server_id": 1, "updated": 1,
+                                      "task_heartbeat": 1, "timeout_ms": 1,
+                                      "lease_expires": 1, "retry_count": 1}))
+        servers = {s.get("uuid"): s for s in db.servers.find({}, {"uuid": 1, "server_name": 1})}
+    except Exception as exc:  # noqa: BLE001
+        print(f"could not query {a.mongo}: {type(exc).__name__}", file=sys.stderr)
+        return 2
+
+    if not running:
+        print("no running tasks")
+        return 0
+
+    now = time.time() * 1000
+    rows, stalled = [], []
+    for t in running:
+        hb = float(t.get("task_heartbeat") or 0)
+        upd = float(t.get("updated") or 0)
+        # Exactly what reap_stuck_tasks does, so this agrees with the reaper
+        # instead of inventing a second opinion.
+        last = max(hb, upd)
+        explicit = int(t.get("timeout_ms") or 0)
+        lease = float(t.get("lease_expires") or 0)
+        # ⚠️ Do NOT invent a budget for a task registered with timeout_ms=0.
+        # That is the DELIBERATE setting for handlers doing blocking I/O (the
+        # osm planet handlers use it), and their real budget is the domain's
+        # FW_TASK_EXECUTION_TIMEOUT_MS - 8h for osm, not this command's default.
+        # Substituting a 15-minute default made a perfectly healthy 21 GB
+        # download look STALLED, which is the false alarm this whole family of
+        # checks exists to avoid.
+        #
+        # The lease is the honest per-task authority: while it holds, the owning
+        # runner is responsible and nothing else may claim the task. Risk of a
+        # SECOND execution begins only once the lease lapses.
+        if explicit:
+            overdue = (now - last) - (explicit + a.grace_ms)
+            budget = explicit
+        elif lease:
+            overdue = now - (lease + a.grace_ms)
+            budget = 0            # not declared; the lease governs
+        else:
+            overdue = -1.0        # nothing to judge against: say so, do not guess
+            budget = 0
+        row = {
+            "name": str(t.get("name", "?"))[:44],
+            "server": (servers.get(t.get("server_id"), {}) or {}).get("server_name", "?"),
+            "hb_min": (now - hb) / 60000 if hb else None,
+            "upd_min": (now - upd) / 60000 if upd else None,
+            "budget_min": budget / 60000 if budget else None,
+            "lease_min": (float(t.get("lease_expires") or 0) - now) / 60000,
+            "overdue": overdue,
+            "uuid": str(t.get("uuid", ""))[:8],
+        }
+        rows.append(row)
+        if overdue > 0:
+            stalled.append(row)
+
+    print(f"{len(running)} running task(s); {len(stalled)} stalled\n")
+    print(f"  {'task':44s} {'server':10s} {'heartbeat':>10s} {'updated':>9s} "
+          f"{'budget':>8s} {'lease':>8s}")
+    for r in sorted(rows, key=lambda x: -x["overdue"]):
+        if not a.all and r["overdue"] <= 0 and len(stalled):
+            continue
+        hb = f"{r['hb_min']:.1f}m" if r["hb_min"] is not None else "never"
+        budget = f"{r['budget_min']:.0f}m" if r["budget_min"] else "lease"
+        print(f"  {r['name']:44s} {r['server'][:10]:10s} {hb:>10s} "
+              f"{r['upd_min']:>8.1f}m {budget:>8s} {r['lease_min']:>7.0f}m"
+              + ("   STALLED" if r["overdue"] > 0 else ""))
+
+    print("\n  heartbeat = liveness (what the reaper uses).  updated = last STATE CHANGE;")
+    print("  a healthy long task legitimately shows a stale `updated` and is NOT wedged.")
+    print("  budget 'lease' = registered timeout_ms=0 (deliberate for blocking I/O), so the")
+    print("  lease governs; no budget is invented for it.")
+    if not stalled:
+        print("\nOK - every running task is heartbeating inside its budget.")
+        return 0
+    print(f"\n{len(stalled)} task(s) past timeout+grace: these will be reclaimed, and a")
+    print("handler that does not check ctx.is_cancelled may then be running TWICE.")
+    print("  fw maint repair-workflow <runner_id>     # if the run is recoverable")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
