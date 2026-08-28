@@ -177,16 +177,21 @@ def _files_calling(func_name):
     return out
 
 
-def test_every_claim_site_passes_resources():
+@pytest.mark.parametrize("kwarg,why", [
+    ("resources",
+     "that poll loop claims work the runner may not be able to finish"),
+    ("known_features",
+     "that poll loop claims workflows using AST constructs it may not understand, "
+     "running them with those semantics SILENTLY dropped (e.g. `after` edges "
+     "become a race) — RunnerService passed none of the three for 5 call sites"),
+])
+def test_every_claim_site_passes_the_capability_kwarg(kwarg, why):
     files = _files_calling("claim_task")
-    # exclude the store implementations themselves (they DEFINE it)
     callers = [f for f in files if "store" not in f.name and f.name != "dao.py"]
     assert callers, "expected to find claim_task callers"
     missing = []
     for path in callers:
         for c in _calls(path, "claim_task"):
-            if "resources" not in {k.arg for k in c.keywords}:
+            if kwarg not in {k.arg for k in c.keywords}:
                 missing.append(f"{path.relative_to(_RUNTIME)}:{c.lineno}")
-    assert not missing, (
-        "claim_task called without resources= at: " + ", ".join(missing) +
-        " — that poll loop claims work the runner may not be able to finish")
+    assert not missing, f"claim_task called without {kwarg}= at: " + ", ".join(missing) + f" — {why}"

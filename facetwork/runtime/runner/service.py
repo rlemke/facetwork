@@ -495,6 +495,7 @@ class RunnerService(BaseRunner):
                     task_list=poll_lists,
                     server_id=self._server_id,
                     resources=self._measured_resources(),
+                    known_features=self._known_ast_features(),
                 )
                 if task is None:
                     break
@@ -520,6 +521,7 @@ class RunnerService(BaseRunner):
                 task_list=poll_lists,
                 server_id=self._server_id,
                 resources=self._measured_resources(),
+                known_features=self._known_ast_features(),
             )
             if task is None:
                 break
@@ -536,6 +538,7 @@ class RunnerService(BaseRunner):
                     task_list=poll_lists,
                     server_id=self._server_id,
                     resources=self._measured_resources(),
+                    known_features=self._known_ast_features(),
                 )
                 if task is None:
                     break
@@ -557,6 +560,7 @@ class RunnerService(BaseRunner):
                     task_list=CONTINUATION_TASK_LIST,
                     server_id=self._server_id,
                     resources=self._measured_resources(),
+                    known_features=self._known_ast_features(),
                 )
                 if task is None:
                     break
@@ -929,6 +933,7 @@ class RunnerService(BaseRunner):
                     step.facet_name,
                     step.id,
         resources=self._measured_resources(),
+        known_features=self._known_ast_features(),
                 )
                 return
 
