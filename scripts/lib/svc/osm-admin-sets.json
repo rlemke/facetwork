@@ -1,21 +1,143 @@
 {
-  "_comment": "Named scopes for `fw svc osm-admin-regen --set NAME`. Each entry is submitted as one BuildAdminSetWorkflow, in the order listed. Override the file with FW_OSM_REGEN_SETS_FILE.",
-  "_chain_comment": "ORDER MATTERS AND IS A CORRECTNESS ISSUE, not a preference. BuildAdminSet downloads its source FROM THE BUCKET, so regenerating children from a stale parent produces extracts with a fresh mtime over month-old data - which reads as current to anything that measures age (these sub-regions carry no replication timestamp, so mtime is the only signal). Always refresh a tier before the tier below it.",
+  "_comment": "Named scopes for `fw svc osm-admin-regen --set NAME`. Each set names a WORKFLOW and its inputs; the runner defaults (strategy/bucket/refresh_after_days/force) are merged in unless the set overrides them. Override this file with FW_OSM_REGEN_SETS_FILE.",
+  "_three_paths_comment": "\u26a0\ufe0f THREE DIFFERENT WORKFLOWS BUILD THREE DIFFERENT TIERS, and they key extracts differently. Using the wrong one silently writes to the wrong path: a north-america@4 BuildAdminSet ran 14.2h, reported success, and published 99 state extracts to north-america/<state> instead of north-america/us/<state> - 93 of them duplicating extracts that already existed at the correct path. (1) BuildAdminSetWorkflow derives keys from OSM admin boundaries under a prefix taken from source_region, so a CONTINENT source can only ever key its children directly under that continent. Right for continent -> countries. (2) BuildPlanetExtracts with scope=subnational uses US Census TIGER shapefiles, which CONSTRUCT the key north-america/us/<state> - the only path that produces the US state tier, because osmfr has no per-state polygons and Geofabrik is banned. (3) BuildAdminFanout fans one BuildAdminSet per child across the FLEET, keyed under that child. Right for states -> counties.",
+  "_chain_comment": "ORDER IS A CORRECTNESS PROPERTY, not a preference. BuildAdminSet downloads its source FROM THE BUCKET, so regenerating a tier from a stale parent writes children with a fresh mtime over month-old data - and sub-regions carry no replication timestamp, so mtime is the only age signal anything has. requires_fresh enforces it.",
+  "historic_note": "Measured durations: europe@2 3.3h and 9.8h on identical inputs (a 3x spread), central-america@2 0.1h, europe/germany@6 5.2h, north-america@4 14.2h. BuildAdminSetWorkflow is SINGLE-HOST by design; BuildAdminFanout is the one that uses the fleet.",
   "sets": {
-    "na-states": {
-      "description": "96 US states + Canadian provinces + Mexican states, from the 21 GB north-america continent extract",
+    "us-states": {
+      "description": "51 US states via Census TIGER polygons (the ONLY path that keys north-america/us/<state>)",
+      "workflow": "osm.planet.BuildPlanetExtracts",
       "requires_fresh": [],
-      "regions": [{ "region": "north-america", "level": 4 }]
+      "_warning": "This extracts from the PLANET, not from a continent - it downloads and delta-updates planet-latest.osm.pbf first. Expensive and long. It is however how the existing 51 states were built; BuildAdminSet cannot produce this tier at all, because the north-america/us key is CONSTRUCTED by tiger_fetch rather than derived from an admin boundary.",
+      "inputs": {
+        "scope": "subnational",
+        "strategy": "complete_ways",
+        "batch_size": 25
+      },
+      "merge_defaults": [
+        "bucket",
+        "strategy"
+      ]
     },
     "us-counties": {
-      "description": "3,167 US counties, one submission per state (51). Mirrors the europe/germany@6 Kreise run that completed in 5.2h.",
-      "requires_fresh": ["north-america/us/*-latest.osm.pbf"],
-      "regions_from": { "prefix": "north-america/us/", "depth": 2, "level": 6 }
+      "description": "3,167 US counties, fanned per-state ACROSS THE FLEET (not one host)",
+      "workflow": "osm.planet.BuildAdminFanout",
+      "requires_fresh": [
+        "north-america/us/*-latest.osm.pbf"
+      ],
+      "inputs": {
+        "prefix": "north-america/us",
+        "admin_level": 6,
+        "strategy": "simple",
+        "osmfr_fallback": false,
+        "width": 6
+      }
     },
     "eu-countries": {
-      "description": "European countries from the 40 GB europe extract (completed in 9.8h on 2026-08-27)",
+      "description": "European countries from the 40 GB europe extract (completed 9.8h; 462/469 fresh)",
+      "workflow": "osm.planet.BuildAdminSetWorkflow",
+      "requires_fresh": [
+        "europe-latest.osm.pbf"
+      ],
+      "inputs": {
+        "source_region": "europe",
+        "admin_level": 2
+      }
+    },
+    "africa-countries": {
+      "description": "56 africa countries (admin_level 2) - the shape europe proved works",
+      "workflow": "osm.planet.BuildAdminSetWorkflow",
+      "requires_fresh": [
+        "africa-latest.osm.pbf"
+      ],
+      "inputs": {
+        "source_region": "africa",
+        "admin_level": 2
+      }
+    },
+    "asia-countries": {
+      "description": "29 asia countries (admin_level 2) - the shape europe proved works",
+      "workflow": "osm.planet.BuildAdminSetWorkflow",
+      "requires_fresh": [
+        "asia-latest.osm.pbf"
+      ],
+      "inputs": {
+        "source_region": "asia",
+        "admin_level": 2
+      }
+    },
+    "oceania-countries": {
+      "description": "27 australia-oceania countries (admin_level 2) - the shape europe proved works",
+      "workflow": "osm.planet.BuildAdminSetWorkflow",
+      "requires_fresh": [
+        "australia-oceania-latest.osm.pbf"
+      ],
+      "inputs": {
+        "source_region": "australia-oceania",
+        "admin_level": 2
+      }
+    },
+    "south-america-countries": {
+      "description": "10 south-america countries (admin_level 2) - the shape europe proved works",
+      "workflow": "osm.planet.BuildAdminSetWorkflow",
+      "requires_fresh": [
+        "south-america-latest.osm.pbf"
+      ],
+      "inputs": {
+        "source_region": "south-america",
+        "admin_level": 2
+      }
+    },
+    "central-america-countries": {
+      "description": "34 central-america countries (admin_level 2) - the shape europe proved works",
+      "workflow": "osm.planet.BuildAdminSetWorkflow",
+      "requires_fresh": [
+        "central-america-latest.osm.pbf"
+      ],
+      "inputs": {
+        "source_region": "central-america",
+        "admin_level": 2
+      }
+    },
+    "russia-districts": {
+      "description": "8 Russian federal districts (admin_level 3) - UNVERIFIED, see _warning",
+      "workflow": "osm.planet.BuildAdminSetWorkflow",
+      "requires_fresh": [
+        "russia-latest.osm.pbf"
+      ],
+      "_warning": "Russia is ONE country, so admin_level 2 yields a single unit that cannot be placed under a continent - a flat key, which the guard drops, publishing nothing after hours of work. The existing 8 objects are FEDERAL DISTRICTS (level 3), but those carry no ISO 3166-2 either (that belongs to the oblasts at level 4), so level 3 may also produce only flat keys. Run once by hand and check the published count before trusting it.",
+      "inputs": {
+        "source_region": "russia",
+        "admin_level": 3
+      }
+    },
+    "rest-of-world": {
+      "description": "All five stale continent country-tiers, one submission each",
+      "workflow": "osm.planet.BuildAdminSetWorkflow",
       "requires_fresh": [],
-      "regions": [{ "region": "europe", "level": 2 }]
+      "inputs_each": [
+        {
+          "source_region": "africa",
+          "admin_level": 2
+        },
+        {
+          "source_region": "asia",
+          "admin_level": 2
+        },
+        {
+          "source_region": "australia-oceania",
+          "admin_level": 2
+        },
+        {
+          "source_region": "south-america",
+          "admin_level": 2
+        },
+        {
+          "source_region": "central-america",
+          "admin_level": 2
+        }
+      ]
     }
-  }
+  },
+  "_merge_defaults_comment": "The runner knobs (bucket/strategy/refresh_after_days/force_refresh) are merged into a set's inputs only for the keys listed in its merge_defaults. NOT every workflow accepts every knob: BuildPlanetExtracts has no refresh_after_days or force_refresh, so merging them blindly would fail the submission. Absent = all four (the BuildAdminSet family). A key the set states explicitly always wins."
 }

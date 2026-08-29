@@ -181,12 +181,24 @@ run)
         n=$(printf '%s\n' "$pairs" | grep -c .)
         echo "  set '$SET_NAME' -> $n submission(s), ${STAGGER}s apart"
         i=0; failed=0; first_runner=""
-        while IFS=$'\t' read -r sr lv; do
-            [ -z "$sr" ] && continue
+        while IFS=$'\t' read -r wf inputs allowed; do
+            [ -z "$wf" ] && continue
             i=$((i+1))
-            si="{\"source_region\": \"$sr\", \"admin_level\": $lv, \"strategy\": \"$STRATEGY\", \"bucket\": \"$BUCKET\", \"osmfr_fallback\": false, \"refresh_after_days\": $REFRESH_DAYS, \"force_refresh\": $FORCE}"
-            echo "  [$i/$n] $sr @ level $lv"
-            if so="$("$FW_ROOT/fw" ffl run --primary "$FFL" --workflow "$WORKFLOW" --inputs "$si" 2>&1)"; then
+            # Merge the runner-level knobs into the set's inputs. The set wins on
+            # a key it sets explicitly (us-counties forces osmfr_fallback=false).
+            si="$("$PYBIN" - "$inputs" "$allowed" "$BUCKET" "$STRATEGY" "$REFRESH_DAYS" "$FORCE" <<'PYEOF'
+import json, sys
+inputs, allowed = json.loads(sys.argv[1]), set(json.loads(sys.argv[2]))
+bucket, strategy, refresh, force = sys.argv[3], sys.argv[4], int(sys.argv[5]), sys.argv[6] == "true"
+for k, v in (("bucket", bucket), ("strategy", strategy),
+             ("refresh_after_days", refresh), ("force_refresh", force)):
+    if k in allowed:
+        inputs.setdefault(k, v)
+print(json.dumps(inputs))
+PYEOF
+)"
+            echo "  [$i/$n] $wf $si"
+            if so="$("$FW_ROOT/fw" ffl run --primary "$FFL" --workflow "$wf" --inputs "$si" 2>&1)"; then
                 r="$(printf '%s' "$so" | grep -oE '[0-9a-f-]{36}' | head -1)"
                 [ -z "$first_runner" ] && first_runner="$r"
                 echo "      submitted ${r:-?}"
@@ -195,9 +207,9 @@ run)
             fi
             [ "$i" -lt "$n" ] && sleep "$STAGGER"
         done <<< "$pairs"
-        printf 'at=%s\nrc=%s\nset=%s\nsubmitted=%s\nfailed=%s\nworkflow=%s\nrunner=%s\n' \
+        printf 'at=%s\nrc=%s\nset=%s\nsubmitted=%s\nfailed=%s\nrunner=%s\n' \
             "$stamp" "$([ "$failed" -eq 0 ] && echo 0 || echo 1)" "$SET_NAME" \
-            "$((n-failed))" "$failed" "$WORKFLOW" "${first_runner:-unknown}" > "$HEALTH"
+            "$((n-failed))" "$failed" "${first_runner:-unknown}" > "$HEALTH"
         echo "=== [$(date '+%F %T %Z')] set '$SET_NAME': $((n-failed))/$n submitted, $failed failed ==="
         echo "    submitted != finished: the fan-outs run on the fleet for hours"
         exit $([ "$failed" -eq 0 ] && echo 0 || echo 1)

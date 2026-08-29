@@ -39,10 +39,27 @@ def _s3():
         aws_secret_access_key=os.environ.get("FW_S3_SECRET_KEY", "minioadmin"))
 
 
-def _objects(client, bucket: str, prefix: str = ""):
-    pages = client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix)
+def _objects(client, bucket: str, prefix: str = "", *, delimiter: str = "/"):
+    """List .osm.pbf under `prefix`, ONE level deep by default.
+
+    ⚠️ Never list this bucket without a delimiter. Every extract has a paired
+    `<region>-updates/` directory holding thousands of small replication files,
+    so a bare recursive listing walks ~100k keys and exceeded a 10-minute
+    timeout here. The tiers this tool reasons about are exactly the immediate
+    children of a prefix, so the delimiter costs nothing and saves everything.
+    """
+    kwargs = {"Bucket": bucket, "Prefix": prefix}
+    if delimiter:
+        kwargs["Delimiter"] = delimiter
+    pages = client.get_paginator("list_objects_v2").paginate(**kwargs)
     return [o for page in pages for o in page.get("Contents", [])
             if o["Key"].endswith(".osm.pbf")]
+
+
+def _prefix_of(pattern: str) -> str:
+    """The fixed directory part of a glob, so we list only that subtree."""
+    head = pattern.split("*")[0].split("?")[0]
+    return head[: head.rfind("/") + 1] if "/" in head else ""
 
 
 def main() -> int:
@@ -77,7 +94,16 @@ def main() -> int:
 
     try:
         client = _s3()
-        objects = _objects(client, a.bucket)
+        # Only the subtrees this set actually references, never the whole bucket.
+        wanted = {_prefix_of(p) for p in (spec.get("requires_fresh") or [])}
+        rf = spec.get("regions_from")
+        if rf:
+            wanted.add(rf["prefix"])
+        if not wanted:
+            wanted = {""}
+        objects = []
+        for pfx in sorted(wanted):
+            objects += _objects(client, a.bucket, pfx)
     except Exception as exc:  # noqa: BLE001
         print(f"could not list {a.bucket}: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
@@ -121,22 +147,26 @@ def main() -> int:
         return 1
 
     # --- expand ------------------------------------------------------------
-    pairs: list[tuple[str, int]] = []
-    for entry in spec.get("regions") or []:
-        pairs.append((entry["region"], int(entry["level"])))
-    rf = spec.get("regions_from")
-    if rf:
-        prefix, depth, level = rf["prefix"], int(rf["depth"]), int(rf["level"])
-        for key in sorted(ages):
-            if not key.startswith(prefix) or key.count("/") != depth:
-                continue
-            region = key[: -len("-latest.osm.pbf")]
-            pairs.append((region, level))
-    if not pairs:
+    # One line per submission: "<workflow>\t<inputs-json>". A set is a WORKFLOW
+    # plus inputs, because the three tiers are built by three different
+    # workflows that key extracts differently - see the config's
+    # _three_paths_comment for what using the wrong one costs.
+    workflow = spec.get("workflow")
+    if not workflow:
+        print(f"set {a.set_name!r} has no 'workflow'", file=sys.stderr)
+        return 2
+    submissions = spec.get("inputs_each") or [spec.get("inputs") or {}]
+    if not submissions:
         print(f"set {a.set_name!r} expanded to nothing", file=sys.stderr)
         return 2
-    for region, level in pairs:
-        print(f"{region}\t{level}")
+    # Which runner knobs may be merged in. Not every workflow accepts every one:
+    # BuildPlanetExtracts has no refresh_after_days/force_refresh, and passing an
+    # unknown input fails the submission.
+    allowed = spec.get("merge_defaults")
+    if allowed is None:
+        allowed = ["bucket", "strategy", "refresh_after_days", "force_refresh"]
+    for inputs in submissions:
+        print(f"{workflow}\t{json.dumps(inputs)}\t{json.dumps(allowed)}")
     return 0
 
 
