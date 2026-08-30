@@ -104,17 +104,32 @@ Notes for working with `fw`:
   things with different lifecycles: the 8 continent extracts (kept current by
   the nightly re-split) and ~3,877 country/state/county extracts that **nothing
   refreshed** — they sat at a July vintage for 33 days while the continents were
-  same-day. Submits `osm.planet.BuildAdminSetWorkflow`, so it returns in seconds
-  and the fan-out is dashboard-visible; `--install` adds a weekly launchd timer
+  same-day. Submits a workflow chosen **per named set** (`--set`), so it returns in
+  seconds and the fan-out is dashboard-visible; `--install` adds a weekly launchd timer
   (Wed 08:17, `RunAtLoad` false — installing a timer must not launch a
-  multi-hour job). ⚠️ Scope is a **pilot by default** (one continent,
-  `admin_level 2`): the county tier is a 3,167-way fan-out that has frozen
-  before and needs `foreach limit`, so widen only after a tier completes.
+  multi-hour job). ⚠️ Scope is a **pilot by default** (one COUNTRY,
+  `europe/france` @ `admin_level 4`): the county tier is a 3,167-way fan-out that
+  has frozen before and needs `foreach limit`, so widen only after a tier
+  completes. The old `<continent>` @ 2 default could never produce anything —
+  under a `country_prefix`, levels <= 4 are SUBDIVISIONS and must carry ISO
+  3166-2, so every COUNTRY (ISO 3166-1, no hyphen) was dropped as island noise.
   ⚠️ `osmfr_fallback` is forced **off** — the straggler fallback fetches from
   OSM France, which `osm_offline: true` forbids fleet-wide, so leaving it on
-  fails those regions anyway; off under-produces visibly instead. Use
-  `BuildAdminSetWorkflow`, **not** `BuildAdminFanout`, which does not expose
-  that flag at all. Skips a tick while the nightly re-split holds its lock
+  fails those regions anyway; off under-produces visibly instead. ⚠️ **Three tiers,
+  three workflows, three different KEYING rules** — a set names its own, since they
+  cannot be expressed as one shape: `BuildAdminSetWorkflow` keys from OSM admin
+  boundaries prefixed by `source_region` (continent→countries, single-host by
+  design); `BuildPlanetExtracts(scope=subnational)` has Census **TIGER construct** the key
+  `north-america/us/<state>` (the US state tier — osmfr has no per-state polys and
+  Geofabrik is banned, so it is the only route below the US country tier); and
+  `BuildAdminFanout` runs one `BuildAdminSet` per child **across the fleet**
+  (states→counties). A continent source can only key children directly under that
+  continent, so `north-america`@4 yields `north-america/<state>` and never
+  `north-america/us/<state>` — that mismatch published 99 extracts one tier too
+  shallow. `BuildAdminFanout` formerly lacked `osmfr_fallback`; `fwh_osm c90c72b`
+  added it plus `refresh_after_days`/`force_refresh`/`width` (a `foreach limit`),
+  so the county tier fans out instead of serialising on one host.
+  Skips a tick while the nightly re-split holds its lock
   (same external volume, and the split rewrites the extracts this reads).
 - **`fw svc osm-replicate [--days N] [--install] [--status]`** — publishes new
   per-region OSM replication diffs (fwh_osm's producer); `--install` adds a

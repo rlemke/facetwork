@@ -35,8 +35,23 @@
 # is the honest setting: it under-produces visibly instead of erroring. Do NOT
 # "fix" this by turning the egress guard off; measure the miss rate first.
 #
-# ⚠️ Use BuildAdminSetWorkflow, NOT BuildAdminFanout: the fan-out workflow does
-# not expose `osmfr_fallback`, so it cannot be told to skip the blocked path.
+# ⚠️ The workflow is per-SET, not one global choice — the three tiers key their
+# output differently and cannot be expressed as one shape:
+#   BuildAdminSetWorkflow  keys from OSM admin boundaries, prefixed by
+#                          `source_region`  -> continent to countries. SINGLE-HOST
+#                          by design ("executes atomically on a single fleet host").
+#   BuildPlanetExtracts    scope=subnational; Census TIGER CONSTRUCTS
+#                          `north-america/us/<state>` -> the US state tier. osmfr
+#                          has no per-state polys and Geofabrik is banned, so this
+#                          is the only route below the US country tier.
+#   BuildAdminFanout       one BuildAdminSet per child ACROSS THE FLEET -> states
+#                          to counties, where a single host is the bottleneck.
+# A continent source can only ever key children directly under that continent, so
+# `north-america` @ 4 produces `north-america/<state>`, NOT `north-america/us/<state>`
+# — that mismatch published 99 extracts one tier too shallow on 2026-08-28.
+# BuildAdminFanout DID lack `osmfr_fallback`, which is why this command used to
+# refuse it; fwh_osm c90c72b added it (plus refresh_after_days/force_refresh and a
+# `width` foreach-limit), so the county tier now fans out instead of serialising.
 #
 # Usage:
 #   fw svc osm-admin-regen                     # submit one regeneration now
