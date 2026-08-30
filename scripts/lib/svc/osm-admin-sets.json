@@ -8,11 +8,12 @@
       "description": "51 US states via Census TIGER polygons (the ONLY path that keys north-america/us/<state>)",
       "workflow": "osm.planet.BuildPlanetExtracts",
       "requires_fresh": [],
-      "_warning": "This extracts from the PLANET, not from a continent - it downloads and delta-updates planet-latest.osm.pbf first. Expensive and long. It is however how the existing 51 states were built; BuildAdminSet cannot produce this tier at all, because the north-america/us key is CONSTRUCTED by tiger_fetch rather than derived from an admin boundary.",
+      "_warning": "Cuts from the 20 GB north-america extract, NOT the 92 GB planet: US states only intersect that continent, so it is ~4.4x less I/O and proportionally less RAM per region. A 25-region complete_ways batch over the PLANET OOM-killed a 14 GiB VM on 2026-08-30. The planet is still downloaded/updated first because the continent extract derives from it.",
       "inputs": {
         "scope": "subnational",
         "strategy": "complete_ways",
-        "batch_size": 25
+        "batch_size": 25,
+        "source_region": "north-america"
       },
       "merge_defaults": [
         "bucket",
