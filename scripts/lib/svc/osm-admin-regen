@@ -245,8 +245,13 @@ run)
 import json, sys
 inputs, allowed = json.loads(sys.argv[1]), set(json.loads(sys.argv[2]))
 bucket, strategy, refresh, force = sys.argv[3], sys.argv[4], int(sys.argv[5]), sys.argv[6] == "true"
+# osmfr_fallback defaults to FALSE here, overriding the FFL default of true:
+# see the header. It is a merged default rather than a per-set literal so a
+# new set cannot silently omit it - which is exactly what happened to 9 of
+# 10 sets after the per-set rewrite, while the header claimed "forced OFF".
 for k, v in (("bucket", bucket), ("strategy", strategy),
-             ("refresh_after_days", refresh), ("force_refresh", force)):
+             ("refresh_after_days", refresh), ("force_refresh", force),
+             ("osmfr_fallback", False)):
     if k in allowed:
         inputs.setdefault(k, v)
 print(json.dumps(inputs))

@@ -31,7 +31,10 @@
         "strategy": "simple",
         "osmfr_fallback": false,
         "width": 6
-      }
+      },
+      "merge_defaults": [
+        "osmfr_fallback"
+      ]
     },
     "eu-countries": {
       "description": "European countries from the 40 GB europe extract (completed 9.8h; 462/469 fresh)",
@@ -42,7 +45,10 @@
       "inputs": {
         "source_region": "europe",
         "admin_level": 2
-      }
+      },
+      "merge_defaults": [
+        "osmfr_fallback"
+      ]
     },
     "africa-countries": {
       "description": "56 africa countries (admin_level 2) - the shape europe proved works",
@@ -53,7 +59,10 @@
       "inputs": {
         "source_region": "africa",
         "admin_level": 2
-      }
+      },
+      "merge_defaults": [
+        "osmfr_fallback"
+      ]
     },
     "asia-countries": {
       "description": "29 asia countries (admin_level 2) - the shape europe proved works",
@@ -64,7 +73,10 @@
       "inputs": {
         "source_region": "asia",
         "admin_level": 2
-      }
+      },
+      "merge_defaults": [
+        "osmfr_fallback"
+      ]
     },
     "oceania-countries": {
       "description": "27 australia-oceania countries (admin_level 2) - the shape europe proved works",
@@ -75,7 +87,10 @@
       "inputs": {
         "source_region": "australia-oceania",
         "admin_level": 2
-      }
+      },
+      "merge_defaults": [
+        "osmfr_fallback"
+      ]
     },
     "south-america-countries": {
       "description": "10 south-america countries (admin_level 2) - the shape europe proved works",
@@ -86,7 +101,10 @@
       "inputs": {
         "source_region": "south-america",
         "admin_level": 2
-      }
+      },
+      "merge_defaults": [
+        "osmfr_fallback"
+      ]
     },
     "central-america-countries": {
       "description": "34 central-america countries (admin_level 2) - the shape europe proved works",
@@ -97,7 +115,10 @@
       "inputs": {
         "source_region": "central-america",
         "admin_level": 2
-      }
+      },
+      "merge_defaults": [
+        "osmfr_fallback"
+      ]
     },
     "russia-districts": {
       "description": "8 Russian federal districts (admin_level 3) - UNVERIFIED, see _warning",
@@ -109,7 +130,10 @@
       "inputs": {
         "source_region": "russia",
         "admin_level": 3
-      }
+      },
+      "merge_defaults": [
+        "osmfr_fallback"
+      ]
     },
     "rest-of-world": {
       "description": "All five stale continent country-tiers, one submission each",
@@ -136,6 +160,9 @@
           "source_region": "central-america",
           "admin_level": 2
         }
+      ],
+      "merge_defaults": [
+        "osmfr_fallback"
       ]
     }
   },
