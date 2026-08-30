@@ -12,7 +12,7 @@
       "inputs": {
         "scope": "subnational",
         "strategy": "complete_ways",
-        "batch_size": 25,
+        "batch_size": 4,
         "source_region": "north-america"
       },
       "merge_defaults": [
