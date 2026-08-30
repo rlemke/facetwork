@@ -111,6 +111,9 @@ SET_NAME="${FW_OSM_REGEN_SET:-}"
 STAGGER="${FW_OSM_REGEN_STAGGER:-20}"
 IGNORE_STALE=0
 SCOPE_HELPER="$(dirname "${BASH_SOURCE[0]}")/_osm_admin_scope.py"
+# Same resolution as the helper's DEFAULT_SETS, so the in-flight guard sees the
+# same workflow set the submission will use.
+SETS_FILE="${FW_OSM_REGEN_SETS_FILE:-$(dirname "${BASH_SOURCE[0]}")/osm-admin-sets.json}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -141,22 +144,42 @@ PYBIN="${PYTHON:-$FW_ROOT/.venv/bin/python}"
 # lock would be released while the real work is still running fleet-wide and the
 # next timer tick would pile a second fan-out on top of the first. The only
 # honest question is what the runtime says, so ask it.
+#
+# ⚠️ It must ask about EVERY workflow this command can submit, not one name.
+# The guard runs before `--set` is resolved, so a hardcoded $WORKFLOW checked
+# BuildAdminSetWorkflow while submitting a BuildPlanetExtracts set: us-states
+# was blocked only by coincidence (2026-08-29), and - the dangerous direction -
+# two BuildPlanetExtracts runs would not have blocked each other at all. The
+# reason for the guard is that they contend for the SAME EXTERNAL VOLUME, which
+# has nothing to do with which workflow it is, so the union is what it means.
 regen_in_flight() {
-    "$PYBIN" - "$WORKFLOW" <<'PY' 2>/dev/null
-import os, sys
+    "$PYBIN" - "$SETS_FILE" "$WORKFLOW" <<'PY' 2>/dev/null
+import json, os, sys
 try:
     import pymongo
 except ImportError:
     sys.exit(2)                       # can't tell — caller treats as "unknown"
 url = os.environ.get("FW_MONGODB_URL") or "mongodb://localhost:27017"
+names = {sys.argv[2]}
+try:                                  # union over the sets file; a missing or
+    with open(sys.argv[1]) as fh:     # bad file degrades to the default name,
+        for spec in (json.load(fh).get("sets") or {}).values():   # never to none
+            if isinstance(spec, dict) and spec.get("workflow"):
+                names.add(spec["workflow"])
+except Exception:
+    pass
 try:
     db = pymongo.MongoClient(url, serverSelectionTimeoutMS=8000).get_database(
         os.environ.get("FW_MONGODB_DATABASE") or "facetwork")
     # The field is NESTED (`workflow.name`), not a flat `workflow_name` — a
     # flat query matches nothing and the guard silently never fires, which is
     # strictly worse than having no guard.
-    n = db.runners.count_documents(
-        {"workflow.name": sys.argv[1], "state": {"$nin": ["completed", "failed", "terminated"]}})
+    q = {"workflow.name": {"$in": sorted(names)},
+         "state": {"$nin": ["completed", "failed", "terminated"]}}
+    n = db.runners.count_documents(q)
+    if n:                             # name what is actually running, so the
+        r = db.runners.find_one(q)    # refusal is actionable, not generic
+        sys.stderr.write(((r or {}).get("workflow") or {}).get("name", "?") + "\n")
 except Exception:
     sys.exit(2)
 print(n)
@@ -185,9 +208,11 @@ run)
         exit 0
     fi
 
-    regen_in_flight >/dev/null; inflight=$?
+    inflight_name="$(regen_in_flight 2>&1 >/dev/null | tail -1)"
+    regen_in_flight >/dev/null 2>&1; inflight=$?
+    [ -n "$inflight_name" ] || inflight_name="$WORKFLOW"
     if [ "$inflight" = "1" ]; then
-        echo "  a $WORKFLOW run is still non-terminal — skipping rather than stacking a second fan-out"
+        echo "  a $inflight_name run is still non-terminal — skipping rather than stacking a second fan-out"
         printf 'at=%s\nrc=0\nreason=skipped-already-running\n' "$stamp" > "$HEALTH"
         exit 0
     elif [ "$inflight" = "2" ]; then
