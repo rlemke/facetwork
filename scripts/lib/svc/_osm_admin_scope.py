@@ -25,16 +25,62 @@ import datetime
 import fnmatch
 import json
 import os
+import pathlib
 import sys
+
+# `fw` execs this file directly, so nothing has sourced .env - see _dotenv.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "_helpers"))
+from _dotenv import load_env  # noqa: E402
+
+load_env(__file__)
+
+
+def _load_fleet_s3() -> None:
+    """Lift FW_S3_* out of .env.fleet, which `_dotenv`/`_env.sh` do NOT read.
+
+    ⚠️ Without this the endpoint falls back to localhost:9000, and on a former
+    standalone host that is a DIFFERENT, POPULATED object store — MaxPro still
+    serves its pre-cutover copy. So the wrong endpoint does not fail, it answers:
+    measured 2026-08-29, `us-counties` returned a confident "needs fresher
+    sources" verdict computed entirely from the wrong world, while
+    `south-america-countries` was refused for a 4.59 GB PBF that was present in
+    the fleet bucket. Already-set values win, matching _env.sh.
+    """
+    root = pathlib.Path(__file__).resolve().parents[3]
+    fleet = root / ".env.fleet"
+    if not fleet.is_file():
+        return
+    wanted = {"FW_S3_ENDPOINT", "FW_S3_ACCESS_KEY", "FW_S3_SECRET_KEY"}
+    for raw in fleet.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip().removeprefix("export ").strip()
+        if key in wanted and key not in os.environ:
+            os.environ[key] = value.strip().strip('"').strip("'")
+
+
+_load_fleet_s3()
 
 DEFAULT_SETS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "osm-admin-sets.json")
 
 
+#: Where the guard actually looked. Reported on every refusal: a WRONG endpoint
+#: and a MISSING extract produce the identical "matched nothing", and on a fleet
+#: host both are reachable — MaxPro still runs a standalone MinIO on
+#: localhost:9000 that holds no continent extracts. Measured 2026-08-29: without
+#: .env this refused `south-america-countries` for a 4.59 GB PBF that was sitting
+#: in the fleet bucket. Naming the endpoint turns a data verdict into a
+#: connection fact.
+S3_ENDPOINT = os.environ.get("FW_S3_ENDPOINT", "http://localhost:9000")
+
+
 def _s3():
     import boto3
     return boto3.client(
-        "s3", endpoint_url=os.environ.get("FW_S3_ENDPOINT", "http://localhost:9000"),
+        "s3", endpoint_url=S3_ENDPOINT,
         aws_access_key_id=os.environ.get("FW_S3_ACCESS_KEY", "minioadmin"),
         aws_secret_access_key=os.environ.get("FW_S3_SECRET_KEY", "minioadmin"))
 
@@ -127,7 +173,9 @@ def main() -> int:
     for pattern in spec.get("requires_fresh") or []:
         matched = [k for k in ages if _match(k, pattern)]
         if not matched:
-            print(f"requires_fresh pattern {pattern!r} matched nothing in {a.bucket}",
+            print(f"requires_fresh pattern {pattern!r} matched nothing in "
+                  f"{a.bucket} at {S3_ENDPOINT} ({len(ages)} object(s) listed) — "
+                  f"a wrong endpoint looks exactly like a missing extract",
                   file=sys.stderr)
             return 2
         worst = max(matched, key=lambda k: ages[k])

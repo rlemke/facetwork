@@ -64,6 +64,21 @@
 #   fw svc osm-admin-regen --status            # timer loaded? last run? still running?
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 source "$FW_LIB/_helpers/_env.sh"
+
+# S3 config lives in .env.fleet, NOT .env — same lift as `fw svc maps`. Without
+# it FW_S3_ENDPOINT falls back to localhost:9000, which on MaxPro is the leftover
+# STANDALONE MinIO: a store that answers and holds no continent extracts. The
+# freshness guard then reports "matched nothing", which reads as a missing source
+# rather than a wrong endpoint. Measured 2026-08-29: south-america-countries was
+# refused for a 4.59 GB PBF that was sitting in the fleet bucket the whole time.
+if [ -f "$FW_ROOT/.env.fleet" ]; then
+    for _k in FW_S3_ENDPOINT FW_S3_ACCESS_KEY FW_S3_SECRET_KEY; do
+        if [ -z "${!_k:-}" ]; then
+            _v="$(sed -n "s/^[[:space:]]*${_k}[[:space:]]*=[[:space:]]*//p" "$FW_ROOT/.env.fleet" | tail -1)"
+            [ -n "$_v" ] && export "$_k=$_v"
+        fi
+    done
+fi
 set -uo pipefail   # NOT -e: the health file must record a failure, not die before it
 
 LABEL="com.facetwork.osm-admin-regen"
