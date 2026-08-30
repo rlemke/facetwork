@@ -32,7 +32,25 @@ docker info >/dev/null 2>&1 || { echo "$(ts) ERROR: docker daemon not responding
 
 # Docker VM root fs usage % (the overlay that holds /var/lib/docker — images,
 # volumes, container layers). Read from inside the VM; the host's df is unrelated.
-read_used() { docker run --rm busybox df / 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); print $5}'; }
+#
+# ⚠️ Measured through a container that ALREADY RUNS, not `docker run busybox`.
+# This guard's own `docker image prune -af` removes every image no RUNNING
+# container references — and busybox is referenced only by --rm containers that
+# have already exited, so the FIRST time the guard fired it deleted the image it
+# needs to measure with. Every later run then failed at "could not read Docker VM
+# disk usage" and exited, into a log nobody reads: a guard that silently disables
+# itself the first time it does its job. Re-pulling is not a way out either — on
+# macOS the osxkeychain credential helper cannot unlock in a launchd/cron context,
+# so the pull fails there specifically. Verified identical on server3 (both 87%).
+read_used() {
+    local cid out
+    for cid in $(docker ps -q 2>/dev/null | head -3); do
+        out="$(docker exec "$cid" df / 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); print $5}')"
+        [[ "$out" =~ ^[0-9]+$ ]] && { echo "$out"; return 0; }
+    done
+    # Nothing running (the case the prune cannot have caused) — fall back.
+    docker run --rm busybox df / 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); print $5}'
+}
 
 used="$(read_used)"
 if ! [[ "$used" =~ ^[0-9]+$ ]]; then
