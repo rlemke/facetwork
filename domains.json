@@ -60,12 +60,17 @@
           [
             "FW_TASK_EXECUTION_TIMEOUT_MS",
             "${FW_TASK_EXECUTION_TIMEOUT_MS:-28800000}"
+          ],
+          [
+            "FW_PLANET_DIR",
+            "/planet"
           ]
         ],
         "volumes": [
           "afl_output:/data/output",
           "${FW_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch",
-          "afl_geofabrik:/geofabrik"
+          "afl_geofabrik:/geofabrik",
+          "${FW_DATA_DIR:-/Volumes/afl_data}/osm-selfhost:/planet"
         ],
         "notes": [
           "Durable cache + output \u2192 MinIO (osm-s3-env); staging/tmp/locks \u2192 /scratch (the LARGE external disk, NOT the small internal volume \u2014 continent extracts staged on the internal disk ENOSPC-crash the shared mongodb volume).",
@@ -95,12 +100,17 @@
           [
             "FW_TASK_EXECUTION_TIMEOUT_MS",
             "${FW_TASK_EXECUTION_TIMEOUT_MS:-14400000}"
+          ],
+          [
+            "FW_PLANET_DIR",
+            "/planet"
           ]
         ],
         "volumes": [
           "${FWH_HANDLERS_ROOT:-$HOME/fw_handlers}/fwh_osm:/handlers/fwh_osm:ro",
           "afl_output:/data/output",
-          "${FW_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch"
+          "${FW_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch",
+          "${FW_DATA_DIR:-/Volumes/afl_data}/osm-selfhost:/planet"
         ],
         "notes": [
           "Pure workflow catalog over fwh_osm \u2014 its facets dispatch to the osm-geocoder runner's handlers, so start that one first (depends_on) and mount fwh_osm read-only.",
