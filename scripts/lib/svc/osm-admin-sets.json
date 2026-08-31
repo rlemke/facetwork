@@ -34,7 +34,9 @@
         "width": 6
       },
       "merge_defaults": [
-        "osmfr_fallback"
+        "osmfr_fallback",
+        "refresh_after_days",
+        "force_refresh"
       ]
     },
     "eu-countries": {
@@ -48,7 +50,9 @@
         "admin_level": 2
       },
       "merge_defaults": [
-        "osmfr_fallback"
+        "osmfr_fallback",
+        "refresh_after_days",
+        "force_refresh"
       ]
     },
     "africa-countries": {
@@ -62,7 +66,9 @@
         "admin_level": 2
       },
       "merge_defaults": [
-        "osmfr_fallback"
+        "osmfr_fallback",
+        "refresh_after_days",
+        "force_refresh"
       ]
     },
     "asia-countries": {
@@ -76,7 +82,9 @@
         "admin_level": 2
       },
       "merge_defaults": [
-        "osmfr_fallback"
+        "osmfr_fallback",
+        "refresh_after_days",
+        "force_refresh"
       ]
     },
     "oceania-countries": {
@@ -90,7 +98,9 @@
         "admin_level": 2
       },
       "merge_defaults": [
-        "osmfr_fallback"
+        "osmfr_fallback",
+        "refresh_after_days",
+        "force_refresh"
       ]
     },
     "south-america-countries": {
@@ -104,7 +114,9 @@
         "admin_level": 2
       },
       "merge_defaults": [
-        "osmfr_fallback"
+        "osmfr_fallback",
+        "refresh_after_days",
+        "force_refresh"
       ]
     },
     "central-america-countries": {
@@ -118,7 +130,9 @@
         "admin_level": 2
       },
       "merge_defaults": [
-        "osmfr_fallback"
+        "osmfr_fallback",
+        "refresh_after_days",
+        "force_refresh"
       ]
     },
     "russia-districts": {
@@ -133,7 +147,9 @@
         "admin_level": 3
       },
       "merge_defaults": [
-        "osmfr_fallback"
+        "osmfr_fallback",
+        "refresh_after_days",
+        "force_refresh"
       ]
     },
     "rest-of-world": {
@@ -163,9 +179,11 @@
         }
       ],
       "merge_defaults": [
-        "osmfr_fallback"
+        "osmfr_fallback",
+        "refresh_after_days",
+        "force_refresh"
       ]
     }
   },
-  "_merge_defaults_comment": "The runner knobs (bucket/strategy/refresh_after_days/force_refresh) are merged into a set's inputs only for the keys listed in its merge_defaults. NOT every workflow accepts every knob: BuildPlanetExtracts has no refresh_after_days or force_refresh, so merging them blindly would fail the submission. Absent = all four (the BuildAdminSet family). A key the set states explicitly always wins."
+  "_merge_defaults_comment": "The runner knobs merge into a set's inputs only when listed here, and a set wins on any key it sets explicitly. \u26a0\ufe0f refresh_after_days defaults to 0 in the FFL, which means NEVER REFRESH \u2014 right for resume (a retry must skip what the last attempt finished) and wrong for the weekly cadence. Omitting it made us-counties report '227 extracts published' while publishing zero and leaving the counties 35 days stale (2026-08-31). BuildPlanetExtracts accepts neither refresh knob, so us-states must NOT list them."
 }
