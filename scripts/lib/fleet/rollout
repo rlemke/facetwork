@@ -55,9 +55,29 @@ _builder_driver() {
         | awk -F': *' '/^Driver:/ {print $2; exit}' \
         | tr -d '[:space:]'
 }
+#
+# ⚠️ host.docker.internal is only the fleet registry when THIS host IS the
+# registry host. Run from any other machine it resolves to that machine's OWN
+# daemon, so the build pushes to a local registry while fleet_config keeps
+# pointing at the real one — the rollout "succeeds", every host pulls the OLD
+# image, and nothing says so. Observed 2026-08-31 running from MaxPro: the
+# multi-arch manifest landed in MaxPro's registry while server3's stayed
+# single-arch. The builder already trusts the registry by name (buildkitd.toml),
+# so when the registry is REMOTE just push to it directly.
+_registry_is_local() {
+    local rhost="${REGISTRY%%:*}" me
+    me="$(hostname -s 2>/dev/null || hostname)"
+    case "$rhost" in
+        localhost|127.0.0.1|"$me"|"$me".local) return 0 ;;
+    esac
+    return 1
+}
 if [ -n "${FW_FLEET_PUSH_REGISTRY:-}" ]; then
     PUSH_REGISTRY="$FW_FLEET_PUSH_REGISTRY"
     _push_why="FW_FLEET_PUSH_REGISTRY"
+elif ! _registry_is_local; then
+    PUSH_REGISTRY="$REGISTRY"
+    _push_why="registry is remote — pushing to it by name"
 else
     # `|| true`: under `set -e` an assignment whose command substitution fails
     # aborts the script, which would make the "not inspectable" case below
@@ -71,7 +91,21 @@ else
 fi
 PUSH_REPO="$PUSH_REGISTRY/facetwork-runner"
 echo "push registry: $PUSH_REGISTRY  ($_push_why)"
-PLATFORM="${FW_FLEET_PLATFORM:-linux/arm64}"
+# Multi-arch by DEFAULT. buildx pushes a manifest list, so every host pulls its
+# own architecture from one tag and no per-host config exists to drift.
+#
+# It was arm64-only because the two Intel minis then ran EVERYTHING under
+# qemu-aarch64 — load 17 on 12 cores, 30-60 min to start 16 runners, and a
+# recurring "1/16 MISSING" that reads as a fault but is only emulation.
+# Measured 2026-08-31: an amd64 build needed ZERO code changes and took
+# 4 min cold (0 cached steps) — tippecanoe compiled from source, the pmtiles
+# TARGETARCH case already picked x86_64, and osmium/shapely/pymongo all
+# import. Docker Desktop's Rosetta layer makes the emulated half near-native,
+# so no separate amd64 builder node is required.
+#
+# Set FW_FLEET_PLATFORM=linux/arm64 to build a single arch (faster bake when
+# no x86 host is in the fleet).
+PLATFORM="${FW_FLEET_PLATFORM:-linux/amd64,linux/arm64}"
 MONGO="${FW_MONGODB_URL:-mongodb://server3.local:27017}"
 # 900s, not 240s: agents recreate their services SERIALLY, so a host's converge
 # time scales with its runner count — server3's 22 containers take well over
@@ -194,6 +228,48 @@ BUILD=(docker buildx build --builder "$BUILDER" --platform "$PLATFORM"
 [ -n "$PREV" ] && BUILD+=(--cache-from "type=registry,ref=$PREV")
 BUILD+=(--push .)
 "${BUILD[@]}"
+
+# Verify the pushed manifest actually carries EVERY platform we asked for.
+# A multi-arch bake that silently produces one arch does not fail here — it
+# fails much later, on the host whose architecture is missing, as an opaque
+# "no matching manifest for linux/amd64" during that host's reconcile. That is
+# precisely the shape that left the minis stuck on an old image for hours
+# (v62). Ask the registry directly: `buildx imagetools inspect` speaks HTTPS to
+# this insecure HTTP registry and errors, so use the v2 API.
+_verify_platforms() {
+    local want="$1" list arch_json missing=""
+    # REGISTRY, not PUSH_REGISTRY: the push alias may be a docker-internal name
+    # (host.docker.internal) that does not resolve from this shell, and the
+    # canonical name is what every host actually pulls from — so verifying it is
+    # verifying the thing that matters.
+    list="$(curl -fsS -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+              "http://${REGISTRY}/v2/facetwork-runner/manifests/${TAG}" 2>/dev/null)" || return 2
+    arch_json="$(printf '%s' "$list" | "$PYBIN_ROLLOUT" -c '
+import json,sys
+d=json.load(sys.stdin)
+print(" ".join(sorted({(m.get("platform") or {}).get("architecture","?") for m in d.get("manifests",[])})))
+' 2>/dev/null)" || return 2
+    [ -z "$arch_json" ] && return 2
+    for want_p in ${want//,/ }; do
+        case " $arch_json " in *" ${want_p#linux/} "*) ;; *) missing="$missing ${want_p}" ;; esac
+    done
+    if [ -n "$missing" ]; then
+        echo "ERROR: pushed manifest is missing:${missing}  (has: $arch_json)" >&2
+        echo "       A host of that architecture cannot pull this tag. Not flipping fleet_config." >&2
+        return 1
+    fi
+    echo "  manifest verified: $arch_json"
+    return 0
+}
+PYBIN_ROLLOUT="${FW_ROOT}/.venv/bin/python3"
+[ -x "$PYBIN_ROLLOUT" ] || PYBIN_ROLLOUT=python3
+_verify_platforms "$PLATFORM"; _vrc=$?
+if [ "$_vrc" = 1 ]; then exit 1; fi
+if [ "$_vrc" = 2 ]; then
+    # A bare `[ … ] && echo` returns 1 when the test is false, which under
+    # `set -e` silently kills the script — exactly what it did on first run.
+    echo "  WARN: could not verify the manifest's platforms (registry API unreachable) — continuing" >&2
+fi
 
 # Pre-pull locally even without --stagger. `buildx --push` does not load the
 # image into the host daemon's store, so THIS host has no copy of the tag it
