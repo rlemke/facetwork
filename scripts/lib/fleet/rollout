@@ -237,33 +237,25 @@ BUILD+=(--push .)
 # (v62). Ask the registry directly: `buildx imagetools inspect` speaks HTTPS to
 # this insecure HTTP registry and errors, so use the v2 API.
 _verify_platforms() {
-    local want="$1" list arch_json missing=""
-    # REGISTRY, not PUSH_REGISTRY: the push alias may be a docker-internal name
-    # (host.docker.internal) that does not resolve from this shell, and the
-    # canonical name is what every host actually pulls from — so verifying it is
-    # verifying the thing that matters.
-    list="$(curl -fsS -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
-              "http://${REGISTRY}/v2/facetwork-runner/manifests/${TAG}" 2>/dev/null)" || return 2
-    arch_json="$(printf '%s' "$list" | "$PYBIN_ROLLOUT" -c '
-import json,sys
-d=json.load(sys.stdin)
-print(" ".join(sorted({(m.get("platform") or {}).get("architecture","?") for m in d.get("manifests",[])})))
-' 2>/dev/null)" || return 2
-    [ -z "$arch_json" ] && return 2
-    for want_p in ${want//,/ }; do
-        case " $arch_json " in *" ${want_p#linux/} "*) ;; *) missing="$missing ${want_p}" ;; esac
-    done
-    if [ -n "$missing" ]; then
-        echo "ERROR: pushed manifest is missing:${missing}  (has: $arch_json)" >&2
-        echo "       A host of that architecture cannot pull this tag. Not flipping fleet_config." >&2
-        return 1
-    fi
-    echo "  manifest verified: $arch_json"
-    return 0
+    # Delegates to _helpers/_verify_image_blobs.py — which proves each blob has
+    # DATA behind it with a 1-byte ranged GET, not just that the platforms are
+    # listed. See that file for why a HEAD is not sufficient.
+    local out rc
+    out="$("$PYBIN_ROLLOUT" "$FW_LIB/_helpers/_verify_image_blobs.py" \
+            "$REGISTRY" facetwork-runner "$TAG" "$PLATFORM" 2>&1)"; rc=$?
+    case "$rc" in
+        0) echo "  manifest verified: ${out#OK }  (all blobs have data)" ;;
+        2) echo "  WARN: $out — continuing" >&2 ;;
+        *) echo "ERROR: $out" >&2
+           echo "       Pulls would fail with \"short read … unexpected EOF\". Not flipping fleet_config." >&2
+           echo "       Usually garbage-collect run against a LIVE registry: restart the" >&2
+           echo "       registry (clears its in-memory blob cache), then rebuild." >&2 ;;
+    esac
+    return $rc
 }
 PYBIN_ROLLOUT="${FW_ROOT}/.venv/bin/python3"
 [ -x "$PYBIN_ROLLOUT" ] || PYBIN_ROLLOUT=python3
-_verify_platforms "$PLATFORM"; _vrc=$?
+_verify_platforms; _vrc=$?
 if [ "$_vrc" = 1 ]; then exit 1; fi
 if [ "$_vrc" = 2 ]; then
     # A bare `[ … ] && echo` returns 1 when the test is false, which under
