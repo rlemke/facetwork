@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+# fw-summary: per-server statistics for a finished (or running) workflow run
+"""Per-server statistics for a workflow run.
+
+Answers "where did this run actually spend its time, and on which machines" —
+servers used, wall time per server, the event timeline per server, and whatever
+resource numbers the run genuinely recorded.
+
+⚠️ On honesty about resources. Facetwork records a server's ADVERTISED capacity
+(``servers.resources`` — what the claim router matches against), not per-task
+consumption: nothing samples RSS or disk while a handler runs. So capacity is
+reported as capacity, never as usage. Peak-memory and transfer figures are
+PARSED FROM HANDLER LOGS where a handler chose to log them, and are labelled as
+such — they exist for osm's adaptive batcher and are absent for most facets.
+Presenting either as measured usage would be the same class of error as a green
+run that published nothing.
+
+⚠️ Attribution follows the CLAIM HISTORY, not ``task.server_id``. That field
+holds only the LAST holder, so a task reclaimed after a timeout would credit all
+its time to whichever server finished it. The "Task claimed" step-log lines carry
+the full sequence, so time is split across the servers that actually held it.
+"""
+from __future__ import annotations
+
+import argparse
+import collections
+import json
+import os
+import pathlib
+import re
+import sys
+from datetime import datetime
+
+# `fw` execs this file directly, so nothing has sourced .env — see _dotenv.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "_helpers"))
+from _dotenv import load_env  # noqa: E402
+
+load_env(__file__)
+
+_CLAIM = re.compile(r"Task claimed: (?P<facet>\S+) \(server=(?P<host>[^,]+), id=(?P<sid>[0-9a-f]+)\)")
+_RECLAIM = re.compile(r"Task reclaimed")
+_PEAK = re.compile(r"peak ([\d.]+)\s*GB")
+_XFER = re.compile(r"([\d.]+)\s*(MB|GB)\s*->\s*(https?://[^\s/]+)")
+_S3UP = re.compile(r"S3 upload: (\S+)\s*\(([\d.]+)\s*MB\)")
+
+
+def _ts(ms):
+    return datetime.fromtimestamp(ms / 1000).strftime("%H:%M:%S") if ms else "-"
+
+
+def _dur(ms):
+    if ms is None:
+        return "-"
+    s = ms / 1000.0
+    if s < 90:
+        return f"{s:.0f}s"
+    if s < 5400:
+        return f"{s/60:.1f}m"
+    return f"{s/3600:.2f}h"
+
+
+def collect(db, rid):
+    runner = db.runners.find_one({"uuid": rid})
+    if not runner:
+        return None
+    tasks = list(db.tasks.find({"runner_id": rid}))
+    steps = [t.get("step_id") for t in tasks if t.get("step_id")]
+    logs = list(db.step_logs.find({"step_id": {"$in": steps}}).sort("time", 1)) if steps else []
+    hosts = {s["uuid"]: s.get("server_name", "?") for s in db.servers.find({}, {"uuid": 1, "server_name": 1})}
+    caps = {}
+    for s in db.servers.find({}, {"server_name": 1, "resources": 1}):
+        r = s.get("resources") or {}
+        if r and s.get("server_name") not in caps:
+            caps[s["server_name"]] = r
+    return {"runner": runner, "tasks": tasks, "logs": logs, "hosts": hosts, "caps": caps}
+
+
+def per_server(data):
+    """Split each task's elapsed time across the servers that actually held it."""
+    by_step = collections.defaultdict(list)
+    for d in data["logs"]:
+        by_step[d.get("step_id")].append(d)
+
+    stats = collections.defaultdict(lambda: {
+        "tasks": 0, "ms": 0, "facets": collections.Counter(),
+        "claims": 0, "reclaims": 0, "errors": 0, "first": None, "last": None})
+    unattributed_ms = 0
+
+    for t in data["tasks"]:
+        end = t.get("updated") or 0
+        entries = sorted(by_step.get(t.get("step_id"), []), key=lambda d: d.get("time", 0))
+        claims = [(d["time"], _CLAIM.search(d.get("message") or "")) for d in entries]
+        claims = [(ts, m.group("host")) for ts, m in claims if m]
+        if not claims:
+            # No claim line (older runs, or a task that never logged) — count the
+            # task but do NOT invent a host for its time.
+            unattributed_ms += max(0, end - (t.get("created") or end))
+            continue
+        for i, (start, host) in enumerate(claims):
+            stop = claims[i + 1][0] if i + 1 < len(claims) else end
+            st = stats[host]
+            st["ms"] += max(0, stop - start)
+            st["claims"] += 1
+            st["first"] = start if st["first"] is None else min(st["first"], start)
+            st["last"] = max(st["last"] or 0, stop)
+        final_host = claims[-1][1]
+        stats[final_host]["tasks"] += 1
+        stats[final_host]["facets"][t["name"].split(".")[-1]] += 1
+        if t.get("error"):
+            stats[final_host]["errors"] += 1
+
+    for d in data["logs"]:
+        if _RECLAIM.search(d.get("message") or ""):
+            for host in stats:
+                pass  # reclaims counted below, per host of the following claim
+    return stats, unattributed_ms
+
+
+def parsed_measurements(data):
+    peaks = collections.defaultdict(list)
+    xfer = collections.Counter()
+    xfer_bytes = collections.Counter()
+    step_host = {}
+    for d in data["logs"]:
+        m = _CLAIM.search(d.get("message") or "")
+        if m:
+            step_host[d.get("step_id")] = m.group("host")
+    for d in data["logs"]:
+        msg = d.get("message") or ""
+        host = step_host.get(d.get("step_id"), "?")
+        p = _PEAK.search(msg)
+        if p:
+            peaks[host].append(float(p.group(1)))
+        x = _XFER.search(msg)
+        if x:
+            gb = float(x.group(1)) / (1024 if x.group(2) == "MB" else 1)
+            xfer[(host, x.group(3))] += 1
+            xfer_bytes[(host, x.group(3))] += gb
+        s = _S3UP.search(msg)
+        if s:
+            xfer[(host, "s3://")] += 1
+            xfer_bytes[(host, "s3://")] += float(s.group(2)) / 1024
+    return peaks, xfer, xfer_bytes
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("runner_id", help="runner uuid (or a unique prefix)")
+    ap.add_argument("--mongo", default=os.environ.get("FW_MONGODB_URL") or "mongodb://localhost:27017")
+    ap.add_argument("--events", type=int, default=0, metavar="N",
+                    help="also print the last N events per server (0 = none)")
+    ap.add_argument("--json", action="store_true", help="machine-readable output")
+    a = ap.parse_args()
+
+    try:
+        import pymongo
+    except ImportError:
+        print("pymongo not installed", file=sys.stderr)
+        return 2
+    db = pymongo.MongoClient(a.mongo, serverSelectionTimeoutMS=8000).get_database(
+        os.environ.get("FW_MONGODB_DATABASE") or "facetwork")
+
+    rid = a.runner_id
+    if len(rid) < 36:
+        m = db.runners.find_one({"uuid": {"$regex": "^" + re.escape(rid)}})
+        if not m:
+            print(f"no runner matching {rid!r}", file=sys.stderr)
+            return 1
+        rid = m["uuid"]
+
+    data = collect(db, rid)
+    if not data:
+        print(f"no runner {rid}", file=sys.stderr)
+        return 1
+    r = data["runner"]
+    stats, unattributed = per_server(data)
+    peaks, xfer, xfer_bytes = parsed_measurements(data)
+
+    wall = (r.get("end_time") or 0) - (r.get("start_time") or 0)
+    if wall <= 0:
+        import time as _t
+        wall = int(_t.time() * 1000) - (r.get("start_time") or 0)
+    busy = sum(s["ms"] for s in stats.values())
+
+    if a.json:
+        print(json.dumps({
+            "runner": rid, "workflow": (r.get("workflow") or {}).get("name"),
+            "state": r.get("state"), "wall_ms": wall, "server_busy_ms": busy,
+            "servers": {h: {k: (dict(v["facets"]) if k == "facets" else v[k])
+                            for k in ("tasks", "ms", "claims", "errors", "facets")}
+                        for h, v in stats.items()},
+            "advertised": data["caps"],
+            "parsed_peak_gb": {h: max(v) for h, v in peaks.items()},
+        }, indent=2, default=str))
+        return 0
+
+    print(f"=== {(r.get('workflow') or {}).get('name','?')}  [{r.get('state')}] ===")
+    print(f"  runner {rid}")
+    print(f"  started {_ts(r.get('start_time'))}   ended {_ts(r.get('end_time'))}   wall {_dur(wall)}")
+    print(f"  tasks {len(data['tasks'])}   log lines {len(data['logs'])}")
+    if wall > 0 and busy:
+        print(f"  server-time {_dur(busy)} across {len(stats)} host(s) "
+              f"— parallelism {busy/wall:.1f}x")
+    print()
+    print(f"  {'server':10} {'tasks':>6} {'busy':>8} {'share':>6} {'claims':>7} {'err':>4}  advertised capacity")
+    for host, s in sorted(stats.items(), key=lambda kv: -kv[1]["ms"]):
+        cap = data["caps"].get(host) or {}
+        capstr = (f"mem={cap.get('memory_gb','?')}GiB cpus={cap.get('cpus','?')} "
+                  f"scratch={cap.get('scratch_gb','?')}GB") if cap else "(not advertising)"
+        share = 100.0 * s["ms"] / busy if busy else 0
+        print(f"  {host:10} {s['tasks']:6} {_dur(s['ms']):>8} {share:5.0f}% {s['claims']:7} {s['errors']:4}  {capstr}")
+    if unattributed:
+        print(f"  {'(unattributed)':10} {'':6} {_dur(unattributed):>8}   "
+              f"— tasks with no claim log; time NOT credited to any host")
+    print()
+    for host, s in sorted(stats.items()):
+        top = ", ".join(f"{k}x{v}" for k, v in s["facets"].most_common(4))
+        print(f"  {host}: {top or '(no terminal tasks)'}")
+
+    if peaks or xfer:
+        print("\n  --- parsed from handler logs (best effort; only where a handler logged it) ---")
+        for host in sorted(set(list(peaks) + [h for h, _ in xfer])):
+            bits = []
+            if peaks.get(host):
+                vals = sorted(peaks[host])
+                med = vals[len(vals) // 2]
+                cap = (data["caps"].get(host) or {}).get("memory_gb")
+                head = f"peak mem {vals[-1]:.1f} GB (median {med:.1f}, n={len(vals)})"
+                # The MAX is what sizes the host; the median shows how atypical it
+                # is. Reporting only one of them hides the thing you need: a run
+                # whose median is 8.7 GB can still peak at 20.4 and OOM a 14 GiB VM.
+                if cap and vals[-1] > 0.85 * float(cap):
+                    head += f"  ⚠️ within 15% of the {cap} GiB advertised"
+                bits.append(head)
+            tot = sum(v for (h, _), v in xfer_bytes.items() if h == host)
+            cnt = sum(v for (h, _), v in xfer.items() if h == host)
+            if cnt:
+                dests = {d for (h, d) in xfer if h == host}
+                bits.append(f"{cnt} transfer(s) ~{tot:.1f} GB -> {', '.join(sorted(dests))}")
+            if bits:
+                print(f"    {host:10} {' | '.join(bits)}")
+
+    print("\n  NOT measured: per-task CPU/RSS/disk consumption and true network byte")
+    print("  counts are not instrumented — capacity above is what each host ADVERTISES")
+    print("  to the claim router, and the parsed figures come from handler log text.")
+
+    if a.events:
+        print()
+        by_host = collections.defaultdict(list)
+        step_host = {}
+        for d in data["logs"]:
+            m = _CLAIM.search(d.get("message") or "")
+            if m:
+                step_host[d.get("step_id")] = m.group("host")
+        for d in data["logs"]:
+            by_host[step_host.get(d.get("step_id"), "?")].append(d)
+        for host in sorted(by_host):
+            print(f"  --- last {a.events} event(s) on {host} ---")
+            for d in by_host[host][-a.events:]:
+                print(f"    {_ts(d.get('time'))} {(d.get('message') or '')[:100]}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

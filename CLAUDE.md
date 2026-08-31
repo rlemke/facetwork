@@ -665,6 +665,31 @@ The first sweep found **27 dead letters across 19 facets**, the oldest 22 days.
   otherwise the task dead-letters again on its first hiccup and reads as "the
   retry did not work" rather than "it was never given a budget".
 
+### Workflow statistics — where a run actually spent its time
+
+`fw maint workflow-stats <runner_id> [--events N] [--json]` reports, for a
+finished or running workflow: the servers that took part, wall time and busy
+time per server (with a parallelism ratio), task and error counts, the facets
+each host ran, and optionally the per-host event timeline.
+
+Two things it does deliberately, because both were wrong in the obvious
+implementation:
+
+- **Attribution follows the CLAIM HISTORY, not `task.server_id`.** That field
+  holds only the LAST holder, so a task reclaimed after a timeout would credit
+  all of its time to whichever host happened to finish it. The `Task claimed`
+  step-log lines carry the full sequence, so time is split across the hosts that
+  actually held it, and tasks with no claim line are reported as
+  `(unattributed)` rather than assigned to a guess.
+- **Capacity is not usage.** Facetwork records what a server ADVERTISES
+  (`servers.resources`, what the claim router matches on); nothing samples RSS
+  or disk during a handler. So advertised capacity is labelled as such, and
+  peak-memory / transfer figures are PARSED FROM HANDLER LOG TEXT where a
+  handler chose to log them (osm's adaptive batcher does; most facets do not).
+  The report says plainly what is not measured. Peak is shown with the median
+  beside it and flagged when within 15% of the advertised ceiling — a run whose
+  median is 8.7 GB can still peak at 20.4 and OOM a 14 GiB VM.
+
 ### Terminating abandoned workflows
 
 For runs that retry/repair can't recover (e.g. a test that failed at the
