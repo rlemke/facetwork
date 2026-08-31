@@ -116,18 +116,47 @@ def per_server(data):
     return stats, unattributed_ms
 
 
+def _claim_windows(logs):
+    """step_id -> ascending [(claimed_at_ms, host)].
+
+    ⚠️ A log line must be credited to whoever held the task AT THAT MOMENT, not
+    to the last host that ever claimed it. Using the final claimer produced an
+    IMPOSSIBLE reading on 2026-08-31 — "peak mem 21.6 GB" attributed to a host
+    whose whole VM is 7.75 GiB — because server3 logged that peak at 15:23:55 and
+    MaxPro only claimed the step at 15:25:52. Same reclaim hazard the time
+    attribution already handles; the absurd number is what exposed it here.
+    """
+    w = collections.defaultdict(list)
+    for d in logs:
+        m = _CLAIM.search(d.get("message") or "")
+        if m:
+            w[d.get("step_id")].append((d.get("time", 0), m.group("host")))
+    for k in w:
+        w[k].sort()
+    return w
+
+
+def _host_at(windows, step_id, when):
+    """Which host held `step_id` at `when` — the latest claim at or before it."""
+    entries = windows.get(step_id) or []
+    host = None
+    for ts, h in entries:
+        if ts <= when:
+            host = h
+        else:
+            break
+    # A line emitted before any claim line belongs to the first claimer.
+    return host or (entries[0][1] if entries else "?")
+
+
 def parsed_measurements(data):
     peaks = collections.defaultdict(list)
     xfer = collections.Counter()
     xfer_bytes = collections.Counter()
-    step_host = {}
-    for d in data["logs"]:
-        m = _CLAIM.search(d.get("message") or "")
-        if m:
-            step_host[d.get("step_id")] = m.group("host")
+    windows = _claim_windows(data["logs"])
     for d in data["logs"]:
         msg = d.get("message") or ""
-        host = step_host.get(d.get("step_id"), "?")
+        host = _host_at(windows, d.get("step_id"), d.get("time", 0))
         p = _PEAK.search(msg)
         if p:
             peaks[host].append(float(p.group(1)))
@@ -230,7 +259,14 @@ def main() -> int:
                 # The MAX is what sizes the host; the median shows how atypical it
                 # is. Reporting only one of them hides the thing you need: a run
                 # whose median is 8.7 GB can still peak at 20.4 and OOM a 14 GiB VM.
-                if cap and vals[-1] > 0.85 * float(cap):
+                if cap and vals[-1] > float(cap):
+                    # Physically impossible: a process cannot exceed its VM. This
+                    # means MISATTRIBUTION, not overcommit — and it is exactly how
+                    # the reclaim-window bug in this tool was caught (21.6 GB shown
+                    # against a 7.75 GiB host). Report it as a data fault.
+                    head += (f"  ⚠️ EXCEEDS the {cap} GiB this host advertises — "
+                             f"impossible; suspect log misattribution, not usage")
+                elif cap and vals[-1] > 0.85 * float(cap):
                     head += f"  ⚠️ within 15% of the {cap} GiB advertised"
                 bits.append(head)
             tot = sum(v for (h, _), v in xfer_bytes.items() if h == host)
@@ -248,13 +284,9 @@ def main() -> int:
     if a.events:
         print()
         by_host = collections.defaultdict(list)
-        step_host = {}
+        windows = _claim_windows(data["logs"])
         for d in data["logs"]:
-            m = _CLAIM.search(d.get("message") or "")
-            if m:
-                step_host[d.get("step_id")] = m.group("host")
-        for d in data["logs"]:
-            by_host[step_host.get(d.get("step_id"), "?")].append(d)
+            by_host[_host_at(windows, d.get("step_id"), d.get("time", 0))].append(d)
         for host in sorted(by_host):
             print(f"  --- last {a.events} event(s) on {host} ---")
             for d in by_host[host][-a.events:]:
