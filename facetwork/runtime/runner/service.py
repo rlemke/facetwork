@@ -698,6 +698,47 @@ class RunnerService(BaseRunner):
 
     # _emit_step_log: inherited from BaseRunner (harmonized keyword-only contract).
 
+    def _prior_task_routing(self, step_id: str) -> dict:
+        """Capability-routing fields from the newest prior task on this step.
+
+        A swept step already HAD a task, created by the normal path with its
+        `requires` floor, `required_features`, environment hash and timeout
+        resolved from the AST. This recovery path has no evaluator context to
+        re-derive them, so it inherits them instead — otherwise the recreated
+        task is claimable by any runner regardless of what it can actually serve.
+
+        Returns only the keys it could recover. When nothing is recoverable it
+        WARNS rather than silently returning an unrouted task: recovery still
+        matters more than perfect routing, but a task that quietly lost its
+        constraints is how a 7.75 GiB host ended up claiming 10 GiB work.
+        """
+        try:
+            prior = list(self._persistence.get_tasks_by_step(step_id) or [])
+        except Exception:
+            prior = []
+        best = None
+        for t in sorted(prior, key=lambda x: getattr(x, "created", 0) or 0, reverse=True):
+            if (getattr(t, "requires", None) or getattr(t, "required_features", None)
+                    or getattr(t, "environment_hash", "")):
+                best = t
+                break
+        if best is None:
+            logger.warning(
+                "Sweep: no prior task on step %s carried capability routing — the "
+                "recreated task has NO resource floor, feature or environment "
+                "constraint and may be claimed by a runner that cannot serve it",
+                step_id[:12],
+            )
+            return {}
+        out: dict = {}
+        for field, default in (("requires", None), ("required_features", None),
+                               ("environment_hash", ""), ("kind", ""), ("timeout_ms", None)):
+            val = getattr(best, field, default)
+            if val:
+                out[field] = dict(val) if isinstance(val, dict) else (
+                    list(val) if isinstance(val, list) else val)
+        return out
+
     def _lookup_runner_context(self, workflow_id: str) -> tuple[str, str]:
         """Return ``(runner_id, qualified_workflow_name)`` for a workflow.
 
@@ -1661,6 +1702,23 @@ class RunnerService(BaseRunner):
                 budget.consume()
 
             runner_id, _ = self._lookup_runner_context(workflow_id)
+            now = _current_time_ms()
+            # ⚠️ Carry the CAPABILITY ROUTING forward. The normal creation path
+            # (handlers/completion._create_event_task) derives requires /
+            # required_features / environment_hash / timeout_ms from the step's
+            # mixins and AST; this recovery path has no evaluator context, so
+            # recreating a bare task silently STRIPPED all of it.
+            #
+            # Measured 2026-08-31: 7 swept BuildAdminSet tasks carried
+            # `requires: {}` instead of `{memory_gb: 10}`, and a 7.75 GiB host
+            # claimed work floored at 10 GiB — the resource routing bypassed
+            # exactly when recovery made it matter most. Losing
+            # `required_features` is the same shape as the bug that left two
+            # stocks snapshots unclaimable for days.
+            #
+            # The prior task on this step was built by the normal path, so
+            # inherit from it rather than re-deriving without the context.
+            prior = self._prior_task_routing(step.id)
             task = TaskDefinition(
                 uuid=generate_id(),
                 name=facet_name,
@@ -1669,10 +1727,13 @@ class RunnerService(BaseRunner):
                 flow_id="",
                 step_id=step.id,
                 state=TaskState.PENDING,
+                created=now,
+                updated=now,
                 # Route by the facet's own namespace so the recreated
                 # task lands on the list its handler-runners poll.
                 task_list_name=namespace_of(facet_name),
                 data=_step_params_as_payload(step),
+                **prior,
             )
             self._persistence.save_task(task)
             logger.info(
