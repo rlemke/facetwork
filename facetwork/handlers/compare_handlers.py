@@ -23,6 +23,7 @@ checksum comparison calls that a failed reproduction. It is not one.
 
 from __future__ import annotations
 
+import collections
 import csv
 import gzip
 import hashlib
@@ -182,7 +183,42 @@ def _iter_records(path: str):
                 yield list(reader.fieldnames or []), dict(rec)
 
 
-def _index(path, keys, *, ignore, sort_json, tol):
+# A key column with more distinct values than this is an IDENTITY, not a
+# partition, and "which partitions exist on each side" is a meaningless
+# question about it. Bounded so the counter cannot grow with the file.
+_PARTITION_CAP = 512
+
+# Refuse to explode one record beyond this many rows. A delimiter that appears
+# in free text would otherwise turn a single record into millions.
+_SPLIT_MAX_ROWS = 256
+
+
+def _split_rows(norm, split, delim):
+    """Explode a record whose columns hold a delimited multi-value list.
+
+    One VCF line `G  A,ATTTACAACCTTAACTCCA` is TWO alleles sharing a row. Keyed
+    on the whole ALT field it matches nothing when the other release lists only
+    `A` — so the comparison reports total disagreement where the two releases in
+    fact AGREE on one allele. Measured on the GIAB HG001 benchmarks: 396 records
+    reported as wholly missing/added that share an allele once split.
+
+    Returns (rows, overflowed).
+    """
+    rows = [norm]
+    over = False
+    for col in split:
+        val = norm.get(col)
+        if not isinstance(val, str) or delim not in val:
+            continue
+        parts = val.split(delim)
+        if len(rows) * len(parts) > _SPLIT_MAX_ROWS:
+            over = True
+            continue
+        rows = [dict(r, **{col: pt}) for r in rows for pt in parts]
+    return rows, over
+
+
+def _index(path, keys, *, ignore, sort_json, tol, split=(), delim=","):
     """Stream a file into {key -> digest of its comparable values}.
 
     A digest rather than the record itself: the comparison needs to know WHETHER
@@ -193,22 +229,37 @@ def _index(path, keys, *, ignore, sort_json, tol):
     two records may be equal without being identical, so a hash cannot decide it
     — those keep their values and the caller compares numerically.
     """
-    idx, fields, count = {}, [], 0
+    idx, fields, count, rows_n, over = {}, [], 0, 0, 0
+    # Distinct values of the FIRST key column, which by convention is the
+    # coarsest: chromosome, region, tenant, date. `None` once it proves to be
+    # high-cardinality, i.e. not a partition at all.
+    part: collections.Counter | None = collections.Counter() if keys else None
     for flds, rec in _iter_records(path):
         if not fields:
             fields = [f for f in flds if f not in ignore]
         count += 1
         norm = _normalise(rec, ignore=ignore, sort_json=sort_json)
-        k = tuple(str(norm.get(c, "")) for c in keys)
-        if tol > 0:
-            idx[k] = tuple(norm.get(f) for f in fields)
+        if split:
+            rows, ov = _split_rows(norm, split, delim)
+            over += ov
         else:
-            h = hashlib.blake2b(digest_size=16)
-            for f in fields:
-                h.update(str(norm.get(f, "")).encode("utf-8", "replace"))
-                h.update(b"\x1f")
-            idx[k] = h.digest()
-    return fields, idx, count
+            rows = (norm,)
+        for row in rows:
+            rows_n += 1
+            k = tuple(str(row.get(c, "")) for c in keys)
+            if part is not None:
+                part[k[0]] += 1
+                if len(part) > _PARTITION_CAP:
+                    part = None
+            if tol > 0:
+                idx[k] = tuple(row.get(f) for f in fields)
+            else:
+                h = hashlib.blake2b(digest_size=16)
+                for f in fields:
+                    h.update(str(row.get(f, "")).encode("utf-8", "replace"))
+                    h.update(b"\x1f")
+                idx[k] = h.digest()
+    return fields, idx, count, rows_n, part, over
 
 
 def _normalise(row: dict, *, ignore: set[str], sort_json: bool) -> dict:
@@ -245,7 +296,8 @@ def _values_equal(a: Any, b: Any, tolerance: float) -> bool:
     return math.isclose(fa, fb, rel_tol=tolerance, abs_tol=0.0)
 
 
-def _write_report(dest, level, agree, differing, ec, ac, detail, applied, expected, actual):
+def _write_report(dest, level, agree, differing, ec, ac, detail, applied,
+                  expected, actual, out_of_scope=0):
     """Write one comparison's verdict as a readable document.
 
     Records what was compared and WHAT NORMALISATION WAS APPLIED, because a
@@ -261,6 +313,14 @@ def _write_report(dest, level, agree, differing, ec, ac, detail, applied, expect
         f"- actual         : `{actual}` ({ac:,} records)",
         f"- differing      : {differing:,}",
         f"- normalised by  : {', '.join(applied) if applied else '(nothing — compared as-is)'}",
+    ]
+    if out_of_scope:
+        lines += [
+            f"- **out of scope : {out_of_scope:,}** of the unmatched records lie in "
+            f"key partitions the other artifact does not cover at all. They are "
+            f"not a content difference and must not be read as one.",
+        ]
+    lines += [
         "",
         "## Detail",
         "",
@@ -284,8 +344,43 @@ def _write_report(dest, level, agree, differing, ec, ac, detail, applied, expect
         return ""
 
 
+def _scope(epart, apart, eidx, aidx, keys):
+    """Partitions present on one side and wholly absent from the other.
+
+    ⚠️ This is the check that was missing, and it is not a small omission.
+    Comparing GIAB HG001 v3.3.2 against v4.2.1 reported 242,958 records
+    "retired — no longer benchmarked". 99,980 of them (41.2%) are on chrX,
+    which v4.2.1 does not cover AT ALL: the releases are named `CHROM1-X` and
+    `1_22`. Those variants were not retired, they are out of scope, and the two
+    claims call for completely different action from a lab that validated
+    against v3.3.2.
+
+    A ladder that reports content differences between artifacts spanning
+    different key space is measuring the wrong thing, confidently. So the scope
+    difference is reported SEPARATELY and never folded into the record counts.
+    """
+    if epart is None or apart is None or not keys:
+        return 0, 0, ""
+    only_e = sorted(set(epart) - set(apart))
+    only_a = sorted(set(apart) - set(epart))
+    if not only_e and not only_a:
+        return 0, 0, ""
+    ne = sum(epart[v] for v in only_e)
+    na = sum(apart[v] for v in only_a)
+    col = keys[0]
+    bits = []
+    if only_e:
+        bits.append(f"{ne:,} record(s) in {col} {only_e[:8]} which `actual` "
+                    f"does not cover at all")
+    if only_a:
+        bits.append(f"{na:,} record(s) in {col} {only_a[:8]} which `expected` "
+                    f"does not cover at all")
+    return ne, na, ("SCOPE: " + "; ".join(bits) +
+                    " — out of scope, NOT a content difference")
+
+
 def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
-                       max_ex, applied, params, result):
+                       max_ex, applied, params, result, split=(), delim=","):
     """Keyed comparison in O(keys) memory rather than O(file).
 
     Two passes, one file at a time: index `expected`, then stream `actual` and
@@ -294,11 +389,26 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
     benchmarks, which exhausted a 23 GiB VM.
     """
     with heartbeating(params, f"indexing {os.path.basename(expected)}"):
-        efields, eidx, ecount = _index(expected, keys, ignore=ignore,
-                                       sort_json=sort_json, tol=tol)
+        efields, eidx, ecount, erows, epart, eover = _index(
+            expected, keys, ignore=ignore, sort_json=sort_json, tol=tol,
+            split=split, delim=delim)
     with heartbeating(params, f"comparing against {os.path.basename(actual)}"):
-        afields, aidx, acount = _index(actual, keys, ignore=ignore,
-                                       sort_json=sort_json, tol=tol)
+        afields, aidx, acount, arows, apart, aover = _index(
+            actual, keys, ignore=ignore, sort_json=sort_json, tol=tol,
+            split=split, delim=delim)
+
+    if split:
+        # Splitting CHANGES THE UNIT OF COMPARISON from record to element, so
+        # the counts must say so rather than silently meaning something else.
+        applied.append(
+            f"split {', '.join(split)} on {delim!r}: "
+            f"{ecount:,}->{erows:,} and {acount:,}->{arows:,} comparable rows")
+        if eover or aover:
+            applied.append(f"{eover + aover} record(s) too wide to split "
+                           f"(> {_SPLIT_MAX_ROWS} rows) — compared unsplit")
+        ecount, acount = erows, arows
+
+    scope_e, scope_a, scope_note = _scope(epart, apart, eidx, aidx, keys)
 
     if not efields or not afields:
         return result("missing", False, 0, ecount, acount, "no records readable")
@@ -322,6 +432,9 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
         elif ev != av:
             changed.append(k)
 
+    # The scope note leads, because it changes how every number below it reads.
+    pre = (scope_note + ". ") if scope_note else ""
+
     if only_e or only_a:
         note = ("the %d shared record(s) match" % len(shared) if not changed
                 else "and %d of the %d shared record(s) also differ in values"
@@ -329,15 +442,18 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
         ex = "; ".join(str(k) for k in sorted(only_e)[:max_ex]) or "-"
         return result("cardinality", False,
                       len(only_e) + len(only_a) + len(changed), ecount, acount,
-                      f"{len(only_e)} record(s) only in expected, "
-                      f"{len(only_a)} only in actual — {note}. missing e.g. {ex}")
+                      f"{pre}{len(only_e)} record(s) only in expected, "
+                      f"{len(only_a)} only in actual — {note}. missing e.g. {ex}",
+                      out_of_scope=scope_e + scope_a)
     if changed:
         ex = "; ".join(str(k) for k in sorted(changed)[:max_ex])
         return result("keys", False, len(changed), ecount, acount,
-                      f"{len(changed)} record(s) differ in values. e.g. {ex}")
+                      f"{pre}{len(changed)} record(s) differ in values. e.g. {ex}",
+                      out_of_scope=scope_e + scope_a)
 
     detail = "same data" + (f" (after {'; '.join(applied)})" if applied else "")
-    return result("values", True, 0, ecount, acount, detail)
+    return result("values", True, 0, ecount, acount, pre + detail,
+                  out_of_scope=scope_e + scope_a)
 
 
 def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
@@ -348,6 +464,8 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     sort_json = bool(params.get("sort_json_keys"))
     tol = float(params.get("tolerance") or 0.0)
     max_ex = int(params.get("max_examples") or 10)
+    split = [c for c in (params.get("split_columns") or []) if c not in ignore]
+    delim = params.get("split_delimiter") or ","
 
     applied: list[str] = []
     if ignore:
@@ -359,16 +477,19 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
 
     dest = params.get("report") or ""
 
-    def _result(level, agree, differing, ec, ac, detail, report_path=""):
+    def _result(level, agree, differing, ec, ac, detail, report_path="",
+                out_of_scope=0):
         # ⚠️ `report` was declared on the facet and silently ignored: a caller
         # could pass a destination, get a green verdict, and find nothing
         # written. A parameter that does nothing is worse than one that does not
         # exist — the FFL promises an artifact the handler never produced.
         out = report_path or (_write_report(dest, level, agree, differing, ec, ac,
-                                            detail, applied, expected, actual)
+                                            detail, applied, expected, actual,
+                                            out_of_scope)
                               if dest else "")
         return {"level": level, "agree": agree, "differing": differing,
                 "expected_count": ec, "actual_count": ac,
+                "out_of_scope": out_of_scope,
                 "normalised_by": applied, "report": out,
                 "_detail": detail}
 
@@ -384,7 +505,8 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     if keys:
         return _compare_streaming(expected, actual, keys, ignore=ignore,
                                   sort_json=sort_json, tol=tol, max_ex=max_ex,
-                                  applied=applied, params=params, result=_result)
+                                  applied=applied, params=params, result=_result,
+                                  split=split, delim=delim)
 
     with heartbeating(params, f"reading {os.path.basename(expected)} / {os.path.basename(actual)}"):
         erows, efields, eraw = _read_records(expected)

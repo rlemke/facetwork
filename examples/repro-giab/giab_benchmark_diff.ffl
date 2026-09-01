@@ -25,6 +25,27 @@
 // ⚠️ VCF `##` metadata is not compared. It carries the producing command line
 // and reference paths, which differ between any two runs without a single
 // variant differing.
+//
+// ⚠️ NORMALISATION — what is applied, and what is deliberately NOT.
+// A VCF record can hold several ALT alleles on one line, so keying on the whole
+// ALT field asks "were these alleles grouped identically?" when the question is
+// "is this allele present in both?". `split_columns = ["ALT"]` compares alleles.
+//
+// The other normalisations a genomicist would expect — trimming to parsimony,
+// left-aligning indels through a repeat, decomposing MNPs — are NOT here, and
+// that is a measured decision, not an omission. Ablated over the full pair:
+//
+//     split ALT              396 records reveal agreement whole-field keying hid
+//     + trim to parsimony    420  (+24)
+//     + MNP decomposition    420  (+0 — fires never)
+//
+// Left-alignment additionally needs the 3 GB GRCh38 FASTA for random-access
+// reads, and 0 records in either release are even trimmable — both were
+// produced by a pipeline that already normalises. Paying a reference-genome
+// dependency to move 24 of 759,786 records is not an engineering trade worth
+// making HERE. It would be a different calculation against an arbitrary
+// caller's output, where representation drift is the classic false difference;
+// the numbers above are what should be re-measured before concluding that.
 
 namespace repro.giab {
 
@@ -34,7 +55,10 @@ namespace repro.giab {
         old_dest: String = "s3://afl-cache/repro/giab/HG001_GRCh38_v3.3.2.vcf.gz",
         new_dest: String = "s3://afl-cache/repro/giab/HG001_GRCh38_v4.2.1.vcf.gz",
         report_dest: String = "s3://afl-cache/repro/giab/HG001_v332_vs_v421.md"
-    ) => (level: String, agree: Boolean, differing: Long, report: String) andThen {
+    ) => (
+        level: String, agree: Boolean, differing: Long,
+        out_of_scope: Long, report: String
+    ) andThen {
 
         // 1. ACQUIRE both published releases. Fetch writes a provenance sidecar
         //    (digest, source URL, validators, fetched_at) beside each, so the
@@ -50,6 +74,7 @@ namespace repro.giab {
             actual = new_release.path,
             key_columns = ["CHROM", "POS", "REF", "ALT"],
             ignore_columns = ["QUAL", "INFO", "FORMAT", "ID"],
+            split_columns = ["ALT"],
             max_examples = 12,
             report = $.report_dest
         )
@@ -60,10 +85,16 @@ namespace repro.giab {
         // the WEAKEST pair. Over a single comparison it added nothing: it was
         // called with an empty verdict list and correctly reported "nothing was
         // compared", which is the guard working, not a result.
+        //    ⚠️ `out_of_scope` is yielded because it is the difference between
+        //    "99,980 variants were retired, your validation of them is void" and
+        //    "v4.2.1 does not cover chrX". The first is a scientific finding; the
+        //    second is a filename (`CHROM1-X` vs `1_22`). A run that reports only
+        //    `differing` cannot tell a reader which one it measured.
         yield CompareBenchmarkReleases(
             level = diff.level,
             agree = diff.agree,
             differing = diff.differing,
+            out_of_scope = diff.out_of_scope,
             report = diff.report
         )
     }

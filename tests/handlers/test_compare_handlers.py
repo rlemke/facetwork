@@ -209,3 +209,105 @@ def test_missing_heartbeat_callback_is_safe(tmp_path):
     a = _w(tmp_path, "a.csv", BASE)
     r = handle_tabular({"expected": a, "actual": a})
     assert r["level"] == "bytes" and r["agree"]
+
+
+# --------------------------------------------------------------------------
+# split_columns — a delimited multi-value column is a LIST, not an identity
+# --------------------------------------------------------------------------
+
+def _vcf(tmp_path, name, rows):
+    p = tmp_path / name
+    p.write_text("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\n"
+                 + "".join(f"{r}\t.\n" for r in rows))
+    return str(p)
+
+
+KEYS = ["CHROM", "POS", "REF", "ALT"]
+
+
+def test_split_columns_reveals_agreement_whole_field_keying_hides(tmp_path):
+    """Two artifacts listing the same allele in different company must MATCH.
+
+    Without splitting, `G>A,ATTTACAACC` and `G>A` share no key at all and the
+    ladder reports total disagreement between records that agree on `G>A`.
+    """
+    a = _vcf(tmp_path, "a.vcf", ["chr1\t100\t.\tG\tA,ATTTACAACC"])
+    b = _vcf(tmp_path, "b.vcf", ["chr1\t100\t.\tG\tA"])
+
+    unsplit = handle_tabular({"expected": a, "actual": b, "key_columns": KEYS,
+                              "ignore_columns": ["QUAL", "ID"]})
+    assert unsplit["differing"] == 2  # one missing, one added — nothing shared
+
+    split = handle_tabular({"expected": a, "actual": b, "key_columns": KEYS,
+                            "ignore_columns": ["QUAL", "ID"],
+                            "split_columns": ["ALT"]})
+    assert split["differing"] == 1  # only the second allele is unmatched
+    assert any("split ALT" in n for n in split["normalised_by"])
+
+
+def test_split_reports_the_changed_unit(tmp_path):
+    """Splitting changes counts from records to elements — it must SAY so.
+
+    A count that silently switches unit is worse than no count: the reader has
+    no way to know the number means something different than it did before.
+    """
+    a = _vcf(tmp_path, "a.vcf", ["chr1\t100\t.\tG\tA,C,T"])
+    r = handle_tabular({"expected": a, "actual": a, "key_columns": KEYS,
+                        "ignore_columns": ["QUAL", "ID"],
+                        "split_columns": ["ALT"]})
+    assert r["expected_count"] == 3 and r["agree"]
+    assert "1->3" in " ".join(r["normalised_by"])
+
+
+def test_split_refuses_to_explode_a_record_without_bound(tmp_path):
+    """A delimiter appearing in free text must not detonate the comparison."""
+    from facetwork.handlers.compare_handlers import _SPLIT_MAX_ROWS
+    wide = ",".join(str(i) for i in range(_SPLIT_MAX_ROWS + 50))
+    a = _vcf(tmp_path, "a.vcf", [f"chr1\t100\t.\tG\t{wide}"])
+    r = handle_tabular({"expected": a, "actual": a, "key_columns": KEYS,
+                        "ignore_columns": ["QUAL", "ID"],
+                        "split_columns": ["ALT"]})
+    assert r["agree"]
+    assert any("too wide to split" in n for n in r["normalised_by"])
+
+
+# --------------------------------------------------------------------------
+# out_of_scope — different key space is not a content difference
+# --------------------------------------------------------------------------
+
+def test_partition_absent_from_the_other_side_is_scope_not_content(tmp_path):
+    """The GIAB chrX case: 41.2% of "retired" records were never in scope."""
+    a = _vcf(tmp_path, "a.vcf", ["chr1\t100\t.\tG\tA",
+                                 "chrX\t200\t.\tC\tT",
+                                 "chrX\t300\t.\tA\tG"])
+    b = _vcf(tmp_path, "b.vcf", ["chr1\t100\t.\tG\tA"])
+    r = handle_tabular({"expected": a, "actual": b, "key_columns": KEYS,
+                        "ignore_columns": ["QUAL", "ID"]})
+    assert r["out_of_scope"] == 2
+    assert "chrX" in r["_detail"] and "NOT a content difference" in r["_detail"]
+
+
+def test_no_scope_claim_when_both_sides_span_the_same_partitions(tmp_path):
+    """A plain content difference must not be dressed up as a scope one."""
+    a = _vcf(tmp_path, "a.vcf", ["chr1\t100\t.\tG\tA", "chr1\t200\t.\tC\tT"])
+    b = _vcf(tmp_path, "b.vcf", ["chr1\t100\t.\tG\tA"])
+    r = handle_tabular({"expected": a, "actual": b, "key_columns": KEYS,
+                        "ignore_columns": ["QUAL", "ID"]})
+    assert r["out_of_scope"] == 0
+    assert "SCOPE" not in r["_detail"]
+
+
+def test_high_cardinality_first_key_is_not_treated_as_a_partition(tmp_path):
+    """`out_of_scope` is meaningless for an identity column, so do not claim it.
+
+    Every row would be its own "partition" and a plain content difference would
+    be reported as a total scope mismatch.
+    """
+    from facetwork.handlers.compare_handlers import _PARTITION_CAP
+    rows = [f"chr{i}\t100\t.\tG\tA" for i in range(_PARTITION_CAP + 10)]
+    a = _vcf(tmp_path, "a.vcf", rows)
+    b = _vcf(tmp_path, "b.vcf", rows[:-5])
+    r = handle_tabular({"expected": a, "actual": b, "key_columns": KEYS,
+                        "ignore_columns": ["QUAL", "ID"]})
+    assert r["out_of_scope"] == 0
+    assert r["differing"] == 5

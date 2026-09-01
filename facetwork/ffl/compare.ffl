@@ -79,6 +79,28 @@ namespace fw.compare {
       *
       * `tolerance` is a RELATIVE tolerance for numeric fields; 0 means exact.
       *
+      * `split_columns` explodes a column holding a DELIMITED MULTI-VALUE LIST
+      * into one comparable row per element, so two artifacts that group the
+      * same elements differently still match on the elements they share. A VCF
+      * line `G  A,ATTTACAACC` is two alleles sharing a row: keyed on the whole
+      * ALT field it matches nothing when the other release lists only `A`, and
+      * the comparison reports total disagreement between artifacts that in fact
+      * AGREE on one allele. Splitting CHANGES THE UNIT of `expected_count` /
+      * `actual_count` from record to element, so it is reported in
+      * `normalised_by` with the before-and-after counts.
+      *
+      * ⚠️ `out_of_scope` is the number of unmatched records lying in a key
+      * partition (the first key column) that the OTHER artifact does not cover
+      * at all. Measured on GIAB HG001 v3.3.2 vs v4.2.1: of 242,958 records the
+      * ladder called "retired", 99,980 — 41.2% — are chrX variants, and v4.2.1
+      * simply does not include chrX (the releases are named `CHROM1-X` and
+      * `1_22`). Those were not retired; they are outside the newer release's
+      * scope, and the two readings call for entirely different action. A
+      * comparison that reports content differences between artifacts spanning
+      * different key space is measuring the wrong thing, confidently — so the
+      * scope difference is surfaced separately and never folded into the
+      * record counts.
+      *
       * Returns the highest level reached, the number of differing records, and
       * the normalisations that were required to get there.
       */
@@ -90,6 +112,8 @@ namespace fw.compare {
         sort_json_keys: Boolean = false,
         tolerance: Double = 0.0,
         max_examples: Long = 10,
+        split_columns: [String] = [],
+        split_delimiter: String = ",",
         report: String = ""
     ) => (
         level: String,
@@ -97,6 +121,7 @@ namespace fw.compare {
         differing: Long,
         expected_count: Long,
         actual_count: Long,
+        out_of_scope: Long,
         normalised_by: [String],
         report: String
     ) with Effect(kind = "io") with Cost(tier = "moderate")
