@@ -156,3 +156,56 @@ def test_gzipped_input_is_read(tmp_path):
         fh.write(VCF.encode())
     r = handle_tabular({"expected": str(p), "actual": str(p)})
     assert r["level"] == "bytes" and r["agree"]
+
+
+def test_heartbeat_ticks_during_a_blocking_call():
+    """Built-in handlers that block MUST signal liveness.
+
+    Regression for 2026-09-01: fw.compare.Tabular comparing two 100 MB+ VCFs was
+    reclaimed mid-run ("server silent for 120s") and re-dispatched onto a second
+    host while the first was still working. No built-in handler signalled
+    liveness at all until then, though the runtime injects the callback.
+
+    Tests the MECHANISM rather than hoping a comparison is slow enough to
+    observe — a test that depends on real work being slow is a flaky test.
+    """
+    import time
+
+    import facetwork.handlers._heartbeat as hb_mod
+
+    calls = []
+    original = hb_mod._INTERVAL_S
+    hb_mod._INTERVAL_S = 0.02
+    try:
+        with hb_mod.heartbeating({"_task_heartbeat": lambda *a, **k: calls.append(1)},
+                                 "blocking phase"):
+            time.sleep(0.15)           # stands in for the blocking call
+    finally:
+        hb_mod._INTERVAL_S = original
+    assert calls, "no heartbeat emitted while a blocking call was in flight"
+
+
+def test_heartbeat_thread_stops_after_the_block():
+    """The ticker must not outlive the work it reports on."""
+    import time
+
+    import facetwork.handlers._heartbeat as hb_mod
+
+    calls = []
+    original = hb_mod._INTERVAL_S
+    hb_mod._INTERVAL_S = 0.02
+    try:
+        with hb_mod.heartbeating({"_task_heartbeat": lambda *a, **k: calls.append(1)}, "x"):
+            time.sleep(0.06)
+        seen = len(calls)
+        time.sleep(0.12)
+        assert len(calls) == seen, "heartbeat kept ticking after the block exited"
+    finally:
+        hb_mod._INTERVAL_S = original
+
+
+def test_missing_heartbeat_callback_is_safe(tmp_path):
+    """Direct/CLI/test callers pass no callback; wrapping must stay a no-op."""
+    a = _w(tmp_path, "a.csv", BASE)
+    r = handle_tabular({"expected": a, "actual": a})
+    assert r["level"] == "bytes" and r["agree"]

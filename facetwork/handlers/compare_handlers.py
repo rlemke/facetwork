@@ -31,6 +31,7 @@ import math
 import os
 from typing import Any
 
+from facetwork.handlers._heartbeat import heartbeating
 from facetwork.runtime.storage import get_storage_backend
 
 logger = logging.getLogger(__name__)
@@ -179,8 +180,11 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     if missing:
         return _result("missing", False, 0, 0, 0, f"not readable: {'; '.join(missing)}")
 
-    erows, efields, eraw = _read_records(expected)
-    arows, afields, araw = _read_records(actual)
+    # Reading two large artifacts (S3 fetch + decompress + parse of millions of
+    # records) is minutes of blocking work with no loop to hook — see _heartbeat.
+    with heartbeating(params, f"reading {os.path.basename(expected)} / {os.path.basename(actual)}"):
+        erows, efields, eraw = _read_records(expected)
+        arows, afields, araw = _read_records(actual)
 
     # --- rung: bytes (checked first; if identical everything below holds) ----
     if eraw == araw:
@@ -241,10 +245,11 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
 
     # --- rung: values -------------------------------------------------------
     diffs = []
-    for k, e, a in pairs:
-        bad = [f for f in ef if not _values_equal(e.get(f), a.get(f), tol)]
-        if bad:
-            diffs.append((k, bad, {f: (e.get(f), a.get(f)) for f in bad[:3]}))
+    with heartbeating(params, f"comparing {len(pairs)} record(s)"):
+        for k, e, a in pairs:
+            bad = [f for f in ef if not _values_equal(e.get(f), a.get(f), tol)]
+            if bad:
+                diffs.append((k, bad, {f: (e.get(f), a.get(f)) for f in bad[:3]}))
     if diffs:
         ex = "; ".join(f"{k}: {d}" for k, _b, d in diffs[:max_ex])
         return _result("keys", False, len(diffs), len(en), len(an),
