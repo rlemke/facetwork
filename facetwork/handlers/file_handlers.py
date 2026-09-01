@@ -37,6 +37,7 @@ import logging
 import os
 from typing import Any
 
+from facetwork.handlers._heartbeat import heartbeats
 from facetwork.runtime.storage import get_storage_backend
 
 logger = logging.getLogger(__name__)
@@ -153,6 +154,7 @@ def handle_stat(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@heartbeats("hashing")
 def handle_hash(params: dict[str, Any]) -> dict[str, Any]:
     """Content digest, read in chunks.
 
@@ -249,6 +251,7 @@ def handle_write_json(params: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+@heartbeats("copying")
 def handle_copy(params: dict[str, Any]) -> dict[str, Any]:
     """Copy, streamed.
 

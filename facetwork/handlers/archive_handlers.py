@@ -50,6 +50,7 @@ import tarfile
 import zipfile
 from typing import Any
 
+from facetwork.handlers._heartbeat import heartbeats
 from facetwork.runtime.storage import LocalStorageBackend, get_storage_backend
 
 logger = logging.getLogger(__name__)
@@ -284,6 +285,7 @@ def _safe_target(dest: str, name: str, strip: int, fs: Any) -> str | None:
     return fs.join(dest, *parts)
 
 
+@heartbeats("extracting archive")
 def handle_extract(params: dict[str, Any]) -> dict[str, Any]:
     archive = params["archive"]
     dest = params["dest"]

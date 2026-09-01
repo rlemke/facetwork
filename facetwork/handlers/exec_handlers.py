@@ -50,6 +50,7 @@ import threading
 import time
 from typing import Any
 
+from facetwork.handlers._heartbeat import heartbeats
 from facetwork.runtime.errors import PermanentError
 
 logger = logging.getLogger(__name__)
@@ -164,6 +165,7 @@ def _drain(stream: Any, cap: int, out: dict, key: str) -> None:
     out[key + "_total"] = total
 
 
+@heartbeats("running external command")
 def handle_run(params: dict[str, Any]) -> dict[str, Any]:
     command = params["command"]
     args = [str(a) for a in _as_list(params.get("args"))]

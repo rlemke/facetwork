@@ -99,7 +99,7 @@ namespace fw.compare {
         actual_count: Long,
         normalised_by: [String],
         report: String
-    ) with Effect(kind = "io") with Cost(tier = "cheap")
+    ) with Effect(kind = "io") with Cost(tier = "moderate")
 
     /** Aggregate many `Tabular` verdicts into one discrepancy report.
       *

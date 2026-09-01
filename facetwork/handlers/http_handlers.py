@@ -51,6 +51,7 @@ import urllib.request
 from datetime import UTC, datetime
 from typing import Any
 
+from facetwork.handlers._heartbeat import heartbeats
 from facetwork.runtime.storage import LocalStorageBackend, get_storage_backend
 
 logger = logging.getLogger(__name__)
@@ -227,6 +228,7 @@ def _integrity_ok(fs: Any, dest: str, side: dict, url: str, expected: str, step_
     return True
 
 
+@heartbeats("fetching")
 def handle_fetch(params: dict[str, Any]) -> dict[str, Any]:
     url = params["url"]
     dest = params["dest"]

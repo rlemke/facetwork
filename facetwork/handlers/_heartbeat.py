@@ -82,3 +82,31 @@ def heartbeating(params: dict[str, Any], what: str) -> Iterator[None]:
         yield
     finally:
         stop.set()
+
+
+def heartbeats(what: str):
+    """Decorator form: keep a whole handler's liveness alive.
+
+    Preferred over an inline `with` for built-ins whose blocking work is the
+    entire body. It cannot be misplaced — there is no call site to forget, no
+    block to indent wrongly, and adding it to a new handler is one line. That
+    matters more than elegance here: the inline form was applied to one of four
+    call sites in a domain package, twice, on the same day.
+
+    Reports elapsed time for the whole invocation, which is the honest signal
+    for opaque work: it says "still running", not "making progress".
+    """
+    def _decorate(fn):
+        import functools
+
+        @functools.wraps(fn)
+        def _wrapped(params, *a, **kw):
+            with heartbeating(params if isinstance(params, dict) else {}, what):
+                return fn(params, *a, **kw)
+
+        # functools.wraps makes inspect.getsource return the UNDECORATED source,
+        # so a text check for "heartbeating" would not see this. Mark the wrapper
+        # explicitly — the enforcement test asks the object, not the text.
+        _wrapped._fw_heartbeats = what
+        return _wrapped
+    return _decorate
