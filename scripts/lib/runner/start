@@ -327,6 +327,29 @@ PYEOF
     # read). Removing first guarantees exactly $REPLICAS fresh containers per
     # service. Same pattern as fw single rebuild-runners --up.
     if [[ "$RECREATE" == "1" ]]; then
+        # ⚠️ NEVER REMOVE A RUNNING CONTAINER BEFORE ITS REPLACEMENT IMAGE IS ON
+        # DISK. `rm -sf` is destructive and the pull used to happen inside the
+        # `up -d` below — so a slow registry left the service with ZERO
+        # containers, and the fleet-agent bounds this whole call at 600s.
+        #
+        # Measured on server1 (Intel mini, 2.3 GB image): every reconcile
+        # removed runner-ffl, started the pull, hit "docker call timed out after
+        # 600s", tripped the agent's 900s watchdog, force-exited for a
+        # supervisor restart, and began again. The host did not merely lag — it
+        # SHED a runner per cycle (15 -> 14 -> …) while looking, from the
+        # outside, like an ordinary slow rollout.
+        #
+        # Pulling first makes a slow or unreachable registry degrade to "stays
+        # on the old image", which is a host that still does work.
+        if [[ "$MODE" == "fleet" ]]; then
+            echo "Pre-pull: fetching images for [${SERVICES[*]}] before touching running containers"
+            if ! docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} \
+                    pull "${SERVICES[@]}"; then
+                echo "ERROR: image pull failed for [${SERVICES[*]}] — leaving the" >&2
+                echo "       existing containers running rather than removing them." >&2
+                exit 1
+            fi
+        fi
         echo "Recreate: removing existing containers for [${SERVICES[*]}] (clears orphan replicas)"
         docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} \
             rm -sf "${SERVICES[@]}" || true
