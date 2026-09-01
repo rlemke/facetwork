@@ -1,0 +1,114 @@
+// Canonical: the built-in fw.compare facets — reproducing a published result.
+//
+// `fw.compare.*` ships with Facetwork (facetwork/ffl/compare.ffl + the handlers
+// in facetwork/handlers/), like `fw.file.*`, `fw.http.*` and `fw.archive.*`.
+// Every runner registers them at startup, so no handler is written for this.
+//
+//   fw ffl compile --check --primary this.ffl
+//
+// WHY THIS IS A BUILT-IN. "Did this pipeline reproduce that published result?"
+// is a question every research domain asks, and almost every answer to it is a
+// hand-rolled diff. The measurement that shaped these facets is fwh_gridbuilder
+// reproducing PyPSA grid-builder's output:
+//
+//     row data: 0 differing (after normalising tag-key order)
+//     bytes:    differ (earth_osm tag-key order is unstable)
+//     RESULT: same data
+//
+// The bytes differ. A checksum comparison — the obvious implementation —
+// reports FAILED and is WRONG: the upstream tool does not serialise a nested
+// dict in a stable key order, so two runs of the SAME pipeline also differ
+// byte-wise. So `Tabular` walks a LADDER — exists, schema, cardinality, keys,
+// values, bytes — and reports the HIGHEST level at which two outputs agree.
+//
+// ⚠️ Normalisations are DECLARED and REPORTED, never silently applied. Quietly
+// sorting keys until two files match does not demonstrate a reproduction, it
+// manufactures one. Whatever was required comes back in `normalised_by`, so a
+// reader can judge whether the agreement is real. Measured on a 13,979-record
+// published dataset against an independent rerun:
+//
+//     exact:          13,960 of 13,978 shared records differ   <- float format
+//     tolerance 1e-9: the 13,978 shared records match, 1 missing
+//
+// Both are true. Only the second is useful, and only because the tolerance is
+// stated beside the verdict rather than hidden inside it.
+//
+// THE SHAPE. Acquire with fw.http (which records digest + provenance in a
+// sidecar, so "what exactly did we download" has an answer), rerun the pipeline,
+// compare each output, and aggregate. `Summarise` reports the WEAKEST pair,
+// because a reproduction is only as good as its worst file.
+
+namespace repro.demo {
+
+    /** The rerun under test. In a real reproduction this is the published
+        pipeline — either the upstream code via a delegation adapter
+        (see examples/snakemake-delegate), or an FFL port of the method.
+        Those answer different questions: the first isolates the ORCHESTRATOR,
+        the second tests whether the METHOD AS PUBLISHED reproduces. */
+    event facet RunPipeline(input: String, out_dir: String) => (out_dir: String, files: [String])
+
+    /** Retrieve a published dataset, rerun the pipeline that claims to produce
+        it, compare every output, and write one discrepancy report.
+
+        `tolerance` and `key_columns` are parameters rather than constants
+        because they are CLAIMS about what counts as reproduced, and different
+        fields warrant different ones. */
+    workflow ReproduceDataset(
+        published_url: String,
+        published_path: String = "/scratch/repro/published.csv",
+        rerun_dir: String = "/scratch/repro/rerun",
+        key_columns: [String] = [],
+        tolerance: Double = 0.0
+    ) => (level: String, agree: Boolean, pairs: Long, report: String) andThen {
+
+        // 1. ACQUIRE. Fetch writes <dest>.meta.json — digest, source URL,
+        //    validators, fetched_at — so the comparison can cite exactly what it
+        //    was compared against, and a later run can tell if the source moved.
+        published = fw.http.Fetch(
+            url = $.published_url,
+            dest = $.published_path,
+            max_age_hours = 24
+        )
+
+        // 2. RERUN. Same input, our pipeline.
+        rerun = repro.demo.RunPipeline(input = published.path, out_dir = $.rerun_dir)
+
+        // 3. COMPARE each produced file against the published artifact.
+        //
+        //    ⚠️ The loop body CANNOT name `published` — that is a step in the
+        //    enclosing block, and a block sees only its own steps plus `$…`
+        //    container attributes (REF_CROSS_BLOCK_STEP). That is why the
+        //    published path is a PARAMETER rather than read off the Fetch step:
+        //    `$$.published_path` is visible here, `published.dest` is not.
+        //
+        //    `after rerun` is not redundant: the loop reads files the rerun wrote
+        //    to a shared directory, and no value flows from that write to this
+        //    read, so the compiler cannot see the edge.
+        checks = fw.file.List(path = $.rerun_dir, pattern = "*.csv") after rerun andThen foreach f in $.paths {
+            verdict = fw.compare.Tabular(
+                expected = $$.published_path,
+                actual = $.f,
+                key_columns = $$.key_columns,
+                sort_json_keys = true,
+                tolerance = $$.tolerance
+            )
+            // `+=` AGGREGATES across iterations. A bare `=` keeps only the LAST
+            // verdict and silently under-reports the whole fan-out.
+            yield ReproduceDataset(pairs += [verdict.differing])
+        }
+
+        // 4. DOCUMENT. One report for the whole set, reporting the WEAKEST pair —
+        //    a reproduction is only as good as its worst file.
+        summary = fw.compare.Summarise(
+            verdicts = [],
+            title = "reproduction report",
+            report = "/scratch/repro/report.md"
+        ) after checks
+
+        yield ReproduceDataset(
+            level = summary.level,
+            agree = summary.agree,
+            report = summary.report
+        )
+    }
+}
