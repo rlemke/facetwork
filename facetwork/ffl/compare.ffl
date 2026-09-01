@@ -39,6 +39,16 @@
   * for most scientific output, but it is a claim about acceptable error, so it
   * is reported alongside the verdict rather than hidden in the result.
   *
+  * ⚠️ ON A DISTRIBUTED RUNTIME, COMPARE THE LOGICAL OUTPUT, NOT THE TASK RECORDS.
+  * Measured 2026-09-01 running the same genomics pipeline twice over three
+  * samples: run 1 produced 10 tasks and 3 per-sample records, run 2 produced 11
+  * tasks and 4 — because one task was RETRIED, leaving a duplicate record for
+  * the same sample. The runs were in fact byte-identical once collapsed to one
+  * record per key. A comparison fed raw task rows would have reported a
+  * cardinality mismatch and called a perfectly reproducible pipeline
+  * irreproducible. Retries are a property of the ORCHESTRATOR, not of the
+  * result; deduplicate on the identity key before comparing.
+  *
   * Composes with the other built-ins: `fw.http.Fetch` acquires the published
   * artifact (recording digest and provenance in its sidecar), `fw.archive.Extract`
   * unpacks it, `fw.compare.Tabular` compares, `fw.compare.Summarise` aggregates
