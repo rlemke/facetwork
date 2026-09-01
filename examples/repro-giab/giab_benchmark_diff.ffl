@@ -50,21 +50,21 @@ namespace repro.giab {
             actual = new_release.path,
             key_columns = ["CHROM", "POS", "REF", "ALT"],
             ignore_columns = ["QUAL", "INFO", "FORMAT", "ID"],
-            max_examples = 12
+            max_examples = 12,
+            report = $.report_dest
         )
 
-        // 3. DOCUMENT.
-        summary = fw.compare.Summarise(
-            verdicts = [],
-            title = "GIAB HG001 GRCh38 — benchmark v3.3.2 vs v4.2.1",
-            report = $.report_dest
-        ) after diff
-
+        // 3. DOCUMENT — the comparison writes its own report.
+        //
+        // Summarise is for a FAN-OUT of many pairs, where the useful answer is
+        // the WEAKEST pair. Over a single comparison it added nothing: it was
+        // called with an empty verdict list and correctly reported "nothing was
+        // compared", which is the guard working, not a result.
         yield CompareBenchmarkReleases(
             level = diff.level,
             agree = diff.agree,
             differing = diff.differing,
-            report = summary.report
+            report = diff.report
         )
     }
 }

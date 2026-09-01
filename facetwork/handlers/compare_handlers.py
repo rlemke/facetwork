@@ -245,6 +245,45 @@ def _values_equal(a: Any, b: Any, tolerance: float) -> bool:
     return math.isclose(fa, fb, rel_tol=tolerance, abs_tol=0.0)
 
 
+def _write_report(dest, level, agree, differing, ec, ac, detail, applied, expected, actual):
+    """Write one comparison's verdict as a readable document.
+
+    Records what was compared and WHAT NORMALISATION WAS APPLIED, because a
+    verdict without its normalisations cannot be judged: "same data" after
+    sorting keys and allowing 1e-6 drift is a different claim from "same data"
+    exactly, and only one of them is a reproduction.
+    """
+    lines = [
+        f"# Comparison — {os.path.basename(actual)} vs {os.path.basename(expected)}",
+        "",
+        f"- verdict        : **{'agree' if agree else 'DIFFER'}** at level `{level}`",
+        f"- expected       : `{expected}` ({ec:,} records)",
+        f"- actual         : `{actual}` ({ac:,} records)",
+        f"- differing      : {differing:,}",
+        f"- normalised by  : {', '.join(applied) if applied else '(nothing — compared as-is)'}",
+        "",
+        "## Detail",
+        "",
+        detail,
+        "",
+    ]
+    body = "\n".join(lines)
+    try:
+        fs = get_storage_backend(dest)
+        parent = os.path.dirname(dest)
+        if parent:
+            try:
+                fs.makedirs(parent, exist_ok=True)
+            except Exception:  # noqa: BLE001 — backend may not need it
+                pass
+        with fs.open(dest, "wb") as fh:
+            fh.write(body.encode("utf-8"))
+        return dest
+    except Exception:
+        logger.warning("could not write comparison report to %s", dest, exc_info=True)
+        return ""
+
+
 def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
                        max_ex, applied, params, result):
     """Keyed comparison in O(keys) memory rather than O(file).
@@ -318,10 +357,19 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     if tol:
         applied.append(f"relative tolerance {tol:g}")
 
+    dest = params.get("report") or ""
+
     def _result(level, agree, differing, ec, ac, detail, report_path=""):
+        # ⚠️ `report` was declared on the facet and silently ignored: a caller
+        # could pass a destination, get a green verdict, and find nothing
+        # written. A parameter that does nothing is worse than one that does not
+        # exist — the FFL promises an artifact the handler never produced.
+        out = report_path or (_write_report(dest, level, agree, differing, ec, ac,
+                                            detail, applied, expected, actual)
+                              if dest else "")
         return {"level": level, "agree": agree, "differing": differing,
                 "expected_count": ec, "actual_count": ac,
-                "normalised_by": applied, "report": report_path,
+                "normalised_by": applied, "report": out,
                 "_detail": detail}
 
     # --- rung: exists -------------------------------------------------------
