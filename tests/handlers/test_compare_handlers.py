@@ -115,3 +115,44 @@ def test_summarise_empty_is_not_success(tmp_path):
     """An empty fan-out reporting success is how a no-op passes for a run."""
     r = handle_summarise({"verdicts": []})
     assert not r["agree"] and r["level"] == "missing"
+
+
+VCF = (
+    "##fileformat=VCFv4.2\n"
+    "##reference=file:///differs/between/runs/GRCh38.fa\n"
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+    "chr1\t783006\t.\tA\tG\t50\tPASS\tplatforms=4\n"
+    "chr1\t783175\t.\tT\tC\t50\tPASS\tplatforms=3\n"
+)
+
+
+def test_vcf_metadata_is_not_compared(tmp_path):
+    """`##` lines carry the producing command line and reference PATHS.
+
+    Two runs of the same pipeline differ there without differing in a single
+    variant, so comparing metadata would report every reproduction as failed.
+    """
+    a = _w(tmp_path, "a.vcf", VCF)
+    b = _w(tmp_path, "b.vcf", VCF.replace("file:///differs/between/runs", "file:///elsewhere"))
+    r = handle_tabular({"expected": a, "actual": b,
+                        "key_columns": ["CHROM", "POS", "REF", "ALT"]})
+    assert r["agree"] and r["level"] == "values", r["_detail"]
+    assert r["expected_count"] == 2
+
+
+def test_vcf_variant_difference_is_detected(tmp_path):
+    """...but an actual variant difference must still be caught."""
+    a = _w(tmp_path, "a.vcf", VCF)
+    b = _w(tmp_path, "b.vcf", VCF.replace("chr1\t783175\t.\tT\tC", "chr1\t783175\t.\tT\tA"))
+    r = handle_tabular({"expected": a, "actual": b,
+                        "key_columns": ["CHROM", "POS", "REF", "ALT"]})
+    assert not r["agree"], "an ALT change must not be normalised away"
+
+
+def test_gzipped_input_is_read(tmp_path):
+    import gzip
+    p = tmp_path / "a.vcf.gz"
+    with gzip.open(p, "wb") as fh:
+        fh.write(VCF.encode())
+    r = handle_tabular({"expected": str(p), "actual": str(p)})
+    assert r["level"] == "bytes" and r["agree"]

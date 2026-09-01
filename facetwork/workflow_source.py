@@ -595,7 +595,16 @@ def _call(call: dict) -> str:
 
 
 def _args(args: list[dict]) -> str:
-    return ", ".join(f"{a['name']} = {_expr(a['value'])}" for a in args)
+    # ⚠️ `append` is `+=` and it is NOT cosmetic. Inside a foreach, `+=`
+    # AGGREGATES across iterations while a bare `=` keeps only the LAST one —
+    # measured elsewhere in this repo as 3 files yielding 1 digest instead of 3.
+    # Rendering `+=` as `=` therefore produced source that LOOKS like the
+    # workflow and silently under-reports every fan-out it is copied into. The
+    # dashboard shows this text to humans, so the flag has to survive.
+    return ", ".join(
+        f"{a['name']} {'+=' if a.get('append') else '='} {_expr(a['value'])}"
+        for a in args
+    )
 
 
 # Operator precedence (FFL grammar, lowest binds loosest). Used to decide

@@ -55,8 +55,46 @@ def _read_records(path: str) -> tuple[list[dict], list[str], bytes]:
     """
     with get_storage_backend(path).open(path, "rb") as fh:
         raw = fh.read()
-    text = raw.decode("utf-8", errors="replace")
     name = path.lower().rsplit("?", 1)[0]
+    if name.endswith(".gz"):
+        # bgzip (as VCFs use) is block-gzip, so a TRUNCATED prefix still yields
+        # whole records before it errors — which is what makes a ranged fetch of
+        # a 126 MB benchmark usable for a comparison at all.
+        import gzip
+        import io as _io
+        buf, dec = [], gzip.GzipFile(fileobj=_io.BytesIO(raw))
+        try:
+            while True:
+                chunk = dec.read(1 << 20)
+                if not chunk:
+                    break
+                buf.append(chunk)
+        except (EOFError, OSError):
+            pass  # truncated stream — keep what decompressed cleanly
+        raw = b"".join(buf)
+        name = name[: -len(".gz")]
+    text = raw.decode("utf-8", errors="replace")
+
+    if name.endswith((".vcf", ".bcf")):
+        # VCF: '##' are metadata, the single '#CHROM' line is the header, and the
+        # natural identity of a record is (CHROM, POS, REF, ALT) — pass those as
+        # key_columns. Metadata is deliberately NOT compared: it carries the
+        # producing command line and reference paths, which differ between any
+        # two runs without the variants differing at all.
+        lines = text.splitlines()
+        head = next((i for i, ln in enumerate(lines) if ln.startswith("#CHROM")), None)
+        if head is None:
+            return [], [], raw
+        fields = lines[head].lstrip("#").split("\t")
+        rows = []
+        for ln in lines[head + 1:]:
+            if not ln or ln.startswith("#"):
+                continue
+            parts = ln.split("\t")
+            if len(parts) < len(fields):
+                continue  # truncated final record from a ranged fetch
+            rows.append(dict(zip(fields, parts)))
+        return rows, fields, raw
 
     if name.endswith((".jsonl", ".ndjson")):
         rows = [json.loads(line) for line in text.splitlines() if line.strip()]
