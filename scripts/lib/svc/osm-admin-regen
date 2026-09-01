@@ -113,7 +113,7 @@ IGNORE_STALE=0
 SCOPE_HELPER="$(dirname "${BASH_SOURCE[0]}")/_osm_admin_scope.py"
 # Same resolution as the helper's DEFAULT_SETS, so the in-flight guard sees the
 # same workflow set the submission will use.
-SETS_FILE="${FW_OSM_REGEN_SETS_FILE:-$(dirname "${BASH_SOURCE[0]}")/osm-admin-sets.json}"
+SETS_FILE="${FW_OSM_REGEN_SETS_FILE:-$(dirname "${BASH_SOURCE[0]}")/_osm-admin-sets.json}"
 
 while [ $# -gt 0 ]; do
     case "$1" in

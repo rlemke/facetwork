@@ -64,7 +64,7 @@ def _load_fleet_s3() -> None:
 _load_fleet_s3()
 
 DEFAULT_SETS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "osm-admin-sets.json")
+                            "_osm-admin-sets.json")
 
 
 #: Where the guard actually looked. Reported on every refusal: a WRONG endpoint
