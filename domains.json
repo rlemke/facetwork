@@ -360,6 +360,21 @@
           ]
         ]
       }
+    },
+    "energy": {
+      "repo": "fwh_energy",
+      "extras": [],
+      "description": "US energy trade + prices (EIA) -> dashboard. Ingests EIA's bulk NDJSON zips rather than the API, so it needs no API key."
+    },
+    "gibraltar": {
+      "repo": "fwh_gibraltar",
+      "extras": [],
+      "description": "The Hollow Mountain - measuring what OpenStreetMap CANNOT see: Gibraltar's and Jersey's tunnel networks, where OSM holds ~12% of 55km of known galleries. Reports absence honestly (None, never 0.0) where no total is published."
+    },
+    "uspanel": {
+      "repo": "fwh_uspanel",
+      "extras": [],
+      "description": "US state x year multi-source data panel (Census ACS/PEP + BLS); 1,020 rows, 2005-2024. Needs CENSUS_API_KEY; PEP migration components exist only for 2010-2019."
     }
   },
   "examples": {
