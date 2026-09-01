@@ -324,3 +324,18 @@ def test_split_without_keys_says_it_does_nothing(tmp_path):
                         "ignore_columns": ["QUAL", "ID"],
                         "split_columns": ["ALT"]})
     assert any("requires key_columns" in n for n in r["normalised_by"])
+
+
+def test_split_composes_with_tolerance(tmp_path):
+    """These share a code path: with tolerance>0 the index stores value TUPLES
+    rather than digests, and splitting writes several rows per record into it."""
+    (tmp_path / "a.csv").write_text('id,alt,score\n1,"A,C",1.000000\n2,T,2.0\n')
+    (tmp_path / "b.csv").write_text('id,alt,score\n1,"A,C",1.0000001\n2,T,2.0\n')
+    r = handle_tabular({"expected": str(tmp_path / "a.csv"),
+                        "actual": str(tmp_path / "b.csv"),
+                        "key_columns": ["id", "alt"], "split_columns": ["alt"],
+                        "tolerance": 1e-3})
+    assert r["agree"] and r["level"] == "values"
+    assert r["expected_count"] == 3  # 2 records -> 3 rows
+    assert any("relative tolerance" in n for n in r["normalised_by"])
+    assert any("split alt" in n for n in r["normalised_by"])
