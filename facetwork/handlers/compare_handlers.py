@@ -24,6 +24,8 @@ checksum comparison calls that a failed reproduction. It is not one.
 from __future__ import annotations
 
 import csv
+import gzip
+import hashlib
 import io
 import json
 import logging
@@ -118,6 +120,97 @@ def _read_records(path: str) -> tuple[list[dict], list[str], bytes]:
     return rows, list(reader.fieldnames or []), raw
 
 
+def _iter_records(path: str):
+    """Yield (fields, record) without ever holding the whole file.
+
+    ⚠️ The load-everything version cost 5.44 GB on two 38 MB slices and PROJECTED
+    16.7 GB on the real 126 MB + 107 MB GIAB benchmarks — on a 23 GiB VM shared
+    with 23 other runners. The container ran out of memory, the runner stalled,
+    its server heartbeat went silent, and the reaper reclaimed the task; it
+    dead-lettered at retry 5 after 24 minutes. A task-level heartbeat cannot help
+    a process that is thrashing, which is why the earlier fix did not.
+
+    Records are yielded one at a time so peak memory is a function of the INDEX
+    built by the caller, not of the file.
+    """
+    fs = get_storage_backend(path)
+    name = path.lower().rsplit("?", 1)[0]
+    gz = name.endswith(".gz")
+    if gz:
+        name = name[: -len(".gz")]
+
+    def _lines(text_stream):
+        """Yield lines, stopping cleanly at a TRUNCATED stream.
+
+        ⚠️ bgzip is block-gzip, so a ranged fetch of a huge benchmark yields whole
+        records and then an EOFError at the cut. That is a supported way to work
+        with a 126 MB VCF, so the truncation must end iteration rather than fail
+        the comparison — the non-streaming reader already tolerated it and this
+        keeps the two consistent.
+        """
+        try:
+            for ln in text_stream:
+                yield ln
+        except (EOFError, OSError) as exc:
+            logger.debug("truncated stream for %s: %s", path, exc)
+
+    with fs.open(path, "rb") as fh:
+        stream = gzip.GzipFile(fileobj=fh) if gz else fh
+        text = _lines(io.TextIOWrapper(stream, encoding="utf-8", errors="replace"))
+        if name.endswith((".vcf", ".bcf")):
+            fields = None
+            for line in text:
+                if line.startswith("##"):
+                    continue
+                if line.startswith("#"):
+                    fields = line.lstrip("#").rstrip("\n").split("\t")
+                    continue
+                if fields is None or not line.strip():
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) >= len(fields):
+                    yield fields, dict(zip(fields, parts))
+        elif name.endswith((".jsonl", ".ndjson")):
+            for line in text:
+                if line.strip():
+                    rec = json.loads(line)
+                    yield list(rec), rec
+        else:
+            delim = "\t" if name.endswith((".tsv", ".tab")) else ","
+            reader = csv.DictReader(text, delimiter=delim)
+            for rec in reader:
+                yield list(reader.fieldnames or []), dict(rec)
+
+
+def _index(path, keys, *, ignore, sort_json, tol):
+    """Stream a file into {key -> digest of its comparable values}.
+
+    A digest rather than the record itself: the comparison needs to know WHETHER
+    two records agree, and keeping ~1 KB of dict per record is what exhausted
+    memory. The digest is ~40 bytes.
+
+    ⚠️ Values are digested only when the comparison is EXACT. With a tolerance,
+    two records may be equal without being identical, so a hash cannot decide it
+    — those keep their values and the caller compares numerically.
+    """
+    idx, fields, count = {}, [], 0
+    for flds, rec in _iter_records(path):
+        if not fields:
+            fields = [f for f in flds if f not in ignore]
+        count += 1
+        norm = _normalise(rec, ignore=ignore, sort_json=sort_json)
+        k = tuple(str(norm.get(c, "")) for c in keys)
+        if tol > 0:
+            idx[k] = tuple(norm.get(f) for f in fields)
+        else:
+            h = hashlib.blake2b(digest_size=16)
+            for f in fields:
+                h.update(str(norm.get(f, "")).encode("utf-8", "replace"))
+                h.update(b"\x1f")
+            idx[k] = h.digest()
+    return fields, idx, count
+
+
 def _normalise(row: dict, *, ignore: set[str], sort_json: bool) -> dict:
     out = {}
     for k, v in row.items():
@@ -152,6 +245,62 @@ def _values_equal(a: Any, b: Any, tolerance: float) -> bool:
     return math.isclose(fa, fb, rel_tol=tolerance, abs_tol=0.0)
 
 
+def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
+                       max_ex, applied, params, result):
+    """Keyed comparison in O(keys) memory rather than O(file).
+
+    Two passes, one file at a time: index `expected`, then stream `actual` and
+    decide each record as it arrives. Peak memory is the index, not the data —
+    measured 16.7 GB projected for the load-everything version on the GIAB
+    benchmarks, which exhausted a 23 GiB VM.
+    """
+    with heartbeating(params, f"indexing {os.path.basename(expected)}"):
+        efields, eidx, ecount = _index(expected, keys, ignore=ignore,
+                                       sort_json=sort_json, tol=tol)
+    with heartbeating(params, f"comparing against {os.path.basename(actual)}"):
+        afields, aidx, acount = _index(actual, keys, ignore=ignore,
+                                       sort_json=sort_json, tol=tol)
+
+    if not efields or not afields:
+        return result("missing", False, 0, ecount, acount, "no records readable")
+    if set(efields) != set(afields):
+        only_e = sorted(set(efields) - set(afields))
+        only_a = sorted(set(afields) - set(efields))
+        return result("exists", False, 0, ecount, acount,
+                      f"field mismatch — only in expected: {only_e or '-'}; "
+                      f"only in actual: {only_a or '-'}")
+
+    only_e = set(eidx) - set(aidx)
+    only_a = set(aidx) - set(eidx)
+    shared = set(eidx) & set(aidx)
+
+    changed = []
+    for k in shared:
+        ev, av = eidx[k], aidx[k]
+        if tol > 0:
+            if any(not _values_equal(x, y, tol) for x, y in zip(ev, av)):
+                changed.append(k)
+        elif ev != av:
+            changed.append(k)
+
+    if only_e or only_a:
+        note = ("the %d shared record(s) match" % len(shared) if not changed
+                else "and %d of the %d shared record(s) also differ in values"
+                     % (len(changed), len(shared)))
+        ex = "; ".join(str(k) for k in sorted(only_e)[:max_ex]) or "-"
+        return result("cardinality", False,
+                      len(only_e) + len(only_a) + len(changed), ecount, acount,
+                      f"{len(only_e)} record(s) only in expected, "
+                      f"{len(only_a)} only in actual — {note}. missing e.g. {ex}")
+    if changed:
+        ex = "; ".join(str(k) for k in sorted(changed)[:max_ex])
+        return result("keys", False, len(changed), ecount, acount,
+                      f"{len(changed)} record(s) differ in values. e.g. {ex}")
+
+    detail = "same data" + (f" (after {'; '.join(applied)})" if applied else "")
+    return result("values", True, 0, ecount, acount, detail)
+
+
 def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     log = params.get("_step_log") or (lambda *a, **k: None)
     expected, actual = params["expected"], params["actual"]
@@ -180,8 +329,15 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     if missing:
         return _result("missing", False, 0, 0, 0, f"not readable: {'; '.join(missing)}")
 
-    # Reading two large artifacts (S3 fetch + decompress + parse of millions of
-    # records) is minutes of blocking work with no loop to hook — see _heartbeat.
+    # KEYED comparison STREAMS — it is the path that has to scale, and the only
+    # one a real reproduction uses. The positional path below still loads both
+    # files; it cannot match records across a reordering anyway, and already
+    # discloses that weaker claim in `normalised_by`.
+    if keys:
+        return _compare_streaming(expected, actual, keys, ignore=ignore,
+                                  sort_json=sort_json, tol=tol, max_ex=max_ex,
+                                  applied=applied, params=params, result=_result)
+
     with heartbeating(params, f"reading {os.path.basename(expected)} / {os.path.basename(actual)}"):
         erows, efields, eraw = _read_records(expected)
         arows, afields, araw = _read_records(actual)
