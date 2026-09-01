@@ -33,6 +33,24 @@
 // Both are true. Only the second is useful, and only because the tolerance is
 // stated beside the verdict rather than hidden inside it.
 //
+// ⚠️ SCOPE IS NOT CONTENT, and getting this wrong is invisible. Comparing two
+// releases of the GIAB benchmark, the ladder reported 242,958 records "retired
+// — prior claims void". 99,980 of them (41.2%) were chromosome X, which the
+// newer release DOES NOT COVER AT ALL: the files are named `CHROM1-X` and
+// `1_22`. Nothing was retired; the two artifacts simply do not span the same
+// key space. The run was green, the arithmetic was right, and the answer was
+// wrong — so `out_of_scope` reports records lying in a key partition (the FIRST
+// key column) the other side does not cover, and never folds them into the
+// record counts. Check it before believing a cardinality verdict.
+//
+// ⚠️ A DELIMITED MULTI-VALUE COLUMN IS A LIST, NOT AN IDENTITY. A VCF `ALT` of
+// `A,ATTTACAACC` is two alleles sharing one row; keyed whole, it matches nothing
+// against a release listing just `A`, and the comparison reports total
+// disagreement where the two AGREE on one allele. `split_columns` explodes it
+// into one comparable row per element. It CHANGES THE UNIT of the counts from
+// record to element, so it says so in `normalised_by` with before/after — a
+// count that quietly changes unit is worse than no count.
+//
 // THE SHAPE. Acquire with fw.http (which records digest + provenance in a
 // sidecar, so "what exactly did we download" has an answer), rerun the pipeline,
 // compare each output, and aggregate. `Summarise` reports the WEAKEST pair,
@@ -58,6 +76,7 @@ namespace repro.demo {
         published_path: String = "/scratch/repro/published.csv",
         rerun_dir: String = "/scratch/repro/rerun",
         key_columns: [String] = [],
+        split_columns: [String] = [],
         tolerance: Double = 0.0
     ) => (level: String, agree: Boolean, pairs: Long, report: String) andThen {
 
@@ -89,6 +108,7 @@ namespace repro.demo {
                 expected = $$.published_path,
                 actual = $.f,
                 key_columns = $$.key_columns,
+                split_columns = $$.split_columns,
                 sort_json_keys = true,
                 tolerance = $$.tolerance
             )
