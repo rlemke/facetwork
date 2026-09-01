@@ -99,16 +99,46 @@ if [ "$PULL_MIRRORS" = 1 ]; then
     else
         for h in $MIRROR_HOSTS; do
             case "$h" in "$SELF"|"$SELF".*) continue ;; esac   # don't ssh to ourselves
+            # The remote reports STATUS<TAB>HEAD<TAB>AGE and ALWAYS reports HEAD,
+            # including when it failed. That is the point: a mirror that cannot
+            # fetch is exactly the one whose distance nobody knows. server3 sat
+            # 83 commits (5 weeks) behind because the old version printed a bare
+            # "fetch-failed" — true, ignorable, and ignored. How far behind is
+            # what makes it actionable.
             out="$(ssh -o ConnectTimeout=8 -o BatchMode=yes "$h" bash -ls 2>/dev/null <<'REMOTE' || true
 d=$(find ~/.claude/projects -maxdepth 3 -type d -name memory 2>/dev/null | while read -r x; do
       git -C "$x" remote get-url origin 2>/dev/null | grep -q claude-memory && { printf '%s' "$x"; break; }; done)
 [ -z "$d" ] && { echo "no-mirror"; exit 0; }
-git -C "$d" fetch -q origin 2>/dev/null || { echo "fetch-failed"; exit 0; }
-git -C "$d" merge --ff-only origin/main >/dev/null 2>&1 || { echo "ff-failed (diverged?)"; exit 0; }
-git -C "$d" rev-parse --short HEAD
+_head() { git -C "$d" rev-parse --short HEAD 2>/dev/null || echo '?'; }
+_age()  { git -C "$d" log -1 --format=%cr HEAD 2>/dev/null || echo 'unknown age'; }
+git -C "$d" fetch -q origin 2>/dev/null || { printf 'fetch-failed\t%s\t%s\n' "$(_head)" "$(_age)"; exit 0; }
+git -C "$d" merge --ff-only origin/main >/dev/null 2>&1 || { printf 'diverged\t%s\t%s\n' "$(_head)" "$(_age)"; exit 0; }
+printf 'ok\t%s\t%s\n' "$(_head)" "$(_age)"
 REMOTE
 )"
-            echo "memory mirror $h: ${out:-unreachable}"
+            if [ -z "$out" ]; then
+                echo "memory mirror $h: unreachable (asleep? no ssh?) — distance unknown"
+                continue
+            fi
+            m_status="${out%%	*}"; m_rest="${out#*	}"
+            m_head="${m_rest%%	*}";  m_age="${m_rest#*	}"
+            case "$m_status" in
+                no-mirror) echo "memory mirror $h: no memory clone on this host" ;;
+                ok)        echo "memory mirror $h: $m_head" ;;
+                *)
+                    # Distance is computed HERE, against our own history — the
+                    # mirror could not reach origin, so it cannot measure itself.
+                    if git cat-file -e "${m_head}^{commit}" 2>/dev/null; then
+                        behind="$(git rev-list --count "${m_head}..HEAD" 2>/dev/null || echo '?')"
+                        ahead="$(git rev-list --count "HEAD..${m_head}" 2>/dev/null || echo 0)"
+                        extra=""
+                        [ "$ahead" != "0" ] && extra=", $ahead local-only commit(s) it would lose"
+                        echo "memory mirror $h: ⚠️  $m_status — stuck at $m_head, ${behind} commit(s) behind, last synced $m_age$extra"
+                    else
+                        echo "memory mirror $h: ⚠️  $m_status — stuck at $m_head ($m_age); that commit is not in our history, so the distance is unknown"
+                    fi
+                    ;;
+            esac
         done
     fi
 fi
