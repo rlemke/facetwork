@@ -344,7 +344,7 @@ def _write_report(dest, level, agree, differing, ec, ac, detail, applied,
         return ""
 
 
-def _scope(epart, apart, eidx, aidx, keys):
+def _scope(epart, apart, keys):
     """Partitions present on one side and wholly absent from the other.
 
     ⚠️ This is the check that was missing, and it is not a small omission.
@@ -408,7 +408,7 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
                            f"(> {_SPLIT_MAX_ROWS} rows) — compared unsplit")
         ecount, acount = erows, arows
 
-    scope_e, scope_a, scope_note = _scope(epart, apart, eidx, aidx, keys)
+    scope_e, scope_a, scope_note = _scope(epart, apart, keys)
 
     if not efields or not afields:
         return result("missing", False, 0, ecount, acount, "no records readable")
@@ -468,6 +468,15 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     delim = params.get("split_delimiter") or ","
 
     applied: list[str] = []
+    if split and not keys:
+        # ⚠️ Splitting only means anything for a KEYED comparison — the
+        # positional path matches row N against row N, and exploding one side
+        # shifts every subsequent row. Accepting the parameter and quietly
+        # doing nothing is how `report` went unnoticed; say it instead.
+        applied.append("split_columns ignored — it requires key_columns")
+        log("split_columns was given without key_columns and has no effect",
+            level="WARNING")
+        split = []
     if ignore:
         applied.append(f"ignored columns: {', '.join(sorted(ignore))}")
     if sort_json:

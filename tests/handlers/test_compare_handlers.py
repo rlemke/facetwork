@@ -311,3 +311,16 @@ def test_high_cardinality_first_key_is_not_treated_as_a_partition(tmp_path):
                         "ignore_columns": ["QUAL", "ID"]})
     assert r["out_of_scope"] == 0
     assert r["differing"] == 5
+
+
+def test_split_without_keys_says_it_does_nothing(tmp_path):
+    """A parameter that is silently ignored is the defect `report` had.
+
+    Splitting only means anything for a KEYED comparison — the positional path
+    matches row N to row N, and exploding one side shifts every row after it.
+    """
+    a = _vcf(tmp_path, "a.vcf", ["chr1\t100\t.\tG\tA,C"])
+    r = handle_tabular({"expected": a, "actual": a,
+                        "ignore_columns": ["QUAL", "ID"],
+                        "split_columns": ["ALT"]})
+    assert any("requires key_columns" in n for n in r["normalised_by"])
