@@ -39,6 +39,7 @@ _BUILTIN_MODULES: list[tuple[str, str]] = [
     ("facetwork.handlers.http_handlers", "http.ffl"),
     ("facetwork.handlers.archive_handlers", "archive.ffl"),
     ("facetwork.handlers.exec_handlers", "exec.ffl"),
+    ("facetwork.handlers.compare_handlers", "compare.ffl"),
 ]
 
 # Generous relative to the work: a Copy or Hash of a large artifact is legitimate

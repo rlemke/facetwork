@@ -1,0 +1,112 @@
+/** Output comparison, shipped with Facetwork.
+  *
+  * For asking "did this pipeline reproduce that published result?" — and
+  * getting an answer more useful than a boolean.
+  *
+  * The motivating measurement is `fwh_gridbuilder`, which reproduced PyPSA
+  * grid-builder's output and compared them by hand:
+  *
+  *     columns:  same (12)
+  *     rows:     snakemake 832, facetwork 832
+  *     row data: 0 differing (after normalising tag-key order)
+  *     bytes:    differ (earth_osm tag-key order is unstable)
+  *     RESULT: same data
+  *
+  * Read that carefully, because the whole design follows from it. The bytes
+  * differ. A checksum comparison — the obvious implementation — reports FAILED
+  * and is WRONG: the upstream tool does not serialise a nested dict in a stable
+  * key order, so two runs of the SAME pipeline also differ byte-wise. The
+  * datasets are identical; only the serialisation is unstable.
+  *
+  * So a reproduction check must report the HIGHEST LEVEL AT WHICH TWO OUTPUTS
+  * AGREE, and what it took to get there — not whether they are identical.
+  * `Tabular` walks a ladder of increasing strictness:
+  *
+  *     exists      -> both artifacts are present and readable
+  *     schema      -> same field names
+  *     cardinality -> same record count
+  *     keys        -> same set of identity keys (WHICH records exist)
+  *     values      -> same values per key, under the declared normalisations
+  *     bytes       -> byte-identical
+  *
+  * ⚠️ Normalisations are DECLARED and REPORTED, never silently applied.
+  * Quietly sorting keys until two files match does not demonstrate a
+  * reproduction, it manufactures one. Whatever was needed to reach agreement
+  * is returned in `normalised_by` so a reader can judge whether the agreement
+  * is real. A comparison that has to work hard to succeed is a finding.
+  *
+  * ⚠️ `tolerance` exists because exact float equality is the wrong predicate
+  * for most scientific output, but it is a claim about acceptable error, so it
+  * is reported alongside the verdict rather than hidden in the result.
+  *
+  * Composes with the other built-ins: `fw.http.Fetch` acquires the published
+  * artifact (recording digest and provenance in its sidecar), `fw.archive.Extract`
+  * unpacks it, `fw.compare.Tabular` compares, `fw.compare.Summarise` aggregates
+  * a fan-out of per-file verdicts into one report.
+  */
+namespace fw.compare {
+
+    /** One file-pair verdict: how far up the ladder the two agree. */
+    schema Verdict {
+        path: String,
+        level: String,
+        agree: Boolean,
+        differing: Long,
+        detail: String
+    }
+
+    /** Compare two record-oriented files (csv, tsv, or json-lines).
+      *
+      * `key_columns` names the identity of a record; with it, records are matched
+      * by key so a REORDERED file still compares equal and the report can say
+      * which records are missing, added or changed. Without it, records are
+      * compared positionally and `normalised_by` says so — position is a weaker
+      * claim and the result should not pretend otherwise.
+      *
+      * `sort_json_keys` normalises nested JSON blobs whose key order is unstable
+      * (the grid-builder case above). `ignore_columns` drops fields that are
+      * expected to differ — timestamps, absolute paths, run ids.
+      *
+      * `tolerance` is a RELATIVE tolerance for numeric fields; 0 means exact.
+      *
+      * Returns the highest level reached, the number of differing records, and
+      * the normalisations that were required to get there.
+      */
+    event facet Tabular(
+        expected: String,
+        actual: String,
+        key_columns: [String] = [],
+        ignore_columns: [String] = [],
+        sort_json_keys: Boolean = false,
+        tolerance: Double = 0.0,
+        max_examples: Long = 10,
+        report: String = ""
+    ) => (
+        level: String,
+        agree: Boolean,
+        differing: Long,
+        expected_count: Long,
+        actual_count: Long,
+        normalised_by: [String],
+        report: String
+    ) with Effect(kind = "io") with Cost(tier = "cheap")
+
+    /** Aggregate many `Tabular` verdicts into one discrepancy report.
+      *
+      * A fan-out over 3,000 files that logs 3,000 verdicts has reported nothing
+      * a person can act on. This returns the weakest level any pair reached —
+      * because a reproduction is only as good as its worst file — alongside the
+      * counts and a written report.
+      */
+    event facet Summarise(
+        verdicts: [Verdict],
+        title: String = "reproduction report",
+        report: String = ""
+    ) => (
+        level: String,
+        agree: Boolean,
+        pairs: Long,
+        disagreeing: Long,
+        report: String
+    ) with Effect(kind = "io") with Cost(tier = "free")
+}
