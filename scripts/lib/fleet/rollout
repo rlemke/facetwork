@@ -373,7 +373,17 @@ if [ "$STAGGER" = 1 ]; then
         _stagger_fail "pre-pull failed on:${_STAGGER_REMOTE_FAILED}" \
             "those hosts will pull ~1GB concurrently on reconcile and can exceed the agent's 600s docker bound"
     fi
-    echo "  pre-pull done — every host has $TAG cached; no reconcile will hit the registry."
+    # ⚠️ --stagger-best-effort makes _stagger_fail WARN AND CONTINUE, so this
+    # line used to print "every host has $TAG cached" immediately after naming
+    # the hosts that do not. The summary must describe what happened, not what
+    # the happy path would have done — a reader skimming for the last line was
+    # told the opposite of the truth.
+    if [ -n "${_STAGGER_REMOTE_FAILED// /}" ]; then
+        echo "  pre-pull PARTIAL — cached everywhere EXCEPT:${_STAGGER_REMOTE_FAILED}"
+        echo "                     those hosts pull from the registry on reconcile."
+    else
+        echo "  pre-pull done — every host has $TAG cached; no reconcile will hit the registry."
+    fi
 fi
 
 echo "=== 2/3 fleet config set --image ==="
