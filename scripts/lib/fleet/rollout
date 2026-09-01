@@ -224,10 +224,52 @@ BUILD=(docker buildx build --builder "$BUILDER" --platform "$PLATFORM"
 # is re-cloned at its current HEAD (git clone in a RUN is not content-addressed,
 # so without this a rollout re-uses the cached clone even when a domain repo
 # moved). Set it to any new value — the changed domain's commit sha reads well.
-[ -n "${FW_FLEET_DOMAINS_REF:-}" ] && BUILD+=(--build-arg "FWH_DOMAINS_REF=${FW_FLEET_DOMAINS_REF}")
-[ -n "$PREV" ] && BUILD+=(--cache-from "type=registry,ref=$PREV")
+if [ -n "${FW_FLEET_DOMAINS_REF:-}" ]; then
+    BUILD+=(--build-arg "FWH_DOMAINS_REF=${FW_FLEET_DOMAINS_REF}")
+fi
 BUILD+=(--push .)
-"${BUILD[@]}"
+
+# The build cache is an OPTIMISATION and must never be able to fail the deploy.
+#
+# ⚠️ Observed twice on 2026-09-01: `--cache-from type=registry` aborted the whole
+# rollout with `failed to solve: failed to load cache key: invalid response
+# status 504`, while the same registry answered /v2/ in 23ms and served every
+# other request. It was not transient — it failed identically on retry — and the
+# build succeeded immediately once the cache reference was dropped. So a slow or
+# unhealthy cache blob could stop the fleet from deploying at all, which is a
+# strictly worse outcome than a slower build.
+#
+# Try WITH the cache; on failure, decide whether the cache was implicated and
+# retry without it. A genuine code failure must NOT be retried — it would burn a
+# second full build and bury the real error, so the retry is gated on the error
+# text naming the cache.
+_build_log="$(mktemp -t fw-rollout-build)"
+_run_build() {
+    "$@" 2>&1 | tee "$_build_log"
+    return "${PIPESTATUS[0]}"
+}
+
+if [ -n "$PREV" ]; then
+    _run_build "${BUILD[@]}" --cache-from "type=registry,ref=$PREV"
+    _brc=$?
+else
+    _run_build "${BUILD[@]}"
+    _brc=$?
+fi
+
+if [ "$_brc" != 0 ] && [ -n "$PREV" ] && grep -qiE "cache key|cache-from|failed to load cache" "$_build_log"; then
+    echo "" >&2
+    echo "WARN: the build cache ($PREV) could not be read — retrying WITHOUT it." >&2
+    echo "      A cache is an optimisation; it must not block a deploy. The build" >&2
+    echo "      will be slower, not different." >&2
+    _run_build "${BUILD[@]}"
+    _brc=$?
+fi
+rm -f "$_build_log"
+if [ "$_brc" != 0 ]; then
+    echo "ERROR: buildx failed (exit $_brc) — not a cache problem; see the output above." >&2
+    exit "$_brc"
+fi
 
 # Verify the pushed manifest actually carries EVERY platform we asked for.
 # A multi-arch bake that silently produces one arch does not fail here — it
