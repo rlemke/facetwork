@@ -296,6 +296,40 @@ def _values_equal(a: Any, b: Any, tolerance: float) -> bool:
     return math.isclose(fa, fb, rel_tol=tolerance, abs_tol=0.0)
 
 
+def _residual_structure(residuals, min_n=8, alpha=0.01):
+    """Is the error SYSTEMATIC, or is it noise?
+
+    ⚠️ A tolerance is a PER-VALUE predicate, and a per-value predicate cannot
+    see a bias. Measured reproducing NOAA's 1991-2020 Climate Normals from the
+    GHCN-Daily observations they are derived from: every one of 36 values landed
+    within 1.0 degF, so `tolerance` reported the reproduction as SUCCESSFUL —
+    while TMAX was high in all 12 months (+0.21..+0.31) and TMIN low in all 12
+    (-0.46..-0.54). "36 small random errors" and "36 errors all in the same
+    direction" are completely different claims about a reproduction, and only
+    the second one says the method differs.
+
+    An exact sign test, so there is no dependency and no distributional
+    assumption: under "the signs are random" the count of positives is
+    Binomial(n, 0.5). Reports the two-sided p-value.
+    """
+    vals = [r for r in residuals if r == r and r != 0.0]  # drop NaN and exact ties
+    n = len(vals)
+    if n < min_n:
+        return None
+    pos = sum(1 for r in vals if r > 0)
+    neg = n - pos
+    k = min(pos, neg)
+    # two-sided exact binomial tail at p=0.5
+    tail = sum(math.comb(n, i) for i in range(k + 1))
+    pval = min(1.0, 2.0 * tail / (2 ** n))
+    mean = sum(vals) / n
+    return {
+        "n": n, "positive": pos, "negative": neg,
+        "mean_residual": mean, "p_value": pval,
+        "systematic": pval < alpha,
+    }
+
+
 def _write_report(dest, level, agree, differing, ec, ac, detail, applied,
                   expected, actual, out_of_scope=0):
     """Write one comparison's verdict as a readable document.
@@ -424,13 +458,47 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
     shared = set(eidx) & set(aidx)
 
     changed = []
+    # ⚠️ PER COLUMN, never pooled. Pooling destroys the signal it is meant to
+    # find: in the NOAA normals case TMAX runs high and TMIN runs low, so a
+    # pooled sign test sees a balanced mix and reports "no bias" while BOTH
+    # columns are systematically wrong in opposite directions.
+    residuals: dict[str, list[float]] = collections.defaultdict(list)
     for k in shared:
         ev, av = eidx[k], aidx[k]
         if tol > 0:
+            # The SIGNED residual of every numeric pair, whether or not it
+            # passes the tolerance: a value inside tolerance still carries
+            # direction, and direction is what a per-value predicate cannot see.
+            for fname, x, y in zip(efields, ev, av):
+                try:
+                    fx, fy = float(x), float(y)
+                except (TypeError, ValueError):
+                    continue
+                if fx == fx and fy == fy:  # not NaN
+                    residuals[fname].append(fy - fx)
             if any(not _values_equal(x, y, tol) for x, y in zip(ev, av)):
                 changed.append(k)
         elif ev != av:
             changed.append(k)
+
+    bias = None
+    if tol > 0:
+        per = {f: st for f, v in residuals.items()
+               if (st := _residual_structure(v)) is not None}
+        flagged = {f: st for f, st in per.items() if st["systematic"]}
+        if flagged:
+            bias = {"systematic": True, "columns": flagged,
+                    "mean_residual": max((st["mean_residual"] for st in flagged.values()),
+                                         key=abs)}
+            for f, st in sorted(flagged.items()):
+                applied.append(
+                    f"⚠️ `{f}` residuals are SYSTEMATIC, not noise: "
+                    f"{st['positive']}+/{st['negative']}- of {st['n']}, mean "
+                    f"{st['mean_residual']:+.4g} (sign test p={st['p_value']:.2g})")
+        elif per:
+            bias = {"systematic": False, "columns": per,
+                    "mean_residual": max((st["mean_residual"] for st in per.values()),
+                                         key=abs)}
 
     # The scope note leads, because it changes how every number below it reads.
     pre = (scope_note + ". ") if scope_note else ""
@@ -444,16 +512,16 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
                       len(only_e) + len(only_a) + len(changed), ecount, acount,
                       f"{pre}{len(only_e)} record(s) only in expected, "
                       f"{len(only_a)} only in actual — {note}. missing e.g. {ex}",
-                      out_of_scope=scope_e + scope_a)
+                      out_of_scope=scope_e + scope_a, bias=bias)
     if changed:
         ex = "; ".join(str(k) for k in sorted(changed)[:max_ex])
         return result("keys", False, len(changed), ecount, acount,
                       f"{pre}{len(changed)} record(s) differ in values. e.g. {ex}",
-                      out_of_scope=scope_e + scope_a)
+                      out_of_scope=scope_e + scope_a, bias=bias)
 
     detail = "same data" + (f" (after {'; '.join(applied)})" if applied else "")
     return result("values", True, 0, ecount, acount, pre + detail,
-                  out_of_scope=scope_e + scope_a)
+                  out_of_scope=scope_e + scope_a, bias=bias)
 
 
 def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
@@ -487,7 +555,7 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     dest = params.get("report") or ""
 
     def _result(level, agree, differing, ec, ac, detail, report_path="",
-                out_of_scope=0):
+                out_of_scope=0, bias=None):
         # ⚠️ `report` was declared on the facet and silently ignored: a caller
         # could pass a destination, get a green verdict, and find nothing
         # written. A parameter that does nothing is worse than one that does not
@@ -499,6 +567,8 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
         return {"level": level, "agree": agree, "differing": differing,
                 "expected_count": ec, "actual_count": ac,
                 "out_of_scope": out_of_scope,
+                "systematic_bias": bool(bias and bias["systematic"]),
+                "mean_residual": float(bias["mean_residual"]) if bias else 0.0,
                 "normalised_by": applied, "report": out,
                 "_detail": detail}
 

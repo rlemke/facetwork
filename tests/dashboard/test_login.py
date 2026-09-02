@@ -76,7 +76,14 @@ class TestSessionCookie:
             return Request(scope)
 
         assert read_session(req(val)) == "user@test.local"
-        assert read_session(req(val[:-2] + "00")) is None  # tampered sig
+        # ⚠️ Flip the last character to something it is NOT. The previous form
+        # appended a fixed "00", which is a no-op whenever the signature already
+        # ends in "00" — then the "tampered" cookie is the ORIGINAL, read_session
+        # correctly returns the user, and the test fails. ~1 run in 256, seen
+        # 2026-09-02.
+        tampered = val[:-1] + ("1" if val[-1] == "0" else "0")
+        assert tampered != val
+        assert read_session(req(tampered)) is None  # tampered sig
         assert read_session(req("garbage")) is None
 
     def test_email_with_pipe_rejected(self):

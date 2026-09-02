@@ -339,3 +339,70 @@ def test_split_composes_with_tolerance(tmp_path):
     assert r["expected_count"] == 3  # 2 records -> 3 rows
     assert any("relative tolerance" in n for n in r["normalised_by"])
     assert any("split alt" in n for n in r["normalised_by"])
+
+
+# --------------------------------------------------------------------------
+# residual structure — a tolerance is a PER-VALUE predicate and cannot see bias
+# --------------------------------------------------------------------------
+
+def _pair(tmp_path, expected_rows, actual_rows):
+    (tmp_path / "e.csv").write_text("k,v\n" + "".join(f"{i},{x}\n" for i, x in enumerate(expected_rows)))
+    (tmp_path / "a.csv").write_text("k,v\n" + "".join(f"{i},{x}\n" for i, x in enumerate(actual_rows)))
+    return {"expected": str(tmp_path / "e.csv"), "actual": str(tmp_path / "a.csv"),
+            "key_columns": ["k"], "tolerance": 0.5}
+
+
+def test_one_sided_residuals_are_reported_even_when_all_pass_tolerance(tmp_path):
+    """The NOAA normals case: every value inside tolerance, every one biased.
+
+    `agree` is True — the caller's tolerance was met — AND the bias is flagged.
+    Both are true, and reporting only the first would hide that the method
+    differs.
+    """
+    base = [10.0] * 12
+    r = handle_tabular(_pair(tmp_path, base, [b + 0.2 for b in base]))
+    assert r["agree"] is True and r["differing"] == 0
+    assert r["systematic_bias"] is True
+    assert any("SYSTEMATIC" in n for n in r["normalised_by"])
+
+
+def test_random_residuals_are_not_called_systematic(tmp_path):
+    """Noise must not be reported as a finding, or the flag becomes ignorable."""
+    base = [10.0] * 12
+    alt = [10.2, 9.8, 10.1, 9.9, 10.3, 9.7, 10.05, 9.95, 10.15, 9.85, 10.1, 9.9]
+    r = handle_tabular(_pair(tmp_path, base, alt))
+    assert r["agree"] is True
+    assert r["systematic_bias"] is False
+
+
+def test_bias_is_per_column_and_opposite_signs_do_not_cancel(tmp_path):
+    """⚠️ REGRESSION: pooling residuals destroys the signal it looks for.
+
+    The first implementation pooled every column, so TMAX running high and TMIN
+    running low cancelled to a balanced sign split and reported "no bias" while
+    BOTH columns were systematically wrong in opposite directions.
+    """
+    (tmp_path / "e.csv").write_text("k,hi,lo\n" + "".join(f"{i},10.0,20.0\n" for i in range(12)))
+    (tmp_path / "a.csv").write_text("k,hi,lo\n" + "".join(f"{i},10.2,19.8\n" for i in range(12)))
+    r = handle_tabular({"expected": str(tmp_path / "e.csv"), "actual": str(tmp_path / "a.csv"),
+                        "key_columns": ["k"], "tolerance": 0.5})
+    assert r["systematic_bias"] is True
+    flagged = " ".join(r["normalised_by"])
+    assert "`hi`" in flagged and "`lo`" in flagged, "both columns must be flagged"
+
+
+def test_too_few_points_is_not_a_claim(tmp_path):
+    """A sign test on 4 points cannot reach significance — do not pretend."""
+    r = handle_tabular(_pair(tmp_path, [10.0] * 4, [10.2] * 4))
+    assert r["systematic_bias"] is False
+
+
+def test_no_tolerance_means_no_residual_claim(tmp_path):
+    """Exact comparison has no residuals to characterise."""
+    r = handle_tabular({"expected": str(tmp_path / "e.csv"), "actual": str(tmp_path / "a.csv"),
+                        "key_columns": ["k"]}) if False else None
+    (tmp_path / "e.csv").write_text("k,v\n1,10.0\n")
+    (tmp_path / "a.csv").write_text("k,v\n1,10.0\n")
+    r = handle_tabular({"expected": str(tmp_path / "e.csv"), "actual": str(tmp_path / "a.csv"),
+                        "key_columns": ["k"]})
+    assert r["systematic_bias"] is False and r["mean_residual"] == 0.0

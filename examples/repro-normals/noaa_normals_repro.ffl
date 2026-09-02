@@ -1,0 +1,175 @@
+// Reproducing a DERIVED PRODUCT from the inputs it is documented to derive from.
+//
+// The GIAB study (examples/repro-giab) compared two published artifacts. This
+// is the stronger claim: NOAA publishes both the raw daily observations
+// (GHCN-Daily) and the 1991-2020 Climate Normals computed from them. Recomputing
+// the normals tests the METHOD, not just whether two files differ.
+//
+//   fw ffl run --primary examples/repro-normals/noaa_normals_repro.ffl \
+//              --workflow repro.normals.ReproduceStationNormals
+//
+// ⚠️ THE FINDING THIS STUDY EXISTS FOR. Every recomputed value lands inside a
+// generous tolerance, so `agree` is true and the reproduction "succeeds" — yet
+// TMAX is high in ALL 12 months and TMIN low in ALL 12, by a near-constant
+// amount (measured at USW00094728: +0.24 and -0.51 degF). A tolerance is a
+// per-value predicate and cannot see that. `systematic_bias` can, via an exact
+// sign test per column, and BOTH results are reported: the reproduction met the
+// stated tolerance AND the method demonstrably differs.
+//
+// ⚠️ The likely cause is a unit round-trip, not an error by either party. US
+// first-order stations record whole degrees F; GHCN-Daily archives tenths of a
+// degree C. NOAA computes normals from the original observations, we recompute
+// from the round-tripped archive, and the rounding does not commute. That is
+// exactly the kind of difference a reproduction study should surface and a
+// pass/fail check cannot.
+//
+// ⚠️ NO HANDLER AND NO DOMAIN. The recomputation is a `script` bound to
+// `fw.file.FileOps`, which supplies fsspec — a bare script block cannot open a
+// file. The 18 MB input is read INSIDE the script rather than passed through a
+// step payload, which would exceed Mongo's 16 MB document limit.
+//
+// ⚠️ `csv` is not on the script sandbox's import allowlist, so the quoted CSV is
+// parsed with `re`. GHCN fields never contain a quote, but NAME contains a
+// comma ("NEW YORK CNTRL PK TWR, NY US"), so a naive split(",") is wrong.
+
+namespace repro.normals {
+
+    /** Recompute monthly TMAX/TMIN/TAVG normals from daily observations.
+      *
+      * Reads GHCN-Daily, keeps the 1991-2020 window, averages per calendar
+      * month, converts tenths-degC to degF, and writes month,TMAX,TMIN,TAVG. */
+    event facet ComputeNormals(
+        daily: String,
+        dest: String,
+        start_year: String = "1991",
+        end_year: String = "2020"
+    ) => (path: String, days: Long, months: Long) in environment fw.file.FileOps
+    script {
+        import re
+        import collections
+        import statistics
+        import fsspec
+
+        with fsspec.open(params["daily"], "rt") as fh:
+            lines = fh.read().splitlines()
+
+        hdr = re.findall(r'"([^"]*)"', lines[0])
+        ix = {name: i for i, name in enumerate(hdr)}
+        lo, hi = params["start_year"], params["end_year"]
+
+        buckets = collections.defaultdict(lambda: collections.defaultdict(list))
+        days = 0
+        for line in lines[1:]:
+            f = re.findall(r'"([^"]*)"', line)
+            if len(f) <= ix["TMIN"]:
+                continue
+            date = f[ix["DATE"]]
+            if not (lo <= date[:4] <= hi):
+                continue
+            days += 1
+            for fld in ("TMAX", "TMIN"):
+                v = f[ix[fld]].strip()
+                if v:
+                    buckets[date[5:7]][fld].append(float(v))
+
+        # tenths of a degree C -> degrees F
+        def to_f(tenths_c):
+            return (tenths_c / 10.0) * 9.0 / 5.0 + 32.0
+
+        out = ["month,TMAX,TMIN,TAVG"]
+        for m in sorted(buckets):
+            b = buckets[m]
+            if not b["TMAX"] or not b["TMIN"]:
+                continue
+            x = to_f(statistics.mean(b["TMAX"]))
+            n = to_f(statistics.mean(b["TMIN"]))
+            out.append("%s,%.2f,%.2f,%.2f" % (m, x, n, (x + n) / 2.0))
+
+        with fsspec.open(params["dest"], "wt") as fh:
+            fh.write("\n".join(out) + "\n")
+
+        result = {"path": params["dest"], "days": days, "months": len(out) - 1}
+    }
+
+    /** Project NOAA's published normals onto the same four columns.
+      *
+      * ⚠️ A PROJECTION, NOT A COMPUTATION. The published file carries 413
+      * columns; this renames three of them and does no arithmetic, so the
+      * comparison stays between OUR method and THEIR result. Any transformation
+      * applied to the reference side would weaken the claim, so there is none. */
+    event facet ExtractPublished(
+        published: String,
+        dest: String
+    ) => (path: String, months: Long) in environment fw.file.FileOps
+    script {
+        import re
+        import fsspec
+
+        with fsspec.open(params["published"], "rt") as fh:
+            lines = fh.read().splitlines()
+
+        hdr = re.findall(r'"([^"]*)"', lines[0])
+        ix = {name: i for i, name in enumerate(hdr)}
+        out = ["month,TMAX,TMIN,TAVG"]
+        for line in lines[1:]:
+            f = re.findall(r'"([^"]*)"', line)
+            if len(f) <= ix["MLY-TAVG-NORMAL"]:
+                continue
+            out.append("%s,%s,%s,%s" % (
+                f[ix["month"]].strip(),
+                f[ix["MLY-TMAX-NORMAL"]].strip(),
+                f[ix["MLY-TMIN-NORMAL"]].strip(),
+                f[ix["MLY-TAVG-NORMAL"]].strip()))
+
+        with fsspec.open(params["dest"], "wt") as fh:
+            fh.write("\n".join(out) + "\n")
+
+        result = {"path": params["dest"], "months": len(out) - 1}
+    }
+
+    workflow ReproduceStationNormals(
+        station: String = "USW00094728",
+        daily_url: String = "https://www.ncei.noaa.gov/data/global-historical-climatology-network-daily/access/USW00094728.csv",
+        normals_url: String = "https://www.ncei.noaa.gov/data/normals-monthly/1991-2020/access/USW00094728.csv",
+        daily_dest: String = "s3://afl-cache/repro/normals/USW00094728-daily.csv",
+        normals_dest: String = "s3://afl-cache/repro/normals/USW00094728-published.csv",
+        ours_dest: String = "s3://afl-cache/repro/normals/USW00094728-recomputed.csv",
+        theirs_dest: String = "s3://afl-cache/repro/normals/USW00094728-reference.csv",
+        report_dest: String = "s3://afl-cache/repro/normals/USW00094728-report.md",
+        tolerance: Double = 0.02
+    ) => (
+        level: String, agree: Boolean, differing: Long,
+        systematic_bias: Boolean, mean_residual: Double, report: String
+    ) andThen {
+
+        // 1. ACQUIRE both published artifacts, with provenance sidecars.
+        //    ⚠️ s3:// on purpose — the steps may be claimed by different hosts.
+        daily = fw.http.Fetch(url = $.daily_url, dest = $.daily_dest, max_age_hours = 168)
+        published = fw.http.Fetch(url = $.normals_url, dest = $.normals_dest, max_age_hours = 168)
+
+        // 2. RECOMPUTE from the raw observations, and project the published
+        //    product onto the same shape.
+        ours = repro.normals.ComputeNormals(daily = daily.path, dest = $.ours_dest)
+        theirs = repro.normals.ExtractPublished(published = published.path, dest = $.theirs_dest)
+
+        // 3. COMPARE. `tolerance` states what counts as reproduced; the sign
+        //    test says whether what remains is noise or method.
+        diff = fw.compare.Tabular(
+            expected = theirs.path,
+            actual = ours.path,
+            key_columns = ["month"],
+            tolerance = $.tolerance,
+            max_examples = 12,
+            report = $.report_dest
+        )
+
+        yield ReproduceStationNormals(
+            level = diff.level,
+            agree = diff.agree,
+            differing = diff.differing,
+            systematic_bias = diff.systematic_bias,
+            mean_residual = diff.mean_residual,
+            report = diff.report
+        )
+    }
+}

@@ -39,6 +39,21 @@
   * for most scientific output, but it is a claim about acceptable error, so it
   * is reported alongside the verdict rather than hidden in the result.
   *
+  * ⚠️ A TOLERANCE IS A PER-VALUE PREDICATE AND CANNOT SEE A BIAS. Measured
+  * reproducing NOAA's 1991-2020 Climate Normals from the GHCN-Daily
+  * observations they derive from: all 36 values landed inside tolerance, so the
+  * verdict was `values` / agree — while TMAX ran high in all 12 months
+  * (+0.24 degF mean) and TMIN low in all 12 (-0.51 degF). "36 small random
+  * errors" and "36 errors in the same direction" are completely different
+  * claims about a reproduction; only the second says the METHOD differs.
+  * So an exact sign test runs over the signed residuals and reports
+  * `systematic_bias` beside the verdict. Both can be true at once: the
+  * reproduction met the stated tolerance AND the method demonstrably differs.
+  *
+  * ⚠️ The test is PER COLUMN, never pooled. Pooling destroys the signal it
+  * looks for -- TMAX high and TMIN low cancel to a balanced sign split and
+  * report "no bias" while both columns are systematically wrong.
+  *
   * ⚠️ ON A DISTRIBUTED RUNTIME, COMPARE THE LOGICAL OUTPUT, NOT THE TASK RECORDS.
   * Measured 2026-09-01 running the same genomics pipeline twice over three
   * samples: run 1 produced 10 tasks and 3 per-sample records, run 2 produced 11
@@ -122,6 +137,8 @@ namespace fw.compare {
         expected_count: Long,
         actual_count: Long,
         out_of_scope: Long,
+        systematic_bias: Boolean,
+        mean_residual: Double,
         normalised_by: [String],
         report: String
     ) with Effect(kind = "io") with Cost(tier = "moderate")
