@@ -83,16 +83,26 @@ def test_reports_declared_environment_as_missing(tmp_path):
 
 
 def test_reports_environment_as_provided_when_materialized(tmp_path):
-    """A venv under FW_ENV_ROOT/<hash>/bin/python marks that environment covered."""
-    interpreter = tmp_path / _canonical_hash() / "bin" / "python"
+    """A venv under FW_ENV_ROOT/<hash>/bin/python marks that environment covered.
+
+    ⚠️ Scoped to the canonical hash on purpose. Asserting that the string
+    "NOT materialized here" is absent ANYWHERE made the test depend on there
+    being exactly one declared environment in the repo — adding a second (an
+    astropy environment for examples/repro-asteroids) broke it, though nothing
+    it covers had changed. Assert about the environment this test materialises.
+    """
+    h = _canonical_hash()
+    interpreter = tmp_path / h / "bin" / "python"
     interpreter.parent.mkdir(parents=True)
     interpreter.write_text("#!/bin/sh\n")
 
     r = _check(tmp_path)
     assert r.returncode == 0, r.stderr
     assert "provided" in r.stdout
-    assert "NOT materialized here" not in r.stdout
-    assert "claim their script tasks" not in r.stdout
+    canonical_lines = [l for l in r.stdout.splitlines() if h[:7] in l]
+    assert canonical_lines, f"no line mentions the canonical env {h[:7]}"
+    for line in canonical_lines:
+        assert "NOT materialized here" not in line, line
 
 
 def test_lists_domains_from_the_catalog(tmp_path):
