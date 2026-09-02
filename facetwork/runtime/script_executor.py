@@ -124,6 +124,14 @@ _SAFE_IMPORT_MODULES: list[str] = [
     "copy",
     "hashlib",
     "collections",
+    # ⚠️ `csv` was missing while `json` was present, and the omission is not
+    # neutral: a script that must read a CSV hand-rolls a parser instead.
+    # Measured 2026-09-02 — a regex "parser" (`re.findall(r'"([^"]*)"')`) over
+    # GHCN-Daily silently shifted every field, because the rows carry 124 CSV
+    # fields of which only 30 are quoted; the unquoted empties were skipped.
+    # It produced plausible, wrong numbers rather than an error. `csv` is pure
+    # stdlib parsing with no filesystem or network reach — exactly like `json`.
+    "csv",
     "itertools",
     "functools",
     "datetime",

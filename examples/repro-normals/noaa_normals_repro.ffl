@@ -28,9 +28,13 @@
 // file. The 18 MB input is read INSIDE the script rather than passed through a
 // step payload, which would exceed Mongo's 16 MB document limit.
 //
-// ⚠️ `csv` is not on the script sandbox's import allowlist, so the quoted CSV is
-// parsed with `re`. GHCN fields never contain a quote, but NAME contains a
-// comma ("NEW YORK CNTRL PK TWR, NY US"), so a naive split(",") is wrong.
+// ⚠️ PARSE CSV WITH `csv`, NEVER WITH A REGEX. The first version of this file
+// used `re.findall(r'"([^"]*)"')` because `csv` was not on the sandbox
+// allowlist. It SILENTLY produced wrong numbers: a GHCN row carries 124 fields
+// of which only ~30 are quoted, so every unquoted empty was skipped and each
+// subsequent field shifted. January TMAX came out 37.59 instead of 39.73 — a
+// plausible temperature, no error raised. `csv` was added to the allowlist in
+// the same change (it is pure stdlib parsing, exactly like `json`).
 
 namespace repro.normals {
 
@@ -45,30 +49,24 @@ namespace repro.normals {
         end_year: String = "2020"
     ) => (path: String, days: Long, months: Long) in environment fw.file.FileOps
     script {
-        import re
+        import csv
         import collections
         import statistics
         import fsspec
 
         with fsspec.open(params["daily"], "rt") as fh:
-            lines = fh.read().splitlines()
+            rows = list(csv.DictReader(fh))
 
-        hdr = re.findall(r'"([^"]*)"', lines[0])
-        ix = {name: i for i, name in enumerate(hdr)}
         lo, hi = params["start_year"], params["end_year"]
-
         buckets = collections.defaultdict(lambda: collections.defaultdict(list))
         days = 0
-        for line in lines[1:]:
-            f = re.findall(r'"([^"]*)"', line)
-            if len(f) <= ix["TMIN"]:
-                continue
-            date = f[ix["DATE"]]
+        for r in rows:
+            date = r.get("DATE", "")
             if not (lo <= date[:4] <= hi):
                 continue
             days += 1
             for fld in ("TMAX", "TMIN"):
-                v = f[ix[fld]].strip()
+                v = (r.get(fld) or "").strip()
                 if v:
                     buckets[date[5:7]][fld].append(float(v))
 
@@ -102,24 +100,21 @@ namespace repro.normals {
         dest: String
     ) => (path: String, months: Long) in environment fw.file.FileOps
     script {
-        import re
+        import csv
         import fsspec
 
         with fsspec.open(params["published"], "rt") as fh:
-            lines = fh.read().splitlines()
+            rows = list(csv.DictReader(fh))
 
-        hdr = re.findall(r'"([^"]*)"', lines[0])
-        ix = {name: i for i, name in enumerate(hdr)}
         out = ["month,TMAX,TMIN,TAVG"]
-        for line in lines[1:]:
-            f = re.findall(r'"([^"]*)"', line)
-            if len(f) <= ix["MLY-TAVG-NORMAL"]:
+        for r in rows:
+            if not (r.get("MLY-TAVG-NORMAL") or "").strip():
                 continue
             out.append("%s,%s,%s,%s" % (
-                f[ix["month"]].strip(),
-                f[ix["MLY-TMAX-NORMAL"]].strip(),
-                f[ix["MLY-TMIN-NORMAL"]].strip(),
-                f[ix["MLY-TAVG-NORMAL"]].strip()))
+                r["month"].strip(),
+                r["MLY-TMAX-NORMAL"].strip(),
+                r["MLY-TMIN-NORMAL"].strip(),
+                r["MLY-TAVG-NORMAL"].strip()))
 
         with fsspec.open(params["dest"], "wt") as fh:
             fh.write("\n".join(out) + "\n")
