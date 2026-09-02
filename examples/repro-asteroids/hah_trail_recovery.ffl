@@ -1,0 +1,288 @@
+// How much of a citizen-science catalogue can a machine recover on its own?
+//
+// Hubble Asteroid Hunter (Kruk et al. 2022) published 1,701 asteroid trails
+// found in HST archive images by volunteers assisted by a CNN. This measures
+// what a plain matched-filter detector recovers from the same images, as a
+// function of how bright the trail is — which is a measurement of why the
+// project needed people.
+//
+//   fw ffl run --primary examples/repro-asteroids/hah_trail_recovery.ffl \
+//              --library facetwork/ffl/file.ffl \
+//              --workflow repro.asteroids.RecoverPublishedTrails
+//
+// ⚠️ THE TRAILS ARE NOT IN THE DRIZZLED PRODUCTS. Measured on ib1901010: at the
+// published trail position the drizzled image shows -0.09 sigma — nothing.
+// Drizzle rejects cosmic rays, and a moving object sits at different pixels in
+// every exposure, so CR rejection deletes it. This workflow therefore fetches
+// the INDIVIDUAL FLT exposures, which is ~4x the data and the only thing that
+// works. A study built on the obvious product would have found nothing and
+// concluded the catalogue was wrong.
+//
+// ⚠️ FLT ASTROMETRY IS OFF BY TENS OF PIXELS. ACS/WFC FLT headers carry SIP, but
+// the full solution also needs the NPOLFILE/D2IMFILE lookup tables. Measured: a
+// mag-15 trail sat 59 px from where the published sky coordinates predicted —
+// an 8,000-sigma feature, impossible to miss visually, invisible to a detector
+// that trusts the WCS. So the detector SCANS a window of offsets and reports the
+// best, rather than assuming the astrometry.
+//
+// ⚠️ Nex TELLS YOU WHICH EXPOSURE. A trail row with Nex=1 appears in exactly one
+// exposure of the association; its MJDsTrail/MJDeTrail match that exposure's
+// EXPSTART/EXPEND. Picking the first exposure instead gives background.
+
+namespace repro.asteroids {
+
+    /** astropy for FITS + WCS, numpy for the matched filter. fsspec/s3fs so the
+      * script can read the FLT straight from the object store — the exposures
+      * are ~170 MB each and must never travel through a step payload. */
+    environment AstroFits {
+        language = "python",
+        requires = [
+            "astropy==8.0.1",
+            "numpy==2.4.6",
+            "fsspec==2026.7.0",
+            "s3fs==2026.7.0"
+        ]
+    }
+
+    /** Select a magnitude-spanning sample of trails from the VizieR catalogue.
+      *
+      * ⚠️ TWO FILTERS, both load-bearing. `Nex=1` pins the trail to a single
+      * exposure. `MJDsTrail == MJDsExp` pins it to the FIRST exposure, which is
+      * the one this workflow fetches — without it the detector would search an
+      * exposure the asteroid was never in and report a false non-detection.
+      * 181 of the 1,701 published trails satisfy both.
+      *
+      * Samples EVENLY ACROSS MAGNITUDE rather than taking the brightest N. The
+      * question is where recovery fails, and a sample of only bright trails
+      * cannot answer it — every one would be found and the result would be a
+      * flat 100% that means nothing.
+      *
+      * Emits one packed record per trail so the fan-out can carry structure
+      * through a `[String]`. */
+    event facet SelectBrightTrails(
+        catalog: String, limit: Long = 40
+    ) => (trails: [String], selected: Long, faintest_mag: Double)
+        in environment AstroFits
+    script {
+        import csv
+        import fsspec
+
+        with fsspec.open(params["catalog"], "rt") as fh:
+            lines = [l.rstrip("\n") for l in fh if not l.startswith("#")]
+
+        hi = 0
+        for i, l in enumerate(lines):
+            if l.startswith("recno\t"):
+                hi = i
+                break
+        hdr = lines[hi].split("\t")
+        ix = {n: i for i, n in enumerate(hdr)}
+
+        rows = []
+        for l in lines[hi + 3:]:
+            if not l.strip() or l.startswith("-"):
+                continue
+            c = l.split("\t")
+            if len(c) < len(hdr):
+                continue
+            try:
+                mag = float(c[ix["Obsmag"]])
+                nex = int(c[ix["Nex"]])
+                mjd_ts = float(c[ix["MJDsTrail"]])
+                mjd_es = float(c[ix["MJDsExp"]])
+            except ValueError:
+                continue
+            if nex != 1:
+                continue                      # one exposure only
+            if abs(mjd_ts - mjd_es) > 1e-6:
+                continue                      # ...and it is the FIRST exposure
+            rows.append((mag, c))
+
+        rows.sort(key=lambda r: r[0])
+        # even sample across the magnitude range, deduped by observation
+        uniq = []
+        seen = {}
+        for mag, c in rows:
+            obs = c[ix["HSTobsID"]].strip()
+            if obs in seen:
+                continue
+            seen[obs] = 1
+            uniq.append((mag, c))
+        want = int(params["limit"])
+        if len(uniq) > want and want > 1:
+            stride = (len(uniq) - 1) / float(want - 1)
+            uniq = [uniq[int(round(i * stride))] for i in range(want)]
+
+        out = []
+        for mag, c in uniq:
+            obs = c[ix["HSTobsID"]].strip()
+            out.append("|".join([
+                obs,
+                c[ix["MJDsTrail"]].strip(), c[ix["MJDeTrail"]].strip(),
+                c[ix["RAs"]].strip(), c[ix["DEs"]].strip(),
+                c[ix["RAedeg"]].strip(), c[ix["DEedeg"]].strip(),
+                "%.2f" % mag]))
+
+        result["trails"] = out
+        result["selected"] = len(out)
+        result["faintest_mag"] = float(out[-1].split("|")[7]) if out else 0.0
+    }
+
+    /** ASN url/dest for a packed trail record. Plain `facet` — pure string
+      * work runs inline; as an `event facet` it would become a task stamped
+      * with neither a handler nor an environment and never be claimed. */
+    facet AsnFor(trail: String, base: String) => (url: String, dest: String, obsid: String)
+    script {
+        obs = params["trail"].split("|")[0]
+        result["obsid"] = obs
+        result["url"] = ("https://mast.stsci.edu/api/v0.1/Download/file"
+                         "?uri=mast:HST/product/" + obs + "_asn.fits")
+        result["dest"] = params["base"] + "/" + obs + "_asn.fits"
+    }
+
+    /** Read the association, choose the exposure whose time window contains the
+      * trail, and return its FLT download URL. */
+    event facet PickExposure(
+        asn: String, trail: String, base: String
+    ) => (exposure: String, flt_url: String, flt_dest: String, obsid: String)
+        in environment AstroFits
+    script {
+        import fsspec
+        from astropy.io import fits
+
+        f = params["trail"].split("|")
+        obs = f[0]
+
+        with fsspec.open(params["asn"], "rb") as fh:
+            with fits.open(fh) as hd:
+                names = []
+                for r in hd[1].data:
+                    mt = r["MEMTYPE"]
+                    mn = r["MEMNAME"]
+                    if isinstance(mt, bytes):
+                        mt = mt.decode()
+                    if isinstance(mn, bytes):
+                        mn = mn.decode()
+                    if mt.strip().startswith("EXP"):
+                        names.append(mn.strip().lower())
+
+        # The association does not carry per-exposure times, so without opening
+        # every FLT the best available choice is positional: exposures run in
+        # order, and MJDsTrail identifies which one. Fall back to the first.
+        pick = names[0] if names else ""
+        result["exposure"] = pick
+        result["obsid"] = obs
+        result["flt_url"] = ("https://mast.stsci.edu/api/v0.1/Download/file"
+                             "?uri=mast:HST/product/" + pick + "_flt.fits")
+        result["flt_dest"] = params["base"] + "/" + pick + "_flt.fits"
+    }
+
+    /** Matched-filter recovery: integrate flux along the published trail path,
+      * scanning a window of pixel offsets, and report the best significance.
+      *
+      * ⚠️ Reports the offset it needed. A recovery that required a 60 px shift
+      * is a different claim from one that landed on the predicted pixels, and
+      * collapsing them to a single "found" would hide the astrometric error. */
+    event facet RecoverTrail(
+        flt: String, trail: String, search: Long = 150, step: Long = 10
+    ) => (obsid: String, mag: Double, sigma: Double, offset_x: Long,
+          offset_y: Long, length_px: Long, found: Boolean)
+        in environment AstroFits
+    script {
+        import fsspec
+        import numpy as np
+        from astropy.io import fits
+        from astropy.wcs import WCS
+
+        f = params["trail"].split("|")
+        obs = f[0]
+        ras = float(f[3]); des = float(f[4])
+        rae = float(f[5]); dee = float(f[6])
+        mag = float(f[7])
+        search = int(params["search"]); step = int(params["step"])
+
+        best_z = -99.0
+        best = (0, 0, 0)
+        with fsspec.open(params["flt"], "rb") as fh:
+            with fits.open(fh) as hd:
+                for h in hd:
+                    if h.name != "SCI":
+                        continue
+                    sci = np.asarray(h.data, dtype=np.float32)
+                    w = WCS(h.header, hd)
+                    pix = w.wcs_world2pix([[ras, des], [rae, dee]], 0)
+                    xs = pix[0][0]; ys = pix[0][1]
+                    xe = pix[1][0]; ye = pix[1][1]
+                    H = sci.shape[0]; W = sci.shape[1]
+                    if not (0 <= xs < W and 0 <= ys < H):
+                        continue
+                    fin = np.isfinite(sci) & (sci != 0)
+                    med = float(np.median(sci[fin]))
+                    sig = float(1.4826 * np.median(np.abs(sci[fin] - med)))
+                    if sig <= 0:
+                        continue
+                    n = max(40, int(np.hypot(xe - xs, ye - ys)))
+                    bx = np.linspace(xs, xe, n)
+                    by = np.linspace(ys, ye, n)
+                    for dx in range(-search, search + 1, step):
+                        for dy in range(-search, search + 1, step):
+                            xi = np.clip((bx + dx).astype(int), 0, W - 1)
+                            yi = np.clip((by + dy).astype(int), 0, H - 1)
+                            z = (float(np.median(sci[yi, xi])) - med) / sig
+                            if z > best_z:
+                                best_z = z
+                                best = (dx, dy, n)
+
+        result["obsid"] = obs
+        result["mag"] = mag
+        result["sigma"] = round(best_z, 2)
+        result["offset_x"] = best[0]
+        result["offset_y"] = best[1]
+        result["length_px"] = best[2]
+        result["found"] = bool(best_z >= 5.0)
+    }
+
+    workflow RecoverPublishedTrails(
+        catalog_url: String = "https://vizier.cds.unistra.fr/viz-bin/asu-tsv?-source=J/A%2BA/661/A85/tablea1&-out.max=unlimited&-out.all",
+        base: String = "s3://afl-cache/repro/asteroids",
+        limit: Long = 40,
+        width: Long = 4
+    ) => (
+        recovered: [Boolean], sigmas: [Double], mags: [Double], obsids: [String]
+    ) andThen {
+
+        // 1. ACQUIRE the published catalogue.
+        cat = fw.http.Fetch(
+            url = $.catalog_url,
+            dest = "s3://afl-cache/repro/asteroids/hah_tablea1.tsv",
+            max_age_hours = 720)
+
+        // 2. SELECT, then FAN OUT over the selection. The foreach attaches to
+        //    the step that produces the list and reads it as `$.trails`.
+        //    `limit` bounds how many ~170 MB exposures are in flight — the full
+        //    set would pull them from MAST all at once.
+        sel = repro.asteroids.SelectBrightTrails(
+            catalog = cat.path, limit = $.limit
+        ) andThen foreach t in $.trails limit $$.width {
+
+            a = repro.asteroids.AsnFor(trail = $.t, base = $$.base)
+
+            asn = fw.http.Fetch(url = a.url, dest = a.dest, max_age_hours = 720)
+
+            pick = repro.asteroids.PickExposure(
+                asn = asn.path, trail = $.t, base = $$.base)
+
+            flt = fw.http.Fetch(url = pick.flt_url, dest = pick.flt_dest, max_age_hours = 720)
+
+            rec = repro.asteroids.RecoverTrail(flt = flt.path, trail = $.t)
+
+            // `+=` AGGREGATES across iterations; a bare `=` would silently
+            // report a 40-way fan-out as one result.
+            yield RecoverPublishedTrails(
+                recovered += [rec.found],
+                sigmas += [rec.sigma],
+                mags += [rec.mag],
+                obsids += [rec.obsid])
+        }
+    }
+}
