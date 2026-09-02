@@ -85,3 +85,33 @@ class TestScriptDeclaredReturns:
         from facetwork.runtime.base_runner import check_declared_returns
         check_declared_returns("f", {"returns": []}, {})
         check_declared_returns("f", {}, {})
+
+
+def test_dockerfile_copies_every_example_that_declares_an_environment():
+    """⚠️ envbake sweeps /app/examples — everything it sweeps must be COPYed.
+
+    The Dockerfile copied only examples/canonical/, so an `environment`
+    declared in any other example was SILENTLY INVISIBLE: envbake found
+    nothing, the layer cached against an unchanged canonical/, no error was
+    raised, and the environment did not exist. Its script tasks then carry an
+    environment_hash no runner advertises and are claimable by nothing.
+    """
+    import pathlib
+    import re
+    root = pathlib.Path(__file__).resolve().parents[1]
+    df = (root / "docker" / "Dockerfile.domain-runner").read_text()
+    assert "--root /app/examples" in df, "envbake no longer sweeps examples"
+
+    declaring = {
+        p.parent.relative_to(root).as_posix()
+        for p in (root / "examples").rglob("*.ffl")
+        if re.search(r"^\s*environment\s+[A-Z]", p.read_text(), re.M)
+    }
+    assert declaring, "no example declares an environment — test is vacuous"
+
+    copied = re.findall(r"^COPY\s+(examples\S*)", df, re.M)
+    for d in sorted(declaring):
+        assert any(c.rstrip("/") == "examples" or d.startswith(c.rstrip("/"))
+                   for c in copied), (
+            f"{d} declares an environment but the Dockerfile does not copy it "
+            f"(COPY lines: {copied}) — envbake would never see it")

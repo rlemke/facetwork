@@ -174,7 +174,15 @@ RUN if [ "${FW_SKIP_DOMAIN_AUDIT}" = "1" ]; then \
 # from second one (no per-task/per-start pip installs). Env conflicts or
 # materialization failures fail the build: a half-provided image would
 # silently strand env-tagged tasks.
-COPY examples/canonical/ ./examples/canonical/
+# ⚠️ envbake below sweeps /app/examples, so EVERY example that declares an
+# `environment` must be copied here. Copying only examples/canonical/ made any
+# environment declared elsewhere SILENTLY INVISIBLE: envbake found nothing to
+# build, the layer cached against an unchanged canonical/, no error was raised,
+# and the environment simply did not exist — its script tasks then carry an
+# environment_hash no runner advertises and are claimable by nothing. Cost a
+# full rollout to find. examples/ is 5.6 MB of mostly text; copy all of it so
+# the sweep matches what the docs promise.
+COPY examples/ ./examples/
 RUN python -m facetwork.envbake --root /opt --root /app/examples \
     && ls /opt/fw_envs 2>/dev/null || true
 
