@@ -115,3 +115,35 @@ def test_dockerfile_copies_every_example_that_declares_an_environment():
                    for c in copied), (
             f"{d} declares an environment but the Dockerfile does not copy it "
             f"(COPY lines: {copied}) — envbake would never see it")
+
+
+def test_envbake_sweeps_every_root_that_declares_an_environment():
+    """⚠️ Built-in environments must be BUILT by the build, not inherited.
+
+    `fw.file.FileOps` is declared in facetwork/ffl/file.ffl. envbake swept only
+    /opt and /app/examples, so it was never discovered — it survived in images
+    purely as a stale cached layer from an older build. The first change that
+    invalidated that layer removed the environment, and every script bound to
+    `in environment fw.file.FileOps` became unclaimable: its tasks carry an
+    environment_hash no runner advertises and nothing errors.
+    """
+    import pathlib
+    import re
+    root = pathlib.Path(__file__).resolve().parents[1]
+    df = (root / "docker" / "Dockerfile.domain-runner").read_text()
+    envbake = [l for l in df.splitlines() if "facetwork.envbake" in l]
+    assert envbake, "no envbake step in the Dockerfile"
+    roots = set(re.findall(r"--root\s+(\S+)", envbake[0]))
+
+    # every directory in the repo that DECLARES an environment
+    declaring = {
+        p.relative_to(root).parts[0]
+        for p in root.rglob("*.ffl")
+        if ".venv" not in p.parts
+        and re.search(r"^\s*environment\s+[A-Z]", p.read_text(), re.M)
+    }
+    assert "facetwork" in declaring, "expected a built-in environment to exist"
+    for d in sorted(declaring):
+        assert any(r.rstrip("/").endswith(d) for r in roots), (
+            f"{d}/ declares an environment but envbake does not sweep it "
+            f"(roots: {sorted(roots)})")

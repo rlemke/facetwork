@@ -183,7 +183,15 @@ RUN if [ "${FW_SKIP_DOMAIN_AUDIT}" = "1" ]; then \
 # full rollout to find. examples/ is 5.6 MB of mostly text; copy all of it so
 # the sweep matches what the docs promise.
 COPY examples/ ./examples/
-RUN python -m facetwork.envbake --root /opt --root /app/examples \
+# ⚠️ /app/facetwork is swept because the BUILT-IN environments live there:
+# fw.file.FileOps is declared in facetwork/ffl/file.ffl, and without this root
+# envbake never sees it. It appeared in earlier images only as a STALE CACHED
+# LAYER from a build whose cache predated the current sweep; the first change
+# that invalidated that layer silently removed the environment, and every
+# script bound to `in environment fw.file.FileOps` became unclaimable. An
+# environment that ships with the product must be built by the build, not
+# inherited from a cache.
+RUN python -m facetwork.envbake --root /opt --root /app/examples --root /app/facetwork \
     && ls /opt/fw_envs 2>/dev/null || true
 
 # Entrypoint installs the named example then starts the runner.
