@@ -38,6 +38,7 @@ from __future__ import annotations
 import base64
 import builtins as _builtins_mod
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -323,6 +324,28 @@ class ScriptExecutor:
         # Pass params via stdin to avoid OS ARG_MAX limits for large payloads
         worker_code = _build_worker_script(code, extra_import_modules=extra_import_modules)
 
+        # ⚠️ `fw.file.FileOps` bundles s3fs SO THAT a script can do
+        # storage-portable I/O — but s3fs/boto3 read AWS_*, and the fleet
+        # supplies FW_S3_*. Without the alias `fsspec.open("s3://…")` fails with
+        # NoCredentialsError inside a script while the identical path works in a
+        # handler, which makes the advertised capability a promise nothing keeps.
+        #
+        # This is NOT new exposure: the worker already inherits the parent
+        # environment wholesale (there is no `env=` below without this), so
+        # FW_S3_* were always visible to script code. The alias only puts the
+        # SAME secrets into the names the bundled library actually reads.
+        # An explicit AWS_* already in the environment always wins.
+        env = dict(os.environ)
+        for aws_name, fw_name in (
+            ("AWS_ACCESS_KEY_ID", "FW_S3_ACCESS_KEY"),
+            ("AWS_SECRET_ACCESS_KEY", "FW_S3_SECRET_KEY"),
+            ("AWS_ENDPOINT_URL", "FW_S3_ENDPOINT"),
+            ("AWS_DEFAULT_REGION", "FW_S3_REGION"),
+        ):
+            fw_val = os.environ.get(fw_name)
+            if fw_val and not env.get(aws_name):
+                env[aws_name] = fw_val
+
         try:
             proc = subprocess.run(
                 [python_executable or sys.executable, "-c", worker_code],
@@ -330,6 +353,7 @@ class ScriptExecutor:
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
+                env=env,
             )
         except subprocess.TimeoutExpired:
             return ScriptResult(
