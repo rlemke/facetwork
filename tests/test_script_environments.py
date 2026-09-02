@@ -147,3 +147,31 @@ def test_envbake_sweeps_every_root_that_declares_an_environment():
         assert any(r.rstrip("/").endswith(d) for r in roots), (
             f"{d}/ declares an environment but envbake does not sweep it "
             f"(roots: {sorted(roots)})")
+
+
+class TestSandboxSubmoduleImports:
+    """⚠️ An allowlist entry names a PACKAGE; its submodules come with it."""
+
+    def test_submodule_of_an_allowed_root_is_importable(self):
+        """Exact-name matching banned most real libraries: `astropy` on the
+        allowlist still refused `from astropy.io import fits`, because Python
+        imports the submodule `astropy.io`. Same for numpy.linalg,
+        scipy.ndimage. Found when a fleet fan-out failed on every task."""
+        from facetwork.runtime.script_executor import ScriptExecutor
+        r = ScriptExecutor(timeout=60).execute(
+            "import collections.abc\nresult['n'] = collections.abc.Mapping.__name__", {})
+        assert r.success, r.error
+        assert r.result["n"] == "Mapping"
+
+    def test_submodule_of_a_banned_root_is_still_refused(self):
+        """Widening to roots must not open a path to a package that is banned."""
+        from facetwork.runtime.script_executor import ScriptExecutor
+        r = ScriptExecutor(timeout=60).execute("import os.path\nresult['x'] = 1", {})
+        assert not r.success
+        assert "not allowed" in (r.error or "")
+
+    def test_banned_top_level_still_refused(self):
+        from facetwork.runtime.script_executor import ScriptExecutor
+        for mod in ("os", "subprocess", "socket", "shutil"):
+            r = ScriptExecutor(timeout=60).execute(f"import {mod}\nresult['x']=1", {})
+            assert not r.success, f"{mod} must stay banned"

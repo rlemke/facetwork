@@ -178,8 +178,15 @@ def _build_worker_script(
         f"_names = {names_repr}",
         f"_allowed_modules = {allowed_repr}",
         "_safe = {n: getattr(_b, n) for n in _names}",
+        # ⚠️ A SUBMODULE OF AN ALLOWED PACKAGE IS ALLOWED. Matching the exact
+        # name only was equivalent to banning most real libraries: an allowlist
+        # entry of `astropy` still refused `from astropy.io import fits`,
+        # because Python imports the SUBMODULE `astropy.io`. Same for
+        # numpy.linalg, scipy.ndimage, collections.abc. The allowlist is about
+        # which PACKAGES a script may reach, so the root decides; a package that
+        # is not allowed still has every submodule refused.
         "def _restricted_import(name, *a, **kw):",
-        "    if name not in _allowed_modules:",
+        "    if name not in _allowed_modules and name.split('.')[0] not in _allowed_modules:",
         "        raise ImportError(f'import of {name!r} is not allowed in script blocks')",
         "    return __import__(name, *a, **kw)",
         "_safe['__import__'] = _restricted_import",
