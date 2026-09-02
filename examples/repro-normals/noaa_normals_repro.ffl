@@ -8,6 +8,13 @@
 //   fw ffl run --primary examples/repro-normals/noaa_normals_repro.ffl \
 //              --workflow repro.normals.ReproduceStationNormals
 //
+// ⚠️ ABSOLUTE tolerance, not relative. Fahrenheit is an INTERVAL scale — its
+// zero is arbitrary — so "within 2%" has no physical meaning. The first run
+// used a 2% relative tolerance and Chicago's constant -0.9 degF TAVG error
+// FAILED in January (2% of 25.2 = 0.50) and PASSED in July (2% of 77.5 = 1.55):
+// same error, opposite verdict, purely seasonal. 0.2 degF is a claim about
+// measurement agreement that means the same thing in every month.
+//
 // ⚠️ THE FINDING THIS STUDY EXISTS FOR. Every recomputed value lands inside a
 // generous tolerance, so `agree` is true and the reproduction "succeeds" — yet
 // TMAX is high in ALL 12 months and TMIN low in ALL 12, by a near-constant
@@ -138,7 +145,7 @@ namespace repro.normals {
         ours_dest: String = "s3://afl-cache/repro/normals/USW00094728-recomputed.csv",
         theirs_dest: String = "s3://afl-cache/repro/normals/USW00094728-reference.csv",
         report_dest: String = "s3://afl-cache/repro/normals/USW00094728-report.md",
-        tolerance: Double = 0.02
+        abs_tolerance: Double = 0.2
     ) => (
         level: String, agree: Boolean, differing: Long,
         systematic_bias: Boolean, mean_residual: Double, report: String
@@ -160,7 +167,7 @@ namespace repro.normals {
             expected = theirs.path,
             actual = ours.path,
             key_columns = ["month"],
-            tolerance = $.tolerance,
+            abs_tolerance = $.abs_tolerance,
             max_examples = 12,
             report = $.report_dest
         )
@@ -218,7 +225,7 @@ namespace repro.normals {
             "USW00023169", "USW00024233", "USW00013874", "USW00014922",
             "USW00012839", "USW00003017", "USW00013881", "USW00093814"
         ],
-        tolerance: Double = 0.02,
+        abs_tolerance: Double = 0.2,
         width: Long = 4
     ) => (
         stations_done: [String], biased: [Boolean], mean_residuals: [Double]
@@ -236,7 +243,7 @@ namespace repro.normals {
             expected = theirs.path,
             actual = ours.path,
             key_columns = ["month"],
-            tolerance = $.tolerance,
+            abs_tolerance = $.abs_tolerance,
             report = paths.report_dest
         )
 

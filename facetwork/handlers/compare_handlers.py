@@ -218,7 +218,7 @@ def _split_rows(norm, split, delim):
     return rows, over
 
 
-def _index(path, keys, *, ignore, sort_json, tol, split=(), delim=","):
+def _index(path, keys, *, ignore, sort_json, tol, abs_tol=0.0, split=(), delim=","):
     """Stream a file into {key -> digest of its comparable values}.
 
     A digest rather than the record itself: the comparison needs to know WHETHER
@@ -251,7 +251,11 @@ def _index(path, keys, *, ignore, sort_json, tol, split=(), delim=","):
                 part[k[0]] += 1
                 if len(part) > _PARTITION_CAP:
                     part = None
-            if tol > 0:
+            # ⚠️ Gate on EITHER tolerance. Digesting is only valid for an
+            # EXACT comparison; an absolute-only tolerance still needs the
+            # values kept, and gating on `tol` alone silently fell through to
+            # exact matching.
+            if tol > 0 or abs_tol > 0:
                 idx[k] = tuple(row.get(f) for f in fields)
             else:
                 h = hashlib.blake2b(digest_size=16)
@@ -276,16 +280,32 @@ def _normalise(row: dict, *, ignore: set[str], sort_json: bool) -> dict:
     return out
 
 
-def _values_equal(a: Any, b: Any, tolerance: float) -> bool:
-    """Equality, with a RELATIVE tolerance for values that parse as numbers.
+def _values_equal(a: Any, b: Any, tolerance: float, abs_tolerance: float = 0.0) -> bool:
+    """Equality within a relative and/or ABSOLUTE tolerance, for numeric values.
 
     Exact float equality is the wrong predicate for most scientific output, but
     tolerance is a claim about acceptable error — so the caller states it and it
     is reported with the verdict rather than applied invisibly.
+
+    ⚠️ A RELATIVE tolerance is MEANINGLESS ON AN INTERVAL SCALE — a quantity
+    whose zero is arbitrary rather than "none of it": Fahrenheit and Celsius
+    temperatures, dates, elevations, longitudes. "2% of the value" has no
+    physical meaning there, so the same measurement error passes or fails
+    depending only on where the reading sits.
+
+    Measured on the NOAA normals study, Chicago TAVG, where our recomputation
+    is off by a near-constant -0.9 degF all year:
+
+        January   NOAA 25.2   2% = 0.50   ->  FAIL
+        July      NOAA 77.5   2% = 1.55   ->  pass
+
+    Same error, opposite verdict, purely seasonal. Use `abs_tolerance` for such
+    quantities; keep `tolerance` for ratio scales (counts, masses, durations),
+    where "within 2%" does mean something.
     """
     if a == b:
         return True
-    if tolerance <= 0:
+    if tolerance <= 0 and abs_tolerance <= 0:
         return False
     try:
         fa, fb = float(a), float(b)
@@ -293,7 +313,11 @@ def _values_equal(a: Any, b: Any, tolerance: float) -> bool:
         return False
     if math.isnan(fa) and math.isnan(fb):
         return True
-    return math.isclose(fa, fb, rel_tol=tolerance, abs_tol=0.0)
+    # Passes if within EITHER bound (math.isclose semantics). Setting only
+    # `abs_tolerance` — the right choice for an interval scale — therefore
+    # gives a pure absolute comparison.
+    return math.isclose(fa, fb, rel_tol=max(tolerance, 0.0),
+                        abs_tol=max(abs_tolerance, 0.0))
 
 
 def _residual_structure(residuals, min_n=8, alpha=0.01):
@@ -414,7 +438,8 @@ def _scope(epart, apart, keys):
 
 
 def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
-                       max_ex, applied, params, result, split=(), delim=","):
+                       max_ex, applied, params, result, split=(), delim=",",
+                       abs_tol=0.0):
     """Keyed comparison in O(keys) memory rather than O(file).
 
     Two passes, one file at a time: index `expected`, then stream `actual` and
@@ -425,11 +450,11 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
     with heartbeating(params, f"indexing {os.path.basename(expected)}"):
         efields, eidx, ecount, erows, epart, eover = _index(
             expected, keys, ignore=ignore, sort_json=sort_json, tol=tol,
-            split=split, delim=delim)
+            abs_tol=abs_tol, split=split, delim=delim)
     with heartbeating(params, f"comparing against {os.path.basename(actual)}"):
         afields, aidx, acount, arows, apart, aover = _index(
             actual, keys, ignore=ignore, sort_json=sort_json, tol=tol,
-            split=split, delim=delim)
+            abs_tol=abs_tol, split=split, delim=delim)
 
     if split:
         # Splitting CHANGES THE UNIT OF COMPARISON from record to element, so
@@ -465,7 +490,7 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
     residuals: dict[str, list[float]] = collections.defaultdict(list)
     for k in shared:
         ev, av = eidx[k], aidx[k]
-        if tol > 0:
+        if tol > 0 or abs_tol > 0:
             # The SIGNED residual of every numeric pair, whether or not it
             # passes the tolerance: a value inside tolerance still carries
             # direction, and direction is what a per-value predicate cannot see.
@@ -476,13 +501,13 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
                     continue
                 if fx == fx and fy == fy:  # not NaN
                     residuals[fname].append(fy - fx)
-            if any(not _values_equal(x, y, tol) for x, y in zip(ev, av)):
+            if any(not _values_equal(x, y, tol, abs_tol) for x, y in zip(ev, av)):
                 changed.append(k)
         elif ev != av:
             changed.append(k)
 
     bias = None
-    if tol > 0:
+    if tol > 0 or abs_tol > 0:
         per = {f: st for f, v in residuals.items()
                if (st := _residual_structure(v)) is not None}
         flagged = {f: st for f, st in per.items() if st["systematic"]}
@@ -531,6 +556,7 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     ignore = set(params.get("ignore_columns") or [])
     sort_json = bool(params.get("sort_json_keys"))
     tol = float(params.get("tolerance") or 0.0)
+    abs_tol = float(params.get("abs_tolerance") or 0.0)
     max_ex = int(params.get("max_examples") or 10)
     split = [c for c in (params.get("split_columns") or []) if c not in ignore]
     delim = params.get("split_delimiter") or ","
@@ -551,6 +577,8 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
         applied.append("sorted nested JSON keys")
     if tol:
         applied.append(f"relative tolerance {tol:g}")
+    if abs_tol:
+        applied.append(f"absolute tolerance {abs_tol:g}")
 
     dest = params.get("report") or ""
 
@@ -583,7 +611,8 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     # discloses that weaker claim in `normalised_by`.
     if keys:
         return _compare_streaming(expected, actual, keys, ignore=ignore,
-                                  sort_json=sort_json, tol=tol, max_ex=max_ex,
+                                  sort_json=sort_json, tol=tol, abs_tol=abs_tol,
+                                  max_ex=max_ex,
                                   applied=applied, params=params, result=_result,
                                   split=split, delim=delim)
 
@@ -634,7 +663,8 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
             # "the records differ everywhere". Those need different responses.
             bad = 0
             for k in shared:
-                if any(not _values_equal(emap[k].get(f), amap[k].get(f), tol) for f in ef):
+                if any(not _values_equal(emap[k].get(f), amap[k].get(f), tol, abs_tol)
+                       for f in ef):
                     bad += 1
             ex = "; ".join(str(k) for k in sorted(only_e)[:max_ex]) or "-"
             note = (f"the {len(shared)} shared record(s) match"
@@ -652,7 +682,7 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     diffs = []
     with heartbeating(params, f"comparing {len(pairs)} record(s)"):
         for k, e, a in pairs:
-            bad = [f for f in ef if not _values_equal(e.get(f), a.get(f), tol)]
+            bad = [f for f in ef if not _values_equal(e.get(f), a.get(f), tol, abs_tol)]
             if bad:
                 diffs.append((k, bad, {f: (e.get(f), a.get(f)) for f in bad[:3]}))
     if diffs:

@@ -29,6 +29,43 @@
   *     values      -> same values per key, under the declared normalisations
   *     bytes       -> byte-identical
   *
+  * THE RETURNED `level` IS THE HIGHEST RUNG REACHED, so it names what DID
+  * match and thereby locates the first thing that did not. Read it as "agrees
+  * up to here":
+  *
+  *     level        means                          the failure is
+  *     -----------  -----------------------------  ---------------------------
+  *     missing      an artifact is absent          acquisition, not analysis
+  *     exists       readable, fields disagree      wrong file / schema change
+  *     schema       fields agree, record sets      records added, dropped, or
+  *                  do not                         out of scope entirely
+  *     cardinality  counts agree, WHICH records    same number, different
+  *                  do not                         members -- often a join or
+  *                                                 filter difference
+  *     keys         the SAME RECORDS EXIST on      the numbers themselves
+  *                  both sides; their values       -- a method difference,
+  *                  differ                         not a plumbing one
+  *     values       values agree under the         only serialisation differs
+  *                  declared normalisations
+  *     bytes        identical files                nothing
+  *
+  * ⚠️ `keys` IS THE MOST INFORMATIVE RUNG, and the easiest to misread. It says
+  * the two artifacts describe exactly the same things and disagree about them.
+  * Nothing was lost in transfer, no filter diverged, no schema drifted -- both
+  * sides looked at the same population and computed different answers. That is
+  * a finding about METHOD, and it is where a reproduction study actually earns
+  * its keep. A verdict of `cardinality` or lower usually means something broke
+  * before the science started.
+  *
+  * The key columns define what "the same record" MEANS, so choosing them is a
+  * substantive claim, not a config detail. In the GIAB study the key is
+  * (CHROM, POS, REF, ALT) -- the identity of a variant -- and without it
+  * records match BY POSITION IN THE FILE, so one inserted row misaligns
+  * everything after it and the comparison reports total disagreement between
+  * near-identical files. In the NOAA study the key is (month): twelve records,
+  * all twelve present on both sides, so every station that fails does so at
+  * `keys` -- the months are the same, the temperatures are not.
+  *
   * ⚠️ Normalisations are DECLARED and REPORTED, never silently applied.
   * Quietly sorting keys until two files match does not demonstrate a
   * reproduction, it manufactures one. Whatever was needed to reach agreement
@@ -38,6 +75,21 @@
   * ⚠️ `tolerance` exists because exact float equality is the wrong predicate
   * for most scientific output, but it is a claim about acceptable error, so it
   * is reported alongside the verdict rather than hidden in the result.
+  *
+  * ⚠️ USE `abs_tolerance` FOR AN INTERVAL SCALE. A relative tolerance is
+  * meaningless where zero is arbitrary rather than "none of it" -- Fahrenheit
+  * and Celsius temperatures, dates, elevations, longitudes. "Within 2% of the
+  * value" has no physical meaning there, so the SAME measurement error passes
+  * or fails depending only on where the reading sits. Measured on the NOAA
+  * normals study (Chicago TAVG, off by a near-constant -0.9 degF all year):
+  *
+  *     January   NOAA 25.2   2% = 0.50  ->  FAIL
+  *     July      NOAA 77.5   2% = 1.55  ->  pass
+  *
+  * Same error, opposite verdict, purely seasonal. Keep `tolerance` for ratio
+  * scales -- counts, masses, durations -- where "within 2%" does mean
+  * something. A value passes if it is within EITHER bound, so setting only
+  * `abs_tolerance` gives a pure absolute comparison.
   *
   * ⚠️ A TOLERANCE IS A PER-VALUE PREDICATE AND CANNOT SEE A BIAS. Measured
   * reproducing NOAA's 1991-2020 Climate Normals from the GHCN-Daily
@@ -126,6 +178,7 @@ namespace fw.compare {
         ignore_columns: [String] = [],
         sort_json_keys: Boolean = false,
         tolerance: Double = 0.0,
+        abs_tolerance: Double = 0.0,
         max_examples: Long = 10,
         split_columns: [String] = [],
         split_delimiter: String = ",",

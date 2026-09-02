@@ -406,3 +406,36 @@ def test_no_tolerance_means_no_residual_claim(tmp_path):
     r = handle_tabular({"expected": str(tmp_path / "e.csv"), "actual": str(tmp_path / "a.csv"),
                         "key_columns": ["k"]})
     assert r["systematic_bias"] is False and r["mean_residual"] == 0.0
+
+
+def test_absolute_tolerance_is_scale_independent(tmp_path):
+    """⚠️ A relative tolerance is meaningless on an INTERVAL scale.
+
+    The NOAA case: a constant -0.9 degF error passes in July (2% of 77.5 = 1.55)
+    and fails in January (2% of 25.2 = 0.50). Same error, opposite verdict.
+    An absolute tolerance judges both identically, which is the correct claim.
+    """
+    (tmp_path / "e.csv").write_text("k,t\njan,25.2\njul,77.5\n")
+    (tmp_path / "a.csv").write_text("k,t\njan,24.3\njul,76.6\n")   # -0.9 both
+    args = {"expected": str(tmp_path / "e.csv"), "actual": str(tmp_path / "a.csv"),
+            "key_columns": ["k"]}
+
+    rel = handle_tabular({**args, "tolerance": 0.02})
+    assert rel["differing"] == 1, "relative tolerance splits an identical error"
+
+    ab = handle_tabular({**args, "abs_tolerance": 1.0})
+    assert ab["agree"] is True and ab["differing"] == 0
+    assert any("absolute tolerance" in n for n in ab["normalised_by"])
+
+    tight = handle_tabular({**args, "abs_tolerance": 0.5})
+    assert tight["differing"] == 2, "both rows fail identically — scale-independent"
+
+
+def test_absolute_tolerance_alone_does_not_fall_through_to_exact(tmp_path):
+    """⚠️ REGRESSION: several paths gated on `tol > 0`, so an absolute-only
+    tolerance silently took the EXACT-comparison branch and digested values."""
+    (tmp_path / "e.csv").write_text("k,v\n1,10.0\n")
+    (tmp_path / "a.csv").write_text("k,v\n1,10.2\n")
+    r = handle_tabular({"expected": str(tmp_path / "e.csv"), "actual": str(tmp_path / "a.csv"),
+                        "key_columns": ["k"], "abs_tolerance": 0.5})
+    assert r["agree"] is True and r["differing"] == 0
