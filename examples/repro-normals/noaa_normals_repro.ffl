@@ -174,4 +174,78 @@ namespace repro.normals {
             report = diff.report
         )
     }
+
+    /** Build the per-station URLs and destinations.
+      *
+      * ⚠️ A plain `facet`, NOT an `event facet`. Pure computation with no
+      * environment runs INLINE in the evaluator. Declared as `event facet` it
+      * becomes a task stamped with neither `kind="script"` nor an environment
+      * hash — claimable by neither the handler path nor the env-routed script
+      * path — and sits pending forever. Verified: four such tasks stayed
+      * pending across 85 runners. The canonical example
+      * (11-environment-script.ffl) is a plain `facet` for the same reason. */
+    facet StationPaths(station: String) => (
+        daily_url: String, normals_url: String,
+        daily_dest: String, normals_dest: String,
+        ours_dest: String, theirs_dest: String, report_dest: String
+    ) script {
+        s = params["station"]
+        ghcn = "https://www.ncei.noaa.gov/data/global-historical-climatology-network-daily/access/"
+        norm = "https://www.ncei.noaa.gov/data/normals-monthly/1991-2020/access/"
+        base = "s3://afl-cache/repro/normals/" + s
+        result["daily_url"] = ghcn + s + ".csv"
+        result["normals_url"] = norm + s + ".csv"
+        result["daily_dest"] = base + "-daily.csv"
+        result["normals_dest"] = base + "-published.csv"
+        result["ours_dest"] = base + "-recomputed.csv"
+        result["theirs_dest"] = base + "-reference.csv"
+        result["report_dest"] = base + "-report.md"
+    }
+
+    /** Reproduce the normals for MANY stations and report where the bias holds.
+      *
+      * The single-station study showed TMAX high and TMIN low in all 12 months.
+      * One station cannot distinguish a universal artifact of the archive from
+      * something particular to that instrument or era — this fans out so the
+      * answer is measured rather than assumed.
+      *
+      * ⚠️ `limit` bounds how many stations are in flight: each iteration pulls
+      * an ~18 MB daily file and the whole set would otherwise hit NOAA at once.
+      * Same elements, same result, only concurrency changes. */
+    workflow ReproduceManyStations(
+        stations: [String] = [
+            "USW00094728", "USW00023174", "USW00094846", "USW00012960",
+            "USW00023169", "USW00024233", "USW00013874", "USW00014922",
+            "USW00012839", "USW00003017", "USW00013881", "USW00093814"
+        ],
+        tolerance: Double = 0.02,
+        width: Long = 4
+    ) => (
+        stations_done: [String], biased: [Boolean], mean_residuals: [Double]
+    ) andThen foreach st in $.stations limit $.width {
+
+        paths = repro.normals.StationPaths(station = $.st)
+
+        daily = fw.http.Fetch(url = paths.daily_url, dest = paths.daily_dest, max_age_hours = 168)
+        published = fw.http.Fetch(url = paths.normals_url, dest = paths.normals_dest, max_age_hours = 168)
+
+        ours = repro.normals.ComputeNormals(daily = daily.path, dest = paths.ours_dest)
+        theirs = repro.normals.ExtractPublished(published = published.path, dest = paths.theirs_dest)
+
+        diff = fw.compare.Tabular(
+            expected = theirs.path,
+            actual = ours.path,
+            key_columns = ["month"],
+            tolerance = $.tolerance,
+            report = paths.report_dest
+        )
+
+        // `+=` AGGREGATES across iterations. A bare `=` keeps only the LAST
+        // station and would silently report a 12-station fan-out as one.
+        yield ReproduceManyStations(
+            stations_done += [$.st],
+            biased += [diff.systematic_bias],
+            mean_residuals += [diff.mean_residual]
+        )
+    }
 }
