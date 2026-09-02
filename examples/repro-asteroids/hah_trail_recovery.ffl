@@ -1,10 +1,20 @@
-// How much of a citizen-science catalogue can a machine recover on its own?
+// Is the signal even THERE, when you are told exactly where to look?
 //
 // Hubble Asteroid Hunter (Kruk et al. 2022) published 1,701 asteroid trails
 // found in HST archive images by volunteers assisted by a CNN. This measures
-// what a plain matched-filter detector recovers from the same images, as a
-// function of how bright the trail is — which is a measurement of why the
-// project needed people.
+// SIGNAL RECOVERABILITY AT A KNOWN POSITION as a function of trail brightness.
+//
+// ⚠️ THIS IS NOT A DETECTOR AND DOES NOT DETECT ANYTHING. It is handed the
+// published sky endpoints of a known trail and integrates flux along that one
+// line. It never searches the frame, never generates candidate orientations or
+// lengths, and cannot find an asteroid the catalogue did not already list.
+// Generating candidates is the actual hard problem — the one the CNN and the
+// volunteers were solving — and it is not attempted here.
+//
+// Calling the result "recall" would be wrong: recall is a property of a
+// detector run over data it has not been given the answer to. What this
+// produces is an UPPER BOUND on what any detector could achieve, since a blind
+// search must do at least as badly as a search that already knows the answer.
 //
 //   fw ffl run --primary examples/repro-asteroids/hah_trail_recovery.ffl \
 //              --library facetwork/ffl/file.ffl \
@@ -177,8 +187,12 @@ namespace repro.asteroids {
         result["flt_dest"] = params["base"] + "/" + pick + "_flt.fits"
     }
 
-    /** Matched-filter recovery: integrate flux along the published trail path,
-      * scanning a window of pixel offsets, and report the best significance.
+    /** Integrate flux along the PUBLISHED trail path, scanning a window of
+      * pixel offsets, and report the best significance found.
+      *
+      * ⚠️ Not detection. The path — position, orientation and length — comes
+      * from the catalogue. This measures whether the signal is present at a
+      * known location, which upper-bounds what a real detector could do.
       *
       * ⚠️ Reports the offset it needed. A recovery that required a 60 px shift
       * is a different claim from one that landed on the predicted pixels, and
@@ -256,6 +270,8 @@ namespace repro.asteroids {
         result["found"] = bool(measured and best_z >= 5.0)
     }
 
+    /** ⚠️ "Recovered" means the integrated signal reached 5 sigma AT THE KNOWN
+      * POSITION. It does not mean anything was detected. */
     workflow RecoverPublishedTrails(
         catalog_url: String = "https://vizier.cds.unistra.fr/viz-bin/asu-tsv?-source=J/A%2BA/661/A85/tablea1&-out.max=unlimited&-out.all",
         base: String = "s3://afl-cache/repro/asteroids",
