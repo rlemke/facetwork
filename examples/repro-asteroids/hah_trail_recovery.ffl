@@ -182,11 +182,20 @@ namespace repro.asteroids {
       *
       * ⚠️ Reports the offset it needed. A recovery that required a 60 px shift
       * is a different claim from one that landed on the predicted pixels, and
-      * collapsing them to a single "found" would hide the astrometric error. */
+      * collapsing them to a single "found" would hide the astrometric error.
+      *
+      * ⚠️ `measured` IS SEPARATE FROM `sigma`. When the predicted position falls
+      * outside every SCI extension there is no measurement to report, and an
+      * earlier version encoded that as sigma = -99.0 -- a non-measurement
+      * sitting in a measurement column beside real values like 3.73. Anything
+      * that averaged or plotted that column would silently treat "could not
+      * look" as "looked and saw a strong deficit". Two of forty rows hit it.
+      * A measurement that did not happen is not a number; it is a different
+      * fact, and it gets its own field. */
     event facet RecoverTrail(
         flt: String, trail: String, search: Long = 150, step: Long = 10
     ) => (obsid: String, mag: Double, sigma: Double, offset_x: Long,
-          offset_y: Long, length_px: Long, found: Boolean)
+          offset_y: Long, length_px: Long, found: Boolean, measured: Boolean)
         in environment AstroFits
     script {
         import fsspec
@@ -201,7 +210,8 @@ namespace repro.asteroids {
         mag = float(f[7])
         search = int(params["search"]); step = int(params["step"])
 
-        best_z = -99.0
+        best_z = 0.0
+        measured = False
         best = (0, 0, 0)
         with fsspec.open(params["flt"], "rb") as fh:
             with fits.open(fh) as hd:
@@ -224,6 +234,9 @@ namespace repro.asteroids {
                     n = max(40, int(np.hypot(xe - xs, ye - ys)))
                     bx = np.linspace(xs, xe, n)
                     by = np.linspace(ys, ye, n)
+                    if not measured:
+                        measured = True
+                        best_z = -1e9        # first real measurement wins
                     for dx in range(-search, search + 1, step):
                         for dy in range(-search, search + 1, step):
                             xi = np.clip((bx + dx).astype(int), 0, W - 1)
@@ -235,11 +248,12 @@ namespace repro.asteroids {
 
         result["obsid"] = obs
         result["mag"] = mag
-        result["sigma"] = round(best_z, 2)
+        result["sigma"] = round(best_z, 2) if measured else 0.0
+        result["measured"] = measured
         result["offset_x"] = best[0]
         result["offset_y"] = best[1]
         result["length_px"] = best[2]
-        result["found"] = bool(best_z >= 5.0)
+        result["found"] = bool(measured and best_z >= 5.0)
     }
 
     workflow RecoverPublishedTrails(
@@ -248,7 +262,8 @@ namespace repro.asteroids {
         limit: Long = 40,
         width: Long = 4
     ) => (
-        recovered: [Boolean], sigmas: [Double], mags: [Double], obsids: [String]
+        recovered: [Boolean], measured: [Boolean], sigmas: [Double],
+        mags: [Double], obsids: [String]
     ) andThen {
 
         // 1. ACQUIRE the published catalogue.
@@ -279,6 +294,7 @@ namespace repro.asteroids {
             // `+=` AGGREGATES across iterations; a bare `=` would silently
             // report a 40-way fan-out as one result.
             yield RecoverPublishedTrails(
+                measured += [rec.measured],
                 recovered += [rec.found],
                 sigmas += [rec.sigma],
                 mags += [rec.mag],
