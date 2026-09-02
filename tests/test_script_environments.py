@@ -54,3 +54,34 @@ class TestScriptS3Credentials:
         se.ScriptExecutor(timeout=30).execute("result = {}", {})
         assert seen.get("AWS_ACCESS_KEY_ID") == "mapped-key"
         assert seen.get("AWS_ENDPOINT_URL") == "http://afl-minio:9000"
+
+
+class TestScriptDeclaredReturns:
+    """A script that declares returns and produces none is a rebind mistake.
+
+    These call the REAL guard. An earlier version of this test re-implemented
+    the check inline and asserted on its own output, which proves nothing about
+    the shipped code.
+    """
+
+    def test_empty_result_against_declared_returns_raises_and_names_the_cause(self):
+        import pytest
+        from facetwork.runtime.base_runner import check_declared_returns
+        with pytest.raises(RuntimeError) as ei:
+            check_declared_returns(
+                "repro.normals.ExtractPublished",
+                {"returns": [{"name": "path"}, {"name": "months"}]},
+                {},
+            )
+        msg = str(ei.value)
+        assert "path" in msg and "MUTATE" in msg and "rebind" in msg
+
+    def test_produced_values_pass(self):
+        from facetwork.runtime.base_runner import check_declared_returns
+        check_declared_returns("f", {"returns": [{"name": "path"}]}, {"path": "/x"})
+
+    def test_no_declared_returns_means_empty_is_fine(self):
+        """A script facet with no return clause legitimately returns nothing."""
+        from facetwork.runtime.base_runner import check_declared_returns
+        check_declared_returns("f", {"returns": []}, {})
+        check_declared_returns("f", {}, {})

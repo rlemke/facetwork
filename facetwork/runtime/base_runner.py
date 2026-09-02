@@ -151,6 +151,32 @@ def _measure() -> dict:
     return res
 
 
+def check_declared_returns(facet_name: str, facet_def: dict, produced: dict) -> None:
+    """Raise when a script declares return values and produced none.
+
+    ⚠️ Almost always `result = {...}` where `result["k"] = ...` was meant.
+    Rebinding creates a new local; the dict the worker serialises stays empty.
+    The script exits 0, the step goes Complete, and the run dies much later and
+    somewhere else — "Attribute 'path' not found on step 'theirs'". Measured
+    2026-09-02: a full fleet run of examples/repro-normals failed exactly that
+    way, with two GREEN script steps upstream of the error. Fail where the
+    cause is, not where the symptom surfaces.
+    """
+    declared = [
+        r.get("name")
+        for r in (facet_def.get("returns") or [])
+        if isinstance(r, dict) and r.get("name")
+    ]
+    if declared and not produced:
+        raise RuntimeError(
+            f"Script for {facet_name} declares {len(declared)} return value(s) "
+            f"({', '.join(declared)}) but produced none. A script must MUTATE "
+            f"the provided dict — result[{declared[0]!r}] = … — never rebind it "
+            f"(`result = {{...}}` creates a new local and the returned dict "
+            f"stays empty)."
+        )
+
+
 class BaseRunner:
     """Server-lifecycle and accounting logic shared by all Facetwork runners."""
 
@@ -417,6 +443,8 @@ class BaseRunner:
         )
         if not result.success:
             raise RuntimeError(result.error or f"Script failed for {task.name}")
+
+        check_declared_returns(task.name, facet_def, result.result)
         return result.result
 
     def _poll_pause(self, interval_s: float, dispatched: int) -> None:

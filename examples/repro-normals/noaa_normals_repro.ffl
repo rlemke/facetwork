@@ -86,7 +86,13 @@ namespace repro.normals {
         with fsspec.open(params["dest"], "wt") as fh:
             fh.write("\n".join(out) + "\n")
 
-        result = {"path": params["dest"], "days": days, "months": len(out) - 1}
+        # ⚠️ MUTATE `result`, never rebind it. `result = {...}` creates a new
+        # local and leaves the dict the worker serialises EMPTY — the script
+        # completes, the step goes Complete, and every downstream reference
+        # fails with "Attribute 'path' not found". Cost a full fleet run.
+        result["path"] = params["dest"]
+        result["days"] = days
+        result["months"] = len(out) - 1
     }
 
     /** Project NOAA's published normals onto the same four columns.
@@ -119,7 +125,8 @@ namespace repro.normals {
         with fsspec.open(params["dest"], "wt") as fh:
             fh.write("\n".join(out) + "\n")
 
-        result = {"path": params["dest"], "months": len(out) - 1}
+        result["path"] = params["dest"]          # mutate, never rebind
+        result["months"] = len(out) - 1
     }
 
     workflow ReproduceStationNormals(
