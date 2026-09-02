@@ -1,0 +1,187 @@
+// Reproducing a published classification from the rule its own documentation
+// states — and finding that the rule does not produce it.
+//
+// Galaxy Zoo 1 (Lintott et al. 2008, 2011) asked volunteers to classify 667,944
+// SDSS galaxies. Table 2 of the data release publishes the whole chain in ONE
+// file: the raw vote fractions, the bias-corrected ("debiased") likelihoods, and
+// the SPIRAL / ELLIPTICAL / UNCERTAIN flags. Its documentation states the flags
+// "are based upon a vote fraction threshold of 0.8".
+//
+//   fw ffl run --primary examples/repro-galaxyzoo/gz1_morphology_repro.ffl \
+//              --library facetwork/ffl/file.ffl \
+//              --workflow repro.galaxyzoo.ReproduceMorphologyFlags
+//
+// ⚠️ THE FINDING. Applying that threshold to the published debiased columns
+// disagrees with the published flags for 89,332 galaxies — 13.4% — and it
+// disagrees in BOTH DIRECTIONS: P_CS_DEBIASED=0.797 is published SPIRAL, while
+// 0.861 is published UNCERTAIN. No single threshold produces that.
+//
+// The data release explains it, and the explanation is the point of the study:
+//
+//   "for the debiased type likelihoods we computed the bias correction based on
+//    the elliptical/spiral ratio using the likelihoods directly; for the type
+//    flags we debiased the raw type likelihoods using a correction based on the
+//    elliptical/spiral ratio determined AFTER applying a 0.8 threshold, and then
+//    applied the same threshold to produce the flags. Therefore, the type flags
+//    do not correspond to simply applying a 0.8 threshold on the debiased type
+//    likelihoods."
+//
+// TWO DIFFERENT DEBIASINGS OF THE SAME QUANTITY SIT IN ADJACENT COLUMNS. Both
+// are correct; they answer different questions. The trap is that nothing in the
+// file marks them as incommensurable, and the note names its own victim: "users
+// who do not want to get into the details too much" — exactly the reader who
+// would threshold the published column and get a different sample.
+//
+// ⚠️ This is NOT a defect in Galaxy Zoo. The behaviour is documented, the
+// reasoning is sound, and the flags are the more careful artifact. What the
+// study measures is how far a documented-but-easily-missed subtlety moves a
+// result — 13.4% of a 667,944-galaxy sample.
+//
+// ⚠️ fsspec needs `compression="gzip"` EXPLICITLY. Inferring from the name
+// fails here, and the failure is a UnicodeDecodeError rather than anything
+// mentioning compression.
+
+namespace repro.galaxyzoo {
+
+    /** Per-run paths. A plain `facet` — pure string work runs INLINE in the
+      * evaluator. As an `event facet` it would become a task stamped with
+      * neither a handler nor an environment, claimable by nothing. */
+    facet Paths(base: String) => (
+        catalog_dest: String, ours_dest: String, theirs_dest: String, report_dest: String
+    ) script {
+        b = params["base"]
+        result["catalog_dest"] = b + "/GalaxyZoo1_DR_table2.csv.gz"
+        result["ours_dest"]    = b + "/flags-from-documented-rule.csv"
+        result["theirs_dest"]  = b + "/flags-as-published.csv"
+        result["report_dest"]  = b + "/report.md"
+    }
+
+    /** Apply the documented rule: threshold the PUBLISHED debiased likelihoods.
+      *
+      * This is the naive reproduction — deliberately. It is what the data
+      * release's own one-line summary describes, and what a reader who stops at
+      * that line would do. */
+    event facet ApplyDocumentedRule(
+        catalog: String, dest: String, threshold: Double = 0.8
+    ) => (path: String, rows: Long, spiral: Long, elliptical: Long, uncertain: Long)
+        in environment fw.file.FileOps
+    script {
+        import csv
+        import fsspec
+
+        thr = float(params["threshold"])
+        out = ["OBJID,SPIRAL,ELLIPTICAL,UNCERTAIN"]
+        n = 0
+        sp = 0
+        el = 0
+        un = 0
+        with fsspec.open(params["catalog"], "rt", compression="gzip") as fh:
+            for r in csv.DictReader(fh):
+                try:
+                    p_el = float(r["P_EL_DEBIASED"])
+                    p_cs = float(r["P_CS_DEBIASED"])
+                except ValueError:
+                    continue
+                n += 1
+                is_sp = 1 if p_cs >= thr else 0
+                is_el = 1 if p_el >= thr else 0
+                is_un = 0 if (is_sp or is_el) else 1
+                sp += is_sp
+                el += is_el
+                un += is_un
+                out.append("%s,%d,%d,%d" % (r["OBJID"], is_sp, is_el, is_un))
+
+        with fsspec.open(params["dest"], "wt") as fh:
+            fh.write("\n".join(out) + "\n")
+
+        result["path"] = params["dest"]
+        result["rows"] = n
+        result["spiral"] = sp
+        result["elliptical"] = el
+        result["uncertain"] = un
+    }
+
+    /** Project the PUBLISHED flags onto the same three columns.
+      *
+      * ⚠️ A PROJECTION, NOT A COMPUTATION — no arithmetic, no thresholds. The
+      * comparison must be between the documented rule and what was actually
+      * published; transforming the reference side would dissolve the question. */
+    event facet ExtractPublishedFlags(
+        catalog: String, dest: String
+    ) => (path: String, rows: Long, spiral: Long, elliptical: Long, uncertain: Long)
+        in environment fw.file.FileOps
+    script {
+        import csv
+        import fsspec
+
+        out = ["OBJID,SPIRAL,ELLIPTICAL,UNCERTAIN"]
+        n = 0
+        sp = 0
+        el = 0
+        un = 0
+        with fsspec.open(params["catalog"], "rt", compression="gzip") as fh:
+            for r in csv.DictReader(fh):
+                try:
+                    float(r["P_EL_DEBIASED"])
+                    float(r["P_CS_DEBIASED"])
+                except ValueError:
+                    continue
+                n += 1
+                sp += int(r["SPIRAL"])
+                el += int(r["ELLIPTICAL"])
+                un += int(r["UNCERTAIN"])
+                out.append("%s,%s,%s,%s" % (
+                    r["OBJID"], r["SPIRAL"], r["ELLIPTICAL"], r["UNCERTAIN"]))
+
+        with fsspec.open(params["dest"], "wt") as fh:
+            fh.write("\n".join(out) + "\n")
+
+        result["path"] = params["dest"]
+        result["rows"] = n
+        result["spiral"] = sp
+        result["elliptical"] = el
+        result["uncertain"] = un
+    }
+
+    workflow ReproduceMorphologyFlags(
+        catalog_url: String = "https://galaxy-zoo-1.s3.amazonaws.com/GalaxyZoo1_DR_table2.csv.gz",
+        base: String = "s3://afl-cache/repro/galaxyzoo",
+        threshold: Double = 0.8
+    ) => (
+        level: String, agree: Boolean, differing: Long,
+        published_spiral: Long, rule_spiral: Long, report: String
+    ) andThen {
+
+        p = repro.galaxyzoo.Paths(base = $.base)
+
+        // 1. ACQUIRE the published catalog, with a provenance sidecar.
+        catalog = fw.http.Fetch(url = $.catalog_url, dest = p.catalog_dest, max_age_hours = 720)
+
+        // 2. Both sides come from the SAME file — one applies the documented
+        //    rule, one reads what was published. Any difference is therefore
+        //    the rule, not the data.
+        ours = repro.galaxyzoo.ApplyDocumentedRule(
+            catalog = catalog.path, dest = p.ours_dest, threshold = $.threshold)
+        theirs = repro.galaxyzoo.ExtractPublishedFlags(
+            catalog = catalog.path, dest = p.theirs_dest)
+
+        // 3. COMPARE keyed on the galaxy. Exact comparison: these are flags,
+        //    not measurements, so there is no tolerance to state.
+        diff = fw.compare.Tabular(
+            expected = theirs.path,
+            actual = ours.path,
+            key_columns = ["OBJID"],
+            max_examples = 8,
+            report = p.report_dest
+        )
+
+        yield ReproduceMorphologyFlags(
+            level = diff.level,
+            agree = diff.agree,
+            differing = diff.differing,
+            published_spiral = theirs.spiral,
+            rule_spiral = ours.spiral,
+            report = diff.report
+        )
+    }
+}
