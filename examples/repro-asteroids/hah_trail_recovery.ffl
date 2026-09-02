@@ -49,6 +49,7 @@ namespace repro.asteroids {
         requires = [
             "astropy==8.0.1",
             "numpy==2.4.6",
+            "scipy==1.18.0",
             "fsspec==2026.7.0",
             "s3fs==2026.7.0"
         ]
@@ -270,6 +271,142 @@ namespace repro.asteroids {
         result["found"] = bool(measured and best_z >= 5.0)
     }
 
+
+    /** BLIND detection: search the whole frame for linear features, with no
+      * knowledge of where any trail is.
+      *
+      * A matched-filter bank — the image is binned, then for each orientation
+      * rotated and box-filtered along rows, which integrates flux along lines
+      * of that angle. Local maxima above 3 sigma become candidates.
+      *
+      * ⚠️ THE SEARCH IS BLIND; THE TRUTH IS USED ONLY TO SCORE IT. The
+      * published position never enters the detection. It is used afterwards to
+      * ask where the real trail landed in the candidate ranking, which is the
+      * only way to measure a detector at all.
+      *
+      * ⚠️ DETECTOR-AXIS REJECTION. Saturated stars bleed along readout columns
+      * and diffraction spikes align with the optics; both ARE linear features
+      * and a line filter cannot tell them from an asteroid. Angles within
+      * `reject_axis` degrees of 0 and 90 are skipped. Measured on the
+      * catalogue's brightest trail (mag 15.0): rank 94 without rejection,
+      * 65 with +/-15 deg. Real but modest — the artifacts are not only axial.
+      *
+      * ⚠️ CAP, NEVER MASK. Zeroing pixels above a threshold to suppress stars
+      * also erases a bright asteroid: masking at 50 sigma deleted the mag-15
+      * trail, which was itself an 8,000-sigma feature, and it then measured
+      * -0.23 sigma. Capping bounds a star's contribution while keeping the
+      * trail's. */
+    event facet BlindDetect(
+        flt: String, trail: String, bin_factor: Long = 4,
+        reject_axis: Long = 15, match_px: Long = 120, match_deg: Long = 25
+    ) => (obsid: String, mag: Double, rank: Long, candidates: Long,
+          best_z: Double, top_z: Double, found_blind: Boolean, measured: Boolean)
+        in environment AstroFits
+    script {
+        import fsspec
+        import numpy as np
+        from astropy.io import fits
+        from astropy.wcs import WCS
+        from scipy.ndimage import rotate, uniform_filter1d, maximum_filter
+
+        f = params["trail"].split("|")
+        obs = f[0]
+        ras = float(f[3]); des = float(f[4])
+        rae = float(f[5]); dee = float(f[6])
+        mag = float(f[7])
+        bin_f = int(params["bin_factor"])
+        rej = int(params["reject_axis"])
+        match_px = float(params["match_px"])
+        match_deg = float(params["match_deg"])
+
+        angles = [a for a in range(0, 180, 10)
+                  if min(abs(a - 0), abs(a - 90), abs(a - 180)) > rej]
+        lengths = (15, 30, 60)
+
+        rank = 0; ncand = 0; best_z = 0.0; top_z = 0.0; measured = False
+
+        with fsspec.open(params["flt"], "rb") as fh:
+            with fits.open(fh) as hd:
+                for h in hd:
+                    if h.name != "SCI":
+                        continue
+                    w = WCS(h.header, hd)
+                    pix = w.wcs_world2pix([[ras, des], [rae, dee]], 0)
+                    x0 = float(pix[0][0]); y0 = float(pix[0][1])
+                    x1 = float(pix[1][0]); y1 = float(pix[1][1])
+                    a = np.asarray(h.data, dtype=np.float32)
+                    H = a.shape[0]; W = a.shape[1]
+                    if not (0 <= x0 < W and 0 <= y0 < H):
+                        continue
+                    measured = True
+                    tcx = (x0 + x1) / 2.0
+                    tcy = (y0 + y1) / 2.0
+                    tang = np.degrees(np.arctan2(y1 - y0, x1 - x0)) % 180.0
+
+                    fin = np.isfinite(a) & (a != 0)
+                    med = float(np.median(a[fin]))
+                    sig = float(1.4826 * np.median(np.abs(a[fin] - med)))
+                    if sig <= 0:
+                        continue
+                    a = np.clip(np.where(fin, a - med, 0.0), -30.0 * sig, 30.0 * sig)
+                    bh = H // bin_f * bin_f
+                    bw = W // bin_f * bin_f
+                    b = a[:bh, :bw].reshape(bh // bin_f, bin_f,
+                                            bw // bin_f, bin_f).mean(axis=(1, 3))
+                    bH = b.shape[0]; bW = b.shape[1]
+                    noise = sig / bin_f
+
+                    cands = []
+                    for ang in angles:
+                        r = rotate(b, ang, reshape=True, order=1,
+                                   mode="constant", cval=0.0)
+                        rH = r.shape[0]; rW = r.shape[1]
+                        th = np.radians(ang)
+                        cc = np.cos(th); ss = np.sin(th)
+                        for L in lengths:
+                            g = uniform_filter1d(r, size=L, axis=1,
+                                                 mode="constant", cval=0.0)
+                            z = g / (noise / np.sqrt(L))
+                            mx = maximum_filter(z, size=(9, 9))
+                            yy, xx = np.where((z == mx) & (z > 3))
+                            if len(yy) == 0:
+                                continue
+                            v = z[yy, xx]
+                            order = np.argsort(v)[::-1][:25]
+                            for i in order:
+                                ry = float(yy[i]); rx = float(xx[i])
+                                # ⚠️ calibrated inverse rotation. The naive form
+                                # (sine signs flipped) put every candidate ~1350 px
+                                # away; a synthetic trail on pure noise exposed it,
+                                # because the angle was right and the place was not.
+                                ox = (rx - rW / 2.0) * cc - (ry - rH / 2.0) * ss + bW / 2.0
+                                oy = (rx - rW / 2.0) * ss + (ry - rH / 2.0) * cc + bH / 2.0
+                                cands.append((float(v[i]), ang,
+                                              ox * bin_f, oy * bin_f))
+                    cands.sort(reverse=True)
+                    ncand = len(cands)
+                    if ncand:
+                        top_z = cands[0][0]
+                    for i in range(ncand):
+                        z, ang, cx, cy = cands[i]
+                        dpos = np.hypot(cx - tcx, cy - tcy)
+                        dang = abs(((ang - tang + 90.0) % 180.0) - 90.0)
+                        if dpos < match_px and dang <= match_deg:
+                            rank = i + 1
+                            best_z = z
+                            break
+                    break
+
+        result["obsid"] = obs
+        result["mag"] = mag
+        result["rank"] = rank
+        result["candidates"] = ncand
+        result["best_z"] = round(best_z, 2)
+        result["top_z"] = round(top_z, 2)
+        result["found_blind"] = bool(rank > 0 and rank <= 10)
+        result["measured"] = measured
+    }
+
     /** ⚠️ "Recovered" means the integrated signal reached 5 sigma AT THE KNOWN
       * POSITION. It does not mean anything was detected. */
     workflow RecoverPublishedTrails(
@@ -315,6 +452,48 @@ namespace repro.asteroids {
                 sigmas += [rec.sigma],
                 mags += [rec.mag],
                 obsids += [rec.obsid])
+        }
+    }
+
+    /** BLIND detection over the same 40 trails, for comparison with
+      * RecoverPublishedTrails.
+      *
+      * Same selection facet, so the two workflows see an IDENTICAL sample —
+      * without that the comparison would confound detector performance with
+      * which trails each happened to look at. */
+    workflow BlindDetectTrails(
+        catalog_url: String = "https://vizier.cds.unistra.fr/viz-bin/asu-tsv?-source=J/A%2BA/661/A85/tablea1&-out.max=unlimited&-out.all",
+        base: String = "s3://afl-cache/repro/asteroids",
+        limit: Long = 40,
+        width: Long = 4
+    ) => (
+        ranks: [Long], candidates: [Long], mags: [Double],
+        found_blind: [Boolean], obsids: [String]
+    ) andThen {
+
+        cat = fw.http.Fetch(
+            url = $.catalog_url,
+            dest = "s3://afl-cache/repro/asteroids/hah_tablea1.tsv",
+            max_age_hours = 720)
+
+        sel = repro.asteroids.SelectBrightTrails(
+            catalog = cat.path, limit = $.limit
+        ) andThen foreach t in $.trails limit $$.width {
+
+            a = repro.asteroids.AsnFor(trail = $.t, base = $$.base)
+            asn = fw.http.Fetch(url = a.url, dest = a.dest, max_age_hours = 720)
+            pick = repro.asteroids.PickExposure(
+                asn = asn.path, trail = $.t, base = $$.base)
+            flt = fw.http.Fetch(url = pick.flt_url, dest = pick.flt_dest, max_age_hours = 720)
+
+            det = repro.asteroids.BlindDetect(flt = flt.path, trail = $.t)
+
+            yield BlindDetectTrails(
+                ranks += [det.rank],
+                candidates += [det.candidates],
+                mags += [det.mag],
+                found_blind += [det.found_blind],
+                obsids += [det.obsid])
         }
     }
 }
