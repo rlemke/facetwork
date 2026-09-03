@@ -218,7 +218,7 @@ Compared to Example 2, there are 3 additional steps (9–11) for s1's nested `an
 
 ### State Machines
 
-Three state machines (from `afl/runtime/states.py`):
+Three state machines (from `facetwork/runtime/states.py`):
 
 **STEP** (VariableAssignment — steps 1, 3, 6, 7, 10):
 ```

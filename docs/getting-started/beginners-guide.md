@@ -54,7 +54,7 @@ cp .env.example .env
 fw ffl seed
 
 # Start the dashboard
-python -m afl.dashboard --log-format text
+python -m facetwork.dashboard --log-format text
 ```
 
 Open http://localhost:8080.

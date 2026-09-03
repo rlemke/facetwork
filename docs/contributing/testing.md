@@ -42,7 +42,7 @@ The implementation includes pytest tests that verify parser, emitter, validator,
 | Runtime | `tests/runtime/test_resume_task.py` | 7 | Resume task protocol |
 | Runtime | `tests/runtime/test_storage.py` | 46 | Storage backends (local, HDFS) |
 | Runtime | `tests/runtime/test_hdfs_storage.py` | 19 | HDFS storage operations |
-| Runtime | `tests/runtime/test_dispatcher.py` | 23 | Event dispatcher |
+| Runtime | `tests/runtime/test_dispatcher.py` | 29 | Handler dispatch |
 | Runtime | `tests/runtime/test_submit.py` | 24 | Workflow submission |
 | Runtime | `tests/runtime/test_registry_runner.py` | 37 | RegistryRunner unit tests |
 | Runtime | `tests/runtime/test_registry_runner_integration.py` | 30 | RegistryRunner integration |
@@ -330,7 +330,7 @@ The runtime implementation includes pytest tests that verify evaluator, state ma
 | `tests/runtime/test_mongo_store.py` | 32 | MongoDB persistence (mongomock) |
 | `tests/runtime/test_dependency.py` | 10 | DependencyGraph from AST |
 | `tests/runtime/test_expression.py` | 51 | Expression evaluation (InputRef, StepRef, BinaryExpr, ConcatExpr) |
-| `tests/runtime/test_events.py` | 15 | Event lifecycle management |
+| `tests/runtime/test_dispatcher.py` | 29 | Handler dispatch (`RegistryDispatcher`, `CompositeDispatcher`) |
 | `tests/runtime/test_evaluator.py` | 68 | Integration tests, iteration traces, acceptance tests |
 | `tests/runtime/test_script_executor.py` | 25 | Sandboxed script execution |
 | `tests/runtime/test_runner_service.py` | 105 | Distributed runner service |

@@ -9,7 +9,7 @@
 
 > Implements [compiler.md](compiler.md) and [runtime.md](runtime.md) §2.
 
-FFL source files are compiled by the FFL compiler (`afl/cli.py`):
+FFL source files are compiled by the FFL compiler (`facetwork/cli.py`):
 
 ```
 FFL Source → Lark Parser → AST → JSON Emitter → MongoDB / JSON file
@@ -27,7 +27,7 @@ The compiled output contains:
 
 > Implements [runtime.md](runtime.md) §9–10.
 
-The `Evaluator` (`afl/runtime/evaluator.py`) orchestrates execution:
+The `Evaluator` (`facetwork/runtime/evaluator.py`) orchestrates execution:
 
 ```
 Evaluator.run()
@@ -42,7 +42,7 @@ Evaluator.run()
 
 > Implements [runtime.md](runtime.md) §6.
 
-Each step follows a state machine defined in `afl/runtime/states.py`:
+Each step follows a state machine defined in `facetwork/runtime/states.py`:
 
 ```
 Created
@@ -86,7 +86,7 @@ StatementEnd → StatementComplete
 
 ### 4.1 StateChanger Base Class
 
-**Location:** `afl/runtime/changers/base.py`
+**Location:** `facetwork/runtime/changers/base.py`
 
 The `StateChanger` drives the state machine in a loop:
 
@@ -140,7 +140,7 @@ Three StateChanger implementations handle different step types:
 | `YieldStateChanger` | `YieldAssignment` | Skips to end after facet initialization |
 | Schema steps | `SchemaInstantiation` | Minimal: `Created → FacetInit → End → Complete` (uses `SCHEMA_TRANSITIONS`) |
 
-**Factory function** (in `afl/runtime/evaluator.py`):
+**Factory function** (in `facetwork/runtime/evaluator.py`):
 
 ```python
 def create_state_changer(step: StepDefinition, context: ExecutionContext) -> StateChanger:
@@ -154,7 +154,7 @@ def create_state_changer(step: StepDefinition, context: ExecutionContext) -> Sta
 
 ### 4.3 Transition Tables
 
-**Location:** `afl/runtime/states.py`
+**Location:** `facetwork/runtime/states.py`
 
 #### Step Transitions (Full State Machine)
 
@@ -284,7 +284,7 @@ BLOCK_TRANSITIONS: dict[str, str] = {
 
 > Implements [runtime.md](runtime.md) §6 state guarantees.
 
-**Location:** `afl/runtime/step.py`
+**Location:** `facetwork/runtime/step.py`
 
 The `StepTransition` dataclass manages state transitions with control flags:
 
@@ -334,7 +334,7 @@ class StepTransition:
 
 > Implements [runtime.md](runtime.md) §6 state execution.
 
-**Location:** `afl/runtime/handlers/base.py`
+**Location:** `facetwork/runtime/handlers/base.py`
 
 ```python
 class StateHandler(ABC):
@@ -383,7 +383,7 @@ Created → BlockExecutionBegin → BlockExecutionContinue (loop) → BlockExecu
 
 ### BlockExecutionBegin
 
-**Location:** `afl/runtime/handlers/block_execution.py`
+**Location:** `facetwork/runtime/handlers/block_execution.py`
 
 ```python
 class BlockExecutionBeginHandler(StateHandler):
@@ -409,7 +409,7 @@ class BlockExecutionBeginHandler(StateHandler):
 
 ### BlockExecutionContinue
 
-**Location:** `afl/runtime/handlers/block_execution.py`
+**Location:** `facetwork/runtime/handlers/block_execution.py`
 
 Polls until all child steps complete:
 
@@ -438,7 +438,7 @@ class BlockExecutionContinueHandler(StateHandler):
 
 ### Step Creation Within Blocks
 
-**Location:** `afl/runtime/handlers/block_execution.py`
+**Location:** `facetwork/runtime/handlers/block_execution.py`
 
 ```python
 def _create_ready_steps(
@@ -468,7 +468,7 @@ def _create_ready_steps(
 
 > Implements [runtime.md](runtime.md) §7, §11.
 
-**Location:** `afl/runtime/block.py`
+**Location:** `facetwork/runtime/block.py`
 
 The `StepAnalysis` dataclass tracks block execution state:
 
@@ -587,7 +587,7 @@ Execute statement-level blocks (from `andThen` bodies):
 
 When a step errors and has a `catch` clause, execution enters the catch phase instead of transitioning to `STATEMENT_ERROR`. This allows error recovery.
 
-**Location:** `afl/runtime/handlers/catch_execution.py`
+**Location:** `facetwork/runtime/handlers/catch_execution.py`
 
 ### State Flow
 
@@ -699,7 +699,7 @@ accumulate in one update.
 
 ### StatementComplete
 
-**Location:** `afl/runtime/handlers/completion.py`
+**Location:** `facetwork/runtime/handlers/completion.py`
 
 ```python
 class StatementCompleteHandler(StateHandler):
@@ -724,7 +724,7 @@ In the Python implementation, container notification is handled implicitly by th
 
 ## 13. Object Types
 
-**Location:** `afl/runtime/types.py`
+**Location:** `facetwork/runtime/types.py`
 
 ```python
 class ObjectType:
@@ -758,7 +758,7 @@ class ObjectType:
 
 ## 14. Step Definition Structure
 
-**Location:** `afl/runtime/step.py`
+**Location:** `facetwork/runtime/step.py`
 
 ```python
 @dataclass
@@ -1139,7 +1139,7 @@ Handler completes on Server A:
    - Bumps `version.sequence` on all updated steps for optimistic concurrency
 
 2. **Continuation events (`continuation.py`):**
-   - Generates `TaskDefinition` entries on the `_afl_continue` task list
+   - Generates `TaskDefinition` entries on the `_fw_continue` task list
    - Each continuation carries only `step_id` and `reason` (lightweight)
    - Deduplicated per target step — at most one pending continuation per step (see *Continuation coalescing* below)
    - Committed atomically alongside step changes (no partial state)
@@ -1161,7 +1161,7 @@ Both check **PENDING state only**. A child event that arrives *after* a continua
    - The loser's write falls back to unconditional update (safe — the winner already advanced the step)
 
 4. **RegistryRunner integration:**
-   - `_poll_cycle()` claims both handler tasks (from `default` task list) and continuation tasks (from `_afl_continue` task list)
+   - `_poll_cycle()` claims both handler tasks (from `default` task list) and continuation tasks (from `_fw_continue` task list)
    - `poll_once()` also processes continuations (for testing)
    - `_process_continuation()` first coalesces redundant sibling continuations (`delete_pending_continuations_for_step`), then calls `process_single_step()` on the target step
    - `_process_event()` calls `continue_step()` then falls back to `_resume_workflow()` for inline dispatch compatibility
@@ -1265,36 +1265,36 @@ The sweep never calls full `resume()` — it processes each stuck step individua
 All source files are located in `afl/runtime/`.
 
 ### Resilience
-- `afl/runtime/mongo_store.py` — `reap_orphaned_tasks()`, `reap_stuck_tasks()`, `claim_task()` with lease
-- `afl/runtime/runner/service.py` — `_maybe_reap_orphaned_tasks()`, stuck watchdog, execution timeout
-- `afl/runtime/agent_poller.py` — parallel reaper/watchdog for standalone pollers
-- `afl/runtime/evaluator.py` — `continue_step()` with errored step recovery
-- `afl/dashboard/app.py` — `_reaper_loop()` independent background reaper
+- `facetwork/runtime/mongo_store/` — `reap_orphaned_tasks()`, `reap_stuck_tasks()`, `claim_task()` with lease
+- `facetwork/runtime/runner/service.py` — `_maybe_reap_orphaned_tasks()`, stuck watchdog, execution timeout
+- `facetwork/runtime/agent_poller.py` — parallel reaper/watchdog for standalone pollers
+- `facetwork/runtime/evaluator.py` — `continue_step()` with errored step recovery
+- `facetwork/dashboard/app.py` — `_reaper_loop()` independent background reaper
 
 ### State Handlers
-- `afl/runtime/handlers/base.py` — `StateHandler` abstract base class
-- `afl/runtime/changers/base.py` — `StateChanger` orchestrator + `StateChangeResult`
-- `afl/runtime/changers/step_changer.py` — `StepStateChanger` (full state machine)
-- `afl/runtime/changers/block_changer.py` — `BlockStateChanger` (block state machine)
-- `afl/runtime/changers/yield_changer.py` — `YieldStateChanger` (yield state machine)
+- `facetwork/runtime/handlers/base.py` — `StateHandler` abstract base class
+- `facetwork/runtime/changers/base.py` — `StateChanger` orchestrator + `StateChangeResult`
+- `facetwork/runtime/changers/step_changer.py` — `StepStateChanger` (full state machine)
+- `facetwork/runtime/changers/block_changer.py` — `BlockStateChanger` (block state machine)
+- `facetwork/runtime/changers/yield_changer.py` — `YieldStateChanger` (yield state machine)
 
 ### Block Execution
-- `afl/runtime/handlers/block_execution.py` — `BlockExecutionBeginHandler`, `BlockExecutionContinueHandler`, `BlockExecutionEndHandler`
-- `afl/runtime/block.py` — `StepAnalysis`, `BlockAnalysis`, `StatementDefinition`
+- `facetwork/runtime/handlers/block_execution.py` — `BlockExecutionBeginHandler`, `BlockExecutionContinueHandler`, `BlockExecutionEndHandler`
+- `facetwork/runtime/block.py` — `StepAnalysis`, `BlockAnalysis`, `StatementDefinition`
 
 ### Capture and Completion
-- `afl/runtime/handlers/capture.py` — `StatementCaptureBeginHandler`, `MixinCaptureBeginHandler`
-- `afl/runtime/handlers/completion.py` — `StatementCompleteHandler`, `EventTransmitHandler`
+- `facetwork/runtime/handlers/capture.py` — `StatementCaptureBeginHandler`, `MixinCaptureBeginHandler`
+- `facetwork/runtime/handlers/completion.py` — `StatementCompleteHandler`, `EventTransmitHandler`
 
 ### Models
-- `afl/runtime/states.py` — `StepState` constants, transition tables (`STEP_TRANSITIONS`, `BLOCK_TRANSITIONS`, `YIELD_TRANSITIONS`, `SCHEMA_TRANSITIONS`)
-- `afl/runtime/step.py` — `StepDefinition`, `StepTransition`
-- `afl/runtime/types.py` — `ObjectType`, `FacetAttributes`, `AttributeValue`, ID types
+- `facetwork/runtime/states.py` — `StepState` constants, transition tables (`STEP_TRANSITIONS`, `BLOCK_TRANSITIONS`, `YIELD_TRANSITIONS`, `SCHEMA_TRANSITIONS`)
+- `facetwork/runtime/step.py` — `StepDefinition`, `StepTransition`
+- `facetwork/runtime/types.py` — `ObjectType`, `FacetAttributes`, `AttributeValue`, ID types
 
 ### Core Engine
-- `afl/runtime/evaluator.py` — `Evaluator`, `ExecutionContext`, iteration loop, `process_single_step()`
-- `afl/runtime/continuation.py` — Continuation event generation for distributed step processing
-- `afl/runtime/dependency.py` — `DependencyGraph` from compiled AST
-- `afl/runtime/persistence.py` — `PersistenceAPI` protocol, `IterationChanges` (with `continuation_tasks`)
-- `afl/runtime/memory_store.py` — In-memory persistence for testing
-- `afl/runtime/mongo_store.py` — MongoDB persistence with optimistic concurrency (`version.sequence`)
+- `facetwork/runtime/evaluator.py` — `Evaluator`, `ExecutionContext`, iteration loop, `process_single_step()`
+- `facetwork/runtime/continuation.py` — Continuation event generation for distributed step processing
+- `facetwork/runtime/dependency.py` — `DependencyGraph` from compiled AST
+- `facetwork/runtime/persistence.py` — `PersistenceAPI` protocol, `IterationChanges` (with `continuation_tasks`)
+- `facetwork/runtime/memory_store.py` — In-memory persistence for testing
+- `facetwork/runtime/mongo_store/` — MongoDB persistence with optimistic concurrency (`version.sequence`)

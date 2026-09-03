@@ -50,10 +50,10 @@ FFL uses an event-driven pattern where workflow state transitions are driven by 
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `EventTransmitHandler` | `afl/runtime/handlers/completion.py` | Creates tasks for event facet steps and blocks the step |
-| `PersistenceAPI` | `afl/runtime/persistence.py` | Task storage abstraction |
-| `TaskDefinition` | `afl/runtime/persistence.py` | Task data structure (replaces former EventDefinition) |
-| `IterationChanges` | `afl/runtime/persistence.py` | Accumulated changes committed atomically |
+| `EventTransmitHandler` | `facetwork/runtime/handlers/completion.py` | Creates tasks for event facet steps and blocks the step |
+| `PersistenceAPI` | `facetwork/runtime/persistence.py` | Task storage abstraction |
+| `TaskDefinition` | `facetwork/runtime/persistence.py` | Task data structure (replaces former EventDefinition) |
+| `IterationChanges` | `facetwork/runtime/persistence.py` | Accumulated changes committed atomically |
 
 ### Processing Model
 
@@ -156,7 +156,7 @@ Step Execution (EventTransmitHandler)
 
 ### EventTransmitHandler
 
-**File:** `afl/runtime/handlers/completion.py`
+**File:** `facetwork/runtime/handlers/completion.py`
 
 The `EventTransmitHandler` creates tasks for event facets:
 
@@ -196,7 +196,7 @@ class EventTransmitHandler(StateHandler):
 
 ### StateHandler Base Class
 
-**File:** `afl/runtime/handlers/base.py`
+**File:** `facetwork/runtime/handlers/base.py`
 
 All handlers extend `StateHandler(ABC)`:
 
@@ -422,9 +422,9 @@ class FacetInitializationBeginHandler(StateHandler):
 
 | Component | Path |
 |-----------|------|
-| TaskDefinition | `afl/runtime/persistence.py` |
-| IterationChanges | `afl/runtime/persistence.py` |
-| PersistenceAPI | `afl/runtime/persistence.py` |
-| EventTransmitHandler | `afl/runtime/handlers/completion.py` |
-| StateHandler base | `afl/runtime/handlers/base.py` |
-| Handler registry | `afl/runtime/handlers/__init__.py` |
+| TaskDefinition | `facetwork/runtime/persistence.py` |
+| IterationChanges | `facetwork/runtime/persistence.py` |
+| PersistenceAPI | `facetwork/runtime/persistence.py` |
+| EventTransmitHandler | `facetwork/runtime/handlers/completion.py` |
+| StateHandler base | `facetwork/runtime/handlers/base.py` |
+| Handler registry | `facetwork/runtime/handlers/__init__.py` |

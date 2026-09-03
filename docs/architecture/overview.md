@@ -45,22 +45,22 @@ The compiler transforms FFL source code into JSON workflow definitions through f
 
 | Stage | Module | Description |
 |-------|--------|-------------|
-| **Parser** | `afl/parser.py` | Lark LALR parser reads `.ffl` source, produces a parse tree. Errors include line/column. |
-| **Transformer** | `afl/transformer.py` | Converts the Lark parse tree into typed AST dataclass nodes. |
-| **Validator** | `afl/validator.py` | Semantic checks: duplicate names, type mismatches, schema resolution, unresolved references. |
-| **Emitter** | `afl/emitter.py` | Serializes the AST to stable JSON output with optional source locations and provenance. |
+| **Parser** | `facetwork/parser.py` | Lark LALR parser reads `.ffl` source, produces a parse tree. Errors include line/column. |
+| **Transformer** | `facetwork/transformer.py` | Converts the Lark parse tree into typed AST dataclass nodes. |
+| **Validator** | `facetwork/validator.py` | Semantic checks: duplicate names, type mismatches, schema resolution, unresolved references. |
+| **Emitter** | `facetwork/emitter.py` | Serializes the AST to stable JSON output with optional source locations and provenance. |
 
 **Key files:**
-- Grammar definition: `afl/grammar/afl.lark`
-- AST node types: `afl/ast.py`
-- CLI entry point: `afl/cli.py`
-- Source management: `afl/source.py`, `afl/loader.py`
+- Grammar definition: `facetwork/grammar/ffl.lark`
+- AST node types: `facetwork/ast.py`
+- CLI entry point: `facetwork/cli.py`
+- Source management: `facetwork/source.py`, `facetwork/loader.py`
 
 ## Runtime Engine
 
 The runtime evaluates compiled workflows using an iterative, dependency-driven execution model.
 
-### Evaluator (`afl/runtime/evaluator.py`)
+### Evaluator (`facetwork/runtime/evaluator.py`)
 
 The Evaluator orchestrates workflow execution:
 1. Creates a starting step from the workflow definition
@@ -68,7 +68,7 @@ The Evaluator orchestrates workflow execution:
 3. When a step reaches `EVENT_TRANSMIT`, the workflow pauses and creates a task for external agents
 4. On resume, the evaluator picks up where it left off, creating new steps as dependencies resolve
 
-**Distributed execution:** For multi-server deployments, `process_single_step()` replaces the full-workflow `resume()`. Each server processes one step at a time, cascading up through parent blocks and generating continuation events (`_afl_continue` tasks) for blocks that need re-evaluation. This eliminates per-workflow locks and enables linear scaling across 100+ servers. Step updates use optimistic concurrency (`version.sequence`) to safely handle concurrent processing.
+**Distributed execution:** For multi-server deployments, `process_single_step()` replaces the full-workflow `resume()`. Each server processes one step at a time, cascading up through parent blocks and generating continuation events (`_fw_continue` tasks) for blocks that need re-evaluation. This eliminates per-workflow locks and enables linear scaling across 100+ servers. Step updates use optimistic concurrency (`version.sequence`) to safely handle concurrent processing.
 
 ### State Machine (`afl/runtime/changers/`)
 
@@ -83,11 +83,11 @@ Each step progresses through a state machine with phases:
 
 State changers are registered handlers that implement transitions between states.
 
-### Persistence (`afl/runtime/persistence.py`)
+### Persistence (`facetwork/runtime/persistence.py`)
 
 The `PersistenceAPI` abstract class defines the storage interface. Two implementations:
-- `MemoryStore` (`afl/runtime/memory_store.py`): in-memory, for testing and simple workflows
-- `MongoStore` (`afl/runtime/mongo_store.py`): MongoDB-backed, for production
+- `MemoryStore` (`facetwork/runtime/memory_store.py`): in-memory, for testing and simple workflows
+- `MongoStore` (`facetwork/runtime/mongo_store/`): MongoDB-backed, for production
 
 ## Agent Execution Models
 
@@ -95,7 +95,7 @@ Facetwork supports four models for processing event facet tasks. All models work
 
 ### RunnerService + RegistryRunner (Recommended)
 
-`afl/runtime/runner/service.py` with `--registry` flag
+`facetwork/runtime/runner/service.py` with `--registry` flag
 
 The recommended production model. Combines the `RunnerService` (distributed orchestration with atomic task claiming, thread pool, HTTP status endpoints, and heartbeat-based health checking) with the `RegistryRunner` pattern (auto-loads handler implementations from MongoDB).
 
@@ -115,7 +115,7 @@ Both start identical `RunnerService` processes. Each registers in MongoDB's `ser
 
 ### AgentPoller
 
-`afl/runtime/agent.py`
+`facetwork/runtime/agent.py`
 
 Standalone agent services with a `register()` callback pattern. Each agent polls MongoDB for tasks matching its registered facet names.
 
@@ -123,13 +123,13 @@ Available in Python, Scala, Go, TypeScript, and Java.
 
 ### ClaudeAgentRunner
 
-`afl/runtime/claude_agent.py`
+`facetwork/runtime/agent.py`
 
 LLM-driven in-process execution via the Claude API. Processes event facets synchronously using Claude as the agent.
 
 ## MCP Server
 
-`afl/mcp/server.py`
+`facetwork/mcp/server.py`
 
 The Model Context Protocol server exposes Facetwork to LLM agents. It provides:
 
@@ -187,16 +187,16 @@ In distributed mode, steps 8-10 happen across multiple servers. Each server clai
 
 | Abstraction | Module | Description |
 |-------------|--------|-------------|
-| `WorkflowDefinition` | `afl/runtime/entities.py` | Workflow metadata: name, starting step, parameters |
-| `StepDefinition` | `afl/runtime/step.py` | Runtime step instance with state, attributes, facet reference |
-| `TaskDefinition` | `afl/runtime/entities.py` | Work item for agent processing (pending/running/completed/failed) |
-| `FlowDefinition` | `afl/runtime/entities.py` | Container for compiled sources, namespaces, workflows |
-| `RunnerDefinition` | `afl/runtime/entities.py` | Active workflow execution instance |
-| `ServerDefinition` | `afl/runtime/entities.py` | Registered agent server with heartbeat |
-| `HandlerRegistration` | `afl/runtime/entities.py` | Registered handler module for a facet name |
-| `EventDefinition` | `afl/runtime/persistence.py` | Event record for task lifecycle tracking |
-| `FacetAttributes` | `afl/runtime/step.py` | Parameter and return value container for steps |
-| `ExecutionResult` | `afl/runtime/evaluator.py` | Outcome of execute/resume: success, outputs, status |
+| `WorkflowDefinition` | `facetwork/runtime/entities/` | Workflow metadata: name, starting step, parameters |
+| `StepDefinition` | `facetwork/runtime/step.py` | Runtime step instance with state, attributes, facet reference |
+| `TaskDefinition` | `facetwork/runtime/entities/` | Work item for agent processing (pending/running/completed/failed) |
+| `FlowDefinition` | `facetwork/runtime/entities/` | Container for compiled sources, namespaces, workflows |
+| `RunnerDefinition` | `facetwork/runtime/entities/` | Active workflow execution instance |
+| `ServerDefinition` | `facetwork/runtime/entities/` | Registered agent server with heartbeat |
+| `HandlerRegistration` | `facetwork/runtime/entities/` | Registered handler module for a facet name |
+| `EventDefinition` | `facetwork/runtime/persistence.py` | Event record for task lifecycle tracking |
+| `FacetAttributes` | `facetwork/runtime/step.py` | Parameter and return value container for steps |
+| `ExecutionResult` | `facetwork/runtime/evaluator.py` | Outcome of execute/resume: success, outputs, status |
 
 ## Composition with External Engines (Spark, OSRM, …)
 
@@ -230,7 +230,7 @@ The net effect is a deliberate division of labour: the **distributed engine** ha
 
 ## Configuration
 
-Facetwork is configured via `afl.config.json` or environment variables:
+Facetwork is configured via `facetwork.config.json` or environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -244,7 +244,7 @@ Facetwork is configured via `afl.config.json` or environment variables:
 
 ```
 afl/
-  grammar/afl.lark      # Lark LALR grammar
+  grammar/facetwork/grammar/ffl.lark      # Lark LALR grammar
   ast.py                 # AST dataclass nodes
   parser.py              # Lark parser wrapper
   transformer.py         # Parse tree -> AST

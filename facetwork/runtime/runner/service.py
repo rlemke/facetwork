@@ -529,7 +529,7 @@ class RunnerService(BaseRunner):
             capacity -= 1
             dispatched += 1
 
-        # Claim built-in tasks (like afl:execute) via atomic find_one_and_update
+        # Claim built-in tasks (like fw:execute) via atomic find_one_and_update
         builtin_names = self._get_builtin_task_names()
         if builtin_names:
             while capacity > 0:
@@ -1287,7 +1287,7 @@ class RunnerService(BaseRunner):
         """Process a resume task inserted by an external agent.
 
         External agents (Java/Scala/Go) handle event facets directly,
-        write return attributes to the step, and insert an afl:resume
+        write return attributes to the step, and insert an fw:resume
         task. This method picks up that task, calls continue_step to
         validate and transition the step, then resumes the workflow.
         """
@@ -1410,7 +1410,7 @@ class RunnerService(BaseRunner):
     # =========================================================================
 
     def _handle_execute_workflow(self, payload: dict) -> dict:
-        """Handle an afl:execute task.
+        """Handle an fw:execute task.
 
         Loads the flow from persistence, parses FFL source, finds the
         workflow AST, and executes it via the evaluator.

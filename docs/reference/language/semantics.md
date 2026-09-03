@@ -349,7 +349,7 @@ Declaration params
 
 ## Implementation Details
 
-### File: `afl/ast.py`
+### File: `facetwork/ast.py`
 - All nodes are `@dataclass` decorated
 - Base `ASTNode` class with:
   - `node_id: str` - Auto-generated UUID (v4) for unique identification
@@ -357,19 +357,19 @@ Declaration params
 - Both fields use `kw_only=True` for inheritance compatibility
 - UUIDs are generated via `uuid.uuid4()` at node creation time
 
-### File: `afl/transformer.py`
+### File: `facetwork/transformer.py`
 - Extends `lark.Transformer`
 - Uses `@v_args(meta=True)` for location tracking
 - Converts Lark parse tree to AST nodes
 
-### File: `afl/preprocess.py`
+### File: `facetwork/preprocess.py`
 - `preprocess_script_braces()` converts brace-delimited `script { code }` to `script "escaped_code"` before LALR parsing
 - Tracks brace depth to handle nested Python dicts/sets
 - Respects Python string literals (single, double, triple-quoted) and FFL comments
 - Strips common indentation (dedent) and preserves line numbers via blank-line padding
 - `PreprocessError` exception for unbalanced braces
 
-### File: `afl/parser.py`
+### File: `facetwork/parser.py`
 - `AFLParser` class wraps Lark parser
 - Calls `preprocess_script_braces()` before Lark parsing
 - `ParseError` exception with line/column

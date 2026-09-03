@@ -77,7 +77,7 @@ event facet SummarizeDoc(text: String, max_length: Int) => (summary: String)
 
 **Changes required:**
 
-- Grammar extension: `prompt` block on event facets (`afl/grammar/afl.lark`).
+- Grammar extension: `prompt` block on event facets (`facetwork/grammar/ffl.lark`).
 - New AST node: `PromptTemplate` with interpolation slots.
 - Transformer and emitter support for the new node.
 - Runtime evaluation of template expressions against step params.
@@ -149,8 +149,8 @@ Many features described above are now implemented and used in production example
 
 | Feature | Status | Reference |
 |---------|--------|-----------|
-| **Prompt blocks** (§2.2) | Done | Grammar (`afl/grammar/afl.lark`), AST (`PromptBlock`), emitter, runtime evaluation |
-| **LLMHandler + ClaudeAgentRunner** (§2.1, §2.3) | Done | Multi-turn tool use, retry, prompt template interpolation (`afl/runtime/agent.py`) |
+| **Prompt blocks** (§2.2) | Done | Grammar (`facetwork/grammar/ffl.lark`), AST (`PromptBlock`), emitter, runtime evaluation |
+| **LLMHandler + ClaudeAgentRunner** (§2.1, §2.3) | Done | Multi-turn tool use, retry, prompt template interpolation (`facetwork/runtime/agent.py`) |
 | **Token tracking** (§2.1) | Done | `TokenUsage` dataclass, `token_budget` param, `TokenBudgetExceededError` |
 | **List/map types** (§2.4) | Done | Array literals `[1, 2]`, map literals `#{"k": "v"}`, array indexing `a[0]`, array type annotations `[Type]` |
 | **Streaming** (§2.5) | Not started | |
@@ -162,7 +162,7 @@ The `ANTHROPIC_API_KEY` environment variable enables live Claude API calls for p
 
 #### Token Usage Tracking
 
-`TokenUsage` (`afl/runtime/agent.py`) accumulates input/output tokens across API calls:
+`TokenUsage` (`facetwork/runtime/agent.py`) accumulates input/output tokens across API calls:
 
 ```python
 @dataclass

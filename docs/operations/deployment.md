@@ -437,9 +437,9 @@ If you skip this — e.g. keep `FW_OSM_OUTPUT_BASE` pointed at a *local* path wh
 | `FW_MONGODB_USERNAME` | | MongoDB authentication username |
 | `FW_MONGODB_PASSWORD` | | MongoDB authentication password |
 | `FW_MONGODB_AUTH_SOURCE` | `admin` | MongoDB auth database |
-| `FW_CONFIG` | | Path to `afl.config.json` file |
+| `FW_CONFIG` | | Path to `facetwork.config.json` file |
 
-### Config File (`afl.config.json`)
+### Config File (`facetwork.config.json`)
 
 ```json
 {
@@ -458,7 +458,7 @@ If you skip this — e.g. keep `FW_OSM_OUTPUT_BASE` pointed at a *local* path wh
 }
 ```
 
-The config file is searched in order: `$FW_CONFIG`, `./afl.config.json`, `~/.ffl/afl.config.json`, `/etc/ffl/afl.config.json`.
+The config file is searched in order: `$FW_CONFIG`, `./facetwork.config.json`, `~/.ffl/facetwork.config.json`, `/etc/ffl/facetwork.config.json`.
 
 ## Service Reference
 
@@ -471,7 +471,7 @@ Web UI for monitoring and managing workflows.
 docker compose up -d dashboard
 
 # Direct
-python -m afl.dashboard --host 0.0.0.0 --port 8080
+python -m facetwork.dashboard --host 0.0.0.0 --port 8080
 ```
 
 | Option | Default | Description |
@@ -493,7 +493,7 @@ Distributed runner that orchestrates workflow execution with locking and concurr
 docker compose up -d --scale runner=3
 
 # Direct
-python -m afl.runtime.runner
+python -m facetwork.runtime.runner
 ```
 
 | Option | Default | Description |
@@ -516,7 +516,7 @@ Model Context Protocol server for LLM agent integration.
 docker compose --profile mcp run --rm mcp
 
 # Direct
-python -m afl.mcp
+python -m facetwork.mcp
 ```
 
 | Option | Default | Description |
@@ -814,11 +814,11 @@ FW_OUTPUT_BASE=/var/afl/local                      # KEEP LOCAL — see gotcha b
 
 ### Migrating an existing local cache into MinIO
 
-If you already have a populated local cache (e.g. the legacy `/Volumes/afl_data/cache`) and want to move it into the bundled MinIO so the fleet reads it over S3, use the host-driven migrator `scripts/_cache_to_minio_move.py`. It streams each file `/Volumes/afl_data/cache/<X>` → `s3://afl-cache/cache/<X>`, **verifies the uploaded object's size, then deletes the local source** — a true move that is idempotent and restart-safe (a file already in the bucket at the matching size is skipped, never re-uploaded). Because it verifies before deleting, it is safe to kill at any time.
+If you already have a populated local cache (e.g. the legacy `/Volumes/afl_data/cache`) and want to move it into the bundled MinIO so the fleet reads it over S3, use the host-driven migrator `scripts/lib/_helpers/_cache_to_minio_move.py`. It streams each file `/Volumes/afl_data/cache/<X>` → `s3://afl-cache/cache/<X>`, **verifies the uploaded object's size, then deletes the local source** — a true move that is idempotent and restart-safe (a file already in the bucket at the matching size is skipped, never re-uploaded). Because it verifies before deleting, it is safe to kill at any time.
 
 ```bash
 docker compose -f docker-compose.full-stack.yml up -d minio
-SKIP_PATH_SUBSTR="osm/geojson/" .venv/bin/python scripts/_cache_to_minio_move.py
+SKIP_PATH_SUBSTR="osm/geojson/" .venv/bin/python scripts/lib/_helpers/_cache_to_minio_move.py
 # On "=== ALL MOVED CLEAN ===", sweep the emptied source dirs:
 find /Volumes/afl_data/cache -type d -empty -delete
 ```
@@ -1227,7 +1227,7 @@ docker exec afl-mongodb mongosh afl --eval "
 
 **Configuration:**
 - Reap interval: 60 seconds (hardcoded, `_reap_interval_ms`)
-- Down timeout: 5 minutes (`SERVER_DOWN_TIMEOUT_MS` in `afl/dashboard/helpers.py`, reused in `reap_orphaned_tasks()`)
+- Down timeout: 5 minutes (`SERVER_DOWN_TIMEOUT_MS` in `facetwork/dashboard/helpers.py`, reused in `reap_orphaned_tasks()`)
 - Heartbeat interval: 10 seconds (configurable via `FW_HEARTBEAT_INTERVAL_MS`)
 
 ### Verifying runner state
@@ -1237,7 +1237,7 @@ Each runner persists its HTTP status port in MongoDB (`ServerDefinition.http_por
 ```bash
 # List all running servers from MongoDB
 python3 -c "
-from afl.runtime.mongo_store import MongoStore
+from facetwork.runtime.mongo_store import MongoStore
 store = MongoStore('mongodb://afl-mongodb:27017')
 for s in store.get_servers_by_state('running'):
     print(f'{s.server_name}: port={s.http_port}, state={s.state}, id={s.uuid}')
@@ -1250,7 +1250,7 @@ curl http://prod-runner-01:8080/health
 curl http://prod-runner-01:8080/status
 ```
 
-### Shared helpers (`scripts/_remote.sh`)
+### Shared helpers (`scripts/lib/_helpers/_remote.sh`)
 
 The remote management scripts share a common helper library sourced after `_env.sh`:
 

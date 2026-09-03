@@ -95,9 +95,9 @@ Lark(
 ### Files
 | File | Purpose |
 |------|---------|
-| `afl/grammar/afl.lark` | Lark EBNF grammar (87 lines) |
-| `afl/parser.py` | Parser wrapper with error handling |
-| `afl/transformer.py` | Parse tree to AST conversion |
+| `facetwork/grammar/ffl.lark` | Lark EBNF grammar (87 lines) |
+| `facetwork/parser.py` | Parser wrapper with error handling |
+| `facetwork/transformer.py` | Parse tree to AST conversion |
 
 ### Error Handling
 All syntax errors include:
@@ -144,7 +144,7 @@ As of v0.12.52, the emitter produces a **declarations-only** JSON format:
 - `Namespace` nodes also use a `declarations` list internally
 - All declaration types (`FacetDecl`, `EventFacetDecl`, `WorkflowDecl`, `ImplicitDecl`, `SchemaDecl`, `Namespace`) appear in the unified `declarations` list
 
-For backward compatibility with legacy/external JSON that uses categorized keys, `normalize_program_ast()` in `afl/ast_utils.py` converts categorized-key JSON into declarations-only format.
+For backward compatibility with legacy/external JSON that uses categorized keys, `normalize_program_ast()` in `facetwork/ast_utils.py` converts categorized-key JSON into declarations-only format.
 
 Example:
 ```json
@@ -277,7 +277,7 @@ except ParseError as e:
 
 ## Grammar File
 
-Location: `afl/grammar/afl.lark`
+Location: `facetwork/grammar/ffl.lark`
 
 ### Structure
 1. Program structure (start, namespace, declarations)

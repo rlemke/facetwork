@@ -133,7 +133,7 @@ be resumed after the agent processes the event.
 ### 3.1 TaskDefinition
 
 A task is represented by the `TaskDefinition` dataclass
-(`afl/runtime/entities.py`):
+(`facetwork/runtime/entities/`):
 
 ```python
 @dataclass
@@ -228,7 +228,7 @@ This allows handlers to be registered with either qualified names
 
 ## 4. AgentPoller API
 
-The `AgentPoller` class (`afl/runtime/agent_poller.py`) is a standalone
+The `AgentPoller` class (`facetwork/runtime/agent_poller.py`) is a standalone
 polling library for building FFL Agent services without the full
 `RunnerService`.
 
@@ -356,7 +356,7 @@ to continue from the paused state.
 ### 5.1 ServerDefinition
 
 Agents register themselves with the runtime via a `ServerDefinition`
-(`afl/runtime/entities.py`):
+(`facetwork/runtime/entities/`):
 
 ```python
 @dataclass
@@ -644,7 +644,7 @@ within the poller.
 
 ## 8. RunnerService
 
-The `RunnerService` (`afl/runtime/runner/service.py`) is a superset of
+The `RunnerService` (`facetwork/runtime/runner/service.py`) is a superset of
 the `AgentPoller` that adds distributed coordination capabilities.
 
 ### 8.1 RunnerConfig
@@ -702,7 +702,7 @@ to `http_max_port_attempts` times if the port is in use.
 
 ## 9. RegistryRunner (Recommended)
 
-The `RegistryRunner` (`afl/runtime/registry_runner.py`) is a universal,
+The `RegistryRunner` (`facetwork/runtime/registry_runner.py`) is a universal,
 handler-agnostic runner that eliminates the need for per-facet
 microservices. Instead of writing custom agent code, developers register
 handler implementations in the database and the RegistryRunner
@@ -932,8 +932,8 @@ runner.register_handler(
 **4. Start the RegistryRunner** — no custom agent code needed:
 
 ```python
-from afl.runtime import MongoStore, Evaluator
-from afl.runtime.registry_runner import RegistryRunner, RegistryRunnerConfig
+from facetwork.runtime import MongoStore, Evaluator
+from facetwork.runtime.registry_runner import RegistryRunner, RegistryRunnerConfig
 
 store = MongoStore()
 evaluator = Evaluator(persistence=store)
@@ -1603,17 +1603,17 @@ races are benign and do not affect correctness:
 
 | File | Description |
 |------|-------------|
-| `afl/runtime/registry_runner.py` | `RegistryRunner` class, `RegistryRunnerConfig`, dynamic handler loading |
-| `afl/runtime/agent_poller.py` | `AgentPoller` class and `AgentPollerConfig` |
-| `afl/runtime/runner/service.py` | `RunnerService` class and `RunnerConfig` |
-| `afl/runtime/entities.py` | `TaskDefinition`, `TaskState`, `ServerDefinition`, `ServerState`, `HandlerRegistration` |
-| `afl/runtime/persistence.py` | `PersistenceAPI` protocol (including `claim_task()`, `register_handler()`) |
-| `afl/runtime/evaluator.py` | `ExecutionContext`, `continue_step()`, `fail_step()`, `resume()` |
-| `afl/runtime/events.py` | `EventManager`, `EventDispatcher`, event lifecycle |
-| `afl/runtime/memory_store.py` | In-memory `PersistenceAPI` with deep-copy isolation |
-| `afl/runtime/mongo_store.py` | MongoDB `PersistenceAPI` with atomic operations |
-| `afl/runtime/runner/__main__.py` | CLI entry point: `python -m afl.runtime.runner` |
-| `afl/runtime/handlers/initialization.py` | `EventTransmitHandler` (task creation) |
+| `facetwork/runtime/registry_runner.py` | `RegistryRunner` class, `RegistryRunnerConfig`, dynamic handler loading |
+| `facetwork/runtime/agent_poller.py` | `AgentPoller` class and `AgentPollerConfig` |
+| `facetwork/runtime/runner/service.py` | `RunnerService` class and `RunnerConfig` |
+| `facetwork/runtime/entities/` | `TaskDefinition`, `TaskState`, `ServerDefinition`, `ServerState`, `HandlerRegistration` |
+| `facetwork/runtime/persistence.py` | `PersistenceAPI` protocol (including `claim_task()`, `register_handler()`) |
+| `facetwork/runtime/evaluator.py` | `ExecutionContext`, `continue_step()`, `fail_step()`, `resume()` |
+| `facetwork/runtime/dispatcher.py` | `HandlerDispatcher` protocol, `RegistryDispatcher`, `CompositeDispatcher` |
+| `facetwork/runtime/memory_store.py` | In-memory `PersistenceAPI` with deep-copy isolation |
+| `facetwork/runtime/mongo_store/` | MongoDB `PersistenceAPI` with atomic operations |
+| `facetwork/runtime/runner/__main__.py` | CLI entry point: `python -m facetwork.runtime.runner` |
+| `facetwork/runtime/handlers/initialization.py` | `EventTransmitHandler` (task creation) |
 
 ---
 

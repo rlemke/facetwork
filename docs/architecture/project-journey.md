@@ -568,7 +568,7 @@ open /Volumes/afl_data/output/maps/alaska-latest.osm_bicycle_routes.html
 ```
 facetwork/
 ├── afl/                          # Compiler package
-│   ├── grammar/afl.lark          # 141-line LALR grammar
+│   ├── grammar/facetwork/grammar/ffl.lark          # 141-line LALR grammar
 │   ├── parser.py                 # Lark parser
 │   ├── transformer.py            # AST builder
 │   ├── emitter.py                # JSON emitter

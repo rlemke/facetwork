@@ -34,7 +34,7 @@ See `constants.json` for complete field schemas and example MongoDB operations:
 
 | Language | Location | Status |
 |----------|----------|--------|
-| Python | `afl/runtime/agent_poller.py` (built-in) | Full evaluator integration |
+| Python | `facetwork/runtime/agent_poller.py` (built-in) | Full evaluator integration |
 | Scala | `agents/scala/fw-agent/` | Lightweight — delegates resume to Python RunnerService via `fw:resume` |
 
 Additional languages can implement the protocol using `constants.json` and any MongoDB driver.

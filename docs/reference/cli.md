@@ -18,12 +18,12 @@ afl input.ffl --config config.json # custom config
 
 ### Services
 ```bash
-python -m afl.dashboard                              # dashboard (port 8080)
-python -m afl.dashboard --port 9000 --reload         # dev mode
-python -m afl.runtime.runner                         # runner service
-python -m afl.runtime.runner --topics TopicA TopicB  # filtered topics
-python -m afl.runtime.runner --max-concurrent 10     # increase concurrency
-python -m afl.mcp                                    # MCP server (stdio)
+python -m facetwork.dashboard                              # dashboard (port 8080)
+python -m facetwork.dashboard --port 9000 --reload         # dev mode
+python -m facetwork.runtime.runner                         # runner service
+python -m facetwork.runtime.runner --topics TopicA TopicB  # filtered topics
+python -m facetwork.runtime.runner --max-concurrent 10     # increase concurrency
+python -m facetwork.mcp                                    # MCP server (stdio)
 ```
 
 ### Scala agent library
@@ -36,8 +36,8 @@ cd agents/scala/fw-agent && sbt package  # package JAR
 ### Convenience scripts
 All scripts are in `scripts/` and are self-contained:
 ```bash
-scripts/_env.sh                                # shared env loader (sourced by other scripts)
-scripts/_remote.sh                             # shared SSH/MongoDB helpers for remote management
+scripts/lib/_helpers/_env.sh                                # shared env loader (sourced by other scripts)
+scripts/lib/_helpers/_remote.sh                             # shared SSH/MongoDB helpers for remote management
 fw single up                                # one-command pipeline (teardown → rebuild → setup → seed)
 fw install setup                                  # bootstrap Docker stack
 fw install setup --runners 3 --agents 2           # start with scaling
@@ -208,7 +208,7 @@ fw single up        # runs the full pipeline using .env values
 ```
 
 **How it works:**
-- `scripts/_env.sh` is sourced by every convenience script. It reads `.env` from the project root and exports each variable **only if it is not already set** in the environment.
+- `scripts/lib/_helpers/_env.sh` is sourced by every convenience script. It reads `.env` from the project root and exports each variable **only if it is not already set** in the environment.
 - `fw single up` translates `.env` variables into `fw install setup` CLI flags and runs the full pipeline (teardown → rebuild → setup → seed).
 - Precedence: **CLI flags > env vars > `.env` > defaults**
 
@@ -259,11 +259,11 @@ fw single up        # runs the full pipeline using .env values
 
 ### Configuration
 
-FFL uses a JSON config file (`afl.config.json`) for service connections. Resolution order:
+FFL uses a JSON config file (`facetwork.config.json`) for service connections. Resolution order:
 
 1. Explicit `--config FILE` CLI argument
 2. `FW_CONFIG` environment variable
-3. `afl.config.json` in the current directory, `~/.ffl/`, or `/etc/ffl/`
+3. `facetwork.config.json` in the current directory, `~/.ffl/`, or `/etc/ffl/`
 4. Environment variables (`FW_MONGODB_*`)
 5. Built-in defaults
 

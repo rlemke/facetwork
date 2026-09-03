@@ -599,7 +599,7 @@ fw ffl seed --include osm-geocoder
 fw runner start --example osm-geocoder
 
 # Start the dashboard to monitor execution
-python -m afl.dashboard
+python -m facetwork.dashboard
 ```
 
 For agent development, see the `agents/` directory which contains client

@@ -5,13 +5,24 @@
 # and verifies the target file exists relative to the source file's directory.
 # Exits 0 if all links resolve, 1 if any are broken.
 #
+# It ALSO validates that docs point at code paths and reserved protocol names
+# that exist. Markdown-link checking alone could not catch the larger drift:
+# after the afl/ -> facetwork/ rename, 56 references across 14 documents pointed
+# at a package that no longer existed, and facetwork/runtime/continuation.py
+# documented the continuation queue as `_afl_continue` while the runtime polls
+# `_fw_continue` -- a wrong queue name in the module that OWNS the protocol is a
+# silent no-op, not a dead link.
+#
 # Usage:
-#   fw util check-doc-links              # check all .md files
+#   fw util check-doc-links              # links + code refs + protocol names
 #   fw util check-doc-links docs/        # check only docs/
+#   fw util check-doc-links --links-only # skip the code-reference pass
 
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
 
+LINKS_ONLY=0
+if [ "${1:-}" = "--links-only" ]; then LINKS_ONLY=1; shift; fi
 ROOT="${1:-.}"
 BROKEN=0
 CHECKED=0
@@ -44,11 +55,20 @@ while IFS= read -r file; do
   done < <(grep -oEn '\[[^]]*\]\([^)]+\)' "$file" 2>/dev/null || true)
 done < <(find "$ROOT" -name '*.md' -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/target/*' | sort)
 
+RC=0
 if [[ $BROKEN -gt 0 ]]; then
   echo ""
   echo "Found $BROKEN broken link(s)"
-  exit 1
+  RC=1
 else
   echo "All doc links OK ($CHECKED checked)"
-  exit 0
 fi
+
+# Second pass: do the docs point at code paths and reserved protocol names that
+# actually exist? Markdown-link checking alone missed 56 stale references.
+if [[ $LINKS_ONLY -eq 0 ]]; then
+  echo ""
+  PY="$FW_ROOT/.venv/bin/python3"; [ -x "$PY" ] || PY=python3
+  "$PY" "$FW_LIB/_helpers/_doc_coderefs.py" "$ROOT" || RC=1
+fi
+exit $RC

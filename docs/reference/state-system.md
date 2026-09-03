@@ -49,7 +49,7 @@ State changers orchestrate the state machine, selecting and executing states in 
 
 ### Base Class: StateChanger
 
-**File:** `afl/runtime/changers/base.py`
+**File:** `facetwork/runtime/changers/base.py`
 
 ```python
 class StateChanger(ABC):
@@ -140,11 +140,11 @@ class StateChangeResult:
 
 | State Changer | Handles | File |
 |---------------|---------|------|
-| `StepStateChanger` | `VariableAssignment` | `afl/runtime/changers/step_changer.py` |
-| `BlockStateChanger` | `AndThen`, `AndMap`, `AndMatch`, `Block` | `afl/runtime/changers/block_changer.py` |
-| `YieldStateChanger` | `YieldAssignment` | `afl/runtime/changers/yield_changer.py` |
+| `StepStateChanger` | `VariableAssignment` | `facetwork/runtime/changers/step_changer.py` |
+| `BlockStateChanger` | `AndThen`, `AndMap`, `AndMatch`, `Block` | `facetwork/runtime/changers/block_changer.py` |
+| `YieldStateChanger` | `YieldAssignment` | `facetwork/runtime/changers/yield_changer.py` |
 
-**Factory Function** (`afl/runtime/changers/__init__.py`):
+**Factory Function** (`facetwork/runtime/changers/__init__.py`):
 
 ```python
 def get_state_changer(step: StepDefinition, context: ExecutionContext) -> StateChanger:
@@ -232,7 +232,7 @@ StatementEnd ──▶ StatementComplete
 
 ## State Constants
 
-**File:** `afl/runtime/states.py`
+**File:** `facetwork/runtime/states.py`
 
 ```python
 class StepState:
@@ -333,7 +333,7 @@ YIELD_TRANSITIONS: dict[str, str] = {
 
 ## State Handler Base
 
-**File:** `afl/runtime/handlers/base.py`
+**File:** `facetwork/runtime/handlers/base.py`
 
 ```python
 class StateHandler(ABC):
@@ -392,7 +392,7 @@ class StateHandler(ABC):
 
 ### Handler Registry
 
-**File:** `afl/runtime/handlers/__init__.py`
+**File:** `facetwork/runtime/handlers/__init__.py`
 
 Handlers are registered in a dict mapping states to handler classes:
 
@@ -442,7 +442,7 @@ def get_handler(
 
 #### FacetInitializationBeginHandler
 
-**File:** `afl/runtime/handlers/initialization.py`
+**File:** `facetwork/runtime/handlers/initialization.py`
 
 **Purpose:** Evaluates facet attributes and applies parameters.
 
@@ -474,7 +474,7 @@ class FacetInitializationBeginHandler(StateHandler):
 
 #### FacetInitializationEndHandler
 
-**File:** `afl/runtime/handlers/initialization.py`
+**File:** `facetwork/runtime/handlers/initialization.py`
 
 **Purpose:** Marks facet initialization complete. Requests state change.
 
@@ -484,7 +484,7 @@ class FacetInitializationBeginHandler(StateHandler):
 
 #### FacetScriptsBeginHandler / FacetScriptsEndHandler
 
-**File:** `afl/runtime/handlers/scripts.py`
+**File:** `facetwork/runtime/handlers/scripts.py`
 
 **Purpose:** Execute and complete facet-level scripts. Currently pass-through states that request state change.
 
@@ -583,7 +583,7 @@ the parent's own snapshot read.
 
 #### EventTransmitHandler
 
-**File:** `afl/runtime/handlers/completion.py`
+**File:** `facetwork/runtime/handlers/completion.py`
 
 **Purpose:** Dispatches events defined by `EventFacetDecl`.
 
@@ -644,7 +644,7 @@ Normal execution continues
 
 #### StatementBlocksBeginHandler
 
-**File:** `afl/runtime/handlers/blocks.py`
+**File:** `facetwork/runtime/handlers/blocks.py`
 
 **Purpose:** Creates block steps for statement-level andThen blocks.
 
@@ -656,7 +656,7 @@ Normal execution continues
 
 #### StatementBlocksContinueHandler
 
-**File:** `afl/runtime/handlers/blocks.py`
+**File:** `facetwork/runtime/handlers/blocks.py`
 
 **Purpose:** Monitors statement block completion.
 
@@ -669,7 +669,7 @@ Normal execution continues
 
 #### StatementBlocksEndHandler
 
-**File:** `afl/runtime/handlers/blocks.py`
+**File:** `facetwork/runtime/handlers/blocks.py`
 
 **Purpose:** Marks statement blocks processing complete. Requests state change.
 
@@ -694,7 +694,7 @@ When the resulting block step enters `BlockExecutionBegin`, the `get_block_ast()
 
 #### StatementCaptureBeginHandler
 
-**File:** `afl/runtime/handlers/capture.py`
+**File:** `facetwork/runtime/handlers/capture.py`
 
 **Purpose:** Extracts and merges captured data from statement blocks.
 
@@ -727,7 +727,7 @@ class StatementCaptureBeginHandler(StateHandler):
 
 #### StatementCaptureEndHandler
 
-**File:** `afl/runtime/handlers/capture.py`
+**File:** `facetwork/runtime/handlers/capture.py`
 
 **Purpose:** Marks statement capture complete. Requests state change.
 
@@ -737,7 +737,7 @@ class StatementCaptureBeginHandler(StateHandler):
 
 #### BlockExecutionBeginHandler
 
-**File:** `afl/runtime/handlers/block_execution.py`
+**File:** `facetwork/runtime/handlers/block_execution.py`
 
 **Purpose:** Begins execution of block contents.
 
@@ -767,7 +767,7 @@ class BlockExecutionBeginHandler(StateHandler):
 
 #### BlockExecutionContinueHandler
 
-**File:** `afl/runtime/handlers/block_execution.py`
+**File:** `facetwork/runtime/handlers/block_execution.py`
 
 **Purpose:** Continues iterating through block items.
 
@@ -780,7 +780,7 @@ class BlockExecutionBeginHandler(StateHandler):
 
 #### BlockExecutionEndHandler
 
-**File:** `afl/runtime/handlers/block_execution.py`
+**File:** `facetwork/runtime/handlers/block_execution.py`
 
 **Purpose:** Marks block execution complete. Requests state change.
 
@@ -790,19 +790,19 @@ class BlockExecutionBeginHandler(StateHandler):
 
 #### StatementBeginHandler
 
-**File:** `afl/runtime/handlers/initialization.py`
+**File:** `facetwork/runtime/handlers/initialization.py`
 
 **Purpose:** Initializes statement execution. Requests state change.
 
 #### StatementEndHandler
 
-**File:** `afl/runtime/handlers/completion.py`
+**File:** `facetwork/runtime/handlers/completion.py`
 
 **Purpose:** Prepares statement for completion. Requests state change.
 
 #### StatementCompleteHandler
 
-**File:** `afl/runtime/handlers/completion.py`
+**File:** `facetwork/runtime/handlers/completion.py`
 
 **Purpose:** Finalizes statement execution and notifies parent.
 
@@ -830,7 +830,7 @@ class StatementCompleteHandler(StateHandler):
 
 ### StepAnalysis
 
-**File:** `afl/runtime/block.py`
+**File:** `facetwork/runtime/block.py`
 
 Provides detailed analysis of step execution state within a block:
 
@@ -876,7 +876,7 @@ class StepAnalysis:
 
 ### BlockAnalysis
 
-**File:** `afl/runtime/block.py`
+**File:** `facetwork/runtime/block.py`
 
 Tracks block completion for containing steps:
 
@@ -905,7 +905,7 @@ class BlockAnalysis:
 
 Steps use the `StepTransition` dataclass to control state machine behavior.
 
-**File:** `afl/runtime/step.py`
+**File:** `facetwork/runtime/step.py`
 
 ```python
 @dataclass
@@ -1045,23 +1045,23 @@ StatementCaptureBeginHandler
 
 | Component | Path |
 |-----------|------|
-| StateChanger base | `afl/runtime/changers/base.py` |
-| StepStateChanger | `afl/runtime/changers/step_changer.py` |
-| BlockStateChanger | `afl/runtime/changers/block_changer.py` |
-| YieldStateChanger | `afl/runtime/changers/yield_changer.py` |
-| get_state_changer | `afl/runtime/changers/__init__.py` |
-| StateHandler base | `afl/runtime/handlers/base.py` |
-| Handler registry | `afl/runtime/handlers/__init__.py` |
-| Initialization handlers | `afl/runtime/handlers/initialization.py` |
-| Script handlers | `afl/runtime/handlers/scripts.py` |
-| Block handlers | `afl/runtime/handlers/blocks.py` |
-| Block execution handlers | `afl/runtime/handlers/block_execution.py` |
-| Capture handlers | `afl/runtime/handlers/capture.py` |
-| Completion handlers | `afl/runtime/handlers/completion.py` |
-| StepState constants | `afl/runtime/states.py` |
-| Transition tables | `afl/runtime/states.py` |
-| StepDefinition | `afl/runtime/step.py` |
-| StepTransition | `afl/runtime/step.py` |
-| StepAnalysis | `afl/runtime/block.py` |
-| BlockAnalysis | `afl/runtime/block.py` |
-| ObjectType | `afl/runtime/types.py` |
+| StateChanger base | `facetwork/runtime/changers/base.py` |
+| StepStateChanger | `facetwork/runtime/changers/step_changer.py` |
+| BlockStateChanger | `facetwork/runtime/changers/block_changer.py` |
+| YieldStateChanger | `facetwork/runtime/changers/yield_changer.py` |
+| get_state_changer | `facetwork/runtime/changers/__init__.py` |
+| StateHandler base | `facetwork/runtime/handlers/base.py` |
+| Handler registry | `facetwork/runtime/handlers/__init__.py` |
+| Initialization handlers | `facetwork/runtime/handlers/initialization.py` |
+| Script handlers | `facetwork/runtime/handlers/scripts.py` |
+| Block handlers | `facetwork/runtime/handlers/blocks.py` |
+| Block execution handlers | `facetwork/runtime/handlers/block_execution.py` |
+| Capture handlers | `facetwork/runtime/handlers/capture.py` |
+| Completion handlers | `facetwork/runtime/handlers/completion.py` |
+| StepState constants | `facetwork/runtime/states.py` |
+| Transition tables | `facetwork/runtime/states.py` |
+| StepDefinition | `facetwork/runtime/step.py` |
+| StepTransition | `facetwork/runtime/step.py` |
+| StepAnalysis | `facetwork/runtime/block.py` |
+| BlockAnalysis | `facetwork/runtime/block.py` |
+| ObjectType | `facetwork/runtime/types.py` |

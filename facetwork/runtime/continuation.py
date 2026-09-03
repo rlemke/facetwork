@@ -4,7 +4,7 @@ When a step completes or progresses, continuation events notify parent
 blocks so they can re-evaluate child completion.  This is the Python
 equivalent of the Scala ContextCache.addContinuationEvents() pattern.
 
-Continuation events are lightweight tasks on the ``_afl_continue`` task
+Continuation events are lightweight tasks on the ``_fw_continue`` task
 list.  Any runner can claim and process them, enabling distributed
 multi-server execution without per-workflow locks.
 """

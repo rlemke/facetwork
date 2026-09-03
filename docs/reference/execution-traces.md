@@ -15,7 +15,7 @@ These traces are the authoritative reference for how the evaluator processes wor
 - **State transitions** are shown as `State1 → State2 → ... → FinalState`. Most transitions happen within a single `StateChanger.process()` call — the step advances through multiple states without returning to the iteration loop.
 - **EventTransmit** is the blocking point for event facets. The step stays at this state until an external handler completes and calls `continue_step()`.
 - **Commits** are atomic persistence operations. Everything in a commit is visible to other servers simultaneously — no partial state.
-- **Continuation tasks** (`_afl_continue`) are generated when parent blocks need re-evaluation after a child completes. In single-server mode, the parent cascade happens in-process; in multi-server mode, any server can claim and process them.
+- **Continuation tasks** (`_fw_continue`) are generated when parent blocks need re-evaluation after a child completes. In single-server mode, the parent cascade happens in-process; in multi-server mode, any server can claim and process them.
 
 ### Conventions
 
