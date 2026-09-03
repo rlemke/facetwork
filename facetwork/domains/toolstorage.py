@@ -4,8 +4,6 @@
 deliberately not folded into it. This one:
 
 * dispatches on the PATH's scheme rather than a configured backend object,
-* talks to boto3 directly (so ``FW_STORAGE=s3`` works in a plain CLI with no
-  runtime configured),
 * uses a SHARED cache root with no per-domain segment,
 * lists files RECURSIVELY and returns paths RELATIVE to the directory,
 * writes local files atomically via ``.tmp`` + ``os.replace`` + ``fsync``.
@@ -16,10 +14,15 @@ by the two names that varied. Nothing else changed: mapping it onto
 ``DomainStorage`` would have altered listing semantics, local atomicity and the
 root defaults all at once, which is a rewrite wearing a refactor's clothes.
 
-⚠️ The boto3 dependency is the honest state of things, not an endorsement. A
-later change can route this through ``facetwork.runtime.storage`` so there is one
-S3 client in the codebase — but that is a MECHANISM change and belongs in its own
-step, verified separately.
+S3 goes through ``facetwork.runtime.storage`` — ONE S3 client in the codebase,
+built from the same ``FW_S3_*`` env this module used to read itself (verified
+identical before the switch).
+
+⚠️ The LOCAL write stays here and stays atomic (``.tmp`` + ``fsync`` +
+``os.replace``). Core's ``write_bytes`` does none of that — no tmp file, no
+rename — so routing the local path through it as well would have silently traded
+a crash-safety guarantee for tidiness. One S3 client was the goal; losing atomic
+writes was not.
 """
 from __future__ import annotations
 
@@ -90,52 +93,40 @@ class ToolStorage:
             return head + ("/" + tail if tail else "")
         return os.path.join(*parts)
 
-    # ── S3 client ────────────────────────────────────────────────────────────
+    # ── S3, through the one client ───────────────────────────────────────────
 
     @staticmethod
-    def _s3():
-        import boto3
+    def _backend(path: str):
+        """The runtime's backend for `path`.
 
-        return boto3.client(
-            "s3",
-            endpoint_url=os.environ.get("FW_S3_ENDPOINT") or None,
-            region_name=os.environ.get("FW_S3_REGION", "us-east-1"),
-            aws_access_key_id=(os.environ.get("FW_S3_ACCESS_KEY")
-                               or os.environ.get("AWS_ACCESS_KEY_ID")),
-            aws_secret_access_key=(os.environ.get("FW_S3_SECRET_KEY")
-                                   or os.environ.get("AWS_SECRET_ACCESS_KEY")),
-        )
+        Previously this module built its own boto3 client. That client read
+        exactly the same env (FW_S3_ENDPOINT / FW_S3_REGION / FW_S3_ACCESS_KEY /
+        FW_S3_SECRET_KEY, falling back to AWS_*) with the same precedence and the
+        same us-east-1 default as ``S3StorageBackend`` — verified line by line
+        before removing it — so this is the same connection, made once.
+        """
+        from facetwork.runtime.storage import get_storage_backend
 
-    @staticmethod
-    def _split(uri: str) -> tuple[str, str]:
-        bucket, _, key = uri[len("s3://"):].partition("/")
-        return bucket, key
+        return get_storage_backend(path)
 
     # ── ops, dispatched on the path ──────────────────────────────────────────
 
     def exists(self, path: str) -> bool:
         if self.is_s3(path):
-            from botocore.exceptions import ClientError
-
-            b, k = self._split(path)
-            try:
-                self._s3().head_object(Bucket=b, Key=k)
-                return True
-            except ClientError:
-                return False
+            return bool(self._backend(path).exists(path))
         return os.path.exists(path)
 
     def read_bytes(self, path: str) -> bytes:
         if self.is_s3(path):
-            b, k = self._split(path)
-            return self._s3().get_object(Bucket=b, Key=k)["Body"].read()
+            with self._backend(path).open(path, "rb") as fh:
+                return fh.read()
         with open(path, "rb") as f:
             return f.read()
 
     def write_bytes(self, path: str, data: bytes) -> None:
         if self.is_s3(path):
-            b, k = self._split(path)
-            self._s3().put_object(Bucket=b, Key=k, Body=data)
+            with self._backend(path).open(path, "wb") as fh:
+                fh.write(data)
             return
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         # ⚠️ Atomic: a reader never sees a half-written file, and a crash leaves
@@ -156,12 +147,12 @@ class ToolStorage:
     def list_files(self, dir_path: str) -> list[str]:
         """File paths RELATIVE to `dir_path`, RECURSIVE. Local dir or S3 prefix."""
         if self.is_s3(dir_path):
-            b, prefix = self._split(dir_path.rstrip("/") + "/")
+            root = dir_path.rstrip("/")
             out: list[str] = []
-            for page in self._s3().get_paginator("list_objects_v2").paginate(
-                    Bucket=b, Prefix=prefix):
-                for obj in page.get("Contents", []):
-                    out.append(obj["Key"][len(prefix):])
+            for cur, _dirs, files in self._backend(root).walk(root):
+                base = cur.rstrip("/")
+                rel = base[len(root):].lstrip("/")
+                out.extend(f"{rel}/{fn}" if rel else fn for fn in files)
             return out
         if not os.path.isdir(dir_path):
             return []

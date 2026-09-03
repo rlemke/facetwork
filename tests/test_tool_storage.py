@@ -97,3 +97,39 @@ def test_text_round_trip(tmp_path):
     p = str(tmp_path / "t.txt")
     s.write_text(p, "héllo")
     assert s.read_text(p) == "héllo" and s.exists(p)
+
+
+def test_no_direct_boto3_client_remains():
+    """⚠️ The point of the port: ONE S3 client in the codebase.
+
+    This module used to build its own boto3 client from the same FW_S3_* env
+    with the same precedence and the same us-east-1 default as
+    S3StorageBackend. Two clients that agree today drift tomorrow — a retry
+    policy or endpoint fix applied to one silently misses the other.
+    """
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parents[1] / "facetwork/domains/toolstorage.py"
+    body = "\n".join(l for l in src.read_text().split("\n")
+                     if not l.strip().startswith("#") and '"""' not in l)
+    assert "boto3.client" not in body
+    assert "put_object" not in body and "get_object" not in body
+    assert "get_storage_backend" in body
+
+
+def test_local_write_stays_atomic_after_the_port(tmp_path):
+    """⚠️ The local path deliberately did NOT move to core.
+
+    facetwork.runtime.storage.write_bytes has no .tmp, no fsync and no
+    os.replace, so routing local writes through it as well would have traded a
+    crash-safety guarantee for tidiness. One S3 client was the goal.
+    """
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parents[1] / "facetwork/domains/toolstorage.py"
+    text = src.read_text()
+    assert "os.replace(tmp, path)" in text and "os.fsync" in text
+    s = tool_storage("gp")
+    p = str(tmp_path / "x" / "f.bin")
+    s.write_bytes(p, b"v1")
+    s.write_bytes(p, b"v2")
+    assert s.read_bytes(p) == b"v2"
+    assert not (tmp_path / "x" / "f.bin.tmp").exists()
