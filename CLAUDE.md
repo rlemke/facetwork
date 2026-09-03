@@ -642,8 +642,15 @@ evaluate at claim time.
 
 ⚠️ **A requirement nothing can meet is a new way to disappear** — such a task is
 never claimed, never errors, never dead-letters. `fw maint unsatisfiable`
-compares pending requirements against every live runner and exits **1** when it
-finds one (**2** = could not tell, e.g. no live servers — so an offline fleet
+compares pending tasks against every live runner on **both routing dimensions** —
+the resource floor in `requires` AND the `environment_hash` of a script task —
+and exits **1** when it finds one. ⚠️ The environment dimension was added
+2026-09-02 after it stranded three rollouts: an `environment` declared outside
+`examples/canonical/` was never baked (the Dockerfile copied only that dir), and
+`fw.file.FileOps` survived in images purely as a **stale cached layer** that the
+first invalidating change removed. In both cases script tasks carried a hash no
+runner advertised, sat pending forever, and this check said "OK" because it was
+looking at the wrong field (**2** = could not tell, e.g. no live servers — so an offline fleet
 does not cry wolf). A dimension name no runner advertises declines everywhere by
 design; that is reported rather than silently ignored.
 

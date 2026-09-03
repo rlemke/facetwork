@@ -17,7 +17,23 @@
 #     2  could not tell (no Mongo, no live servers to compare against)
 # Only 1 is a real alarm. Reporting "unsatisfiable" when the fleet is merely
 # offline would train you to ignore it.
-"""Report pending tasks whose `requires` exceeds every live runner's capacity."""
+"""Report pending tasks no live runner can ever claim.
+
+Two independent routing dimensions can strand a task, and both fail the same
+silent way: never claimed, never retried, never dead-lettered.
+
+  requires           a resource floor (memory_gb, scratch_gb, ...) that exceeds
+                     every live host's advertised capacity
+  environment_hash   a script environment no live runner provides
+
+⚠️ The second was missing and it is the one that actually bit. A new
+`environment` declared outside examples/canonical/ was never baked (the
+Dockerfile copied only that directory), and the built-in fw.file.FileOps
+environment survived in images purely as a stale cached layer -- the first
+change that invalidated it removed the environment entirely. In both cases
+script tasks carried an environment_hash no runner advertised and sat pending
+forever while this check reported "OK". It was looking at the wrong dimension.
+"""
 from __future__ import annotations
 
 import argparse
@@ -48,10 +64,15 @@ def main() -> int:
 
     try:
         db = pymongo.MongoClient(a.mongo, serverSelectionTimeoutMS=8000).get_database(a.database)
-        pending = list(db.tasks.find({"state": "pending", "requires": {"$nin": [None, {}]}},
-                                     {"uuid": 1, "name": 1, "requires": 1, "created": 1}))
-        servers = list(db.servers.find({"state": "running"}, {"server_name": 1, "resources": 1,
-                                                              "ping_time": 1}))
+        pending = list(db.tasks.find(
+            {"state": "pending",
+             "$or": [{"requires": {"$nin": [None, {}]}},
+                     {"environment_hash": {"$nin": [None, ""]}}]},
+            {"uuid": 1, "name": 1, "requires": 1, "environment_hash": 1,
+             "kind": 1, "created": 1}))
+        servers = list(db.servers.find({"state": "running"},
+                                       {"server_name": 1, "resources": 1, "ping_time": 1,
+                                        "provided_environments": 1}))
     except Exception as exc:  # noqa: BLE001
         print(f"could not query {a.mongo}: {type(exc).__name__}", file=sys.stderr)
         return 2
@@ -77,25 +98,42 @@ def main() -> int:
                 return False
         return True
 
+    provided = set()
+    for s in live:
+        provided.update(s.get("provided_environments") or [])
+
     bad = []
     for t in pending:
         need = t.get("requires") or {}
-        if not any(fits(need, s.get("resources") or {}) for s in live):
-            bad.append(t)
+        env = (t.get("environment_hash") or "").strip()
+        why = []
+        if need and not any(fits(need, s.get("resources") or {}) for s in live):
+            why.append(f"requires {need}")
+        if env and env not in provided:
+            why.append(f"environment {env[:16]} provided by NO live runner")
+        if why:
+            bad.append((t, "; ".join(why)))
 
+    n_env = sum(1 for t in pending if (t.get("environment_hash") or "").strip())
     if not bad:
-        print(f"OK — {len(pending)} pending task(s) with requirements, all satisfiable "
-              f"by at least one of {len(live)} live runner(s)")
+        print(f"OK — {len(pending)} pending task(s) with routing constraints "
+              f"({n_env} env-routed), all servable by at least one of "
+              f"{len(live)} live runner(s)")
         return 0
 
     print(f"{len(bad)} pending task(s) NO live runner can serve "
           f"(checked against {len(live)} runner(s)):\n")
-    for t in bad[:20]:
+    for t, why in bad[:20]:
         age_h = (now - float(t.get("created") or now)) / 3_600_000
-        print(f"  {t.get('name','?')[:48]:48s} waiting {age_h:5.1f}h  needs {t.get('requires')}")
+        print(f"  {t.get('name','?')[:44]:44s} waiting {age_h:5.1f}h  {why}")
     print("\n  fleet capacity:")
     for s in live:
         print(f"    {s.get('server_name','?'):10s} {s.get('resources') or '(none advertised)'}")
+    print(f"\n  environments provided across the fleet: "
+          f"{sorted(e[:16] for e in provided) or '(none)'}")
+    if any("environment" in w for _, w in bad):
+        print("\n  An unprovided environment usually means the image did not BAKE it.")
+        print("  Check the build:  fw ffl bake-envs --check   /   envbake in the runner image")
     print("\n  These will NOT retry and will NOT dead-letter — they are simply never")
     print("  claimed. Lower the requirement, add a capable host, or terminate them:")
     print("    fw maint terminate-workflow <runner_id>")
