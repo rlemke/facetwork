@@ -27,21 +27,82 @@ source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 source "$FW_LIB/_helpers/_env.sh"
 
 PYTHON="$FW_ROOT/.venv/bin/python3"; [ -x "$PYTHON" ] || PYTHON=python3
-INSTALL=0 BREAK=0
+INSTALL=0 BREAK=0 COMMANDS_ONLY=0 FLEET=0 JSON=0 QUIET=0
 for a in "$@"; do
     case "$a" in
         --install|--fix) INSTALL=1 ;;
         --dry|--dry-run) INSTALL=0 ;;
         --break-system-packages) BREAK=1 ;;
+        --commands) COMMANDS_ONLY=1 ;;
+        --fleet) FLEET=1 ;;
+        --json) JSON=1 ;;
+        --quiet) QUIET=1 ;;
         -h|--help)
             sed -n '3,17p' "$0" | grep -v '^# fw-summary:' | sed 's/^# \{0,1\}//'
             echo; echo "Usage: fw install check [--install] [--break-system-packages]"
+            echo "       fw install check --commands [--json|--quiet]   # section 4 only"
+            echo "       fw install check --fleet                       # section 4 on every host"
             exit 0 ;;
         *) echo "unknown arg: $a" >&2; exit 2 ;;
     esac
 done
 
-exec env FW_ROOT="$FW_ROOT" FW_LIB="$FW_LIB" FW_PYTHON="$PYTHON" FW_INSTALL="$INSTALL" FW_BREAK="$BREAK" \
+STARTABILITY="$FW_LIB/_helpers/_startability.py"
+
+# --- [4] on every host ----------------------------------------------------
+# A command that cannot start is a PER-HOST fact, and the whole point is that
+# it is invisible from the host where it works. `fw maint unsatisfiable` ran
+# only on the machine it was written on for its entire life.
+if [ "$FLEET" -eq 1 ]; then
+    HOSTS="${FW_RUNNER_HOSTS:-}"
+    if [ -z "$HOSTS" ] && [ -f "$FW_ROOT/servers.json" ]; then
+        HOSTS="$("$PYTHON" -c "import json,sys;print(' '.join(s['name'] for s in json.load(open(sys.argv[1]))['servers']))" "$FW_ROOT/servers.json" 2>/dev/null || true)"
+    fi
+    [ -z "$HOSTS" ] && { echo "could not verify: no hosts (set FW_RUNNER_HOSTS or add servers.json)" >&2; exit 2; }
+    SELF="$(hostname -s 2>/dev/null || hostname)"
+    rc=0; reached=0
+    echo "fw command startability across the fleet"
+    echo
+    for h in $HOSTS; do
+        short="${h%%.*}"
+        if [ "$short" = "$SELF" ]; then
+            out="$("$PYTHON" "$STARTABILITY" --json 2>/dev/null || true)"
+        else
+            out="$(ssh -o ConnectTimeout=8 -o BatchMode=yes "$h" \
+                   'cd ~/facetwork 2>/dev/null && ./fw install check --commands --json' 2>/dev/null || true)"
+        fi
+        if [ -z "$out" ]; then
+            printf '  %-10s unreachable or no checkout — startability UNKNOWN here\n' "$short"
+            rc=2
+            continue
+        fi
+        reached=$((reached+1))
+        printf '%s' "$out" | "$PYTHON" -c '
+import json,sys
+d=json.load(sys.stdin); h=sys.argv[1]
+b,r=d["broken"],d["risk"]
+mark="OK " if not b else "✗  "
+print(f"  {mark}{h:<10} {len(b)} BROKEN, {len(r)} RISK of {d["total"]} commands")
+for x in b: print(f"        ✗ fw {x["cmd"]:<26} [{x["interpreter"]}] missing: {", ".join(x["missing"])}")
+for x in r: print(f"        ⚠ fw {x["cmd"]:<26} needs via system python: {", ".join(x["modules"])}")
+sys.exit(1 if b else 0)' "$short" || rc=1
+    done
+    echo
+    [ "$rc" -eq 1 ] && echo "FAIL — a command cannot start somewhere in the fleet."
+    [ "$rc" -eq 2 ] && echo "COULD NOT VERIFY — at least one host was unreachable (reached $reached)."
+    [ "$rc" -eq 0 ] && echo "OK — every command resolves its imports on all $reached reachable host(s)."
+    exit $rc
+fi
+
+# --- [4] only -------------------------------------------------------------
+if [ "$COMMANDS_ONLY" -eq 1 ]; then
+    ARGS=""
+    [ "$JSON" -eq 1 ] && ARGS="--json"
+    [ "$QUIET" -eq 1 ] && ARGS="$ARGS --quiet"
+    exec "$PYTHON" "$STARTABILITY" $ARGS
+fi
+
+env FW_ROOT="$FW_ROOT" FW_LIB="$FW_LIB" FW_PYTHON="$PYTHON" FW_INSTALL="$INSTALL" FW_BREAK="$BREAK" \
     "$PYTHON" - <<'PY'
 import ast
 import os
@@ -348,3 +409,12 @@ if env_gaps:
             rc = rc or 1
 sys.exit(rc)
 PY
+rc_deps=$?
+
+# --- [4] command startability ---------------------------------------------
+echo
+"$PYTHON" "$STARTABILITY"
+rc_cmds=$?
+
+[ "$rc_deps" -ne 0 ] && exit "$rc_deps"
+exit "$rc_cmds"
