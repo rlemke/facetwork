@@ -1200,7 +1200,7 @@ No server holds a lock on the workflow. Each processes its step independently. T
 |---|---|---|
 | 1 server | `resume()` (O(N²)) | Sequential, limited by scan cost |
 | 1 server | `resume_step()` (O(depth)) | Sequential, 22ms per step |
-| 100 servers | `process_single_step()` | Parallel — each server processes independently |
+| 100 servers | `process_single_step()` | Parallel — each server processes independently. ⚠️ **Architectural, not measured.** The other rows are measurements; this one describes what the design does. Observed evidence is 4 hosts / ~85 runners — see [informal-fleet.md](../operations/informal-fleet.md) |
 
 **Files:** `evaluator.py:process_single_step()`, `persistence.py:get_pending_continuation_step_ids()` / `delete_pending_continuations_for_step()`, `continuation.py`, `registry_runner.py:_process_continuation()`, `mongo_store/tasks.py`, `memory_store.py`
 
