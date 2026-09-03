@@ -79,7 +79,11 @@ jobs:
       - name: Install (from scratch)
         run: |
           python -m pip install --upgrade pip
-          pip install ./core
+          # ⚠️ WITH the extras. Installing bare core left pymongo out, and three
+          # domains' entry points import it transitively — they failed at
+          # "entry point loads" for a missing dependency of the PLATFORM, not of
+          # themselves. The core's own CI installs the same set.
+          pip install "./core[mongodb,s3]"
           if [ -n "${{ inputs.extras }}" ]; then
             pip install -e "./domain[${{ inputs.extras }}]"
           else

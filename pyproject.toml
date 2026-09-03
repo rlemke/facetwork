@@ -85,6 +85,14 @@ include = ["facetwork*"]
 [tool.setuptools.package-data]
 facetwork = [
     "grammar/*.lark",
+    # ⚠️ The built-in facet libraries (fw.file / fw.http / fw.archive / fw.exec /
+    # fw.compare). Without this line a pip-installed Facetwork has NONE of them:
+    # `use fw.file` fails with "namespace 'fw.file' does not exist". Invisible in
+    # this repo and on the fleet, because both run from a source tree or an image
+    # built by COPY — it only appears when the package is actually installed,
+    # which the new domain CI does on every push. Found 2026-09-03 by
+    # fwh_gridbuilder and fwh_pypsa_data failing to compile.
+    "ffl/*.ffl",
     "dashboard/templates/**/*.html",
     "dashboard/static/*.js",
     "dashboard/static/*.css",
