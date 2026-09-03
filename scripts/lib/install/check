@@ -60,37 +60,78 @@ if [ "$FLEET" -eq 1 ]; then
     fi
     [ -z "$HOSTS" ] && { echo "could not verify: no hosts (set FW_RUNNER_HOSTS or add servers.json)" >&2; exit 2; }
     SELF="$(hostname -s 2>/dev/null || hostname)"
+    # ⚠️ Always include THIS host. FW_RUNNER_HOSTS names the machines you deploy
+    # TO, so a sweep driven by it silently omits the one you are standing on —
+    # which is the host where everything looks fine, and the reason a per-host
+    # failure stayed invisible for as long as it did.
+    case " $HOSTS " in *" $SELF "*|*" $SELF."*) ;; *) HOSTS="$SELF $HOSTS" ;; esac
     rc=0; reached=0
     echo "fw command startability across the fleet"
     echo
+    # ⚠️ Probed in BOTH shell contexts, because they resolve DIFFERENT
+    # interpreters and the honest answer differs between them. Measured
+    # 2026-09-02: server1 finds /usr/local/bin/python3 (has pymongo) at login
+    # and /usr/bin/python3 (3.9, does not) when scheduled — so `fw fleet config`
+    # works when a human runs it and fails from launchd. Reporting one number
+    # would have been wrong whichever we picked, and the context that matters
+    # for a scheduled job is the one that fails.
     for h in $HOSTS; do
         short="${h%%.*}"
-        if [ "$short" = "$SELF" ]; then
-            out="$("$PYTHON" "$STARTABILITY" --json 2>/dev/null || true)"
-        else
-            out="$(ssh -o ConnectTimeout=8 -o BatchMode=yes "$h" \
-                   'cd ~/facetwork 2>/dev/null && ./fw install check --commands --json' 2>/dev/null || true)"
-        fi
-        if [ -z "$out" ]; then
-            printf '  %-10s unreachable or no checkout — startability UNKNOWN here\n' "$short"
-            rc=2
-            continue
-        fi
-        reached=$((reached+1))
-        printf '%s' "$out" | "$PYTHON" -c '
-import json,sys
-d=json.load(sys.stdin); h=sys.argv[1]
-b,r=d["broken"],d["risk"]
-mark="OK " if not b else "✗  "
-print(f"  {mark}{h:<10} {len(b)} BROKEN, {len(r)} RISK of {d["total"]} commands")
-for x in b: print(f"        ✗ fw {x["cmd"]:<26} [{x["interpreter"]}] missing: {", ".join(x["missing"])}")
-for x in r: print(f"        ⚠ fw {x["cmd"]:<26} needs via system python: {", ".join(x["modules"])}")
-sys.exit(1 if b else 0)' "$short" || rc=1
+        printf '  %s\n' "$short"
+        host_rc=0; got=0
+        for ctx in login scheduled; do
+            # $SHELL, not bash: the login PATH lives in the USER'S shell rc
+            # files. Probing with `bash -lc` on a zsh host reported
+            # /usr/bin/python3 while a real login resolves homebrew — the probe
+            # was measuring a shell nobody uses. Single-quoted so $SHELL expands
+            # on the REMOTE host.
+            if [ "$ctx" = "login" ]; then remote='$SHELL -lc "cd ~/facetwork && ./fw install check --commands --json"'
+            else                          remote='cd ~/facetwork && ./fw install check --commands --json'; fi
+            if [ "$short" = "$SELF" ]; then
+                if [ "$ctx" = "login" ]; then out="$("${SHELL:-/bin/sh}" -lc "'$PYTHON' '$STARTABILITY' --json" 2>/dev/null || true)"
+                else out="$(env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$PYTHON" "$STARTABILITY" --json 2>/dev/null || true)"; fi
+            else
+                out="$(ssh -o ConnectTimeout=8 -o BatchMode=yes "$h" "$remote" 2>/dev/null || true)"
+            fi
+            if [ -z "$out" ]; then
+                printf '      %-12s unreachable or no checkout — UNKNOWN\n' "$ctx"
+                [ "$rc" -eq 0 ] && rc=2
+                continue
+            fi
+            got=1
+            printf '%s' "$out" | "$PYTHON" -c '
+import json, sys
+d = json.load(sys.stdin)
+ctx = sys.argv[1]
+b = d.get("broken", [])
+r = d.get("risk", [])
+interp = d.get("interpreters", {}).get("system", "?")
+tag = "OK" if not b else "%d BROKEN" % len(b)
+print("      %-12s %-10s %s" % (ctx, tag, interp))
+for x in b:
+    print("          \u2717 fw %-24s missing: %s" % (x["cmd"], ", ".join(x["missing"])))
+for x in r:
+    print("          \u26a0 fw %-24s via system python: %s" % (x["cmd"], ", ".join(x["modules"])))
+sys.exit(1 if b else 0)' "$ctx" || host_rc=1
+        done
+        [ "$got" -eq 1 ] && reached=$((reached+1))
+        [ "$host_rc" -eq 1 ] && rc=1
     done
     echo
+    echo "  login     = the PATH a login shell / ssh command resolves"
+    echo "  scheduled = the PATH a launchd or cron job resolves"
+    echo
+    echo "  Both are reported because they resolve DIFFERENT interpreters and the"
+    echo "  honest answer differs: server1 finds pymongo in /usr/local/bin/python3"
+    echo "  at login and /usr/bin/python3 (without it) when scheduled. A command"
+    echo "  broken only under 'scheduled' still fails every timer that calls it."
+    echo "  ⚠️ An INTERACTIVE terminal can differ again where rc files add to PATH"
+    echo "  (server3's .zshrc prepends homebrew); the interpreter path is printed"
+    echo "  for each row so the answer is never left to the label."
+    echo
     [ "$rc" -eq 1 ] && echo "FAIL — a command cannot start somewhere in the fleet."
-    [ "$rc" -eq 2 ] && echo "COULD NOT VERIFY — at least one host was unreachable (reached $reached)."
-    [ "$rc" -eq 0 ] && echo "OK — every command resolves its imports on all $reached reachable host(s)."
+    [ "$rc" -eq 2 ] && echo "COULD NOT VERIFY — a host was unreachable (reached $reached)."
+    [ "$rc" -eq 0 ] && echo "OK — every command resolves its imports on all $reached reachable host(s), both contexts."
     exit $rc
 fi
 

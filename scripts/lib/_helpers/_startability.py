@@ -46,6 +46,10 @@ from pathlib import Path
 SKIP_DIRS = {"__pycache__", "_helpers"}
 VENV_PY = re.compile(r"\.venv/bin/python")
 REEXEC = re.compile(r"os\.exec[vl]p?e?\(")
+# The shared fix (_helpers/venv_reexec.py) does the exec out of line, so
+# looking only for a literal os.execv here would report every command that
+# adopted it as still broken.
+ENSURE_VENV = re.compile(r"ensure_venv\(")
 # A bare python invocation in shell: start of line/pipe/subshell, not $PYTHON.
 BASH_BARE_PY = re.compile(r"(?:^|[|;&(`]|\$\()\s*(?:command\s+)?python3?\b", re.M)
 # Imports inside an embedded python payload, in the two shapes shell uses: at
@@ -109,11 +113,19 @@ def _optional_nodes(tree):
     return out
 
 
+SYNTAX_ERROR = "\x00syntax-error"
+
+
 def python_imports(text):
     try:
         tree = ast.parse(text)
     except SyntaxError:
-        return set()
+        # ⚠️ A file that cannot parse cannot start — but it also yields no
+        # imports, so returning an empty set reported it as OK. Caught when a
+        # bad edit left `fw maint unsatisfiable` with a SyntaxError and this
+        # check said "all 99 commands resolve their imports". The sentinel is
+        # never importable, so it flows through the normal probe as BROKEN.
+        return {SYNTAX_ERROR}
     optional = _optional_nodes(tree)
     mods = set()
     for node in ast.walk(tree):
@@ -145,7 +157,8 @@ def classify(path: Path):
         # fw execs the file, so `env python3` = the SYSTEM interpreter, unless
         # the file re-execs itself under the venv (which is the fix, not a
         # style choice — see the module docstring).
-        key = "venv" if (VENV_PY.search(text) and REEXEC.search(text)) else "system"
+        reexecs = ENSURE_VENV.search(text) or (VENV_PY.search(text) and REEXEC.search(text))
+        key = "venv" if reexecs else "system"
         return "python", key, python_imports(text)
     mods = shell_imports(text)
     if VENV_PY.search(text):
@@ -246,21 +259,24 @@ def main():
         lang, key, mods = classify(path)
         mods = {
             m for m in mods
-            if m not in STDLIB and not m.startswith("_") and m not in local
+            if m == SYNTAX_ERROR
+            or (m not in STDLIB and not m.startswith("_") and m not in local)
         }
         meta[name] = (lang, key, mods)
         if key in wanted:
-            wanted[key] |= mods
+            wanted[key] |= mods - {SYNTAX_ERROR}
     missing = {key: probe(interps[key], wanted[key]) for key in ("system", "venv")}
 
     broken, risk, ok = [], [], []
     for name, path in cmds:
         lang, key, mods = meta[name]
         gone = sorted(m for m in mods if m in missing.get(key, set()))
+        if SYNTAX_ERROR in mods:
+            gone = ["(file does not parse)"] + gone
         if gone:
             broken.append((name, key, gone))
-        elif key == "system" and mods:
-            risk.append((name, sorted(mods)))
+        elif key == "system" and mods - {SYNTAX_ERROR}:
+            risk.append((name, sorted(mods - {SYNTAX_ERROR})))
         else:
             ok.append(name)
 
@@ -287,9 +303,14 @@ def main():
         for name, key, gone in broken:
             print(f"      fw {name:<28} {key:<6} missing: {', '.join(gone)}")
         print()
-        print("    Fix: have the command re-exec itself under the repo venv (see")
-        print("    scripts/lib/maint/unsatisfiable), or install the module for the")
-        print("    system interpreter. `fw install repo` creates the venv if absent.")
+        if any("does not parse" in m for _, _, g in broken for m in g):
+            print("    A file that does not parse cannot start at all — fix the syntax first.")
+        if any(m != "(file does not parse)" for _, _, g in broken for m in g):
+            print("    Fix a missing module by having the command re-exec itself under the")
+            print("    repo venv — `from venv_reexec import ensure_venv` then")
+            print("    `ensure_venv(__file__, \"pymongo\")`, as fw maint unsatisfiable does —")
+            print("    or install the module for the system interpreter.")
+            print("    `fw install repo` creates the venv if it is absent.")
         print()
     if risk:
         print(f"  ⚠ {len(risk)} command(s) reach a third-party module through the SYSTEM python:")

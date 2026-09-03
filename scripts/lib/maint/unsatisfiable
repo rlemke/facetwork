@@ -49,32 +49,13 @@ from _dotenv import load_env  # noqa: E402
 load_env(__file__)
 
 
-def _reexec_under_repo_venv() -> None:
-    """Re-run under the repo venv when the system python lacks pymongo.
+# fw execs this file, so the shebang picked the SYSTEM python — which on three
+# of this fleet's four hosts has no pymongo. This check therefore exited 2
+# ("could not verify") everywhere but the host it was written on, for its whole
+# life, without ever looking broken.
+from venv_reexec import ensure_venv  # noqa: E402
 
-    ⚠️ The shebang is `env python3`, which on a fleet host is the SYSTEM
-    interpreter — and on three of this fleet's four hosts that has no pymongo,
-    while `.venv` does. The check therefore exited 2 ("could not verify") on
-    every host but the one it was written on. It failed safe rather than
-    reporting false health, but a check that can never run is still no check.
-    Sibling commands (fw util ffl-audit) are bash wrappers that pick the venv
-    explicitly; this one is executed directly, so it re-execs itself.
-    """
-    if os.environ.get("_FW_UNSAT_REEXEC"):
-        return
-    try:
-        import pymongo  # noqa: F401
-        return
-    except ImportError:
-        pass
-    root = pathlib.Path(__file__).resolve().parents[3]
-    for cand in (root / ".venv/bin/python3", root / ".venv/bin/python"):
-        if cand.exists():
-            os.environ["_FW_UNSAT_REEXEC"] = "1"
-            os.execv(str(cand), [str(cand), str(pathlib.Path(__file__).resolve()), *sys.argv[1:]])
-
-
-_reexec_under_repo_venv()
+ensure_venv(__file__, "pymongo")
 
 
 def main() -> int:

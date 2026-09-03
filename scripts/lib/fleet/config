@@ -44,6 +44,17 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_helpers"))
 import _fleet_lib  # noqa: E402
+
+# fw execs this file, so the shebang picked the SYSTEM python — which on three
+# of four hosts here has no pymongo. Degrade to a no-op if the helper is
+# somehow unavailable: this file is the launchd reconciler's entry point and
+# must never fail to start because of its own startup guard.
+try:
+    from venv_reexec import ensure_venv  # noqa: E402
+
+    ensure_venv(__file__, "pymongo")
+except ImportError:
+    pass
 from pymongo import MongoClient  # noqa: E402
 
 DB = os.environ.get("FW_MONGODB_DATABASE", "facetwork")

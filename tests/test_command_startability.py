@@ -126,3 +126,21 @@ def test_real_repo_enumeration_matches_fw(tmp_path):
     assert len(names) > 50
     assert "maint unsatisfiable" in names
     assert not any(Path(n.split()[-1]).name.startswith("_") for n in names)
+
+
+def test_a_file_that_does_not_parse_is_broken_not_ok(tmp_path):
+    """A SyntaxError yields no imports, so the first version reported such a
+    file as OK — caught live when a bad edit broke `fw maint unsatisfiable`
+    and this check still said 'all 99 commands resolve their imports'."""
+    p = _cmd(tmp_path, "c", "#!/usr/bin/env python3\ndef f() -> None: -> None:\n")
+    assert sa.SYNTAX_ERROR in sa.classify(p)[2]
+
+
+def test_shared_venv_helper_counts_as_the_fix(tmp_path):
+    """The fix moved out of line into _helpers/venv_reexec.py; a detector that
+    only looked for a literal os.execv would flag every adopter as broken."""
+    p = _cmd(tmp_path, "c", "#!/usr/bin/env python3\n"
+                            "from venv_reexec import ensure_venv\n"
+                            "ensure_venv(__file__, 'pymongo')\n"
+                            "import pymongo\n")
+    assert sa.classify(p)[1] == "venv"
