@@ -27,8 +27,16 @@
 #   fw svc selfcheck                     # run the checks once, now
 #   fw svc selfcheck --install           # every 6h
 #   fw svc selfcheck --every-hours 12 --install
+#   fw svc selfcheck --local --install   # check only THIS host's commands
 #   fw svc selfcheck --uninstall
 #   fw svc selfcheck --status
+#
+# Running it on every host is deliberate redundancy, not waste: these are
+# laptops that sleep, and a single-host timer dies with that host. The cost is
+# duplicate alarms for the cluster-wide legs (unsatisfiable / dead-letters read
+# the SHARED Mongo, so every host reaches the same verdict). With every host
+# covering ITSELF, --local drops the fleet sweep — otherwise four machines each
+# ssh to four, sixteen sessions a tick, to re-derive what each already knows.
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 source "$FW_LIB/_helpers/_env.sh"
 set -uo pipefail
@@ -41,6 +49,7 @@ LOG="$LOGDIR/selfcheck.log"
 HEALTH="$HOME/.facetwork/selfcheck-health.txt"
 EVERY_HOURS=6
 ACTION="check"
+LOCAL=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -48,6 +57,7 @@ while [ $# -gt 0 ]; do
         --uninstall) ACTION="uninstall"; shift ;;
         --status) ACTION="status"; shift ;;
         --every-hours) EVERY_HOURS="$2"; shift 2 ;;
+        --local) LOCAL=1; shift ;;
         -h|--help) sed -n '2,30p' "$0" | grep -v '^# fw-summary:' | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
@@ -100,7 +110,7 @@ install)
 set -u
 export PYTHONUNBUFFERED=1
 cd "$FW_ROOT" || exit 1
-exec ./fw svc selfcheck
+exec ./fw svc selfcheck$([ "$LOCAL" -eq 1 ] && echo " --local")
 WRAP
     chmod +x "$WRAPPER"
     cat > "$PLIST" <<PLISTEOF
@@ -160,7 +170,11 @@ check)
     # the gap that stranded fw maint unsatisfiable on 3 of 4 machines. If ssh is
     # unavailable to launchd it reports UNKNOWN (exit 2), which does not alarm
     # and is visible in the log — never a false OK.
-    run_one "commands can start, fleet-wide" ./fw install check --fleet
+    if [ "$LOCAL" -eq 1 ]; then
+        run_one "commands can start here" ./fw install check --commands
+    else
+        run_one "commands can start, fleet-wide" ./fw install check --fleet
+    fi
     run_one "no unsatisfiable tasks"    ./fw maint unsatisfiable $MONGO_ARGS
     run_one "no forgotten dead letters" ./fw maint dead-letters $MONGO_ARGS
 
