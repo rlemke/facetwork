@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# fw-summary: periodic sweep of the checks that catch SILENT failures, alarming only on a real one
+#
+# Facetwork has several checks whose whole subject is failure that never
+# announces itself — a task no runner can claim (never errors, never
+# dead-letters), a dead letter nobody retried (the first sweep found one that
+# had sat 10 days), a command that cannot start on this host (`fw maint
+# unsatisfiable` ran only on the machine it was written on, for its entire
+# life). Every one of them is advisory, and nothing runs them.
+#
+# An advisory check that nobody runs has exactly the failure mode it was built
+# to detect. So this is the standing runner for them, on the osm-watchdog
+# pattern: separate label, its own schedule, deliberately trivial. It reports
+# and alarms; it repairs nothing and mutates nothing.
+#
+# EXIT CODES MATTER. 0 = all clear, 1 = something needs attention, 2 = could
+# not verify (Mongo unreachable, host offline). Only 1 alarms. A laptop off the
+# network is not a fault, and alarming on it would train you to ignore the
+# alarm — which is how the silent failures survived in the first place.
+#
+# ⚠️ It cannot observe its own absence either. It records every run in a health
+# file and alarms when its OWN last run is older than 3x the interval, so a
+# watcher that quietly stopped is caught on the next tick — by the dashboard's
+# eye, or by --status, rather than by nothing.
+#
+# Usage:
+#   fw svc selfcheck                     # run the checks once, now
+#   fw svc selfcheck --install           # every 6h
+#   fw svc selfcheck --every-hours 12 --install
+#   fw svc selfcheck --uninstall
+#   fw svc selfcheck --status
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+source "$FW_LIB/_helpers/_env.sh"
+set -uo pipefail
+
+LABEL="com.facetwork.selfcheck"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+WRAPPER="$HOME/.facetwork/selfcheck-run.sh"
+LOGDIR="$HOME/.facetwork/logs"
+LOG="$LOGDIR/selfcheck.log"
+HEALTH="$HOME/.facetwork/selfcheck-health.txt"
+EVERY_HOURS=6
+ACTION="check"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --install) ACTION="install"; shift ;;
+        --uninstall) ACTION="uninstall"; shift ;;
+        --status) ACTION="status"; shift ;;
+        --every-hours) EVERY_HOURS="$2"; shift 2 ;;
+        -h|--help) sed -n '2,30p' "$0" | grep -v '^# fw-summary:' | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+# ⚠️ Mongo-touching checks default to localhost, and on a runner host that is
+# not the DB that is simply wrong — it would report "could not verify" forever
+# and read as a quiet fleet. Take the URL the runners actually use.
+MONGO="${FW_MONGODB_URL:-}"
+if [ -z "$MONGO" ] && [ -f "$FW_ROOT/.env.fleet" ]; then
+    MONGO="$(awk -F= '!/^[[:space:]]*#/ && $1 == "FW_MONGODB_URL" { sub(/^[^=]*=/, ""); v = $0 } END { print v }' "$FW_ROOT/.env.fleet" 2>/dev/null)"
+fi
+MONGO_ARGS=""
+[ -n "$MONGO" ] && MONGO_ARGS="--mongo $MONGO"
+
+case "$ACTION" in
+status)
+    if [ -n "$(launchctl list 2>/dev/null | grep -F "$LABEL" || true)" ]; then
+        echo "selfcheck: loaded ($LABEL)"
+    else
+        echo "selfcheck: NOT loaded — install with: fw svc selfcheck --install"
+    fi
+    if [ -f "$HEALTH" ]; then
+        echo "last run:"; sed 's/^/  /' "$HEALTH"
+    else
+        echo "last run: never (no $HEALTH)"
+    fi
+    exit 0
+    ;;
+
+uninstall)
+    launchctl unload "$PLIST" 2>/dev/null || true
+    rm -f "$PLIST" "$WRAPPER"
+    echo "uninstalled $LABEL."
+    echo "⚠️  Unsatisfiable tasks, forgotten dead letters and commands that cannot"
+    echo "    start will again be found only when someone thinks to look."
+    ;;
+
+install)
+    if [ "$(uname)" != "Darwin" ]; then
+        echo "launchd is macOS-only. On Linux use a systemd timer, or cron:" >&2
+        echo "  0 */$EVERY_HOURS * * *  cd $FW_ROOT && ./fw svc selfcheck >> $LOG 2>&1" >&2
+        exit 1
+    fi
+    mkdir -p "$LOGDIR" "$(dirname "$PLIST")" "$(dirname "$WRAPPER")"
+    cat > "$WRAPPER" <<WRAP
+#!/bin/bash -l
+# Facetwork self-check — launched by $LABEL.
+# Regenerate via 'fw svc selfcheck --install'. Do not hand-edit.
+set -u
+export PYTHONUNBUFFERED=1
+cd "$FW_ROOT" || exit 1
+exec ./fw svc selfcheck
+WRAP
+    chmod +x "$WRAPPER"
+    cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$LABEL</string>
+    <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
+    <!-- StartInterval, not StartCalendarInterval: a missed fixed time is NOT
+         run on wake, so a nightly slot on a sleeping laptop never fires. That
+         exact failure is why these checks exist. -->
+    <key>RunAtLoad</key><true/>
+    <key>StartInterval</key><integer>$((EVERY_HOURS * 3600))</integer>
+    <key>StandardOutPath</key><string>$LOG</string>
+    <key>StandardErrorPath</key><string>$LOGDIR/selfcheck.err.log</string>
+</dict>
+</plist>
+PLISTEOF
+    echo "wrote:"
+    echo "  $WRAPPER"
+    echo "  $PLIST   (every ${EVERY_HOURS}h)"
+    launchctl unload "$PLIST" 2>/dev/null || true
+    launchctl load "$PLIST"
+    echo "loaded $LABEL — the advisory checks now run whether or not anyone remembers."
+    ;;
+
+check)
+    mkdir -p "$LOGDIR" "$(dirname "$HEALTH")"
+    stamp="$(date '+%F %T %Z')"
+    echo "=== fw svc selfcheck — $stamp on $(hostname -s) ==="
+    worst=0
+    declare -a SUMMARY=()
+
+    run_one() {  # $1 = label, $2... = command
+        local name="$1"; shift
+        local out rc
+        out="$("$@" 2>&1)"; rc=$?
+        case $rc in
+            0) SUMMARY+=("  OK        $name") ;;
+            2) SUMMARY+=("  UNKNOWN   $name — could not verify")
+               [ "$worst" -eq 0 ] && worst=2 ;;
+            *) SUMMARY+=("  ATTENTION $name")
+               worst=1 ;;
+        esac
+        # Detail only when it is not clean; a clean run that prints pages of
+        # output is a run nobody reads, and this fires four times a day.
+        if [ $rc -ne 0 ]; then
+            printf '%s\n' "$out" | sed 's/^/      /'
+        fi
+    }
+
+    run_one "commands can start here"   ./fw install check --commands
+    run_one "no unsatisfiable tasks"    ./fw maint unsatisfiable $MONGO_ARGS
+    run_one "no forgotten dead letters" ./fw maint dead-letters $MONGO_ARGS
+
+    # Self-staleness: this job cannot report that it stopped running, but it
+    # CAN report on its next tick that it had been absent.
+    if [ -f "$HEALTH" ]; then
+        last_epoch="$(awk -F'epoch=' '/epoch=/ {print $2}' "$HEALTH" | tail -1)"
+        if [ -n "${last_epoch:-}" ]; then
+            gap=$(( $(date +%s) - last_epoch ))
+            max=$(( EVERY_HOURS * 3600 * 3 ))
+            if [ "$gap" -gt "$max" ]; then
+                SUMMARY+=("  ATTENTION selfcheck itself had not run for $((gap / 3600))h")
+                worst=1
+            fi
+        fi
+    fi
+
+    printf '%s\n' "${SUMMARY[@]}"
+    printf 'last_run=%s epoch=%s verdict=%s\n' "$stamp" "$(date +%s)" "$worst" > "$HEALTH"
+
+    case $worst in
+        0) echo "OK — nothing silently broken on $(hostname -s)." ;;
+        2) echo "COULD NOT VERIFY — offline or Mongo unreachable; NOT alarming." ;;
+        1) echo "ATTENTION — see above."
+           if [ "$(uname)" = "Darwin" ]; then
+               osascript -e 'display notification "A Facetwork self-check needs attention — fw svc selfcheck" with title "Facetwork self-check"' >/dev/null 2>&1 || true
+           fi ;;
+    esac
+    exit $worst
+    ;;
+esac

@@ -75,15 +75,21 @@ def main() -> int:
 
     try:
         db = pymongo.MongoClient(a.mongo, serverSelectionTimeoutMS=8000).get_database(a.database)
+        # ⚠️ NOT filtered to tasks that declare a constraint. The handler-name
+        # dimension applies to EVERY task, and the task it strands declares
+        # nothing at all: an event-facet task whose facet no live runner has a
+        # handler for is never CLAIMED, so it is never released-with-backoff,
+        # so retry_count stays 0 and it never dead-letters. Measured
+        # 2026-09-02: repro.asteroids.PickExposure sat pending 8h at retry=0
+        # while this check reported OK, because it was reading only the two
+        # fields the task left empty.
         pending = list(db.tasks.find(
-            {"state": "pending",
-             "$or": [{"requires": {"$nin": [None, {}]}},
-                     {"environment_hash": {"$nin": [None, ""]}}]},
-            {"uuid": 1, "name": 1, "requires": 1, "environment_hash": 1,
+            {"state": "pending"},
+            {"uuid": 1, "name": 1, "requires": 1, "environment_hash": 1, "kind": 1,
              "kind": 1, "created": 1}))
         servers = list(db.servers.find({"state": "running"},
                                        {"server_name": 1, "resources": 1, "ping_time": 1,
-                                        "provided_environments": 1}))
+                                        "provided_environments": 1, "handlers": 1}))
     except Exception as exc:  # noqa: BLE001
         print(f"could not query {a.mongo}: {type(exc).__name__}", file=sys.stderr)
         return 2
@@ -110,8 +116,10 @@ def main() -> int:
         return True
 
     provided = set()
+    served = set()
     for s in live:
         provided.update(s.get("provided_environments") or [])
+        served.update(str(h) for h in (s.get("handlers") or []))
 
     bad = []
     for t in pending:
@@ -122,6 +130,15 @@ def main() -> int:
             why.append(f"requires {need}")
         if env and env not in provided:
             why.append(f"environment {env[:16]} provided by NO live runner")
+        # A script task is named by its facet and is in no runner's handler
+        # set — the environment IS its capability (see
+        # persistence.claim_script_task), so the name dimension does not apply
+        # to it. Protocol tasks are handled by every runner by definition.
+        name = t.get("name") or ""
+        is_protocol = name.startswith("fw:") or name.startswith("_fw")
+        if (t.get("kind") or "") != "script" and not is_protocol and not env:
+            if name not in served:
+                why.append(f"no live runner has a handler for {name}")
         if why:
             bad.append((t, "; ".join(why)))
 
@@ -137,12 +154,25 @@ def main() -> int:
     for t, why in bad[:20]:
         age_h = (now - float(t.get("created") or now)) / 3_600_000
         print(f"  {t.get('name','?')[:44]:44s} waiting {age_h:5.1f}h  {why}")
+    # One row per DISTINCT (host, capacity). A fleet of 85 runners is ~20
+    # processes per host all advertising the same numbers, and printing every
+    # one buried the single finding under 85 near-identical lines. This runs on
+    # a timer now; a report nobody reads to the end is a report nobody reads.
     print("\n  fleet capacity:")
+    seen = {}
     for s in live:
-        print(f"    {s.get('server_name','?'):10s} {s.get('resources') or '(none advertised)'}")
+        key = (s.get("server_name", "?"), str(s.get("resources") or "(none advertised)"))
+        seen[key] = seen.get(key, 0) + 1
+    for (host, res), n in sorted(seen.items()):
+        print(f"    {host:10s} x{n:<3d} {res}")
     print(f"\n  environments provided across the fleet: "
           f"{sorted(e[:16] for e in provided) or '(none)'}")
     if any("environment" in w for _, w in bad):
+        if any("has a handler for" in r for _, r in bad):
+            print("\n  An unserved NAME usually means the domain is not deployed to the")
+            print("  fleet (a local-checkout runner served it once and is now gone), or a")
+            print("  runner's --topics scoping excludes it. Such a task is never claimed,")
+            print("  so it never retries and never dead-letters — it only disappears.")
         print("\n  An unprovided environment usually means the image did not BAKE it.")
         print("  Check the build:  fw ffl bake-envs --check   /   envbake in the runner image")
     print("\n  These will NOT retry and will NOT dead-letter — they are simply never")
