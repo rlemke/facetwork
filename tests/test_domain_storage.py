@@ -142,3 +142,47 @@ def test_backend_is_selected_per_path():
     import inspect
     sig = inspect.signature(DomainStorage.backend)
     assert "path" in sig.parameters
+
+
+def test_list_dir_returns_full_paths(tmp_path, monkeypatch):
+    """⚠️ Full paths, not names. I first wrote this returning bare names and
+    asserted in the docstring that it matched every domain copy — it did not,
+    and fwh_amr's tests failed because every returned path was wrong."""
+    monkeypatch.setenv("FW_DATA_ROOT", str(tmp_path))
+    d = tmp_path / "things"
+    d.mkdir()
+    (d / "a.json").write_text("{}")
+    got = domain_storage("demo").list_dir(str(d))
+    assert got == [str(d / "a.json")]
+
+
+def test_list_dir_is_empty_for_a_missing_prefix(tmp_path, monkeypatch):
+    monkeypatch.setenv("FW_DATA_ROOT", str(tmp_path))
+    assert domain_storage("demo").list_dir(str(tmp_path / "nope")) == []
+
+
+def test_output_env_override_is_honoured(monkeypatch):
+    """fwh_amr's tests set FW_AMR_OUTPUT_DIR; a layer honouring only the cache
+    override sent their writes to the real /Volumes data root."""
+    monkeypatch.setenv("FW_DATA_ROOT", "s3://afl-cache")
+    monkeypatch.setenv("FW_AMR_OUTPUT_DIR", "/scratch/out")
+    assert domain_storage("amr").output_root() == "/scratch/out"
+
+
+def test_an_override_can_be_disabled_explicitly(monkeypatch):
+    """⚠️ Not every domain honours one, and adding one silently is still a
+    behaviour change: fwh_cancer ignores a cache override, fwh_census_us
+    ignores an output override."""
+    monkeypatch.setenv("FW_DATA_ROOT", "s3://afl-cache")
+    monkeypatch.setenv("FW_CANCER_CACHE_DIR", "/should/be/ignored")
+    s = domain_storage("cancer", layout="flat", cache_env="")
+    assert s.cache_root() == "s3://afl-cache/cache/cancer"
+
+
+def test_global_layout_has_no_domain_segment(monkeypatch):
+    """fwh_groupphoto / fwh_sentinel2 share one cache and write outputs at the
+    data root itself."""
+    monkeypatch.setenv("FW_DATA_ROOT", "s3://afl-cache")
+    s = domain_storage("groupphoto", layout="global")
+    assert s.cache_root() == "s3://afl-cache/cache"
+    assert s.output_root() == "s3://afl-cache"

@@ -77,11 +77,17 @@ class DomainStorage:
     LAYOUTS = {
         "nested": ("cache", "{domain}", "cache"),   # s3://root/cache/<d>/cache
         "flat": ("cache", "{domain}"),              # s3://root/cache/<d>
+        # ⚠️ No domain segment at all: the cache is SHARED between domains and
+        # outputs go to the data root itself. fwh_groupphoto and fwh_sentinel2
+        # both do this (they are copies of each other). Not a mistake to tidy —
+        # it is where their objects are.
+        "global": ("cache",),                       # s3://root/cache
     }
 
     def __init__(self, domain: str, *, cache_env: str | None = None,
                  root_env: str = "FW_DATA_ROOT", layout: str = "nested",
-                 path_name: str | None = None) -> None:
+                 path_name: str | None = None, local_name: str | None = None,
+                 output_env: str | None = None) -> None:
         if not domain or "/" in domain:
             raise ValueError(f"domain must be a bare name, got {domain!r}")
         if layout not in self.LAYOUTS:
@@ -93,10 +99,26 @@ class DomainStorage:
         # overridable, because a wrong guess here silently points at an empty
         # prefix rather than failing.
         self.path_name = path_name or domain
+        # ⚠️ The LOCAL directory name is not always the remote one. fwh_census_us
+        # stores under "census-us" remotely but "census-cache" locally; deriving
+        # one from the other would silently move a developer's local cache.
+        self.local_name = local_name or self.path_name
         # Each repo invented its own override name (FW_CONFLICT_CACHE_DIR,
         # FW_CENSUS_CACHE_DIR, ...). Derive it, but let a package keep the exact
         # spelling it already documents.
-        self.cache_env = cache_env or f"FW_{domain.upper().replace('-', '_')}_CACHE_DIR"
+        # ⚠️ Pass "" to mean NO override. Not every domain honours one, and
+        # adding one silently is still a behaviour change: fwh_cancer ignores a
+        # cache override and fwh_census_us ignores an output override, so a
+        # helpfully-added env var would make them obey something they never did.
+        self.cache_env = (f"FW_{domain.upper().replace('-', '_')}_CACHE_DIR"
+                          if cache_env is None else cache_env)
+        # ⚠️ There is an OUTPUT override too, and it is not optional politeness:
+        # fwh_amr's tests set FW_AMR_OUTPUT_DIR, and a layer that honoured only
+        # the cache override sent their writes to the real /Volumes data root.
+        # My equivalence check missed it because it varied FW_DATA_ROOT and
+        # never the per-domain overrides.
+        self.output_env = (f"FW_{domain.upper().replace('-', '_')}_OUTPUT_DIR"
+                           if output_env is None else output_env)
         self.root_env = root_env
 
     # --- roots -------------------------------------------------------------
@@ -106,12 +128,13 @@ class DomainStorage:
         return os.environ.get(self.root_env) or _core_output_base()
 
     def cache_root(self) -> str:
-        ov = os.environ.get(self.cache_env)
+        ov = os.environ.get(self.cache_env) if self.cache_env else None
         if ov:
             return ov
         r = self.data_root()
         if not is_remote(r):
-            return join(r, f"{self.path_name}-cache")
+            return (join(r, "cache") if self.layout == "global"
+                    else join(r, f"{self.local_name}-cache"))
         parts = [p.format(domain=self.path_name) for p in self.LAYOUTS[self.layout]]
         return join(r, *parts)
 
@@ -123,10 +146,23 @@ class DomainStorage:
         tidier-looking layout would orphan the existing objects instead of
         moving them. Verified against the pre-consolidation modules.
         """
+        ov = os.environ.get(self.output_env) if self.output_env else None
+        if ov:
+            return ov
+        r = self.data_root()
+        if self.layout == "global":
+            return r
+        if not is_remote(r):
+            return join(r, f"{self.local_name}-output")
+        return join(r, "cache", self.path_name, "output")
+
+    def maps_root(self) -> str:
+        """Rendered maps. Same shape for every domain that publishes them:
+        ``cache/<d>/maps`` remote, ``<d>-maps`` local."""
         r = self.data_root()
         if not is_remote(r):
-            return join(r, f"{self.path_name}-output")
-        return join(r, "cache", self.path_name, "output")
+            return join(r, f"{self.local_name}-maps")
+        return join(r, "cache", self.path_name, "maps")
 
     def cache(self, *parts: str) -> str:
         return join(self.cache_root(), *parts)
@@ -154,6 +190,36 @@ class DomainStorage:
 
     def mkdir_p(self, path: str) -> None:
         self.backend(path).makedirs(path, exist_ok=True)
+
+    def read_bytes(self, path: str) -> bytes:
+        return _core.read_bytes(path)
+
+    def write_bytes(self, path: str, body: bytes) -> None:
+        _core.write_bytes(path, body)
+
+    def list_dir(self, path: str) -> list[str]:
+        """Immediate entries under `path`, as FULL PATHS; empty when absent.
+
+        ⚠️ Full paths, not names. I first wrote this returning bare names and
+        asserted in the docstring that it "matches every domain copy" — it did
+        not, and fwh_amr's tests failed with "no organism aggregates cached"
+        because every returned path was then wrong. Verify, do not assert.
+
+        Empty-on-missing is deliberate: a listing that raises for an unseeded
+        cache turns a cold start into an error. It does mean "absent" and
+        "empty" are indistinguishable, so a caller needing that difference must
+        ask exists() first.
+        """
+        backend = self.backend(path)
+        lister = getattr(backend, "list", None) or getattr(backend, "listdir", None)
+        if lister is not None:
+            try:
+                return [join(path, os.path.basename(str(p).rstrip("/"))) for p in lister(path)]
+            except Exception:  # noqa: BLE001 - a missing prefix is not an error
+                pass
+        if not is_remote(path) and os.path.isdir(path):
+            return [join(path, n) for n in sorted(os.listdir(path))]
+        return []
 
     def read_text(self, path: str, encoding: str = "utf-8") -> str:
         return _core.read_text(path, encoding=encoding)
