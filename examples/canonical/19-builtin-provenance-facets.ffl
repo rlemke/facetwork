@@ -1,0 +1,56 @@
+// 19 — fw.provenance: recording what produced an output, from what.
+//
+// The other built-ins move data; this one records where it came from. `fw.http`
+// already writes a `<dest>.meta.json` per fetched artifact; `fw.provenance`
+// answers the RUN-level question — which workflow, from which inputs, with
+// which software, live or mock.
+//
+// ⚠️ Read `complete` before trusting a manifest. An input with no recorded
+// provenance is REPORTED (in `incomplete`), never omitted: a manifest that
+// lists only the inputs it understood would look complete while being least
+// trustworthy exactly where it matters.
+//
+// ⚠️ `run_mode` is DECLARED. A run that fell back to synthetic data cannot be
+// detected from its outputs afterwards, so the workflow has to say so.
+
+// The built-ins are ambient: every runner registers them at startup, so
+// there is no `use` and no handler to write.
+
+namespace demo.provenance {
+
+    workflow RecordWhatWeBuilt(
+        source_url: String = "https://raw.githubusercontent.com/rlemke/facetwork/main/README.md",
+        work_dir: String = "/tmp/fw-provenance-demo"
+    ) => (manifest: String, complete: Boolean, unknown: [String]) andThen {
+
+        // 1. Fetch an input. This writes <dest>.meta.json beside it, which is
+        //    the per-artifact half of provenance.
+        input = fw.http.Fetch(
+            url = $.source_url,
+            dest = $.work_dir ++ "/inputs/README.md"
+        )
+
+        // 2. Produce an output from it.
+        built = fw.file.Copy(
+            source = input.path,
+            dest = $.work_dir ++ "/outputs/report.md"
+        )
+
+        // 3. Describe the run. `inputs` names what went in; anything without a
+        //    sidecar comes back in `incomplete`.
+        manifest = fw.provenance.Manifest(
+            outputs = $.work_dir ++ "/outputs",
+            inputs = [input.path],
+            run_mode = "live"
+        ) after built
+
+        // 4. Later — does the manifest still describe what is on disk?
+        check = fw.provenance.Verify(path = manifest.path)
+
+        yield RecordWhatWeBuilt(
+            manifest = manifest.path,
+            complete = manifest.complete,
+            unknown = manifest.incomplete
+        )
+    }
+}

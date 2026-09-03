@@ -1,0 +1,50 @@
+// Built-in run provenance: what produced this output, from what, with what.
+//
+// `fw.http` already records per-artifact metadata in a `<dest>.meta.json`
+// sidecar (source URL, digest, validators, fetched_at). What was missing is the
+// RUN-level answer: which workflow produced these outputs, from which inputs,
+// with which software, and whether it ran against live sources or mocks.
+//
+// ⚠️ The point of the design is that an input WITHOUT a sidecar is reported as
+// unknown rather than omitted. A manifest that silently lists only the inputs it
+// happens to understand looks complete while being least trustworthy exactly
+// where it matters — the `incomplete` return names them, and `complete` is false.
+
+namespace fw.provenance {
+
+    /** Write a provenance manifest describing a run's inputs and outputs.
+      *
+      * Records: the workflow and step that produced it, generation time, the
+      * software (Python, platform, facetwork and every installed fwh_* domain
+      * package), the container image when detectable, each input's recorded
+      * provenance from its `.meta.json` sidecar, each output's size and SHA-256,
+      * and the caller-DECLARED run mode.
+      *
+      * `run_mode` is declared, never inferred. A pipeline that fell back to
+      * synthetic data cannot be detected from its outputs, so the workflow must
+      * say — and a manifest claiming "live" for a mock run is worse than none.
+      */
+    event facet Manifest(
+        outputs: String,
+        inputs: [String] = [],
+        dest: String = "",
+        run_mode: String = "live",
+        extra_json: String = ""
+    ) => (
+        path: String,
+        inputs_recorded: Long,
+        outputs_recorded: Long,
+        incomplete: [String],
+        complete: Boolean
+    ) with Effect(kind = "io") with Cost(tier = "free")
+
+    /** Read a manifest back and report whether it still describes what is on
+      * disk. An output that changed since the manifest was written makes the
+      * manifest a claim about a file that no longer exists in that form. */
+    event facet Verify(path: String) => (
+        matches: Boolean,
+        checked: Long,
+        changed: [String],
+        missing: [String]
+    ) with Effect(kind = "io") with Cost(tier = "free")
+}
