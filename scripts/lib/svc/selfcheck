@@ -66,12 +66,24 @@ done
 # ⚠️ Mongo-touching checks default to localhost, and on a runner host that is
 # not the DB that is simply wrong — it would report "could not verify" forever
 # and read as a quiet fleet. Take the URL the runners actually use.
-MONGO="${FW_MONGODB_URL:-}"
-if [ -z "$MONGO" ] && [ -f "$FW_ROOT/.env.fleet" ]; then
+# ⚠️ .env.fleet FIRST, not the environment. _env.sh has already sourced .env,
+# which on server1/server2 sets FW_MONGODB_URL=mongodb://localhost:27017 — no
+# Mongo listens there, so taking the env value made every run report
+# could-not-verify while looking correctly configured. This is the same
+# asymmetry that has cost real debugging here before: .env carries a local
+# default, .env.fleet carries where the cluster actually is.
+MONGO=""
+if [ -f "$FW_ROOT/.env.fleet" ]; then
     MONGO="$(awk -F= '!/^[[:space:]]*#/ && $1 == "FW_MONGODB_URL" { sub(/^[^=]*=/, ""); v = $0 } END { print v }' "$FW_ROOT/.env.fleet" 2>/dev/null)"
 fi
+[ -z "$MONGO" ] && MONGO="${FW_MONGODB_URL:-}"
 MONGO_ARGS=""
-[ -n "$MONGO" ] && MONGO_ARGS="--mongo $MONGO"
+# Exported as well as passed: the checks disagree on how they take it, and a
+# flag that is silently ignored is worse than one that is missing.
+if [ -n "$MONGO" ]; then
+    MONGO_ARGS="--mongo $MONGO"
+    export FW_MONGODB_URL="$MONGO"
+fi
 
 case "$ACTION" in
 status)

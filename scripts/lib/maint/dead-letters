@@ -45,7 +45,7 @@ from facetwork.runtime.dead_letters import FORGOTTEN_HOURS, collect, drop, retry
 args = sys.argv[1:]
 if any(a in ("-h", "--help") for a in args):
     print(__doc__ or "")
-    print("fw maint dead-letters [--all] [--retry NAME] [--retry-all]")
+    print("fw maint dead-letters [--all] [--retry NAME] [--retry-all] [--mongo URL]")
     print("                       [--drop NAME --reason TEXT]   # retire ones that can never succeed")
     raise SystemExit(0)
 
@@ -72,11 +72,29 @@ if "--retry" in args:
         raise SystemExit(2)
     retry_name = args[i + 1]
 
+# ⚠️ Accept --mongo like `fw maint unsatisfiable` does. Unknown args are
+# ignored here, so a caller passing --mongo (as the selfcheck did) got the
+# localhost default with no error and no clue — the flag LOOKED honoured.
 url = os.environ.get("FW_MONGODB_URL") or "mongodb://localhost:27017"
+if "--mongo" in args:
+    i = args.index("--mongo")
+    if i + 1 >= len(args):
+        print("--mongo needs a URL", file=sys.stderr)
+        raise SystemExit(2)
+    url = args[i + 1]
 dbname = os.environ.get("FW_MONGODB_DATABASE") or "facetwork"
 db = pymongo.MongoClient(url, serverSelectionTimeoutMS=5000)[dbname]
 
-groups = collect(db)
+# ⚠️ An unreachable Mongo is COULD-NOT-VERIFY (2), never "there are dead
+# letters" (1). Without this the command died with a raw traceback and exited
+# 1, so on a runner host that is not the DB it alarmed every single run —
+# forever, about nothing. A check that cries wolf on being offline is one you
+# learn to ignore, which is the failure this tool exists to prevent.
+try:
+    groups = collect(db)
+except Exception as exc:  # noqa: BLE001
+    print(f"could not query {url}: {type(exc).__name__}", file=sys.stderr)
+    raise SystemExit(2)
 if not groups:
     print("no dead-lettered tasks.")
     raise SystemExit(0)
