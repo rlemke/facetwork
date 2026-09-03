@@ -186,3 +186,38 @@ def test_global_layout_has_no_domain_segment(monkeypatch):
     s = domain_storage("groupphoto", layout="global")
     assert s.cache_root() == "s3://afl-cache/cache"
     assert s.output_root() == "s3://afl-cache"
+
+
+def test_there_is_one_s3_client_construction():
+    """⚠️ The whole point. Four slightly different credential chains had grown:
+    the backend's, toolstorage's, and two in fwh_osm — one pair omitting the
+    region and the AWS_* fallback, the other hardcoding minioadmin."""
+    import inspect
+
+    import facetwork.runtime.storage as S
+    src = inspect.getsource(S)
+    assert src.count("_b.client(") + src.count("_boto3.client(") == 1
+    assert "def s3_client(" in src
+
+
+def test_the_shared_client_carries_the_minio_config():
+    """MinIO needs s3v4 + PATH-style addressing. The ad-hoc clients omitted it
+    and worked only because boto3 happens to choose path-style for a custom
+    endpoint_url — making it explicit is what one client is for."""
+    import inspect
+
+    import facetwork.runtime.storage as S
+    body = inspect.getsource(S.s3_client)
+    assert "s3v4" in body and "addressing_style" in body
+
+
+def test_client_defaults_can_be_pinned_by_a_caller():
+    """fwh_osm passes its historical localhost/minioadmin defaults explicitly
+    rather than reintroducing its own constructor. The default is a smell —
+    it silently targets a local store when the env is unset — but removing it
+    changes behaviour for the live planet pipeline."""
+    import inspect
+
+    import facetwork.runtime.storage as S
+    sig = inspect.signature(S.s3_client)
+    assert {"endpoint", "access_key", "secret_key", "region"} <= set(sig.parameters)

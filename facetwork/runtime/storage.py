@@ -479,6 +479,49 @@ class _S3WriteStream:
         return False
 
 
+def s3_client(endpoint: str | None = None, *,
+              access_key: str | None = None, secret_key: str | None = None,
+              region: str | None = None):
+    """The ONE place an S3/MinIO client is constructed.
+
+    ``S3StorageBackend`` uses this, and so does any caller needing an operation
+    the backend interface does not cover — a **ranged GET** (fwh_osm reads a
+    multi-GB PBF's replication header from its first 64 KB) or a **multipart
+    upload** (planet extracts). Those callers previously built their own client,
+    which is how four slightly different credential chains appeared in one
+    codebase.
+
+    The parameters exist so a caller can pin the defaults it historically had
+    without reintroducing its own constructor. ⚠️ fwh_osm passes
+    ``http://localhost:9000`` / ``minioadmin`` that way: a hardcoded credential
+    default is a smell — it silently targets a local store when the env is unset
+    instead of failing — but removing it is a behaviour change for the live
+    planet pipeline and belongs in its own deliberate step, not smuggled into a
+    refactor.
+    """
+    try:
+        import boto3 as _b
+    except ImportError as exc:  # pragma: no cover - optional extra
+        raise RuntimeError(
+            "boto3 is required for S3/MinIO support. Install it with: "
+            "pip install boto3 (or the package's 's3' extra)."
+        ) from exc
+    return _b.client(
+        "s3",
+        endpoint_url=endpoint or os.environ.get("FW_S3_ENDPOINT") or None,
+        region_name=region or os.environ.get("FW_S3_REGION", "us-east-1"),
+        aws_access_key_id=(access_key or os.environ.get("FW_S3_ACCESS_KEY")
+                           or os.environ.get("AWS_ACCESS_KEY_ID")),
+        aws_secret_access_key=(secret_key or os.environ.get("FW_S3_SECRET_KEY")
+                               or os.environ.get("AWS_SECRET_ACCESS_KEY")),
+        # ⚠️ MinIO speaks S3v4 + PATH-style addressing. The ad-hoc clients in the
+        # domain repos omitted this and worked only because boto3 happens to
+        # choose path-style for a custom endpoint_url; making it explicit is what
+        # "one client" is for.
+        config=_BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"}),
+    )
+
+
 class S3StorageBackend:
     """Storage backend for S3-compatible object stores (AWS S3 or a self-hosted
     MinIO surfacing the shared cache).
@@ -507,15 +550,9 @@ class S3StorageBackend:
         region = os.environ.get("FW_S3_REGION", "us-east-1")
         access = os.environ.get("FW_S3_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
         secret = os.environ.get("FW_S3_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
-        self._client = _boto3.client(
-            "s3",
-            endpoint_url=endpoint,
-            region_name=region,
-            aws_access_key_id=access,
-            aws_secret_access_key=secret,
-            # MinIO speaks S3v4 + path-style addressing.
-            config=_BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"}),
-        )
+        # One construction for the whole codebase — see s3_client() above.
+        self._client = s3_client(endpoint, access_key=access, secret_key=secret,
+                                 region=region)
 
     def _split(self, path: str) -> tuple[str, str]:
         return _s3_split(path)

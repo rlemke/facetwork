@@ -63,6 +63,30 @@ def is_remote(path: str) -> bool:
     return "://" in (path or "")
 
 
+def subdirs_containing(base: str, filename: str) -> list[str]:
+    """Names of immediate subdirectories of `base` that contain `filename`.
+
+    ⚠️ This exists because three domains (fwh_h1b, fwh_livability,
+    fwh_osm_mapping) each carried a byte-identical copy of it, and each built
+    its OWN boto3 client to do the S3 half — clients that omitted the region and
+    the AWS_* credential fallback that every other client in the codebase has.
+    They worked only because this fleet always sets FW_S3_*.
+
+    One implementation, over the runtime backend, so local and s3:// take the
+    same path. Empty for a base that does not exist: an unseeded cache is a cold
+    start, not an error.
+    """
+    backend = _core.get_storage_backend(base)
+    root = base.rstrip("/")
+    out: set[str] = set()
+    for cur, _dirs, files in backend.walk(root):
+        if filename in files:
+            name = cur.rstrip("/").rsplit("/", 1)[-1]
+            if name and cur.rstrip("/") != root:
+                out.add(name)
+    return sorted(out)
+
+
 class DomainStorage:
     """Per-domain paths over the shared storage backend."""
 
