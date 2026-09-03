@@ -143,10 +143,19 @@ def main() -> int:
             bad.append((t, "; ".join(why)))
 
     n_env = sum(1 for t in pending if (t.get("environment_hash") or "").strip())
+    n_named = sum(
+        1 for t in pending
+        if (t.get("kind") or "") != "script"
+        and not (t.get("name") or "").startswith(("fw:", "_fw"))
+        and not (t.get("environment_hash") or "").strip()
+    )
     if not bad:
-        print(f"OK — {len(pending)} pending task(s) with routing constraints "
-              f"({n_env} env-routed), all servable by at least one of "
-              f"{len(live)} live runner(s)")
+        # "with routing constraints" was accurate only while the query filtered
+        # to tasks declaring one. It now covers EVERY pending task, and saying
+        # otherwise would understate what was checked.
+        print(f"OK — all {len(pending)} pending task(s) are servable by at least "
+              f"one of {len(live)} live runner(s) "
+              f"({n_env} env-routed, {n_named} name-routed)")
         return 0
 
     print(f"{len(bad)} pending task(s) NO live runner can serve "

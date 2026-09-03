@@ -153,14 +153,25 @@ check)
         fi
     }
 
-    run_one "commands can start here"   ./fw install check --commands
+    # --fleet, not --commands: unsatisfiable and dead-letters read the SHARED
+    # Mongo, so running this on four hosts would just quadruple the same
+    # answer — one timer is enough. But startability is a PER-HOST fact, and a
+    # single-host timer would leave the other three unwatched, which is exactly
+    # the gap that stranded fw maint unsatisfiable on 3 of 4 machines. If ssh is
+    # unavailable to launchd it reports UNKNOWN (exit 2), which does not alarm
+    # and is visible in the log — never a false OK.
+    run_one "commands can start, fleet-wide" ./fw install check --fleet
     run_one "no unsatisfiable tasks"    ./fw maint unsatisfiable $MONGO_ARGS
     run_one "no forgotten dead letters" ./fw maint dead-letters $MONGO_ARGS
 
     # Self-staleness: this job cannot report that it stopped running, but it
     # CAN report on its next tick that it had been absent.
     if [ -f "$HEALTH" ]; then
-        last_epoch="$(awk -F'epoch=' '/epoch=/ {print $2}' "$HEALTH" | tail -1)"
+        # Take only the digits: the line is "last_run=... epoch=N verdict=V", so
+        # splitting on epoch= alone captured "N verdict=V" and the arithmetic
+        # below died on it.
+        last_epoch="$(awk -F'epoch=' '/epoch=/ {split($2, a, " "); print a[1]}' "$HEALTH" | tail -1)"
+        case "${last_epoch:-}" in (*[!0-9]*|"") last_epoch="" ;; esac
         if [ -n "${last_epoch:-}" ]; then
             gap=$(( $(date +%s) - last_epoch ))
             max=$(( EVERY_HOURS * 3600 * 3 ))

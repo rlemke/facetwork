@@ -46,6 +46,7 @@ args = sys.argv[1:]
 if any(a in ("-h", "--help") for a in args):
     print(__doc__ or "")
     print("fw maint dead-letters [--all] [--retry NAME] [--retry-all]")
+    print("                       [--drop NAME --reason TEXT]   # retire ones that can never succeed")
     raise SystemExit(0)
 
 fail_on_recent = "--all" in args
