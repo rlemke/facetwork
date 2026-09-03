@@ -106,8 +106,14 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Tests
+        # ⚠️ pytest is installed here, not left to the caller's extras. Of the 29
+        # domains, 9 declare no optional-dependencies at all and one declares
+        # only a runtime extra (fwh_stocks: yfinance), so deriving the test
+        # dependency from packaging metadata silently produces a run with no
+        # test runner - which passes by doing nothing.
         run: |
           if [ -d domain/tests ] || ls domain/test_*.py >/dev/null 2>&1; then
+            pip install pytest
             cd domain && python -m pytest ${{ inputs.test-args }}
           else
             echo "::warning::no tests in this repository"
