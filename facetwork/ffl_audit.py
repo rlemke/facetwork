@@ -192,9 +192,25 @@ def scan_contracts(repo: pathlib.Path) -> list[str]:
 
 
 def audit(roots: list[str], *, check_contracts: bool = True,
-          python: str | None = None, cwd: str | None = None) -> list[RepoResult]:
-    """Validate every ``fwh_*`` repo found under ``roots``."""
+          python: str | None = None, cwd: str | None = None,
+          repo_paths: "list[str] | None" = None) -> list[RepoResult]:
+    """Validate every ``fwh_*`` repo found under ``roots``.
+
+    ``repo_paths`` names repositories DIRECTLY instead of sweeping a parent for
+    ``fwh_*`` children. CI checks a domain out on its own, with no siblings and
+    often not even under an ``fwh_``-prefixed directory, so a sweep finds
+    nothing -- and an audit that finds no work reports success. Only the FIRST
+    entry is audited; the rest are supplied as libraries, which is what
+    fwh_osm_lz needs (it uses the ``osm`` namespace and defines none of it).
+    Measured 2026-09-03: 1 of 29 domains needs that.
+    """
     repos: list[pathlib.Path] = []
+    audit_only: set[str] = set()
+    for direct in [pathlib.Path(x) for x in (repo_paths or [])]:
+        if direct.is_dir():
+            repos.append(direct)
+    if repos:
+        audit_only = {repos[0].name}
     for root in roots:
         rp = pathlib.Path(root)
         if not rp.is_dir():
@@ -211,6 +227,8 @@ def audit(roots: list[str], *, check_contracts: bool = True,
     py = python or sys.executable
     results: list[RepoResult] = []
     for r in repos:
+        if audit_only and r.name not in audit_only:
+            continue   # supplied as a library only
         own = files[r.name]
         contract_hits = scan_contracts(r) if check_contracts else []
         if not own:
@@ -283,18 +301,32 @@ def main(argv: list[str] | None = None) -> int:
                    help=f"directory holding fwh_* repos (repeatable; default {DEFAULT_ROOT}). "
                         "Use --root /opt inside a runner container to audit the BAKED "
                         "domains, which is what the fleet actually executes.")
+    p.add_argument("--repo", action="append", default=[],
+                   help="audit THIS repository directly instead of sweeping a parent "
+                        "for fwh_* children. Use in CI, where a domain is checked out "
+                        "alone: a sweep finds no fwh_* dirs, and an audit that finds no "
+                        "work reports success.")
+    p.add_argument("--lib-repo", action="append", default=[],
+                   help="supply another checkout as a LIBRARY (repeatable). Needed only "
+                        "where a domain uses a namespace it does not define - 1 of 29 "
+                        "(fwh_osm_lz needs fwh_osm).")
     p.add_argument("--no-contracts", action="store_true",
                    help="skip the obsolete-handler-API scan (FFL validation only)")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument("-q", "--quiet", action="store_true", help="fewer error lines per repo")
     a = p.parse_args(argv)
 
-    roots = a.root or [DEFAULT_ROOT]
     repo_root = pathlib.Path(__file__).resolve().parent.parent
-    results = audit(roots, check_contracts=not a.no_contracts, cwd=str(repo_root))
+    if a.repo:
+        roots, paths = a.root, list(a.repo) + list(a.lib_repo)
+    else:
+        roots, paths = (a.root or [DEFAULT_ROOT]), None
+    results = audit(roots, check_contracts=not a.no_contracts, cwd=str(repo_root),
+                    repo_paths=paths)
 
     if not results:
-        print(f"no fwh_* repos found under: {', '.join(roots)}", file=sys.stderr)
+        where = ", ".join(a.repo) if a.repo else ", ".join(roots)
+        print(f"no repo to audit at: {where}", file=sys.stderr)
         return 2
 
     if a.json:

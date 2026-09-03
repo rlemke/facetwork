@@ -1,0 +1,122 @@
+# Reusable CI for the fwh_* domain repositories.
+#
+# Domain packages live in their OWN repos and deploy baked into an image, so
+# nothing in this repository's CI protects them: they keep compiling, keep
+# deploying, and fail only when someone finally runs the workflow. As of
+# 2026-09-03, 0 of 29 domain repos had any CI at all.
+#
+# All 29 are public, so Actions minutes are free and this workflow (in a public
+# repo) is callable from every one of them.
+#
+# ⚠️ The install is deliberately FROM SCRATCH. The failure this catches is a
+# dependency that exists in the author's local checkout and nowhere else - the
+# same class as `fw install check`, one level up.
+#
+# Call from a domain repo with .github/workflows/ci.yml:
+#
+#   name: CI
+#   on: [push, pull_request]
+#   jobs:
+#     domain:
+#       uses: rlemke/facetwork/.github/workflows/domain-ci.yml@main
+#       with:
+#         extras: "test"          # optional pip extras
+#         lib-repos: ""           # e.g. "rlemke/fwh_osm" if this domain USES a
+#                                 # namespace it does not DEFINE (1 of 29 does)
+name: Domain CI
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        type: string
+        default: "3.12"
+      extras:
+        description: 'pip extras for this package, e.g. "test" or "test,s3"'
+        type: string
+        default: ""
+      lib-repos:
+        description: >-
+          Space-separated owner/repo slugs to shallow-clone as FFL libraries.
+          Needed only where the domain uses a namespace it does not define -
+          without it the validator reports ~90 phantom "Unknown facet" errors,
+          which is why the library set is supplied explicitly rather than
+          guessed.
+        type: string
+        default: ""
+      test-args:
+        type: string
+        default: "-q"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the domain
+        uses: actions/checkout@v4
+        with:
+          path: domain
+
+      - name: Check out the Facetwork core
+        uses: actions/checkout@v4
+        with:
+          repository: rlemke/facetwork
+          path: core
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Shallow-clone FFL library repos
+        if: inputs.lib-repos != ''
+        run: |
+          mkdir -p libs
+          for slug in ${{ inputs.lib-repos }}; do
+            name="${slug##*/}"
+            git clone --depth 1 "https://github.com/$slug" "libs/$name"
+          done
+
+      - name: Install (from scratch)
+        run: |
+          python -m pip install --upgrade pip
+          pip install ./core
+          if [ -n "${{ inputs.extras }}" ]; then
+            pip install -e "./domain[${{ inputs.extras }}]"
+          else
+            pip install -e ./domain
+          fi
+
+      - name: Domain entry point loads
+        run: |
+          python - <<'PY'
+          from importlib.metadata import entry_points
+          eps = list(entry_points(group="facetwork.domains"))
+          if not eps:
+              raise SystemExit("package declares no facetwork.domains entry point")
+          for e in eps:
+              e.load()          # an import error here is a broken deploy
+              print("ok:", e.name)
+          PY
+
+      - name: Validate FFL and handler contracts
+        run: |
+          args="--repo domain"
+          for d in libs/*; do [ -d "$d" ] && args="$args --lib-repo $d"; done
+          python -m facetwork.ffl_audit $args
+        working-directory: ${{ github.workspace }}
+
+      - name: Tests
+        run: |
+          if [ -d domain/tests ] || ls domain/test_*.py >/dev/null 2>&1; then
+            cd domain && python -m pytest ${{ inputs.test-args }}
+          else
+            echo "::warning::no tests in this repository"
+          fi
+
+      - name: License present
+        run: |
+          if ls domain | grep -qiE '^licen[cs]e'; then
+            echo "license: $(ls domain | grep -iE '^licen[cs]e' | head -1)"
+          else
+            echo "::warning::no LICENSE file — 17 of 29 domains lacked one on 2026-09-03"
+          fi
