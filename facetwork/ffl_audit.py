@@ -206,7 +206,12 @@ def audit(roots: list[str], *, check_contracts: bool = True,
     """
     repos: list[pathlib.Path] = []
     audit_only: set[str] = set()
-    for direct in [pathlib.Path(x) for x in (repo_paths or [])]:
+    # ⚠️ resolve()d. The compiler subprocess runs with cwd set to the FACETWORK
+    # root, so a relative --repo resolves against the wrong directory and every
+    # .ffl reports "File not found" while the glob that found them succeeded.
+    # Invisible locally, where an absolute path is natural to type; it failed on
+    # the first CI run.
+    for direct in [pathlib.Path(x).resolve() for x in (repo_paths or [])]:
         if direct.is_dir():
             repos.append(direct)
     if repos:
