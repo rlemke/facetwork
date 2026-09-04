@@ -109,6 +109,14 @@ Notes for working with `fw`:
   alarms when the report itself stops being regenerated — reading the
   **published** report, since only the generator writes one locally and a
   local-file check would alarm on every other host for not being the generator.
+  ⚠️ It separates **stale** from **stale forever**: `left_behind` flags an extract
+  whose siblings were written by a more recent rebuild of its tier and which was
+  not. Measured 2026-09-04 — `rest-of-world` rebuilt five continents and **47**
+  country extracts kept their old vintage, exactly the count each run warned was
+  *"NOT reproducible at admin_level=2"*. A key the tier's workflow cannot
+  regenerate is never fixed by re-running it, and until this check existed those
+  sat in the plain stale count, which reads as an action item. (644 US counties
+  are in the same state, left behind by the county fan-out.)
   It also carries the **rebuild runbook**: the tier chain (planet → continents →
   countries → US states → counties, each cut from the tier above so order is a
   correctness property), the per-set command table **derived from

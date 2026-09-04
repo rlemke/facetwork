@@ -386,6 +386,48 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
             "requires": ", ".join("`" + r + "`" for r in spec.get("requires_fresh") or []),
         })
 
+    # 5b. LEFT BEHIND by the last rebuild of their own tier.
+    #
+    # ⚠️ This is the difference between "stale, re-run the set" and "stale
+    # forever". Measured 2026-09-04: rest-of-world rebuilt five continents and
+    # 47 country extracts stayed at their old vintage — exactly the number the
+    # five runs each warned was "NOT reproducible at admin_level=2". A key that
+    # the tier's own workflow cannot regenerate will never be refreshed by
+    # running that workflow again, and nothing else was saying so: the report
+    # listed them among the plain stale, which reads as "run the set".
+    #
+    # Detectable from the store alone: if a parent's other children were written
+    # in the last rebuild and this one was not, it was passed over.
+    left_behind = []
+    kids_by_parent: dict[str, list] = {}
+    for region, e in b.items():
+        if "/" in region and e.get("mtime"):
+            kids_by_parent.setdefault(region.rsplit("/", 1)[0], []).append(e)
+    for parent, kids in kids_by_parent.items():
+        if len(kids) < 2:
+            continue
+        last_rebuild = max(k["mtime"] for k in kids)
+        for k in kids:
+            behind = (last_rebuild - k["mtime"]).days
+            if behind > 7:
+                left_behind.append({"region": k["region"], "parent": parent,
+                                    "days_behind_siblings": behind})
+    lb_parent: dict[str, dict] = {}
+    for row in left_behind:
+        d = lb_parent.setdefault(row["parent"], {"parent": row["parent"], "count": 0,
+                                                 "worst": 0})
+        d["count"] += 1
+        d["worst"] = max(d["worst"], row["days_behind_siblings"])
+    g["left_behind"] = {
+        "rule": ("its siblings were written by a more recent rebuild of this tier "
+                 "and it was not"),
+        "total": len(left_behind),
+        "by_parent": sorted(lb_parent.values(), key=lambda d: -d["count"]),
+        "note": ("the usual cause is that the tier's workflow CANNOT reproduce that "
+                 "key — so re-running the set will not fix it, however many times "
+                 "it is run"),
+    }
+
     # 6b. Parents that have children but no extract of their own. Invisible in a
     #     file listing (the directory is "there" because its children are), and it
     #     changes what a rebuild has to cut FROM.
@@ -620,6 +662,29 @@ def render_markdown(rep: dict) -> str:
         w("|---|---:|---:|")
         for r in p["by_parent"][:20]:
             w(f"| `{r['parent']}` | {r['children']:,} | {r['max_days']}d |")
+    else:
+        w("None.")
+    w("")
+
+    lb = g["left_behind"]
+    w("### Left behind by the last rebuild of their own tier")
+    w("")
+    w(f"*Rule: {lb['rule']}.*")
+    w("")
+    w("⚠️ **This is the difference between \"stale, re-run the set\" and \"stale")
+    w("forever\".** A key the tier's workflow cannot reproduce will never be")
+    w("refreshed by running that workflow again — and until this check existed")
+    w("these sat in the plain stale count, which reads as an action item.")
+    w("")
+    if lb["total"]:
+        w(f"**{lb['total']:,}** extracts, under:")
+        w("")
+        w("| parent | left behind | worst |")
+        w("|---|---:|---:|")
+        for r in lb["by_parent"][:20]:
+            w(f"| `{r['parent']}` | {r['count']:,} | {r['worst']}d |")
+        w("")
+        w(f"⚠️ {lb['note']}.")
     else:
         w("None.")
     w("")

@@ -236,3 +236,31 @@ def test_every_finding_states_the_rule_that_produced_it(key):
     g = R.find_gaps(_store({}), _store({}, "tree"), {}, now=NOW, stale_days=14,
                     county_reference=None)
     assert g[key]["rule"]
+
+
+def test_left_behind_separates_stale_from_stale_forever():
+    """⚠️ Measured 2026-09-04: rest-of-world rebuilt five continents and 47
+    country extracts kept their old vintage — exactly the count each run warned
+    was "NOT reproducible at admin_level=2". Re-running the set cannot fix them,
+    but the plain stale count reads as "run the set"."""
+    old = NOW - dt.timedelta(days=40)
+    b = _store({
+        "af": _ex("af", "continent", 1, NOW),
+        "af/a": _ex("af/a", "country", 1, NOW),        # rebuilt
+        "af/b": _ex("af/b", "country", 1, NOW),        # rebuilt
+        "af/c": _ex("af/c", "country", 1, old),        # passed over
+    })
+    g = R.find_gaps(b, _store({}, "tree"), {}, now=NOW, stale_days=14,
+                    county_reference=None)
+    assert g["left_behind"]["total"] == 1
+    assert g["left_behind"]["by_parent"][0]["parent"] == "af"
+
+
+def test_a_lone_child_is_not_left_behind():
+    """With one child there is no sibling rebuild to be behind, so the rule has
+    no evidence — and inventing a finding is worse than reporting none."""
+    b = _store({"af": _ex("af", "continent", 1, NOW),
+                "af/a": _ex("af/a", "country", 1, NOW - dt.timedelta(days=99))})
+    g = R.find_gaps(b, _store({}, "tree"), {}, now=NOW, stale_days=14,
+                    county_reference=None)
+    assert g["left_behind"]["total"] == 0
