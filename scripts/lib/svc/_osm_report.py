@@ -832,6 +832,33 @@ def load_census_counties(path: str) -> dict:
 
 # --------------------------------------------------------------------------
 
+def check_published(endpoint: str, bucket: str, *, access_key: str, secret_key: str,
+                    max_age_hours: int) -> int:
+    """0 = published report is current, 1 = stale, 2 = could not verify."""
+    try:
+        import boto3
+        import botocore.config
+        s3 = boto3.client("s3", endpoint_url=endpoint,
+                          aws_access_key_id=access_key, aws_secret_access_key=secret_key,
+                          config=botocore.config.Config(connect_timeout=10, read_timeout=20,
+                                                        retries={"max_attempts": 2}))
+        body = s3.get_object(Bucket=bucket, Key="_report/status.json")["Body"].read()
+        gen = dt.datetime.fromisoformat(json.loads(body)["generated_at"])
+    except Exception as exc:                            # noqa: BLE001
+        print(f"could not read s3://{bucket}/_report/status.json: {type(exc).__name__}")
+        return 2
+    hours = (dt.datetime.now(UTC) - gen).total_seconds() / 3600
+    if hours <= max_age_hours:
+        print(f"osm store report generated {hours:.0f}h ago on "
+              f"{json.loads(body).get('generated_on', '?')}")
+        return 0
+    print(f"osm store report is {hours:.0f}h old (limit {max_age_hours}h) — the OSM")
+    print("store status page has stopped being regenerated. Its numbers describe")
+    print("the past while looking current; check the generator's timer:")
+    print("  fw svc osm-report --status")
+    return 1
+
+
 def main(argv=None) -> int:
     """Exit 0 = report written. Exit 2 = could not survey.
 
@@ -864,7 +891,24 @@ def main(argv=None) -> int:
                          "browsable at <tree-url>/_report/ alongside the extracts "
                          "it describes (only useful on the host that owns the tree)")
     ap.add_argument("--json", action="store_true", help="print the JSON to stdout")
+    ap.add_argument("--check", action="store_true",
+                    help="do not generate; report whether the PUBLISHED report is "
+                         "still current. 0 fresh, 1 stale, 2 could not verify")
+    ap.add_argument("--max-age-hours", type=int, default=48)
     a = ap.parse_args(argv)
+
+    if a.check:
+        # ⚠️ Reads the PUBLISHED report, not a local file. Only the generator
+        # host writes one locally, so a local-file check would alarm on every
+        # other machine for the crime of not being the generator — and would go
+        # on passing on a host holding a months-old copy. "Is the store report
+        # current?" is a fleet fact with exactly one answer.
+        return check_published(a.endpoint, a.bucket,
+                               access_key=os.environ.get("FW_S3_ACCESS_KEY",
+                                   os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")),
+                               secret_key=os.environ.get("FW_S3_SECRET_KEY",
+                                   os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin")),
+                               max_age_hours=a.max_age_hours)
 
     try:
         rep = build(endpoint=a.endpoint, bucket=a.bucket,

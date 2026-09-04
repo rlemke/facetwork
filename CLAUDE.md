@@ -104,8 +104,16 @@ Notes for working with `fw`:
   **1** — this describes, `osm-watchdog` alarms. `osm-replicate` and the nightly
   re-split call it when they finish; `osm-admin-regen` deliberately does NOT
   (it only *submits*, so refreshing there would stamp a fresh time on the
-  pre-run state). The daily timer is the backstop, and `fw svc selfcheck` alarms
-  when the report itself stops being regenerated.
+  pre-run state). The timer on the generator host is the backstop, and
+  **`--check`** (0 fresh / 1 stale / 2 unverifiable, run by `fw svc selfcheck`)
+  alarms when the report itself stops being regenerated — reading the
+  **published** report, since only the generator writes one locally and a
+  local-file check would alarm on every other host for not being the generator.
+  ⚠️ `--install` **refuses** an unreachable endpoint rather than installing a
+  timer that fails every tick, and it does **not guess** which store is the
+  fleet's: MaxPro's leftover standalone MinIO answers on `localhost:9000` with
+  an `osm-extracts` bucket of its own, so an auto-fallback pinned the job to a
+  stale parallel world and reported it authoritatively.
 - **`fw svc osm-watchdog [--install] [--every-hours N] [--status]`** — an
   INDEPENDENT agent (12h) that runs the chain check and alarms if the OSM
   stream or an index has stalled. It exists because `osm-replicate`'s own
