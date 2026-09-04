@@ -64,7 +64,7 @@ done
 # install time, so this is reusing an answer, not guessing one (the installer
 # refuses to guess for exactly this reason). An explicit FW_S3_ENDPOINT always
 # wins.
-if [ -z "${FW_S3_ENDPOINT:-}" ] && [ -f "$WRAPPER" ]; then
+if [ -z "${FW_S3_ENDPOINT:-}" ] && [ -f "$WRAPPER" ] && [ -f "$PLIST" ]; then
     _pinned="$(sed -n 's/^export FW_S3_ENDPOINT="\(.*\)"$/\1/p' "$WRAPPER" | tail -1)"
     [ -n "$_pinned" ] && export FW_S3_ENDPOINT="$_pinned"
 fi
@@ -105,8 +105,8 @@ status)
 uninstall)
     launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null \
         || launchctl unload "$PLIST" 2>/dev/null
-    rm -f "$PLIST"
-    echo "removed $LABEL"
+    rm -f "$PLIST" "$WRAPPER"
+    echo "removed $LABEL (plist and wrapper)"
     exit 0
     ;;
 
