@@ -241,3 +241,37 @@ def test_config_tuning_is_optional():
     c = s3_client("http://x:9000", access_key="k", secret_key="s")
     assert c.meta.config.signature_version == "s3v4"
     assert c.meta.config.s3["addressing_style"] == "path"
+
+
+def test_connect_timeout_is_tunable_for_the_serving_path():
+    """⚠️ The two tuning callers want OPPOSITE things, which is why these stay
+    per-caller rather than becoming a default:
+
+      fwh_county_atlas  read_timeout=300, max_attempts=5  — multi-GB PBFs, where
+                        a short timeout turns a slow object into a failure.
+      mapserver         connect_timeout=4, read_timeout=12, max_attempts=2 — a
+                        request thread serving a browser, where an unbounded
+                        list/get blocks for minutes instead of failing fast.
+    """
+    from facetwork.runtime.storage import s3_client
+    c = s3_client("http://x:9000", access_key="k", secret_key="s",
+                  connect_timeout=4, read_timeout=12, max_attempts=2)
+    assert c.meta.config.connect_timeout == 4
+    assert c.meta.config.read_timeout == 12
+    assert c.meta.config.retries["total_max_attempts"] == 3
+
+
+def test_no_module_builds_its_own_s3_client():
+    """The end state of the sweep: one construction in the whole codebase."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1] / "facetwork"
+    offenders = []
+    for f in root.rglob("*.py"):
+        if "__pycache__" in f.parts:
+            continue
+        text = f.read_text(errors="replace")
+        for line in text.split("\n"):
+            if ("boto3.client(" in line or "_b.client(" in line) and not line.strip().startswith("#"):
+                if f.name != "storage.py":
+                    offenders.append(f"{f.relative_to(root)}: {line.strip()[:60]}")
+    assert not offenders, offenders

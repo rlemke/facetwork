@@ -32,8 +32,6 @@ from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
 
-import boto3
-from botocore.config import Config as _BotoConfig
 
 # --- config ---------------------------------------------------------------
 
@@ -78,19 +76,27 @@ def _classify(key: str):
 
 
 def _client():
-    return boto3.client(
-        "s3",
-        endpoint_url=ENDPOINT,
-        aws_access_key_id=ACCESS,
-        aws_secret_access_key=SECRET,
-        # Fail fast rather than hang: under heavy MinIO load (e.g. a big concurrent
-        # upload) an un-bounded list/get would block the request thread for minutes.
-        config=_BotoConfig(
-            signature_version="s3v4",
-            retries={"max_attempts": 2},
-            connect_timeout=4,
-            read_timeout=12,
-        ),
+    """The runtime's single S3 client construction.
+
+    ⚠️ The timeouts are the point and are passed through, not inherited. This is
+    a REQUEST THREAD serving a browser: under heavy MinIO load (a big concurrent
+    upload, say) an un-bounded list/get blocks it for minutes instead of failing
+    fast. The opposite of what fwh_county_atlas wants from the same factory,
+    which is why these stay per-caller rather than becoming a default.
+
+    ENDPOINT is passed explicitly so the afl-minio -> localhost rewrite above
+    survives: this runs as a HOST process, where afl-minio resolves only via
+    /etc/hosts.
+    """
+    from facetwork.runtime.storage import s3_client
+
+    return s3_client(
+        ENDPOINT,
+        access_key=ACCESS,
+        secret_key=SECRET,
+        connect_timeout=4,
+        read_timeout=12,
+        max_attempts=2,
     )
 
 

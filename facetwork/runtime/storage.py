@@ -482,7 +482,7 @@ class _S3WriteStream:
 def s3_client(endpoint: str | None = None, *,
               access_key: str | None = None, secret_key: str | None = None,
               region: str | None = None, read_timeout: int | None = None,
-              max_attempts: int | None = None):
+              max_attempts: int | None = None, connect_timeout: int | None = None):
     """The ONE place an S3/MinIO client is constructed.
 
     ``S3StorageBackend`` uses this, and so does any caller needing an operation
@@ -492,10 +492,16 @@ def s3_client(endpoint: str | None = None, *,
     which is how four slightly different credential chains appeared in one
     codebase.
 
-    ``read_timeout`` / ``max_attempts`` exist so the Config is also built in one
-    place: fwh_county_atlas tuned them (300s, 5 attempts) for multi-GB county PBF
-    downloads, and losing that in a consolidation would turn a slow object into a
-    timeout rather than a slow success.
+    The timeout/retry parameters exist so the Config is also built in one place,
+    and the two callers that tune them want OPPOSITE things — which is exactly
+    why they must stay callable rather than be averaged into a default:
+
+    * fwh_county_atlas: ``read_timeout=300``, ``max_attempts=5`` — multi-GB PBF
+      downloads, where losing the long timeout turns a slow object into a
+      timeout rather than a slow success.
+    * mapserver: ``connect_timeout=4``, ``read_timeout=12``, ``max_attempts=2``
+      — a request thread serving a browser, where an unbounded list/get under
+      heavy MinIO load blocks for minutes instead of failing fast.
 
     The parameters exist so a caller can pin the defaults it historically had
     without reintroducing its own constructor. ⚠️ fwh_osm passes
@@ -525,14 +531,17 @@ def s3_client(endpoint: str | None = None, *,
         # choose path-style for a custom endpoint_url; making it explicit is what
         # "one client" is for.
         config=_BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"},
-                           **_cfg_extra(read_timeout, max_attempts)),
+                           **_cfg_extra(read_timeout, max_attempts, connect_timeout)),
     )
 
 
-def _cfg_extra(read_timeout: int | None, max_attempts: int | None) -> dict:
+def _cfg_extra(read_timeout: int | None, max_attempts: int | None,
+               connect_timeout: int | None = None) -> dict:
     extra: dict = {}
     if read_timeout is not None:
         extra["read_timeout"] = read_timeout
+    if connect_timeout is not None:
+        extra["connect_timeout"] = connect_timeout
     if max_attempts is not None:
         extra["retries"] = {"max_attempts": max_attempts}
     return extra
