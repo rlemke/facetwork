@@ -107,15 +107,15 @@ def tier_of(key: str) -> str:
 # the bucket
 
 def survey_bucket(endpoint: str, bucket: str, *, access_key: str,
-                  secret_key: str, threads: int = 32) -> dict:
+                  secret_key: str, threads: int = 12) -> dict:
     import boto3
     import botocore.config
 
     s3 = boto3.client(
         "s3", endpoint_url=endpoint,
         aws_access_key_id=access_key, aws_secret_access_key=secret_key,
-        config=botocore.config.Config(read_timeout=60, connect_timeout=15,
-                                      retries={"max_attempts": 3}))
+        config=botocore.config.Config(read_timeout=180, connect_timeout=20,
+                                      retries={"max_attempts": 8, "mode": "adaptive"}))
 
     extracts: dict[str, dict] = {}
     state_keys: dict[str, str] = {}
@@ -367,6 +367,24 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
                             if e["tier"] == "country" and r not in parents_with_kids),
     }
     g["not_attempted"]["count"] = len(g["not_attempted"]["countries"])
+
+    # Rebuild instructions, derived from the sets file rather than typed out —
+    # a runbook maintained separately from the thing it describes is wrong by
+    # the time anyone needs it.
+    g["rebuild_sets"] = []
+    for name, spec in sets.items():
+        inputs = spec.get("inputs", {})
+        each = spec.get("inputs_each") or []
+        src = inputs.get("prefix") or inputs.get("source_region") or ", ".join(
+            e.get("source_region", "?") for e in each) or "—"
+        lvl = inputs.get("admin_level") or (each[0].get("admin_level") if each else None)
+        g["rebuild_sets"].append({
+            "name": name,
+            "workflow": spec.get("workflow", "?"),
+            "source": f"`{src}`" + (f" @ level {lvl}" if lvl else ""),
+            "expect": f"{spec['expect']:,}" if spec.get("expect") else "—",
+            "requires": ", ".join("`" + r + "`" for r in spec.get("requires_fresh") or []),
+        })
 
     # 6b. Parents that have children but no extract of their own. Invisible in a
     #     file listing (the directory is "there" because its children are), and it
@@ -643,6 +661,138 @@ def render_markdown(rep: dict) -> str:
         w(f"⚠️ {pw['note']}.")
     else:
         w("None.")
+    w("")
+
+    # --- reconstruction ---------------------------------------------------
+    # DERIVED from the sets file, not typed out, so a new set appears in the
+    # rebuild instructions automatically. A runbook maintained separately from
+    # the thing it describes is a runbook that is wrong by the time it matters.
+    w("## Rebuilding this store on a new system")
+    w("")
+    w("Everything below is derived from the store and from")
+    w("`scripts/lib/svc/_osm-admin-sets.json`, so it cannot drift from what the")
+    w("commands actually do.")
+    w("")
+
+    w("### The chain — order is a correctness property, not a preference")
+    w("")
+    w("Each tier is cut **from the tier above, read out of the object store**. So")
+    w("rebuilding a tier from a stale parent writes children with a *fresh write")
+    w("time over month-old data* — and most sub-regions carry no vintage of their")
+    w("own, so nothing downstream can tell. Build top-down, and check the parent's")
+    w("vintage first.")
+    w("")
+    w("| # | tier | produced by | source | cadence |")
+    w("|---:|---|---|---|---|")
+    w("| 0 | planet master | one-time bootstrap, then daily replication diffs | upstream OSM | continuous |")
+    w("| 1 | continents (served) | `osm-maintain` re-split | planet master | nightly |")
+    w("| 2 | continents (bucket) | `osm.planet.BuildPlanetExtracts` | planet master | on demand |")
+    w("| 3 | countries | `osm.planet.BuildAdminSetWorkflow` | a continent | weekly |")
+    w("| 4 | US states | `osm.planet.BuildPlanetExtracts` (`scope=subnational`) | the continent + Census TIGER | weekly |")
+    w("| 5 | US counties | `osm.planet.BuildAdminFanout` | the state tier | weekly |")
+    w("")
+    w("⚠️ **Three tiers, three workflows, three different keying rules** — they")
+    w("cannot be expressed as one shape, and using the wrong one publishes to the")
+    w("wrong path silently. `BuildAdminSetWorkflow` keys children directly under")
+    w("its `source_region`, so a *continent* source can only ever produce")
+    w("`<continent>/<child>` — never `<continent>/<country>/<child>`. That mismatch")
+    w("once published 99 US state extracts one tier too shallow, after 14 hours,")
+    w("reporting success. `BuildPlanetExtracts` is the only route to the US state")
+    w("tier, because it has Census TIGER *construct* the key.")
+    w("")
+    w("⚠️ `BuildAdminSetWorkflow` runs **on a single host** by design; only")
+    w("`BuildAdminFanout` spreads across the fleet.")
+    w("")
+
+    w("### The sets, and the command for each")
+    w("")
+    w("| set | builds | workflow | source | needs fresh first |")
+    w("|---|---:|---|---|---|")
+    for spec in g["rebuild_sets"]:
+        w(f"| `{spec['name']}` | {spec['expect']} | `{spec['workflow'].rsplit('.', 1)[-1]}` | "
+          f"{spec['source']} | {spec['requires'] or '—'} |")
+    w("")
+    w("```")
+    w("fw svc osm-admin-regen --list-sets            # what is available")
+    w("fw svc osm-admin-regen --set <name>           # submit it (returns in seconds)")
+    w("fw svc osm-admin-regen --status               # what is in flight")
+    w("fw svc osm-admin-regen --set <name> --install # weekly timer")
+    w("```")
+    w("")
+    w("⚠️ `--refresh-after-days` defaults to **0 in the FFL, which means NEVER")
+    w("REFRESH** — correct for a retry (it must skip what the last attempt")
+    w("finished) and wrong for a scheduled rebuild. Omitting it once made a run")
+    w("report *\"227 extracts published\"* while publishing zero and leaving the")
+    w("counties 35 days stale. The CLI defaults it to 7; pass it explicitly when")
+    w("you mean it.")
+    w("")
+    w("⚠️ **Submitted is not finished.** These return in seconds and the fan-out")
+    w("runs for hours (measured: 0.1h to 14.2h per set, and 3.3h vs 9.8h on")
+    w("*identical* inputs). Watch the run, not the exit code.")
+    w("")
+
+    w("### Setting up a machine that can do this work")
+    w("")
+    w("A host only ever claims work it can actually run, so a half-provisioned")
+    w("machine does not fail — it silently never claims. Three independent")
+    w("dimensions must line up, and **absent means unconstrained** on all three:")
+    w("")
+    w("1. **The handler.** A runner claims a task only if it has a handler for that")
+    w("   facet name. No `fwh_osm` installed → no OSM work, no error.")
+    w("2. **The environment hash.** Script tasks carry the hash of their dependency")
+    w("   manifest; a runner advertises the environments it provides.")
+    w("3. **The resource floor.** These cuts declare a memory floor. A host below it")
+    w("   is skipped at claim time — which is the point: an under-provisioned box")
+    w("   used to claim a continent-sized split and get OOM-killed hours in.")
+    w("")
+    w("```")
+    w("fw install repo                    # venv (system python is PEP 668-locked)")
+    w("fw install domain osm-geocoder     # the handlers")
+    w("fw install check --install         # domains, deps AND missing script environments")
+    w("fw runner start --fleet            # join; the fleet-agent keeps it converged")
+    w("fw maint unsatisfiable             # exits 1 if any task no live runner can claim")
+    w("```")
+    w("")
+    w("`fw install check` is the one that matters here: a declared *environment*")
+    w("this host does not provide is invisible — no error, the work just never runs")
+    w("on it. `fw maint unsatisfiable` is the fleet-wide counterpart.")
+    w("")
+    w("Configuration is by environment variable; the ones this store depends on:")
+    w("")
+    w("| variable | what it selects |")
+    w("|---|---|")
+    w("| `FW_OSM_EXTRACT_BUCKET` | the bucket surveyed above |")
+    w("| `FW_OSM_SELFHOST_BASE_URL` | the extracts server stamped into PBF headers |")
+    w("| `FW_OSM_SELFHOST_REGIONS` | which continents the publisher advances |")
+    w("| `FW_OSM_SELFHOST_WWW` | the served tree's directory, on the host that owns it |")
+    w("| `FW_S3_ENDPOINT` / `FW_S3_ACCESS_KEY` / `FW_S3_SECRET_KEY` | the object store |")
+    w("| `FW_DATA_DIR` | a **local** scratch path on this host — never the infra host's disk |")
+    w("| `FW_SERVER_GROUP` | capability tier; heavy OSM roles only start where it matches |")
+    w("| `FW_OSM_OFFLINE` | forbids third-party extract mirrors fleet-wide |")
+    w("")
+    w("⚠️ Fleet-managed runners are configured from the **central fleet config**,")
+    w("not from any `.env` file. A value in `.env.fleet` governs a locally-started")
+    w("runner and is silently ignored by a fleet-managed one — which cost real")
+    w("debugging time when an offline-enforcement flag sat there looking active")
+    w("while every container ran without it. Change `fleet_config`, not a file.")
+    w("")
+
+    w("### Standing jobs (without these the store just stops advancing)")
+    w("")
+    w("| command | cadence | what stops without it |")
+    w("|---|---|---|")
+    w("| `fw svc osm-replicate --install` | nightly | the replication stream stops advancing; nothing reports it |")
+    w("| `fw svc osm-extracts --install` | always on | the URL stamped into every PBF header 404s, and consumers silently re-download whole extracts from a third party |")
+    w("| `fw svc osm-admin-regen --set <name> --install` | weekly | the sub-region tiers freeze at whatever vintage they had |")
+    w("| `fw svc osm-watchdog --install` | 12h | nothing notices any of the above stopping |")
+    w("| `fw svc osm-report --install` | 6h | this page freezes and describes the past while looking current |")
+    w("")
+    w("⚠️ Being current is a **rate, not a state**. Every one of these is a job")
+    w("whose absence is invisible from the data: the extracts do not report that")
+    w("they stopped being updated, they just quietly get older. That is why the")
+    w("watchdog is a *separate* job from the publisher — a process cannot observe")
+    w("its own absence, and a fixed nightly time that never once fired on a")
+    w("sleeping laptop is exactly how this store reached 39 days stale.")
     w("")
 
     n = g["not_attempted"]

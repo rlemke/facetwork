@@ -109,6 +109,13 @@ Notes for working with `fw`:
   alarms when the report itself stops being regenerated — reading the
   **published** report, since only the generator writes one locally and a
   local-file check would alarm on every other host for not being the generator.
+  It also carries the **rebuild runbook**: the tier chain (planet → continents →
+  countries → US states → counties, each cut from the tier above so order is a
+  correctness property), the per-set command table **derived from
+  `_osm-admin-sets.json`** rather than typed out, what a new host needs before it
+  can claim this work (handler + environment hash + resource floor — a
+  half-provisioned host silently never claims rather than failing), and the
+  standing timers whose absence is invisible from the data.
   ⚠️ The rendered files carry **no hostnames, endpoints, IPs or ports** — stores
   are named by ROLE and the generating machine by a stable `host-<6hex>` hash,
   which preserves "did two different hosts generate this?" (the signal that
