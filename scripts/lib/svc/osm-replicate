@@ -98,6 +98,16 @@ run)
         exit 1
     fi
     echo "chain healthy — stream and indexes current"
+
+    # Refresh the store status report, because the cache just changed. Failure
+    # here must NOT change this command's exit code: the publish either worked or
+    # it did not, and a broken renderer must not be able to report a good publish
+    # as a bad one. The report's own timer is the backstop if this leg fails.
+    if "$FW_ROOT/fw" svc osm-report --publish >/dev/null 2>&1; then
+        echo "status report refreshed"
+    else
+        echo "status report NOT refreshed (fw svc osm-report failed) — publish itself was fine"
+    fi
     exit $rc
     ;;
 

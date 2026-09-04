@@ -290,6 +290,12 @@ PYEOF
     # hours afterwards. --status reports the run's real state; don't read a 0
     # here as "the extracts were rebuilt".
     echo "=== [$(date '+%F %T %Z')] submitted (rc=$rc, runner=${runner:-unknown}) — completion is tracked in the dashboard ==="
+    # ⚠️ NO `fw svc osm-report` call here, deliberately. `osm-replicate` and the
+    # nightly re-split refresh the report when they finish because they finish
+    # synchronously; this command only SUBMITS, and the fan-out rewrites the
+    # bucket hours later on other hosts. Regenerating the report now would
+    # produce a fresh timestamp over the PRE-run state — the most misleading
+    # thing a status page can do. The report's own timer picks the change up.
     exit $rc
     ;;
 

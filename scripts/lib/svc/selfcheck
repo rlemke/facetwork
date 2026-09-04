@@ -190,6 +190,28 @@ check)
     run_one "no unsatisfiable tasks"    ./fw maint unsatisfiable $MONGO_ARGS
     run_one "no forgotten dead letters" ./fw maint dead-letters $MONGO_ARGS
 
+    # The OSM store report describes the cache; nothing describes the REPORT.
+    # A generator that quietly stopped leaves a page that still renders, still
+    # looks authoritative, and silently describes a month ago — the same shape as
+    # the stale extracts it was written to surface. So check its AGE, not its
+    # contents. UNKNOWN (2) where no report exists: most hosts do not generate
+    # one, and alarming there would make this noisy on every machine.
+    osm_report_age_check() {
+        local r="$HOME/.facetwork/osm-cache-report.md" mtime age
+        if [ ! -f "$r" ]; then
+            echo "no report on this host (only the generator writes one)"
+            return 2
+        fi
+        mtime="$(stat -f %m "$r" 2>/dev/null || stat -c %Y "$r" 2>/dev/null)"
+        case "${mtime:-}" in (*[!0-9]*|"") echo "cannot stat $r"; return 2 ;; esac
+        age=$(( ( $(date +%s) - mtime ) / 3600 ))
+        [ "$age" -le 48 ] && return 0
+        echo "osm-cache-report.md is ${age}h old — the OSM store status page has"
+        echo "stopped being regenerated; see: fw svc osm-report --status"
+        return 1
+    }
+    run_one "osm store report is current" osm_report_age_check
+
     # Self-staleness: this job cannot report that it stopped running, but it
     # CAN report on its next tick that it had been absent.
     if [ -f "$HEALTH" ]; then

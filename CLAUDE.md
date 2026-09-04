@@ -82,6 +82,30 @@ Notes for working with `fw`:
   or drop a gitignored `domains.local.json` (merged over the defaults — entries
   add/replace by key; top-level `"_remove": […]` drops standard ones). Run
   `gen-compose` after editing the catalog.
+- **`fw svc osm-report [--publish] [--tree-dir DIR] [--json] [--install]`** —
+  status page for the OSM extract stores: size and count per tier, when each
+  tier was last written, when its DATA was last current, and what is missing.
+  ⚠️ **"Last updated" is two different clocks and the report keeps them apart.**
+  mtime is when we WROTE the file; the replication `timestamp` in the sibling
+  `-updates/state.txt` is when the DATA was current. Measured here they differ
+  by up to **53 days**, and only the second answers "is this stale?".
+  **1,105 extracts cannot answer it at all** (empty or partial `state.txt` —
+  the 415 German Kreise carry an EMPTY one), so *age unknown* is its own
+  category, never folded into "old" and never assumed fresh. ⚠️ Both stores are
+  always shown side by side (see the `osm-two-extract-stores` trap): the bucket
+  is 5 days behind the served tree, and they name the same continent
+  `australia-oceania` vs `oceania`. Every gap states the RULE that produced it,
+  and deliberate scope is reported as **not attempted**, never as missing — 229
+  country extracts have no sub-region tier because no set covers them, and in a
+  bare file listing that is indistinguishable from loss. Expected sizes come
+  from `expect` in `_osm-admin-sets.json` (declared, not parsed out of the
+  prose); a set with no `expect` is reported **unchecked**, not passing.
+  ⚠️ Exit **0** = written, **2** = could not survey; there is deliberately no
+  **1** — this describes, `osm-watchdog` alarms. `osm-replicate` and the nightly
+  re-split call it when they finish; `osm-admin-regen` deliberately does NOT
+  (it only *submits*, so refreshing there would stamp a fresh time on the
+  pre-run state). The daily timer is the backstop, and `fw svc selfcheck` alarms
+  when the report itself stops being regenerated.
 - **`fw svc osm-watchdog [--install] [--every-hours N] [--status]`** — an
   INDEPENDENT agent (12h) that runs the chain check and alarms if the OSM
   stream or an index has stalled. It exists because `osm-replicate`'s own

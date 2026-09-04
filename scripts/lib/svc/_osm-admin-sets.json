@@ -1,6 +1,6 @@
 {
   "_comment": "Named scopes for `fw svc osm-admin-regen --set NAME`. Each set names a WORKFLOW and its inputs; the runner defaults (strategy/bucket/refresh_after_days/force) are merged in unless the set overrides them. Override this file with FW_OSM_REGEN_SETS_FILE.",
-  "_three_paths_comment": "\u26a0\ufe0f THREE DIFFERENT WORKFLOWS BUILD THREE DIFFERENT TIERS, and they key extracts differently. Using the wrong one silently writes to the wrong path: a north-america@4 BuildAdminSet ran 14.2h, reported success, and published 99 state extracts to north-america/<state> instead of north-america/us/<state> - 93 of them duplicating extracts that already existed at the correct path. (1) BuildAdminSetWorkflow derives keys from OSM admin boundaries under a prefix taken from source_region, so a CONTINENT source can only ever key its children directly under that continent. Right for continent -> countries. (2) BuildPlanetExtracts with scope=subnational uses US Census TIGER shapefiles, which CONSTRUCT the key north-america/us/<state> - the only path that produces the US state tier, because osmfr has no per-state polygons and Geofabrik is banned. (3) BuildAdminFanout fans one BuildAdminSet per child across the FLEET, keyed under that child. Right for states -> counties.",
+  "_three_paths_comment": "⚠️ THREE DIFFERENT WORKFLOWS BUILD THREE DIFFERENT TIERS, and they key extracts differently. Using the wrong one silently writes to the wrong path: a north-america@4 BuildAdminSet ran 14.2h, reported success, and published 99 state extracts to north-america/<state> instead of north-america/us/<state> - 93 of them duplicating extracts that already existed at the correct path. (1) BuildAdminSetWorkflow derives keys from OSM admin boundaries under a prefix taken from source_region, so a CONTINENT source can only ever key its children directly under that continent. Right for continent -> countries. (2) BuildPlanetExtracts with scope=subnational uses US Census TIGER shapefiles, which CONSTRUCT the key north-america/us/<state> - the only path that produces the US state tier, because osmfr has no per-state polygons and Geofabrik is banned. (3) BuildAdminFanout fans one BuildAdminSet per child across the FLEET, keyed under that child. Right for states -> counties.",
   "_chain_comment": "ORDER IS A CORRECTNESS PROPERTY, not a preference. BuildAdminSet downloads its source FROM THE BUCKET, so regenerating a tier from a stale parent writes children with a fresh mtime over month-old data - and sub-regions carry no replication timestamp, so mtime is the only age signal anything has. requires_fresh enforces it.",
   "historic_note": "Measured durations: europe@2 3.3h and 9.8h on identical inputs (a 3x spread), central-america@2 0.1h, europe/germany@6 5.2h, north-america@4 14.2h. BuildAdminSetWorkflow is SINGLE-HOST by design; BuildAdminFanout is the one that uses the fleet.",
   "sets": {
@@ -18,7 +18,9 @@
       "merge_defaults": [
         "bucket",
         "strategy"
-      ]
+      ],
+      "expect": 51,
+      "expect_prefix": "north-america/us"
     },
     "us-counties": {
       "description": "3,167 US counties, fanned per-state ACROSS THE FLEET (not one host)",
@@ -37,7 +39,9 @@
         "osmfr_fallback",
         "refresh_after_days",
         "force_refresh"
-      ]
+      ],
+      "expect": 3167,
+      "expect_prefix": "north-america/us/*"
     },
     "eu-countries": {
       "description": "European countries from the 40 GB europe extract (completed 9.8h; 462/469 fresh)",
@@ -53,7 +57,9 @@
         "osmfr_fallback",
         "refresh_after_days",
         "force_refresh"
-      ]
+      ],
+      "expect": 50,
+      "expect_prefix": null
     },
     "africa-countries": {
       "description": "56 africa countries (admin_level 2) - the shape europe proved works",
@@ -69,7 +75,9 @@
         "osmfr_fallback",
         "refresh_after_days",
         "force_refresh"
-      ]
+      ],
+      "expect": 56,
+      "expect_prefix": null
     },
     "asia-countries": {
       "description": "29 asia countries (admin_level 2) - the shape europe proved works",
@@ -85,7 +93,9 @@
         "osmfr_fallback",
         "refresh_after_days",
         "force_refresh"
-      ]
+      ],
+      "expect": 29,
+      "expect_prefix": null
     },
     "oceania-countries": {
       "description": "27 australia-oceania countries (admin_level 2) - the shape europe proved works",
@@ -101,7 +111,9 @@
         "osmfr_fallback",
         "refresh_after_days",
         "force_refresh"
-      ]
+      ],
+      "expect": 27,
+      "expect_prefix": null
     },
     "south-america-countries": {
       "description": "10 south-america countries (admin_level 2) - the shape europe proved works",
@@ -117,7 +129,9 @@
         "osmfr_fallback",
         "refresh_after_days",
         "force_refresh"
-      ]
+      ],
+      "expect": 10,
+      "expect_prefix": null
     },
     "central-america-countries": {
       "description": "34 central-america countries (admin_level 2) - the shape europe proved works",
@@ -133,7 +147,9 @@
         "osmfr_fallback",
         "refresh_after_days",
         "force_refresh"
-      ]
+      ],
+      "expect": 34,
+      "expect_prefix": null
     },
     "russia-districts": {
       "description": "8 Russian federal districts (admin_level 3) - UNVERIFIED, see _warning",
@@ -150,7 +166,9 @@
         "osmfr_fallback",
         "refresh_after_days",
         "force_refresh"
-      ]
+      ],
+      "expect": 8,
+      "expect_prefix": null
     },
     "rest-of-world": {
       "description": "All five stale continent country-tiers, one submission each",
@@ -185,5 +203,6 @@
       ]
     }
   },
-  "_merge_defaults_comment": "The runner knobs merge into a set's inputs only when listed here, and a set wins on any key it sets explicitly. \u26a0\ufe0f refresh_after_days defaults to 0 in the FFL, which means NEVER REFRESH \u2014 right for resume (a retry must skip what the last attempt finished) and wrong for the weekly cadence. Omitting it made us-counties report '227 extracts published' while publishing zero and leaving the counties 35 days stale (2026-08-31). BuildPlanetExtracts accepts neither refresh knob, so us-states must NOT list them."
+  "_merge_defaults_comment": "The runner knobs merge into a set's inputs only when listed here, and a set wins on any key it sets explicitly. ⚠️ refresh_after_days defaults to 0 in the FFL, which means NEVER REFRESH — right for resume (a retry must skip what the last attempt finished) and wrong for the weekly cadence. Omitting it made us-counties report '227 extracts published' while publishing zero and leaving the counties 35 days stale (2026-08-31). BuildPlanetExtracts accepts neither refresh knob, so us-states must NOT list them.",
+  "_expect_comment": "`expect` is the count `fw svc osm-report` compares the store against, and `expect_prefix` overrides where it looks (default: one level under inputs.prefix or inputs.source_region; a '*' segment means 'per child'). Declared rather than parsed out of `description`, because a reworded sentence must not silently switch the report to expecting nothing. A set with no `expect` is REPORTED as unchecked, never assumed complete."
 }
