@@ -375,6 +375,11 @@
       "repo": "fwh_uspanel",
       "extras": [],
       "description": "US state x year multi-source data panel (Census ACS/PEP + BLS); 1,020 rows, 2005-2024. Needs CENSUS_API_KEY; PEP migration components exist only for 2010-2019."
+    },
+    "road-safety": {
+      "repo": "https://github.com/rlemke/fwh_road_safety",
+      "extras": [],
+      "description": "US fatal-crash RATE by state \u2014 NHTSA FARS fatalities over FHWA VM-2 vehicle-miles travelled. Reproduces NHTSA's published 1.26 per 100M VMT for 2023. Fatal crashes only, not a dangerous-roads measure."
     }
   },
   "examples": {
