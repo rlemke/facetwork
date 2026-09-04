@@ -264,3 +264,24 @@ def test_a_lone_child_is_not_left_behind():
     g = R.find_gaps(b, _store({}, "tree"), {}, now=NOW, stale_days=14,
                     county_reference=None)
     assert g["left_behind"]["total"] == 0
+
+
+def test_the_missing_sequence_stamp_is_the_cause_left_behind_only_detects():
+    """⚠️ Measured 2026-09-04 and the separation was exact: all 195 country
+    extracts the rebuild refreshed carried sequenceNumber+timestamp; all 54 it
+    passed over carried a timestamp only. The stamp is what OUR cut pipeline
+    writes, so its absence means the extract was downloaded from a third-party
+    provider under that provider's naming — a key our workflows never emit."""
+    old = NOW - dt.timedelta(days=40)
+    b = _store({
+        "af": _ex("af", "continent", 1, NOW, NOW, seq=5105),
+        "af/ours": _ex("af/ours", "country", 1, NOW, NOW, seq=5105),
+        "af/theirs": _ex("af/theirs", "country", 1, old, old, seq=None),
+    })
+    g = R.find_gaps(b, _store({}, "tree"), {}, now=NOW, stale_days=14,
+                    county_reference=None)
+    fp = g["foreign_provenance"]
+    assert fp["total"] == 1 and fp["stale"] == 1
+    assert fp["by_tier"] == {"country": 1}
+    # cause and symptom agree
+    assert g["left_behind"]["total"] == 1

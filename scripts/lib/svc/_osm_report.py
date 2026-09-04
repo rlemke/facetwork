@@ -428,6 +428,41 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
                  "it is run"),
     }
 
+    # 5c. NOT PRODUCED BY THIS PIPELINE — and therefore never refreshed by it.
+    #
+    # ⚠️ This is the CAUSE that `left_behind` only detects the symptom of.
+    # Measured 2026-09-04, and the separation is exact: of the country tier's
+    # 249 extracts, all 195 that the rebuild refreshed carry `sequenceNumber`
+    # + `timestamp`; all 54 it passed over carry a TIMESTAMP ONLY. Same at the
+    # county tier — 2,522 stamped and refreshed, 644 with an empty state.txt
+    # and untouched.
+    #
+    # The sequence number is what OUR cut pipeline stamps. An extract without
+    # one was DOWNLOADED from a third-party provider under that provider's
+    # naming (`micronesia` where we now cut `federated-states-of-micronesia`,
+    # `falkland` vs `falkland-islands`, Connecticut's pre-2022 county names
+    # beside the `-planning-region` ones). Our workflows key from OSM admin
+    # boundaries, so they never write those names — the file stays at its
+    # download-day vintage forever, and a consumer that looks it up gets a
+    # stale extract that looks perfectly normal.
+    unstamped = [r for r, e in b.items() if e.get("sequence") is None]
+    by_tier: dict[str, int] = {}
+    for r in unstamped:
+        by_tier[b[r]["tier"]] = by_tier.get(b[r]["tier"], 0) + 1
+    stale_unstamped = [r for r in unstamped
+                       if b[r].get("vintage") and (now - b[r]["vintage"]).days > stale_days]
+    g["foreign_provenance"] = {
+        "rule": ("no `sequenceNumber` in its state.txt — the stamp this pipeline "
+                 "writes when it cuts an extract"),
+        "total": len(unstamped), "by_tier": by_tier,
+        "stale": len(stale_unstamped),
+        "note": ("these were downloaded from a third-party provider under that "
+                 "provider's naming, so our workflows — which key from OSM admin "
+                 "boundaries — will never write those keys again. Re-running the "
+                 "set does not help; the fix is to retire the duplicate key or "
+                 "add it to the alias table"),
+    }
+
     # 6b. Parents that have children but no extract of their own. Invisible in a
     #     file listing (the directory is "there" because its children are), and it
     #     changes what a rebuild has to cut FROM.
@@ -664,6 +699,22 @@ def render_markdown(rep: dict) -> str:
             w(f"| `{r['parent']}` | {r['children']:,} | {r['max_days']}d |")
     else:
         w("None.")
+    w("")
+
+    fp = g["foreign_provenance"]
+    w("### Not produced by this pipeline — so never refreshed by it")
+    w("")
+    w(f"*Rule: {fp['rule']}.*")
+    w("")
+    w(f"**{fp['total']:,}** extracts — " +
+      ", ".join(f"{n:,} {t}" for t, n in sorted(fp["by_tier"].items())) +
+      f" — of which **{fp['stale']:,}** are already stale.")
+    w("")
+    w("⚠️ This is the **cause**; the section below is the symptom. The separation")
+    w("is exact: every extract the last rebuild refreshed carries the sequence")
+    w("stamp, and every one it passed over does not.")
+    w("")
+    w(f"⚠️ {fp['note']}.")
     w("")
 
     lb = g["left_behind"]

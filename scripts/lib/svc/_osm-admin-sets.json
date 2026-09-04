@@ -61,6 +61,24 @@
       "expect": 50,
       "expect_prefix": null
     },
+    "na-countries": {
+      "description": "north-america countries (admin_level 2) - the tier NOTHING covered",
+      "workflow": "osm.planet.BuildAdminSetWorkflow",
+      "requires_fresh": [
+        "north-america-latest.osm.pbf"
+      ],
+      "_warning": "The 8 keys under north-america/ are ALL third-party downloads at a 2026-07-12 vintage, and four of them - us-midwest, us-northeast, us-south, us-west - are not countries at all but that provider's US census-region splits. No set has ever built this tier, so it has never been refreshed by us. This set cuts canada / mexico / united-states and the territories from our own continent extract; the legacy us-* keys will be left behind and should be RETIRED, not rebuilt - nothing can reproduce them and they duplicate coverage the state tier already provides properly.",
+      "expect": 10,
+      "inputs": {
+        "source_region": "north-america",
+        "admin_level": 2
+      },
+      "merge_defaults": [
+        "osmfr_fallback",
+        "refresh_after_days",
+        "force_refresh"
+      ]
+    },
     "africa-countries": {
       "description": "56 africa countries (admin_level 2) - the shape europe proved works",
       "workflow": "osm.planet.BuildAdminSetWorkflow",
