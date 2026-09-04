@@ -56,6 +56,19 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# ⚠️ The default endpoint `afl-minio` resolves on every host via /etc/hosts
+# EXCEPT the infra host itself, where MinIO is on localhost and no such entry
+# exists — so a non-interactive `fw svc osm-report` there defaults to a name it
+# cannot resolve and exits 2 forever. If a timer was installed here, reuse the
+# endpoint it pinned: that value was PROBED and CONFIRMED by an operator at
+# install time, so this is reusing an answer, not guessing one (the installer
+# refuses to guess for exactly this reason). An explicit FW_S3_ENDPOINT always
+# wins.
+if [ -z "${FW_S3_ENDPOINT:-}" ] && [ -f "$WRAPPER" ]; then
+    _pinned="$(sed -n 's/^export FW_S3_ENDPOINT="\(.*\)"$/\1/p' "$WRAPPER" | tail -1)"
+    [ -n "$_pinned" ] && export FW_S3_ENDPOINT="$_pinned"
+fi
+
 PYBIN="${PYTHON:-$FW_ROOT/.venv/bin/python}"
 [ -x "$PYBIN" ] || PYBIN="$(command -v python3)"
 MODULE="$FW_LIB/svc/_osm_report.py"
