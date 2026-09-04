@@ -221,3 +221,23 @@ def test_client_defaults_can_be_pinned_by_a_caller():
     import facetwork.runtime.storage as S
     sig = inspect.signature(S.s3_client)
     assert {"endpoint", "access_key", "secret_key", "region"} <= set(sig.parameters)
+
+
+def test_client_config_tuning_is_passed_through_not_dropped():
+    """⚠️ fwh_county_atlas tuned read_timeout=300 / max_attempts=5 for multi-GB
+    county PBF downloads. Consolidating without carrying those would turn a slow
+    object into a timeout rather than a slow success — the kind of regression a
+    refactor hides because nothing fails until the object is big enough."""
+    from facetwork.runtime.storage import s3_client
+    c = s3_client("http://x:9000", access_key="k", secret_key="s",
+                  read_timeout=300, max_attempts=5)
+    assert c.meta.config.read_timeout == 300
+    # botocore normalises max_attempts=5 to total_max_attempts=6 (5 retries + 1)
+    assert c.meta.config.retries["total_max_attempts"] == 6
+
+
+def test_config_tuning_is_optional():
+    from facetwork.runtime.storage import s3_client
+    c = s3_client("http://x:9000", access_key="k", secret_key="s")
+    assert c.meta.config.signature_version == "s3v4"
+    assert c.meta.config.s3["addressing_style"] == "path"

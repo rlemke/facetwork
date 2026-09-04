@@ -481,7 +481,8 @@ class _S3WriteStream:
 
 def s3_client(endpoint: str | None = None, *,
               access_key: str | None = None, secret_key: str | None = None,
-              region: str | None = None):
+              region: str | None = None, read_timeout: int | None = None,
+              max_attempts: int | None = None):
     """The ONE place an S3/MinIO client is constructed.
 
     ``S3StorageBackend`` uses this, and so does any caller needing an operation
@@ -490,6 +491,11 @@ def s3_client(endpoint: str | None = None, *,
     upload** (planet extracts). Those callers previously built their own client,
     which is how four slightly different credential chains appeared in one
     codebase.
+
+    ``read_timeout`` / ``max_attempts`` exist so the Config is also built in one
+    place: fwh_county_atlas tuned them (300s, 5 attempts) for multi-GB county PBF
+    downloads, and losing that in a consolidation would turn a slow object into a
+    timeout rather than a slow success.
 
     The parameters exist so a caller can pin the defaults it historically had
     without reintroducing its own constructor. ⚠️ fwh_osm passes
@@ -518,8 +524,18 @@ def s3_client(endpoint: str | None = None, *,
         # domain repos omitted this and worked only because boto3 happens to
         # choose path-style for a custom endpoint_url; making it explicit is what
         # "one client" is for.
-        config=_BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"}),
+        config=_BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"},
+                           **_cfg_extra(read_timeout, max_attempts)),
     )
+
+
+def _cfg_extra(read_timeout: int | None, max_attempts: int | None) -> dict:
+    extra: dict = {}
+    if read_timeout is not None:
+        extra["read_timeout"] = read_timeout
+    if max_attempts is not None:
+        extra["retries"] = {"max_attempts": max_attempts}
+    return extra
 
 
 class S3StorageBackend:
