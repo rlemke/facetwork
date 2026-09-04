@@ -75,6 +75,28 @@ def parse_state(text: str) -> dict:
     return out
 
 
+def host_label(name: str) -> str:
+    """A stable, non-identifying label for a machine.
+
+    ⚠️ The report is a PUBLISHED artifact, so it must not carry hostnames,
+    endpoints or IPs. But "which host generated this?" is load-bearing — it is
+    how a second generator writing to a different store was caught (two hosts,
+    two different answers to a question that has one). A hash keeps that
+    signal exactly and leaks nothing: the same machine always gets the same
+    label, and two machines never collide.
+
+    The real name still reaches the operator on stdout, which never leaves the
+    machine it ran on.
+    """
+    import hashlib
+    return "host-" + hashlib.sha256(name.encode()).hexdigest()[:6]
+
+
+def store_label(endpoint: str, bucket: str) -> str:
+    """Name the store by its ROLE, never its address."""
+    return f"object store / {bucket}"
+
+
 def tier_of(key: str) -> str:
     """Depth in the key IS the tier — the layout carries no other marker."""
     return {0: "continent", 1: "country", 2: "subnational", 3: "county"}.get(
@@ -127,7 +149,7 @@ def survey_bucket(endpoint: str, bucket: str, *, access_key: str,
             e["sequence"] = st.get("sequenceNumber")
             e["vintage"] = st.get("timestamp")
 
-    return {"kind": "bucket", "name": f"{bucket} @ {endpoint}",
+    return {"kind": "bucket", "name": store_label(endpoint, bucket),
             "objects": total_objects, "bytes": total_bytes,
             "extracts": extracts}
 
@@ -196,7 +218,7 @@ def survey_tree(base_url: str, *, timeout: int = 20) -> dict:
     with cf.ThreadPoolExecutor(max_workers=16) as pool:
         list(pool.map(enrich, list(extracts)))
 
-    return {"kind": "tree", "name": base_url,
+    return {"kind": "tree", "name": "self-hosted extracts server",
             "objects": len(extracts),
             "bytes": sum(e["bytes"] or 0 for e in extracts.values()),
             "extracts": extracts}
@@ -463,7 +485,7 @@ def render_markdown(rep: dict) -> str:
         w(f"| `{s['name']}` | {s['holds']} | {len(s['extracts']):,} | "
           f"{human_bytes(s['bytes'])} | {newest} |")
     w("")
-    w("⚠️ The served tree is what the `osmosis_replication_base_url` stamped into")
+    w("⚠️ The self-hosted extracts server is what the `osmosis_replication_base_url` stamped into")
     w("every PBF header points at — it is the address a third-party consumer")
     w("follows. The bucket is what our own workflows read. **They hold different")
     w("region sets and they name continents differently**, so repointing a")
@@ -730,7 +752,8 @@ def build(*, endpoint: str, bucket: str, access_key: str, secret_key: str,
     try:
         t = survey_tree(tree_url)
     except Exception as exc:                            # noqa: BLE001
-        t = {"kind": "tree", "name": tree_url, "objects": 0, "bytes": 0,
+        t = {"kind": "tree", "name": "self-hosted extracts server",
+             "objects": 0, "bytes": 0,
              "extracts": {}, "error": type(exc).__name__}
 
     county_ref = None
@@ -780,13 +803,15 @@ def build(*, endpoint: str, bucket: str, access_key: str, secret_key: str,
 
     stores = []
     for s, label, holds in ((b, "MinIO bucket", "8 continents + the country / state / county tiers"),
-                            (t, "Served tree (:8088)", "continents only — what stamped PBF headers point at")):
+                            (t, "Self-hosted extracts server",
+                             "continents only — what stamped PBF headers point at")):
         stores.append({"name": s["name"], "label": label, "holds": holds,
                        "kind": s["kind"], "objects": s["objects"], "bytes": s["bytes"],
                        "error": s.get("error"),
                        "tiers": summarise_store(s, now), "extracts": s["extracts"]})
 
-    return {"generated_at": now.isoformat(), "generated_on": os.uname().nodename,
+    return {"generated_at": now.isoformat(),
+            "generated_on": host_label(os.uname().nodename),
             "stores": stores, "continents": rows, "gaps": gaps}
 
 
@@ -849,8 +874,9 @@ def check_published(endpoint: str, bucket: str, *, access_key: str, secret_key: 
         return 2
     hours = (dt.datetime.now(UTC) - gen).total_seconds() / 3600
     if hours <= max_age_hours:
-        print(f"osm store report generated {hours:.0f}h ago on "
-              f"{json.loads(body).get('generated_on', '?')}")
+        print(f"osm store report generated {hours:.0f}h ago by "
+              f"{json.loads(body).get('generated_on', '?')} "
+              f"(a stable label, not a hostname)")
         return 0
     print(f"osm store report is {hours:.0f}h old (limit {max_age_hours}h) — the OSM")
     print("store status page has stopped being regenerated. Its numbers describe")
@@ -983,6 +1009,8 @@ def main(argv=None) -> int:
         print(json.dumps(slim, indent=2))
     else:
         g = rep["gaps"]
+        print(f"generated on {os.uname().nodename} (published as {rep['generated_on']} — "
+              f"the files carry no hostnames, endpoints or IPs)")
         print(f"wrote {paths['md']}")
         print(f"      {paths['html']}")
         print(f"      {paths['json']}")

@@ -109,6 +109,11 @@ Notes for working with `fw`:
   alarms when the report itself stops being regenerated — reading the
   **published** report, since only the generator writes one locally and a
   local-file check would alarm on every other host for not being the generator.
+  ⚠️ The rendered files carry **no hostnames, endpoints, IPs or ports** — stores
+  are named by ROLE and the generating machine by a stable `host-<6hex>` hash,
+  which preserves "did two different hosts generate this?" (the signal that
+  caught a second generator writing to a different store) without naming either.
+  Real names go to **stdout only**, which never leaves the machine.
   ⚠️ `--install` **refuses** an unreachable endpoint rather than installing a
   timer that fails every tick, and it does **not guess** which store is the
   fleet's: MaxPro's leftover standalone MinIO answers on `localhost:9000` with
