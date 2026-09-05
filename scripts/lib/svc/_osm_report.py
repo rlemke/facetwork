@@ -31,6 +31,7 @@ how current it is is a worse problem than one that says it is old.
 """
 from __future__ import annotations
 
+import collections
 import concurrent.futures as cf
 import datetime as dt
 import json
@@ -418,37 +419,40 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
                                                  "worst": 0})
         d["count"] += 1
         d["worst"] = max(d["worst"], row["days_behind_siblings"])
-    # ⚠️ TWO populations, different prognoses, told apart by state.txt shape:
+    # ⚠️ THE STATE.TXT SHAPE IS PROVENANCE, NOT PROGNOSIS. I got this wrong and
+    # the fix is recorded here so nobody re-derives it:
     #
-    #   timestamp only  -> downloaded from a third party under ITS naming. Our
-    #                      workflows key from OSM admin boundaries and will never
-    #                      write that key. NOT reproducible; retire or alias it.
-    #   empty / absent  -> written by an OLDER version of our own pipeline, before
-    #                      it stamped. The key is one we do still produce, so a
-    #                      re-run should pick it up.
+    #   timestamp only  -> downloaded from a third party under ITS naming
+    #   empty / absent  -> written by an older path of OURS, before it stamped
     #
-    # Measured: all 54 country-tier ones are timestamp-only (micronesia,
-    # falkland, czech-republic…). All 644 county-tier ones are EMPTY, and their
-    # names — alabama/baldwin, virginia/accomack — are ordinary counties OSM
-    # carries at admin_level 6. Same symptom, opposite fix, and one note for
-    # both would have sent someone to retire 644 reproducible extracts.
-    shape = {"not_reproducible": 0, "probably_reproducible": 0}
+    # That much holds. What does NOT follow is that the second kind can be
+    # re-made. I inferred it would — the names are ordinary counties OSM carries
+    # at admin_level 6 (alabama/baldwin, virginia/accomack) — and a us-counties
+    # re-run on 2026-09-05 produced ZERO of the 645. The handler said why, per
+    # state: Wyoming generated 10 admin_level=6 polygons for 23 counties and
+    # called the other 13 not reproducible; Virginia generated 118 of 129.
+    # Those counties simply have no usable admin_level=6 boundary in OSM.
+    #
+    # So the report no longer predicts. The ONLY reliable statement about
+    # reproducibility comes from the run itself, which enumerates the keys it
+    # cannot regenerate. Guessing on the store's behalf sent a re-run at 645
+    # extracts that could never come back, and would have read as progress.
     for row in left_behind:
-        e = b[row["region"]]
-        key = "not_reproducible" if e.get("vintage") else "probably_reproducible"
-        shape[key] += 1
-        row["prognosis"] = key
+        row["provenance"] = ("third-party download" if b[row["region"]].get("vintage")
+                             else "an earlier path of ours")
+    shape = collections.Counter(r["provenance"] for r in left_behind)
     g["left_behind"] = {
         "rule": ("its siblings were written by a more recent rebuild of this tier "
                  "and it was not"),
         "total": len(left_behind),
         "by_parent": sorted(lb_parent.values(), key=lambda d: -d["count"]),
-        "prognosis": shape,
-        "note": ("an extract carrying a TIMESTAMP ONLY came from a third-party "
-                 "download under that provider's naming — re-running the set will "
-                 "never write that key, so retire or alias it. One with an EMPTY "
-                 "state.txt was written by an older version of THIS pipeline, "
-                 "under a key we still produce, so a re-run should pick it up"),
+        "provenance": dict(shape),
+        "note": ("the state.txt shape says where an extract CAME FROM, not whether "
+                 "it can be re-made. Measured 2026-09-05: a us-counties re-run "
+                 "regenerated 0 of the 645 county extracts in this list, because "
+                 "those counties have no usable admin_level=6 boundary in OSM. "
+                 "Read the RUN's own 'NOT reproducible' list before re-running "
+                 "anything on their account"),
     }
 
     # 5c. NOT PRODUCED BY THIS PIPELINE — and therefore never refreshed by it.
@@ -760,13 +764,14 @@ def render_markdown(rep: dict) -> str:
         w("")
         w(f"⚠️ {lb['note']}.")
         w("")
-        pg = lb["prognosis"]
-        w("| prognosis | extracts | what to do |")
-        w("|---|---:|---|")
-        w(f"| not reproducible (timestamp only) | {pg['not_reproducible']:,} | "
-          "retire the key, or add it to the alias table |")
-        w(f"| probably reproducible (empty state.txt) | {pg['probably_reproducible']:,} | "
-          "re-run the set that owns this tier |")
+        w("| provenance | extracts |")
+        w("|---|---:|")
+        for prov, n in sorted(lb["provenance"].items()):
+            w(f"| {prov} | {n:,} |")
+        w("")
+        w("⚠️ **Provenance is not prognosis.** This table says where these came")
+        w("from, not whether they can be re-made — see the note above for the")
+        w("re-run that proved the difference.")
     else:
         w("None.")
     w("")

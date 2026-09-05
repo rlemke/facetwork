@@ -113,10 +113,13 @@ Notes for working with `fw`:
   whose siblings were written by a more recent rebuild of its tier and which was
   not. Measured 2026-09-04 — `rest-of-world` rebuilt five continents and **47**
   country extracts kept their old vintage, exactly the count each run warned was
-  *"NOT reproducible at admin_level=2"*. A key the tier's workflow cannot
-  regenerate is never fixed by re-running it, and until this check existed those
-  sat in the plain stale count, which reads as an action item. (644 US counties
-  are in the same state, left behind by the county fan-out.)
+  *"NOT reproducible at admin_level=2"*. 644 US counties are in the same state.
+  ⚠️ The `state.txt` shape (timestamp-only = a third-party download; empty = an
+  earlier path of ours) is **provenance, not prognosis** — the report deliberately
+  makes no reproducibility claim. Inferring one was wrong: a `us-counties` re-run
+  on 2026-09-05 regenerated **0 of the 645**, because those counties have no
+  usable `admin_level=6` boundary in OSM (Wyoming yielded 10 polygons for 23
+  counties, Virginia 118 of 129). Only the RUN can say what it cannot rebuild.
   It also carries the **rebuild runbook**: the tier chain (planet → continents →
   countries → US states → counties, each cut from the tier above so order is a
   correctness property), the per-set command table **derived from

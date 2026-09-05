@@ -62,13 +62,13 @@
       "expect_prefix": null
     },
     "na-countries": {
-      "description": "north-america countries (admin_level 2) - the tier NOTHING covered",
+      "description": "north-america countries (admin_level 2) - yields only 3; see _warning",
       "workflow": "osm.planet.BuildAdminSetWorkflow",
       "requires_fresh": [
         "north-america-latest.osm.pbf"
       ],
-      "_warning": "The 8 keys under north-america/ are ALL third-party downloads at a 2026-07-12 vintage, and four of them - us-midwest, us-northeast, us-south, us-west - are not countries at all but that provider's US census-region splits. No set has ever built this tier, so it has never been refreshed by us. This set cuts canada / mexico / united-states and the territories from our own continent extract; the legacy us-* keys will be left behind and should be RETIRED, not rebuilt - nothing can reproduce them and they duplicate coverage the state tier already provides properly.",
-      "expect": 10,
+      "_warning": "The 8 keys under north-america/ are ALL third-party downloads at a 2026-07-12 vintage, and four of them - us-midwest, us-northeast, us-south, us-west - are not countries at all but that provider's US census-region splits. No set has ever built this tier, so it has never been refreshed by us. This set cuts canada / mexico / united-states and the territories from our own continent extract; the legacy us-* keys will be left behind and should be RETIRED, not rebuilt - nothing can reproduce them and they duplicate coverage the state tier already provides properly. RUN 2026-09-04: produced exactly 3 - bermuda, canada, greenland - and dropped 9 for lacking a country ISO 3166-2, MEXICO AMONG THEM. So this set does not refresh mexico or saint-pierre-et-miquelon either, and the four us-* keys remain untouched as expected. `expect` is 3, not 10.",
+      "expect": 3,
       "inputs": {
         "source_region": "north-america",
         "admin_level": 2
@@ -170,12 +170,12 @@
       "expect_prefix": null
     },
     "russia-districts": {
-      "description": "8 Russian federal districts (admin_level 3) - UNVERIFIED, see _warning",
+      "description": "russia federal districts - VERIFIED TO PRODUCE NOTHING, do not schedule",
       "workflow": "osm.planet.BuildAdminSetWorkflow",
       "requires_fresh": [
         "russia-latest.osm.pbf"
       ],
-      "_warning": "Russia is ONE country, so admin_level 2 yields a single unit that cannot be placed under a continent - a flat key, which the guard drops, publishing nothing after hours of work. The existing 8 objects are FEDERAL DISTRICTS (level 3), but those carry no ISO 3166-2 either (that belongs to the oblasts at level 4), so level 3 may also produce only flat keys. Run once by hand and check the published count before trusting it.",
+      "_warning": "RUN AND DISPROVEN 2026-09-04. The set's own instruction was to run it once by hand and check the published count before trusting it. Done: five attempts, every one logged 'generated 0 admin_level=3 polygons (dropped 5 without a country ISO 3166-2)'. Russia is ONE country, so its ISO 3166-1 code is on the country and the ISO 3166-2 codes are on the OBLASTS at level 4 - the federal districts at level 3 carry neither, so the guard drops all five and publishes nothing. The 8 objects under russia/ are third-party downloads and this path can never refresh them. If the tier is wanted, try admin_level 4 (oblasts, ~85 units) - a DIFFERENT tier, not a fix for these keys. Left in the catalogue so nobody re-derives this at the cost of another five passes.",
       "inputs": {
         "source_region": "russia",
         "admin_level": 3
@@ -185,7 +185,7 @@
         "refresh_after_days",
         "force_refresh"
       ],
-      "expect": 8,
+      "expect": 0,
       "expect_prefix": null
     },
     "rest-of-world": {

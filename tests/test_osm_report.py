@@ -287,12 +287,12 @@ def test_the_missing_sequence_stamp_is_the_cause_left_behind_only_detects():
     assert g["left_behind"]["total"] == 1
 
 
-def test_left_behind_splits_by_prognosis_not_just_by_count():
-    """⚠️ Same symptom, opposite fix. A timestamp-only extract came from a
-    third-party download under its own naming and must be retired; an empty
-    state.txt came from an older version of THIS pipeline under a key we still
-    produce, so a re-run picks it up. One note for both would have sent someone
-    to retire 644 perfectly reproducible county extracts."""
+def test_left_behind_reports_provenance_and_makes_no_reproducibility_claim():
+    """⚠️ The state.txt shape says where an extract CAME FROM, not whether it can
+    be re-made. Inferring the second from the first was wrong: a us-counties
+    re-run on 2026-09-05 regenerated 0 of the 645 county extracts it predicted
+    were reproducible — those counties have no usable admin_level=6 boundary in
+    OSM at all."""
     old = NOW - dt.timedelta(days=40)
     b = _store({
         "af": _ex("af", "continent", 1, NOW, NOW, seq=5105),
@@ -300,6 +300,9 @@ def test_left_behind_splits_by_prognosis_not_just_by_count():
         "af/downloaded": _ex("af/downloaded", "country", 1, old, old),      # timestamp only
         "af/ours-unstamped": _ex("af/ours-unstamped", "country", 1, old),   # empty
     })
-    pg = R.find_gaps(b, _store({}, "tree"), {}, now=NOW, stale_days=14,
-                     county_reference=None)["left_behind"]["prognosis"]
-    assert pg == {"not_reproducible": 1, "probably_reproducible": 1}
+    lb = R.find_gaps(b, _store({}, "tree"), {}, now=NOW, stale_days=14,
+                     county_reference=None)["left_behind"]
+    assert lb["provenance"] == {"third-party download": 1, "an earlier path of ours": 1}
+    # and it must NOT promise either one can be rebuilt
+    assert "prognosis" not in lb
+    assert "re-run" not in lb["note"].split("Measured")[0]
