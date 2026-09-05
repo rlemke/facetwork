@@ -285,3 +285,21 @@ def test_the_missing_sequence_stamp_is_the_cause_left_behind_only_detects():
     assert fp["by_tier"] == {"country": 1}
     # cause and symptom agree
     assert g["left_behind"]["total"] == 1
+
+
+def test_left_behind_splits_by_prognosis_not_just_by_count():
+    """⚠️ Same symptom, opposite fix. A timestamp-only extract came from a
+    third-party download under its own naming and must be retired; an empty
+    state.txt came from an older version of THIS pipeline under a key we still
+    produce, so a re-run picks it up. One note for both would have sent someone
+    to retire 644 perfectly reproducible county extracts."""
+    old = NOW - dt.timedelta(days=40)
+    b = _store({
+        "af": _ex("af", "continent", 1, NOW, NOW, seq=5105),
+        "af/fresh": _ex("af/fresh", "country", 1, NOW, NOW, seq=5105),
+        "af/downloaded": _ex("af/downloaded", "country", 1, old, old),      # timestamp only
+        "af/ours-unstamped": _ex("af/ours-unstamped", "country", 1, old),   # empty
+    })
+    pg = R.find_gaps(b, _store({}, "tree"), {}, now=NOW, stale_days=14,
+                     county_reference=None)["left_behind"]["prognosis"]
+    assert pg == {"not_reproducible": 1, "probably_reproducible": 1}

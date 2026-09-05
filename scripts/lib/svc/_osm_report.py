@@ -418,14 +418,37 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
                                                  "worst": 0})
         d["count"] += 1
         d["worst"] = max(d["worst"], row["days_behind_siblings"])
+    # ⚠️ TWO populations, different prognoses, told apart by state.txt shape:
+    #
+    #   timestamp only  -> downloaded from a third party under ITS naming. Our
+    #                      workflows key from OSM admin boundaries and will never
+    #                      write that key. NOT reproducible; retire or alias it.
+    #   empty / absent  -> written by an OLDER version of our own pipeline, before
+    #                      it stamped. The key is one we do still produce, so a
+    #                      re-run should pick it up.
+    #
+    # Measured: all 54 country-tier ones are timestamp-only (micronesia,
+    # falkland, czech-republic…). All 644 county-tier ones are EMPTY, and their
+    # names — alabama/baldwin, virginia/accomack — are ordinary counties OSM
+    # carries at admin_level 6. Same symptom, opposite fix, and one note for
+    # both would have sent someone to retire 644 reproducible extracts.
+    shape = {"not_reproducible": 0, "probably_reproducible": 0}
+    for row in left_behind:
+        e = b[row["region"]]
+        key = "not_reproducible" if e.get("vintage") else "probably_reproducible"
+        shape[key] += 1
+        row["prognosis"] = key
     g["left_behind"] = {
         "rule": ("its siblings were written by a more recent rebuild of this tier "
                  "and it was not"),
         "total": len(left_behind),
         "by_parent": sorted(lb_parent.values(), key=lambda d: -d["count"]),
-        "note": ("the usual cause is that the tier's workflow CANNOT reproduce that "
-                 "key — so re-running the set will not fix it, however many times "
-                 "it is run"),
+        "prognosis": shape,
+        "note": ("an extract carrying a TIMESTAMP ONLY came from a third-party "
+                 "download under that provider's naming — re-running the set will "
+                 "never write that key, so retire or alias it. One with an EMPTY "
+                 "state.txt was written by an older version of THIS pipeline, "
+                 "under a key we still produce, so a re-run should pick it up"),
     }
 
     # 5c. NOT PRODUCED BY THIS PIPELINE — and therefore never refreshed by it.
@@ -736,6 +759,14 @@ def render_markdown(rep: dict) -> str:
             w(f"| `{r['parent']}` | {r['count']:,} | {r['worst']}d |")
         w("")
         w(f"⚠️ {lb['note']}.")
+        w("")
+        pg = lb["prognosis"]
+        w("| prognosis | extracts | what to do |")
+        w("|---|---:|---|")
+        w(f"| not reproducible (timestamp only) | {pg['not_reproducible']:,} | "
+          "retire the key, or add it to the alias table |")
+        w(f"| probably reproducible (empty state.txt) | {pg['probably_reproducible']:,} | "
+          "re-run the set that owns this tier |")
     else:
         w("None.")
     w("")
