@@ -20,7 +20,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "mongodb": "^6.3.0",
-    "uuid": "^9.0.0"
+    "uuid": "^14.0.2"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",
