@@ -495,7 +495,27 @@ def cmd_apply(a):
 
 
 def cmd_refresh_hosts(a):
-    """One-shot: point every runner container's afl-* names at the current infra IP."""
+    """One-shot: re-point runner containers at the current infra IP.
+
+    TWO places can hold an address, and until 2026-09-08 this healed only one.
+
+      /etc/hosts inside the container  — patched in place, cheap, no restart.
+      the container's ENVIRONMENT      — e.g. FW_MONGODB_URL=mongodb://<ip>:27017,
+                                          baked at creation and IMMUTABLE.
+
+    ⚠️ The second cost a real outage. server3's DHCP lease moved; 22 of its 23
+    runners kept the old IP in their environment, stayed "Up" for days, logged
+    "Heartbeat failed" every 30s and never registered — while this command
+    truthfully reported "no drift", because the /etc/hosts entries it owned were
+    correct. `docker ps` said Up, the agent said "up to date" (it compares the
+    IMAGE TAG), and only Mongo registration counts revealed it.
+
+    An environment cannot be rewritten, so env drift is fixed by RECREATING the
+    affected containers. That is disruptive, so it is opt-in via --recreate here
+    and automatic in `watch` (where a stale endpoint means the runner is already
+    dead, so recreation strictly improves matters and cannot thrash: the new
+    container carries the current IP and stops matching).
+    """
     ip = _fleet_lib.resolve_infra_ip(log=lambda m: print(f"  {m}"))
     if not ip:
         print(f"fleet-agent[{HOST}]: could not resolve the infra IP — nothing to do")
@@ -506,7 +526,27 @@ def cmd_refresh_hosts(a):
         print(f"fleet-agent[{HOST}]: refreshed afl-* → {ip} on {len(patched)} container(s): "
               f"{', '.join(patched)}")
     else:
-        print(f"fleet-agent[{HOST}]: all runner containers already point at {ip} (no drift)")
+        print(f"fleet-agent[{HOST}]: all runner containers already point at {ip} "
+              f"(/etc/hosts: no drift)")
+
+    stale = _fleet_lib.stale_env_containers(ip, log=lambda m: print(f"fleet-agent[{HOST}]: {m}"))
+    if not stale:
+        print(f"fleet-agent[{HOST}]: no container pins a stale infra IP in its environment")
+        return
+    names = sorted({c for c, _v, _o in stale})
+    print(f"fleet-agent[{HOST}]: ⚠️ {len(names)} container(s) pin a STALE infra IP in "
+          f"their environment — these cannot be patched, only recreated:")
+    for c, var, old_ip in stale:
+        print(f"    {c}: {var} pins {old_ip} (infra is {ip})")
+    if not getattr(a, "recreate", False):
+        print(f"fleet-agent[{HOST}]: re-run with --recreate to rebuild them, or wait "
+              f"for the next `watch` poll, which does it automatically.")
+        return
+    print(f"fleet-agent[{HOST}]: recreating {len(names)} container(s)…")
+    mongo = _fleet_lib.resolve_mongo(getattr(a, "mongo", None),
+                                     log=lambda m: print(f"  {m}"))
+    cfg = _read_cfg(mongo)
+    _apply(cfg, mongo, getattr(a, "data_dir", None), None, recreate=True, dry_run=False)
 
 
 def cmd_watch(a):
@@ -584,6 +624,29 @@ def cmd_watch(a):
                 if ip:
                     _fleet_lib.refresh_container_hosts(
                         ip, log=lambda m: print(f"fleet-agent[{HOST}]: {m}", flush=True))
+                    # ⚠️ And the OTHER place an address hides: the container's
+                    # ENVIRONMENT. Patching /etc/hosts cannot reach
+                    # FW_MONGODB_URL=mongodb://<old-ip>:27017, and on 2026-09-08
+                    # that left 22 of server3's 23 runners "Up" for days,
+                    # heartbeat-failing every 30s, while this very block reported
+                    # no drift. An environment is immutable, so the cure is
+                    # recreation.
+                    #
+                    # Safe to do unattended: such a runner is ALREADY dead, so a
+                    # recreate strictly improves matters, and it cannot thrash —
+                    # the rebuilt container carries the current IP and stops
+                    # matching on the next poll.
+                    stale = _fleet_lib.stale_env_containers(ip)
+                    if stale:
+                        names = sorted({c for c, _v, _o in stale})
+                        for c, var, old_ip in stale:
+                            print(f"fleet-agent[{HOST}]: env drift {c}: {var} pins "
+                                  f"{old_ip}, infra is {ip}", flush=True)
+                        print(f"fleet-agent[{HOST}]: recreating {len(names)} "
+                              f"container(s) — a pinned endpoint cannot be patched",
+                              flush=True)
+                        _apply(_read_cfg(mongo), mongo, a.data_dir, None,
+                               recreate=True, dry_run=False)
             except Exception as exc:  # noqa: BLE001 - never let host-refresh kill the daemon
                 print(f"fleet-agent[{HOST}]: host-refresh error: {exc}", flush=True)
         for _ in range(wait):
@@ -615,8 +678,15 @@ def main():
     pw.set_defaults(func=cmd_watch)
 
     pr = sub.add_parser("refresh-hosts",
-                        help="patch runner containers' afl-* /etc/hosts to the current "
-                             "infra IP (DHCP-drift self-heal; also run each watch poll)")
+                        help="re-point runner containers at the current infra IP — "
+                             "patch their afl-* /etc/hosts AND report any container "
+                             "whose ENVIRONMENT pins a stale IP (DHCP-drift self-heal; "
+                             "also run each watch poll)")
+    pr.add_argument("--recreate", action="store_true",
+                    help="also recreate containers whose environment pins a stale IP "
+                         "(an environment cannot be patched, only rebuilt)")
+    pr.add_argument("--mongo", help="MongoDB URL (default: discover)")
+    pr.add_argument("--data-dir", help="host data dir for the recreate")
     pr.set_defaults(func=cmd_refresh_hosts)
 
     a = p.parse_args()

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import re
 import subprocess
 from urllib.parse import urlparse
 
@@ -366,6 +367,67 @@ def refresh_container_hosts(ip: str, *, log=None) -> list[str]:
         except Exception as exc:  # noqa: BLE001 - one bad container shouldn't stop the rest
             say(f"could not refresh {c}: {exc}")
     return patched
+
+
+# Endpoint variables that may carry a literal infra address. A stale IP in any
+# of these makes a runner unreachable in a way /etc/hosts patching cannot fix.
+_ENDPOINT_VARS = ("FW_MONGODB_URL", "FW_S3_ENDPOINT", "FW_DASHBOARD_URL",
+                  "FW_POSTGIS_URL", "FW_OSM_SELFHOST_BASE_URL")
+_IPV4 = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
+
+
+def _container_env(name: str) -> dict:
+    try:
+        out = subprocess.run(
+            ["docker", "inspect", "-f",
+             "{{range .Config.Env}}{{println .}}{{end}}", name],
+            capture_output=True, text=True, timeout=10)
+        env = {}
+        for line in out.stdout.splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                env[k] = v
+        return env
+    except Exception:
+        return {}
+
+
+def stale_env_containers(ip: str, *, log=None) -> list[tuple[str, str, str]]:
+    """(container, variable, stale_ip) for env endpoints pinned to the wrong IP.
+
+    ⚠️ THIS IS THE HOLE /etc/hosts PATCHING CANNOT REACH, and it cost a real
+    outage. When the infra host's DHCP lease moved, every runner kept
+    ``FW_MONGODB_URL=mongodb://<old-ip>:27017`` in its ENVIRONMENT, baked in at
+    creation. The containers stayed "Up" for days, logged "Heartbeat failed"
+    every 30s, and stopped registering — while `refresh_container_hosts`
+    correctly reported "no drift", because the /etc/hosts entries it owns were
+    fine. Two places can hold an address; the self-heal only covered one.
+
+    ⚠️ Reports rather than fixes, because a container's environment is IMMUTABLE
+    after creation. The only cure is recreation, which belongs to whoever owns
+    the compose invocation — so this returns findings and the agent acts.
+    """
+    say = log or (lambda _m: None)
+    out: list[tuple[str, str, str]] = []
+    for c in _runner_containers():
+        # One unreadable container must not stop the sweep — the same contract
+        # refresh_container_hosts holds. A host with 23 runners should report the
+        # 22 it could read, not nothing because the 23rd was mid-restart.
+        try:
+            env = _container_env(c)
+        except Exception as exc:  # noqa: BLE001
+            say(f"could not read env of {c}: {exc}")
+            continue
+        for var in _ENDPOINT_VARS:
+            val = env.get(var) or ""
+            for found in _IPV4.findall(val):
+                # A loopback or container-network address is deliberate, not drift.
+                if found.startswith(("127.", "172.", "0.")):
+                    continue
+                if found != ip:
+                    out.append((c, var, found))
+                    say(f"env drift: {c} {var} pins {found}, infra is {ip}")
+    return out
 
 
 # ---------------------------------------------------------------------------
