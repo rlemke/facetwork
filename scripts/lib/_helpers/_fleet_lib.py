@@ -369,6 +369,38 @@ def refresh_container_hosts(ip: str, *, log=None) -> list[str]:
     return patched
 
 
+
+# Hosts that a RUNNER CONTAINER can never reach, however valid they are for a
+# process on the host. Inside a bridge-networked container 127.0.0.1 is the
+# container itself, so a runner configured this way starts, finds no MongoDB and
+# crash-loops -- while `docker ps` reports it Up and the fleet agent reports the
+# version applied. Nothing in the fleet notices.
+_LOOPBACK_HOSTS = frozenset({"localhost", "::1", "0.0.0.0", "0"})
+
+
+def container_unusable_host(url: str | None) -> str | None:
+    """Return the host of ``url`` when a container could never reach it, else None.
+
+    Kept here, as ONE function used by both the agent and its tests, because the
+    bug this catches is a parsing bug: a test that re-implements the extraction
+    can pass while the caller still lets the bad value through. (It did: an
+    IPv6 literal ``mongodb://[::1]:27017`` slipped past a `split(":")[0]`
+    version, which yields ``"["``.)
+    """
+    if not url:
+        return None
+    rest = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", "", url).split("/")[0]
+    # Strip any userinfo (user:pw@) before the host.
+    rest = rest.rsplit("@", 1)[-1]
+    if rest.startswith("["):                      # bracketed IPv6 literal
+        host = rest[1:rest.index("]")] if "]" in rest else rest[1:]
+    else:
+        host = rest.split(":")[0]
+    host = host.strip().lower()
+    if host in _LOOPBACK_HOSTS or host.startswith("127."):
+        return host or url
+    return None
+
 # Endpoint variables that may carry a literal infra address. A stale IP in any
 # of these makes a runner unreachable in a way /etc/hosts patching cannot fix.
 _ENDPOINT_VARS = ("FW_MONGODB_URL", "FW_S3_ENDPOINT", "FW_DASHBOARD_URL",

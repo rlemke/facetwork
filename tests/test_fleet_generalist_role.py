@@ -136,3 +136,66 @@ def test_membership_rides_the_child_env_not_the_shared_env_file():
     """
     src = (REPO / "scripts/lib/fleet/agent").read_text()
     assert 'dict(child_env, FW_DOMAIN_NAMES=",".join(gen_domains))' in src
+
+
+# --------------------------------------------------------------------------
+# loopback guard (2026-09-08 server3 outage)
+# --------------------------------------------------------------------------
+def _lib():
+    import sys
+    sys.path.insert(0, str(REPO / "scripts/lib/_helpers"))
+    import _fleet_lib
+    return _fleet_lib
+
+
+@pytest.mark.parametrize("url,host", [
+    ("mongodb://127.0.0.1:27017", "127.0.0.1"),
+    ("mongodb://localhost:27017", "localhost"),
+    ("mongodb://user:pw@127.0.0.1:27017/facetwork", "127.0.0.1"),
+    ("mongodb://[::1]:27017", "::1"),          # regressed a split(":")[0] version
+    ("mongodb://0.0.0.0:27017", "0.0.0.0"),
+    ("mongodb://127.53.1.9:27017", "127.53.1.9"),
+])
+def test_loopback_mongo_is_refused_for_runner_containers(url, host):
+    """Loopback is right for a host process and poison inside a container.
+
+    Inside a bridge-networked container 127.0.0.1 is the CONTAINER, so a runner
+    finds no MongoDB and crash-loops while `docker ps` reports it Up and the
+    agent reports the version applied. Measured on the infra host, whose
+    /etc/hosts maps afl-mongodb to 127.0.0.1: 22 of 23 runners down,
+    RestartCount 21, and no signal anywhere said so.
+    """
+    assert _lib().container_unusable_host(url) == host
+
+
+@pytest.mark.parametrize("url", [
+    "mongodb://afl-mongodb:27017",
+    "mongodb://192.168.68.67:27017",
+    "mongodb://server3.local:27017",
+    None,
+    "",
+])
+def test_routable_mongo_urls_are_accepted(url):
+    """The guard must not reject a name or LAN address a container can resolve."""
+    assert _lib().container_unusable_host(url) is None
+
+
+def test_guard_is_in_the_env_builder_not_discovery():
+    """Discovery is shared with host-only commands where loopback is valid.
+
+    `fleet status` runs on the host and connecting to 127.0.0.1 is correct there,
+    so rejecting at discovery would break it. The check belongs where the value
+    becomes CONTAINER configuration.
+    """
+    src = (REPO / "scripts/lib/fleet/agent").read_text()
+    i = src.index("refusing to configure runners with")
+    j = src.index('"FW_MONGODB_URL": mongo,')
+    assert i < j, "guard must run before the env dict is built"
+    assert "--mongo mongodb://afl-mongodb:27017" in src, "message must name the fix"
+
+
+def test_agent_does_not_reimplement_the_parse():
+    """One implementation, so a test cannot pass while the caller stays broken."""
+    src = (REPO / "scripts/lib/fleet/agent").read_text()
+    assert "_fleet_lib.container_unusable_host(mongo)" in src
+    assert 'strip("[]")' not in src, "the hand-rolled parse is what missed [::1]"

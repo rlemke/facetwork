@@ -20,6 +20,7 @@ Secrets stay local (Phase 1/2): MinIO creds come from this host's environment
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 try:
@@ -314,6 +315,34 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
             "running fleet-agent, or pass --data-dir <path> (macOS: e.g. "
             "$HOME/afl_data ; Linux: e.g. /var/lib/afl_data). Do NOT use "
             "/Volumes/afl_data — that's the infra host's disk."
+        )
+
+    # A loopback MongoDB URL is CORRECT for a process on this host and POISON
+    # for the containers this env file configures: inside a bridge-networked
+    # container 127.0.0.1 is the container itself, so every runner starts, finds
+    # no MongoDB, and crash-loops -- while `docker ps` reports it Up and the
+    # agent reports the version applied. Refuse instead of baking it in.
+    #
+    # This is not hypothetical (2026-09-08, server3): that host IS the MongoDB
+    # host, so its /etc/hosts maps afl-mongodb to 127.0.0.1 and self-discovery
+    # returned it. 22 of 23 runners were down with RestartCount 21 and nothing
+    # said so -- the only survivor was the gh-router. The fix is a NAME the
+    # container can resolve (afl-mongodb, mapped by extra_hosts to the infra
+    # host), which is also stale-proof across DHCP changes.
+    #
+    # Checked here rather than at discovery because discovery is also used by
+    # host-only commands (`fleet status`), where loopback is perfectly valid.
+    _bad = _fleet_lib.container_unusable_host(mongo)
+    if _bad:
+        raise SystemExit(
+            f"fleet-agent[{HOST}]: refusing to configure runners with "
+            f"FW_MONGODB_URL={mongo} — that is this host's loopback, and inside a "
+            "container it points at the container itself, so every runner would "
+            "crash-loop while reporting Up. Pass a name the CONTAINER can resolve, "
+            "e.g. --mongo mongodb://afl-mongodb:27017 (mapped to the infra host by "
+            "extra_hosts). On the infra host this is easy to hit: /etc/hosts there "
+            "may map afl-mongodb to 127.0.0.1, which is right for host processes "
+            "and wrong for containers."
         )
 
     env = {
