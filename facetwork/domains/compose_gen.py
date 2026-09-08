@@ -157,7 +157,16 @@ def _render_generalist(names: list[str]) -> str:
         "      <<: *s3-storage\n"
         "      FW_MONGODB_URL: mongodb://mongodb:27017\n"
         "      FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}\n"
-        f"      FW_DOMAIN_NAMES: {','.join(names)}\n"
+        # Env-overridable, catalog value as the DEFAULT -- same reason as
+        # FW_OSM_INDEX_HOST_DIR above. Which domains one runner fronts is a
+        # PER-HOST decision (see consolidated_domains.__doc__: the same domain
+        # is cold on one deployment and hot on another), but this generated
+        # file is committed and shared by every host. Baked in bare, the
+        # generating host's list reaches all of them -- and when that host
+        # consolidates nothing the value is EMPTY, which the entrypoint
+        # rejects (`${FW_DOMAIN_NAMES:?}`), so every other host's generalist
+        # crash-loops on a choice it never made.
+        f"      FW_DOMAIN_NAMES: ${{FW_DOMAIN_NAMES:-{','.join(names)}}}\n"
         "      # More workers than a single-domain runner: this one fronts several\n"
         "      # queues, so one slow handler should not block the rest.\n"
         '      FW_REGISTRY_RUNNER_ARGS: "--max-concurrent ${FW_GENERALIST_WORKERS:-4}"\n'
@@ -166,7 +175,13 @@ def _render_generalist(names: list[str]) -> str:
         f"      - {_DATA_DIR}:/Volumes/afl_data\n"
         + idx_mount
         + "    restart: unless-stopped\n"
-        # Emitted even with an empty `consolidated`, so keep it from starting.
+        # Emitted even with an empty `consolidated`, so a bare `docker compose
+        # up -d` does not start a generalist with no membership list (which the
+        # entrypoint refuses, correctly, by crash-looping). This stays right
+        # under the env override above: naming a service explicitly on the
+        # command line enables its profile, so a host that supplies
+        # FW_DOMAIN_NAMES can still start it -- the gate only covers the
+        # start-everything path, which is the one that cannot know better.
         # See _render_region for why the block itself is unconditional.
         + ('    profiles: ["generalist"]\n' if not names else "")
     )

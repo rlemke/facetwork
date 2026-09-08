@@ -274,6 +274,14 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     # domain runner is `fleet set --domain-runner <name>` — no agent code change.
     domain_roles = {n: s for n, s in roles.items()
                     if s.get("kind") == "domain" and int(s.get("replicas", 1) or 0) > 0}
+    # Generalist tier: ONE runner fronting several cold domains, instead of a
+    # container each. Its own role rather than a kind="domain" entry because it
+    # carries a MEMBERSHIP LIST (`domains`), which no per-domain role has, and
+    # because that list is the thing a light host tunes -- a 2-core/6.7 GiB box
+    # serves the same cold domains as a big host, just not with 14 containers.
+    gen_role = roles.get("generalist", {})
+    gen_domains = [d for d in (gen_role.get("domains") or []) if d]
+    gen_replicas = int(gen_role.get("replicas", 1) or 0)
 
     # server_groups gating: a role bearing a server_groups list runs ONLY on
     # hosts whose group is in it; absent/empty = everywhere. This is what lets a
@@ -283,11 +291,12 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     osm_here = _fleet_lib.role_in_group(osm, grp)
     gh_here = _fleet_lib.role_in_group(gh_role, grp)
     ffl_here = _fleet_lib.role_in_group(ffl, grp)
+    gen_here = _fleet_lib.role_in_group(gen_role, grp)
     domain_roles = {n: s for n, s in domain_roles.items()
                     if _fleet_lib.role_in_group(s, grp)}
     skipped = sorted(
         n for n, s in roles.items()
-        if (s.get("kind") == "domain" or n in ("osm-geocoder", "gh-router", "ffl-runner"))
+        if (s.get("kind") == "domain" or n in ("osm-geocoder", "gh-router", "ffl-runner", "generalist"))
         and not _fleet_lib.role_in_group(s, grp)
     )
     endpoint = _fleet_lib.resolve_minio(minio.get("endpoint"))
@@ -351,6 +360,7 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
              + (f" gh-router={gh_image}" if gh_image else "")
              + (f" ffl-replicas={ffl_replicas}" if ffl_replicas else "")
              + (f" domain-runners={len(domain_roles)}" if domain_roles else "")
+             + (f" generalist={len(gen_domains)}dom" if (gen_domains and gen_here and gen_replicas) else "")
              + (f" skipped(not in group)={','.join(skipped)}" if skipped else ""))
     print(f"fleet-agent[{HOST}]: applying fleet_config {label}" + (" (recreate)" if recreate else ""))
     if dry_run:
@@ -367,6 +377,14 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         for name, spec in sorted(domain_roles.items()):
             img = f" image={spec['image']}" if spec.get("image") else " (shared image)"
             print(f"    + would bring up runner-{name} ({spec.get('replicas', 1)} replicas) — domain runner{img}")
+        if gen_replicas and gen_here:
+            if gen_domains:
+                print(f"    + would bring up runner-generalist ({gen_replicas} replica) "
+                      f"fronting {len(gen_domains)}: {','.join(gen_domains)}")
+            else:
+                print("    - would SKIP runner-generalist: role configured but its "
+                      "`domains` list is EMPTY, and a generalist with no membership "
+                      "list is refused by its entrypoint (it would crash-loop)")
         if skipped:
             print(f"    - would SKIP (host group '{grp}' not listed): {', '.join(skipped)}")
         return
@@ -434,6 +452,32 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
                 sys.stderr.write(fr.stderr)
                 print(f"fleet-agent[{HOST}]: WARNING ffl-runner start failed (exit {fr.returncode}); "
                       "continuing — another host can run the orchestration tier")
+        # Generalist tier: one runner over several cold domains. Started before
+        # the per-domain roles so that on a host running both, the generalist is
+        # already claiming while the (usually longer) per-domain sweep proceeds.
+        #
+        # FW_DOMAIN_NAMES rides the CHILD ENV rather than the shared env file:
+        # compose interpolates from the process environment too, and it takes
+        # precedence over --env-file, so this scopes the membership list to the
+        # one service that reads it instead of writing a fleet-wide value that
+        # every other role would carry around meaninglessly.
+        if gen_replicas > 0 and gen_here and gen_domains:
+            g_cmd = ["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"), "--fleet",
+                     "--env", envf, "--example", "generalist", "--replicas", str(gen_replicas)]
+            if recreate:
+                g_cmd.append("--recreate")
+            gr = _run_compose(g_cmd, dict(child_env, FW_DOMAIN_NAMES=",".join(gen_domains)))
+            sys.stdout.write(gr.stdout)
+            if gr.returncode != 0:
+                sys.stderr.write(gr.stderr)
+                print(f"fleet-agent[{HOST}]: WARNING generalist start failed (exit {gr.returncode}); "
+                      "continuing — another host can serve these domains' tasks")
+        elif gen_replicas > 0 and gen_here and not gen_domains:
+            # Loud, not silent: the role exists, so someone meant to consolidate
+            # here. An empty list would make the entrypoint crash-loop.
+            print(f"fleet-agent[{HOST}]: WARNING generalist role configured with an EMPTY "
+                  "`domains` list — not started. Set it with "
+                  "`fw fleet set --generalist d1,d2,...`")
         # Per-domain handler runners: bring up each kind="domain" role as its
         # runner-<name> compose service. Image inherits the shared runner image
         # (same env file) unless the role pins its own. Non-fatal per role — a
@@ -469,6 +513,10 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
             + (ffl_replicas if ffl_here else 0)
             # the gh-router registers as a runner too when this host serves it
             + (1 if (gh_image and gh_here) else 0)
+            # ONE runner regardless of how many domains it fronts -- that is the
+            # whole point of consolidating. Counting its member domains here
+            # would understate convergence by len(domains)-1 forever.
+            + (gen_replicas if (gen_here and gen_domains) else 0)
         )
         if osm_here:
             try:

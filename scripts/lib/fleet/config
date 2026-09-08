@@ -177,6 +177,32 @@ def cmd_set(a):
                 spec["server_groups"] = groups
             else:
                 spec.pop("server_groups", None)
+    # Generalist tier: one runner fronting several cold domains. Membership is
+    # validated against the catalog for the same reason --domain-runner is: a
+    # typo here does not fail loudly at `fleet set` time, it fails much later
+    # inside a container that refuses to start because a name is not baked.
+    if a.generalist is not None:
+        names = [n.strip() for n in a.generalist.split(",") if n.strip()]
+        if names:
+            _warn_unknown_domain_runners(names)
+            spec = cfg.setdefault("roles", {}).setdefault("generalist", {})
+            spec["kind"] = "generalist"
+            spec["domains"] = names
+            spec.setdefault("replicas", 1)
+            if a.generalist_replicas is not None:
+                spec["replicas"] = a.generalist_replicas
+            if a.server_groups is not None and not a.domain_runner:
+                groups = [g.strip() for g in a.server_groups.split(",") if g.strip()]
+                if groups:
+                    spec["server_groups"] = groups
+                else:
+                    spec.pop("server_groups", None)
+        else:
+            # Empty value REMOVES the role rather than leaving it with an empty
+            # membership list, which the agent would refuse to start anyway.
+            (cfg.get("roles") or {}).pop("generalist", None)
+    elif a.generalist_replicas is not None:
+        cfg.setdefault("roles", {}).setdefault("generalist", {})["replicas"] = a.generalist_replicas
     # server_groups gating, general form: restrict ANY role (osm-geocoder,
     # ffl-runner, gh-router, or a domain) to hosts in the named server-groups.
     # `ROLE:` with no groups clears the restriction. The role need not be created
@@ -333,6 +359,12 @@ def main():
                     help="add/update a per-domain handler runner role (compose-service suffix, e.g. census-us, anthropic, jenkins-example); repeatable. Each maps to runner-<NAME> and is managed fleet-wide by fleet-agent.")
     ps.add_argument("--domain-replicas", type=int, help="replicas per server for the --domain-runner(s) in this call (default 1 when adding)")
     ps.add_argument("--domain-image", help="image override for the --domain-runner(s) in this call (default: the shared runner image, so a --image roll covers them)")
+    ps.add_argument("--generalist", metavar="D1,D2",
+                    help="consolidate these domains behind ONE runner-generalist instead of a container each "
+                         "(empty value removes the role). Pair with --server-groups/--role-groups to apply it "
+                         "to light hosts only, and gate the per-domain roles away from them.")
+    ps.add_argument("--generalist-replicas", type=int,
+                    help="replicas of runner-generalist per server (default 1)")
     ps.add_argument("--server-groups", metavar="G1,G2",
                     help="server-groups for the --domain-runner(s) in THIS call — they then run ONLY on hosts whose FW_SERVER_GROUP is listed (empty value clears). Convenience for --role-groups NAME:G1,G2.")
     ps.add_argument("--role-groups", action="append", metavar="ROLE:G1,G2",

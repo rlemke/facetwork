@@ -301,7 +301,17 @@ PYEOF
     fi
 
     # Validate each selected service exists (catches typos / wrong example name).
-    AVAIL="$(docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} config --services 2>/dev/null | grep '^runner-' || true)"
+    #
+    # Every profile is enabled for this listing on purpose. `config --services`
+    # reports the services ACTIVE in the current profile set, not the services
+    # that EXIST -- so a profile-gated block (runner-generalist carries
+    # `profiles: ["generalist"]` when the catalog consolidates nothing) is
+    # omitted here and the loop below rejects it as "no compose service", which
+    # reads as compose-file drift rather than a profile. Naming a service
+    # explicitly on the command line enables its profile (verified against
+    # compose v2), so the service really is startable and listing it is correct.
+    _PROFILES="$(docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} config --profiles 2>/dev/null | paste -sd, - || true)"
+    AVAIL="$(COMPOSE_PROFILES="$_PROFILES" docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} config --services 2>/dev/null | grep '^runner-' || true)"
     for s in "${SERVICES[@]}"; do
         if ! grep -qx "$s" <<<"$AVAIL"; then
             echo "ERROR: no compose service '$s' (from --example ${s#runner-})." >&2
