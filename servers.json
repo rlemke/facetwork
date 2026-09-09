@@ -4,7 +4,12 @@
   "servers": [
     {
       "name": "server3.local",
-      "aliases": ["afl-mongodb", "afl-minio", "afl-postgres", "server3"],
+      "aliases": [
+        "afl-mongodb",
+        "afl-minio",
+        "afl-postgres",
+        "server3"
+      ],
       "purpose": "infra: MongoDB, MinIO, PostGIS, dashboard, image registry (+ heavy runner tier, 14 TB disk)",
       "group": "heavy",
       "infra": true,
@@ -12,7 +17,9 @@
     },
     {
       "name": "MaxPro.local",
-      "aliases": ["maxpro"],
+      "aliases": [
+        "maxpro"
+      ],
       "purpose": "heavy runner tier (osm PBF imports, wide fan-outs)",
       "group": "heavy",
       "infra": false,
@@ -30,6 +37,16 @@
       "name": "server2.local",
       "aliases": [],
       "purpose": "runner (light domains; x86-emulated docker)",
+      "group": "runner",
+      "infra": false,
+      "ip_pin": null
+    },
+    {
+      "name": "atopnuc01.local",
+      "aliases": [
+        "atopnuc01"
+      ],
+      "purpose": "light runner tier (2 cores / 6.7 GiB): ffl orchestration + ONE generalist runner over 19 cold domains. Deliberately NOT in the heavy group - a europe OSM cut has peaked at 18.9 GB here, so the group gate is what keeps that work off this box.",
       "group": "runner",
       "infra": false,
       "ip_pin": null
