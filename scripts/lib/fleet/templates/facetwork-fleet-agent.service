@@ -1,0 +1,42 @@
+[Unit]
+Description=Facetwork fleet agent (reconcile this host to fleet_config)
+Documentation=https://github.com/rlemke/facetwork/blob/main/docs/operations/fleet-rollouts.md
+# The agent drives `docker compose`, so it needs a live daemon. After= only
+# orders startup; the wrapper still polls `docker info` because dockerd accepts
+# connections some seconds after systemd considers it started.
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=simple
+User=ralph_lemke
+Group=ralph_lemke
+# Docker socket access comes from the docker group; without it every reconcile
+# fails with a permission error that reads like a missing binary.
+SupplementaryGroups=docker
+WorkingDirectory=/home/ralph_lemke/facetwork
+ExecStart=/home/ralph_lemke/.facetwork/fleet-agent-watch.sh
+
+# Equivalent of launchd KeepAlive on the macOS hosts: the watch loop is meant to
+# be permanent, and its own watchdog deliberately hard-exits when a reconcile
+# wedges (see FW_FLEET_AGENT_WATCHDOG_SECONDS) so a supervisor can restart it
+# with fresh state. Without Restart=always that self-kill would end the agent.
+Restart=always
+RestartSec=30
+# A crash loop must not be mistaken for a working agent, but must also not be
+# given up on: rate-limit restarts instead of hitting systemd's default
+# start-limit, which STOPS the unit permanently after 5 failures in 10s.
+StartLimitIntervalSec=0
+
+# Runners are started as detached containers and deliberately OUTLIVE this unit:
+# stopping the agent must not stop the fleet (the macOS hosts behave the same --
+# "stopped (runners left running)"). KillMode=process keeps systemd from
+# reaping the compose children along with the wrapper.
+KillMode=process
+TimeoutStopSec=30
+
+StandardOutput=append:/home/ralph_lemke/.facetwork/fleet-agent.log
+StandardError=append:/home/ralph_lemke/.facetwork/fleet-agent.err.log
+
+[Install]
+WantedBy=multi-user.target
