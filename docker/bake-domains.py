@@ -15,20 +15,69 @@ back to the entrypoint's bind-mount path), so one bad repo can't fail the build.
 
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 CV_EXTRAS = {"detect", "enhance", "matte"}  # markers of heavy CV (torch/opencv) domains
+# Optional buildx secret (`--secret id=gh_token,...`), used ONLY to retry a clone
+# that failed anonymously. A private domain repo is otherwise indistinguishable
+# from a deleted one: `git clone` returns 128 either way, this script's
+# continue-on-error skips it, and the build SUCCEEDS without it. That is how
+# fwh_unimatch shipped missing from an image whose rollout reported success.
+GH_TOKEN_FILE = Path("/run/secrets/gh_token")
 ALREADY_BAKED = {"osm-geocoder"}  # baked earlier with system deps
 BAKED_LIST = Path("/etc/afl-baked-domains")
+
+
+def _read_token() -> str | None:
+    """The build secret, if one was mounted. Never logged."""
+    try:
+        tok = GH_TOKEN_FILE.read_text().strip()
+    except OSError:
+        return None
+    return tok or None
+
+
+def _clone(repo: str, dest: str, token: str | None) -> None:
+    """Clone ``repo``, retrying with the token only if anonymous access fails.
+
+    Anonymous first so a public repo never sees the credential, and so behaviour
+    is identical on build hosts that have no token.
+
+    The token travels as an ``http.extraHeader`` set with ``git -c`` rather than
+    embedded in the URL: ``-c`` values are NOT written to ``.git/config``, so the
+    credential cannot survive into a layer even if a later step fails before the
+    ``rm -rf .git`` below.
+    """
+    url = f"https://github.com/rlemke/{repo}.git"
+    try:
+        subprocess.run(["git", "clone", "--depth", "1", url, dest],
+                       check=True, capture_output=True, text=True)
+        return
+    except subprocess.CalledProcessError:
+        if not token:
+            raise
+    # Leave nothing half-cloned behind for the retry to trip over.
+    subprocess.run(["rm", "-rf", dest], check=False)
+    auth = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    subprocess.run(
+        ["git", "-c", f"http.extraHeader=Authorization: Basic {auth}",
+         "clone", "--depth", "1", url, dest],
+        check=True, capture_output=True, text=True,
+    )
+    print(f"  (used the build secret for {repo})", flush=True)
 
 
 def main() -> int:
     catalog = json.loads(Path("domains.json").read_text())
     domains = catalog.get("domains", catalog)
+    token = _read_token()
+    print(f"  build secret for private repos: {'present' if token else 'absent'}", flush=True)
     baked: list[str] = []
+    failed: list[str] = []
     for name, d in domains.items():
         if not isinstance(d, dict):
             continue
@@ -42,10 +91,7 @@ def main() -> int:
         dest = f"/opt/{repo}"
         spec = f"{dest}[{','.join(extras)}]" if extras else dest
         try:
-            subprocess.run(
-                ["git", "clone", "--depth", "1", f"https://github.com/rlemke/{repo}.git", dest],
-                check=True,
-            )
+            _clone(repo, dest, token)
             subprocess.run(
                 [sys.executable, "-m", "pip", "install", "--no-cache-dir", "-e", spec], check=True
             )
@@ -59,8 +105,11 @@ def main() -> int:
                 flush=True,
             )
         except subprocess.CalledProcessError as e:
+            failed.append(name)
+            hint = "" if token else " (no build secret mounted — private repo?)"
             print(
-                f"  WARN: could not bake {name} ({repo}): {e} — falls back to bind-mount",
+                f"  WARN: could not bake {name} ({repo}): rc={e.returncode}{hint}"
+                " — falls back to bind-mount",
                 file=sys.stderr,
                 flush=True,
             )
@@ -69,6 +118,19 @@ def main() -> int:
     all_baked = sorted(set(existing) | set(baked))
     BAKED_LIST.write_text("\n".join(all_baked) + "\n")
     print(f"baked domains ({len(all_baked)}): {' '.join(all_baked)}", flush=True)
+    # Record the misses IN THE IMAGE. Continue-on-error is deliberate -- one bad
+    # repo must not fail a 30-domain build -- but "skipped" was previously visible
+    # only as a WARN buried in build output, so an image could ship without a
+    # domain and its rollout still report success. Written here, `fw fleet status`
+    # and anyone in a container can ask what is actually missing.
+    if failed:
+        Path("/etc/afl-bake-failures").write_text("\n".join(sorted(failed)) + "\n")
+        print(
+            f"NOT BAKED ({len(failed)}): {' '.join(sorted(failed))} — these domains "
+            "are absent from this image and NO fleet runner can claim their work",
+            file=sys.stderr,
+            flush=True,
+        )
     return 0
 
 

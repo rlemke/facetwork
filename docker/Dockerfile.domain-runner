@@ -143,7 +143,11 @@ RUN git clone https://github.com/rlemke/fwh_osm.git /opt/fwh_osm \
 ARG FWH_DOMAINS_REF=4
 COPY domains.json ./domains.json
 COPY docker/bake-domains.py /tmp/bake-domains.py
-RUN FWH_DOMAINS_REF=${FWH_DOMAINS_REF} python /tmp/bake-domains.py
+# The gh_token secret is OPTIONAL (`required=false`): a build host without one
+# still builds, skipping any private domain exactly as before. Mounted as a
+# secret rather than an ARG/ENV so it never lands in a layer or in image history.
+RUN --mount=type=secret,id=gh_token,required=false \
+    FWH_DOMAINS_REF=${FWH_DOMAINS_REF} python /tmp/bake-domains.py
 
 # Audit the domains we just baked (`fw util ffl-audit`). The clone above is the
 # only moment every domain's CURRENT source sits on one disk, so the check is

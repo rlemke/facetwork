@@ -227,6 +227,25 @@ BUILD=(docker buildx build --builder "$BUILDER" --platform "$PLATFORM"
 if [ -n "${FW_FLEET_DOMAINS_REF:-}" ]; then
     BUILD+=(--build-arg "FWH_DOMAINS_REF=${FW_FLEET_DOMAINS_REF}")
 fi
+# Build secret for PRIVATE domain repos. The bake clones anonymously first and
+# only retries with this, so a public-only fleet is unaffected -- but without it a
+# private domain is skipped and the build still SUCCEEDS, which is exactly how
+# fwh_unimatch shipped missing from an image whose rollout reported success.
+# Sourced from GITHUB_TOKEN, else `gh auth token`. Passed via a file (not
+# env=) so the value never appears in this process's environment or in `ps`;
+# the file is created 0600 in a private temp dir and removed on exit.
+GH_TOKEN="${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}"
+if [ -n "$GH_TOKEN" ]; then
+    _SECRET_DIR="$(mktemp -d)"; chmod 700 "$_SECRET_DIR"
+    trap 'rm -rf "$_SECRET_DIR"' EXIT INT TERM
+    (umask 077; printf '%s' "$GH_TOKEN" > "$_SECRET_DIR/gh_token")
+    unset GH_TOKEN
+    BUILD+=(--secret "id=gh_token,src=$_SECRET_DIR/gh_token")
+    echo "  private-repo secret: supplied (private domains can bake)"
+else
+    echo "  private-repo secret: none (GITHUB_TOKEN unset and gh not logged in) —"
+    echo "                       any PRIVATE domain repo will be skipped by the bake"
+fi
 BUILD+=(--push .)
 
 # The build cache is an OPTIMISATION and must never be able to fail the deploy.
