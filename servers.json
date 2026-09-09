@@ -27,16 +27,20 @@
     },
     {
       "name": "server1.local",
-      "aliases": [],
-      "purpose": "runner (light domains; x86-emulated docker)",
+      "aliases": [
+        "server1"
+      ],
+      "purpose": "light runner tier (ffl orchestration + ONE generalist runner over the cold domains). Being converted to Ubuntu 26; provision with docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh (defaults are correct for these: --group runner, --rdp remote-login). NOT heavy - the OSM tier needs headroom one europe cut has pushed to 18.9 GB. Intel hardware, but NO longer emulated: the fleet image is multi-arch (linux/amd64 + linux/arm64) since 2026-09, so these run amd64 natively.",
       "group": "runner",
       "infra": false,
       "ip_pin": null
     },
     {
       "name": "server2.local",
-      "aliases": [],
-      "purpose": "runner (light domains; x86-emulated docker)",
+      "aliases": [
+        "server2"
+      ],
+      "purpose": "light runner tier (ffl orchestration + ONE generalist runner over the cold domains). Being converted to Ubuntu 26; provision with docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh (defaults are correct for these: --group runner, --rdp remote-login). NOT heavy - the OSM tier needs headroom one europe cut has pushed to 18.9 GB. Intel hardware, but NO longer emulated: the fleet image is multi-arch (linux/amd64 + linux/arm64) since 2026-09, so these run amd64 natively.",
       "group": "runner",
       "infra": false,
       "ip_pin": null
