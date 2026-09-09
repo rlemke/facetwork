@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# fw-summary: verify every architecture of an image contains the SAME domain commits
+#
+# Each platform of a multi-arch build clones the fwh_* repos INDEPENDENTLY, at
+# different wall-clock times, and `git clone` in a RUN layer is not
+# content-addressed. So a domain repo that moves mid-build lands at DIFFERENT
+# commits per architecture under ONE tag. FW_FLEET_DOMAINS_REF busts the cache;
+# it does not pin a commit.
+#
+# Measured 2026-09-08 in production: tag e20e532d-droadsafety-e carried unimatch
+# @3d6d8a9 on amd64 and @5822d35 on arm64 — the fixed and the broken version of
+# the same domain, in the same tag, on a fleet where 46 of 48 runners are arm64.
+# Nothing prevented it and nothing reported it; it was found by hand-comparing
+# two containers.
+#
+# Reads /etc/afl-domain-commits out of each platform variant with `docker create`
+# + `docker cp`, which does NOT execute the image — so a foreign architecture
+# needs no emulation and a crash-looping image is still inspectable.
+#
+# Exit: 0 identical · 1 DIVERGED · 2 could not verify (deliberately distinct, so
+# an unreachable registry never reads as a passing check).
+set -uo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+# Resolve the venv interpreter explicitly: a bare `python3` is the SYSTEM one,
+# which has no pymongo, and would make this exit 2 ("cannot verify") on a host
+# where verification is perfectly possible.
+PY="$FW_ROOT/.venv/bin/python3"; [ -x "$PY" ] || PY="$FW_ROOT/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || command -v python)"
+
+IMAGE="${1:-}"
+if [ -z "$IMAGE" ]; then
+    IMAGE="$("$PY" -c "
+import pymongo, os
+u = os.environ.get('FW_MONGODB_URL') or 'mongodb://afl-mongodb:27017'
+c = pymongo.MongoClient(u, serverSelectionTimeoutMS=4000)['facetwork'].fleet_config.find_one({}) or {}
+print(((c.get('roles') or {}).get('osm-geocoder', {}) or {}).get('image') or '')
+" 2>/dev/null)"
+fi
+[ -z "$IMAGE" ] && { echo "verify-domain-parity: no image given and none in fleet_config" >&2; exit 2; }
+echo "image: $IMAGE"
+
+# Read the platform list from the registry HTTP API, not `docker buildx
+# imagetools`: imagetools insists on HTTPS and this registry is plain HTTP
+# ("server gave HTTP response to HTTPS client"). The docker DAEMON is fine with
+# it -- it has the host in insecure-registries -- so `docker pull --platform`
+# below still works; only the manifest read needed replacing.
+_REG="${IMAGE%%/*}"; _REST="${IMAGE#*/}"; _REPO="${_REST%:*}"; _TAG="${_REST##*:}"
+PLATFORMS="$(curl -sf \
+    -H "Accept: application/vnd.oci.image.index.v1+json" \
+    -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+    -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+    "http://$_REG/v2/$_REPO/manifests/$_TAG" 2>/dev/null \
+  | "$PY" -c "
+import json, sys
+try:
+    m = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for x in (m.get('manifests') or []):
+    p = x.get('platform') or {}
+    if p.get('architecture') in (None, 'unknown'):
+        continue
+    print(p.get('os', 'linux') + '/' + p['architecture'])
+" 2>/dev/null | sort -u)"
+[ -z "$PLATFORMS" ] && { echo "  could not read the manifest (registry unreachable, or a single-arch image)" >&2; exit 2; }
+
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+n=0
+for p in $PLATFORMS; do
+    # `docker create` does not start the container, so no emulation is involved.
+    if ! docker pull -q --platform "$p" "$IMAGE" >/dev/null 2>&1; then
+        echo "  $p: could not pull" >&2; exit 2
+    fi
+    cid="$(docker create --platform "$p" "$IMAGE" true 2>/dev/null)" || { echo "  $p: could not create" >&2; exit 2; }
+    if docker cp "$cid:/etc/afl-domain-commits" "$TMP/$(echo "$p" | tr / _)" >/dev/null 2>&1; then
+        n=$((n+1))
+    else
+        echo "  $p: no /etc/afl-domain-commits — image predates the manifest; rebuild to enable this check" >&2
+        docker rm -f "$cid" >/dev/null 2>&1; exit 2
+    fi
+    docker rm -f "$cid" >/dev/null 2>&1
+done
+[ "$n" -lt 2 ] && { echo "  only $n platform(s) — nothing to compare"; exit 0; }
+
+first=""; diverged=0
+for f in "$TMP"/*; do
+    if [ -z "$first" ]; then first="$f"; continue; fi
+    if ! diff -q "$first" "$f" >/dev/null 2>&1; then
+        diverged=1
+        echo "  DIVERGED: $(basename "$first") vs $(basename "$f")"
+        # Name the domains, not just the fact — the whole point is knowing WHICH
+        # code a given architecture is actually running.
+        join -j1 "$first" "$f" 2>/dev/null | awk '$2 != $3 {printf "    %-22s %s: %s   %s: %s\n", $1, "A", substr($2,1,12), "B", substr($3,1,12)}'
+    fi
+done
+if [ "$diverged" = 1 ]; then
+    echo "  every architecture of one tag must contain the same domain code." >&2
+    echo "  cause: a domain repo moved between the per-platform builds." >&2
+    echo "  fix:   re-run the rollout with a new FW_FLEET_DOMAINS_REF and do NOT push" >&2
+    echo "         domain commits while it builds." >&2
+    exit 1
+fi
+echo "  OK — all $n platform(s) carry identical domain commits ($(wc -l < "$first" | tr -d ' ') domains)"
+exit 0

@@ -30,6 +30,17 @@ CV_EXTRAS = {"detect", "enhance", "matte"}  # markers of heavy CV (torch/opencv)
 GH_TOKEN_FILE = Path("/run/secrets/gh_token")
 ALREADY_BAKED = {"osm-geocoder"}  # baked earlier with system deps
 BAKED_LIST = Path("/etc/afl-baked-domains")
+# domain -> commit, one per line. The names alone cannot answer "do both
+# architectures of this tag contain the same code?": each platform of a multi-arch
+# build clones INDEPENDENTLY, at different wall-clock times, and `git clone` in a
+# RUN layer is not content-addressed. A domain repo that moves mid-build therefore
+# lands at different commits per architecture UNDER ONE TAG.
+#
+# Measured 2026-09-08 in production: tag e20e532d-droadsafety-e carried unimatch
+# @3d6d8a9 on amd64 and @5822d35 on arm64 -- the fixed and the broken version of
+# the same domain, in the same tag. FW_FLEET_DOMAINS_REF busts the cache but does
+# not PIN a commit, so nothing prevented it and nothing reported it.
+COMMITS_LIST = Path("/etc/afl-domain-commits")
 
 
 def _read_token() -> str | None:
@@ -78,6 +89,7 @@ def main() -> int:
     print(f"  build secret for private repos: {'present' if token else 'absent'}", flush=True)
     baked: list[str] = []
     failed: list[str] = []
+    commits: dict[str, str] = {}
     for name, d in domains.items():
         if not isinstance(d, dict):
             continue
@@ -114,6 +126,7 @@ def main() -> int:
                 check=True,
             )
             baked.append(name)
+            commits[name] = Path(dest + ".commit").read_text().strip()
             print(
                 f"  baked {name} ({repo}) @ {Path(dest + '.commit').read_text().strip()[:12]}",
                 flush=True,
@@ -132,6 +145,17 @@ def main() -> int:
     all_baked = sorted(set(existing) | set(baked))
     BAKED_LIST.write_text("\n".join(all_baked) + "\n")
     print(f"baked domains ({len(all_baked)}): {' '.join(all_baked)}", flush=True)
+    # Merged with anything an earlier layer recorded, same as BAKED_LIST above.
+    prior = {}
+    if COMMITS_LIST.exists():
+        for line in COMMITS_LIST.read_text().split("\n"):
+            if line.strip():
+                k, _, v = line.partition(" ")
+                prior[k] = v.strip()
+    prior.update(commits)
+    COMMITS_LIST.write_text(
+        "".join(f"{k} {v}\n" for k, v in sorted(prior.items()))
+    )
     # Record the misses IN THE IMAGE. Continue-on-error is deliberate -- one bad
     # repo must not fail a 30-domain build -- but "skipped" was previously visible
     # only as a WARN buried in build output, so an image could ship without a

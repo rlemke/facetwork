@@ -117,6 +117,15 @@ def test_dockerfile_copies_every_example_that_declares_an_environment():
             f"(COPY lines: {copied}) — envbake would never see it")
 
 
+# Directories that CONTAIN COPIES of repo sources rather than sources themselves.
+# The scan below is a repo-wide rglob and does not honour .gitignore, so a
+# developer who has ever run a wheel build has build/lib/facetwork/ffl/*.ffl on
+# disk -- and the test then reports "build/ declares an environment but envbake
+# does not sweep it", which reads as a missing envbake root rather than as stale
+# output. `.venv` was already excluded for exactly this reason; these are the rest.
+_BUILD_ARTIFACTS = {".venv", "build", "dist", ".eggs", ".tox", "site-packages"}
+
+
 def test_envbake_sweeps_every_root_that_declares_an_environment():
     """⚠️ Built-in environments must be BUILT by the build, not inherited.
 
@@ -139,7 +148,7 @@ def test_envbake_sweeps_every_root_that_declares_an_environment():
     declaring = {
         p.relative_to(root).parts[0]
         for p in root.rglob("*.ffl")
-        if ".venv" not in p.parts
+        if not (_BUILD_ARTIFACTS & set(p.parts))
         and re.search(r"^\s*environment\s+[A-Z]", p.read_text(), re.M)
     }
     assert "facetwork" in declaring, "expected a built-in environment to exist"

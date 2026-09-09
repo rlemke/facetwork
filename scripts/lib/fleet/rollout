@@ -317,6 +317,33 @@ _verify_platforms() {
 PYBIN_ROLLOUT="${FW_ROOT}/.venv/bin/python3"
 [ -x "$PYBIN_ROLLOUT" ] || PYBIN_ROLLOUT=python3
 _verify_platforms; _vrc=$?
+# Domain-commit parity across architectures. `_verify_platforms` proves each
+# platform EXISTS and has data; it cannot see that they contain DIFFERENT domain
+# code. Each platform clones the fwh_* repos independently at different
+# wall-clock times, so a domain repo that moves mid-build diverges per arch under
+# one tag -- measured 2026-09-08: unimatch @3d6d8a9 on amd64 and @5822d35 on
+# arm64, the fixed and broken version of the same domain, in the same tag, on a
+# fleet where 46 of 48 runners are arm64.
+#
+# Non-fatal (a warning, not a hard stop): the check needs
+# /etc/afl-domain-commits, which images built before it lack, and a rollout must
+# not start failing on an older image just because the checker is newer. It fails
+# LOUDLY though -- a divergent image is a correctness problem, not cosmetics.
+if [ -x "$(dirname "${BASH_SOURCE[0]}")/verify-domain-parity" ]; then
+    echo "=== domain-commit parity across architectures ==="
+    if "$(dirname "${BASH_SOURCE[0]}")/verify-domain-parity" "$PUSH_IMAGE"; then
+        :
+    else
+        _prc=$?
+        if [ "$_prc" = 1 ]; then
+            echo "  ERROR: architectures of this tag contain DIFFERENT domain code." >&2
+            echo "         Re-run with a new FW_FLEET_DOMAINS_REF and do not push domain" >&2
+            echo "         commits while the build runs." >&2
+        else
+            echo "  (parity unverified — pre-manifest image or registry unreachable)" >&2
+        fi
+    fi
+fi
 if [ "$_vrc" = 1 ]; then exit 1; fi
 if [ "$_vrc" = 2 ]; then
     # A bare `[ … ] && echo` returns 1 when the test is false, which under

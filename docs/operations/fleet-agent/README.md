@@ -1,5 +1,10 @@
 # fleet-agent supervisor templates
 
+> Kept OUTSIDE `scripts/lib/` on purpose. The `fw` dispatcher treats the
+> filesystem as its command registry — every file under `scripts/lib/<group>/`
+> becomes `fw <group> <command>` — so templates placed there turn into fake
+> commands that are not executable and have no shebang.
+
 The fleet agent needs a supervisor: `fw fleet agent watch` is meant to be
 permanent, and its own watchdog deliberately hard-exits when a reconcile wedges
 (`FW_FLEET_AGENT_WATCHDOG_SECONDS`) so that something restarts it with fresh
@@ -14,9 +19,9 @@ These are the Linux files, installed on atopnuc01 2026-09-08. The macOS hosts
 ## Install (Linux / systemd)
 
 ```bash
-install -m 755 scripts/lib/fleet/templates/fleet-agent-watch.linux.sh \
+install -m 755 docs/operations/fleet-agent/fleet-agent-watch.linux.sh \
         ~/.facetwork/fleet-agent-watch.sh
-sudo install -m 644 scripts/lib/fleet/templates/facetwork-fleet-agent.service \
+sudo install -m 644 docs/operations/fleet-agent/facetwork-fleet-agent.service \
         /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now facetwork-fleet-agent
