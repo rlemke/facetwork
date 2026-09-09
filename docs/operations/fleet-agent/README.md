@@ -16,7 +16,41 @@ has its old runners registered.
 These are the Linux files, installed on atopnuc01 2026-09-08. The macOS hosts
 (MaxPro, server3) use hand-written launchd equivalents in `~/.facetwork/`.
 
-## Install (Linux / systemd)
+
+## Provisioning a brand-new Ubuntu host
+
+`setup-ubuntu-fleet-host.sh` does the whole thing from a fresh install — packages,
+SSH, remote desktop, Docker + the plain-HTTP registry, the repo and venv, the
+per-host fleet config, and this agent. It is idempotent and has a `--dry-run`.
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/rlemke/facetwork/main/docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh
+bash setup-ubuntu-fleet-host.sh --dry-run          # review the plan first
+bash setup-ubuntu-fleet-host.sh --ssh-key 'ssh-ed25519 AAAA...'
+```
+
+Options: `--group` (default `runner`), `--data-dir`, `--infra-host`,
+`--rdp remote-login|xrdp|none`, `--ssh-key`, `--no-join`.
+
+⚠️ **The default group is `runner` on purpose.** `heavy` opts the host into the
+OSM tier, where a single europe cut has peaked at **18.9 GB RSS**. On a machine
+that cannot take that, a mis-set group is an OOM kill, not a slow run.
+
+⚠️ **Choosing the RDP mode is a real decision, not a preference.** GNOME ships two
+services. *Remote Login* (system unit) needs no local session — right for a
+headless server — but hands the client over using RDP **server redirection**, and
+the Mac "Windows App" client does not follow it: it reports *"the credentials did
+not work"* **after** authentication has already succeeded. Use a
+redirection-capable client (FreeRDP: `sdl-freerdp /v:host /u:user`), or pick
+`--rdp xrdp`, which serves its own session with no handover and works with the
+Microsoft clients. *Desktop Sharing* (user unit) is the third option and is not
+scripted: it shares the existing session, needs someone logged in locally, and
+keeps its password in the GNOME keyring, which autologin typically leaves locked.
+
+Validated on atopnuc01 (Ubuntu 26.04.1 LTS, python 3.14.4, docker.io 29.1.3,
+docker-compose-v2 2.40.3).
+
+## Install (Linux / systemd) — agent only
 
 ```bash
 install -m 755 docs/operations/fleet-agent/fleet-agent-watch.linux.sh \
