@@ -88,6 +88,20 @@ def main() -> int:
         if set(extras) & CV_EXTRAS:
             print(f"  skip {name}: CV domain ({extras})", flush=True)
             continue
+        # `repo` is a NAME, not a URL -- it is interpolated into both a clone URL
+        # and a filesystem path. A full URL here yields
+        # https://github.com/rlemke/https://github.com/... and a /opt/https:/...
+        # path, failing as rc=128, which reads as "repo missing or private" and
+        # sent the first investigation looking at GitHub permissions. Say what is
+        # actually wrong. (road-safety shipped like this and nobody could see it.)
+        if "/" in repo or ":" in repo:
+            print(
+                f"  WARN: could not bake {name}: domains.json `repo` must be a bare "
+                f"repository NAME, got {repo!r} — falls back to bind-mount",
+                file=sys.stderr, flush=True,
+            )
+            failed.append(name)
+            continue
         dest = f"/opt/{repo}"
         spec = f"{dest}[{','.join(extras)}]" if extras else dest
         try:

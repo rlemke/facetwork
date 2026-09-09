@@ -82,6 +82,21 @@ NON_TERMINAL_STEP_STATES = [
     "state.statement.End",
 ]
 NON_TERMINAL_TASK_STATES = ["pending", "running"]
+# Also closed out when a run is terminated. A dead letter is already terminal to
+# the RUNTIME -- nothing will retry it -- but it stays open to the OPERATOR:
+# `fw maint dead-letters` reports it as forgotten, forever, and that check's
+# whole value is that it only fires on something worth acting on.
+#
+# Terminating a run is the operator saying its work is unrecoverable. Its dead
+# letters are part of that same work and the same decision, so leaving them
+# behind creates a permanent false alarm on an already-failed run. Measured
+# 2026-09-08: one BuildAdminSet dead letter, 3.9 days old, on a runner already in
+# state `failed`, for a set the catalog declares `expect: 0` -- it can never
+# succeed and nothing could ever close it.
+#
+# Kept as a SEPARATE list, and stamped with a distinct error, so the record of
+# what happened is not overwritten by a generic cancellation.
+OPERATOR_CLOSABLE_TASK_STATES = ["dead_letter"]
 
 
 HEARTBEAT_WINDOW_MS = 30_000  # tasks heartbeating within this window are "live"
@@ -142,6 +157,21 @@ def terminate_runner(db: Any, runner_id: str, dry: bool) -> dict[str, int]:
         db.tasks.update_many(
             task_query,
             {"$set": {"state": "canceled", "error": "terminated by operator"}},
+        )
+
+    # Dead letters, counted and stamped separately so the report distinguishes
+    # "work we stopped" from "work that had already given up".
+    dl_query: dict[str, Any] = {
+        "runner_id": runner_id,
+        "state": {"$in": OPERATOR_CLOSABLE_TASK_STATES},
+    }
+    counts["dead_letters"] = db.tasks.count_documents(dl_query)
+    if counts["dead_letters"] and not dry:
+        db.tasks.update_many(
+            dl_query,
+            {"$set": {"state": "canceled",
+                      "error": "terminated by operator (was dead_letter; "
+                               "the original failure is preserved in the step log)"}},
         )
 
     return counts
@@ -231,21 +261,26 @@ def main() -> int:
             )
             return 2
 
-    total = {"runner": 0, "steps": 0, "tasks": 0}
+    total = {"runner": 0, "steps": 0, "tasks": 0, "dead_letters": 0}
     for rid in ids:
         c = terminate_runner(db, rid, args.dry)
         prefix = "DRY " if args.dry else ""
+        # Dead letters are named in the line only when there are some: they are
+        # rare, and a permanent "dead_letters=0" trains the eye to skip the line.
+        dl = f" dead-letters→canceled={c['dead_letters']}" if c.get("dead_letters") else ""
         print(
             f"{prefix}{rid[:12]}: runner={c['runner']} "
-            f"steps→Error={c['steps']} tasks→canceled={c['tasks']}"
+            f"steps→Error={c['steps']} tasks→canceled={c['tasks']}{dl}"
         )
         for k in total:
-            total[k] += c[k]
+            total[k] += c.get(k, 0)
 
     suffix = "would change" if args.dry else "changed"
+    dl_total = (f", {total['dead_letters']} dead letter(s)"
+                if total["dead_letters"] else "")
     print(
         f"\nTotal {suffix}: {total['runner']} runner(s), "
-        f"{total['steps']} step(s), {total['tasks']} task(s)"
+        f"{total['steps']} step(s), {total['tasks']} task(s){dl_total}"
     )
     return 0
 

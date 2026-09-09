@@ -142,3 +142,27 @@ def test_rollout_passes_the_secret_by_file_not_env():
     assert "id=gh_token,env=" not in src
     assert "umask 077" in src, "the secret file must not be world-readable"
     assert 'trap ' in src and '_SECRET_DIR' in src, "the secret file must be removed on exit"
+
+
+# --------------------------------------------------------------------------
+# catalog hygiene (road-safety, found by the reporting added above)
+# --------------------------------------------------------------------------
+def test_every_catalog_repo_field_is_a_bare_name():
+    """`repo` is interpolated into BOTH a clone URL and a filesystem path.
+
+    A full URL yields https://github.com/rlemke/https://github.com/... and a
+    /opt/https:/... path. It fails as rc=128 -- indistinguishable from "missing or
+    private", which is where the first investigation went. road-safety shipped
+    like this and no image contained it, because the skip was only a build WARN.
+    """
+    import json
+    cat = json.loads((REPO / "domains.json").read_text())
+    bad = {n: s["repo"] for n, s in cat["domains"].items()
+           if isinstance(s, dict) and isinstance(s.get("repo"), str)
+           and ("/" in s["repo"] or ":" in s["repo"])}
+    assert not bad, f"repo must be a bare name: {bad}"
+
+
+def test_bake_rejects_a_malformed_repo_field_with_a_useful_message():
+    src = (REPO / "docker/bake-domains.py").read_text()
+    assert "must be a bare " in src and "repository NAME" in src
