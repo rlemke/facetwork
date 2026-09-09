@@ -110,7 +110,10 @@ info "venv package: $VENV_PKG"
 # ⚠️ docker-compose-v2 is a SEPARATE package. docker.io does NOT bring it, and its
 # absence presents as "no compose service 'runner-<name>'" for every domain —
 # which reads as compose-file drift, not a missing package. This cost real time.
-PKGS=(openssh-server docker.io docker-compose-v2 "$VENV_PKG" python3-pip
+# No python3-pip: it pulls python3-dev/libpython3-dev/zlib1g-dev and ~42 MB of
+# build headers that nothing here needs — `python3 -m venv` provides pip INSIDE
+# the venv, which is the only pip this host uses.
+PKGS=(openssh-server docker.io docker-compose-v2 "$VENV_PKG"
       git curl ca-certificates avahi-daemon libnss-mdns chrony)
 run sudo apt-get update -qq
 run sudo apt-get install -y "${PKGS[@]}"
@@ -253,16 +256,29 @@ REG="${INFRA_HOST}:${REGISTRY_PORT}"
 if [ "$DRY" = 0 ]; then
     sudo mkdir -p /etc/docker
     # Merge rather than clobber: this file may hold log/storage settings.
-    sudo python3 - "$DAEMON_JSON" "$REG" "${INFRA_IP}:${REGISTRY_PORT}" <<'PYEOF'
-import json, sys, pathlib
-p, *regs = sys.argv[1:]
+    sudo python3 - "$DAEMON_JSON" "$REG" "${INFRA_IP}:${REGISTRY_PORT}" "$REGISTRY_PORT" <<'PYEOF'
+import json, re, sys, pathlib
+p, name_reg, ip_reg, port = sys.argv[1:]
 path = pathlib.Path(p)
 try:
     cfg = json.loads(path.read_text())
 except Exception:
     cfg = {}
 cur = list(cfg.get("insecure-registries") or [])
-for r in regs:
+
+# ⚠️ PRUNE stale IP entries for this registry port before adding the current one.
+# Naively appending accumulates one address per DHCP lease the infra host has
+# ever had (measured: server3.local:5050 + .67:5050 + .112:5050 on one host).
+# That is not merely untidy -- each entry grants plain-HTTP trust to whatever
+# machine holds that address TODAY, and a released lease gets reassigned. Keep
+# the NAME (which follows the host) plus exactly the current IP.
+stale = [r for r in cur
+         if re.fullmatch(rf"\d{{1,3}}(?:\.\d{{1,3}}){{3}}:{re.escape(port)}", r)
+         and r != ip_reg]
+if stale:
+    print(f"    pruning stale registry addresses: {stale}")
+cur = [r for r in cur if r not in stale]
+for r in (name_reg, ip_reg):
     if r not in cur:
         cur.append(r)
 cfg["insecure-registries"] = cur
@@ -374,7 +390,13 @@ chk "docker compose v2 present"   "docker compose version"
 chk "infra host resolves"         "getent hosts $INFRA_HOST"
 chk "afl-mongodb resolves"        "getent hosts afl-mongodb"
 chk "registry reachable"          "curl -sf http://$REG/v2/ -o /dev/null"
-chk "sleep masked"                "systemctl is-enabled sleep.target 2>&1 | grep -q masked"
+# ⚠️ Compare the OUTPUT, not the exit code, and never through a pipe here:
+# `systemctl is-enabled` exits 1 for a masked unit while correctly printing
+# "masked", and `set -o pipefail` then makes `... | grep -q masked` fail even
+# though grep matched. That reported a FALSE FAILURE on a correctly configured
+# host — worse than a false pass, in a script whose non-zero exit says
+# "do not trust this host".
+chk "sleep masked"                '[ "$(systemctl is-enabled sleep.target 2>/dev/null || true)" = masked ]'
 chk "repo present"                "test -x $REPO_DIR/fw"
 chk "venv present"                "test -x $REPO_DIR/.venv/bin/python"
 [ "$RDP_MODE" != none ] && chk "rdp listening on 3389" "ss -tln | grep -q ':3389'"

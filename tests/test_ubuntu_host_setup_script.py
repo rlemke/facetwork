@@ -108,3 +108,46 @@ def test_infra_host_is_a_name_resolved_at_run_time():
     to remove — this fleet's infra host moved three times in two days."""
     assert 'INFRA_HOST="${FW_INFRA_HOST:-server3.local}"' in SRC
     assert "getent hosts" in SRC
+
+
+# --------------------------------------------------------------------------
+# bugs found by the first real run, on atopnuc01 (2026-09-09)
+# --------------------------------------------------------------------------
+def test_masked_check_does_not_depend_on_systemctl_exit_code():
+    """⚠️ `systemctl is-enabled <unit>` exits 1 for a MASKED unit while correctly
+    printing "masked". Under `set -o pipefail`, `... | grep -q masked` then fails
+    even though grep matched — so a correctly configured host was reported as
+    FAILING. In a script whose non-zero exit says "do not trust this host", a
+    false failure is worse than a false pass.
+    """
+    assert 'systemctl is-enabled sleep.target 2>&1 | grep -q masked' not in SRC
+    assert '= masked ]' in SRC, "compare the output, not the exit status"
+
+
+def test_pipefail_is_on_so_the_above_matters():
+    assert "set -euo pipefail" in SRC
+
+
+def test_no_python3_pip_package():
+    """It drags in python3-dev/libpython3-dev/zlib1g-dev — ~42 MB of build headers
+    for nothing. `python3 -m venv` provides the only pip this host uses."""
+    import re
+    pkgs = SRC[SRC.index("PKGS=("):SRC.index(")", SRC.index("PKGS=("))]
+    assert "python3-pip" not in pkgs
+
+
+def test_stale_registry_addresses_are_pruned():
+    """⚠️ Appending accumulates one address per DHCP lease the infra host has ever
+    had — measured as server3.local:5050 + .67:5050 + .112:5050 on one machine.
+    Each entry grants plain-HTTP trust to whatever holds that address TODAY, and a
+    released lease gets reassigned to a different device.
+    """
+    assert "pruning stale registry addresses" in SRC
+    assert "r != ip_reg" in SRC
+
+
+def test_prune_keeps_the_name_and_other_ports():
+    """The NAME follows the host across leases and must survive; an unrelated
+    registry on a different port must not be collateral damage."""
+    assert "re.escape(port)" in SRC, "prune must be scoped to this registry's port"
+    assert "for r in (name_reg, ip_reg)" in SRC
