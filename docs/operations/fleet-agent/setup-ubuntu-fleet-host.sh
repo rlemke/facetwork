@@ -159,10 +159,28 @@ if [ -n "$SSH_KEY" ]; then
     run mkdir -p "$HOME/.ssh"
     run chmod 700 "$HOME/.ssh"
     if [ "$DRY" = 0 ]; then
+        # ⚠️ VALIDATE before trusting it. A key pasted through a terminal or chat
+        # arrives wrapped or truncated more often than not, and an unusable key is
+        # SILENT: this step reports success, and you discover it only at the next
+        # login attempt — from a machine you may no longer be able to reach.
+        # ssh-keygen -l is the same parser sshd uses.
+        if ! printf '%s\n' "$SSH_KEY" | ssh-keygen -lf - >/dev/null 2>&1; then
+            warn "the --ssh-key value is NOT a valid public key (wrapped or truncated paste?)"
+            warn "not writing it. Install it from the other machine instead:"
+            # -i is NOT optional. Without it ssh-copy-id picks an identity itself
+            # (agent keys first, then whatever it finds in ~/.ssh) and will happily
+            # install a key the client never OFFERS to this host — measured on
+            # macmini01, where it installed a repo deploy key while the client kept
+            # offering id_rsa. Auth then fails with a valid key in authorized_keys.
+            warn "    ssh-copy-id -i ~/.ssh/id_rsa.pub $USER@$(hostname).local"
+            SSH_KEY=""
+        fi
+    fi
+    if [ "$DRY" = 0 ] && [ -n "$SSH_KEY" ]; then
         touch "$HOME/.ssh/authorized_keys"; chmod 600 "$HOME/.ssh/authorized_keys"
         grep -qxF "$SSH_KEY" "$HOME/.ssh/authorized_keys" \
             || printf '%s\n' "$SSH_KEY" >> "$HOME/.ssh/authorized_keys"
-        info "authorized_keys updated"
+        info "authorized_keys updated ($(printf '%s\n' "$SSH_KEY" | ssh-keygen -lf - | awk '{print $2}'))"
     else
         info "[dry] would append the given key to ~/.ssh/authorized_keys"
     fi
@@ -291,7 +309,9 @@ else
 fi
 # Socket access comes from the docker group; without it every reconcile fails
 # with a permission error that reads like a missing binary.
+NEW_DOCKER_GROUP=0
 if ! id -nG "$USER" | tr ' ' '\n' | grep -qx docker; then
+    NEW_DOCKER_GROUP=1
     run sudo usermod -aG docker "$USER"
     warn "added $USER to the 'docker' group — you must LOG OUT AND BACK IN"
     warn "(or run 'newgrp docker') before the rest of this script can use docker"
@@ -385,7 +405,18 @@ fi
 fail=0
 chk() { if eval "$2" >/dev/null 2>&1; then info "OK    $1"; else info "FAIL  $1"; fail=1; fi; }
 chk "ssh enabled"                 "systemctl is-active --quiet ssh"
-chk "docker daemon reachable"     "docker info"
+# ⚠️ Not a failure on a FIRST run: the group change this script just made does not
+# apply to the shell it is running in. Reporting an expected, documented state as
+# a FAILURE — under a banner saying "do not trust this host" — is the same
+# cry-wolf defect as the pipefail check above, and it fires on every new machine.
+if docker info >/dev/null 2>&1; then
+    chk "docker daemon reachable" "docker info"
+elif [ "$NEW_DOCKER_GROUP" = 1 ]; then
+    info "PEND  docker daemon reachable — group added this run; log out and back in"
+    pending=1
+else
+    chk "docker daemon reachable" "docker info"
+fi
 chk "docker compose v2 present"   "docker compose version"
 chk "infra host resolves"         "getent hosts $INFRA_HOST"
 chk "afl-mongodb resolves"        "getent hosts afl-mongodb"
@@ -401,9 +432,24 @@ chk "repo present"                "test -x $REPO_DIR/fw"
 chk "venv present"                "test -x $REPO_DIR/.venv/bin/python"
 [ "$RDP_MODE" != none ] && chk "rdp listening on 3389" "ss -tln | grep -q ':3389'"
 chk "agent unit installed"        "systemctl cat facetwork-fleet-agent"
-[ "$JOIN" = 1 ] && chk "agent running" "systemctl is-active --quiet facetwork-fleet-agent"
+if [ "$JOIN" = 1 ]; then
+    if [ "${pending:-0}" = 1 ]; then
+        info "PEND  agent running — blocked by the docker group change above"
+    else
+        chk "agent running" "systemctl is-active --quiet facetwork-fleet-agent"
+    fi
+fi
 
 echo
+if [ "$fail" = 0 ] && [ "${pending:-0}" = 1 ]; then
+    echo "Setup complete except for one expected step. This host is group '$SERVER_GROUP'."
+    echo
+    echo "  Log out and back in (or run 'newgrp docker'), then:"
+    echo "      sudo systemctl enable --now facetwork-fleet-agent"
+    echo
+    echo "  Nothing is wrong — a group change cannot apply to an already-running shell."
+    exit 0
+fi
 if [ "$fail" = 0 ]; then
     echo "Setup complete. This host is group '$SERVER_GROUP'."
     echo "Check it registered (from any fleet host):   fw fleet status"

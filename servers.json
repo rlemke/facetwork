@@ -50,6 +50,16 @@
       "group": "runner",
       "infra": false,
       "ip_pin": null
+    },
+    {
+      "name": "macmini01.local",
+      "aliases": [
+        "macmini01"
+      ],
+      "purpose": "light runner tier (2 cores / 3 GiB): ffl orchestration + ONE generalist runner over the cold domains. Provisioned entirely by docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh. NOT heavy - 3 GiB cannot take an OSM cut (one europe split has peaked at 18.9 GB).",
+      "group": "runner",
+      "infra": false,
+      "ip_pin": null
     }
   ]
 }

@@ -151,3 +151,61 @@ def test_prune_keeps_the_name_and_other_ports():
     registry on a different port must not be collateral damage."""
     assert "re.escape(port)" in SRC, "prune must be scoped to this registry's port"
     assert "for r in (name_reg, ip_reg)" in SRC
+
+
+# --------------------------------------------------------------------------
+# bugs found by the first run on a FRESH host, macmini01 (2026-09-09)
+# --------------------------------------------------------------------------
+def test_ssh_key_is_validated_before_being_written():
+    """⚠️ An unusable key is SILENT. A key pasted through a terminal or chat
+    arrives wrapped or truncated more often than not; the script reported
+    "authorized_keys updated" and login still failed — discoverable only at the
+    next attempt, from a machine you may no longer be able to reach.
+    ssh-keygen -l is the same parser sshd uses.
+    """
+    assert "ssh-keygen -lf -" in SRC
+    assert "NOT a valid public key" in SRC
+    assert "ssh-copy-id -i " in SRC, (
+        "must name the reliable alternative WITH -i: without it ssh-copy-id picks "
+        "its own identity and can install a key the client never offers")
+
+
+def test_a_rejected_key_does_not_get_written():
+    """Refusing must mean refusing — not warning and appending anyway."""
+    # Structural, not distance-based: assert the ORDER of the three facts, so
+    # adding explanatory comments between them cannot break the test.
+    # Search FROM the rejection onward. A bare .index() finds the variable
+    # declaration at the top of the script and the SSH phase's opening `if`,
+    # both of which precede the rejection and make the ordering look inverted.
+    reject = SRC.index("NOT a valid public key")
+    clear = SRC.index('SSH_KEY=""', reject)
+    guard = SRC.index('[ -n "$SSH_KEY" ]', clear)
+    write = SRC.index("authorized_keys updated", guard)
+    assert reject < clear < guard < write, (
+        "the rejected key must be cleared BEFORE the guarded write, or the script "
+        "warns and appends anyway")
+
+
+def test_docker_group_relogin_is_pending_not_failure():
+    """⚠️ A group change cannot apply to the shell that made it. Reporting that
+    expected first-run state as a FAILURE, under a banner reading "do not trust
+    this host", fires on every new machine — the same cry-wolf defect as the
+    pipefail check, and it would teach you to ignore the verdict that matters.
+    """
+    assert "NEW_DOCKER_GROUP" in SRC
+    assert "PEND  docker daemon reachable" in SRC
+    assert "PEND  agent running" in SRC
+
+
+def test_pending_exits_zero_with_the_next_step():
+    """Expected-and-incomplete is not failure; it must still say what to do."""
+    i = SRC.index("Setup complete except for one expected step")
+    seg = SRC[i:i + 600]
+    assert "systemctl enable --now facetwork-fleet-agent" in seg
+    assert "exit 0" in seg
+    assert "Nothing is wrong" in seg
+
+
+def test_real_failures_still_exit_nonzero():
+    assert "Setup finished WITH FAILURES" in SRC
+    assert "exit 1" in SRC
