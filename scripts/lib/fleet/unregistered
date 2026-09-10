@@ -21,7 +21,11 @@ PY="$FW_ROOT/.venv/bin/python3"; [ -x "$PY" ] || PY="$FW_ROOT/.venv/bin/python"
 docker info >/dev/null 2>&1 || { echo "unregistered: docker not reachable here" >&2; exit 2; }
 
 # Short IDs are what the runner records, so compare in that form.
-LOCAL="$(docker ps --format '{{.ID}} {{.Names}}' | awk '$2 ~ /runner/ {print $1" "$2}')"
+# Image included: a container running a DIFFERENT image than the Python runner
+# cannot carry this field at all (the gh-router is a Java agent registering
+# through the polyglot protocol), and a container running an OLDER runner image is
+# a separate, real finding rather than an unregistered one.
+LOCAL="$(docker ps --format '{{.ID}} {{.Names}} {{.Image}}' | awk '$2 ~ /runner/ {print $1" "$2" "$3}')"
 [ -z "$LOCAL" ] && { echo "no runner containers on this host"; exit 0; }
 
 "$PY" - "$LOCAL" <<'PYEOF'
@@ -29,9 +33,9 @@ import os, socket, subprocess, sys, time
 
 local = {}
 for line in (sys.argv[1] if len(sys.argv) > 1 else "").splitlines():
-    if line.strip():
-        cid, _, name = line.strip().partition(" ")
-        local[cid[:12]] = name
+    parts = line.split()
+    if len(parts) >= 3:
+        local[parts[0][:12]] = (parts[1], parts[2])
 
 try:
     import pymongo
@@ -52,6 +56,15 @@ except Exception as exc:                                   # noqa: BLE001
 registered = {(s.get("container") or "")[:12] for s in recs if s.get("container")}
 print(f"  {len(local)} runner container(s), {len(recs)} live server record(s) for this host")
 
+# The image fleet_config points at. Containers on a different image are a
+# different KIND of runner and are exempt from this check.
+try:
+    cfg = db.fleet_config.find_one({}) or {}
+    want_image = ((cfg.get("roles") or {}).get("osm-geocoder", {}) or {}).get("image") or ""
+except Exception:                                          # noqa: BLE001
+    want_image = ""
+want_tag = want_image.rsplit(":", 1)[-1] if want_image else ""
+
 # An image built before the field exists records nothing, and every container
 # would then look unregistered. Report that as could-not-tell, not as a fault.
 if recs and not registered:
@@ -60,18 +73,45 @@ if recs and not registered:
           file=sys.stderr)
     sys.exit(2)
 
-missing = {c: n for c, n in local.items() if c not in registered}
+missing, foreign, stale = {}, {}, {}
+for cid, (name, image) in local.items():
+    tag = image.rsplit(":", 1)[-1]
+    if want_tag and tag != want_tag:
+        # Same repo, older tag = a container the last rollout did not recreate.
+        # Different repo entirely = a different agent (the Java gh-router).
+        same_repo = want_image.rsplit(":", 1)[0] == image.rsplit(":", 1)[0]
+        (stale if same_repo else foreign)[cid] = (name, tag)
+        continue
+    if cid not in registered:
+        missing[cid] = name
+
 orphan = registered - set(local)
 for cid, name in sorted(missing.items(), key=lambda kv: kv[1]):
     print(f"  UNREGISTERED  {name}  ({cid})")
-for cid in sorted(orphan):
-    print(f"  record with no local container: {cid} "
-          f"(stopped container whose record has not aged out yet)")
+for cid, (name, tag) in sorted(stale.items(), key=lambda kv: kv[1][0]):
+    print(f"  STALE IMAGE   {name}  running {tag}, fleet is on {want_tag}")
+for cid, (name, tag) in sorted(foreign.items(), key=lambda kv: kv[1][0]):
+    print(f"  exempt        {name}  ({tag}) — a different agent image; it "
+          f"registers through the polyglot protocol and carries no container id")
+if orphan:
+    print(f"  {len(orphan)} record(s) with no local container — stopped containers "
+          f"whose records have not aged out (normal right after a rollout)")
+
+rc = 0
 if missing:
     print(f"\n  {len(missing)} container(s) are running but not registered — they "
           f"claim nothing. Check their logs:", file=sys.stderr)
     for name in sorted(missing.values()):
         print(f"      docker logs --tail 50 {name}", file=sys.stderr)
-    sys.exit(1)
+    rc = 1
+if stale:
+    print(f"\n  {len(stale)} container(s) run an OLD image and will never be updated "
+          f"by a rollout — the agent only brings roles UP, it does not recreate a "
+          f"role it is no longer asked to run. Remove them:", file=sys.stderr)
+    for _, (name, _t) in sorted(stale.items()):
+        print(f"      docker rm -f {name}", file=sys.stderr)
+    rc = 1
+if rc:
+    sys.exit(rc)
 print("  OK — every runner container has a live server record")
 PYEOF

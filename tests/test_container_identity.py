@@ -82,3 +82,39 @@ def test_the_checker_resolves_infra_through_the_catalog():
     src = (REPO / "scripts/lib/fleet/unregistered").read_text()
     assert "from facetwork.servers import catalog" in src
     assert ".venv/bin/python3" in src, "a bare python3 has no pymongo"
+
+
+# --------------------------------------------------------------------------
+# refinements from the first real run across the fleet (2026-09-09)
+# --------------------------------------------------------------------------
+def test_a_foreign_agent_image_is_exempt_not_flagged():
+    """⚠️ The gh-router is a JAVA agent registering through the polyglot protocol.
+    It can never carry a Python-side container id, so flagging it would fire on
+    every host that runs it — the cry-wolf pattern that makes a check worthless.
+    It is exempted AND the reason is printed, so the exemption is auditable.
+    """
+    src = (REPO / "scripts/lib/fleet/unregistered").read_text()
+    assert "exempt" in src
+    assert "polyglot protocol" in src
+    assert "same_repo" in src, "exempt by IMAGE REPO, not by a hardcoded name list"
+
+
+def test_a_container_on_an_old_tag_is_its_own_finding():
+    """⚠️ A real problem the check surfaced: macmini02's generalist was left running
+    when the host was promoted to 'heavy', so the rollout never recreated it — the
+    agent brings roles UP and does not recreate a role it is no longer asked to
+    run. It sat on an old image indefinitely. That is not "unregistered"; it is
+    stale, and it needs a different fix (docker rm).
+    """
+    src = (REPO / "scripts/lib/fleet/unregistered").read_text()
+    assert "STALE IMAGE" in src
+    assert "does not recreate a role it is no longer asked to run" in src
+    assert "docker rm -f" in src, "must name the remedy"
+
+
+def test_stale_and_unregistered_are_reported_separately():
+    """Two different causes with two different fixes must not share one label."""
+    src = (REPO / "scripts/lib/fleet/unregistered").read_text()
+    assert "missing, foreign, stale = {}, {}, {}" in src
+    # ...and orphan records right after a rollout are noise, labelled as such.
+    assert "normal right after a rollout" in src
