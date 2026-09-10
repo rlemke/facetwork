@@ -153,3 +153,33 @@ def test_container_ip_uncatalogued_name_still_resolves(cat, monkeypatch):
     monkeypatch.setattr(catalog, "_local_addresses", lambda: {"127.0.0.1"})
     monkeypatch.setattr(catalog.socket, "gethostname", lambda: "someone-else")
     assert catalog.container_ip("not-in-catalog.local") == "192.0.2.9"
+
+
+def test_host_list_falls_back_to_the_catalog():
+    """⚠️ A hand-maintained FW_RUNNER_HOSTS is what goes stale. Ours named two
+    powered-off machines and omitted two live ones, so `fleet rollout --stagger`
+    refused to flip — it pre-pulls to exactly those hosts — while the hosts it did
+    not know about pulled ~1GB unstaggered on reconcile.
+
+    The catalog already tracks the fleet by stable name and is updated on join.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1]
+           / "scripts/lib/_helpers/_remote.sh").read_text()
+    assert "from facetwork.servers import catalog" in src
+    # An explicit setting must still win: this is a fallback, not a takeover.
+    i = src.index("_afl_resolve_hosts()")
+    body = src[i:i + 2600]
+    assert body.index("FW_RUNNER_HOSTS") < body.index("catalog")
+
+
+def test_the_fallback_skips_unreachable_and_self():
+    """A catalogued machine that is simply POWERED OFF is not an error — treating
+    it as one turns 'server1 is down' into a failed rollout. And every caller acts
+    on this host locally, not over ssh."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1]
+           / "scripts/lib/_helpers/_remote.sh").read_text()
+    assert "catalog.resolve_ip(name)" in src, "must skip machines that do not resolve"
+    assert "skip machines that are simply off" in src
+    assert 'split(".")[0].lower() == me' in src, "must exclude this host"

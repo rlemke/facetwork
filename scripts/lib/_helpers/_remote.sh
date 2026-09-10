@@ -176,7 +176,40 @@ _afl_resolve_hosts() {
         # shellcheck disable=SC2086
         printf '%s\n' $FW_RUNNER_HOSTS
     else
-        echo "Error: no hosts specified. Use --host or set FW_RUNNER_HOSTS." >&2
+        # Fall back to the SERVER CATALOG rather than failing. A hand-maintained
+        # list is the thing that goes stale: ours listed two powered-off machines
+        # and omitted two live ones, which made `fleet rollout --stagger` refuse to
+        # flip (it pre-pulls to exactly these hosts) while the hosts it did not
+        # know about pulled ~1GB unstaggered on reconcile. The catalog already
+        # tracks the fleet by stable NAME and is updated when a host joins.
+        #
+        # Only hosts that RESOLVE are returned: an entry for a machine that is off
+        # is not an error, and treating it as one turns "server1 is powered down"
+        # into a failed rollout. This host is excluded — every caller acts on it
+        # locally, not over ssh.
+        local _self _out
+        _self="$(hostname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+        _out="$("${FW_PYTHON:-python3}" - "$_self" <<'_PYEOF' 2>/dev/null
+import sys
+try:
+    from facetwork.servers import catalog
+except Exception:
+    sys.exit(0)
+me = (sys.argv[1] if len(sys.argv) > 1 else "").strip().lower()
+for entry in (catalog.servers() or []):
+    name = entry.get("name") or ""
+    if not name or name.split(".")[0].lower() == me:
+        continue
+    if catalog.resolve_ip(name):        # skip machines that are simply off
+        print(name)
+_PYEOF
+)"
+        if [[ -n "$_out" ]]; then
+            printf '%s\n' "$_out"
+            return 0
+        fi
+        echo "Error: no hosts specified. Use --host, set FW_RUNNER_HOSTS, or add" >&2
+        echo "       reachable entries to servers.json." >&2
         return 1
     fi
 }
