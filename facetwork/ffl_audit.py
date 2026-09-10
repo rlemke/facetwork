@@ -87,6 +87,71 @@ CONTRACT_CHECKS = [
     ),
 ]
 
+def check_register_handlers(text: str, rel: str) -> list[str]:
+    """Structural check on `register_handlers` — the runner-registration contract.
+
+    ⚠️ Motivating failure (fwh_unimatch, found 2026-09-10 in a DEPLOYED image):
+    the function was written `def register_handlers(register)` and called its
+    argument directly. The runtime passes the RUNNER object, so every call raised
+    "'RegistryRunner' object is not callable".
+
+    What makes it worth a check is how little it disturbed. The domain installed,
+    registered its entry point, imported cleanly, seeded its workflow, and the
+    runner still scoped itself to that namespace. ONLY the handlers were missing,
+    so its tasks could never be claimed by anyone — with no error anywhere except
+    a single line at container start. Every other domain had the correct shape,
+    so nothing else surfaced it.
+
+    Structural rather than a regex: the defect is "calls its parameter" versus
+    "calls a method on its parameter", which a flat pattern expresses badly.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []                      # broken syntax is reported by other checks
+    out: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name != "register_handlers":
+            continue
+        args = [a.arg for a in node.args.args]
+        if not args:
+            out.append(f"register-handlers-contract  {rel}:{node.lineno}  "
+                       "register_handlers() takes no argument; it receives the runner")
+            continue
+        param = args[0]
+        calls_param = calls_method = False
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.Call):
+                continue
+            fn = sub.func
+            if isinstance(fn, ast.Name) and fn.id == param:
+                calls_param = True
+            if (isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name)
+                    and fn.value.id == param and fn.attr == "register_handler"):
+                calls_method = True
+        if calls_param and not calls_method:
+            # ALWAYS wrong: the runtime passes the runner object, so calling it
+            # raises TypeError on every invocation.
+            out.append(f"register-handlers-contract  {rel}:{node.lineno}  "
+                       f"calls {param}(...) directly; the runtime passes the RUNNER, "
+                       f"so use {param}.register_handler(facet_name=..., "
+                       f"module_uri=..., entrypoint=...) — no handler is registered, "
+                       f"and this domain's tasks cannot be claimed by anyone")
+        elif not calls_method:
+            # ⚠️ NOT reported here. A repo may hold many handler modules and a
+            # no-op stub among them is harmless — fwh_osm has exactly that
+            # (`register_handlers(runner): pass` in boundary_handlers.py) while
+            # registering its facets from other modules and running the fleet's
+            # heaviest workload. Reporting it per-file would raise a false alarm
+            # on the biggest domain, which is how a check earns being ignored.
+            # The caller decides, once it has seen every module in the repo.
+            out.append(f"register-handlers-noop  {rel}:{node.lineno}  "
+                       f"registers nothing")
+    return out
+
+
 DEFAULT_ROOT = os.environ.get("FWH_HANDLERS_ROOT") or str(pathlib.Path.home() / "fw_handlers")
 
 
@@ -171,6 +236,7 @@ def scan_contracts(repo: pathlib.Path) -> list[str]:
     written to prevent exactly this drift.
     """
     hits: list[str] = []
+    registers_somewhere = False
     for py in sorted(repo.rglob("*.py")):
         parts = py.parts
         # Same exclusion set as the FFL scan: the two used to differ, so a build
@@ -188,6 +254,22 @@ def scan_contracts(repo: pathlib.Path) -> list[str]:
                 if pattern.search(line):
                     rel = py.relative_to(repo)
                     hits.append(f"{label}  {rel}:{n}  {line.strip()[:80]}")
+        if "register_handlers" in text:
+            hits.extend(check_register_handlers(text, str(py.relative_to(repo))))
+            if "register_handler(" in text:
+                registers_somewhere = True
+    # ⚠️ A no-op `register_handlers` matters ONLY when nothing in the repo
+    # registers anything. A repo may hold many handler modules and a stub among
+    # them is harmless: fwh_osm ships exactly that (`register_handlers(runner):
+    # pass` in boundary_handlers.py) while registering its facets elsewhere and
+    # running the fleet's heaviest workload. Reporting it per-file would put a
+    # false alarm on the biggest domain, which is how a check earns being ignored.
+    if registers_somewhere:
+        hits = [h for h in hits if not h.startswith("register-handlers-noop")]
+    else:
+        hits = [("register-handlers-contract  " + h.split("  ", 1)[1] +
+                 "  — and NO module in this repo registers a handler at all")
+                if h.startswith("register-handlers-noop") else h for h in hits]
     return hits
 
 
