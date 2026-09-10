@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# fw-summary: name the runner containers on this host that have no server record
+#
+# ⚠️ Exists because a count mismatch was UNDIAGNOSABLE. Every runner on a host
+# registers with the same `server_name` and the same `service_name`
+# ("afl-runner"), so "23 containers but 22 records" resolved to a number and
+# nothing else. Three hosts showed it at once and none could be investigated.
+#
+# Runners now record their short container ID, which is the one identifier that
+# maps 1:1 to `docker ps`. This compares the two sets and NAMES the difference.
+#
+# Exit: 0 all containers accounted for · 1 at least one is unregistered ·
+#       2 could not tell (no docker, no Mongo, or an image predating the field —
+#       kept distinct so "cannot verify" never reads as "all good").
+set -uo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+PY="$FW_ROOT/.venv/bin/python3"; [ -x "$PY" ] || PY="$FW_ROOT/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || command -v python)"
+
+docker info >/dev/null 2>&1 || { echo "unregistered: docker not reachable here" >&2; exit 2; }
+
+# Short IDs are what the runner records, so compare in that form.
+LOCAL="$(docker ps --format '{{.ID}} {{.Names}}' | awk '$2 ~ /runner/ {print $1" "$2}')"
+[ -z "$LOCAL" ] && { echo "no runner containers on this host"; exit 0; }
+
+"$PY" - "$LOCAL" <<'PYEOF'
+import os, socket, subprocess, sys, time
+
+local = {}
+for line in (sys.argv[1] if len(sys.argv) > 1 else "").splitlines():
+    if line.strip():
+        cid, _, name = line.strip().partition(" ")
+        local[cid[:12]] = name
+
+try:
+    import pymongo
+    from facetwork.servers import catalog
+    infra = catalog.infra()
+    ip = catalog.resolve_ip(infra) if infra else None
+    url = os.environ.get("FW_MONGODB_URL") or (f"mongodb://{ip}:27017" if ip
+                                               else "mongodb://afl-mongodb:27017")
+    db = pymongo.MongoClient(url, serverSelectionTimeoutMS=6000)["facetwork"]
+    now = int(time.time() * 1000)
+    host = socket.gethostname().split(".")[0].lower()
+    recs = [s for s in db.servers.find({"ping_time": {"$gt": now - 180_000}})
+            if (s.get("server_name") or "").split(".")[0].lower() == host]
+except Exception as exc:                                   # noqa: BLE001
+    print(f"unregistered: cannot reach MongoDB ({type(exc).__name__})", file=sys.stderr)
+    sys.exit(2)
+
+registered = {(s.get("container") or "")[:12] for s in recs if s.get("container")}
+print(f"  {len(local)} runner container(s), {len(recs)} live server record(s) for this host")
+
+# An image built before the field exists records nothing, and every container
+# would then look unregistered. Report that as could-not-tell, not as a fault.
+if recs and not registered:
+    print("  none of the records carry a container ID — this host runs an image "
+          "predating the field; roll out a newer one to enable this check",
+          file=sys.stderr)
+    sys.exit(2)
+
+missing = {c: n for c, n in local.items() if c not in registered}
+orphan = registered - set(local)
+for cid, name in sorted(missing.items(), key=lambda kv: kv[1]):
+    print(f"  UNREGISTERED  {name}  ({cid})")
+for cid in sorted(orphan):
+    print(f"  record with no local container: {cid} "
+          f"(stopped container whose record has not aged out yet)")
+if missing:
+    print(f"\n  {len(missing)} container(s) are running but not registered — they "
+          f"claim nothing. Check their logs:", file=sys.stderr)
+    for name in sorted(missing.values()):
+        print(f"      docker logs --tail 50 {name}", file=sys.stderr)
+    sys.exit(1)
+print("  OK — every runner container has a live server record")
+PYEOF

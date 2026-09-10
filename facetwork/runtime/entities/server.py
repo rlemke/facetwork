@@ -1,6 +1,45 @@
 """Server and handler registration entity definitions."""
 
+import os
+import re
 from dataclasses import dataclass, field
+from functools import lru_cache
+
+_CID = re.compile(r"\b([0-9a-f]{64})\b")
+
+
+@lru_cache(maxsize=1)
+def container_id() -> str:
+    """This process's container ID, or "" when not containerised.
+
+    ⚠️ Exists because a count mismatch on a host was UNDIAGNOSABLE. Every runner
+    on a host registers with the same ``server_name`` and the same
+    ``service_name`` ("afl-runner"), so "23 containers but 22 records" could not
+    be resolved to a NAME from the data — only to a number. Three hosts showed it
+    simultaneously and none could be investigated.
+
+    Read from /proc rather than from the hostname: compose may set a hostname, and
+    an operator certainly may, at which point the hostname stops being the
+    container ID and the mapping silently breaks. cgroup v1 puts the ID in
+    /proc/self/cgroup; under cgroup v2 that file often carries only "0::/", so
+    mountinfo is checked too. Returns "" rather than guessing — a bare-metal
+    runner has no container, and inventing one would make it look like a
+    container nobody can find.
+    """
+    for path in ("/proc/self/cgroup", "/proc/self/mountinfo"):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                m = _CID.search(fh.read())
+        except OSError:
+            continue
+        if m:
+            return m.group(1)[:12]
+    # Podman and some runtimes expose it directly; cheap to honour.
+    for var in ("HOSTNAME_CONTAINER_ID", "CONTAINER_ID"):
+        v = (os.environ.get(var) or "").strip()
+        if re.fullmatch(r"[0-9a-f]{12,64}", v):
+            return v[:12]
+    return ""
 
 
 class ServerState:
@@ -58,6 +97,13 @@ class ServerDefinition:
     # "16 GB" lies, and the OOM this exists to prevent was against a real
     # 7.75 GiB Docker VM.
     resources: dict = field(default_factory=dict)
+    # Short container ID of the process that registered this record, or "" on a
+    # bare-metal runner. A default_factory ON PURPOSE: three separate subclasses
+    # build ServerDefinition independently (RegistryRunner, AgentPoller,
+    # RunnerService), and a field set at the call sites would be added to one and
+    # missed by the others — the recurring shape of bugs in this codebase. Computed
+    # here, no caller can omit it.
+    container: str = field(default_factory=container_id)
 
 
 @dataclass
