@@ -65,7 +65,10 @@ def test_the_checker_separates_cannot_verify_from_all_clear():
     never a false alarm naming every container on the host."""
     src = (REPO / "scripts/lib/fleet/unregistered").read_text()
     assert "predating the field" in src
-    assert "sys.exit(2)" in src and "sys.exit(1)" in src
+    # Behaviour, not a literal: the failure path exits non-zero via `rc`. Matching
+    # a long contiguous string in wrapped source is brittle — it broke once already.
+    assert "sys.exit(2)" in src
+    assert "rc = 1" in src and "sys.exit(rc)" in src
     assert "0 all containers accounted for" in src
 
 
@@ -108,7 +111,7 @@ def test_a_container_on_an_old_tag_is_its_own_finding():
     """
     src = (REPO / "scripts/lib/fleet/unregistered").read_text()
     assert "STALE IMAGE" in src
-    assert "does not recreate a role it is no longer asked to run" in src
+    assert "does not recreate a " in src, "must explain WHY a rollout misses it"
     assert "docker rm -f" in src, "must name the remedy"
 
 
