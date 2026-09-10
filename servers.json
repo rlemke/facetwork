@@ -64,6 +64,16 @@
       "group": "runner",
       "infra": false,
       "ip_pin": null
+    },
+    {
+      "name": "macmini02.local",
+      "aliases": [
+        "macmini02"
+      ],
+      "purpose": "12 cores / 30 GiB / 852 GB free — the largest non-infra host. Currently group 'runner' (ffl + one generalist), which UNDER-USES it: 30 GiB clears the 18.9 GB peak of a europe OSM cut, so this is the first light-tier host that could credibly join 'heavy'. Provisioned by docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh.",
+      "group": "runner",
+      "infra": false,
+      "ip_pin": null
     }
   ]
 }
