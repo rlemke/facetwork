@@ -74,6 +74,16 @@
       "group": "heavy",
       "infra": false,
       "ip_pin": null
+    },
+    {
+      "name": "macmini03.local",
+      "aliases": [
+        "macmini03"
+      ],
+      "purpose": "12 cores / 30 GiB, same class as macmini02 — but only ~87 GB free on / against macmini02's ~850 GB. Group 'runner' (ffl + one generalist). ⚠️ Memory would allow the heavy tier; DISK is the reason to hold off — OSM cuts stage tens of GB of scratch, and FW_DATA_DIR here is on the root filesystem. Provisioned by docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh. Macmini8,1-class hardware: built-in Wi-Fi has no usable Linux firmware, ETHERNET ONLY.",
+      "group": "runner",
+      "infra": false,
+      "ip_pin": null
     }
   ]
 }

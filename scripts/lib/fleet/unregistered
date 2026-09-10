@@ -85,6 +85,32 @@ for cid, (name, image) in local.items():
     if cid not in registered:
         missing[cid] = name
 
+# ⚠️ GRACE PERIOD. Registration is not instant: the generalist seeds 21 domains and
+# loads several hundred handlers before it registers, which takes tens of seconds.
+# A container younger than that ALWAYS looks unregistered, so without this the
+# check cries wolf on every fresh join and after every rollout — measured on
+# macmini03, where a 7-second-old generalist was flagged and was fine 20s later.
+# Only the flagged containers are inspected, so this costs one call per finding
+# (usually zero).
+GRACE_S = 120
+if missing:
+    import datetime
+    still = {}
+    for cid, name in missing.items():
+        try:
+            out = subprocess.run(["docker", "inspect", "-f",
+                                  "{{.State.StartedAt}}", cid],
+                                 capture_output=True, text=True, timeout=10).stdout.strip()
+            started = datetime.datetime.fromisoformat(out.replace("Z", "+00:00"))
+            age = (datetime.datetime.now(datetime.timezone.utc) - started).total_seconds()
+        except Exception:                                   # noqa: BLE001
+            age = GRACE_S + 1                               # cannot tell: report it
+        if age < GRACE_S:
+            print(f"  starting     {name}  ({int(age)}s old, still registering)")
+        else:
+            still[cid] = name
+    missing = still
+
 orphan = registered - set(local)
 for cid, name in sorted(missing.items(), key=lambda kv: kv[1]):
     print(f"  UNREGISTERED  {name}  ({cid})")

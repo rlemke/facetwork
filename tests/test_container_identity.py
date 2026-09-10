@@ -121,3 +121,25 @@ def test_stale_and_unregistered_are_reported_separately():
     assert "missing, foreign, stale = {}, {}, {}" in src
     # ...and orphan records right after a rollout are noise, labelled as such.
     assert "normal right after a rollout" in src
+
+
+def test_the_checker_has_a_registration_grace_period():
+    """⚠️ Registration is not instant — the generalist seeds 21 domains and loads
+    several hundred handlers first. A container younger than that ALWAYS looks
+    unregistered, so without a grace period the check fires on every fresh join
+    and after every rollout. Measured on macmini03: a 7-second-old generalist was
+    flagged and was fine 20 seconds later.
+    """
+    src = (REPO / "scripts/lib/fleet/unregistered").read_text()
+    assert "GRACE_S" in src
+    assert "still registering" in src, "a starting container must be shown, not hidden"
+    # Inspecting only the FLAGGED containers keeps the cost at zero when clean.
+    i = src.index("GRACE_S = ")
+    assert "if missing:" in src[i:i + 200]
+
+
+def test_an_unreadable_start_time_is_reported_not_excused():
+    """If the age cannot be determined, the container must still be flagged —
+    a grace period must not become a way for findings to disappear."""
+    src = (REPO / "scripts/lib/fleet/unregistered").read_text()
+    assert "cannot tell: report it" in src
