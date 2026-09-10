@@ -70,8 +70,8 @@
       "aliases": [
         "macmini02"
       ],
-      "purpose": "12 cores / 30 GiB / 852 GB free — the largest non-infra host. Currently group 'runner' (ffl + one generalist), which UNDER-USES it: 30 GiB clears the 18.9 GB peak of a europe OSM cut, so this is the first light-tier host that could credibly join 'heavy'. Provisioned by docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh.",
-      "group": "runner",
+      "purpose": "12 cores / 30 GiB / 850 GB free — the largest-memory host in the fleet, promoted to 'heavy' 2026-09-09. It is the only host besides server3 that clears the 18.9 GB peak of a europe OSM cut with headroom (MaxPro is in 'heavy' with 7.75 GB and relies on resource-aware claim routing to keep the big cuts away). Runs the OSM tier + gh-router + the per-domain runners; the generalist container from its light-tier phase was left running, since gating a role out does not stop an already-running one. ⚠️ Macmini8,1 (T2): the built-in BCM4364 Wi-Fi has NO usable firmware on Linux (Apple-proprietary, ships only in macOS, which is wiped here) — ETHERNET ONLY, which is the correct medium for a runner anyway.",
+      "group": "heavy",
       "infra": false,
       "ip_pin": null
     }

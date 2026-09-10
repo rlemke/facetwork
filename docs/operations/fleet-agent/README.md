@@ -17,6 +17,33 @@ These are the Linux files, installed on atopnuc01 2026-09-08. The macOS hosts
 (MaxPro, server3) use hand-written launchd equivalents in `~/.facetwork/`.
 
 
+
+## ⚠️ Wi-Fi does not work on T2 Macs — use Ethernet
+
+On a 2018–2020 Intel Mac (Macmini8,1 and friends) the built-in Broadcom Wi-Fi
+(BCM4364) has **no usable firmware on Linux**. `brcmfmac` loads and identifies the
+chip correctly, then fails with:
+
+    Direct firmware load for brcm/brcmfmac4364b2-pcie.bin failed with error -2
+    brcmf_pcie_setup: Dongle setup failed
+
+`-2` is *file not found*. The firmware is Apple-proprietary, ships only inside
+macOS, and no apt package provides it — so if macOS has been wiped there is no
+local source. No interface is created, so Settings shows no Wi-Fi panel at all,
+which reads as a configuration problem and is not one. Bluetooth fails the same
+way (`BCM: firmware Patch file not found`).
+
+**Use Ethernet, and not merely as a workaround.** The dead-server reaper treats a
+heartbeat gap as a dead host and reclaims its tasks, and delivery is at-least-once
+with no fencing token — so a Wi-Fi dropout does not pause a runner, it hands that
+runner's in-flight work to another host **while its handlers keep running**. That
+is the duplicate-execution window. Wired is the correct medium for a fleet host.
+
+If you genuinely need wireless: a USB adapter with an in-tree driver (MediaTek
+MT7612U, Realtek RTL8812AU) works immediately. Recovering the built-in radio means
+extracting the firmware from a macOS source — see t2linux.org — and needs the exact
+board variant the kernel names in the log (`apple,lanai` on a Macmini8,1).
+
 ## Provisioning a brand-new Ubuntu host
 
 `setup-ubuntu-fleet-host.sh` does the whole thing from a fresh install — packages,
