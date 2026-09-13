@@ -34,3 +34,25 @@ export FW_ROOT
 FW_LIB="$FW_ROOT/scripts/lib"
 REPO_ROOT="$FW_ROOT"   # back-compat alias for existing script bodies
 export FW_LIB REPO_ROOT
+
+# --- interpreter selection -------------------------------------------------
+# Every python-based command file starts with `#!/usr/bin/env python3`, so the
+# interpreter is whatever PATH resolves — historically the SYSTEM/Homebrew
+# python3, not this repo's venv. That has bitten twice:
+#   1. `facetwork`/`pymongo` missing there -> the command dies at import.
+#   2. macOS Local Network Privacy is granted PER BINARY. Homebrew moving its
+#      `python3` symlink to a new minor (3.12 -> 3.14) produced an UNGRANTED
+#      binary, and every LAN connection from it failed with "No route to host"
+#      / a silent timeout while the same call from .venv/bin/python succeeded.
+#      A CLI cannot raise the permission prompt, so nothing ever re-grants it.
+#      Symptom: `fw fleet status` reporting "could not discover MongoDB" against
+#      an infra host that is demonstrably up and serving every other client.
+# Putting the venv first makes `env python3` resolve to the interpreter the repo
+# is actually installed into. Skipped when there is no venv (runner images run
+# python from the image), and never clobbers an explicit FW_PYTHON_NO_VENV=1.
+if [ -z "${FW_PYTHON_NO_VENV:-}" ] && [ -x "$FW_ROOT/.venv/bin/python3" ]; then
+    case ":$PATH:" in
+        *":$FW_ROOT/.venv/bin:"*) ;;
+        *) PATH="$FW_ROOT/.venv/bin:$PATH"; export PATH ;;
+    esac
+fi
