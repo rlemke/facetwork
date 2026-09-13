@@ -142,12 +142,33 @@ def _measure() -> dict:
         res["memory_gb"] = round(mem_bytes / (1024 ** 3), 2)
 
     # Scratch: free space where this runner actually stages, not "/".
+    #
+    # ⚠️ Measure the nearest EXISTING ancestor, not the leaf. The staging dir is
+    # created on first use, so on a host that has not run this domain yet the
+    # leaf does not exist and `disk_usage` raises FileNotFoundError — which used
+    # to drop `scratch_gb` entirely. That is not a harmless omission: an
+    # unadvertised dimension makes the runner DECLINE every task carrying a
+    # scratch floor (mongo_store/tasks.py: "a runner that cannot measure
+    # something must not assume it fits"), so the host silently never claims
+    # that work. Measured 2026-09-13: 20 of macmini02's 23 runners advertised no
+    # scratch at all while sitting on 847 free GB, because only the osm
+    # containers had ever created their staging dir.
+    #
+    # Walking up is still an honest measurement — every ancestor is on the same
+    # filesystem the leaf will be created on. If nothing on the path exists we
+    # still omit the dimension rather than guess.
     scratch = (_os.environ.get("FW_LOCAL_SCRATCH")
                or _os.environ.get("FW_OUTPUT_BASE") or "/tmp")
-    try:
-        res["scratch_gb"] = round(_shutil.disk_usage(scratch).free / (1024 ** 3), 1)
-    except Exception:
-        pass
+    probe = _os.path.abspath(scratch)
+    while True:
+        try:
+            res["scratch_gb"] = round(_shutil.disk_usage(probe).free / (1024 ** 3), 1)
+            break
+        except Exception:
+            parent = _os.path.dirname(probe)
+            if parent == probe:      # reached the root and still nothing
+                break
+            probe = parent
     return res
 
 
