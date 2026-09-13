@@ -1,19 +1,34 @@
 {
-  "_comment": "Server catalog — the fleet's machines by STABLE NAME (mDNS/DNS), not IP. Anything that needs a fleet machine resolves it from here at startup/reconcile time (facetwork/servers/catalog.py), so a DHCP-drifted address heals on the next resolution instead of requiring /etc/hosts edits on every host. Per-deployment override: servers.local.json (merged over this file, matched by name; top-level \"_remove\": [names] drops entries) or FW_SERVERS_FILE=<path> (full replace). Set ip_pin ONLY for hosts that mDNS/DNS cannot resolve (e.g. across subnets) — a pinned IP reintroduces the drift problem this file exists to remove. See servers.example.json and docs/reference/server-catalog.md.",
+  "_comment": "Server catalog — the fleet's machines by STABLE NAME (mDNS/DNS), not IP. Anything that needs a fleet machine resolves it from here at startup/reconcile time (facetwork/servers/catalog.py), so a DHCP-drifted address heals on the next resolution instead of requiring /etc/hosts edits on every host. Per-deployment override: servers.local.json (merged over this file, matched by name; top-level \"_remove\": [names] drops entries) or FW_SERVERS_FILE=<path> (full replace). Set ip_pin ONLY for hosts that mDNS/DNS cannot resolve (e.g. across subnets) — a pinned IP reintroduces the drift problem this file exists to remove. See servers.example.json and docs/reference/server-catalog.md. The per-server `capacity` block is a MEASURED, dated record (2026-09-13) for capacity-aware placement (docs/architecture/server-groups.md §6.1) — it is descriptive only. The number routing actually matches on is what each runner advertises in its `servers.resources` record, measured from the cgroup limit inside the container; `container_memory_gb` here is that same number, so a divergence between the two means this file has gone stale.",
   "version": 1,
   "servers": [
     {
       "name": "server3.local",
       "aliases": [
-        "afl-mongodb",
         "afl-minio",
         "afl-postgres",
         "server3"
       ],
-      "purpose": "infra: MongoDB, MinIO, PostGIS, dashboard, image registry (+ heavy runner tier, 14 TB disk)",
+      "purpose": "infra: MinIO, PostGIS, dashboard, image registry, osm-extracts server (+ heavy runner tier, 14 TB disk). ⚠️ NO LONGER THE MONGODB HOST — the fleet's control plane moved to beelink01 on 2026-09-13. MinIO stayed because it stayed on server3; that split is why the afl-* names resolve per service instead of all pointing here.",
       "group": "heavy",
       "infra": true,
-      "ip_pin": null
+      "ip_pin": null,
+      "capacity": {
+        "tier": "heavy",
+        "arch": "arm64",
+        "cores": 12,
+        "host_ram_gb": 32,
+        "container_memory_gb": 23.43,
+        "scratch_path": "/Volumes/afl_data",
+        "scratch_total_gb": 14903,
+        "scratch_free_gb": 3581,
+        "credentials": [
+          "CENSUS_API_KEY",
+          "ANTHROPIC_API_KEY",
+          "GITHUB_TOKEN"
+        ],
+        "note": "Docker VM deliberately tuned to 24 GiB of the 32 GB host. Clears the 18.9 GB europe-cut peak. Only host with GITHUB_TOKEN, so map publishing is server3-only."
+      }
     },
     {
       "name": "MaxPro.local",
@@ -23,47 +38,22 @@
       "purpose": "heavy runner tier (osm PBF imports, wide fan-outs)",
       "group": "heavy",
       "infra": false,
-      "ip_pin": null
-    },
-    {
-      "name": "server1.local",
-      "aliases": [
-        "server1"
-      ],
-      "purpose": "light runner tier (ffl orchestration + ONE generalist runner over the cold domains). Being converted to Ubuntu 26; provision with docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh (defaults are correct for these: --group runner, --rdp remote-login). NOT heavy - the OSM tier needs headroom one europe cut has pushed to 18.9 GB. Intel hardware, but NO longer emulated: the fleet image is multi-arch (linux/amd64 + linux/arm64) since 2026-09, so these run amd64 natively.",
-      "group": "runner",
-      "infra": false,
-      "ip_pin": null
-    },
-    {
-      "name": "server2.local",
-      "aliases": [
-        "server2"
-      ],
-      "purpose": "light runner tier (ffl orchestration + ONE generalist runner over the cold domains). Being converted to Ubuntu 26; provision with docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh (defaults are correct for these: --group runner, --rdp remote-login). NOT heavy - the OSM tier needs headroom one europe cut has pushed to 18.9 GB. Intel hardware, but NO longer emulated: the fleet image is multi-arch (linux/amd64 + linux/arm64) since 2026-09, so these run amd64 natively.",
-      "group": "runner",
-      "infra": false,
-      "ip_pin": null
-    },
-    {
-      "name": "atopnuc01.local",
-      "aliases": [
-        "atopnuc01"
-      ],
-      "purpose": "light runner tier (2 cores / 6.7 GiB): ffl orchestration + ONE generalist runner over 19 cold domains. Deliberately NOT in the heavy group - a europe OSM cut has peaked at 18.9 GB here, so the group gate is what keeps that work off this box.",
-      "group": "runner",
-      "infra": false,
-      "ip_pin": null
-    },
-    {
-      "name": "macmini01.local",
-      "aliases": [
-        "macmini01"
-      ],
-      "purpose": "light runner tier (2 cores / 3 GiB): ffl orchestration + ONE generalist runner over the cold domains. Provisioned entirely by docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh. NOT heavy - 3 GiB cannot take an OSM cut (one europe split has peaked at 18.9 GB).",
-      "group": "runner",
-      "infra": false,
-      "ip_pin": null
+      "ip_pin": null,
+      "capacity": {
+        "tier": "heavy",
+        "arch": "arm64",
+        "cores": 16,
+        "host_ram_gb": 64,
+        "container_memory_gb": 31.29,
+        "scratch_path": "/Volumes/afl_data_local/scratch",
+        "scratch_total_gb": 3725,
+        "scratch_free_gb": 3342,
+        "credentials": [
+          "CENSUS_API_KEY",
+          "ANTHROPIC_API_KEY"
+        ],
+        "note": "Docker VM RAISED 7.75 -> 31.29 GiB on 2026-09-13 (MemoryMiB 32768 written into settings-store.json, which previously carried no memory key at all and so ran on the Docker Desktop default). Before that this 64 GB host advertised the SMALLEST capacity of any heavy member and could not serve the tier's defining workload - a europe OSM cut peaks at 18.9 GB - which had already cost a real OOM (a Kreise split, 2026-08-26). It now clears that peak with headroom and is heavy on merit rather than by exception. 32 GiB of 64 leaves half the host to macOS."
+      }
     },
     {
       "name": "macmini02.local",
@@ -73,7 +63,120 @@
       "purpose": "12 cores / 30 GiB / 850 GB free — the largest-memory host in the fleet, promoted to 'heavy' 2026-09-09. It is the only host besides server3 that clears the 18.9 GB peak of a europe OSM cut with headroom (MaxPro is in 'heavy' with 7.75 GB and relies on resource-aware claim routing to keep the big cuts away). Runs the OSM tier + gh-router + the per-domain runners; the generalist container from its light-tier phase was left running, since gating a role out does not stop an already-running one. ⚠️ Macmini8,1 (T2): the built-in BCM4364 Wi-Fi has NO usable firmware on Linux (Apple-proprietary, ships only in macOS, which is wiped here) — ETHERNET ONLY, which is the correct medium for a runner anyway.",
       "group": "heavy",
       "infra": false,
-      "ip_pin": null
+      "ip_pin": null,
+      "capacity": {
+        "tier": "heavy",
+        "arch": "x86_64",
+        "cores": 12,
+        "host_ram_gb": 30,
+        "container_memory_gb": 30.69,
+        "scratch_path": "/home/ralph_lemke/fw_data",
+        "scratch_total_gb": 916,
+        "scratch_free_gb": 847,
+        "credentials": [
+          "CENSUS_API_KEY",
+          "ANTHROPIC_API_KEY"
+        ],
+        "note": "Largest container memory in the fleet (30.69 GiB) with the disk to match (847 GB free) - the strongest heavy member on paper. CENSUS_API_KEY + ANTHROPIC_API_KEY installed 2026-09-13; before that it ran the census and anthropic per-domain runners with no credentials at all, i.e. it would claim their tasks and dead-letter them."
+      }
+    },
+    {
+      "name": "atopnuc01.local",
+      "aliases": [
+        "atopnuc01"
+      ],
+      "purpose": "light runner tier (2 cores / 6.7 GiB): ffl orchestration + ONE generalist runner over 19 cold domains. Deliberately NOT in the heavy group - a europe OSM cut has peaked at 18.9 GB here, so the group gate is what keeps that work off this box.",
+      "group": "runner",
+      "infra": false,
+      "ip_pin": null,
+      "capacity": {
+        "tier": "light",
+        "arch": "x86_64",
+        "cores": 2,
+        "host_ram_gb": 6,
+        "container_memory_gb": 6.71,
+        "scratch_path": "/home/ralph_lemke/fw_data",
+        "scratch_total_gb": 98,
+        "scratch_free_gb": 91,
+        "credentials": [
+          "CENSUS_API_KEY",
+          "ANTHROPIC_API_KEY"
+        ],
+        "note": "Correctly tiered. 2 cores / 6.71 GiB serves ffl orchestration + one generalist runner over the cold domains."
+      }
+    },
+    {
+      "name": "atopnuc02.local",
+      "aliases": [
+        "atopnuc02"
+      ],
+      "purpose": "light runner tier, same class as atopnuc01 (2 cores / ~6 GiB). ADDED 2026-09-13 with the site move; NOT yet provisioned — it answers on the network but has no fleet-agent and registers no runners, and this host's SSH key is not installed on it (publickey denied). Provision with docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh (defaults are correct: --group runner, --rdp remote-login). NOT heavy — 6 GiB cannot take an OSM cut (one europe split has peaked at 18.9 GB).",
+      "group": "runner",
+      "infra": false,
+      "ip_pin": null,
+      "capacity": {
+        "tier": "light (assumed — UNVERIFIED)",
+        "arch": null,
+        "cores": null,
+        "host_ram_gb": null,
+        "container_memory_gb": null,
+        "scratch_path": null,
+        "scratch_total_gb": null,
+        "scratch_free_gb": null,
+        "credentials": null,
+        "note": "NOT MEASURED - this host rejects the fleet's SSH key, so every figure here would be a guess. Tier is assumed from atopnuc01 (same model) and must be confirmed once it is provisioned. It advertises nothing to claim routing, so it currently declines all work."
+      }
+    },
+    {
+      "name": "beelink01.local",
+      "aliases": [
+        "afl-mongodb",
+        "beelink01"
+      ],
+      "purpose": "heavy runner tier AND the fleet's MONGODB host since 2026-09-13 (Ubuntu 26.04.1, AMD Ryzen AI 9 HX 470, 24 threads). ⚠️ Mongo's dbPath is /run/media/ralph_lemke/data/mongodb/data on /dev/nvme1n1p4 — a udisks SESSION auto-mount, NOT in /etc/fstab. The container uses a long-form bind with create_host_path:false so it REFUSES to start when that volume is absent; with the short -v form a reboot without a desktop login would have silently started an EMPTY control plane. Add an fstab entry to fix this properly.",
+      "group": "heavy",
+      "infra": false,
+      "ip_pin": null,
+      "capacity": {
+        "tier": "heavy",
+        "arch": "x86_64",
+        "cores": 24,
+        "host_ram_gb": 30,
+        "container_memory_gb": 30.48,
+        "scratch_path": "/home/ralph_lemke/fw_data",
+        "scratch_total_gb": 915,
+        "scratch_free_gb": 850,
+        "credentials": [
+          "CENSUS_API_KEY",
+          "ANTHROPIC_API_KEY"
+        ],
+        "note": "Promoted runner -> heavy on MEASUREMENT, 2026-09-13: 30.48 GiB docker limit clears the 18.9 GB europe-cut peak, 850 GB free on the nvme holding FW_DATA_DIR, PostGIS reachable, API keys installed. Docker runs natively here (no VM), so 30.48 GiB is the real cgroup limit. ⚠️ FW_OSM_REPLICAS=1 is deliberate and should stay: two concurrent europe-class cuts would want ~37.8 GB against this host's 30.48."
+      }
+    },
+    {
+      "name": "macmini01.local",
+      "aliases": [
+        "macmini01"
+      ],
+      "purpose": "light runner tier (2 cores / 3 GiB): ffl orchestration + ONE generalist runner over the cold domains. Provisioned entirely by docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh. NOT heavy - 3 GiB cannot take an OSM cut (one europe split has peaked at 18.9 GB).",
+      "group": "runner",
+      "infra": false,
+      "ip_pin": null,
+      "capacity": {
+        "tier": "light",
+        "arch": "x86_64",
+        "cores": 2,
+        "host_ram_gb": 3,
+        "container_memory_gb": 3.26,
+        "scratch_path": "/home/ralph_lemke/fw_data",
+        "scratch_total_gb": 440,
+        "scratch_free_gb": 416,
+        "credentials": [
+          "CENSUS_API_KEY",
+          "ANTHROPIC_API_KEY"
+        ],
+        "note": "Smallest memory in the fleet (3.26 GiB) and correctly tiered light - but note it has 416 GB of scratch, 5x macmini03's 84 GB. The disk is on the box that cannot use it and absent from the box whose tier it caps."
+      }
     },
     {
       "name": "macmini03.local",
@@ -81,9 +184,36 @@
         "macmini03"
       ],
       "purpose": "12 cores / 30 GiB, same class as macmini02 — but only ~87 GB free on / against macmini02's ~850 GB. Group 'runner' (ffl + one generalist). ⚠️ Memory would allow the heavy tier; DISK is the reason to hold off — OSM cuts stage tens of GB of scratch, and FW_DATA_DIR here is on the root filesystem. Provisioned by docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh. Macmini8,1-class hardware: built-in Wi-Fi has no usable Linux firmware, ETHERNET ONLY.",
-      "group": "runner",
+      "group": "medium",
       "infra": false,
-      "ip_pin": null
+      "ip_pin": null,
+      "capacity": {
+        "tier": "medium",
+        "arch": "x86_64",
+        "cores": 12,
+        "host_ram_gb": 30,
+        "container_memory_gb": 30.69,
+        "scratch_path": "/home/ralph_lemke/fw_data",
+        "scratch_total_gb": 98,
+        "scratch_free_gb": 84,
+        "credentials": [
+          "CENSUS_API_KEY",
+          "ANTHROPIC_API_KEY"
+        ],
+        "note": "PROMOTED to the new 'medium' group 2026-09-13. 30.69 GiB - more container memory than server3 - but only ~84 GB free on / against macmini02's 847, and an OSM cut stages tens of GB of scratch. 'medium' is exactly that line: every domain role, no osm-geocoder/gh-router. It went from 2 containers to 16. Do NOT promote to 'heavy' without first moving FW_DATA_DIR off the root filesystem."
+      }
     }
-  ]
+  ],
+  "_groups": {
+    "heavy": "Clears the 18.9 GB peak of a europe OSM cut AND has multi-hundred-GB scratch. Runs every role including osm-geocoder/osm-lz/gh-router. Members: server3, macmini02, MaxPro.",
+    "medium": "Ample memory for every domain role but NOT the scratch headroom for OSM staging. Runs all 15 domain roles + the generalist; osm-geocoder/gh-router are gated away. Added 2026-09-13. Members: macmini03.",
+    "runner": "The light tier (historical name, kept because it is the fleet-wide default) AND the safe landing place for any host whose capacity has not been measured yet. ffl orchestration + ONE generalist runner over the cold domains. Members: atopnuc01, macmini01; atopnuc02 and beelink01 once provisioned."
+  },
+  "_services": {
+    "afl-mongodb": "beelink01.local — the fleet control plane (moved off server3 2026-09-13)",
+    "afl-minio": "server3.local — the object store. Its bucket data is ~616 GB, on a 15 TiB volume it shares with the ~10 TiB OSM extract tree. It COULD physically fit on beelink01 (868 GB free), but that volume now holds the control plane too and would be left ~250 GB of headroom, against 3.5 TiB free where it is. It stays for headroom, not impossibility.",
+    "afl-postgres": "server3.local",
+    "afl-extracts": "server3.local — the self-hosted OSM extract server",
+    "_note": "Each afl-* name is resolved INDEPENDENTLY from the entry whose aliases claim it (_fleet_lib.service_ips); a name no entry claims falls back to the infra:true host, which is the historical one-box behaviour."
+  }
 }

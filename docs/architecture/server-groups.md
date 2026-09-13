@@ -197,22 +197,85 @@ it wrong — a mis-placed heavy task just won't be claimed by a host that can't
 serve it — but honoring the invariant is what keeps heavy work off the boxes that
 would thrash or crash on it.
 
-### 6.4 Current fleet assignment (worked example, 2026-07-10)
+### 6.4 Current fleet assignment (worked example, 2026-09-13)
 
-The live fleet has one native-arm64 heavy box and two emulated x86 minis:
+Six live hosts, 73 runners. The fleet was physically relocated on 2026-09-13:
+**server1 and server2 were decommissioned**, macmini01-03 / atopnuc01 / atopnuc02
+are their replacements, and every host's address changed. Nothing in this table
+is keyed on an IP — hosts are named in `servers.json` and resolved at
+startup/reconcile, which is what let a whole-site move happen without a config
+edit (see [server-catalog.md](../reference/server-catalog.md)).
 
-| Host | Group | Why | Runs |
-|------|-------|-----|------|
-| **MaxPro** | `heavy` | native arm64 (no emulation), large scratch, reaches PostGIS | osm-geocoder + osm-lz + gh-router (all `heavy`-gated) **plus** all light/medium domains |
-| **server1, server2** | `runner` | x86 running the arm64 image under **qemu** (heavy work is doubly slow here); modest scratch | the light/medium data domains only — **no osm** |
-| **server3** | — | infra host (Mongo/MinIO/registry/dashboard) | no runners |
+| Host | Group | Container memory | Scratch free | Runs |
+|------|-------|------------------|--------------|------|
+| **beelink01** | `heavy` | 30.48 GiB | 850 GB | all 23 roles incl. the osm tier — 24 threads, the most in the fleet |
+| **macmini02** | `heavy` | 30.69 GiB | 847 GB | all 23 roles incl. the osm tier |
+| **MaxPro** | `heavy` | 31.29 GiB | 3342 GB | all 23 roles incl. the osm tier |
+| **server3** | `heavy` | 23.43 GiB | 3581 GB | infra **and** all 23 roles |
+| **macmini03** | `medium` | 30.69 GiB | **84 GB** | all 15 domain roles + generalist; **no osm/gh-router** |
+| **atopnuc01** | `runner` | 6.71 GiB | 91 GB | ffl + one generalist |
+| **macmini01** | `runner` | 3.26 GiB | 416 GB | ffl + one generalist |
+| **atopnuc02** | `runner` | — | — | **not provisioned** |
 
-Set with:
+The three tiers, and the axis that separates each pair:
+
+- **`heavy` vs everything else — memory.** The tier's defining workload is a
+  europe OSM cut, measured peaking at **18.9 GB**. A host that cannot hold that
+  does not belong in `heavy`, and the group gate is the cheap way to say so.
+- **`medium` vs `runner` — also memory**, but at the other end: macmini03 has
+  30.69 GiB, *more than server3*, and was sitting in the light tier running two
+  containers while a 7.75 GiB host ran 23. `medium` exists (added 2026-09-13) so
+  that a box with ample RAM but modest disk can take every domain role.
+- **`medium` vs `heavy` — scratch disk.** macmini03's memory would qualify it for
+  `heavy`; its ~84 GB of free root filesystem does not, because an OSM cut stages
+  tens of GB there. Promoting it requires moving `FW_DATA_DIR` off `/` first.
+
+⚠️ **A group is a floor, not a schedule.** Two things it deliberately does not do:
+
+1. It cannot separate hosts *within* a tier — the case that motivated
+   resource-aware claim routing (§ runtime), where MaxPro and server3 were both
+   `heavy` and only one could hold a Kreise split.
+2. It says nothing about **credentials**, which are just as much a capability as
+   RAM. Measured 2026-09-13: macmini02 was correctly gated `heavy` and ran the
+   census + anthropic per-domain runners **with no API keys at all** — it would
+   claim those tasks and dead-letter every one. Group placement looked right and
+   the host was incapable. Check keys whenever a host gains a role.
+
+⚠️ The x86 hosts are **no longer emulated**: the runner image has been multi-arch
+(linux/amd64 + linux/arm64) since 2026-09, so the qemu penalty that used to be an
+independent reason to keep the heavy tier off them no longer applies. Group
+placement here is now decided by **memory and scratch disk alone**.
+
+Set with (the live v209 assignment):
+
 ```bash
-fw fleet set --role-groups osm-geocoder:heavy   # implies osm-lz (rides osm)
+# The osm tier stays heavy-only — this is the gate that enforces the 18.9 GB floor.
+fw fleet set --role-groups osm-geocoder:heavy    # implies osm-lz (rides osm)
 fw fleet set --role-groups gh-router:heavy       # GraphHopper routing follows osm
-# light/medium domains: no --role-groups → run on every host
+
+# Every domain role runs on heavy AND medium. One `fw fleet set` call with all
+# 16 flags, so the whole fleet reconciles on ONE version bump rather than 16.
+fw fleet set --role-groups census-us:heavy,medium --role-groups anthropic:heavy,medium \
+             --role-groups jenkins-example:heavy,medium --role-groups sensor-monitoring:heavy,medium \
+             --role-groups genomics:heavy,medium --role-groups noaa-weather:heavy,medium \
+             --role-groups save-earth:heavy,medium --role-groups conflict:heavy,medium \
+             --role-groups osm-mapping:heavy,medium --role-groups h1b:heavy,medium \
+             --role-groups health:heavy,medium --role-groups cancer:heavy,medium \
+             --role-groups congress:heavy,medium --role-groups livability:heavy,medium \
+             --role-groups gridbuilder:heavy,medium \
+             --role-groups generalist:runner,medium
 ```
+
+⚠️ `generalist` is gated `runner,medium`, **not** `runner` alone, deliberately: it
+covers the cold domains that have no dedicated role (energy, gibraltar, uspanel,
+stocks, amr…). Moving macmini03 out of `runner` would otherwise have silently
+dropped a generalist from the fleet — gaining 15 roles while losing coverage of
+the ones nobody names.
+
+⚠️ A host must be told its own tier *before* the config change lands, in its
+`.env.fleet.override` (`FW_SERVER_GROUP=medium`) followed by a fleet-agent
+restart. The agent reads the group from that file, so a config that references a
+group no host claims starts nothing and reports nothing.
 
 Verified end-to-end 2026-07-10: an `osm.heatmap.ContinentHeatmap` fan-out over 3
 leaves ran **all 13 osm tasks on MaxPro** and **zero on the emulated minis** — the

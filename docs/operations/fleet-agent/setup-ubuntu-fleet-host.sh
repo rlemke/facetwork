@@ -28,11 +28,22 @@ usage() {
 usage: $0 [options]
 
   --dry-run              print what would happen, change nothing
-  --group NAME           fleet server group (default: runner)
-                         'runner' = light tier. 'heavy' opts this host INTO the
-                         OSM tier, where a single europe cut has peaked at
-                         18.9 GB RSS. Do not set it on a machine that cannot
-                         take that; a mis-set group is an OOM kill, not a slow run.
+  --group NAME           fleet server group (default: runner). THREE tiers:
+                         'runner' = light tier: ffl + one generalist runner.
+                         'medium' = every domain role, but NOT the OSM tier.
+                                    For a box with ample RAM and modest disk.
+                         'heavy'  = adds osm-geocoder/osm-lz/gh-router.
+                         Pick by MEMORY first, then scratch disk:
+                           < ~8 GiB          -> runner
+                           >= ~16 GiB        -> medium
+                           >= ~24 GiB AND a few hundred GB of scratch -> heavy
+                         A europe OSM cut has peaked at 18.9 GB RSS and stages
+                         tens of GB of scratch, so 'heavy' needs BOTH. Cores and
+                         disk alone do NOT qualify a host - memory is the gate.
+                         A mis-set group is an OOM kill, not a slow run.
+                         ⚠️ Measure the DOCKER limit (\`docker info\`/cgroup), not
+                         the host's RAM - that is what the runner advertises and
+                         what the OOM killer enforces.
   --data-dir PATH        large LOCAL scratch dir (default: \$HOME/fw_data)
   --infra-host NAME      infra host's stable name (default: server3.local)
   --rdp MODE             remote-login | xrdp | none   (default: remote-login)
@@ -346,9 +357,13 @@ if [ "$DRY" = 0 ]; then
     [ -f .env.fleet.preset ] && cp .env.fleet.preset .env.fleet
     cat > .env.fleet.override <<OVERRIDE
 # Per-server values for $(hostname). Gitignored; wins over .env.fleet.
-# FW_SERVER_GROUP decides which ROLES this host starts. 'runner' is the light
-# tier; 'heavy' opts into the OSM tier, where one europe cut has peaked at
-# 18.9 GB RSS. A mis-set group is an OOM kill, not a slow run.
+# FW_SERVER_GROUP decides which ROLES this host starts. Three tiers:
+#   runner  light: ffl + one generalist runner over the cold domains
+#   medium  every domain role, but NOT the OSM tier (ample RAM, modest disk)
+#   heavy   adds osm-geocoder/osm-lz/gh-router
+# Chosen by MEMORY first, then scratch: one europe OSM cut has peaked at 18.9 GB
+# RSS and stages tens of GB of scratch, so 'heavy' needs both. A mis-set group is
+# an OOM kill, not a slow run. See docs/architecture/server-groups.md #6.
 FW_SERVER_GROUP=$SERVER_GROUP
 FW_DATA_DIR=$DATA_DIR
 FW_OSM_REPLICAS=1
