@@ -133,7 +133,7 @@
         "afl-mongodb",
         "beelink01"
       ],
-      "purpose": "heavy runner tier AND the fleet's MONGODB host since 2026-09-13 (Ubuntu 26.04.1, AMD Ryzen AI 9 HX 470, 24 threads). ⚠️ Mongo's dbPath is /run/media/ralph_lemke/data/mongodb/data on /dev/nvme1n1p4 — a udisks SESSION auto-mount, NOT in /etc/fstab. The container uses a long-form bind with create_host_path:false so it REFUSES to start when that volume is absent; with the short -v form a reboot without a desktop login would have silently started an EMPTY control plane. Add an fstab entry to fix this properly.",
+      "purpose": "heavy runner tier AND the fleet's MONGODB host since 2026-09-13 (Ubuntu 26.04.1, AMD Ryzen AI 9 HX 470, 24 threads). ⚠️ Mongo's dbPath is ~/fw-mongodb/data on the ROOT filesystem (/dev/nvme1n1p2), NOT on the second NVMe. It was first put on /run/media/<user>/data and that cost the fleet its control plane for 2.5h: a reboot started Docker at 13:22:02 while udisks did not mount that volume until 13:26:40, and the same reboot swapped the two identical NVMe device names. The root filesystem mounts before Docker by construction. Capacity was never the constraint - this database is ~430 MB against 848 GB free on /.",
       "group": "heavy",
       "infra": false,
       "ip_pin": null,
@@ -150,7 +150,7 @@
           "CENSUS_API_KEY",
           "ANTHROPIC_API_KEY"
         ],
-        "note": "Promoted runner -> heavy on MEASUREMENT, 2026-09-13: 30.48 GiB docker limit clears the 18.9 GB europe-cut peak, 850 GB free on the nvme holding FW_DATA_DIR, PostGIS reachable, API keys installed. Docker runs natively here (no VM), so 30.48 GiB is the real cgroup limit. ⚠️ FW_OSM_REPLICAS=1 is deliberate and should stay: two concurrent europe-class cuts would want ~37.8 GB against this host's 30.48."
+        "note": "Promoted runner -> heavy on MEASUREMENT, 2026-09-13: 30.48 GiB docker limit clears the 18.9 GB europe-cut peak, 850 GB free on the nvme holding FW_DATA_DIR, PostGIS reachable, API keys installed. Docker runs natively here (no VM), so 30.48 GiB is the real cgroup limit. ⚠️ FW_OSM_REPLICAS=1 is deliberate and should stay: two concurrent europe-class cuts would want ~37.8 GB against this host's 30.48. Mongo's dbPath is on / (see purpose); the second NVMe (~868 GB at /run/media/<user>/data) remains the OSM scratch volume and is still a session mount."
       }
     },
     {

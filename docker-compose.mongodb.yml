@@ -9,17 +9,25 @@
 #
 # FW_MONGO_DATA_DIR points at the parent holding data/ and config/.
 #
-# ⚠️ THE BIND MOUNT IS DELIBERATELY LONG-FORM WITH create_host_path: false.
-# The data lives on /dev/nvme1n1p4, which udisks2 mounts at
-# /run/media/ralph_lemke/data when the DESKTOP SESSION logs in — it is NOT in
-# /etc/fstab. Docker starts at boot regardless. With the usual short `-v a:b`
-# syntax, a missing mount means Docker CREATES AN EMPTY DIRECTORY, mongod
-# initialises a BRAND-NEW EMPTY DATABASE, and the entire fleet's control plane
-# silently resets while the healthcheck reports green. `create_host_path: false`
-# turns that into a loud refusal to start, which is the only acceptable failure
-# mode for this service. Do not "simplify" it back to the short form.
+# ⚠️ THE DATA LIVES ON THE ROOT FILESYSTEM, ON PURPOSE.
 #
-# The real fix is an /etc/fstab entry (needs root) — see the repo notes.
+# It was first placed on the second NVMe at /run/media/<user>/data — a udisks
+# SESSION auto-mount, not an fstab entry. That cost the fleet its control plane
+# for 2.5h on 2026-09-13: the host rebooted, Docker started at 13:22:02, and
+# udisks did not mount the volume until 13:26:40. The bind refused (correctly)
+# and mongod never came up. The same reboot also SWAPPED the two identical NVMe
+# device names (nvme1n1p4 -> nvme0n1p4), so even an fstab entry had to be by
+# UUID rather than device path.
+#
+# The root filesystem is mounted before Docker by construction, so none of that
+# applies here. And capacity was never the reason to use the other disk: this
+# database is ~430 MB against 848 GB free on /. Reliability was the constraint;
+# the control plane belongs on the volume that cannot be absent.
+#
+# ⚠️ create_host_path: false is KEPT as a belt-and-braces guard. With the usual
+# short `-v a:b` syntax, a missing source means Docker CREATES AN EMPTY DIRECTORY,
+# mongod initialises a BRAND-NEW EMPTY DATABASE, and the fleet's control plane
+# silently resets while the healthcheck reports green. Do not "simplify" it.
 services:
   mongodb:
     image: mongo:7
@@ -29,12 +37,12 @@ services:
       - "27017:27017"
     volumes:
       - type: bind
-        source: ${FW_MONGO_DATA_DIR:-/run/media/ralph_lemke/data/mongodb}/data
+        source: ${FW_MONGO_DATA_DIR:-/home/ralph_lemke/fw-mongodb}/data
         target: /data/db
         bind:
           create_host_path: false
       - type: bind
-        source: ${FW_MONGO_DATA_DIR:-/run/media/ralph_lemke/data/mongodb}/config
+        source: ${FW_MONGO_DATA_DIR:-/home/ralph_lemke/fw-mongodb}/config
         target: /data/configdb
         bind:
           create_host_path: false
