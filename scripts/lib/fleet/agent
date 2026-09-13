@@ -355,6 +355,18 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         "FW_DATA_DIR": data_dir,
         "FW_OSM_REPLICAS": str(replicas),
     }
+    # extra_hosts addresses for the afl-* names. Until 2026-09-13 neither of
+    # these was passed at all, so compose fell through to `${FW_INFRA_IP:-127.0.0.1}`
+    # and every container was CREATED pointing afl-mongodb at its own loopback —
+    # then rescued a poll later by the /etc/hosts drift self-heal. That works, but
+    # it means each new runner spends its first seconds Mongo-blind, and it makes
+    # the compose default a lie. Supply them from the catalog so a container is
+    # born correct; the self-heal stays as the answer to drift AFTER creation.
+    # Two variables, not one: Mongo and MinIO are on different hosts now.
+    for _var, _svc in (("FW_INFRA_IP", "afl-minio"), ("FW_MONGO_IP", "afl-mongodb")):
+        _a = _fleet_lib.container_service_ip(_svc)
+        if _a:
+            env[_var] = _a
     # Third-party-egress guard, carried in fleet_config so it reaches EVERY host.
     # It cannot live in .env.fleet: this agent builds its compose env from
     # fleet_config alone, so a value there would resolve to the compose default
@@ -593,20 +605,26 @@ def cmd_refresh_hosts(a):
     dead, so recreation strictly improves matters and cannot thrash: the new
     container carries the current IP and stops matching).
     """
-    ip = _fleet_lib.resolve_infra_ip(log=lambda m: print(f"  {m}"))
-    if not ip:
-        print(f"fleet-agent[{HOST}]: could not resolve the infra IP — nothing to do")
+    # Per-SERVICE addresses, not one infra IP: afl-mongodb and afl-minio live on
+    # different machines since 2026-09-13 (Mongo moved to its own host; MinIO
+    # stayed on server3). Collapsing them would point the object store at the
+    # Mongo host and take every runner's cache and outputs down with it.
+    svc = _fleet_lib.service_ips(log=lambda m: print(f"  {m}"))
+    if not svc:
+        print(f"fleet-agent[{HOST}]: could not resolve the afl-* addresses — nothing to do")
         return
+    ip = svc.get("afl-minio") or _fleet_lib.resolve_infra_ip()
     patched = _fleet_lib.refresh_container_hosts(
-        ip, log=lambda m: print(f"fleet-agent[{HOST}]: {m}"))
+        svc, log=lambda m: print(f"fleet-agent[{HOST}]: {m}"))
+    _svc_desc = ", ".join(f"{n}={a}" for n, a in sorted(svc.items()))
     if patched:
-        print(f"fleet-agent[{HOST}]: refreshed afl-* → {ip} on {len(patched)} container(s): "
-              f"{', '.join(patched)}")
+        print(f"fleet-agent[{HOST}]: refreshed afl-* on {len(patched)} container(s) "
+              f"({_svc_desc}): {', '.join(patched)}")
     else:
-        print(f"fleet-agent[{HOST}]: all runner containers already point at {ip} "
-              f"(/etc/hosts: no drift)")
+        print(f"fleet-agent[{HOST}]: all runner containers already point at "
+              f"{_svc_desc} (/etc/hosts: no drift)")
 
-    stale = _fleet_lib.stale_env_containers(ip, log=lambda m: print(f"fleet-agent[{HOST}]: {m}"))
+    stale = _fleet_lib.stale_env_containers(svc, log=lambda m: print(f"fleet-agent[{HOST}]: {m}"))
     if not stale:
         print(f"fleet-agent[{HOST}]: no container pins a stale infra IP in its environment")
         return
@@ -697,10 +715,11 @@ def cmd_watch(a):
             # patches each runner's afl-* /etc/hosts, so runners auto-reconnect to
             # Mongo/MinIO without waiting for a rollout/recreate.
             try:
-                ip = _fleet_lib.resolve_infra_ip()
-                if ip:
+                svc = _fleet_lib.service_ips()
+                ip = svc.get("afl-minio") or _fleet_lib.resolve_infra_ip()
+                if svc:
                     _fleet_lib.refresh_container_hosts(
-                        ip, log=lambda m: print(f"fleet-agent[{HOST}]: {m}", flush=True))
+                        svc, log=lambda m: print(f"fleet-agent[{HOST}]: {m}", flush=True))
                     # ⚠️ And the OTHER place an address hides: the container's
                     # ENVIRONMENT. Patching /etc/hosts cannot reach
                     # FW_MONGODB_URL=mongodb://<old-ip>:27017, and on 2026-09-08
@@ -713,7 +732,11 @@ def cmd_watch(a):
                     # recreate strictly improves matters, and it cannot thrash —
                     # the rebuilt container carries the current IP and stops
                     # matching on the next poll.
-                    stale = _fleet_lib.stale_env_containers(ip)
+                    # svc, not ip — this is the call that RECREATES containers.
+                    # Comparing FW_MONGODB_URL against the infra IP after the
+                    # Mongo move would mark every correct runner as drifted and
+                    # recreate the whole fleet on every poll, forever.
+                    stale = _fleet_lib.stale_env_containers(svc)
                     if stale:
                         names = sorted({c for c, _v, _o in stale})
                         for c, var, old_ip in stale:

@@ -81,6 +81,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"export FW_INFRA_IP={ip}")
         if host_ip:
             print(f"export FW_INFRA_HOST_IP={host_ip}")
+        # FW_MONGO_IP is separate because MongoDB no longer lives on the infra
+        # host (moved 2026-09-13; MinIO stayed). Emitted only when some entry
+        # actually claims the afl-mongodb alias, so a one-infra-host deployment
+        # keeps exactly the variables it had.
+        mongo_entry = catalog.find("afl-mongodb")
+        if mongo_entry and mongo_entry.get("name") != entry.get("name"):
+            mongo_ip = catalog.container_ip(mongo_entry)
+            mongo_host_ip = catalog.resolve_ip(mongo_entry)
+            if mongo_ip:
+                print(f"export FW_MONGO_IP={mongo_ip}")
+            if mongo_host_ip:
+                print(f"export FW_MONGO_HOST_IP={mongo_host_ip}")
         return 0
 
     src = catalog.catalog_source()

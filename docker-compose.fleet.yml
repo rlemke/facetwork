@@ -70,7 +70,13 @@ x-fleet-runner: &fleet-runner
   # fails fast against localhost instead of silently pointing at a stale/foreign
   # address — the exact class of bug the name-based resolution removes.
   extra_hosts:
-    - "afl-mongodb:${FW_INFRA_IP:-127.0.0.1}"
+    # ⚠️ afl-mongodb has its OWN variable. MongoDB moved off the infra host on
+    # 2026-09-13 and MinIO stayed (see the catalog's _services note for why), so
+    # these two names no longer share an address. FW_MONGO_IP falls back to
+    # FW_INFRA_IP, which is exactly the old behaviour for a fleet that still
+    # runs both on one box. The fleet-agent supplies both from the server
+    # catalog; see the .env.fleet warning about compose defaults winning.
+    - "afl-mongodb:${FW_MONGO_IP:-${FW_INFRA_IP:-127.0.0.1}}"
     - "afl-minio:${FW_INFRA_IP:-127.0.0.1}"
     # The self-hosted extract server (`fw svc osm-extracts`) runs on the infra
     # host too. Named, not addressed by IP: a literal would freeze at whatever

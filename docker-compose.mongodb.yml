@@ -1,0 +1,58 @@
+# Facetwork fleet MongoDB — the control plane.
+#
+# Deployed on beelink01 since 2026-09-13, moved off the infra host (server3);
+# MinIO/PostGIS/registry/dashboard stayed there. Because the two are no longer
+# co-located, the afl-* names resolve PER SERVICE from servers.json — see
+# _fleet_lib.service_ips and docs/operations/deployment.md.
+#
+#   cd ~/facetwork && docker compose -f docker-compose.mongodb.yml up -d
+#
+# FW_MONGO_DATA_DIR points at the parent holding data/ and config/.
+#
+# ⚠️ THE BIND MOUNT IS DELIBERATELY LONG-FORM WITH create_host_path: false.
+# The data lives on /dev/nvme1n1p4, which udisks2 mounts at
+# /run/media/ralph_lemke/data when the DESKTOP SESSION logs in — it is NOT in
+# /etc/fstab. Docker starts at boot regardless. With the usual short `-v a:b`
+# syntax, a missing mount means Docker CREATES AN EMPTY DIRECTORY, mongod
+# initialises a BRAND-NEW EMPTY DATABASE, and the entire fleet's control plane
+# silently resets while the healthcheck reports green. `create_host_path: false`
+# turns that into a loud refusal to start, which is the only acceptable failure
+# mode for this service. Do not "simplify" it back to the short form.
+#
+# The real fix is an /etc/fstab entry (needs root) — see the repo notes.
+services:
+  mongodb:
+    image: mongo:7
+    container_name: facetwork-mongodb
+    command: ["--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - type: bind
+        source: ${FW_MONGO_DATA_DIR:-/run/media/ralph_lemke/data/mongodb}/data
+        target: /data/db
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${FW_MONGO_DATA_DIR:-/run/media/ralph_lemke/data/mongodb}/config
+        target: /data/configdb
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    # ⚠️ MongoDB needs a high file-descriptor limit — one per connection, and this
+    # fleet opens 108 runners x a pymongo pool. server3 never showed this because
+    # Docker Desktop's VM hands containers a large default; native Docker on Linux
+    # gives the daemon's default (1024 soft), and mongod hit it within minutes of
+    # the cutover: "Unable to create eventfd object ... Too many open files,
+    # errno: 24", after which it accepted NO new connections while the container
+    # still reported Up. MongoDB's own production checklist asks for 64000.
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000

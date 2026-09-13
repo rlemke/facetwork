@@ -40,8 +40,14 @@ for line in (sys.argv[1] if len(sys.argv) > 1 else "").splitlines():
 try:
     import pymongo
     from facetwork.servers import catalog
-    infra = catalog.infra()
-    ip = catalog.resolve_ip(infra) if infra else None
+    # The MONGO host, which since 2026-09-13 is NOT the infra host — Mongo moved
+    # off it and MinIO stayed. Asking catalog.infra() here pointed this command
+    # at a host with no mongod and it reported "cannot reach MongoDB" on every
+    # runner host while the fleet was perfectly healthy.
+    ip = catalog.resolve_ip("afl-mongodb")
+    if not ip:
+        infra = catalog.infra()
+        ip = catalog.resolve_ip(infra) if infra else None
     url = os.environ.get("FW_MONGODB_URL") or (f"mongodb://{ip}:27017" if ip
                                                else "mongodb://afl-mongodb:27017")
     db = pymongo.MongoClient(url, serverSelectionTimeoutMS=6000)["facetwork"]

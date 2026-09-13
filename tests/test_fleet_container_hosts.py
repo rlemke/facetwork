@@ -12,6 +12,13 @@ Two behaviours are pinned here, both regressions this file was written for:
   be left alone. That mapping cannot go stale, so "differs from the LAN IP" is
   not drift; rewriting it would downgrade it to an address that dies on this
   machine's next DHCP lease.
+
+Since 2026-09-13 the repair is also **per name**. MongoDB moved off the infra
+host while MinIO stayed behind, so the afl-*
+names no longer share an address. The old code checked drift on ``afl-mongodb``
+alone and returned early if it matched — under which a MinIO-only move would
+have been invisible. These tests therefore answer for EVERY name, and pin that
+a split mapping is honoured.
 """
 
 import importlib.util
@@ -77,11 +84,43 @@ def test_probe_asks_for_the_ipv4_answer(monkeypatch):
     )
 
 
+def _all_names_at(ip, **extra):
+    """Every afl-* name already resolving to ``ip`` — i.e. nothing drifted."""
+    answers = {n: ip for n in fl.INFRA_HOST_NAMES}
+    answers.update(extra)
+    return answers
+
+
 def test_no_rewrite_when_the_container_already_has_the_current_ip(monkeypatch):
-    rec = _Recorder({"afl-mongodb": "10.0.0.1"})
+    rec = _Recorder(_all_names_at("10.0.0.1"))
     _patch(monkeypatch, rec)
     assert fl.refresh_container_hosts("10.0.0.1") == []
     assert rec.written == []
+
+
+def test_a_name_the_container_is_missing_entirely_is_healed(monkeypatch):
+    """Only afl-mongodb is present. The others resolve to nothing, which is
+    drift — the old single-name check returned early here and left a container
+    that could never reach MinIO."""
+    rec = _Recorder({"afl-mongodb": "10.0.0.1", "host.docker.internal": GATEWAY})
+    _patch(monkeypatch, rec)
+    assert fl.refresh_container_hosts("10.0.0.1") == ["runner-a"]
+    assert "10.0.0.1\tafl-minio" in rec.written[0]
+
+
+def test_split_mapping_sends_each_name_to_its_own_host(monkeypatch):
+    """The reason this function takes a mapping: Mongo on one box, MinIO on
+    another. Pointing them at one address would take the object store out."""
+    rec = _Recorder(_all_names_at("10.0.0.1", **{"host.docker.internal": GATEWAY}))
+    _patch(monkeypatch, rec)
+    split = {n: "10.0.0.1" for n in fl.INFRA_HOST_NAMES}
+    split["afl-mongodb"] = "10.0.0.55"
+    assert fl.refresh_container_hosts(split) == ["runner-a"]
+    written = rec.written[0]
+    assert "10.0.0.55\tafl-mongodb" in written, "Mongo must move"
+    assert "10.0.0.1\tafl-mongodb" not in written
+    # ...and MinIO must NOT have followed it.
+    assert "10.0.0.55\tafl-minio" not in written
 
 
 def test_rewrite_on_real_drift(monkeypatch):
@@ -95,7 +134,7 @@ def test_host_gateway_mapping_is_left_alone(monkeypatch):
     """Infra is this machine: the container resolves afl-* through Docker's
     gateway, which never goes stale — patching it to the LAN IP would be a
     downgrade, and it would happen again on every single poll."""
-    rec = _Recorder({"afl-mongodb": GATEWAY, "host.docker.internal": GATEWAY})
+    rec = _Recorder(_all_names_at(GATEWAY, **{"host.docker.internal": GATEWAY}))
     _patch(monkeypatch, rec)
     assert fl.refresh_container_hosts("10.0.0.99") == []
     assert rec.written == []

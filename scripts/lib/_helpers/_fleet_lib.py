@@ -183,12 +183,20 @@ def resolve_mongo(explicit: str | None = None, *, log=None) -> str:
     try:
         from facetwork.servers import catalog as _srv_catalog
 
+        # Prefer whichever entry CLAIMS the afl-mongodb alias — since 2026-09-13
+        # that is no longer necessarily the infra host (MongoDB moved off it;
+        # MinIO stayed on server3). Falls through to the infra entry when
+        # no entry claims the alias, i.e. unchanged for a one-infra-host fleet.
+        _mongo_entry = _srv_catalog.find("afl-mongodb")
         _infra = _srv_catalog.infra()
-        _ip = _srv_catalog.resolve_ip(_infra) if _infra else None
-        if _ip and (_ip.startswith("127.") or _ip == "::1"):
-            _ip = lan_ip() or _ip
-        if _ip:
-            candidates.append(("server catalog (infra)", f"mongodb://{_ip}:27017"))
+        for _label, _entry in (("server catalog (afl-mongodb)", _mongo_entry),
+                               ("server catalog (infra)", _infra)):
+            _ip = _srv_catalog.resolve_ip(_entry) if _entry else None
+            if _ip and (_ip.startswith("127.") or _ip == "::1"):
+                _ip = lan_ip() or _ip
+            _url = f"mongodb://{_ip}:27017" if _ip else None
+            if _url and _url not in [u for _h, u in candidates]:
+                candidates.append((_label, _url))
     except Exception:
         pass
     hp = mdns_lookup("_afl-mongo._tcp.local.")
@@ -256,6 +264,71 @@ def resolve_infra_ip(*, log=None) -> str | None:
         return None
 
 
+def service_ips(*, log=None) -> dict[str, str]:
+    """Map each ``INFRA_HOST_NAMES`` entry to the IP it should resolve to.
+
+    ⚠️ These names used to ALL point at the single ``infra: true`` host, because
+    Mongo, MinIO, PostGIS and the extract server did all live on one box. They no
+    longer do: the fleet's MongoDB moved to its own host on 2026-09-13 while
+    MinIO stayed put (it stayed on server3). Collapsing the
+    four names onto one address would therefore point ``afl-minio`` at the Mongo
+    host and take the object store out fleet-wide.
+
+    So each name is resolved INDEPENDENTLY through the server catalog: if some
+    entry carries the name as an alias, that entry's IP wins. A name no entry
+    claims falls back to the infra host, which is exactly the previous
+    behaviour — so this is inert for any fleet that still runs one infra box.
+    """
+    out: dict[str, str] = {}
+    infra_ip = resolve_infra_ip(log=log)
+    try:
+        from facetwork.servers import catalog as _srv
+
+        for name in INFRA_HOST_NAMES:
+            entry = _srv.find(name)
+            ip = None
+            if entry:
+                ip = _srv.resolve_ip(entry)
+                # Same loopback guard as resolve_infra_ip: on the host that OWNS
+                # the service the name resolves to 127.0.0.1, which inside a
+                # container is the container itself.
+                if ip and (ip.startswith("127.") or ip == "::1"):
+                    ip = lan_ip() or ip
+            if not ip:
+                ip = infra_ip
+            if ip:
+                out[name] = ip
+    except Exception as exc:  # noqa: BLE001
+        if log:
+            log(f"service-IP resolve failed ({exc}); falling back to one infra IP")
+        if infra_ip:
+            out = {n: infra_ip for n in INFRA_HOST_NAMES}
+    return out
+
+
+def resolve_mongo_ip(*, log=None) -> str | None:
+    """IP of the host serving ``afl-mongodb`` — its own catalog entry if one
+    claims that alias, else the infra host."""
+    return service_ips(log=log).get("afl-mongodb") or resolve_infra_ip(log=log)
+
+
+def container_service_ip(name: str, *, log=None) -> str | None:
+    """What container ``extra_hosts`` should map ONE afl-* name to.
+
+    Same contract as :func:`container_infra_ip` (Docker's ``host-gateway`` alias
+    when that service runs on THIS machine, so it is immune to our own DHCP
+    drift) but resolved per service, so afl-mongodb and afl-minio can differ."""
+    try:
+        from facetwork.servers import catalog as _srv
+
+        if _srv.find(name):
+            return _srv.container_ip(name)
+    except Exception as exc:  # noqa: BLE001
+        if log:
+            log(f"container-IP resolve for {name} failed: {exc}")
+    return container_infra_ip(log=log)
+
+
 def container_infra_ip(*, log=None) -> str | None:
     """What container ``extra_hosts`` should map the afl-* names to: Docker's
     ``host-gateway`` alias when infra is this machine (immune to this host's own
@@ -297,21 +370,33 @@ def _container_gateway_ip(container: str) -> str | None:
     return _container_resolves(container, "host.docker.internal")
 
 
-def _rewrite_hosts(content: str, ip: str, names=INFRA_HOST_NAMES) -> str:
-    """Return /etc/hosts content with every ``names`` entry pointed at ``ip``
-    (adding any that are missing). Order preserved; other lines untouched."""
+def _rewrite_hosts(content: str, ip_or_map, names=INFRA_HOST_NAMES) -> str:
+    """Return /etc/hosts content with each ``names`` entry pointed at its own
+    address (adding any that are missing). Order preserved; other lines
+    untouched.
+
+    ``ip_or_map`` is either a single IP — every name gets it, the historical
+    one-infra-host behaviour — or a ``{name: ip}`` mapping from
+    :func:`service_ips`, which is what lets ``afl-mongodb`` and ``afl-minio``
+    live on DIFFERENT machines. A name absent from the mapping is left alone
+    rather than guessed at: writing a wrong address is worse than leaving a
+    stale one, because the stale one is at least diagnosable.
+    """
+    mapping = ({n: ip_or_map for n in names}
+               if isinstance(ip_or_map, str) else dict(ip_or_map))
     nameset = set(names)
     seen: set[str] = set()
     out: list[str] = []
     for ln in content.splitlines():
         parts = ln.split()
-        if len(parts) >= 2 and parts[1] in nameset:
-            out.append(f"{ip}\t{parts[1]}")
+        if len(parts) >= 2 and parts[1] in nameset and parts[1] in mapping:
+            out.append(f"{mapping[parts[1]]}\t{parts[1]}")
             seen.add(parts[1])
         else:
             out.append(ln)
     for n in nameset - seen:
-        out.append(f"{ip}\t{n}")
+        if n in mapping:
+            out.append(f"{mapping[n]}\t{n}")
     return "\n".join(out) + "\n"
 
 
@@ -328,26 +413,52 @@ def _runner_containers() -> list[str]:
         return []
 
 
-def refresh_container_hosts(ip: str, *, log=None) -> list[str]:
-    """Patch each running runner container whose afl-mongodb entry ≠ ``ip`` so the
-    afl-* names resolve to the current infra IP. Rewrites /etc/hosts in place via
-    ``cat > /etc/hosts`` (truncate-in-place works on docker's bind-mounted file;
-    ``sed -i`` / rename does not). Returns the names of containers actually patched.
-    A no-op when nothing drifted, so it's cheap to call every poll."""
+def refresh_container_hosts(ip_or_map, *, log=None) -> list[str]:
+    """Patch each running runner container whose afl-* entries have drifted, so
+    those names resolve to their current addresses. Rewrites /etc/hosts in place
+    via ``cat > /etc/hosts`` (truncate-in-place works on docker's bind-mounted
+    file; ``sed -i`` / rename does not). Returns the names of containers actually
+    patched. A no-op when nothing drifted, so it's cheap to call every poll.
+
+    ``ip_or_map`` accepts a single IP (legacy one-infra-host form) or the
+    ``{name: ip}`` mapping from :func:`service_ips`.
+
+    ⚠️ Drift is checked across EVERY name, not just ``afl-mongodb``. It used to
+    check only that one, on the assumption that all four moved together — true
+    while one host served them all, false since MongoDB moved off the infra box
+    on 2026-09-13. Under the old check, a MinIO-only move would have been
+    invisible: afl-mongodb still matched, so the function returned early and
+    left afl-minio pointing at nothing.
+    """
     say = log or (lambda _m: None)
+    mapping = ({n: ip_or_map for n in INFRA_HOST_NAMES}
+               if isinstance(ip_or_map, str) else dict(ip_or_map))
     patched: list[str] = []
     for c in _runner_containers():
         try:
-            cur_ip = _container_resolves(c, "afl-mongodb")
-            if cur_ip == ip:
+            drifted = {}
+            for name, want in mapping.items():
+                cur = _container_resolves(c, name)
+                if cur != want:
+                    drifted[name] = (cur, want)
+            if not drifted:
                 continue
+            cur_ip = drifted.get("afl-mongodb", (None, None))[0]
             # Created with `afl-mongodb:host-gateway` (infra is this machine):
             # that mapping is maintained by Docker and can never go stale, so
             # "differs from the LAN IP" is not drift — leave it alone, or we
             # would rewrite it back every poll and downgrade it to an address
             # that dies on the next DHCP lease.
-            if cur_ip and cur_ip == _container_gateway_ip(c):
-                continue
+            gw = _container_gateway_ip(c)
+            if gw:
+                # Names created as `<name>:host-gateway` (that service runs on
+                # THIS machine): Docker maintains the mapping and it can never go
+                # stale, so "differs from the LAN IP" is not drift — rewriting it
+                # would downgrade it to an address that dies on the next lease.
+                for name in [n for n, (cur, _w) in drifted.items() if cur == gw]:
+                    drifted.pop(name)
+                if not drifted:
+                    continue
             content = subprocess.run(
                 ["docker", "exec", c, "cat", "/etc/hosts"],
                 capture_output=True,
@@ -356,14 +467,18 @@ def refresh_container_hosts(ip: str, *, log=None) -> list[str]:
             ).stdout
             subprocess.run(
                 ["docker", "exec", "-i", c, "sh", "-c", "cat > /etc/hosts"],
-                input=_rewrite_hosts(content, ip),
+                input=_rewrite_hosts(content, {n: mapping[n] for n in drifted}
+                                     if len(drifted) < len(mapping) else mapping,
+                                     names=set(drifted) if len(drifted) < len(mapping)
+                                     else INFRA_HOST_NAMES),
                 text=True,
                 check=True,
                 timeout=15,
                 capture_output=True,
             )
             patched.append(c)
-            say(f"drift: {c} afl-* {cur_ip} → {ip} (runner auto-reconnects)")
+            for name, (cur, want) in drifted.items():
+                say(f"drift: {c} {name} {cur} → {want} (runner auto-reconnects)")
         except Exception as exc:  # noqa: BLE001 - one bad container shouldn't stop the rest
             say(f"could not refresh {c}: {exc}")
     return patched
@@ -405,6 +520,18 @@ def container_unusable_host(url: str | None) -> str | None:
 # of these makes a runner unreachable in a way /etc/hosts patching cannot fix.
 _ENDPOINT_VARS = ("FW_MONGODB_URL", "FW_S3_ENDPOINT", "FW_DASHBOARD_URL",
                   "FW_POSTGIS_URL", "FW_OSM_SELFHOST_BASE_URL")
+
+# Which afl-* service each endpoint variable points at. Needed since MongoDB
+# moved off the infra host (2026-09-13): comparing FW_MONGODB_URL against the
+# INFRA ip would mark every correctly-configured runner as drifted, and `watch`
+# RECREATES on that signal — an endless recreate loop across the whole fleet.
+# A var with no entry here is compared against the infra host, as before.
+_ENDPOINT_VAR_SERVICE = {
+    "FW_MONGODB_URL": "afl-mongodb",
+    "FW_S3_ENDPOINT": "afl-minio",
+    "FW_POSTGIS_URL": "afl-postgres",
+    "FW_OSM_SELFHOST_BASE_URL": "afl-extracts",
+}
 _IPV4 = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
 
 
@@ -424,7 +551,7 @@ def _container_env(name: str) -> dict:
         return {}
 
 
-def stale_env_containers(ip: str, *, log=None) -> list[tuple[str, str, str]]:
+def stale_env_containers(ip_or_map, *, log=None) -> list[tuple[str, str, str]]:
     """(container, variable, stale_ip) for env endpoints pinned to the wrong IP.
 
     ⚠️ THIS IS THE HOLE /etc/hosts PATCHING CANNOT REACH, and it cost a real
@@ -440,6 +567,16 @@ def stale_env_containers(ip: str, *, log=None) -> list[tuple[str, str, str]]:
     the compose invocation — so this returns findings and the agent acts.
     """
     say = log or (lambda _m: None)
+    # Accept a single IP (legacy) or the {name: ip} map from service_ips().
+    if isinstance(ip_or_map, str):
+        infra_ip, svc = ip_or_map, {}
+    else:
+        svc = dict(ip_or_map)
+        infra_ip = svc.get("afl-minio") or next(iter(svc.values()), None)
+
+    def _want(var: str) -> str | None:
+        return svc.get(_ENDPOINT_VAR_SERVICE.get(var, ""), infra_ip)
+
     out: list[tuple[str, str, str]] = []
     for c in _runner_containers():
         # One unreadable container must not stop the sweep — the same contract
@@ -456,9 +593,11 @@ def stale_env_containers(ip: str, *, log=None) -> list[tuple[str, str, str]]:
                 # A loopback or container-network address is deliberate, not drift.
                 if found.startswith(("127.", "172.", "0.")):
                     continue
-                if found != ip:
+                want = _want(var)
+                if want and found != want:
                     out.append((c, var, found))
-                    say(f"env drift: {c} {var} pins {found}, infra is {ip}")
+                    say(f"env drift: {c} {var} pins {found}, "
+                        f"{_ENDPOINT_VAR_SERVICE.get(var, 'infra')} is {want}")
     return out
 
 

@@ -34,8 +34,13 @@ export FW_MONGO_URL
 # goes stale and every reconcile fails against an address nobody answers --
 # after a power outage that is the normal case, not the exception. Say so
 # loudly and name the fix, rather than retrying into a dead address in silence.
-_infra="$(.venv/bin/python -m facetwork.servers --infra-name 2>/dev/null)"
-_want="$(.venv/bin/python -m facetwork.servers --resolve "$_infra" 2>/dev/null)"
+# ⚠️ Resolve afl-mongodb BY NAME, not via --infra-name. MongoDB moved off the
+# infra host on 2026-09-13 (MinIO stayed), so comparing the afl-mongodb entry
+# against the infra host now yields the wrong answer — and this block PRINTS A
+# sed COMMAND, so a wrong answer is a wrong instruction to point Mongo back at
+# the host that no longer serves it.
+_infra="afl-mongodb"
+_want="$(.venv/bin/python -m facetwork.servers --resolve afl-mongodb 2>/dev/null)"
 _have="$(getent hosts afl-mongodb 2>/dev/null | awk '{print $1; exit}')"
 if [ -n "$_want" ] && [ -n "$_have" ] && [ "$_want" != "$_have" ]; then
   echo "fleet-agent-watch: WARNING /etc/hosts maps afl-mongodb to $_have but the"

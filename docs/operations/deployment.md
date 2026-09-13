@@ -426,6 +426,60 @@ If you skip this — e.g. keep `FW_OSM_OUTPUT_BASE` pointed at a *local* path wh
 - **Monitoring**: Dashboard at `/v3/workflows` and `/v3/servers`; API at `/api/servers` for health checks
 - **Crash recovery**: Orphan reaper automatically resets tasks from dead runners (configurable via `FW_REAPER_TIMEOUT_MS`)
 
+## MongoDB host (moved off the infra host, 2026-09-13)
+
+The fleet's MongoDB no longer runs on the infra host. It runs on **beelink01**,
+with its dbPath on that machine's second NVMe; MinIO, PostGIS, the registry, the
+dashboard and the osm-extracts server stayed on **server3**. Consequently the
+`afl-*` names are resolved **per service** from `servers.json` (each name goes to
+whichever entry claims it as an alias, falling back to the `infra: true` host) —
+see `_fleet_lib.service_ips`. A one-infra-host deployment is unaffected: with no
+entry claiming a name, every name still resolves to the infra host as before.
+
+Two things that migration turned up, both worth keeping:
+
+### ⚠️ mongod needs a raised file-descriptor limit on native Docker
+
+Within minutes of the cutover mongod began logging
+
+    "Unable to create eventfd object ... Too many open files, errno: 24"
+
+and stopped accepting connections **while the container still reported `Up`** —
+the whole fleet lost its control plane, and `docker ps` showed nothing wrong.
+Cause: Docker Desktop's VM (server3) hands containers a large default nofile, so
+this never appeared there; native Docker on Linux gives the daemon's default of
+**1024**, and this fleet opens 108 runners times a pymongo connection pool.
+MongoDB's own production checklist asks for 64000. The compose service therefore
+sets it explicitly:
+
+```yaml
+    ulimits:
+      nofile: {soft: 64000, hard: 64000}
+```
+
+Check it with `docker exec facetwork-mongodb sh -c 'ulimit -n'` — the failure
+mode is a healthy-looking container that refuses connections, so do not infer it
+from `docker ps`.
+
+### ⚠️ Patching /etc/hosts does not move a LIVE connection
+
+The fleet-agent's drift self-heal repoints `afl-mongodb` inside every running
+runner, and that is enough for a runner to find Mongo *at its next connect*. It
+does **not** move a connection that is already open: pymongo keeps its pool, so
+after the catalog flip the fleet was split — some runners on the new host, some
+still heartbeating to the old one, with both databases advancing. Measured here,
+it stayed that way indefinitely.
+
+Stopping the OLD mongod is what completes a migration: the sockets break, the
+clients reconnect, and the name they re-resolve is the new one. Plan the cutover
+around that rather than expecting the self-heal to drain the old host.
+
+A container is also only born with the right address if the agent supplies it —
+`FW_MONGO_IP` / `FW_INFRA_IP` in the compose env. Before 2026-09-13 neither was
+passed, so `${FW_INFRA_IP:-127.0.0.1}` made every new runner point `afl-mongodb`
+at its own loopback until the next self-heal poll rescued it.
+
+
 ## Configuration Reference
 
 ### Environment Variables
