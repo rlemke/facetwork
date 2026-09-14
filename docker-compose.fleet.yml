@@ -96,6 +96,16 @@ x-fleet-env: &fleet-env
   FW_MONGODB_URL: ${FW_MONGODB_URL:?set FW_MONGODB_URL to the shared MongoDB, e.g. mongodb://afl-mongodb:27017}
   FW_S3_ENDPOINT: ${FW_S3_ENDPOINT:?set FW_S3_ENDPOINT to the shared MinIO, e.g. http://afl-minio:9000}
   FW_POSTGIS_URL: ${FW_POSTGIS_URL:-}
+  # ⚠️ The SAME value compose uses to pick the image, passed INTO the container.
+  # `image: ${FW_RUNNER_IMAGE}` selects what runs; it does not tell the process
+  # what it is running. ServerDefinition.image reads this at registration so
+  # `fleet status` can flag a runner on a stale tag — the check that would have
+  # caught a generalist container sitting 22h across three rollouts while its
+  # host read "23/23 [up-to-date]". Without this the variable is empty inside
+  # the container, every runner reports "", and the check degrades to
+  # "(image unreported)" fleet-wide — which is what it did after the first
+  # rollout that shipped it.
+  FW_RUNNER_IMAGE: ${FW_RUNNER_IMAGE:-}
 
 services:
   runner-anthropic:
