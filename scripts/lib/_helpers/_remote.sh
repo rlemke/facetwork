@@ -200,14 +200,17 @@ for entry in (catalog.servers() or []):
     name = entry.get("name") or ""
     if not name or name.split(".")[0].lower() == me:
         continue
-    # ⚠️ RESOLVING IS NOT MEMBERSHIP. A machine can be catalogued — so its
-    # capacity and intent are tracked — long before it runs a fleet-agent.
-    # atopnuc02 answered on the network, passed the reachability filter, and
-    # then failed `rollout --stagger`'s pre-pull because it has no Docker and
-    # no key; the rollout correctly refused to flip the config, so ONE
-    # unprovisioned host blocked deploying to the six real ones. Entries opt
-    # out with "joined": false until they are provisioned. Absent means true,
-    # so every existing entry is unaffected.
+    # RESOLVING IS NOT MEMBERSHIP. A machine can be catalogued (so its capacity
+    # and intent are tracked) long before it runs a fleet-agent. atopnuc02
+    # answered on the network, passed the reachability filter, then failed the
+    # staggered pre-pull because it has no Docker and no key. The rollout then
+    # correctly refused to flip the config, so ONE unprovisioned host blocked
+    # deploying to the six real ones. Entries opt out with "joined": false until
+    # provisioned. Absent means true, so existing entries are unaffected.
+    #
+    # NOTE: no apostrophes or backticks in this block. It sits inside a quoted
+    # heredoc nested in $(...), where bash still scans for quote pairs and a
+    # lone apostrophe breaks the whole file with "unexpected EOF".
     if entry.get("joined") is False:
         continue
     if catalog.resolve_ip(name):        # skip machines that are simply off
