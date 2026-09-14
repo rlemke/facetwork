@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+# fw-summary: send a system command (status/pause/resume) to specific runners
+"""runner sys — system-control commands addressed to RUNNER PROCESSES.
+
+    fw runner sys status --host server3
+    fw runner sys pause  --host server3 --task-list osm
+    fw runner sys resume --uuid f4889570-...
+    fw runner sys status --all
+
+⚠️ THE ADDRESS IS THE SERVER UUID, and it has to be. Measured on the live fleet:
+111 runners share only 7 distinct server_names (server3 alone runs 23), and
+`service_name` is "afl-runner" for 109 of them. Even server_name+task_list is
+not unique — services have replicas. uuid is the only key that identifies one
+process, so `fw:sys:<uuid>` is the wire name a runner polls for.
+
+⚠️ COARSER TARGETS ARE FAN-OUT, not a broadcast task. claim_task is a race in
+which exactly ONE runner wins, so a single task aimed at a host would pause one
+arbitrary runner out of 23. This resolves a selector to matching live runners
+and enqueues ONE TASK PER RUNNER.
+
+⚠️ A uuid is EPHEMERAL: a restarted runner gets a new one. That is correct for
+these commands — they act on a live process. A command aimed at a runner that
+has since died is never claimed and stays visible as a pending task, instead of
+silently applying to whatever replaced it.
+
+`pause` means "claim no NEW work". In-flight tasks run to completion and the
+HEARTBEAT CONTINUES — a paused runner that went quiet would be pruned by the
+dead-server reaper and its work reclaimed elsewhere, turning a pause into the
+duplicate execution the reaper exists to cause.
+"""
+import argparse
+import json
+import os
+import sys
+import time
+import uuid as _uuid
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_helpers"))
+from _dotenv import load_env  # noqa: E402
+
+load_env()
+
+KNOWN = ("status", "pause", "resume")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="fw runner sys")
+    ap.add_argument("command", choices=KNOWN)
+    ap.add_argument("--host", help="server_name (fans out to every runner on it)")
+    ap.add_argument("--task-list", help="narrow to one service on that host")
+    ap.add_argument("--uuid", help="one runner process, exactly")
+    ap.add_argument("--all", action="store_true", help="every live runner in the fleet")
+    ap.add_argument("--mongo", default=os.environ.get("FW_MONGODB_URL"))
+    ap.add_argument("--fresh-ms", type=int, default=180_000)
+    ap.add_argument("--dry", action="store_true", help="show targets, enqueue nothing")
+    a = ap.parse_args()
+
+    if not (a.host or a.uuid or a.all):
+        ap.error("choose a target: --uuid, --host [--task-list], or --all")
+
+    try:
+        import pymongo
+    except ImportError:
+        print("needs pymongo", file=sys.stderr)
+        return 2
+    url = a.mongo or "mongodb://localhost:27017"
+    db = pymongo.MongoClient(url, serverSelectionTimeoutMS=8000).get_database(
+        os.environ.get("FW_MONGODB_DATABASE") or "facetwork")
+
+    now = int(time.time() * 1000)
+    targets = []
+    for s in db.servers.find({"state": "running"}):
+        # A stale record is a runner that is already gone; addressing it would
+        # enqueue a task nothing will ever claim.
+        if now - int(s.get("ping_time") or 0) > a.fresh_ms:
+            continue
+        if a.uuid and not str(s.get("uuid", "")).startswith(a.uuid):
+            continue
+        if a.host and str(s.get("server_name") or "") != a.host:
+            continue
+        if a.task_list and str(s.get("task_list") or "") != a.task_list:
+            continue
+        targets.append(s)
+
+    if not targets:
+        print("no live runners match that selector", file=sys.stderr)
+        return 1
+
+    print(f"{a.command} -> {len(targets)} runner(s):")
+    for s in targets:
+        print(f"  {str(s.get('server_name')):12} {str(s.get('task_list')):12} "
+              f"{str(s.get('uuid'))[:8]}  container={str(s.get('container'))[:12]}")
+    if a.dry:
+        print("(--dry: nothing enqueued)")
+        return 0
+
+    for s in targets:
+        sid = s.get("uuid")
+        db.tasks.insert_one({
+            "uuid": str(_uuid.uuid4()),
+            "name": f"fw:sys:{sid}",
+            "state": "pending",
+            "task_list_name": s.get("task_list") or "default",
+            "data": {"command": a.command},
+            "created": now,
+            "updated": now,
+            "retry_count": 0,
+            # One retry: a control command that keeps retrying against a runner
+            # that has gone is noise, and the task staying visible is the signal.
+            "max_retries": 1,
+        })
+    print(f"enqueued {len(targets)} fw:sys task(s) — watch `fw runner list` or the dashboard")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

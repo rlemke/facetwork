@@ -315,8 +315,26 @@ class RunnerService(BaseRunner):
         # the HandlerDispatcher protocol).
         self._continuation_dispatcher = _ToolRegistryDispatcher(self._tool_registry)
 
-        # Register built-in task handler
+        # Register built-in task handlers
         self._tool_registry.register("fw:execute", self._handle_execute_workflow)
+        # System-control channel, addressed to THIS RUNNER PROCESS.
+        #
+        # ⚠️ The key is the server UUID, not the host name. Measured on the live
+        # fleet: 111 runners share only 7 distinct server_names (server3 alone
+        # runs 23), so "fw:sys:server3" would be claimed by whichever of its 23
+        # runners won the race — a lottery, not an address. `container` is not
+        # universal either (polyglot and bare-metal runners report none). uuid
+        # is the only field that is unique per runner process.
+        #
+        # ⚠️ A uuid is EPHEMERAL — a restarted runner gets a new one. That is
+        # correct for these commands: they act on a live process, so a command
+        # aimed at a runner that has since died is simply never claimed and
+        # shows up as a pending task, rather than silently applying to whatever
+        # replaced it.
+        self._tool_registry.register(f"fw:sys:{self.server_id}", self._handle_sys_command)
+        # Set by fw:sys pause/resume. Claiming is gated on it; heartbeats are
+        # NOT — see _handle_sys_command.
+        self._paused: bool = False
 
     # server_id / is_running: inherited from BaseRunner.
 
@@ -485,6 +503,31 @@ class RunnerService(BaseRunner):
         from ..task_list_routing import namespaces_for
 
         poll_lists = sorted(set(namespaces_for(self._get_event_names())) | {self._config.task_list})
+
+        # PAUSED: claim nothing except this runner's own control channel, so a
+        # `resume` can still reach it. In-flight work is untouched — pause means
+        # "take no NEW work", which is what makes it safe to drain a host before
+        # maintenance without killing a multi-hour extract.
+        #
+        # ⚠️ Deliberately does NOT stop the heartbeat. A paused runner that went
+        # quiet would be pruned by the dead-server reaper and its in-flight tasks
+        # reclaimed by another host — turning a pause into exactly the
+        # duplicate-execution event the reaper exists to cause. It stays visibly
+        # alive and simply stops claiming.
+        if getattr(self, "_paused", False):
+            capacity_for_sys = capacity
+            while capacity_for_sys > 0:
+                task = self._persistence.claim_task(
+                    task_names=[f"fw:sys:{self.server_id}"],
+                    task_list=poll_lists,
+                    server_id=self._server_id,
+                )
+                if task is None:
+                    break
+                self._submit_event_task(task)
+                capacity_for_sys -= 1
+                dispatched += 1
+            return dispatched
 
         # Claim event tasks from the task queue (filtered by circuit breaker)
         event_names = [n for n in self._get_event_names() if self._circuit_breakers.is_allowed(n)]
@@ -887,6 +930,49 @@ class RunnerService(BaseRunner):
             names.extend(n for n in handler_names if is_ambient(n))
             return sorted(set(names))
         return handler_names
+
+    def _handle_sys_command(self, payload: dict) -> dict:
+        """Execute a system-control command addressed to this runner.
+
+        Commands: ``status`` (read-only), ``pause`` (claim no new work),
+        ``resume``. Anything else is REFUSED by name rather than ignored — a
+        control channel that silently accepts an unknown verb is worse than one
+        that rejects it, because the caller believes it took effect.
+
+        ⚠️ Every command is IDEMPOTENT. Delivery is at-least-once and there is
+        no fencing token (see docs/reference/execution-semantics.md), so a
+        command must be safe to apply twice and concurrently. pause/resume set
+        a flag to an absolute value rather than toggling, which is why: a toggle
+        delivered twice is a no-op, and a toggle delivered twice CONCURRENTLY is
+        a coin flip.
+        """
+        cmd = str((payload or {}).get("command") or (payload or {}).get("cmd") or "").strip().lower()
+        if cmd in ("pause", "resume"):
+            was = getattr(self, "_paused", False)
+            self._paused = (cmd == "pause")
+            logger.warning(
+                "fw:sys %s on %s (%s) — paused %s -> %s; in-flight work continues, "
+                "heartbeat continues", cmd, self._config.server_name, self.server_id,
+                was, self._paused)
+            return {"ok": True, "command": cmd, "server_id": self.server_id,
+                    "server_name": self._config.server_name,
+                    "was_paused": was, "paused": self._paused,
+                    "active_work_items": self._active_count()}
+        if cmd == "status":
+            now = _current_time_ms()
+            return {"ok": True, "command": "status", "server_id": self.server_id,
+                    "server_name": self._config.server_name,
+                    "paused": getattr(self, "_paused", False),
+                    "running": self.is_running,
+                    "uptime_ms": now - self._start_time_ms if self._start_time_ms else 0,
+                    "active_work_items": self._active_count(),
+                    "task_list": self._config.task_list,
+                    "server_group": self._config.server_group,
+                    "version": getattr(self, "_version", "unknown")}
+        raise ValueError(
+            f"fw:sys: unknown command {cmd!r} (known: status, pause, resume). "
+            f"Refused rather than ignored, so the caller is not left believing it applied."
+        )
 
     def _get_builtin_task_names(self) -> list[str]:
         """Get task name prefixes for built-in handlers (e.g. fw:execute).
