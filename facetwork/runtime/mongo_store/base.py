@@ -291,13 +291,48 @@ class BaseMixin:
         tasks.create_index("task_list_name", name="task_list_name_index")
         tasks.create_index("state", name="task_state_index")
         tasks.create_index("name", name="task_name_index")
-        # Partial unique index for running tasks
-        tasks.create_index(
-            "step_id",
-            unique=True,
-            partialFilterExpression={"state": "running"},
-            name="task_step_id_running_unique_index",
-        )
+        # At most one RUNNING task per STEP — the guard against a step being
+        # executed twice concurrently.
+        #
+        # ⚠️ The filter must exclude STEPLESS tasks. It used to be
+        # {"state": "running"} alone, which made the empty string a value like
+        # any other: bootstrap tasks (fw:execute) all carry step_id "", so only
+        # ONE of them could be running fleet-wide, and the second concurrent
+        # workflow submission failed to claim. Control tasks with step_id None
+        # collided the same way — measured 2026-09-14, that broke a runner's
+        # entire poll cycle with a repeating DuplicateKeyError, which reads as a
+        # database fault rather than a scheduling one.
+        #
+        # A task with no step is simply not in this invariant's scope; it was
+        # being caught by accident. `$gt: ""` excludes the empty string, and
+        # BSON type ordering places null below strings so None is excluded too.
+        # Verified both directions: many stepless tasks may run concurrently,
+        # while the same real step_id running twice still raises DuplicateKey.
+        _step_uniq = "task_step_id_running_unique_index"
+        _want_filter = {"state": "running", "step_id": {"$gt": ""}}
+        try:
+            _existing = next(
+                (dict(i) for i in tasks.list_indexes() if dict(i).get("name") == _step_uniq),
+                None,
+            )
+            # A partial index cannot be modified in place — it has to be dropped
+            # and rebuilt. Only do that when the filter actually differs, so a
+            # normal startup does not briefly drop the guard for no reason.
+            if _existing is not None and _existing.get("partialFilterExpression") != _want_filter:
+                tasks.drop_index(_step_uniq)
+                _existing = None
+            if _existing is None:
+                tasks.create_index(
+                    "step_id",
+                    unique=True,
+                    partialFilterExpression=_want_filter,
+                    name=_step_uniq,
+                )
+        except Exception:
+            # Never let an index migration stop a runner from starting: without
+            # this the guard is merely absent, with it the whole fleet is down.
+            logger.warning("could not migrate %s; leaving the existing index in place",
+                           _step_uniq, exc_info=True)
         # Compound indexes for the two claim_task queries. Equality fields
         # first, the single range field last, so each query is fully served by
         # an index instead of a collection scan on the hot tasks collection:
