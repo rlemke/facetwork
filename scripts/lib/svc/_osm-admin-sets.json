@@ -6,14 +6,16 @@
   "sets": {
     "us-states": {
       "description": "51 US states via Census TIGER polygons (the ONLY path that keys north-america/us/<state>)",
-      "workflow": "osm.planet.BuildPlanetExtracts",
-      "requires_fresh": [],
-      "_warning": "Cuts from the ~20 GB north-america extract, NOT the 92 GB planet: US states only intersect that continent, so it is ~4.4x less I/O and proportionally less RAM per region. A 25-region complete_ways batch over the PLANET OOM-killed a 14 GiB VM on 2026-08-30, hence batch_size 4. The planet is still downloaded/updated first, which pins this tier to the single host holding it. ⚠️ osm.planet.BuildRegionExtracts removes that pin (it cuts from the bucket and drops the two planet steps) and is written, compile-checked and unit-tested in fwh_osm — but NOT YET BAKED INTO THE RUNNER IMAGE. Switch this set to it, and set requires_fresh to ['north-america-latest.osm.pbf'], in the same change that rolls out that image. Pointing at it sooner submits a workflow the fleet cannot execute.",
+      "workflow": "osm.planet.BuildRegionExtracts",
+      "requires_fresh": [
+        "north-america-latest.osm.pbf"
+      ],
+      "_warning": "Cuts from the ~20 GB north-america extract, NOT the 92 GB planet: US states only intersect that continent, so it is ~4.4x less I/O and proportionally less RAM per region. A 25-region complete_ways batch over the PLANET OOM-killed a 14 GiB VM on 2026-08-30, hence batch_size 4. SWITCHED 2026-09-13 from BuildPlanetExtracts, which downloaded and updated the PLANET first and so pinned this tier to the one host holding it - for a source it never read. BuildRegionExtracts drops those two steps and fetches north-america from the BUCKET, so any host with ~50 GB of scratch can run it. requires_fresh is set because the source is now a bucket artifact this tier depends on, where before it was re-derived from the planet in-run. Deployed in fwh_osm 53a4d94, image dfd10cf1.",
       "inputs": {
+        "source_region": "north-america",
         "scope": "subnational",
         "strategy": "complete_ways",
-        "batch_size": 4,
-        "source_region": "north-america"
+        "batch_size": 4
       },
       "merge_defaults": [
         "bucket",
