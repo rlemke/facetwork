@@ -82,6 +82,16 @@ x-osm-s3-env: &osm-s3-env
   FW_S3_ACCESS_KEY: ${FW_S3_ACCESS_KEY:-minioadmin}
   FW_S3_SECRET_KEY: ${FW_S3_SECRET_KEY:-minioadmin}
   FW_S3_REGION: ${FW_S3_REGION:-us-east-1}
+  # "Run it where the data is." Every osm runner in the fleet advertises the
+  # planet handlers, but the 92 GB master exists on exactly ONE host — so any of
+  # them could claim planet work and then try to fetch 92 GB. This names WHERE
+  # the planet would be; the runner stats it and advertises dataset_planet_gb
+  # only if it is really there (base_runner.measured_resources). A step carrying
+  # `with Requires(dataset_planet_gb = 80)` therefore routes to the planet host
+  # without anything having to name that host — and every other runner declines,
+  # because an unadvertised dimension is a decline by contract.
+  # Set on ALL hosts deliberately: it is a measurement, not a claim.
+  FW_RUNNER_DATASETS: ${FW_RUNNER_DATASETS:-planet=/planet/planet-latest.osm.pbf}
   FW_LOCAL_SCRATCH: /scratch
   # get_output_base()/get_temp_dir() — keep handler temp + local output on the
   # local scratch/output volumes, never on the object store. FW_OUTPUT_BASE
@@ -249,7 +259,24 @@ services:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
-      - ${FW_MINIO_DATA_DIR:-/Volumes/afl_data/minio}:/data
+      # ⚠️ LONG-FORM WITH create_host_path: false — do not "simplify" to `a:b`.
+      # This path is on an ATTACHED volume, and Docker can start before it
+      # mounts. With the short form a missing mount is not an error: Docker
+      # CREATES AN EMPTY DIRECTORY and MinIO comes up serving an EMPTY OBJECT
+      # STORE — no cache, no published maps, no osm-extracts bucket — while
+      # reporting healthy. It has already happened on this fleet once
+      # (containers beat the /Volumes mount: registry 503 and MinIO
+      # "corrupted backend" while `docker ps` said Up).
+      #
+      # The same mistake cost the control plane 2.5h on 2026-09-13 when Mongo
+      # was put behind a session mount; there the guard caught it and mongod
+      # refused to start, which is the only acceptable failure mode for a store
+      # whose emptiness is indistinguishable from health.
+      - type: bind
+        source: ${FW_MINIO_DATA_DIR:-/Volumes/afl_data/minio}
+        target: /data
+        bind:
+          create_host_path: false
     # Resolve as `afl-minio` on the compose network too, so the unified default
     # endpoint (http://afl-minio:9000) works on the infra host exactly as it does
     # on remote runner hosts (which map afl-minio via extra_hosts). Keeps ONE
