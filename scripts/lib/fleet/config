@@ -327,8 +327,20 @@ def cmd_status(a):
         if odd:
             img_note = "  ** STALE IMAGE: " + ", ".join(f"{n}x {t}" for t, n in sorted(odd.items())) + " **"
             degraded.append(host)
-        elif unknown and unknown == n and want_tag:
-            img_note = "  (image unreported)"
+        elif unknown and want_tag:
+            # ⚠️ Report a PARTIAL unreported count too, not only an all-or-nothing
+            # one. The first version said "(image unreported)" only when EVERY
+            # runner on the host was unreported, so a host with 4 of 23 unreported
+            # rendered completely clean — and those four were genuinely stale
+            # containers one rollout behind. A partial mix is the more likely
+            # shape (a rollout that left stragglers), so it is exactly the case
+            # worth surfacing.
+            #
+            # Still not "STALE": a runner reporting "" may legitimately be a
+            # polyglot agent on a different image (gh-router reports none), so
+            # this stays an observation rather than a fault.
+            img_note = ("  (image unreported)" if unknown == n
+                        else f"  ({unknown} of {n} image unreported)")
         print(f"  {host:<24} {count:<18} [{drift}]{health}{img_note}  {ips or ''}")
     if degraded:
         print("\n  A host can apply the config and still have its runners die on startup —")
