@@ -52,6 +52,33 @@ class ServerState:
     QUARANTINE = "quarantine"
 
 
+@lru_cache(maxsize=1)
+def runner_image() -> str:
+    """The image tag this runner is RUNNING, or "" when not set.
+
+    ⚠️ Exists because "did the rollout reach every runner?" was unanswerable from
+    the data. `fleet status` measures convergence by counting REGISTERED RUNNERS
+    against what the fleet-agent was asked to start — which says nothing about
+    what image those runners are on. Measured 2026-09-13: a generalist container
+    ran 22 hours across THREE rollouts on a stale image while its host reported
+    "23/23 [up-to-date]" throughout. It had been orphaned by a server-group
+    change (gating a role out does not stop an already-running container), so
+    the agent never recreated it and nothing noticed.
+
+    `fleet_agents.applied_image` does not cover this: that host DID apply the new
+    config. Only the per-runner image distinguishes "the agent applied it" from
+    "this process is actually running it".
+
+    Read from the environment the agent already passes to compose, so no new
+    plumbing: FW_RUNNER_IMAGE is what fleet_config pins fleet-wide. Returns ""
+    rather than guessing, and a "" is reported as unknown, never as stale — the
+    first fleet to deploy this has no runner reporting one yet.
+    """
+    import os as _os
+
+    return (_os.environ.get("FW_RUNNER_IMAGE") or "").strip()
+
+
 @dataclass
 class HandledCount:
     """Event handling statistics."""
@@ -104,6 +131,10 @@ class ServerDefinition:
     # missed by the others — the recurring shape of bugs in this codebase. Computed
     # here, no caller can omit it.
     container: str = field(default_factory=container_id)
+    # Image tag this runner is running. Same default_factory contract as
+    # `container` above and for the same reason: set at the call sites it would
+    # be added to one subclass and missed by the others.
+    image: str = field(default_factory=runner_image)
 
 
 @dataclass

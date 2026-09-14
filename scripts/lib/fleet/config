@@ -295,7 +295,41 @@ def cmd_status(a):
                 health = f"  ** {int(exp) - n} MISSING **"
         if health:
             degraded.append(host)
-        print(f"  {host:<24} {count:<18} [{drift}]{health}  {ips or ''}")
+        # ⚠️ IMAGE TAGS, not just counts. Everything above measures whether the
+        # right NUMBER of runners registered; none of it asks what they are
+        # RUNNING. A container orphaned by a server-group change keeps running,
+        # keeps registering, and keeps being counted "up-to-date" — measured
+        # 2026-09-13, one sat 22h across THREE rollouts on a stale image while
+        # its host read 23/23. `fleet_agents.applied_image` cannot catch that:
+        # the agent applied the config fine, it just never touched that
+        # container. Only the per-runner tag distinguishes the two.
+        #
+        # A runner reporting "" is UNKNOWN, never stale: it predates
+        # ServerDefinition.image, and calling that drift would flag the whole
+        # fleet on the first deploy of this check.
+        # The fleet-wide tag is per-ROLE, not top-level: take the most common
+        # image across roles that pin one. A role with its own image (gh-router
+        # runs a different agent entirely) is a legitimate minority, not drift.
+        _imgs = Counter((r_.get("image") or "").strip()
+                        for r_ in (cfg.get("roles") or {}).values()
+                        if (r_.get("image") or "").strip())
+        want_img = _imgs.most_common(1)[0][0] if _imgs else ""
+        tags = Counter()
+        for sv in servers:
+            if _host_key(sv.get("server_name", "?")) != host:
+                continue
+            img = (sv.get("image") or "").strip()
+            tags[img.rsplit(":", 1)[-1] if img else ""] += 1
+        want_tag = want_img.rsplit(":", 1)[-1] if want_img else ""
+        odd = {t: n for t, n in tags.items() if t and want_tag and t != want_tag}
+        unknown = tags.get("", 0)
+        img_note = ""
+        if odd:
+            img_note = "  ** STALE IMAGE: " + ", ".join(f"{n}x {t}" for t, n in sorted(odd.items())) + " **"
+            degraded.append(host)
+        elif unknown and unknown == n and want_tag:
+            img_note = "  (image unreported)"
+        print(f"  {host:<24} {count:<18} [{drift}]{health}{img_note}  {ips or ''}")
     if degraded:
         print("\n  A host can apply the config and still have its runners die on startup —")
         print("  check `docker ps` restart counts and the runner logs on: " + ", ".join(degraded))
