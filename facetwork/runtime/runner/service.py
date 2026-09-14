@@ -521,6 +521,12 @@ class RunnerService(BaseRunner):
                     task_names=[f"fw:sys:{self.server_id}"],
                     task_list=poll_lists,
                     server_id=self._server_id,
+                    # Every capability kwarg, like every other claim site.
+                    # test_every_claim_site_passes_the_capability_kwarg exists
+                    # because a NEW poll loop that omits them claims work the
+                    # runner cannot serve — and it caught this one.
+                    resources=self._measured_resources(),
+                    known_features=self._known_ast_features(),
                 )
                 if task is None:
                     break
