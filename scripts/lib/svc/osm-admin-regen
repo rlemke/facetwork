@@ -149,9 +149,22 @@ PYBIN="${PYTHON:-$FW_ROOT/.venv/bin/python}"
 # The guard runs before `--set` is resolved, so a hardcoded $WORKFLOW checked
 # BuildAdminSetWorkflow while submitting a BuildPlanetExtracts set: us-states
 # was blocked only by coincidence (2026-08-29), and - the dangerous direction -
-# two BuildPlanetExtracts runs would not have blocked each other at all. The
-# reason for the guard is that they contend for the SAME EXTERNAL VOLUME, which
-# has nothing to do with which workflow it is, so the union is what it means.
+# two BuildPlanetExtracts runs would not have blocked each other at all.
+#
+# ⚠️ It is a BULKHEAD, not a lock. The original reason was that runs "contend
+# for the SAME EXTERNAL VOLUME" - true when the OSM tier effectively ran on one
+# host. It is no longer true of BuildAdminSetWorkflow: BuildAdminSet localises
+# its source from the BUCKET into the CLAIMING HOST's own scratch
+# (_scratch_dir + s3.download_file), so two continents on two hosts share
+# nothing but MinIO read bandwidth. Holding the limit at 1 serialises the fleet
+# for no reason - measured: europe alone has taken 9.8h, so six continents in
+# series is days of wall clock across idle machines.
+#
+# FW_OSM_REGEN_MAX_INFLIGHT caps concurrent runs; default 1 preserves the
+# previous behaviour exactly. Raise it to at most the number of hosts that can
+# actually serve the work. ⚠️ Do NOT raise it for BuildPlanetExtracts sets:
+# those read the 92 GB planet, which lives on ONE host, so they really are
+# mutually exclusive.
 regen_in_flight() {
     "$PYBIN" - "$SETS_FILE" "$WORKFLOW" <<'PY' 2>/dev/null
 import json, os, sys
@@ -177,13 +190,15 @@ try:
     q = {"workflow.name": {"$in": sorted(names)},
          "state": {"$nin": ["completed", "failed", "terminated"]}}
     n = db.runners.count_documents(q)
-    if n:                             # name what is actually running, so the
+    cap = int(os.environ.get("FW_OSM_REGEN_MAX_INFLIGHT") or 1)
+    if n >= cap:                      # name what is actually running, so the
         r = db.runners.find_one(q)    # refusal is actionable, not generic
-        sys.stderr.write(((r or {}).get("workflow") or {}).get("name", "?") + "\n")
+        sys.stderr.write(((r or {}).get("workflow") or {}).get("name", "?")
+                         + f" ({n} in flight, cap {cap})\n")
 except Exception:
     sys.exit(2)
 print(n)
-sys.exit(0 if n == 0 else 1)
+sys.exit(0 if n < cap else 1)
 PY
 }
 
