@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+# fw-summary: send a command (status/recreate/restart) to a host's fleet-agent
+"""fleet agent-cmd — control a HOST's fleet-agent, not a runner process.
+
+    fw fleet agent-cmd status   --host server3.local
+    fw fleet agent-cmd recreate --host beelink01 --service runner-generalist
+    fw fleet agent-cmd status   --all
+
+⚠️ TWO DIFFERENT CHANNELS, on purpose:
+
+    fw:sys:<uuid>    -> a runner PROCESS   (status/pause/resume)
+    fw:agent:<host>  -> a host's AGENT     (status/recreate/restart a container)
+
+A runner cannot restart the container it lives in, so anything at the
+container/compose layer belongs here. This is the layer that had no remote
+control at all: the agent's only input was the fleet_config version, which is
+fine for "roll everyone forward" and useless for "this one service on this one
+host is wrong" — the state that let an orphaned container run 22h on a stale
+image across three rollouts.
+
+⚠️ The --host value is the agent's own fleet_agents key, which is NOT uniform
+across the fleet (both "MaxPro.local" and "atopnuc01" exist). This lists the
+real keys rather than guessing, so the address always matches what the agent
+writes.
+"""
+import argparse
+import os
+import sys
+import time
+import uuid as _uuid
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_helpers"))
+from _dotenv import load_env  # noqa: E402
+import _fleet_lib  # noqa: E402
+
+load_env()
+KNOWN = ("status", "recreate", "restart")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="fw fleet agent-cmd")
+    ap.add_argument("command", choices=KNOWN)
+    ap.add_argument("--host", help="fleet_agents key (see --list-hosts)")
+    ap.add_argument("--all", action="store_true")
+    ap.add_argument("--service", help="container name, e.g. runner-generalist")
+    ap.add_argument("--list-hosts", action="store_true")
+    ap.add_argument("--mongo")
+    ap.add_argument("--wait", type=int, default=90, help="seconds to await a result (0 = fire and forget)")
+    a = ap.parse_args()
+
+    import pymongo
+    url = a.mongo or os.environ.get("FW_MONGODB_URL") or _fleet_lib.resolve_mongo(None, log=lambda m: None)
+    db = pymongo.MongoClient(url, serverSelectionTimeoutMS=8000).get_database(
+        os.environ.get("FW_MONGODB_DATABASE") or "facetwork")
+
+    keys = sorted(d["_id"] for d in db.fleet_agents.find({}, {"_id": 1}))
+    if a.list_hosts:
+        print("fleet-agent keys (use these verbatim as --host):")
+        for k in keys:
+            print(f"  {k}")
+        return 0
+    if not (a.host or a.all):
+        ap.error("choose --host <key> or --all (see --list-hosts)")
+    if a.command in ("recreate", "restart") and not a.service:
+        ap.error(f"{a.command} needs --service (e.g. runner-generalist)")
+
+    targets = keys if a.all else [a.host]
+    unknown = [t for t in targets if t not in keys]
+    if unknown:
+        print(f"no fleet-agent record for: {', '.join(unknown)}", file=sys.stderr)
+        print(f"known keys: {', '.join(keys)}", file=sys.stderr)
+        return 1
+
+    now = int(time.time() * 1000)
+    ids = {}
+    for host in targets:
+        tid = str(_uuid.uuid4())
+        db.tasks.insert_one({
+            "uuid": tid, "name": f"fw:agent:{host}", "state": "pending",
+            "task_list_name": "default",
+            "data": {"command": a.command, "service": a.service or ""},
+            "created": now, "updated": now, "retry_count": 0, "max_retries": 1,
+        })
+        ids[host] = tid
+        print(f"  queued {a.command} -> {host}" + (f" ({a.service})" if a.service else ""))
+
+    if not a.wait:
+        return 0
+    print(f"  waiting up to {a.wait}s for results (agents poll on their own interval)...")
+    deadline = time.time() + a.wait
+    pending = dict(ids)
+    while pending and time.time() < deadline:
+        for host, tid in list(pending.items()):
+            t = db.tasks.find_one({"uuid": tid}) or {}
+            if t.get("state") in ("completed", "failed"):
+                res = (t.get("data") or {}).get("result")
+                mark = "ok" if t.get("state") == "completed" else "FAILED"
+                print(f"  [{mark}] {host}: {str(res)[:400]}")
+                pending.pop(host)
+        if pending:
+            time.sleep(3)
+    for host in pending:
+        print(f"  [pending] {host}: no result yet — the agent polls every ~30s")
+    return 0 if not pending else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

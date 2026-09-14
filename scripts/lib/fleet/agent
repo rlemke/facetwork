@@ -644,6 +644,111 @@ def cmd_refresh_hosts(a):
     _apply(cfg, mongo, getattr(a, "data_dir", None), None, recreate=True, dry_run=False)
 
 
+
+# ---------------------------------------------------------------------------
+# Agent command channel — fw:agent:<HOST>
+# ---------------------------------------------------------------------------
+#
+# The fleet-agent had NO remote control. Everything it does was driven by one
+# input: the fleet_config version. That is fine for "roll everyone forward" and
+# useless for "this one service on this one host is wrong" — which is a real
+# state: on 2026-09-13 a generalist container ran 22h across three rollouts on a
+# stale image because a server-group change orphaned it, and gating a role OUT
+# does not stop an already-running container. Nothing could tell that host to
+# recreate it; it had to be done by hand over ssh.
+#
+# ⚠️ This is the AGENT channel, not the runner one. `fw:sys:<uuid>` reaches a
+# runner PROCESS and can pause it; it cannot restart a container, because a
+# process cannot meaningfully recreate the container it lives in. Anything at
+# the container/compose layer has to be done by the agent, which is why this
+# exists separately rather than as another verb on fw:sys.
+#
+# ⚠️ The address is the agent's OWN fleet_agents key. Those keys are not
+# uniform — the live fleet has both "MaxPro.local" and "atopnuc01" — so any
+# normalisation here would drift from what the agent actually writes. Using the
+# record's own _id makes the address and the identity the same string by
+# construction.
+_AGENT_CMDS = ("status", "recreate", "restart")
+
+
+def _claim_agent_command(mongo):
+    """Atomically take one pending command addressed to THIS agent, or None."""
+    try:
+        import pymongo
+        db = _db(mongo)
+        return db.tasks.find_one_and_update(
+            {"name": f"fw:agent:{HOST}", "state": "pending"},
+            {"$set": {"state": "running", "server_id": HOST,
+                      "updated": int(time.time() * 1000)}},
+            return_document=pymongo.ReturnDocument.AFTER,
+        )
+    except Exception as exc:
+        print(f"fleet-agent[{HOST}]: could not poll the command channel: {exc}", flush=True)
+        return None
+
+
+def _finish_agent_command(mongo, task, ok, result):
+    try:
+        _db(mongo).tasks.update_one(
+            {"uuid": task.get("uuid")},
+            {"$set": {"state": "completed" if ok else "failed",
+                      "updated": int(time.time() * 1000),
+                      "data.result": result,
+                      "error": None if ok else str(result)[:500]}},
+        )
+    except Exception as exc:
+        print(f"fleet-agent[{HOST}]: could not record command result: {exc}", flush=True)
+
+
+def _run_agent_command(task, mongo, data_dir):
+    """Execute one agent command. Returns (ok, result)."""
+    d = task.get("data") or {}
+    cmd = str(d.get("command") or "").strip().lower()
+    svc = str(d.get("service") or "").strip()
+    print(f"fleet-agent[{HOST}]: command {cmd!r} service={svc!r}", flush=True)
+
+    if cmd == "status":
+        # Reports IMAGE TAGS, not just names — the blind spot that hid the
+        # orphaned container. `docker ps` on the host is the only place the
+        # truth lives; a runner cannot report a container it does not control.
+        out = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}\t{{.Image}}\t{{.Status}}"],
+            capture_output=True, text=True, timeout=60)
+        rows = []
+        for ln in out.stdout.splitlines():
+            parts = ln.split("\t")
+            if len(parts) >= 2 and "facetwork-runner" in parts[0]:
+                rows.append({"name": parts[0], "image": parts[1].rsplit(":", 1)[-1],
+                             "status": parts[2] if len(parts) > 2 else ""})
+        return True, {"host": HOST, "containers": len(rows), "runners": rows}
+
+    if cmd in ("recreate", "restart"):
+        if not svc:
+            return False, "service name required (e.g. runner-generalist)"
+        # `restart` reuses the existing container (and its baked-in image and
+        # env); `recreate` removes it so compose rebuilds it from the CURRENT
+        # config. Only recreate fixes a stale image or a stale mount — which is
+        # exactly why both exist rather than one.
+        try:
+            if cmd == "recreate":
+                subprocess.run(["docker", "rm", "-f", svc], capture_output=True,
+                               text=True, timeout=120)
+                cfg = _read_cfg(mongo)
+                _apply(cfg, mongo, data_dir, None, recreate=False)
+                return True, {"host": HOST, "action": "recreated", "service": svc}
+            r = subprocess.run(["docker", "restart", svc], capture_output=True,
+                               text=True, timeout=180)
+            if r.returncode != 0:
+                return False, (r.stderr or r.stdout)[:300]
+            return True, {"host": HOST, "action": "restarted", "service": svc}
+        except Exception as exc:
+            return False, str(exc)[:300]
+
+    # Refused by name, never ignored: a control channel that swallows an unknown
+    # verb leaves the operator believing it took effect.
+    return False, f"unknown command {cmd!r} (known: {', '.join(_AGENT_CMDS)})"
+
+
 def cmd_watch(a):
     _sweep_stranded_env_files()
     mongo = _fleet_lib.resolve_mongo(a.mongo, log=lambda m: print(f"  {m}"))
@@ -668,6 +773,18 @@ def cmd_watch(a):
         wd.daemon = True
         wd.start()
         try:
+            # Agent commands first: an operator asking this host to fix itself
+            # should not wait behind a config poll, and `status` must work even
+            # when the config read below is what is failing.
+            _t = _claim_agent_command(mongo)
+            if _t is not None:
+                try:
+                    _ok, _res = _run_agent_command(_t, mongo, a.data_dir)
+                except Exception as _exc:            # never let a command kill the loop
+                    _ok, _res = False, f"{type(_exc).__name__}: {_exc}"
+                print(f"fleet-agent[{HOST}]: command result ok={_ok} {str(_res)[:160]}", flush=True)
+                _finish_agent_command(mongo, _t, _ok, _res)
+
             cfg = _read_cfg(mongo)
             version = cfg.get("version")
             image = (cfg.get("roles") or {}).get("osm-geocoder", {}).get("image")
