@@ -271,6 +271,13 @@ class ServerMixin(_MixinBase):
             "ast_features": list(getattr(server, "ast_features", None) or []),
             "resources": server.resources or {},
             "container": getattr(server, "container", "") or "",
+            # Image tag this runner is running. ⚠️ This dict is an EXPLICIT
+            # field list, so a new ServerDefinition field is silently dropped
+            # here unless added — which is exactly what happened: `image` was
+            # populated in the container and never persisted, and `fleet status`
+            # read "(image unreported)" fleet-wide while the value was right
+            # there in the process. See test_server_roundtrip_persists_every_field.
+            "image": getattr(server, "image", "") or "",
             "topics": server.topics,
             "handlers": server.handlers,
             "handled": [asdict(h) for h in server.handled],
@@ -296,6 +303,7 @@ class ServerMixin(_MixinBase):
             ast_features=doc.get("ast_features", []) or [],
             resources=doc.get("resources") or {},
             container=doc.get("container", "") or "",
+            image=doc.get("image", "") or "",
             topics=doc.get("topics", []),
             handlers=doc.get("handlers", []),
             handled=[HandledCount(**h) for h in doc.get("handled", [])],
