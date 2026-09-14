@@ -400,7 +400,27 @@ def _rewrite_hosts(content: str, ip_or_map, names=INFRA_HOST_NAMES) -> str:
     return "\n".join(out) + "\n"
 
 
+# Non-runner containers that also reach the afl-* services and therefore also
+# go stale when one moves. They are NOT fleet-agent managed, so nothing else
+# maintains their addresses.
+#
+# ⚠️ The drift self-heal matched `facetwork-runner-` only, on the reasonable
+# assumption that runners are what talk to Mongo. They are not the only ones:
+# when MongoDB moved off the infra host on 2026-09-13 the DASHBOARD kept
+# pointing at the old address and stopped answering on :8080 entirely, because
+# it reached Mongo through the stopped container's compose alias. It had to be
+# repaired by hand, with a literal IP — which is exactly the kind of pin that
+# goes stale on the next DHCP lease and that this function exists to prevent.
+_EXTRA_AFL_CONTAINERS = ("facetwork-dashboard", "facetwork-mongo-express")
+
+
 def _runner_containers() -> list[str]:
+    """Containers whose afl-* /etc/hosts entries the agent maintains.
+
+    The runners, plus the infra UIs that consume the same names. Only those
+    actually present on THIS host are returned, so a host without a dashboard
+    simply gets the runners."""
+    names: list[str] = []
     try:
         out = subprocess.run(
             ["docker", "ps", "--format", "{{.Names}}", "--filter", "name=facetwork-runner-"],
@@ -408,9 +428,21 @@ def _runner_containers() -> list[str]:
             text=True,
             timeout=15,
         )
-        return [n for n in out.stdout.split() if n]
+        names = [n for n in out.stdout.split() if n]
     except Exception:
         return []
+    for extra in _EXTRA_AFL_CONTAINERS:
+        try:
+            out = subprocess.run(
+                ["docker", "ps", "--format", "{{.Names}}", "--filter", f"name=^{extra}$"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            names += [n for n in out.stdout.split() if n]
+        except Exception:
+            continue
+    return names
 
 
 def refresh_container_hosts(ip_or_map, *, log=None) -> list[str]:
