@@ -96,12 +96,29 @@ def main() -> int:
 
     for s in targets:
         sid = s.get("uuid")
+        tid = str(_uuid.uuid4())
         db.tasks.insert_one({
-            "uuid": str(_uuid.uuid4()),
+            "uuid": tid,
             "name": f"fw:sys:{sid}",
             "state": "pending",
             "task_list_name": s.get("task_list") or "default",
             "data": {"command": a.command},
+            # ⚠️ A UNIQUE step_id, never None and never "". The tasks collection
+            # carries a PARTIAL UNIQUE INDEX on {step_id} where state=="running"
+            # — "at most one running task per step". Inserting these with
+            # step_id=None made the first one to reach `running` occupy the null
+            # slot, and every later task doing the same failed with
+            # DuplicateKeyError. Measured 2026-09-14: that broke the poll cycle
+            # of the runner it was sent to, which is far worse than the command
+            # simply not working. Its own uuid gives each command a step nothing
+            # else shares.
+            "step_id": tid,
+            "runner_id": "",
+            "workflow_id": "",
+            "flow_id": "",
+            "kind": "",
+            "data_type": "",
+            "stage_name": "",
             "created": now,
             "updated": now,
             "retry_count": 0,

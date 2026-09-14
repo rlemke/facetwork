@@ -79,6 +79,13 @@ def main() -> int:
             "uuid": tid, "name": f"fw:agent:{host}", "state": "pending",
             "task_list_name": "default",
             "data": {"command": a.command, "service": a.service or ""},
+            # Unique step_id — see the note in scripts/lib/runner/sys. The
+            # partial unique index on {step_id} where state=="running" means a
+            # shared value (None or "") makes the second concurrent command
+            # fail with DuplicateKeyError. These agent commands happened to work
+            # because only one was ever in flight; --all would have hit it.
+            "step_id": tid, "runner_id": "", "workflow_id": "", "flow_id": "",
+            "kind": "", "data_type": "", "stage_name": "",
             "created": now, "updated": now, "retry_count": 0, "max_retries": 1,
         })
         ids[host] = tid
