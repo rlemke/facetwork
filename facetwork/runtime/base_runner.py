@@ -141,6 +141,51 @@ def _measure() -> dict:
     if mem_bytes:
         res["memory_gb"] = round(mem_bytes / (1024 ** 3), 2)
 
+    # Datasets this host HOLDS — the "run it where the data is" dimension.
+    #
+    # Some work is bound to a host not by capacity but by a large local artifact.
+    # The OSM planet is the case that forced this: a 92 GB file that exists on
+    # exactly one host, while 16 runners across 4 hosts advertise its handler.
+    # Nothing expressed that, so any of them could claim the work and then try to
+    # fetch 92 GB — server groups gate which ROLES start, not which TASKS route,
+    # and no capacity threshold separates "has the planet" from "has free disk".
+    #
+    # ⚠️ Declared as a PATH, never as a number, so this stays MEASURED. The
+    # operator says where a dataset would live; the runner stats it and
+    # advertises only what is really there. A host that merely claims to hold
+    # the planet is caught by the file not existing — which is the whole reason
+    # this function refuses to read capacities from config.
+    #
+    #   FW_RUNNER_DATASETS="planet=/planet/planet-latest.osm.pbf,tiger=/data/tiger"
+    #     -> dataset_planet_gb = 92.0   on the host that has it
+    #     -> dimension ABSENT           everywhere else, so those runners DECLINE
+    #        any task carrying Requires(dataset_planet_gb = ...)
+    #
+    # Absent-means-decline is the existing contract (mongo_store/tasks.py), so
+    # this is inert for every task that does not ask for a dataset.
+    for _spec in (_os.environ.get("FW_RUNNER_DATASETS") or "").split(","):
+        _spec = _spec.strip()
+        if not _spec or "=" not in _spec:
+            continue
+        _name, _path = _spec.split("=", 1)
+        _name, _path = _name.strip(), _path.strip()
+        if not _name or not _path:
+            continue
+        try:
+            if _os.path.isdir(_path):
+                _total = sum(
+                    _os.path.getsize(_os.path.join(_root, _f))
+                    for _root, _dirs, _files in _os.walk(_path)
+                    for _f in _files
+                    if _os.path.exists(_os.path.join(_root, _f))
+                )
+            else:
+                _total = _os.path.getsize(_path)
+        except Exception:
+            continue          # not here -> dimension omitted -> this runner declines
+        if _total > 0:
+            res[f"dataset_{_name}_gb"] = round(_total / (1024 ** 3), 1)
+
     # Scratch: free space where this runner actually stages, not "/".
     #
     # ⚠️ Measure the nearest EXISTING ancestor, not the leaf. The staging dir is
