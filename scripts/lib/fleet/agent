@@ -152,10 +152,48 @@ def _watchdog_fire():
     os._exit(75)
 
 
+def _precreate_handler_dirs(env):
+    """Create the ~/fw_handlers/<domain> bind sources as THIS user, first.
+
+    ⚠️ Docker creates a missing bind-mount source directory itself, as ROOT.
+    The compose files carry 23 such binds (~/fw_handlers/fwh_*), they did not
+    exist on the Linux hosts, so every one was created root:root — which makes
+    `fw install domain` fail with "Permission denied" on the clone. Measured
+    2026-09-15 on all four Linux hosts at once; it blocked moving the OSM role
+    to beelink01, because the host-side replication publisher needs a checkout.
+
+    `create_host_path: false` would be the WRONG guard here: the runners log
+    "using baked-in <domain> (image is source of truth; bind-mount ignored)", so
+    these binds are a local-dev convenience, and making them strict would stop
+    every runner on a host that has no checkouts — which is the normal fleet
+    case. Creating them first is what keeps both properties: Docker finds them
+    present and leaves ownership alone.
+
+    Best effort throughout: a host where this cannot be done is no worse off
+    than before, and must not lose its runners over a convenience mount.
+    """
+    root = (env.get("FWH_HANDLERS_ROOT") or "").strip() or os.path.expanduser("~/fw_handlers")
+    try:
+        os.makedirs(root, exist_ok=True)
+    except OSError:
+        return
+    try:
+        from facetwork.domains.catalog import domains as _domains
+        names = [(d.get("repo") or "").rsplit("/", 1)[-1] for d in _domains().values()]
+    except Exception:                                          # noqa: BLE001
+        names = []
+    for n in [n for n in names if n.startswith("fwh_")]:
+        try:
+            os.makedirs(os.path.join(root, n), exist_ok=True)
+        except OSError:
+            pass
+
+
 def _run_compose(cmd, env):
     """Run a docker compose start bounded by _DOCKER_TIMEOUT. A timeout is
     surfaced as a non-zero CompletedProcess (exit 124) so callers' existing
     returncode handling applies — instead of a wedged docker hanging the daemon."""
+    _precreate_handler_dirs(env)
     try:
         return subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=_DOCKER_TIMEOUT)
     except subprocess.TimeoutExpired as exc:
