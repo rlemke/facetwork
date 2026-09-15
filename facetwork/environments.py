@@ -36,6 +36,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import shutil
+import time
 import os
 import re
 import subprocess
@@ -186,15 +188,153 @@ def interpreter_for_hash(manifest_hash_: str) -> str | None:
     return path if os.path.exists(path) else None
 
 
-def discover_provided_environments() -> list[str]:
-    """Manifest hashes materialized under FW_ENV_ROOT on this host."""
+#: Written inside a materialized venv once its declared packages have been
+#: IMPORTED successfully on this host. Its absence means "not verified here",
+#: never "broken" — an env baked by an older image simply gets verified on first
+#: discovery.
+VERIFIED_MARKER = ".fw-verified"
+
+
+def _top_level_modules(pin: str) -> str:
+    """Distribution name from a pin (``numpy==2.5.3``, ``pkg[extra]>=1``)."""
+    name = re.split(r"[<>=!~\[;\s]", pin.strip(), 1)[0].strip()
+    return name
+
+
+def smoke_import(interpreter: str, pins: list[str], timeout: int = 300) -> tuple[bool, str]:
+    """Import every DECLARED package of an environment in its own interpreter.
+
+    ⚠️ This exists because "the environment is provided here" was a claim about
+    files on disk, not about whether this host can RUN them, and the two come
+    apart on real hardware. macmini01 is an Intel Core 2 Duo (2009) with no
+    SSE4.2/POPCNT, so it does not meet x86-64-v2: `pip install numpy` there
+    SUCCEEDS — the x86_64 wheel is perfectly valid — and only `import numpy`
+    fails. Without this check the host materializes the venv, advertises the
+    hash honestly by the old definition, claims the task, and fails at dispatch.
+
+    Only the DECLARED pins are imported, not every installed distribution.
+    That is deliberate on both sides: importing a declared package exercises its
+    transitive dependencies anyway (a broken numpy breaks `import pandas`), while
+    walking every distribution would import optional backends that legitimately
+    raise and would turn this into a source of false failures.
+
+    Distribution name != import name (``Pillow`` -> ``PIL``), so the module names
+    come from each distribution's own ``top_level.txt`` where it has one.
+    """
+    probe = r'''
+import importlib, sys
+import importlib.metadata as md
+
+failed = []
+for dist_name in sys.argv[1:]:
+    # Installed at all? A pin that pip did not actually place is a broken
+    # environment, and without this the ModuleNotFoundError below would be
+    # swallowed as "a shim that is not importable on its own" and PASS.
+    try:
+        dist = md.distribution(dist_name)
+    except Exception:
+        failed.append(f"{dist_name}: declared in the manifest but not installed")
+        continue
+    mods = []
+    try:
+        top = dist.read_text("top_level.txt") or ""
+        mods = [m.strip() for m in top.split() if m.strip() and not m.startswith("_")]
+    except Exception:
+        pass
+    if not mods:
+        mods = [dist_name.replace("-", "_")]
+    for m in mods:
+        try:
+            importlib.import_module(m)
+        except ModuleNotFoundError:
+            # A top_level entry that is not importable on its own is common
+            # (namespace shims, stubs). Not evidence the environment is broken.
+            continue
+        except Exception as exc:
+            failed.append(f"{dist_name}:{m}: {type(exc).__name__}: {exc}")
+            break
+if failed:
+    print("; ".join(failed)[:800], file=sys.stderr)
+    sys.exit(1)
+'''
+    names = [_top_level_modules(p) for p in pins]
+    names = [n for n in names if n]
+    if not names:
+        return True, ""
+    try:
+        proc = subprocess.run([interpreter, "-c", probe, *names],
+                              capture_output=True, text=True, timeout=timeout)
+    except Exception as exc:                                   # noqa: BLE001
+        return False, f"could not run the probe: {type(exc).__name__}: {exc}"
+    if proc.returncode == 0:
+        return True, ""
+    return False, (proc.stderr or proc.stdout or "").strip()[:800]
+
+
+def _mark_verified(target: str) -> None:
+    """Record that this venv's packages imported here. Best effort: a read-only
+    env root just means the check runs again next start, never a false claim."""
+    try:
+        with open(os.path.join(target, VERIFIED_MARKER), "w", encoding="utf-8") as fh:
+            fh.write(f"{time.time():.0f} {sys.executable}\n")
+    except OSError:
+        pass
+
+
+def discover_provided_environments(manifests: dict | None = None) -> list[str]:
+    """Manifest hashes materialized AND verified importable on this host.
+
+    ⚠️ Verification is persisted (``VERIFIED_MARKER``), because this function is
+    a filesystem scan: without a marker, an environment whose smoke import failed
+    would be re-advertised on the very next runner start. An env with no marker
+    (baked by an older image) is verified lazily here and then marked, so hosts
+    converge without a rebuild.
+
+    ``manifests`` maps hash -> manifest so the pins are known. When it is absent
+    the pins are read from the venv's own recorded manifest if one was written;
+    an env whose pins cannot be determined is advertised unchanged rather than
+    dropped — declining work over a missing bookkeeping file would be worse than
+    the hole this closes.
+    """
     root = env_root()
     try:
-        return sorted(
+        candidates = sorted(
             d for d in os.listdir(root) if os.path.exists(os.path.join(root, d, "bin", "python"))
         )
     except OSError:
         return []
+
+    provided = []
+    for h in candidates:
+        target = os.path.join(root, h)
+        if os.path.exists(os.path.join(target, VERIFIED_MARKER)):
+            provided.append(h)
+            continue
+        pins = []
+        m = (manifests or {}).get(h) or _recorded_manifest(target)
+        if m:
+            pins = list(m.get("pins") or [])
+        if not pins:
+            provided.append(h)                     # unknown pins: unchanged behaviour
+            continue
+        ok, err = smoke_import(os.path.join(target, "bin", "python"), pins)
+        if ok:
+            _mark_verified(target)
+            provided.append(h)
+        else:
+            logger.warning(
+                "environment %s is installed here but its packages do not import "
+                "on this host — NOT advertising it: %s", h, err)
+    return provided
+
+
+def _recorded_manifest(target: str) -> dict | None:
+    """The manifest written beside a materialized venv, when present."""
+    try:
+        with open(os.path.join(target, "manifest.json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
 
 
 def materialize_environment(manifest: dict, hash_: str) -> str:
@@ -230,6 +370,32 @@ def materialize_environment(manifest: dict, hash_: str) -> str:
             raise RuntimeError(
                 f"Environment {hash_} materialization failed: {proc.stderr.strip()[:500]}"
             )
+
+    # Record the pins beside the venv so a later discovery can verify it without
+    # being handed the manifest again (image bakes and lazy materialization take
+    # different routes into this function).
+    try:
+        with open(os.path.join(target, "manifest.json"), "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+    except OSError:
+        pass
+
+    # ⚠️ INSTALLED IS NOT RUNNABLE. pip succeeding proves the wheels matched this
+    # platform tag, not that this CPU can execute them — measured on a 2009 Core
+    # 2 Duo where `pip install numpy` succeeds and `import numpy` raises on the
+    # x86-64-v2 baseline. Verify before returning, because the caller advertises
+    # the hash on the strength of this returning.
+    ok, err = smoke_import(interpreter, pins)
+    if not ok:
+        # Remove the venv rather than leave it on disk: discovery is a filesystem
+        # scan, so a failed env left behind is advertised on the next start and
+        # the check silently undoes itself.
+        shutil.rmtree(target, ignore_errors=True)
+        raise RuntimeError(
+            f"Environment {hash_} installed but its packages do not import on this "
+            f"host: {err}"
+        )
+    _mark_verified(target)
     return interpreter
 
 
