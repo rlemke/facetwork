@@ -95,7 +95,12 @@ run)
     ;;
 
 status)
-    if [ -n "$(launchctl list 2>/dev/null | grep -F "$LABEL" || true)" ]; then
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    if ! fw_timer_is_darwin; then
+        CRON_LINE="$(fw_timer_cron_line "$LABEL")"
+        [ -n "$CRON_LINE" ] && echo "timer: LOADED (cron) — $CRON_LINE" \
+                           || echo "timer: not installed — fw svc osm-watchdog --install"
+    elif [ -n "$(launchctl list 2>/dev/null | grep -F "$LABEL" || true)" ]; then
         echo "watchdog: LOADED ($LABEL)"
     else
         echo "watchdog: not loaded — install with: fw svc osm-watchdog --install"
@@ -104,6 +109,8 @@ status)
     ;;
 
 uninstall)
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    fw_timer_is_darwin || fw_timer_cron_uninstall "$LABEL"
     launchctl unload "$PLIST" 2>/dev/null || true
     rm -f "$PLIST" "$WRAPPER"
     echo "uninstalled $LABEL."
@@ -112,11 +119,8 @@ uninstall)
     ;;
 
 install)
-    if [ "$(uname)" != "Darwin" ]; then
-        echo "launchd is macOS-only. On Linux use a systemd timer, or cron:" >&2
-        echo "  0 */$EVERY_HOURS * * *  cd $FW_ROOT && ./fw svc osm-watchdog >> $LOG 2>&1" >&2
-        exit 1
-    fi
+    # Linux installs the same wrapper on a cron line; only the scheduler differs.
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
     mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
 
     cat > "$WRAPPER" <<WRAP
@@ -132,6 +136,16 @@ cd "$FW_ROOT" || exit 1
 exec ./fw svc osm-watchdog
 WRAP
     chmod +x "$WRAPPER"
+
+    if ! fw_timer_is_darwin; then
+        SPEC="$(fw_timer_cron_spec "" "$EVERY_HOURS")" || exit 2
+        fw_timer_cron_install "$LABEL" "$WRAPPER" "$SPEC" "$LOG"
+        echo "wrote:"
+        echo "  $WRAPPER"
+        echo "  crontab: $SPEC  (every ${EVERY_HOURS}h, independent of the publisher)"
+        echo "  logs: $LOG  ·  check: fw svc osm-watchdog --status"
+        exit 0
+    fi
 
     cat > "$PLIST" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
