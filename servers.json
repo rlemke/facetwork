@@ -132,7 +132,8 @@
       "name": "beelink01.local",
       "aliases": [
         "afl-mongodb",
-        "beelink01"
+        "beelink01",
+        "afl-extracts"
       ],
       "purpose": "heavy runner tier AND the fleet's MONGODB host since 2026-09-13 (Ubuntu 26.04.1, AMD Ryzen AI 9 HX 470, 24 threads). \u26a0\ufe0f Mongo's dbPath is ~/fw-mongodb/data on the ROOT filesystem (/dev/nvme1n1p2), NOT on the second NVMe. It was first put on /run/media/<user>/data and that cost the fleet its control plane for 2.5h: a reboot started Docker at 13:22:02 while udisks did not mount that volume until 13:26:40, and the same reboot swapped the two identical NVMe device names. The root filesystem mounts before Docker by construction. Capacity was never the constraint - this database is ~430 MB against 848 GB free on /.",
       "group": "heavy",
@@ -215,7 +216,7 @@
     "afl-mongodb": "beelink01.local \u2014 the fleet control plane (moved off server3 2026-09-13)",
     "afl-minio": "server3.local \u2014 the object store. Its bucket data is ~616 GB, on a 15 TiB volume it shares with the ~10 TiB OSM extract tree. It COULD physically fit on beelink01 (868 GB free), but that volume now holds the control plane too and would be left ~250 GB of headroom, against 3.5 TiB free where it is. It stays for headroom, not impossibility.",
     "afl-postgres": "server3.local",
-    "afl-extracts": "server3.local \u2014 the self-hosted OSM extract server",
+    "afl-extracts": "beelink01.local \u2014 the self-hosted OSM extract server (nginx, Range support). MOVED from server3 2026-09-15 with the OSM role. \u26a0\ufe0f This alias is what osmosis_replication_base_url is stamped from, so it must follow the host that actually serves the tree \u2014 an extract stamped with a dead URL sends consumers back to a full third-party re-download, silently.",
     "_note": "Each afl-* name is resolved INDEPENDENTLY from the entry whose aliases claim it (_fleet_lib.service_ips); a name no entry claims falls back to the infra:true host, which is the historical one-box behaviour."
   }
 }
