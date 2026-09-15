@@ -55,13 +55,58 @@ except Exception:
     }
     if ! _mongo_ok; then
         _FW_ORIG_URL="${FW_MONGODB_URL:-}"
-        export FW_MONGODB_URL="mongodb://localhost:27017"
-        if _mongo_ok; then
-            echo "MongoDB at ${_FW_ORIG_URL:-<unset>} unreachable, using localhost" >&2
-        else
-            # Restore original — let downstream scripts handle the error
-            if [ -n "$_FW_ORIG_URL" ]; then
+
+        # 1. THE SERVER CATALOG FIRST. A name like afl-mongodb failing to resolve
+        #    almost always means a stale /etc/hosts, not a missing database: the
+        #    catalog tracks the current IP so DHCP drift self-heals without root.
+        #    Measured on MaxPro 2026-09-14 — /etc/hosts still pointed afl-mongodb
+        #    at a host that had not held it since the move, while the catalog had
+        #    the right address all along.
+        # URL passed as argv, NOT via the environment: _FW_ORIG_URL is a plain
+        # shell variable here, and reading it with os.environ silently yielded
+        # None -- the lookup "ran" and always declined.
+        _FW_CAT_URL="$("$_PYTHON" -c '
+import re, sys
+m = re.match(r"^(mongodb://)([^/:,?]+)(.*)$", sys.argv[1] if len(sys.argv) > 1 else "")
+if not m:
+    sys.exit(1)
+try:
+    from facetwork.servers import catalog
+    ip = catalog.resolve_ip(m.group(2))
+except Exception:
+    sys.exit(1)
+if not ip or ip == m.group(2):
+    sys.exit(1)
+print(m.group(1) + ip + m.group(3))
+' "$_FW_ORIG_URL" 2>/dev/null)"
+        if [ -n "$_FW_CAT_URL" ]; then
+            export FW_MONGODB_URL="$_FW_CAT_URL"
+            if _mongo_ok; then
+                echo "MongoDB: ${_FW_ORIG_URL} did not resolve; using the server catalog -> ${_FW_CAT_URL}" >&2
+                _FW_ORIG_URL=""            # resolved; no further fallback
+            else
                 export FW_MONGODB_URL="$_FW_ORIG_URL"
+            fi
+        fi
+
+        # 2. Only then localhost — and LOUDLY. This does not reconnect you to the
+        #    same cluster, it points you at a DIFFERENT WORLD: a host running its
+        #    own standalone mongod has separate workflows, runs and tasks. That
+        #    has already caused a dashboard to serve a 4-day-stale universe while
+        #    looking perfectly healthy, so it must never read as a mere retry.
+        if [ -n "$_FW_ORIG_URL" ] || [ -z "${FW_MONGODB_URL:-}" ]; then
+            if ! _mongo_ok; then
+                _FW_SAVED="${FW_MONGODB_URL:-}"
+                export FW_MONGODB_URL="mongodb://localhost:27017"
+                if _mongo_ok; then
+                    echo "WARNING: MongoDB at ${_FW_ORIG_URL:-<unset>} is unreachable and the server" >&2
+                    echo "         catalog could not resolve it either. Falling back to LOCALHOST," >&2
+                    echo "         which is a SEPARATE database — not the fleet's. Anything you" >&2
+                    echo "         submit or read here is invisible to the fleet." >&2
+                else
+                    # Restore — let downstream scripts handle the error
+                    [ -n "$_FW_SAVED" ] && export FW_MONGODB_URL="$_FW_SAVED"
+                fi
             fi
         fi
     fi
