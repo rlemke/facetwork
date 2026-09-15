@@ -1,5 +1,5 @@
 {
-  "_comment": "Server catalog — the fleet's machines by STABLE NAME (mDNS/DNS), not IP. Anything that needs a fleet machine resolves it from here at startup/reconcile time (facetwork/servers/catalog.py), so a DHCP-drifted address heals on the next resolution instead of requiring /etc/hosts edits on every host. Per-deployment override: servers.local.json (merged over this file, matched by name; top-level \"_remove\": [names] drops entries) or FW_SERVERS_FILE=<path> (full replace). Set ip_pin ONLY for hosts that mDNS/DNS cannot resolve (e.g. across subnets) — a pinned IP reintroduces the drift problem this file exists to remove. See servers.example.json and docs/reference/server-catalog.md. The per-server `capacity` block is a MEASURED, dated record (2026-09-13) for capacity-aware placement (docs/architecture/server-groups.md §6.1) — it is descriptive only. The number routing actually matches on is what each runner advertises in its `servers.resources` record, measured from the cgroup limit inside the container; `container_memory_gb` here is that same number, so a divergence between the two means this file has gone stale. A host that is catalogued but not yet running a fleet-agent sets \"joined\": false — it is tracked here (capacity, intent, provisioning notes) but excluded from fleet-wide operations like `fleet rollout --stagger`, which would otherwise fail its pre-pull and block deploying to every provisioned host. Absent means true.",
+  "_comment": "Server catalog \u2014 the fleet's machines by STABLE NAME (mDNS/DNS), not IP. Anything that needs a fleet machine resolves it from here at startup/reconcile time (facetwork/servers/catalog.py), so a DHCP-drifted address heals on the next resolution instead of requiring /etc/hosts edits on every host. Per-deployment override: servers.local.json (merged over this file, matched by name; top-level \"_remove\": [names] drops entries) or FW_SERVERS_FILE=<path> (full replace). Set ip_pin ONLY for hosts that mDNS/DNS cannot resolve (e.g. across subnets) \u2014 a pinned IP reintroduces the drift problem this file exists to remove. See servers.example.json and docs/reference/server-catalog.md. The per-server `capacity` block is a MEASURED, dated record (2026-09-13) for capacity-aware placement (docs/architecture/server-groups.md \u00a76.1) \u2014 it is descriptive only. The number routing actually matches on is what each runner advertises in its `servers.resources` record, measured from the cgroup limit inside the container; `container_memory_gb` here is that same number, so a divergence between the two means this file has gone stale. A host that is catalogued but not yet running a fleet-agent sets \"joined\": false \u2014 it is tracked here (capacity, intent, provisioning notes) but excluded from fleet-wide operations like `fleet rollout --stagger`, which would otherwise fail its pre-pull and block deploying to every provisioned host. Absent means true.",
   "version": 1,
   "servers": [
     {
@@ -9,7 +9,7 @@
         "afl-postgres",
         "server3"
       ],
-      "purpose": "infra: MinIO, PostGIS, dashboard, image registry, osm-extracts server (+ heavy runner tier, 14 TB disk). ⚠️ NO LONGER THE MONGODB HOST — the fleet's control plane moved to beelink01 on 2026-09-13. MinIO stayed because it stayed on server3; that split is why the afl-* names resolve per service instead of all pointing here.",
+      "purpose": "infra: MinIO, PostGIS, dashboard, image registry, osm-extracts server (+ heavy runner tier, 14 TB disk). \u26a0\ufe0f NO LONGER THE MONGODB HOST \u2014 the fleet's control plane moved to beelink01 on 2026-09-13. MinIO stayed because it stayed on server3; that split is why the afl-* names resolve per service instead of all pointing here.",
       "group": "heavy",
       "infra": true,
       "ip_pin": null,
@@ -60,7 +60,7 @@
       "aliases": [
         "macmini02"
       ],
-      "purpose": "12 cores / 30 GiB / 850 GB free — the largest-memory host in the fleet, promoted to 'heavy' 2026-09-09. It is the only host besides server3 that clears the 18.9 GB peak of a europe OSM cut with headroom (MaxPro is in 'heavy' with 7.75 GB and relies on resource-aware claim routing to keep the big cuts away). Runs the OSM tier + gh-router + the per-domain runners; the generalist container from its light-tier phase was left running, since gating a role out does not stop an already-running one. ⚠️ Macmini8,1 (T2): the built-in BCM4364 Wi-Fi has NO usable firmware on Linux (Apple-proprietary, ships only in macOS, which is wiped here) — ETHERNET ONLY, which is the correct medium for a runner anyway.",
+      "purpose": "12 cores / 30 GiB / 850 GB free \u2014 the largest-memory host in the fleet, promoted to 'heavy' 2026-09-09. It is the only host besides server3 that clears the 18.9 GB peak of a europe OSM cut with headroom (MaxPro is in 'heavy' with 7.75 GB and relies on resource-aware claim routing to keep the big cuts away). Runs the OSM tier + gh-router + the per-domain runners; the generalist container from its light-tier phase was left running, since gating a role out does not stop an already-running one. \u26a0\ufe0f Macmini8,1 (T2): the built-in BCM4364 Wi-Fi has NO usable firmware on Linux (Apple-proprietary, ships only in macOS, which is wiped here) \u2014 ETHERNET ONLY, which is the correct medium for a runner anyway.",
       "group": "heavy",
       "infra": false,
       "ip_pin": null,
@@ -110,13 +110,13 @@
       "aliases": [
         "atopnuc02"
       ],
-      "purpose": "light runner tier, same class as atopnuc01 (2 cores / ~6 GiB). ADDED 2026-09-13 with the site move; NOT yet provisioned — it answers on the network but has no fleet-agent and registers no runners, and this host's SSH key is not installed on it (publickey denied). Provision with docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh (defaults are correct: --group runner, --rdp remote-login). NOT heavy — 6 GiB cannot take an OSM cut (one europe split has peaked at 18.9 GB).",
+      "purpose": "light runner tier, same class as atopnuc01 (2 cores / ~6 GiB). ADDED 2026-09-13 with the site move; NOT yet provisioned \u2014 it answers on the network but has no fleet-agent and registers no runners, and this host's SSH key is not installed on it (publickey denied). Provision with docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh (defaults are correct: --group runner, --rdp remote-login). NOT heavy \u2014 6 GiB cannot take an OSM cut (one europe split has peaked at 18.9 GB).",
       "group": "runner",
       "infra": false,
       "joined": false,
       "ip_pin": null,
       "capacity": {
-        "tier": "light (assumed — UNVERIFIED)",
+        "tier": "light (assumed \u2014 UNVERIFIED)",
         "arch": null,
         "cores": null,
         "host_ram_gb": null,
@@ -134,7 +134,7 @@
         "afl-mongodb",
         "beelink01"
       ],
-      "purpose": "heavy runner tier AND the fleet's MONGODB host since 2026-09-13 (Ubuntu 26.04.1, AMD Ryzen AI 9 HX 470, 24 threads). ⚠️ Mongo's dbPath is ~/fw-mongodb/data on the ROOT filesystem (/dev/nvme1n1p2), NOT on the second NVMe. It was first put on /run/media/<user>/data and that cost the fleet its control plane for 2.5h: a reboot started Docker at 13:22:02 while udisks did not mount that volume until 13:26:40, and the same reboot swapped the two identical NVMe device names. The root filesystem mounts before Docker by construction. Capacity was never the constraint - this database is ~430 MB against 848 GB free on /.",
+      "purpose": "heavy runner tier AND the fleet's MONGODB host since 2026-09-13 (Ubuntu 26.04.1, AMD Ryzen AI 9 HX 470, 24 threads). \u26a0\ufe0f Mongo's dbPath is ~/fw-mongodb/data on the ROOT filesystem (/dev/nvme1n1p2), NOT on the second NVMe. It was first put on /run/media/<user>/data and that cost the fleet its control plane for 2.5h: a reboot started Docker at 13:22:02 while udisks did not mount that volume until 13:26:40, and the same reboot swapped the two identical NVMe device names. The root filesystem mounts before Docker by construction. Capacity was never the constraint - this database is ~430 MB against 848 GB free on /.",
       "group": "heavy",
       "infra": false,
       "ip_pin": null,
@@ -151,7 +151,7 @@
           "CENSUS_API_KEY",
           "ANTHROPIC_API_KEY"
         ],
-        "note": "Promoted runner -> heavy on MEASUREMENT, 2026-09-13: 30.48 GiB docker limit clears the 18.9 GB europe-cut peak, 850 GB free on the nvme holding FW_DATA_DIR, PostGIS reachable, API keys installed. Docker runs natively here (no VM), so 30.48 GiB is the real cgroup limit. ⚠️ FW_OSM_REPLICAS=1 is deliberate and should stay: two concurrent europe-class cuts would want ~37.8 GB against this host's 30.48. Mongo's dbPath is on / (see purpose); the second NVMe (~868 GB at /run/media/<user>/data) remains the OSM scratch volume and is still a session mount."
+        "note": "Promoted runner -> heavy on MEASUREMENT, 2026-09-13: 30.48 GiB docker limit clears the 18.9 GB europe-cut peak, 850 GB free on the nvme holding FW_DATA_DIR, PostGIS reachable, API keys installed. Docker runs natively here (no VM), so 30.48 GiB is the real cgroup limit. \u26a0\ufe0f FW_OSM_REPLICAS=1 is deliberate and should stay: two concurrent europe-class cuts would want ~37.8 GB against this host's 30.48. Mongo's dbPath is on / (see purpose); the second NVMe (~868 GB at /run/media/<user>/data) remains the OSM scratch volume and is still a session mount."
       }
     },
     {
@@ -159,7 +159,7 @@
       "aliases": [
         "macmini01"
       ],
-      "purpose": "light runner tier (2 cores / 3 GiB): ffl orchestration + ONE generalist runner over the cold domains. Provisioned entirely by docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh. NOT heavy - 3 GiB cannot take an OSM cut (one europe split has peaked at 18.9 GB).",
+      "purpose": "DROPPED FROM THE FLEET 2026-09-15. Intel Core 2 Duo P8800 (2009): has SSSE3 and CX16 but NO SSE4.2 and NO POPCNT, so it does not meet x86-64-v2. numpy in the runner image is built to that baseline, so `pip install numpy` succeeds there and `import numpy` raises. Handler modules import numpy INSIDE functions, so preload(verify=True) cannot see it: the host came up healthy, advertised 265 facets, and would have failed at dispatch on any that touched numpy. Re-joining needs an image whose numpy is built for a lower baseline.",
       "group": "runner",
       "infra": false,
       "ip_pin": null,
@@ -177,14 +177,15 @@
           "ANTHROPIC_API_KEY"
         ],
         "note": "Smallest memory in the fleet (3.26 GiB) and correctly tiered light - but note it has 416 GB of scratch, 5x macmini03's 84 GB. The disk is on the box that cannot use it and absent from the box whose tier it caps."
-      }
+      },
+      "joined": false
     },
     {
       "name": "macmini03.local",
       "aliases": [
         "macmini03"
       ],
-      "purpose": "12 cores / 30 GiB, same class as macmini02 — but only ~87 GB free on / against macmini02's ~850 GB. Group 'runner' (ffl + one generalist). ⚠️ Memory would allow the heavy tier; DISK is the reason to hold off — OSM cuts stage tens of GB of scratch, and FW_DATA_DIR here is on the root filesystem. Provisioned by docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh. Macmini8,1-class hardware: built-in Wi-Fi has no usable Linux firmware, ETHERNET ONLY.",
+      "purpose": "12 cores / 30 GiB, same class as macmini02 \u2014 but only ~87 GB free on / against macmini02's ~850 GB. Group 'runner' (ffl + one generalist). \u26a0\ufe0f Memory would allow the heavy tier; DISK is the reason to hold off \u2014 OSM cuts stage tens of GB of scratch, and FW_DATA_DIR here is on the root filesystem. Provisioned by docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh. Macmini8,1-class hardware: built-in Wi-Fi has no usable Linux firmware, ETHERNET ONLY.",
       "group": "medium",
       "infra": false,
       "ip_pin": null,
@@ -211,10 +212,10 @@
     "runner": "The light tier (historical name, kept because it is the fleet-wide default) AND the safe landing place for any host whose capacity has not been measured yet. ffl orchestration + ONE generalist runner over the cold domains. Members: atopnuc01, macmini01; atopnuc02 and beelink01 once provisioned."
   },
   "_services": {
-    "afl-mongodb": "beelink01.local — the fleet control plane (moved off server3 2026-09-13)",
-    "afl-minio": "server3.local — the object store. Its bucket data is ~616 GB, on a 15 TiB volume it shares with the ~10 TiB OSM extract tree. It COULD physically fit on beelink01 (868 GB free), but that volume now holds the control plane too and would be left ~250 GB of headroom, against 3.5 TiB free where it is. It stays for headroom, not impossibility.",
+    "afl-mongodb": "beelink01.local \u2014 the fleet control plane (moved off server3 2026-09-13)",
+    "afl-minio": "server3.local \u2014 the object store. Its bucket data is ~616 GB, on a 15 TiB volume it shares with the ~10 TiB OSM extract tree. It COULD physically fit on beelink01 (868 GB free), but that volume now holds the control plane too and would be left ~250 GB of headroom, against 3.5 TiB free where it is. It stays for headroom, not impossibility.",
     "afl-postgres": "server3.local",
-    "afl-extracts": "server3.local — the self-hosted OSM extract server",
+    "afl-extracts": "server3.local \u2014 the self-hosted OSM extract server",
     "_note": "Each afl-* name is resolved INDEPENDENTLY from the entry whose aliases claim it (_fleet_lib.service_ips); a name no entry claims falls back to the infra:true host, which is the historical one-box behaviour."
   }
 }
