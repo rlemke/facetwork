@@ -310,17 +310,26 @@ class BaseMixin:
         # while the same real step_id running twice still raises DuplicateKey.
         _step_uniq = "task_step_id_running_unique_index"
         _want_filter = {"state": "running", "step_id": {"$gt": ""}}
+        #
+        # ⚠️ STARTUP NEVER CHANGES THE FILTER. It creates the index when absent
+        # and otherwise leaves whatever is there alone. This is not timidity: an
+        # index is shared state that OLDER images validate at startup, and a
+        # partial index cannot be altered in place, so "migrate on startup" means
+        # the first upgraded runner drops the filter out from under every runner
+        # still on the previous image. Their create_index then raises
+        # IndexKeySpecsConflict, which kills the seed step, which crash-loops the
+        # container. Measured 2026-09-14: applying this filter live took the
+        # fleet from ~108 runners to 23, and hosts looked healthy right up until
+        # something restarted them.
+        #
+        # Migrating is therefore an explicit, operator-timed act once the fleet
+        # is uniform: `fw maint migrate-task-index`. Expand (tolerate both
+        # filters everywhere) → migrate (one shot) → contract.
         try:
             _existing = next(
                 (dict(i) for i in tasks.list_indexes() if dict(i).get("name") == _step_uniq),
                 None,
             )
-            # A partial index cannot be modified in place — it has to be dropped
-            # and rebuilt. Only do that when the filter actually differs, so a
-            # normal startup does not briefly drop the guard for no reason.
-            if _existing is not None and _existing.get("partialFilterExpression") != _want_filter:
-                tasks.drop_index(_step_uniq)
-                _existing = None
             if _existing is None:
                 tasks.create_index(
                     "step_id",
@@ -328,10 +337,15 @@ class BaseMixin:
                     partialFilterExpression=_want_filter,
                     name=_step_uniq,
                 )
+            elif _existing.get("partialFilterExpression") != _want_filter:
+                logger.info(
+                    "%s carries the legacy filter %s; run `fw maint migrate-task-index` "
+                    "once every runner is on this image to widen it to %s",
+                    _step_uniq, _existing.get("partialFilterExpression"), _want_filter)
         except Exception:
-            # Never let an index migration stop a runner from starting: without
+            # Never let index bookkeeping stop a runner from starting: without
             # this the guard is merely absent, with it the whole fleet is down.
-            logger.warning("could not migrate %s; leaving the existing index in place",
+            logger.warning("could not ensure %s; leaving the existing index in place",
                            _step_uniq, exc_info=True)
         # Compound indexes for the two claim_task queries. Equality fields
         # first, the single range field last, so each query is fully served by

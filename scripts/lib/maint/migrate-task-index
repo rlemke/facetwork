@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# fw-summary: widen the running-task unique index to exclude stepless tasks
+#
+# The `task_step_id_running_unique_index` enforces "one running task per step".
+# Its original filter, {state: "running"}, treated the EMPTY STRING as a step id
+# like any other -- and every `fw:execute` bootstrap task carries step_id "".
+# Measured on this fleet: 147 of them. So only ONE workflow submission could be
+# `running` fleet-wide, and a second concurrent submission could not claim.
+#
+# The fix is to exclude stepless tasks: {state: "running", step_id: {$gt: ""}}.
+# BSON type ordering puts null below strings, so None is excluded too.
+#
+# ⚠️ WHY THIS IS A SEPARATE, OPERATOR-TIMED COMMAND AND NOT DONE AT STARTUP.
+# A partial index cannot be altered in place; it must be dropped and rebuilt.
+# An index is shared state that OLDER images validate when they start, so the
+# first upgraded runner to migrate pulls the filter out from under every runner
+# still on the previous image. Their create_index then raises
+# IndexKeySpecsConflict (code 86), which kills the seed step in entrypoint.sh,
+# which crash-loops the container. Measured 2026-09-14: doing this live took the
+# fleet from ~108 runners to 23. Hosts looked healthy right until something
+# restarted them, so the damage arrived hours later, host by host.
+#
+# Order is therefore: expand (roll the tolerant image everywhere -- it creates
+# the index when absent and otherwise leaves the filter alone) -> migrate (this
+# command, once) -> contract.
+#
+# Exit: 0 migrated or already correct - 1 refused, the fleet is not uniform -
+#       2 could not tell (no Mongo, no live servers).
+set -uo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+PY="$FW_ROOT/.venv/bin/python3"; [ -x "$PY" ] || PY="$FW_ROOT/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || command -v python)"
+
+exec "$PY" - "$@" <<'PYEOF'
+import sys, time
+
+args = sys.argv[1:]
+CHECK = "--check" in args
+FORCE = "--force" in args
+REVERT = "--revert" in args
+
+NAME = "task_step_id_running_unique_index"
+WIDE = {"state": "running", "step_id": {"$gt": ""}}
+LEGACY = {"state": "running"}
+want = LEGACY if REVERT else WIDE
+
+try:
+    import pymongo
+    from facetwork.servers import catalog
+    ip = catalog.resolve_ip("afl-mongodb")
+    url = f"mongodb://{ip}:27017" if ip else "mongodb://afl-mongodb:27017"
+    db = pymongo.MongoClient(url, serverSelectionTimeoutMS=8000)["facetwork"]
+    now = int(time.time() * 1000)
+    live = list(db.servers.find({"ping_time": {"$gt": now - 180_000}}))
+except Exception as exc:                                       # noqa: BLE001
+    print(f"migrate-task-index: cannot reach MongoDB ({type(exc).__name__})", file=sys.stderr)
+    sys.exit(2)
+
+existing = next((dict(i) for i in db.tasks.list_indexes() if dict(i).get("name") == NAME), None)
+current = existing.get("partialFilterExpression") if existing else None
+print(f"  index:  {NAME}")
+print(f"  filter: {current}")
+print(f"  target: {want}")
+
+if existing is not None and current == want:
+    print("  already correct — nothing to do")
+    sys.exit(0)
+
+# Uniformity gate, over the PYTHON runners only. A foreign agent (the Java
+# gh-router registers through the polyglot protocol) never executes this index
+# code, so it cannot conflict — and since it can never report an image, counting
+# it as unknown would make this gate permanently unpassable, which is how a
+# safety check turns into something people reach for --force to get past.
+#
+# Within the Python runners an unreported image is still UNKNOWN and still
+# blocks: the field is recent, and an image predating it is exactly the kind of
+# straggler this exists to catch.
+PY_SERVICE = "afl-runner"
+runners = [s for s in live if (s.get("service_name") or "") == PY_SERVICE]
+foreign = [s for s in live if s not in runners]
+tags, unknown = {}, 0
+for s in runners:
+    img = (s.get("image") or "").strip()
+    if not img:
+        unknown += 1
+    else:
+        tags[img] = tags.get(img, 0) + 1
+if not runners:
+    print("  no live python runners — cannot tell whether the fleet is uniform", file=sys.stderr)
+    sys.exit(2)
+print(f"  python runners: {len(runners)}  distinct images: {len(tags)}  unreported: {unknown}")
+for tag, n in sorted(tags.items(), key=lambda kv: -kv[1]):
+    print(f"    {n:>4}x {tag}")
+for s in foreign:
+    print(f"    exempt: {s.get('service_name')} on {s.get('server_name')} "
+          f"— foreign agent, does not run this index code")
+
+# ⚠️ THE ACTUAL READINESS TEST. A uniform image tag is NOT it: the first version
+# of this gate reported "ready" while all 129 runners sat on the image that
+# cannot tolerate the new filter -- a tag is an identity, not a capability.
+# Runners advertise `store_features`; absent means decline, as everywhere else.
+FEATURE = "task-index:flexible"
+lacking = [s for s in runners if FEATURE not in (s.get("store_features") or [])]
+print(f"  advertising {FEATURE}: {len(runners) - len(lacking)} of {len(runners)}")
+
+ready = not lacking and unknown == 0
+if not ready and not FORCE:
+    hosts = sorted({(s.get("server_name") or "?").split(".")[0] for s in lacking})
+    print(f"\n  REFUSING: {len(lacking)} runner(s) do not advertise {FEATURE}"
+          f"{' on ' + ', '.join(hosts[:6]) if hosts else ''}. They are on a build that "
+          "REWRITES this index at startup, so migrating now makes them crash-loop on "
+          "their next restart (IndexKeySpecsConflict -> failed seed -> exit 1) -- which "
+          "is what took the fleet from ~108 runners to 23 on 2026-09-14.\n"
+          "  Roll out the tolerant image, wait for convergence, then re-run. "
+          "--force overrides.", file=sys.stderr)
+    sys.exit(1)
+
+if CHECK:
+    print("\n  ready to migrate" if ready else "\n  NOT ready (--force would override)")
+    sys.exit(0 if ready else 1)
+
+# Stepless tasks currently running would violate the LEGACY filter on revert.
+if REVERT:
+    n = db.tasks.count_documents({"state": "running", "step_id": {"$in": ["", None]}})
+    if n:
+        print(f"  terminalising {n} running stepless task(s) that the legacy filter cannot hold")
+        db.tasks.update_many({"state": "running", "step_id": {"$in": ["", None]}},
+                             {"$set": {"state": "complete"}})
+
+if existing is not None:
+    db.tasks.drop_index(NAME)
+db.tasks.create_index("step_id", unique=True, partialFilterExpression=want, name=NAME)
+after = next((dict(i) for i in db.tasks.list_indexes() if dict(i).get("name") == NAME), None)
+print(f"\n  migrated — filter is now {after.get('partialFilterExpression') if after else '(missing!)'}")
+PYEOF

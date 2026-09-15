@@ -79,6 +79,30 @@ def runner_image() -> str:
     return (_os.environ.get("FW_RUNNER_IMAGE") or "").strip()
 
 
+# Behaviours of this runner's STORE layer, advertised so that an operator-timed
+# schema migration can tell whether the fleet is actually ready for it.
+#
+# ⚠️ Image UNIFORMITY is not readiness. `fw maint migrate-task-index` first
+# gated on "every runner reports the same image tag", which was green while the
+# whole fleet sat on the image that CANNOT tolerate the new index filter — the
+# exact state whose migration took the fleet down on 2026-09-14. A tag is an
+# identity, not a capability; only the code can say what it supports.
+#
+# Same contract as the other routing dimensions: ABSENT MEANS DECLINE. A runner
+# too old to publish this list simply does not advertise the feature, and the
+# migration refuses rather than assuming.
+_STORE_FEATURES = (
+    # This build's ensure_indexes tolerates EITHER partialFilterExpression on
+    # task_step_id_running_unique_index and never rewrites it at startup.
+    "task-index:flexible",
+)
+
+
+def store_features() -> list[str]:
+    """Store-layer behaviours this build supports (see _STORE_FEATURES)."""
+    return list(_STORE_FEATURES)
+
+
 @dataclass
 class HandledCount:
     """Event handling statistics."""
@@ -135,6 +159,10 @@ class ServerDefinition:
     # `container` above and for the same reason: set at the call sites it would
     # be added to one subclass and missed by the others.
     image: str = field(default_factory=runner_image)
+    # Store-layer behaviours this build supports. Same default_factory contract as
+    # `container` and `image`: set at the call sites it would be added to one
+    # runner subclass and missed by the others.
+    store_features: list = field(default_factory=store_features)
 
 
 @dataclass

@@ -278,6 +278,11 @@ class ServerMixin(_MixinBase):
             # read "(image unreported)" fleet-wide while the value was right
             # there in the process. See test_server_roundtrip_persists_every_field.
             "image": getattr(server, "image", "") or "",
+            # ⚠️ Persisted alongside `image` deliberately: this explicit field list
+            # once dropped `image` itself, so the runner advertised it and the DB
+            # never stored it. A capability that does not survive the round trip
+            # reads as "not supported" everywhere it is checked.
+            "store_features": list(getattr(server, "store_features", []) or []),
             "topics": server.topics,
             "handlers": server.handlers,
             "handled": [asdict(h) for h in server.handled],
@@ -304,6 +309,7 @@ class ServerMixin(_MixinBase):
             resources=doc.get("resources") or {},
             container=doc.get("container", "") or "",
             image=doc.get("image", "") or "",
+            store_features=list(doc.get("store_features") or []),
             topics=doc.get("topics", []),
             handlers=doc.get("handlers", []),
             handled=[HandledCount(**h) for h in doc.get("handled", [])],

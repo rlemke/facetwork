@@ -45,3 +45,36 @@ def test_absent_image_persists_as_empty_not_missing():
     """'' means UNKNOWN to fleet status, which must never be read as stale."""
     doc = _doc_for(image="")
     assert doc.get("image") == ""
+
+
+def test_store_features_are_advertised_by_default():
+    """⚠️ The migration gate reads this to decide whether the fleet can take a
+    schema change. A build that does not advertise is treated as NOT ready, so
+    an empty default would silently block every migration forever."""
+    from facetwork.runtime.entities.server import store_features
+    assert "task-index:flexible" in store_features()
+    assert "task-index:flexible" in ServerDefinition(
+        uuid="u1", server_group="g", service_name="svc", server_name="h1").store_features
+
+
+def test_store_features_survive_the_write():
+    doc = _doc_for(store_features=["task-index:flexible", "something-else"])
+    assert doc.get("store_features") == ["task-index:flexible", "something-else"]
+
+
+def test_store_features_survive_the_read_back():
+    """The gate reads server DOCUMENTS. A value that is written but not read back
+    reads as 'not supported' at every call site — the same shape as the `image`
+    bug this file exists for, one layer further along."""
+    doc = _doc_for(store_features=["task-index:flexible"])
+    back = ServerMixin._doc_to_server(object.__new__(ServerMixin), doc)
+    assert "task-index:flexible" in back.store_features
+
+
+def test_a_runner_that_advertises_nothing_round_trips_as_empty():
+    """Absent means DECLINE, so it must come back as [] rather than as a default
+    that would make an old runner look capable."""
+    doc = _doc_for()
+    doc.pop("store_features", None)          # as an older runner's record would be
+    back = ServerMixin._doc_to_server(object.__new__(ServerMixin), doc)
+    assert back.store_features == []
