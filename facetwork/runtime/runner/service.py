@@ -1191,6 +1191,16 @@ class RunnerService(BaseRunner):
             # task terminal and can complete the runner on this cycle.)
             task.state = TaskState.COMPLETED
             task.updated = _current_time_ms()
+            # A STEPLESS task has nowhere else to put its result. For a normal
+            # event task the return value flows to the step via continue_step()
+            # below, but fw:execute and fw:sys have no step, so the value was
+            # simply discarded — a control command showed `completed` with
+            # result None, telling you THAT it ran but not WHAT it reported,
+            # which for a control channel is most of the point. Recording it on
+            # the task makes `pause` report what it actually changed.
+            if not task.step_id and isinstance(result, dict):
+                task.data = dict(task.data or {})
+                task.data["result"] = result
             if not self._safe_save_task(task):
                 logger.warning(
                     "Not advancing workflow for task %s (step=%s): lease was reclaimed "

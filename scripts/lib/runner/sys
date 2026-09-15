@@ -103,16 +103,17 @@ def main() -> int:
             "state": "pending",
             "task_list_name": s.get("task_list") or "default",
             "data": {"command": a.command},
-            # ⚠️ A UNIQUE step_id, never None and never "". The tasks collection
-            # carries a PARTIAL UNIQUE INDEX on {step_id} where state=="running"
-            # — "at most one running task per step". Inserting these with
-            # step_id=None made the first one to reach `running` occupy the null
-            # slot, and every later task doing the same failed with
-            # DuplicateKeyError. Measured 2026-09-14: that broke the poll cycle
-            # of the runner it was sent to, which is far worse than the command
-            # simply not working. Its own uuid gives each command a step nothing
-            # else shares.
-            "step_id": tid,
+            # ⚠️ step_id "" — a control command genuinely has NO step, and must
+            # say so. Two earlier shapes were both wrong:
+            #   None  -> collided on the partial unique index {step_id} where
+            #            state=="running", which broke the whole poll cycle of
+            #            the runner it was sent to (2026-09-14).
+            #   a uuid -> dodged the index, but made the runtime try to
+            #            continue_step() a step that does not exist, logging
+            #            "Post-handler resume failed" on every command.
+            # The index now excludes stepless tasks ($gt ""), so the honest
+            # value is also the working one.
+            "step_id": "",
             "runner_id": "",
             "workflow_id": "",
             "flow_id": "",
