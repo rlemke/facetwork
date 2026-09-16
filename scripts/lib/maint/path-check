@@ -60,7 +60,12 @@ else:
 
 # Absolute paths with at least two segments. Trailing punctuation that commonly
 # abuts a path in JSON/env/YAML is stripped rather than captured.
-PATH_RE = re.compile(r'(?<![\w/])(/(?:[A-Za-z0-9._+-]+/)+[A-Za-z0-9._+-]*)')
+# ⚠️ `~` in the lookbehind. Without it, `~/.facetwork/x` yields the "absolute"
+# path `/.facetwork/x`, which of course does not exist — a false positive on
+# every doc comment and env file that mentions a home-relative path. Precision
+# is the whole value here: a checker that cries wolf gets ignored, which is the
+# failure mode of the thing it was built to catch.
+PATH_RE = re.compile(r'(?<![\w/~$])(/(?:[A-Za-z0-9._+-]+/)+[A-Za-z0-9._+-]*)')
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "site-packages"}
 TEXTY = {".json", ".env", ".conf", ".cfg", ".ini", ".yaml", ".yml", ".toml",
          ".sh", ".txt", ".plist", ".service", ".md", ""}
