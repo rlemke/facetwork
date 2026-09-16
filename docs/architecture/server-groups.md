@@ -197,7 +197,7 @@ it wrong — a mis-placed heavy task just won't be claimed by a host that can't
 serve it — but honoring the invariant is what keeps heavy work off the boxes that
 would thrash or crash on it.
 
-### 6.4 Current fleet assignment (worked example, 2026-09-13)
+### 6.4 Current fleet assignment (worked example, 2026-09-15)
 
 Six live hosts, 73 runners. The fleet was physically relocated on 2026-09-13:
 **server1 and server2 were decommissioned**, macmini01-03 / atopnuc01 / atopnuc02
@@ -208,14 +208,40 @@ edit (see [server-catalog.md](../reference/server-catalog.md)).
 
 | Host | Group | Container memory | Scratch free | Runs |
 |------|-------|------------------|--------------|------|
-| **beelink01** | `heavy` | 30.48 GiB | 850 GB | all 23 roles incl. the osm tier — 24 threads, the most in the fleet |
+| **beelink01** | `heavy` | 30.48 GiB | 608 GB | **MongoDB** + **the whole OSM role** (planet, extract server, replication timers) + all 23 roles |
 | **macmini02** | `heavy` | 30.69 GiB | 847 GB | all 23 roles incl. the osm tier |
 | **MaxPro** | `heavy` | 31.29 GiB | 3342 GB | all 23 roles incl. the osm tier |
-| **server3** | `heavy` | 23.43 GiB | 3581 GB | infra **and** all 23 roles |
+| **server3** | `heavy` | 23.43 GiB | 3581 GB | **MinIO + the registry** + all 23 roles; no longer the OSM host |
 | **macmini03** | `medium` | 30.69 GiB | **84 GB** | all 15 domain roles + generalist; **no osm/gh-router** |
 | **atopnuc01** | `runner` | 6.71 GiB | 91 GB | ffl + one generalist |
-| **macmini01** | `runner` | 3.26 GiB | 416 GB | ffl + one generalist |
 | **atopnuc02** | `runner` | — | — | **not provisioned** |
+| ~~macmini01~~ | — | 3.26 GiB | 416 GB | **DROPPED 2026-09-15** — see below |
+
+**Two changes since 2026-09-13 that the tiers alone could not express:**
+
+**The OSM role moved from server3 to beelink01 (2026-09-15).** Both are `heavy`,
+so the group gate could not distinguish them — and server3 was the wrong host:
+32 GB of physical RAM shared between a 24 GiB Docker VM, MinIO, the registry and
+23 runners. Under a planet update it reached **60 MB of free memory**, its runner
+wedged, the 120s dead-server reaper reclaimed the task, and the reclaimed
+execution started a *fresh 92 GB copy* while the original kept running. Four ran
+concurrently. What actually moved the work was not a group but the
+**`dataset_planet_gb` routing dimension**: the 92 GB planet file now exists only
+on beelink01, so `Requires(dataset_planet_gb = 80)` resolves there and nowhere
+else. The tier says which roles a host *starts*; the dataset says which host can
+*claim*. This is the §2 point made concrete — placement by capability beats
+placement by label.
+
+**macmini01 was dropped, and the reason is instructive.** It is an Intel Core 2
+Duo P8800 (2009): SSSE3 and CX16, but no SSE4.2 and no POPCNT, so it does not
+meet **x86-64-v2**. numpy in the runner image is built to that baseline, so
+`pip install numpy` there SUCCEEDS and only `import numpy` raises. Handler
+modules import numpy *inside functions*, so `preload(verify=True)` imports the
+module cleanly and the host advertised all **265** facets. It came up 2/2,
+reported healthy, and would have failed at DISPATCH on any task touching numpy.
+⚠️ **No group or resource floor expresses this.** Both are about capacity; this
+is about instruction set. A host that silently fails a subset of tasks is worse
+than one that will not join, and nothing in the routing model could see it.
 
 The three tiers, and the axis that separates each pair:
 

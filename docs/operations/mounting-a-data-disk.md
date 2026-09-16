@@ -13,8 +13,16 @@ between the initramfs and the booted system, between kernels, and between boots.
 Measured on beelink01: the root filesystem (UUID `fad5c9ab-…`) is
 `nvme0n1p2` in the booted system, but every boot journal shows the initramfs
 mounting that same UUID as **`nvme1n1p2`** — the two identical 931 GB NVMe drives
-swap names depending on who is looking. A host with `sda`/`sdb` (macmini01) has
-the same exposure for the same reason.
+swap names depending on who is looking. A host with `sda`/`sdb` has the same
+exposure for the same reason.
+
+> **Confirmed by reboot, 2026-09-15.** This is no longer an inference. The data
+> disk was `/dev/nvme1n1p4` before the reboot and **`/dev/nvme0n1p4` after it**,
+> same UUID, same filesystem, nothing touched in between. A `/dev/nvme1n1p4`
+> fstab entry would have mounted the wrong disk or nothing at all — which is
+> exactly what happened on the two earlier attempts that had to be backed out.
+> The UUID entry followed the filesystem across the rename without incident, and
+> 301 GB of OSM data plus the MongoDB host came back untouched.
 
 An fstab entry naming a device path therefore points at *a* disk, not at *your*
 disk. When the order shifts, the mount fails — or, far worse, succeeds against
@@ -83,6 +91,18 @@ sudo reboot
 # then, once it is back:
 findmnt /srv/afl_data && docker ps --filter name=facetwork-runner | wc -l
 ```
+
+**What a passing reboot looks like** (beelink01, 2026-09-15). Compare the two
+timestamps — the ordering is the half that `mount -a` cannot test:
+
+```
+mount unit active:  19:54:46
+docker started:     19:54:55      <- nine seconds LATER, via RequiresMountsFor
+```
+
+If Docker's timestamp is the earlier one, the ordering is not in effect and a
+bind-mounted container may be holding the empty directory underneath the
+mountpoint. That container will look healthy.
 
 If the mount is absent after reboot, read `journalctl -b -1 -u srv-afl_data.mount`
 (the unit name is the mountpoint with `/` → `-`) before changing anything.
