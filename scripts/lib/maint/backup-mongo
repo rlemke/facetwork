@@ -96,8 +96,10 @@ status|check)
         echo "backup-mongo: NO BACKUP FOUND on $ARCHIVE_HOST:$RD" >&2
         exit 1
     fi
-    META="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "stat -c '%Y %s' '$LATEST' 2>/dev/null || stat -f '%m %z' '$LATEST'")"
-    MTIME="${META%% *}"; SIZE="${META##* }"
+    # Same portability rule as above: byte count from wc, mtime from a python
+    # one-liner, because neither stat dialect can be relied on across this fleet.
+    SIZE="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "wc -c < '$LATEST'" | tr -d ' ')"
+    MTIME="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "python3 -c \"import os,sys;print(int(os.path.getmtime(sys.argv[1])))\" '$LATEST'")"
     AGE_H=$(( ( $(date +%s) - MTIME ) / 3600 ))
     COUNT="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "ls -1 $RD/mongo-*.archive.gz 2>/dev/null | wc -l" | tr -d ' ')"
     echo "  archive host: $ARCHIVE_HOST:$RD"
@@ -187,7 +189,11 @@ run)
         echo "backup-mongo: mongodump failed: $(tail -2 "$TMP/err" | tr '\n' ' ')" >&2
         exit 1
     fi
-    SIZE=$(stat -f %z "$LOCAL" 2>/dev/null || stat -c %s "$LOCAL")
+    # ⚠️ wc -c, not stat. `stat -f` is BSD's "format" but GNU's "FILESYSTEM
+    # status", so on Linux the BSD-first fallback SUCCEEDS and returns a block
+    # report instead of a byte count -- a silent wrong answer rather than an
+    # error, which then failed the size comparison with pages of tmpfs stats.
+    SIZE=$(wc -c < "$LOCAL" | tr -d ' ')
     echo "  dumped:  $SIZE bytes"
 
     # ⚠️ Verify the ARCHIVE, not the exit code. A truncated stream still exits 0
@@ -214,7 +220,7 @@ run)
     fi
 
     # ⚠️ Confirm what ARRIVED. scp exiting 0 says the command returned.
-    RSIZE="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "stat -c %s '$RD/$NAME' 2>/dev/null || stat -f %z '$RD/$NAME'")"
+    RSIZE="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "wc -c < '$RD/$NAME'" | tr -d ' ')"
     if [ "$RSIZE" != "$SIZE" ]; then
         echo "backup-mongo: SIZE MISMATCH — sent $SIZE, arrived ${RSIZE:-nothing}" >&2; exit 1
     fi
