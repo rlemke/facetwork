@@ -121,11 +121,6 @@ uninstall)
 install)
     # Linux installs the same wrapper on a cron line; only the scheduler differs.
     . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
-    if ! command -v launchctl >/dev/null 2>&1; then
-        echo "launchd is macOS-only. On Linux use a systemd timer or cron:" >&2
-        echo "  0 6 * * *  $FW_ROOT/fw svc osm-report --publish" >&2
-        exit 2
-    fi
     mkdir -p "$HOME/.facetwork" "$HOME/Library/LaunchAgents"
 
     # ⚠️ PROVE THE JOB CAN RUN BEFORE INSTALLING IT. The default endpoint is
