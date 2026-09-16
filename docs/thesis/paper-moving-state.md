@@ -245,6 +245,26 @@ load-correlated is invisible to every idle check**, including the one an operato
 reaches for first. A 20-packet ping reported 0% on a link that was losing half
 its packets minutes earlier.
 
+**Resolved, 2026-09-16: it was the cable.** Cables were replaced and the switch
+deliberately kept, isolating the variable. Re-measured by the same method — 8 GB
+over `nc`, 120 pings *during* the copy:
+
+| | old cable | new cable |
+|---|---|---|
+| loss under load | 34–55% | **0%** |
+| throughput | ~124 MB/s | **261 MB/s** (~84% of 2.5GbE line rate) |
+
+Two things we get wrong-way-round credit for. The `energy-efficient-ethernet`
+flag, which we listed as a prime suspect, is **still set** and was irrelevant —
+the cheapest hypothesis was the correct one, and the more interesting one was a
+distraction. And the resolution obliges us to **re-weight §6**: we attributed the
+reclaim storm to memory starvation, and memory pressure was real, but the reaper
+fired because the host's heartbeat did not reach the database for 121 seconds.
+A link losing half its packets under precisely the load a 92 GB copy generates
+is a better explanation of that silence than memory alone. We leave §6 as
+written — it reports what we believed with the evidence we had — and record the
+correction here, which is the honest form.
+
 ---
 
 ## 5. Probes that cannot return the failing answer
