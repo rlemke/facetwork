@@ -24,6 +24,15 @@
 # sequences that look like paths, and scanning it would cost hours to produce
 # noise. Default cap 1 MB; raise with --max-bytes.
 #
+# ⚠️ IT CANNOT TELL LIVE CONFIG FROM A HISTORICAL ARTIFACT. Every finding is a
+# true statement — this path does not resolve here — but a stale build record
+# from three months ago is reported exactly like a config something reads
+# tonight. On the first fleet-wide run, 44 of 44 findings were artifacts
+# (a pre-move extract-config, a July scratch cfg.json) and none were live.
+# Judge severity by the file's MTIME and by whether anything reads it; the tool
+# deliberately does not guess, because guessing wrong in the quiet direction is
+# how the bug it exists for survived in the first place.
+#
 # Exit: 0 nothing unresolvable · 1 found paths that do not resolve here ·
 #       2 could not scan (bad root).
 set -uo pipefail

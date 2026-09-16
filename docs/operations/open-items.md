@@ -49,9 +49,18 @@ it hardcodes absolute poly paths from the host that generated it. **A faithful
 copy was exactly the wrong outcome.** Found only because `osm-watchdog` alarms
 on a stale re-split.
 
-No tooling detects absolute paths pointing at a host that no longer holds the
-data. A migration check that greps moved configs for the *source* host's paths
-would have caught it in seconds.
+**Partly addressed** by `fw maint path-check` — it flags absolute paths that do
+not resolve on this host, paths impossible for the platform (`/Volumes` on
+Linux), and anything under a `--stale-prefix`. Verified against the original
+`regions.json`: it catches all 8 bad paths in seconds, with no knowledge of the
+migration.
+
+⚠️ **Still open: nothing rewrites them, and nothing distinguishes live config
+from a historical artifact.** The first fleet-wide run returned 44 findings, all
+true and all artifacts (a pre-move `extract-config.json`, a July scratch
+`cfg.json`). Judging severity still needs a human reading mtimes. The checker
+should be run as part of a migration, where "this file arrived today and does
+not resolve" is unambiguous.
 
 ### 1.4 53 country extracts are permanently stale
 
