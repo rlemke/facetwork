@@ -132,10 +132,37 @@ Read the truth with `crontab -l` (Linux) or `launchctl list | grep com.facetwork
 (macOS), and per-command with `fw <group> <name> --status`. This table is a
 snapshot; the host is not.
 
-⚠️ **Timers do not move with a role by themselves.** When the OSM role moved
-hosts on 2026-09-15, its timers stayed behind on a machine that no longer had
-the planet — a nightly re-split pointed at data that was gone. Relocating a role
-means relocating its schedule, and nothing enforces that.
+⚠️ **Timers do not move with a role by themselves**, and this is not a caution
+— it happened, to the person writing this page, hours after writing it.
+
+When the OSM role moved hosts on 2026-09-15, five timers were moved with it and
+one was not. `osm-maintain` — the nightly re-split — is not a `fw` command; it
+lives in `fwh_osm/deploy/selfhost/install.sh`, which was launchd-only, so it
+could not have been installed on the new Linux host even if it had been
+remembered. It kept running on the old machine against a planet that had been
+deleted:
+
+```
+2026-09-15 06:23  osm-maintain done     8 region(s) re-extracted
+2026-09-16 03:30  osm-maintain: master PBF missing: …/planet-latest.osm.pbf
+```
+
+Three lessons worth more than the incident:
+
+1. **Inventory timers by HOST, not by repository.** The five that moved were the
+   ones `fw` knows about. The one that did not was in another repo, and no
+   audit of this repo would have listed it. `crontab -l` and
+   `launchctl list | grep com.facetwork` on each host are the only complete
+   inventory.
+2. **Moving a data tree is not moving its siblings.** The migration synced
+   `www`, `bucket-tier` and `work`. It did not sync the ROOT-LEVEL files beside
+   them, so `regions.json` — 695 bytes, and a required input — never arrived.
+   A directory-by-directory parity check passed, because the files that were
+   missing were in no directory that was compared.
+3. **It was visible only because something independent was watching.**
+   `osm-watchdog` alarms when the re-split goes stale. Without it, a scheduled
+   job with nowhere to run is silence, and the extracts just stop advancing —
+   the failure that took 39 days to notice the first time.
 
 ## 8. History
 
