@@ -320,6 +320,12 @@ list-sets)
     ;;
 
 status)
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    if ! fw_timer_is_darwin; then
+        _CL="$(fw_timer_cron_line "$LABEL")"
+        [ -n "$_CL" ] && echo "timer: LOADED (cron) — $_CL" \
+                      || echo "timer: not installed — fw svc osm-admin-regen --install"
+    fi
     if launchctl list 2>/dev/null | grep -qF "$LABEL"; then
         echo "timer: LOADED ($LABEL)"
     else
@@ -341,6 +347,8 @@ status)
     ;;
 
 uninstall)
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    fw_timer_is_darwin || fw_timer_cron_uninstall "$LABEL"
     launchctl unload "$PLIST" 2>/dev/null || true
     rm -f "$PLIST" "$WRAPPER"
     echo "uninstalled $LABEL."
@@ -349,11 +357,8 @@ uninstall)
     ;;
 
 install)
-    if [ "$(uname)" != "Darwin" ]; then
-        echo "launchd is macOS-only. On Linux use a systemd timer, or cron:" >&2
-        echo "  17 8 * * 3  cd $FW_ROOT && ./fw svc osm-admin-regen >> $LOG 2>&1" >&2
-        exit 1
-    fi
+    # Linux installs the same wrapper on a cron line; only the scheduler differs.
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
     HH="${AT%%:*}"; MM="${AT##*:}"
     case "$HH$MM" in *[!0-9]*) echo "--at wants HH:MM, got '$AT'" >&2; exit 2 ;; esac
     mkdir -p "$LOGDIR" "$(dirname "$PLIST")"
@@ -373,6 +378,18 @@ cd "$FW_ROOT" || exit 1
 exec ./fw svc osm-admin-regen
 WRAP
     chmod +x "$WRAPPER"
+
+    if ! fw_timer_is_darwin; then
+        # Weekly, Wednesday 08:17 — same slot the plist uses. RunAtLoad is
+        # deliberately absent on both platforms: installing a timer must not
+        # launch a multi-hour job.
+        fw_timer_cron_install "$LABEL" "$WRAPPER" "17 8 * * 3" "$LOG"
+        echo "wrote:"
+        echo "  $WRAPPER"
+        echo "  crontab: 17 8 * * 3  (weekly, Wed 08:17)"
+        echo "  check:   fw svc osm-admin-regen --status"
+        exit 0
+    fi
 
     cat > "$PLIST" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>

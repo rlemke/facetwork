@@ -79,6 +79,12 @@ run)
     ;;
 
 status)
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    if ! fw_timer_is_darwin; then
+        _CL="$(fw_timer_cron_line "$LABEL")"
+        [ -n "$_CL" ] && echo "timer: LOADED (cron) — $_CL" \
+                      || echo "timer: not installed — fw svc osm-report --install"
+    fi
     echo "label:   $LABEL"
     if [ -f "$PLIST" ]; then
         echo "plist:   $PLIST"
@@ -103,6 +109,8 @@ status)
     ;;
 
 uninstall)
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    fw_timer_is_darwin || fw_timer_cron_uninstall "$LABEL"
     launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null \
         || launchctl unload "$PLIST" 2>/dev/null
     rm -f "$PLIST" "$WRAPPER"
@@ -111,6 +119,8 @@ uninstall)
     ;;
 
 install)
+    # Linux installs the same wrapper on a cron line; only the scheduler differs.
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
     if ! command -v launchctl >/dev/null 2>&1; then
         echo "launchd is macOS-only. On Linux use a systemd timer or cron:" >&2
         echo "  0 6 * * *  $FW_ROOT/fw svc osm-report --publish" >&2
@@ -173,6 +183,16 @@ cd "$FW_ROOT" || exit 1
 exec "$FW_ROOT/fw" svc osm-report --publish${TREE_ARG}
 WEOF
     chmod +x "$WRAPPER"
+    if ! fw_timer_is_darwin; then
+        fw_timer_cron_install "$LABEL" "$WRAPPER" "0 */6 * * *" "$LOG"
+        echo "wrote:"
+        echo "  $WRAPPER"
+        echo "  crontab: 0 */6 * * *  (every 6h — the backstop that alarms when"
+        echo "           the report itself stops being regenerated)"
+        echo "  check:   fw svc osm-report --check   (0 fresh / 1 stale / 2 unverifiable)"
+        exit 0
+    fi
+
     cat > "$PLIST" <<PEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
