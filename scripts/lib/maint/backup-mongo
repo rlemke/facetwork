@@ -66,6 +66,22 @@ print(name or catalog.resolve_ip('afl-mongodb') or '')
 " 2>/dev/null)"
 [ -n "$MONGO_HOST" ] || { echo "backup-mongo: cannot resolve afl-mongodb from the catalog" >&2; exit 2; }
 
+# ⚠️ Run LOCALLY when this host IS the Mongo host. The natural home for this job
+# is the database's own machine -- that is where it was installed -- and a host
+# does not normally authorise ssh to itself, so the first cron run there failed
+# with "Permission denied (publickey)". Detect it and drop the ssh hop.
+IS_SELF="$("$PY" -c "
+from facetwork.servers import catalog
+print('yes' if catalog.is_self('$MONGO_HOST') else 'no')
+" 2>/dev/null)"
+if [ "$IS_SELF" = "yes" ]; then
+    _mongo_sh() { sh -c "$1"; }
+    MONGO_WHERE="local"
+else
+    _mongo_sh() { ssh -o BatchMode=yes "$MONGO_HOST" "$1"; }
+    MONGO_WHERE="via ssh"
+fi
+
 _remote_dir() { ssh -o BatchMode=yes "$ARCHIVE_HOST" "eval echo $ARCHIVE_DIR"; }
 
 case "$ACTION" in
@@ -165,10 +181,9 @@ run)
     TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
     LOCAL="$TMP/$NAME"
 
-    echo "  source:  $MONGO_HOST (container $CONTAINER)"
+    echo "  source:  $MONGO_HOST (container $CONTAINER, $MONGO_WHERE)"
     # mongodump INSIDE the container: no host tooling, version always matches.
-    if ! ssh -o BatchMode=yes "$MONGO_HOST" \
-            "docker exec $CONTAINER mongodump --archive --gzip --quiet" > "$LOCAL" 2>"$TMP/err"; then
+    if ! _mongo_sh "docker exec $CONTAINER mongodump --archive --gzip --quiet" > "$LOCAL" 2>"$TMP/err"; then
         echo "backup-mongo: mongodump failed: $(tail -2 "$TMP/err" | tr '\n' ' ')" >&2
         exit 1
     fi
