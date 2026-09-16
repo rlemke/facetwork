@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# fw-summary: dump the control-plane database to the archive host, and verify it
+#
+# ⚠️ WHY THIS EXISTS. As of 2026-09-15 this fleet had NO backup of MongoDB, and
+# nothing in the repo did. Mongo holds every workflow, run, step and task, the
+# fleet config, the server catalog, the handler registry and the workflow
+# catalog. It is 126 MB and it is the only state here that cannot be rebuilt:
+# the OSM planet can be re-downloaded and the extract tree re-derived, but a
+# lost Mongo loses all history and the fleet's own definition of itself.
+# It lives on one host, which had two unplanned outages the day this was written.
+#
+# SHAPE. mongodump runs INSIDE the mongo container (`docker exec`), so no host
+# needs the tools installed and the version always matches the server. The dump
+# is a single `--archive --gzip` stream, which makes it one file to verify, one
+# file to ship, and one file to restore.
+#
+# ⚠️ A BACKUP YOU HAVE NOT VERIFIED IS NOT A BACKUP. Every run checks the
+# archive is valid gzip, that it contains the collections that matter, and that
+# the bytes that ARRIVED match the bytes that were sent. A copy whose exit code
+# was 0 proves the command returned, not that the data is there -- a distinction
+# this fleet has been bitten by repeatedly.
+#
+# ⚠️ AND A BACKUP JOB THAT STOPS RUNNING IS INVISIBLE. `--check` is the standing
+# question "is there a recent, valid backup?" and is meant for a timer. Exit
+# codes are load-bearing, as with osm-watchdog: 0 healthy, 1 STALE OR BROKEN
+# (alarm), 2 could-not-verify (offline, do NOT alarm) -- alarming when merely
+# unreachable trains you to ignore the alarm.
+set -uo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+ARCHIVE_HOST="${FW_BACKUP_HOST:-macmini01.local}"
+ARCHIVE_DIR="${FW_BACKUP_DIR:-\$HOME/fw_backups/mongo}"
+KEEP="${FW_BACKUP_KEEP:-14}"
+MAX_AGE_H="${FW_BACKUP_MAX_AGE_HOURS:-36}"
+MIN_BYTES="${FW_BACKUP_MIN_BYTES:-1048576}"      # 1 MB: a dump smaller than this is not a fleet
+ACTION="run"
+CONTAINER="${FW_MONGO_CONTAINER:-facetwork-mongodb}"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --archive-host) ARCHIVE_HOST="$2"; shift 2 ;;
+        --keep) KEEP="$2"; shift 2 ;;
+        --check) ACTION="check"; shift ;;
+        --install) ACTION="install"; shift ;;
+        --uninstall) ACTION="uninstall"; shift ;;
+        --status) ACTION="status"; shift ;;
+        -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
+
+PY="$FW_ROOT/.venv/bin/python3"; [ -x "$PY" ] || PY="$(command -v python3)"
+
+# The MONGO host, from the catalog. Not "the infra host": Mongo moved off it on
+# 2026-09-13 and asking for infra would back this up from the wrong machine --
+# or from nothing.
+# ⚠️ The NAME, not the IP. catalog.resolve_ip returns an address, and ssh to a
+# bare address fails host-key verification wherever known_hosts was populated by
+# name -- which is everywhere here. find() returns the catalog entry, whose name
+# every host already trusts, and which keeps working across DHCP drift.
+MONGO_HOST="$("$PY" -c "
+from facetwork.servers import catalog
+e = catalog.find('afl-mongodb')
+name = (e or {}).get('name') if isinstance(e, dict) else (e or '')
+print(name or catalog.resolve_ip('afl-mongodb') or '')
+" 2>/dev/null)"
+[ -n "$MONGO_HOST" ] || { echo "backup-mongo: cannot resolve afl-mongodb from the catalog" >&2; exit 2; }
+
+_remote_dir() { ssh -o BatchMode=yes "$ARCHIVE_HOST" "eval echo $ARCHIVE_DIR"; }
+
+case "$ACTION" in
+status|check)
+    RD="$(_remote_dir 2>/dev/null)"
+    if [ -z "$RD" ]; then
+        echo "backup-mongo: archive host $ARCHIVE_HOST unreachable — cannot verify" >&2
+        exit 2
+    fi
+    LATEST="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "ls -1t $RD/mongo-*.archive.gz 2>/dev/null | head -1")"
+    if [ -z "$LATEST" ]; then
+        echo "backup-mongo: NO BACKUP FOUND on $ARCHIVE_HOST:$RD" >&2
+        exit 1
+    fi
+    META="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "stat -c '%Y %s' '$LATEST' 2>/dev/null || stat -f '%m %z' '$LATEST'")"
+    MTIME="${META%% *}"; SIZE="${META##* }"
+    AGE_H=$(( ( $(date +%s) - MTIME ) / 3600 ))
+    COUNT="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "ls -1 $RD/mongo-*.archive.gz 2>/dev/null | wc -l" | tr -d ' ')"
+    echo "  archive host: $ARCHIVE_HOST:$RD"
+    echo "  latest:       $(basename "$LATEST")  ${SIZE} bytes  ${AGE_H}h old"
+    echo "  retained:     $COUNT backup(s), keep=$KEEP"
+    rc=0
+    if [ "$SIZE" -lt "$MIN_BYTES" ]; then
+        echo "  ** TOO SMALL — $SIZE bytes is below $MIN_BYTES; this is not a whole fleet **" >&2; rc=1
+    fi
+    if [ "$AGE_H" -gt "$MAX_AGE_H" ]; then
+        echo "  ** STALE — ${AGE_H}h old, limit ${MAX_AGE_H}h. The job has stopped running and" >&2
+        echo "     nothing else would have told you. **" >&2; rc=1
+    fi
+    [ "$rc" = 0 ] && echo "  OK — a recent, plausible backup exists"
+    exit $rc
+    ;;
+
+install)
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    LABEL="com.facetwork.backup-mongo"
+    LOGDIR="$HOME/.facetwork"; LOG="$LOGDIR/backup-mongo.log"
+    WRAPPER="$LOGDIR/backup-mongo.sh"
+    mkdir -p "$LOGDIR"
+    cat > "$WRAPPER" <<WRAP
+#!/bin/bash -l
+# Nightly control-plane backup — launched by $LABEL.
+# Regenerate via 'fw maint backup-mongo --install'. Do not hand-edit.
+set -u
+export PYTHONUNBUFFERED=1
+export FW_BACKUP_HOST="$ARCHIVE_HOST"
+export FW_BACKUP_KEEP="$KEEP"
+cd "$FW_ROOT" || exit 1
+exec ./fw maint backup-mongo
+WRAP
+    chmod +x "$WRAPPER"
+    if ! fw_timer_is_darwin; then
+        SPEC="$(fw_timer_cron_spec "02:40" "")" || exit 2
+        fw_timer_cron_install "$LABEL" "$WRAPPER" "$SPEC" "$LOG"
+        echo "wrote:"
+        echo "  $WRAPPER"
+        echo "  crontab: $SPEC  (daily 02:40, before the 03:15 OSM publish)"
+        echo "  archive: $ARCHIVE_HOST  keep=$KEEP"
+        echo "  check:   fw maint backup-mongo --check   (0 ok / 1 stale-or-broken / 2 unverifiable)"
+        exit 0
+    fi
+    PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+    mkdir -p "$(dirname "$PLIST")"
+    cat > "$PLIST" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$LABEL</string>
+    <key>ProgramArguments</key><array><string>$WRAPPER</string></array>
+    <!-- StartInterval, not a fixed hour: a missed StartCalendarInterval is not
+         run on wake, so on a machine that sleeps a nightly entry never fires. -->
+    <key>StartInterval</key><integer>86400</integer>
+    <key>StandardOutPath</key><string>$LOG</string>
+    <key>StandardErrorPath</key><string>$LOGDIR/backup-mongo.err.log</string>
+</dict>
+</plist>
+PLISTEOF
+    launchctl unload "$PLIST" 2>/dev/null || true
+    launchctl load "$PLIST"
+    echo "loaded $LABEL — archive: $ARCHIVE_HOST, keep=$KEEP"
+    ;;
+
+uninstall)
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
+    LABEL="com.facetwork.backup-mongo"
+    fw_timer_is_darwin || fw_timer_cron_uninstall "$LABEL"
+    launchctl unload "$HOME/Library/LaunchAgents/$LABEL.plist" 2>/dev/null || true
+    rm -f "$HOME/Library/LaunchAgents/$LABEL.plist" "$HOME/.facetwork/backup-mongo.sh"
+    echo "uninstalled $LABEL."
+    echo "⚠️  Nothing is backing up the control plane now, and nothing will say so."
+    ;;
+
+run)
+    STAMP="$(date +%Y%m%d-%H%M)"
+    NAME="mongo-${STAMP}.archive.gz"
+    TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+    LOCAL="$TMP/$NAME"
+
+    echo "  source:  $MONGO_HOST (container $CONTAINER)"
+    # mongodump INSIDE the container: no host tooling, version always matches.
+    if ! ssh -o BatchMode=yes "$MONGO_HOST" \
+            "docker exec $CONTAINER mongodump --archive --gzip --quiet" > "$LOCAL" 2>"$TMP/err"; then
+        echo "backup-mongo: mongodump failed: $(tail -2 "$TMP/err" | tr '\n' ' ')" >&2
+        exit 1
+    fi
+    SIZE=$(stat -f %z "$LOCAL" 2>/dev/null || stat -c %s "$LOCAL")
+    echo "  dumped:  $SIZE bytes"
+
+    # ⚠️ Verify the ARCHIVE, not the exit code. A truncated stream still exits 0
+    # on the ssh side if the remote command succeeded and the pipe broke after.
+    if ! gzip -t "$LOCAL" 2>/dev/null; then
+        echo "backup-mongo: archive is not valid gzip — refusing to publish it" >&2; exit 1
+    fi
+    if [ "$SIZE" -lt "$MIN_BYTES" ]; then
+        echo "backup-mongo: dump is $SIZE bytes, below $MIN_BYTES — refusing to publish a stub" >&2; exit 1
+    fi
+    # The collections that make this a fleet rather than an empty database. If a
+    # dump is valid gzip, big enough, and contains none of these, something is
+    # pointed at the wrong server.
+    FOUND=$(gzip -dc "$LOCAL" 2>/dev/null | strings 2>/dev/null | grep -cE "fleet_config|servers|tasks|runners" || true)
+    if [ "${FOUND:-0}" -lt 1 ]; then
+        echo "backup-mongo: archive names none of the expected collections — wrong database?" >&2; exit 1
+    fi
+    echo "  verified: valid gzip, expected collections present"
+
+    RD="$(_remote_dir)" || { echo "backup-mongo: archive host $ARCHIVE_HOST unreachable" >&2; exit 2; }
+    ssh -o BatchMode=yes "$ARCHIVE_HOST" "mkdir -p $RD" || exit 2
+    if ! scp -q -o BatchMode=yes "$LOCAL" "$ARCHIVE_HOST:$RD/$NAME"; then
+        echo "backup-mongo: transfer to $ARCHIVE_HOST failed" >&2; exit 1
+    fi
+
+    # ⚠️ Confirm what ARRIVED. scp exiting 0 says the command returned.
+    RSIZE="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" "stat -c %s '$RD/$NAME' 2>/dev/null || stat -f %z '$RD/$NAME'")"
+    if [ "$RSIZE" != "$SIZE" ]; then
+        echo "backup-mongo: SIZE MISMATCH — sent $SIZE, arrived ${RSIZE:-nothing}" >&2; exit 1
+    fi
+    if ! ssh -o BatchMode=yes "$ARCHIVE_HOST" "gzip -t '$RD/$NAME'" 2>/dev/null; then
+        echo "backup-mongo: the arrived copy is not valid gzip" >&2; exit 1
+    fi
+    echo "  archived: $ARCHIVE_HOST:$RD/$NAME ($RSIZE bytes, gzip verified at rest)"
+
+    # Prune ON THE ARCHIVE HOST, oldest first, keeping KEEP.
+    PRUNED="$(ssh -o BatchMode=yes "$ARCHIVE_HOST" \
+        "ls -1t $RD/mongo-*.archive.gz 2>/dev/null | tail -n +$((KEEP+1)) | tee /dev/stderr | xargs -r rm -f" 2>&1 >/dev/null | wc -l | tr -d ' ')"
+    [ "${PRUNED:-0}" -gt 0 ] && echo "  pruned:   $PRUNED old backup(s), keeping $KEEP"
+    echo "  OK"
+    ;;
+esac
