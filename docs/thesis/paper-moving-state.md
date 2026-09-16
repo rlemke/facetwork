@@ -59,7 +59,7 @@ irreplaceable or expensive state:
 
 | State | Size | Replaceable? |
 |---|---|---|
-| MongoDB (workflows, runs, steps, tasks, fleet config, catalogs) | 126 MB | **No** — no backup existed |
+| MongoDB (workflows, runs, steps, tasks, fleet config, catalogs) | 126 MB | **No** — no backup existed (see §10) |
 | OSM planet, advanced by replication diffs | 92 GB | Only by re-download + weeks of diffs |
 | Derived extract tree (`www`, `bucket-tier`) | 206 GB | Only by re-running the pipeline |
 
@@ -250,8 +250,8 @@ its packets minutes earlier.
 ## 5. Probes that cannot return the failing answer
 
 This is our principal contribution, and it emerged only because we kept a
-per-incident record. Seven mechanisms reported health while the thing they
-observed was broken. They are mechanically unrelated; what they share is that
+per-incident record. Eight mechanisms reported health, or a plausible wrong answer, while the thing
+they observed was broken or absent. They are mechanically unrelated; what they share is that
 **the failing state was outside the probe's expressible range**.
 
 | # | Probe | Reported | Reality | Mechanism |
@@ -263,6 +263,7 @@ observed was broken. They are mechanically unrelated; what they share is that
 | 5 | Stall detector v1 | no stall | one transfer stalled | Required **both** transfers stalled to report one |
 | 6 | `du -sb` progress | 90% complete | 76%, 41 GB missing | Counting a **duplicate the operator had created** |
 | 7 | Image-convergence check | "23/23 up-to-date" | 22 hours on a stale image | Counted *registered runners*, not the **image they ran** |
+| 8 | `stat -f %z f \|\| stat -c %s f` | a byte count | a **filesystem block report** | `-f` is BSD's *format* but GNU's *filesystem status*: on Linux the first form SUCCEEDS, so the fallback never fires |
 
 Four caused real harm. #1 nearly triggered an unnecessary Docker restart on the
 object-store host. #2 hid a dead transfer for 45 minutes. #3 made a cleanup
@@ -277,10 +278,21 @@ insidious.** A monitoring gap is an absence you can notice. A probe that cannot
 express the failing state produces a *positive assertion of health*, which
 terminates investigation.
 
-**Cross-platform heterogeneity is a silent generator of this class.** Four of the
-seven (#1, plus `ps -eo`, `du -sb`, and a `pkill` behaviour difference) arise
-from a fleet mixing GNU and BSD userland. A probe written on one and run on the
-other does not usually error — it returns something plausible.
+**Cross-platform heterogeneity is a silent generator of this class.** Five of the
+eight (#1 and #8, plus `ps -eo`, `du -sb`, and `pgrep -c`) arise from a fleet
+mixing GNU and BSD userland. A probe written on one and run on the other does not
+usually error — it returns something plausible.
+
+⚠️ **#8 is the worst shape in this table, and it appeared last.** The others
+fail loudly enough to be noticed once you look. This one is a *defensive
+fallback that defeats itself*: the idiom `stat -f … || stat -c …` is written
+precisely to be portable, and it is portable in one direction only, because the
+same flag means different things rather than being absent. On Linux the BSD form
+does not fail over — it succeeds and returns filesystem statistics where a byte
+count was expected. A portability guard that silently returns the wrong kind of
+answer is worse than no guard, because it is *evidence of having thought about
+the problem*. The fix is to use primitives with no dialect (`wc -c`), not to
+order the fallbacks better.
 
 **Self-matching is endemic to pattern-based process probes.** `pgrep -f` and
 `pkill -f` match against full command lines, and a probe dispatched over ssh puts
@@ -409,7 +421,52 @@ For designers of distributed runtimes:
 
 ---
 
-## 9. Limits
+## 9. Closing the gap the report opened
+
+§1 recorded that the only irreplaceable state in this fleet had no backup, and
+that nothing in the repository did. That is now addressed, and the shape of the
+solution follows this paper's own argument.
+
+`mongodump` runs inside the database's own container, so no host carries the
+tooling and the dump version cannot drift from the server. The output is a
+single `--archive --gzip` stream: one file to verify, ship and restore.
+
+Every run verifies the **artifact**, not the exit status — valid gzip before
+sending, the expected collection names present (a large, valid, *empty* dump
+means the tool is pointed at the wrong server), byte-count equality after
+transfer, and a second gzip test on the copy at rest. `--check` answers the
+standing question, with the same load-bearing exit codes as the OSM watchdog:
+**0** healthy, **1** stale or broken, **2** could-not-verify. The third is not a
+courtesy. A check that alarms because the archive host is merely offline teaches
+the operator to dismiss it, which is the mechanism by which the original gap
+survived unnoticed for the fleet's whole life.
+
+Three defects surfaced only by running it, all of a piece with §5: it resolved
+the database host to an IP and failed host-key verification; it took an ssh hop
+to itself when run on the very host `--install` places it; and it counted bytes
+with `stat -f` (#8 above). None would have appeared in review.
+
+**And the backup was then restored.** Into a throwaway container, with every
+collection compared against live:
+
+| collection | live | restored |
+|---|---|---|
+| workflows | 2045 | 2045 |
+| steps | 2362 | 2362 |
+| tasks | 1412 | 1412 |
+| handler_registrations | 700 | 700 |
+| runners / servers / afl_sources / fleet_config | 151 / 106 / 1 / 1 | identical |
+
+We record this because the distinction is the whole point of the section: a
+backup that is valid gzip and contains plausible collection names is *readable*.
+Only a restore with matching counts shows it is a **backup**. The archive host is
+a machine dropped from the fleet for being unable to run the runtime — a backup
+target needs sshd and disk, so the defect that disqualified it is irrelevant to
+the role.
+
+---
+
+## 10. Limits
 
 This is a single-fleet experience report over three weeks, one operator, seven
 hosts, one workload family. The incident frequencies are not rates and should not
