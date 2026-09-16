@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# fw-summary: find absolute paths in configs that do not resolve on this host
+#
+# ⚠️ WHY. When the OSM role moved hosts on 2026-09-15, `regions.json` transferred
+# BYTE-FOR-BYTE and broke the nightly re-split, because it hardcodes absolute
+# poly paths from the machine that generated it. A faithful copy was exactly the
+# wrong outcome — and the migration's own verification passed, because it
+# compared directories file-by-file and size-by-size. Content was never in
+# question; the paths INSIDE the content were.
+#
+# It surfaced 8 hours later, only because an independent watchdog alarms when the
+# re-split goes stale. This check would have found it in seconds.
+#
+# WHAT IT LOOKS FOR, in order of confidence:
+#   1. An absolute path that DOES NOT EXIST on this host. Strongest signal, and
+#      it needs no knowledge of the migration at all.
+#   2. A path that is IMPOSSIBLE for this platform — /Volumes/... on Linux,
+#      /home/... or /opt/homebrew/... on macOS. Wrong even if something happens
+#      to exist there.
+#   3. Paths under a prefix you name with --stale-prefix (e.g. the source host's
+#      data root), whether or not they resolve.
+#
+# ⚠️ Deliberately only reads SMALL TEXT files. A 92 GB PBF contains byte
+# sequences that look like paths, and scanning it would cost hours to produce
+# noise. Default cap 1 MB; raise with --max-bytes.
+#
+# Exit: 0 nothing unresolvable · 1 found paths that do not resolve here ·
+#       2 could not scan (bad root).
+set -uo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+PY="$FW_ROOT/.venv/bin/python3"; [ -x "$PY" ] || PY="$(command -v python3)"
+exec "$PY" - "$@" <<'PYEOF'
+import argparse, os, re, sys
+
+ap = argparse.ArgumentParser(prog="fw maint path-check")
+ap.add_argument("--root", action="append", default=[],
+                help="directory to scan (repeatable; default: ~/.facetwork and the fw checkout)")
+ap.add_argument("--stale-prefix", action="append", default=[],
+                help="flag any path under this prefix, resolving or not (e.g. a source host's data root)")
+ap.add_argument("--max-bytes", type=int, default=1_048_576,
+                help="skip files larger than this (default 1 MB)")
+ap.add_argument("--json", action="store_true")
+a = ap.parse_args()
+
+roots = a.root or [os.path.expanduser("~/.facetwork"),
+                   os.environ.get("FW_ROOT") or os.getcwd()]
+roots = [r for r in roots if os.path.isdir(r)]
+if not roots:
+    print("path-check: no scannable root", file=sys.stderr); sys.exit(2)
+
+# Platform-impossible prefixes. A path under one of these is wrong on this host
+# regardless of whether something happens to exist there.
+if sys.platform == "darwin":
+    IMPOSSIBLE = ("/home/", "/opt/homebrew/../home")
+    PLAT = "macOS"
+else:
+    IMPOSSIBLE = ("/Volumes/", "/Users/", "/System/", "/opt/homebrew/")
+    PLAT = "Linux"
+
+# Absolute paths with at least two segments. Trailing punctuation that commonly
+# abuts a path in JSON/env/YAML is stripped rather than captured.
+PATH_RE = re.compile(r'(?<![\w/])(/(?:[A-Za-z0-9._+-]+/)+[A-Za-z0-9._+-]*)')
+SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "site-packages"}
+TEXTY = {".json", ".env", ".conf", ".cfg", ".ini", ".yaml", ".yml", ".toml",
+         ".sh", ".txt", ".plist", ".service", ".md", ""}
+
+findings = []
+scanned = 0
+for root in roots:
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        for fn in filenames:
+            fp = os.path.join(dirpath, fn)
+            ext = os.path.splitext(fn)[1].lower()
+            if ext not in TEXTY:
+                continue
+            try:
+                if os.path.getsize(fp) > a.max_bytes or os.path.islink(fp):
+                    continue
+                with open(fp, "r", encoding="utf-8", errors="strict") as fh:
+                    lines = fh.readlines()
+            except (OSError, UnicodeDecodeError):
+                continue                      # binary or unreadable: not our business
+            scanned += 1
+            for n, line in enumerate(lines, 1):
+                for m in PATH_RE.finditer(line):
+                    p = m.group(1).rstrip("/.,;:\"')")
+                    if len(p.split("/")) < 3:
+                        continue
+                    stale = next((s for s in a.stale_prefix if p.startswith(s)), None)
+                    impossible = p.startswith(IMPOSSIBLE)
+                    exists = os.path.exists(p)
+                    if exists and not stale and not impossible:
+                        continue
+                    why = ("under --stale-prefix " + stale if stale
+                           else f"impossible on {PLAT}" if impossible
+                           else "does not exist here")
+                    findings.append({"file": fp, "line": n, "path": p, "why": why,
+                                     "exists": exists})
+
+if a.json:
+    import json as _j
+    print(_j.dumps({"scanned": scanned, "findings": findings}, indent=2))
+    sys.exit(1 if findings else 0)
+
+print(f"  scanned {scanned} text file(s) under: {', '.join(roots)}")
+if not findings:
+    print("  OK — every absolute path resolves on this host")
+    sys.exit(0)
+
+# Group by file so one bad config reads as one problem, not twenty.
+byfile = {}
+for f in findings:
+    byfile.setdefault(f["file"], []).append(f)
+print(f"\n  {len(findings)} path(s) in {len(byfile)} file(s) do not resolve here:\n")
+for fp, items in sorted(byfile.items()):
+    print(f"  {fp}")
+    for it in items[:6]:
+        print(f"      line {it['line']:<5} {it['path']}")
+        print(f"      {'':<10} ^ {it['why']}")
+    if len(items) > 6:
+        print(f"      … and {len(items) - 6} more")
+    print()
+print("  ⚠️ After moving data between hosts, a byte-exact copy of a config that")
+print("     embeds absolute paths is the WRONG outcome. Rewrite them to this")
+print("     host's layout, or make the consumer resolve them relatively.")
+sys.exit(1)
+PYEOF
