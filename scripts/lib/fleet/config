@@ -321,11 +321,32 @@ def cmd_status(a):
             img = (sv.get("image") or "").strip()
             tags[img.rsplit(":", 1)[-1] if img else ""] += 1
         want_tag = want_img.rsplit(":", 1)[-1] if want_img else ""
-        odd = {t: n for t, n in tags.items() if t and want_tag and t != want_tag}
+        # ⚠️ Compare only runners on the SAME image repo. A different repo is a
+        # different KIND of agent, not a stale one: the Java gh-router runs
+        # osm-gh-router:* and registers through the polyglot protocol, so it can
+        # never carry the python runner's tag. Without this it was reported as
+        # STALE IMAGE on every host running it, after every rollout -- a
+        # permanent false positive on a check whose whole value is that it is
+        # believed. `fleet unregistered` already draws this distinction; this is
+        # the same rule, applied where the operator actually reads it.
+        want_repo = want_img.rsplit(":", 1)[0] if ":" in want_img else want_img
+        foreign = Counter()
+        same_repo_tags = Counter()
+        for sv in servers:
+            if _host_key(sv.get("server_name", "?")) != host:
+                continue
+            img = (sv.get("image") or "").strip()
+            if not img:
+                continue
+            repo = img.rsplit(":", 1)[0] if ":" in img else img
+            (same_repo_tags if repo == want_repo else foreign)[img.rsplit(":", 1)[-1]] += 1
+        odd = {t: n for t, n in same_repo_tags.items() if t and want_tag and t != want_tag}
         unknown = tags.get("", 0)
         img_note = ""
         if odd:
             img_note = "  ** STALE IMAGE: " + ", ".join(f"{n}x {t}" for t, n in sorted(odd.items())) + " **"
+        elif foreign:
+            img_note = "  (" + ", ".join(f"{n}x {t} foreign agent" for t, n in sorted(foreign.items())) + ")"
             degraded.append(host)
         elif unknown and want_tag:
             # ⚠️ Report a PARTIAL unreported count too, not only an all-or-nothing
