@@ -29,8 +29,45 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# ⚠️ NOT a timer — this supervises a LONG-RUNNING server (RunAtLoad + KeepAlive),
+# so cron is the wrong tool: it would start a new gallery every tick and stack
+# them. The Linux equivalent is a systemd unit, which needs root to install, so
+# this cannot self-install. It writes the unit and hands over the one command,
+# which is more use than telling the operator that a unit exists.
+#
+# `loginctl show-user … Linger` is off on these hosts, so a --user unit would
+# die at logout; a system unit with User= is the form that survives.
 if [ "$(uname)" != "Darwin" ]; then
-    echo "launchd is macOS-only. On Linux use a systemd user unit running 'fw svc maps'." >&2
+    UNIT="/tmp/facetwork-maps.service"
+    cat > "$UNIT" <<UNITEOF
+[Unit]
+Description=Facetwork local maps gallery
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$FW_ROOT
+ExecStart=$FW_ROOT/fw svc maps --port ${PORT:-8090}
+Restart=always
+RestartSec=10
+StandardOutput=append:${LOG:-$HOME/.facetwork/maps.log}
+StandardError=append:${LOG:-$HOME/.facetwork/maps.log}
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+    echo "launchd is macOS-only, and this is a supervised server rather than a" >&2
+    echo "scheduled job, so cron is not the substitute." >&2
+    echo >&2
+    echo "Wrote a systemd unit to $UNIT. Install it with:" >&2
+    echo "  sudo cp $UNIT /etc/systemd/system/facetwork-maps.service" >&2
+    echo "  sudo systemctl daemon-reload" >&2
+    echo "  sudo systemctl enable --now facetwork-maps" >&2
+    echo >&2
+    echo "Or just run it in the foreground when you want it:" >&2
+    echo "  fw svc maps --port ${PORT:-8090}" >&2
     exit 1
 fi
 

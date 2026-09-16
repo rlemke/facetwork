@@ -109,11 +109,8 @@ uninstall)
     ;;
 
 install)
-    if [ "$(uname)" != "Darwin" ]; then
-        echo "launchd is macOS-only. On Linux use a systemd timer, or cron:" >&2
-        echo "  0 */$EVERY_HOURS * * *  cd $FW_ROOT && ./fw svc selfcheck >> $LOG 2>&1" >&2
-        exit 1
-    fi
+    # Linux installs the same wrapper on a cron line; only the scheduler differs.
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
     mkdir -p "$LOGDIR" "$(dirname "$PLIST")" "$(dirname "$WRAPPER")"
     cat > "$WRAPPER" <<WRAP
 #!/bin/bash -l
@@ -125,6 +122,16 @@ cd "$FW_ROOT" || exit 1
 exec ./fw svc selfcheck$([ "$LOCAL" -eq 1 ] && echo " --local")
 WRAP
     chmod +x "$WRAPPER"
+    if ! fw_timer_is_darwin; then
+        SPEC="$(fw_timer_cron_spec "" "$EVERY_HOURS")" || exit 2
+        fw_timer_cron_install "$LABEL" "$WRAPPER" "$SPEC" "$LOG"
+        echo "wrote:"
+        echo "  $WRAPPER"
+        echo "  crontab: $SPEC  (every ${EVERY_HOURS}h)"
+        echo "  check:   fw svc selfcheck --status"
+        exit 0
+    fi
+
     cat > "$PLIST" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

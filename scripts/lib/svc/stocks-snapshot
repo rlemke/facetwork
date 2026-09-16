@@ -93,11 +93,8 @@ uninstall)
     ;;
 
 install)
-    if [ "$(uname)" != "Darwin" ]; then
-        echo "launchd is macOS-only. On Linux use a systemd user timer, or cron:" >&2
-        echo "  30 23 * * 1-5  cd $FW_ROOT && ./fw svc stocks-snapshot >> $LOG 2>&1" >&2
-        exit 1
-    fi
+    # Linux installs the same wrapper on a cron line; only the scheduler differs.
+    . "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_timer.sh"
     case "$AT" in
         [0-9][0-9]:[0-9][0-9]) HH="${AT%%:*}"; MM="${AT##*:}" ;;
         *) echo "--at wants HH:MM (24h), got '$AT'" >&2; exit 2 ;;
@@ -122,6 +119,22 @@ cd "$FW_ROOT" || exit 1
 exec ./fw svc stocks-snapshot
 WRAP
     chmod +x "$WRAPPER"
+
+    if ! fw_timer_is_darwin; then
+        # WEEKDAYS only (1-5): the snapshot marks open paper-trading groups to
+        # market, and there is no US close to mark against at a weekend.
+        case "$AT" in
+            [0-9][0-9]:[0-9][0-9]) : ;;
+            *) echo "--at wants HH:MM (24h), got '$AT'" >&2; exit 2 ;;
+        esac
+        SPEC="$((10#${AT##*:})) $((10#${AT%%:*})) * * 1-5"
+        fw_timer_cron_install "$LABEL" "$WRAPPER" "$SPEC" "$LOG"
+        echo "wrote:"
+        echo "  $WRAPPER"
+        echo "  crontab: $SPEC  (weekdays at $AT local)"
+        echo "  check:   fw svc stocks-snapshot --status"
+        exit 0
+    fi
 
     cat > "$PLIST" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>

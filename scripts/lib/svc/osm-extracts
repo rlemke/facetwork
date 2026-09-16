@@ -190,9 +190,17 @@ NGINXEOF
         echo "    not to restart it."
         exit 0
     fi
+    # ⚠️ NOT a timer — this path supervises a LONG-RUNNING server, so cron is the
+    # wrong tool (it would start a new one every tick and stack them). On Linux
+    # the supervisor we already have is Docker's restart policy, which is exactly
+    # what --container uses. Point there rather than at a systemd unit nobody has
+    # written: --container is also the better mode anyway, because nginx provides
+    # HTTP Range on multi-GB PBFs and python's http.server never has.
     if [ "$(uname)" != "Darwin" ]; then
-        echo "launchd is macOS-only. On Linux use a systemd unit running:" >&2
-        echo "  fw svc osm-extracts --port $PORT --root $ROOT" >&2
+        echo "This native mode is supervised by launchd and is macOS-only." >&2
+        echo "On Linux use the container mode, which is supervised by Docker:" >&2
+        echo "  fw svc osm-extracts --install --container --root ${ROOT:-<www tree>}" >&2
+        echo "It also gains HTTP Range support, which http.server does not have." >&2
         exit 1
     fi
     [ -n "$ROOT" ] || { echo "set FW_OSM_SELFHOST_WWW or pass --root" >&2; exit 2; }
