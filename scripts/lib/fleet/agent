@@ -203,6 +203,45 @@ def _run_compose(cmd, env):
         return subprocess.CompletedProcess(cmd, returncode=124, stdout=out, stderr=err)
 
 
+def _containers_on_wrong_image(want_image: str) -> list[str]:
+    """Runner containers NOT on ``want_image``, ignoring foreign-repo agents.
+
+    ⚠️ Exists because "up to date" was asserted from a RECORDED VERSION and never
+    from observed state. Measured 2026-09-17: a host printed "up to date (v217)"
+    on every cycle for hours while all 17 of its runners ran the previous image.
+    The version counter said the reconcile had happened; the containers said it
+    had not, and nothing compared the two. `fleet status` could see it — that is
+    what the stale-image check reports — but the agent, the only thing able to
+    FIX it, could not.
+
+    Foreign repos are excluded: the Java gh-router runs osm-gh-router:* and can
+    never carry the python runner's tag, so counting it would make every host
+    permanently "wrong" and turn this into a recreate loop.
+    """
+    want_repo = want_image.rsplit(":", 1)[0] if ":" in want_image else want_image
+    want_tag = want_image.rsplit(":", 1)[-1] if ":" in want_image else ""
+    if not want_tag:
+        return []
+    try:
+        out = subprocess.run(
+            ["docker", "ps", "--filter", "name=facetwork-runner",
+             "--format", "{{.Names}}\t{{.Image}}"],
+            capture_output=True, text=True, timeout=30).stdout
+    except Exception:                                          # noqa: BLE001
+        return []                                              # cannot tell -> do not act
+    wrong = []
+    for line in out.splitlines():
+        if "\t" not in line:
+            continue
+        name, img = line.split("\t", 1)
+        repo = img.rsplit(":", 1)[0] if ":" in img else img
+        if repo != want_repo:
+            continue                                           # different agent by design
+        if img.rsplit(":", 1)[-1] != want_tag:
+            wrong.append(name)
+    return wrong
+
+
 def _read_cfg(mongo):
     cfg = _db(mongo).fleet_config.find_one({"_id": "default"})
     if not cfg:
@@ -845,8 +884,27 @@ def cmd_watch(a):
                     print(f"fleet-agent[{HOST}]: {exc} — reconcile of v{version} "
                           f"failed (attempt {fails}); backing off {wait}s", flush=True)
             else:
-                print(f"fleet-agent[{HOST}]: up to date (v{version})", flush=True)
-                fails, failing_version = 0, None
+                # ⚠️ Verify STATE, not just the version counter. A recorded
+                # version means "a reconcile returned", not "the containers run
+                # the configured image" -- and those came apart on a host that
+                # reported up-to-date for hours with every runner on the old tag.
+                _wrong = _containers_on_wrong_image(image) if image else []
+                if _wrong:
+                    print(f"fleet-agent[{HOST}]: v{version} recorded but "
+                          f"{len(_wrong)} container(s) run the wrong image "
+                          f"({', '.join(_wrong[:4])}{'…' if len(_wrong) > 4 else ''}) "
+                          f"— forcing recreate", flush=True)
+                    try:
+                        _apply(cfg, mongo, a.data_dir, a.replicas, recreate=True)
+                        fails, failing_version = 0, None
+                    except SystemExit as exc:
+                        fails += 1
+                        wait = min(a.interval * (2 ** fails), _BACKOFF_CAP_S)
+                        print(f"fleet-agent[{HOST}]: {exc} — image repair failed "
+                              f"(attempt {fails}); backing off {wait}s", flush=True)
+                else:
+                    print(f"fleet-agent[{HOST}]: up to date (v{version})", flush=True)
+                    fails, failing_version = 0, None
         except Exception as exc:  # noqa: BLE001 - keep the daemon alive across transient errors
             # Transient (Mongo/read/discovery) error — not tied to a config
             # version, so back off on a separate counter and rebuild the client.
