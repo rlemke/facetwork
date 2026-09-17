@@ -29,48 +29,32 @@ co-location primitive and does not generalise.
 `BuildAdminSet` does extract-and-publish in **one task**, explicitly "so there's
 no cross-host local-file handoff". The planet workflows should do the same.
 
-### 1.2 Capability advertisement never imports the handler at all
+### 1.2 Capability advertisement never imports the handler — ✅ FIXED 2026-09-16
 
-⚠️ **Sharpened 2026-09-16, and it is worse than first recorded here.** This entry
-previously said the hole was *lazy imports inside functions* defeating the check.
-That understates it. `registration_module_available()` uses
-`importlib.util.find_spec`, which only **locates** a module — it never executes
-it. Demonstrated:
+`registration_module_available()` used `importlib.util.find_spec`, which only
+**locates** a module and never executes it — so a module whose first line was an
+impossible import passed, and the function did not test the thing its docstring
+promised. That is how macmini01 advertised **265 facets** it could not execute.
 
-```python
-# brokenhandler.py
-import numpy_that_does_not_exist   # first line, cannot possibly succeed
-```
-```
-find_spec says available: True
-actually imports:         NO — ModuleNotFoundError
-```
+Now two stages: `find_spec` as a cheap pre-filter (cannot be located → cannot be
+imported, decided without executing anything), then a **real import, cached per
+image tag on this host**. A generalist runner carries ~265 registrations, so the
+import pass is paid once per image per host rather than on every start. Failures
+are cached too — an ImportError under a given image on a given host is a stable
+fact.
 
-So a **top-level** import failure passes verification too. The docstring says
-registrations "whose handler module is not importable in this process are
-dropped", and importability is precisely what is not tested. That is how
-macmini01 advertised **265 facets** it could not execute, and it is the same
-shape as `fwh_sensor_monitoring` shipping six dead handlers with 48 tests green.
+⚠️ The cache is keyed by image tag AND is host-local, and both halves matter:
+the premise of the whole check is that the *same image* behaves differently on
+different CPUs, so a cache shared across hosts would be actively wrong. A file
+on the host is implicitly host-scoped; the tag stops a rollout inheriting the
+previous image's answers.
 
-The **environment** half is fixed: `materialize_environment` smoke-imports every
-declared pin before the host advertises the hash (`7e47c068`).
+Eight tests, verified to fail against the `find_spec`-only version.
 
-**The fix needs a decision, which is why it is not done.** Actually importing is
-the only thing that proves importability, but `find_spec` was chosen for a
-reason the comment states — it is "cheap, side-effect-light", and a generalist
-runner holds ~265 registrations whose modules would all be executed at startup.
-Options, roughly in order of appetite:
-
-1. Import for real at preload. Truthful, costs seconds-to-a-minute of startup,
-   and runs any module-level side effects a handler author wrote.
-2. Import lazily on first dispatch and drop the registration then — cheap, but
-   the first task still fails.
-3. Keep `find_spec` as a fast pre-filter and import only the subset a host has
-   not verified before, caching the result per image tag.
-
-⚠️ `requirements` on `HandlerRegistration` cannot help: **1 of 700** rows
-populates it, and that one is corrupt (a string iterated character-wise, so the
-entries are `[` and `]`).
+⚠️ Residual: `HandlerRegistration.requirements` is still unusable — **1 of 700**
+rows populates it and that row is corrupt (a string iterated character-wise, so
+its entries are `[` and `]`). Nothing depends on it; worth either populating or
+removing.
 
 ### 1.3 Nothing rewrites absolute paths after a migration
 

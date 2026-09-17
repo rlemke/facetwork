@@ -34,22 +34,116 @@ from .persistence import PersistenceAPI
 logger = logging.getLogger(__name__)
 
 
-def registration_module_available(module_uri: str) -> bool:
-    """Return True if ``module_uri`` is importable in this process.
+#: Per-process memo of the on-disk verification cache, keyed by module_uri.
+_IMPORT_VERIFY: dict[str, bool] | None = None
+_IMPORT_VERIFY_PATH: str | None = None
+_IMPORT_VERIFY_LOCK = threading.Lock()
 
-    A cheap, side-effect-light check used to decide whether a runner should
-    advertise (and therefore claim) tasks for a given handler registration:
-    a runner must never accept a task whose handler it cannot load. For
-    ``file://`` URIs this is just a path-existence check (the common case —
-    each example runner only bind-mounts its own handler source); for dotted
-    module names it uses :func:`importlib.util.find_spec`.
+
+def _import_verify_cache_path() -> str:
+    """Where this host records which handler modules really import.
+
+    ⚠️ Keyed by IMAGE TAG and stored ON THE HOST, and both halves matter. The
+    whole reason this verification exists is that the same image behaves
+    differently on different CPUs — macmini01's 2009 processor cannot run the
+    image's numpy while every other host can — so a cache shared between hosts
+    would be actively wrong. A file on the host is implicitly host-scoped; the
+    tag in its name keeps a rollout from inheriting the previous image's answers.
+    """
+    tag = (os.environ.get("FW_RUNNER_IMAGE") or "").rsplit(":", 1)[-1] or "untagged"
+    base = os.environ.get("FW_LOCAL_SCRATCH") or "/tmp"
+    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in tag)
+    return os.path.join(base, f"fw-import-verify-{safe}.json")
+
+
+def _load_import_verify() -> dict[str, bool]:
+    global _IMPORT_VERIFY, _IMPORT_VERIFY_PATH
+    if _IMPORT_VERIFY is not None:
+        return _IMPORT_VERIFY
+    with _IMPORT_VERIFY_LOCK:
+        if _IMPORT_VERIFY is None:
+            _IMPORT_VERIFY_PATH = _import_verify_cache_path()
+            try:
+                import json
+
+                with open(_IMPORT_VERIFY_PATH, encoding="utf-8") as fh:
+                    loaded = json.load(fh)
+                _IMPORT_VERIFY = {k: bool(v) for k, v in loaded.items()}
+            except (OSError, ValueError):
+                _IMPORT_VERIFY = {}
+    return _IMPORT_VERIFY
+
+
+def _save_import_verify() -> None:
+    """Best effort. A read-only scratch dir costs a re-verify, never a wrong answer."""
+    if _IMPORT_VERIFY is None or not _IMPORT_VERIFY_PATH:
+        return
+    try:
+        import json
+
+        tmp = f"{_IMPORT_VERIFY_PATH}.{os.getpid()}"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(_IMPORT_VERIFY, fh)
+        os.replace(tmp, _IMPORT_VERIFY_PATH)
+    except OSError:
+        pass
+
+
+def registration_module_available(module_uri: str) -> bool:
+    """Return True if ``module_uri`` can actually be IMPORTED in this process.
+
+    Used to decide whether a runner should advertise (and therefore claim) tasks
+    for a handler registration: a runner must never accept a task whose handler
+    it cannot load.
+
+    ⚠️ This used to be ``find_spec`` alone, which only LOCATES a module and never
+    executes it — so a module whose first line was an impossible import passed,
+    and the function did not test the thing its own docstring promised. That is
+    how one host advertised 265 facets it could not execute: its 2009 CPU cannot
+    run the image's numpy, every handler module that imports numpy fails, and
+    every one of them was located successfully.
+
+    Now two stages:
+
+    1. ``find_spec`` as a cheap pre-filter. Cannot be located → cannot be
+       imported, decided without executing anything.
+    2. A real import, **cached per image tag on this host** (see
+       :func:`_import_verify_cache_path`). A generalist runner carries ~265
+       registrations, so the import pass is paid once per image per host rather
+       than on every start.
+
+    Failures are cached too: an ImportError under a given image on a given host
+    is a stable fact, and re-deriving it every start is pure cost.
     """
     if module_uri.startswith("file://"):
         return os.path.exists(module_uri[len("file://") :])
+
+    # Stage 1 — cheap, no execution.
     try:
-        return importlib.util.find_spec(module_uri) is not None
+        if importlib.util.find_spec(module_uri) is None:
+            return False
     except (ImportError, ValueError, ModuleNotFoundError):
         return False
+
+    # Stage 2 — the truthful one.
+    cache = _load_import_verify()
+    if module_uri in cache:
+        return cache[module_uri]
+    try:
+        importlib.import_module(module_uri)
+        ok = True
+    except Exception as exc:  # noqa: BLE001 — any failure means "cannot run it here"
+        ok = False
+        logger.warning(
+            "handler module %s locates but does NOT import here (%s: %s) — "
+            "not advertising its facets",
+            module_uri,
+            type(exc).__name__,
+            str(exc)[:200],
+        )
+    cache[module_uri] = ok
+    _save_import_verify()
+    return ok
 
 
 @runtime_checkable
