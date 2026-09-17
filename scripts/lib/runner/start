@@ -238,12 +238,21 @@ from pymongo import MongoClient
 from urllib.parse import urlparse, urlunparse
 url = sys.argv[1]; infra_ip = sys.argv[2] if len(sys.argv) > 2 else ""
 u = urlparse(url)
-# afl-mongodb is a container alias (stale in the host's /etc/hosts on DHCP
-# drift); the container reaches it via extra_hosts -> FW_INFRA_IP, so the
-# host-side preflight substitutes that resolved IP too.
-if infra_ip and u.hostname and u.hostname.startswith("afl-"):
-    netloc = f"{infra_ip}:{u.port or 27017}"
-    url = urlunparse((u.scheme, netloc, u.path, u.params, u.query, u.fragment))
+# ⚠️ Same rule as the MinIO probe below: resolve the alias through the SERVER
+# CATALOG, per name. Substituting FW_INFRA_IP was correct only while one host
+# served everything; afl-mongodb is precisely the name that moved OFF the infra
+# host on 2026-09-13, so the infra substitution probes the wrong machine.
+if u.hostname and u.hostname.startswith("afl-"):
+    _resolved = None
+    try:
+        from facetwork.servers import catalog as _c
+        _resolved = _c.resolve_ip(u.hostname)
+    except Exception:
+        _resolved = None
+    _ip = _resolved or infra_ip
+    if _ip:
+        netloc = f"{_ip}:{u.port or 27017}"
+        url = urlunparse((u.scheme, netloc, u.path, u.params, u.query, u.fragment))
 MongoClient(url, serverSelectionTimeoutMS=5000).admin.command("ping")
 PYEOF
         then echo "  ✓ MongoDB reachable: $FW_MONGODB_URL"
@@ -257,12 +266,25 @@ import socket, sys
 from urllib.parse import urlparse
 u = urlparse(sys.argv[1]); host = u.hostname or sys.argv[1]
 infra_ip = sys.argv[2] if len(sys.argv) > 2 else ""
-# afl-* are container aliases resolved via the host's /etc/hosts, which goes
-# stale on infra-host DHCP drift. The container maps them to FW_INFRA_IP (the
-# name-resolved current infra IP) via extra_hosts, so the host-side reachability
-# check must use that same resolved IP rather than the stale /etc/hosts entry.
-if infra_ip and host.startswith("afl-"):
-    host = infra_ip
+# afl-* are container aliases. The host's /etc/hosts goes stale -- measured
+# 2026-09-16: FIVE of six hosts still mapped every afl-* name to a machine that
+# had not held it since before the site move -- so those entries were removed
+# fleet-wide and the SERVER CATALOG is authoritative.
+#
+# ⚠️ Resolve EACH NAME INDEPENDENTLY, not all of them to one infra IP. Since
+# 2026-09-13 there is no single infra host: MongoDB moved to one machine and
+# MinIO stayed on another. Collapsing them to FW_INFRA_IP probes the wrong
+# machine for at least one service, and after the /etc/hosts cleanup it probed
+# a name that no longer resolves at all -- which is how this check started
+# failing on a host whose MinIO was perfectly reachable.
+if host.startswith("afl-"):
+    _resolved = None
+    try:
+        from facetwork.servers import catalog as _c
+        _resolved = _c.resolve_ip(host)
+    except Exception:
+        _resolved = None
+    host = _resolved or infra_ip or host
 port = u.port or (443 if u.scheme == "https" else 80)
 socket.create_connection((host, port), timeout=5).close()
 PYEOF
