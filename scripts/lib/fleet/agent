@@ -203,6 +203,69 @@ def _run_compose(cmd, env):
         return subprocess.CompletedProcess(cmd, returncode=124, stdout=out, stderr=err)
 
 
+#: Source files whose change should make this daemon reload itself.
+_SELF_SOURCES = (__file__,
+                 os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "..", "_helpers", "_fleet_lib.py"))
+
+
+def _source_fingerprint() -> tuple:
+    """(size, mtime) of this agent's own sources."""
+    out = []
+    for f in _SELF_SOURCES:
+        try:
+            st = os.stat(f)
+            out.append((int(st.st_size), int(st.st_mtime)))
+        except OSError:
+            out.append((0, 0))
+    return tuple(out)
+
+
+def _reexec_if_source_changed(baseline: tuple) -> None:
+    """Re-exec this process when its own source has changed on disk.
+
+    ⚠️ Why a daemon needs this. `git pull` updates FILES; it does not reload a
+    RUNNING interpreter. Measured 2026-09-17: four fleet-agents had been running
+    since 14-15 September, executing code from whenever they last started, while
+    every fix of that week sat on disk unused. Worse, the symptom was invisible —
+    `fleet status` reports `applied_version`, which is what the agent last
+    RECORDED, and nothing anywhere says "this agent is running stale code". Three
+    separate diagnoses that week went looking for a second bug when the real
+    answer was that the first fix had never been loaded.
+
+    It also removes the operational cost that provoked it: the agent is a SYSTEM
+    unit, so restarting it needs root on every host for every change — which does
+    not scale past a handful of machines.
+
+    Safe by construction:
+      * only re-execs when the new source PARSES, so a half-written or broken
+        file leaves the current (working) process running;
+      * at the TOP of a cycle, never mid-reconcile;
+      * in-memory state is only last_version/last_image, both re-derived on the
+        next poll, so a reload costs one extra reconcile at worst.
+    """
+    if _source_fingerprint() == baseline:
+        return
+    import ast
+
+    for f in _SELF_SOURCES:
+        try:
+            with open(f, encoding="utf-8") as fh:
+                ast.parse(fh.read())
+        except SyntaxError as exc:
+            print(f"fleet-agent[{HOST}]: source changed but {os.path.basename(f)} "
+                  f"does not parse ({exc}) — staying on the running version",
+                  flush=True)
+            return
+        except OSError:
+            return
+    print(f"fleet-agent[{HOST}]: own source changed on disk — re-executing to "
+          f"pick it up (no restart needed)", flush=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), *sys.argv[1:]])
+
+
 def _containers_on_wrong_image(want_image: str) -> list[str]:
     """Runner containers NOT on ``want_image``, ignoring foreign-repo agents.
 
@@ -841,7 +904,11 @@ def cmd_watch(a):
     # `interval` forever — so we grow the post-failure wait exponentially, capped.
     fails = 0
     failing_version = None
+    _src_baseline = _source_fingerprint()
     while not stop["v"]:
+        # Reload our own code before anything else in the cycle: a pulled fix
+        # that never runs is indistinguishable from a fix that did not work.
+        _reexec_if_source_changed(_src_baseline)
         wait = a.interval  # normal poll cadence unless a failure backs us off
         # Watchdog: a poll that runs longer than _WATCHDOG_SECONDS is wedged on
         # something Mongo/docker timeouts didn't catch — force-exit so the
