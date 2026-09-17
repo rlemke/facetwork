@@ -270,7 +270,7 @@ correction here, which is the honest form.
 ## 5. Probes that cannot return the failing answer
 
 This is our principal contribution, and it emerged only because we kept a
-per-incident record. Eight mechanisms reported health, or a plausible wrong answer, while the thing
+per-incident record. Nine mechanisms reported health, or a plausible wrong answer, while the thing
 they observed was broken or absent. They are mechanically unrelated; what they share is that
 **the failing state was outside the probe's expressible range**.
 
@@ -284,6 +284,7 @@ they observed was broken or absent. They are mechanically unrelated; what they s
 | 6 | `du -sb` progress | 90% complete | 76%, 41 GB missing | Counting a **duplicate the operator had created** |
 | 7 | Image-convergence check | "23/23 up-to-date" | 22 hours on a stale image | Counted *registered runners*, not the **image they ran** |
 | 8 | `stat -f %z f \|\| stat -c %s f` | a byte count | a **filesystem block report** | `-f` is BSD's *format* but GNU's *filesystem status*: on Linux the first form SUCCEEDS, so the fallback never fires |
+| 9 | `fleet status` → `applied_version` | agents current | four agents running **3-day-old code** | Reports what the agent last **recorded**, not what it is **executing**; `git pull` updates files, not a running interpreter |
 
 Four caused real harm. #1 nearly triggered an unnecessary Docker restart on the
 object-store host. #2 hid a dead transfer for 45 minutes. #3 made a cleanup
@@ -318,6 +319,18 @@ order the fallbacks better.
 `pkill -f` match against full command lines, and a probe dispatched over ssh puts
 its own pattern on a command line on the target host. This is a general hazard of
 remote administration, not a quirk of these tools.
+
+⚠️ **#9 is the one we would least have predicted, and it invalidated three
+diagnoses.** A long-lived daemon does not follow its own source: `git pull`
+rewrites files while the interpreter keeps executing what it loaded at start.
+Four fleet-agents had been running since 14–15 September, so every fix of that
+week sat on disk unused — and *nothing anywhere reports it*. The convergence
+view shows `applied_version`, which is what the agent last **recorded**; the
+agent's own liveness watchdog checks that it is **alive**, not that it is
+**current**. Three times that week we diagnosed a second bug when the real
+answer was that the first fix had never loaded. The repair was to make the
+daemon re-exec when its own source changes, which also removes the root access
+that a restart-per-change otherwise demands on every host.
 
 **Mitigations we adopted.** Measure the *artifact*, not a proxy for it — byte
 counts on disk rather than process liveness. Prefer probes that can only be
