@@ -245,7 +245,6 @@ class TestToolInputValidation:
                 "entrypoint": "process",
                 "version": "3.2.1",
                 "timeout_ms": 60000,
-                "requirements": ["numpy>=1.0", "pandas"],
                 "metadata": {"author": "test", "priority": 10},
             },
             lambda: store,
@@ -258,7 +257,6 @@ class TestToolInputValidation:
         assert handler["entrypoint"] == "process"
         assert handler["version"] == "3.2.1"
         assert handler["timeout_ms"] == 60000
-        assert handler["requirements"] == ["numpy>=1.0", "pandas"]
         assert handler["metadata"]["author"] == "test"
         assert handler["metadata"]["priority"] == 10
 
@@ -278,7 +276,6 @@ class TestToolInputValidation:
         assert handler["entrypoint"] == "handle"
         assert handler["version"] == "1.0.0"
         assert handler["timeout_ms"] == 30000
-        assert handler["requirements"] == []
         assert handler["metadata"] == {}
 
 

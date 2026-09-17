@@ -51,10 +51,13 @@ previous image's answers.
 
 Eight tests, verified to fail against the `find_spec`-only version.
 
-⚠️ Residual: `HandlerRegistration.requirements` is still unusable — **1 of 700**
-rows populates it and that row is corrupt (a string iterated character-wise, so
-its entries are `[` and `]`). Nothing depends on it; worth either populating or
-removing.
+`HandlerRegistration.requirements` was **removed** in the same pass. It was
+stored, serialised and round-tripped through five places and exposed in the MCP
+tool schema as "Python package requirements" — and nothing ever acted on it. No
+install, no check, no gate. That is worse than dead internal code: a caller
+could set it and reasonably expect something to happen. The import verification
+above also subsumes its only plausible purpose, since importing a module
+exercises its dependencies transitively.
 
 ### 1.3 Nothing rewrites absolute paths after a migration
 

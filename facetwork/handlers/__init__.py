@@ -138,7 +138,6 @@ def register_builtin_handlers(persistence: Any) -> int:
                 version="1.0.0",
                 checksum="",
                 timeout_ms=timeout_ms,
-                requirements=[],
                 metadata={"builtin": "true"},
                 created=now,
                 updated=now,

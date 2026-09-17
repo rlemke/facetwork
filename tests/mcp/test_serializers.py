@@ -254,7 +254,6 @@ class TestSerializeHandlerRegistration:
             version="2.5.0",
             checksum="abc123",
             timeout_ms=60000,
-            requirements=["numpy>=1.0", "pandas>=2.0"],
             metadata={"author": "test", "priority": 1},
             created=1000,
             updated=2000,
@@ -266,25 +265,10 @@ class TestSerializeHandlerRegistration:
         assert d["version"] == "2.5.0"
         assert d["checksum"] == "abc123"
         assert d["timeout_ms"] == 60000
-        assert d["requirements"] == ["numpy>=1.0", "pandas>=2.0"]
         assert d["metadata"]["author"] == "test"
         assert d["metadata"]["priority"] == 1
         assert d["created"] == 1000
         assert d["updated"] == 2000
-
-    def test_with_requirements_list(self):
-        reg = HandlerRegistration(
-            facet_name="ns.WithReqs",
-            module_uri="reqs.module",
-            requirements=["flask>=2.0", "requests", "boto3>=1.28"],
-            created=500,
-            updated=600,
-        )
-        d = serialize_handler_registration(reg)
-        assert len(d["requirements"]) == 3
-        assert "flask>=2.0" in d["requirements"]
-        assert "requests" in d["requirements"]
-        assert "boto3>=1.28" in d["requirements"]
 
     def test_with_metadata_dict(self):
         reg = HandlerRegistration(
@@ -309,7 +293,6 @@ class TestSerializeHandlerRegistration:
         assert d["version"] == "1.0.0"
         assert d["checksum"] == ""
         assert d["timeout_ms"] == 30000
-        assert d["requirements"] == []
         assert d["metadata"] == {}
         assert d["created"] == 0
         assert d["updated"] == 0

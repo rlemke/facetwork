@@ -170,7 +170,6 @@ class RegistryRunner(BaseRunner):
         version: str = "1.0.0",
         checksum: str = "",
         timeout_ms: int = 30000,
-        requirements: list[str] | None = None,
         metadata: dict | None = None,
     ) -> None:
         """Register a handler in persistence (convenience method).
@@ -185,7 +184,6 @@ class RegistryRunner(BaseRunner):
             version: Handler version string
             checksum: Cache-invalidation checksum
             timeout_ms: Handler timeout in milliseconds
-            requirements: Optional pip requirements
             metadata: Optional metadata dict
         """
         now = _current_time_ms()
@@ -196,7 +194,6 @@ class RegistryRunner(BaseRunner):
             version=version,
             checksum=checksum,
             timeout_ms=timeout_ms,
-            requirements=requirements or [],
             metadata=metadata or {},
             created=now,
             updated=now,

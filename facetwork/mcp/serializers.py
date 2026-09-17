@@ -172,7 +172,6 @@ def serialize_handler_registration(registration: HandlerRegistration) -> dict[st
         "version": registration.version,
         "checksum": registration.checksum,
         "timeout_ms": registration.timeout_ms,
-        "requirements": registration.requirements,
         "metadata": registration.metadata,
         "created": registration.created,
         "updated": registration.updated,

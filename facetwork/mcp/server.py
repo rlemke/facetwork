@@ -272,7 +272,7 @@ def create_server(
                     "execute. Call this BEFORE writing FFL that references "
                     "handler facets — do not invent handler names. Returns "
                     "an array of {facet_name, module_uri, entrypoint, version, "
-                    "timeout_ms, requirements, metadata, ...}. Use the optional "
+                    "timeout_ms, metadata, ...}. Use the optional "
                     "namespace filter (e.g. 'osm') to scope results."
                 ),
                 inputSchema={
@@ -292,7 +292,7 @@ def create_server(
                 name="fw_describe_handler",
                 description=(
                     "Get the full registration for a single handler facet: "
-                    "module_uri, entrypoint, version, timeout_ms, requirements, "
+                    "module_uri, entrypoint, version, timeout_ms, "
                     "metadata, and timestamps. Call this when planning a step "
                     "that uses a handler, to verify the handler exists and to "
                     "see its declared metadata before writing the FFL step."
@@ -344,11 +344,6 @@ def create_server(
                         "timeout_ms": {
                             "type": "integer",
                             "description": "Timeout in milliseconds (default: 30000)",
-                        },
-                        "requirements": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Python package requirements",
                         },
                         "metadata": {
                             "type": "object",
@@ -1221,7 +1216,6 @@ def _tool_manage_handlers(
                 entrypoint=arguments.get("entrypoint", "handle"),
                 version=arguments.get("version", "1.0.0"),
                 timeout_ms=arguments.get("timeout_ms", 30000),
-                requirements=arguments.get("requirements", []),
                 metadata=arguments.get("metadata", {}),
                 created=created,
                 updated=now,

@@ -502,7 +502,6 @@ async def api_handler_update(facet_name: str, request: Request, store=Depends(ge
         version=handler.version,
         checksum=handler.checksum,
         timeout_ms=body.get("timeout_ms", handler.timeout_ms),
-        requirements=handler.requirements,
         metadata={**handler.metadata, **body.get("metadata", {})},
         created=handler.created,
         updated=now_ms,

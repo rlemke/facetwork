@@ -179,7 +179,6 @@ class HandlerRegistration:
     version: str = "1.0.0"
     checksum: str = ""  # For cache invalidation
     timeout_ms: int = 30000
-    requirements: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
     created: int = 0  # Timestamp (ms)
     updated: int = 0  # Timestamp (ms)
