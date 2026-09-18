@@ -270,7 +270,7 @@ correction here, which is the honest form.
 ## 5. Probes that cannot return the failing answer
 
 This is our principal contribution, and it emerged only because we kept a
-per-incident record. Nine mechanisms reported health, or a plausible wrong answer, while the thing
+per-incident record. Ten mechanisms reported health, or a plausible wrong answer, while the thing
 they observed was broken or absent. They are mechanically unrelated; what they share is that
 **the failing state was outside the probe's expressible range**.
 
@@ -285,6 +285,7 @@ they observed was broken or absent. They are mechanically unrelated; what they s
 | 7 | Image-convergence check | "23/23 up-to-date" | 22 hours on a stale image | Counted *registered runners*, not the **image they ran** |
 | 8 | `stat -f %z f \|\| stat -c %s f` | a byte count | a **filesystem block report** | `-f` is BSD's *format* but GNU's *filesystem status*: on Linux the first form SUCCEEDS, so the fallback never fires |
 | 9 | `fleet status` → `applied_version` | agents current | four agents running **3-day-old code** | Reports what the agent last **recorded**, not what it is **executing**; `git pull` updates files, not a running interpreter |
+| 10 | `fleet-agent.err.log` tail | MinIO unreachable | **log 4 days stale**; the real failure writes nothing | An append-mode log that stops being written keeps its last lines *looking* current — read as the present state twice |
 
 Four caused real harm. #1 nearly triggered an unnecessary Docker restart on the
 object-store host. #2 hid a dead transfer for 45 minutes. #3 made a cleanup

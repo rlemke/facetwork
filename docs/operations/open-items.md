@@ -105,13 +105,40 @@ a keying-rule change, not a parameter.
 
 ---
 
+### 1.5 A failing reconcile can produce no diagnostic at all
+
+macmini02 has failed `reconcile of v217` **94 times** with 22 containers on the
+old image. The agent prints `start-worker failed (exit 1)` and nothing else: it
+writes the subprocess's `stdout` and `stderr` on failure, and **both are empty**,
+so `runner/start` is exiting 1 before it says anything. Exit status without output
+is the least useful failure shape there is — it cannot be triaged remotely, which
+is exactly when it matters.
+
+⚠️ The trap that cost the most here was not the silence but the **stale log**: the
+agent's `fleet-agent.err.log` was last written **four days earlier**, and its final
+lines were three `✗ MinIO/S3 NOT reachable`. Those were read as current twice and
+produced a wrong diagnosis both times. The fd is not unlinked and the unit's
+`StandardError=append` is correct — the file is simply not being written because
+nothing is sent to stderr.
+
+Two fixes, independent:
+
+- `runner/start` must not be able to exit non-zero silently — trap `ERR` and name
+  the failing line, so the exit status always carries a message.
+- The agent should stamp each cycle into the err log (or drop the split and send
+  both streams to one file), so "no recent stderr" cannot be mistaken for "the
+  last stderr is the current state".
+
+Next step for the host itself: run `runner/start` by hand with the env file the
+agent hands compose, which is the only way to see what it refuses to print.
+
+---
+
 ## 2. Deployment and hygiene
 
 | Item | Detail |
 |---|---|
-| **server3 `bucket-tier` (94 GB)** | Duplicate of what beelink01 holds since the OSM move. `www` was deleted 2026-09-16; this is the remainder. Verify beelink01's copy, then remove. |
-| **`country_width: 4` not live** | Committed (`7b88e9d`) but the FFL is baked into the image, so it needs a rollout. Will show its effect on the first run with real work — a run with nothing to rebuild leaves the slots idle regardless. |
-| **Four installers still launchd-only** | `maps-install`, `selfcheck`, `stocks-snapshot`, and `osm-extracts`' native (non-container) path. None block anything today; the fleet is majority Linux, so they are installable on 2 hosts of 7. `_timer.sh` makes each a small change. |
+| **`country_width: 4` awaiting a real run** | Committed (`7b88e9d`) but the FFL is baked into the image, so it needs a rollout. Will show its effect on the first run with real work — a run with nothing to rebuild leaves the slots idle regardless. |
 | **server3 selfhost leftovers** | A 1 MB stand-in `master.osm.pbf` and assorted logs in `~/.facetwork/osm-selfhost/`, now that the role has moved. |
 
 ---
