@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# fw-summary: let this host's owner restart the fleet-agent without sudo (polkit)
+#
+# The fleet agent is a systemd SYSTEM unit, so `systemctl restart` asks polkit
+# for interactive authentication -- which a non-TTY ssh session cannot provide:
+#
+#   Failed to restart ...: Access denied as the requested operation requires
+#   interactive authentication.
+#
+# That turns "reload the agent" into a hands-on, per-host sudo, which does not
+# scale past a handful of machines. This installs a polkit rule allowing ONE
+# user to manage ONE unit with no authentication. It costs one sudo, once, and
+# then every later restart/stop/start works over plain ssh.
+#
+# Deliberately narrow: the rule names the exact unit and the exact user, and
+# permits only start/stop/restart/reload -- not `systemctl` in general and not
+# other units. A broad rule here would hand that user root-equivalent control
+# over every service on the box.
+#
+# Usage:
+#   sudo fw fleet allow-restart                 # for $SUDO_USER on this host
+#   sudo fw fleet allow-restart --user ralph    # explicit
+#   fw fleet allow-restart --check              # is it installed and working?
+#   sudo fw fleet allow-restart --uninstall
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
+
+UNIT="facetwork-fleet-agent.service"
+RULE="/etc/polkit-1/rules.d/49-facetwork-fleet-agent.rules"
+USER_NAME=""
+MODE="install"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --user)      USER_NAME="$2"; shift 2 ;;
+    --unit)      UNIT="$2"; shift 2 ;;
+    --check)     MODE="check"; shift ;;
+    --uninstall) MODE="uninstall"; shift ;;
+    -h|--help)   sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "fw fleet allow-restart: Linux/systemd only — this host is $(uname -s)." >&2
+  echo "  macOS hosts run the agent under launchd, where the owner can already" >&2
+  echo "  'launchctl kickstart -k gui/\$UID/com.facetwork.fleet-agent' with no sudo." >&2
+  exit 2
+fi
+
+# $SUDO_USER is the human who ran sudo; $USER would be root and is never right.
+[[ -n "$USER_NAME" ]] || USER_NAME="${SUDO_USER:-}"
+[[ -n "$USER_NAME" ]] || USER_NAME="$(id -un)"
+
+if [[ "$MODE" == "check" ]]; then
+  echo "unit:  $UNIT"
+  echo "user:  $USER_NAME"
+  if [[ -f "$RULE" ]]; then echo "rule:  $RULE (present)"; else echo "rule:  $RULE — ABSENT"; fi
+  # The only check that matters is whether a restart actually works unprivileged,
+  # so ASK SYSTEMD rather than inferring it from the file's existence.
+  if systemctl restart "$UNIT" 2>/dev/null; then
+    echo "verify: ✓ restarted $UNIT with no sudo"
+    exit 0
+  fi
+  echo "verify: ✗ restart still requires authentication" >&2
+  echo "  run: sudo fw fleet allow-restart --user $USER_NAME" >&2
+  exit 1
+fi
+
+[[ "$(id -u)" == "0" ]] || { echo "fw fleet allow-restart: run me under sudo (writing $RULE)." >&2; exit 2; }
+
+if [[ "$MODE" == "uninstall" ]]; then
+  rm -f "$RULE" && echo "removed $RULE"
+  command -v systemctl >/dev/null && systemctl restart polkit 2>/dev/null || true
+  exit 0
+fi
+
+id -u "$USER_NAME" >/dev/null 2>&1 || { echo "no such user: $USER_NAME" >&2; exit 2; }
+
+install -d -m 755 "$(dirname "$RULE")"
+cat > "$RULE" <<RULES
+// Installed by \`fw fleet allow-restart\`. Lets ONE user manage ONE unit with no
+// interactive authentication, so the agent can be reloaded over plain ssh.
+// Scoped deliberately: this is not blanket systemctl access.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        subject.user == "$USER_NAME") {
+        var unit = action.lookup("unit");
+        var verb = action.lookup("verb");
+        if (unit == "$UNIT" &&
+            (verb == "start" || verb == "stop" || verb == "restart" ||
+             verb == "reload" || verb == "reload-or-restart")) {
+            return polkit.Result.YES;
+        }
+    }
+});
+RULES
+chmod 644 "$RULE"
+echo "wrote $RULE  (user=$USER_NAME unit=$UNIT)"
+
+# polkit picks up rules.d changes on its own, but restarting makes it immediate
+# and surfaces a syntax error now rather than at the next restart attempt.
+if systemctl restart polkit 2>/dev/null; then
+  echo "polkit reloaded"
+else
+  echo "NOTE: could not restart polkit; the rule applies on its next reload." >&2
+fi
+
+echo
+echo "Verify as $USER_NAME (NOT as root — root is always allowed, so testing"
+echo "here proves nothing about the rule):"
+echo "  ssh $(hostname -s) 'fw fleet allow-restart --check'"

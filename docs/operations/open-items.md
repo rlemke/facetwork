@@ -176,6 +176,7 @@ silent).
 
 | Item | Detail |
 |---|---|
+| **`fw fleet allow-restart` not installed yet** | Restarting the agent needs sudo on every Linux host (polkit wants interactive auth, which a non-TTY ssh cannot give), so "reload the agent" is a hands-on, per-host operation — the thing that does not scale. `sudo fw fleet allow-restart` installs a polkit rule scoped to ONE user and ONE unit, permitting only start/stop/restart/reload. One sudo per host, once, then plain ssh works. Needed on macmini02, macmini03, beelink01, atopnuc01. Verify as the user (not root, who is always allowed): `fw fleet allow-restart --check`. |
 | **`country_width: 4` awaiting a real run** | Committed (`7b88e9d`) but the FFL is baked into the image, so it needs a rollout. Will show its effect on the first run with real work — a run with nothing to rebuild leaves the slots idle regardless. |
 | **server3 selfhost leftovers** | A 1 MB stand-in `master.osm.pbf` and assorted logs in `~/.facetwork/osm-selfhost/`, now that the role has moved. |
 
