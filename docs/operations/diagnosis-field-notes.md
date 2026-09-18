@@ -158,7 +158,17 @@ invisible to the check before it:
 22. **A wedged host is worse than a dead one.** It holds memory, keeps its
     containers `Up`, and every reclaim adds load to the host least able to bear
     it.
-23. **Changing shared state that older code validates needs
+23. ⚠️ **A per-item tolerance converts a total failure into a silent partial.**
+    The fleet agent starts each domain runner and, on failure, logs
+    `WARNING … start failed (exit 1); continuing — another host can serve this
+    domain's tasks` and moves on. That is right when one domain is broken. When
+    *every* start fails for a shared reason, the same rule reports the reconcile as
+    successful with **all** containers left on the old image — measured on
+    macmini03: `[up-to-date]` while running **17 stale containers**. A tolerance
+    scoped per item needs an aggregate check: *did any of them succeed?* The
+    image-level check (`_containers_on_wrong_image`) is what finally made it
+    visible, because it asks about the outcome rather than the attempts.
+24. **Changing shared state that older code validates needs
     expand/migrate/contract.** Deploy tolerant code everywhere *first*. An index
     filter changed live took this fleet from 108 runners to 23.
 
