@@ -29,35 +29,49 @@ co-location primitive and does not generalise.
 `BuildAdminSet` does extract-and-publish in **one task**, explicitly "so there's
 no cross-host local-file handoff". The planet workflows should do the same.
 
-### 1.2 Capability advertisement never imports the handler — ✅ FIXED 2026-09-16
+### 1.2 Capability advertisement cannot see a LAZY import — ⚠️ STILL OPEN
 
-`registration_module_available()` used `importlib.util.find_spec`, which only
-**locates** a module and never executes it — so a module whose first line was an
-impossible import passed, and the function did not test the thing its docstring
-promised. That is how macmini01 advertised **265 facets** it could not execute.
+⚠️ **I marked this fixed on 2026-09-16 and it is not.** Recording the sequence,
+because the mistake is more instructive than the bug.
 
-Now two stages: `find_spec` as a cheap pre-filter (cannot be located → cannot be
-imported, decided without executing anything), then a **real import, cached per
-image tag on this host**. A generalist runner carries ~265 registrations, so the
-import pass is paid once per image per host rather than on every start. Failures
-are cached too — an ImportError under a given image on a given host is a stable
-fact.
+There were **two separate holes**, and I conflated them:
 
-⚠️ The cache is keyed by image tag AND is host-local, and both halves matter:
-the premise of the whole check is that the *same image* behaves differently on
-different CPUs, so a cache shared across hosts would be actively wrong. A file
-on the host is implicitly host-scoped; the tag stops a rollout inheriting the
-previous image's answers.
+1. `registration_module_available()` used `find_spec`, which only LOCATES a
+   module and never executes it — so even a top-level impossible import passed.
+   **Fixed** (`8d3eebe1`): a real import, cached per image tag per host.
+2. A dependency imported **inside a function** is not exercised by importing the
+   module. **Still open.**
 
-Eight tests, verified to fail against the `find_spec`-only version.
+My first entry here described hole 2. I then "corrected" it to describe hole 1
+and implied 2 had been a misstatement. Both were real. Fixing 1 and declaring
+the problem closed was wrong, and the fleet disproved it within a day:
 
-`HandlerRegistration.requirements` was **removed** in the same pass. It was
-stored, serialised and round-tripped through five places and exposed in the MCP
-tool schema as "Python package requirements" — and nothing ever acted on it. No
-install, no check, no gate. That is worse than dead internal code: a caller
-could set it and reasonably expect something to happen. The import verification
-above also subsumes its only plausible purpose, since importing a module
-exercises its dependencies transitively.
+```
+macmini01, on the image containing the fix:
+  osm_geocoder import: OK            <- the handler module loads
+  numpy import:        ImportError   <- its dependency does not
+  still advertises:    265 handlers, 122 numpy-dependent
+```
+
+**What would actually close it.** Importing the module is not enough, and
+`requirements` is gone (it was dead — see below). Two candidates:
+
+- **Host-level admission.** If the image's core scientific stack does not import
+  on this host, the runner should refuse to advertise domain handlers at all.
+  Blunt, but an image whose core dependencies cannot load is not usable there,
+  and it needs no per-handler declaration.
+- **AST scan for function-level imports**, importing those that are not wrapped
+  in `try/except ImportError` (a guarded import is optional by construction).
+  Precise and self-maintaining, but more machinery.
+
+I would take the first: it is small, it matches the actual failure (a whole
+image being unrunnable on one CPU), and it cannot be defeated by where an
+author happens to put an import statement.
+
+⚠️ Until then, **macmini01 must stay out of the fleet**, and note that
+`systemctl disable` is not enough — a `systemctl restart` sweep started its
+agent anyway, because `disabled` only prevents starting at boot. It needs
+`stop`, and ideally masking.
 
 ### 1.3 Nothing rewrites absolute paths after a migration
 
