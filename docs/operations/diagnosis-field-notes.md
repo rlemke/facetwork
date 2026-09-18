@@ -181,6 +181,20 @@ failure, and both were empty, so the host could not be triaged remotely at all.
 VAR="$(python -c '…')" || VAR=""            # declining is now an answer, not an abort
 ```
 
+⚠️ **Three silent-failure modes lived in this one helper**, which every `fw`
+command sources — so each was reachable from ~40 entry points:
+
+| # | Defect | Symptom |
+|---|---|---|
+| 1 | declining `$( )` under the caller's `set -e` | caller aborts, **0 bytes** of output |
+| 2 | resolver imported `facetwork` in a minimal env | transitive `lark` ImportError, swallowed, reported as *network unreachable* |
+| 3 | restore guarded by `[ -n "$_SAVED" ]` | nothing to restore → the probe's **own** localhost value was left in place, silently, so every downstream script addressed a **closed port** and called it the fleet's database |
+
+Defect 3 is the subtlest: the guard looks defensive. It protects against
+*overwriting with an empty value*, and in doing so it preserves a value the probe
+itself invented. **No endpoint is an answerable state; a wrong one is not** — unset
+it and say so.
+
 ### Rules
 
 24. **`||` every command substitution whose command may legitimately decline.**
@@ -196,7 +210,8 @@ VAR="$(python -c '…')" || VAR=""            # declining is now an answer, not 
     names the exit code, line and `$BASH_COMMAND` costs six lines and converts an
     untriageable host into a one-line diagnosis. `runner/start` now carries one —
     it named this bug on the **first** reconcile after deployment.
-27. **Write the test that strips the fix.** A regression test asserting the good
+27. **A "restore the previous value" branch must handle there being none.** Guarding the restore leaves whatever the probe set — which is the probe's guess, not the system's state.
+28. **Write the test that strips the fix.** A regression test asserting the good
     path passes is compatible with the fix having done nothing; the companion case
     removes the guard and asserts the caller dies *and that stderr is empty*. Same
     rule as §1.1, applied to tests.
