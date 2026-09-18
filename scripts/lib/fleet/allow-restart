@@ -60,6 +60,16 @@ if [[ "$MODE" == "check" ]]; then
   # so ASK SYSTEMD rather than inferring it from the file's existence.
   if systemctl restart "$UNIT" 2>/dev/null; then
     echo "verify: ✓ restarted $UNIT with no sudo"
+    # Boot persistence is a SEPARATE polkit action, so a host can pass the
+    # restart check and still not come back from a reboot. Report it.
+    _en="$(systemctl is-enabled "$UNIT" 2>/dev/null || true)"
+    if [[ "$_en" == "enabled" ]]; then
+      echo "boot:   ✓ enabled (survives a reboot)"
+    else
+      echo "boot:   ✗ is-enabled=$_en — this host will NOT rejoin after a reboot" >&2
+      echo "        fix: systemctl enable $UNIT   (no sudo once this rule is current)" >&2
+      exit 1
+    fi
     exit 0
   fi
   echo "verify: ✗ restart still requires authentication" >&2
@@ -83,15 +93,29 @@ cat > "$RULE" <<RULES
 // interactive authentication, so the agent can be reloaded over plain ssh.
 // Scoped deliberately: this is not blanket systemctl access.
 polkit.addRule(function(action, subject) {
+    if (subject.user != "$USER_NAME") { return; }
+    var unit = action.lookup("unit");
+    if (unit != "$UNIT") { return; }
+    var verb = action.lookup("verb");
+
+    // Runtime control: reload the agent after a code change.
     if (action.id == "org.freedesktop.systemd1.manage-units" &&
-        subject.user == "$USER_NAME") {
-        var unit = action.lookup("unit");
-        var verb = action.lookup("verb");
-        if (unit == "$UNIT" &&
-            (verb == "start" || verb == "stop" || verb == "restart" ||
-             verb == "reload" || verb == "reload-or-restart")) {
-            return polkit.Result.YES;
-        }
+        (verb == "start" || verb == "stop" || verb == "restart" ||
+         verb == "reload" || verb == "reload-or-restart")) {
+        return polkit.Result.YES;
+    }
+
+    // Boot persistence: joining or parking a host. Measured 2026-09-18 --
+    // atopnuc02 ran the agent with it DISABLED, so the host worked until its
+    // next reboot and would then have vanished from the fleet silently. Fixing
+    // that needed sudo, which is the per-host toil this rule exists to remove.
+    //
+    // 'mask' and 'unmask' are deliberately NOT here: masking is how you make a
+    // unit unstartable, and that belongs with the administrator, not with
+    // routine fleet ops.
+    if (action.id == "org.freedesktop.systemd1.manage-unit-files" &&
+        (verb == "enable" || verb == "disable" || verb == "reenable")) {
+        return polkit.Result.YES;
     }
 });
 RULES

@@ -110,22 +110,21 @@
       "aliases": [
         "atopnuc02"
       ],
-      "purpose": "light runner tier, same class as atopnuc01 (2 cores / ~6 GiB). ADDED 2026-09-13 with the site move; NOT yet provisioned \u2014 it answers on the network but has no fleet-agent and registers no runners, and this host's SSH key is not installed on it (publickey denied). Provision with docs/operations/fleet-agent/setup-ubuntu-fleet-host.sh (defaults are correct: --group runner, --rdp remote-login). NOT heavy \u2014 6 GiB cannot take an OSM cut (one europe split has peaked at 18.9 GB).",
+      "purpose": "light runner tier, twin of atopnuc01 (2 cores / 6.71 GiB): ffl orchestration + ONE generalist runner over the cold domains. PROVISIONED 2026-09-18 -- fleet-agent active, 2 runners registered, ops SSH key installed. Deliberately NOT heavy: 6.71 GiB cannot take an OSM cut (one europe split has peaked at 18.9 GB), and the group gate is what keeps that work off this box.",
       "group": "runner",
       "infra": false,
-      "joined": false,
       "ip_pin": null,
       "capacity": {
-        "tier": "light (assumed \u2014 UNVERIFIED)",
-        "arch": null,
-        "cores": null,
-        "host_ram_gb": null,
-        "container_memory_gb": null,
-        "scratch_path": null,
-        "scratch_total_gb": null,
-        "scratch_free_gb": null,
-        "credentials": null,
-        "note": "NOT MEASURED - this host rejects the fleet's SSH key, so every figure here would be a guess. Tier is assumed from atopnuc01 (same model) and must be confirmed once it is provisioned. It advertises nothing to claim routing, so it currently declines all work."
+        "tier": "light",
+        "arch": "x86_64",
+        "cores": 2,
+        "host_ram_gb": 6,
+        "container_memory_gb": 6.71,
+        "scratch_path": "/home/ralph_lemke/fw_data",
+        "scratch_total_gb": 116,
+        "scratch_free_gb": 95,
+        "credentials": [],
+        "note": "MEASURED 2026-09-18 (previously a guess -- the host rejected the fleet's SSH key). Matches atopnuc01 on every dimension except credentials: this host has NO fleet-secrets.env, and a credential is a claim-routing capability, so it silently declines work needing CENSUS_API_KEY or ANTHROPIC_API_KEY rather than failing it. Add those keys if it should serve that work."
       }
     },
     {
