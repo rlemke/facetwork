@@ -29,49 +29,64 @@ co-location primitive and does not generalise.
 `BuildAdminSet` does extract-and-publish in **one task**, explicitly "so there's
 no cross-host local-file handoff". The planet workflows should do the same.
 
-### 1.2 Capability advertisement cannot see a LAZY import — ⚠️ STILL OPEN
+### 1.2 Capability advertisement cannot see a LAZY import — ✅ FIXED (needs a rebake to reach the fleet)
 
-⚠️ **I marked this fixed on 2026-09-16 and it is not.** Recording the sequence,
-because the mistake is more instructive than the bug.
+Two holes, conflated once and recorded here because the mistake was instructive:
 
-There were **two separate holes**, and I conflated them:
-
-1. `registration_module_available()` used `find_spec`, which only LOCATES a
-   module and never executes it — so even a top-level impossible import passed.
-   **Fixed** (`8d3eebe1`): a real import, cached per image tag per host.
+1. `registration_module_available()` used `find_spec`, which only LOCATES a module
+   and never executes it — so even a top-level impossible import passed. Fixed
+   `8d3eebe1`: a real import, cached per image tag per host.
 2. A dependency imported **inside a function** is not exercised by importing the
-   module. **Still open.**
+   module. **Fixed 2026-09-18** by host-level admission.
 
-My first entry here described hole 2. I then "corrected" it to describe hole 1
-and implied 2 had been a misstatement. Both were real. Fixing 1 and declaring
-the problem closed was wrong, and the fleet disproved it within a day:
+**What shipped.** `core_stack_unusable()` probes a sentinel set
+(`FW_CORE_IMPORTS`, default `numpy`). When it reports a reason,
+`preload(verify=True)` drops every non-ambient registration and keeps only the
+stdlib-only `fw.*` facets, logging the reason at WARNING. This matches what the
+failure actually is — an IMAGE that cannot run on this CPU, a property of the
+host, checkable once — rather than something an author can defeat by moving an
+import statement.
+
+⚠️ **ABSENT IS NOT BROKEN.** `find_spec` returning None means *not installed*, which
+is a legitimate minimal deployment and is NOT a reason to refuse; only
+installed-but-raises is. Refusing on absence would silence every numpy-free
+deployment — a worse failure than the one being fixed. Guarded by a test.
+
+⚠️ **The exception is caught broadly on purpose, and the hardware proves why.**
+Measured in the image on macmini01: numpy reports this as **`RuntimeError`**, not
+`ImportError`:
 
 ```
-macmini01, on the image containing the fix:
-  osm_geocoder import: OK            <- the handler module loads
-  numpy import:        ImportError   <- its dependency does not
-  still advertises:    265 handlers, 122 numpy-dependent
+find_spec(numpy)  -> True            <- which is why hole 1 passed
+import numpy      -> RuntimeError: NumPy was built with baseline
+                     optimizations: (X86_V2) but your machine doesn't support
 ```
 
-**What would actually close it.** Importing the module is not enough, and
-`requirements` is gone (it was dead — see below). Two candidates:
+Catching only `ImportError` would have missed the exact case that motivated the
+work.
 
-- **Host-level admission.** If the image's core scientific stack does not import
-  on this host, the runner should refuse to advertise domain handlers at all.
-  Blunt, but an image whose core dependencies cannot load is not usable there,
-  and it needs no per-handler declaration.
-- **AST scan for function-level imports**, importing those that are not wrapped
-  in `try/except ImportError` (a guarded import is optional by construction).
-  Precise and self-maintaining, but more machinery.
+**Verified on real hardware, both directions:**
 
-I would take the first: it is small, it matches the actual failure (a whole
-image being unrunnable on one CPU), and it cannot be defeated by where an
-author happens to put an import statement.
+| host | CPU | verdict |
+|---|---|---|
+| macmini01 | Core 2 Duo, **no SSE4.2 / POPCNT** | refuses domain handlers ✓ |
+| atopnuc01 | x86_64, healthy, **same image** | advertises normally ✓ |
+| macmini02 | x86_64, healthy, same image | advertises normally ✓ |
 
-⚠️ Until then, **macmini01 must stay out of the fleet**, and note that
-`systemctl disable` is not enough — a `systemctl restart` sweep started its
-agent anyway, because `disabled` only prevents starting at boot. It needs
-`stop`, and ideally masking.
+**macmini01 can rejoin as an `fw.*`-only host** once the fleet image carries this.
+Checked rather than assumed: all six built-in handler modules import there, none
+of them imports numpy/pandas/scipy/fsspec at top level *or inside a function*
+(which would have reproduced this very hole for the ambient facets), and `boto3`
+is present. It becomes a limited but honest host instead of one advertising 265
+handlers it cannot execute.
+
+**Remaining:** the runtime is baked into the image, so this takes effect on the
+next bake + rollout. Until then macmini01 stays out — and note `systemctl
+disable` is not enough (a `restart` sweep starts the unit anyway); it needs `stop`
+plus a renamed unit file, which is how it is currently parked (`is-enabled`
+reports `not-found`).
+
+Tests: `tests/runtime/test_host_admission.py` (9 cases).
 
 ### 1.3 Nothing rewrites absolute paths after a migration
 
