@@ -55,6 +55,21 @@
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 set -euo pipefail
 
+# ⚠️ Never exit non-zero in silence. `fw fleet agent` runs this with captured
+# output and prints both streams only on failure, so an early `set -e` abort that
+# has not echoed anything yet reaches the operator as a bare "start-worker failed
+# (exit 1)" — measured on macmini02, which failed that way 94 times with BOTH
+# streams empty and could not be triaged remotely at all. An exit status with no
+# message is the least actionable failure shape there is; name the line.
+_fw_start_err() {
+  local _rc=$? _line=${1:-?}
+  echo "runner/start: FAILED (exit $_rc) at line $_line: ${BASH_COMMAND}" >&2
+  echo "runner/start: (host=$(hostname -s 2>/dev/null || echo ?) pwd=$PWD)" >&2
+  exit "$_rc"
+}
+set -o errtrace   # so the trap also fires inside functions
+trap '_fw_start_err "$LINENO"' ERR
+
 REPO_ROOT="$FW_ROOT"
 
 # Load shared env (.env sets FW_MONGODB_URL etc.)
