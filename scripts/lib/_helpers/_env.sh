@@ -134,9 +134,21 @@ print(m.group(1) + ip + m.group(3))
                     echo "         catalog could not resolve it either. Falling back to LOCALHOST," >&2
                     echo "         which is a SEPARATE database — not the fleet's. Anything you" >&2
                     echo "         submit or read here is invisible to the fleet." >&2
+                elif [ -n "$_FW_SAVED" ]; then
+                    # Restore — let downstream scripts report the real endpoint.
+                    export FW_MONGODB_URL="$_FW_SAVED"
                 else
-                    # Restore — let downstream scripts handle the error
-                    [ -n "$_FW_SAVED" ] && export FW_MONGODB_URL="$_FW_SAVED"
+                    # ⚠️ Nothing to restore: FW_MONGODB_URL was never set (a fleet
+                    # host carries .env.fleet, not .env, so this is NORMAL there).
+                    # The old code left the probe's own localhost value in place
+                    # and said nothing, so every downstream script silently
+                    # addressed a CLOSED local port and reported it as the fleet's
+                    # database. Measured on macmini02 2026-09-18. Unset it and say
+                    # so: no endpoint is an answerable state, a wrong one is not.
+                    unset FW_MONGODB_URL
+                    echo "MongoDB: no endpoint configured (no .env here) and localhost is closed." >&2
+                    echo "         Leaving FW_MONGODB_URL UNSET rather than pointing at a dead port." >&2
+                    echo "         Fleet hosts get theirs from fleet_config; pass --mongo, or set it in .env." >&2
                 fi
             fi
         fi
