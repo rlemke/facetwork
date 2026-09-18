@@ -338,6 +338,16 @@ else
     run git clone -q "$REPO_URL" "$REPO_DIR"
 fi
 run mkdir -p "$DATA_DIR"
+# ⚠️ Pre-create EVERY bind-mount source, as this user, before any container can
+# run. Docker does not fail on a missing bind source -- it INVENTS it, owned by
+# root:root. Measured 2026-08: 23 such directories across four hosts, ~/fw_handlers
+# among them, which broke `fw install domain` weeks later and needed a chown sweep.
+# Creating them here is the whole fix; `create_host_path: false` is the wrong guard
+# because binds that are legitimately optional would then stop a runner outright.
+for _d in "$HOME/fw_handlers" "$DATA_DIR/osm-scratch" "$DATA_DIR/cache" \
+          "$DATA_DIR/output" "$HOME/.facetwork"; do
+    run mkdir -p "$_d"
+done
 if [ "$DRY" = 0 ]; then
     cd "$REPO_DIR"
     [ -d .venv ] || python3 -m venv .venv
@@ -392,6 +402,15 @@ if [ "$DRY" = 0 ]; then
     rm -f /tmp/facetwork-fleet-agent.service
     sudo systemctl daemon-reload
     info "unit installed as facetwork-fleet-agent.service"
+    # Day-2 must not need root. Install the polkit rule NOW, while we already hold
+    # privilege -- otherwise the very first "restart the agent after a code change"
+    # needs an interactive password on this machine, which does not scale past a
+    # handful of hosts. See docs/operations/zero-sudo-operations.md.
+    if [ -x "$REPO_DIR/fw" ]; then
+        sudo "$REPO_DIR/fw" fleet allow-restart --user "$USER" >/dev/null 2>&1 \
+            && info "polkit rule installed — agent restart/enable need no sudo" \
+            || warn "could not install the polkit rule; run: sudo fw fleet allow-restart"
+    fi
 else
     info "[dry] would install the wrapper + systemd unit"
 fi
@@ -442,6 +461,18 @@ chk "registry reachable"          "curl -sf http://$REG/v2/ -o /dev/null"
 # though grep matched. That reported a FALSE FAILURE on a correctly configured
 # host — worse than a false pass, in a script whose non-zero exit says
 # "do not trust this host".
+# ⚠️ Boot persistence and unprivileged control are what this script exists to
+# establish, so VERIFY them rather than assuming the install worked. atopnuc02 ran
+# for days active-but-disabled -- working, and guaranteed to vanish at its next
+# reboot -- because nothing ever asked. Compare the OUTPUT of is-enabled, not its
+# exit code (it exits 1 for a masked unit while printing the right answer).
+if [ "$JOIN" = 1 ]; then
+    chk "agent enabled at boot" \
+        '[ "$(systemctl is-enabled facetwork-fleet-agent 2>/dev/null || true)" = enabled ]'
+    # As the USER, never under sudo: root is always permitted by polkit, so a
+    # check run privileged proves nothing about the rule.
+    chk "agent restart needs no sudo" "systemctl restart facetwork-fleet-agent"
+fi
 chk "sleep masked"                '[ "$(systemctl is-enabled sleep.target 2>/dev/null || true)" = masked ]'
 chk "repo present"                "test -x $REPO_DIR/fw"
 chk "venv present"                "test -x $REPO_DIR/.venv/bin/python"
