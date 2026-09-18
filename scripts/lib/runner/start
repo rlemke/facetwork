@@ -232,7 +232,11 @@ if [[ "$MODE" == "docker" || "$MODE" == "fleet" ]]; then
         [[ "$_infra_probe_ip" == "host-gateway" ]] && _infra_probe_ip="127.0.0.1"
 
         echo "Preflight — shared services must be reachable from this host:"
-        if "$PY" - "$FW_MONGODB_URL" "${_infra_probe_ip:-}" <<'PYEOF' 2>/dev/null
+        # PYTHONPATH explicitly, as the other python call sites in this script
+        # already do. Without it the snippet cannot import facetwork when $PY has
+        # fallen back to the system interpreter, the catalog lookup fails, and the
+        # probe blames the NETWORK for an import error.
+        if env PYTHONPATH="$REPO_ROOT" "$PY" - "$FW_MONGODB_URL" "${_infra_probe_ip:-}" <<'PYEOF' 2>/dev/null
 import sys
 from pymongo import MongoClient
 from urllib.parse import urlparse, urlunparse
@@ -247,8 +251,9 @@ if u.hostname and u.hostname.startswith("afl-"):
     try:
         from facetwork.servers import catalog as _c
         _resolved = _c.resolve_ip(u.hostname)
-    except Exception:
-        _resolved = None
+    except Exception as _exc:
+        print(f"    (cannot consult the server catalog: {type(_exc).__name__}: {_exc})",
+              file=sys.stderr)
     _ip = _resolved or infra_ip
     if _ip:
         netloc = f"{_ip}:{u.port or 27017}"
@@ -261,7 +266,7 @@ PYEOF
             echo "    Check host/port, /etc/hosts (afl-mongodb -> IP), mongod binds 0.0.0.0, firewall." >&2
             exit 1
         fi
-        if "$PY" - "$FW_S3_ENDPOINT" "${_infra_probe_ip:-}" <<'PYEOF' 2>/dev/null
+        if env PYTHONPATH="$REPO_ROOT" "$PY" - "$FW_S3_ENDPOINT" "${_infra_probe_ip:-}" <<'PYEOF' 
 import socket, sys
 from urllib.parse import urlparse
 u = urlparse(sys.argv[1]); host = u.hostname or sys.argv[1]
@@ -282,8 +287,15 @@ if host.startswith("afl-"):
     try:
         from facetwork.servers import catalog as _c
         _resolved = _c.resolve_ip(host)
-    except Exception:
-        _resolved = None
+    except Exception as _exc:
+        # ⚠️ SAY SO. A silent fallback here degrades to the unresolvable alias and
+        # then reports "NOT reachable" about a service that is perfectly fine --
+        # blaming the network for an import error. Measured 2026-09-18: the agent
+        # runs this under a minimal environment where $PY had fallen back to the
+        # system python, which cannot import facetwork, so 66 consecutive
+        # reconciles failed with a message that named the wrong cause.
+        print(f"    (cannot consult the server catalog: {type(_exc).__name__}: {_exc}; "
+              f"falling back to FW_INFRA_IP/hosts resolution)", file=sys.stderr)
     host = _resolved or infra_ip or host
 port = u.port or (443 if u.scheme == "https" else 80)
 socket.create_connection((host, port), timeout=5).close()
