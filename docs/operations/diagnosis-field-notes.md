@@ -164,7 +164,44 @@ invisible to the check before it:
 
 ---
 
-## 7. Practical habits that paid off
+## 7. Shell semantics that produce a silent non-zero exit
+
+The macmini02 outage (94 failed reconciles, **zero bytes of output**) was one line:
+
+```bash
+VAR="$(python -c '... sys.exit(1) ...')"     # exits 1 to mean "declined"
+```
+
+Under the caller's `set -e` a failing command substitution **is** a failing
+command, so a *deliberate* "I could not resolve this" aborted the caller — before
+anything was printed. The fleet agent shows the subprocess's streams only on
+failure, and both were empty, so the host could not be triaged remotely at all.
+
+```bash
+VAR="$(python -c '…')" || VAR=""            # declining is now an answer, not an abort
+```
+
+### Rules
+
+24. **`||` every command substitution whose command may legitimately decline.**
+    Exit 1 meaning "no result" and exit 1 meaning "I broke" are indistinguishable
+    to `set -e`; the guard is what separates them.
+25. ⚠️ **This bug class defeats the obvious audit.** The file holding the
+    assignment does not itself `set -e` — the *caller* does. A sweep over "files
+    with `set -e`" cannot see it. Audit by the shape of the assignment, across all
+    files. (Done here: 6 such assignments under `scripts/lib`; exactly one could
+    decline, and the other five *should* abort.)
+26. **A script that can exit non-zero must not be able to do so silently.** An
+    `ERR` trap (with `set -o errtrace`, so it also fires inside functions) that
+    names the exit code, line and `$BASH_COMMAND` costs six lines and converts an
+    untriageable host into a one-line diagnosis. `runner/start` now carries one —
+    it named this bug on the **first** reconcile after deployment.
+27. **Write the test that strips the fix.** A regression test asserting the good
+    path passes is compatible with the fix having done nothing; the companion case
+    removes the guard and asserts the caller dies *and that stderr is empty*. Same
+    rule as §1.1, applied to tests.
+
+## 8. Practical habits that paid off
 
 - **Capture a baseline before changing anything.** "4 advertisers here, 0 there"
   before a cutover made the after-state provable rather than plausible.

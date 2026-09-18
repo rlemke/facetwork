@@ -105,32 +105,38 @@ a keying-rule change, not a parameter.
 
 ---
 
-### 1.5 A failing reconcile can produce no diagnostic at all
+### 1.5 A reconcile could exit non-zero in silence — ✅ ROOT-CAUSED AND FIXED
 
-macmini02 has failed `reconcile of v217` **94 times** with 22 containers on the
-old image. The agent prints `start-worker failed (exit 1)` and nothing else: it
-writes the subprocess's `stdout` and `stderr` on failure, and **both are empty**,
-so `runner/start` is exiting 1 before it says anything. Exit status without output
-is the least useful failure shape there is — it cannot be triaged remotely, which
-is exactly when it matters.
+macmini02 failed `reconcile of v217` **94 times** with **zero bytes on either
+stream**. Two independent defects, both fixed:
 
-⚠️ The trap that cost the most here was not the silence but the **stale log**: the
-agent's `fleet-agent.err.log` was last written **four days earlier**, and its final
-lines were three `✗ MinIO/S3 NOT reachable`. Those were read as current twice and
-produced a wrong diagnosis both times. The fd is not unlinked and the unit's
-`StandardError=append` is correct — the file is simply not being written because
-nothing is sent to stderr.
+- **`_env.sh`** resolved `afl-mongodb` from the catalog with
+  `VAR="$(python -c '… sys.exit(1) …')"`. The exit 1 means *declined*, but under
+  the caller's `set -e` a failing command substitution aborts the caller — before
+  printing anything. Guarded with `|| VAR=""`. Measured A/B: unguarded exit=1,
+  stderr **0 bytes**; guarded reaches the end. ⚠️ The audit trap: the file holding
+  the assignment does not itself `set -e`, so a sweep over files that do cannot
+  see it. All 6 such assignments under `scripts/lib` were checked — one could
+  decline, five should abort.
+- The same resolver imported `facetwork`, which fails on a **transitive** dep
+  (`lark`) under the agent's minimal environment — the defect already fixed in
+  `runner/start`'s `_catalog_ip()`. Now stdlib-only.
 
-Two fixes, independent:
+`runner/start` also carries an `ERR` trap (`errtrace`, names exit code + line +
+`$BASH_COMMAND`); it identified this on the **first** reconcile after deployment,
+having been invisible for 94.
 
-- `runner/start` must not be able to exit non-zero silently — trap `ERR` and name
-  the failing line, so the exit status always carries a message.
-- The agent should stamp each cycle into the err log (or drop the split and send
-  both streams to one file), so "no recent stderr" cannot be mistaken for "the
-  last stderr is the current state".
+⚠️ Separately, the trap that cost the most time was a **stale log**: the agent's
+`fleet-agent.err.log` had not been written for **four days** and its last lines
+(`✗ MinIO/S3 NOT reachable`) were read as current twice, producing a wrong
+diagnosis both times. The fd was not unlinked and `StandardError=append` was
+correct — nothing was being sent to stderr. Still open: stamp each cycle into the
+err log, or merge the streams, so "no recent stderr" cannot read as "the last
+stderr is the current state".
 
-Next step for the host itself: run `runner/start` by hand with the env file the
-agent hands compose, which is the only way to see what it refuses to print.
+Regression: `tests/test_env_helper_declines_safely.py` (3 cases, one of which
+strips the guard to prove the assertion can go red and asserts the death is
+silent).
 
 ---
 
