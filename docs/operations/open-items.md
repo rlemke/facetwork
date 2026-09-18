@@ -105,43 +105,38 @@ a keying-rule change, not a parameter.
 
 ---
 
-### 1.5 A host can run fleet work while excluded from every ops sweep
+### 1.5 A host can run fleet work while excluded from every ops sweep — ✅ FIXED
 
-atopnuc02 is marked **`joined: false`** in `servers.json`, yet `fleet_agents`
-shows it applying **v217** with **2/2 runners up-to-date**. Both statements are
-true because the flag does not mean what its name suggests:
+atopnuc02 was applying **v217 with 2/2 runners up** while catalogued
+`joined: false` and unreachable by ssh from every host in the fleet. It had
+silently missed two rounds of fixes.
 
-- **What `joined: false` actually gates** — deploy targeting (`_remote.sh`) and
-  name resolution (`_env.sh`, `runner/start`'s `_catalog_ip`). Nothing more.
-- **What it does NOT gate** — participation. The host runs a fleet agent, applies
-  fleet_config, starts runners and claims work regardless.
+The flag does not mean what its name suggests: `joined: false` gates **deploy
+targeting** (`_remote.sh`) and **name resolution** (`_env.sh`, `_catalog_ip`), not
+participation. A host set false still runs its agent, applies fleet_config and
+claims work — it is merely invisible to maintenance. Neither fact is wrong alone;
+only the pair is, which is why nothing reported it.
 
-So the flag is about **addressability, not membership**, and a host set to false
-becomes *invisible to maintenance while still doing work*: no pull reaches it, no
-installer runs on it, and it silently misses every fix. atopnuc02 missed the
-`_env.sh` and preflight-retry fixes for exactly this reason. macmini01 looks
-correctly excluded only because its containers are also stopped — the same shape
-as `systemctl disable` not stopping a running unit (see field notes §5, rule 19).
+Resolved 2026-09-18: ops key installed, repo pulled current, catalog entry
+replaced with **measured** capacity (x86_64, 2 cores, 6.71 GiB container memory,
+116 GB scratch — previously a self-declared guess, because the host rejected the
+fleet's key), and `joined` restored.
 
-⚠️ **Do not simply flip it to true.** The comment at `_remote.sh:200` records why
-it was set false: atopnuc02 answered on the network, passed the reachability
-filter, then failed the staggered pre-pull because it had **no Docker and no
-key**, and the rollout correctly refused to flip the config — so one
-unprovisioned host blocked deploying to the six real ones.
+⚠️ It is a **twin of atopnuc01 except for credentials**: no `fleet-secrets.env`.
+A credential is a claim-routing capability, so it silently DECLINES work needing
+`CENSUS_API_KEY`/`ANTHROPIC_API_KEY` rather than failing it. Recorded in the entry.
 
-That premise is now **half stale**: the host clearly has Docker and an agent. What
-is still missing is the **ops key** — no host in the fleet can ssh to it
-(`Permission denied (publickey,password)` from all five tried), so it cannot be
-pulled, verified, or given `fw fleet allow-restart`.
+**`fw fleet status` now reports the combination** (`UNMANAGED: catalogued
+joined:false — ops sweeps SKIP it`), gated on **live runners** rather than on
+having a fleet-agent record: a retired host keeps its record (macmini01, 0
+runners), and flagging every retirement forever trains you to skip the warning.
+Regression: `tests/test_fleet_status_unmanaged_flag.py`.
 
-Sequence to fix, in order: (1) append the fleet ops key to its
-`~/.ssh/authorized_keys`; (2) confirm pull + Docker + agent from MaxPro; (3) only
-then set `"joined": true` so it rejoins deploy sweeps.
-
-**Worth considering:** the two facts should not be able to disagree silently.
-`fw fleet status` knows the host is applying config; it could flag a host that is
-participating while catalogued `joined: false`, which is the one combination that
-means "running unmanaged".
+**Second gap found while surveying it:** the agent was **active but `disabled`** —
+it worked and would have vanished at its next reboot, the only host in that state.
+`enable` is a *different* polkit action (`manage-unit-files`) from restart, so
+`allow-restart` did not cover it and `--check` could not see it. Both fixed; now
+enabled on all five Linux hosts.
 
 ---
 
@@ -216,7 +211,7 @@ silent).
 
 | Item | Detail |
 |---|---|
-| **`fw fleet allow-restart` not installed yet** | Restarting the agent needs sudo on every Linux host (polkit wants interactive auth, which a non-TTY ssh cannot give), so "reload the agent" is a hands-on, per-host operation — the thing that does not scale. `sudo fw fleet allow-restart` installs a polkit rule scoped to ONE user and ONE unit, permitting only start/stop/restart/reload. One sudo per host, once, then plain ssh works. Needed on macmini02, macmini03, beelink01, atopnuc01. Verify as the user (not root, who is always allowed): `fw fleet allow-restart --check`. |
+| **polkit rules predate the enable/disable clause** | Installed on all five Linux hosts during the 2026-09-18 15:28–15:33 sweep, i.e. the version covering only start/stop/restart/reload. Boot persistence is a separate polkit action, so parking or rejoining a host still needs sudo until `sudo fw fleet allow-restart` is re-run. Nothing is broken today — every agent is `enabled` — so this is hygiene, not a defect. |
 | **`country_width: 4` awaiting a real run** | Committed (`7b88e9d`) but the FFL is baked into the image, so it needs a rollout. Will show its effect on the first run with real work — a run with nothing to rebuild leaves the slots idle regardless. |
 | **server3 selfhost leftovers** | A 1 MB stand-in `master.osm.pbf` and assorted logs in `~/.facetwork/osm-selfhost/`, now that the role has moved. |
 
