@@ -105,7 +105,47 @@ a keying-rule change, not a parameter.
 
 ---
 
-### 1.5 server3's link drops packets again — throughput fix held, loss did not
+### 1.5 A host can run fleet work while excluded from every ops sweep
+
+atopnuc02 is marked **`joined: false`** in `servers.json`, yet `fleet_agents`
+shows it applying **v217** with **2/2 runners up-to-date**. Both statements are
+true because the flag does not mean what its name suggests:
+
+- **What `joined: false` actually gates** — deploy targeting (`_remote.sh`) and
+  name resolution (`_env.sh`, `runner/start`'s `_catalog_ip`). Nothing more.
+- **What it does NOT gate** — participation. The host runs a fleet agent, applies
+  fleet_config, starts runners and claims work regardless.
+
+So the flag is about **addressability, not membership**, and a host set to false
+becomes *invisible to maintenance while still doing work*: no pull reaches it, no
+installer runs on it, and it silently misses every fix. atopnuc02 missed the
+`_env.sh` and preflight-retry fixes for exactly this reason. macmini01 looks
+correctly excluded only because its containers are also stopped — the same shape
+as `systemctl disable` not stopping a running unit (see field notes §5, rule 19).
+
+⚠️ **Do not simply flip it to true.** The comment at `_remote.sh:200` records why
+it was set false: atopnuc02 answered on the network, passed the reachability
+filter, then failed the staggered pre-pull because it had **no Docker and no
+key**, and the rollout correctly refused to flip the config — so one
+unprovisioned host blocked deploying to the six real ones.
+
+That premise is now **half stale**: the host clearly has Docker and an agent. What
+is still missing is the **ops key** — no host in the fleet can ssh to it
+(`Permission denied (publickey,password)` from all five tried), so it cannot be
+pulled, verified, or given `fw fleet allow-restart`.
+
+Sequence to fix, in order: (1) append the fleet ops key to its
+`~/.ssh/authorized_keys`; (2) confirm pull + Docker + agent from MaxPro; (3) only
+then set `"joined": true` so it rejoins deploy sweeps.
+
+**Worth considering:** the two facts should not be able to disagree silently.
+`fw fleet status` knows the host is applying config; it could flag a host that is
+participating while catalogued `joined: false`, which is the one combination that
+means "running unmanaged".
+
+---
+
+### 1.6 server3's link drops packets again — throughput fix held, loss did not
 
 The 2026-09-16 cable replacement fixed **throughput** (124 → 261 MB/s) and that
 has held. The **loss** is back, with a different signature: measured 2026-09-18
@@ -137,7 +177,7 @@ The switch is still the original one.
 
 ---
 
-### 1.6 A reconcile could exit non-zero in silence — ✅ ROOT-CAUSED AND FIXED
+### 1.7 A reconcile could exit non-zero in silence — ✅ ROOT-CAUSED AND FIXED
 
 macmini02 failed `reconcile of v217` **94 times** with **zero bytes on either
 stream**. Two independent defects, both fixed:

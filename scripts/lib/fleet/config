@@ -248,6 +248,37 @@ def _host_key(name) -> str:
     return s[:-6] if s.endswith(".local") else s
 
 
+
+def _catalogued_not_joined() -> set[str]:
+    """Host keys the catalog marks ``joined: false``.
+
+    ⚠️ That flag gates DEPLOY TARGETING and name resolution, not participation:
+    a host set false still runs its agent, applies fleet_config and claims work,
+    while every ops sweep skips it. So the one combination that means "running
+    UNMANAGED" -- has a fleet-agent record AND is catalogued not-joined -- is
+    invisible unless something compares the two. Measured 2026-09-18: atopnuc02
+    applied v217 with 2/2 runners up while no host could even ssh to it, and it
+    silently missed two rounds of fixes.
+
+    Stdlib only, and never fatal: this is a status annotation, and a status
+    command that dies because a catalog file moved is worse than one that omits
+    an annotation.
+    """
+    try:
+        root = os.environ.get("FW_ROOT") or os.getcwd()
+        path = os.environ.get("FW_SERVERS_FILE") or os.path.join(root, "servers.json")
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        entries = doc.get("servers") or doc
+        rows = entries.values() if isinstance(entries, dict) else entries
+        return {
+            _host_key(e.get("name") or "")
+            for e in rows
+            if isinstance(e, dict) and e.get("joined") is False and e.get("name")
+        }
+    except Exception:
+        return set()
+
 def cmd_status(a):
     d = _db(_resolve(a))
     cfg = d.fleet_config.find_one({"_id": "default"}) or {}
@@ -275,6 +306,7 @@ def cmd_status(a):
     print(f"\nlive runners: {len(servers)} across {len(by_host)} host(s)"
           + (f"   ({stale} stale record(s) ignored)" if stale else ""))
     degraded = []
+    _not_joined = _catalogued_not_joined()
     for host in hosts:
         n = by_host.get(host, 0)
         ips = next((s.get("server_ips") for s in servers
@@ -295,6 +327,21 @@ def cmd_status(a):
                 health = f"  ** {int(exp) - n} MISSING **"
         if health:
             degraded.append(host)
+        # A host that participates while catalogued not-joined is running
+        # UNMANAGED: no pull, no installer and no rollout reaches it, so it
+        # silently misses every fix. Neither fact is wrong on its own; only the
+        # pair is, which is why nothing reported it before.
+        # Gate on LIVE RUNNERS, not on having an agent record. A deliberately
+        # retired host keeps its fleet_agents document (macmini01's applied_at is
+        # hours old with 0 runners alive), so keying off the record's existence
+        # flags every retirement forever -- and a flag that cries wolf is one you
+        # learn to skip past, which is how the original silent failures survived.
+        # n > 0 is the precise condition: work is running here and no ops sweep
+        # can reach it.
+        if n > 0 and host in _not_joined:
+            health += "  ** UNMANAGED: catalogued joined:false — ops sweeps SKIP it **"
+            if host not in degraded:
+                degraded.append(host)
         # ⚠️ IMAGE TAGS, not just counts. Everything above measures whether the
         # right NUMBER of runners registered; none of it asks what they are
         # RUNNING. A container orphaned by a server-group change keeps running,
