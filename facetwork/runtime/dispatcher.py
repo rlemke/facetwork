@@ -89,6 +89,74 @@ def _save_import_verify() -> None:
         pass
 
 
+_CORE_STACK_LOCK = threading.Lock()
+_CORE_STACK_VERDICT: tuple[bool, str] | None = None
+
+
+def core_stack_unusable() -> str | None:
+    """Reason the image's core stack cannot run HERE, or None if it can.
+
+    Host-level admission. :func:`registration_module_available` imports a handler
+    MODULE, which is necessary but not sufficient: a dependency imported inside a
+    function is never exercised by importing the module, so a handler whose body
+    does ``import numpy`` passes the per-registration check and then dies at
+    dispatch. Measured on macmini01 (2009 Core 2 Duo, no SSE4.2/POPCNT):
+
+        osm_geocoder import: OK          <- the handler module loads
+        numpy import:        ImportError <- its dependency does not
+        still advertised:    265 handlers, 122 numpy-dependent
+
+    No per-handler declaration can fix that, because it depends on where an
+    author happened to put an import statement. What the failure actually is, is
+    an IMAGE that cannot run on this CPU — a property of the host, checkable once.
+
+    ⚠️ **Absent is not broken.** A deployment that simply has no numpy (someone
+    running only their own handlers) must keep advertising normally, so:
+
+    * ``find_spec`` returns None  -> NOT installed -> not a reason to refuse.
+      Handlers that need it fail their own per-registration import check.
+    * installed but raises        -> present and unusable -> refuse.
+
+    That asymmetry is the whole point: refusing on absence would silence every
+    minimal deployment, which is a worse failure than the one being fixed.
+
+    The sentinel set is ``FW_CORE_IMPORTS`` (comma-separated, default ``numpy``)
+    so a deployment whose core stack is something else can say so. Verdict is
+    cached per process — a CPU does not gain instructions at runtime.
+    """
+    global _CORE_STACK_VERDICT
+    if _CORE_STACK_VERDICT is not None:
+        return _CORE_STACK_VERDICT[1] or None
+    with _CORE_STACK_LOCK:
+        if _CORE_STACK_VERDICT is None:
+            _CORE_STACK_VERDICT = (True, _probe_core_stack())
+    return _CORE_STACK_VERDICT[1] or None
+
+
+def _probe_core_stack() -> str:
+    names = [
+        n.strip()
+        for n in os.environ.get("FW_CORE_IMPORTS", "numpy").split(",")
+        if n.strip()
+    ]
+    for name in names:
+        try:
+            if importlib.util.find_spec(name) is None:
+                continue          # not installed here — see the docstring
+        except Exception:
+            continue              # cannot even ask; not evidence of breakage
+        try:
+            importlib.import_module(name)
+        except Exception as exc:
+            # Deliberately broad. numpy reports a CPU-baseline mismatch as
+            # ImportError in some versions and RuntimeError in others, and the
+            # verdict must not depend on which. It is still narrow in effect:
+            # this line is reached only for a module that IS installed and does
+            # NOT import, which is precisely the unusable-image case.
+            return f"{name} is installed but does not import here: {type(exc).__name__}: {exc}"
+    return ""
+
+
 def registration_module_available(module_uri: str) -> bool:
     """Return True if ``module_uri`` can actually be IMPORTED in this process.
 
@@ -225,6 +293,22 @@ class RegistryDispatcher:
         registrations = self._persistence.list_handler_registrations()
         self._reg_cache.clear()
         skipped: list[str] = []
+
+        # Host-level admission, BEFORE the per-registration check. If the image's
+        # core stack cannot run on this CPU, no amount of per-handler verification
+        # helps: a dependency imported inside a function passes the module import
+        # and dies at dispatch. Refuse the whole domain surface and keep only the
+        # ambient `fw.*` facets, which are stdlib-only and genuinely do work here.
+        core_reason = core_stack_unusable() if verify else None
+        if core_reason:
+            logger.warning(
+                "RegistryDispatcher: NOT advertising domain handlers on this host "
+                "— %s. Only the built-in fw.* facets are offered. This host cannot "
+                "run this image's handlers, so advertising them would claim work it "
+                "would then fail.",
+                core_reason,
+            )
+
         for reg in registrations:
             # Scope to --topics BEFORE the import-check: a topic-scoped runner
             # must not pay to `find_spec` (and, for cross-domain deps, import)
@@ -244,6 +328,9 @@ class RegistryDispatcher:
                 and not ambient
                 and not any(fnmatch.fnmatch(reg.facet_name, t) for t in self._topics)
             ):
+                continue
+            if core_reason and not ambient:
+                skipped.append(reg.facet_name)
                 continue
             if verify and not registration_module_available(reg.module_uri):
                 skipped.append(reg.facet_name)
