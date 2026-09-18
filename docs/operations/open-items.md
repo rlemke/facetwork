@@ -105,7 +105,39 @@ a keying-rule change, not a parameter.
 
 ---
 
-### 1.5 A reconcile could exit non-zero in silence — ✅ ROOT-CAUSED AND FIXED
+### 1.5 server3's link drops packets again — throughput fix held, loss did not
+
+The 2026-09-16 cable replacement fixed **throughput** (124 → 261 MB/s) and that
+has held. The **loss** is back, with a different signature: measured 2026-09-18
+at idle, not under load.
+
+| source | ICMP loss to server3 |
+|---|---|
+| MaxPro | **0%** |
+| beelink01 | 25% |
+| macmini02 | 25–49% |
+| macmini03 | ~33% |
+
+Rate dependence is **inconsistent** (49% at 10 pps in one window, 0% at 10 pps
+minutes later), so nothing rate-based — EEE included — is established by this.
+
+⚠️ ICMP alone would be weak evidence (macOS rate-limits ICMP). The evidence that
+is not ICMP: a TCP connect from macmini02 to the MinIO port took **4,018 ms**
+against a **1.1 ms** median — a lost SYN retried by the kernel, landing just
+inside the 5 s probe timeout. NIC error counters remain **all zero**.
+
+**Cost, measured:** server3 hosts MinIO for the fleet, so single-attempt
+preflights lost a coin flip each cycle and left 1–7 domain runners per mini on
+the old image. **Mitigated, not fixed** — the MinIO preflight now takes 3 attempts
+over ~8 s and *prints* the retries, so a degraded link stays visible.
+
+**Best remaining clue:** MaxPro is clean while three other hosts are not. That
+asymmetry points at the path (switch port / cable segment), not server3's NIC.
+The switch is still the original one.
+
+---
+
+### 1.6 A reconcile could exit non-zero in silence — ✅ ROOT-CAUSED AND FIXED
 
 macmini02 failed `reconcile of v217` **94 times** with **zero bytes on either
 stream**. Two independent defects, both fixed:
