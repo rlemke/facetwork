@@ -65,20 +65,51 @@ except Exception:
         # URL passed as argv, NOT via the environment: _FW_ORIG_URL is a plain
         # shell variable here, and reading it with os.environ silently yielded
         # None -- the lookup "ran" and always declined.
+        # ⚠️ TWO defects lived in this one assignment, and together they cost
+        # 94 silent reconcile failures on macmini02 (2026-09-18).
+        #
+        # 1. `|| _FW_CAT_URL=""`. The snippet exits 1 to mean "I could not
+        #    resolve this" -- a normal, expected outcome. But a command
+        #    substitution ASSIGNMENT that fails is a failing command, so under
+        #    the caller's `set -e` a declined lookup KILLED THE CALLER. It did so
+        #    before printing anything, which is why the fleet agent reported only
+        #    "start-worker failed (exit 1)" with both streams empty.
+        # 2. Stdlib only -- do NOT import facetwork here. This runs under the
+        #    fleet agent's minimal environment where $_PYTHON falls back to the
+        #    system interpreter, and `from facetwork.servers import catalog` then
+        #    fails on a TRANSITIVE dependency (lark), so PYTHONPATH does not
+        #    rescue it. Same lesson as _catalog_ip() in scripts/lib/runner/start:
+        #    a diagnostic must have fewer dependencies than what it diagnoses.
         _FW_CAT_URL="$("$_PYTHON" -c '
-import re, sys
+import json, os, re, socket, sys
+
 m = re.match(r"^(mongodb://)([^/:,?]+)(.*)$", sys.argv[1] if len(sys.argv) > 1 else "")
 if not m:
     sys.exit(1)
+host = m.group(2)
+root = os.environ.get("FW_ROOT") or os.getcwd()
+path = os.environ.get("FW_SERVERS_FILE") or os.path.join(root, "servers.json")
 try:
-    from facetwork.servers import catalog
-    ip = catalog.resolve_ip(m.group(2))
+    with open(path, encoding="utf-8") as fh:
+        doc = json.load(fh)
 except Exception:
     sys.exit(1)
-if not ip or ip == m.group(2):
+entries = doc.get("servers") or doc
+rows = entries.values() if isinstance(entries, dict) else entries
+ip = None
+for e in rows:
+    if not isinstance(e, dict) or e.get("joined") is False:
+        continue          # a host deliberately out of the fleet is not an answer
+    if host == e.get("name") or host in (e.get("aliases") or []):
+        try:
+            ip = e.get("ip_pin") or socket.gethostbyname(e["name"])
+        except Exception:
+            ip = e.get("ip_pin")
+        break
+if not ip or ip == host:
     sys.exit(1)
 print(m.group(1) + ip + m.group(3))
-' "$_FW_ORIG_URL" 2>/dev/null)"
+' "$_FW_ORIG_URL" 2>/dev/null)" || _FW_CAT_URL=""
         if [ -n "$_FW_CAT_URL" ]; then
             export FW_MONGODB_URL="$_FW_CAT_URL"
             if _mongo_ok; then
