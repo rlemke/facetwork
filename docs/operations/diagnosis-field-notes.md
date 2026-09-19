@@ -58,6 +58,25 @@ Three different artifacts lied about being current, in one week.
 | `fleet-agent.err.log` | **4 days stale** while the agent actively failed. I diagnosed from it twice and reached a wrong conclusion both times. |
 | the agent's own **code** | `git pull` updates files; a running interpreter keeps what it loaded. Four agents ran 3-day-old code while every fix sat on disk. |
 
+Measured again during the v218 rollout, and this is the cheapest way to detect it —
+compare the process start against its own source's mtime:
+
+| host | agent code mtime | process started | |
+|---|---|---|---|
+| server3 | 15:33 | **14:12** | 81 min older than its code |
+| MaxPro | Sep **17** 07:28 | Sep **15** 20:53 | **2 days** older than its code |
+
+Both reported `up to date (v218)` while running a container on the previous image:
+their older logic compared only the config version, never the container's image.
+Nothing in the fleet view could show this, because the agent was answering
+truthfully about the only question its code knew how to ask.
+
+⚠️ The self-reload (`_reexec_if_source_changed`) cannot fix its own absence — it
+has to be *running* to notice a source change, so adopting it needs one bootstrap
+restart per host. Verified live on all seven hosts after this rollout: for each,
+`has_fn` present **and** process start newer than code mtime. Both halves matter;
+the file containing the function proves nothing about the process.
+
 ### Rules
 
 6. **Check the mtime of anything you are about to reason from.** Especially logs

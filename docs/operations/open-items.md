@@ -29,7 +29,7 @@ co-location primitive and does not generalise.
 `BuildAdminSet` does extract-and-publish in **one task**, explicitly "so there's
 no cross-host local-file handoff". The planet workflows should do the same.
 
-### 1.2 Capability advertisement cannot see a LAZY import — ✅ FIXED (needs a rebake to reach the fleet)
+### 1.2 Capability advertisement cannot see a LAZY import — ✅ FIXED AND DEPLOYED (v218)
 
 Two holes, conflated once and recorded here because the mistake was instructive:
 
@@ -80,8 +80,12 @@ of them imports numpy/pandas/scipy/fsspec at top level *or inside a function*
 is present. It becomes a limited but honest host instead of one advertising 265
 handlers it cannot execute.
 
-**Remaining:** the runtime is baked into the image, so this takes effect on the
-next bake + rollout. Until then macmini01 stays out — and note `systemctl
+**Deployed 2026-09-18** in image `eaa5e91c` (fleet_config v218, all 7 live hosts).
+Verified against the BAKED code, no repo mount: macmini01 refuses
+(`numpy … RuntimeError: built with baseline optimizations (X86_V2)`), while
+macmini02, beelink01 and MaxPro all report `core stack OK` — both architectures.
+
+**Remaining:** macmini01 still needs to be rejoined (one provisioning step). Until then it stays out — and note `systemctl
 disable` is not enough (a `restart` sweep starts the unit anyway); it needs `stop`
 plus a renamed unit file, which is how it is currently parked (`is-enabled`
 reports `not-found`).
