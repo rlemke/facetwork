@@ -143,6 +143,30 @@ invisible to the check before it:
 
 ---
 
+### A cleanup scoped to current members leaves landmines in the ones that return
+
+The fleet removed every `afl-*` pin from `/etc/hosts` on 2026-09-16, because the
+server catalog resolves those names per service and a pinned entry **wins** over
+it. The sweep ran over *live fleet hosts* — so it skipped the two machines that
+were out of the fleet at that moment, and both kept their stale pins:
+
+| host | pins | wrong |
+|---|---|---|
+| macmini01 | 4 | **4** — all at an address holding none of these services |
+| atopnuc02 | 4 | **2** — `afl-mongodb` and `afl-extracts` moved hosts since |
+
+Both later rejoined, carrying the exact configuration the cleanup existed to
+remove. They function only because the host-side helpers were separately taught to
+consult the catalog — luck, not design.
+
+28. **Scope a cleanup to every host in the CATALOG, not to the live set.** A host
+    that is down, parked, or unprovisioned is precisely the one that will rejoin
+    later with the old configuration intact.
+29. **Prefer a check that runs on every start over a one-time sweep.** The
+    provisioning script now warns when `/etc/hosts` still pins an `afl-*` name, so
+    a returning host reports its own staleness instead of waiting for someone to
+    remember it.
+
 ## 5. Docker, mounts and bind sources
 
 15. **A bind whose source is missing does not fail — it gets invented, as root.**
