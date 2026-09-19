@@ -248,32 +248,52 @@ case "$RDP_MODE" in
 esac
 
 # ---------------------------------------------------------------- 6. infra addresses
-say "6/10  infra host + /etc/hosts"
+say "6/10  infra host + name resolution"
 INFRA_IP="$(getent hosts "$INFRA_HOST" 2>/dev/null | awk '{print $1; exit}' || true)"
 [ -z "$INFRA_IP" ] && die "cannot resolve $INFRA_HOST — is it powered on and on this LAN?
        (mDNS is provided by avahi-daemon/libnss-mdns, installed above; a fresh
         install may need a moment, or the host may simply be down)"
 info "$INFRA_HOST -> $INFRA_IP"
-# ⚠️ Containers do NOT read the host's /etc/hosts and Docker's DNS does not
-# resolve .local names — the runners reach the infra host through `extra_hosts`
-# entries the agent generates from this name. But the AGENT itself (a host
-# process) resolves afl-mongodb through /etc/hosts, so both must exist.
-for name in afl-mongodb afl-minio afl-postgres afl-extracts; do
-    if grep -qE "^[0-9.]+[[:space:]].*\b${name}\b" /etc/hosts 2>/dev/null; then
-        cur="$(awk -v n="$name" '$0 !~ /^#/ && $0 ~ n {print $1; exit}' /etc/hosts)"
-        if [ "$cur" != "$INFRA_IP" ]; then
-            info "updating $name: $cur -> $INFRA_IP"
-            # Escape the dots: unescaped they are regex wildcards, so
-            # 192.168.68.115 would also match 192.168.68x115. Harmless here by
-            # luck, wrong in principle, and this file is a template others copy.
-            cur_re="$(printf '%s' "$cur" | sed 's/\./\\./g')"
-            sh_run "sudo sed -i 's/^${cur_re}\\([[:space:]]\\)/${INFRA_IP}\\1/' /etc/hosts"
+
+# ⚠️ This step DELIBERATELY WRITES NOTHING TO /etc/hosts, and that is a fix, not
+# an omission. It used to point all four afl-* names at $INFRA_IP, which was true
+# when one machine held every service and became actively WRONG on 2026-09-13 when
+# MongoDB moved to another host (MinIO stayed) -- and again when afl-extracts
+# followed the OSM role. A dry run on macmini01 on 2026-09-18 showed it about to
+# write afl-mongodb -> the infra host, which has not served Mongo for five days.
+#
+# The fleet deleted these entries on every host for exactly that reason: a name
+# pinned in a file drifts silently, while the SERVER CATALOG (servers.json)
+# resolves each name INDEPENDENTLY at startup, so DHCP and role moves self-heal
+# with no root and no per-host edit. Containers never read the host's /etc/hosts
+# anyway -- the agent generates `extra_hosts` for them -- and the host-side
+# helpers (_env.sh, runner/start) now consult the catalog when a name does not
+# resolve.
+#
+# So this is the cheapest kind of privileged step: the one that was removed. It
+# also drops a `sudo sed` from provisioning. See
+# docs/operations/zero-sudo-operations.md §2 row 8.
+#
+# What remains is a CHECK, because a catalog that cannot resolve its own service
+# names is a provisioning failure worth catching here rather than at first claim.
+if [ "$DRY" = 0 ] && [ -x "$REPO_DIR/.venv/bin/python" ]; then
+    for name in afl-mongodb afl-minio afl-postgres afl-extracts; do
+        _ip="$("$REPO_DIR/.venv/bin/python" -m facetwork.servers --resolve "$name" 2>/dev/null || true)"
+        if [ -n "$_ip" ]; then
+            info "catalog: $name -> $_ip"
+        else
+            warn "catalog cannot resolve $name — check servers.json aliases"
         fi
-    else
-        sh_run "printf '%s\\t%s\\n' '$INFRA_IP' '$name' | sudo tee -a /etc/hosts >/dev/null"
+    done
+    _stale="$(grep -cE "^[0-9.]+[[:space:]].*\bafl-" /etc/hosts 2>/dev/null || true)"
+    if [ "${_stale:-0}" -gt 0 ]; then
+        warn "/etc/hosts still pins $_stale afl-* name(s). The catalog is authoritative;"
+        warn "a pinned entry WINS over it and will drift. Remove them:"
+        warn "  sudo sed -i '/[[:space:]]afl-/d' /etc/hosts"
     fi
-done
-info "afl-* now point at $INFRA_IP"
+else
+    info "[dry] would verify each afl-* name resolves via the server catalog"
+fi
 
 # ---------------------------------------------------------------- 7. docker
 say "7/10  Docker"
