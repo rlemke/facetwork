@@ -107,6 +107,23 @@ something plausible.
 | `sed -i` | GNU takes no arg, BSD requires one (`sed -i ''`) |
 | `rsync` | macOS ships **openrsync**, which rejects many options. Use `--rsync-path=/opt/homebrew/bin/rsync` |
 
+⚠️ **A non-interactive ssh session on macOS does not have Docker on its PATH.**
+Measured on server3: `ssh host 'docker ps'` returns `command not found` while the
+same command works in an interactive shell, because Docker Desktop's PATH entry
+comes from a profile that a non-login shell never reads. It reads exactly like a
+dead daemon. Use an absolute path in any scripted ssh:
+
+```bash
+for c in /usr/local/bin/docker /opt/homebrew/bin/docker \
+         /Applications/Docker.app/Contents/Resources/bin/docker; do
+    [ -x "$c" ] && D="$c" && break
+done
+```
+
+⚠️ **macOS caches name lookups**, so an `/etc/hosts` edit is not in effect when
+the editor exits: `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`.
+Omitting it makes a correct edit look like it did nothing.
+
 ### Rules
 
 9. **Prefer primitives with no dialect** — `wc -c` over `stat`, python over
@@ -159,49 +176,81 @@ Both later rejoined, carrying the exact configuration the cleanup existed to
 remove. They function only because the host-side helpers were separately taught to
 consult the catalog — luck, not design.
 
-28. **Scope a cleanup to every host in the CATALOG, not to the live set.** A host
+15. **Scope a cleanup to every host in the CATALOG, not to the live set.** A host
     that is down, parked, or unprovisioned is precisely the one that will rejoin
     later with the old configuration intact.
-29. **Prefer a check that runs on every start over a one-time sweep.** The
+16. **Prefer a check that runs on every start over a one-time sweep.** The
     provisioning script now warns when `/etc/hosts` still pins an `afl-*` name, so
     a returning host reports its own staleness instead of waiting for someone to
     remember it.
 
+⚠️ **Not every pinned entry is stale — the same sweep needs per-line judgement.**
+Finishing the cleanup across the two macOS hosts, a blanket
+`sed -i '/afl-/d' /etc/hosts` would have been wrong. Each line had to be decided
+on evidence:
+
+| line | verdict | how it was decided |
+|---|---|---|
+| `192.168.68.112 afl-mongodb afl-minio` | stale | probed both ports on `.112` — **closed** |
+| `127.0.0.1 afl-postgres` | stale | 5432 **closed** locally on both hosts; catalog says `.117` |
+| `192.168.68.127 afl-mongodb` (server3) | correct, redundant | matches the catalog |
+| `127.0.0.1 afl-hadoop-{hdfs,yarn}` | **left alone** | not in the catalog at all; HDFS is not deployed |
+
+A name pointed at loopback is legitimate *when the service really runs there* — so
+the deciding test is whether the port answers, not whether the line looks unusual.
+And one correct-looking result is not the same as a correct rule: server3
+resolves `afl-minio` to `127.0.0.1` **because server3 is the MinIO host**, which is
+proper self-resolution, not drift.
+
+17. **Decide a cleanup line-by-line against a probe, not by pattern.** A pattern
+    matches the shape; only a probe knows whether the thing is still true.
+
 ## 5. Docker, mounts and bind sources
 
-15. **A bind whose source is missing does not fail — it gets invented, as root.**
+18. **A bind whose source is missing does not fail — it gets invented, as root.**
     23 such binds created `root:root` directories on four hosts, breaking domain
     installs weeks later. `create_host_path: false` is right for binds that
     *must* exist and wrong for optional ones (it would stop every runner on a
     host with no checkouts); pre-create them as the user instead.
-16. **Name filesystems by UUID.** Device names are context-dependent — measured:
+19. **Name filesystems by UUID.** Device names are context-dependent — measured:
     the same filesystem was `nvme1n1p4` before a reboot and `nvme0n1p4` after.
-17. **Order the container runtime after the mount** (`RequiresMountsFor`), and
+20. **Order the container runtime after the mount** (`RequiresMountsFor`), and
     verify by *rebooting*: `mount -a` tests parsing, not ordering. A passing
     reboot shows the mount timestamp **before** the daemon's.
-18. **On macOS there is no such ordering.** A volume reattached under a running
+21. **On macOS there is no such ordering.** A volume reattached under a running
     Docker leaves its file-sharing layer stale: `test -d` succeeds from the shell
     while the daemon reports `not a directory`. Only a daemon restart clears it.
-19. **`systemctl disable` does not keep a unit out.** It only prevents starting at
+22. **`systemctl disable` does not keep a unit out.** It only prevents starting at
     *boot*; a `restart` sweep starts it anyway. Use `stop` plus `mask` — and note
     `mask` fails if a real unit file occupies the path, so rename it instead.
+23. ⚠️ **A flag that reads as "excluded" usually gates something narrower.**
+    `joined: false` in `servers.json` controls **addressability** — deploy
+    targeting (`_remote.sh`) and name resolution (`_env.sh`, `_catalog_ip`) — and
+    **not participation**. A host set false still runs its agent, applies
+    fleet_config, starts runners and claims work; it is simply invisible to every
+    ops sweep, so it silently misses fixes. Measured: atopnuc02 applied v217 with
+    2/2 runners up while no host in the fleet could ssh to it. Same shape as the
+    rule above, and the same defence: **check the OUTCOME you care about** (is it
+    running work? does it survive a reboot?) rather than trusting a flag's name.
+    `fw fleet status` now reports the one combination that means *running
+    unmanaged* — live runners plus `joined: false`.
 
 ---
 
 ## 6. Distributed execution
 
-20. **Reclaim does not stop the original execution.** At-least-once plus an
+24. **Reclaim does not stop the original execution.** At-least-once plus an
     uncancelled original turns recovery into amplification: four concurrent 92 GB
     copies once ran here, each making the others slower. Handlers must be
     idempotent in the **cost** sense, not only the correctness sense.
-21. **A timeout read from the observer's environment cannot be tuned by the
+25. **A timeout read from the observer's environment cannot be tuned by the
     observed.** A domain raised its own execution budget to 8h; the reaper
     timeout lives in whichever runner is *doing the reaping*, so ~130 other
     runners still reclaimed it at 120s.
-22. **A wedged host is worse than a dead one.** It holds memory, keeps its
+26. **A wedged host is worse than a dead one.** It holds memory, keeps its
     containers `Up`, and every reclaim adds load to the host least able to bear
     it.
-23. ⚠️ **A per-item tolerance converts a total failure into a silent partial.**
+27. ⚠️ **A per-item tolerance converts a total failure into a silent partial.**
     The fleet agent starts each domain runner and, on failure, logs
     `WARNING … start failed (exit 1); continuing — another host can serve this
     domain's tasks` and moves on. That is right when one domain is broken. When
@@ -211,7 +260,7 @@ consult the catalog — luck, not design.
     scoped per item needs an aggregate check: *did any of them succeed?* The
     image-level check (`_containers_on_wrong_image`) is what finally made it
     visible, because it asks about the outcome rather than the attempts.
-24. **Changing shared state that older code validates needs
+28. **Changing shared state that older code validates needs
     expand/migrate/contract.** Deploy tolerant code everywhere *first*. An index
     filter changed live took this fleet from 108 runners to 23.
 
@@ -248,23 +297,57 @@ Defect 3 is the subtlest: the guard looks defensive. It protects against
 itself invented. **No endpoint is an answerable state; a wrong one is not** — unset
 it and say so.
 
+⚠️ **A pipe throws away the exit status you wanted**, and every mechanism for
+recovering it differs between the two shells in use here. All four facts measured
+2026-09-18, after this bit me twice in one session:
+
+```bash
+false | sed 's/x/y/'; echo $?      # -> 0   $? is SED's status, not false's
+```
+
+| | bash | zsh |
+|---|---|---|
+| array name | `PIPESTATUS` | **`pipestatus`** |
+| index of the first command | `[0]` | **`[1]`** |
+| reading the *wrong* name gives | — | **empty string, not an error** |
+
+So `echo "exit=${PIPESTATUS[0]}"` in zsh prints `exit=` and looks like a
+successful check with an odd format. Worse, the array is **reset by the next
+command**, so it must be captured on the line immediately after the pipe — my
+first attempt at measuring this read `echo`'s own status and reported a passing
+result for a failing command.
+
+The reliable form needs no array at all: send output to a file and read `$?`
+directly.
+
+```bash
+./fw fleet allow-restart --check >/tmp/ck.out 2>/tmp/ck.err; rc=$?
+```
+
+That is how the `--check` exit code was finally verified as **1** after a piped
+harness had reported **0** for the same failing run.
+
 ### Rules
 
-24. **`||` every command substitution whose command may legitimately decline.**
+
+29. **Never read an exit status through a pipe.** Redirect to a file and read
+    `$?`. If you must use the array, use the right name *and* base for the shell
+    you are in, and capture it on the very next line.
+30. **`||` every command substitution whose command may legitimately decline.**
     Exit 1 meaning "no result" and exit 1 meaning "I broke" are indistinguishable
     to `set -e`; the guard is what separates them.
-25. ⚠️ **This bug class defeats the obvious audit.** The file holding the
+31. ⚠️ **This bug class defeats the obvious audit.** The file holding the
     assignment does not itself `set -e` — the *caller* does. A sweep over "files
     with `set -e`" cannot see it. Audit by the shape of the assignment, across all
     files. (Done here: 6 such assignments under `scripts/lib`; exactly one could
     decline, and the other five *should* abort.)
-26. **A script that can exit non-zero must not be able to do so silently.** An
+32. **A script that can exit non-zero must not be able to do so silently.** An
     `ERR` trap (with `set -o errtrace`, so it also fires inside functions) that
     names the exit code, line and `$BASH_COMMAND` costs six lines and converts an
     untriageable host into a one-line diagnosis. `runner/start` now carries one —
     it named this bug on the **first** reconcile after deployment.
-27. **A "restore the previous value" branch must handle there being none.** Guarding the restore leaves whatever the probe set — which is the probe's guess, not the system's state.
-28. **Write the test that strips the fix.** A regression test asserting the good
+33. **A "restore the previous value" branch must handle there being none.** Guarding the restore leaves whatever the probe set — which is the probe's guess, not the system's state.
+34. **Write the test that strips the fix.** A regression test asserting the good
     path passes is compatible with the fix having done nothing; the companion case
     removes the guard and asserts the caller dies *and that stderr is empty*. Same
     rule as §1.1, applied to tests.

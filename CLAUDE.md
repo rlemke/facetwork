@@ -31,7 +31,7 @@ fw db postgis vacuum          # nested groups work
 Groups: **`install`** (toolchain/venv/examples/**check**) · **`single`** (local dev stack:
 up/down/rebuild) · **`db`** (mongo/postgres/import-pg/check + `postgis` subgroup) ·
 **`runner`** (start/stop/drain/list/**scale**) · **`fleet`** (status/get/set/secret/
-agent/**rollout**/**scale**/**registry-setup**/rolling-deploy/simulate) · **`ffl`**
+agent/**rollout**/**scale**/**registry-setup**/**allow-restart**/rolling-deploy/simulate) · **`ffl`**
 (compile/run/publish/seed/scaffold/catalog/**bake-envs**/**lsp**) · **`maint`** (disk-guard/**disk-recover**/repair-workflow/
 terminate-workflow/cache-index/**purge-servers**/**dead-letters**/**unsatisfiable**) · **`svc`** (dashboard/mcp/grafana/maps/**stocks-snapshot**/**osm-extracts**/**osm-replicate**/**osm-watchdog**/**osm-admin-regen**) ·
 **`util`** (check-doc-links/serve-map/thesis-pdf/**memory-sync**/**gen-compose**/**ffl-audit**) ·
@@ -63,6 +63,24 @@ Notes for working with `fw`:
   with no repo `.venv` (system Homebrew python is PEP 668-locked) needs `fw install repo`
   first to create one; if `FW_ENV_ROOT` (default `/opt/fw_envs`) isn't writable,
   point it somewhere that is and export the same value for the runners.
+- **`fw fleet allow-restart [--user U] [--check] [--uninstall]`** — install a polkit
+  rule so this host's owner can restart/stop/start **and** enable/disable the
+  fleet-agent with **no sudo**. Run it ONCE per host, under sudo, at provisioning
+  time; every later reload works over plain ssh. The agent is a systemd *system*
+  unit, so without this every "reload the agent after a code change" needs an
+  interactive password on that specific machine — which does not scale past a
+  handful of hosts. Deliberately narrow: one user, one unit, an enumerated verb
+  list. ⚠️ **`mask`/`unmask` are excluded on purpose** — making a unit unstartable
+  belongs with the administrator, not routine ops. ⚠️ **`--check` verifies as the
+  USER, never root** (root is always permitted by polkit, so a privileged check
+  proves nothing), and it reports **two** dimensions: an unprivileged restart AND
+  `is-enabled`. Boot persistence is a *different* polkit action
+  (`manage-unit-files`), so a host can pass the restart check and still never
+  return from a reboot — measured on atopnuc02, which ran for days active and
+  disabled with nothing reporting it. Exits non-zero naming whichever leg failed.
+  Refuses on macOS, where launchd already needs no sudo (`launchctl kickstart -k
+  gui/$UID/com.facetwork.fleet-agent`). Full rationale and the 10 -> 1000 machine
+  path: [docs/operations/zero-sudo-operations.md](docs/operations/zero-sudo-operations.md).
 - **`domains.json` (catalog) + `fw util gen-compose`** — the domain/example set is
   defined ONCE in `domains.json`, not hardcoded in scripts. Each domain entry:
   `repo`, `extras`, `description`, and (for domains with a compose runner)
