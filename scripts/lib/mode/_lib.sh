@@ -68,6 +68,16 @@ _mode_resolve_ip() {
     # That is why this host had an IP pinned by hand, and why the pin silently
     # went stale when the machine changed subnet.
     local host="$1" ip=""
+    # An afl-* name is a CATALOG ALIAS, not a DNS name -- since the /etc/hosts pins
+    # were removed fleet-wide (the catalog resolves each service independently)
+    # there is nothing for dscacheutil to answer with, and this used to return
+    # empty and report a healthy cluster UNREACHABLE. Ask the catalog first.
+    case "$host" in
+        afl-*)
+            ip="$("$FW_ROOT/.venv/bin/python" -m facetwork.servers --resolve "$host" 2>/dev/null || true)"
+            if [ -n "$ip" ]; then echo "$ip"; return 0; fi
+            ;;
+    esac
     ip="$(dscacheutil -q host -a name "$host" 2>/dev/null \
           | awk '/^ip_address:/ && $2 !~ /^127\./ {print $2; exit}')"
     [ -z "$ip" ] && ip="$(ping -c1 -t1 "$host" 2>/dev/null \
@@ -98,6 +108,17 @@ _mode_runner_containers() { docker ps -a --format '{{.Names}}' 2>/dev/null | gre
 # (it lives on a different machine — maxpro-standalone §3.6). Python, never sed.
 _mode_set_hosts() {
     local ip="$1"; [ -z "$ip" ] && return 0
+    # ⚠️ "none" means DO NOT PIN. Writing both names to one IP was correct when a
+    # single machine held every service and is now actively wrong -- it would point
+    # afl-mongodb at the host that stopped serving Mongo on 2026-09-13. In cluster
+    # mode the SERVER CATALOG resolves each name independently, and a pinned entry
+    # WINS over it, so pinning re-creates the drift the catalog removed. Local mode
+    # still pins 127.0.0.1, where it is genuinely load-bearing (it is what points
+    # the host-side CLI at this machine's own Mongo/MinIO instead of the cluster's).
+    if [ "$ip" = "none" ]; then
+        echo "  /etc/hosts: not pinned (server catalog resolves afl-* per service)"
+        return 0
+    fi
     read -r -d '' _hp <<'PY' || true
 import sys
 ip = sys.argv[1]
@@ -151,11 +172,37 @@ _mode_apply() {
     # the value written to .env.fleet stays correct across reboots onto a new IP.
     local container_ip; container_ip="$(_mode_container_ip "$infra_host")"
 
-    local reachable=0
-    { [ -n "$infra_ip" ] && _mode_mongo_reachable "$infra_ip"; } && reachable=1
+    # ⚠️ Probe the MONGO host, not the infra host. Since 2026-09-13 there is no
+    # single infra machine: MongoDB moved off it and MinIO stayed, so probing
+    # $infra_ip for :27017 asks the wrong box. Measured 2026-09-18: this made
+    # `fw mode status` report Mongo UNREACHABLE while the cluster was healthy, and
+    # would have made `fw mode cluster` REFUSE on return from a trip -- the exact
+    # stranding the guard exists to prevent, caused by the guard itself.
+    local mongo_host mongo_ip reachable=0
+    mongo_host="$(printf '%s' "$mongo" | sed -E 's|^mongodb://||; s|/.*$||; s|:[0-9]+$||; s|^.*@||; s|,.*$||')"
+    # ⚠️ Resolve with the catalog of the mode we are switching INTO, not the one
+    # currently active. Measured 2026-09-18 while in local mode: previewing a
+    # switch to cluster resolved afl-mongodb through servers.local.json and got
+    # THIS MACHINE, so the guard passed by probing MaxPro's own Mongo. On return
+    # from a trip with the cluster still powered off it would have passed again and
+    # switched anyway -- stranding the box, which is the one thing this guard
+    # exists to prevent. A guard that consults the wrong world does not guard.
+    local _saved_sf="${FW_SERVERS_FILE:-}"
+    case "$server_catalog" in
+        none)  export FW_SERVERS_FILE="$FW_ROOT/servers.json" ;;
+        local) [ -f "$FW_ROOT/servers.local.json" ] \
+                 && export FW_SERVERS_FILE="$FW_ROOT/servers.local.json" \
+                 || export FW_SERVERS_FILE="$FW_ROOT/servers.local.json.disabled" ;;
+    esac
+    mongo_ip="$(_mode_resolve_ip "$mongo_host" 2>/dev/null || true)"
+    if [ -n "$_saved_sf" ]; then export FW_SERVERS_FILE="$_saved_sf"; else unset FW_SERVERS_FILE; fi
+    # A catalog name resolves through the catalog; an IP resolves to itself.
+    [ -z "$mongo_ip" ] && mongo_ip="$mongo_host"
+    { [ -n "$mongo_ip" ] && _mode_mongo_reachable "$mongo_ip"; } && reachable=1
 
     echo "Switch to mode '$target':"
-    printf '  %-14s %s\n' infra "$infra_host (${infra_ip:-unresolved})  Mongo:27017 $([ "$reachable" = 1 ] && echo 'reachable ✓' || echo 'UNREACHABLE ✗')"
+    printf '  %-14s %s\n' infra "$infra_host (${infra_ip:-unresolved})"
+    printf '  %-14s %s\n' mongo-probe "$mongo_host (${mongo_ip:-unresolved}):27017 $([ "$reachable" = 1 ] && echo 'reachable ✓' || echo 'UNREACHABLE ✗')"
     printf '  %-14s %s\n' containers "afl-* -> ${container_ip:-unresolved}"
     printf '  %-14s %s\n' registry "$reg"
     printf '  %-14s %s\n' mongo "$mongo"
@@ -210,12 +257,61 @@ _mode_apply() {
         echo "  sourced fleet-secrets.env (API keys → runners)"
     fi
 
+    # ⚠️ RESTART THE LONG-RUNNING AGENT FIRST, or it undoes this switch.
+    # The agent resolves its Mongo ONCE at start and then builds every runner's
+    # compose environment from `fleet_config` in THAT database -- it never reads
+    # .env.fleet (see CLAUDE.md). So a mode switch that only rewrites .env.fleet
+    # leaves a daemon still pointed at the old world, which re-reconciles the
+    # runners straight back. Measured 2026-09-18: after `fw mode local`,
+    # **19 of 23 runners still had FW_MONGODB_URL pointing at the CLUSTER**, which
+    # was about to be powered off for a week. The one-shot `agent apply` below
+    # cannot fix that on its own; the daemon has to be re-exec'd so it re-resolves
+    # afl-mongodb through the newly-active catalog.
+    echo "=== restarting the fleet-agent so it re-resolves infra for '$target' ==="
+    if [ "$(uname -s)" = "Darwin" ]; then
+        if launchctl kickstart -k "gui/$(id -u)/com.facetwork.fleet-agent" 2>/dev/null; then
+            echo "  fleet-agent restarted (launchd)"
+        else
+            echo "  NOTE: no launchd fleet-agent to restart (or it is not loaded)."
+        fi
+    else
+        if systemctl restart facetwork-fleet-agent 2>/dev/null; then
+            echo "  fleet-agent restarted (systemd)"
+        else
+            echo "  NOTE: could not restart facetwork-fleet-agent — it may re-apply the" >&2
+            echo "        PREVIOUS mode. Run: sudo systemctl restart facetwork-fleet-agent" >&2
+        fi
+    fi
+
     echo "=== reconciling runners against '$target' infra (fleet agent apply) ==="
     FW_DATA_DIR="$data_dir" "$FW_LIB/fleet/agent" apply --data-dir "$data_dir" || {
         echo "ERROR: fleet agent apply failed — env is set but runners were not recreated." >&2
         echo "       Fix the cause and re-run 'fw mode $target', or 'fw mode $(_mode_active)' to revert." >&2
         return 1
     }
+
+    # Verify the OUTCOME, not the intent: count runners whose compose env actually
+    # points at this mode's Mongo. A switch that reports success while most runners
+    # address the other world is the failure this check exists to catch.
+    local want_ok=0 want_bad=0 _u
+    for _c in $(_mode_runner_containers); do
+        _u="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$_c" 2>/dev/null \
+              | grep -E '^FW_MONGODB_URL=' | cut -d= -f2-)"
+        case "$_u" in
+            *"${mongo_ip:-@@none@@}"*|*"$mongo_host"*|*host-gateway*|*host.docker.internal*)
+                want_ok=$((want_ok+1)) ;;
+            "") : ;;
+            *) want_bad=$((want_bad+1)) ;;
+        esac
+    done
+    printf '  runners addressing %s: %d ok' "$target" "$want_ok"
+    [ "$want_bad" -gt 0 ] && printf ', %d STILL ON THE OTHER WORLD' "$want_bad"
+    echo
+    if [ "$want_bad" -gt 0 ]; then
+        echo "  ⚠️ $want_bad runner(s) still point elsewhere. The fleet-agent may have" >&2
+        echo "     re-applied the previous mode. Re-run 'fw mode $target' once the agent" >&2
+        echo "     has restarted, and check: fw mode status" >&2
+    fi
 
     echo "$target" > "$_MODE_MARKER"
     echo

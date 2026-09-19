@@ -40,9 +40,32 @@ fi
 
 echo
 echo "Reachability:"
-if [ -n "$probe_ip" ]; then
+# ⚠️ Probe the MONGO host, not the infra host. There has been no single infra
+# machine since 2026-09-13 (Mongo moved off it, MinIO stayed), so probing the
+# infra IP for :27017 asks the wrong box and reported UNREACHABLE against a
+# perfectly healthy cluster. Derive the host from FW_MONGODB_URL and resolve it
+# the way everything else does -- through the server catalog.
+_m_url="$(grep -m1 -E '^FW_MONGODB_URL=' "$FW_ROOT/.env.fleet" 2>/dev/null | cut -d= -f2-)"
+_m_host="$(printf '%s' "$_m_url" | sed -E 's|^mongodb://||; s|/.*$||; s|:[0-9]+$||; s|^.*@||; s|,.*$||')"
+_m_ip=""
+[ -n "$_m_host" ] && _m_ip="$(_mode_resolve_ip "$_m_host" 2>/dev/null || true)"
+[ -z "$_m_ip" ] && _m_ip="$_m_host"
+if [ -n "$_m_ip" ]; then
+    if _mode_mongo_reachable "$_m_ip"; then s="reachable ✓"; else s="UNREACHABLE ✗"; fi
+    printf '  %-18s %s\n' "Mongo :27017"  "$_m_host ($_m_ip) → $s"
+elif [ -n "$probe_ip" ]; then
     if _mode_mongo_reachable "$probe_ip"; then s="reachable ✓"; else s="UNREACHABLE ✗"; fi
     printf '  %-18s %s\n' "Mongo :27017"  "$probe_ip → $s"
+fi
+# MinIO is a SEPARATE service on a SEPARATE host; say so rather than implying the
+# one Mongo line covers the fleet's storage too.
+_s3="$(grep -m1 -E '^FW_S3_ENDPOINT=' "$FW_ROOT/.env.fleet" 2>/dev/null | cut -d= -f2-)"
+_s3_host="$(printf '%s' "$_s3" | sed -E 's|^https?://||; s|/.*$||; s|:[0-9]+$||')"
+_s3_port="$(printf '%s' "$_s3" | sed -nE 's|.*:([0-9]+).*|\1|p')"; : "${_s3_port:=9000}"
+if [ -n "$_s3_host" ]; then
+    _s3_ip="$(_mode_resolve_ip "$_s3_host" 2>/dev/null || true)"; [ -z "$_s3_ip" ] && _s3_ip="$_s3_host"
+    if nc -z -G 3 "$_s3_ip" "$_s3_port" >/dev/null 2>&1; then s="reachable ✓"; else s="UNREACHABLE ✗"; fi
+    printf '  %-18s %s\n' "MinIO :$_s3_port" "$_s3_host ($_s3_ip) → $s"
 fi
 
 echo

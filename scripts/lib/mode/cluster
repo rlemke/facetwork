@@ -4,7 +4,25 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../_helpers/_bootstrap.sh"
 source "$FW_LIB/mode/_lib.sh"
 
-DRY=0; [ "${1:-}" = "--dry" ] && DRY=1
+# ⚠️ REJECT an unknown argument. This used to be a bare `[ "$1" = "--dry" ]`, so
+# `fw mode local --dry-run` silently performed the REAL switch -- flipping infra
+# and recreating 23 containers on a command the operator believed was a preview.
+# Measured 2026-09-18. A flag that is ignored is worse than one that errors,
+# especially where the difference is "preview" vs "change the whole host".
+DRY=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry|--dry-run|-n) DRY=1; shift ;;
+        -h|--help)
+            echo "Usage: fw mode cluster [--dry]"
+            echo "  --dry, --dry-run, -n   print what would change; change nothing"
+            exit 0 ;;
+        *)
+            echo "fw mode cluster: unknown argument '$1'" >&2
+            echo "  did you mean --dry ?  (nothing was changed)" >&2
+            exit 2 ;;
+    esac
+done
 # This host becomes a plain runner against the shared infra host. REFUSES if that
 # host is unreachable (see _mode_apply) so you can't strand the box on a dead cluster.
 _mode_apply cluster "$DRY"
