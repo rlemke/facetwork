@@ -159,7 +159,7 @@
       "aliases": [
         "macmini01"
       ],
-      "purpose": "DROPPED FROM THE FLEET 2026-09-15. Intel Core 2 Duo P8800 (2009): has SSSE3 and CX16 but NO SSE4.2 and NO POPCNT, so it does not meet x86-64-v2. numpy in the runner image is built to that baseline, so `pip install numpy` succeeds there and `import numpy` raises. Handler modules import numpy INSIDE functions, so preload(verify=True) cannot see it: the host came up healthy, advertised 265 facets, and would have failed at dispatch on any that touched numpy. Re-joining needs an image whose numpy is built for a lower baseline.",
+      "purpose": "REJOINED 2026-09-18 as an fw.*-ONLY host. Intel Core 2 Duo P8800 (2009): has SSSE3 and CX16 but NO SSE4.2 and NO POPCNT, so it does not meet x86-64-v2. The image's numpy is built to that baseline, so pip install succeeds and `import numpy` raises RuntimeError. Handler modules import numpy INSIDE functions, so preload(verify=True) could not see it and the host advertised 265 facets it would have failed at dispatch. Fixed by HOST-LEVEL ADMISSION (v218): core_stack_unusable() finds numpy installed-but-unimportable and the runner drops every non-ambient registration, keeping only the handler-free fw.* library. Measured after rejoin: 25 facets advertised, ALL fw.* (file 12, http 4, archive 3, exec 2, compare 2, provenance 2), 0 domain facets. It is an honest limited host rather than a liability. A domain role will never run here until the image's numpy is built for a lower baseline.",
       "group": "runner",
       "infra": false,
       "ip_pin": null,
@@ -170,15 +170,14 @@
         "host_ram_gb": 3,
         "container_memory_gb": 3.26,
         "scratch_path": "/home/ralph_lemke/fw_data",
-        "scratch_total_gb": 440,
-        "scratch_free_gb": 416,
+        "scratch_total_gb": 457,
+        "scratch_free_gb": 413,
         "credentials": [
           "CENSUS_API_KEY",
           "ANTHROPIC_API_KEY"
         ],
-        "note": "Smallest memory in the fleet (3.26 GiB) and correctly tiered light - but note it has 416 GB of scratch, 5x macmini03's 84 GB. The disk is on the box that cannot use it and absent from the box whose tier it caps."
-      },
-      "joined": false
+        "note": "MEASURED 2026-09-18 after rejoin. 3.26 GiB Docker limit puts it in the light tier by memory, which is the gate -- its 457 GB of scratch does not qualify it for anything higher. Advertises ONLY the 25 built-in fw.* facets by design (see purpose); its 2 runners are ffl-runner + generalist."
+      }
     },
     {
       "name": "macmini03.local",
