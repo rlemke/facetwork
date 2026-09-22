@@ -187,3 +187,85 @@ class TestRepairResetContainerStepNotEventTransmit:
         reloaded = store.get_step(block.id)
         assert reloaded.state != StepState.EVENT_TRANSMIT
         assert reloaded.state == StepState.BLOCK_EXECUTION_CONTINUE
+
+
+@needs_mongomock
+class TestRepairAncestorWalkResolvesStatePerAncestor:
+    """The container-chain walk advances by ``block_id or container_id`` and so
+    passes THROUGH the andThen blocks between a failed statement and the
+    workflow root. Each ancestor must resume at ITS OWN continue state: a
+    block put into ``STATEMENT_BLOCKS_CONTINUE`` has no sub-blocks to wait on
+    and never leaves it.
+
+    Measured 2026-09-22 on a California GraphHopper build: repair reset the
+    outer andThen to the statement state, and every runner whose sweep touched
+    it spun the resume loop at ~14k Mongo queries/s with its poll thread
+    wedged and its heartbeat still green.
+    """
+
+    def _chain(self, store):
+        """workflow -> outer andThen -> statement -> inner andThen -> leaf,
+        every one of them in STATEMENT_ERROR (a descendant failed)."""
+        from facetwork.runtime.states import StepState
+        from facetwork.runtime.step import StepDefinition
+        from facetwork.runtime.types import ObjectType
+
+        wf = StepDefinition.create(
+            workflow_id="wf-repair-chain", object_type=ObjectType.WORKFLOW, facet_name="Build"
+        )
+        outer = StepDefinition.create(
+            workflow_id="wf-repair-chain",
+            object_type=ObjectType.AND_THEN,
+            facet_name="",
+            container_id=wf.id,
+            root_id=wf.id,
+        )
+        stmt = StepDefinition.create(
+            workflow_id="wf-repair-chain",
+            object_type=ObjectType.VARIABLE_ASSIGNMENT,
+            facet_name="osm.cache.GraphHopper.UnitedStates.California",
+            block_id=outer.id,
+            container_id=wf.id,
+            root_id=wf.id,
+        )
+        inner = StepDefinition.create(
+            workflow_id="wf-repair-chain",
+            object_type=ObjectType.AND_THEN,
+            facet_name="",
+            container_id=stmt.id,
+            root_id=wf.id,
+        )
+        leaf = StepDefinition.create(
+            workflow_id="wf-repair-chain",
+            object_type=ObjectType.VARIABLE_ASSIGNMENT,
+            facet_name="osm.ops.GraphHopper.BuildGraph",
+            block_id=inner.id,
+            container_id=stmt.id,
+            root_id=wf.id,
+        )
+        steps = [wf, outer, stmt, inner, leaf]
+        for s in steps:
+            s.mark_error(RuntimeError("HeadObject 400"))
+            assert s.state == StepState.STATEMENT_ERROR
+            store.save_step(s)
+        return {s.id: s for s in steps}, wf, outer, stmt, inner, leaf
+
+    def test_every_ancestor_resumes_at_its_own_continue_state(self, store):
+        from facetwork.runtime.states import StepState
+
+        step_by_id, wf, outer, stmt, inner, leaf = self._chain(store)
+        reset: list[str] = []
+
+        store._reset_failed_step_and_ancestors(leaf, step_by_id, reset)
+
+        got = {name: store.get_step(s.id).state for name, s in
+               (("leaf", leaf), ("inner", inner), ("stmt", stmt), ("outer", outer), ("wf", wf))}
+        assert got["leaf"] == StepState.EVENT_TRANSMIT
+        assert got["inner"] == StepState.BLOCK_EXECUTION_CONTINUE
+        assert got["stmt"] == StepState.STATEMENT_BLOCKS_CONTINUE
+        assert got["outer"] == StepState.BLOCK_EXECUTION_CONTINUE, (
+            "the outer andThen is reached through the CONTAINER chain, but it is a "
+            "block: in STATEMENT_BLOCKS_CONTINUE it has no sub-blocks and spins forever"
+        )
+        assert got["wf"] == StepState.STATEMENT_BLOCKS_CONTINUE
+        assert set(reset) == {inner.id, stmt.id, outer.id, wf.id}

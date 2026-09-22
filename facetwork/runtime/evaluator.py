@@ -1864,11 +1864,16 @@ class Evaluator:
             if ancestor is None:
                 break
             if ancestor.state == StepState.STATEMENT_ERROR:
-                resume_state = (
-                    StepState.MIXIN_BLOCKS_CONTINUE
-                    if is_mixin_sub_step(immediate_child)
-                    else StepState.STATEMENT_BLOCKS_CONTINUE
-                )
+                # This walk advances by ``block_id or container_id`` and so
+                # passes through andThen blocks; a block must resume at its
+                # OWN continue state or it spins forever in the statement
+                # one (see MongoStore._walk_errored_ancestors).
+                if ancestor.is_block:
+                    resume_state = StepState.BLOCK_EXECUTION_CONTINUE
+                elif is_mixin_sub_step(immediate_child):
+                    resume_state = StepState.MIXIN_BLOCKS_CONTINUE
+                else:
+                    resume_state = StepState.STATEMENT_BLOCKS_CONTINUE
                 ancestor.state = resume_state
                 ancestor.transition.current_state = resume_state
                 ancestor.transition.clear_error()

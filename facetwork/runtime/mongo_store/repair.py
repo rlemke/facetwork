@@ -99,7 +99,19 @@ class RepairMixin(_MixinBase):
             if ancestor is None:
                 break
             if ancestor.state == StepState.STATEMENT_ERROR:
-                self._set_step_state(ancestor, target_state)
+                # The container chain advances by ``block_id or container_id``,
+                # so it passes THROUGH the andThen blocks between a statement
+                # and the workflow root. A block put into the *statement*
+                # continue state has no sub-blocks of its own to wait for and
+                # never leaves it: measured 2026-09-22, one such block spun the
+                # resume loop at 14k Mongo queries/s on every runner that swept
+                # it, with the poll thread wedged and the heartbeat still
+                # green. The target is a property of the ANCESTOR, not of the
+                # chain that reached it.
+                resolved = (
+                    StepState.BLOCK_EXECUTION_CONTINUE if ancestor.is_block else target_state
+                )
+                self._set_step_state(ancestor, resolved)
                 ancestors_reset.append(ancestor.id)
             current_id = advance(ancestor)
 
