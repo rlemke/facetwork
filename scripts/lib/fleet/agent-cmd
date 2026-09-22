@@ -30,6 +30,11 @@ import time
 import uuid as _uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_helpers"))
+# fw execs this file, so the shebang picks the SYSTEM python, which on most
+# fleet hosts has no pymongo. Re-exec under the repo venv before importing it.
+from venv_reexec import ensure_venv  # noqa: E402
+
+ensure_venv(__file__, "pymongo")
 from _dotenv import load_env  # noqa: E402
 import _fleet_lib  # noqa: E402
 
