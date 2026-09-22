@@ -50,6 +50,16 @@ _FOREACH_LIMIT_ATTR = "_foreach_limit"
 _FOREACH_STALL_GRACE_MS = 60_000
 
 
+
+def _containing_facet_name_of(context, step) -> str | None:
+    """Qualified facet name that owns block ``step`` (its container's facet)."""
+    if not step.container_id:
+        return None
+    container = context.persistence.get_step(step.container_id)
+    if container is None:
+        return None
+    return container.facet_name or None
+
 class BlockExecutionBeginHandler(StateHandler):
     """Handler for state.block.execution.Begin.
 
@@ -81,7 +91,10 @@ class BlockExecutionBeginHandler(StateHandler):
         # Build dependency graph
         workflow_inputs = self._get_workflow_inputs()
         graph = DependencyGraph.from_ast(
-            block_ast, workflow_inputs, program_ast=self.context.program_ast
+            block_ast,
+            workflow_inputs,
+            program_ast=self.context.program_ast,
+            containing_facet=_containing_facet_name_of(self.context, self.step),
         )
 
         # Store graph for continue phase
@@ -1013,7 +1026,10 @@ class BlockExecutionContinueHandler(StateHandler):
 
         workflow_inputs = self._get_workflow_inputs()
         graph = DependencyGraph.from_ast(
-            block_ast, workflow_inputs, program_ast=self.context.program_ast
+            block_ast,
+            workflow_inputs,
+            program_ast=self.context.program_ast,
+            containing_facet=_containing_facet_name_of(self.context, self.step),
         )
         self.context.set_block_graph(self.step.id, graph)
         return graph

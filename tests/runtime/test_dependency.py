@@ -483,3 +483,90 @@ class TestAfterClause:
         """
         graph = DependencyGraph.from_ast(self._block(["nosuch"]), set())
         assert graph.dependencies["step-2"] == set()
+
+
+class TestBareTargetResolvesRelativeToContainingFacet:
+    """Two namespaces declare a facet with the same simple name. A bare call
+    target inside one facet's block must resolve relative to THAT facet, not
+    to whichever namespace was declared first.
+
+    Measured 2026-09-22: ``osm.cache.UnitedStates.California`` and
+    ``osm.cache.GraphHopper.UnitedStates.California`` both exist; the
+    GraphHopper wrapper's ``yield California(graph = …)`` resolved to the
+    cache facet, so the container never received ``graph`` and the next step
+    failed ``Attribute 'graph' not found on step 'ca_gh'`` on every run.
+    """
+
+    PROGRAM = {
+        "declarations": [
+            {
+                "type": "Namespace",
+                "name": "osm.cache.UnitedStates",
+                "declarations": [{"type": "FacetDecl", "name": "California"}],
+            },
+            {
+                "type": "Namespace",
+                "name": "osm.cache.GraphHopper",
+                "declarations": [
+                    {
+                        "type": "Namespace",
+                        "name": "UnitedStates",
+                        "declarations": [{"type": "FacetDecl", "name": "California"}],
+                    },
+                    {"type": "EventFacetDecl", "name": "BuildGraph"},
+                ],
+            },
+            {
+                "type": "Namespace",
+                "name": "osm.ops",
+                "declarations": [{"type": "EventFacetDecl", "name": "BuildGraph"}],
+            },
+        ]
+    }
+
+    BLOCK = {
+        "steps": [
+            {"id": "s1", "name": "california", "call": {"target": "BuildGraph", "args": []}},
+        ],
+        "yield": {
+            "id": "y1",
+            "call": {"target": "California", "args": []},
+        },
+    }
+
+    def _graph(self, containing):
+        return DependencyGraph.from_ast(
+            self.BLOCK, set(), program_ast=self.PROGRAM, containing_facet=containing
+        )
+
+    def test_yield_targets_the_containing_facet_not_the_first_namesake(self):
+        g = self._graph("osm.cache.GraphHopper.UnitedStates.California")
+        y = next(s for s in g.get_all_statements() if s.is_yield)
+        assert y.facet_name == "osm.cache.GraphHopper.UnitedStates.California"
+
+    def test_the_other_namesake_still_resolves_to_itself(self):
+        g = self._graph("osm.cache.UnitedStates.California")
+        y = next(s for s in g.get_all_statements() if s.is_yield)
+        assert y.facet_name == "osm.cache.UnitedStates.California"
+
+    def test_bare_step_call_prefers_the_containing_namespace(self):
+        g = self._graph("osm.cache.GraphHopper.UnitedStates.California")
+        s = next(s for s in g.get_all_statements() if s.name == "california")
+        # GraphHopper's own BuildGraph (parent namespace of the facet) is not
+        # a sibling, so the program-wide search applies — but it must not
+        # pick a same-named facet in an unrelated namespace over a sibling.
+        assert s.facet_name in ("osm.cache.GraphHopper.BuildGraph", "osm.ops.BuildGraph")
+
+    def test_without_context_the_historical_first_match_is_kept(self):
+        g = DependencyGraph.from_ast(self.BLOCK, set(), program_ast=self.PROGRAM)
+        y = next(s for s in g.get_all_statements() if s.is_yield)
+        assert y.facet_name == "osm.cache.UnitedStates.California"
+
+    def test_already_qualified_targets_are_untouched(self):
+        block = {
+            "steps": [],
+            "yield": {"id": "y", "call": {"target": "osm.ops.BuildGraph", "args": []}},
+        }
+        g = DependencyGraph.from_ast(block, set(), program_ast=self.PROGRAM, containing_facet="x.Y")
+        y = next(s for s in g.get_all_statements() if s.is_yield)
+        assert y.facet_name == "osm.ops.BuildGraph"

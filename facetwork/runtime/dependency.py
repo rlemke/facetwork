@@ -46,12 +46,24 @@ class DependencyGraph:
     # Optional program AST for qualified facet name resolution
     _program_ast: dict | None = field(default=None, repr=False)
 
+    # Qualified name of the facet whose block this is (e.g.
+    # ``osm.cache.GraphHopper.UnitedStates.California``). Resolution of a
+    # bare call target starts HERE: the facet itself, then its namespace,
+    # then the program. Without it a program that declares the same simple
+    # name in two namespaces resolves every bare reference to whichever
+    # namespace was declared first — measured 2026-09-22: the yield inside
+    # ``osm.cache.GraphHopper.UnitedStates.California`` resolved to
+    # ``osm.cache.UnitedStates.California``, so the container never received
+    # ``graph`` and the next step failed "Attribute 'graph' not found".
+    _containing_facet: str | None = field(default=None, repr=False)
+
     @classmethod
     def from_ast(
         cls,
         block_ast: dict,
         workflow_inputs: set[str],
         program_ast: dict | None = None,
+        containing_facet: str | None = None,
     ) -> "DependencyGraph":
         """Build dependency graph from compiled AST.
 
@@ -59,12 +71,16 @@ class DependencyGraph:
             block_ast: The andThen block AST (dict with 'steps' and 'yield')
             workflow_inputs: Set of valid input parameter names
             program_ast: Optional program AST for qualified facet name resolution
+            containing_facet: Qualified name of the facet that owns this block;
+                bare call targets resolve relative to it first (see
+                ``_resolve_facet_name``)
 
         Returns:
             DependencyGraph for the block
         """
         graph = cls()
         graph._program_ast = program_ast
+        graph._containing_facet = containing_facet
 
         steps = block_ast.get("steps", [])
         yields = block_ast.get("yields", [])
@@ -210,10 +226,54 @@ class DependencyGraph:
         """
         if not self._program_ast or not short_name:
             return short_name
+        if "." in short_name:
+            return short_name  # already qualified
 
+        # 1. The containing facet itself: a yield's target IS the facet whose
+        #    block this is (the validator enforces that), and a facet may be
+        #    called recursively by its bare name.
+        containing = self._containing_facet or ""
+        if containing:
+            ns, _, simple = containing.rpartition(".")
+            if simple == short_name:
+                return containing
+            # 2. A sibling in the containing facet's namespace.
+            if ns and self._declaration_exists(f"{ns}.{short_name}"):
+                return f"{ns}.{short_name}"
+
+        # 3. Anywhere in the program (first match, declaration order) — the
+        #    historical behaviour, kept for cross-namespace bare references.
         declarations = self._program_ast.get("declarations", [])
         result = self._resolve_in_declarations(declarations, short_name, prefix="")
         return result if result else short_name
+
+    def _declaration_exists(self, qualified: str) -> bool:
+        """True if ``qualified`` names a facet/event facet/workflow in the program."""
+        if not self._program_ast:
+            return False
+        parts = qualified.split(".")
+        decls = self._program_ast.get("declarations", [])
+        # Namespaces may be declared as one dotted name (``namespace a.b.c``)
+        # or nested, so match by walking prefixes.
+        i = 0
+        while i < len(parts) - 1:
+            found = None
+            for decl in decls:
+                if decl.get("type") != "Namespace":
+                    continue
+                ns_parts = decl.get("name", "").split(".")
+                if parts[i : i + len(ns_parts)] == ns_parts:
+                    found = decl
+                    i += len(ns_parts)
+                    break
+            if found is None:
+                return False
+            decls = found.get("declarations", [])
+        return any(
+            d.get("type") in ("FacetDecl", "EventFacetDecl", "WorkflowDecl")
+            and d.get("name") == parts[-1]
+            for d in decls
+        )
 
     def _resolve_in_declarations(
         self, declarations: list, short_name: str, prefix: str
