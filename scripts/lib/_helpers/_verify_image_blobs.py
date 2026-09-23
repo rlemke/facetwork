@@ -39,8 +39,20 @@ def verify(registry: str, repo: str, tag: str, want_platforms: list[str]):
     base = f"http://{registry}/v2/{repo}/"
     top = _json(base + "manifests/" + tag)
     # A single-arch push has no "manifests" list; treat the tag itself as the one.
-    entries = top.get("manifests") or [{"digest": tag, "platform": {
-        "architecture": top.get("architecture", "unknown")}}]
+    # Its architecture is NOT on the image manifest (an OCI/Docker v2 manifest
+    # carries no platform) but in the CONFIG blob — reading it off the manifest
+    # reported every single-platform build as "unknown" and refused the flip
+    # (measured 2026-09-22, an arm64-only build on the standalone host).
+    entries = top.get("manifests")
+    if not entries:
+        arch = "unknown"
+        cfg = (top.get("config") or {}).get("digest")
+        if cfg:
+            try:
+                arch = _json(base + "blobs/" + cfg).get("architecture", "unknown")
+            except Exception:  # noqa: BLE001 — leave "unknown"; the blob check below still runs
+                pass
+        entries = [{"digest": tag, "platform": {"architecture": arch}}]
     archs, missing = [], []
     for ent in entries:
         arch = (ent.get("platform") or {}).get("architecture", "unknown")

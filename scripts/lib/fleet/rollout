@@ -68,7 +68,7 @@ _registry_is_local() {
     local rhost="${REGISTRY%%:*}" me
     me="$(hostname -s 2>/dev/null || hostname)"
     case "$rhost" in
-        localhost|127.0.0.1|"$me"|"$me".local) return 0 ;;
+        localhost|127.0.0.1|host.docker.internal|"$me"|"$me".local) return 0 ;;
     esac
     return 1
 }
@@ -301,9 +301,16 @@ _verify_platforms() {
     # Delegates to _helpers/_verify_image_blobs.py — which proves each blob has
     # DATA behind it with a 1-byte ranged GET, not just that the platforms are
     # listed. See that file for why a HEAD is not sufficient.
-    local out rc
-    out="$("$PYBIN_ROLLOUT" "$FW_LIB/_helpers/_verify_image_blobs.py" \
-            "$REGISTRY" facetwork-runner "$TAG" "$PLATFORM" 2>&1)"; rc=$?
+    local out rc vreg
+    # Verify through an address THIS host can resolve: `host.docker.internal`
+    # is a container-side name, so a REGISTRY recorded under it is reached
+    # from the host as localhost. And never `out="$(...)"; rc=$?` under
+    # `set -e`: a non-zero substitution in an assignment aborts the script
+    # with NO output — the 2026-09-22 rollout built, pushed, then exited 2
+    # silently before the flip (see the silent-non-zero-exit note).
+    vreg="$REGISTRY"; _registry_is_local && vreg="localhost:${REGISTRY##*:}"
+    if out="$("$PYBIN_ROLLOUT" "$FW_LIB/_helpers/_verify_image_blobs.py" \
+            "$vreg" facetwork-runner "$TAG" "$PLATFORM" 2>&1)"; then rc=0; else rc=$?; fi
     case "$rc" in
         0) echo "  manifest verified: ${out#OK }  (all blobs have data)" ;;
         2) echo "  WARN: $out — continuing" >&2 ;;
