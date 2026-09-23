@@ -141,6 +141,16 @@ services:
     depends_on: !reset []
     environment:
       <<: *fleet-env
+  # graphhopper-web server for the low-zoom builder's routing (see full-stack).
+  # Region/profile come from the fleet_config `graphhopper` role via the agent's
+  # env file; the compose defaults only apply to a hand-run `runner start`.
+  runner-graphhopper:
+    <<: *fleet-runner
+    depends_on: !reset []
+    environment:
+      <<: *fleet-env
+      FW_GRAPHHOPPER_REGION: ${FW_GRAPHHOPPER_REGION:-north-america/us/washington}
+      FW_GRAPHHOPPER_PROFILE: ${FW_GRAPHHOPPER_PROFILE:-car}
 
   runner-noaa-weather:
     <<: *fleet-runner

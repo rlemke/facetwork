@@ -74,6 +74,13 @@ x-osm-s3-env: &osm-s3-env
   # the bulk run at ~1GB and skip the rest. Raise/remove on a larger host.
   FW_OSM_MAX_PBF_MB: "3072"
   FW_OSM_OUTPUT_BASE: s3://${FW_S3_BUCKET:-afl-cache}/osm-output
+  # Where the low-zoom builder ROUTES (osm.Roads.ZoomBuilder / zoom_sbs.py): the
+  # runner-graphhopper service below, by its compose-network name. A literal, not
+  # ${…:-}: the fleet-agent builds runner env from fleet_config alone, so a
+  # variable here would silently resolve to its default on every fleet host.
+  # Without a reachable server every sampled route fails at DEBUG and the step
+  # still succeeds with zero betweenness (measured 2026-09-22, Washington).
+  GRAPHHOPPER_API_URL: http://runner-graphhopper:8989
   # Local-only enforcement for the osm-geocoder runner (the Download-facet host):
   # FW_OSM_OFFLINE=1 forbids all mirror fetches (cache-read only; a miss fails
   # loudly). Pass-through — opt in via .env.fleet. Pairs with the pbf_download guard.
@@ -959,6 +966,45 @@ services:
       FW_MONGODB_URL: mongodb://mongodb:27017
       FW_MONGODB_DATABASE: ${FW_MONGODB_DATABASE:-facetwork}
       FW_TASK_LIST: osm
+    restart: unless-stopped
+
+  # =====================================================================
+  # runner-graphhopper — graphhopper-web HTTP server over ONE prebuilt graph.
+  #
+  # Serves the routing API the low-zoom builder samples against
+  # (GRAPHHOPPER_API_URL in *osm-s3-env). Same runner image (it carries the
+  # GraphHopper 8.0 web jar + Java the build facet imports with), entrypoint
+  # bind-mounted from the repo so a change needs no re-bake. The graph is
+  # pulled from the object-store cache into /scratch at start; a missing graph
+  # is a refusal, never an empty server. One region+profile per server —
+  # FW_GRAPHHOPPER_REGION selects it (fleet: `fw fleet set --graphhopper-region`).
+  # Not a facetwork runner: it registers nothing and claims nothing.
+  # =====================================================================
+  runner-graphhopper:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.domain-runner
+    hostname: ${FW_FLEET_HOST:-}
+    entrypoint: ["bash", "/usr/local/bin/graphhopper-server.sh"]
+    depends_on:
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      <<: *osm-s3-env
+      FW_GRAPHHOPPER_REGION: ${FW_GRAPHHOPPER_REGION:-north-america/us/washington}
+      FW_GRAPHHOPPER_PROFILE: ${FW_GRAPHHOPPER_PROFILE:-car}
+      JAVA_OPTS: ${FW_GRAPHHOPPER_JAVA_OPTS:--Xmx2g}
+    ports:
+      - "${FW_GRAPHHOPPER_PORT:-8989}:8989"
+    volumes:
+      - ./docker/graphhopper-server.sh:/usr/local/bin/graphhopper-server.sh:ro
+      - ${FW_DATA_DIR:-/Volumes/afl_data}/osm-scratch:/scratch
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8989/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
     restart: unless-stopped
 
   # =====================================================================

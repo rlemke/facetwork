@@ -106,7 +106,8 @@ def _print_cfg(cfg):
         kind = f" kind={spec['kind']}" if spec.get("kind") else ""
         groups = spec.get("server_groups")
         grp = f" groups={','.join(groups)}" if groups else ""
-        print(f"  role {role}: replicas={spec.get('replicas', '-')} task_list={spec.get('task_list', '-')} image={spec.get('image', '-')}{kind}{grp}")
+        region = f" region={spec['region']} profile={spec.get('profile', 'car')}" if spec.get("region") else ""
+        print(f"  role {role}: replicas={spec.get('replicas', '-')} task_list={spec.get('task_list', '-')} image={spec.get('image', '-')}{kind}{grp}{region}")
 
 
 def cmd_set(a):
@@ -143,6 +144,19 @@ def cmd_set(a):
         cfg.setdefault("roles", {}).setdefault("osm-geocoder", {})["image"] = a.image
     if a.gh_router_image:
         cfg.setdefault("roles", {}).setdefault("gh-router", {})["image"] = a.gh_router_image
+    # graphhopper: the graphhopper-web HTTP server the low-zoom builder routes
+    # against (one region+profile per server; runs on the shared runner image).
+    # Empty region REMOVES the role — the agent then brings up no server.
+    if a.graphhopper_region is not None:
+        if a.graphhopper_region.strip():
+            gh_srv = cfg.setdefault("roles", {}).setdefault("graphhopper", {})
+            gh_srv["region"] = a.graphhopper_region.strip().strip("/")
+            gh_srv.setdefault("profile", "car")
+            gh_srv.setdefault("replicas", 1)
+        else:
+            (cfg.get("roles") or {}).pop("graphhopper", None)
+    if a.graphhopper_profile:
+        cfg.setdefault("roles", {}).setdefault("graphhopper", {})["profile"] = a.graphhopper_profile
     # ffl-runner: the dedicated orchestration tier (continuation_mode=shared).
     # replicas>0 makes each host bring up that many; image is optional (defaults
     # to the shared runner image so a --image roll covers it too — set --ffl-image
@@ -467,6 +481,8 @@ def main():
                          "coverage and region naming before switching")
     ps.add_argument("--image", help="runner image tag (a change triggers a rolling recreate fleet-wide)")
     ps.add_argument("--gh-router-image", help="embedded-GraphHopper agent image tag for the gh-router role (a change recreates it fleet-wide)")
+    ps.add_argument("--graphhopper-region", help="graphhopper role: serve this prebuilt region's routing graph over HTTP for the low-zoom builder (e.g. north-america/us/washington); '' removes the role")
+    ps.add_argument("--graphhopper-profile", help="graphhopper role: profile of the served graph (default car)")
     ps.add_argument("--ffl-replicas", type=int, help="ffl-runner (orchestration tier, continuation_mode=shared) per server; 0 disables")
     ps.add_argument("--ffl-image", help="image tag for the ffl-runner role (optional; defaults to the shared runner image — set only to roll the engine to ONLY the ffl tier)")
     ps.add_argument("--domain-runner", action="append", metavar="NAME",

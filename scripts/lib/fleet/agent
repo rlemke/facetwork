@@ -406,6 +406,12 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     image = osm.get("image")
     gh_role = roles.get("gh-router", {})
     gh_image = gh_role.get("image")
+    # graphhopper: graphhopper-web HTTP server (shared runner image) serving ONE
+    # prebuilt region+profile for the low-zoom builder's routing. Present only
+    # when the role names a region.
+    gh_srv = roles.get("graphhopper", {})
+    gh_srv_region = (gh_srv.get("region") or "").strip()
+    gh_srv_profile = gh_srv.get("profile") or "car"
     # ffl-runner orchestration tier (opt-in: only brought up when replicas>0).
     ffl = roles.get("ffl-runner", {})
     ffl_replicas = int(ffl.get("replicas", 0) or 0)
@@ -431,13 +437,14 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
     # is not started here; another host in its group serves those tasks.
     osm_here = _fleet_lib.role_in_group(osm, grp)
     gh_here = _fleet_lib.role_in_group(gh_role, grp)
+    gh_srv_here = bool(gh_srv_region) and _fleet_lib.role_in_group(gh_srv, grp)
     ffl_here = _fleet_lib.role_in_group(ffl, grp)
     gen_here = _fleet_lib.role_in_group(gen_role, grp)
     domain_roles = {n: s for n, s in domain_roles.items()
                     if _fleet_lib.role_in_group(s, grp)}
     skipped = sorted(
         n for n, s in roles.items()
-        if (s.get("kind") == "domain" or n in ("osm-geocoder", "gh-router", "ffl-runner", "generalist"))
+        if (s.get("kind") == "domain" or n in ("osm-geocoder", "gh-router", "graphhopper", "ffl-runner", "generalist"))
         and not _fleet_lib.role_in_group(s, grp)
     )
     endpoint = _fleet_lib.resolve_minio(minio.get("endpoint"))
@@ -524,6 +531,9 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         env["FW_RUNNER_IMAGE"] = image
     if gh_image:
         env["FW_GH_ROUTER_IMAGE"] = gh_image
+    if gh_srv_region:
+        env["FW_GRAPHHOPPER_REGION"] = gh_srv_region
+        env["FW_GRAPHHOPPER_PROFILE"] = gh_srv_profile
     if ffl_image:
         env["FW_FFL_IMAGE"] = ffl_image
     # Role group for fleet status / dashboard + the server_groups gate above.
@@ -553,6 +563,8 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
             print(f"    - would SKIP the osm tier (host group '{grp}' not in osm-geocoder.server_groups)")
         if gh_image and gh_here:
             print("    + would bring up runner-gh-router (1 replica) from FW_GH_ROUTER_IMAGE")
+        if gh_srv_here:
+            print(f"    + would bring up runner-graphhopper (1 replica) serving {gh_srv_region}/{gh_srv_profile}")
         if ffl_replicas and ffl_here:
             print(f"    + would bring up runner-ffl ({ffl_replicas} replicas) — orchestration tier")
         for name, spec in sorted(domain_roles.items()):
@@ -617,6 +629,21 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
                 sys.stderr.write(gr.stderr)
                 print(f"fleet-agent[{HOST}]: WARNING gh-router start failed (exit {gr.returncode}); "
                       "continuing — another host can serve RouteBatch")
+        # graphhopper role: the graphhopper-web HTTP server the low-zoom builder
+        # routes against. Same env file (carries FW_GRAPHHOPPER_REGION/PROFILE).
+        # Non-fatal for the same reason as gh-router: it only needs to run on ONE
+        # host that the osm runners can reach.
+        if gh_srv_here:
+            srv_cmd = ["bash", os.path.join(REPO, "scripts", "lib", "runner", "start"), "--fleet",
+                       "--env", envf, "--example", "graphhopper", "--replicas", "1"]
+            if recreate:
+                srv_cmd.append("--recreate")
+            sr = _run_compose(srv_cmd, child_env)
+            sys.stdout.write(sr.stdout)
+            if sr.returncode != 0:
+                sys.stderr.write(sr.stderr)
+                print(f"fleet-agent[{HOST}]: WARNING graphhopper server start failed (exit {sr.returncode}); "
+                      "continuing — the low-zoom builder will route against nothing until it is up")
         # ffl-runner role: bring up the orchestration tier (continuation_mode=
         # shared, set in the compose file) at the configured replica count. Same
         # env file (carries FW_FFL_IMAGE if pinned). Non-fatal: the tier only
