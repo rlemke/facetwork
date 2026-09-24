@@ -32,7 +32,6 @@ from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
 
-
 # --- config ---------------------------------------------------------------
 
 ENDPOINT = os.environ.get("FW_S3_ENDPOINT", "http://localhost:9000")
@@ -414,13 +413,38 @@ class _Handler(BaseHTTPRequestHandler):
             if rel.endswith("/") or rel == "":
                 rel += "index.html"
             key = PREFIX + rel
+            # Pass Range through to the object store. PMTiles (what
+            # osm.viz.RenderTiledMap emits) addresses tiles as BYTE RANGES of
+            # one archive: without this every tile fetch downloads the whole
+            # file — 31 MB for a single road layer — and the map either crawls
+            # or fails outright. Serving 200-with-everything looks like it
+            # works right up until someone opens a tiled map.
+            rng = self.headers.get("Range")
             try:
-                obj = s3.get_object(Bucket=BUCKET, Key=key)
+                obj = s3.get_object(Bucket=BUCKET, Key=key, **({"Range": rng} if rng else {}))
             except Exception:
-                self._send(404, f"<h1>404</h1><p>not in store: <code>{escape(key)}</code></p>")
-                return
+                if rng:  # an unsatisfiable/odd range should not read as "missing"
+                    try:
+                        obj = s3.get_object(Bucket=BUCKET, Key=key)
+                        rng = None
+                    except Exception:
+                        self._send(404, f"<h1>404</h1><p>not in store: <code>{escape(key)}</code></p>")
+                        return
+                else:
+                    self._send(404, f"<h1>404</h1><p>not in store: <code>{escape(key)}</code></p>")
+                    return
             ctype = mimetypes.guess_type(key)[0] or "application/octet-stream"
-            self._send(200, obj["Body"].read(), ctype)
+            body = obj["Body"].read()
+            partial = bool(rng and obj.get("ContentRange"))
+            self.send_response(206 if partial else 200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Accept-Ranges", "bytes")
+            if partial:
+                self.send_header("Content-Range", obj["ContentRange"])
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(body)
             return
         self._send(404, "<h1>404</h1>")
 
