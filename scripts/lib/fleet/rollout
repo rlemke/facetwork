@@ -465,10 +465,39 @@ while [ "$elapsed" -lt "$TIMEOUT" ]; do
     LIVE="$(printf '%s' "$STATUS" | grep 'runner(s)' | grep -v 'NO RUNNERS ALIVE' || true)"
     DEAD="$(printf '%s' "$STATUS" | grep 'runner(s)' | grep 'NO RUNNERS ALIVE' || true)"
     total="$(printf '%s' "$LIVE" | grep -c 'runner(s)' || true)"
-    onnew="$(printf '%s' "$LIVE" | grep -c 'up-to-date' || true)"
     ndead="$(printf '%s' "$DEAD" | grep -c 'runner(s)' || true)"
-    echo "  ${onnew}/${total} live host(s) on v${NEWVER} (${elapsed}s)$([ "${ndead:-0}" -gt 0 ] && echo " — ${ndead} host(s) with no runners alive, not counted")"
-    [ -n "$NEWVER" ] && [ "$onnew" -ge "$total" ] && [ "$total" -gt 0 ] && { echo "All live hosts converged."; break; }
+    # Judge convergence by the IMAGE the runners are RUNNING, not by a config
+    # version number.
+    #
+    # ⚠️ "up-to-date" is computed against the CURRENT config version, so ANY
+    # concurrent writer makes this wait unsatisfiable: the host applies vN while
+    # the config is already at vN+1, and it reads as LAGGING forever. Measured
+    # 2026-09-25 — a 50-state batch calling `fleet set --graphhopper-region` per
+    # state pushed the config from v170 to v173 during the wait, and a rollout
+    # whose image had demonstrably reached all 23 runners sat at "0/1 live host on
+    # v170" until it timed out and exited non-zero. A wrong failure trains you to
+    # ignore the one that matters, which is the whole reason the dead-host
+    # exclusion above exists.
+    #
+    # The image is what a rollout DEPLOYS, `fleet config status` already flags a
+    # host whose runners run an older one, and that test is immune to version
+    # churn. A host with nothing but unreported images is NOT counted: a runner
+    # that has not yet said what it runs is unknown, not correct.
+    onnew=0
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        case "$line" in *'** STALE IMAGE'*) continue ;; esac
+        case "$line" in *'of'*'image unreported'*)
+            rep="${line##*(}"; rep="${rep%% of *}"
+            tot="${line##* of }"; tot="${tot%% image unreported*}"
+            [ "${rep:-0}" = "${tot:-0}" ] && continue ;;
+        esac
+        onnew=$((onnew+1))
+    done <<EOF
+$LIVE
+EOF
+    echo "  ${onnew}/${total} live host(s) on the new image (${elapsed}s)$([ "${ndead:-0}" -gt 0 ] && echo " — ${ndead} host(s) with no runners alive, not counted")"
+    [ "$onnew" -ge "$total" ] && [ "$total" -gt 0 ] && { echo "All live hosts converged."; break; }
     sleep 12; elapsed=$((elapsed+12))
 done
 "$FW_LIB/fleet/config" status --mongo "$MONGO" | grep -E 'runner\(s\)' || true
@@ -494,7 +523,7 @@ else
         echo "       running to apply it. Start a fleet-agent, or check the infra." >&2
         exit 1
     fi
-    echo "ERROR: rollout NOT converged after ${TIMEOUT}s — ${onnew:-0}/${total:-0} LIVE host(s) on v${NEWVER:-?}." >&2
+    echo "ERROR: rollout NOT converged after ${TIMEOUT}s — ${onnew:-0}/${total:-0} LIVE host(s) on the new image (config v${NEWVER:-?})." >&2
     echo "       The image is pushed and fleet_config points at it, so agents keep retrying." >&2
     echo "       Check: fw fleet status; per-host \`docker ps\` image tags; a wedged" >&2
     echo "       \`docker compose\` (its fleet-agent log goes stale while it hangs)." >&2
