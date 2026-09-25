@@ -441,6 +441,41 @@ class TaskMixin(_MixinBase):
             )
         )
         dead_ids = [doc["uuid"] for doc in dead_servers]
+
+        # ⚠️ A server whose RECORD IS GONE is invisible to the query above, and its
+        # tasks are stranded until the lease expires.
+        #
+        # The scan looks for records with a stale ping. A deleted record has no
+        # ping to be stale — it simply is not in the collection — so `dead_ids`
+        # never names it. Measured 2026-09-25: a fleet rollout destroyed the
+        # container running a 45-minute low-zoom step, its server record was
+        # pruned, and the task sat `state=running` with a lease **473 minutes** in
+        # the future and nothing able to reclaim it. Every rollout can strand
+        # whatever was running at that moment, for the better part of a day.
+        #
+        # Derive them from the tasks rather than the servers: an owner that does
+        # not exist cannot be making progress. Scoped to the server_ids actually
+        # referenced by live tasks, so this stays a handful of ids however large
+        # the fleet grows. The same stale-task-heartbeat guard below still
+        # applies, which is what makes it safe — a runner whose record was pruned
+        # while it is alive RE-REGISTERS on its next heartbeat, and its task
+        # heartbeat would be fresh.
+        referenced = [
+            sid
+            for sid in self._db.tasks.distinct("server_id", {"state": "running"})
+            if sid
+        ]
+        if referenced:
+            known = {
+                doc["uuid"]
+                for doc in self._db.servers.find(
+                    {"uuid": {"$in": referenced}}, {"uuid": 1}
+                )
+            }
+            vanished = [sid for sid in referenced if sid not in known]
+            if vanished:
+                dead_ids.extend(vanished)
+
         if not dead_ids:
             return []
 
