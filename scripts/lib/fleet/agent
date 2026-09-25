@@ -538,6 +538,23 @@ def _apply(cfg, mongo, data_dir, replicas_override, recreate, dry_run=False):
         env["FW_FFL_IMAGE"] = ffl_image
     # Role group for fleet status / dashboard + the server_groups gate above.
     env["FW_SERVER_GROUP"] = grp
+    # Stamp the runners with THIS AGENT'S identity rather than letting each one
+    # re-derive it. `runner/start` otherwise falls back to `hostname -s`, and a
+    # host's network hostname is mutable: measured 2026-09-24, MaxPro's became
+    # "Mac"/"Mac.home" after a network change while the long-running agent still
+    # held the "MaxPro.local" it computed at startup. The runners then registered
+    # under "Mac" with no agent record while the agent's own host reported
+    # "NO RUNNERS ALIVE" — the fleet view split in two, `fleet status` could not
+    # see 23 healthy runners, and a rollout's convergence check read 0/2 hosts
+    # converged when every container was already on the new image.
+    #
+    # ⚠️ Residual, deliberately not papered over here: the agent's own HOST is
+    # still `FW_FLEET_HOST or socket.gethostname()`, so a hostname change
+    # re-keys the agent itself and orphans its previous fleet_agents record.
+    # Pinning FW_FLEET_HOST per host (or reading a stable name from
+    # servers.json) is the real cure; this at least keeps agent and runners
+    # agreeing with each other whatever they are called.
+    env["FW_FLEET_HOST"] = HOST
     tl = osm.get("task_list")
     if tl:
         env["FW_REGISTRY_RUNNER_ARGS"] = f"--task-list {tl} --server-group {grp}"
