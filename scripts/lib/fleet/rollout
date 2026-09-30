@@ -33,11 +33,6 @@ _afl_resolve_remote_env
 # written into the repo. FW_FLEET_REGISTRY overrides.
 _fw_reg_host="$(fw_service_host afl-registry)"
 REGISTRY="${FW_FLEET_REGISTRY:-${_fw_reg_host:+$_fw_reg_host:5050}}"
-if [ -z "$REGISTRY" ]; then
-    echo "$(basename "$0"): no image registry: set FW_FLEET_REGISTRY=<host>:<port>, or give" >&2
-    echo "  the server catalog (servers.json, from servers.example.json) an infra host" >&2
-    exit 2
-fi
 IMAGE_REPO="$REGISTRY/facetwork-runner"
 BUILDER="${FW_FLEET_BUILDER:-fleetbuilder}"
 
@@ -179,6 +174,12 @@ while [ $# -gt 0 ]; do
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
+# Checked AFTER parsing so --help works with no catalog (a fresh clone).
+if [ -z "$REGISTRY" ]; then
+    echo "$(basename "$0"): no image registry: set FW_FLEET_REGISTRY=<host>:<port>, or give" >&2
+    echo "  the server catalog (servers.json, from servers.example.json) an infra host" >&2
+    exit 2
+fi
 
 cd "$FW_ROOT"
 [ -n "$(git status --porcelain 2>/dev/null)" ] && echo "WARNING: working tree is dirty — rolling out HEAD, not your uncommitted edits." >&2

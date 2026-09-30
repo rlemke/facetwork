@@ -37,8 +37,19 @@ LOCAL_OVERRIDE = _REPO_ROOT / "servers.local.json"
 
 
 def _read(path: Path) -> dict:
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    """A catalog file, or an EMPTY catalog when the file does not exist.
+
+    The catalog is site configuration and never committed, so a fresh clone (or
+    a host that has not been given one yet) has none -- including where
+    ``FW_SERVERS_FILE`` names the default path explicitly, as ``fw mode`` does.
+    Absent means "no machines known", which every consumer already handles;
+    crashing them all would turn a missing file into a broken CLI. A file that
+    exists but is not valid JSON still raises: that is a real error."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"servers": []}
 
 
 def _merge(base: dict, overlay: dict) -> dict:
