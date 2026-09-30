@@ -321,7 +321,7 @@ pip install -e ".[dev,test,dashboard,mcp,mongodb]"
 |-------|----------|
 | (base) | `lark` |
 | `dev` | pytest, pytest-cov, ruff, mypy, pre-commit |
-| `test` | pytest, pytest-cov, mongomock |
+| `test` | pytest, pytest-cov, mongomock, requests, pyshp, boto3 |
 | `mongodb` | pymongo |
 | `dashboard` | fastapi, uvicorn, jinja2 |
 | `mcp` | mcp |

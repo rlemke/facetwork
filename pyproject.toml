@@ -47,6 +47,10 @@ test = [
     "mongomock>=4.0",
     "requests>=2.28",
     "pyshp>=2.3",
+    # tests/test_domain_storage.py builds a REAL client to check the timeout and
+    # retry config reaches it; without boto3 those tests fail on every fresh
+    # install that follows the README (and did on CI from 2026-09-17).
+    "boto3>=1.28",
 ]
 dashboard = [
     # No upper bound: the route tests (tests/dashboard/test_app.py) check behavior

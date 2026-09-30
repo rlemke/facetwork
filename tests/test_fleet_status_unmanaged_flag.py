@@ -21,11 +21,19 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 MOD = REPO / "scripts" / "lib" / "fleet" / "config"
 
 
 def _load():
+    # ⚠️ The script re-execs ITSELF under the repo venv when pymongo is missing
+    # (_fleet_bootstrap.bootstrap_and_reexec). Imported from pytest, that exec
+    # replaces the pytest process: every later test silently never runs and no
+    # summary is printed -- measured on a fresh clone installed without the
+    # `mongodb` extra. Skip instead, visibly.
+    pytest.importorskip("pymongo", reason="fleet/config needs pymongo (the `mongodb` extra)")
     # The script has no .py extension, so importlib infers no loader for it --
     # name one explicitly rather than asserting on a spec that cannot exist.
     loader = importlib.machinery.SourceFileLoader("_fleet_config", str(MOD))

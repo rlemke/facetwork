@@ -170,7 +170,7 @@ def test_loopback_mongo_is_refused_for_runner_containers(url, host):
 
 @pytest.mark.parametrize("url", [
     "mongodb://afl-mongodb:27017",
-    "mongodb://192.168.68.67:27017",
+    "mongodb://192.0.2.67:27017",
     "mongodb://server3.local:27017",
     None,
     "",

@@ -2,7 +2,7 @@
 
 ⚠️ WRITTEN AFTER A REAL OUTAGE, 2026-09-08. The infra host's DHCP lease moved it
 from .114 to .67 and .114 was reassigned to a different machine. Every runner on
-that host carried ``FW_MONGODB_URL=mongodb://192.168.68.114:27017`` in its
+that host carried ``FW_MONGODB_URL=mongodb://198.51.100.114:27017`` in its
 ENVIRONMENT, baked in at container creation. 22 of 23 runners stayed "Up" for
 days, logged "Heartbeat failed" every 30 seconds, and never registered.
 
@@ -33,7 +33,7 @@ def _load():
 
 
 fl = _load()
-INFRA = "192.168.68.67"
+INFRA = "192.0.2.67"
 
 
 def _with_env(monkeypatch, containers: dict):
@@ -44,10 +44,10 @@ def _with_env(monkeypatch, containers: dict):
 def test_the_exact_outage_value_is_detected(monkeypatch):
     """The literal string that took the fleet down."""
     _with_env(monkeypatch, {
-        "runner-a": {"FW_MONGODB_URL": "mongodb://192.168.68.114:27017"},
+        "runner-a": {"FW_MONGODB_URL": "mongodb://198.51.100.114:27017"},
     })
     got = fl.stale_env_containers(INFRA)
-    assert got == [("runner-a", "FW_MONGODB_URL", "192.168.68.114")]
+    assert got == [("runner-a", "FW_MONGODB_URL", "198.51.100.114")]
 
 
 def test_a_hostname_is_not_drift(monkeypatch):
@@ -84,7 +84,7 @@ def test_the_current_infra_ip_is_not_drift(monkeypatch):
 def test_every_endpoint_variable_is_checked(monkeypatch):
     """Mongo is the one that caused the outage, but MinIO, the dashboard, PostGIS
     and the self-hosted extracts server can each pin an address the same way."""
-    stale = "192.168.68.114"
+    stale = "198.51.100.114"
     _with_env(monkeypatch, {
         "runner-a": {v: f"http://{stale}:9000" for v in fl._ENDPOINT_VARS},
     })
@@ -96,13 +96,13 @@ def test_findings_name_the_container_variable_and_value(monkeypatch):
     """The report has to be actionable without a second investigation: which
     container, which variable, what it pins."""
     _with_env(monkeypatch, {
-        "runner-a": {"FW_MONGODB_URL": "mongodb://10.1.2.3:27017"},
+        "runner-a": {"FW_MONGODB_URL": "mongodb://203.0.113.3:27017"},
         "runner-b": {"FW_MONGODB_URL": "mongodb://afl-mongodb:27017"},
     })
     got = fl.stale_env_containers(INFRA)
     assert len(got) == 1
     c, var, old = got[0]
-    assert (c, var, old) == ("runner-a", "FW_MONGODB_URL", "10.1.2.3")
+    assert (c, var, old) == ("runner-a", "FW_MONGODB_URL", "203.0.113.3")
 
 
 def test_a_container_that_cannot_be_inspected_is_skipped_not_fatal(monkeypatch):
@@ -113,11 +113,11 @@ def test_a_container_that_cannot_be_inspected_is_skipped_not_fatal(monkeypatch):
     def env(name):
         if name == "bad":
             raise RuntimeError("docker inspect failed")
-        return {"FW_MONGODB_URL": "mongodb://192.168.68.114:27017"}
+        return {"FW_MONGODB_URL": "mongodb://198.51.100.114:27017"}
 
     monkeypatch.setattr(fl, "_container_env", env)
     try:
         got = fl.stale_env_containers(INFRA)
     except RuntimeError:
         raise AssertionError("one bad container aborted the sweep")
-    assert ("good", "FW_MONGODB_URL", "192.168.68.114") in got
+    assert ("good", "FW_MONGODB_URL", "198.51.100.114") in got

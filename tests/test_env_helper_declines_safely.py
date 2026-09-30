@@ -14,6 +14,7 @@ itself `set -e`, so any audit scoped to files that do will miss it.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -32,11 +33,38 @@ echo REACHED_END
 """
 
 
-def _run(env_sh: Path) -> subprocess.CompletedProcess[str]:
+def _run(env_sh: Path, env: dict | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-c", _PROBE.format(url=UNRESOLVABLE, env_sh=env_sh)],
-        cwd=REPO, capture_output=True, text=True, timeout=120,
+        cwd=REPO, capture_output=True, text=True, timeout=120, env=env,
     )
+
+
+# A stand-in `pymongo` for _env.sh's reachability probe: localhost answers,
+# everything else does not. The warning under test is printed only AFTER a local
+# Mongo answers, so against the real driver this test passed only on a machine
+# that happened to run mongod on :27017 -- green on the author's laptop, red on
+# CI and on every fresh clone (2026-09-17 onward).
+_FAKE_PYMONGO = """
+class MongoClient:
+    def __init__(self, url, **_kw):
+        self.url = url
+
+    def server_info(self):
+        if "localhost" in self.url or "127.0.0.1" in self.url:
+            return {"version": "fake"}
+        raise RuntimeError("unreachable (fake)")
+"""
+
+
+def _local_mongo_env(tmp_path: Path) -> dict:
+    pkg = tmp_path / "fake_site" / "pymongo"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text(_FAKE_PYMONGO, encoding="utf-8")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (str(pkg.parent), env.get("PYTHONPATH", "")) if p)
+    return env
 
 
 def test_declining_lookup_does_not_abort_a_set_e_caller() -> None:
@@ -67,10 +95,10 @@ def test_the_guard_is_what_makes_it_survive(tmp_path: Path) -> None:
     assert r.stderr == "", f"expected a SILENT death, got stderr={r.stderr!r}"
 
 
-def test_fallback_is_loud_when_it_lands_on_localhost() -> None:
+def test_fallback_is_loud_when_it_lands_on_localhost(tmp_path: Path) -> None:
     """Declining safely must not become declining quietly: falling back to a
     separate local database is exactly the outcome that needs to be said."""
-    r = _run(ENV_SH)
+    r = _run(ENV_SH, env=_local_mongo_env(tmp_path))
     assert "LOCALHOST" in r.stderr and "not the fleet" in r.stderr, (
         f"localhost fallback was not announced; stderr={r.stderr!r}"
     )

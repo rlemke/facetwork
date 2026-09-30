@@ -144,7 +144,6 @@ class MavenArtifactRunner(RegistryRunner):
         version: str = "1.0.0",
         checksum: str = "",
         timeout_ms: int = 300000,
-        requirements: list[str] | None = None,
         metadata: dict | None = None,
     ) -> None:
         """Register a Maven artifact handler in persistence.
@@ -156,7 +155,6 @@ class MavenArtifactRunner(RegistryRunner):
             version: Handler version string
             checksum: Cache-invalidation checksum
             timeout_ms: Subprocess timeout in milliseconds
-            requirements: Unused (kept for API compatibility)
             metadata: Optional metadata dict (may contain ``jvm_args`` list)
 
         Raises:
@@ -173,7 +171,6 @@ class MavenArtifactRunner(RegistryRunner):
             version=version,
             checksum=checksum,
             timeout_ms=timeout_ms,
-            requirements=requirements,
             metadata=metadata,
         )
 

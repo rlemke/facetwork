@@ -1016,7 +1016,7 @@ class TestServerOperations:
             server_group="workers",
             service_name="afl-worker",
             server_name="worker-01",
-            server_ips=["192.168.1.100"],
+            server_ips=["192.0.2.100"],
             topics=["workflow.events"],
             handlers=["StepHandler"],
             handled=[HandledCount(handler="StepHandler", handled=10)],

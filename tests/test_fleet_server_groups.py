@@ -105,18 +105,18 @@ def test_rewrite_hosts_repoints_afl_names():
         "127.0.0.1\tlocalhost\n"
         "192.0.2.10\tafl-mongodb\n"
         "fd00::2\tafl-minio\n"
-        "10.0.0.5\tsome-other-host\n"
+        "198.51.100.5\tsome-other-host\n"
     )
     after = fl._rewrite_hosts(before, "192.0.2.20")
     lines = after.splitlines()
     assert "192.0.2.20\tafl-mongodb" in lines
     assert "192.0.2.20\tafl-minio" in lines
     assert "192.0.2.20\tafl-postgres" in lines  # missing one added
-    assert "10.0.0.5\tsome-other-host" in lines  # unrelated untouched
+    assert "198.51.100.5\tsome-other-host" in lines  # unrelated untouched
     assert "127.0.0.1\tlocalhost" in lines
     assert "192.0.2.10" not in after and "fd00::2" not in after  # stale gone
 
 
 def test_rewrite_hosts_idempotent():
-    once = fl._rewrite_hosts("127.0.0.1\tlocalhost\n", "10.1.1.1")
-    assert fl._rewrite_hosts(once, "10.1.1.1") == once  # no churn when current
+    once = fl._rewrite_hosts("127.0.0.1\tlocalhost\n", "198.51.100.1")
+    assert fl._rewrite_hosts(once, "198.51.100.1") == once  # no churn when current

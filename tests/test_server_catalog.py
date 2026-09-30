@@ -29,7 +29,7 @@ def cat(tmp_path, monkeypatch):
                 "purpose": "runner",
                 "group": "runner",
                 "infra": False,
-                "ip_pin": "10.9.8.7",
+                "ip_pin": "203.0.113.7",
             },
         ],
     }
@@ -53,7 +53,7 @@ def test_infra_and_alias_map(cat):
 
 
 def test_resolve_ip_pin_wins_and_unknown_none(cat):
-    assert catalog.resolve_ip("worker.local") == "10.9.8.7"
+    assert catalog.resolve_ip("worker.local") == "203.0.113.7"
     assert catalog.resolve_ip("unknown-host") is None
 
 
@@ -115,7 +115,7 @@ def test_local_override_merge(cat, monkeypatch):
 def test_container_ip_remote_infra_is_the_resolved_address(cat, monkeypatch):
     """Infra on another machine: containers still get its live address."""
     monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: "192.0.2.5")
-    monkeypatch.setattr(catalog, "_local_addresses", lambda: {"127.0.0.1", "10.0.0.9"})
+    monkeypatch.setattr(catalog, "_local_addresses", lambda: {"127.0.0.1", "198.51.100.9"})
     monkeypatch.setattr(catalog.socket, "gethostname", lambda: "someone-else")
     assert catalog.container_ip() == "192.0.2.5"
 
@@ -123,8 +123,8 @@ def test_container_ip_remote_infra_is_the_resolved_address(cat, monkeypatch):
 def test_container_ip_self_infra_is_the_gateway_alias(cat, monkeypatch):
     """Infra on THIS machine: never an address — a reboot onto a new DHCP lease
     must not strand the containers on an IP that no longer exists."""
-    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: "10.0.0.9")
-    monkeypatch.setattr(catalog, "_local_addresses", lambda: {"127.0.0.1", "10.0.0.9"})
+    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: "198.51.100.9")
+    monkeypatch.setattr(catalog, "_local_addresses", lambda: {"127.0.0.1", "198.51.100.9"})
     monkeypatch.setattr(catalog.socket, "gethostname", lambda: "someone-else")
     assert catalog.container_ip() == catalog.HOST_GATEWAY
 
@@ -143,7 +143,7 @@ def test_container_ip_self_by_hostname_without_dns(cat, monkeypatch):
 def test_container_ip_pin_wins_over_gateway(cat, monkeypatch):
     """An explicit ip_pin is a deliberate choice — it outranks the alias."""
     monkeypatch.setattr(catalog.socket, "gethostname", lambda: "worker")
-    assert catalog.container_ip("worker.local") == "10.9.8.7"
+    assert catalog.container_ip("worker.local") == "203.0.113.7"
 
 
 def test_container_ip_uncatalogued_name_still_resolves(cat, monkeypatch):

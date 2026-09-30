@@ -263,14 +263,14 @@ class TestServerAndLocks:
             server_group="workers",
             service_name="afl-worker",
             server_name="worker-01",
-            server_ips=["192.168.1.100"],
+            server_ips=["192.0.2.100"],
             topics=["workflow.events"],
             handlers=["StepHandler", "EventHandler"],
             state=ServerState.RUNNING,
         )
         assert server.uuid == "server-123"
         assert server.state == "running"
-        assert "192.168.1.100" in server.server_ips
+        assert "192.0.2.100" in server.server_ips
 
     def test_server_states(self):
         """Test ServerState constants."""
