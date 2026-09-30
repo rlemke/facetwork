@@ -294,8 +294,12 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description="Ray delegation watcher (D3)")
     ap.add_argument("--task-list", default="ray")
-    ap.add_argument("--ray-address", default=os.environ.get("FW_RAY_ADDRESS", "http://localhost:8265"))
-    ap.add_argument("--mongo", default=os.environ.get("FW_MONGODB_URL", "mongodb://localhost:27017"))
+    ap.add_argument(
+        "--ray-address", default=os.environ.get("FW_RAY_ADDRESS", "http://localhost:8265")
+    )
+    ap.add_argument(
+        "--mongo", default=os.environ.get("FW_MONGODB_URL", "mongodb://localhost:27017")
+    )
     ap.add_argument("--database", default=os.environ.get("FW_MONGODB_DATABASE", "facetwork"))
     args = ap.parse_args(argv)
 

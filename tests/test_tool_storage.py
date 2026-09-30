@@ -6,6 +6,7 @@ semantics differ in four ways at once (path-scheme dispatch, boto3 directly, a
 shared cache root with no domain segment, and recursive-relative listing), so
 merging them would be a rewrite wearing a refactor's clothes.
 """
+
 from __future__ import annotations
 
 import os
@@ -56,8 +57,10 @@ def test_local_output_base_is_ignored_on_s3(monkeypatch):
 def test_output_base_env_is_not_derived_from_the_namespace():
     """fwh_sentinel2 reads FW_S2_OUTPUT_BASE while its package is 'sentinel2';
     guessing would silently ignore an operator's setting."""
-    assert tool_storage("s2", output_base_env="FW_S2_OUTPUT_BASE").output_base_env == \
-        "FW_S2_OUTPUT_BASE"
+    assert (
+        tool_storage("s2", output_base_env="FW_S2_OUTPUT_BASE").output_base_env
+        == "FW_S2_OUTPUT_BASE"
+    )
 
 
 def test_join_is_os_path_for_local_and_posix_for_s3():
@@ -108,9 +111,13 @@ def test_no_direct_boto3_client_remains():
     policy or endpoint fix applied to one silently misses the other.
     """
     import pathlib
+
     src = pathlib.Path(__file__).resolve().parents[1] / "facetwork/domains/toolstorage.py"
-    body = "\n".join(ln for ln in src.read_text().split("\n")
-                     if not ln.strip().startswith("#") and '"""' not in ln)
+    body = "\n".join(
+        ln
+        for ln in src.read_text().split("\n")
+        if not ln.strip().startswith("#") and '"""' not in ln
+    )
     assert "boto3.client" not in body
     assert "put_object" not in body and "get_object" not in body
     assert "get_storage_backend" in body
@@ -124,6 +131,7 @@ def test_local_write_stays_atomic_after_the_port(tmp_path):
     crash-safety guarantee for tidiness. One S3 client was the goal.
     """
     import pathlib
+
     src = pathlib.Path(__file__).resolve().parents[1] / "facetwork/domains/toolstorage.py"
     text = src.read_text()
     assert "os.replace(tmp, path)" in text and "os.fsync" in text

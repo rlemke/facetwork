@@ -882,8 +882,8 @@ class RegistryRunner(BaseRunner):
             # operator terminate, a watchdog that already failed the task, or a
             # reclaim that turned us into a zombie. Cached, so a handler may
             # check it as often as it likes.
-            payload["_cancellation_check"] = (
-                lambda: self._persistence.task_cancellation_reason(task.uuid, self._server_id)
+            payload["_cancellation_check"] = lambda: self._persistence.task_cancellation_reason(
+                task.uuid, self._server_id
             )
 
             payload["_task_uuid"] = task.uuid

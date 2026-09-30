@@ -97,6 +97,7 @@ def heartbeats(what: str):
     Reports elapsed time for the whole invocation, which is the honest signal
     for opaque work: it says "still running", not "making progress".
     """
+
     def _decorate(fn):
         import functools
 
@@ -110,4 +111,5 @@ def heartbeats(what: str):
         # explicitly — the enforcement test asks the object, not the text.
         _wrapped._fw_heartbeats = what
         return _wrapped
+
     return _decorate

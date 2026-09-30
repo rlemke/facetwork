@@ -59,18 +59,22 @@ def _run(body: str) -> str:
 
 def test_the_installing_process_still_shuts_down():
     """The point of having a handler at all."""
-    assert _run("""
+    assert (
+        _run("""
         called = []
         install_shutdown_handlers(lambda: called.append(os.getpid()))
         os.kill(os.getpid(), signal.SIGTERM)
         print("stopped" if called == [os.getpid()] else f"WRONG {called}")
-    """) == "stopped"
+    """)
+        == "stopped"
+    )
 
 
 def test_a_forked_child_gets_the_default_disposition_back():
     """After fork the child holds SIG_DFL, so a pool's SIGTERM terminates it
     instead of running the parent's graceful-shutdown path."""
-    assert _run("""
+    assert (
+        _run("""
         install_shutdown_handlers(lambda: None)
         r, w = os.pipe()
         if os.fork() == 0:
@@ -81,14 +85,17 @@ def test_a_forked_child_gets_the_default_disposition_back():
         answer = os.read(r, 1)
         os.wait()
         print("default" if answer == b"1" else "INHERITED THE HANDLER")
-    """) == "default"
+    """)
+        == "default"
+    )
 
 
 def test_a_forked_child_terminates_on_sigterm_and_does_not_run_stop():
     """End to end, and the symptom directly: the child must die, and `stop`
     must not run — a child that reaches `stop` is what logged the parent's
     server_id."""
-    assert _run("""
+    assert (
+        _run("""
         marker = "/tmp/fw_signals_child_ran_stop"
         try:
             os.unlink(marker)
@@ -108,7 +115,9 @@ def test_a_forked_child_terminates_on_sigterm_and_does_not_run_stop():
         _, status = os.waitpid(pid, 0)
         killed = os.WIFSIGNALED(status) and os.WTERMSIG(status) == signal.SIGTERM
         print("terminated" if killed and not os.path.exists(marker) else f"BAD status={status}")
-    """) == "terminated"
+    """)
+        == "terminated"
+    )
 
 
 def test_the_owner_pid_guard_holds_when_the_handler_survives_the_fork():
@@ -118,7 +127,8 @@ def test_the_owner_pid_guard_holds_when_the_handler_survives_the_fork():
     handlers afterwards, can still hold the parent's handler. The owner-pid
     guard makes it terminate rather than run the runner's shutdown.
     """
-    assert _run("""
+    assert (
+        _run("""
         install_shutdown_handlers(lambda: None)
         handler = signal.getsignal(signal.SIGTERM)
         pid = os.fork()
@@ -130,7 +140,9 @@ def test_the_owner_pid_guard_holds_when_the_handler_survives_the_fork():
         os.kill(pid, signal.SIGTERM)
         _, status = os.waitpid(pid, 0)
         print("terminated" if os.WIFSIGNALED(status) else f"SURVIVED status={status}")
-    """) == "terminated"
+    """)
+        == "terminated"
+    )
 
 
 def test_stop_logs_the_pid(caplog):

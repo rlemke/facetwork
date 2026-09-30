@@ -94,14 +94,16 @@ def collect(db, *, now_ms: int | None = None) -> list[DeadLetterGroup]:
             e = _error_text(t)
             if e and e not in errs:
                 errs.append(e)
-        groups.append(DeadLetterGroup(
-            name=name,
-            count=len(tasks),
-            oldest_hours=max(ages) if ages else 0.0,
-            newest_hours=min(ages) if ages else 0.0,
-            errors=errs[:3],
-            uuids=[str(t.get("uuid")) for t in tasks],
-        ))
+        groups.append(
+            DeadLetterGroup(
+                name=name,
+                count=len(tasks),
+                oldest_hours=max(ages) if ages else 0.0,
+                newest_hours=min(ages) if ages else 0.0,
+                errors=errs[:3],
+                uuids=[str(t.get("uuid")) for t in tasks],
+            )
+        )
     groups.sort(key=lambda g: -g.oldest_hours)
     return groups
 
@@ -124,8 +126,14 @@ def drop(db, uuids: list[str], reason: str, *, now_ms: int | None = None) -> int
     now = now_ms or int(time.time() * 1000)
     res = db.tasks.update_many(
         {"uuid": {"$in": list(uuids)}, "state": "dead_letter"},
-        {"$set": {"state": "cancelled", "updated": now,
-                  "dropped_reason": reason, "dropped_at": now}},
+        {
+            "$set": {
+                "state": "cancelled",
+                "updated": now,
+                "dropped_reason": reason,
+                "dropped_at": now,
+            }
+        },
     )
     return int(res.modified_count)
 
@@ -145,8 +153,14 @@ def retry(db, uuids: list[str], *, now_ms: int | None = None) -> int:
     now = now_ms or int(time.time() * 1000)
     res = db.tasks.update_many(
         {"uuid": {"$in": list(uuids)}, "state": "dead_letter"},
-        {"$set": {"state": "pending", "retry_count": 0,
-                  "next_retry_after": 0, "updated": now,
-                  "server_id": None}},
+        {
+            "$set": {
+                "state": "pending",
+                "retry_count": 0,
+                "next_retry_after": 0,
+                "updated": now,
+                "server_id": None,
+            }
+        },
     )
     return int(res.modified_count)

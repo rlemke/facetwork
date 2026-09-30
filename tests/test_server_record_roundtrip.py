@@ -12,6 +12,7 @@ grepped the module for the field name, which passed even with the write removed
 — the name still appeared in the read-back path. A test that cannot fail is
 worse than no test, because it is counted as coverage.
 """
+
 import dataclasses
 
 from facetwork.runtime.entities.server import ServerDefinition
@@ -19,8 +20,7 @@ from facetwork.runtime.mongo_store.servers import ServerMixin
 
 
 def _doc_for(**over) -> dict:
-    s = ServerDefinition(uuid="u1", server_group="g", service_name="svc",
-                         server_name="h1", **over)
+    s = ServerDefinition(uuid="u1", server_group="g", service_name="svc", server_name="h1", **over)
     return ServerMixin._server_to_doc(object.__new__(ServerMixin), s)
 
 
@@ -50,9 +50,14 @@ def test_store_features_are_advertised_by_default():
     schema change. A build that does not advertise is treated as NOT ready, so
     an empty default would silently block every migration forever."""
     from facetwork.runtime.entities.server import store_features
+
     assert "task-index:flexible" in store_features()
-    assert "task-index:flexible" in ServerDefinition(
-        uuid="u1", server_group="g", service_name="svc", server_name="h1").store_features
+    assert (
+        "task-index:flexible"
+        in ServerDefinition(
+            uuid="u1", server_group="g", service_name="svc", server_name="h1"
+        ).store_features
+    )
 
 
 def test_store_features_survive_the_write():
@@ -73,6 +78,6 @@ def test_a_runner_that_advertises_nothing_round_trips_as_empty():
     """Absent means DECLINE, so it must come back as [] rather than as a default
     that would make an old runner look capable."""
     doc = _doc_for()
-    doc.pop("store_features", None)          # as an older runner's record would be
+    doc.pop("store_features", None)  # as an older runner's record would be
     back = ServerMixin._doc_to_server(object.__new__(ServerMixin), doc)
     assert back.store_features == []

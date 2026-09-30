@@ -47,9 +47,12 @@ def _with_env(monkeypatch, containers: dict):
 
 def test_the_exact_outage_value_is_detected(monkeypatch):
     """The literal string that took the fleet down."""
-    _with_env(monkeypatch, {
-        "runner-a": {"FW_MONGODB_URL": f"mongodb://{STALE}:27017"},
-    })
+    _with_env(
+        monkeypatch,
+        {
+            "runner-a": {"FW_MONGODB_URL": f"mongodb://{STALE}:27017"},
+        },
+    )
     got = fl.stale_env_containers(INFRA)
     assert got == [("runner-a", "FW_MONGODB_URL", STALE)]
 
@@ -58,10 +61,15 @@ def test_a_hostname_is_not_drift(monkeypatch):
     """⚠️ The correct configuration. Flagging it would recreate every container
     on every poll forever — the failure mode the /etc/hosts probe already had
     once, for the same reason."""
-    _with_env(monkeypatch, {
-        "runner-a": {"FW_MONGODB_URL": "mongodb://afl-mongodb:27017",
-                     "FW_S3_ENDPOINT": "http://afl-minio:9000"},
-    })
+    _with_env(
+        monkeypatch,
+        {
+            "runner-a": {
+                "FW_MONGODB_URL": "mongodb://afl-mongodb:27017",
+                "FW_S3_ENDPOINT": "http://afl-minio:9000",
+            },
+        },
+    )
     assert fl.stale_env_containers(INFRA) == []
 
 
@@ -69,19 +77,25 @@ def test_loopback_and_container_network_addresses_are_deliberate(monkeypatch):
     """⚠️ On the infra host itself the endpoint is legitimately loopback, and a
     compose-network address is assigned by Docker. Neither is drift, and
     recreating on them would make the infra host unable to run runners at all."""
-    _with_env(monkeypatch, {
-        "runner-a": {"FW_MONGODB_URL": f"mongodb://{_site.loopback()}:27017"},
-        "runner-b": {"FW_S3_ENDPOINT": f"http://{_site.container_net_ip()}:9000"},
-    })
+    _with_env(
+        monkeypatch,
+        {
+            "runner-a": {"FW_MONGODB_URL": f"mongodb://{_site.loopback()}:27017"},
+            "runner-b": {"FW_S3_ENDPOINT": f"http://{_site.container_net_ip()}:9000"},
+        },
+    )
     assert fl.stale_env_containers(INFRA) == []
 
 
 def test_the_current_infra_ip_is_not_drift(monkeypatch):
     """A literal IP is not itself wrong — the infra host's own runners are
     pinned to one by construction. Only a STALE one is."""
-    _with_env(monkeypatch, {
-        "runner-a": {"FW_MONGODB_URL": f"mongodb://{INFRA}:27017"},
-    })
+    _with_env(
+        monkeypatch,
+        {
+            "runner-a": {"FW_MONGODB_URL": f"mongodb://{INFRA}:27017"},
+        },
+    )
     assert fl.stale_env_containers(INFRA) == []
 
 
@@ -89,9 +103,12 @@ def test_every_endpoint_variable_is_checked(monkeypatch):
     """Mongo is the one that caused the outage, but MinIO, the dashboard, PostGIS
     and the self-hosted extracts server can each pin an address the same way."""
     stale = STALE
-    _with_env(monkeypatch, {
-        "runner-a": dict.fromkeys(fl._ENDPOINT_VARS, f"http://{stale}:9000"),
-    })
+    _with_env(
+        monkeypatch,
+        {
+            "runner-a": dict.fromkeys(fl._ENDPOINT_VARS, f"http://{stale}:9000"),
+        },
+    )
     got = fl.stale_env_containers(INFRA)
     assert {v for _c, v, _o in got} == set(fl._ENDPOINT_VARS)
 
@@ -99,10 +116,13 @@ def test_every_endpoint_variable_is_checked(monkeypatch):
 def test_findings_name_the_container_variable_and_value(monkeypatch):
     """The report has to be actionable without a second investigation: which
     container, which variable, what it pins."""
-    _with_env(monkeypatch, {
-        "runner-a": {"FW_MONGODB_URL": f"mongodb://{OTHER_STALE}:27017"},
-        "runner-b": {"FW_MONGODB_URL": "mongodb://afl-mongodb:27017"},
-    })
+    _with_env(
+        monkeypatch,
+        {
+            "runner-a": {"FW_MONGODB_URL": f"mongodb://{OTHER_STALE}:27017"},
+            "runner-b": {"FW_MONGODB_URL": "mongodb://afl-mongodb:27017"},
+        },
+    )
     got = fl.stale_env_containers(INFRA)
     assert len(got) == 1
     c, var, old = got[0]

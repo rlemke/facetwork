@@ -9,6 +9,7 @@ Measured 2026-09-08: one osm.planet.BuildAdminSet dead letter, 3.9 days old, on 
 runner ALREADY in state `failed`, for an admin set the catalog declares
 `expect: 0`. It could never succeed and nothing could ever close it.
 """
+
 import pathlib
 
 REPO = pathlib.Path(__file__).resolve().parents[1]

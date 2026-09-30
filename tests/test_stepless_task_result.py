@@ -5,6 +5,7 @@ continue_step(). fw:execute and fw:sys have no step, so the value was discarded:
 `fw runner sys pause` completed with result None, telling you THAT the command
 ran but not WHAT it reported — for a control channel, most of the point.
 """
+
 import inspect
 
 from facetwork.runtime.runner import service as svc

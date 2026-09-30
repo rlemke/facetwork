@@ -5,6 +5,7 @@ bake clones anonymously, a private repo returns rc=128, continue-on-error skips
 it, and the build exits 0. Every test here pins one half of that -- the auth path
 that makes it bake, and the reporting that makes a miss impossible to overlook.
 """
+
 import importlib.util
 import pathlib
 import subprocess
@@ -46,7 +47,7 @@ def test_failed_clone_retries_with_the_token(monkeypatch):
         calls.append(cmd)
         if cmd[0] == "rm":
             return subprocess.CompletedProcess(cmd, 0, "", "")
-        if len([c for c in calls if c[0] != "rm"]) == 1:      # anonymous attempt
+        if len([c for c in calls if c[0] != "rm"]) == 1:  # anonymous attempt
             raise subprocess.CalledProcessError(128, cmd)
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
@@ -87,6 +88,7 @@ def test_token_never_goes_into_the_url_or_git_config(monkeypatch):
 
 def test_no_token_means_the_original_error_propagates(monkeypatch):
     """Without a secret the failure must stay a failure, not become a silent pass."""
+
     def fake_run(cmd, **kw):
         raise subprocess.CalledProcessError(128, cmd)
 
@@ -141,7 +143,7 @@ def test_rollout_passes_the_secret_by_file_not_env():
     assert "id=gh_token,src=" in src
     assert "id=gh_token,env=" not in src
     assert "umask 077" in src, "the secret file must not be world-readable"
-    assert 'trap ' in src and '_SECRET_DIR' in src, "the secret file must be removed on exit"
+    assert "trap " in src and "_SECRET_DIR" in src, "the secret file must be removed on exit"
 
 
 # --------------------------------------------------------------------------
@@ -156,10 +158,15 @@ def test_every_catalog_repo_field_is_a_bare_name():
     like this and no image contained it, because the skip was only a build WARN.
     """
     import json
+
     cat = json.loads((REPO / "domains.json").read_text())
-    bad = {n: s["repo"] for n, s in cat["domains"].items()
-           if isinstance(s, dict) and isinstance(s.get("repo"), str)
-           and ("/" in s["repo"] or ":" in s["repo"])}
+    bad = {
+        n: s["repo"]
+        for n, s in cat["domains"].items()
+        if isinstance(s, dict)
+        and isinstance(s.get("repo"), str)
+        and ("/" in s["repo"] or ":" in s["repo"])
+    }
     assert not bad, f"repo must be a bare name: {bad}"
 
 

@@ -16,6 +16,7 @@ not alarm, so nothing ever looked wrong; the check simply never ran.
 `fw install check --commands` finds commands still missing this, and recognises
 the call below as the fix.
 """
+
 import os
 import sys
 from pathlib import Path

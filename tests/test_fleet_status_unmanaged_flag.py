@@ -67,11 +67,14 @@ def _write_catalog(tmp_path: Path, servers: list[dict]) -> Path:
 
 def test_reads_the_not_joined_set(tmp_path, monkeypatch) -> None:
     mod = _load()
-    _write_catalog(tmp_path, [
-        {"name": IN.name, "aliases": [IN.alias]},                    # absent = joined
-        {"name": OUT.name, "aliases": [OUT.alias], "joined": False},
-        {"name": YES.name, "aliases": [YES.alias], "joined": True},
-    ])
+    _write_catalog(
+        tmp_path,
+        [
+            {"name": IN.name, "aliases": [IN.alias]},  # absent = joined
+            {"name": OUT.name, "aliases": [OUT.alias], "joined": False},
+            {"name": YES.name, "aliases": [YES.alias], "joined": True},
+        ],
+    )
     monkeypatch.setenv("FW_SERVERS_FILE", str(tmp_path / "servers.json"))
     got = mod._catalogued_not_joined()
     assert OUT.alias in got, got

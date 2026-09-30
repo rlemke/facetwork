@@ -837,8 +837,8 @@ class AgentPoller:
 
             # Cooperative cancellation (lessons-learned §16) — same contract as
             # RegistryRunner, so a handler behaves identically on either runner.
-            payload["_cancellation_check"] = (
-                lambda: self._persistence.task_cancellation_reason(task.uuid, self._server_id)
+            payload["_cancellation_check"] = lambda: self._persistence.task_cancellation_reason(
+                task.uuid, self._server_id
             )
 
             payload["_task_uuid"] = task.uuid

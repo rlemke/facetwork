@@ -655,8 +655,7 @@ class FFLValidator:
                 return self._facets[name]
             # Not found as exact match
             self._result.add_error(
-                f"Unknown facet '{name}'"
-                f"{_suggest.did_you_mean(name, self._facets.keys())}",
+                f"Unknown facet '{name}'{_suggest.did_you_mean(name, self._facets.keys())}",
                 location,
                 rule_id="REF_UNKNOWN_FACET",
             )

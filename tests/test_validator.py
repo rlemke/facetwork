@@ -4313,8 +4313,8 @@ class TestBuiltinDeclarationsAreAlwaysVisible:
         for path in builtin_ffl_paths():
             with open(path) as fh:
                 result = validate(parse(fh.read()))
-            assert result.is_valid, (
-                f"{os.path.basename(path)}: " + "; ".join(e.message for e in result.errors)
+            assert result.is_valid, f"{os.path.basename(path)}: " + "; ".join(
+                e.message for e in result.errors
             )
 
 
@@ -4328,30 +4328,33 @@ class TestForeachYieldAggregation:
     """
 
     def _src(self, body: str) -> str:
-        return (
-            "namespace x {\n"
-            "    event facet W(v: String) => (out: String)\n"
-            f"{body}\n"
-            "}\n"
-        )
+        return f"namespace x {{\n    event facet W(v: String) => (out: String)\n{body}\n}}\n"
 
     def test_append_aggregates_without_warning(self, validator):
-        result = validator.validate(parse(self._src("""
+        result = validator.validate(
+            parse(
+                self._src("""
     facet Each(xs: Json) => (outs: Json)
         andThen foreach x in $.xs {
             w = W(v = $.x)
             yield Each(outs += w.out)
-        }""")))
+        }""")
+            )
+        )
         assert result.is_valid, [e.message for e in result.errors]
         assert not [w for w in result.warnings if w.rule_id == "YIELD_FOREACH_OVERWRITES"]
 
     def test_bare_assign_of_a_step_value_warns(self, validator):
-        result = validator.validate(parse(self._src("""
+        result = validator.validate(
+            parse(
+                self._src("""
     facet Each(xs: Json) => (outs: Json)
         andThen foreach x in $.xs {
             w = W(v = $.x)
             yield Each(outs = w.out)
-        }""")))
+        }""")
+            )
+        )
         assert result.is_valid, "must stay a warning — existing workflows keep compiling"
         warned = [w for w in result.warnings if w.rule_id == "YIELD_FOREACH_OVERWRITES"]
         assert len(warned) == 1
@@ -4361,30 +4364,42 @@ class TestForeachYieldAggregation:
         """`status = "partial"` is the same every iteration — deliberate
         last-wins, and by far the most common form in the installed domains.
         Flagging it would make the rule noise."""
-        result = validator.validate(parse(self._src("""
+        result = validator.validate(
+            parse(
+                self._src("""
     facet Each(xs: Json) => (status: String)
         andThen foreach x in $.xs {
             w = W(v = $.x)
             yield Each(status = "partial")
-        }""")))
+        }""")
+            )
+        )
         assert not [w for w in result.warnings if w.rule_id == "YIELD_FOREACH_OVERWRITES"]
 
     def test_no_warning_outside_a_foreach(self, validator):
-        result = validator.validate(parse(self._src("""
+        result = validator.validate(
+            parse(
+                self._src("""
     workflow Once(a: String) => (out: String) andThen {
         w = W(v = $.a)
         yield Once(out = w.out)
-    }""")))
+    }""")
+            )
+        )
         assert not [w for w in result.warnings if w.rule_id == "YIELD_FOREACH_OVERWRITES"]
 
     def test_append_on_a_step_call_is_an_error(self, validator):
         """A call argument is evaluated once, so `+=` cannot mean anything
         there — accepting it would make it a second spelling of `=`."""
-        result = validator.validate(parse(self._src("""
+        result = validator.validate(
+            parse(
+                self._src("""
     workflow Once(a: String) => (out: String) andThen {
         w = W(v += $.a)
         yield Once(out = w.out)
-    }""")))
+    }""")
+            )
+        )
         assert not result.is_valid
         assert [e for e in result.errors if e.rule_id == "YIELD_APPEND_OUTSIDE_YIELD"]
 
@@ -4393,12 +4408,14 @@ class TestForeachYieldAggregation:
         unconditional key would rewrite every stored AST."""
         from facetwork.emitter import emit_dict
 
-        program = parse(self._src("""
+        program = parse(
+            self._src("""
     facet Each(xs: Json) => (outs: Json, n: Int)
         andThen foreach x in $.xs {
             w = W(v = $.x)
             yield Each(outs += w.out, n = 1)
-        }"""))
+        }""")
+        )
         emitted = emit_dict(program, include_locations=False)
         args = _find_yield_args(emitted)
         by_name = {a["name"]: a for a in args}

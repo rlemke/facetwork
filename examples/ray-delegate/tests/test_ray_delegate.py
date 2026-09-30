@@ -50,7 +50,7 @@ class FakeClient:
         self.jobs: dict[str, object] = dict(existing or {})
         self.submitted: list[str] = []
         self.stopped: list[str] = []
-        self.run_for = run_for          # polls before a submitted job finishes
+        self.run_for = run_for  # polls before a submitted job finishes
         self._polls: dict[str, int] = {}
         self.final = JobStatus.SUCCEEDED
 

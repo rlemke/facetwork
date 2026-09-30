@@ -110,15 +110,19 @@ def _handler(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
 def test_the_obsolete_step_log_list_form_is_flagged(tmp_path):
     """This is the failure the audit exists for: `_step_log` is a callback, and
     `.append` raises AttributeError at the handler's first log line."""
-    _handler(tmp_path, 'def h(p):\n    step_log = p.get("_step_log")\n'
-                       '    step_log.append({"message": "x", "level": "info"})\n')
+    _handler(
+        tmp_path,
+        'def h(p):\n    step_log = p.get("_step_log")\n'
+        '    step_log.append({"message": "x", "level": "info"})\n',
+    )
     hits = scan_contracts(tmp_path)
     assert len(hits) == 1 and "_step_log-as-list" in hits[0]
 
 
 def test_the_correct_call_form_is_not_flagged(tmp_path):
-    _handler(tmp_path, 'def h(p):\n    step_log = p.get("_step_log")\n'
-                       '    step_log("x", level="info")\n')
+    _handler(
+        tmp_path, 'def h(p):\n    step_log = p.get("_step_log")\n    step_log("x", level="info")\n'
+    )
     assert scan_contracts(tmp_path) == []
 
 
@@ -149,23 +153,27 @@ def test_step_log_check_catches_the_spelling_it_is_named_after():
     while happily matching the bare `step_log.append(`.
     """
     pattern = CONTRACT_CHECKS[0][1]
-    for src in ('_step_log.append("x")',
-                'step_log.append("x")',
-                'params["_step_log"].append("x")',
-                "params['_step_log'].append('x')",
-                '_step_log .append( "x" )',
-                '        _step_log.append(msg)'):
+    for src in (
+        '_step_log.append("x")',
+        'step_log.append("x")',
+        'params["_step_log"].append("x")',
+        "params['_step_log'].append('x')",
+        '_step_log .append( "x" )',
+        "        _step_log.append(msg)",
+    ):
         assert pattern.search(src), f"must flag: {src}"
 
 
 def test_step_log_check_does_not_flag_unrelated_lists():
     """A genuine list that merely contains 'step_log' in its name is not the bug."""
     pattern = CONTRACT_CHECKS[0][1]
-    for src in ('my_step_log.append("x")',
-                'step_logs.append(x)',
-                'self.step_log_list.append(x)',
-                'astep_log.append(x)',
-                'step_log(msg, level="info")'):
+    for src in (
+        'my_step_log.append("x")',
+        "step_logs.append(x)",
+        "self.step_log_list.append(x)",
+        "astep_log.append(x)",
+        'step_log(msg, level="info")',
+    ):
         assert not pattern.search(src), f"must NOT flag: {src}"
 
 
@@ -178,8 +186,13 @@ def test_build_artifacts_are_excluded_from_both_scans(tmp_path):
     was invisible to one and poisoned the other.
     """
     repo = tmp_path / "fwh_x"
-    for rel in ("src/x/ffl/a.ffl", "build/lib/x/ffl/a.ffl",
-                "dist/x/ffl/a.ffl", ".venv/lib/x.ffl", "x.egg-info/a.ffl"):
+    for rel in (
+        "src/x/ffl/a.ffl",
+        "build/lib/x/ffl/a.ffl",
+        "dist/x/ffl/a.ffl",
+        ".venv/lib/x.ffl",
+        "x.egg-info/a.ffl",
+    ):
         p = repo / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("namespace x {}\n")

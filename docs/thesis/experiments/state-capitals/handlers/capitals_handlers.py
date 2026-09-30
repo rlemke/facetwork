@@ -67,8 +67,7 @@ def handle_fetch_state_data(params: dict[str, Any]) -> dict[str, Any]:
     res = lib.fetch_state_data(_cache_dir(), force=force)
     _log(
         step_log,
-        f"[{'cached' if res['was_cached'] else 'downloaded'}] "
-        f"{res['state_count']} state relations",
+        f"[{'cached' if res['was_cached'] else 'downloaded'}] {res['state_count']} state relations",
         "success",
     )
     return {

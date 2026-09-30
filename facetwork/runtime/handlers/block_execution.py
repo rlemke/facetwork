@@ -50,7 +50,6 @@ _FOREACH_LIMIT_ATTR = "_foreach_limit"
 _FOREACH_STALL_GRACE_MS = 60_000
 
 
-
 def _containing_facet_name_of(context, step) -> str | None:
     """Qualified facet name that owns block ``step`` (its container's facet)."""
     if not step.container_id:
@@ -59,6 +58,7 @@ def _containing_facet_name_of(context, step) -> str | None:
     if container is None:
         return None
     return container.facet_name or None
+
 
 class BlockExecutionBeginHandler(StateHandler):
     """Handler for state.block.execution.Begin.

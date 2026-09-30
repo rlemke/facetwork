@@ -7,6 +7,7 @@ from the fleet's — measured 2026-08-28, one container had 2 running runners an
 the other had 0. A diagnostic reading the wrong database reports confidently
 about the wrong world.
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -33,6 +34,7 @@ def test_loads_values_from_the_repo_root(tmp_path, monkeypatch):
     root = load_env(cmd)
     assert root == tmp_path
     import os
+
     assert os.environ["FW_MONGODB_URL"] == "mongodb://afl-mongodb:27017"
     assert os.environ["OTHER"] == "x"
 
@@ -43,15 +45,17 @@ def test_an_explicit_environment_value_wins(tmp_path, monkeypatch):
     monkeypatch.setenv("FW_MONGODB_URL", "mongodb://explicit:27017")
     load_env(cmd)
     import os
+
     assert os.environ["FW_MONGODB_URL"] == "mongodb://explicit:27017"
 
 
 def test_comments_blanks_quotes_and_export_are_handled(tmp_path, monkeypatch):
-    cmd = _repo(tmp_path, '# a comment\n\nexport A="quoted"\nB=\'single\'\nC=plain\nnot_a_pair\n')
+    cmd = _repo(tmp_path, "# a comment\n\nexport A=\"quoted\"\nB='single'\nC=plain\nnot_a_pair\n")
     for k in "ABC":
         monkeypatch.delenv(k, raising=False)
     load_env(cmd)
     import os
+
     assert os.environ["A"] == "quoted"
     assert os.environ["B"] == "single"
     assert os.environ["C"] == "plain"
@@ -70,9 +74,11 @@ def test_the_python_maint_commands_actually_call_it():
     silently read localhost again. Discovering them by scan rather than trusting
     a hardcoded list — the same lesson as the claim-site guard."""
     maint = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "lib" / "maint"
-    python_cmds = [p for p in maint.iterdir()
-                   if p.is_file() and p.read_text(errors="replace").startswith("#!/usr/bin/env python")]
+    python_cmds = [
+        p
+        for p in maint.iterdir()
+        if p.is_file() and p.read_text(errors="replace").startswith("#!/usr/bin/env python")
+    ]
     assert python_cmds, "expected python maint commands"
-    missing = [p.name for p in python_cmds
-               if "load_env" not in p.read_text(errors="replace")]
+    missing = [p.name for p in python_cmds if "load_env" not in p.read_text(errors="replace")]
     assert not missing, f"python maint commands not loading .env: {missing}"

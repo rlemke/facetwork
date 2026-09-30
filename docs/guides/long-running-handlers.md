@@ -92,11 +92,12 @@ seconds no matter how often you call it, so put it in the loop:
 ```python
 from facetwork.runtime.handler_context import HandlerContext
 
+
 def handle(payload: dict) -> dict:
     ctx = HandlerContext.from_payload(payload)
 
     for i in range(0, len(items), batch_size):
-        ctx.raise_if_cancelled()          # abort between batches
+        ctx.raise_if_cancelled()  # abort between batches
         process_batch(items[i : i + batch_size])
         ctx.heartbeat(progress_message=f"{i:,}/{len(items):,}")
 
@@ -108,9 +109,9 @@ def handle(payload: dict) -> dict:
 there is partial state to clean up, check the flag instead and unwind yourself:
 
 ```python
-    if ctx.is_cancelled:                  # ctx.cancellation_reason says why
-        drop_staging_tables()
-        return {"status": "cancelled", "processed": processed}
+if ctx.is_cancelled:  # ctx.cancellation_reason says why
+    drop_staging_tables()
+    return {"status": "cancelled", "processed": processed}
 ```
 
 You are cancelled when your result would no longer be accepted, which is broader

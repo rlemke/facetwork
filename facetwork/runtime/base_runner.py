@@ -94,7 +94,6 @@ def measured_resources() -> dict:
 
 
 def _measure() -> dict:
-
     """MEASURED capacity of this host, for resource-aware claim routing.
 
     Measured, never configured: the OOM this exists to prevent was against a
@@ -121,8 +120,7 @@ def _measure() -> dict:
     # Memory: prefer the cgroup limit (what the OOM killer enforces in a
     # container) and fall back to the host total.
     mem_bytes = None
-    for path in ("/sys/fs/cgroup/memory.max",
-                 "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
         try:
             raw = open(path).read().strip()
             if raw and raw != "max":
@@ -139,7 +137,7 @@ def _measure() -> dict:
         except Exception:
             mem_bytes = None
     if mem_bytes:
-        res["memory_gb"] = round(mem_bytes / (1024 ** 3), 2)
+        res["memory_gb"] = round(mem_bytes / (1024**3), 2)
 
     # Datasets this host HOLDS — the "run it where the data is" dimension.
     #
@@ -182,9 +180,9 @@ def _measure() -> dict:
             else:
                 _total = _os.path.getsize(_path)
         except Exception:
-            continue          # not here -> dimension omitted -> this runner declines
+            continue  # not here -> dimension omitted -> this runner declines
         if _total > 0:
-            res[f"dataset_{_name}_gb"] = round(_total / (1024 ** 3), 1)
+            res[f"dataset_{_name}_gb"] = round(_total / (1024**3), 1)
 
     # Scratch: free space where this runner actually stages, not "/".
     #
@@ -202,16 +200,15 @@ def _measure() -> dict:
     # Walking up is still an honest measurement — every ancestor is on the same
     # filesystem the leaf will be created on. If nothing on the path exists we
     # still omit the dimension rather than guess.
-    scratch = (_os.environ.get("FW_LOCAL_SCRATCH")
-               or _os.environ.get("FW_OUTPUT_BASE") or "/tmp")
+    scratch = _os.environ.get("FW_LOCAL_SCRATCH") or _os.environ.get("FW_OUTPUT_BASE") or "/tmp"
     probe = _os.path.abspath(scratch)
     while True:
         try:
-            res["scratch_gb"] = round(_shutil.disk_usage(probe).free / (1024 ** 3), 1)
+            res["scratch_gb"] = round(_shutil.disk_usage(probe).free / (1024**3), 1)
             break
         except Exception:
             parent = _os.path.dirname(probe)
-            if parent == probe:      # reached the root and still nothing
+            if parent == probe:  # reached the root and still nothing
                 break
             probe = parent
     return res

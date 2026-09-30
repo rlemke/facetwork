@@ -52,8 +52,9 @@ def _broken_module(tmp_path: Path, name: str, exc: str) -> None:
 # the verdict itself
 # --------------------------------------------------------------------------
 
+
 def test_healthy_host_has_no_reason(monkeypatch) -> None:
-    monkeypatch.setenv("FW_CORE_IMPORTS", "json,os")   # always importable
+    monkeypatch.setenv("FW_CORE_IMPORTS", "json,os")  # always importable
     assert disp.core_stack_unusable() is None
 
 
@@ -84,13 +85,14 @@ def test_verdict_does_not_depend_on_the_exception_type(monkeypatch, tmp_path) ->
 
 def test_sentinel_set_is_configurable(monkeypatch, tmp_path) -> None:
     _broken_module(tmp_path, "brokencore_c", "ImportError('x')")
-    monkeypatch.setenv("FW_CORE_IMPORTS", "json")        # does not include the broken one
+    monkeypatch.setenv("FW_CORE_IMPORTS", "json")  # does not include the broken one
     assert disp.core_stack_unusable() is None
 
 
 # --------------------------------------------------------------------------
 # what it does to advertisement
 # --------------------------------------------------------------------------
+
 
 def _store_with(handler_file: Path) -> MemoryStore:
     store = MemoryStore()

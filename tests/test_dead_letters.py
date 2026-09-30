@@ -53,9 +53,14 @@ class _FakeDB:
 
 def _task(name, *, hours_ago, uuid, error="boom", state="dead_letter"):
     now = int(time.time() * 1000)
-    return {"uuid": uuid, "name": name, "state": state,
-            "created": now - int(hours_ago * 3600000),
-            "error": {"message": error}, "retry_count": 5}
+    return {
+        "uuid": uuid,
+        "name": name,
+        "state": state,
+        "created": now - int(hours_ago * 3600000),
+        "error": {"message": error},
+        "retry_count": 5,
+    }
 
 
 # --- grouping ---------------------------------------------------------------
@@ -65,11 +70,13 @@ def test_tasks_are_grouped_by_facet_not_listed_flat():
     """One broken handler produces a dead letter per attempt across many
     workflows. A flat list of ninety rows hides that they are three problems,
     and a triage tool that buries the shape of the failure is not used twice."""
-    db = _FakeDB([
-        _task("a.B", hours_ago=50, uuid="1"),
-        _task("a.B", hours_ago=40, uuid="2"),
-        _task("c.D", hours_ago=10, uuid="3"),
-    ])
+    db = _FakeDB(
+        [
+            _task("a.B", hours_ago=50, uuid="1"),
+            _task("a.B", hours_ago=40, uuid="2"),
+            _task("c.D", hours_ago=10, uuid="3"),
+        ]
+    )
     groups = collect(db)
     assert [g.name for g in groups] == ["a.B", "c.D"], "oldest group first"
     assert groups[0].count == 2
@@ -77,11 +84,13 @@ def test_tasks_are_grouped_by_facet_not_listed_flat():
 
 
 def test_only_dead_letters_are_collected():
-    db = _FakeDB([
-        _task("a.B", hours_ago=50, uuid="1"),
-        _task("a.B", hours_ago=50, uuid="2", state="completed"),
-        _task("a.B", hours_ago=50, uuid="3", state="pending"),
-    ])
+    db = _FakeDB(
+        [
+            _task("a.B", hours_ago=50, uuid="1"),
+            _task("a.B", hours_ago=50, uuid="2", state="completed"),
+            _task("a.B", hours_ago=50, uuid="3", state="pending"),
+        ]
+    )
     assert collect(db)[0].count == 1
 
 
@@ -118,10 +127,12 @@ def test_old_dead_letters_are_forgotten():
 def test_a_group_is_forgotten_if_its_OLDEST_member_is():
     """A facet failing continuously has both recent and ancient dead letters.
     It is still unattended, so the oldest decides."""
-    db = _FakeDB([
-        _task("a.B", hours_ago=0.5, uuid="1"),
-        _task("a.B", hours_ago=500, uuid="2"),
-    ])
+    db = _FakeDB(
+        [
+            _task("a.B", hours_ago=0.5, uuid="1"),
+            _task("a.B", hours_ago=500, uuid="2"),
+        ]
+    )
     g = collect(db)[0]
     assert g.forgotten is True
     assert g.newest_hours < 1 and g.oldest_hours > 400

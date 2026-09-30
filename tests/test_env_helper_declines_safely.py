@@ -36,7 +36,11 @@ echo REACHED_END
 def _run(env_sh: Path, env: dict | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-c", _PROBE.format(url=UNRESOLVABLE, env_sh=env_sh)],
-        cwd=REPO, capture_output=True, text=True, timeout=120, env=env,
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
     )
 
 
@@ -63,7 +67,8 @@ def _local_mongo_env(tmp_path: Path) -> dict:
     (pkg / "__init__.py").write_text(_FAKE_PYMONGO, encoding="utf-8")
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(
-        p for p in (str(pkg.parent), env.get("PYTHONPATH", "")) if p)
+        p for p in (str(pkg.parent), env.get("PYTHONPATH", "")) if p
+    )
     return env
 
 

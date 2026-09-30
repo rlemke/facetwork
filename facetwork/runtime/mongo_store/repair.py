@@ -108,9 +108,7 @@ class RepairMixin(_MixinBase):
                 # it, with the poll thread wedged and the heartbeat still
                 # green. The target is a property of the ANCESTOR, not of the
                 # chain that reached it.
-                resolved = (
-                    StepState.BLOCK_EXECUTION_CONTINUE if ancestor.is_block else target_state
-                )
+                resolved = StepState.BLOCK_EXECUTION_CONTINUE if ancestor.is_block else target_state
                 self._set_step_state(ancestor, resolved)
                 ancestors_reset.append(ancestor.id)
             current_id = advance(ancestor)

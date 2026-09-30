@@ -10,6 +10,7 @@ still scoped itself to `unimatch.*`. ONLY the handlers were missing, so its task
 could never be claimed — with no error anywhere except one line at container
 start. `fw util ffl-audit` reported ALL CLEAN throughout.
 """
+
 from facetwork.ffl_audit import check_register_handlers as check
 
 
@@ -21,9 +22,11 @@ def test_calling_the_parameter_directly_is_flagged():
 
 
 def test_the_correct_shape_is_clean():
-    src = ("def register_handlers(runner):\n"
-           "    runner.register_handler(facet_name='f', module_uri='m',"
-           " entrypoint='handle')\n")
+    src = (
+        "def register_handlers(runner):\n"
+        "    runner.register_handler(facet_name='f', module_uri='m',"
+        " entrypoint='handle')\n"
+    )
     assert check(src, "h.py") == []
 
 
@@ -36,14 +39,15 @@ def test_a_noop_stub_is_not_reported_as_a_contract_error():
     hits = check("def register_handlers(runner):\n    pass\n", "h.py")
     assert hits, "it is still noted..."
     assert all(h.startswith("register-handlers-noop") for h in hits), (
-        "...but as a NOOP note the caller resolves per-repo, not a contract error")
+        "...but as a NOOP note the caller resolves per-repo, not a contract error"
+    )
 
 
 def test_the_repo_level_rule_is_implemented():
     """A no-op matters only when NOTHING in the repo registers anything."""
     import pathlib
-    src = (pathlib.Path(__file__).resolve().parents[1]
-           / "facetwork/ffl_audit.py").read_text()
+
+    src = (pathlib.Path(__file__).resolve().parents[1] / "facetwork/ffl_audit.py").read_text()
     assert "registers_somewhere" in src
     assert "NO module in this repo registers a handler" in src
 

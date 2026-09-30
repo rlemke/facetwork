@@ -255,8 +255,12 @@ class TaskMixin(_MixinBase):
                 {"requires_dims": {"$not": {"$elemMatch": {"$nin": list(have)}}}}
             ]
             per_dim += [
-                {"$or": [{f"requires.{dim}": {"$exists": False}},
-                         {f"requires.{dim}": {"$lte": cap}}]}
+                {
+                    "$or": [
+                        {f"requires.{dim}": {"$exists": False}},
+                        {f"requires.{dim}": {"$lte": cap}},
+                    ]
+                }
                 for dim, cap in have.items()
             ]
             res_conditions.append({"$and": per_dim})
@@ -461,16 +465,12 @@ class TaskMixin(_MixinBase):
         # while it is alive RE-REGISTERS on its next heartbeat, and its task
         # heartbeat would be fresh.
         referenced = [
-            sid
-            for sid in self._db.tasks.distinct("server_id", {"state": "running"})
-            if sid
+            sid for sid in self._db.tasks.distinct("server_id", {"state": "running"}) if sid
         ]
         if referenced:
             known = {
                 doc["uuid"]
-                for doc in self._db.servers.find(
-                    {"uuid": {"$in": referenced}}, {"uuid": 1}
-                )
+                for doc in self._db.servers.find({"uuid": {"$in": referenced}}, {"uuid": 1})
             }
             vanished = [sid for sid in referenced if sid not in known]
             if vanished:

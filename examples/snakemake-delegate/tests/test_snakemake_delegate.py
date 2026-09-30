@@ -93,11 +93,13 @@ def test_a_nonexistent_path_is_permanent(tmp_path):
     from facetwork.runtime.errors import PermanentError
 
     with pytest.raises(PermanentError, match="does not exist"):
-        sh.handle({
-            "_facet_name": "snakemake.delegate.RunWorkflow",
-            "snakefile": str(tmp_path / "nope"),
-            "workdir": str(tmp_path),
-        })
+        sh.handle(
+            {
+                "_facet_name": "snakemake.delegate.RunWorkflow",
+                "snakefile": str(tmp_path / "nope"),
+                "workdir": str(tmp_path),
+            }
+        )
 
 
 def test_a_bad_timeout_is_permanent_not_a_two_hour_wait(tmp_path):
@@ -106,12 +108,14 @@ def test_a_bad_timeout_is_permanent_not_a_two_hour_wait(tmp_path):
     from facetwork.runtime.errors import PermanentError
 
     with pytest.raises(PermanentError, match="run_timeout_minutes must be positive"):
-        sh.handle({
-            "_facet_name": "snakemake.delegate.RunWorkflow",
-            "snakefile": str(SNAKEFILE),
-            "workdir": str(tmp_path),
-            "run_timeout_minutes": 0,
-        })
+        sh.handle(
+            {
+                "_facet_name": "snakemake.delegate.RunWorkflow",
+                "snakefile": str(SNAKEFILE),
+                "workdir": str(tmp_path),
+                "run_timeout_minutes": 0,
+            }
+        )
 
 
 def test_unknown_facet_is_rejected():
@@ -123,13 +127,19 @@ def test_unknown_facet_is_rejected():
 
 
 def test_command_is_argv_and_carries_the_knobs(tmp_path):
-    cmd = sh._command("/bin/snakemake", {"cores": 4, "targets": "all", "extra_args": "--quiet"},
-                      str(tmp_path), str(SNAKEFILE))
+    cmd = sh._command(
+        "/bin/snakemake",
+        {"cores": 4, "targets": "all", "extra_args": "--quiet"},
+        str(tmp_path),
+        str(SNAKEFILE),
+    )
     assert cmd[0] == "/bin/snakemake"
     assert "--cores" in cmd and cmd[cmd.index("--cores") + 1] == "4"
     assert cmd[-2:] == ["--quiet", "all"]
     # A path with a space must arrive as ONE argv element, not two words.
-    spaced = sh._command("/bin/snakemake", {"targets": "'a file.txt'"}, str(tmp_path), str(SNAKEFILE))
+    spaced = sh._command(
+        "/bin/snakemake", {"targets": "'a file.txt'"}, str(tmp_path), str(SNAKEFILE)
+    )
     assert "a file.txt" in spaced
 
 

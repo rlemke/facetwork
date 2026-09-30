@@ -479,10 +479,16 @@ class _S3WriteStream:
         return False
 
 
-def s3_client(endpoint: str | None = None, *,
-              access_key: str | None = None, secret_key: str | None = None,
-              region: str | None = None, read_timeout: int | None = None,
-              max_attempts: int | None = None, connect_timeout: int | None = None):
+def s3_client(
+    endpoint: str | None = None,
+    *,
+    access_key: str | None = None,
+    secret_key: str | None = None,
+    region: str | None = None,
+    read_timeout: int | None = None,
+    max_attempts: int | None = None,
+    connect_timeout: int | None = None,
+):
     """The ONE place an S3/MinIO client is constructed.
 
     ``S3StorageBackend`` uses this, and so does any caller needing an operation
@@ -522,21 +528,29 @@ def s3_client(endpoint: str | None = None, *,
         "s3",
         endpoint_url=endpoint or os.environ.get("FW_S3_ENDPOINT") or None,
         region_name=region or os.environ.get("FW_S3_REGION", "us-east-1"),
-        aws_access_key_id=(access_key or os.environ.get("FW_S3_ACCESS_KEY")
-                           or os.environ.get("AWS_ACCESS_KEY_ID")),
-        aws_secret_access_key=(secret_key or os.environ.get("FW_S3_SECRET_KEY")
-                               or os.environ.get("AWS_SECRET_ACCESS_KEY")),
+        aws_access_key_id=(
+            access_key or os.environ.get("FW_S3_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
+        ),
+        aws_secret_access_key=(
+            secret_key
+            or os.environ.get("FW_S3_SECRET_KEY")
+            or os.environ.get("AWS_SECRET_ACCESS_KEY")
+        ),
         # ⚠️ MinIO speaks S3v4 + PATH-style addressing. The ad-hoc clients in the
         # domain repos omitted this and worked only because boto3 happens to
         # choose path-style for a custom endpoint_url; making it explicit is what
         # "one client" is for.
-        config=_BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"},
-                           **_cfg_extra(read_timeout, max_attempts, connect_timeout)),
+        config=_BotoConfig(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            **_cfg_extra(read_timeout, max_attempts, connect_timeout),
+        ),
     )
 
 
-def _cfg_extra(read_timeout: int | None, max_attempts: int | None,
-               connect_timeout: int | None = None) -> dict:
+def _cfg_extra(
+    read_timeout: int | None, max_attempts: int | None, connect_timeout: int | None = None
+) -> dict:
     extra: dict = {}
     if read_timeout is not None:
         extra["read_timeout"] = read_timeout
@@ -576,8 +590,7 @@ class S3StorageBackend:
         access = os.environ.get("FW_S3_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
         secret = os.environ.get("FW_S3_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
         # One construction for the whole codebase — see s3_client() above.
-        self._client = s3_client(endpoint, access_key=access, secret_key=secret,
-                                 region=region)
+        self._client = s3_client(endpoint, access_key=access, secret_key=secret, region=region)
 
     def _split(self, path: str) -> tuple[str, str]:
         return _s3_split(path)

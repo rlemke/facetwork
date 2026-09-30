@@ -10,6 +10,7 @@ it, which is what surfaced this.
 cron rather than systemd: `loginctl show-user … Linger` is `no` on these hosts,
 so a --user timer dies at logout, and system units need sudo per install.
 """
+
 import os
 import subprocess
 import textwrap
@@ -27,17 +28,20 @@ def _run(script: str, tmp_path: Path) -> subprocess.CompletedProcess:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     store = tmp_path / "crontab.txt"
-    (bin_dir / "crontab").write_text(textwrap.dedent(f"""\
+    (bin_dir / "crontab").write_text(
+        textwrap.dedent(f"""\
         #!/bin/bash
         STORE="{store}"
         if [ "${{1:-}}" = "-l" ]; then cat "$STORE" 2>/dev/null; exit 0; fi
         if [ "${{1:-}}" = "-r" ]; then rm -f "$STORE"; exit 0; fi
         cat "$1" > "$STORE"
-        """))
+        """)
+    )
     (bin_dir / "crontab").chmod(0o755)
     env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
-    return subprocess.run(["bash", "-c", f". {HELPER}\n{script}"],
-                          capture_output=True, text=True, env=env)
+    return subprocess.run(
+        ["bash", "-c", f". {HELPER}\n{script}"], capture_output=True, text=True, env=env
+    )
 
 
 def test_cron_spec_from_a_time():
@@ -62,8 +66,10 @@ def test_install_then_uninstall_round_trips(tmp_path):
     r = _run(
         'fw_timer_cron_install demo /tmp/w.sh "15 3 * * *" /tmp/l.log\n'
         'echo "AFTER_INSTALL:$(fw_timer_cron_line demo)"\n'
-        'fw_timer_cron_uninstall demo\n'
-        'echo "AFTER_UNINSTALL:[$(fw_timer_cron_line demo)]"\n', tmp_path)
+        "fw_timer_cron_uninstall demo\n"
+        'echo "AFTER_UNINSTALL:[$(fw_timer_cron_line demo)]"\n',
+        tmp_path,
+    )
     assert "AFTER_INSTALL:15 3 * * * /tmp/w.sh" in r.stdout, r.stdout
     assert "AFTER_UNINSTALL:[]" in r.stdout, r.stdout
 
@@ -74,7 +80,9 @@ def test_reinstall_does_not_duplicate_the_line(tmp_path):
     r = _run(
         'fw_timer_cron_install demo /tmp/w.sh "15 3 * * *" /tmp/l.log\n'
         'fw_timer_cron_install demo /tmp/w.sh "30 4 * * *" /tmp/l.log\n'
-        'fw_timer_cron_line demo | wc -l\n', tmp_path)
+        "fw_timer_cron_line demo | wc -l\n",
+        tmp_path,
+    )
     assert r.stdout.strip().endswith("1"), r.stdout
 
 
@@ -84,7 +92,9 @@ def test_uninstall_leaves_other_entries_alone(tmp_path):
     r = _run(
         'printf "0 5 * * * /usr/local/bin/backup.sh\\n" > /tmp/seed.$$ && crontab /tmp/seed.$$\n'
         'fw_timer_cron_install demo /tmp/w.sh "15 3 * * *" /tmp/l.log\n'
-        'fw_timer_cron_uninstall demo\n'
-        'crontab -l\n', tmp_path)
+        "fw_timer_cron_uninstall demo\n"
+        "crontab -l\n",
+        tmp_path,
+    )
     assert "backup.sh" in r.stdout, r.stdout
     assert "fw-timer:demo" not in r.stdout, r.stdout

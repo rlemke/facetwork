@@ -258,8 +258,16 @@ class TestRepairAncestorWalkResolvesStatePerAncestor:
 
         store._reset_failed_step_and_ancestors(leaf, step_by_id, reset)
 
-        got = {name: store.get_step(s.id).state for name, s in
-               (("leaf", leaf), ("inner", inner), ("stmt", stmt), ("outer", outer), ("wf", wf))}
+        got = {
+            name: store.get_step(s.id).state
+            for name, s in (
+                ("leaf", leaf),
+                ("inner", inner),
+                ("stmt", stmt),
+                ("outer", outer),
+                ("wf", wf),
+            )
+        }
         assert got["leaf"] == StepState.EVENT_TRANSMIT
         assert got["inner"] == StepState.BLOCK_EXECUTION_CONTINUE
         assert got["stmt"] == StepState.STATEMENT_BLOCKS_CONTINUE

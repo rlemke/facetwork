@@ -49,7 +49,9 @@ _BUILTIN_TIMEOUT_MS = 600_000
 
 
 def _ffl_path(filename: str) -> str:
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ffl", filename)
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ffl", filename
+    )
 
 
 def builtin_facets() -> dict[str, str]:

@@ -31,6 +31,7 @@ Two classes of check, because they fail differently:
     (agents/java/fw-agent/src/main/java/afl/agent/AgentPoller.java). The docs
     that import it are correct.
 """
+
 import argparse
 import pathlib
 import re
@@ -42,7 +43,9 @@ import sys
 # repo (`publish-replication.sh` belongs to fwh_osm). Checking bare names
 # produced 200+ false positives, and a linter nobody can run clean is a linter
 # nobody runs.
-CODE_REF = re.compile(r"`([A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_.-]+)+\.(?:py|lark|ffl|java|sh))`")
+CODE_REF = re.compile(
+    r"`([A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_.-]+)+\.(?:py|lark|ffl|java|sh))`"
+)
 # Reserved protocol names, in their ONLY correct spelling.
 RESERVED = {
     "_afl_continue": "_fw_continue",
@@ -53,8 +56,7 @@ SKIP_FILES = {"docs/contributing/changelog.md"}
 # Third-party trees carry their own READMEs about their own layout.
 SKIP_DIRS = {".git", ".venv", "node_modules", "site-packages", "__pycache__", "build", "dist"}
 # Top-level trees this repo owns and can therefore be authoritative about.
-OURS = {"facetwork", "scripts", "docs", "examples", "tests", "agents",
-        "domain-template", "afl"}
+OURS = {"facetwork", "scripts", "docs", "examples", "tests", "agents", "domain-template", "afl"}
 
 
 def resolves(repo, p):
@@ -74,12 +76,14 @@ def resolves(repo, p):
         if str(cand).endswith(tail):
             return True
     return False
+
+
 # Paths that legitimately do not exist in this repo.
 ALLOW_MISSING = re.compile(
     r"^(?:"
-    r"path/|your/|some/|example|foo|bar|my_|<|\.\.\.|"          # illustrative
-    r"[A-Za-z0-9_.-]+\.(?:json|yml|yaml)$|"                      # bare filenames
-    r"afl/agent/"                                                # the Java package
+    r"path/|your/|some/|example|foo|bar|my_|<|\.\.\.|"  # illustrative
+    r"[A-Za-z0-9_.-]+\.(?:json|yml|yaml)$|"  # bare filenames
+    r"afl/agent/"  # the Java package
     r")"
 )
 
@@ -139,8 +143,10 @@ def main() -> int:
                     bad_names.append((py.relative_to(repo), n, stale, good))
 
     if a.quiet:
-        print(f"code refs: {len(bad_paths)} broken paths, {len(bad_names)} stale protocol names "
-              f"({checked} checked)")
+        print(
+            f"code refs: {len(bad_paths)} broken paths, {len(bad_names)} stale protocol names "
+            f"({checked} checked)"
+        )
         return 1 if (bad_paths or bad_names) else 0
 
     if bad_names:
@@ -160,8 +166,10 @@ def main() -> int:
         print("  deleted. Resolve by SYMBOL (where is the class now?), not by filename.")
         return 1
     if foreign:
-        print(f"note: {len(foreign)} reference(s) name files outside this repo "
-              f"(domain repos); reported, not failed:")
+        print(
+            f"note: {len(foreign)} reference(s) name files outside this repo "
+            f"(domain repos); reported, not failed:"
+        )
         for f, n, p in foreign[:6]:
             print(f"    {f}:{n}  {p}")
         print()

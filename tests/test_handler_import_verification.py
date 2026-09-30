@@ -9,6 +9,7 @@ numpy, every handler module importing numpy raises, and every one of them was
 located successfully. The tasks then failed at DISPATCH, burning retry budget,
 while the host reported healthy.
 """
+
 import json
 import sys
 import textwrap
@@ -37,20 +38,30 @@ def _module(tmp_path, monkeypatch, name, body):
 
 def test_a_module_that_locates_but_cannot_import_is_rejected(tmp_path, monkeypatch):
     """THE PRE-x86-64-v2 HOST CASE — and the one find_spec alone passed."""
-    n = _module(tmp_path, monkeypatch, "brokenhandler", """
+    n = _module(
+        tmp_path,
+        monkeypatch,
+        "brokenhandler",
+        """
         import a_module_that_cannot_possibly_exist
         def handle(params): return {}
-    """)
+    """,
+    )
     # find_spec alone would say yes; the real check must say no.
     assert disp.importlib.util.find_spec(n) is not None, "precondition: it IS locatable"
     assert disp.registration_module_available(n) is False
 
 
 def test_a_healthy_module_is_accepted(tmp_path, monkeypatch):
-    n = _module(tmp_path, monkeypatch, "goodhandler", """
+    n = _module(
+        tmp_path,
+        monkeypatch,
+        "goodhandler",
+        """
         VALUE = 1
         def handle(params): return {"ok": True}
-    """)
+    """,
+    )
     assert disp.registration_module_available(n) is True
 
 
@@ -93,7 +104,8 @@ def test_cache_is_keyed_by_image_tag(tmp_path, monkeypatch):
 
 def test_a_file_uri_is_still_a_path_check(tmp_path):
     """file:// registrations are bind-mounted sources; existence is the question."""
-    f = tmp_path / "h.py"; f.write_text("def handle(p): return {}\n")
+    f = tmp_path / "h.py"
+    f.write_text("def handle(p): return {}\n")
     assert disp.registration_module_available(f"file://{f}") is True
     assert disp.registration_module_available(f"file://{tmp_path}/absent.py") is False
 
@@ -103,4 +115,4 @@ def test_an_unwritable_cache_dir_costs_a_reverify_not_a_wrong_answer(tmp_path, m
     monkeypatch.setenv("FW_LOCAL_SCRATCH", str(tmp_path / "does" / "not" / "exist"))
     monkeypatch.setattr(disp, "_IMPORT_VERIFY", None, raising=False)
     monkeypatch.setattr(disp, "_IMPORT_VERIFY_PATH", None, raising=False)
-    assert disp.registration_module_available(n) is True     # still correct
+    assert disp.registration_module_available(n) is True  # still correct

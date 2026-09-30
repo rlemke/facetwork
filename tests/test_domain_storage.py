@@ -10,6 +10,7 @@ DATA MIGRATION, not a refactor: eight domains store under a doubled
 fwh_osm_mapping under a hyphen its package name does not have. Unifying those
 silently would orphan each cache rather than move it.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -81,8 +82,10 @@ def test_cache_env_override_wins_and_is_derived_per_domain(monkeypatch):
 
 def test_an_explicit_cache_env_name_is_honoured():
     """A package that already documents FW_CENSUS_CACHE_DIR keeps that spelling."""
-    assert domain_storage("census_us", cache_env="FW_CENSUS_CACHE_DIR").cache_env == \
-        "FW_CENSUS_CACHE_DIR"
+    assert (
+        domain_storage("census_us", cache_env="FW_CENSUS_CACHE_DIR").cache_env
+        == "FW_CENSUS_CACHE_DIR"
+    )
 
 
 def test_a_bad_layout_or_domain_is_refused():
@@ -138,6 +141,7 @@ def test_backend_is_selected_per_path():
     """get_storage_backend selects per path; calling it bare would resolve a
     remote destination against the default backend."""
     import inspect
+
     sig = inspect.signature(DomainStorage.backend)
     assert "path" in sig.parameters
 
@@ -193,6 +197,7 @@ def test_there_is_one_s3_client_construction():
     import inspect
 
     import facetwork.runtime.storage as S
+
     src = inspect.getsource(S)
     assert src.count("_b.client(") + src.count("_boto3.client(") == 1
     assert "def s3_client(" in src
@@ -205,6 +210,7 @@ def test_the_shared_client_carries_the_minio_config():
     import inspect
 
     import facetwork.runtime.storage as S
+
     body = inspect.getsource(S.s3_client)
     assert "s3v4" in body and "addressing_style" in body
 
@@ -217,6 +223,7 @@ def test_client_defaults_can_be_pinned_by_a_caller():
     import inspect
 
     import facetwork.runtime.storage as S
+
     sig = inspect.signature(S.s3_client)
     assert {"endpoint", "access_key", "secret_key", "region"} <= set(sig.parameters)
 
@@ -227,8 +234,8 @@ def test_client_config_tuning_is_passed_through_not_dropped():
     object into a timeout rather than a slow success — the kind of regression a
     refactor hides because nothing fails until the object is big enough."""
     from facetwork.runtime.storage import s3_client
-    c = s3_client("http://x:9000", access_key="k", secret_key="s",
-                  read_timeout=300, max_attempts=5)
+
+    c = s3_client("http://x:9000", access_key="k", secret_key="s", read_timeout=300, max_attempts=5)
     assert c.meta.config.read_timeout == 300
     # botocore normalises max_attempts=5 to total_max_attempts=6 (5 retries + 1)
     assert c.meta.config.retries["total_max_attempts"] == 6
@@ -236,6 +243,7 @@ def test_client_config_tuning_is_passed_through_not_dropped():
 
 def test_config_tuning_is_optional():
     from facetwork.runtime.storage import s3_client
+
     c = s3_client("http://x:9000", access_key="k", secret_key="s")
     assert c.meta.config.signature_version == "s3v4"
     assert c.meta.config.s3["addressing_style"] == "path"
@@ -252,8 +260,15 @@ def test_connect_timeout_is_tunable_for_the_serving_path():
                         list/get blocks for minutes instead of failing fast.
     """
     from facetwork.runtime.storage import s3_client
-    c = s3_client("http://x:9000", access_key="k", secret_key="s",
-                  connect_timeout=4, read_timeout=12, max_attempts=2)
+
+    c = s3_client(
+        "http://x:9000",
+        access_key="k",
+        secret_key="s",
+        connect_timeout=4,
+        read_timeout=12,
+        max_attempts=2,
+    )
     assert c.meta.config.connect_timeout == 4
     assert c.meta.config.read_timeout == 12
     assert c.meta.config.retries["total_max_attempts"] == 3
@@ -262,6 +277,7 @@ def test_connect_timeout_is_tunable_for_the_serving_path():
 def test_no_module_builds_its_own_s3_client():
     """The end state of the sweep: one construction in the whole codebase."""
     import pathlib
+
     root = pathlib.Path(__file__).resolve().parents[1] / "facetwork"
     offenders = []
     for f in root.rglob("*.py"):
@@ -269,7 +285,9 @@ def test_no_module_builds_its_own_s3_client():
             continue
         text = f.read_text(errors="replace")
         for line in text.split("\n"):
-            if ("boto3.client(" in line or "_b.client(" in line) and not line.strip().startswith("#"):
+            if ("boto3.client(" in line or "_b.client(" in line) and not line.strip().startswith(
+                "#"
+            ):
                 if f.name != "storage.py":
                     offenders.append(f"{f.relative_to(root)}: {line.strip()[:60]}")
     assert not offenders, offenders

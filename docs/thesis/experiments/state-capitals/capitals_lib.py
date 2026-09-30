@@ -48,13 +48,56 @@ out tags center;
 # DC and the territories are in the OSM data but are not states, so they are not
 # fanned out over.
 STATE_CODES = [
-    "US-AL", "US-AK", "US-AZ", "US-AR", "US-CA", "US-CO", "US-CT", "US-DE",
-    "US-FL", "US-GA", "US-HI", "US-ID", "US-IL", "US-IN", "US-IA", "US-KS",
-    "US-KY", "US-LA", "US-ME", "US-MD", "US-MA", "US-MI", "US-MN", "US-MS",
-    "US-MO", "US-MT", "US-NE", "US-NV", "US-NH", "US-NJ", "US-NM", "US-NY",
-    "US-NC", "US-ND", "US-OH", "US-OK", "US-OR", "US-PA", "US-RI", "US-SC",
-    "US-SD", "US-TN", "US-TX", "US-UT", "US-VT", "US-VA", "US-WA", "US-WV",
-    "US-WI", "US-WY",
+    "US-AL",
+    "US-AK",
+    "US-AZ",
+    "US-AR",
+    "US-CA",
+    "US-CO",
+    "US-CT",
+    "US-DE",
+    "US-FL",
+    "US-GA",
+    "US-HI",
+    "US-ID",
+    "US-IL",
+    "US-IN",
+    "US-IA",
+    "US-KS",
+    "US-KY",
+    "US-LA",
+    "US-ME",
+    "US-MD",
+    "US-MA",
+    "US-MI",
+    "US-MN",
+    "US-MS",
+    "US-MO",
+    "US-MT",
+    "US-NE",
+    "US-NV",
+    "US-NH",
+    "US-NJ",
+    "US-NM",
+    "US-NY",
+    "US-NC",
+    "US-ND",
+    "US-OH",
+    "US-OK",
+    "US-OR",
+    "US-PA",
+    "US-RI",
+    "US-SC",
+    "US-SD",
+    "US-TN",
+    "US-TX",
+    "US-UT",
+    "US-VT",
+    "US-VA",
+    "US-WA",
+    "US-WV",
+    "US-WI",
+    "US-WY",
 ]
 
 
@@ -74,6 +117,7 @@ def cache_path(cache_dir: str | Path) -> Path:
 # --------------------------------------------------------------------------
 # The one networked step
 # --------------------------------------------------------------------------
+
 
 def fetch_state_data(cache_dir: str | Path, force: bool = False) -> dict:
     """Download the OSM state relations + capital nodes, once.
@@ -108,9 +152,7 @@ def fetch_state_data(cache_dir: str | Path, force: bool = False) -> dict:
         code = tags.get("ISO3166-2")
         if not code:
             continue
-        centre = next(
-            (m for m in el.get("members", []) if m.get("role") == "admin_centre"), None
-        )
+        centre = next((m for m in el.get("members", []) if m.get("role") == "admin_centre"), None)
         states[code] = {
             "iso": code,
             "name": tags.get("name", ""),
@@ -153,6 +195,7 @@ def fetch_state_data(cache_dir: str | Path, force: bool = False) -> dict:
 # --------------------------------------------------------------------------
 # The fan-out step — cache only, never the network
 # --------------------------------------------------------------------------
+
 
 def resolve_capital(cache_dir: str | Path, state_code: str) -> dict:
     """Resolve one state's capital from the cache. Never touches the network."""
@@ -199,6 +242,7 @@ def write_state_result(out_dir: str | Path, result: dict) -> Path:
 # --------------------------------------------------------------------------
 # Fan-in
 # --------------------------------------------------------------------------
+
 
 def combine(states_dir: str | Path, out_path: str | Path) -> dict:
     """Merge the per-state results into one table (JSON + CSV beside it)."""

@@ -224,8 +224,9 @@ def test_no_flag_survives_a_concurrent_storm():
         with lock:
             calls.append(1)
 
-    threads = [threading.Thread(target=lambda: svc._resume_with_lock(WF, resume_fn))
-               for _ in range(64)]
+    threads = [
+        threading.Thread(target=lambda: svc._resume_with_lock(WF, resume_fn)) for _ in range(64)
+    ]
     for t in threads:
         t.start()
     for t in threads:

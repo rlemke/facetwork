@@ -24,6 +24,7 @@ rename — so routing the local path through it as well would have silently trad
 a crash-safety guarantee for tidiness. One S3 client was the goal; losing atomic
 writes was not.
 """
+
 from __future__ import annotations
 
 import os
@@ -151,7 +152,7 @@ class ToolStorage:
             out: list[str] = []
             for cur, _dirs, files in self._backend(root).walk(root):
                 base = cur.rstrip("/")
-                rel = base[len(root):].lstrip("/")
+                rel = base[len(root) :].lstrip("/")
                 out.extend(f"{rel}/{fn}" if rel else fn for fn in files)
             return out
         if not os.path.isdir(dir_path):

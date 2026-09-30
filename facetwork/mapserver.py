@@ -428,7 +428,9 @@ class _Handler(BaseHTTPRequestHandler):
                         obj = s3.get_object(Bucket=BUCKET, Key=key)
                         rng = None
                     except Exception:
-                        self._send(404, f"<h1>404</h1><p>not in store: <code>{escape(key)}</code></p>")
+                        self._send(
+                            404, f"<h1>404</h1><p>not in store: <code>{escape(key)}</code></p>"
+                        )
                         return
                 else:
                     self._send(404, f"<h1>404</h1><p>not in store: <code>{escape(key)}</code></p>")

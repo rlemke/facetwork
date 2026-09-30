@@ -9,6 +9,7 @@ and only `import numpy` raises. The host would materialize the venv, advertise
 the hash honestly by the old definition, claim the task, and fail at dispatch —
 which is indistinguishable from a healthy runner until the work lands on it.
 """
+
 import json
 import os
 import sys
@@ -33,9 +34,12 @@ def _installed_dist(root: Path, name: str, body: str) -> None:
 
 def test_a_package_that_installs_but_raises_on_import_is_rejected(tmp_path, monkeypatch):
     """THE PRE-x86-64-v2 HOST CASE. Installed, discoverable, and fatal when imported."""
-    _installed_dist(tmp_path, "cpuboundpkg",
-                    "raise ImportError('built with baseline optimizations (X86_V2) "
-                    "but your machine does not support them')")
+    _installed_dist(
+        tmp_path,
+        "cpuboundpkg",
+        "raise ImportError('built with baseline optimizations (X86_V2) "
+        "but your machine does not support them')",
+    )
     monkeypatch.setenv("PYTHONPATH", str(tmp_path))
 
     ok, err = smoke_import(sys.executable, ["cpuboundpkg==1.0"])
@@ -66,6 +70,7 @@ def test_no_pins_is_vacuously_fine():
 
 
 # --- discovery -------------------------------------------------------------
+
 
 def _fake_env(root: Path, h: str, pins: list[str] | None) -> Path:
     d = root / h

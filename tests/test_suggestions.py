@@ -39,6 +39,7 @@ def _messages(source: str) -> tuple[list[str], list[str]]:
 # The suggestion primitives
 # --------------------------------------------------------------------------
 
+
 def test_a_near_miss_is_suggested():
     assert suggest.closest("fetchd", ["fetched", "combined"]) == "fetched"
 
@@ -61,7 +62,7 @@ def test_the_name_itself_is_never_suggested():
 
 
 def test_an_empty_scope_produces_no_list():
-    """"(steps in scope here: )" reads as a compiler bug, not an empty block."""
+    """ "(steps in scope here: )" reads as a compiler bug, not an empty block."""
     assert suggest.in_scope("steps in scope here", []) == ""
 
 

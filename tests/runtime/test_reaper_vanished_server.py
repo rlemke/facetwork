@@ -10,6 +10,7 @@ low-zoom step, its server record was pruned, and the task sat `state=running` wi
 a lease **473 minutes** in the future with nothing able to reclaim it. Every
 rollout can strand whatever was running at that moment for most of a day.
 """
+
 import pytest
 
 from facetwork.runtime.mongo_store import MongoStore
@@ -30,13 +31,19 @@ def store(monkeypatch):
 
 
 def _task(store, server_id, heartbeat_ms):
-    store._db.tasks.insert_one({
-        "uuid": "task-1", "name": "osm.Roads.ZoomBuilder.BuildZoomLayers",
-        "state": "running", "server_id": server_id, "step_id": "step-1",
-        "workflow_id": "wf-1", "updated": NOW - 600_000,
-        "task_heartbeat": heartbeat_ms,
-        "lease_expires": NOW + 8 * 3_600_000,   # the 473-minute lease
-    })
+    store._db.tasks.insert_one(
+        {
+            "uuid": "task-1",
+            "name": "osm.Roads.ZoomBuilder.BuildZoomLayers",
+            "state": "running",
+            "server_id": server_id,
+            "step_id": "step-1",
+            "workflow_id": "wf-1",
+            "updated": NOW - 600_000,
+            "task_heartbeat": heartbeat_ms,
+            "lease_expires": NOW + 8 * 3_600_000,  # the 473-minute lease
+        }
+    )
 
 
 def test_a_task_owned_by_a_deleted_server_is_reclaimed(store):

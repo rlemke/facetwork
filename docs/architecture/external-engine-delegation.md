@@ -151,7 +151,7 @@ with ctx.stage("temporal-run", timeout_ms=30 * 60_000) as s:
     while not done:
         s.heartbeat(progress_message=f"{status}")
         if slower_than_expected:
-            s.extend(15 * 60_000)      # grow the budget mid-flight
+            s.extend(15 * 60_000)  # grow the budget mid-flight
 ```
 
 `ctx.stage()` is a context manager that sets `stage_budget_expires` on the task
@@ -446,21 +446,21 @@ Adapter, in outline:
 ```python
 def handle(payload):
     ctx = HandlerContext.from_payload(payload)
-    external_id = f"fw-{payload['_step_id']}"          # derived, not generated
+    external_id = f"fw-{payload['_step_id']}"  # derived, not generated
 
-    handle = temporal.start_workflow(                   # idempotent by policy
+    handle = temporal.start_workflow(  # idempotent by policy
         payload["workflow_type"],
         id=external_id,
         task_queue=payload["task_queue"],
         id_reuse_policy=REJECT_DUPLICATE,
-    )                                                   # duplicate -> attach
+    )  # duplicate -> attach
 
-    store.update_task_stage_budget(                     # park, do not block
+    store.update_task_stage_budget(  # park, do not block
         payload["_task_id"],
         budget_expires=now_ms() + payload["run_timeout_minutes"] * 60_000,
         stage_name="temporal-run",
     )
-    return PARKED          # no returns written yet; the watcher finishes it
+    return PARKED  # no returns written yet; the watcher finishes it
 ```
 
 The watcher (or Temporal's final activity) then performs protocol steps 4–6.
@@ -552,21 +552,22 @@ Adapter, in outline — the same five moves as §8.2:
 ```python
 from ray.job_submission import JobSubmissionClient
 
+
 def handle(payload):
     ctx = HandlerContext.from_payload(payload)
     client = JobSubmissionClient(os.environ["FW_RAY_ADDRESS"])
-    external_id = f"fw-{payload['_step_id']}"           # derived, not generated
+    external_id = f"fw-{payload['_step_id']}"  # derived, not generated
 
     try:
-        client.submit_job(                              # idempotent by id
+        client.submit_job(  # idempotent by id
             entrypoint=payload["entrypoint"],
             submission_id=external_id,
             runtime_env=json.loads(payload["runtime_env_json"]),
         )
-    except RuntimeError:                                # id exists -> attach
+    except RuntimeError:  # id exists -> attach
         pass
 
-    store.update_task_stage_budget(                     # park, do not block
+    store.update_task_stage_budget(  # park, do not block
         payload["_task_id"],
         budget_expires=now_ms() + payload["run_timeout_minutes"] * 60_000,
         stage_name="ray-job",

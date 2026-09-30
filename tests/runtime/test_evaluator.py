@@ -6958,7 +6958,10 @@ class TestAppendYieldMerge:
         completed = [block(2), block(0), block(1)]
         ordered = sorted(
             completed,
-            key=lambda b: (getattr(b, "foreach_index", None) is None, getattr(b, "foreach_index", -1)),
+            key=lambda b: (
+                getattr(b, "foreach_index", None) is None,
+                getattr(b, "foreach_index", -1),
+            ),
         )
         assert [b.foreach_index for b in ordered] == [0, 1, 2]
 
@@ -6966,6 +6969,9 @@ class TestAppendYieldMerge:
         plain = StepDefinition(id="plain", object_type="AndThen", workflow_id="w1")
         mixed = sorted(
             [plain, block(1), block(0)],
-            key=lambda b: (getattr(b, "foreach_index", None) is None, getattr(b, "foreach_index", -1)),
+            key=lambda b: (
+                getattr(b, "foreach_index", None) is None,
+                getattr(b, "foreach_index", -1),
+            ),
         )
         assert [b.id for b in mixed] == ["b0", "b1", "plain"]

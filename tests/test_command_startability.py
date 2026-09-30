@@ -6,6 +6,7 @@ python has no pymongo, so `fw maint unsatisfiable` exited 2 ("could not verify")
 on every host but the one it was written on — for its entire life, without ever
 looking broken, because exit 2 correctly does not alarm.
 """
+
 import importlib.util
 import stat
 from pathlib import Path
@@ -35,6 +36,7 @@ def _cmd(d: Path, name: str, body: str) -> Path:
 
 # --- interpreter resolution ------------------------------------------------
 
+
 def test_bare_python_command_resolves_to_system_interpreter(tmp_path):
     """The whole bug in one assertion: nothing points a bare .py at the venv."""
     p = _cmd(tmp_path, "unsat", "#!/usr/bin/env python3\nimport pymongo\n")
@@ -45,18 +47,21 @@ def test_bare_python_command_resolves_to_system_interpreter(tmp_path):
 
 def test_self_reexec_into_venv_is_recognised(tmp_path):
     """The fix (2c48d10c) must not still read as broken."""
-    p = _cmd(tmp_path, "unsat", "#!/usr/bin/env python3\n"
-                                "import os\n"
-                                "os.execv('/x/.venv/bin/python3', [])\n"
-                                "import pymongo\n")
+    p = _cmd(
+        tmp_path,
+        "unsat",
+        "#!/usr/bin/env python3\nimport os\nos.execv('/x/.venv/bin/python3', [])\nimport pymongo\n",
+    )
     _, key, _ = sa.classify(p)
     assert key == "venv"
 
 
 def test_shell_command_that_picks_the_venv_is_not_system(tmp_path):
-    p = _cmd(tmp_path, "audit", '#!/usr/bin/env bash\n'
-                                'PYTHON="$FW_ROOT/.venv/bin/python3"\n'
-                                '$PYTHON -c "import pymongo"\n')
+    p = _cmd(
+        tmp_path,
+        "audit",
+        '#!/usr/bin/env bash\nPYTHON="$FW_ROOT/.venv/bin/python3"\n$PYTHON -c "import pymongo"\n',
+    )
     lang, key, mods = sa.classify(p)
     assert (lang, key) == ("shell", "venv")
     assert mods == {"pymongo"}
@@ -75,9 +80,13 @@ def test_shell_comment_is_not_read_as_an_import(tmp_path):
 
 # --- import extraction -----------------------------------------------------
 
+
 def test_import_guarded_by_except_ImportError_is_optional(tmp_path):
-    p = _cmd(tmp_path, "c", "#!/usr/bin/env python3\n"
-                            "try:\n    import boto3\nexcept ImportError:\n    boto3 = None\n")
+    p = _cmd(
+        tmp_path,
+        "c",
+        "#!/usr/bin/env python3\ntry:\n    import boto3\nexcept ImportError:\n    boto3 = None\n",
+    )
     assert "boto3" not in sa.classify(p)[2]
 
 
@@ -87,6 +96,7 @@ def test_relative_import_is_not_a_dependency(tmp_path):
 
 
 # --- local modules ---------------------------------------------------------
+
 
 def test_modules_we_ship_are_not_missing_dependencies():
     """`from fwroot import fw_root` resolves via the bootstrap's sys.path
@@ -99,6 +109,7 @@ def test_modules_we_ship_are_not_missing_dependencies():
 
 
 # --- enumeration matches fw's own dispatch ---------------------------------
+
 
 def test_enumeration_skips_underscore_and_nonexecutable(tmp_path):
     g = tmp_path / "grp"
@@ -137,8 +148,12 @@ def test_a_file_that_does_not_parse_is_broken_not_ok(tmp_path):
 def test_shared_venv_helper_counts_as_the_fix(tmp_path):
     """The fix moved out of line into _helpers/venv_reexec.py; a detector that
     only looked for a literal os.execv would flag every adopter as broken."""
-    p = _cmd(tmp_path, "c", "#!/usr/bin/env python3\n"
-                            "from venv_reexec import ensure_venv\n"
-                            "ensure_venv(__file__, 'pymongo')\n"
-                            "import pymongo\n")
+    p = _cmd(
+        tmp_path,
+        "c",
+        "#!/usr/bin/env python3\n"
+        "from venv_reexec import ensure_venv\n"
+        "ensure_venv(__file__, 'pymongo')\n"
+        "import pymongo\n",
+    )
     assert sa.classify(p)[1] == "venv"

@@ -9,6 +9,7 @@ The lease must EXPIRE rather than be assigned, so that a dead holder is replaced
 automatically. A config flag naming one instance would leave nobody reaping
 whenever that instance is down, which is the failure the reaper exists to catch.
 """
+
 import pytest
 
 from facetwork.runtime.mongo_store import MongoStore
@@ -28,7 +29,9 @@ def test_only_one_holder_wins(store):
 
 def test_holder_can_renew_its_own_lease(store):
     assert store.try_acquire_lease("reaper", "host-a:1", 60_000) is True
-    assert store.try_acquire_lease("reaper", "host-a:1", 60_000) is True, "renewal must not lock a holder out"
+    assert store.try_acquire_lease("reaper", "host-a:1", 60_000) is True, (
+        "renewal must not lock a holder out"
+    )
 
 
 def test_an_expired_lease_is_taken_over(store, monkeypatch):
@@ -41,7 +44,7 @@ def test_an_expired_lease_is_taken_over(store, monkeypatch):
     assert store.try_acquire_lease("reaper", "dead-host:1", 5_000) is True
     assert store.try_acquire_lease("reaper", "live-host:2", 5_000) is False
 
-    now[0] += 6_000                                   # dead holder's lease lapses
+    now[0] += 6_000  # dead holder's lease lapses
     assert store.try_acquire_lease("reaper", "live-host:2", 5_000) is True
     # ...and the dead one does not silently steal it back while the new holder is live
     assert store.try_acquire_lease("reaper", "dead-host:1", 5_000) is False

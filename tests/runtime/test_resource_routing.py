@@ -10,6 +10,7 @@ Follows the two capability dimensions the claim already had (environment_hash,
 required_features): the task carries a requirement, the runner advertises what it
 provides, absent means unconstrained.
 """
+
 import pytest
 
 from facetwork.runtime.entities.task import TaskDefinition
@@ -21,15 +22,28 @@ SMALL = {"memory_gb": 7.75, "cpus": 12, "scratch_gb": 1600}
 
 def _store(**requires):
     s = MemoryStore()
-    s.save_task(TaskDefinition(uuid="t1", name="osm.planet.BuildAdminSet", runner_id="r",
-                               workflow_id="w", flow_id="f", step_id="s",
-                               task_list_name="osm", requires=requires))
+    s.save_task(
+        TaskDefinition(
+            uuid="t1",
+            name="osm.planet.BuildAdminSet",
+            runner_id="r",
+            workflow_id="w",
+            flow_id="f",
+            step_id="s",
+            task_list_name="osm",
+            requires=requires,
+        )
+    )
     return s
 
 
 def _claim(store, resources):
-    return store.claim_task(task_names=["osm.planet.BuildAdminSet"], task_list="osm",
-                            server_id="srv", resources=resources)
+    return store.claim_task(
+        task_names=["osm.planet.BuildAdminSet"],
+        task_list="osm",
+        server_id="srv",
+        resources=resources,
+    )
 
 
 def test_a_task_with_no_requirements_is_claimable_by_anyone():
@@ -76,32 +90,58 @@ mongomock = pytest.importorskip("mongomock")
 from facetwork.runtime.mongo_store import MongoStore  # noqa: E402
 
 CASES = [
-    ({},                              SMALL, True,  "unconstrained -> anyone"),
-    ({"memory_gb": 10},               SMALL, False, "small host declines"),
-    ({"memory_gb": 10},               BIG,   True,  "capable host takes it"),
-    ({"memory_gb": 7.75},             SMALL, True,  "exact fit"),
+    ({}, SMALL, True, "unconstrained -> anyone"),
+    ({"memory_gb": 10}, SMALL, False, "small host declines"),
+    ({"memory_gb": 10}, BIG, True, "capable host takes it"),
+    ({"memory_gb": 7.75}, SMALL, True, "exact fit"),
     ({"memory_gb": 4, "scratch_gb": 9999}, BIG, False, "one dimension fails -> decline"),
-    ({"gpu_count": 1},                BIG,   False, "unadvertised dimension blocks"),
-    ({"memory_gb": 1},                {},    False, "runner advertising nothing declines"),
+    ({"gpu_count": 1}, BIG, False, "unadvertised dimension blocks"),
+    ({"memory_gb": 1}, {}, False, "runner advertising nothing declines"),
 ]
 
 
 @pytest.mark.parametrize("requires,resources,expected,why", CASES)
 def test_mongo_store_matches_memory_store(requires, resources, expected, why):
     ms = MongoStore(database_name="t_res", client=mongomock.MongoClient())
-    ms.save_task(TaskDefinition(uuid="t1", name="osm.planet.BuildAdminSet", runner_id="r",
-                                workflow_id="w", flow_id="f", step_id="s",
-                                task_list_name="osm", requires=requires))
-    got = ms.claim_task(task_names=["osm.planet.BuildAdminSet"], task_list="osm",
-                        server_id="srv", resources=resources)
+    ms.save_task(
+        TaskDefinition(
+            uuid="t1",
+            name="osm.planet.BuildAdminSet",
+            runner_id="r",
+            workflow_id="w",
+            flow_id="f",
+            step_id="s",
+            task_list_name="osm",
+            requires=requires,
+        )
+    )
+    got = ms.claim_task(
+        task_names=["osm.planet.BuildAdminSet"],
+        task_list="osm",
+        server_id="srv",
+        resources=resources,
+    )
     assert (got is not None) is expected, f"MongoStore disagrees: {why}"
 
     mem = MemoryStore()
-    mem.save_task(TaskDefinition(uuid="t1", name="osm.planet.BuildAdminSet", runner_id="r",
-                                 workflow_id="w", flow_id="f", step_id="s",
-                                 task_list_name="osm", requires=requires))
-    got2 = mem.claim_task(task_names=["osm.planet.BuildAdminSet"], task_list="osm",
-                          server_id="srv", resources=resources)
+    mem.save_task(
+        TaskDefinition(
+            uuid="t1",
+            name="osm.planet.BuildAdminSet",
+            runner_id="r",
+            workflow_id="w",
+            flow_id="f",
+            step_id="s",
+            task_list_name="osm",
+            requires=requires,
+        )
+    )
+    got2 = mem.claim_task(
+        task_names=["osm.planet.BuildAdminSet"],
+        task_list="osm",
+        server_id="srv",
+        resources=resources,
+    )
     assert (got2 is not None) is expected, f"MemoryStore disagrees: {why}"
 
 
@@ -110,9 +150,18 @@ def test_requires_survives_the_round_trip():
     feature-routing filter queried a field nothing ever wrote (0 of 15,600 live
     task docs carried it)."""
     ms = MongoStore(database_name="t_rt", client=mongomock.MongoClient())
-    ms.save_task(TaskDefinition(uuid="t9", name="n", runner_id="r", workflow_id="w",
-                                flow_id="f", step_id="s",
-                                requires={"memory_gb": 10}, required_features=["after"]))
+    ms.save_task(
+        TaskDefinition(
+            uuid="t9",
+            name="n",
+            runner_id="r",
+            workflow_id="w",
+            flow_id="f",
+            step_id="s",
+            requires={"memory_gb": 10},
+            required_features=["after"],
+        )
+    )
     back = ms.get_task("t9")
     assert back.requires == {"memory_gb": 10}
     assert back.required_features == ["after"]
@@ -154,7 +203,8 @@ def test_every_registration_advertises_resources(rel):
         assert "resources" in kw, (
             f"{rel} builds a ServerDefinition without resources= — that runner "
             "registers with no advertised capacity and silently declines every "
-            "task carrying a requirement")
+            "task carrying a requirement"
+        )
 
 
 def _files_calling(func_name):
@@ -177,14 +227,18 @@ def _files_calling(func_name):
     return out
 
 
-@pytest.mark.parametrize("kwarg,why", [
-    ("resources",
-     "that poll loop claims work the runner may not be able to finish"),
-    ("known_features",
-     "that poll loop claims workflows using AST constructs it may not understand, "
-     "running them with those semantics SILENTLY dropped (e.g. `after` edges "
-     "become a race) — RunnerService passed none of the three for 5 call sites"),
-])
+@pytest.mark.parametrize(
+    "kwarg,why",
+    [
+        ("resources", "that poll loop claims work the runner may not be able to finish"),
+        (
+            "known_features",
+            "that poll loop claims workflows using AST constructs it may not understand, "
+            "running them with those semantics SILENTLY dropped (e.g. `after` edges "
+            "become a race) — RunnerService passed none of the three for 5 call sites",
+        ),
+    ],
+)
 def test_every_claim_site_passes_the_capability_kwarg(kwarg, why):
     files = _files_calling("claim_task")
     callers = [f for f in files if "store" not in f.name and f.name != "dao.py"]
@@ -194,4 +248,6 @@ def test_every_claim_site_passes_the_capability_kwarg(kwarg, why):
         for c in _calls(path, "claim_task"):
             if kwarg not in {k.arg for k in c.keywords}:
                 missing.append(f"{path.relative_to(_RUNTIME)}:{c.lineno}")
-    assert not missing, f"claim_task called without {kwarg}= at: " + ", ".join(missing) + f" — {why}"
+    assert not missing, (
+        f"claim_task called without {kwarg}= at: " + ", ".join(missing) + f" — {why}"
+    )

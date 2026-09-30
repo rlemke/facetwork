@@ -66,6 +66,7 @@ def _read_records(path: str) -> tuple[list[dict], list[str], bytes]:
         # a 126 MB benchmark usable for a comparison at all.
         import gzip
         import io as _io
+
         buf, dec = [], gzip.GzipFile(fileobj=_io.BytesIO(raw))
         try:
             while True:
@@ -91,7 +92,7 @@ def _read_records(path: str) -> tuple[list[dict], list[str], bytes]:
             return [], [], raw
         fields = lines[head].lstrip("#").split("\t")
         rows = []
-        for ln in lines[head + 1:]:
+        for ln in lines[head + 1 :]:
             if not ln or ln.startswith("#"):
                 continue
             parts = ln.split("\t")
@@ -315,8 +316,7 @@ def _values_equal(a: Any, b: Any, tolerance: float, abs_tolerance: float = 0.0) 
     # Passes if within EITHER bound (math.isclose semantics). Setting only
     # `abs_tolerance` — the right choice for an interval scale — therefore
     # gives a pure absolute comparison.
-    return math.isclose(fa, fb, rel_tol=max(tolerance, 0.0),
-                        abs_tol=max(abs_tolerance, 0.0))
+    return math.isclose(fa, fb, rel_tol=max(tolerance, 0.0), abs_tol=max(abs_tolerance, 0.0))
 
 
 def _residual_structure(residuals, min_n=8, alpha=0.01):
@@ -344,17 +344,21 @@ def _residual_structure(residuals, min_n=8, alpha=0.01):
     k = min(pos, neg)
     # two-sided exact binomial tail at p=0.5
     tail = sum(math.comb(n, i) for i in range(k + 1))
-    pval = min(1.0, 2.0 * tail / (2 ** n))
+    pval = min(1.0, 2.0 * tail / (2**n))
     mean = sum(vals) / n
     return {
-        "n": n, "positive": pos, "negative": neg,
-        "mean_residual": mean, "p_value": pval,
+        "n": n,
+        "positive": pos,
+        "negative": neg,
+        "mean_residual": mean,
+        "p_value": pval,
         "systematic": pval < alpha,
     }
 
 
-def _write_report(dest, level, agree, differing, ec, ac, detail, applied,
-                  expected, actual, out_of_scope=0):
+def _write_report(
+    dest, level, agree, differing, ec, ac, detail, applied, expected, actual, out_of_scope=0
+):
     """Write one comparison's verdict as a readable document.
 
     Records what was compared and WHAT NORMALISATION WAS APPLIED, because a
@@ -427,18 +431,30 @@ def _scope(epart, apart, keys):
     col = keys[0]
     bits = []
     if only_e:
-        bits.append(f"{ne:,} record(s) in {col} {only_e[:8]} which `actual` "
-                    f"does not cover at all")
+        bits.append(f"{ne:,} record(s) in {col} {only_e[:8]} which `actual` does not cover at all")
     if only_a:
-        bits.append(f"{na:,} record(s) in {col} {only_a[:8]} which `expected` "
-                    f"does not cover at all")
-    return ne, na, ("SCOPE: " + "; ".join(bits) +
-                    " — out of scope, NOT a content difference")
+        bits.append(
+            f"{na:,} record(s) in {col} {only_a[:8]} which `expected` does not cover at all"
+        )
+    return ne, na, ("SCOPE: " + "; ".join(bits) + " — out of scope, NOT a content difference")
 
 
-def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
-                       max_ex, applied, params, result, split=(), delim=",",
-                       abs_tol=0.0):
+def _compare_streaming(
+    expected,
+    actual,
+    keys,
+    *,
+    ignore,
+    sort_json,
+    tol,
+    max_ex,
+    applied,
+    params,
+    result,
+    split=(),
+    delim=",",
+    abs_tol=0.0,
+):
     """Keyed comparison in O(keys) memory rather than O(file).
 
     Two passes, one file at a time: index `expected`, then stream `actual` and
@@ -448,22 +464,39 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
     """
     with heartbeating(params, f"indexing {os.path.basename(expected)}"):
         efields, eidx, ecount, erows, epart, eover = _index(
-            expected, keys, ignore=ignore, sort_json=sort_json, tol=tol,
-            abs_tol=abs_tol, split=split, delim=delim)
+            expected,
+            keys,
+            ignore=ignore,
+            sort_json=sort_json,
+            tol=tol,
+            abs_tol=abs_tol,
+            split=split,
+            delim=delim,
+        )
     with heartbeating(params, f"comparing against {os.path.basename(actual)}"):
         afields, aidx, acount, arows, apart, aover = _index(
-            actual, keys, ignore=ignore, sort_json=sort_json, tol=tol,
-            abs_tol=abs_tol, split=split, delim=delim)
+            actual,
+            keys,
+            ignore=ignore,
+            sort_json=sort_json,
+            tol=tol,
+            abs_tol=abs_tol,
+            split=split,
+            delim=delim,
+        )
 
     if split:
         # Splitting CHANGES THE UNIT OF COMPARISON from record to element, so
         # the counts must say so rather than silently meaning something else.
         applied.append(
             f"split {', '.join(split)} on {delim!r}: "
-            f"{ecount:,}->{erows:,} and {acount:,}->{arows:,} comparable rows")
+            f"{ecount:,}->{erows:,} and {acount:,}->{arows:,} comparable rows"
+        )
         if eover or aover:
-            applied.append(f"{eover + aover} record(s) too wide to split "
-                           f"(> {_SPLIT_MAX_ROWS} rows) — compared unsplit")
+            applied.append(
+                f"{eover + aover} record(s) too wide to split "
+                f"(> {_SPLIT_MAX_ROWS} rows) — compared unsplit"
+            )
         ecount, acount = erows, arows
 
     scope_e, scope_a, scope_note = _scope(epart, apart, keys)
@@ -473,9 +506,14 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
     if set(efields) != set(afields):
         only_e = sorted(set(efields) - set(afields))
         only_a = sorted(set(afields) - set(efields))
-        return result("exists", False, 0, ecount, acount,
-                      f"field mismatch — only in expected: {only_e or '-'}; "
-                      f"only in actual: {only_a or '-'}")
+        return result(
+            "exists",
+            False,
+            0,
+            ecount,
+            acount,
+            f"field mismatch — only in expected: {only_e or '-'}; only in actual: {only_a or '-'}",
+        )
 
     only_e = set(eidx) - set(aidx)
     only_a = set(aidx) - set(eidx)
@@ -507,45 +545,65 @@ def _compare_streaming(expected, actual, keys, *, ignore, sort_json, tol,
 
     bias = None
     if tol > 0 or abs_tol > 0:
-        per = {f: st for f, v in residuals.items()
-               if (st := _residual_structure(v)) is not None}
+        per = {f: st for f, v in residuals.items() if (st := _residual_structure(v)) is not None}
         flagged = {f: st for f, st in per.items() if st["systematic"]}
         if flagged:
-            bias = {"systematic": True, "columns": flagged,
-                    "mean_residual": max((st["mean_residual"] for st in flagged.values()),
-                                         key=abs)}
+            bias = {
+                "systematic": True,
+                "columns": flagged,
+                "mean_residual": max((st["mean_residual"] for st in flagged.values()), key=abs),
+            }
             for f, st in sorted(flagged.items()):
                 applied.append(
                     f"⚠️ `{f}` residuals are SYSTEMATIC, not noise: "
                     f"{st['positive']}+/{st['negative']}- of {st['n']}, mean "
-                    f"{st['mean_residual']:+.4g} (sign test p={st['p_value']:.2g})")
+                    f"{st['mean_residual']:+.4g} (sign test p={st['p_value']:.2g})"
+                )
         elif per:
-            bias = {"systematic": False, "columns": per,
-                    "mean_residual": max((st["mean_residual"] for st in per.values()),
-                                         key=abs)}
+            bias = {
+                "systematic": False,
+                "columns": per,
+                "mean_residual": max((st["mean_residual"] for st in per.values()), key=abs),
+            }
 
     # The scope note leads, because it changes how every number below it reads.
     pre = (scope_note + ". ") if scope_note else ""
 
     if only_e or only_a:
-        note = (f"the {len(shared)} shared record(s) match" if not changed
-                else f"and {len(changed)} of the {len(shared)} shared record(s) "
-                     "also differ in values")
+        note = (
+            f"the {len(shared)} shared record(s) match"
+            if not changed
+            else f"and {len(changed)} of the {len(shared)} shared record(s) also differ in values"
+        )
         ex = "; ".join(str(k) for k in sorted(only_e)[:max_ex]) or "-"
-        return result("cardinality", False,
-                      len(only_e) + len(only_a) + len(changed), ecount, acount,
-                      f"{pre}{len(only_e)} record(s) only in expected, "
-                      f"{len(only_a)} only in actual — {note}. missing e.g. {ex}",
-                      out_of_scope=scope_e + scope_a, bias=bias)
+        return result(
+            "cardinality",
+            False,
+            len(only_e) + len(only_a) + len(changed),
+            ecount,
+            acount,
+            f"{pre}{len(only_e)} record(s) only in expected, "
+            f"{len(only_a)} only in actual — {note}. missing e.g. {ex}",
+            out_of_scope=scope_e + scope_a,
+            bias=bias,
+        )
     if changed:
         ex = "; ".join(str(k) for k in sorted(changed)[:max_ex])
-        return result("keys", False, len(changed), ecount, acount,
-                      f"{pre}{len(changed)} record(s) differ in values. e.g. {ex}",
-                      out_of_scope=scope_e + scope_a, bias=bias)
+        return result(
+            "keys",
+            False,
+            len(changed),
+            ecount,
+            acount,
+            f"{pre}{len(changed)} record(s) differ in values. e.g. {ex}",
+            out_of_scope=scope_e + scope_a,
+            bias=bias,
+        )
 
     detail = "same data" + (f" (after {'; '.join(applied)})" if applied else "")
-    return result("values", True, 0, ecount, acount, pre + detail,
-                  out_of_scope=scope_e + scope_a, bias=bias)
+    return result(
+        "values", True, 0, ecount, acount, pre + detail, out_of_scope=scope_e + scope_a, bias=bias
+    )
 
 
 def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
@@ -567,8 +625,7 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
         # shifts every subsequent row. Accepting the parameter and quietly
         # doing nothing is how `report` went unnoticed; say it instead.
         applied.append("split_columns ignored — it requires key_columns")
-        log("split_columns was given without key_columns and has no effect",
-            level="WARNING")
+        log("split_columns was given without key_columns and has no effect", level="WARNING")
         split = []
     if ignore:
         applied.append(f"ignored columns: {', '.join(sorted(ignore))}")
@@ -581,23 +638,41 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
 
     dest = params.get("report") or ""
 
-    def _result(level, agree, differing, ec, ac, detail, report_path="",
-                out_of_scope=0, bias=None):
+    def _result(level, agree, differing, ec, ac, detail, report_path="", out_of_scope=0, bias=None):
         # ⚠️ `report` was declared on the facet and silently ignored: a caller
         # could pass a destination, get a green verdict, and find nothing
         # written. A parameter that does nothing is worse than one that does not
         # exist — the FFL promises an artifact the handler never produced.
-        out = report_path or (_write_report(dest, level, agree, differing, ec, ac,
-                                            detail, applied, expected, actual,
-                                            out_of_scope)
-                              if dest else "")
-        return {"level": level, "agree": agree, "differing": differing,
-                "expected_count": ec, "actual_count": ac,
-                "out_of_scope": out_of_scope,
-                "systematic_bias": bool(bias and bias["systematic"]),
-                "mean_residual": float(bias["mean_residual"]) if bias else 0.0,
-                "normalised_by": applied, "report": out,
-                "_detail": detail}
+        out = report_path or (
+            _write_report(
+                dest,
+                level,
+                agree,
+                differing,
+                ec,
+                ac,
+                detail,
+                applied,
+                expected,
+                actual,
+                out_of_scope,
+            )
+            if dest
+            else ""
+        )
+        return {
+            "level": level,
+            "agree": agree,
+            "differing": differing,
+            "expected_count": ec,
+            "actual_count": ac,
+            "out_of_scope": out_of_scope,
+            "systematic_bias": bool(bias and bias["systematic"]),
+            "mean_residual": float(bias["mean_residual"]) if bias else 0.0,
+            "normalised_by": applied,
+            "report": out,
+            "_detail": detail,
+        }
 
     # --- rung: exists -------------------------------------------------------
     missing = [p for p in (expected, actual) if not get_storage_backend(p).exists(p)]
@@ -609,11 +684,21 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     # files; it cannot match records across a reordering anyway, and already
     # discloses that weaker claim in `normalised_by`.
     if keys:
-        return _compare_streaming(expected, actual, keys, ignore=ignore,
-                                  sort_json=sort_json, tol=tol, abs_tol=abs_tol,
-                                  max_ex=max_ex,
-                                  applied=applied, params=params, result=_result,
-                                  split=split, delim=delim)
+        return _compare_streaming(
+            expected,
+            actual,
+            keys,
+            ignore=ignore,
+            sort_json=sort_json,
+            tol=tol,
+            abs_tol=abs_tol,
+            max_ex=max_ex,
+            applied=applied,
+            params=params,
+            result=_result,
+            split=split,
+            delim=delim,
+        )
 
     with heartbeating(params, f"reading {os.path.basename(expected)} / {os.path.basename(actual)}"):
         erows, efields, eraw = _read_records(expected)
@@ -627,9 +712,14 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     ef, af = [f for f in efields if f not in ignore], [f for f in afields if f not in ignore]
     if set(ef) != set(af):
         only_e, only_a = sorted(set(ef) - set(af)), sorted(set(af) - set(ef))
-        return _result("exists", False, 0, len(erows), len(arows),
-                       f"field mismatch — only in expected: {only_e or '-'}; "
-                       f"only in actual: {only_a or '-'}")
+        return _result(
+            "exists",
+            False,
+            0,
+            len(erows),
+            len(arows),
+            f"field mismatch — only in expected: {only_e or '-'}; only in actual: {only_a or '-'}",
+        )
     if ef != af:
         applied.append("ignored field ORDER")
 
@@ -644,14 +734,22 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
     # the fact that the other 13,978 were identical. "13,978 identical, 1
     # missing" is the finding; "counts differ" is not.
     if len(en) != len(an) and not keys:
-        return _result("schema", False, abs(len(en) - len(an)), len(en), len(an),
-                       f"record count differs: expected {len(en)}, actual {len(an)}"
-                       " (no key_columns given, so records cannot be matched up)")
+        return _result(
+            "schema",
+            False,
+            abs(len(en) - len(an)),
+            len(en),
+            len(an),
+            f"record count differs: expected {len(en)}, actual {len(an)}"
+            " (no key_columns given, so records cannot be matched up)",
+        )
 
     # --- rung: keys ---------------------------------------------------------
     if keys:
+
         def kf(r):
             return tuple(str(r.get(k, "")) for k in keys)
+
         emap, amap = {kf(r): r for r in en}, {kf(r): r for r in an}
         only_e, only_a = set(emap) - set(amap), set(amap) - set(emap)
         shared = set(emap) & set(amap)
@@ -662,17 +760,23 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
             # "the records differ everywhere". Those need different responses.
             bad = 0
             for k in shared:
-                if any(not _values_equal(emap[k].get(f), amap[k].get(f), tol, abs_tol)
-                       for f in ef):
+                if any(not _values_equal(emap[k].get(f), amap[k].get(f), tol, abs_tol) for f in ef):
                     bad += 1
             ex = "; ".join(str(k) for k in sorted(only_e)[:max_ex]) or "-"
-            note = (f"the {len(shared)} shared record(s) match"
-                    if not bad else
-                    f"and {bad} of the {len(shared)} shared record(s) also differ in values")
-            return _result("cardinality", False, len(only_e) + len(only_a) + bad,
-                           len(en), len(an),
-                           f"{len(only_e)} record(s) only in expected, "
-                           f"{len(only_a)} only in actual — {note}. missing e.g. {ex}")
+            note = (
+                f"the {len(shared)} shared record(s) match"
+                if not bad
+                else f"and {bad} of the {len(shared)} shared record(s) also differ in values"
+            )
+            return _result(
+                "cardinality",
+                False,
+                len(only_e) + len(only_a) + bad,
+                len(en),
+                len(an),
+                f"{len(only_e)} record(s) only in expected, "
+                f"{len(only_a)} only in actual — {note}. missing e.g. {ex}",
+            )
     else:
         applied.append("matched records BY POSITION (no key_columns given)")
         pairs = [(i, e, a) for i, (e, a) in enumerate(zip(en, an))]
@@ -686,8 +790,14 @@ def handle_tabular(params: dict[str, Any]) -> dict[str, Any]:
                 diffs.append((k, bad, {f: (e.get(f), a.get(f)) for f in bad[:3]}))
     if diffs:
         ex = "; ".join(f"{k}: {d}" for k, _b, d in diffs[:max_ex])
-        return _result("keys", False, len(diffs), len(en), len(an),
-                       f"{len(diffs)} record(s) differ in values. e.g. {ex}")
+        return _result(
+            "keys",
+            False,
+            len(diffs),
+            len(en),
+            len(an),
+            f"{len(diffs)} record(s) differ in values. e.g. {ex}",
+        )
 
     detail = "same data" + (f" (after {'; '.join(applied)})" if applied else "")
     log(f"{os.path.basename(actual)}: {detail}; bytes differ")
@@ -708,23 +818,34 @@ def handle_summarise(params: dict[str, Any]) -> dict[str, Any]:
     if not verdicts:
         # An empty fan-out must not read as success; see the OSM county tier,
         # where "0 built" and "all built" were indistinguishable for weeks.
-        return {"level": "missing", "agree": False, "pairs": 0, "disagreeing": 0,
-                "report": "", "_detail": "no verdicts supplied — nothing was compared"}
+        return {
+            "level": "missing",
+            "agree": False,
+            "pairs": 0,
+            "disagreeing": 0,
+            "report": "",
+            "_detail": "no verdicts supplied — nothing was compared",
+        }
 
     worst = min(verdicts, key=lambda v: _rank(str(v.get("level", "missing"))))
     disagreeing = [v for v in verdicts if not v.get("agree")]
-    lines = [f"# {title}", "",
-             f"pairs compared : {len(verdicts)}",
-             f"weakest level  : {worst.get('level')}",
-             f"disagreeing    : {len(disagreeing)} of {len(verdicts)}", ""]
+    lines = [
+        f"# {title}",
+        "",
+        f"pairs compared : {len(verdicts)}",
+        f"weakest level  : {worst.get('level')}",
+        f"disagreeing    : {len(disagreeing)} of {len(verdicts)}",
+        "",
+    ]
     if disagreeing:
         lines.append("## Discrepancies")
         for v in disagreeing:
-            lines.append(f"- **{v.get('path','?')}** — level `{v.get('level')}`, "
-                         f"{v.get('differing', 0)} differing: {v.get('detail', '')}")
+            lines.append(
+                f"- **{v.get('path', '?')}** — level `{v.get('level')}`, "
+                f"{v.get('differing', 0)} differing: {v.get('detail', '')}"
+            )
     else:
-        lines.append("All pairs agree at level "
-                     f"`{worst.get('level')}` or better.")
+        lines.append(f"All pairs agree at level `{worst.get('level')}` or better.")
     body = "\n".join(lines) + "\n"
 
     if dest:
@@ -738,9 +859,13 @@ def handle_summarise(params: dict[str, Any]) -> dict[str, Any]:
         with fs.open(dest, "wb") as fh:
             fh.write(body.encode("utf-8"))
 
-    return {"level": str(worst.get("level", "missing")),
-            "agree": not disagreeing, "pairs": len(verdicts),
-            "disagreeing": len(disagreeing), "report": dest or body}
+    return {
+        "level": str(worst.get("level", "missing")),
+        "agree": not disagreeing,
+        "pairs": len(verdicts),
+        "disagreeing": len(disagreeing),
+        "report": dest or body,
+    }
 
 
 _DISPATCH: dict[str, Any] = {

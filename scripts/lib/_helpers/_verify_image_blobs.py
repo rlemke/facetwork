@@ -18,16 +18,19 @@ GET forces the registry to open the data file. Cost is bytes, not gigabytes.
 
 Exit 0 = every blob has data; 1 = some do not; 2 = could not tell.
 """
+
 from __future__ import annotations
 
 import json
 import sys
 import urllib.request
 
-ACCEPT = ("application/vnd.oci.image.index.v1+json, "
-          "application/vnd.docker.distribution.manifest.list.v2+json, "
-          "application/vnd.oci.image.manifest.v1+json, "
-          "application/vnd.docker.distribution.manifest.v2+json")
+ACCEPT = (
+    "application/vnd.oci.image.index.v1+json, "
+    "application/vnd.docker.distribution.manifest.list.v2+json, "
+    "application/vnd.oci.image.manifest.v1+json, "
+    "application/vnd.docker.distribution.manifest.v2+json"
+)
 
 
 def _json(url: str, timeout: int = 30):
@@ -59,8 +62,9 @@ def verify(registry: str, repo: str, tag: str, want_platforms: list[str]):
         archs.append(arch)
         man = _json(base + "manifests/" + ent["digest"])
         for blob in [man["config"]] + list(man.get("layers") or []):
-            req = urllib.request.Request(base + "blobs/" + blob["digest"],
-                                         headers={"Range": "bytes=0-0"})
+            req = urllib.request.Request(
+                base + "blobs/" + blob["digest"], headers={"Range": "bytes=0-0"}
+            )
             try:
                 urllib.request.urlopen(req, timeout=30).read()
             except Exception:
@@ -74,7 +78,7 @@ def verify(registry: str, repo: str, tag: str, want_platforms: list[str]):
     if missing:
         print(f"{len(missing)} blob(s) have NO DATA behind them:")
         for arch, dig, size in missing[:5]:
-            print(f"    {arch:6} {dig}… {size/1e6:8.1f} MB")
+            print(f"    {arch:6} {dig}… {size / 1e6:8.1f} MB")
         return 1
     print(f"OK {' '.join(archs)}")
     return 0

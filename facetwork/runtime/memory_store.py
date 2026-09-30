@@ -484,18 +484,18 @@ class MemoryStore(PersistenceAPI):
         """
         provided = set(provided_environments or [])
         known = set(known_features or [])
-        have = {k: v for k, v in (resources or {}).items()
-                if isinstance(v, (int, float))}
+        have = {k: v for k, v in (resources or {}).items() if isinstance(v, (int, float))}
 
         def _fits(task) -> bool:
             need = getattr(task, "requires", None) or {}
             if not need:
-                return True                      # unconstrained: anyone may claim
+                return True  # unconstrained: anyone may claim
             for dim, want in need.items():
                 cap = have.get(dim)
                 if cap is None or want > cap:
                     return False
             return True
+
         with self._claim_lock:
             names_set = set(task_names)
             tl_set = set(task_list) if isinstance(task_list, (list, tuple, set)) else {task_list}

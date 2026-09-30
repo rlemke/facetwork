@@ -54,6 +54,7 @@ def tree(tmp_path):
 # List — the enumerate-then-fan-out primitive
 # ---------------------------------------------------------------------------
 
+
 def test_list_filters_by_glob(tree):
     out = _call("List", path=str(tree), pattern="*.csv")
     assert out["count"] == 2
@@ -100,6 +101,7 @@ def test_filter_narrows_without_a_second_listing(tree):
 # Metadata
 # ---------------------------------------------------------------------------
 
+
 def test_exists(tree):
     assert _call("Exists", path=str(tree / "a.csv"))["exists"] is True
     assert _call("Exists", path=str(tree / "gone"))["exists"] is False
@@ -141,6 +143,7 @@ def test_hash_rejects_an_unknown_algorithm(tree):
 # ---------------------------------------------------------------------------
 # Read / write
 # ---------------------------------------------------------------------------
+
 
 def test_read_and_write_text(tmp_path):
     target = str(tmp_path / "deep" / "nested" / "out.txt")
@@ -189,6 +192,7 @@ def test_write_json_accepts_a_json_string(tmp_path):
 # Mutation
 # ---------------------------------------------------------------------------
 
+
 def test_copy_preserves_content(tree, tmp_path):
     dest = str(tmp_path / "copied" / "a.csv")
     out = _call("Copy", source=str(tree / "a.csv"), dest=dest)
@@ -225,6 +229,7 @@ def test_unknown_facet_is_a_clear_error():
 # ---------------------------------------------------------------------------
 # The FFL and the handlers must not drift
 # ---------------------------------------------------------------------------
+
 
 def test_every_declared_facet_has_a_handler():
     """The failure this prevents: a facet that compiles, dispatches, and then

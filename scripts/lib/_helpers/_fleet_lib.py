@@ -190,8 +190,10 @@ def resolve_mongo(explicit: str | None = None, *, log=None) -> str:
         # no entry claims the alias, i.e. unchanged for a one-infra-host fleet.
         _mongo_entry = _srv_catalog.find("afl-mongodb")
         _infra = _srv_catalog.infra()
-        for _label, _entry in (("server catalog (afl-mongodb)", _mongo_entry),
-                               ("server catalog (infra)", _infra)):
+        for _label, _entry in (
+            ("server catalog (afl-mongodb)", _mongo_entry),
+            ("server catalog (infra)", _infra),
+        ):
             _ip = _srv_catalog.resolve_ip(_entry) if _entry else None
             if _ip and (_ip.startswith("127.") or _ip == "::1"):
                 _ip = lan_ip() or _ip
@@ -383,8 +385,7 @@ def _rewrite_hosts(content: str, ip_or_map, names=INFRA_HOST_NAMES) -> str:
     rather than guessed at: writing a wrong address is worse than leaving a
     stale one, because the stale one is at least diagnosable.
     """
-    mapping = (dict.fromkeys(names, ip_or_map)
-               if isinstance(ip_or_map, str) else dict(ip_or_map))
+    mapping = dict.fromkeys(names, ip_or_map) if isinstance(ip_or_map, str) else dict(ip_or_map)
     nameset = set(names)
     seen: set[str] = set()
     out: list[str] = []
@@ -453,7 +454,7 @@ def _this_host_addresses() -> set[str]:
         from facetwork.servers import catalog as _srv  # noqa: PLC0415
 
         out |= set(_srv._local_addresses())
-    except Exception:                                          # noqa: BLE001
+    except Exception:  # noqa: BLE001
         pass
     ip = lan_ip()
     if ip:
@@ -479,8 +480,11 @@ def refresh_container_hosts(ip_or_map, *, log=None) -> list[str]:
     left afl-minio pointing at nothing.
     """
     say = log or (lambda _m: None)
-    mapping = (dict.fromkeys(INFRA_HOST_NAMES, ip_or_map)
-               if isinstance(ip_or_map, str) else dict(ip_or_map))
+    mapping = (
+        dict.fromkeys(INFRA_HOST_NAMES, ip_or_map)
+        if isinstance(ip_or_map, str)
+        else dict(ip_or_map)
+    )
     patched: list[str] = []
     for c in _runner_containers():
         try:
@@ -510,8 +514,7 @@ def refresh_container_hosts(ip_or_map, *, log=None) -> list[str]:
                 # kept resolving afl-extracts to server3's own, now-empty server
                 # for two weeks while every other host was self-healed.
                 mine = _this_host_addresses()
-                for name in [n for n, (cur, want) in drifted.items()
-                             if cur == gw and want in mine]:
+                for name in [n for n, (cur, want) in drifted.items() if cur == gw and want in mine]:
                     drifted.pop(name)
                 if not drifted:
                     continue
@@ -523,10 +526,11 @@ def refresh_container_hosts(ip_or_map, *, log=None) -> list[str]:
             ).stdout
             subprocess.run(
                 ["docker", "exec", "-i", c, "sh", "-c", "cat > /etc/hosts"],
-                input=_rewrite_hosts(content, {n: mapping[n] for n in drifted}
-                                     if len(drifted) < len(mapping) else mapping,
-                                     names=set(drifted) if len(drifted) < len(mapping)
-                                     else INFRA_HOST_NAMES),
+                input=_rewrite_hosts(
+                    content,
+                    {n: mapping[n] for n in drifted} if len(drifted) < len(mapping) else mapping,
+                    names=set(drifted) if len(drifted) < len(mapping) else INFRA_HOST_NAMES,
+                ),
                 text=True,
                 check=True,
                 timeout=15,
@@ -538,7 +542,6 @@ def refresh_container_hosts(ip_or_map, *, log=None) -> list[str]:
         except Exception as exc:  # noqa: BLE001 - one bad container shouldn't stop the rest
             say(f"could not refresh {c}: {exc}")
     return patched
-
 
 
 # Hosts that a RUNNER CONTAINER can never reach, however valid they are for a
@@ -563,8 +566,8 @@ def container_unusable_host(url: str | None) -> str | None:
     rest = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", "", url).split("/")[0]
     # Strip any userinfo (user:pw@) before the host.
     rest = rest.rsplit("@", 1)[-1]
-    if rest.startswith("["):                      # bracketed IPv6 literal
-        host = rest[1:rest.index("]")] if "]" in rest else rest[1:]
+    if rest.startswith("["):  # bracketed IPv6 literal
+        host = rest[1 : rest.index("]")] if "]" in rest else rest[1:]
     else:
         host = rest.split(":")[0]
     host = host.strip().lower()
@@ -572,10 +575,16 @@ def container_unusable_host(url: str | None) -> str | None:
         return host or url
     return None
 
+
 # Endpoint variables that may carry a literal infra address. A stale IP in any
 # of these makes a runner unreachable in a way /etc/hosts patching cannot fix.
-_ENDPOINT_VARS = ("FW_MONGODB_URL", "FW_S3_ENDPOINT", "FW_DASHBOARD_URL",
-                  "FW_POSTGIS_URL", "FW_OSM_SELFHOST_BASE_URL")
+_ENDPOINT_VARS = (
+    "FW_MONGODB_URL",
+    "FW_S3_ENDPOINT",
+    "FW_DASHBOARD_URL",
+    "FW_POSTGIS_URL",
+    "FW_OSM_SELFHOST_BASE_URL",
+)
 
 # Which afl-* service each endpoint variable points at. Needed since MongoDB
 # moved off the infra host (2026-09-13): comparing FW_MONGODB_URL against the
@@ -594,9 +603,11 @@ _IPV4 = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
 def _container_env(name: str) -> dict:
     try:
         out = subprocess.run(
-            ["docker", "inspect", "-f",
-             "{{range .Config.Env}}{{println .}}{{end}}", name],
-            capture_output=True, text=True, timeout=10)
+            ["docker", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", name],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
         env = {}
         for line in out.stdout.splitlines():
             if "=" in line:
@@ -652,8 +663,10 @@ def stale_env_containers(ip_or_map, *, log=None) -> list[tuple[str, str, str]]:
                 want = _want(var)
                 if want and found != want:
                     out.append((c, var, found))
-                    say(f"env drift: {c} {var} pins {found}, "
-                        f"{_ENDPOINT_VAR_SERVICE.get(var, 'infra')} is {want}")
+                    say(
+                        f"env drift: {c} {var} pins {found}, "
+                        f"{_ENDPOINT_VAR_SERVICE.get(var, 'infra')} is {want}"
+                    )
     return out
 
 
@@ -700,8 +713,14 @@ def role_in_group(spec: dict, host_group: str) -> bool:
 # anything is started, so it is checked there rather than discovered by a
 # restart loop.
 
-_ARCH_ALIASES = {"x86_64": "amd64", "amd64": "amd64", "x64": "amd64",
-                 "aarch64": "arm64", "arm64": "arm64", "arm64v8": "arm64"}
+_ARCH_ALIASES = {
+    "x86_64": "amd64",
+    "amd64": "amd64",
+    "x64": "amd64",
+    "aarch64": "arm64",
+    "arm64": "arm64",
+    "arm64v8": "arm64",
+}
 
 
 def normalize_arch(arch: str | None) -> str | None:
@@ -720,14 +739,19 @@ def host_docker_arch() -> str | None:
     Asks the engine, not the OS: on Apple Silicon the engine is a linux/arm64
     VM, and that is what an image has to match. Falls back to the host CPU."""
     try:
-        out = subprocess.run(["docker", "version", "--format", "{{.Server.Arch}}"],
-                             capture_output=True, text=True, timeout=15)
+        out = subprocess.run(
+            ["docker", "version", "--format", "{{.Server.Arch}}"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
         a = normalize_arch(out.stdout)
         if out.returncode == 0 and a:
             return a
-    except Exception:                                          # noqa: BLE001
+    except Exception:  # noqa: BLE001
         pass
     import platform
+
     return normalize_arch(platform.machine())
 
 
@@ -748,18 +772,21 @@ def _split_image_ref(image: str) -> tuple[str, str, str] | None:
     return first, repo, ref
 
 
-_MANIFEST_ACCEPT = ", ".join([
-    "application/vnd.oci.image.index.v1+json",
-    "application/vnd.docker.distribution.manifest.list.v2+json",
-    "application/vnd.oci.image.manifest.v1+json",
-    "application/vnd.docker.distribution.manifest.v2+json",
-])
+_MANIFEST_ACCEPT = ", ".join(
+    [
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    ]
+)
 
 
 def _registry_json(url: str, accept: str, timeout: float) -> dict:
     import urllib.request
+
     req = urllib.request.Request(url, headers={"Accept": accept})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:          # noqa: S310
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
         return json.loads(resp.read().decode())
 
 
@@ -803,7 +830,7 @@ def image_archs(image: str, *, timeout: float = 10.0) -> set[str] | None:
         base = f"{scheme}://{host}/v2/{repo}"
         try:
             man = _registry_json(f"{base}/manifests/{ref}", _MANIFEST_ACCEPT, timeout)
-        except Exception:                                      # noqa: BLE001
+        except Exception:  # noqa: BLE001
             continue
         listed = archs_from_manifest(man)
         if listed is not None:
@@ -813,7 +840,7 @@ def image_archs(image: str, *, timeout: float = 10.0) -> set[str] | None:
             return None
         try:
             cfg = _registry_json(f"{base}/blobs/{digest}", "*/*", timeout)
-        except Exception:                                      # noqa: BLE001
+        except Exception:  # noqa: BLE001
             return None
         a = normalize_arch(cfg.get("architecture"))
         return {a} if a else None
@@ -829,10 +856,12 @@ def image_arch_refusal(image: str, host_arch: str | None = None) -> str | None:
     me = host_arch or host_docker_arch()
     if have is None or not me or me in have:
         return None
-    return (f"image {image} is built for {'/'.join(sorted(have)) or 'no platform'} "
-            f"only; this host's Docker runs linux/{me} (it would crash-loop "
-            f"'exec format error'). Rebuild it multi-arch — for gh-router: "
-            f"`fw fleet agent-image gh-router`")
+    return (
+        f"image {image} is built for {'/'.join(sorted(have)) or 'no platform'} "
+        f"only; this host's Docker runs linux/{me} (it would crash-loop "
+        f"'exec format error'). Rebuild it multi-arch — for gh-router: "
+        f"`fw fleet agent-image gh-router`"
+    )
 
 
 def fleet_archs(server_groups: list[str] | None = None) -> dict[str, str]:
@@ -865,11 +894,14 @@ def remove_service_containers(service: str) -> list[str]:
     try:
         ids = subprocess.run(
             ["docker", "ps", "-aq", "--filter", f"label=com.docker.compose.service={service}"],
-            capture_output=True, text=True, timeout=30).stdout.split()
+            capture_output=True,
+            text=True,
+            timeout=30,
+        ).stdout.split()
         if ids:
             subprocess.run(["docker", "rm", "-f", *ids], capture_output=True, timeout=60)
         return ids
-    except Exception:                                          # noqa: BLE001
+    except Exception:  # noqa: BLE001
         return []
 
 

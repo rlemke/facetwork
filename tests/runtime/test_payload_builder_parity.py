@@ -11,6 +11,7 @@ a retry re-attaches instead of launching a second job — dead-lettered with
 "no _step_id in payload" only on the path that omitted it. Three tasks sat
 forgotten for 14 days.
 """
+
 import ast
 import pathlib
 
@@ -28,12 +29,14 @@ def _injected_keys(path: pathlib.Path) -> set[str]:
         if not isinstance(node, ast.Assign):
             continue
         for target in node.targets:
-            if (isinstance(target, ast.Subscript)
-                    and isinstance(target.value, ast.Name)
-                    and target.value.id == "payload"
-                    and isinstance(target.slice, ast.Constant)
-                    and isinstance(target.slice.value, str)
-                    and target.slice.value.startswith("_")):
+            if (
+                isinstance(target, ast.Subscript)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "payload"
+                and isinstance(target.slice, ast.Constant)
+                and isinstance(target.slice.value, str)
+                and target.slice.value.startswith("_")
+            ):
                 keys.add(target.slice.value)
     return keys
 
@@ -43,7 +46,8 @@ def test_every_builder_injects_the_step_id(name):
     """The specific key whose absence dead-lettered the Ray adapter."""
     assert "_step_id" in _injected_keys(RUNTIME / name), (
         f"{name} does not inject _step_id; a handler deriving an external run id "
-        "from it will fail only when this path claims the task")
+        "from it will fail only when this path claims the task"
+    )
 
 
 def test_builders_do_not_drift_apart():
@@ -59,4 +63,5 @@ def test_builders_do_not_drift_apart():
     union = set.union(*sets.values())
     extras = {n: sorted(union - k) for n, k in sets.items() if union - k}
     assert "_step_id" not in {k for v in extras.values() for k in v}, (
-        f"_step_id is not injected everywhere: {extras}")
+        f"_step_id is not injected everywhere: {extras}"
+    )

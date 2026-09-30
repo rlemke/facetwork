@@ -31,6 +31,7 @@ Verdicts
             BROKEN.
   OK      — imports resolve, or the command needs no python at all.
 """
+
 import argparse
 import ast
 import json
@@ -100,9 +101,7 @@ def _optional_nodes(tree):
             or (isinstance(h.type, ast.Name) and h.type.id in OPTIONAL_EXC)
             or (
                 isinstance(h.type, ast.Tuple)
-                and any(
-                    isinstance(e, ast.Name) and e.id in OPTIONAL_EXC for e in h.type.elts
-                )
+                and any(isinstance(e, ast.Name) and e.id in OPTIONAL_EXC for e in h.type.elts)
             )
             for h in node.handlers
         )
@@ -233,9 +232,7 @@ def main():
 
     interps = {
         "system": shutil.which("python3") or shutil.which("python"),
-        "venv": str(root / ".venv/bin/python3")
-        if (root / ".venv/bin/python3").exists()
-        else None,
+        "venv": str(root / ".venv/bin/python3") if (root / ".venv/bin/python3").exists() else None,
         "none": None,
     }
 
@@ -247,10 +244,13 @@ def main():
     # _helpers is named explicitly because every command bootstraps by
     # inserting it on sys.path, so `from fwroot import fw_root` always
     # resolves there and is not a missing dependency.
-    local = local_modules(root, [
-        lib / "_helpers",
-        os.environ.get("FWH_HANDLERS_ROOT") or Path.home() / "fw_handlers",
-    ])
+    local = local_modules(
+        root,
+        [
+            lib / "_helpers",
+            os.environ.get("FWH_HANDLERS_ROOT") or Path.home() / "fw_handlers",
+        ],
+    )
 
     # One probe per interpreter over the union of what it is asked for.
     wanted = {"system": set(), "venv": set()}
@@ -258,9 +258,9 @@ def main():
     for name, path in cmds:
         lang, key, mods = classify(path)
         mods = {
-            m for m in mods
-            if m == SYNTAX_ERROR
-            or (m not in STDLIB and not m.startswith("_") and m not in local)
+            m
+            for m in mods
+            if m == SYNTAX_ERROR or (m not in STDLIB and not m.startswith("_") and m not in local)
         }
         meta[name] = (lang, key, mods)
         if key in wanted:
@@ -281,11 +281,18 @@ def main():
             ok.append(name)
 
     if args.json:
-        print(json.dumps(
-            {"broken": [{"cmd": c, "interpreter": k, "missing": m} for c, k, m in broken],
-             "risk": [{"cmd": c, "modules": m} for c, m in risk],
-             "ok": len(ok), "total": len(cmds),
-             "interpreters": {k: v for k, v in interps.items() if v}}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "broken": [{"cmd": c, "interpreter": k, "missing": m} for c, k, m in broken],
+                    "risk": [{"cmd": c, "modules": m} for c, m in risk],
+                    "ok": len(ok),
+                    "total": len(cmds),
+                    "interpreters": {k: v for k, v in interps.items() if v},
+                },
+                indent=2,
+            )
+        )
         return 1 if broken else 0
 
     host = os.uname().nodename.split(".")[0]
@@ -308,7 +315,7 @@ def main():
         if any(m != "(file does not parse)" for _, _, g in broken for m in g):
             print("    Fix a missing module by having the command re-exec itself under the")
             print("    repo venv — `from venv_reexec import ensure_venv` then")
-            print("    `ensure_venv(__file__, \"pymongo\")`, as fw maint unsatisfiable does —")
+            print('    `ensure_venv(__file__, "pymongo")`, as fw maint unsatisfiable does —')
             print("    or install the module for the system interpreter.")
             print("    `fw install repo` creates the venv if it is absent.")
         print()

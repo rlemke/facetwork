@@ -130,12 +130,8 @@ def _render_generalist(names: list[str]) -> str:
     # to Overpass. FW_OSM_INDEX_HOST_DIR lets a host point at its own tree
     # without editing (or diverging from) the generated artefact.
     idx = index_dir()
-    idx_mount = (
-        f"      - ${{FW_OSM_INDEX_HOST_DIR:-{idx}}}:/opt/fw_osm_indexes:ro\n"
-        if idx
-        else ""
-    )
-    idx_env = ("      FW_OSM_INDEX_ROOT: /opt/fw_osm_indexes\n" if idx else "")
+    idx_mount = f"      - ${{FW_OSM_INDEX_HOST_DIR:-{idx}}}:/opt/fw_osm_indexes:ro\n" if idx else ""
+    idx_env = "      FW_OSM_INDEX_ROOT: /opt/fw_osm_indexes\n" if idx else ""
 
     return (
         "  # Generalist runner: ONE container serving every domain listed in the\n"

@@ -65,8 +65,9 @@ def _clone(repo: str, dest: str, token: str | None) -> None:
     """
     url = f"https://github.com/rlemke/{repo}.git"
     try:
-        subprocess.run(["git", "clone", "--depth", "1", url, dest],
-                       check=True, capture_output=True, text=True)
+        subprocess.run(
+            ["git", "clone", "--depth", "1", url, dest], check=True, capture_output=True, text=True
+        )
         return
     except subprocess.CalledProcessError:
         if not token:
@@ -75,9 +76,19 @@ def _clone(repo: str, dest: str, token: str | None) -> None:
     subprocess.run(["rm", "-rf", dest], check=False)
     auth = base64.b64encode(f"x-access-token:{token}".encode()).decode()
     subprocess.run(
-        ["git", "-c", f"http.extraHeader=Authorization: Basic {auth}",
-         "clone", "--depth", "1", url, dest],
-        check=True, capture_output=True, text=True,
+        [
+            "git",
+            "-c",
+            f"http.extraHeader=Authorization: Basic {auth}",
+            "clone",
+            "--depth",
+            "1",
+            url,
+            dest,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     )
     print(f"  (used the build secret for {repo})", flush=True)
 
@@ -110,7 +121,8 @@ def main() -> int:
             print(
                 f"  WARN: could not bake {name}: domains.json `repo` must be a bare "
                 f"repository NAME, got {repo!r} — falls back to bind-mount",
-                file=sys.stderr, flush=True,
+                file=sys.stderr,
+                flush=True,
             )
             failed.append(name)
             continue
@@ -153,9 +165,7 @@ def main() -> int:
                 k, _, v = line.partition(" ")
                 prior[k] = v.strip()
     prior.update(commits)
-    COMMITS_LIST.write_text(
-        "".join(f"{k} {v}\n" for k, v in sorted(prior.items()))
-    )
+    COMMITS_LIST.write_text("".join(f"{k} {v}\n" for k, v in sorted(prior.items())))
     # Record the misses IN THE IMAGE. Continue-on-error is deliberate -- one bad
     # repo must not fail a 30-domain build -- but "skipped" was previously visible
     # only as a WARN buried in build output, so an image could ship without a

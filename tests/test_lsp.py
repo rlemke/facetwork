@@ -56,6 +56,7 @@ namespace demo {
 # Analysis
 # ---------------------------------------------------------------------------
 
+
 def test_valid_source_reports_nothing():
     assert diagnostics_for(GOOD) == []
 
@@ -128,6 +129,7 @@ def test_hover_on_a_bad_line_prefers_the_rule_doc():
 # The protocol, over real byte streams
 # ---------------------------------------------------------------------------
 
+
 def _frame(payload: dict) -> bytes:
     body = json.dumps(payload).encode()
     return f"Content-Length: {len(body)}\r\n\r\n".encode() + body
@@ -161,24 +163,39 @@ def test_initialize_advertises_the_capabilities_it_implements():
 
 
 def test_opening_a_document_publishes_diagnostics():
-    replies = _run([
-        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-        {"jsonrpc": "2.0", "method": "textDocument/didOpen",
-         "params": {"textDocument": {"uri": "file:///a.ffl", "text": BAD}}},
-    ])
+    replies = _run(
+        [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": "file:///a.ffl", "text": BAD}},
+            },
+        ]
+    )
     published = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"]
     assert published, "no diagnostics were published on open"
     assert published[0]["params"]["diagnostics"][0]["code"] == "REF_UNDEFINED_STEP"
 
 
 def test_editing_republishes_against_the_new_text():
-    replies = _run([
-        {"jsonrpc": "2.0", "method": "textDocument/didOpen",
-         "params": {"textDocument": {"uri": "file:///a.ffl", "text": BAD}}},
-        {"jsonrpc": "2.0", "method": "textDocument/didChange",
-         "params": {"textDocument": {"uri": "file:///a.ffl"},
-                    "contentChanges": [{"text": GOOD}]}},
-    ])
+    replies = _run(
+        [
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": "file:///a.ffl", "text": BAD}},
+            },
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didChange",
+                "params": {
+                    "textDocument": {"uri": "file:///a.ffl"},
+                    "contentChanges": [{"text": GOOD}],
+                },
+            },
+        ]
+    )
     published = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"]
     assert len(published) == 2
     assert published[0]["params"]["diagnostics"], "the broken version reported nothing"
@@ -187,12 +204,20 @@ def test_editing_republishes_against_the_new_text():
 
 def test_closing_clears_the_diagnostics():
     """A closed file's problems must not linger in the panel as if still live."""
-    replies = _run([
-        {"jsonrpc": "2.0", "method": "textDocument/didOpen",
-         "params": {"textDocument": {"uri": "file:///a.ffl", "text": BAD}}},
-        {"jsonrpc": "2.0", "method": "textDocument/didClose",
-         "params": {"textDocument": {"uri": "file:///a.ffl"}}},
-    ])
+    replies = _run(
+        [
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": "file:///a.ffl", "text": BAD}},
+            },
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didClose",
+                "params": {"textDocument": {"uri": "file:///a.ffl"}},
+            },
+        ]
+    )
     published = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"]
     assert published[-1]["params"]["diagnostics"] == []
 
@@ -206,10 +231,12 @@ def test_an_unknown_request_is_still_answered():
 
 def test_a_malformed_message_does_not_end_the_session():
     """One bad message must not take the server down mid-edit."""
-    replies = _run([
-        {"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {}},
-        {"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {}},
-    ])
+    replies = _run(
+        [
+            {"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {}},
+            {"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {}},
+        ]
+    )
     assert any(r.get("id") == 2 for r in replies), "the server stopped after a bad message"
 
 

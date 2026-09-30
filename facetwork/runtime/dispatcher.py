@@ -134,17 +134,13 @@ def core_stack_unusable() -> str | None:
 
 
 def _probe_core_stack() -> str:
-    names = [
-        n.strip()
-        for n in os.environ.get("FW_CORE_IMPORTS", "numpy").split(",")
-        if n.strip()
-    ]
+    names = [n.strip() for n in os.environ.get("FW_CORE_IMPORTS", "numpy").split(",") if n.strip()]
     for name in names:
         try:
             if importlib.util.find_spec(name) is None:
-                continue          # not installed here — see the docstring
+                continue  # not installed here — see the docstring
         except Exception:
-            continue              # cannot even ask; not evidence of breakage
+            continue  # cannot even ask; not evidence of breakage
         try:
             importlib.import_module(name)
         except Exception as exc:

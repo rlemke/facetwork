@@ -767,8 +767,11 @@ class RunnerService(BaseRunner):
             prior = []
         best = None
         for t in sorted(prior, key=lambda x: getattr(x, "created", 0) or 0, reverse=True):
-            if (getattr(t, "requires", None) or getattr(t, "required_features", None)
-                    or getattr(t, "environment_hash", "")):
+            if (
+                getattr(t, "requires", None)
+                or getattr(t, "required_features", None)
+                or getattr(t, "environment_hash", "")
+            ):
                 best = t
                 break
         if best is None:
@@ -780,12 +783,20 @@ class RunnerService(BaseRunner):
             )
             return {}
         out: dict = {}
-        for field, default in (("requires", None), ("required_features", None),
-                               ("environment_hash", ""), ("kind", ""), ("timeout_ms", None)):
+        for field, default in (
+            ("requires", None),
+            ("required_features", None),
+            ("environment_hash", ""),
+            ("kind", ""),
+            ("timeout_ms", None),
+        ):
             val = getattr(best, field, default)
             if val:
-                out[field] = dict(val) if isinstance(val, dict) else (
-                    list(val) if isinstance(val, list) else val)
+                out[field] = (
+                    dict(val)
+                    if isinstance(val, dict)
+                    else (list(val) if isinstance(val, list) else val)
+                )
         return out
 
     def _lookup_runner_context(self, workflow_id: str) -> tuple[str, str]:
@@ -952,29 +963,45 @@ class RunnerService(BaseRunner):
         delivered twice is a no-op, and a toggle delivered twice CONCURRENTLY is
         a coin flip.
         """
-        cmd = str((payload or {}).get("command") or (payload or {}).get("cmd") or "").strip().lower()
+        cmd = (
+            str((payload or {}).get("command") or (payload or {}).get("cmd") or "").strip().lower()
+        )
         if cmd in ("pause", "resume"):
             was = getattr(self, "_paused", False)
-            self._paused = (cmd == "pause")
+            self._paused = cmd == "pause"
             logger.warning(
                 "fw:sys %s on %s (%s) — paused %s -> %s; in-flight work continues, "
-                "heartbeat continues", cmd, self._config.server_name, self.server_id,
-                was, self._paused)
-            return {"ok": True, "command": cmd, "server_id": self.server_id,
-                    "server_name": self._config.server_name,
-                    "was_paused": was, "paused": self._paused,
-                    "active_work_items": self._active_count()}
+                "heartbeat continues",
+                cmd,
+                self._config.server_name,
+                self.server_id,
+                was,
+                self._paused,
+            )
+            return {
+                "ok": True,
+                "command": cmd,
+                "server_id": self.server_id,
+                "server_name": self._config.server_name,
+                "was_paused": was,
+                "paused": self._paused,
+                "active_work_items": self._active_count(),
+            }
         if cmd == "status":
             now = _current_time_ms()
-            return {"ok": True, "command": "status", "server_id": self.server_id,
-                    "server_name": self._config.server_name,
-                    "paused": getattr(self, "_paused", False),
-                    "running": self.is_running,
-                    "uptime_ms": now - self._start_time_ms if self._start_time_ms else 0,
-                    "active_work_items": self._active_count(),
-                    "task_list": self._config.task_list,
-                    "server_group": self._config.server_group,
-                    "version": getattr(self, "_version", "unknown")}
+            return {
+                "ok": True,
+                "command": "status",
+                "server_id": self.server_id,
+                "server_name": self._config.server_name,
+                "paused": getattr(self, "_paused", False),
+                "running": self.is_running,
+                "uptime_ms": now - self._start_time_ms if self._start_time_ms else 0,
+                "active_work_items": self._active_count(),
+                "task_list": self._config.task_list,
+                "server_group": self._config.server_group,
+                "version": getattr(self, "_version", "unknown"),
+            }
         raise ValueError(
             f"fw:sys: unknown command {cmd!r} (known: status, pause, resume). "
             f"Refused rather than ignored, so the caller is not left believing it applied."
@@ -1065,8 +1092,8 @@ class RunnerService(BaseRunner):
                     "No handler for facet '%s' on step %s",
                     step.facet_name,
                     step.id,
-        resources=self._measured_resources(),
-        known_features=self._known_ast_features(),
+                    resources=self._measured_resources(),
+                    known_features=self._known_ast_features(),
                 )
                 return
 

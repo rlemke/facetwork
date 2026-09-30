@@ -82,9 +82,7 @@ _LOCKED = re.compile(r"Directory cannot be locked|already locked", re.I)
 def _require(payload: dict, key: str) -> str:
     value = (payload.get(key) or "").strip()
     if not value:
-        raise PermanentError(
-            f"{key} is required — a retry cannot supply a missing parameter"
-        )
+        raise PermanentError(f"{key} is required — a retry cannot supply a missing parameter")
     return value
 
 
@@ -97,8 +95,11 @@ def _resolve_binary() -> str:
     """
     from shutil import which
 
-    found = which(SNAKEMAKE_BIN) if os.path.basename(SNAKEMAKE_BIN) == SNAKEMAKE_BIN \
+    found = (
+        which(SNAKEMAKE_BIN)
+        if os.path.basename(SNAKEMAKE_BIN) == SNAKEMAKE_BIN
         else (SNAKEMAKE_BIN if os.path.isfile(SNAKEMAKE_BIN) else None)
+    )
     if not found:
         raise PermanentError(
             f"snakemake not found (looked for {SNAKEMAKE_BIN!r}). Install it on this "
@@ -114,12 +115,16 @@ def _command(binary: str, payload: dict, workdir: str, snakefile: str) -> list[s
         raise PermanentError(f"cores must be positive, got {cores}")
     cmd = [
         binary,
-        "--snakefile", snakefile,
-        "--directory", workdir,
-        "--cores", str(cores),
+        "--snakefile",
+        snakefile,
+        "--directory",
+        workdir,
+        "--cores",
+        str(cores),
         # Snakemake ≥8 requires an explicit deployment method; "conda" would
         # silently try to build environments on a runner that has no conda.
-        "--software-deployment-method", "env-modules",
+        "--software-deployment-method",
+        "env-modules",
         "--nocolor",
     ]
     # argv list, never a shell string — the same rule fw.exec.Run enforces, and
@@ -275,9 +280,7 @@ def _spawn_and_wait(cmd: list[str], ctx: HandlerContext, timeout_min: int) -> tu
                 now = time.monotonic()
                 if now > deadline:
                     _terminate(proc, ctx.step_log)
-                    raise TimeoutError(
-                        f"snakemake exceeded run_timeout_minutes={timeout_min}"
-                    )
+                    raise TimeoutError(f"snakemake exceeded run_timeout_minutes={timeout_min}")
                 # Two different clocks, deliberately. Exit is detected at
                 # WAIT_TICK_S; the heartbeat still goes out at POLL_INTERVAL_S.
                 # Sleeping the heartbeat interval instead would put a floor

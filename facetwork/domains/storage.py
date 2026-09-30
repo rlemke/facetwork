@@ -31,6 +31,7 @@ Usage in a domain package::
 artifact is published: build it on local scratch, then finalize. Writing
 directly to an ``s3://`` path and crashing halfway leaves nothing usable.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -99,19 +100,26 @@ class DomainStorage:
     #: silently unifying them, because unifying is a DATA MIGRATION, not a
     #: refactor.
     LAYOUTS = {
-        "nested": ("cache", "{domain}", "cache"),   # s3://root/cache/<d>/cache
-        "flat": ("cache", "{domain}"),              # s3://root/cache/<d>
+        "nested": ("cache", "{domain}", "cache"),  # s3://root/cache/<d>/cache
+        "flat": ("cache", "{domain}"),  # s3://root/cache/<d>
         # ⚠️ No domain segment at all: the cache is SHARED between domains and
         # outputs go to the data root itself. fwh_groupphoto and fwh_sentinel2
         # both do this (they are copies of each other). Not a mistake to tidy —
         # it is where their objects are.
-        "global": ("cache",),                       # s3://root/cache
+        "global": ("cache",),  # s3://root/cache
     }
 
-    def __init__(self, domain: str, *, cache_env: str | None = None,
-                 root_env: str = "FW_DATA_ROOT", layout: str = "nested",
-                 path_name: str | None = None, local_name: str | None = None,
-                 output_env: str | None = None) -> None:
+    def __init__(
+        self,
+        domain: str,
+        *,
+        cache_env: str | None = None,
+        root_env: str = "FW_DATA_ROOT",
+        layout: str = "nested",
+        path_name: str | None = None,
+        local_name: str | None = None,
+        output_env: str | None = None,
+    ) -> None:
         if not domain or "/" in domain:
             raise ValueError(f"domain must be a bare name, got {domain!r}")
         if layout not in self.LAYOUTS:
@@ -134,15 +142,19 @@ class DomainStorage:
         # adding one silently is still a behaviour change: fwh_cancer ignores a
         # cache override and fwh_census_us ignores an output override, so a
         # helpfully-added env var would make them obey something they never did.
-        self.cache_env = (f"FW_{domain.upper().replace('-', '_')}_CACHE_DIR"
-                          if cache_env is None else cache_env)
+        self.cache_env = (
+            f"FW_{domain.upper().replace('-', '_')}_CACHE_DIR" if cache_env is None else cache_env
+        )
         # ⚠️ There is an OUTPUT override too, and it is not optional politeness:
         # fwh_amr's tests set FW_AMR_OUTPUT_DIR, and a layer that honoured only
         # the cache override sent their writes to the real /Volumes data root.
         # My equivalence check missed it because it varied FW_DATA_ROOT and
         # never the per-domain overrides.
-        self.output_env = (f"FW_{domain.upper().replace('-', '_')}_OUTPUT_DIR"
-                           if output_env is None else output_env)
+        self.output_env = (
+            f"FW_{domain.upper().replace('-', '_')}_OUTPUT_DIR"
+            if output_env is None
+            else output_env
+        )
         self.root_env = root_env
 
     # --- roots -------------------------------------------------------------
@@ -157,8 +169,9 @@ class DomainStorage:
             return ov
         r = self.data_root()
         if not is_remote(r):
-            return (join(r, "cache") if self.layout == "global"
-                    else join(r, f"{self.local_name}-cache"))
+            return (
+                join(r, "cache") if self.layout == "global" else join(r, f"{self.local_name}-cache")
+            )
         parts = [p.format(domain=self.path_name) for p in self.LAYOUTS[self.layout]]
         return join(r, *parts)
 

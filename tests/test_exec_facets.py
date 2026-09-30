@@ -101,7 +101,7 @@ def test_a_path_is_refused_even_if_its_basename_is_allowed(monkeypatch, tmp_path
 
 
 def test_an_allowed_command_missing_from_path_is_a_host_problem(monkeypatch):
-    """"Advertised but absent" is a provisioning fault, and saying so beats a
+    """ "Advertised but absent" is a provisioning fault, and saying so beats a
     bare FileNotFoundError with no context about which host."""
     monkeypatch.setenv(eh.ALLOW_VAR, "definitely-not-a-real-binary-xyz")
     with pytest.raises(FileNotFoundError, match="advertises a capability"):
@@ -130,7 +130,7 @@ def test_stdout_and_exit_code_come_back(allow_python):
 
 
 def test_a_nonzero_exit_fails_with_stderr_in_the_message(allow_python):
-    """"exit status 1" is not a diagnosis; the tail of stderr usually is."""
+    """ "exit status 1" is not a diagnosis; the tail of stderr usually is."""
     with pytest.raises(RuntimeError) as exc:
         _py("import sys; sys.stderr.write('boom: bad input file\\n'); sys.exit(3)")
     assert "exited 3" in str(exc.value)

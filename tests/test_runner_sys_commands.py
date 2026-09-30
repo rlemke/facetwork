@@ -1,4 +1,5 @@
 """Unit tests for the fw:sys control channel."""
+
 import pytest
 
 from facetwork.runtime.runner.service import RunnerService
@@ -6,16 +7,25 @@ from facetwork.runtime.runner.service import RunnerService
 
 class _Svc:
     """Minimal stand-in: exercises the handler without booting a runner."""
+
     _handle_sys_command = RunnerService._handle_sys_command
+
     def __init__(self):
         self._paused = False
         self.server_id = "uuid-1234"
         self.is_running = True
         self._start_time_ms = 0
         self._version = "test"
-        class _C: server_name="h1"; task_list="default"; server_group="runner"
+
+        class _C:
+            server_name = "h1"
+            task_list = "default"
+            server_group = "runner"
+
         self._config = _C()
-    def _active_count(self): return 3
+
+    def _active_count(self):
+        return 3
 
 
 def test_pause_then_resume_is_absolute_not_a_toggle():

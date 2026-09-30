@@ -15,6 +15,7 @@ fell back to synthetic data cannot be detected from its outputs afterwards, so
 the workflow has to say. A manifest asserting "live" for a mock run is worse
 than no manifest, because it is evidence for a claim that is false.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -126,8 +127,9 @@ def handle_manifest(params: dict[str, Any]) -> dict[str, Any]:
         meta = _read_sidecar(str(p))
         if meta is None:
             incomplete.append(str(p))
-            recorded_inputs.append({"path": str(p), "provenance": "unknown",
-                                    "why": "no .meta.json sidecar"})
+            recorded_inputs.append(
+                {"path": str(p), "provenance": "unknown", "why": "no .meta.json sidecar"}
+            )
         else:
             recorded_inputs.append({"path": str(p), "provenance": "recorded", **meta})
 
@@ -136,20 +138,21 @@ def handle_manifest(params: dict[str, Any]) -> dict[str, Any]:
     # Hashing a run's whole output tree is the one part that can block for
     # minutes; keep the liveness signal alive across it.
     with heartbeating(params, f"hashing {len(found)} output(s)"):
-      for p in found:
-          try:
-              size = os.path.getsize(p)
-          except OSError:
-              continue
-          entry: dict[str, Any] = {"path": os.path.relpath(p, outputs_root)
-                                   if os.path.isdir(outputs_root) else p,
-                                   "size_bytes": size}
-          if size <= _HASH_MAX_BYTES:
-              entry["sha256"] = _sha256(p)
-          else:
-              entry["identity"] = "size+mtime"
-              entry["mtime"] = int(os.path.getmtime(p))
-          recorded_outputs.append(entry)
+        for p in found:
+            try:
+                size = os.path.getsize(p)
+            except OSError:
+                continue
+            entry: dict[str, Any] = {
+                "path": os.path.relpath(p, outputs_root) if os.path.isdir(outputs_root) else p,
+                "size_bytes": size,
+            }
+            if size <= _HASH_MAX_BYTES:
+                entry["sha256"] = _sha256(p)
+            else:
+                entry["identity"] = "size+mtime"
+                entry["mtime"] = int(os.path.getmtime(p))
+            recorded_outputs.append(entry)
 
     extra: dict[str, Any] = {}
     raw = str(params.get("extra_json") or "").strip()
@@ -177,9 +180,11 @@ def handle_manifest(params: dict[str, Any]) -> dict[str, Any]:
 
     dest = str(params.get("dest") or "").strip()
     if not dest:
-        dest = (os.path.join(outputs_root, MANIFEST_NAME)
-                if os.path.isdir(outputs_root)
-                else outputs_root + "." + MANIFEST_NAME)
+        dest = (
+            os.path.join(outputs_root, MANIFEST_NAME)
+            if os.path.isdir(outputs_root)
+            else outputs_root + "." + MANIFEST_NAME
+        )
     body = json.dumps(manifest, indent=2, sort_keys=False) + "\n"
     backend = get_storage_backend()
     if hasattr(backend, "write_text"):
@@ -190,8 +195,11 @@ def handle_manifest(params: dict[str, Any]) -> dict[str, Any]:
             fh.write(body)
 
     if incomplete:
-        say(f"provenance: {len(incomplete)} input(s) have NO recorded provenance "
-            f"— manifest marked incomplete", level="warning")
+        say(
+            f"provenance: {len(incomplete)} input(s) have NO recorded provenance "
+            f"— manifest marked incomplete",
+            level="warning",
+        )
     return {
         "path": dest,
         "inputs_recorded": len(recorded_inputs) - len(incomplete),
@@ -215,19 +223,19 @@ def handle_verify(params: dict[str, Any]) -> dict[str, Any]:
     checked = 0
     entries = manifest.get("outputs", [])
     with heartbeating(params, f"verifying {len(entries)} output(s)"):
-      for entry in entries:
-          rel = entry.get("path") or ""
-          full = rel if os.path.isabs(rel) else os.path.join(root, rel)
-          if not os.path.exists(full):
-              missing.append(rel)
-              continue
-          checked += 1
-          if "sha256" in entry:
-              if _sha256(full) != entry["sha256"]:
-                  changed.append(rel)
-          else:
-              if os.path.getsize(full) != entry.get("size_bytes"):
-                  changed.append(rel)
+        for entry in entries:
+            rel = entry.get("path") or ""
+            full = rel if os.path.isabs(rel) else os.path.join(root, rel)
+            if not os.path.exists(full):
+                missing.append(rel)
+                continue
+            checked += 1
+            if "sha256" in entry:
+                if _sha256(full) != entry["sha256"]:
+                    changed.append(rel)
+            else:
+                if os.path.getsize(full) != entry.get("size_bytes"):
+                    changed.append(rel)
     return {
         "matches": not changed and not missing,
         "checked": checked,

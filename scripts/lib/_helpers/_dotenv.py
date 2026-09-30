@@ -12,6 +12,7 @@ is worse than one that does not run.
 Like _env.sh, values already in the environment WIN - an explicit
 `FW_MONGODB_URL=... fw maint ...` must still override the file.
 """
+
 from __future__ import annotations
 
 import os
@@ -35,7 +36,7 @@ def load_env(start: str | pathlib.Path | None = None) -> pathlib.Path | None:
         key, _, value = line.partition("=")
         key = key.strip()
         if key.startswith("export "):
-            key = key[len("export "):].strip()
+            key = key[len("export ") :].strip()
         if key and key not in os.environ:
             os.environ[key] = value.strip().strip('"').strip("'")
     return root

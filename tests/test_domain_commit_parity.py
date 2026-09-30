@@ -9,6 +9,7 @@ Measured 2026-09-08 in production: tag e20e532d-droadsafety-e carried unimatch
 same domain, in the same tag, on a fleet where 46 of 48 runners are arm64. Nothing
 prevented it and nothing reported it; it was found by hand-comparing containers.
 """
+
 import pathlib
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -26,6 +27,7 @@ def test_the_bake_records_a_commit_per_domain():
 def test_checker_exists_and_is_executable():
     assert CHECK.exists()
     import os
+
     assert os.access(CHECK, os.X_OK)
 
 
@@ -52,7 +54,7 @@ def test_checker_resolves_the_venv_interpreter():
     """A bare python3 is the SYSTEM one, which has no pymongo -- the check would
     report 'cannot verify' on a host where verification is perfectly possible."""
     src = CHECK.read_text()
-    assert '.venv/bin/python3' in src
+    assert ".venv/bin/python3" in src
 
 
 def test_cannot_verify_is_distinct_from_passing():
@@ -80,5 +82,5 @@ def test_rollout_runs_the_check_before_pointing_the_fleet_at_the_image():
 def test_rollout_does_not_hard_fail_on_a_pre_manifest_image():
     """The checker is newer than existing images; a rollout must not start failing
     merely because the check cannot apply yet."""
-    seg = ROLLOUT[ROLLOUT.index("domain-commit parity"):][:1600]
+    seg = ROLLOUT[ROLLOUT.index("domain-commit parity") :][:1600]
     assert "parity unverified" in seg

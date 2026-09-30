@@ -163,16 +163,10 @@ def _members(kind: str, handle: Any, archive: str, files_only: bool) -> list[tup
     """``(name, size)`` for each member, in archive order."""
     if kind == ZIP:
         return [
-            (i.filename, i.file_size)
-            for i in handle.infolist()
-            if not (files_only and i.is_dir())
+            (i.filename, i.file_size) for i in handle.infolist() if not (files_only and i.is_dir())
         ]
     if kind == TAR:
-        return [
-            (m.name, m.size)
-            for m in handle.getmembers()
-            if not files_only or m.isfile()
-        ]
+        return [(m.name, m.size) for m in handle.getmembers() if not files_only or m.isfile()]
     return []  # gzip: filled in by the caller, which knows the archive name
 
 
@@ -212,7 +206,9 @@ def _select_member(names: list[str], member: str, pattern: str, archive: str) ->
         return member
     if pattern:
         matches = sorted(
-            n for n in names if fnmatch.fnmatch(n, pattern) or fnmatch.fnmatch(posixpath.basename(n), pattern)
+            n
+            for n in names
+            if fnmatch.fnmatch(n, pattern) or fnmatch.fnmatch(posixpath.basename(n), pattern)
         )
         if not matches:
             raise KeyError(
@@ -330,9 +326,7 @@ def handle_extract(params: dict[str, Any]) -> dict[str, Any]:
                     f"{archive} holds more than max_files={max_files} matching members"
                 )
             if max_bytes and total + size > max_bytes:
-                raise ValueError(
-                    f"extracting {archive} would exceed max_bytes={max_bytes}"
-                )
+                raise ValueError(f"extracting {archive} would exceed max_bytes={max_bytes}")
             if not overwrite and fs.exists(target):
                 continue
 

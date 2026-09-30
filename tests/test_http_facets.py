@@ -247,12 +247,14 @@ def test_same_dest_different_url_is_refetched(origin, tmp_path):
     """What is cached must be what was ASKED for, not merely something."""
     dest = tmp_path / "data.bin"
     _fetch(origin, dest, max_age_hours=24)
-    out = hh.handle({
-        "_facet_name": "fw.http.Fetch",
-        "url": origin.url + "?variant=b",
-        "dest": str(dest),
-        "max_age_hours": 24,
-    })
+    out = hh.handle(
+        {
+            "_facet_name": "fw.http.Fetch",
+            "url": origin.url + "?variant=b",
+            "dest": str(dest),
+            "max_age_hours": 24,
+        }
+    )
     assert out["was_cached"] is False
 
 
@@ -300,7 +302,7 @@ def test_published_checksum_changed_means_refetch(origin, tmp_path):
 
 
 def test_an_unreachable_checksum_falls_back_rather_than_redownloading(origin, tmp_path):
-    """"Could not ask" is not "changed". Re-downloading a multi-GB PBF because a
+    """ "Could not ask" is not "changed". Re-downloading a multi-GB PBF because a
     checksum endpoint blipped is the expensive wrong answer; the conditional GET
     still settles it correctly."""
     dest = tmp_path / "data.bin"

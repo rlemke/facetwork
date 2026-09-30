@@ -16,6 +16,7 @@ facet claims to be costly, its handler must be able to say it is still alive.
 Declaring a genuinely slow facet `cheap` to dodge this check would be a lie in
 the FFL, where it is visible, rather than a silent omission in Python.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -38,7 +39,7 @@ def _declared_costs(ffl_name: str) -> dict[str, str]:
     out: dict[str, str] = {}
     for m in re.finditer(r"event facet (\w+)\(", text):
         nxt = text.find("event facet ", m.end())
-        seg = text[m.end(): nxt if nxt > 0 else len(text)]
+        seg = text[m.end() : nxt if nxt > 0 else len(text)]
         cost = re.search(r'Cost\(tier = "(\w+)"\)', seg)
         out[m.group(1)] = cost.group(1) if cost else "unset"
     return out
@@ -70,7 +71,7 @@ def test_costly_builtin_heartbeats(facet, tier, fn):
     marked = getattr(fn, "_fw_heartbeats", None) is not None
     inline = "heartbeating" in inspect.getsource(fn)
     assert marked or inline, (
-        f"{facet} declares Cost(tier=\"{tier}\") but its handler never signals "
+        f'{facet} declares Cost(tier="{tier}") but its handler never signals '
         f"liveness. A blocking call with no heartbeat is reclaimed mid-run and "
         f"re-dispatched onto another host — two machines then do the same work. "
         f"Wrap the blocking phase in facetwork.handlers._heartbeat.heartbeating."

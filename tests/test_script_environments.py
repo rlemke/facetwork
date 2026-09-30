@@ -1,5 +1,3 @@
-
-
 def test_csv_is_importable_in_script_blocks():
     """⚠️ `csv` must stay on the sandbox allowlist.
 
@@ -10,6 +8,7 @@ def test_csv_is_importable_in_script_blocks():
     exactly like `json`.
     """
     from facetwork.runtime.script_executor import _SAFE_IMPORT_MODULES
+
     assert "csv" in _SAFE_IMPORT_MODULES
     assert "json" in _SAFE_IMPORT_MODULES
 
@@ -22,6 +21,7 @@ class TestScriptS3Credentials:
         import subprocess as sp
 
         from facetwork.runtime import script_executor as se
+
         monkeypatch.setenv("FW_S3_ACCESS_KEY", "from-fw")
         monkeypatch.setenv("AWS_ACCESS_KEY_ID", "explicit")
         seen = {}
@@ -40,6 +40,7 @@ class TestScriptS3Credentials:
         import subprocess as sp
 
         from facetwork.runtime import script_executor as se
+
         for k in ("AWS_ACCESS_KEY_ID", "AWS_ENDPOINT_URL"):
             monkeypatch.delenv(k, raising=False)
         monkeypatch.setenv("FW_S3_ACCESS_KEY", "mapped-key")
@@ -69,6 +70,7 @@ class TestScriptDeclaredReturns:
         import pytest
 
         from facetwork.runtime.base_runner import check_declared_returns
+
         with pytest.raises(RuntimeError) as ei:
             check_declared_returns(
                 "repro.normals.ExtractPublished",
@@ -80,11 +82,13 @@ class TestScriptDeclaredReturns:
 
     def test_produced_values_pass(self):
         from facetwork.runtime.base_runner import check_declared_returns
+
         check_declared_returns("f", {"returns": [{"name": "path"}]}, {"path": "/x"})
 
     def test_no_declared_returns_means_empty_is_fine(self):
         """A script facet with no return clause legitimately returns nothing."""
         from facetwork.runtime.base_runner import check_declared_returns
+
         check_declared_returns("f", {"returns": []}, {})
         check_declared_returns("f", {}, {})
 
@@ -100,6 +104,7 @@ def test_dockerfile_copies_every_example_that_declares_an_environment():
     """
     import pathlib
     import re
+
     root = pathlib.Path(__file__).resolve().parents[1]
     df = (root / "docker" / "Dockerfile.domain-runner").read_text()
     assert "--root /app/examples" in df, "envbake no longer sweeps examples"
@@ -113,10 +118,10 @@ def test_dockerfile_copies_every_example_that_declares_an_environment():
 
     copied = re.findall(r"^COPY\s+(examples\S*)", df, re.M)
     for d in sorted(declaring):
-        assert any(c.rstrip("/") == "examples" or d.startswith(c.rstrip("/"))
-                   for c in copied), (
+        assert any(c.rstrip("/") == "examples" or d.startswith(c.rstrip("/")) for c in copied), (
             f"{d} declares an environment but the Dockerfile does not copy it "
-            f"(COPY lines: {copied}) — envbake would never see it")
+            f"(COPY lines: {copied}) — envbake would never see it"
+        )
 
 
 # Directories that CONTAIN COPIES of repo sources rather than sources themselves.
@@ -140,6 +145,7 @@ def test_envbake_sweeps_every_root_that_declares_an_environment():
     """
     import pathlib
     import re
+
     root = pathlib.Path(__file__).resolve().parents[1]
     df = (root / "docker" / "Dockerfile.domain-runner").read_text()
     envbake = [ln for ln in df.splitlines() if "facetwork.envbake" in ln]
@@ -156,8 +162,8 @@ def test_envbake_sweeps_every_root_that_declares_an_environment():
     assert "facetwork" in declaring, "expected a built-in environment to exist"
     for d in sorted(declaring):
         assert any(r.rstrip("/").endswith(d) for r in roots), (
-            f"{d}/ declares an environment but envbake does not sweep it "
-            f"(roots: {sorted(roots)})")
+            f"{d}/ declares an environment but envbake does not sweep it (roots: {sorted(roots)})"
+        )
 
 
 class TestSandboxSubmoduleImports:
@@ -169,20 +175,24 @@ class TestSandboxSubmoduleImports:
         imports the submodule `astropy.io`. Same for numpy.linalg,
         scipy.ndimage. Found when a fleet fan-out failed on every task."""
         from facetwork.runtime.script_executor import ScriptExecutor
+
         r = ScriptExecutor(timeout=60).execute(
-            "import collections.abc\nresult['n'] = collections.abc.Mapping.__name__", {})
+            "import collections.abc\nresult['n'] = collections.abc.Mapping.__name__", {}
+        )
         assert r.success, r.error
         assert r.result["n"] == "Mapping"
 
     def test_submodule_of_a_banned_root_is_still_refused(self):
         """Widening to roots must not open a path to a package that is banned."""
         from facetwork.runtime.script_executor import ScriptExecutor
+
         r = ScriptExecutor(timeout=60).execute("import os.path\nresult['x'] = 1", {})
         assert not r.success
         assert "not allowed" in (r.error or "")
 
     def test_banned_top_level_still_refused(self):
         from facetwork.runtime.script_executor import ScriptExecutor
+
         for mod in ("os", "subprocess", "socket", "shutil"):
             r = ScriptExecutor(timeout=60).execute(f"import {mod}\nresult['x']=1", {})
             assert not r.success, f"{mod} must stay banned"

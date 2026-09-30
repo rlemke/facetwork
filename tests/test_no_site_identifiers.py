@@ -64,7 +64,7 @@ def _findings(path: Path, names: list[str]) -> list[str]:
         low = line.lower()
         for name in names:
             if re.search(rf"(?<![\w-]){re.escape(name.lower())}(?![\w-])", low):
-                out.append(f"{rel}:{n}: catalogued host name")   # not echoed: it is private
+                out.append(f"{rel}:{n}: catalogued host name")  # not echoed: it is private
     return out
 
 
@@ -73,13 +73,17 @@ def test_no_test_file_names_a_server_or_spells_an_ip() -> None:
     found = [f for p in _test_files() for f in _findings(p, names)]
     assert not found, (
         "tests must take host names and addresses from tests/_site.py, never "
-        "literals:\n  " + "\n  ".join(found[:40]))
+        "literals:\n  " + "\n  ".join(found[:40])
+    )
 
 
-@pytest.mark.parametrize("line", [
-    "x = '{}'".format(".".join(["198", "51", "100", "7"])),
-    "host = 'box.{}'".format("local"),
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "x = '{}'".format(".".join(["198", "51", "100", "7"])),
+        "host = 'box.{}'".format("local"),
+    ],
+)
 def test_the_guard_can_fail(tmp_path: Path, line: str) -> None:
     """A guard that cannot go red proves nothing. Built by joining parts, so this
     file does not itself contain the literals it forbids."""

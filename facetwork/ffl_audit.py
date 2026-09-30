@@ -79,12 +79,15 @@ CONTRACT_CHECKS = [
         # The lookbehind excludes `_` as well as alphanumerics, so an unrelated
         # `my_step_log.append(` on a genuine list is not flagged; the second arm
         # catches the subscript form, `params["_step_log"].append(`.
-        re.compile(r"""(?:(?<![A-Za-z0-9_])_?step_log|\[\s*["']_step_log["']\s*\])"""
-                   r"""\s*\.\s*append\s*\("""),
+        re.compile(
+            r"""(?:(?<![A-Za-z0-9_])_?step_log|\[\s*["']_step_log["']\s*\])"""
+            r"""\s*\.\s*append\s*\("""
+        ),
         "`_step_log` is a callback — step_log(message, level=…), not a list. "
         "`.append` raises AttributeError at the handler's first log line.",
     ),
 ]
+
 
 def check_register_handlers(text: str, rel: str) -> list[str]:
     """Structural check on `register_handlers` — the runner-registration contract.
@@ -109,15 +112,17 @@ def check_register_handlers(text: str, rel: str) -> list[str]:
     try:
         tree = ast.parse(text)
     except SyntaxError:
-        return []                      # broken syntax is reported by other checks
+        return []  # broken syntax is reported by other checks
     out: list[str] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.FunctionDef) or node.name != "register_handlers":
             continue
         args = [a.arg for a in node.args.args]
         if not args:
-            out.append(f"register-handlers-contract  {rel}:{node.lineno}  "
-                       "register_handlers() takes no argument; it receives the runner")
+            out.append(
+                f"register-handlers-contract  {rel}:{node.lineno}  "
+                "register_handlers() takes no argument; it receives the runner"
+            )
             continue
         param = args[0]
         calls_param = calls_method = False
@@ -127,17 +132,23 @@ def check_register_handlers(text: str, rel: str) -> list[str]:
             fn = sub.func
             if isinstance(fn, ast.Name) and fn.id == param:
                 calls_param = True
-            if (isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name)
-                    and fn.value.id == param and fn.attr == "register_handler"):
+            if (
+                isinstance(fn, ast.Attribute)
+                and isinstance(fn.value, ast.Name)
+                and fn.value.id == param
+                and fn.attr == "register_handler"
+            ):
                 calls_method = True
         if calls_param and not calls_method:
             # ALWAYS wrong: the runtime passes the runner object, so calling it
             # raises TypeError on every invocation.
-            out.append(f"register-handlers-contract  {rel}:{node.lineno}  "
-                       f"calls {param}(...) directly; the runtime passes the RUNNER, "
-                       f"so use {param}.register_handler(facet_name=..., "
-                       f"module_uri=..., entrypoint=...) — no handler is registered, "
-                       f"and this domain's tasks cannot be claimed by anyone")
+            out.append(
+                f"register-handlers-contract  {rel}:{node.lineno}  "
+                f"calls {param}(...) directly; the runtime passes the RUNNER, "
+                f"so use {param}.register_handler(facet_name=..., "
+                f"module_uri=..., entrypoint=...) — no handler is registered, "
+                f"and this domain's tasks cannot be claimed by anyone"
+            )
         elif not calls_method:
             # ⚠️ NOT reported here. A repo may hold many handler modules and a
             # no-op stub among them is harmless — fwh_osm has exactly that
@@ -146,8 +157,7 @@ def check_register_handlers(text: str, rel: str) -> list[str]:
             # heaviest workload. Reporting it per-file would raise a false alarm
             # on the biggest domain, which is how a check earns being ignored.
             # The caller decides, once it has seen every module in the repo.
-            out.append(f"register-handlers-noop  {rel}:{node.lineno}  "
-                       f"registers nothing")
+            out.append(f"register-handlers-noop  {rel}:{node.lineno}  registers nothing")
     return out
 
 
@@ -176,10 +186,21 @@ class RepoResult:
 # 'RetryPolicy': could be save_earth.mixins.RetryPolicy,
 # save_earth.mixins.RetryPolicy" errors, which is enough noise to bury a real
 # finding in the tier this audit exists to gate.
-_COPY_DIRS = frozenset({
-    ".venv", "venv", "site-packages", "build", "dist", "sdist",
-    ".eggs", ".tox", "__pycache__", "node_modules", ".git",
-})
+_COPY_DIRS = frozenset(
+    {
+        ".venv",
+        "venv",
+        "site-packages",
+        "build",
+        "dist",
+        "sdist",
+        ".eggs",
+        ".tox",
+        "__pycache__",
+        "node_modules",
+        ".git",
+    }
+)
 
 
 def _is_vendored(path: pathlib.Path) -> bool:
@@ -206,7 +227,9 @@ def scan_namespaces(files: list[pathlib.Path]) -> tuple[set[str], set[str]]:
     return defined, used
 
 
-def dependencies_for(repo: str, defines: dict[str, set[str]], uses: dict[str, set[str]]) -> list[str]:
+def dependencies_for(
+    repo: str, defines: dict[str, set[str]], uses: dict[str, set[str]]
+) -> list[str]:
     """Repos whose namespaces ``repo`` uses but does not define.
 
     Prefix-aware in both directions: ``use osm.types`` is satisfied by a repo
@@ -220,9 +243,7 @@ def dependencies_for(repo: str, defines: dict[str, set[str]], uses: dict[str, se
         for owner, owned in defines.items():
             if owner == repo:
                 continue
-            if ns in owned or any(
-                o.startswith(ns + ".") or ns.startswith(o + ".") for o in owned
-            ):
+            if ns in owned or any(o.startswith(ns + ".") or ns.startswith(o + ".") for o in owned):
                 out.add(owner)
     return sorted(out)
 
@@ -266,15 +287,27 @@ def scan_contracts(repo: pathlib.Path) -> list[str]:
     if registers_somewhere:
         hits = [h for h in hits if not h.startswith("register-handlers-noop")]
     else:
-        hits = [("register-handlers-contract  " + h.split("  ", 1)[1] +
-                 "  — and NO module in this repo registers a handler at all")
-                if h.startswith("register-handlers-noop") else h for h in hits]
+        hits = [
+            (
+                "register-handlers-contract  "
+                + h.split("  ", 1)[1]
+                + "  — and NO module in this repo registers a handler at all"
+            )
+            if h.startswith("register-handlers-noop")
+            else h
+            for h in hits
+        ]
     return hits
 
 
-def audit(roots: list[str], *, check_contracts: bool = True,
-          python: str | None = None, cwd: str | None = None,
-          repo_paths: list[str] | None = None) -> list[RepoResult]:
+def audit(
+    roots: list[str],
+    *,
+    check_contracts: bool = True,
+    python: str | None = None,
+    cwd: str | None = None,
+    repo_paths: list[str] | None = None,
+) -> list[RepoResult]:
     """Validate every ``fwh_*`` repo found under ``roots``.
 
     ``repo_paths`` names repositories DIRECTLY instead of sweeping a parent for
@@ -314,7 +347,7 @@ def audit(roots: list[str], *, check_contracts: bool = True,
     results: list[RepoResult] = []
     for r in repos:
         if audit_only and r.name not in audit_only:
-            continue   # supplied as a library only
+            continue  # supplied as a library only
         own = files[r.name]
         contract_hits = scan_contracts(r) if check_contracts else []
         if not own:
@@ -338,8 +371,11 @@ def audit(roots: list[str], *, check_contracts: bool = True,
         out = (proc.stdout or "") + (proc.stderr or "")
         errs = [ln.strip() for ln in out.splitlines() if ln.strip().startswith("Error:")]
         status = "ok" if proc.returncode == 0 and not errs else "drift"
-        results.append(RepoResult(r.name, len(own), status, errs,
-                                  [d.replace("fwh_", "") for d in deps], contract_hits))
+        results.append(
+            RepoResult(
+                r.name, len(own), status, errs, [d.replace("fwh_", "") for d in deps], contract_hits
+            )
+        )
     return results
 
 
@@ -358,14 +394,16 @@ def _report(results: list[RepoResult], *, quiet: bool) -> None:
     failures = [r for r in results if r.failed]
     print()
     if not failures:
-        print("ALL CLEAN — every domain validates against the current compiler "
-              "and uses no obsolete handler APIs.")
+        print(
+            "ALL CLEAN — every domain validates against the current compiler "
+            "and uses no obsolete handler APIs."
+        )
         return
     for r in failures:
         if r.errors:
             print(f"=== {r.name} — {len(r.errors)} FFL error(s)")
             for e in r.errors[: (3 if quiet else 8)]:
-                print("   ", e[len("Error:"):].strip()[:150])
+                print("   ", e[len("Error:") :].strip()[:150])
             if len(r.errors) > (3 if quiet else 8):
                 print(f"    … {len(r.errors) - (3 if quiet else 8)} more")
         for hit in r.contract_hits:
@@ -381,23 +419,38 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="fw util ffl-audit",
         description="Validate every domain repo's FFL and handler contracts "
-                    "against the current runtime.",
+        "against the current runtime.",
     )
-    p.add_argument("--root", action="append", default=[],
-                   help=f"directory holding fwh_* repos (repeatable; default {DEFAULT_ROOT}). "
-                        "Use --root /opt inside a runner container to audit the BAKED "
-                        "domains, which is what the fleet actually executes.")
-    p.add_argument("--repo", action="append", default=[],
-                   help="audit THIS repository directly instead of sweeping a parent "
-                        "for fwh_* children. Use in CI, where a domain is checked out "
-                        "alone: a sweep finds no fwh_* dirs, and an audit that finds no "
-                        "work reports success.")
-    p.add_argument("--lib-repo", action="append", default=[],
-                   help="supply another checkout as a LIBRARY (repeatable). Needed only "
-                        "where a domain uses a namespace it does not define - 1 of 29 "
-                        "(fwh_osm_lz needs fwh_osm).")
-    p.add_argument("--no-contracts", action="store_true",
-                   help="skip the obsolete-handler-API scan (FFL validation only)")
+    p.add_argument(
+        "--root",
+        action="append",
+        default=[],
+        help=f"directory holding fwh_* repos (repeatable; default {DEFAULT_ROOT}). "
+        "Use --root /opt inside a runner container to audit the BAKED "
+        "domains, which is what the fleet actually executes.",
+    )
+    p.add_argument(
+        "--repo",
+        action="append",
+        default=[],
+        help="audit THIS repository directly instead of sweeping a parent "
+        "for fwh_* children. Use in CI, where a domain is checked out "
+        "alone: a sweep finds no fwh_* dirs, and an audit that finds no "
+        "work reports success.",
+    )
+    p.add_argument(
+        "--lib-repo",
+        action="append",
+        default=[],
+        help="supply another checkout as a LIBRARY (repeatable). Needed only "
+        "where a domain uses a namespace it does not define - 1 of 29 "
+        "(fwh_osm_lz needs fwh_osm).",
+    )
+    p.add_argument(
+        "--no-contracts",
+        action="store_true",
+        help="skip the obsolete-handler-API scan (FFL validation only)",
+    )
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument("-q", "--quiet", action="store_true", help="fewer error lines per repo")
     a = p.parse_args(argv)
@@ -407,8 +460,7 @@ def main(argv: list[str] | None = None) -> int:
         roots, paths = a.root, list(a.repo) + list(a.lib_repo)
     else:
         roots, paths = (a.root or [DEFAULT_ROOT]), None
-    results = audit(roots, check_contracts=not a.no_contracts, cwd=str(repo_root),
-                    repo_paths=paths)
+    results = audit(roots, check_contracts=not a.no_contracts, cwd=str(repo_root), repo_paths=paths)
 
     if not results:
         where = ", ".join(a.repo) if a.repo else ", ".join(roots)
@@ -416,10 +468,22 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if a.json:
-        print(json.dumps([{
-            "repo": r.name, "ffl": r.ffl_count, "status": r.status,
-            "deps": r.deps, "errors": r.errors, "contract_hits": r.contract_hits,
-        } for r in results], indent=2))
+        print(
+            json.dumps(
+                [
+                    {
+                        "repo": r.name,
+                        "ffl": r.ffl_count,
+                        "status": r.status,
+                        "deps": r.deps,
+                        "errors": r.errors,
+                        "contract_hits": r.contract_hits,
+                    }
+                    for r in results
+                ],
+                indent=2,
+            )
+        )
     else:
         _report(results, quiet=a.quiet)
 

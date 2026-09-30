@@ -4,6 +4,7 @@ One runner fronting several cold domains, instead of a container each. The role
 carries a MEMBERSHIP LIST, which no other role has, and every test here pins a
 failure that list makes possible.
 """
+
 import importlib.util
 import pathlib
 
@@ -68,7 +69,10 @@ def test_service_validation_enables_every_profile():
     assert "config --profiles" in src
     assert 'COMPOSE_PROFILES="$_PROFILES"' in src
     # The bare form must be gone, or the gate silently returns.
-    assert 'AVAIL="$(docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} config --services' not in src
+    assert (
+        'AVAIL="$(docker compose "${COMPOSE_F[@]}" ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} config --services'
+        not in src
+    )
 
 
 # --------------------------------------------------------------------------
@@ -92,7 +96,7 @@ def test_generalist_membership_is_validated_against_the_catalog():
     """
     src = (REPO / "scripts/lib/fleet/config").read_text()
     i = src.index("if a.generalist is not None:")
-    assert "_warn_unknown_domain_runners(names)" in src[i:i + 900]
+    assert "_warn_unknown_domain_runners(names)" in src[i : i + 900]
 
 
 # --------------------------------------------------------------------------
@@ -144,19 +148,24 @@ def test_membership_rides_the_child_env_not_the_shared_env_file():
 # --------------------------------------------------------------------------
 def _lib():
     import sys
+
     sys.path.insert(0, str(REPO / "scripts/lib/_helpers"))
     import _fleet_lib
+
     return _fleet_lib
 
 
-@pytest.mark.parametrize("url,host", [
-    ("mongodb://127.0.0.1:27017", "127.0.0.1"),
-    ("mongodb://localhost:27017", "localhost"),
-    ("mongodb://user:pw@127.0.0.1:27017/facetwork", "127.0.0.1"),
-    ("mongodb://[::1]:27017", "::1"),          # regressed a split(":")[0] version
-    ("mongodb://0.0.0.0:27017", "0.0.0.0"),
-    ("mongodb://127.53.1.9:27017", "127.53.1.9"),
-])
+@pytest.mark.parametrize(
+    "url,host",
+    [
+        ("mongodb://127.0.0.1:27017", "127.0.0.1"),
+        ("mongodb://localhost:27017", "localhost"),
+        ("mongodb://user:pw@127.0.0.1:27017/facetwork", "127.0.0.1"),
+        ("mongodb://[::1]:27017", "::1"),  # regressed a split(":")[0] version
+        ("mongodb://0.0.0.0:27017", "0.0.0.0"),
+        ("mongodb://127.53.1.9:27017", "127.53.1.9"),
+    ],
+)
 def test_loopback_mongo_is_refused_for_runner_containers(url, host):
     """Loopback is right for a host process and poison inside a container.
 
@@ -169,13 +178,16 @@ def test_loopback_mongo_is_refused_for_runner_containers(url, host):
     assert _lib().container_unusable_host(url) == host
 
 
-@pytest.mark.parametrize("url", [
-    "mongodb://afl-mongodb:27017",
-    f"mongodb://{_site.ip('infra')}:27017",
-    f"mongodb://{_site.host('infra')}:27017",
-    None,
-    "",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "mongodb://afl-mongodb:27017",
+        f"mongodb://{_site.ip('infra')}:27017",
+        f"mongodb://{_site.host('infra')}:27017",
+        None,
+        "",
+    ],
+)
 def test_routable_mongo_urls_are_accepted(url):
     """The guard must not reject a name or LAN address a container can resolve."""
     assert _lib().container_unusable_host(url) is None

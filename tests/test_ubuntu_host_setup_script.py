@@ -4,6 +4,7 @@ Not a style check. Every assertion here corresponds to something that actually
 broke on this fleet, and the script exists so the next host does not rediscover
 it. If one of these fails, the script has lost a hard-won fix.
 """
+
 import pathlib
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -13,6 +14,7 @@ SRC = SH.read_text()
 
 def test_script_exists_and_is_executable():
     import os
+
     assert SH.exists() and os.access(SH, os.X_OK)
 
 
@@ -120,8 +122,8 @@ def test_masked_check_does_not_depend_on_systemctl_exit_code():
     FAILING. In a script whose non-zero exit says "do not trust this host", a
     false failure is worse than a false pass.
     """
-    assert 'systemctl is-enabled sleep.target 2>&1 | grep -q masked' not in SRC
-    assert '= masked ]' in SRC, "compare the output, not the exit status"
+    assert "systemctl is-enabled sleep.target 2>&1 | grep -q masked" not in SRC
+    assert "= masked ]" in SRC, "compare the output, not the exit status"
 
 
 def test_pipefail_is_on_so_the_above_matters():
@@ -131,7 +133,7 @@ def test_pipefail_is_on_so_the_above_matters():
 def test_no_python3_pip_package():
     """It drags in python3-dev/libpython3-dev/zlib1g-dev — ~42 MB of build headers
     for nothing. `python3 -m venv` provides the only pip this host uses."""
-    pkgs = SRC[SRC.index("PKGS=("):SRC.index(")", SRC.index("PKGS=("))]
+    pkgs = SRC[SRC.index("PKGS=(") : SRC.index(")", SRC.index("PKGS=("))]
     assert "python3-pip" not in pkgs
 
 
@@ -166,7 +168,8 @@ def test_ssh_key_is_validated_before_being_written():
     assert "NOT a valid public key" in SRC
     assert "ssh-copy-id -i " in SRC, (
         "must name the reliable alternative WITH -i: without it ssh-copy-id picks "
-        "its own identity and can install a key the client never offers")
+        "its own identity and can install a key the client never offers"
+    )
 
 
 def test_a_rejected_key_does_not_get_written():
@@ -182,7 +185,8 @@ def test_a_rejected_key_does_not_get_written():
     write = SRC.index("authorized_keys updated", guard)
     assert reject < clear < guard < write, (
         "the rejected key must be cleared BEFORE the guarded write, or the script "
-        "warns and appends anyway")
+        "warns and appends anyway"
+    )
 
 
 def test_docker_group_relogin_is_pending_not_failure():
@@ -199,7 +203,7 @@ def test_docker_group_relogin_is_pending_not_failure():
 def test_pending_exits_zero_with_the_next_step():
     """Expected-and-incomplete is not failure; it must still say what to do."""
     i = SRC.index("Setup complete except for one expected step")
-    seg = SRC[i:i + 600]
+    seg = SRC[i : i + 600]
     assert "systemctl enable --now facetwork-fleet-agent" in seg
     assert "exit 0" in seg
     assert "Nothing is wrong" in seg

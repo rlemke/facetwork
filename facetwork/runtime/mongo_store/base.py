@@ -341,12 +341,18 @@ class BaseMixin:
                 logger.info(
                     "%s carries the legacy filter %s; run `fw maint migrate-task-index` "
                     "once every runner is on this image to widen it to %s",
-                    _step_uniq, _existing.get("partialFilterExpression"), _want_filter)
+                    _step_uniq,
+                    _existing.get("partialFilterExpression"),
+                    _want_filter,
+                )
         except Exception:
             # Never let index bookkeeping stop a runner from starting: without
             # this the guard is merely absent, with it the whole fleet is down.
-            logger.warning("could not ensure %s; leaving the existing index in place",
-                           _step_uniq, exc_info=True)
+            logger.warning(
+                "could not ensure %s; leaving the existing index in place",
+                _step_uniq,
+                exc_info=True,
+            )
         # Compound indexes for the two claim_task queries. Equality fields
         # first, the single range field last, so each query is fully served by
         # an index instead of a collection scan on the hot tasks collection:
@@ -451,8 +457,7 @@ class BaseMixin:
         try:
             doc = self._db.leases.find_one_and_update(
                 # Take it if it is ours already, or if whoever held it let it lapse.
-                {"_id": name,
-                 "$or": [{"holder": holder}, {"expires_at": {"$lte": now}}]},
+                {"_id": name, "$or": [{"holder": holder}, {"expires_at": {"$lte": now}}]},
                 {"$set": {"holder": holder, "expires_at": now + ttl_ms}},
                 upsert=True,
                 return_document=ReturnDocument.AFTER,

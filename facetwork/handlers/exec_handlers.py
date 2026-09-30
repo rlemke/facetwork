@@ -234,9 +234,7 @@ def handle_run(params: dict[str, Any]) -> dict[str, Any]:
         )
     if proc.returncode not in ok_codes:
         # The tail of stderr is what turns "exit status 1" into a diagnosis.
-        raise RuntimeError(
-            f"{command_line} exited {proc.returncode}{_stderr_hint(stderr)}"
-        )
+        raise RuntimeError(f"{command_line} exited {proc.returncode}{_stderr_hint(stderr)}")
 
     _log(step_log, f"exit {proc.returncode} in {duration_ms}ms", "success")
     return {

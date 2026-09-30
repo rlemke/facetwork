@@ -29,6 +29,7 @@ state.txt. So "age unknown" is reported as its own category, never folded
 into "old" and never silently treated as fresh — an extract that cannot say
 how current it is is a worse problem than one that says it is old.
 """
+
 from __future__ import annotations
 
 import collections
@@ -46,6 +47,7 @@ PBF_SUFFIX = "-latest.osm.pbf"
 
 # --------------------------------------------------------------------------
 # state.txt
+
 
 def parse_state(text: str) -> dict:
     """An osmosis state file. Returns {} for the empty ones rather than raising.
@@ -69,8 +71,9 @@ def parse_state(text: str) -> dict:
             out.pop("sequenceNumber")
     if "timestamp" in out:
         try:
-            out["timestamp"] = dt.datetime.strptime(
-                out["timestamp"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+            out["timestamp"] = dt.datetime.strptime(out["timestamp"], "%Y-%m-%dT%H:%M:%SZ").replace(
+                tzinfo=UTC
+            )
         except ValueError:
             out.pop("timestamp")
     return out
@@ -90,6 +93,7 @@ def host_label(name: str) -> str:
     machine it ran on.
     """
     import hashlib
+
     return "host-" + hashlib.sha256(name.encode()).hexdigest()[:6]
 
 
@@ -101,22 +105,29 @@ def store_label(endpoint: str, bucket: str) -> str:
 def tier_of(key: str) -> str:
     """Depth in the key IS the tier — the layout carries no other marker."""
     return {0: "continent", 1: "country", 2: "subnational", 3: "county"}.get(
-        key.count("/"), "deeper")
+        key.count("/"), "deeper"
+    )
 
 
 # --------------------------------------------------------------------------
 # the bucket
 
-def survey_bucket(endpoint: str, bucket: str, *, access_key: str,
-                  secret_key: str, threads: int = 12) -> dict:
+
+def survey_bucket(
+    endpoint: str, bucket: str, *, access_key: str, secret_key: str, threads: int = 12
+) -> dict:
     import boto3
     import botocore.config
 
     s3 = boto3.client(
-        "s3", endpoint_url=endpoint,
-        aws_access_key_id=access_key, aws_secret_access_key=secret_key,
-        config=botocore.config.Config(read_timeout=180, connect_timeout=20,
-                                      retries={"max_attempts": 8, "mode": "adaptive"}))
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        config=botocore.config.Config(
+            read_timeout=180, connect_timeout=20, retries={"max_attempts": 8, "mode": "adaptive"}
+        ),
+    )
 
     extracts: dict[str, dict] = {}
     state_keys: dict[str, str] = {}
@@ -127,9 +138,13 @@ def survey_bucket(endpoint: str, bucket: str, *, access_key: str,
             k, total_objects, total_bytes = o["Key"], total_objects + 1, total_bytes + o["Size"]
             if k.endswith(PBF_SUFFIX):
                 region = k[: -len(PBF_SUFFIX)]
-                extracts[region] = {"region": region, "key": k, "bytes": o["Size"],
-                                    "mtime": o["LastModified"].astimezone(UTC),
-                                    "tier": tier_of(region)}
+                extracts[region] = {
+                    "region": region,
+                    "key": k,
+                    "bytes": o["Size"],
+                    "mtime": o["LastModified"].astimezone(UTC),
+                    "tier": tier_of(region),
+                }
                 state_keys[region] = region + "-updates/state.txt"
 
     # One small GET per extract. Threaded because ~4,000 sequential round trips
@@ -140,7 +155,7 @@ def survey_bucket(endpoint: str, bucket: str, *, access_key: str,
         try:
             body = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
             return region, parse_state(body.decode("utf-8", "replace")), None
-        except Exception as exc:                       # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             return region, {}, type(exc).__name__
 
     with cf.ThreadPoolExecutor(max_workers=threads) as pool:
@@ -150,9 +165,13 @@ def survey_bucket(endpoint: str, bucket: str, *, access_key: str,
             e["sequence"] = st.get("sequenceNumber")
             e["vintage"] = st.get("timestamp")
 
-    return {"kind": "bucket", "name": store_label(endpoint, bucket),
-            "objects": total_objects, "bytes": total_bytes,
-            "extracts": extracts}
+    return {
+        "kind": "bucket",
+        "name": store_label(endpoint, bucket),
+        "objects": total_objects,
+        "bytes": total_bytes,
+        "extracts": extracts,
+    }
 
 
 # --------------------------------------------------------------------------
@@ -190,13 +209,17 @@ def survey_tree(base_url: str, *, timeout: int = 20) -> dict:
                     to_visit.append((rel + href, depth + 1))
             elif href.endswith(PBF_SUFFIX):
                 region = (rel + href)[: -len(PBF_SUFFIX)]
-                extracts[region] = {"region": region, "key": rel + href,
-                                    "bytes": None, "mtime": None,
-                                    "tier": tier_of(region)}
+                extracts[region] = {
+                    "region": region,
+                    "key": rel + href,
+                    "bytes": None,
+                    "mtime": None,
+                    "tier": tier_of(region),
+                }
 
     def enrich(region):
         e = extracts[region]
-        try:                                   # size + mtime from a HEAD
+        try:  # size + mtime from a HEAD
             req = urllib.request.Request(base + e["key"], method="HEAD")
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 cl = r.headers.get("Content-Length")
@@ -204,25 +227,29 @@ def survey_tree(base_url: str, *, timeout: int = 20) -> dict:
                 if cl:
                     e["bytes"] = int(cl)
                 if lm:
-                    e["mtime"] = dt.datetime.strptime(
-                        lm, "%a, %d %b %Y %H:%M:%S %Z").replace(tzinfo=UTC)
-        except Exception:                      # noqa: BLE001
+                    e["mtime"] = dt.datetime.strptime(lm, "%a, %d %b %Y %H:%M:%S %Z").replace(
+                        tzinfo=UTC
+                    )
+        except Exception:  # noqa: BLE001
             pass
         try:
             st = parse_state(get(base + region + "-updates/state.txt"))
             e["sequence"] = st.get("sequenceNumber")
             e["vintage"] = st.get("timestamp")
-        except Exception as exc:               # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             e["state_error"] = type(exc).__name__
         return region
 
     with cf.ThreadPoolExecutor(max_workers=16) as pool:
         list(pool.map(enrich, list(extracts)))
 
-    return {"kind": "tree", "name": "self-hosted extracts server",
-            "objects": len(extracts),
-            "bytes": sum(e["bytes"] or 0 for e in extracts.values()),
-            "extracts": extracts}
+    return {
+        "kind": "tree",
+        "name": "self-hosted extracts server",
+        "objects": len(extracts),
+        "bytes": sum(e["bytes"] or 0 for e in extracts.values()),
+        "extracts": extracts,
+    }
 
 
 # --------------------------------------------------------------------------
@@ -239,8 +266,11 @@ def survey_tree(base_url: str, *, timeout: int = 20) -> dict:
 # Fallback only. `expect` in the sets file is the declared answer; this parses
 # the prose for a set that has not declared one yet, and the report says which
 # mechanism it used so an inferred number is never mistaken for a stated one.
-EXPECT_COUNT = re.compile(r"(\d[\d,]*)\s+(?:[\w-]+\s+){0,2}?"
-                          r"(counties|countries|states|districts)", re.I)
+EXPECT_COUNT = re.compile(
+    r"(\d[\d,]*)\s+(?:[\w-]+\s+){0,2}?"
+    r"(counties|countries|states|districts)",
+    re.I,
+)
 
 
 def load_sets(path: str) -> dict:
@@ -251,8 +281,15 @@ def load_sets(path: str) -> dict:
         return {}
 
 
-def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
-              stale_days: int, county_reference: dict | None) -> dict:
+def find_gaps(
+    bucket: dict,
+    tree: dict,
+    sets: dict,
+    *,
+    now: dt.datetime,
+    stale_days: int,
+    county_reference: dict | None,
+) -> dict:
     b, t = bucket.get("extracts", {}), tree.get("extracts", {})
     g: dict = {"stale_days": stale_days}
 
@@ -266,9 +303,11 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
         "bucket_only": sorted(bc - tc),
         "tree_only": sorted(tc - bc),
         "both": len(bc & tc),
-        "note": ("the two stores use different names for the same continent "
-                 "(oceania / australia-oceania); a name here is a NAMING "
-                 "divergence, not necessarily absent data"),
+        "note": (
+            "the two stores use different names for the same continent "
+            "(oceania / australia-oceania); a name here is a NAMING "
+            "divergence, not necessarily absent data"
+        ),
     }
 
     # 2. Declared-vs-actual, from the set descriptions. The admin-sets file is
@@ -284,27 +323,37 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
                 continue
             expected, how = int(m.group(1).replace(",", "")), "inferred from description"
         inputs = spec.get("inputs", {})
-        prefix = spec.get("expect_prefix") or inputs.get("prefix") \
-            or inputs.get("source_region") or ""
+        prefix = (
+            spec.get("expect_prefix") or inputs.get("prefix") or inputs.get("source_region") or ""
+        )
         # A '*' segment means "one level under EACH child" — the county tier is
         # keyed <continent>/us/<state>/<county>, so its parent is per-state.
         if prefix.endswith("/*"):
             stem, want_depth = prefix[:-2], prefix.count("/") + 1
         else:
             stem, want_depth = prefix, prefix.count("/") + 1
-        actual = sum(1 for r in b
-                     if r.startswith(stem + "/") and r.count("/") == want_depth)
-        declared.append({"set": name, "prefix": prefix, "expected": expected,
-                         "how": how, "actual": actual, "delta": actual - expected,
-                         "shortfall": max(0, expected - actual),
-                         "description": spec.get("description", "")})
+        actual = sum(1 for r in b if r.startswith(stem + "/") and r.count("/") == want_depth)
+        declared.append(
+            {
+                "set": name,
+                "prefix": prefix,
+                "expected": expected,
+                "how": how,
+                "actual": actual,
+                "delta": actual - expected,
+                "shortfall": max(0, expected - actual),
+                "description": spec.get("description", ""),
+            }
+        )
     g["declared_vs_actual"] = {
         "rule": "each set's declared `expect` vs extracts at that depth under its prefix",
         "sets": sorted(declared, key=lambda d: -abs(d["delta"])),
         "unchecked": unchecked,
-        "note": ("`expect` is the size that set produced when it last completed, so a "
-                 "delta means the store no longer matches it — in EITHER direction. "
-                 "A set with no declared expectation is listed as unchecked, not as complete"),
+        "note": (
+            "`expect` is the size that set produced when it last completed, so a "
+            "delta means the store no longer matches it — in EITHER direction. "
+            "A set with no declared expectation is listed as unchecked, not as complete"
+        ),
     }
 
     # 3. Children older than their parent. This is the correctness property the
@@ -319,13 +368,20 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
         if not parent or not parent["mtime"] or not e["mtime"]:
             continue
         if e["mtime"] < parent["mtime"]:
-            behind.append({"region": region, "parent": parent["region"],
-                           "child_mtime": e["mtime"], "parent_mtime": parent["mtime"],
-                           "days": (parent["mtime"] - e["mtime"]).days})
+            behind.append(
+                {
+                    "region": region,
+                    "parent": parent["region"],
+                    "child_mtime": e["mtime"],
+                    "parent_mtime": parent["mtime"],
+                    "days": (parent["mtime"] - e["mtime"]).days,
+                }
+            )
     by_parent: dict[str, dict] = {}
     for row in behind:
-        p = by_parent.setdefault(row["parent"], {"parent": row["parent"], "children": 0,
-                                                 "max_days": 0})
+        p = by_parent.setdefault(
+            row["parent"], {"parent": row["parent"], "children": 0, "max_days": 0}
+        )
         p["children"] += 1
         p["max_days"] = max(p["max_days"], row["days"])
     g["cut_from_superseded_parent"] = {
@@ -341,31 +397,37 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
         by_tier[b[r]["tier"]] = by_tier.get(b[r]["tier"], 0) + 1
     g["vintage_unknown"] = {
         "rule": "sibling -updates/state.txt absent, empty, or carrying no parsable timestamp",
-        "total": len(unknown), "by_tier": by_tier,
+        "total": len(unknown),
+        "by_tier": by_tier,
         "note": "an extract that cannot say how current it is is not the same as one that says it is old",
     }
 
     # 5. Stale by data vintage (only where a vintage exists to judge).
-    stale = [{"region": r, "vintage": e["vintage"],
-              "days": (now - e["vintage"]).days}
-             for r, e in b.items()
-             if e.get("vintage") and (now - e["vintage"]).days > stale_days]
+    stale = [
+        {"region": r, "vintage": e["vintage"], "days": (now - e["vintage"]).days}
+        for r, e in b.items()
+        if e.get("vintage") and (now - e["vintage"]).days > stale_days
+    ]
     st_tier: dict[str, dict] = {}
     for row in stale:
-        d = st_tier.setdefault(b[row["region"]]["tier"], {"tier": b[row["region"]]["tier"],
-                                                          "count": 0, "max_days": 0})
+        d = st_tier.setdefault(
+            b[row["region"]]["tier"], {"tier": b[row["region"]]["tier"], "count": 0, "max_days": 0}
+        )
         d["count"] += 1
         d["max_days"] = max(d["max_days"], row["days"])
-    g["stale"] = {"rule": f"replication timestamp older than {stale_days} days",
-                  "total": len(stale), "by_tier": sorted(st_tier.values(),
-                                                         key=lambda d: -d["max_days"])}
+    g["stale"] = {
+        "rule": f"replication timestamp older than {stale_days} days",
+        "total": len(stale),
+        "by_tier": sorted(st_tier.values(), key=lambda d: -d["max_days"]),
+    }
 
     # 6. Parents with no child tier. NOT a defect — no set covers them.
     parents_with_kids = {r.rsplit("/", 1)[0] for r in b if "/" in r}
     g["not_attempted"] = {
         "rule": "extract exists but nothing has ever been cut from it; no set covers it",
-        "countries": sorted(r for r, e in b.items()
-                            if e["tier"] == "country" and r not in parents_with_kids),
+        "countries": sorted(
+            r for r, e in b.items() if e["tier"] == "country" and r not in parents_with_kids
+        ),
     }
     g["not_attempted"]["count"] = len(g["not_attempted"]["countries"])
 
@@ -376,16 +438,22 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
     for name, spec in sets.items():
         inputs = spec.get("inputs", {})
         each = spec.get("inputs_each") or []
-        src = inputs.get("prefix") or inputs.get("source_region") or ", ".join(
-            e.get("source_region", "?") for e in each) or "—"
+        src = (
+            inputs.get("prefix")
+            or inputs.get("source_region")
+            or ", ".join(e.get("source_region", "?") for e in each)
+            or "—"
+        )
         lvl = inputs.get("admin_level") or (each[0].get("admin_level") if each else None)
-        g["rebuild_sets"].append({
-            "name": name,
-            "workflow": spec.get("workflow", "?"),
-            "source": f"`{src}`" + (f" @ level {lvl}" if lvl else ""),
-            "expect": f"{spec['expect']:,}" if spec.get("expect") else "—",
-            "requires": ", ".join("`" + r + "`" for r in spec.get("requires_fresh") or []),
-        })
+        g["rebuild_sets"].append(
+            {
+                "name": name,
+                "workflow": spec.get("workflow", "?"),
+                "source": f"`{src}`" + (f" @ level {lvl}" if lvl else ""),
+                "expect": f"{spec['expect']:,}" if spec.get("expect") else "—",
+                "requires": ", ".join("`" + r + "`" for r in spec.get("requires_fresh") or []),
+            }
+        )
 
     # 5b. LEFT BEHIND by the last rebuild of their own tier.
     #
@@ -411,12 +479,12 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
         for k in kids:
             behind = (last_rebuild - k["mtime"]).days
             if behind > 7:
-                left_behind.append({"region": k["region"], "parent": parent,
-                                    "days_behind_siblings": behind})
+                left_behind.append(
+                    {"region": k["region"], "parent": parent, "days_behind_siblings": behind}
+                )
     lb_parent: dict[str, dict] = {}
     for row in left_behind:
-        d = lb_parent.setdefault(row["parent"], {"parent": row["parent"], "count": 0,
-                                                 "worst": 0})
+        d = lb_parent.setdefault(row["parent"], {"parent": row["parent"], "count": 0, "worst": 0})
         d["count"] += 1
         d["worst"] = max(d["worst"], row["days_behind_siblings"])
     # ⚠️ THE STATE.TXT SHAPE IS PROVENANCE, NOT PROGNOSIS. I got this wrong and
@@ -438,21 +506,23 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
     # cannot regenerate. Guessing on the store's behalf sent a re-run at 645
     # extracts that could never come back, and would have read as progress.
     for row in left_behind:
-        row["provenance"] = ("third-party download" if b[row["region"]].get("vintage")
-                             else "an earlier path of ours")
+        row["provenance"] = (
+            "third-party download" if b[row["region"]].get("vintage") else "an earlier path of ours"
+        )
     shape = collections.Counter(r["provenance"] for r in left_behind)
     g["left_behind"] = {
-        "rule": ("its siblings were written by a more recent rebuild of this tier "
-                 "and it was not"),
+        "rule": ("its siblings were written by a more recent rebuild of this tier and it was not"),
         "total": len(left_behind),
         "by_parent": sorted(lb_parent.values(), key=lambda d: -d["count"]),
         "provenance": dict(shape),
-        "note": ("the state.txt shape says where an extract CAME FROM, not whether "
-                 "it can be re-made. Measured 2026-09-05: a us-counties re-run "
-                 "regenerated 0 of the 645 county extracts in this list, because "
-                 "those counties have no usable admin_level=6 boundary in OSM. "
-                 "Read the RUN's own 'NOT reproducible' list before re-running "
-                 "anything on their account"),
+        "note": (
+            "the state.txt shape says where an extract CAME FROM, not whether "
+            "it can be re-made. Measured 2026-09-05: a us-counties re-run "
+            "regenerated 0 of the 645 county extracts in this list, because "
+            "those counties have no usable admin_level=6 boundary in OSM. "
+            "Read the RUN's own 'NOT reproducible' list before re-running "
+            "anything on their account"
+        ),
     }
 
     # 5c. NOT PRODUCED BY THIS PIPELINE — and therefore never refreshed by it.
@@ -476,18 +546,24 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
     by_tier: dict[str, int] = {}
     for r in unstamped:
         by_tier[b[r]["tier"]] = by_tier.get(b[r]["tier"], 0) + 1
-    stale_unstamped = [r for r in unstamped
-                       if b[r].get("vintage") and (now - b[r]["vintage"]).days > stale_days]
+    stale_unstamped = [
+        r for r in unstamped if b[r].get("vintage") and (now - b[r]["vintage"]).days > stale_days
+    ]
     g["foreign_provenance"] = {
-        "rule": ("no `sequenceNumber` in its state.txt — the stamp this pipeline "
-                 "writes when it cuts an extract"),
-        "total": len(unstamped), "by_tier": by_tier,
+        "rule": (
+            "no `sequenceNumber` in its state.txt — the stamp this pipeline "
+            "writes when it cuts an extract"
+        ),
+        "total": len(unstamped),
+        "by_tier": by_tier,
         "stale": len(stale_unstamped),
-        "note": ("these were downloaded from a third-party provider under that "
-                 "provider's naming, so our workflows — which key from OSM admin "
-                 "boundaries — will never write those keys again. Re-running the "
-                 "set does not help; the fix is to retire the duplicate key or "
-                 "add it to the alias table"),
+        "note": (
+            "these were downloaded from a third-party provider under that "
+            "provider's naming, so our workflows — which key from OSM admin "
+            "boundaries — will never write those keys again. Re-running the "
+            "set does not help; the fix is to retire the duplicate key or "
+            "add it to the alias table"
+        ),
     }
 
     # 6b. Parents that have children but no extract of their own. Invisible in a
@@ -496,9 +572,11 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
     g["parent_without_extract"] = {
         "rule": "region has children in the store but no <region>-latest.osm.pbf of its own",
         "regions": sorted({p for p in parents_with_kids if p and p not in b}),
-        "note": ("not necessarily wrong — the US state tier is cut from the whole "
-                 "north-america extract by design — but it means no rebuild of this "
-                 "region alone is possible, and it has no vintage of its own"),
+        "note": (
+            "not necessarily wrong — the US state tier is cut from the whole "
+            "north-america extract by design — but it means no rebuild of this "
+            "region alone is possible, and it has no vintage of its own"
+        ),
     }
     g["parent_without_extract"]["count"] = len(g["parent_without_extract"]["regions"])
 
@@ -510,7 +588,7 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
         ours: dict[str, int] = {}
         for r in b:
             if r.startswith("north-america/us/") and r.count("/") == 3:
-                state = r.split("/")[2]          # [2] is the state, [3] the county
+                state = r.split("/")[2]  # [2] is the state, [3] the county
                 ours[state] = ours.get(state, 0) + 1
         rows = []
         for state, exp in sorted(county_reference.items()):
@@ -519,22 +597,29 @@ def find_gaps(bucket: dict, tree: dict, sets: dict, *, now: dt.datetime,
                 rows.append({"state": state, "census": exp, "ours": got, "delta": got - exp})
         g["us_counties"] = {
             "rule": "extracts under north-america/us/<state>/ vs Census county-equivalents (PEP)",
-            "states_covered": len(ours), "census_states": len(county_reference),
-            "ours_total": sum(ours.values()), "census_total": sum(county_reference.values()),
+            "states_covered": len(ours),
+            "census_states": len(county_reference),
+            "ours_total": sum(ours.values()),
+            "census_total": sum(county_reference.values()),
             "empty_states": sorted(s for s in county_reference if s not in ours),
             "differs": rows,
-            "note": ("ours are OSM admin_level 6 boundaries, which include units "
-                     "Census does not call counties — a delta is a difference to "
-                     "explain, not automatically a miss"),
+            "note": (
+                "ours are OSM admin_level 6 boundaries, which include units "
+                "Census does not call counties — a delta is a difference to "
+                "explain, not automatically a miss"
+            ),
         }
     else:
-        g["us_counties"] = {"rule": "not checked", "unverified":
-                            "no Census county reference available"}
+        g["us_counties"] = {
+            "rule": "not checked",
+            "unverified": "no Census county reference available",
+        }
     return g
 
 
 # --------------------------------------------------------------------------
 # rendering
+
 
 def human_bytes(n) -> str:
     if not n:
@@ -553,8 +638,10 @@ def _age(now, when):
 def summarise_store(store: dict, now: dt.datetime) -> list[dict]:
     tiers: dict[str, dict] = {}
     for e in store.get("extracts", {}).values():
-        d = tiers.setdefault(e["tier"], {"tier": e["tier"], "count": 0, "bytes": 0,
-                                         "mtimes": [], "vintages": [], "unknown": 0})
+        d = tiers.setdefault(
+            e["tier"],
+            {"tier": e["tier"], "count": 0, "bytes": 0, "mtimes": [], "vintages": [], "unknown": 0},
+        )
         d["count"] += 1
         d["bytes"] += e.get("bytes") or 0
         if e.get("mtime"):
@@ -569,14 +656,18 @@ def summarise_store(store: dict, now: dt.datetime) -> list[dict]:
         d = tiers.get(name)
         if not d:
             continue
-        out.append({
-            "tier": name, "count": d["count"], "bytes": d["bytes"],
-            "written_oldest": min(d["mtimes"]) if d["mtimes"] else None,
-            "written_newest": max(d["mtimes"]) if d["mtimes"] else None,
-            "vintage_oldest": min(d["vintages"]) if d["vintages"] else None,
-            "vintage_newest": max(d["vintages"]) if d["vintages"] else None,
-            "vintage_unknown": d["unknown"],
-        })
+        out.append(
+            {
+                "tier": name,
+                "count": d["count"],
+                "bytes": d["bytes"],
+                "written_oldest": min(d["mtimes"]) if d["mtimes"] else None,
+                "written_newest": max(d["mtimes"]) if d["mtimes"] else None,
+                "vintage_oldest": min(d["vintages"]) if d["vintages"] else None,
+                "vintage_newest": max(d["vintages"]) if d["vintages"] else None,
+                "vintage_unknown": d["unknown"],
+            }
+        )
     return out
 
 
@@ -604,8 +695,10 @@ def render_markdown(rep: dict) -> str:
     for s in rep["stores"]:
         vin = [e["vintage"] for e in s["extracts"].values() if e.get("vintage")]
         newest = max(vin).strftime("%Y-%m-%d") if vin else "unknown"
-        w(f"| `{s['name']}` | {s['holds']} | {len(s['extracts']):,} | "
-          f"{human_bytes(s['bytes'])} | {newest} |")
+        w(
+            f"| `{s['name']}` | {s['holds']} | {len(s['extracts']):,} | "
+            f"{human_bytes(s['bytes'])} | {newest} |"
+        )
     w("")
     w("⚠️ The self-hosted extracts server is what the `osmosis_replication_base_url` stamped into")
     w("every PBF header points at — it is the address a third-party consumer")
@@ -621,27 +714,39 @@ def render_markdown(rep: dict) -> str:
         w("| tier | extracts | size | written | data vintage | vintage unknown |")
         w("|---|---:|---:|---|---|---:|")
         for t in s["tiers"]:
-            wr = (f"{t['written_oldest']:%Y-%m-%d} → {t['written_newest']:%Y-%m-%d}"
-                  if t["written_oldest"] else "-")
-            vi = (f"{t['vintage_oldest']:%Y-%m-%d} → {t['vintage_newest']:%Y-%m-%d}"
-                  if t["vintage_oldest"] else "-")
-            w(f"| {t['tier']} | {t['count']:,} | {human_bytes(t['bytes'])} | {wr} | "
-              f"{vi} | {t['vintage_unknown']:,} |")
+            wr = (
+                f"{t['written_oldest']:%Y-%m-%d} → {t['written_newest']:%Y-%m-%d}"
+                if t["written_oldest"]
+                else "-"
+            )
+            vi = (
+                f"{t['vintage_oldest']:%Y-%m-%d} → {t['vintage_newest']:%Y-%m-%d}"
+                if t["vintage_oldest"]
+                else "-"
+            )
+            w(
+                f"| {t['tier']} | {t['count']:,} | {human_bytes(t['bytes'])} | {wr} | "
+                f"{vi} | {t['vintage_unknown']:,} |"
+            )
         w("")
         w("*written* is when we saved the file; *data vintage* is when the data in it")
         w("was current, read from the sibling `-updates/state.txt`. Only the second")
-        w("answers \"is this stale?\", and it is the one that is often missing.")
+        w('answers "is this stale?", and it is the one that is often missing.')
         w("")
 
     # --- continents
     w("## Continents")
     w("")
-    w("| region | bucket size | bucket seq | bucket vintage | tree seq | tree vintage | countries | sub-regions |")
+    w(
+        "| region | bucket size | bucket seq | bucket vintage | tree seq | tree vintage | countries | sub-regions |"
+    )
     w("|---|---:|---:|---|---:|---|---:|---:|")
     for row in rep["continents"]:
-        w(f"| {row['region']} | {human_bytes(row['bytes'])} | {row['sequence'] or '-'} | "
-          f"{row['vintage'] or '-'} | {row['tree_sequence'] or '-'} | "
-          f"{row['tree_vintage'] or '-'} | {row['countries']:,} | {row['descendants']:,} |")
+        w(
+            f"| {row['region']} | {human_bytes(row['bytes'])} | {row['sequence'] or '-'} | "
+            f"{row['vintage'] or '-'} | {row['tree_sequence'] or '-'} | "
+            f"{row['tree_vintage'] or '-'} | {row['countries']:,} | {row['descendants']:,} |"
+        )
     w("")
 
     # --- gaps
@@ -666,8 +771,10 @@ def render_markdown(rep: dict) -> str:
     w(f"⚠️ {d['note']}.")
     w("")
     if d["unchecked"]:
-        w(f"Not checked (no declared expectation): {', '.join('`'+n+'`' for n in d['unchecked'])}. "
-          "Listed here rather than omitted — an unchecked set is not a passing one.")
+        w(
+            f"Not checked (no declared expectation): {', '.join('`' + n + '`' for n in d['unchecked'])}. "
+            "Listed here rather than omitted — an unchecked set is not a passing one."
+        )
         w("")
 
     c = g["cross_store"]
@@ -675,8 +782,8 @@ def render_markdown(rep: dict) -> str:
     w("")
     w(f"*Rule: {c['rule']}.* {c['both']} continent names appear in both.")
     w("")
-    w(f"- bucket only: {', '.join('`'+x+'`' for x in c['bucket_only']) or 'none'}")
-    w(f"- tree only: {', '.join('`'+x+'`' for x in c['tree_only']) or 'none'}")
+    w(f"- bucket only: {', '.join('`' + x + '`' for x in c['bucket_only']) or 'none'}")
+    w(f"- tree only: {', '.join('`' + x + '`' for x in c['tree_only']) or 'none'}")
     w("")
     w(f"⚠️ {c['note']}.")
     w("")
@@ -686,8 +793,11 @@ def render_markdown(rep: dict) -> str:
     w("")
     w(f"*Rule: {v['rule']}.*")
     w("")
-    w(f"**{v['total']:,}** extracts — " +
-      ", ".join(f"{n:,} {t}" for t, n in sorted(v["by_tier"].items())) + ".")
+    w(
+        f"**{v['total']:,}** extracts — "
+        + ", ".join(f"{n:,} {t}" for t, n in sorted(v["by_tier"].items()))
+        + "."
+    )
     w("")
     w(f"⚠️ {v['note']}. These cannot be judged stale or fresh by anything; for them")
     w("the write time is the only signal there is.")
@@ -733,9 +843,11 @@ def render_markdown(rep: dict) -> str:
     w("")
     w(f"*Rule: {fp['rule']}.*")
     w("")
-    w(f"**{fp['total']:,}** extracts — " +
-      ", ".join(f"{n:,} {t}" for t, n in sorted(fp["by_tier"].items())) +
-      f" — of which **{fp['stale']:,}** are already stale.")
+    w(
+        f"**{fp['total']:,}** extracts — "
+        + ", ".join(f"{n:,} {t}" for t, n in sorted(fp["by_tier"].items()))
+        + f" — of which **{fp['stale']:,}** are already stale."
+    )
     w("")
     w("⚠️ This is the **cause**; the section below is the symptom. The separation")
     w("is exact: every extract the last rebuild refreshed carries the sequence")
@@ -749,7 +861,7 @@ def render_markdown(rep: dict) -> str:
     w("")
     w(f"*Rule: {lb['rule']}.*")
     w("")
-    w("⚠️ **This is the difference between \"stale, re-run the set\" and \"stale")
+    w('⚠️ **This is the difference between "stale, re-run the set" and "stale')
     w("forever\".** A key the tier's workflow cannot reproduce will never be")
     w("refreshed by running that workflow again — and until this check existed")
     w("these sat in the plain stale count, which reads as an action item.")
@@ -784,14 +896,18 @@ def render_markdown(rep: dict) -> str:
     else:
         w(f"*Rule: {u['rule']}.*")
         w("")
-        w(f"{u['ours_total']:,} extracts across {u['states_covered']}/{u['census_states']} "
-          f"states; Census lists {u['census_total']:,} county-equivalents.")
+        w(
+            f"{u['ours_total']:,} extracts across {u['states_covered']}/{u['census_states']} "
+            f"states; Census lists {u['census_total']:,} county-equivalents."
+        )
         w("")
         w(f"⚠️ {u['note']}.")
         w("")
         if u["empty_states"]:
-            w(f"**States with no counties at all: {', '.join(u['empty_states'])}** — "
-              "the fan-out never reached them.")
+            w(
+                f"**States with no counties at all: {', '.join(u['empty_states'])}** — "
+                "the fan-out never reached them."
+            )
             w("")
         if u["differs"]:
             w("| state | Census | ours | delta |")
@@ -836,11 +952,15 @@ def render_markdown(rep: dict) -> str:
     w("")
     w("| # | tier | produced by | source | cadence |")
     w("|---:|---|---|---|---|")
-    w("| 0 | planet master | one-time bootstrap, then daily replication diffs | upstream OSM | continuous |")
+    w(
+        "| 0 | planet master | one-time bootstrap, then daily replication diffs | upstream OSM | continuous |"
+    )
     w("| 1 | continents (served) | `osm-maintain` re-split | planet master | nightly |")
     w("| 2 | continents (bucket) | `osm.planet.BuildPlanetExtracts` | planet master | on demand |")
     w("| 3 | countries | `osm.planet.BuildAdminSetWorkflow` | a continent | weekly |")
-    w("| 4 | US states | `osm.planet.BuildPlanetExtracts` (`scope=subnational`) | the continent + Census TIGER | weekly |")
+    w(
+        "| 4 | US states | `osm.planet.BuildPlanetExtracts` (`scope=subnational`) | the continent + Census TIGER | weekly |"
+    )
     w("| 5 | US counties | `osm.planet.BuildAdminFanout` | the state tier | weekly |")
     w("")
     w("⚠️ **Three tiers, three workflows, three different keying rules** — they")
@@ -861,8 +981,10 @@ def render_markdown(rep: dict) -> str:
     w("| set | builds | workflow | source | needs fresh first |")
     w("|---|---:|---|---|---|")
     for spec in g["rebuild_sets"]:
-        w(f"| `{spec['name']}` | {spec['expect']} | `{spec['workflow'].rsplit('.', 1)[-1]}` | "
-          f"{spec['source']} | {spec['requires'] or '—'} |")
+        w(
+            f"| `{spec['name']}` | {spec['expect']} | `{spec['workflow'].rsplit('.', 1)[-1]}` | "
+            f"{spec['source']} | {spec['requires'] or '—'} |"
+        )
     w("")
     w("```")
     w("fw svc osm-admin-regen --list-sets            # what is available")
@@ -874,7 +996,7 @@ def render_markdown(rep: dict) -> str:
     w("⚠️ `--refresh-after-days` defaults to **0 in the FFL, which means NEVER")
     w("REFRESH** — correct for a retry (it must skip what the last attempt")
     w("finished) and wrong for a scheduled rebuild. Omitting it once made a run")
-    w("report *\"227 extracts published\"* while publishing zero and leaving the")
+    w('report *"227 extracts published"* while publishing zero and leaving the')
     w("counties 35 days stale. The CLI defaults it to 7; pass it explicitly when")
     w("you mean it.")
     w("")
@@ -933,11 +1055,19 @@ def render_markdown(rep: dict) -> str:
     w("")
     w("| command | cadence | what stops without it |")
     w("|---|---|---|")
-    w("| `fw svc osm-replicate --install` | nightly | the replication stream stops advancing; nothing reports it |")
-    w("| `fw svc osm-extracts --install` | always on | the URL stamped into every PBF header 404s, and consumers silently re-download whole extracts from a third party |")
-    w("| `fw svc osm-admin-regen --set <name> --install` | weekly | the sub-region tiers freeze at whatever vintage they had |")
+    w(
+        "| `fw svc osm-replicate --install` | nightly | the replication stream stops advancing; nothing reports it |"
+    )
+    w(
+        "| `fw svc osm-extracts --install` | always on | the URL stamped into every PBF header 404s, and consumers silently re-download whole extracts from a third party |"
+    )
+    w(
+        "| `fw svc osm-admin-regen --set <name> --install` | weekly | the sub-region tiers freeze at whatever vintage they had |"
+    )
     w("| `fw svc osm-watchdog --install` | 12h | nothing notices any of the above stopping |")
-    w("| `fw svc osm-report --install` | 6h | this page freezes and describes the past while looking current |")
+    w(
+        "| `fw svc osm-report --install` | 6h | this page freezes and describes the past while looking current |"
+    )
     w("")
     w("⚠️ Being current is a **rate, not a state**. Every one of these is a job")
     w("whose absence is invisible from the data: the extracts do not report that")
@@ -953,8 +1083,8 @@ def render_markdown(rep: dict) -> str:
     w(f"*Rule: {n['rule']}.*")
     w("")
     w(f"**{n['count']:,}** of the country extracts have no sub-region tier because")
-    w("no set covers them. They are listed here so \"absent\" is never read as")
-    w("\"lost\" — deliberate scope and a failure look identical in a bare file listing.")
+    w('no set covers them. They are listed here so "absent" is never read as')
+    w('"lost" — deliberate scope and a failure look identical in a bare file listing.')
     w("")
     return "\n".join(L) + "\n"
 
@@ -1011,32 +1141,37 @@ def render_html(md: str, rep: dict) -> str:
     if in_quote:
         out.append("</blockquote>")
 
-    css = ("body{font-family:system-ui,-apple-system,sans-serif;max-width:60rem;"
-           "margin:2.5rem auto;padding:0 1.2rem;line-height:1.55;color:#1a1a1a}"
-           "h1{font-size:1.55rem;margin-bottom:.2rem}h2{font-size:1.15rem;"
-           "margin:2rem 0 .4rem;border-bottom:1px solid #e3e3e3;padding-bottom:.25rem}"
-           "h3{font-size:1rem;margin:1.4rem 0 .3rem}"
-           "table{border-collapse:collapse;margin:.6rem 0 1rem;font-size:.9rem;"
-           "display:block;overflow-x:auto;max-width:100%}"
-           "th,td{border:1px solid #ddd;padding:.32rem .6rem;text-align:left;"
-           "white-space:nowrap}th{background:#f6f6f6;font-weight:600}"
-           "tr:nth-child(even) td{background:#fafafa}"
-           "code{background:#f2f2f2;padding:.08rem .3rem;border-radius:3px;"
-           "font-size:.88em}ul{margin:.2rem 0 .6rem 1.2rem}"
-           "blockquote{margin:.8rem 0;padding:.5rem .9rem;border-left:3px solid #c9c9c9;"
-           "background:#fafafa;color:#444;font-size:.93rem}"
-           "p{margin:.45rem 0}"
-           "@media(prefers-color-scheme:dark){body{background:#151515;color:#e6e6e6}"
-           "h2{border-color:#333}th{background:#232323}tr:nth-child(even) td{background:#1c1c1c}"
-           "th,td{border-color:#333}code{background:#242424}"
-           "blockquote{background:#1c1c1c;border-color:#3a3a3a;color:#bbb}}")
-    return (f"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\n"
-            f"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-            f"<title>OSM extract store status</title>\n<style>{css}</style>\n"
-            f"</head><body>\n" + "\n".join(out) +
-            f"\n<p style=\"color:#888;font-size:.82rem;margin-top:2rem\">"
-            f"Generated by <code>fw svc osm-report</code> at {rep['generated_at']}."
-            f"</p>\n</body></html>\n")
+    css = (
+        "body{font-family:system-ui,-apple-system,sans-serif;max-width:60rem;"
+        "margin:2.5rem auto;padding:0 1.2rem;line-height:1.55;color:#1a1a1a}"
+        "h1{font-size:1.55rem;margin-bottom:.2rem}h2{font-size:1.15rem;"
+        "margin:2rem 0 .4rem;border-bottom:1px solid #e3e3e3;padding-bottom:.25rem}"
+        "h3{font-size:1rem;margin:1.4rem 0 .3rem}"
+        "table{border-collapse:collapse;margin:.6rem 0 1rem;font-size:.9rem;"
+        "display:block;overflow-x:auto;max-width:100%}"
+        "th,td{border:1px solid #ddd;padding:.32rem .6rem;text-align:left;"
+        "white-space:nowrap}th{background:#f6f6f6;font-weight:600}"
+        "tr:nth-child(even) td{background:#fafafa}"
+        "code{background:#f2f2f2;padding:.08rem .3rem;border-radius:3px;"
+        "font-size:.88em}ul{margin:.2rem 0 .6rem 1.2rem}"
+        "blockquote{margin:.8rem 0;padding:.5rem .9rem;border-left:3px solid #c9c9c9;"
+        "background:#fafafa;color:#444;font-size:.93rem}"
+        "p{margin:.45rem 0}"
+        "@media(prefers-color-scheme:dark){body{background:#151515;color:#e6e6e6}"
+        "h2{border-color:#333}th{background:#232323}tr:nth-child(even) td{background:#1c1c1c}"
+        "th,td{border-color:#333}code{background:#242424}"
+        "blockquote{background:#1c1c1c;border-color:#3a3a3a;color:#bbb}}"
+    )
+    return (
+        f'<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n'
+        f'<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f"<title>OSM extract store status</title>\n<style>{css}</style>\n"
+        f"</head><body>\n"
+        + "\n".join(out)
+        + f'\n<p style="color:#888;font-size:.82rem;margin-top:2rem">'
+        f"Generated by <code>fw svc osm-report</code> at {rep['generated_at']}."
+        f"</p>\n</body></html>\n"
+    )
 
 
 def _jsonable(o):
@@ -1045,34 +1180,51 @@ def _jsonable(o):
     raise TypeError(type(o).__name__)
 
 
-def build(*, endpoint: str, bucket: str, access_key: str, secret_key: str,
-          tree_url: str, sets_file: str, county_csv: str | None,
-          stale_days: int) -> dict:
+def build(
+    *,
+    endpoint: str,
+    bucket: str,
+    access_key: str,
+    secret_key: str,
+    tree_url: str,
+    sets_file: str,
+    county_csv: str | None,
+    stale_days: int,
+) -> dict:
     now = dt.datetime.now(UTC)
 
     b = survey_bucket(endpoint, bucket, access_key=access_key, secret_key=secret_key)
     try:
         t = survey_tree(tree_url)
-    except Exception as exc:                            # noqa: BLE001
-        t = {"kind": "tree", "name": "self-hosted extracts server",
-             "objects": 0, "bytes": 0,
-             "extracts": {}, "error": type(exc).__name__}
+    except Exception as exc:  # noqa: BLE001
+        t = {
+            "kind": "tree",
+            "name": "self-hosted extracts server",
+            "objects": 0,
+            "bytes": 0,
+            "extracts": {},
+            "error": type(exc).__name__,
+        }
 
     county_ref = None
     if county_csv:
         try:
             county_ref = load_census_counties(ensure_county_csv(county_csv))
-        except Exception as exc:                        # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             # Deliberately not fatal and deliberately not silent: the check is
             # skipped and SAYS it was skipped. Reporting "every state matches"
             # because the reference could not be read is the failure mode this
             # whole report exists to make impossible.
             county_ref = None
-            print(f"  census county reference unavailable ({type(exc).__name__}); "
-                  f"county completeness NOT checked", flush=True)
+            print(
+                f"  census county reference unavailable ({type(exc).__name__}); "
+                f"county completeness NOT checked",
+                flush=True,
+            )
 
-    gaps = find_gaps(b, t, load_sets(sets_file), now=now, stale_days=stale_days,
-                     county_reference=county_ref)
+    gaps = find_gaps(
+        b, t, load_sets(sets_file), now=now, stale_days=stale_days, county_reference=county_ref
+    )
 
     # continent cross-table: the same row from both stores side by side, joined
     # on the SHARED SUFFIX, because "australia-oceania" and "oceania" are the
@@ -1091,34 +1243,56 @@ def build(*, endpoint: str, bucket: str, access_key: str, secret_key: str,
                 if region.endswith(name) or name.endswith(region):
                     te = cand
                     break
-        rows.append({
-            "region": region, "bytes": e["bytes"], "sequence": e.get("sequence"),
-            "vintage": e["vintage"].strftime("%Y-%m-%d") if e.get("vintage") else None,
-            "tree_name": te["region"] if te else None,
-            "tree_sequence": te.get("sequence") if te else None,
-            "tree_vintage": (te["vintage"].strftime("%Y-%m-%d")
-                             if te and te.get("vintage") else None),
-            "countries": sum(1 for r in b["extracts"]
-                             if r.startswith(region + "/") and r.count("/") == 1),
-            "descendants": sum(1 for r in b["extracts"] if r.startswith(region + "/")),
-        })
+        rows.append(
+            {
+                "region": region,
+                "bytes": e["bytes"],
+                "sequence": e.get("sequence"),
+                "vintage": e["vintage"].strftime("%Y-%m-%d") if e.get("vintage") else None,
+                "tree_name": te["region"] if te else None,
+                "tree_sequence": te.get("sequence") if te else None,
+                "tree_vintage": (
+                    te["vintage"].strftime("%Y-%m-%d") if te and te.get("vintage") else None
+                ),
+                "countries": sum(
+                    1 for r in b["extracts"] if r.startswith(region + "/") and r.count("/") == 1
+                ),
+                "descendants": sum(1 for r in b["extracts"] if r.startswith(region + "/")),
+            }
+        )
 
     stores = []
-    for s, label, holds in ((b, "MinIO bucket", "8 continents + the country / state / county tiers"),
-                            (t, "Self-hosted extracts server",
-                             "continents only — what stamped PBF headers point at")):
-        stores.append({"name": s["name"], "label": label, "holds": holds,
-                       "kind": s["kind"], "objects": s["objects"], "bytes": s["bytes"],
-                       "error": s.get("error"),
-                       "tiers": summarise_store(s, now), "extracts": s["extracts"]})
+    for s, label, holds in (
+        (b, "MinIO bucket", "8 continents + the country / state / county tiers"),
+        (t, "Self-hosted extracts server", "continents only — what stamped PBF headers point at"),
+    ):
+        stores.append(
+            {
+                "name": s["name"],
+                "label": label,
+                "holds": holds,
+                "kind": s["kind"],
+                "objects": s["objects"],
+                "bytes": s["bytes"],
+                "error": s.get("error"),
+                "tiers": summarise_store(s, now),
+                "extracts": s["extracts"],
+            }
+        )
 
-    return {"generated_at": now.isoformat(),
-            "generated_on": host_label(os.uname().nodename),
-            "stores": stores, "continents": rows, "gaps": gaps}
+    return {
+        "generated_at": now.isoformat(),
+        "generated_on": host_label(os.uname().nodename),
+        "stores": stores,
+        "continents": rows,
+        "gaps": gaps,
+    }
 
 
-CENSUS_COUNTY_URL = ("https://www2.census.gov/programs-surveys/popest/datasets/"
-                     "2020-2023/counties/totals/co-est2023-alldata.csv")
+CENSUS_COUNTY_URL = (
+    "https://www2.census.gov/programs-surveys/popest/datasets/"
+    "2020-2023/counties/totals/co-est2023-alldata.csv"
+)
 
 
 def ensure_county_csv(path: str) -> str:
@@ -1146,6 +1320,7 @@ def load_census_counties(path: str) -> dict:
     (`north-america/us/new-hampshire/...`).
     """
     import csv
+
     counts: dict[str, int] = {}
     with open(path, newline="", encoding="utf-8-sig", errors="replace") as fh:
         for row in csv.DictReader(fh):
@@ -1159,26 +1334,36 @@ def load_census_counties(path: str) -> dict:
 
 # --------------------------------------------------------------------------
 
-def check_published(endpoint: str, bucket: str, *, access_key: str, secret_key: str,
-                    max_age_hours: int) -> int:
+
+def check_published(
+    endpoint: str, bucket: str, *, access_key: str, secret_key: str, max_age_hours: int
+) -> int:
     """0 = published report is current, 1 = stale, 2 = could not verify."""
     try:
         import boto3
         import botocore.config
-        s3 = boto3.client("s3", endpoint_url=endpoint,
-                          aws_access_key_id=access_key, aws_secret_access_key=secret_key,
-                          config=botocore.config.Config(connect_timeout=10, read_timeout=20,
-                                                        retries={"max_attempts": 2}))
+
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=endpoint,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=botocore.config.Config(
+                connect_timeout=10, read_timeout=20, retries={"max_attempts": 2}
+            ),
+        )
         body = s3.get_object(Bucket=bucket, Key="_report/status.json")["Body"].read()
         gen = dt.datetime.fromisoformat(json.loads(body)["generated_at"])
-    except Exception as exc:                            # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         print(f"could not read s3://{bucket}/_report/status.json: {type(exc).__name__}")
         return 2
     hours = (dt.datetime.now(UTC) - gen).total_seconds() / 3600
     if hours <= max_age_hours:
-        print(f"osm store report generated {hours:.0f}h ago by "
-              f"{json.loads(body).get('generated_on', '?')} "
-              f"(a stable label, not a hostname)")
+        print(
+            f"osm store report generated {hours:.0f}h ago by "
+            f"{json.loads(body).get('generated_on', '?')} "
+            f"(a stable label, not a hostname)"
+        )
         return 0
     print(f"osm store report is {hours:.0f}h old (limit {max_age_hours}h) — the OSM")
     print("store status page has stopped being regenerated. Its numbers describe")
@@ -1199,29 +1384,41 @@ def main(argv=None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(prog="fw svc osm-report", description=__doc__)
-    ap.add_argument("--endpoint", default=os.environ.get("FW_S3_ENDPOINT",
-                                                         "http://afl-minio:9000"))
-    ap.add_argument("--bucket", default=os.environ.get("FW_OSM_EXTRACT_BUCKET",
-                                                       "osm-extracts"))
-    ap.add_argument("--tree-url", default=os.environ.get("FW_OSM_SELFHOST_BASE_URL",
-                                                         "http://server3.local:8088"))
-    ap.add_argument("--sets-file", default=os.path.join(os.path.dirname(
-        os.path.abspath(__file__)), "_osm-admin-sets.json"))
-    ap.add_argument("--county-csv", default=os.environ.get(
-        "FW_OSM_REPORT_COUNTY_CSV",
-        os.path.expanduser("~/.facetwork/census-counties.csv")))
+    ap.add_argument("--endpoint", default=os.environ.get("FW_S3_ENDPOINT", "http://afl-minio:9000"))
+    ap.add_argument("--bucket", default=os.environ.get("FW_OSM_EXTRACT_BUCKET", "osm-extracts"))
+    ap.add_argument(
+        "--tree-url",
+        default=os.environ.get("FW_OSM_SELFHOST_BASE_URL", "http://server3.local:8088"),
+    )
+    ap.add_argument(
+        "--sets-file",
+        default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "_osm-admin-sets.json"),
+    )
+    ap.add_argument(
+        "--county-csv",
+        default=os.environ.get(
+            "FW_OSM_REPORT_COUNTY_CSV", os.path.expanduser("~/.facetwork/census-counties.csv")
+        ),
+    )
     ap.add_argument("--stale-days", type=int, default=14)
     ap.add_argument("--out-dir", default=os.path.expanduser("~/.facetwork"))
-    ap.add_argument("--publish", action="store_true",
-                    help="also write the report into the extract bucket")
-    ap.add_argument("--tree-dir", default=os.environ.get("FW_OSM_SELFHOST_WWW"),
-                    help="also drop the report into the served tree, so it is "
-                         "browsable at <tree-url>/_report/ alongside the extracts "
-                         "it describes (only useful on the host that owns the tree)")
+    ap.add_argument(
+        "--publish", action="store_true", help="also write the report into the extract bucket"
+    )
+    ap.add_argument(
+        "--tree-dir",
+        default=os.environ.get("FW_OSM_SELFHOST_WWW"),
+        help="also drop the report into the served tree, so it is "
+        "browsable at <tree-url>/_report/ alongside the extracts "
+        "it describes (only useful on the host that owns the tree)",
+    )
     ap.add_argument("--json", action="store_true", help="print the JSON to stdout")
-    ap.add_argument("--check", action="store_true",
-                    help="do not generate; report whether the PUBLISHED report is "
-                         "still current. 0 fresh, 1 stale, 2 could not verify")
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="do not generate; report whether the PUBLISHED report is "
+        "still current. 0 fresh, 1 stale, 2 could not verify",
+    )
     ap.add_argument("--max-age-hours", type=int, default=48)
     a = ap.parse_args(argv)
 
@@ -1231,31 +1428,44 @@ def main(argv=None) -> int:
         # other machine for the crime of not being the generator — and would go
         # on passing on a host holding a months-old copy. "Is the store report
         # current?" is a fleet fact with exactly one answer.
-        return check_published(a.endpoint, a.bucket,
-                               access_key=os.environ.get("FW_S3_ACCESS_KEY",
-                                   os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")),
-                               secret_key=os.environ.get("FW_S3_SECRET_KEY",
-                                   os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin")),
-                               max_age_hours=a.max_age_hours)
+        return check_published(
+            a.endpoint,
+            a.bucket,
+            access_key=os.environ.get(
+                "FW_S3_ACCESS_KEY", os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")
+            ),
+            secret_key=os.environ.get(
+                "FW_S3_SECRET_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin")
+            ),
+            max_age_hours=a.max_age_hours,
+        )
 
     try:
-        rep = build(endpoint=a.endpoint, bucket=a.bucket,
-                    access_key=os.environ.get("FW_S3_ACCESS_KEY",
-                                              os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")),
-                    secret_key=os.environ.get("FW_S3_SECRET_KEY",
-                                              os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin")),
-                    tree_url=a.tree_url, sets_file=a.sets_file,
-                    county_csv=a.county_csv, stale_days=a.stale_days)
-    except Exception as exc:                            # noqa: BLE001
-        print(f"could not survey {a.bucket} @ {a.endpoint}: "
-              f"{type(exc).__name__}: {exc}", flush=True)
-        return 2                                        # could-not-verify, not "healthy"
+        rep = build(
+            endpoint=a.endpoint,
+            bucket=a.bucket,
+            access_key=os.environ.get(
+                "FW_S3_ACCESS_KEY", os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")
+            ),
+            secret_key=os.environ.get(
+                "FW_S3_SECRET_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin")
+            ),
+            tree_url=a.tree_url,
+            sets_file=a.sets_file,
+            county_csv=a.county_csv,
+            stale_days=a.stale_days,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"could not survey {a.bucket} @ {a.endpoint}: {type(exc).__name__}: {exc}", flush=True
+        )
+        return 2  # could-not-verify, not "healthy"
 
     md = render_markdown(rep)
     os.makedirs(a.out_dir, exist_ok=True)
     slim = json.loads(json.dumps(rep, default=_jsonable))
-    for s in slim["stores"]:                            # the per-extract dump is
-        s.pop("extracts", None)                         # ~4k rows; keep the JSON usable
+    for s in slim["stores"]:  # the per-extract dump is
+        s.pop("extracts", None)  # ~4k rows; keep the JSON usable
     paths = {
         "md": os.path.join(a.out_dir, "osm-cache-report.md"),
         "html": os.path.join(a.out_dir, "osm-cache-report.html"),
@@ -1271,22 +1481,32 @@ def main(argv=None) -> int:
     if a.publish:
         import boto3
         import botocore.config
+
         s3 = boto3.client(
-            "s3", endpoint_url=a.endpoint,
-            aws_access_key_id=os.environ.get("FW_S3_ACCESS_KEY",
-                                             os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")),
-            aws_secret_access_key=os.environ.get("FW_S3_SECRET_KEY",
-                                                 os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin")),
-            config=botocore.config.Config(read_timeout=60, retries={"max_attempts": 3}))
+            "s3",
+            endpoint_url=a.endpoint,
+            aws_access_key_id=os.environ.get(
+                "FW_S3_ACCESS_KEY", os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")
+            ),
+            aws_secret_access_key=os.environ.get(
+                "FW_S3_SECRET_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin")
+            ),
+            config=botocore.config.Config(read_timeout=60, retries={"max_attempts": 3}),
+        )
         # Under _report/ so it can never collide with a region key: every
         # extract key is <region>-latest.osm.pbf at the bucket root.
         for name, body, ctype in (
-                ("_report/index.html", render_html(md, rep), "text/html; charset=utf-8"),
-                ("_report/report.md", md, "text/markdown; charset=utf-8"),
-                ("_report/status.json", json.dumps(slim, indent=2), "application/json")):
-            s3.put_object(Bucket=a.bucket, Key=name,
-                          Body=body.encode(), ContentType=ctype,
-                          CacheControl="no-cache")
+            ("_report/index.html", render_html(md, rep), "text/html; charset=utf-8"),
+            ("_report/report.md", md, "text/markdown; charset=utf-8"),
+            ("_report/status.json", json.dumps(slim, indent=2), "application/json"),
+        ):
+            s3.put_object(
+                Bucket=a.bucket,
+                Key=name,
+                Body=body.encode(),
+                ContentType=ctype,
+                CacheControl="no-cache",
+            )
         print(f"published to s3://{a.bucket}/_report/")
 
     if a.tree_dir:
@@ -1296,9 +1516,11 @@ def main(argv=None) -> int:
         try:
             d = os.path.join(a.tree_dir, "_report")
             os.makedirs(d, exist_ok=True)
-            for name, body in (("index.html", render_html(md, rep)),
-                               ("report.md", md),
-                               ("status.json", json.dumps(slim, indent=2))):
+            for name, body in (
+                ("index.html", render_html(md, rep)),
+                ("report.md", md),
+                ("status.json", json.dumps(slim, indent=2)),
+            ):
                 tmp = os.path.join(d, name + ".tmp")
                 with open(tmp, "w") as fh:
                     fh.write(body)
@@ -1311,8 +1533,10 @@ def main(argv=None) -> int:
         print(json.dumps(slim, indent=2))
     else:
         g = rep["gaps"]
-        print(f"generated on {os.uname().nodename} (published as {rep['generated_on']} — "
-              f"the files carry no hostnames, endpoints or IPs)")
+        print(
+            f"generated on {os.uname().nodename} (published as {rep['generated_on']} — "
+            f"the files carry no hostnames, endpoints or IPs)"
+        )
         print(f"wrote {paths['md']}")
         print(f"      {paths['html']}")
         print(f"      {paths['json']}")

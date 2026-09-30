@@ -9,7 +9,6 @@ import pytest
 from facetwork.servers import catalog
 from tests import _site
 
-
 # No host name or address is spelled here -- each is a ROLE from tests/_site.py.
 INFRA = _site.host("infra")
 WORKER = _site.host("worker")
@@ -20,7 +19,6 @@ RESOLVED_IP = _site.ip("resolved")
 SELF_IP = _site.ip("this-host")
 OTHER_IP = _site.ip("other-host")
 LOOPBACK = _site.loopback()
-
 
 
 @pytest.fixture()
@@ -146,6 +144,7 @@ def test_container_ip_self_infra_is_the_gateway_alias(cat, monkeypatch):
 def test_container_ip_self_by_hostname_without_dns(cat, monkeypatch):
     """Hostname match alone is enough — the laptop with no network at all still
     gets a usable mapping, where resolution would give nothing."""
+
     def boom(_):
         raise OSError("no dns")
 
@@ -178,12 +177,14 @@ def test_host_list_falls_back_to_the_catalog():
     The catalog already tracks the fleet by stable name and is updated on join.
     """
     import pathlib
-    src = (pathlib.Path(__file__).resolve().parents[1]
-           / "scripts/lib/_helpers/_remote.sh").read_text()
+
+    src = (
+        pathlib.Path(__file__).resolve().parents[1] / "scripts/lib/_helpers/_remote.sh"
+    ).read_text()
     assert "from facetwork.servers import catalog" in src
     # An explicit setting must still win: this is a fallback, not a takeover.
     i = src.index("_afl_resolve_hosts()")
-    body = src[i:i + 2600]
+    body = src[i : i + 2600]
     assert body.index("FW_RUNNER_HOSTS") < body.index("catalog")
 
 
@@ -192,8 +193,10 @@ def test_the_fallback_skips_unreachable_and_self():
     it as one turns 'one host is down' into a failed rollout. And every caller acts
     on this host locally, not over ssh."""
     import pathlib
-    src = (pathlib.Path(__file__).resolve().parents[1]
-           / "scripts/lib/_helpers/_remote.sh").read_text()
+
+    src = (
+        pathlib.Path(__file__).resolve().parents[1] / "scripts/lib/_helpers/_remote.sh"
+    ).read_text()
     assert "catalog.resolve_ip(name)" in src, "must skip machines that do not resolve"
     assert "skip machines that are simply off" in src
     assert 'split(".")[0].lower() == me' in src, "must exclude this host"

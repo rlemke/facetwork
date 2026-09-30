@@ -221,7 +221,7 @@ def smoke_import(interpreter: str, pins: list[str], timeout: int = 300) -> tuple
     Distribution name != import name (``Pillow`` -> ``PIL``), so the module names
     come from each distribution's own ``top_level.txt`` where it has one.
     """
-    probe = r'''
+    probe = r"""
 import importlib, sys
 import importlib.metadata as md
 
@@ -256,15 +256,16 @@ for dist_name in sys.argv[1:]:
 if failed:
     print("; ".join(failed)[:800], file=sys.stderr)
     sys.exit(1)
-'''
+"""
     names = [_top_level_modules(p) for p in pins]
     names = [n for n in names if n]
     if not names:
         return True, ""
     try:
-        proc = subprocess.run([interpreter, "-c", probe, *names],
-                              capture_output=True, text=True, timeout=timeout)
-    except Exception as exc:                                   # noqa: BLE001
+        proc = subprocess.run(
+            [interpreter, "-c", probe, *names], capture_output=True, text=True, timeout=timeout
+        )
+    except Exception as exc:  # noqa: BLE001
         return False, f"could not run the probe: {type(exc).__name__}: {exc}"
     if proc.returncode == 0:
         return True, ""
@@ -315,7 +316,7 @@ def discover_provided_environments(manifests: dict | None = None) -> list[str]:
         if m:
             pins = list(m.get("pins") or [])
         if not pins:
-            provided.append(h)                     # unknown pins: unchanged behaviour
+            provided.append(h)  # unknown pins: unchanged behaviour
             continue
         ok, err = smoke_import(os.path.join(target, "bin", "python"), pins)
         if ok:
@@ -324,7 +325,10 @@ def discover_provided_environments(manifests: dict | None = None) -> list[str]:
         else:
             logger.warning(
                 "environment %s is installed here but its packages do not import "
-                "on this host — NOT advertising it: %s", h, err)
+                "on this host — NOT advertising it: %s",
+                h,
+                err,
+            )
     return provided
 
 
@@ -392,8 +396,7 @@ def materialize_environment(manifest: dict, hash_: str) -> str:
         # the check silently undoes itself.
         shutil.rmtree(target, ignore_errors=True)
         raise RuntimeError(
-            f"Environment {hash_} installed but its packages do not import on this "
-            f"host: {err}"
+            f"Environment {hash_} installed but its packages do not import on this host: {err}"
         )
     _mark_verified(target)
     return interpreter

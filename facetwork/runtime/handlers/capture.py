@@ -51,7 +51,9 @@ def _merge_appended_value(existing: object, new: object) -> object:
     ceremony, and the nested case reads correctly too. To append a list AS an
     element, wrap it: ``xs += [inner]``.
     """
-    base: list = list(existing) if isinstance(existing, list) else ([] if existing is None else [existing])
+    base: list = (
+        list(existing) if isinstance(existing, list) else ([] if existing is None else [existing])
+    )
     if isinstance(new, list):
         return base + list(new)
     return base + [new]
@@ -350,7 +352,10 @@ class StatementCaptureBeginHandler(StateHandler):
         # relative order (sort is stable, and they sort as index -1).
         for s in sorted(
             (s for s in steps if s.is_block and s.is_complete),
-            key=lambda b: (getattr(b, "foreach_index", None) is None, getattr(b, "foreach_index", -1)),
+            key=lambda b: (
+                getattr(b, "foreach_index", None) is None,
+                getattr(b, "foreach_index", -1),
+            ),
         ):
             yields.extend(self._collect_yields_recursive(s.id))
 

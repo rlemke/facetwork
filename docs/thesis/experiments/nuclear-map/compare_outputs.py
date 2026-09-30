@@ -121,8 +121,14 @@ def _parse_run(spec: str) -> tuple[str, Path]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--run", action="append", type=_parse_run, default=[], metavar="LABEL=PATH",
-                    help="a run to compare; the first is the reference (repeatable)")
+    ap.add_argument(
+        "--run",
+        action="append",
+        type=_parse_run,
+        default=[],
+        metavar="LABEL=PATH",
+        help="a run to compare; the first is the reference (repeatable)",
+    )
     ap.add_argument("--region", default="nuclear")
     args = ap.parse_args()
 
@@ -136,16 +142,27 @@ def main() -> int:
     total = 0
     for label, root in others:
         oth = _cache(root.resolve())
-        geo = compare_geojson(ref / "nuclear" / "reactors.geojson",
-                              oth / "nuclear" / "reactors.geojson", ref_label, label)
-        html, masked = compare_html(ref / "maps" / args.region / "index.html",
-                                    oth / "maps" / args.region / "index.html", ref_label, label)
+        geo = compare_geojson(
+            ref / "nuclear" / "reactors.geojson",
+            oth / "nuclear" / "reactors.geojson",
+            ref_label,
+            label,
+        )
+        html, masked = compare_html(
+            ref / "maps" / args.region / "index.html",
+            oth / "maps" / args.region / "index.html",
+            ref_label,
+            label,
+        )
         print(f"{label} vs {ref_label}")
         print("  GeoJSON:  " + ("OK" if not geo else "DIFFERS"))
         for p in geo:
             print("    " + p)
-        print("  HTML:     " + ("OK" if not html else "DIFFERS")
-              + ("  (render timestamp masked)" if masked else ""))
+        print(
+            "  HTML:     "
+            + ("OK" if not html else "DIFFERS")
+            + ("  (render timestamp masked)" if masked else "")
+        )
         for p in html:
             print("    " + p)
         total += len(geo) + len(html)

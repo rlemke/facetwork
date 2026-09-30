@@ -188,8 +188,7 @@ def facet_completions(source: str) -> list[dict[str, Any]]:
                         "documentation": {
                             "kind": "markdown",
                             "value": (
-                                f"**{ns_name}.{name}** — {kind}\n\n"
-                                f"```ffl\n{name}{detail}\n```"
+                                f"**{ns_name}.{name}** — {kind}\n\n```ffl\n{name}{detail}\n```"
                             ),
                         },
                         # Insert the call with its parens so the cursor lands
@@ -345,7 +344,7 @@ class LanguageServer:
         if method == "exit":
             raise SystemExit(0 if self._shutdown else 1)
 
-        doc = (params.get("textDocument") or {})
+        doc = params.get("textDocument") or {}
         uri = doc.get("uri", "")
 
         if method == "textDocument/didOpen":

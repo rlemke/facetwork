@@ -41,7 +41,7 @@ def _load():
 fl = _load()
 
 # Every address is a ROLE from tests/_site.py -- never a literal (see that module).
-GATEWAY = _site.ip("docker-gateway")    # what Docker's host-gateway resolves to in a container
+GATEWAY = _site.ip("docker-gateway")  # what Docker's host-gateway resolves to in a container
 INFRA = _site.ip("infra")
 INFRA_NEW = _site.ip("infra-after-move")
 MONGO_HOST = _site.ip("mongo-host")
@@ -161,7 +161,7 @@ def test_gateway_entry_for_a_service_that_moved_away_is_healed(monkeypatch):
     _patch(monkeypatch, rec)
     monkeypatch.setattr(fl, "_this_host_addresses", lambda: {HERE})
     mapping = dict.fromkeys(fl.INFRA_HOST_NAMES, HERE)  # MinIO etc. still here
-    mapping["afl-extracts"] = EXTRACTS_HOST                     # ...the extracts moved
+    mapping["afl-extracts"] = EXTRACTS_HOST  # ...the extracts moved
     assert fl.refresh_container_hosts(mapping) == ["runner-a"]
     written = rec.written[0]
     assert f"{EXTRACTS_HOST}\tafl-extracts" in written

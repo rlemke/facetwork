@@ -105,12 +105,7 @@ def test_rewrite_hosts_repoints_afl_names():
     a missing afl-* name is added (so a stale/IPv6 mapping can't survive)."""
     lo, old, new = _site.loopback(), _site.ip("infra-before"), _site.ip("infra-after")
     other, stale6 = _site.ip("unrelated-host"), _site.ip6("stale-v6-mapping")
-    before = (
-        f"{lo}\tlocalhost\n"
-        f"{old}\tafl-mongodb\n"
-        f"{stale6}\tafl-minio\n"
-        f"{other}\tsome-other-host\n"
-    )
+    before = f"{lo}\tlocalhost\n{old}\tafl-mongodb\n{stale6}\tafl-minio\n{other}\tsome-other-host\n"
     after = fl._rewrite_hosts(before, new)
     lines = after.splitlines()
     assert f"{new}\tafl-mongodb" in lines

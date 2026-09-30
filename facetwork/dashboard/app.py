@@ -98,13 +98,15 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 await asyncio.sleep(interval)
                 # Re-acquire every cycle: this both renews our own lease and
                 # picks it up if the previous holder died.
-                holding = store.try_acquire_lease(
-                    "dashboard-reaper", holder, lease_ttl_ms)
+                holding = store.try_acquire_lease("dashboard-reaper", holder, lease_ttl_ms)
                 if holding != was_holder:
                     logger.info(
                         "Dashboard reaper: %s (holder=%s)",
-                        "now reaping" if holding else "standing down, another instance holds the lease",
-                        holder)
+                        "now reaping"
+                        if holding
+                        else "standing down, another instance holds the lease",
+                        holder,
+                    )
                     was_holder = holding
                 if not holding:
                     continue

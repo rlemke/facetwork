@@ -39,8 +39,9 @@ from pathlib import Path
 
 # RFC 5737 TEST-NET-1/2/3, the RFC 3849 IPv6 documentation prefix and the
 # RFC 6761 reserved TLD: the ONLY literals.
-_DOC_NETS = tuple(ipaddress.ip_network(n) for n in
-                  ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"))
+_DOC_NETS = tuple(
+    ipaddress.ip_network(n) for n in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")
+)
 _DOC_NET6 = ipaddress.ip_network("2001:db8::/32")
 _TEST_TLD = "test"
 
@@ -117,7 +118,7 @@ def container_net_ip() -> str:
 
     Code that must ignore Docker-assigned addresses keys on that range, so a test
     of it needs one; generated, because no particular value is meaningful."""
-    net = ipaddress.ip_network((0xAC100000, 12))                # 172.16.0.0/12
+    net = ipaddress.ip_network((0xAC100000, 12))  # 172.16.0.0/12
     return str(net.network_address + _rng.randrange(2, net.num_addresses - 2))
 
 
@@ -127,6 +128,7 @@ def forbidden_names() -> list[str]:
     names = {str(n) for n in (_SITE.get("forbidden_names") or []) if n}
     try:
         import sys
+
         repo = Path(__file__).resolve().parents[1]
         if str(repo) not in sys.path:
             sys.path.insert(0, str(repo))

@@ -18,6 +18,7 @@ Used by `fw svc osm-admin-regen --set NAME`. Two jobs:
 Exit codes: 0 expanded (pairs on stdout, one "region<TAB>level" per line),
 1 refused by the freshness guard, 2 could not check.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -63,8 +64,7 @@ def _load_fleet_s3() -> None:
 
 _load_fleet_s3()
 
-DEFAULT_SETS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "_osm-admin-sets.json")
+DEFAULT_SETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_osm-admin-sets.json")
 
 
 #: Where the guard actually looked. Reported on every refusal: a WRONG endpoint
@@ -79,10 +79,13 @@ S3_ENDPOINT = os.environ.get("FW_S3_ENDPOINT", "http://localhost:9000")
 
 def _s3():
     import boto3
+
     return boto3.client(
-        "s3", endpoint_url=S3_ENDPOINT,
+        "s3",
+        endpoint_url=S3_ENDPOINT,
         aws_access_key_id=os.environ.get("FW_S3_ACCESS_KEY", "minioadmin"),
-        aws_secret_access_key=os.environ.get("FW_S3_SECRET_KEY", "minioadmin"))
+        aws_secret_access_key=os.environ.get("FW_S3_SECRET_KEY", "minioadmin"),
+    )
 
 
 def _objects(client, bucket: str, prefix: str = "", *, delimiter: str = "/"):
@@ -98,8 +101,7 @@ def _objects(client, bucket: str, prefix: str = "", *, delimiter: str = "/"):
     if delimiter:
         kwargs["Delimiter"] = delimiter
     pages = client.get_paginator("list_objects_v2").paginate(**kwargs)
-    return [o for page in pages for o in page.get("Contents", [])
-            if o["Key"].endswith(".osm.pbf")]
+    return [o for page in pages for o in page.get("Contents", []) if o["Key"].endswith(".osm.pbf")]
 
 
 def _prefix_of(pattern: str) -> str:
@@ -109,15 +111,23 @@ def _prefix_of(pattern: str) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--set", required=True, dest="set_name")
     ap.add_argument("--bucket", default=os.environ.get("FW_OSM_EXTRACT_BUCKET", "osm-extracts"))
-    ap.add_argument("--max-source-age-days", type=float, default=14.0,
-                    help="refuse when a requires_fresh source is older than this")
-    ap.add_argument("--ignore-stale-source", action="store_true",
-                    help="expand anyway; the children will carry a fresh mtime over "
-                         "stale data, so only use this deliberately")
+    ap.add_argument(
+        "--max-source-age-days",
+        type=float,
+        default=14.0,
+        help="refuse when a requires_fresh source is older than this",
+    )
+    ap.add_argument(
+        "--ignore-stale-source",
+        action="store_true",
+        help="expand anyway; the children will carry a fresh mtime over "
+        "stale data, so only use this deliberately",
+    )
     ap.add_argument("--list-sets", action="store_true")
     a = ap.parse_args()
 
@@ -173,25 +183,31 @@ def main() -> int:
     for pattern in spec.get("requires_fresh") or []:
         matched = [k for k in ages if _match(k, pattern)]
         if not matched:
-            print(f"requires_fresh pattern {pattern!r} matched nothing in "
-                  f"{a.bucket} at {S3_ENDPOINT} ({len(ages)} object(s) listed) — "
-                  f"a wrong endpoint looks exactly like a missing extract",
-                  file=sys.stderr)
+            print(
+                f"requires_fresh pattern {pattern!r} matched nothing in "
+                f"{a.bucket} at {S3_ENDPOINT} ({len(ages)} object(s) listed) — "
+                f"a wrong endpoint looks exactly like a missing extract",
+                file=sys.stderr,
+            )
             return 2
         worst = max(matched, key=lambda k: ages[k])
         if ages[worst] > a.max_source_age_days:
             stale.append((worst, ages[worst]))
     if stale and not a.ignore_stale_source:
-        print(f"REFUSED: set {a.set_name!r} needs fresher sources than the bucket holds.",
-              file=sys.stderr)
+        print(
+            f"REFUSED: set {a.set_name!r} needs fresher sources than the bucket holds.",
+            file=sys.stderr,
+        )
         for key, age in stale:
-            print(f"  {key}  {age:.1f} days old (limit {a.max_source_age_days:g})",
-                  file=sys.stderr)
-        print("\n  BuildAdminSet reads its source FROM THE BUCKET, so building on these\n"
-              "  would stamp children with a fresh mtime over month-old data - and these\n"
-              "  sub-regions carry no replication timestamp, so mtime is the only age\n"
-              "  signal anything has. Refresh the parent tier first, or pass\n"
-              "  --ignore-stale-source if you mean it.", file=sys.stderr)
+            print(f"  {key}  {age:.1f} days old (limit {a.max_source_age_days:g})", file=sys.stderr)
+        print(
+            "\n  BuildAdminSet reads its source FROM THE BUCKET, so building on these\n"
+            "  would stamp children with a fresh mtime over month-old data - and these\n"
+            "  sub-regions carry no replication timestamp, so mtime is the only age\n"
+            "  signal anything has. Refresh the parent tier first, or pass\n"
+            "  --ignore-stale-source if you mean it.",
+            file=sys.stderr,
+        )
         return 1
 
     # --- expand ------------------------------------------------------------

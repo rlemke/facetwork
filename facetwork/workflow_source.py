@@ -602,8 +602,7 @@ def _args(args: list[dict]) -> str:
     # workflow and silently under-reports every fan-out it is copied into. The
     # dashboard shows this text to humans, so the flag has to survive.
     return ", ".join(
-        f"{a['name']} {'+=' if a.get('append') else '='} {_expr(a['value'])}"
-        for a in args
+        f"{a['name']} {'+=' if a.get('append') else '='} {_expr(a['value'])}" for a in args
     )
 
 
