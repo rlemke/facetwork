@@ -105,6 +105,37 @@ def service_host(service: str) -> str | None:
     return (entry or {}).get("name") or None
 
 
+def resolve_url(url: str) -> str:
+    """``url`` with its host replaced by the catalog's address when this machine
+    cannot resolve that host itself; unchanged otherwise.
+
+    Host-side tools address shared services by their ``afl-*`` names, which
+    containers map through ``extra_hosts`` but a host resolves only if something
+    pinned them in /etc/hosts -- which the fleet deliberately stopped doing. The
+    bash helpers already fell back to the catalog; Python commands run by ``fw``
+    did not, so e.g. ``fw maint workflow-stats`` could not reach MongoDB from a
+    laptop that every other command reached fine."""
+    from urllib.parse import urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    host = parts.hostname
+    if not host or find(host) is None:
+        return url
+    try:
+        socket.gethostbyname(host)
+        return url  # the system resolves it: leave it alone
+    except OSError:
+        pass
+    ip = resolve_ip(host)
+    if not ip:
+        return url
+    netloc = parts.netloc.replace(host, ip, 1)
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
 def host_key(name: object) -> str:
     """The key two records of the SAME machine agree on, whatever their naming.
 

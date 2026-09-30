@@ -26,6 +26,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--infra-name", action="store_true", help="print the infra host's stable name")
     p.add_argument("--resolve", metavar="NAME", help="print the current IP for a name/alias")
     p.add_argument(
+        "--resolve-url",
+        nargs="+",
+        metavar="URL",
+        help="print each URL with an unresolvable catalog host replaced by its address",
+    )
+    p.add_argument(
         "--service-host",
         metavar="SERVICE",
         help="print the stable name of the host serving an afl-* service "
@@ -51,6 +57,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         print(val)
+        return 0
+
+    if args.resolve_url:
+        for u in args.resolve_url:
+            print(catalog.resolve_url(u))
         return 0
 
     if args.service_host:

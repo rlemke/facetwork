@@ -218,3 +218,27 @@ def test_other_machines_still_resolve_by_name(cat, monkeypatch):
     monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: RESOLVED_IP)
     monkeypatch.setattr(catalog, "_primary_lan_ip", lambda: SELF_IP)
     assert catalog.resolve_ip(INFRA) == RESOLVED_IP
+
+
+def test_resolve_url_substitutes_only_unresolvable_catalog_hosts(cat, monkeypatch):
+    """Host-side fw commands read afl-* URLs straight from .env; a host that does
+    not pin those names in /etc/hosts could not reach MongoDB at all."""
+
+    def gethostbyname(name):
+        if name == "afl-mongodb":
+            raise OSError("not resolvable on this host")
+        return RESOLVED_IP
+
+    monkeypatch.setattr(catalog.socket, "gethostbyname", gethostbyname)
+    monkeypatch.setattr(catalog.socket, "gethostname", lambda: "somewhere-else")
+    assert catalog.resolve_url("mongodb://afl-mongodb:27017") == f"mongodb://{RESOLVED_IP}:27017"
+    assert (
+        catalog.resolve_url("mongodb://u:p@afl-mongodb:27017/db")
+        == f"mongodb://u:p@{RESOLVED_IP}:27017/db"
+    )
+
+
+def test_resolve_url_leaves_resolvable_and_foreign_hosts_alone(cat, monkeypatch):
+    monkeypatch.setattr(catalog.socket, "gethostbyname", lambda n: RESOLVED_IP)
+    assert catalog.resolve_url("http://afl-minio:9000") == "http://afl-minio:9000"
+    assert catalog.resolve_url("https://not-in-catalog.test/x") == "https://not-in-catalog.test/x"

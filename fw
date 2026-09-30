@@ -9,6 +9,36 @@ set -uo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/scripts/lib/_helpers/_bootstrap.sh"
 
+# Service URLs name shared services by their afl-* aliases. Containers map those
+# through extra_hosts; a HOST resolves them only via /etc/hosts, which the fleet
+# stopped pinning. Bash commands fall back to the server catalog in _env.sh, but
+# Python commands read the URL straight from the environment -- so e.g.
+# `fw maint workflow-stats` could not reach MongoDB from a machine where every
+# bash command could. Resolve once here, for every command. Only runs when a URL
+# actually names an afl-* host; a name the system resolves is left untouched.
+_fw_resolve_service_urls() {
+    local v urls=() out i=0 fromfile
+    for v in FW_MONGODB_URL FW_S3_ENDPOINT; do
+        # Same precedence as _env.sh / _dotenv.py: the environment wins, else .env.
+        if [ -z "${!v:-}" ] && [ -f "$FW_ROOT/.env" ]; then
+            fromfile="$(sed -nE "s/^(export[[:space:]]+)?$v=[\"']?([^\"'#[:space:]]*).*/\\2/p" "$FW_ROOT/.env" | tail -1)"
+            [ -n "$fromfile" ] && export "$v=$fromfile"
+        fi
+        urls+=("${!v:-}")
+    done
+    case "${urls[*]}" in *afl-*) ;; *) return 0 ;; esac
+    local py="$FW_ROOT/.venv/bin/python3"; [ -x "$py" ] || py=python3
+    out="$(PYTHONPATH="$FW_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$py" -m facetwork.servers \
+           --resolve-url "${urls[0]:-none://}" "${urls[1]:-none://}" 2>/dev/null)" || return 0
+    for v in FW_MONGODB_URL FW_S3_ENDPOINT; do
+        i=$((i + 1))
+        local val; val="$(printf '%s\n' "$out" | sed -n "${i}p")"
+        [ -n "${!v:-}" ] && [ -n "$val" ] && export "$v=$val"
+    done
+    return 0
+}
+_fw_resolve_service_urls
+
 # --- helpers --------------------------------------------------------------
 _fw_summary() {  # $1 = file -> prints its one-line blurb
     local f="$1" s
